@@ -5131,6 +5131,21 @@
           "default": null,
           "description": "A task's pull requests: the PR URLs among its references."
         },
+        "runs": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/TaskRun"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A task's scheduler runs: those whose run id names it (`dag-run-task-<N>-<ts>`)."
+        },
         "state": {
           "type": "string"
         },
@@ -6995,6 +7010,28 @@
         "record"
       ],
       "title": "TaskRecord",
+      "type": "object"
+    },
+    "TaskRun": {
+      "additionalProperties": false,
+      "description": "One scheduler run a task's id names, linked to the run's own page.",
+      "properties": {
+        "startedAt": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "url",
+        "status",
+        "startedAt"
+      ],
+      "title": "TaskRun",
       "type": "object"
     },
     "Tie": {

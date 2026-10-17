@@ -274,6 +274,15 @@ def _params(text: str) -> dict[str, str]:
     return {key: value for key, equals, value in pairs if equals and key}
 
 
+_TASK_RUN = re.compile(r"dag-run-task-(\d+)-")
+
+
+def _task_of(run_id: str) -> str | None:
+    """The Board task a `dag-run-task-<N>-<ts>` run id names, or None for any other run."""
+    match = _TASK_RUN.match(run_id)
+    return f"TASK-{match.group(1)}" if match else None
+
+
 def _recent_run(base_url: str, run: dict) -> dict:
     """One listed run as a `RecentRun`, its steps read from its detail (none when Dagu no longer has it)."""
     try:
@@ -282,6 +291,8 @@ def _recent_run(base_url: str, run: dict) -> dict:
         nodes = []
     return {
         "runId": run["dagRunId"],
+        "task": _task_of(run["dagRunId"]),
+        "url": f"{base_url}/dag-runs/{urllib.parse.quote(run['name'])}/{urllib.parse.quote(run['dagRunId'])}",
         **_reported(run["statusLabel"]),
         "startedAt": run.get("startedAt") or run.get("queuedAt") or "",
         "finishedAt": run.get("finishedAt", ""),
@@ -362,6 +373,8 @@ def dags(
         if only is not None and d["fileName"] not in only:
             continue
         run = d.get("latestDAGRun") or {}
+        # a DAG whose runs name a task keeps them too, so the task's card links them though no Board event ties it
+        keeps_recent = d["fileName"] in recent or _task_of(run.get("dagRunId", "")) is not None
         try:
             pool, steps = _graph(base_url, d["fileName"], run, graphs, clock())
         except OSError:
@@ -376,7 +389,7 @@ def dags(
                 "steps": steps,
                 "active": [a for r in in_flight.get(d["fileName"], []) if (a := _active(base_url, r, steps))],
                 "pool": pool,
-                **({"recent": recent_runs(base_url, d["fileName"], finished)} if d["fileName"] in recent else {}),
+                **({"recent": recent_runs(base_url, d["fileName"], finished)} if keeps_recent else {}),
             }
         )
     return out
@@ -456,7 +469,7 @@ def _begun(recent: list[dict], run: _Run) -> list[dict]:
     """`recent` holding the run a start entry reports, with no parameters when Dagu has not listed it yet."""
     if any(entry["runId"] == run.run_id for entry in recent):
         return recent
-    begun = {"runId": run.run_id, "status": "running", "startedAt": _iso(run.at), "finishedAt": "", "params": {}, "steps": {}}
+    begun = {"runId": run.run_id, "task": _task_of(run.run_id), "url": "", "status": "running", "startedAt": _iso(run.at), "finishedAt": "", "params": {}, "steps": {}}
     return [begun, *recent]
 
 

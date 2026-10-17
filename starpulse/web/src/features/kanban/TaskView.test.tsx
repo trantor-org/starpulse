@@ -476,3 +476,11 @@ describe("the Move to menu under a moving pointer", () => {
     }
   });
 });
+
+describe("the task view's workflow runs", () => {
+  it("links each run the task's id names, and draws no section for a task with none", () => {
+    const runs = [{ url: "http://dagu/dag-runs/w/dag-run-task-7-1", status: "failed", startedAt: "2026-10-17T15:00:00Z" }];
+    expect(draw({ task: { ...task, runs } })).toContain('href="http://dagu/dag-runs/w/dag-run-task-7-1"');
+    expect(draw({ task })).not.toContain(">Runs<");
+  });
+});

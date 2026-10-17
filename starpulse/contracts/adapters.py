@@ -224,6 +224,10 @@ class RecentRun(_Contract):
     """One run of a DAG within the last day, running or over, with the parameters it started with."""
 
     run_id: str = Field(alias="runId", description="The run's id.")
+    task: str | None = Field(
+        default=None, description="The Board task a `dag-run-task-<N>-<ts>` run id names (`TASK-N`); None for any other run."
+    )
+    url: str = Field(default="", description="A link to the run in the scheduler's own page; empty when it has none.")
     status: RunStatus = Field(description="The run's status.")
     raw: str | None = Field(
         default=None, description="The engine's own status for the run when it differs from `status`, shown as is."

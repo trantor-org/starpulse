@@ -555,6 +555,10 @@ export interface RawAgent {
    * A task's pull requests: the PR URLs among its references.
    */
   prs?: string[] | null;
+  /**
+   * A task's scheduler runs: those whose run id names it (`dag-run-task-<N>-<ts>`).
+   */
+  runs?: TaskRun[] | null;
   state: string;
   steps?: number | null;
   /**
@@ -603,6 +607,14 @@ export interface Move {
    * The actors the machine YAML declares for the event behind the move; empty when it declares none, and then any actor may make it.
    */
   writers?: string[];
+}
+/**
+ * One scheduler run a task's id names, linked to the run's own page.
+ */
+export interface TaskRun {
+  startedAt: string;
+  status: string;
+  url: string;
 }
 export interface TrailStep {
   at: number;

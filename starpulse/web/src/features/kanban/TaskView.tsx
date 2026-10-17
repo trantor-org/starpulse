@@ -463,6 +463,11 @@ export function TaskView(p: TaskViewProps) {
             </RailSection>
             <RailSection name="Session"><SessionRows session={sessionOf(p.task, p.record, p.now, startLane(p.task))} lane={p.task.lane} startLane={startLane(p.task)} /></RailSection>
             {criteria.length > 0 && <RailSection name="Start Criteria" count={`${metCount(criteria)}/${criteria.length} met`}><StartCriteria criteria={criteria} now={p.now} /></RailSection>}
+            {!!p.task.runs?.length && (
+              <RailSection name="Runs" count={p.task.runs.length}>
+                {p.task.runs.map((r) => <div key={r.url} className="pull"><a href={r.url} target="_blank" rel="noopener">{r.startedAt} ↗</a><span className="k">{r.status}</span></div>)}
+              </RailSection>
+            )}
             <RailSection name="Pull requests" count={p.task.prs.length}><PullRows pulls={p.task.prs} /></RailSection>
             <RailSection name="CI history" count={ciHistory(p.task)?.pulls.length}><CiRows task={p.task} /></RailSection>
             <RailSection name="Dependencies" count={deps.dependsOn.length + deps.holds.length + deps.more}>
