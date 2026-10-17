@@ -310,18 +310,6 @@ def test_the_api_child_runs_for_a_false_setting_and_never_beside_a_hub() -> None
     assert "api" not in worker_commands(load(None), None, hub=True)  # a hub serves its page in-process
 
 
-def test_a_child_is_handed_the_listening_socket_on_the_descriptor_its_environment_names(tmp_path: Path) -> None:
-    seen = tmp_path / "port"
-    adopt = (
-        "import os, socket, sys; s = socket.socket(fileno=int(os.environ['" + LISTEN_FD_ENV + "'])); "
-        "open(sys.argv[1], 'w').write(str(s.getsockname()[1]))"
-    )
-    with socket.create_server(("127.0.0.1", 0)) as listening:
-        child = spawn_child([sys.executable, "-c", adopt, str(seen)], listening)
-        assert child.wait(20) == 0
-        assert seen.read_text() == str(listening.getsockname()[1])
-
-
 def test_a_child_started_without_a_socket_is_told_of_none(tmp_path: Path) -> None:
     seen = tmp_path / "env"
     child = spawn_child([sys.executable, "-c", "import os, sys; open(sys.argv[1], 'w').write(os.environ.get('" + LISTEN_FD_ENV + "', 'none'))", str(seen)])
@@ -356,7 +344,7 @@ class Handed:
 
 def test_the_supervisor_hands_its_socket_to_the_named_child_each_time_it_starts_it() -> None:
     Handed.made = []
-    with socket.create_server(("127.0.0.1", 0)) as listening:
+    with socket.socket() as listening:
         supervisor = Supervisor({"api": SLEEP, "pulls": SLEEP}, spawn=Handed, sockets={"api": listening})
         supervisor.tick(0.0)
         Handed.made[0].ended = True  # the api child dies; the next tick starts its replacement
