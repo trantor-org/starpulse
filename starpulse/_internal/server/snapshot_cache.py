@@ -66,6 +66,7 @@ class SnapshotCache:
         self._floor = 0
         self._building = threading.Lock()
         self._thread: threading.Thread | None = None
+        self._built = threading.Condition()
         self._kept: OrderedDict[str, Encoded] = OrderedDict()
         #: Each board task's JSON, kept between builds so one that changed is the only one encoded afresh.
         self._tasks: dict[int, tuple[Any, bytes]] = {}
@@ -79,6 +80,17 @@ class SnapshotCache:
         if self._current(held := self._held):
             return held  # type: ignore[return-value]
         return self._build()
+
+    def after_current(self) -> Served:
+        """The snapshot at the feed revision as of now or later, built by the background thread, never by the caller: a
+        long-lived stream that built it would keep the heap pages of the build for as long as it is open."""
+        self._refresh_in_background()
+        target = self._feed.rev
+        with self._built:
+            while (held := self._held) is None or held.rev < target:
+                self._feed.revised.set()  # wakes the background thread, which waits the settle out and builds
+                self._built.wait(self._settle_s + 1)
+        return held
 
     def read(self) -> Served:
         """The snapshot for a plain read: the one held while the background rebuild catches up with changes published
@@ -106,7 +118,9 @@ class SnapshotCache:
             self._kept[held.key] = encoded
             while len(self._kept) > KEPT:
                 self._kept.popitem(last=False)
-            return held
+        with self._built:
+            self._built.notify_all()
+        return held
 
     def body(self, key: str) -> Encoded | None:
         """The snapshot `key` names, while it is one of the last few built."""

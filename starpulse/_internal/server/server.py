@@ -266,7 +266,7 @@ from starpulse._internal.hub import forward, forward_report
 from starpulse._internal.server.compression import LEVEL, Encoded, accepts_gzip, compressed, gzip_stream
 from starpulse._internal.server.process_metrics import process_gauges
 from starpulse._internal.hub.forward import Forwarder
-from starpulse._internal.server.column_stream import ColumnViews, Interest, column_view
+from starpulse._internal.server.column_stream import ColumnViews, Interest
 from starpulse._internal.server.live_push import wire_forwarding, wire_level
 from starpulse._internal.server.snapshot_cache import SnapshotCache
 from starpulse._internal.server.closure import Reader
@@ -1606,18 +1606,18 @@ def request_handler(
                 return
             changes = None
             try:
-                served = snapshots.get()
+                served = snapshots.after_current()
                 while (attached := feed.watch_from(served.sent)) is None:
-                    served = snapshots.get()
+                    served = snapshots.after_current()
                 missed, changes = attached
                 if missed:
-                    served = snapshots.get()  # the view must include what was published after the snapshot it started from
+                    served = snapshots.after_current()  # the view must include what was published after the snapshot it started from
                 self._open_stream()
                 sent = None
                 while True:
-                    view = column_view(column_views.of(served), holder, states)
+                    view, text = column_views.render(served, holder, states)
                     if view != sent:
-                        self._frame(event, json.dumps(view, ensure_ascii=False))
+                        self._frame(event, text)
                         sent = view
                         interest = Interest(view, holder, states)
                     self._wait_touched(changes, interest)
@@ -1625,7 +1625,7 @@ def request_handler(
                     while not changes.empty():
                         changes.get_nowait()
                         changes.task_done()
-                    served = snapshots.get()
+                    served = snapshots.after_current()
             except OSError:
                 pass
             finally:
