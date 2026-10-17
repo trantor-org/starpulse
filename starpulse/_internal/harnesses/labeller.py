@@ -1,4 +1,4 @@
-"""The intent label of a human prompt, from the instance's configured Laya typed-decision endpoint.
+"""The intent label of a human prompt, from the instance's configured typed-decision endpoint.
 
 The prompt text leaves StarPulse in the request and only the label comes back; neither is stored here. The call never
 raises and never waits past the labeller's `timeout`: an endpoint that is down, slow or answers nothing usable leaves

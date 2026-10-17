@@ -388,7 +388,7 @@ when = { lane = { equals = "done" } }    # optional: each field must match by `e
 # label = "validation"                                     # a label the task carries
 # injected_openings = ["<task-notification"]               # a prompt opening with one is labelled `injected`, any other `human`
 # [analytics.labeller]                                     # names a human prompt's intent at ingest; with none, no prompt is labelled
-# url = "http://127.0.0.1:8006/v1/systemone"               # a Laya typed-decision endpoint, sent the prompt's text; only its label is kept
+# url = "http://127.0.0.1:8006/v1/systemone"               # a typed-decision endpoint, sent the prompt's text; only its label is kept
 # model = "intent"                                         # the checkpoint it asks
 # instructions = "Classify this message an operator sent an AI coding agent."
 # timeout = 2.0                                            # seconds it may take; slower, unreachable or no answer leaves the label empty
