@@ -8,7 +8,7 @@ import time
 import pytest
 
 from starpulse._internal.config.config import Repo
-from starpulse._internal.config.pins import GitHub, contained, link
+from starpulse._internal.config.pins import _RETRY_WAIT_S, GitHub, contained, link
 
 REPOS = (Repo(name="skills", path="skills", applied_by="pin-bump"),)
 CHILD_SHA, LATER_SHA = "c1" * 20, "c2" * 20
@@ -123,15 +123,6 @@ def test_a_default_branch_head_is_reused_within_its_ttl_then_read_again(monkeypa
     assert github.answers() == {"pointers": [], "reaches": []}
 
 
-def test_an_unreadable_pointer_is_asked_again_rather_than_remembered(monkeypatch: pytest.MonkeyPatch) -> None:
-    gh = Gh({})
-    monkeypatch.setattr(subprocess, "run", gh)
-    github = GitHub()
-
-    assert [github.pointer("trantor-org/trantor", "p1", "skills") for _ in range(2)] == [None, None]
-    assert len(gh.asked) == 2
-
-
 NOT_FOUND = '{"message":"Not Found","status":"404"}'
 
 
@@ -164,16 +155,35 @@ def test_a_path_github_answers_not_found_is_kept_and_saved_rather_than_asked_aga
         "",
     ],
 )
-def test_a_pointer_read_that_fails_without_a_not_found_answer_is_asked_again(
+def test_a_pointer_read_that_fails_without_a_not_found_answer_is_asked_again_only_after_the_retry_wait(
     monkeypatch: pytest.MonkeyPatch, body: str
 ) -> None:
     gh = failing(body)
+    clock = [1000.0]
     monkeypatch.setattr(subprocess, "run", gh)
+    monkeypatch.setattr(time, "monotonic", lambda: clock[0])
     github = GitHub()
 
-    assert [github.pointer("trantor-org/trantor", "p1", "skills") for _ in range(2)] == [None, None]
+    assert [github.pointer("trantor-org/trantor", "p1", "skills") for _ in range(3)] == [None] * 3
+    assert len(gh.asked) == 1
+    clock[0] += _RETRY_WAIT_S
+    assert github.pointer("trantor-org/trantor", "p1", "skills") is None
     assert len(gh.asked) == 2
     assert github.answers()["pointers"] == []
+
+
+def test_a_compare_that_fails_is_asked_again_only_after_the_retry_wait(monkeypatch: pytest.MonkeyPatch) -> None:
+    gh = failing("HTTP 502")
+    clock = [1000.0]
+    monkeypatch.setattr(subprocess, "run", gh)
+    monkeypatch.setattr(time, "monotonic", lambda: clock[0])
+    github = GitHub()
+
+    assert [github.reaches("trantor-org/skills", CHILD_SHA, NEW_POINTER) for _ in range(3)] == [False] * 3
+    assert len(gh.asked) == 1
+    clock[0] += _RETRY_WAIT_S
+    github.reaches("trantor-org/skills", CHILD_SHA, NEW_POINTER)
+    assert len(gh.asked) == 2
 
 
 def test_a_compare_that_fails_with_an_error_body_answers_not_contained_and_keeps_nothing(
