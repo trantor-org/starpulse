@@ -62,6 +62,9 @@ from starpulse._internal.board.upstream_backlog import (
     lane_id,
     project_board,
 )
+from starpulse._internal.board.upstream_backlog import (
+    _holder as _holder_of,
+)
 from starpulse._internal.eventlog.tables import retired_tasks
 from starpulse._internal.feed import criteria
 from starpulse._internal.machines.transitions import DONE, WAITING
@@ -257,7 +260,9 @@ class _Guard:
     ) -> Written | None:
         """Why the write of `text` over `before` (None for a create) by `actor` is refused, or None to let it land."""
         kind = str(frontmatter.get("type") or "")
-        was = str(_split_record(before or "")[0].get("type") or "")  # a write that leaves the type alone is not refused for it
+        was = str(
+            _split_record(before or "")[0].get("type") or ""
+        )  # a write that leaves the type alone is not refused for it
         if self.types and kind and kind != was and kind not in self.types:
             return Written(False, f"type {kind!r} is not one of this board's types: {', '.join(self.types)}")
         if self.rules:
@@ -810,8 +815,11 @@ def _restorer(root: Path, retired: _Retired) -> TaskRestorer:
 
 
 def _holder(body: str, session: str) -> str:
-    """`body` with `**Holder:** <session>` appended to its notes, which the board reads the holder from."""
-    return _append_notes(body, f"**Holder:** {session}")
+    """`body` with `**Holder:** <session>` appended to its notes, which the board reads the holder from.
+
+    A session the notes already name as holder is not named again: a claim's edit may have recorded it before the move.
+    """
+    return body if _holder_of(body) == session else _append_notes(body, f"**Holder:** {session}")
 
 
 def _writer(root: Path, statuses: tuple[str, ...], guard: _Guard = _Guard()) -> MoveWriter:
