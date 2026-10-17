@@ -19,7 +19,7 @@ import tempfile
 import threading
 import time
 import uuid
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -82,6 +82,8 @@ _SETTINGS = {"type", "path", "interval", "machine", "criteria", "holds", "valida
 #: is `<id>-<slug>.md`, lowercase and space-free, its slug capped at `_SLUG_MAX` characters.
 _FILE_NAMES = ("title", "slug")
 _SLUG_MAX = 19
+#: How many retired rows a scan reads at a time, so no more than a page of their text is in memory at once.
+_RETIRED_PAGE = 200
 #: A trailing ISO date survives the cap, uncounted: it tells one run of a recurring task from the next.
 _SLUG_DATE = re.compile(r"-\d{4}-\d{2}-\d{2}$")
 #: Function words a capped slug does not end on: `task-1-re-fit-the` says no more than `task-1-re-fit`.
@@ -650,20 +652,38 @@ class _Retired:
         with self.engine.connect() as db:
             return [dict(row._mapping) for row in db.execute(query)]
 
-    def changes(self) -> Callable[[], dict[str, str] | None]:
-        """A reader of every retired task's text by id that answers None while the rows are as it last read them."""
+    def texts(self) -> Iterator[str]:
+        """Every retired task's text, by id, a page of rows at a time, so no more than a page is held at once."""
+        after = ""
+        while self.engine is not None:
+            query = (
+                select(retired_tasks.c.task, retired_tasks.c.text)
+                .where(retired_tasks.c.task > after)
+                .order_by(retired_tasks.c.task)
+                .limit(_RETIRED_PAGE)
+            )
+            with self.engine.connect() as db:
+                page = db.execute(query).all()
+            yield from (row.text for row in page)
+            if len(page) < _RETIRED_PAGE:
+                return
+            after = page[-1].task
+
+    def changes(self) -> Callable[[bool], Iterator[str] | None]:
+        """A reader of every retired task's text that answers None while the rows are as it last read them, unless
+        `force` asks for the text again; it keeps the rows' count and newest `retired_at`, never their text."""
         seen: tuple[int, float | None] | None = None
 
-        def read() -> dict[str, str] | None:
+        def read(force: bool = False) -> Iterator[str] | None:
             nonlocal seen
             if self.engine is None:
                 return None
             with self.engine.connect() as db:
                 now = tuple(db.execute(select(func.count(), func.max(retired_tasks.c.retired_at))).one())
-            if now == seen:
+            if now == seen and not force:
                 return None
             seen = now
-            return {row["task"]: row["text"] for row in self.rows()}
+            return self.texts()
 
         return read
 
