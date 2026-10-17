@@ -551,10 +551,13 @@ class BoardFeed:
         self._read_notes = catch_up
 
     def _writer(self, task_id: str) -> tuple[str, str, str]:
-        """`_mover`, reading the notes logged since the last read first when none names `task_id` yet; a replay's moves
-        are old, and a read that fails leaves the move unnamed."""
+        """`_mover`, reading the notes logged since the last read first when none names `task_id` yet, and a read that
+        fails leaves the move unnamed. A replay's moves are old and were written when nobody saw them: one no note names
+        is the replay's."""
         writer = self._mover(task_id)
-        if writer[0] or self._read_notes is None or self._replaying():
+        if self._replaying():
+            return writer if writer[0] else (lane_events.REPLAY_ACTOR, "", "")
+        if writer[0] or self._read_notes is None:
             return writer
         try:
             self._read_notes()
@@ -642,7 +645,7 @@ class BoardFeed:
                 if self._lanes.record_lane(event_id, task_id, lane, at):
                     recorded += 1
                     if self._lane_log is not None:
-                        lane_events.append(self._lane_log, event_id, task_id, lane, at)
+                        lane_events.append(self._lane_log, event_id, task_id, lane, at, lane_events.RECONCILE_ACTOR)
             except Exception as exc:  # the history is down; the next start goes again
                 logger.warning("StarPulse: cannot reconcile the lane of %s: %s", task_id, exc)
         return recorded

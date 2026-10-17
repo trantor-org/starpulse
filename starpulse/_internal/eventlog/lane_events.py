@@ -24,6 +24,10 @@ STREAM = "board:lanes"
 REPLAYED = "board:lanes:replayed"
 #: The fields a forwarded lane entry may carry.
 FIELDS = ("task", "lane", "time", "team", "milestone", "labels", "assignee", "actor")
+#: The actor of a move the replay of the Board placed with no note naming its writer: written while `serve` was down.
+REPLAY_ACTOR = "starpulse/replay"
+#: The actor of a lane the reconcile recorded, which no write's note names.
+RECONCILE_ACTOR = "starpulse/lane-reconcile"
 UNATTRIBUTED_METRIC = "starpulse_board_lane_unattributed_total"
 UNATTRIBUTED_HELP = "Lane entries appended to board:lanes since start that name no actor."
 
@@ -51,9 +55,11 @@ def publish(
     return log.append(STREAM, entry(task, at, actor, session, harness), event_id=event_id)
 
 
-def append(log: EventLog, event_id: str, task: str, lane: str, at: float) -> int | None:
-    """Append a lane entry of only the task, the lane and the time to `log` under `event_id`, fail-open."""
-    return log.append(STREAM, {"task": task, "lane": lane, "time": at}, event_id=event_id)
+def append(log: EventLog, event_id: str, task: str, lane: str, at: float, actor: str = "") -> int | None:
+    """Append a lane entry of only the task, the lane, the time and the `actor` where given to `log` under `event_id`,
+    fail-open."""
+    fields = {"task": task, "lane": lane, "time": at, **({"actor": actor} if actor else {})}
+    return log.append(STREAM, fields, event_id=event_id)
 
 
 class Unattributed:

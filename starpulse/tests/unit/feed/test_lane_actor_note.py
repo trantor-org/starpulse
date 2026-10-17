@@ -196,3 +196,48 @@ def test_an_actor_note_the_follower_has_not_read_yet_still_names_the_move_it_pre
     entries = [e for e in Tail(log, lane_events.STREAM).poll() if e.fields["lane"] == "ready"]
 
     assert [e.fields.get("actor") for e in entries] == ["starpulse/task-actor"]
+
+
+def test_a_move_the_replay_places_with_no_note_names_the_component_that_placed_it(tmp_path: Path) -> None:
+    """The 2026-10-17 08:00:49 MST restart placed TASK-6002 and TASK-6004, written while `serve` was down, in bare
+    entries: no note names a write nobody saw, and the replay reads none."""
+    log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
+    feed = BoardFeed(machines=MACHINES)
+    feed.record_lanes(HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", MACHINES), log)
+    feed.expect("9-0")  # the board is not read yet
+    feed.put(_task("ready", "t", 100.0))
+    feed.put(_task("in_progress", "t", 110.0))
+
+    entries = Tail(log, lane_events.STREAM).poll()
+
+    assert [(e.fields["lane"], e.fields.get("actor")) for e in entries] == [
+        ("ready", lane_events.REPLAY_ACTOR),
+        ("in_progress", lane_events.REPLAY_ACTOR),
+    ]
+
+
+def test_a_move_placed_after_the_replay_with_no_note_stays_unattributed(tmp_path: Path) -> None:
+    log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
+    feed = BoardFeed(machines=MACHINES)
+    feed.record_lanes(HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", MACHINES), log)
+    feed.expect("0-0")  # an empty board is read at once
+    feed.put(_task("ready", "t", 100.0))
+
+    assert [e.fields.get("actor") for e in Tail(log, lane_events.STREAM).poll()] == [None]
+
+
+def test_a_lane_the_reconcile_records_names_the_reconcile_as_its_actor(tmp_path: Path) -> None:
+    """TASK-5577 entered In Progress at 11:07:20 on 2026-10-16 and TASK-5822 at 10:55:47 on 2026-10-17, each in a bare
+    entry the Board child's reconcile appended."""
+    log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
+    history = HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", MACHINES)
+    history.record_lane("T-1@ready@100.0", "T-1", "ready", 100.0)
+    feed = BoardFeed(machines=MACHINES)
+    feed.record_lanes(history, log, live=False)
+    feed.put(_task("in_progress", "t", 110.0))
+
+    assert feed.reconcile_lanes(history.current_lanes()) == 1
+
+    entry = Tail(log, lane_events.STREAM).poll()[0]
+
+    assert (entry.fields["lane"], entry.fields.get("actor")) == ("in_progress", lane_events.RECONCILE_ACTOR)

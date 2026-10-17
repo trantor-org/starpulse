@@ -665,7 +665,7 @@ Each move the actor writes names `starpulse/task-actor` on its `board:lanes` ent
 actor's note before the write, and `serve` reads the notes logged since its last read before it places a move no note
 names yet, so a move the file watch places before the note arrives still names the actor. `GET /metrics` carries
 `starpulse_board_lane_unattributed_total`, a counter of the `board:lanes` entries any process appended since `serve`
-started that name no actor. A move made while `serve` was down, and a lane the reconcile repairs, name none.
+started that name no actor. A move placed while `serve` replays the Board that no note names, one made while it was down, names `starpulse/replay`, and a lane the reconcile repairs names `starpulse/lane-reconcile`.
 
 
 ## Conformance violations
