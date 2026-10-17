@@ -3,20 +3,34 @@
 from __future__ import annotations
 
 import http.server
-import subprocess
 import sys
 import threading
-import time
 
+import fresh_serve
 import pytest
 from fresh_serve import check, live_children, worker_contexts
 
-PARENT = (
-    "import subprocess, sys, time\n"
-    "for argv in sys.argv[1:]:\n"
-    "    subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)', *argv.split()])\n"
-    "time.sleep(30)\n"
-)
+# A serve (pid 100) whose zygote (pid 200) forks the workers: their ps rows carry the zygote's argv, so the supervisor's
+# log is the only record of which pid runs which context. `api` is a plain subprocess of serve.
+TABLE = {100: (1, "S"), 200: (100, "S"), 201: (200, "S"), 202: (200, "S"), 300: (100, "S"), 400: (1, "S")}
+LOG = """INFO:starpulse:worker pulls started as pid 201
+INFO:starpulse:worker board started as pid 202
+INFO:starpulse:worker api started as pid 300
+"""
+
+
+@pytest.fixture
+def table(monkeypatch):
+    rows = dict(TABLE)
+    monkeypatch.setattr(fresh_serve, "process_table", lambda: rows)
+    return rows
+
+
+@pytest.fixture
+def log(tmp_path):
+    path = tmp_path / "serve.log"
+    path.write_text(LOG)
+    return path
 
 
 class Page(http.server.BaseHTTPRequestHandler):
@@ -38,44 +52,36 @@ def page():
     server.shutdown()
 
 
-@pytest.fixture
-def parent(request):
-    proc = subprocess.Popen([sys.executable, "-c", PARENT, *request.param])
-    yield proc
-    proc.kill()
-    proc.wait()
+def test_live_children_finds_workers_forked_from_a_zygote(table, log):
+    assert live_children(100, log) == {"pulls": 201, "board": 202, "api": 300}
 
 
-def wait_for_children_named(proc, names):
-    deadline = time.monotonic() + 10
-    while set(live_children(proc.pid)) != names and time.monotonic() < deadline:
-        time.sleep(0.05)
+def test_live_children_takes_the_latest_pid_a_restarted_context_logged(table, log):
+    log.write_text(LOG + "INFO:starpulse:worker pulls started as pid 203\n")
+    table[203] = (200, "S")
+    assert live_children(100, log)["pulls"] == 203
 
 
-@pytest.mark.parametrize("parent", [("worker pulls", "other thing")], indirect=True)
-def test_live_children_names_only_the_worker_children(parent):
-    wait_for_children_named(parent, {"pulls"})
-    assert set(live_children(parent.pid)) == {"pulls"}
+def test_live_children_skips_a_dead_zombie_or_foreign_pid(table, log):
+    del table[201]
+    table[202] = (200, "Zs")
+    table[300] = (400, "S")
+    assert live_children(100, log) == {}
 
 
-@pytest.mark.parametrize("parent", [("worker pulls", "worker autopilot")], indirect=True)
-def test_check_passes_with_the_page_up_and_every_worker_alive(parent, page):
-    wait_for_children_named(parent, {"pulls", "autopilot"})
-    assert check(page, parent.pid, {"pulls", "autopilot"}) is None
+def test_check_passes_with_the_page_up_and_every_worker_alive(table, log, page):
+    assert check(page, 100, {"pulls", "board", "api"}, log) is None
 
 
-@pytest.mark.parametrize("parent", [("worker pulls",)], indirect=True)
-def test_check_names_the_worker_context_with_no_live_child(parent, page):
-    wait_for_children_named(parent, {"pulls"})
-    assert "autopilot" in check(page, parent.pid, {"pulls", "autopilot"})
+def test_check_names_the_worker_context_with_no_live_child(table, log, page):
+    del table[202]
+    assert "board" in check(page, 100, {"pulls", "board", "api"}, log)
 
 
-@pytest.mark.parametrize("parent", [("worker pulls",)], indirect=True)
-def test_check_reports_a_page_that_is_not_200(parent, page):
+def test_check_reports_a_page_that_is_not_200(table, log, page):
     Page.status = 503
     try:
-        wait_for_children_named(parent, {"pulls"})
-        assert "503" in check(page, parent.pid, {"pulls"})
+        assert "503" in check(page, 100, {"pulls"}, log)
     finally:
         Page.status = 200
 
