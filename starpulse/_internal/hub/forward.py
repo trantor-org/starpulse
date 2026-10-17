@@ -20,12 +20,11 @@ from typing import TYPE_CHECKING, Any
 
 from starpulse._internal.config.config import discover
 from starpulse._internal.eventlog import lane_events, operator_settings
-from starpulse._internal.eventlog.event_log import EventLog, Tail
-from starpulse._internal.eventlog.history import open_event_log
 from starpulse._internal.runs.forwarded import FIELDS, PERSON, project
 
 if TYPE_CHECKING:
     from starpulse._internal.config.config import Config, Forward
+    from starpulse._internal.eventlog.event_log import EventLog
     from starpulse._internal.eventlog.history import HistoryStore
 
 logger = logging.getLogger(__name__)
@@ -143,6 +142,8 @@ class Forwarder:
             self._refused = False
         sent_opt_in = opted and not self._refused
         after = self.store.cursor(self.name)
+        from starpulse._internal.eventlog.event_log import Tail  # noqa: PLC0415 - the database stack loads when a log opens
+
         tail = Tail(self.log, self.name, streams=tuple(FIELDS), after=after, batch=self.forward.batch)
         entries = tail.poll()
         if not entries:
@@ -247,6 +248,8 @@ class Forwarder:
     def _build_status(self) -> dict[str, Any]:
         opted = self.opt_in.get()
         names = opted and not self._refused
+        from starpulse._internal.eventlog.event_log import Tail  # noqa: PLC0415 - the database stack loads when a log opens
+
         tail = Tail(self.log, self.name, streams=tuple(FIELDS), after=self.store.cursor(self.name), batch=PREVIEW + 1)
         entries = tail.poll()
         return {
@@ -311,6 +314,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.action == "rebind":
         if not args.source:
             parser.error("rebind needs the name of the source to rebind")
+        from starpulse._internal.eventlog.history import open_event_log  # noqa: PLC0415 - the database stack loads when a log opens
+
         held = open_event_log(args.config).unbind_source(args.source)
         print(
             f"{args.source}: binding dropped; the next instance to send under its token takes it"
@@ -321,6 +326,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.source:
         parser.error(f"{args.action} takes no source")
     config = discover(args.config)
+    from starpulse._internal.eventlog.history import open_event_log  # noqa: PLC0415 - the database stack loads when a log opens
+
     flag = OptIn(open_event_log(config), (config.parent if config else Path.cwd()) / OPT_IN_FILE)
     if args.action != "status":
         flag.set(args.action == "opt-in")

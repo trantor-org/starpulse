@@ -6,12 +6,15 @@ one cannot come back after a reset. A store that cannot be read leaves a setting
 fail-closed default.
 """
 
+from __future__ import annotations
+
 import json
 import logging
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from starpulse._internal.eventlog.event_log import EventLog
+if TYPE_CHECKING:  # annotation only: the event log opens the database stack
+    from starpulse._internal.eventlog.event_log import EventLog
 
 logger = logging.getLogger(__name__)
 

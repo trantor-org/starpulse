@@ -11,14 +11,15 @@ import yaml
 from starpulse._internal.board.native import board
 from starpulse._internal.board.seam import Board
 from starpulse._internal.board.upstream_backlog import UpstreamBacklog, board_moves, upstream_keys
-from starpulse._internal.kit.adapter_kit import BoardAdapterKit
-from starpulse._internal.server.server import announce, assemble
-from starpulse._internal.server.writes import move_task
-from starpulse.contracts.adapters import BoardTask
-from starpulse._internal.machines.machine_definition import Writer
-from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.config.config import load
 from starpulse._internal.eventlog.event_log import EventLog
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.kit.adapter_kit import BoardAdapterKit
+from starpulse._internal.machines.machine_definition import Writer
+from starpulse._internal.server.assembly import assemble
+from starpulse._internal.server.server import announce
+from starpulse._internal.server.writes import move_task
+from starpulse.contracts.adapters import BoardTask
 
 LANES = ["To Do", "In Progress", "Done"]
 _OPERATOR_ONLY = """\

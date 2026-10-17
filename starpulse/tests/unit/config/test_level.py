@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.server.server import assemble
-from starpulse._internal.config.level import Activity, Facet, Level, LevelError, Orbit, Terminal
 from starpulse._internal.config.config import ConfigError, load
+from starpulse._internal.config.level import Activity, Facet, Level, LevelError, Orbit, Terminal
+from starpulse._internal.server.assembly import assemble
 
 _LEVEL = """
 [level]

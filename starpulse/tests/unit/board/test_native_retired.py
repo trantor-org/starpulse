@@ -17,7 +17,7 @@ from starpulse._internal.config.config import load
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.server import writes
-from starpulse._internal.server.server import assemble
+from starpulse._internal.server.assembly import assemble
 from starpulse.tests.unit.board.test_native import native_root, write_task
 from starpulse.tests.unit.board.test_native_rules import done_needs
 
