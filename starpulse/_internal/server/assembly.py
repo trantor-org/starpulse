@@ -6,6 +6,7 @@ import threading
 from collections.abc import Collection, Mapping
 from pathlib import Path
 
+from starpulse._internal.board import replica
 from starpulse._internal.board.seam import Board
 from starpulse._internal.board.seam import load as load_board
 from starpulse._internal.ci.ci import attach
@@ -54,6 +55,17 @@ def assemble(config: Config, base: Path, window_s: float | None, run_safe: Colle
         hint=found_backlog(config, base),
         commit={instance.name: instance.commit for instance in config.runs if instance.commit},
     )
+    return board, feed
+
+
+def worker_board(
+    config: Config, base: Path, log: EventLog, group: str, stop: threading.Event, *, local: bool
+) -> tuple[Board, BoardFeed]:
+    """The board and feed of a worker beside `serve`: the feed reads the replica the Board child publishes, or with
+    `local` (a worker a hub manages) the adapter started in this process (`replica.read`). Raises ValueError as
+    `assemble` does."""
+    board, feed = assemble(config, base, None, [])
+    replica.read(board, feed, group, log, config, stop, local=local)
     return board, feed
 
 

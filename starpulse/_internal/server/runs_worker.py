@@ -16,7 +16,6 @@ import logging
 import threading
 from pathlib import Path
 
-from starpulse._internal.board import replica
 from starpulse._internal.config.config import Config, discover, load
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import database_url
@@ -25,7 +24,7 @@ from starpulse._internal.runs import run_events
 from starpulse._internal.runs.projection import Publisher
 from starpulse._internal.runs.push_runs import PUSHED_INSTANCE, PushRuns
 from starpulse._internal.runs.triggers import run_triggers
-from starpulse._internal.server.assembly import assemble, history_store
+from starpulse._internal.server.assembly import history_store, worker_board
 from starpulse._internal.server.hold import hold
 from starpulse._internal.server.server import run_adapters, run_starts
 
@@ -61,15 +60,12 @@ def main(argv: list[str] | None, parser: argparse.ArgumentParser) -> None:
     base = args.config.parent if args.config else Path.cwd()
     adapters = run_adapters(parser, config)
     starts = run_starts(adapters)
-    try:
-        board, feed = assemble(config, base, None, [])
-    except ValueError as exc:
-        parser.exit(1, f"{exc}\n")
     log = EventLog(database_url(config.database_url, base))
     stop = threading.Event()
-    replica.read(
-        board, feed, "starpulse-runs", log, config, stop, local=args.local_board
-    )
+    try:
+        _, feed = worker_board(config, base, log, "starpulse-runs", stop, local=args.local_board)
+    except ValueError as exc:
+        parser.exit(1, f"{exc}\n")
     store = history_store(config, base, feed.machines)
     publisher = Publisher(log)
     for instance, adapter in adapters:

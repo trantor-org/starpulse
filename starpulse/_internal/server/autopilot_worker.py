@@ -18,7 +18,6 @@ from pathlib import Path
 
 from starpulse._internal.autopilot.remote import follow_wakes, publisher
 from starpulse._internal.autopilot.runtime import Runtime
-from starpulse._internal.board import replica
 from starpulse._internal.board.seam import Board
 from starpulse._internal.config.config import Config, discover, load
 from starpulse._internal.eventlog import events as machine_events
@@ -26,7 +25,7 @@ from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import History, database_url
 from starpulse._internal.feed.board_feed import BoardFeed, follow
 from starpulse._internal.feed.machine_tasks import MachineTasks
-from starpulse._internal.server.assembly import assemble, history_store
+from starpulse._internal.server.assembly import history_store, worker_board
 from starpulse._internal.server.autopilot_service import start_autopilot
 from starpulse._internal.server.hold import hold
 
@@ -122,13 +121,12 @@ def main(argv: list[str] | None, parser: argparse.ArgumentParser) -> None:
     except (OSError, ValueError) as exc:
         parser.exit(1, f"{path}: {exc}\n")
     base = args.config.parent if args.config else Path.cwd()
-    try:
-        board, feed = assemble(config, base, None, [])
-    except ValueError as exc:
-        parser.exit(1, f"{exc}\n")
     log = EventLog(database_url(config.database_url, base))
     stop = threading.Event()
-    replica.read(board, feed, "starpulse-autopilot", log, config, stop, local=args.local_board)
+    try:
+        board, feed = worker_board(config, base, log, "starpulse-autopilot", stop, local=args.local_board)
+    except ValueError as exc:
+        parser.exit(1, f"{exc}\n")
     tasks = MachineTasks(feed, board.keys)
     follow(tasks, log, machine_events.STREAM, tasks.handle_entry)
     autopilot = Autopilot(config, base, board, feed, log, history_store(config, base, feed.machines))
