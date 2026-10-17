@@ -429,7 +429,8 @@ load it: the files of the `starpulse` modules the process imports, with their co
 process's config blocks with the last reading, taken when `serve` started or at the last `reload`, then:
 
 - **replaced**: a child whose closure changed, or whose `database_url`, `board_type` or `board` changed, is ended and
-  started again with a new pid.
+  started again with a new pid. The `runs` child builds its adapters and triggers once, so a `runs` or `triggers`
+  change also replaces it.
 - **reloaded**: a child whose only change is its own config block (`pull_requests`, `repos`, `ci`, `release`,
   `task_actor` for `pulls`; `autopilot`, `level`, `session_start_url` for `autopilot`) keeps its pid and re-reads the
   config on `SIGHUP`. Where the platform has no `SIGHUP`, it is replaced instead.
@@ -437,7 +438,7 @@ process's config blocks with the last reading, taken when `serve` started or at 
 - **re-executed**: `serve` replaced itself, in place, because its own closure changed. Every child is ended first, so each
   is `replaced`: the new `serve` starts them again.
 
-A change to a `delivery_worker` or `autopilot_worker` setting is read when `serve` starts and is not reconciled by
+A change to a `delivery_worker`, `autopilot_worker` or `runs_worker` setting is read when `serve` starts and is not reconciled by
 `reload`. A closure that cannot be read, such as a half-written module, or a config that does not load, changes nothing.
 
 It prints one JSON object, and the reply is sent before a `serve` that re-executes replaces itself:

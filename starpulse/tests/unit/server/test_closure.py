@@ -9,6 +9,7 @@ import pytest
 
 from starpulse._internal.server import closure
 from starpulse._internal.server.closure import SELF, Reader, ReloadError, code_of
+from starpulse._internal.server.supervisor import WORKER_FLAGS
 
 
 @pytest.fixture
@@ -87,14 +88,18 @@ def test_a_delivery_setting_is_a_live_change_to_pulls_and_leaves_autopilot_and_s
     assert new[SELF] == old[SELF]
 
 
+def test_every_supervised_worker_has_a_closure_entry() -> None:
+    assert set(WORKER_FLAGS) <= set(closure.ENTRIES)
+
+
 @pytest.mark.usefixtures("no_code")
-def test_the_database_is_a_restart_change_to_both_workers(tmp_path: Path) -> None:
+def test_the_database_is_a_restart_change_to_every_worker(tmp_path: Path) -> None:
     path = _toml(tmp_path, "")
     reader = Reader(path)
-    old = {name: reader(name) for name in ("pulls", "autopilot")}
+    old = {name: reader(name) for name in WORKER_FLAGS}
     _toml(tmp_path, 'database_url = "sqlite:///other.db"\n')
 
-    new = {name: reader(name) for name in ("pulls", "autopilot")}
+    new = {name: reader(name) for name in WORKER_FLAGS}
 
     assert all(new[n].restart != old[n].restart and new[n].live == old[n].live for n in old)
 
