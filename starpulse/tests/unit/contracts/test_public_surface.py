@@ -50,7 +50,18 @@ PUBLIC: dict[str, set[str]] = {
         "module_name",
     },
     "starpulse.board_feed": {"BoardFeed", "BoardStore", "Followed", "Resumable"},
-    "starpulse.config": {"CommitKeys", "Config", "ConfigError", "Forward", "RunsInstance", "Source", "load", "runs_adapter"},
+    "starpulse.config": {
+        "CONFIG_OWNERS",
+        "CommitKeys",
+        "Config",
+        "ConfigError",
+        "Forward",
+        "RunsInstance",
+        "Source",
+        "load",
+        "restarts_serve",
+        "runs_adapter",
+    },
     "starpulse.contracts": {
         "CONTRACTS",
         "EVENT_STREAMS",
@@ -103,7 +114,9 @@ PUBLIC: dict[str, set[str]] = {
     "starpulse.snapshot": {"Qualify", "describe", "is_workflow", "qualifier", "writers"},
 }
 
-SURFACE = next(root for root in Path(__file__).resolve().parents if (root / "README.md").is_file()) / "docs/public-surface.md"
+SURFACE = (
+    next(root for root in Path(__file__).resolve().parents if (root / "README.md").is_file()) / "docs/public-surface.md"
+)
 
 
 def _listed_on_the_page() -> set[str]:
@@ -144,7 +157,9 @@ def test_the_root_holds_only_the_public_surface_and_the_internal_package() -> No
 
 def test_every_listed_module_is_a_root_module() -> None:
     package = Path(importlib.import_module("starpulse").__file__ or "").parent
-    top_level = {path.stem for path in package.glob("*.py")} | {path.parent.name for path in package.glob("*/__init__.py")}
+    top_level = {path.stem for path in package.glob("*.py")} | {
+        path.parent.name for path in package.glob("*/__init__.py")
+    }
 
     assert {module.removeprefix("starpulse.") for module in PUBLIC} <= top_level
 
