@@ -129,10 +129,12 @@ the value under that key:
 | Primitive | Value under the key | Holds when |
 |---|---|---|
 | `field` | `{ field = "references", matches = "/pull/\\d+$", in = [...], min = 1 }` | a scalar or list front matter field has at least `min` (default 1) items that match the pattern and are in the set; one of `matches`, `in` or `min` is required |
-| `label` | `{ contains = "adr-needed" }` or `{ prefix = "size-", in = [1, 2, 3, 5, 8] }` | the task has the label, or has a label with the prefix and every such label is the prefix and a value of `in` |
+| `label` | `{ contains = "adr-needed" }`, `{ starts_with = "board-lint-" }` or `{ prefix = "size-", in = [1, 2, 3, 5, 8] }` | the task has the label, has a label that starts with the text, or has a label with the prefix and every such label is the prefix and a value of `in` |
 | `section` | `{ heading = "Needs attention", nonempty = true }` or `{ heading = "Needs attention", not_matching = "\\bTASK-\\d+\\b", except_self = true }` | the body has a `## <heading>` section (up to the next `##`); with `nonempty` it is not blank; with `not_matching` its text, an absent section's counting as empty, does not match, `except_self` first dropping the task's own id |
 | `dependencies` | `{ all_in = ["Done"] }` | every task in `dependencies` is in one of the named states; a dependency with no task file is in none, and no dependencies holds |
-| `checklist` | `{ sections = ["acceptance_criteria", "definition_of_done"], all_checked = true }` | every item of the named lists is checked; an empty or absent list holds |
+| `checklist` | `{ sections = ["acceptance_criteria", "definition_of_done"], all_checked = true }` or `{ sections = ["acceptance_criteria"], min_items = 3 }` | every item of the named lists is checked (an empty or absent list holds), and/or the named lists hold at least `min_items` items between them; `all_checked` and `min_items` combine |
+| `body` | `{ region = "description", matches = "AGENTS\\.md\\b" }` | the regular expression is found in the body, or in one region of it (`description`, `plan`, `acceptance_criteria`, `definition_of_done`, each between its `<!-- ...:BEGIN -->` and `:END -->` markers); an absent region holds nothing |
+| `block` | `{ heading = "Start Criteria", key = "start_criteria" }` | the section under the `## ` heading holds a fenced `yaml` block that parses to a mapping whose `key` is a non-empty list; an absent section, fence or list fails |
 | `all_of`, `any_of`, `exactly_one`, `none_of` | a non-empty list of primitives | all, at least one, exactly one or none of them hold |
 
 A write names its actor, which `unless_actor` matches. `POST /api/move`, `/api/edit`, `/api/archive` and `/api/tasks`

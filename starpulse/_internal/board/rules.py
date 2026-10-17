@@ -3,8 +3,8 @@
 `[board] rules` lists them. Each is `{on, require, reason}` (and optionally `skill` and `unless_actor`): `on` says
 which writes it judges, `require` is one primitive the task as it will be after the write must satisfy, and `reason`
 is the refusal every writer, the CLI's and the page's, answers with. A primitive is a one-key table naming its kind:
-`{field: {...}}`, `{label: {...}}`, `{section: {...}}`, `{dependencies: {...}}` or `{checklist: {...}}`, or a
-combinator, `all_of`, `any_of`, `exactly_one` and `none_of`, over a list of primitives. A write carries the actor that
+`{field: {...}}`, `{label: {...}}`, `{section: {...}}`, `{body: {...}}`, `{block: {...}}`,
+`{dependencies: {...}}` or `{checklist: {...}}`, or a combinator, `all_of`, `any_of`, `exactly_one` and `none_of`, over a list of primitives. A write carries the actor that
 makes it (`operator`, `agent`, or `<instance>/<workflow>` as a machine's `writers` spell it), which `unless_actor`
 exempts.
 """
@@ -15,6 +15,8 @@ import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
+
+import yaml
 
 from starpulse._internal.machines.transitions import lane_id
 
@@ -39,9 +41,19 @@ class Record:
 Primitive = Callable[[Record], bool]
 #: The `## <heading>` lines that bound a body's sections.
 _HEADING = re.compile(r"^##[ \t]+(.*?)[ \t]*$", re.M)
-#: The checklists a record keeps, by the name a rule gives them and the markers that bound them.
-_CHECKLISTS = {"acceptance_criteria": "AC", "definition_of_done": "DOD"}
+#: The regions of a body a rule can read, by the name a rule gives them and the markers that bound them.
+_REGIONS = {
+    "description": "SECTION:DESCRIPTION",
+    "plan": "SECTION:PLAN",
+    "acceptance_criteria": "AC",
+    "definition_of_done": "DOD",
+}
+#: The regions that hold a checklist.
+_CHECKLISTS = ("acceptance_criteria", "definition_of_done")
 _UNCHECKED = re.compile(r"^- \[ \] #\d+ ", re.M)
+_ITEM = re.compile(r"^- \[[ xX]\]", re.M)
+#: The first fenced YAML block of a section.
+_FENCE = re.compile(r"```ya?ml\n(.*?)\n```", re.S)
 _RULE_KEYS = {"on", "require", "reason", "skill", "unless_actor"}
 _ON_KEYS = {"to", "from", "while", "write"}
 
@@ -148,7 +160,12 @@ def _label(spec: Mapping[str, Any], where: str) -> Primitive:
             return bool(found) and all(value in allowed for value in found)
 
         return sized
-    raise ValueError(f"{where}: label is `contains: <label>`, or `prefix: <text>` with `in: [<values>]`")
+    if spec.keys() == {"starts_with"} and isinstance(spec["starts_with"], str) and spec["starts_with"]:
+        start = spec["starts_with"]
+        return lambda record: any(label.startswith(start) for label in _values(record.front.get("labels")))
+    raise ValueError(
+        f"{where}: label is `contains: <label>`, `starts_with: <text>`, or `prefix: <text>` with `in: [<values>]`"
+    )
 
 
 def _under(body: str, heading: str) -> str | None:
@@ -190,6 +207,51 @@ def _section(spec: Mapping[str, Any], where: str) -> Primitive:
     return holds
 
 
+def _region(name: str) -> re.Pattern[str]:
+    marker = _REGIONS[name]
+    return re.compile(rf"<!-- {marker}:BEGIN -->(.*?)<!-- {marker}:END -->", re.S)
+
+
+def _body(spec: Mapping[str, Any], where: str) -> Primitive:
+    _unknown(spec, {"region", "matches"}, where, "body")
+    region = spec.get("region")
+    if region is not None and region not in _REGIONS:
+        raise ValueError(f"{where}: body has no region {region}; known: {', '.join(_REGIONS)}")
+    try:
+        wanted = re.compile(spec["matches"])
+    except KeyError as error:
+        raise ValueError(f"{where}: body needs `matches`, the regular expression it searches for") from error
+    except (re.error, TypeError) as error:
+        raise ValueError(f"{where}: body `matches` is not a regular expression: {error}") from error
+    bounds = _region(region) if region else None
+
+    def holds(record: Record) -> bool:
+        found = bounds.search(record.body) if bounds else None
+        return bool(wanted.search(found.group(1) if found else "" if bounds else record.body))
+
+    return holds
+
+
+def _block(spec: Mapping[str, Any], where: str) -> Primitive:
+    _unknown(spec, {"heading", "key"}, where, "block")
+    heading, key = spec.get("heading"), spec.get("key")
+    if not isinstance(heading, str) or not heading.strip():
+        raise ValueError(f"{where}: block needs `heading`, the `## ` heading whose fenced YAML it reads")
+    if not isinstance(key, str) or not key.strip():
+        raise ValueError(f"{where}: block needs `key`, the YAML key that holds the list")
+
+    def holds(record: Record) -> bool:
+        text = _under(record.body, heading.strip())
+        fenced = _FENCE.search(text) if text else None
+        try:
+            parsed = yaml.safe_load(fenced.group(1)) if fenced else None
+        except yaml.YAMLError:
+            return False
+        return isinstance(parsed, dict) and isinstance(parsed.get(key), list) and bool(parsed[key])
+
+    return holds
+
+
 def _dependencies(spec: Mapping[str, Any], where: str) -> Primitive:
     _unknown(spec, {"all_in"}, where, "dependencies")
     states = _states(spec.get("all_in"), f"{where}.all_in")
@@ -197,21 +259,25 @@ def _dependencies(spec: Mapping[str, Any], where: str) -> Primitive:
 
 
 def _checklist(spec: Mapping[str, Any], where: str) -> Primitive:
-    _unknown(spec, {"sections", "all_checked"}, where, "checklist")
+    _unknown(spec, {"sections", "all_checked", "min_items"}, where, "checklist")
     names = spec.get("sections")
     if not isinstance(names, list) or not names or not all(isinstance(name, str) for name in names):
         raise ValueError(f"{where}: checklist `sections` is a list of: {', '.join(_CHECKLISTS)}")
     if missing := [name for name in names if name not in _CHECKLISTS]:
         raise ValueError(f"{where}: checklist has no section {', '.join(missing)}; known: {', '.join(_CHECKLISTS)}")
-    if spec.get("all_checked") is not True:
-        raise ValueError(f"{where}: checklist needs `all_checked: true`, the one thing it can require")
-    regions = [
-        re.compile(rf"<!-- {_CHECKLISTS[name]}:BEGIN -->(.*?)<!-- {_CHECKLISTS[name]}:END -->", re.S) for name in names
-    ]
+    minimum = spec.get("min_items")
+    if "all_checked" in spec and spec["all_checked"] is not True:
+        raise ValueError(f"{where}: checklist `all_checked` can only be `true`")
+    if minimum is None and "all_checked" not in spec:
+        raise ValueError(f"{where}: checklist needs `all_checked: true` or `min_items`, what it can require")
+    if minimum is not None and (not isinstance(minimum, int) or isinstance(minimum, bool) or minimum < 1):
+        raise ValueError(f"{where}: checklist `min_items` must be a whole number of at least 1")
+    regions = [_region(name) for name in names]
 
     def holds(record: Record) -> bool:
-        return not any(
-            (found := region.search(record.body)) and _UNCHECKED.search(found.group(1)) for region in regions
+        lists = [found.group(1) for region in regions if (found := region.search(record.body))]
+        return (not spec.get("all_checked") or not any(_UNCHECKED.search(text) for text in lists)) and (
+            minimum is None or sum(len(_ITEM.findall(text)) for text in lists) >= minimum
         )
 
     return holds
@@ -228,6 +294,8 @@ _KINDS: dict[str, Callable[[Mapping[str, Any], str], Primitive]] = {
     "field": _field,
     "label": _label,
     "section": _section,
+    "body": _body,
+    "block": _block,
     "dependencies": _dependencies,
     "checklist": _checklist,
 }
