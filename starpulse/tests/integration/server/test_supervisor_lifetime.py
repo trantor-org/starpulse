@@ -1,10 +1,16 @@
-"""A supervised worker child ends with `serve`: when it is killed, and when a terminal interrupt reaches its process group."""
+"""A supervised worker child ends with `serve`: when it is killed, and when a terminal interrupt reaches its process group.
+
+Each case runs with the child started by `subprocess` and, on Linux, forked from the preloaded process."""
 
 import os
 import signal
 import subprocess
 import sys
 import time
+
+import pytest
+
+from starpulse._internal.server.zygote import fork_supported
 
 
 def _alive(pid: int) -> bool:
@@ -25,10 +31,14 @@ HOLD = [
     "-c",
     "import threading; from starpulse._internal.server.hold import hold; hold(threading.Event(), print)",
 ]
+FORKED = [sys.executable, "-m", "starpulse", "hold"]
 DRIVER = """
 import sys, time
-from starpulse._internal.server.supervisor import Supervisor
-supervisor = Supervisor({"w": sys.argv[1:]}, poll=0.02)
+from starpulse._internal.server.supervisor import Supervisor, spawn_child
+from starpulse._internal.server.zygote import Forker
+forker = Forker([], entry="starpulse.tests.zygote_entry:main")
+spawn = forker if sys.argv[1] == "forked" else spawn_child
+supervisor = Supervisor({"w": sys.argv[2:]}, spawn=spawn, poll=0.02)
 supervisor.start()
 try:
     print(supervisor.pids()["w"], flush=True)
@@ -37,12 +47,20 @@ except KeyboardInterrupt:
     pass
 finally:
     supervisor.stop()
+    forker.close()
 """
 
+STARTS = [
+    pytest.param("subprocess", HOLD, id="subprocess"),
+    pytest.param(
+        "forked", FORKED, id="forked", marks=pytest.mark.skipif(not fork_supported(), reason="no preloaded fork here")
+    ),
+]
 
-def _driver() -> tuple[subprocess.Popen, int]:
+
+def _driver(how: str, command: list[str]) -> tuple[subprocess.Popen, int]:
     driver = subprocess.Popen(
-        [sys.executable, "-c", DRIVER, *HOLD],
+        [sys.executable, "-c", DRIVER, how, *command],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -51,8 +69,9 @@ def _driver() -> tuple[subprocess.Popen, int]:
     return driver, int(driver.stdout.readline())
 
 
-def test_a_child_exits_when_the_supervisor_is_killed() -> None:
-    driver, child = _driver()
+@pytest.mark.parametrize(("how", "command"), STARTS)
+def test_a_child_exits_when_the_supervisor_is_killed(how: str, command: list[str]) -> None:
+    driver, child = _driver(how, command)
     try:
         driver.kill()
         driver.wait()
@@ -62,8 +81,11 @@ def test_a_child_exits_when_the_supervisor_is_killed() -> None:
         subprocess.run(["kill", "-9", str(child)], capture_output=True)
 
 
-def test_a_terminal_interrupt_to_the_process_group_stops_the_supervisor_with_no_traceback() -> None:
-    driver, child = _driver()
+@pytest.mark.parametrize(("how", "command"), STARTS)
+def test_a_terminal_interrupt_to_the_process_group_stops_the_supervisor_with_no_traceback(
+    how: str, command: list[str]
+) -> None:
+    driver, child = _driver(how, command)
 
     os.killpg(driver.pid, signal.SIGINT)
     _, err = driver.communicate(timeout=15)

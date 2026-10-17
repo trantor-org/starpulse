@@ -206,3 +206,44 @@ def test_a_supervisor_whose_baseline_could_not_be_read_replaces_its_children_on_
 
     assert report == {"supervisor": "kept", "children": {"pulls": "replaced"}}
     assert executed == []
+
+
+def _retiring(install: Install) -> tuple[Supervisor, list[str]]:
+    Child.made = []
+    events: list[str] = []
+
+    def spawn(command: list[str]) -> Child:
+        events.append("spawn")
+        return Child(command)
+
+    running = Supervisor(
+        {name: [name] for name in NAMES},
+        spawn=spawn,
+        retire=lambda: events.append("retire"),
+        read=install,
+        poll=60.0,
+    )
+    running.start()
+    return running, events
+
+
+def test_a_reload_that_changes_a_childs_code_retires_the_preloaded_process_before_the_replacement_starts(
+    install: Install,
+) -> None:
+    running, events = _retiring(install)
+    install.now["pulls"] = reading("v2")
+
+    running.reload()
+    running.stop()
+
+    assert events == ["spawn", "spawn", "retire", "spawn"]
+
+
+def test_a_reload_that_changes_only_config_leaves_the_preloaded_process_alone(install: Install) -> None:
+    running, events = _retiring(install)
+    install.now["pulls"] = reading(live="other")
+
+    running.reload()
+    running.stop()
+
+    assert events == ["spawn", "spawn"]

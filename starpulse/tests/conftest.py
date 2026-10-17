@@ -248,12 +248,41 @@ class FakeSupervisor:
         self.stopped = True
 
 
+class FakeForker:
+    """What an in-process `server.main` forks workers with: records what it was built for and starts no process."""
+
+    made: list[FakeForker] = []
+
+    def __init__(self, modules: list[str]) -> None:
+        self.modules = modules
+        self.started = False
+        self.closed = False
+        type(self).made.append(self)
+
+    def start(self) -> None:
+        self.started = True
+
+    def retire(self) -> None:
+        pass
+
+    def close(self) -> None:
+        self.closed = True
+
+
 @pytest.fixture(autouse=True)
 def supervisors(monkeypatch: pytest.MonkeyPatch) -> list[FakeSupervisor]:
-    """The supervisors an in-process `server.main` built this test: none of them starts a real worker child."""
+    """The supervisors an in-process `server.main` built this test: none of them starts a real worker child or
+    preloaded process (`forkers` holds the latter)."""
     FakeSupervisor.made = []
     monkeypatch.setenv("STARPULSE_STATIC", "")  # `server.main` exports the page build it checked; undone at teardown
     monkeypatch.delenv("STARPULSE_STATIC")
+    FakeForker.made = []
     if "starpulse._internal.server.server" in sys.modules:
         monkeypatch.setattr("starpulse._internal.server.server.Supervisor", FakeSupervisor)
+        monkeypatch.setattr("starpulse._internal.server.server.Forker", FakeForker)
     return FakeSupervisor.made
+
+
+@pytest.fixture
+def forkers() -> list[FakeForker]:
+    return FakeForker.made

@@ -449,7 +449,7 @@ def _source(raw: object) -> Source:
 
 @dataclass(frozen=True)
 class MemoryLimit:
-    """A worker child's resident memory limits in megabytes: past `soft_mb` it is replaced, past `hard_mb` it is killed."""
+    """A worker child's memory limits in megabytes: past `soft_mb` it is replaced, past `hard_mb` it is killed."""
 
     soft_mb: int
     hard_mb: int
@@ -566,7 +566,7 @@ class Config:
     runs_worker: bool = False
     """The Runs context (the run adapters, the trigger starts and the pushed-runs follower) runs in `starpulse worker runs`, not in `serve`: `serve` starts none of them and draws the workflows the worker keeps in the event log; false: `serve` supervises that worker as a child."""
     worker_memory: Mapping[str, MemoryLimit] = field(default_factory=lambda: dict(WORKER_MEMORY))
-    """The resident memory limits `serve` holds each worker child to: past `soft_mb` it replaces the child (starts a new one, then stops the old), past `hard_mb` it kills and restarts it. Keyed by context, `pulls`, `autopilot`, `runs`, `forwarding`, `history` and `search`."""
+    """The memory limits `serve` holds each worker child to: past `soft_mb` it replaces the child (starts a new one, then stops the old), past `hard_mb` it kills and restarts it. Keyed by context, `pulls`, `autopilot`, `runs`, `forwarding`, `history` and `search`."""
     slow_read_seconds: float = SLOW_READ_S
     """`serve` logs a `slow_read` line for each `GET /api/pulls` that took this many seconds or more, from accept to the last byte written, with the seconds it waited for a handler thread, computed its answer and wrote it."""
     forwarding_worker: bool = False

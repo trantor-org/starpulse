@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import os
 import signal
-import sys
 import threading
 from collections.abc import Callable
 
@@ -38,6 +37,8 @@ def hold(stop: threading.Event, reload: Callable[[], None]) -> None:  # pragma: 
 
 
 def _stop_at_eof(stop: threading.Event, reloads: threading.Event) -> None:  # pragma: no mutate block — process boundary
-    sys.stdin.buffer.read()
+    # the descriptor, not `sys.stdin.buffer`: a buffered read holds a lock the interpreter cannot take at shutdown
+    while os.read(0, 4096):
+        pass
     stop.set()
     reloads.set()

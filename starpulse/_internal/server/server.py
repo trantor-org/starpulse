@@ -278,10 +278,11 @@ from starpulse._internal.hub.forward import Forwarder
 from starpulse._internal.server.column_stream import ColumnViews, Interest
 from starpulse._internal.server.live_push import wire_forwarding, wire_level
 from starpulse._internal.server.snapshot_cache import SnapshotCache
-from starpulse._internal.server.closure import Reader
+from starpulse._internal.server.closure import ENTRIES, Reader
 from starpulse._internal.server.control import control_file
 from starpulse._internal.server.hold import LISTEN_FD_ENV, STATIC_ENV
 from starpulse._internal.server.supervisor import Supervisor, worker_commands
+from starpulse._internal.server.zygote import Forker
 from starpulse._internal.server.writes import (
     autopilot,
     OPERATOR,
@@ -2435,6 +2436,8 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     os.environ.pop(LISTEN_FD_ENV, None)  # the workers started below are handed what they hold, not what this process was
     ready = prepare(parser, args, config)
     commands = worker_commands(config, args.config, hub=args.hub)
+    # the Page API child inherits the listening socket, so it starts with `subprocess`; every other worker forks from this
+    forker = Forker([ENTRIES[context] for context in commands if context != "api"])
     if "api" in commands:  # bound once the config is accepted and before the board, the history or a worker starts
         os.environ[STATIC_ENV] = str(_STATIC)
         listening = listening or listen(parser, args)
@@ -2442,20 +2445,28 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         commands["api"] += ["--hours", str(args.hours)]
     elif args.hub:
         listening = listening or listen(parser, args)
+    if commands.keys() - {"api"}:
+        forker.start()  # once the port is bound: a refused start leaves no process behind
     supervisor = Supervisor(
         commands,
         sockets={"api": listening} if "api" in commands else {},
+        spawn=forker,
+        retire=forker.retire,
         read=Reader(args.config),
         control=control_file(args.config),
         limits=config.worker_memory,
     )
     if args.hub:
-        return serve_page(parser, args, config, ready, listening, supervisor)
+        try:
+            return serve_page(parser, args, config, ready, listening, supervisor)
+        finally:
+            forker.close()
     supervisor.start()
     try:
         stay_until_stopped()
     finally:
         supervisor.stop()
+        forker.close()
 
 
 if __name__ == "__main__":
