@@ -37,11 +37,11 @@ logger = logging.getLogger(__name__)
 
 _HANGUP = getattr(signal, "SIGHUP", None)
 
-#: The `starpulse worker` contexts, by the `Config` flag that says an outside runner owns them.
+#: The `starpulse worker` contexts, by the `Config` flag that says an outside runner owns them; none: `serve` always supervises it.
 WORKER_FLAGS = {
     "api": "api_worker",
-    "pulls": "delivery_worker",
-    "autopilot": "autopilot_worker",
+    "pulls": None,
+    "autopilot": None,
     "runs": "runs_worker",
     "forwarding": "forwarding_worker",
     "history": "history_worker",
@@ -56,7 +56,7 @@ _MB = 1024 * 1024
 
 
 def worker_commands(config: Config, config_path: Path | None, *, hub: bool = False) -> dict[str, list[str]]:
-    """The command of each context `serve` supervises: the ones whose `*_worker` setting is false.
+    """The command of each context `serve` supervises: pulls, autopilot, and the others whose `*_worker` setting is false.
 
     A hub serves its page in-process, so it gets no Page API child.
 
@@ -78,7 +78,7 @@ def worker_commands(config: Config, config_path: Path | None, *, hub: bool = Fal
             *(["--local-board"] if hub and context in READERS else []),
         ]
         for context, flag in WORKER_FLAGS.items()
-        if not getattr(config, flag)
+        if not (flag and getattr(config, flag))
         and (context != "forwarding" or config.forward is not None)
         and (context != "history" or not hub)
         and (context != "search" or (config.search.embeddings_url and not hub))

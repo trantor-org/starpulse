@@ -1,4 +1,4 @@
-"""With `autopilot_worker = true` `serve` starts neither the sampler nor the loop and answers `/api/autopilot` from the worker."""
+"""`serve` starts neither the sampler nor the loop and answers `/api/autopilot` from the worker."""
 
 from pathlib import Path
 
@@ -13,7 +13,7 @@ from starpulse.tests import fake_board
 BOARD = '[board]\ntype = "starpulse.tests.fake_board"\nlanes = ["waiting", "ready", "done"]\nwrites = true\n'
 
 
-def _serve(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, worker: bool) -> tuple[list[object], dict[str, object]]:
+def _serve(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[list[object], dict[str, object]]:
     monkeypatch.setattr(fake_board, "BUILT", [])
     static = tmp_path / "static"
     static.mkdir()
@@ -25,18 +25,15 @@ def _serve(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, worker: bool) -> 
     handled: dict[str, object] = {}
     monkeypatch.setattr(server, "request_handler", lambda *args, **kwargs: handled.update(kwargs))
     config = tmp_path / "starpulse.toml"
-    config.write_text(f"autopilot_worker = {str(worker).lower()}\n{BOARD}")
+    config.write_text(BOARD)
 
     api_child.main(["api", "--config", str(config), "--port", "0"])
 
     return started, handled
 
 
-def test_serve_starts_neither_the_sampler_nor_the_loop_when_the_worker_runs_them(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    started, handled = _serve(tmp_path, monkeypatch, worker=True)
+def test_serve_starts_neither_the_sampler_nor_the_loop(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    started, handled = _serve(tmp_path, monkeypatch)
 
     assert started == []
     assert isinstance(handled["autopilot"], Remote)
-

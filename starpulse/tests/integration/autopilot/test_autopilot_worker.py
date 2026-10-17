@@ -21,7 +21,7 @@ from starpulse.tests.integration.autopilot.test_autopilot_served import IDLE_HOS
 def _worker(base: Path, url: str) -> Iterator[tuple[Autopilot, Remote]]:
     """A worker over the native board and the event log in `base`, as `serve` (the `Remote`) sees it."""
     path = base / "starpulse.toml"
-    path.write_text(f'session_start_url = "{url}"\nautopilot_worker = true\n[board]\ninterval = 0.1\n')
+    path.write_text(f'session_start_url = "{url}"\n[board]\ninterval = 0.1\n')
     config = load(path)
     board, feed = assemble(config, base, None, ())
     log = EventLog(f"sqlite:///{base / 'events.sqlite'}")

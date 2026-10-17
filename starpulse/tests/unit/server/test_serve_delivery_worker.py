@@ -1,4 +1,4 @@
-"""With `delivery_worker = true` `serve` starts none of the Delivery context's threads and draws what the worker projects."""
+"""`serve` starts none of the Delivery context's threads and draws what the worker projects."""
 
 import threading
 from collections.abc import Callable
@@ -82,9 +82,7 @@ class Follower:
         return threading.Thread()
 
 
-def _serve(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, text: str, *, worker: bool, gh: bool = True
-) -> list[object]:
+def _serve(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, text: str, *, gh: bool = True) -> list[object]:
     monkeypatch.setattr(fake_board, "BUILT", [])
     static = tmp_path / "static"
     static.mkdir()
@@ -101,24 +99,22 @@ def _serve(
     polled: list[object] = []
     monkeypatch.setattr(server, "_keep_released", lambda *args: polled.append(args))
     config = tmp_path / "starpulse.toml"
-    config.write_text(f"delivery_worker = {str(worker).lower()}\n{text}")
+    config.write_text(text)
 
     api_child.main(["api", "--config", str(config), "--port", "0"])
 
     return polled
 
 
-def test_serve_starts_none_of_the_delivery_threads_when_the_worker_runs_them(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    polled = _serve(tmp_path, monkeypatch, CONTEXT, worker=True)
+def test_serve_starts_none_of_the_delivery_threads(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    polled = _serve(tmp_path, monkeypatch, CONTEXT)
 
     # the one PullSync built only answers which repositories the store tracks
     assert (Actor.made, [sync.started for sync in Sync.made], Projection.made, polled) == ([], [False], [], [])
 
 
 def test_serve_follows_the_projection_the_worker_keeps(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    _serve(tmp_path, monkeypatch, CONTEXT, worker=True)
+    _serve(tmp_path, monkeypatch, CONTEXT)
 
     assert len(Follower.started) == 1
 
@@ -126,6 +122,6 @@ def test_serve_follows_the_projection_the_worker_keeps(tmp_path: Path, monkeypat
 def test_a_refresh_is_queued_for_the_worker_when_serve_has_no_gh(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _serve(tmp_path, monkeypatch, CONTEXT, worker=True, gh=False)
+    _serve(tmp_path, monkeypatch, CONTEXT, gh=False)
 
     assert [refresh.args[0] for refresh in Refresh.made] == ["secret"]

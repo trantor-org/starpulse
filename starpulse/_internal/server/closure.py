@@ -47,8 +47,6 @@ _SERVE_KEYS = (
     "slow_read_seconds",
     "worker_memory",
     "api_worker",
-    "delivery_worker",
-    "autopilot_worker",
     "runs_worker",
     "forwarding_worker",
     "history_worker",

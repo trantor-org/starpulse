@@ -53,8 +53,8 @@ short request needs. A stream past the limit gets `503` with `Retry-After: 5` an
 
 ### Worker processes
 
-`serve` is a supervisor over the contexts that run as their own `starpulse worker <context>` process: `api` (the Page API), `pulls` (Delivery), `autopilot`, `runs`, `forwarding`, `history`, `search` (with an `[search] embeddings_url`) and `board` (the Start Criteria dating and the lane reconcile). For each one whose `api_worker`, `delivery_worker`,
-`autopilot_worker`, `runs_worker`, `forwarding_worker`, `history_worker`, `search_worker` or `board_worker` setting is false, the default, `serve` starts the worker as a child, restarts it with a growing delay (1 s, doubling to 60 s; a child that
+`serve` is a supervisor over the contexts that run as their own `starpulse worker <context>` process: `api` (the Page API), `pulls` (Delivery), `autopilot`, `runs`, `forwarding`, `history`, `search` (with an `[search] embeddings_url`) and `board` (the Start Criteria dating and the lane reconcile). `serve` always starts `pulls` and `autopilot` as children; for each other one whose `api_worker`,
+`runs_worker`, `forwarding_worker`, `history_worker`, `search_worker` or `board_worker` setting is false, the default, it starts the worker as a child, restarts it with a growing delay (1 s, doubling to 60 s; a child that
 ran a minute restarts at once) when it exits, and stops it when `serve` stops on `SIGTERM` or Ctrl-C. The children read the same config and `database_url` and meet `serve` only in
 the event log. A true setting means something outside `serve` runs that worker, so `serve` starts no child for it. No unit file is needed to run StarPulse.
 
@@ -236,22 +236,6 @@ type = "native"
 # `starpulse worker api --config <this file>` yourself, which binds `--host` and `--port` (or adopts the socket the service
 # manager passes in), and `serve` binds and supervises nothing for it.
 # api_worker = false
-
-# Whether something outside `serve` runs the Delivery context (the pull request store's sync and projection, the task actor
-# and the release of dependents). False, the default: `serve` supervises it as a child process, `starpulse worker pulls`.
-# True: you run `starpulse worker pulls --config <this file>` yourself (a unit file, `systemctl --user start`) and `serve`
-# starts no child for it. Either way `serve` runs none of those threads: it keeps the store read-only, draws the projection
-# the worker keeps in the event log, and queues `POST /api/pulls/refresh` for the worker; the two share this file and
-# `database_url`. With the flag set and no worker running, no pull request state is refreshed.
-# delivery_worker = false
-
-# Whether something outside `serve` runs the Autopilot context (the sampler and the loop that starts a session per
-# eligible task). False, the default: `serve` supervises it as a child process, `starpulse worker autopilot`. True: you
-# run `starpulse worker autopilot --config <this file>` yourself and `serve` starts no child for it. Either way `serve`
-# runs neither, answers the autopilot's status from what the worker publishes in the event log, and wakes the worker on a
-# switch, quiet-hours or harness change; the switch, the pauses and the run ledger stay in the store, so a restarted
-# worker starts no task twice. `SIGHUP` re-reads the config. With the flag set and no worker running, no task is started.
-# autopilot_worker = false
 
 # Whether something outside `serve` runs the Runs context (the run adapters, the trigger starts and the pushed-runs
 # follower). False, the default: `serve` supervises it as a child process, `starpulse worker runs`. True: you run

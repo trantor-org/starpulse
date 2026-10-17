@@ -60,31 +60,26 @@ def _wait_for(check, timeout: float = 10.0):
 
 def test_a_context_whose_worker_setting_is_false_gets_a_child_command_and_a_true_one_gets_none() -> None:
     every = worker_commands(load(None), None)
-    only_autopilot = worker_commands(
-        replace(load(None), delivery_worker=True, runs_worker=True, history_worker=True, board_worker=True, api_worker=True), Path("/etc/starpulse.toml")
-    )
-    neither = worker_commands(
+    only_delivery_and_autopilot = worker_commands(
         replace(
             load(None),
-            delivery_worker=True,
-            autopilot_worker=True,
             runs_worker=True,
             forwarding_worker=True,
             history_worker=True,
             board_worker=True,
             api_worker=True,
         ),
-        None,
+        Path("/etc/starpulse.toml"),
     )
 
     assert every["pulls"] == [sys.executable, "-m", "starpulse", "worker", "pulls"]
     assert every["runs"] == [sys.executable, "-m", "starpulse", "worker", "runs"]
     assert every["history"] == [sys.executable, "-m", "starpulse", "worker", "history"]
     assert set(every) == {"api", "pulls", "autopilot", "runs", "history", "board"}  # forwarding has no child without a [forward] table
-    assert only_autopilot == {
-        "autopilot": [sys.executable, "-m", "starpulse", "worker", "autopilot", "--config", "/etc/starpulse.toml"]
+    assert only_delivery_and_autopilot == {
+        context: [sys.executable, "-m", "starpulse", "worker", context, "--config", "/etc/starpulse.toml"]
+        for context in ("pulls", "autopilot")
     }
-    assert neither == {}
 
 
 def test_the_history_child_runs_for_a_false_setting_and_never_beside_a_hub() -> None:

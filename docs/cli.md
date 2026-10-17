@@ -358,7 +358,7 @@ stream; a stream that drops is retried with backoff while the pane stays open. T
 
 ## The pull-request store
 
-With `gh` available and the config's `pull_requests` not false, `starpulse worker pulls` (a child `serve` supervises, or one you run yourself with `delivery_worker = true`) keeps a store of pull requests (table
+With `gh` available and the config's `pull_requests` not false, `starpulse worker pulls` (a child `serve` supervises) keeps a store of pull requests (table
 `starpulse_pull_requests`) and refreshes it every minute, one GraphQL query per repository: every open pull request, plus any other pull request updated since the newest
 `updatedAt` the store holds for that repository. A merged or closed record is final and is never read again, except a merged one saved without its `mergeSha`
 (stored before the store read the merge commit), which is re-read on every refresh until it has one. An open
@@ -439,7 +439,7 @@ process's config blocks with the last reading, taken when `serve` started or at 
 - **re-executed**: `serve` replaced itself, in place, because its own closure changed. Every child is ended first, so each
   is `replaced`: the new `serve` starts them again.
 
-A change to a `delivery_worker`, `autopilot_worker` or `runs_worker` setting is read when `serve` starts and is not reconciled by
+A change to a `runs_worker` setting is read when `serve` starts and is not reconciled by
 `reload`. A closure that cannot be read, such as a half-written module, or a config that does not load, changes nothing.
 
 It prints one JSON object, and the reply is sent before a `serve` that re-executes replaces itself:
