@@ -140,6 +140,35 @@ const archivedRemotely = async ($: Engine, home: string, known: Registered[]) =>
   return new Set(lines.flatMap(line => paths.get(line) ?? []))
 }
 
+type TitleRow = { type: string; aiTitle?: string; customTitle?: string }
+
+// A transcript line cut mid-write reads as no title, not as a fault that empties the pane.
+const titleRow = (text: string): TitleRow | null => {
+  try {
+    return JSON.parse(text) as TitleRow
+  } catch {
+    return null
+  }
+}
+
+// The title Claude gives each session in its transcript: the last custom-title (/rename), else the last ai-title, which
+// it rewrites as the work goes. One grep reads every transcript; a session with neither keeps its registry name.
+const titlesOf = async ($: Engine, home: string, known: Registered[]) => {
+  const paths = new Map(known.filter(s => s.cwd).map(s => [transcriptOf(home, s), s.sessionId]))
+  const ran = paths.size ? await $.process.run(['grep', '-H', '-s', '-E', '"type":"(custom|ai)-title"', ...paths.keys()]).catch(() => null) : null
+  const custom = new Map<string, string>()
+  const ai = new Map<string, string>()
+  for (const line of ran?.stdout.split('\n') ?? []) {
+    const at = line.indexOf('.jsonl:') + '.jsonl'.length
+    const id = paths.get(line.slice(0, at))
+    const row = id ? titleRow(line.slice(at + 1)) : null
+    if (id && row?.customTitle) custom.set(id, row.customTitle)
+    if (id && row?.aiTitle) ai.set(id, row.aiTitle)
+  }
+
+  return new Map([...ai, ...custom])
+}
+
 // Each tmux pane's pid and the tmux session it sits in; empty when no tmux server runs.
 const tmuxPanes = async ($: Engine): Promise<Map<number, string>> => {
   const panes = new Map<number, string>()
@@ -186,7 +215,7 @@ const peers = async ($: Engine): Promise<PeerSession[]> => {
     const known = found.filter((s): s is Registered => s !== null)
     const mine = known.find(s => s.sessionId === own)
     const handTmux = mine && !panes.has(mine.pid) ? await ownTmux($) : null
-    const remote = await archivedRemotely($, String(home), known)
+    const [remote, titles] = await Promise.all([archivedRemotely($, String(home), known), titlesOf($, String(home), known)])
 
     return known
       .map(s => {
@@ -195,7 +224,7 @@ const peers = async ($: Engine): Promise<PeerSession[]> => {
         return {
           id: s.sessionId,
           label,
-          name: s.name ?? label,
+          name: titles.get(s.sessionId) ?? s.name ?? label,
           status: s.status ?? 'unknown',
           tmux,
           isBackground: s.kind === 'bg',

@@ -349,8 +349,9 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(await keys(ui, 'session:')).toContain('session:session-81')
     expect(await keys(ui, 'session:')).not.toContain('session:session-70')
     expect(await label(ui, 'chip:archived')).toBe('archived 1')
-    expect(h.greps!.at(-1)).toContain('/home/me/.claude/projects/-work-seventy/session-70.jsonl')
-    expect(h.greps!.at(-1)).not.toContain('/home/me/.claude/projects/-work-eighty-eight/session-88.jsonl')
+    const bridgeGrep = h.greps!.findLast(g => g.includes('-l'))
+    expect(bridgeGrep).toContain('/home/me/.claude/projects/-work-seventy/session-70.jsonl')
+    expect(bridgeGrep).not.toContain('/home/me/.claude/projects/-work-eighty-eight/session-88.jsonl')
 
     await ui.press({ key: 'fold:archived' })
     expect(await label(ui, 'session:session-70')).toBe('trantor-70, archived, 5m')
