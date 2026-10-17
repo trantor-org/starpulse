@@ -12,6 +12,9 @@ export interface ApiContract {
     | Retired
     | RetiredImported
     | Completed
+    | Claimed
+    | Parked
+    | Reviewed
     | Created
     | MilestoneCreated
     | MilestoneEdited
@@ -66,6 +69,9 @@ export interface ApiContract {
     | RetireRequest
     | RetiredImportRequest
     | CompleteRequest
+    | ClaimRequest
+    | ParkRequest
+    | ReviewRequest
     | CreateRequest
     | MilestoneCreateRequest
     | MilestoneEditRequest
@@ -117,6 +123,19 @@ export interface RetiredImported {
 }
 export interface Completed {
   task: string;
+}
+export interface Claimed {
+  holder: string;
+  task: string;
+  to: string;
+}
+export interface Parked {
+  task: string;
+  to: string;
+}
+export interface Reviewed {
+  task: string;
+  to: string;
 }
 export interface Created {
   task: string;
@@ -1595,6 +1614,47 @@ export interface RetiredImportRequest {
  * `POST /api/complete`: move the Done task `task` into the board's completed tasks.
  */
 export interface CompleteRequest {
+  task: string;
+}
+/**
+ * `POST /api/claim`: move `task` to In Progress and record `session` as its holder, an opaque string; the same
+ * holder claiming again changes nothing, and a holder already on another open claim is refused.
+ */
+export interface ClaimRequest {
+  actor?: string | null;
+  harness?: string | null;
+  session?: string | null;
+  task: string;
+}
+/**
+ * `POST /api/park`: pause `task` on exactly one reason, which picks the lane: `untilTask` (tasks that must reach
+ * Done) and `until` (criteria a check can observe) wait; `operator` (what only the operator can do) needs attention.
+ */
+export interface ParkRequest {
+  actor?: string | null;
+  comment?: string | null;
+  harness?: string | null;
+  operator?: string | null;
+  session?: string | null;
+  task: string;
+  until?:
+    | {
+        [k: string]: unknown;
+      }[]
+    | null;
+  untilTask?: string[] | null;
+}
+/**
+ * `POST /api/review`: move `task` to Review, adding `references` and `summary` first so the configured rules judge
+ * the record the move would leave.
+ */
+export interface ReviewRequest {
+  actor?: string | null;
+  comment?: string | null;
+  harness?: string | null;
+  references?: string[] | null;
+  session?: string | null;
+  summary?: string | null;
   task: string;
 }
 /**

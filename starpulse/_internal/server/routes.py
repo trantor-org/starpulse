@@ -74,6 +74,15 @@ _RETIRED_IMPORT = "/api/retired/import"
 _COMPLETE = "/api/complete"
 
 
+_CLAIM = "/api/claim"
+
+
+_PARK = "/api/park"
+
+
+_REVIEW = "/api/review"
+
+
 _TASKS = "/api/tasks"
 
 
@@ -124,7 +133,21 @@ _RETIRED_WRITES = frozenset({_RETIRE, _RETIRED_IMPORT})
 
 #: The write routes whose JSON body a handler in `writes` reads whole.
 _TASK_WRITES = frozenset(
-    {_MOVE, _START, _EDIT, _ARCHIVE, _RESTORE, _COMPLETE, _TASKS, *_MILESTONE_WRITES, *_DOC_WRITES, *_RETIRED_WRITES}
+    {
+        _MOVE,
+        _START,
+        _EDIT,
+        _ARCHIVE,
+        _RESTORE,
+        _COMPLETE,
+        _CLAIM,
+        _PARK,
+        _REVIEW,
+        _TASKS,
+        *_MILESTONE_WRITES,
+        *_DOC_WRITES,
+        *_RETIRED_WRITES,
+    }
 )
 
 
@@ -138,6 +161,9 @@ _WRITES = {
     _RETIRE: "retire",
     _RETIRED_IMPORT: "retired_import",
     _COMPLETE: "complete",
+    _CLAIM: "claim",
+    _PARK: "park",
+    _REVIEW: "review",
     _TASKS: "create",
     _MILESTONES: "milestone_create",
     _MILESTONE_EDIT: "milestone_edit",

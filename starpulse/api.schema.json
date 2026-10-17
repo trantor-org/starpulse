@@ -809,6 +809,74 @@
       "title": "ClaimDelta",
       "type": "object"
     },
+    "ClaimRequest": {
+      "additionalProperties": false,
+      "description": "`POST /api/claim`: move `task` to In Progress and record `session` as its holder, an opaque string; the same\nholder claiming again changes nothing, and a holder already on another open claim is refused.",
+      "properties": {
+        "actor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "harness": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "session": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "task": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task"
+      ],
+      "title": "ClaimRequest",
+      "type": "object"
+    },
+    "Claimed": {
+      "additionalProperties": false,
+      "properties": {
+        "holder": {
+          "type": "string"
+        },
+        "task": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "to",
+        "holder"
+      ],
+      "title": "Claimed",
+      "type": "object"
+    },
     "ClusterMedoid": {
       "additionalProperties": false,
       "description": "The case nearest every other by normalized LCS distance between traces, and the cluster's usual spread.",
@@ -4621,6 +4689,121 @@
       "title": "Outlier",
       "type": "object"
     },
+    "ParkRequest": {
+      "additionalProperties": false,
+      "description": "`POST /api/park`: pause `task` on exactly one reason, which picks the lane: `untilTask` (tasks that must reach\nDone) and `until` (criteria a check can observe) wait; `operator` (what only the operator can do) needs attention.",
+      "properties": {
+        "actor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "comment": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "harness": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "operator": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "session": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "task": {
+          "type": "string"
+        },
+        "until": {
+          "anyOf": [
+            {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "untilTask": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "task"
+      ],
+      "title": "ParkRequest",
+      "type": "object"
+    },
+    "Parked": {
+      "additionalProperties": false,
+      "properties": {
+        "task": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "to"
+      ],
+      "title": "Parked",
+      "type": "object"
+    },
     "Pool": {
       "additionalProperties": false,
       "description": "One concurrency pool: the cap on the runs that may execute at once, and the runs holding or awaiting it.",
@@ -5393,6 +5576,106 @@
         "tasks"
       ],
       "title": "RetiredTasks",
+      "type": "object"
+    },
+    "ReviewRequest": {
+      "additionalProperties": false,
+      "description": "`POST /api/review`: move `task` to Review, adding `references` and `summary` first so the configured rules judge\nthe record the move would leave.",
+      "properties": {
+        "actor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "comment": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "harness": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "references": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "session": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "summary": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "task": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task"
+      ],
+      "title": "ReviewRequest",
+      "type": "object"
+    },
+    "Reviewed": {
+      "additionalProperties": false,
+      "properties": {
+        "task": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "to"
+      ],
+      "title": "Reviewed",
       "type": "object"
     },
     "RunDiff": {
@@ -7811,6 +8094,15 @@
             "$ref": "#/$defs/Completed"
           },
           {
+            "$ref": "#/$defs/Claimed"
+          },
+          {
+            "$ref": "#/$defs/Parked"
+          },
+          {
+            "$ref": "#/$defs/Reviewed"
+          },
+          {
             "$ref": "#/$defs/Created"
           },
           {
@@ -7994,6 +8286,15 @@
           },
           {
             "$ref": "#/$defs/CompleteRequest"
+          },
+          {
+            "$ref": "#/$defs/ClaimRequest"
+          },
+          {
+            "$ref": "#/$defs/ParkRequest"
+          },
+          {
+            "$ref": "#/$defs/ReviewRequest"
           },
           {
             "$ref": "#/$defs/CreateRequest"

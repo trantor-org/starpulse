@@ -4,6 +4,9 @@
     starpulse task show PROJ-45
     starpulse task moves PROJ-45
     starpulse task move PROJ-45 review
+    starpulse task claim PROJ-45 --session s-1
+    starpulse task park PROJ-45 --until-task PROJ-40 --comment "needs the API"
+    starpulse task review PROJ-45 --ref https://example.test/pull/9 --summary "Shipped"
     starpulse task trace PROJ-45 --flow in-progress
     starpulse task create "Rotate the secret" --priority high --label ops --ac "It rotates"
     starpulse task edit PROJ-45 --title "Rotate the signing secret" --label ops --label security
@@ -51,6 +54,11 @@ session and harness when `--session` and `--harness`, or `STARPULSE_SESSION` and
 lane entry records both, a create stamps `created_by: <harness>:<session>`, a claim (a move to `in_progress`) records the
 session as the task's holder, and the board writer may answer with `advice`. A move the board machine declares for the operator alone, or that the
 board's guard refuses, is `{"ok": false, "reason": "...", "skill": "..."}`, the verdict, and exit 1.
+`task claim` moves a task to In Progress holding the session (an opaque string) and is refused while another session
+holds it or the session holds another In Progress task; `task park` takes exactly one of `--until-task`, `--until` and
+`--operator` and picks the lane from it (`waiting`, or `needs_attention` for the operator); `task review` moves to Review
+with `--ref` evidence and the board's rules judge the record. Each answers like `task move`: a refusal is `ok: false`
+with its reason and skill, exit 1, and nothing is written.
 The exit code is 0 for success (for `doctor`, every check passing), 1 for a refused or invalid request, a refused
 move or a failed `doctor` check, 2 for a usage error, 3 when the server (or what the
 verb needs of it) is unavailable and 4 for something not found. The server is `--server`, else `STARPULSE_URL`, else
@@ -101,6 +109,8 @@ import urllib.request
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any, NoReturn
+
+import yaml
 
 from starpulse._internal.cli import demo, skill_install
 from starpulse._internal.cli import doctor
@@ -210,6 +220,8 @@ _TASK_KEYS = (
     "description",
 )
 _MOVE_KEYS = ("ok", "task", "to", "reason", "skill", "advice")
+_CLAIM_KEYS = ("ok", "task", "to", "holder", "reason", "skill")
+_LIFECYCLE_KEYS = ("ok", "task", "to", "reason", "skill")
 _MILESTONE_KEYS = ("id", "title", "outcome", "specs", "adrs", "retro", "description")
 _DOC_KEYS = ("id", "title", "type", "created_date", "updated_date", "path", "body")
 #: Seconds `watch` waits for the next byte: the server pings every 15, so a longer silence is a server that is gone.
@@ -441,6 +453,79 @@ def _move(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any
     if status in (400, 403):
         raise CliError("refused", message)
     raise CliError("unavailable", f"{base}: {message}")
+
+
+def _lifecycle(
+    args: argparse.Namespace, environ: Mapping[str, str], verb: str, fields: dict[str, Any]
+) -> dict[str, Any]:
+    """Post the lifecycle verb `verb` (`claim`, `park`, `review`) for the task as the agent: the server's answer, with a
+    refusal as `ok: false` and its reason and skill, or an error when no board writer can answer."""
+    base, path = server_url(args.server, environ), f"/api/{verb}"
+    status, reply = _post(base, path, {"task": args.task, **fields, **_writer(args, environ)})
+    message = reply.get("error") or f"{base} answered {status} for {path}"
+    if status == 200:
+        return {
+            "ok": True,
+            "task": args.task,
+            "to": reply.get("to", ""),
+            "holder": reply.get("holder", ""),
+            "reason": "",
+            "skill": "",
+        }
+    if status == 409:
+        return {
+            "ok": False,
+            "task": args.task,
+            "to": "",
+            "holder": "",
+            "reason": message,
+            "skill": reply.get("skill", ""),
+        }
+    if status == 404 and any(text in message for text in _TASK_MISSING):
+        raise CliError("not_found", message)
+    if status in (400, 403):
+        raise CliError("refused", message)
+    raise CliError("unavailable", f"{base}: {message}")
+
+
+def _kept(output: dict[str, Any], keys: Sequence[str]) -> dict[str, Any]:
+    """`output` without the keys a verb does not report."""
+    return {key: output[key] for key in keys}
+
+
+def _task_claim(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """Claim the task for the session: it moves to In Progress with that session as holder, refused when another holds it."""
+    return _kept(_lifecycle(args, environ, "claim", {}), _CLAIM_KEYS)
+
+
+def _criterion(text: str) -> dict[str, Any]:
+    """The `--until` criterion `text` (YAML or JSON) names, refused when it is not a mapping."""
+    try:
+        criterion = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        raise CliError("refused", f"--until is not YAML or JSON: {exc}") from exc
+    if not isinstance(criterion, dict):
+        raise CliError("refused", f"--until must be a mapping, got {text!r}")
+    return criterion
+
+
+def _task_park(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """Park the task on one reason: `--until-task` and `--until` wait, `--operator` needs attention; the server picks the lane."""
+    fields = {
+        "untilTask": args.until_task,
+        "until": [_criterion(text) for text in args.until],
+        "operator": args.operator,
+        "comment": args.comment,
+    }
+    given = {key: value for key, value in fields.items() if value}
+    return _kept(_lifecycle(args, environ, "park", given), _LIFECYCLE_KEYS)
+
+
+def _task_review(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """Move the task to Review with `--ref` references and `--summary`: the configured rules judge the resulting record."""
+    fields = {"references": args.ref, "summary": args.summary, "comment": args.comment}
+    given = {key: value for key, value in fields.items() if value}
+    return _kept(_lifecycle(args, environ, "review", given), _LIFECYCLE_KEYS)
 
 
 def _post(base: str, path: str, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
@@ -1323,6 +1408,43 @@ def _parser() -> argparse.ArgumentParser:
     move.add_argument("task", help="the task's key (`PROJ-45`)")
     move.add_argument("to", help="the column's state id (`review`), as `task moves` lists")
     _writer_flags(move)
+    claim = leaf(
+        task_verbs,
+        "claim",
+        "claim a task for a session: it moves to In Progress holding that session; refused when another session holds it or this one holds another",
+        _task_claim,
+        _CLAIM_KEYS,
+        (0, 1, 2, 3, 4),
+    )
+    claim.add_argument("task", help="the task's key (`PROJ-45`)")
+    _writer_flags(claim)
+    park = leaf(
+        task_verbs,
+        "park",
+        "pause a task on one typed reason that picks the lane: --until-task or --until waits, --operator needs attention",
+        _task_park,
+        _LIFECYCLE_KEYS,
+        (0, 1, 2, 3, 4),
+    )
+    park.add_argument("task", help="the task's key (`PROJ-45`)")
+    park.add_argument("--until-task", action="append", default=[], help="a task that must reach Done first (repeatable)")
+    park.add_argument("--until", action="append", default=[], help="a condition a check can observe, as YAML or JSON (repeatable)")
+    park.add_argument("--operator", help="what only the operator can do or decide")
+    park.add_argument("--comment", help="what is outstanding, recorded with the move")
+    _writer_flags(park)
+    review = leaf(
+        task_verbs,
+        "review",
+        "move a task to Review with its evidence; the configured rules judge the record, a refusal names the rule and its skill",
+        _task_review,
+        _LIFECYCLE_KEYS,
+        (0, 1, 2, 3, 4),
+    )
+    review.add_argument("task", help="the task's key (`PROJ-45`)")
+    review.add_argument("--ref", action="append", default=[], help="evidence to add to the task's references, such as a pull request URL (repeatable)")
+    review.add_argument("--summary", help="the task's final summary")
+    review.add_argument("--comment", help="a comment recorded with the move")
+    _writer_flags(review)
     trace = leaf(
         task_verbs,
         "trace",

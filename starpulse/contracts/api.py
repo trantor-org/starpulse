@@ -1710,6 +1710,34 @@ class CompleteRequest(_Api):
     task: str
 
 
+class ClaimRequest(_Writer):
+    """`POST /api/claim`: move `task` to In Progress and record `session` as its holder, an opaque string; the same
+    holder claiming again changes nothing, and a holder already on another open claim is refused."""
+
+    task: str
+
+
+class ParkRequest(_Writer):
+    """`POST /api/park`: pause `task` on exactly one reason, which picks the lane: `untilTask` (tasks that must reach
+    Done) and `until` (criteria a check can observe) wait; `operator` (what only the operator can do) needs attention."""
+
+    task: str
+    untilTask: list[str] | None = None
+    until: list[dict[str, Any]] | None = None
+    operator: str | None = None
+    comment: str | None = None
+
+
+class ReviewRequest(_Writer):
+    """`POST /api/review`: move `task` to Review, adding `references` and `summary` first so the configured rules judge
+    the record the move would leave."""
+
+    task: str
+    references: list[str] | None = None
+    summary: str | None = None
+    comment: str | None = None
+
+
 class CreateRequest(_Writer):
     """`POST /api/tasks`: create a task in the board's starting lane, stamped `created_by: <harness>:<session>`."""
 
@@ -1881,6 +1909,22 @@ class Completed(_Api):
     task: str
 
 
+class Claimed(_Api):
+    task: str
+    to: str
+    holder: str
+
+
+class Parked(_Api):
+    task: str
+    to: str
+
+
+class Reviewed(_Api):
+    task: str
+    to: str
+
+
 class Created(_Api):
     task: str
 
@@ -1989,6 +2033,9 @@ REQUESTS: dict[str, type[BaseModel]] = {
     "/api/retire": RetireRequest,
     "/api/retired/import": RetiredImportRequest,
     "/api/complete": CompleteRequest,
+    "/api/claim": ClaimRequest,
+    "/api/park": ParkRequest,
+    "/api/review": ReviewRequest,
     "/api/tasks": CreateRequest,
     "/api/milestones": MilestoneCreateRequest,
     "/api/milestones/edit": MilestoneEditRequest,
@@ -2045,6 +2092,9 @@ BODIES: dict[str, Any] = {
     "retired": RetiredTasks | ApiError,
     "retired_import": RetiredImported | SkillRefusal | ApiError,
     "complete": Completed | SkillRefusal | ApiError,
+    "claim": Claimed | SkillRefusal | ApiError,
+    "park": Parked | SkillRefusal | ApiError,
+    "review": Reviewed | SkillRefusal | ApiError,
     "create": Created | SkillRefusal | ApiError,
     "milestones": Milestones | ApiError,
     "milestone": MilestoneShown | ApiError,
@@ -2237,6 +2287,9 @@ class ApiContract(_Api):
         | RetireRequest
         | RetiredImportRequest
         | CompleteRequest
+        | ClaimRequest
+        | ParkRequest
+        | ReviewRequest
         | CreateRequest
         | MilestoneCreateRequest
         | MilestoneEditRequest
@@ -2259,6 +2312,9 @@ class ApiContract(_Api):
         | Retired
         | RetiredImported
         | Completed
+        | Claimed
+        | Parked
+        | Reviewed
         | Created
         | MilestoneCreated
         | MilestoneEdited

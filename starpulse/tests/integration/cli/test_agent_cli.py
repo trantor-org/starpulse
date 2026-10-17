@@ -29,6 +29,7 @@ from starpulse._internal.board.view import task_view
 from starpulse._internal.cli import agent_cli as cli
 from starpulse._internal.cli import skill_install
 from starpulse.contracts.adapters import Move
+from starpulse.tests.unit.board.test_native_lifecycle import PULL, REVIEW_NEEDS_PR, _lifecycle
 from starpulse._internal.config.level import Level, Orbit, Terminal
 from starpulse._internal.cli import doctor
 from starpulse._internal.feed.board_feed import HOT_S, BoardFeed
@@ -362,6 +363,16 @@ def tasked(tmp_path: Path) -> Iterator[str]:
     own writers."""
     with _native_server(tmp_path) as url:
         yield url
+
+
+@pytest.fixture
+def lifecycled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
+    """A server whose native board has the lifecycle lanes and a rule that Review needs a pull request: `task-1` is
+    Ready, `task-2` In Progress and `task-3` Done."""
+    tasks = {"task-1": ("Ready", {}), "task-2": ("In Progress", {}), "task-3": ("Done", {})}
+    feed, built = _lifecycle(tmp_path, monkeypatch, tasks, [REVIEW_NEEDS_PR])
+    with _serve(tmp_path, feed, writer=built.writer, read=built.read, edit=built.edit) as server:
+        yield _url(server, "")
 
 
 @pytest.fixture
@@ -1098,6 +1109,79 @@ def test_task_complete_of_a_task_that_is_not_done_is_refused_and_moves_nothing(
     assert not (tmp_path / ".starpulse" / "board" / "completed").exists()
 
 
+def test_task_claim_records_the_session_as_the_holder_and_names_it(
+    lifecycled: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["task", "claim", "task-1", "--server", lifecycled], {"STARPULSE_SESSION": "s-7"})
+
+    assert (code, doc) == (
+        0,
+        {"ok": True, "task": "task-1", "to": "in_progress", "holder": "s-7", "reason": "", "skill": ""},
+    )
+
+
+def test_task_claim_without_a_session_is_refused_as_invalid(lifecycled: str, capsys: pytest.CaptureFixture[str]) -> None:
+    code, doc = _run(capsys, ["task", "claim", "task-1", "--server", lifecycled])
+
+    assert (code, doc["code"]) == (1, "refused")
+    assert "session" in doc["error"]
+
+
+@pytest.mark.parametrize("verb", [["park", "PROJ-6", "--operator", "choose"], ["review", "PROJ-6", "--ref", PULL]])
+def test_task_park_and_review_on_a_board_that_edits_no_task_exit_3_and_say_so(
+    verb: list[str], bare: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["task", *verb, "--server", bare])
+
+    assert (code, doc["code"]) == (3, "unavailable")
+    assert "does not edit tasks" in doc["error"]
+
+
+def test_task_park_picks_the_lane_from_the_reason_given(lifecycled: str, capsys: pytest.CaptureFixture[str]) -> None:
+    soak = "{id: soak, kind: prom, expr: up, at_least: 1}"
+
+    waiting = _run(capsys, ["task", "park", "task-2", "--until", soak, "--comment", "soaking", "--server", lifecycled])
+
+    assert waiting == (0, {"ok": True, "task": "task-2", "to": "waiting", "reason": "", "skill": ""})
+
+
+def test_task_park_on_the_operator_needs_attention(lifecycled: str, capsys: pytest.CaptureFixture[str]) -> None:
+    code, doc = _run(capsys, ["task", "park", "task-2", "--operator", "pick a window", "--server", lifecycled])
+
+    assert (code, doc["to"]) == (0, "needs_attention")
+
+
+@pytest.mark.parametrize(
+    "reasons",
+    [[], ["--until-task", "task-1", "--operator", "choose"], ["--until", "[1, 2]"], ["--until", "{unclosed"]],
+)
+def test_task_park_without_exactly_one_valid_reason_is_refused(
+    reasons: list[str], lifecycled: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["task", "park", "task-2", *reasons, "--server", lifecycled])
+
+    assert (code, doc["code"]) == (1, "refused")
+
+
+def test_task_review_with_a_pull_request_moves_the_task_and_without_one_names_the_rule_and_skill(
+    lifecycled: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    refused = _run(capsys, ["task", "review", "task-2", "--server", lifecycled])
+    moved = _run(capsys, ["task", "review", "task-2", "--ref", PULL, "--summary", "Shipped", "--server", lifecycled])
+
+    assert refused == (
+        1,
+        {
+            "ok": False,
+            "task": "task-2",
+            "to": "",
+            "reason": "Review needs a pull request in references",
+            "skill": "completing-tasks",
+        },
+    )
+    assert moved == (0, {"ok": True, "task": "task-2", "to": "review", "reason": "", "skill": ""})
+
+
 def test_task_checkpoint_ac_checks_one_criterion_and_records_its_evidence(
     tasked: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -1186,6 +1270,9 @@ def test_the_manifest_describes_every_verb_and_each_of_its_arguments(capsys: pyt
         "task show",
         "task moves",
         "task move",
+        "task claim",
+        "task park",
+        "task review",
         "task trace",
         "task create",
         "task edit",
@@ -1900,6 +1987,21 @@ CASES = {
     ("task move", 2): ["task", "move", "PROJ-6"],
     ("task move", 3): ["task", "move", "PROJ-6", "review", "--server", "{bare}"],
     ("task move", 4): ["task", "move", "PROJ-99", "review", "--server", "{movable}"],
+    ("task claim", 0): ["task", "claim", "task-1", "--session", "s-1", "--server", "{lifecycled}"],
+    ("task claim", 1): ["task", "claim", "task-3", "--session", "s-1", "--server", "{lifecycled}"],
+    ("task claim", 2): ["task", "claim"],
+    ("task claim", 3): ["task", "claim", "task-1", "--session", "s-1", "--server", "{down}"],
+    ("task claim", 4): ["task", "claim", "task-99", "--session", "s-1", "--server", "{lifecycled}"],
+    ("task park", 0): ["task", "park", "task-2", "--until-task", "task-1", "--server", "{lifecycled}"],
+    ("task park", 1): ["task", "park", "task-1", "--operator", "choose", "--server", "{lifecycled}"],
+    ("task park", 2): ["task", "park"],
+    ("task park", 3): ["task", "park", "task-2", "--operator", "choose", "--server", "{down}"],
+    ("task park", 4): ["task", "park", "task-99", "--operator", "choose", "--server", "{lifecycled}"],
+    ("task review", 0): ["task", "review", "task-2", "--ref", PULL, "--server", "{lifecycled}"],
+    ("task review", 1): ["task", "review", "task-2", "--server", "{lifecycled}"],
+    ("task review", 2): ["task", "review"],
+    ("task review", 3): ["task", "review", "task-2", "--ref", PULL, "--server", "{down}"],
+    ("task review", 4): ["task", "review", "task-99", "--ref", PULL, "--server", "{lifecycled}"],
     ("task trace", 0): ["task", "trace", "PROJ-1", "--flow", "in-progress", "--server", "{server}"],
     ("task trace", 2): ["task", "trace"],
     ("task trace", 3): ["task", "trace", "PROJ-1", "--server", "{down}"],
@@ -2087,6 +2189,7 @@ SERVERS = {
     "leveled": "leveled",
     "stepped": "stepped",
     "movable": "movable",
+    "lifecycled": "lifecycled",
     "bare": "bare",
     "runnable": "runnable",
     "forbidden": "forbidden",

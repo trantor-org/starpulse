@@ -534,6 +534,36 @@ def test_a_board_that_completes_no_tasks_answers_404(tmp_path: Path) -> None:
     assert answer == (404, {"error": "this board does not complete tasks"})
 
 
+def test_a_task_is_claimed_through_the_server_and_the_lifecycle_routes_answer_post_only(tmp_path: Path) -> None:
+    moved: list[tuple[str, str]] = []
+
+    def writer(task_id: str, target: str, *_: object) -> Written:
+        moved.append((task_id, target))
+        return Written(True, "ok")
+
+    feed = BoardFeed()
+    feed.put(task("PROJ-3", "Ready", moves={"in_progress": Move(allowed=True)}))
+    with _serve(tmp_path, feed, writer=writer) as server:
+        claimed = _post(server, "/api/claim", {"task": "PROJ-3", "session": "s-1"})
+        sessionless = _post(server, "/api/claim", {"task": "PROJ-3"})
+        parked = _post(server, "/api/park", {"task": "PROJ-3", "operator": "needs a decision"})
+        reviewed = _post(server, "/api/review", {"task": "PROJ-3"})
+        malformed = _post(server, "/api/park", {})
+        gets = []
+        for path in ("/api/claim", "/api/park", "/api/review"):
+            with pytest.raises(urllib.error.HTTPError) as got:
+                urllib.request.urlopen(_url(server, path), timeout=5)
+            gets.append((got.value.code, got.value.headers["Allow"]))
+
+    assert claimed == (200, {"task": "PROJ-3", "to": "in_progress", "holder": "s-1"})
+    assert sessionless[0] == 400
+    assert moved == [("PROJ-3", "In Progress")]
+    assert (parked[0], parked[1]["error"]) == (404, "this board does not edit tasks")
+    assert (reviewed[0], reviewed[1]["error"]) == (404, "this board does not edit tasks")
+    assert malformed[0] == 400
+    assert gets == [(405, "POST")] * 3
+
+
 def test_the_page_script_is_served_as_text_javascript_whatever_the_hosts_mime_table_says(
     server: ThreadingHTTPServer, monkeypatch: pytest.MonkeyPatch
 ) -> None:
