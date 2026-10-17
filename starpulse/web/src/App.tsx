@@ -18,7 +18,7 @@ import { SearchClear } from "./shared/SearchClear";
 import { useScrollRest } from "./shared/scrollRest";
 import { useBoardDrawn } from "./shared/boardDrawn";
 import { Leaderboard } from "./features/kanban/Leaderboard";
-import { recent } from "./features/kanban/kanban";
+import { recent } from "./features/kanban/kanbanModel";
 import { MoveStore, postMove } from "./features/kanban/move";
 import { AdminPage, Dags, Kanban, OrbitCard, prefetchViews } from "./lazyViews";
 import { retired, viewOf, viewSearch, type ViewName } from "./shared/nav";
