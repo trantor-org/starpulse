@@ -4,20 +4,27 @@ A pushed workflow has no listing to read its steps from, so each step an entry n
 steps it said it waits on. The graph is kept in the history store, so after a restart the workflow is drawn with
 its steps, not started, until the next run reports them again. A step that has never run is not drawn.
 
-Entries arrive on the one reader thread, so nothing here needs a lock; the feed holds the page-facing state.
+Entries arrive on the one reader thread; the lock only keeps what `save` writes whole. The feed holds the
+page-facing state, and the workflows with the cursor they reflect are saved in the event log (`resume`), so a restart
+reads the entries after it rather than the whole retention.
 """
 
 from __future__ import annotations
 
+import logging
+import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol, get_args
 
 from starpulse._internal.runs import run_events
 from starpulse.contracts.adapters import RunStatus
-from starpulse._internal.feed.board_feed import PUSHED_INSTANCE, InstanceRuns, stream_id
+from starpulse._internal.feed.board_feed import PUSHED_INSTANCE, SAVE_INTERVAL, BoardStore, InstanceRuns, stream_id
 
 __all__ = ["PUSHED_INSTANCE", "PushRuns"]
+
+logger = logging.getLogger(__name__)
 
 
 class GraphStore(Protocol):
@@ -96,6 +103,10 @@ class PushRuns:
         self._store = store
         self._dags = {name: _dag(name, steps) for name, steps in (store.learned_graphs() if store else {}).items()}
         self._replay_end: tuple[int, int] | None = None
+        self._lock = threading.Lock()
+        #: The id of the last entry read, which `_dags` reflects, and the one last saved.
+        self._seen = self._saved = (0, 0)
+        self._store_at: tuple[BoardStore, str] | None = None
         self._publish()
 
     def _publish(self) -> None:
@@ -107,13 +118,67 @@ class PushRuns:
         During the startup replay the workflows are published once, at the replay's last entry: each publish rebuilds
         the feed's Ledger under its lock, which every page request waits on.
         """
-        moved = self._move(fields)
+        with self._lock:
+            moved = self._move(fields)
+            self._seen = stream_id(entry_id)
         if self._replay_end is None:
             if moved:
                 self._publish()
         elif stream_id(entry_id) >= self._replay_end:
             self._replay_end = None
             self._publish()
+
+    def resume(self, store: BoardStore, stream: str, retained: Callable[[str], bool]) -> str | None:
+        """Restore the workflows `store` saved for `stream` and return the cursor to read the stream after, else None.
+
+        None means the reader replays what the stream retains: nothing was saved, `retained(cursor)` says the stream
+        no longer holds every entry after the saved cursor, or the saved state is not one this reader can read. The
+        workflows are saved to `store` under `stream` from now on (`save`, `keep_saved`).
+        """
+        self._store_at = (store, stream)
+        saved = store.load_board_state(stream)
+        if saved is None:
+            logger.warning("StarPulse: replaying %s: no saved pushed runs", stream)
+            return None
+        cursor, state = saved
+        if not retained(cursor):
+            logger.warning("StarPulse: replaying %s: cursor %s is no longer retained", stream, cursor)
+            return None
+        try:
+            dags = {name: dict(dag) for name, dag in state["dags"].items()}
+            seen = stream_id(cursor)
+        except (KeyError, AttributeError, TypeError, ValueError):
+            logger.warning("StarPulse: replaying %s: the saved pushed runs cannot be read", stream)
+            return None
+        with self._lock:
+            self._dags |= dags
+            self._seen = self._saved = seen
+        self._publish()
+        logger.warning("StarPulse: resuming %s after %s", stream, cursor)
+        return cursor
+
+    def save(self) -> None:
+        """Write the workflows and the cursor they reflect to the store `resume` was given, unless nothing was read
+        since the last save. A store that cannot be written is logged; the next save tries again."""
+        if self._store_at is None:
+            return
+        store, stream = self._store_at
+        with self._lock:
+            seen, dags = self._seen, dict(self._dags)  # a workflow is replaced, never changed in place
+        if seen == self._saved:
+            return
+        try:
+            store.save_board_state(stream, "-".join(map(str, seen)), {"dags": dags})
+        except Exception as exc:  # the store is down; the workflows still draw and the next save retries
+            logger.warning("StarPulse: cannot save the pushed runs of %s: %s", stream, exc)
+            return
+        self._saved = seen
+
+    def keep_saved(self, stop: threading.Event, interval: float = SAVE_INTERVAL) -> None:
+        """Save every `interval` seconds, and once more when `stop` is set."""
+        while not stop.wait(interval):
+            self.save()
+        self.save()
 
     def _move(self, fields: dict) -> bool:
         """Apply an entry to the workflow it names; whether it moved one."""
@@ -160,5 +225,5 @@ class PushRuns:
 
     def expect(self, last_id: str) -> None:
         """Hold publishing until the replay reaches `last_id`, the stream's last entry at start (`follow` calls this)."""
-        if stream_id(last_id) > (0, 0):
+        if stream_id(last_id) > self._seen:
             self._replay_end = stream_id(last_id)

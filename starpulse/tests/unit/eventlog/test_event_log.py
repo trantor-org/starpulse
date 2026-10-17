@@ -120,6 +120,32 @@ def test_a_tail_resumes_after_the_cursor_it_is_given(log: EventLog) -> None:
     assert _gaps(log) == []
 
 
+def test_a_tail_at_the_head_reads_only_what_is_appended_after_it_was_taken(log: EventLog) -> None:
+    for n in range(3):
+        log.append("a", {"n": str(n)})
+    log.append("b", {"n": "other"})
+
+    tail = Tail.at_head(log, "a")
+    log.append("a", {"n": "3"})
+
+    assert [e.id for e in tail.poll()] == [5]
+    assert _gaps(log) == []
+
+
+def test_a_tail_at_the_head_of_an_empty_stream_reads_everything_appended_later(log: EventLog) -> None:
+    tail = Tail.at_head(log, "a")
+    log.append("a", {"n": "1"})
+
+    assert [e.id for e in tail.poll()] == [1]
+
+
+def test_a_tail_at_the_head_replays_the_retention_when_the_log_cannot_be_reached(log: EventLog) -> None:
+    log.append("a", {"n": "1"})
+    log.last = lambda stream: (_ for _ in ()).throw(OperationalError("select", {}, Exception("down")))  # type: ignore[method-assign]
+
+    assert Tail.at_head(log, "a").cursor is None
+
+
 def test_a_tail_over_several_streams_reads_them_in_log_order_under_one_cursor(log: EventLog) -> None:
     log.append("a", {"n": 1})
     log.append("other", {"n": 2})

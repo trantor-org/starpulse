@@ -300,3 +300,91 @@ def test_an_empty_stream_holds_nothing_back() -> None:
     runs.handle_entry("1-0", fields("start", "running"))
 
     assert drawn(feed)["status"] == "running"
+
+
+def _wait_until(condition, timeout: float = 5.0) -> None:
+    deadline = time.monotonic() + timeout
+    while not condition():
+        assert time.monotonic() < deadline, "condition not met within the timeout"
+        time.sleep(0.01)
+
+
+class _Spy(PushRuns):
+    """A `PushRuns` that notes the ids of the entries it is handed."""
+
+    def __init__(self, *args: Any, handled: list[str]) -> None:
+        super().__init__(*args)
+        self._handled = handled
+
+    def handle_entry(self, entry_id: str, fields: dict) -> None:
+        self._handled.append(entry_id)
+        super().handle_entry(entry_id, fields)
+
+
+def test_a_restarted_reader_resumes_from_its_saved_state_and_reads_only_the_entries_after_its_cursor(
+    tmp_path: Path,
+) -> None:
+    log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
+    history = f"sqlite:///{tmp_path / 'history.sqlite'}"
+    log.append(run_events.STREAM, fields("start", "running"))
+    log.append(run_events.STREAM, fields("start", "running", step="load", depends=["fetch"]))
+    log.append(run_events.STREAM, fields("end", "succeeded"))
+    first, stop = BoardFeed(), threading.Event()
+    runs = PushRuns(first.runs(PUSHED_INSTANCE), HistoryStore(history, {}))
+    follow(runs, log, run_events.STREAM, runs.handle_entry, stop=stop, interval=0.01)
+    _wait_until(lambda: first.snapshot()["dags"] and drawn(first)["status"] == "succeeded")
+    stop.set()
+    _wait_until(lambda: (log.load_board_state(run_events.STREAM) or ("",))[0] == "3-0")
+    log.append(run_events.STREAM, fields("start", "running", run="r2", at=START + 60))
+
+    handled: list[str] = []
+    second, stop = BoardFeed(), threading.Event()
+    restarted = _Spy(second.runs(PUSHED_INSTANCE), HistoryStore(history, {}), handled=handled)
+    follow(restarted, log, run_events.STREAM, restarted.handle_entry, stop=stop, interval=0.01)
+    _wait_until(lambda: second.snapshot()["dags"] and drawn(second)["runId"] == "r2")
+    stop.set()
+
+    assert handled == ["4"]
+    assert edges(drawn(second)) == {"load": ["fetch"]}
+
+
+def test_a_restart_with_nothing_new_draws_the_saved_workflows_without_reading_an_entry(tmp_path: Path) -> None:
+    log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
+    log.append(run_events.STREAM, fields("start", "running"))
+    first = PushRuns(BoardFeed().runs(PUSHED_INSTANCE), None)
+    first.resume(log, run_events.STREAM, lambda cursor: True)
+    first.handle_entry("1-0", fields("start", "running"))
+    first.save()
+
+    handled: list[str] = []
+    feed, stop = BoardFeed(), threading.Event()
+    restarted = _Spy(feed.runs(PUSHED_INSTANCE), None, handled=handled)
+    follow(restarted, log, run_events.STREAM, restarted.handle_entry, stop=stop, interval=0.01)
+    _wait_until(lambda: feed.snapshot()["dags"])
+    stop.set()
+
+    assert drawn(feed)["status"] == "running"
+    assert handled == []
+
+
+@pytest.mark.parametrize("saved", [None, ("1-0", {"dags": "not a mapping"}), ("1-0", {})])
+def test_a_reader_with_no_usable_saved_state_replays_the_retention(saved: tuple[str, dict] | None) -> None:
+    class Store:
+        def load_board_state(self, stream: str) -> tuple[str, dict] | None:
+            return saved
+
+        def save_board_state(self, stream: str, cursor: str, state: dict) -> None: ...
+
+    runs = PushRuns(BoardFeed().runs(PUSHED_INSTANCE), None)
+
+    assert runs.resume(Store(), run_events.STREAM, lambda cursor: True) is None
+
+
+def test_a_reader_whose_saved_cursor_the_log_no_longer_retains_replays_the_retention() -> None:
+    class Store:
+        def load_board_state(self, stream: str) -> tuple[str, dict]:
+            return "1-0", {"dags": {}}
+
+    runs = PushRuns(BoardFeed().runs(PUSHED_INSTANCE), None)
+
+    assert runs.resume(Store(), run_events.STREAM, lambda cursor: False) is None

@@ -731,17 +731,23 @@ def test_a_run_appended_to_the_log_moves_its_dag_and_the_end_reads_the_steps_aga
     assert calls.count(LISTING) == 2  # the first listing, then the ended run's step read
 
 
-def test_the_runs_the_log_retains_are_replayed_after_the_first_listing_and_older_ones_are_in_that_listing(
+def test_the_tail_starts_at_the_log_head_so_no_retained_entry_is_replayed_and_a_later_one_is_handled(
     log: EventLog, monkeypatch: pytest.MonkeyPatch, follow_instance
 ) -> None:
     monkeypatch.setattr("starpulse._internal.runs.dagu._reconcile_forever", lambda runs, stop: None)
-    _run_event(log, "start", "running", workflow="d1", at=1.0)  # long before the listing: Dagu's listing holds it
-    _run_event(log, "start", "running", workflow="d2")  # after it
+    handled: list[str] = []
+    real_handle = DaguRuns.handle_entry
+    monkeypatch.setattr(DaguRuns, "handle_entry", lambda self, entry_id, fields: (handled.append(entry_id), real_handle(self, entry_id, fields))[1])
+    for _ in range(3):  # the retention the listing already covers
+        _run_event(log, "start", "running", workflow="d1", at=1.0)
     feed = BoardFeed()
     with dagu({"d1": ["a"], "d2": ["b"]}) as (base_url, _):
         follow_instance(base_url, feed.runs("ci"), log, interval=0.01)
-        _wait_until(lambda: feed.snapshot()["dags"] and dag(feed, "d2")["status"] == "running")
+        _wait_until(lambda: feed.snapshot()["dags"])
+        _run_event(log, "start", "running", workflow="d2")
+        _wait_until(lambda: dag(feed, "d2")["status"] == "running")
 
+    assert handled == ["4"]
     assert dag(feed, "d1")["status"] != "running"
 
 
