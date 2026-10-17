@@ -7,7 +7,7 @@ import pytest
 
 from starpulse._internal.config.analytics import Analytics, MachineStage, SkillMachine
 from starpulse._internal.harnesses.telemetry import CLAUDE_CODE, Signal
-from starpulse._internal.level.flow import directly_follows, fast_slow_diff, sub_stages
+from starpulse._internal.level.flow import cost_to_go, directly_follows, fast_slow_diff, sub_stages
 from starpulse.contracts.adapters import TaskKeys
 
 KEYS = TaskKeys(
@@ -176,7 +176,37 @@ def test_a_group_of_five_with_no_conformant_run_is_listed_with_conformant_zero_a
             "conformant": 0,
             "reference": None,
             "slow": {"task": "TASK-5", "steps": 6},
-            "slow_only": [{"activity": "read", "count": 4}, {"activity": "edit", "count": 1}, {"activity": "test", "count": 1}],
+            "slow_only": [
+                {"activity": "read", "count": 4},
+                {"activity": "edit", "count": 1},
+                {"activity": "test", "count": 1},
+            ],
             "reference_only": [],
         }
     ]
+
+
+WORK_STEPS = SkillMachine(
+    "work", (MachineStage("edit", frozenset({"edit"})), MachineStage("test", frozenset({"test"})))
+)
+
+
+def test_cost_to_go_is_the_closed_form_of_the_step_chain_over_the_machine_states() -> None:
+    machine = Analytics(
+        completion_skill="completing-tasks", stop_activities=frozenset({"Skill"}), skill_machines=(WORK_STEPS,)
+    )
+    # A step is in the stage its run had reached when it began: [start] until the first edit, then edit, then test.
+    # [start] -> edit in all four runs, stays 2, 1, 1, 1 steps; edit -> test once in four, stays 1, 1, 2, 1; test stays 1
+    runs = [("read", "edit", "test"), ("edit", "test"), ("edit", "edit", "test"), ("edit", "test", "read")]
+    found = [s for n, calls in enumerate(runs, 1) for s in completed(n, *calls)]
+    tasks = {f"TASK-{n}": EXECUTE_8 for n in range(1, 5)}
+
+    rows = [r for r in cost_to_go(found, KEYS, tasks, machine) if r["skill"] == "work"]
+
+    # Q = [[0, 1, 0], [0, 0, .25], [0, 0, 0]]: N = (I-Q)^-1 = [[1, 1, .25], [0, 1, .25], [0, 0, 1]]; h = (1.25, 1.25, 1)
+    assert [(r["state"], r["n"], r["cost_to_go"]) for r in rows] == [
+        ("[start]", 4, pytest.approx(1.25 + 1.25 + 0.25)),
+        ("edit", 4, pytest.approx(1.25 + 0.25)),
+        ("test", 1, pytest.approx(1.0)),
+    ]
+    assert {(r["kind"], r["size"]) for r in rows} == {("execute", 8)}

@@ -950,6 +950,27 @@ class RunDiffs(_Api):
     diff: list[RunDiff]
 
 
+class StateCost(_Api):
+    """One skill-machine state's expected cost-to-go within a kind and size."""
+
+    kind: str
+    size: int
+    skill: str
+    state: str = Field(description="A stage of the skill's machine, or `[start]` before its first.")
+    n: int = Field(description="The times the state was seen left in the clean completed runs.")
+    cost_to_go: float = Field(
+        description="The expected agent steps from a run's first step in the state until the run ends."
+    )
+
+
+class CostToGo(_Api):
+    """`GET /api/analytics/cost-to-go`: every state of each skill machine, whatever its `n`; a consumer holds a cell with a small one."""
+
+    now: float
+    window_s: float
+    cost_to_go: list[StateCost]
+
+
 class CaseRef(_Api):
     """One session's work on one task (`task` None: a branch that names none)."""
 
@@ -1883,6 +1904,7 @@ RESPONSES: dict[str, Any] = {
     "/api/analytics/graph": FlowGraph,
     "/api/analytics/stages": SubStages,
     "/api/analytics/diff": RunDiffs,
+    "/api/analytics/cost-to-go": CostToGo,
     "/api/analytics/missed-loads": MissedLoads,
     "/api/analytics/trace-clusters": TraceClusters,
     "/api/level": Level,
@@ -1947,6 +1969,7 @@ BODIES: dict[str, Any] = {
     "graph": FlowGraph | ApiError | WindowTooLong,
     "stages": SubStages | ApiError | WindowTooLong,
     "diff": RunDiffs | ApiError | WindowTooLong,
+    "cost_to_go": CostToGo | ApiError | WindowTooLong,
     "missed_loads": MissedLoads | ApiError | WindowTooLong,
     "trace_clusters": TraceClusters | ApiError | WindowTooLong,
     "level": Level | ApiError | WindowTooLong,
@@ -2082,6 +2105,7 @@ class ApiContract(_Api):
     graph: FlowGraph
     stages: SubStages
     diff: RunDiffs
+    costToGo: CostToGo
     missedLoads: MissedLoads
     traceClusters: TraceClusters
     level: Level

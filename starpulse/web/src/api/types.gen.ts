@@ -35,6 +35,7 @@ export interface ApiContract {
   build: BuildEvent;
   cells: Cells;
   contractReport: ContractReport;
+  costToGo: CostToGo;
   diff: RunDiffs;
   docShown: DocShown;
   docs: Docs;
@@ -365,6 +366,34 @@ export interface ContractCheck {
   check: string;
   reason: string;
   status: "pass" | "warn" | "fail";
+}
+/**
+ * `GET /api/analytics/cost-to-go`: every state of each skill machine, whatever its `n`; a consumer holds a cell with a small one.
+ */
+export interface CostToGo {
+  cost_to_go: StateCost[];
+  now: number;
+  window_s: number;
+}
+/**
+ * One skill-machine state's expected cost-to-go within a kind and size.
+ */
+export interface StateCost {
+  /**
+   * The expected agent steps from a run's first step in the state until the run ends.
+   */
+  cost_to_go: number;
+  kind: string;
+  /**
+   * The times the state was seen left in the clean completed runs.
+   */
+  n: number;
+  size: number;
+  skill: string;
+  /**
+   * A stage of the skill's machine, or `[start]` before its first.
+   */
+  state: string;
 }
 /**
  * `GET /api/analytics/diff`: a transition with under 5 clean runs reports nothing; one with none that conforms has `conformant` 0.
