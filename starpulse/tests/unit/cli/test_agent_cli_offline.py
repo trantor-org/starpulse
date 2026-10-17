@@ -142,6 +142,7 @@ class TestConfigCheck:
                 "pulls": {"soft_mb": 768, "hard_mb": 1536},
                 "autopilot": {"soft_mb": 384, "hard_mb": 768},
                 "runs": {"soft_mb": 512, "hard_mb": 1024},
+                "forwarding": {"soft_mb": 256, "hard_mb": 512},
             },
             "event_log_retention_days": 7,
             "event_log_archive_dir": "starpulse-archive",
