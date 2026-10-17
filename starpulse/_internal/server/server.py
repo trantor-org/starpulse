@@ -41,7 +41,9 @@ GET /api/events    server-sent events: a `snapshot` on connect ({graphs, dags, p
 GET /api/events/body/<key>
                    the `snapshot` document a `ref` named, cacheable for an hour (its key is its digest); 404 once the
                    server has built four newer ones
-GET /api/snapshot  the document /api/events sends on connect, as one response, for `starpulse snapshot|board|task`
+GET /api/snapshot  the document /api/events sends on connect, as one response: without each task's description,
+                   criteria and moves (`/api/task/<id>`, `move_sets`) and with only the day's settled tasks;
+                   `?view=full` is the whole document, which `starpulse snapshot|board|task` read
 GET /api/merges[?before=T][&limit=N]
                    {merges, more}: the merge ledger's next `limit` rows (default 20, at most 100) older than `before`
                    (epoch seconds, the `at` of the last row held; none: the newest), each as the snapshot's
@@ -77,6 +79,11 @@ GET /api/machines[?open=NAME][&before=T][&limit=N]
                    the newest; a machine with no task counts as 0), machines sharing the boundary activity all come in
                    one page, so walking `before` neither repeats nor skips one. An `open` that is not a machine here is
                    404, a `before` that is not a finite number or a `limit` outside 1-100 is 400
+GET /api/done[?before=T][&limit=N]
+                   {tasks, more}: the next `limit` done tasks (default and most as `/api/machines`) past their hot day,
+                   newest done first, each {id, title, state, model, labels, milestone, type, entered} read from the
+                   board on request. `before` is the `entered` of the last one held (epoch seconds; none: the newest).
+                   A board that cannot read a task is 404, a bad `before` or `limit` 400
 GET /api/history?task=TASK-N[&flow=NAME]
                    {task, path}: the task's Board lane changes as [{at, from, to}], oldest first (`at`
                    epoch seconds). With `flow`, {task, flow, path, steps}: its events on that lifecycle
@@ -467,6 +474,25 @@ def machines_response(feed: BoardFeed, query: dict[str, list[str]]) -> tuple[byt
     if found is None:
         return _error(f"{open_} is not a machine here"), 404
     return encode("machines", found), 200
+
+
+def done_response(feed: BoardFeed, read: TaskReader | None, query: dict[str, list[str]]) -> tuple[bytes, int]:
+    """The body and status for `/api/done`: the next page of cold done tasks, each read from the board for its card."""
+    if read is None:
+        return _error("this board cannot read a task's full record"), 404
+    asked = _page_query(query, "done")
+    if isinstance(asked, bytes):
+        return asked, 400
+    stubs, more = feed.cold_page(*asked)
+    tasks = [_done_card(stub, read(stub["id"]) or {}) for stub in stubs]
+    return encode("done", {"tasks": tasks, "more": more}), 200
+
+
+def _done_card(stub: dict, record: Mapping[str, Any]) -> dict:
+    """A kanban card for a cold done task: its stub's id and entered time with the card fields of its board record."""
+    card = {key: record[key] for key in ("labels", "milestone", "type") if key in record}
+    named = {"id": stub["id"], "title": record.get("title") or stub["id"], "state": "done"}
+    return named | {"model": record.get("profile") or "", "entered": stub["entered"]} | card
 
 
 def history_response(
@@ -1423,13 +1449,18 @@ def request_handler(
             elif url.path.startswith(_SNAPSHOT_BODY):
                 self._snapshot_body(url.path.removeprefix(_SNAPSHOT_BODY))
             elif url.path == "/api/snapshot":
-                self._send(snapshots.read().encoded)
+                if parse_qs(url.query).get("view") == ["full"]:
+                    self._send(encode("snapshot", snapshots.read().snapshot))
+                else:
+                    self._send(snapshots.read().encoded)
             elif url.path == "/api/merges":
                 self._send(*merges_response(feed, parse_qs(url.query)))
             elif url.path == "/api/doctor":
                 self._send(encode("doctor", contract() if contract else {"ok": True, "checks": []}))
             elif url.path == "/api/machines":
                 self._send(*machines_response(feed, parse_qs(url.query)))
+            elif url.path == "/api/done":
+                self._send(*done_response(feed, read, parse_qs(url.query)))
             elif url.path == "/api/history":
                 self._send(*history_response(history, parse_qs(url.query), flows, feed.keys))
             elif url.path == "/api/pulls":

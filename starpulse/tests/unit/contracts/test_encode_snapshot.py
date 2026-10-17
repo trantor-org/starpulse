@@ -2,7 +2,7 @@
 
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import task
-from starpulse.contracts.api import encode, encode_snapshot
+from starpulse.contracts.api import encode, encode_snapshot, slim_snapshot
 from starpulse.tests.machines import MACHINES
 
 
@@ -13,17 +13,17 @@ def _feed(*tasks: tuple[str, str]) -> BoardFeed:
     return feed
 
 
-def test_the_snapshot_encodes_to_the_bytes_a_full_encode_makes() -> None:
+def test_the_snapshot_encodes_to_the_bytes_the_slimmed_encode_makes() -> None:
     feed = _feed(("PROJ-1", "To Do"), ("PROJ-2", "In Progress"), ("PROJ-3", "Done"))
     snapshot = feed.snapshot()
 
-    assert encode_snapshot(snapshot, {}) == encode("snapshot", snapshot)
+    assert encode_snapshot(snapshot, {}) == encode("snapshot", slim_snapshot(snapshot))
 
 
-def test_a_snapshot_with_no_open_task_encodes_to_the_bytes_a_full_encode_makes() -> None:
+def test_a_snapshot_with_no_open_task_encodes_to_the_bytes_the_slimmed_encode_makes() -> None:
     snapshot = _feed().snapshot()
 
-    assert encode_snapshot(snapshot, {}) == encode("snapshot", snapshot)
+    assert encode_snapshot(snapshot, {}) == encode("snapshot", slim_snapshot(snapshot))
 
 
 def test_a_rebuild_keeps_the_encoding_of_every_task_the_feed_still_holds_unchanged() -> None:
@@ -38,7 +38,7 @@ def test_a_rebuild_keeps_the_encoding_of_every_task_the_feed_still_holds_unchang
     body = encode_snapshot(snapshot, held)
 
     after = {t["id"]: held[id(t)][1] for t in snapshot["flows"][0]["agents"]}
-    assert body == encode("snapshot", snapshot)
+    assert body == encode("snapshot", slim_snapshot(snapshot))
     assert after["PROJ-1"] is before["PROJ-1"]
     assert after["PROJ-3"] is before["PROJ-3"]
     assert after["PROJ-2"] is not before["PROJ-2"]
@@ -64,16 +64,16 @@ def _row(key: str) -> dict:
     return {"key": key, "at": 1.0, "tasks": ["PROJ-1"], "sha": "abc", "runs": {}, "fails": {}, "pinned": False}
 
 
-def test_a_snapshot_with_ledger_rows_encodes_to_the_bytes_a_full_encode_makes() -> None:
+def test_a_snapshot_with_ledger_rows_encodes_to_the_bytes_the_slimmed_encode_makes() -> None:
     snapshot = _with_ledgers(_feed(("PROJ-1", "To Do")).snapshot(), MERGED=[_row("a"), _row("b")], REOPEN=[_row("c")])
 
-    assert encode_snapshot(snapshot, {}) == encode("snapshot", snapshot)
+    assert encode_snapshot(snapshot, {}) == encode("snapshot", slim_snapshot(snapshot))
 
 
-def test_a_snapshot_with_ledger_events_but_no_rows_encodes_to_the_bytes_a_full_encode_makes() -> None:
+def test_a_snapshot_with_ledger_events_but_no_rows_encodes_to_the_bytes_the_slimmed_encode_makes() -> None:
     snapshot = _with_ledgers(_feed(("PROJ-1", "To Do")).snapshot(), MERGED=[], REOPEN=[])
 
-    assert encode_snapshot(snapshot, {}) == encode("snapshot", snapshot)
+    assert encode_snapshot(snapshot, {}) == encode("snapshot", slim_snapshot(snapshot))
 
 
 def test_a_rebuild_keeps_the_encoding_of_each_ledger_row_it_meets_again() -> None:
@@ -87,6 +87,6 @@ def test_a_rebuild_keeps_the_encoding_of_each_ledger_row_it_meets_again() -> Non
     snapshot = _with_ledgers(snapshot, MERGED=[newer, first], REOPEN=[second])
     body = encode_snapshot(snapshot, held)
 
-    assert body == encode("snapshot", snapshot)
+    assert body == encode("snapshot", slim_snapshot(snapshot))
     assert held[id(first)][1] is kept
     assert {id(first), id(second), id(newer)} <= held.keys()

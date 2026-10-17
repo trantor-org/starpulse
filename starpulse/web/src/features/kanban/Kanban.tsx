@@ -741,7 +741,7 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
       onHover={(on) => { rest(t.id, on); setHovered((h) => (on ? t.id : h === t.id ? null : h)); }}
       dismiss={() => moves.dismiss(t.id)} dismissStart={() => starts.dismiss(t.id)} />
   );
-  const outline = useMemo(() => milestoneOutline(cards, hud.settled), [cards, hud.settled]);
+  const outline = useMemo(() => milestoneOutline(cards, hud.milestoneDone), [cards, hud.milestoneDone]);
   // phone width: the lane showing, In Progress first as the lane a phone is most often opened to check, else the board's first
   const [phoneLane, setPhoneLane] = useState("in_progress");
   const shownLane = view.columns.some((c) => c.id === phoneLane) ? phoneLane : view.columns[0]?.id;
@@ -892,7 +892,7 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
 }
 
 /** The `hud` fields the view draws. The rest of the HUD (the clock, the DAGs, the feed) changes on most stream events and none of it is on the Kanban. */
-const SHOWN = ["cards", "names", "claims", "settled", "capabilities", "hint"] as const;
+const SHOWN = ["cards", "names", "claims", "milestoneDone", "capabilities", "hint"] as const;
 
 /** `KanbanView`, drawn again only when a field it shows or another prop changes, so an event that moves no card draws none. */
 export const Kanban = memo(KanbanView, ({ hud: before, ...a }, { hud: after, ...b }) =>

@@ -175,13 +175,14 @@ REPLAY_WAIT_S = 5.0
 
 
 def _held(feed: BoardFeed, task: str) -> dict | None:
-    """The open task `task` as the feed holds it, waiting up to `REPLAY_WAIT_S` for a replay that has not placed it.
+    """The open task `task` as the feed holds it (a cold done task as its stub), waiting up to `REPLAY_WAIT_S` for a
+    replay that has not placed it.
 
     A restarted instance serves before it has read its stream, when a task it holds is absent only because the replay
     has not reached it; the wait ends at the replay, and a feed that is not replaying answers at once.
     """
-    if (agent := feed.task(task)) is None and feed.wait_replayed(REPLAY_WAIT_S):
-        agent = feed.task(task)
+    if (agent := feed.held(task)) is None and feed.wait_replayed(REPLAY_WAIT_S):
+        agent = feed.held(task)
     return agent
 
 
@@ -344,7 +345,7 @@ def move_task(source: str, raw: bytes, feed: BoardFeed, writer: MoveWriter) -> t
         }
     if (agent := _held(feed, task)) is None:
         return _not_held(feed, task)
-    if column not in agent["moves"]:
+    if column not in agent.get("moves", {}):  # a cold done task holds no moves
         return 409, {"error": f"{task} cannot move from {agent['state']} to {column}"}
     if not (move := Move.model_validate(agent["moves"][column])).permits(who.actor):
         return 409, {"error": move.for_actor(who.actor).reason, "skill": move.skill}

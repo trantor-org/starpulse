@@ -5050,6 +5050,18 @@
         "model": {
           "type": "string"
         },
+        "move_set": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A snapshot's key into its `move_sets` for the task's `moves`; absent when it has none."
+        },
         "moves": {
           "anyOf": [
             {
@@ -5063,7 +5075,7 @@
             }
           ],
           "default": null,
-          "description": "The verdict on each Board column the task may move to, by state id."
+          "description": "The verdict on each Board column the task may move to, by state id; a snapshot names the set in `move_set` instead, and a delta carries it here."
         },
         "pause_reason": {
           "anyOf": [
@@ -6265,6 +6277,21 @@
           "default": null,
           "description": "Each task's latest In Progress claim the board writer refused an agent, and when (epoch seconds)."
         },
+        "cold_done": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The ids of the done tasks past 24 h that the board feed holds as a stub, left out of `flows`: the full view (`?view=full`) only, the page reads them from `/api/done` and `/api/task/<id>`."
+        },
         "cues": {
           "anyOf": [
             {
@@ -6416,6 +6443,39 @@
             }
           ],
           "default": null
+        },
+        "milestone_done": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "integer"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "How many tasks each milestone has completed, counted over every settled task though `settled` holds only the recent ones."
+        },
+        "move_sets": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/Move"
+                },
+                "type": "object"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Each distinct set of Board-column verdicts a task's `move_set` names, by key."
         },
         "now": {
           "type": "number"

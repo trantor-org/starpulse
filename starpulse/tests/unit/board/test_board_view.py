@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import Any
 
-from starpulse._internal.board.view import board_columns
+from starpulse._internal.board.view import board_columns, cold_agent, done_ids, task_view
 
 
 class _CountedAgents(list):
@@ -51,3 +51,40 @@ def test_board_columns_still_reports_each_undone_dependency_as_waiting() -> None
     columns = board_columns(_snapshot(3), lambda agent: True)["columns"]
     waiting = {task["id"]: task["waiting_on"] for column in columns for task in column["tasks"]}
     assert waiting == {"T-0": [], "T-1": ["T-0"], "T-2": []}
+
+
+def test_a_cold_done_task_is_done_to_a_dependent_and_a_verb_view_loads_its_full_fields_from_the_record() -> None:
+    waiting = {**_snapshot(1)["flows"][0]["agents"][0], "id": "T-9", "state": "ready", "dependencies": ["T-cold"]}
+    snapshot = {"flows": [{"name": "board", "agents": [waiting]}], "pulls": {}, "settled": {}, "cold_done": ["T-cold"]}
+    record = {
+        "title": "Old work",
+        "type": "story",
+        "profile": "@agent-a",
+        "labels": ["x"],
+        "milestone": "m-1",
+        "dependencies": [],
+        "description": "Long ago.",
+        "acceptanceCriteria": [{"n": 1, "text": "ships", "checked": True}],
+    }
+
+    cold = cold_agent("T-cold", record)
+
+    assert done_ids(snapshot) == {"T-cold"}
+    assert task_view(waiting, snapshot)["waiting_on"] == []
+    assert task_view(cold, snapshot) == {
+        "id": "T-cold",
+        "title": "Old work",
+        "lane": "done",
+        "assignee": "@agent-a",
+        "holder": "",
+        "milestone": "m-1",
+        "type": "story",
+        "labels": ["x"],
+        "dependencies": [],
+        "waiting_on": [],
+        "criteria": [{"text": "ships", "checked": True}],
+        "pause_reason": "",
+        "prs": [],
+        "moves": {},
+    }
+    assert cold["description"] == "Long ago."

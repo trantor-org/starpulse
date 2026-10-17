@@ -45,6 +45,41 @@ describe("applyDelta", () => {
     expect(back.settled).toEqual({ "PROJ-2": settled("archived") });
   });
 
+  describe("a milestone's completed count", () => {
+    const done = (milestone: string, state = "completed") => ({ ...settled(state), milestone });
+    const counted = (s: Snapshot) => s.milestone_done;
+
+    it("counts a task that completes in a milestone", () => {
+      const s = board([agent("PROJ-1", "in_progress")], { milestone_done: { "m-1": 2 } });
+
+      const completed = applyDelta(s, { kind: "task", id: "PROJ-1", agent: null, settled: done("m-1") });
+      const first = applyDelta(completed, { kind: "task", id: "PROJ-2", agent: null, settled: done("m-2") });
+
+      expect(counted(completed)).toEqual({ "m-1": 3 });
+      expect(counted(first)).toEqual({ "m-1": 3, "m-2": 1 });
+    });
+
+    it("leaves it as it was for an archived task, a task with no milestone and a lane move", () => {
+      const s = board([agent("PROJ-1", "in_progress")], { milestone_done: { "m-1": 2 } });
+
+      const archived = applyDelta(s, { kind: "task", id: "PROJ-1", agent: null, settled: done("m-1", "archived") });
+      const bare = applyDelta(s, { kind: "task", id: "PROJ-1", agent: null, settled: settled("completed") });
+      const moved = applyDelta(s, { kind: "task", id: "PROJ-1", agent: agent("PROJ-1", "ready"), settled: null });
+
+      expect([counted(archived), counted(bare), counted(moved)]).toEqual([{ "m-1": 2 }, { "m-1": 2 }, { "m-1": 2 }]);
+    });
+
+    it("takes a task's completion back when it returns to a lane, and counts it once when it settles again", () => {
+      const s = board([], { settled: { "PROJ-1": done("m-1") }, milestone_done: { "m-1": 2 } });
+
+      const back = applyDelta(s, { kind: "task", id: "PROJ-1", agent: agent("PROJ-1", "to_do"), settled: null });
+      const again = applyDelta(s, { kind: "task", id: "PROJ-1", agent: null, settled: done("m-1") });
+
+      expect(counted(back)).toEqual({ "m-1": 1 });
+      expect(counted(again)).toEqual({ "m-1": 2 });
+    });
+  });
+
   describe("a ledgers delta", () => {
     const row = (key: string, at: number, pinned = false): LedgerRow => ({ key, at, tasks: [key], runs: {}, fails: {}, pinned });
     const [a, b, c] = [row("a", 30), row("b", 20), row("c", 10)];

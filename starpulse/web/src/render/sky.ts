@@ -3,7 +3,7 @@
 // plays each move once, when the stream first delivers it.
 import { stepRings, type StepRing } from "../features/fanout/fanout";
 import { tree, type Tree } from "./levels";
-import type { Capabilities, Cue, Dag, FlowSnapshot, LedgerRow, MachineEntry, MachinePage, MergeStrip, Pool, Pull, RawAgent, Settled, Snapshot, Writer } from "../api";
+import type { Capabilities, Cue, Dag, FlowSnapshot, LedgerRow, MachineEntry, MachinePage, MergeStrip, Move as Verdict, Pool, Pull, RawAgent, Settled, Snapshot, Writer } from "../api";
 
 /** Seconds one move takes to cross its path, the arrival rings, and a finished DAG's flare. */
 export const TRAVEL = 3;
@@ -59,7 +59,12 @@ export interface Sky {
   pulls: Record<string, Pull[]>;
   /** Each task's latest In Progress claim the board writer refused an agent, and when. */
   claims: Record<string, { reason: string; at: number }>;
+  /** The tasks created or settled recently, which the day's arrivals and the task titles are read from. */
   settled: Record<string, Settled>;
+  /** How many tasks each milestone has completed, over every settled task, not only the recent ones in `settled`. */
+  milestoneDone: Record<string, number>;
+  /** Each distinct set of Board-column verdicts an agent's `move_set` names. */
+  moveSets: Record<string, Record<string, Verdict>>;
   /** Each Ledger event's rows, newest first; empty when the server sent none. */
   ledgers: Record<string, LedgerRow[]>;
   /** The merge Ledger's 24-hour strip; null when the server sent none. */
@@ -160,6 +165,8 @@ export function merge(snap: Snapshot, since = midnight()): Sky {
     pulls: snap.pulls ?? {},
     claims: snap.claims ?? {},
     settled: snap.settled,
+    milestoneDone: snap.milestone_done ?? {},
+    moveSets: snap.move_sets ?? {},
     ledgers: snap.ledgers ?? {},
     mergeStrip: snap.mergeStrip ?? null,
     mergePins: snap.mergePins ?? [],

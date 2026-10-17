@@ -17,6 +17,7 @@ import type { AdminPrefs } from "../features/admin/adminPrefs";
 import { ACT, DAG_COLOR, easeO, rgba, type Drawing, type DrawCtx } from "./draw";
 import { FLARE, RING, type Moves, type Sky } from "./sky";
 import { textW, type Scene, type Star } from "./scene";
+import { TaskTitles } from "./taskTitles";
 
 /** Re-export: the palette lives in ledgerPalette.ts so the Board's first-paint chunk can name it without loading foldDraw. */
 export { LEDGER_PALETTE } from "./ledgerPalette";
@@ -45,6 +46,7 @@ export interface FoldIO {
 
 export function foldDraw(dc: DrawCtx, d: Drawing, io: FoldIO) {
   const { cx } = dc;
+  const titles = new TaskTitles(() => io.wake());
   const { text, labPx, label, circle, dot, pulse, comet, flowLine, fitText, stroke, rail, arrow, body } = d;
   // A merge Ledger's scroll (ledgerScroll): every merge loaded and where the viewport sits on them, forgotten with the arrivals when the level has not been
   // drawn for a while, and where the pointer can take it (thumb, chip) as last drawn. `scrollGen` drops a page asked for before a forgetting; `scrollHeld`
@@ -269,7 +271,7 @@ export function foldDraw(dc: DrawCtx, d: Drawing, io: FoldIO) {
         led, glyphs: Object.fromEntries(led.cols.map((c) => [c.dag, sc.stars[c.dag].glyph])), ctx: { event: led.event, now: io.T, hm: io.hhmm, by: (k) => byKey.get(k) },
         optional: Object.fromEntries(led.cols.map((c) => [c.dag, optionalSteps(scroll.rows, c.dag)])), px: labPx, palette: LEDGER_PALETTE, clock: dc.clock, age, scroll: scroll,
         lit: dc.hover?.kind === "lrow" ? dc.hover.o.key : io.openRow()?.key, pins: pins, rerunning: rerunLine(io.rerunStore.state.started, io.S?.dags ?? [], io.T),
-        title: (id) => io.S?.settled[id]?.title ?? io.S?.board.agents.find((a) => a.id === id)?.title,
+        title: (id) => io.S?.settled[id]?.title ?? io.S?.board.agents.find((a) => a.id === id)?.title ?? (io.S ? titles.of(id) : undefined),
       });
       if (io.S?.mergeStrip) {
         const day = io.heldRows().filter((r) => r.at > io.T - 86400).length;

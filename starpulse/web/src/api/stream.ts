@@ -2,7 +2,7 @@
 
 import { demoServer, type DemoServerHandle } from "../demo/host";
 import { playLink } from "../demo/linkDemo";
-import type { AutopilotStatus, Delta, LedgerRow, Snapshot } from ".";
+import type { AutopilotStatus, Delta, LedgerRow, Settled, Snapshot } from ".";
 import { keep } from "./same";
 
 export { embedded } from "../demo/host";
@@ -36,6 +36,19 @@ function foldLedgers(ledgers: Snapshot["ledgers"], delta: { ledgers: Record<stri
   return next;
 }
 
+/** The milestone a settled task counts toward in `milestone_done`: the one it completed in, if any. */
+const completedIn = (entry: Settled | null | undefined) => (entry?.state === "completed" && entry.milestone ? entry.milestone : null);
+
+/** `done` with a task's settling `was` taken back and `now` counted; `done` itself when neither counts. */
+function recount(done: Snapshot["milestone_done"], was: Settled | undefined, now: Settled | null): Snapshot["milestone_done"] {
+  const [from, to] = [completedIn(was), completedIn(now)];
+  if (from === to) return done;
+  const next = { ...done };
+  if (from) next[from] = (next[from] ?? 0) - 1;
+  if (to) next[to] = (next[to] ?? 0) + 1;
+  return next;
+}
+
 /** `snap` with one delta folded in; `snap` itself is left as it was. */
 export function applyDelta(snap: Snapshot, delta: Delta): Snapshot {
   // a dags or pulls delta carries the whole of what it replaces, a ledgers delta only the rows that changed or left; whatever a delta leaves as it was keeps its old reference, so the page's work follows what changed
@@ -63,7 +76,7 @@ export function applyDelta(snap: Snapshot, delta: Delta): Snapshot {
   const settled = { ...snap.settled };
   if (delta.settled === null) delete settled[delta.id];
   else settled[delta.id] = delta.settled;
-  return { ...snap, flows, settled };
+  return { ...snap, flows, settled, milestone_done: recount(snap.milestone_done, snap.settled[delta.id], delta.settled) };
 }
 
 /**

@@ -43,6 +43,20 @@ def builds(monkeypatch: pytest.MonkeyPatch) -> Counter[int]:
     return built
 
 
+def test_the_snapshot_leaves_a_tasks_detail_out_and_its_full_view_keeps_it(tmp_path: Path) -> None:
+    feed = BoardFeed(machines=MACHINES)
+    feed.put(task("PROJ-1", description="About it", moves={"in_progress": Move(allowed=True)}))
+
+    with _serve(tmp_path, feed) as server:
+        slim = json.loads(_get(server))["flows"][0]["agents"][0]
+        with urllib.request.urlopen(_url(server, "/api/snapshot?view=full"), timeout=5) as resp:
+            full = json.load(resp)["flows"][0]["agents"][0]
+
+    assert "description" not in slim and "moves" not in slim and "move_set" in slim
+    assert full["description"] == "About it"
+    assert full["moves"]["in_progress"]["allowed"] is True
+
+
 def test_a_snapshot_is_built_once_however_many_pages_ask(tmp_path: Path, builds: Counter[int]) -> None:
     feed = BoardFeed(machines=MACHINES)
     feed.put(task("PROJ-1"))
@@ -192,7 +206,7 @@ def test_a_snapshot_is_gzipped_when_built_not_by_the_request_that_reads_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     feed = BoardFeed(machines=MACHINES)
-    feed.put(task("PROJ-1", description="x" * 100_000))  # over the size gzip is worth
+    feed.put(task("PROJ-1", title="x" * 100_000))  # over the size gzip is worth; a description is no longer sent
     compressions: list[int] = []
     real = gzip.compress
 

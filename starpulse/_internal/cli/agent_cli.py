@@ -105,7 +105,7 @@ from typing import Any, NoReturn
 from starpulse._internal.cli import demo, skill_install
 from starpulse._internal.cli import doctor
 from starpulse._internal.config.config import ConfigError, load
-from starpulse._internal.board.view import AGENT, board_columns, board_flow, task_view
+from starpulse._internal.board.view import AGENT, board_columns, board_flow, cold_agent, task_view
 
 #: serve's default `--port`, where a server runs unless the caller says otherwise.
 DEFAULT_SERVER = "http://localhost:8766"
@@ -128,6 +128,7 @@ _SNAPSHOT_KEYS = (
     "claims",
     "insights",
     "settled",
+    "cold_done",
     "error",
     "cues",
     "domains",
@@ -297,7 +298,7 @@ def _get(base: str, path: str) -> tuple[int, Any]:
 def _get_snapshot(base: str) -> dict[str, Any]:
     """The snapshot the server at `base` answers; JSON without every snapshot key is no StarPulse server."""
     path = "/api/snapshot"
-    status, document = _get(base, path)
+    status, document = _get(base, f"{path}?view=full")
     if status != 200:
         raise CliError("unavailable", f"{base} answered {status} for {path}: is it a StarPulse server?")
     if not isinstance(document, dict) or not document.keys() >= set(_SNAPSHOT_KEYS):
@@ -332,6 +333,9 @@ def _show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any
     wanted = args.task.casefold()
     agents = {agent["id"].casefold(): agent for agent in board_flow(snapshot)["agents"]}
     if (agent := agents.get(wanted)) is None:
+        cold = next((task for task in snapshot.get("cold_done", ()) if task.casefold() == wanted), None)
+        if cold is not None:
+            return _show_cold(server_url(args.server, environ), cold, snapshot)
         settled_id, settled = next(
             ((key, value) for key, value in snapshot["settled"].items() if key.casefold() == wanted), (None, None)
         )
@@ -350,6 +354,15 @@ def _show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any
             "moves": {},
             "description": "",
         }
+    return {**task_view(agent, snapshot), "description": agent["description"]}
+
+
+def _show_cold(base: str, task_id: str, snapshot: dict[str, Any]) -> dict[str, Any]:
+    """A done task past its hot day, whole: the snapshot holds only its id, so its record is read from the board."""
+    status, document = _get(base, f"/api/task/{urllib.parse.quote(task_id, safe='')}")
+    if status != 200:
+        raise CliError("unavailable", f"{base} answered {status} for the record of {task_id}")
+    agent = cold_agent(task_id, document["record"])
     return {**task_view(agent, snapshot), "description": agent["description"]}
 
 

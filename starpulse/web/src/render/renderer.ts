@@ -589,7 +589,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       dags: sky.dags.map((d) => d.name),
       ...(dagData && kanbanTasks ? { dagData: dagData(sky), cards: kanbanTasks(sky) } : {}),
       pools: sky.pools,
-      settled: Object.values(sky.settled),
+      milestoneDone: sky.milestoneDone,
       names: Object.fromEntries(board.machine.states.map((s) => [s.id, s.name])),
       claims: sky.claims,
       boardUrl: sky.boardUrl,
