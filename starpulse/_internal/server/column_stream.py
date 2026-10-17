@@ -5,7 +5,9 @@ the whole board. A stream now wakes only for a change its own view reads, and th
 one build of the columns.
 """
 
+import json
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from collections.abc import Sequence
 from typing import Any
 
@@ -22,13 +24,55 @@ class ColumnViews:
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
+        self._served: Served | None = None
         self._inputs: tuple[Any, ...] | None = None
         self._columns: list[dict[str, Any]] = []
+        #: One thread makes every view and frame: on a free-threaded interpreter a thread keeps the heap pages of what it
+        #: allocated, so a stream thread that made its own view would hold a copy of its share of the board for as long
+        #: as the stream is open.
+        self._worker = ThreadPoolExecutor(1, thread_name_prefix="column-views")
+        self._views: dict[tuple[str | None, tuple[str, ...]], tuple[list[dict[str, Any]], dict[str, Any]]] = {}
+        self._frames: dict[tuple[str | None, tuple[str, ...]], tuple[dict[str, Any], str]] = {}
+
+    def render(self, served: Served, holder: str | None, states: Sequence[str]) -> tuple[dict[str, Any], str]:
+        """The view of `holder` and `states` in `served` with its JSON, made on the one worker thread."""
+        return self._worker.submit(self._render, served, holder, states).result()
+
+    def _render(self, served: Served, holder: str | None, states: Sequence[str]) -> tuple[dict[str, Any], str]:
+        view = self.view(served, holder, states)
+        return view, self.frame(view, holder, states)
+
+    def view(self, served: Served, holder: str | None, states: Sequence[str]) -> dict[str, Any]:
+        """The view of `holder` and `states` in `served`, filtered once however many streams with them read it."""
+        columns, key = self.of(served), (holder, tuple(states))
+        with self._lock:
+            held = self._views.get(key)
+        if held is not None and held[0] is columns:
+            return held[1]
+        view = column_view(columns, holder, states)
+        with self._lock:
+            self._views[key] = (columns, view)
+        return view
+
+    def frame(self, view: dict[str, Any], holder: str | None, states: Sequence[str]) -> str:
+        """`view` as JSON, encoded once however many streams with the same holder and states send it."""
+        key = (holder, tuple(states))
+        with self._lock:
+            held = self._frames.get(key)
+        if held is not None and held[0] == view:
+            return held[1]
+        text = json.dumps(view, ensure_ascii=False)
+        with self._lock:
+            self._frames[key] = (view, text)
+        return text
 
     def of(self, served: Served) -> list[dict[str, Any]]:
-        snapshot = served.snapshot
-        inputs = (board_flow(snapshot), snapshot["settled"], snapshot["pulls"])
         with self._lock:
+            if served is self._served:
+                return self._columns  # a stream rereading the snapshot it read last allocates nothing
+            snapshot = served.snapshot
+            inputs = (board_flow(snapshot), snapshot["settled"], snapshot["pulls"])
+            self._served = served
             if inputs != self._inputs:
                 self._columns = board_columns(snapshot, lambda agent: True)["columns"]
                 self._inputs = inputs
