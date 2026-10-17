@@ -99,6 +99,9 @@ function SessionRows({ session, lane, startLane }: { session: ReturnType<typeof 
   return <div className="none">{lane === "in_progress" ? "No session has claimed it: worked by hand" : startLane ? "No session holds this task. ▶ Start session, top right, opens one." : "No session holds this task"}</div>;
 }
 
+/** A run's ISO start in Arizona time, or a dash when the scheduler gave none it can parse. */
+const runStart = (iso: string) => (Number.isNaN(Date.parse(iso)) ? "—" : fmtAt(Date.parse(iso) / 1000));
+
 const checkClass = (p: Pull) => (p.merged ? "merged" : p.checks === "failing" ? "fail" : p.checks);
 
 function PullRows({ pulls }: { pulls: Pull[] }) {
@@ -465,7 +468,7 @@ export function TaskView(p: TaskViewProps) {
             {criteria.length > 0 && <RailSection name="Start Criteria" count={`${metCount(criteria)}/${criteria.length} met`}><StartCriteria criteria={criteria} now={p.now} /></RailSection>}
             {!!p.task.runs?.length && (
               <RailSection name="Runs" count={p.task.runs.length}>
-                {p.task.runs.map((r) => <div key={r.url} className="pull"><a href={r.url} target="_blank" rel="noopener">{r.startedAt} ↗</a><span className="k">{r.status}</span></div>)}
+                {p.task.runs.map((r) => <div key={`${r.url} ${r.startedAt}`} className="pull"><a href={r.url} target="_blank" rel="noopener">{runStart(r.startedAt)} ↗</a><span className="k">{r.status}</span></div>)}
               </RailSection>
             )}
             <RailSection name="Pull requests" count={p.task.prs.length}><PullRows pulls={p.task.prs} /></RailSection>
