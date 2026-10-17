@@ -2,26 +2,35 @@
 
 A child is started with `subprocess` on a pipe it exits on when `serve` dies, restarted with a growing delay when it exits and stopped with `serve`. A context
 whose setting is true is run by something outside `serve`, so it gets no child here.
+
+`starpulse reload` (`starpulse._internal.server.control`) calls `Supervisor.reload`: it reads each child's code and config
+again from the installed files (`starpulse._internal.server.closure`) and replaces only the children something changed
+for, as the ADR "StarPulse Supervises Its Own Context Workers" decides.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import signal
 import subprocess
 import sys
 import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from starpulse._internal.config.config import Config
+from starpulse._internal.server.closure import SELF, Reading, ReloadError
+from starpulse._internal.server.control import Control
 from starpulse._internal.server.hold import SUPERVISED_ENV
 
 logger = logging.getLogger(__name__)
 
+_HANGUP = getattr(signal, "SIGHUP", None)
 
 #: The `starpulse worker` contexts, by the `Config` flag that says an outside runner owns them.
 WORKER_FLAGS = {"pulls": "delivery_worker", "autopilot": "autopilot_worker", "runs": "runs_worker"}
@@ -42,6 +51,10 @@ def spawn_child(command: Sequence[str]) -> subprocess.Popen:
     return subprocess.Popen(
         command, stdin=subprocess.PIPE, env={**os.environ, SUPERVISED_ENV: "1"}, start_new_session=True
     )
+
+
+def _exec_self() -> None:  # pragma: no mutate block — process boundary
+    os.execv(sys.executable, sys.orig_argv)
 
 
 @dataclass
@@ -66,6 +79,9 @@ class Supervisor:
         stable_after: float = 60.0,
         poll: float = 0.5,
         grace: float = 10.0,
+        read: Callable[[str], Reading] | None = None,
+        execute: Callable[[], None] = _exec_self,
+        control: Path | None = None,
     ) -> None:
         self._children = {name: _Child(command) for name, command in commands.items()}
         self._spawn = spawn
@@ -77,6 +93,10 @@ class Supervisor:
         self._lock = threading.Lock()
         self._halt = threading.Event()
         self._thread: threading.Thread | None = None
+        self._read = read
+        self._execute = execute
+        self._control = Control(control, self) if control else None
+        self._seen: dict[str, Reading] = {}
 
     def _delay(self, failures: int) -> float:
         return min(self._longest_delay, self._first_delay * 2 ** (failures - 1)) if failures else 0.0
@@ -97,9 +117,12 @@ class Supervisor:
                         "worker %s exited with %s after %.1fs; restarting at +%.1fs", name, code, ran, child.due - now
                     )
                 if child.proc is None and now >= child.due:
-                    child.proc = self._spawn(child.command)
-                    child.started = now
-                    logger.info("worker %s started as pid %s", name, child.proc.pid)
+                    self._launch(name, child, now)
+
+    def _launch(self, name: str, child: _Child, now: float) -> None:
+        child.proc = self._spawn(child.command)
+        child.started = now
+        logger.info("worker %s started as pid %s", name, child.proc.pid)
 
     def pids(self) -> dict[str, int]:
         """The pid of each child running now."""
@@ -108,25 +131,90 @@ class Supervisor:
 
     def start(self) -> None:
         """Start every child and keep them running on a background thread until `stop`."""
+        if self._read:
+            try:
+                self._seen = self._readings()
+            except ReloadError as exc:
+                logger.warning("reload: no baseline for the installed code: %s", exc)
         self.tick(time.monotonic())
         self._thread = threading.Thread(target=self._run, name="worker-supervisor", daemon=True)
         self._thread.start()
+        if self._control:
+            self._control.start()
 
     def _run(self) -> None:
         while not self._halt.wait(self._poll):
             self.tick(time.monotonic())
 
+    def _readings(self) -> dict[str, Reading]:
+        if self._read is None:
+            raise ReloadError("this supervisor reads no installed code")
+        names = [*self._children, SELF]
+        with ThreadPoolExecutor(len(names)) as pool:
+            return dict(zip(names, pool.map(self._read, names), strict=True))
+
+    def reload(self) -> dict[str, Any]:
+        """Replace each child whose code or database changed since the last reading, tell each whose only change is its
+        live config block to re-read it, and keep the rest; report each as "replaced", "reloaded" or "kept".
+
+        When `serve`'s own code changed every child is ended and `supervisor` reports "re-executed": the caller
+        sends that report, then calls `reexec`. Raises `ReloadError`, changing nothing, when a reading fails."""
+        after = self._readings()
+        with self._lock:
+            if self._halt.is_set():
+                raise ReloadError("serve is stopping")
+            own = self._seen.get(SELF)
+            reexec = own is not None and own.code != after[SELF].code
+            if reexec:
+                self._halt.set()
+                self._end([c.proc for c in self._children.values() if c.proc is not None])
+                outcomes = dict.fromkeys(self._children, "replaced")
+            else:
+                outcomes = {n: self._apply(n, c, self._seen.get(n), after[n]) for n, c in self._children.items()}
+            self._seen = after
+        return {"supervisor": "re-executed" if reexec else "kept", "children": outcomes}
+
+    def _apply(self, name: str, child: _Child, before: Reading | None, now: Reading) -> str:
+        if before is None or (before.code, before.restart) != (now.code, now.restart):
+            return self._replace(name, child)
+        if before.live == now.live:
+            return "kept"
+        running = child.proc is not None and child.proc.poll() is None
+        if running and _HANGUP is None:
+            return self._replace(name, child)
+        if running:
+            child.proc.send_signal(_HANGUP)
+        return "reloaded"
+
+    def _replace(self, name: str, child: _Child) -> str:
+        if child.proc is not None:
+            self._end([child.proc])
+        child.failures = 0
+        self._launch(name, child, time.monotonic())
+        return "replaced"
+
+    def reexec(self) -> None:
+        """Replace this process with a new one running the same command, after `reload` reported "re-executed"."""
+        if self._control:
+            self._control.stop()
+        self._execute()
+
+    def _end(self, running: list[Any]) -> None:
+        """Terminate each process and kill one still running `grace` seconds after."""
+        for proc in running:
+            proc.terminate()
+        deadline = time.monotonic() + self._grace
+        for proc in running:
+            try:
+                proc.wait(max(0.0, deadline - time.monotonic()))
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+
     def stop(self) -> None:
         """End every child, killing one still running `grace` seconds after it was asked to stop."""
         self._halt.set()
+        if self._control:
+            self._control.stop()
         with self._lock:
-            running = [c.proc for c in self._children.values() if c.proc is not None]
-            for proc in running:
-                proc.terminate()
-            deadline = time.monotonic() + self._grace
-            for proc in running:
-                try:
-                    proc.wait(max(0.0, deadline - time.monotonic()))
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-                    proc.wait()
+            self._end([c.proc for c in self._children.values() if c.proc is not None])
