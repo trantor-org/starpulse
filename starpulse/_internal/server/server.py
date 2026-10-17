@@ -2183,7 +2183,6 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     # The declared --hours is the default; an override Admin wrote beside the config replaces it from the first snapshot.
     url = database_url(config.database_url, base)
     log = EventLog(url)
-    keep_event_log(log, config, base, hub=args.hub, stop=threading.Event())
     window = HistoryWindow(feed, args.hours, log, base / SETTINGS_FILE)
     # the history dates the lanes the board adapter replays, so it is open before the adapter starts
     store = history_store(config, base, feed.machines)
@@ -2239,10 +2238,12 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         actor_metrics = metrics_of(log)
     if refresh_token:
         pull_refresh = PullRefresh(refresh_token, request_refresh(log, PullSync(pulls, feed, config.repos).tracked))
-    threading.Thread(
-        target=record_machine_events, args=(store, log, threading.Event()), name="machine-history", daemon=True
-    ).start()
-    if args.hub:  # the lane changes the hub's sources forward become its Board trajectories
+    # `starpulse worker history` runs the machine-history recorder and the event log's prune; a hub keeps its recorder
+    # in-process (and prunes by partition), and its sources' lane changes become its Board trajectories
+    if args.hub:
+        threading.Thread(
+            target=record_machine_events, args=(store, log, threading.Event()), name="machine-history", daemon=True
+        ).start()
         threading.Thread(
             target=record_lane_events, args=(store, log, threading.Event()), name="lane-history", daemon=True
         ).start()
@@ -2314,7 +2315,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         slow_read_s=config.slow_read_seconds,
     )
     supervisor = Supervisor(
-        worker_commands(config, args.config),
+        worker_commands(config, args.config, hub=args.hub),
         read=Reader(args.config),
         control=control_file(args.config),
         limits=config.worker_memory,

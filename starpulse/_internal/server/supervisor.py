@@ -41,22 +41,26 @@ WORKER_FLAGS = {
     "autopilot": "autopilot_worker",
     "runs": "runs_worker",
     "forwarding": "forwarding_worker",
+    "history": "history_worker",
 }
 
 
 _MB = 1024 * 1024
 
 
-def worker_commands(config: Config, config_path: Path | None) -> dict[str, list[str]]:
+def worker_commands(config: Config, config_path: Path | None, *, hub: bool = False) -> dict[str, list[str]]:
     """The command of each context `serve` supervises: the ones whose `*_worker` setting is false.
 
-    Forwarding has work only with a `[forward]` table, so a config without one gets no forwarding child.
+    Forwarding has work only with a `[forward]` table, so a config without one gets no forwarding child. A hub keeps its
+    history threads in-process, so it gets no history child.
     """
     tail = ["--config", str(config_path)] if config_path else []
     return {
         context: [sys.executable, "-m", "starpulse", "worker", context, *tail]
         for context, flag in WORKER_FLAGS.items()
-        if not getattr(config, flag) and (context != "forwarding" or config.forward is not None)
+        if not getattr(config, flag)
+        and (context != "forwarding" or config.forward is not None)
+        and (context != "history" or not hub)
     }
 
 
