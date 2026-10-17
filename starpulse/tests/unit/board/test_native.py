@@ -214,6 +214,18 @@ def test_an_agents_claim_records_its_session_as_the_holder_and_an_operators_move
     assert [task.holder for task in scanned(tmp_path)] == ["0d617371"]
 
 
+def test_a_session_that_claims_a_task_it_already_holds_leaves_one_holder_line(tmp_path: Path) -> None:
+    path, built = project(tmp_path, "To Do")
+    assert built.writer is not None
+
+    assert built.writer("task-1", "In Progress", "agent", "0d617371").ok
+    assert built.writer("task-1", "In Progress", "agent", "0d617371").ok
+
+    assert path.read_text().count("**Holder:** 0d617371") == 1
+    assert built.writer("task-1", "In Progress", "agent", "e5f6a7b8").ok
+    assert [task.holder for task in scanned(tmp_path)] == ["e5f6a7b8"]
+
+
 def test_a_move_the_machine_leaves_to_the_operator_is_refused_to_an_agent_with_its_reason(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
