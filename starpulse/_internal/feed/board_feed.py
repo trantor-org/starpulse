@@ -15,11 +15,10 @@ import threading
 import time
 from collections import deque
 from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from starpulse._internal.config.config import CommitKeys
-from starpulse._internal.eventlog import lane_events
-from starpulse._internal.eventlog.event_log import DEFAULT_POLL_INTERVAL, EventLog, Tail
+from starpulse._internal.eventlog import DEFAULT_POLL_INTERVAL, lane_events
 from starpulse._internal.feed import criteria
 from starpulse._internal.feed.ledger import (
     MERGE_EVENT,
@@ -40,6 +39,9 @@ from starpulse._internal.machines.stays import LaneRow
 from starpulse._internal.machines.transitions import DEFAULT_STATUSES, DONE, WAITING, board_machine, lane_id
 from starpulse.contracts.adapters import BoardTask, TaskKeys
 from starpulse.contracts.api import Pull
+
+if TYPE_CHECKING:  # annotation only: the event log opens the database stack
+    from starpulse._internal.eventlog.event_log import EventLog
 
 __all__ = ["BoardFeed", "BoardStore", "FEED_EVENT_RESEND", "Followed", "Resumable"]
 
@@ -1404,6 +1406,8 @@ def follow(
         if isinstance(feed, Resumable):
             threading.Thread(target=feed.keep_saved, args=(stop,), name="board-state", daemon=True).start()
         # no cursor replays the whole retention
+        from starpulse._internal.eventlog.event_log import Tail  # noqa: PLC0415 - the database stack loads when a log opens
+
         tail = Tail(log, stream, after=None if after is None else stream_id(after)[0], interval=interval)
         tail.run(lambda entry: handle(str(entry.id), entry.fields), stop)
 

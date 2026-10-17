@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from starpulse._internal.board import replica
-from starpulse._internal.server import server, worker
+from starpulse._internal.server import assembly, server, worker
 from starpulse._internal.server.hold import STATIC_ENV
 from starpulse.tests import fake_board
 from starpulse.tests.conftest import FakeSupervisor
@@ -80,7 +80,7 @@ def test_serve_stops_with_the_reason_when_the_config_builds_no_page_and_starts_n
     def refuse(*args: object) -> None:
         raise ValueError("writers name workflows no configured adapter lists: ['bogus/actor']")
 
-    monkeypatch.setattr(server, "assemble", refuse)
+    monkeypatch.setattr(assembly, "assemble", refuse)
 
     with pytest.raises(SystemExit) as exited:
         server.main(["--config", str(config), "--port", "0"])

@@ -9,13 +9,13 @@ from typing import Any
 import pytest
 
 from starpulse._internal.board.seam import Board, Written
+from starpulse._internal.config.config import load
+from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.server import writes as server_writes
-from starpulse._internal.server.server import assemble
+from starpulse._internal.server.assembly import assemble
 from starpulse._internal.server.writes import archive_task, edit_task, task_record
 from starpulse.contracts.adapters import Move
-from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.config.config import load
 from starpulse.tests import fake_board
 from starpulse.tests.machines import MACHINES
 

@@ -26,15 +26,17 @@ import re
 import threading
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import asdict, fields
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from starpulse._internal.config.analytics import Analytics
-from starpulse._internal.eventlog.event_log import EventLog, Tail
 from starpulse._internal.harnesses.activity import SHELLS, activities, elide_heredocs, paths, writes_file
 from starpulse._internal.harnesses.labeller import intent_label
 from starpulse._internal.harnesses.otlp import BRANCH, _attributes, _epoch, _records
 from starpulse._internal.level.signals import CLAUDE_CODE, CODEX, Signal, claim_key, claimed, main_thread_source
 from starpulse.contracts.adapters import TaskKeys
+
+if TYPE_CHECKING:  # annotation only: the event log opens the database stack
+    from starpulse._internal.eventlog.event_log import EventLog
 
 __all__ = ["CLAUDE_CODE", "CODEX", "Signal", "TelemetryLog", "redactor", "signals"]
 
@@ -347,6 +349,8 @@ class TelemetryLog:
 
     def __init__(self, log: EventLog, keep: float = 7 * 86400.0) -> None:
         self._log = log
+        from starpulse._internal.eventlog.event_log import Tail  # noqa: PLC0415 - the database stack loads when a log opens
+
         self._tail = Tail(log, self.STREAM, batch=5000)
         self._keep = keep
         self._held: list[Signal] = []

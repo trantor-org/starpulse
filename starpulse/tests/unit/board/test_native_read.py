@@ -6,11 +6,11 @@ import pytest
 
 from starpulse._internal.board.seam import Board
 from starpulse._internal.board.upstream_backlog import UpstreamBacklog
-from starpulse._internal.server.server import assemble
-from starpulse._internal.server.writes import create_task, task_record
-from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.config.config import load
 from starpulse._internal.eventlog.event_log import EventLog
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.server.assembly import assemble
+from starpulse._internal.server.writes import create_task, task_record
 
 LAN = "127.0.0.1"
 FILE = """---

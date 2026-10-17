@@ -39,6 +39,7 @@ from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import SQLAlchemyError
 
+from starpulse._internal.eventlog import DEFAULT_POLL_INTERVAL
 from starpulse._internal.eventlog.migrate import migrate
 from starpulse._internal.eventlog.tables import (
     autopilot_runs,
@@ -55,10 +56,6 @@ from starpulse._internal.eventlog.tables import (
 __all__ = ["Entry", "EventLog", "Tail"]
 
 logger = logging.getLogger(__name__)
-
-#: How long an idle running tail waits before it polls anyway, in seconds. An append wakes it sooner; this bounds the
-#: delivery latency of one that cannot, a Postgres append by another process.
-DEFAULT_POLL_INTERVAL = 5.0
 
 #: How often the SQLite watcher looks for a commit by another process, in seconds.
 _DATA_VERSION_INTERVAL = 0.25

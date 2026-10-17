@@ -8,10 +8,10 @@ import pytest
 
 from starpulse._internal.board.seam import Board
 from starpulse._internal.board.seam import load as load_board
-from starpulse._internal.server.server import assemble, history_store
 from starpulse._internal.config.config import ConfigError, load
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import DEFAULT_FILE, HistoryStore
+from starpulse._internal.server.assembly import assemble, history_store
 from starpulse.tests import fake_board
 
 TASK = """---

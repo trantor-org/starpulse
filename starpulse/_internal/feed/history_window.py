@@ -1,11 +1,15 @@
 """The settings StarPulse Admin writes to the server: a declared default, an override kept in the history store, and Reset."""
 
+from __future__ import annotations
+
 import threading
 from pathlib import Path
-from typing import Any, Protocol, TypeGuard
+from typing import TYPE_CHECKING, Any, Protocol, TypeGuard
 
 from starpulse._internal.eventlog import operator_settings
-from starpulse._internal.eventlog.event_log import EventLog
+
+if TYPE_CHECKING:  # annotation only: the event log opens the database stack
+    from starpulse._internal.eventlog.event_log import EventLog
 
 #: The history window Admin may set, in hours.
 MIN_HOURS, MAX_HOURS = 1, 72

@@ -17,9 +17,10 @@ from __future__ import annotations
 import logging
 import threading
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from starpulse._internal.eventlog.event_log import Entry, EventLog, Tail
+if TYPE_CHECKING:  # annotation only: the event log opens the database stack
+    from starpulse._internal.eventlog.event_log import Entry, EventLog
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,8 @@ POLL_S = 1.0
 
 
 def _follow(name: str, log: EventLog, stream: str, after: int, handle: Callable[[Entry], None], stop: threading.Event):
+    from starpulse._internal.eventlog.event_log import Tail  # noqa: PLC0415 - the database stack loads when a log opens
+
     tail = Tail(log, stream, after=after, interval=POLL_S)
     thread = threading.Thread(target=tail.run, args=(handle, stop), name=name, daemon=True)
     thread.start()

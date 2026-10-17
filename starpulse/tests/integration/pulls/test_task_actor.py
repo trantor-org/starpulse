@@ -13,16 +13,16 @@ from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.pulls.pulls import PullStore
 from starpulse._internal.pulls.task_actor import ACTOR, TaskActor
-from starpulse._internal.server.server import assemble
+from starpulse._internal.server.assembly import assemble
 from starpulse.tests.task_actor_kit import (
     CHILD,
     CHILD_PR,
     GATED,
+    MOVES,
     PARENT,
     PR_ONE,
     PR_TWO,
     REPOS,
-    MOVES,
     SHA,
     WAITS,
     WITHIN_S,

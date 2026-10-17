@@ -17,9 +17,12 @@ import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from starpulse._internal.eventlog import events
-from starpulse._internal.eventlog.event_log import EventLog
+
+if TYPE_CHECKING:  # annotation only: the event log opens the database stack
+    from starpulse._internal.eventlog.event_log import EventLog
 
 logger = logging.getLogger(__name__)
 

@@ -19,12 +19,14 @@ import queue
 import threading
 import time
 from collections.abc import Callable, Collection, Iterable, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from starpulse._internal.config.config import Repo
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.pulls.pull_requests import PULL_URL, REFRESH_S, GhUnavailableError, query_github
-from starpulse._internal.pulls.pulls import PullStore
+
+if TYPE_CHECKING:  # annotation only: the pull store opens the database stack
+    from starpulse._internal.pulls.pulls import PullStore
 
 logger = logging.getLogger(__name__)
 

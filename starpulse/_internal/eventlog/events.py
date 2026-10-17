@@ -12,9 +12,10 @@ fired it), and `time` (epoch seconds).
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from starpulse._internal.eventlog.event_log import EventLog
+if TYPE_CHECKING:
+    from starpulse._internal.eventlog.event_log import EventLog
 
 STREAM = "machine:events"
 

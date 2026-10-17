@@ -10,9 +10,10 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from starpulse._internal.eventlog.event_log import EventLog, Tail
+if TYPE_CHECKING:  # annotation only: the event log opens the database stack
+    from starpulse._internal.eventlog.event_log import EventLog
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +102,8 @@ class Projected:
 
     def follow(self, stop: threading.Event) -> threading.Thread:
         """Apply the kept reports now, then each one announced after, on a thread until `stop`."""
+        from starpulse._internal.eventlog.event_log import Tail  # noqa: PLC0415 - the database stack loads when a log opens
+
         tail = Tail(self._log, PROJECTED_STREAM, after=self._log.head() or 0, interval=POLL_S)
         self.apply()
         thread = threading.Thread(

@@ -244,9 +244,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from pydantic import ValidationError
-from sqlalchemy.exc import SQLAlchemyError
 
-from starpulse._internal.board import replica
 from starpulse._internal.board.seam import (
     AssigneeWriter,
     Board,
@@ -328,32 +326,13 @@ from starpulse._internal.level.steps import session_steps
 from starpulse._internal.level.traces import Case, cases as trace_cases, missed_loads
 from starpulse.contracts.adapters import TaskKeys
 from starpulse._internal.cli import doctor
-from starpulse._internal.feed.board_feed import WAITING, BoardFeed, follow
-from starpulse._internal.server.assembly import assemble, history_store
-from starpulse._internal.ci.ci_trail import CiTrail
-from starpulse._internal.level.insights import Insights, InsightStore, restore
 from starpulse._internal.feed.ledger import PAGE
-from starpulse._internal.feed.claim_refusals import CLAIMS_STREAM, ClaimRefusals
-from starpulse._internal.feed.machine_tasks import MachineTasks
-from starpulse._internal.feed.search import SearchIndex
-from starpulse._internal.feed.machine_tasks import tables as machine_tables
+from starpulse._internal.feed.claim_refusals import CLAIMS_STREAM
 from starpulse._internal.config.config import SLOW_READ_S, Config, ConfigError, RunsInstance, discover, load, runs_adapter
 from starpulse._internal.config.harnesses import Harnesses
 from starpulse._internal.feed.history_window import SETTINGS_FILE, HistoryWindow
 from starpulse._internal.eventlog import events as machine_events
 from starpulse._internal.eventlog import lane_events
-from starpulse._internal.eventlog.event_log import EventLog
-from starpulse._internal.eventlog.history import (
-    HealthHistory,
-    History,
-    LevelHistory,
-    SummarisedHealth,
-    SummarisedLevel,
-    database_url,
-    record_lane_events,
-    record_machine_events,
-)
-from starpulse._internal.pulls.pulls import PullStore
 from starpulse._internal.config.analytics import Analytics
 from starpulse._internal.harnesses.telemetry import Signal, TelemetryLog
 
@@ -379,6 +358,12 @@ _FORWARDING = "/api/forwarding"
 if TYPE_CHECKING:  # annotation only: a runtime import would put the autopilot in the Delivery worker's import closure
     from starpulse._internal.autopilot.remote import Remote
     from starpulse._internal.autopilot.runtime import Runtime
+    from starpulse._internal.eventlog.event_log import EventLog
+    from starpulse._internal.eventlog.history import History
+    from starpulse._internal.feed.board_feed import BoardFeed
+    from starpulse._internal.feed.search import SearchIndex
+    from starpulse._internal.level.insights import Insights
+    from starpulse._internal.pulls.pulls import PullStore
 
 _AUTOPILOT = "/api/autopilot"
 _TASK = "/api/task/"
@@ -595,6 +580,7 @@ def health_response(
     history: History, query: dict[str, list[str]], machines: Mapping[str, dict], now: float
 ) -> tuple[bytes, int]:
     """The body and status for `/api/analytics/health`: the Board's flow health over the last `hours` as of `now`."""
+    from starpulse._internal.eventlog.history import HealthHistory, SummarisedHealth  # noqa: PLC0415 - the database stack loads when a store does
     window = _hours(query, "hours", _HEALTH_HOURS)
     stuck = _hours(query, "stuck_hours", _STUCK_HOURS)
     if window is None or stuck is None:
@@ -1008,6 +994,7 @@ def _level_view(
     now: float,
     view: Callable[..., dict[str, Any]],
 ) -> tuple[bytes, int]:
+    from starpulse._internal.eventlog.history import LevelHistory, SummarisedLevel  # noqa: PLC0415 - the database stack loads when a store does
     if level is None:
         return _error("this server has no level: add a [level] table and serve with --hub"), 404
     window = _hours(query, "hours", _HEALTH_HOURS)
@@ -2110,6 +2097,8 @@ def start_delivery(
     `actor_feed` is the feed the actor notes its writes on (the worker's relays them to `serve`); `after_project`
     runs after each projection. Raises `ValueError` naming a table the board cannot serve.
     """
+    from starpulse._internal.ci.ci_trail import CiTrail  # noqa: PLC0415 - the database stack loads when a store does
+    from starpulse._internal.feed.board_feed import WAITING  # noqa: PLC0415 - the database stack loads when a store does
     # without the GitHub CLI there is no source, and a task simply carries no PR state; a config can turn the store off
     actor = None
     if config.task_actor:
@@ -2226,6 +2215,7 @@ def refuse_unassemblable(
 ) -> None:
     """Exit with the reason when the page cannot be built from `config`, so `serve` fails on it as the Page API child would
     rather than supervising a child that exits on it at every start."""
+    from starpulse._internal.server.assembly import assemble  # noqa: PLC0415 - the database stack loads after the config is accepted
     base = args.config.parent if args.config else Path.cwd()
     try:
         assemble(config, base, args.hours * 3600, ready.run_safe)
@@ -2262,6 +2252,19 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
 ) -> None:
     """Build the Page API and serve it on `listening` until stopped: in the `starpulse worker api` child, or in a hub's
     `serve`, which supervises its other children from the same process (`supervisor`)."""
+    from sqlalchemy.exc import SQLAlchemyError  # noqa: PLC0415 - the database stack loads after the config is accepted
+
+    from starpulse._internal.board import replica  # noqa: PLC0415 - the database stack loads after the config is accepted
+    from starpulse._internal.eventlog.event_log import EventLog  # noqa: PLC0415 - the database stack loads after the config is accepted
+    from starpulse._internal.eventlog.history import database_url, record_lane_events, record_machine_events  # noqa: PLC0415 - the database stack loads after the config is accepted
+    from starpulse._internal.feed.board_feed import follow  # noqa: PLC0415 - the database stack loads after the config is accepted
+    from starpulse._internal.feed.claim_refusals import ClaimRefusals  # noqa: PLC0415 - the database stack loads after the config is accepted
+    from starpulse._internal.feed.machine_tasks import MachineTasks  # noqa: PLC0415 - the database stack loads after the config is accepted
+    from starpulse._internal.feed.machine_tasks import tables as machine_tables  # noqa: PLC0415 - the database stack loads after the config is accepted
+    from starpulse._internal.feed.search import SearchIndex  # noqa: PLC0415 - the database stack loads after the config is accepted
+    from starpulse._internal.level.insights import Insights, InsightStore, restore  # noqa: PLC0415 - the database stack loads after the config is accepted
+    from starpulse._internal.pulls.pulls import PullStore  # noqa: PLC0415 - the database stack loads after the config is accepted
+    from starpulse._internal.server.assembly import assemble, history_store  # noqa: PLC0415 - the database stack loads after the config is accepted
     instance_tokens, source_tokens, refresh_token, gate, starts, reruns, run_safe = ready
     if args.hub:
         from starpulse._internal.hub import hub  # noqa: PLC0415 - hub-only code; `prepare` found it importable
