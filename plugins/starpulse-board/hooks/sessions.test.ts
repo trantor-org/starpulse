@@ -149,6 +149,16 @@ for (const surface of ['terminal', 'desktop'] as const) {
     await ui.unmount()
   })
 
+  // Claude titles a session StarPulse started from its start prompt, which is the task ID the chip already shows.
+  test(`a session named for the task it holds shows that task's title (${surface})`, { timeoutMs: SLOW }, async ($, on) => {
+    host(on, { extra: { '/home/me/.claude/sessions/500.json': { ...REGISTRY['/home/me/.claude/sessions/500.json'], name: 'TASK-7' } } })
+    await start($, surface)
+    const ui = await pane($, surface)
+
+    expect(await label(ui, 'session:session-t7')).toBe('Busy one, TASK-7, idle, 30m')
+    await ui.unmount()
+  })
+
   test(`a session in no tmux pane is not listed, a background one included, but this one always is (${surface})`, { timeoutMs: SLOW }, async ($, on) => {
     host(on, { panes: '200 claude-5d\n' })
     await start($, surface)
