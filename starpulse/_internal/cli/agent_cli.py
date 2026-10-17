@@ -105,7 +105,7 @@ from typing import Any, NoReturn
 from starpulse._internal.cli import demo, skill_install
 from starpulse._internal.cli import doctor
 from starpulse._internal.config.config import ConfigError, load
-from starpulse._internal.board.view import AGENT, board_columns, board_flow, cold_agent, task_view
+from starpulse._internal.board.view import AGENT, board_columns, board_flow, cold_agent, done_ids, task_view
 
 #: serve's default `--port`, where a server runs unless the caller says otherwise.
 DEFAULT_SERVER = "http://localhost:8766"
@@ -324,7 +324,27 @@ def _board(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, An
             and (not args.holder or agent.get("holder", "") == args.holder)
         )
 
-    return board_columns(snapshot, kept, args.state)
+    board = board_columns(snapshot, kept, args.state)
+    if args.milestone and snapshot.get("cold_done") and args.state in (None, "done"):
+        done = done_ids(snapshot)
+        column = next(column for column in board["columns"] if column["state"] == "done")
+        bare = {"milestone": "", "labels": [], "dependencies": [], "prs": [], "moves": {}}
+        cards = [bare | card for card in _cold_done(server_url(args.server, environ))]
+        column["tasks"] += [task_view(card, snapshot, done) for card in cards if kept(card)]
+    return board
+
+
+def _cold_done(base: str) -> Iterator[dict[str, Any]]:
+    """Every done task past its hot day as a board card, newest first; the snapshot lists them by id only."""
+    before = ""
+    while True:
+        status, page = _get(base, f"/api/done?limit=100{before}")
+        if status != 200:
+            raise CliError("unavailable", f"{base} answered {status} for /api/done: cannot list the done tasks")
+        yield from page["tasks"]
+        if not page["more"]:
+            return
+        before = f"&before={page['tasks'][-1]['entered']}"
 
 
 def _show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
