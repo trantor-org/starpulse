@@ -87,7 +87,11 @@ def run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, dagu: Dagu, held: list[
         config = tmp_path / "starpulse.toml"
         config.write_text(text)
         worker.main(["runs", "--config", str(config)])
-        return EventLog(f"sqlite:///{(tmp_path / 'starpulse-history.sqlite').resolve()}")
+        url = f"sqlite:///{(tmp_path / 'starpulse-history.sqlite').resolve()}"
+        if "[[triggers]]" in text:  # a move appended before the reader takes its place at the head is never read
+            store = HistoryStore(url, {})
+            assert _eventually(lambda: store.cursor("triggers") is not None)
+        return EventLog(url)
 
     yield start
     for stop in held:

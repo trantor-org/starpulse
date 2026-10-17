@@ -76,6 +76,7 @@ _KEYS = {
     "runs_worker",
     "forwarding_worker",
     "history_worker",
+    "search_worker",
     "slow_read_seconds",
     "worker_memory",
 }
@@ -459,6 +460,7 @@ WORKER_MEMORY = {
     "runs": MemoryLimit(512, 1024),
     "forwarding": MemoryLimit(256, 512),
     "history": MemoryLimit(384, 768),
+    "search": MemoryLimit(384, 768),
 }
 
 
@@ -561,13 +563,15 @@ class Config:
     runs_worker: bool = False
     """The Runs context (the run adapters, the trigger starts and the pushed-runs follower) runs in `starpulse worker runs`, not in `serve`: `serve` starts none of them and draws the workflows the worker keeps in the event log; false: `serve` supervises that worker as a child."""
     worker_memory: Mapping[str, MemoryLimit] = field(default_factory=lambda: dict(WORKER_MEMORY))
-    """The resident memory limits `serve` holds each worker child to: past `soft_mb` it replaces the child (starts a new one, then stops the old), past `hard_mb` it kills and restarts it. Keyed by context, `pulls`, `autopilot`, `runs`, `forwarding` and `history`."""
+    """The resident memory limits `serve` holds each worker child to: past `soft_mb` it replaces the child (starts a new one, then stops the old), past `hard_mb` it kills and restarts it. Keyed by context, `pulls`, `autopilot`, `runs`, `forwarding`, `history` and `search`."""
     slow_read_seconds: float = SLOW_READ_S
     """`serve` logs a `slow_read` line for each `GET /api/pulls` that took this many seconds or more, from accept to the last byte written, with the seconds it waited for a handler thread, computed its answer and wrote it."""
     forwarding_worker: bool = False
     """The Forwarding context (the forwarder that sends the event log to the hub) runs in `starpulse worker forwarding`, not in `serve`: `serve` starts no forwarder and shows its status from the event log; false: `serve` supervises that worker as a child when `[forward]` is set."""
     history_worker: bool = False
     """The History context (the recorder that copies the event log's machine events into the history store, and the hourly prune of the log) runs in `starpulse worker history`, not in `serve`: `serve` starts neither thread; false: `serve` supervises that worker as a child. A hub keeps both in-process whatever this says."""
+    search_worker: bool = False
+    """The Search context's embedding catch-up (the thread that fills vectors for indexed task text) runs in `starpulse worker search`, not in `serve`: `serve` starts no thread; false: `serve` supervises that worker as a child when `[search]` names an `embeddings_url`. A hub keeps no search index whatever this says."""
     analytics: Analytics = field(default_factory=Analytics)
     """What the instance's agents' telemetry is read against (`[analytics]`); no table: no roots, stops or triggers."""
     release: Release | None = None
@@ -797,5 +801,6 @@ def load(path: Path | None) -> Config:
         worker_memory=_worker_memory(raw.get("worker_memory", {})),
         forwarding_worker=_flag(raw, "forwarding_worker", False),
         history_worker=_flag(raw, "history_worker", False),
+        search_worker=_flag(raw, "search_worker", False),
         slow_read_seconds=_slow_read(raw.get("slow_read_seconds", SLOW_READ_S)),
     )

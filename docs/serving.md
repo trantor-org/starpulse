@@ -53,8 +53,8 @@ short request needs. A stream past the limit gets `503` with `Retry-After: 5` an
 
 ### Worker processes
 
-`serve` is a supervisor over the contexts that run as their own `starpulse worker <context>` process: `pulls` (Delivery), `autopilot`, `runs`, `forwarding` and `history`. For each one whose `delivery_worker`,
-`autopilot_worker`, `runs_worker`, `forwarding_worker` or `history_worker` setting is false, the default, `serve` starts the worker as a child with `subprocess`, restarts it with a growing delay (1 s, doubling to 60 s; a child that
+`serve` is a supervisor over the contexts that run as their own `starpulse worker <context>` process: `pulls` (Delivery), `autopilot`, `runs`, `forwarding`, `history` and `search` (with an `[search] embeddings_url`). For each one whose `delivery_worker`,
+`autopilot_worker`, `runs_worker`, `forwarding_worker`, `history_worker` or `search_worker` setting is false, the default, `serve` starts the worker as a child with `subprocess`, restarts it with a growing delay (1 s, doubling to 60 s; a child that
 ran a minute restarts at once) when it exits, and stops it when `serve` stops on `SIGTERM` or Ctrl-C. The children read the same config and `database_url` and meet `serve` only in
 the event log. A true setting means something outside `serve` runs that worker, so `serve` starts no child for it. No unit file is needed to run StarPulse.
 
@@ -68,6 +68,8 @@ the event log. A true setting means something outside `serve` runs that worker, 
 | `autopilot` | 384 | 768 |
 | `runs` | 512 | 1024 |
 | `forwarding` | 256 | 512 |
+| `history` | 384 | 768 |
+| `search` | 384 | 768 |
 
 `[worker_memory.<context>]` overrides either key for a context (whole megabytes, 1 or more; `soft_mb` below `hard_mb`). An unknown context, an unknown key or a soft limit not below the hard one is refused at load by name.
 
@@ -263,6 +265,15 @@ type = "native"
 # a restarted worker neither drops nor repeats a history row. A hub (`serve --hub`) keeps both threads in-process and
 # ignores this setting. With the flag set and no worker running, no machine event is recorded and the log is not pruned.
 # history_worker = false
+
+# Whether something outside `serve` runs the Search context's embedding catch-up (the thread that fills vectors for the
+# indexed task text). False, the default: with `[search] embeddings_url` set, `serve` supervises it as a child process,
+# `starpulse worker search`. True: you run `starpulse worker search --config <this file>` yourself and `serve` starts
+# no thread and no child. Vectors are stored per batch in one transaction, keyed by the text's digest, so a restarted
+# worker neither drops nor repeats an embedding; `serve` rereads the vectors it ranks by every 30 s. A hub
+# (`serve --hub`) keeps no search index and ignores this setting. With the flag set and no worker running, no vector is
+# written and search ranks by the vectors already stored, else lexically.
+# search_worker = false
 
 # Let a producer that just saw a pull request close have its record read now instead of at the next minute's refresh:
 # `POST /api/pulls/refresh` with `{"repo": "<owner>/<name>", "number": 12}` and `Authorization: Bearer <token>`. The PR store's

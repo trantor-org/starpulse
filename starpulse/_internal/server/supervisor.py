@@ -42,6 +42,7 @@ WORKER_FLAGS = {
     "runs": "runs_worker",
     "forwarding": "forwarding_worker",
     "history": "history_worker",
+    "search": "search_worker",
 }
 
 
@@ -52,7 +53,8 @@ def worker_commands(config: Config, config_path: Path | None, *, hub: bool = Fal
     """The command of each context `serve` supervises: the ones whose `*_worker` setting is false.
 
     Forwarding has work only with a `[forward]` table, so a config without one gets no forwarding child. A hub keeps its
-    history threads in-process, so it gets no history child.
+    history threads in-process, so it gets no history child. Search has work only with an `embeddings_url`, and a hub keeps
+    no search index, so a config without one, or a hub, gets no search child.
     """
     tail = ["--config", str(config_path)] if config_path else []
     return {
@@ -61,6 +63,7 @@ def worker_commands(config: Config, config_path: Path | None, *, hub: bool = Fal
         if not getattr(config, flag)
         and (context != "forwarding" or config.forward is not None)
         and (context != "history" or not hub)
+        and (context != "search" or (config.search.embeddings_url and not hub))
     }
 
 

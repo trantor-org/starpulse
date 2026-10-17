@@ -167,3 +167,22 @@ def test_serve_runs_neither_the_recorder_nor_the_prune_thread_whatever_the_histo
     _serve(tmp_path, monkeypatch, settings)
 
     assert not {"machine-history", "event-log-prune"} & ({t.name for t in threading.enumerate()} - before)
+
+
+SEARCH = '[search]\nembeddings_url = "http://embeddings.test/v1/embeddings"\nmodel = "m"\n'
+
+
+@pytest.mark.parametrize(("settings", "supervised"), [("", True), ("search_worker = true\n", False)])
+def test_serve_runs_no_embedding_thread_and_supervises_a_search_child_for_a_false_setting(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    supervisors: list[FakeSupervisor],
+    settings: str,
+    supervised: bool,
+) -> None:
+    before = {t.name for t in threading.enumerate()}
+
+    _serve(tmp_path, monkeypatch, settings + SEARCH)
+
+    assert "search-embeddings" not in {t.name for t in threading.enumerate()} - before
+    assert ("search" in supervisors[0].commands) is supervised

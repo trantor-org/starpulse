@@ -138,6 +138,7 @@ class TestConfigCheck:
             "runs_worker": False,
             "forwarding_worker": False,
             "history_worker": False,
+            "search_worker": False,
             "slow_read_seconds": 1.0,
             "worker_memory": {
                 "pulls": {"soft_mb": 768, "hard_mb": 1536},
@@ -145,6 +146,7 @@ class TestConfigCheck:
                 "runs": {"soft_mb": 512, "hard_mb": 1024},
                 "forwarding": {"soft_mb": 256, "hard_mb": 512},
                 "history": {"soft_mb": 384, "hard_mb": 768},
+                "search": {"soft_mb": 384, "hard_mb": 768},
             },
             "event_log_retention_days": 7,
             "event_log_archive_dir": "starpulse-archive",

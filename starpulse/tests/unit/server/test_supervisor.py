@@ -12,6 +12,7 @@ from pathlib import Path
 import starpulse._internal.server.rss as rss_module
 import starpulse._internal.server.supervisor as supervisor_module
 from starpulse._internal.config.config import Forward, MemoryLimit, load
+from starpulse._internal.config.search import Search
 from starpulse._internal.server.supervisor import Supervisor, worker_commands
 
 STEP = 0.25
@@ -86,6 +87,15 @@ def test_the_history_child_runs_for_a_false_setting_and_never_beside_a_hub() -> 
     assert "history" in worker_commands(load(None), None)
     assert "history" not in worker_commands(replace(load(None), history_worker=True), None)
     assert "history" not in worker_commands(load(None), None, hub=True)  # a hub keeps its history threads in-process
+
+
+def test_the_search_child_runs_only_for_an_embeddings_url_a_false_setting_and_no_hub() -> None:
+    embedding = replace(load(None), search=Search("http://embeddings.test/v1/embeddings", "m"))
+
+    assert "search" in worker_commands(embedding, None)
+    assert "search" not in worker_commands(load(None), None)  # no endpoint, nothing to embed
+    assert "search" not in worker_commands(replace(embedding, search_worker=True), None)
+    assert "search" not in worker_commands(embedding, None, hub=True)  # a hub keeps no search index
 
 
 def test_the_forwarding_child_runs_only_for_a_config_with_a_forward_table_and_a_false_setting() -> None:
