@@ -841,13 +841,19 @@ def _machine(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, 
     tasks: dict[str, list[str]] = {state["id"]: [] for state in machine["states"]}
     for agent in flow["agents"]:
         tasks.setdefault(agent["state"], []).append(agent["id"])
-    return {
+    document = {
         "name": flow["name"],
         "states": [
             {**state, "count": len(tasks[state["id"]]), "tasks": tasks[state["id"]]} for state in machine["states"]
         ],
         "transitions": machine["transitions"],
+        **{key: machine[key] for key in ("subflows", "launches", "writers") if key in machine},
     }
+    if args.format == "dot":
+        from starpulse._internal.machines.diagram import dot  # noqa: PLC0415 - import cost, paid on first use
+
+        document |= {"format": "dot", "diagram": dot(flow["name"], machine)}
+    return document
 
 
 def _runs(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
@@ -1499,12 +1505,13 @@ def _parser() -> argparse.ArgumentParser:
     show_machine = leaf(
         machine_verbs,
         "show",
-        "one machine: its states with the live task count and tasks in each, and its transitions",
+        "one machine: its states with the live task count and tasks in each, its transitions, and the subflows, launches and writers it declares; `--format dot` adds a static Graphviz diagram",
         _machine,
         ("name", "states", "transitions"),
         (0, 2, 3, 4),
     )
     show_machine.add_argument("name", help="the machine's name (`board`, `in-progress`)")
+    show_machine.add_argument("--format", choices=("json", "dot"), default="json", help="`dot` adds the machine as Graphviz DOT source in `diagram`")
     validate = leaf(
         machine_verbs,
         "validate",

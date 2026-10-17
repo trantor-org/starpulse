@@ -118,7 +118,17 @@
         "to": {"type": "string"},
         "if": {"$ref": "#/$defs/guard"},
         "unless": {"$ref": "#/$defs/guard"},
-        "action": {"$ref": "#/$defs/registered"}
+        "action": {"$ref": "#/$defs/registered"},
+        "cite": {
+          "description": "The sentence of a skill that sends a session down this transition, drawn as the edge's tooltip.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["skill", "quote"],
+          "properties": {
+            "skill": {"type": "string", "minLength": 1},
+            "quote": {"type": "string", "minLength": 1}
+          }
+        }
       }
     },
     "writer": {

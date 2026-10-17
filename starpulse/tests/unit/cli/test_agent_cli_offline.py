@@ -348,3 +348,58 @@ class TestSearchTimeout:
         assert document["code"] == "unavailable"
         assert "slow search" in document["error"]
         assert "cannot reach StarPulse" not in document["error"]
+
+
+class TestMachineShow:
+    FLOW = {
+        "name": "in-progress",
+        "agents": [{"id": "PROJ-1", "state": "start"}],
+        "machine": {
+            "states": [
+                {"id": "start", "name": "Start", "initial": True, "final": False},
+                {"id": "done", "name": "Done", "initial": False, "final": True},
+            ],
+            "transitions": [{"source": "start", "target": "done", "event": "FINISH"}],
+            "writers": {"FINISH": [{"actor": "ops/nightly", "trigger": "emit"}]},
+            "subflows": [{"state": "start", "flow": "review", "exits": {}, "parent": "in-progress", "when": ""}],
+            "launches": {"ops/nightly": {"skill": "audit", "flow": "review"}},
+        },
+    }
+
+    @pytest.fixture(autouse=True)
+    def served(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(cli, "_get_snapshot", lambda url: {"flows": [self.FLOW]})
+
+    def test_it_returns_the_subflows_launches_and_writers_the_machine_declares(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        code, document = _run(capsys, ["machine", "show", "in-progress"])
+
+        assert code == 0
+        machine = self.FLOW["machine"]
+        assert {key: document[key] for key in ("subflows", "launches", "writers")} == {
+            key: machine[key] for key in ("subflows", "launches", "writers")
+        }
+
+    def test_a_machine_that_declares_none_of_them_returns_none(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        bare = {**self.FLOW, "machine": {key: self.FLOW["machine"][key] for key in ("states", "transitions")}}
+        monkeypatch.setattr(cli, "_get_snapshot", lambda url: {"flows": [bare]})
+
+        _, document = _run(capsys, ["machine", "show", "in-progress"])
+
+        assert not {"subflows", "launches", "writers"} & document.keys()
+
+    def test_format_dot_returns_the_static_diagram_beside_the_machine(self, capsys: pytest.CaptureFixture[str]) -> None:
+        code, document = _run(capsys, ["machine", "show", "in-progress", "--format", "dot"])
+
+        assert code == 0
+        assert document["format"] == "dot"
+        assert document["diagram"].startswith('digraph "in-progress" {')
+        assert '"start" -> "done" [label="FINISH"' in document["diagram"]
+
+    def test_the_default_format_is_json_and_draws_no_diagram(self, capsys: pytest.CaptureFixture[str]) -> None:
+        _, document = _run(capsys, ["machine", "show", "in-progress"])
+
+        assert "diagram" not in document

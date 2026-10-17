@@ -37,17 +37,19 @@ def _titled(name: str) -> str:
 
 def describe(machine: Any) -> dict:
     """The machine's states and transitions, self-loops included, its `source` when a third party moves it, and the
-    workflows among its YAML-declared writers.
+    workflows among its YAML-declared writers. A transition its YAML cites carries the `cite`.
 
     A writer is a workflow when its actor is named `<instance>/<workflow>`; a machine with none carries no
     `writers`.
     """
+    cited = getattr(machine, "citations", {})
     body: dict[str, Any] = {
         "states": [
             {"id": s.id, "name": _titled(s.name), "initial": s.initial, "final": s.final} for s in machine.states
         ],
         "transitions": [
             {"source": t.source.id, "target": t.target.id, "event": str(t.event)}
+            | ({"cite": dict(cite)} if (cite := cited.get((t.source.id, str(t.event), t.target.id))) else {})
             for s in machine.states
             for t in s.transitions
         ],

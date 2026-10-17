@@ -20,6 +20,7 @@ from starpulse._internal.machines.machine_definition import (
     validate,
     writers_of,
 )
+from starpulse._internal.machines.snapshot import describe
 
 MACHINES = Path(__file__).parent.parent.parent / "fixtures" / "machines"
 
@@ -555,3 +556,34 @@ class TestSubflowFiles:
             load_machine(path)
 
         assert str(raised.value).startswith(f"{tmp_path / 'child.yaml'}: ")
+
+
+class TestCitations:
+    CITE = {"skill": "completing-tasks", "quote": "Only exit 3 is a blocker"}
+
+    def test_a_transition_may_cite_the_skill_sentence_that_authorizes_it(self) -> None:
+        validate(_doc({"from": "a", "to": "b", "cite": self.CITE}))
+
+    @pytest.mark.parametrize("cite", [{"skill": "completing-tasks"}, {"quote": "q"}, {**CITE, "page": 3}, "skill"])
+    def test_a_citation_without_a_skill_and_quote_or_with_more_is_refused(self, cite: Any) -> None:
+        with pytest.raises(MachineDefinitionError, match="cite"):
+            validate(_doc({"from": "a", "to": "b", "cite": cite}))
+
+    def test_a_citation_is_kept_per_source_event_and_target_and_drawn_on_the_transition(self, tmp_path: Path) -> None:
+        document = _doc(
+            {"from": ["a", "c"], "to": "b", "cite": self.CITE},
+            {"from": "a", "to": "c"},
+            states={"a": {"initial": True}, "b": {"final": True}, "c": {}},
+        )
+        machine = load_machine(_written(tmp_path, document)).machine
+
+        assert machine.citations == {("a", "GO", "b"): self.CITE, ("c", "GO", "b"): self.CITE}
+        assert sorted((t for t in describe(machine)["transitions"] if "cite" in t), key=lambda t: t["source"]) == [
+            {"source": "a", "target": "b", "event": "GO", "cite": self.CITE},
+            {"source": "c", "target": "b", "event": "GO", "cite": self.CITE},
+        ]
+
+    def test_an_uncited_transition_draws_no_cite(self, tmp_path: Path) -> None:
+        machine = load_machine(_written(tmp_path, _doc())).machine
+
+        assert all("cite" not in t for t in describe(machine)["transitions"])

@@ -18,6 +18,9 @@ refuses an unknown fact kind and an event that is not a transition out of the st
 A top-level `source:` names the third party that moves the machine; StarPulse only observes it, and the snapshot
 carries the name so the page can draw it apart from a machine its own actors move.
 
+A transition may carry a `cite:` (the `skill` and the `quote` of its sentence that sends a session down it); the
+compiled class keeps it by `(source, event, target)` in `citations`, and the page and `machine show` draw it.
+
 A top-level `writers:` block names, per event, who fires it: each entry is an
 `actor` (`agent`, `operator`, or a workflow as `<instance>/<workflow>`) and
 the `trigger` it fires through. `refuse_unlisted` refuses a workflow no
@@ -182,6 +185,7 @@ def compile_document(document: dict[str, Any], path: Path, registry: Registry = 
     except InvalidDefinition as error:
         raise MachineDefinitionError(f"{path}: {error}", path) from error
     setattr(machine, "writers", writers)
+    setattr(machine, "citations", _citations(document["events"]))
     setattr(machine, "source", document.get("source"))
     drawing = {key: document[key] for key in DRAWING if key in document}
     return Compiled(document["name"], machine, bindings, writers, cues, drawing, waits)
@@ -254,6 +258,17 @@ def _compile(
         waits |= child_waits
         states[f"{prefix}{name}"]["states"] = children
     return states, bindings, waits
+
+
+def _citations(events: Mapping[str, Any]) -> dict[tuple[str, str, str], Mapping[str, str]]:
+    """Each cited transition's `cite`, by `(source, event, target)`."""
+    return {
+        (source, event, transition["to"]): transition["cite"]
+        for event, transitions in events.items()
+        for transition in transitions
+        if "cite" in transition
+        for source in _sources(transition)
+    }
 
 
 def _sources(transition: Mapping[str, Any]) -> list[str]:
