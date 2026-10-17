@@ -128,13 +128,14 @@ def test_a_pushed_run_reaches_the_log_as_the_pushed_instance(run) -> None:
 
 
 def test_a_worker_with_no_trigger_starts_no_trigger_reader(run, dagu: Dagu) -> None:
+    before = {t for t in threading.enumerate() if t.name == "board-triggers"}  # a stopped worker's may still be exiting
     log = run(RUNS + BOARD)
 
     _move(log, "TASK-1", 100.0)
     time.sleep(0.3)
 
     assert dagu.started == []
-    assert "board-triggers" not in {t.name for t in threading.enumerate()}
+    assert {t for t in threading.enumerate() if t.name == "board-triggers"} <= before
 
 
 def test_a_restarted_worker_neither_drops_nor_repeats_a_trigger_start_or_a_pushed_run(
