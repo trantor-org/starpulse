@@ -81,4 +81,4 @@ def test_check_reports_a_page_that_is_not_200(parent, page):
 
 
 def test_worker_contexts_are_the_ones_the_default_config_supervises(tmp_path):
-    assert worker_contexts(sys.executable, str(tmp_path)) == {"pulls", "autopilot", "runs", "history", "board"}
+    assert worker_contexts(sys.executable, str(tmp_path)) == {"api", "pulls", "autopilot", "runs", "history", "board"}
