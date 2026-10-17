@@ -133,8 +133,6 @@ class TestConfigCheck:
             "aggregates_only": False,
             "refresh_token_env": None,
             "pull_requests": True,
-            "delivery_worker": False,
-            "autopilot_worker": False,
             "runs_worker": False,
             "forwarding_worker": False,
             "history_worker": False,

@@ -230,7 +230,7 @@ def test_hub_mode_is_a_serve_flag_not_a_config_setting(tmp_path: Path) -> None:
 
 def test_unknown_keys_are_refused_by_name_beside_the_known_ones(tmp_path: Path) -> None:
     assert _refusal(tmp_path, 'zeta = 1\ntrakcer_url = "http://x.test"\n') == (
-        "unknown config key(s) trakcer_url, zeta; known: aggregates_only, analytics, api_worker, autopilot, autopilot_worker, board, board_worker, ci, cursor_context, database_url, delivery_worker, event_log_archive_dir, event_log_retention_days, "
+        "unknown config key(s) trakcer_url, zeta; known: aggregates_only, analytics, api_worker, autopilot, board, board_worker, ci, cursor_context, database_url, event_log_archive_dir, event_log_retention_days, "
         "forward, forwarding_worker, harnesses_file, history_worker, hub_retention_days, level, mode, oidc, pull_requests, refresh_token_env, release, repos, runs, runs_worker, search, search_worker, session_start_url, slow_read_seconds, sources, tracker_url, triggers, worker_memory"
     )
 
@@ -538,10 +538,10 @@ def test_an_instance_keeps_a_pull_request_store_unless_configured_off(tmp_path: 
     assert _refusal(tmp_path, 'pull_requests = "no"\n') == "pull_requests must be true or false"
 
 
-def test_autopilot_worker_defaults_off_and_is_a_flag(tmp_path: Path) -> None:
-    assert load(None).autopilot_worker is False
-    assert load(_write(tmp_path, "autopilot_worker = true\n")).autopilot_worker is True
-    assert _refusal(tmp_path, 'autopilot_worker = "yes"\n') == "autopilot_worker must be true or false"
+@pytest.mark.parametrize("context", ["delivery", "autopilot"])
+def test_a_removed_worker_setting_is_refused_by_name(tmp_path: Path, context: str) -> None:
+    key = f"{context}_worker"
+    assert _refusal(tmp_path, f"{key} = true\n").startswith(f"unknown config key(s) {key};")
 
 
 def test_runs_worker_defaults_off_and_is_a_flag(tmp_path: Path) -> None:
@@ -572,12 +572,6 @@ def test_forwarding_worker_defaults_off_and_is_a_flag(tmp_path: Path) -> None:
     assert load(None).forwarding_worker is False
     assert load(_write(tmp_path, "forwarding_worker = true\n")).forwarding_worker is True
     assert _refusal(tmp_path, 'forwarding_worker = "yes"\n') == "forwarding_worker must be true or false"
-
-
-def test_delivery_worker_defaults_off_and_is_a_flag(tmp_path: Path) -> None:
-    assert load(None).delivery_worker is False
-    assert load(_write(tmp_path, "delivery_worker = true\n")).delivery_worker is True
-    assert _refusal(tmp_path, 'delivery_worker = "yes"\n') == "delivery_worker must be true or false"
 
 
 def test_a_hub_takes_names_unless_it_is_configured_for_aggregates_only(tmp_path: Path) -> None:

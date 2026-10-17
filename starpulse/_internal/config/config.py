@@ -71,8 +71,6 @@ _KEYS = {
     "cursor_context",
     "refresh_token_env",
     "pull_requests",
-    "delivery_worker",
-    "autopilot_worker",
     "runs_worker",
     "forwarding_worker",
     "history_worker",
@@ -559,10 +557,6 @@ class Config:
     """The environment variable holding the token `POST /api/pulls/refresh` accepts; none: the route answers 404."""
     pull_requests: bool = True
     """`serve` keeps the pull request store, refreshing it from GitHub every minute; false: no store, so an instance beside another that reads the same repositories spends none of the GitHub budget on a store no one reads."""
-    delivery_worker: bool = False
-    """The Delivery context (pull-store sync, pull projection, task actor, board release) runs in `starpulse worker pulls`, not in `serve`: `serve` keeps the store read-only and starts none of those threads; false: `serve` runs them."""
-    autopilot_worker: bool = False
-    """The autopilot (capacity sampler and dispatch loop) runs in `starpulse worker autopilot`, not in `serve`: `serve` starts neither and reads and writes the autopilot's settings through the event log; false: `serve` runs them."""
     runs_worker: bool = False
     """The Runs context (the run adapters, the trigger starts and the pushed-runs follower) runs in `starpulse worker runs`, not in `serve`: `serve` starts none of them and draws the workflows the worker keeps in the event log; false: `serve` supervises that worker as a child."""
     worker_memory: Mapping[str, MemoryLimit] = field(default_factory=lambda: dict(WORKER_MEMORY))
@@ -802,8 +796,6 @@ def load(path: Path | None) -> Config:
         cursor_context=_cursor_context(raw.get("cursor_context")),
         refresh_token_env=_refresh_token_env(raw.get("refresh_token_env")),
         pull_requests=_flag(raw, "pull_requests", True),
-        delivery_worker=_flag(raw, "delivery_worker", False),
-        autopilot_worker=_flag(raw, "autopilot_worker", False),
         runs_worker=_flag(raw, "runs_worker", False),
         worker_memory=_worker_memory(raw.get("worker_memory", {})),
         forwarding_worker=_flag(raw, "forwarding_worker", False),

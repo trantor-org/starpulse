@@ -54,7 +54,7 @@ def test_a_key_is_owned_by_exactly_the_processes_whose_reading_it_changes(key: s
     assert moved == set(CONFIG_OWNERS[key]) - {SELF}
 
 
-@pytest.mark.parametrize("flag", WORKER_FLAGS.values())
+@pytest.mark.parametrize("flag", [flag for flag in WORKER_FLAGS.values() if flag])
 def test_a_worker_flag_is_read_by_serve_alone(flag: str) -> None:
     assert CONFIG_OWNERS[flag] == (SELF,)
 
@@ -76,7 +76,7 @@ def test_a_change_to_a_context_owned_table_does_not_restart_serve(old: dict, new
 @pytest.mark.parametrize(
     ("old", "new"),
     [
-        ({"delivery_worker": True}, {"delivery_worker": False}),
+        ({"runs_worker": True}, {"runs_worker": False}),
         ({}, {"worker_memory": {"runs": {"soft_mb": 1, "hard_mb": 2}}}),
         ({}, {"mode": "hub"}),
         ({}, {"unheard_of": 1}),

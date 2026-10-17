@@ -85,15 +85,12 @@ def test_serve_forks_its_workers_from_one_preloaded_process_it_closes_at_the_end
     ("settings", "supervised"),
     [
         ("api_worker = true\n", {"pulls", "autopilot", "runs", "history", "board"}),
-        ("delivery_worker = true\n", {"api", "autopilot", "runs", "history", "board"}),
-        ("autopilot_worker = true\n", {"api", "pulls", "runs", "history", "board"}),
         ("runs_worker = true\n", {"api", "pulls", "autopilot", "history", "board"}),
         ("history_worker = true\n", {"api", "pulls", "autopilot", "runs", "board"}),
         ("board_worker = true\n", {"api", "pulls", "autopilot", "runs", "history"}),
         (
-            "api_worker = true\ndelivery_worker = true\nautopilot_worker = true\nruns_worker = true\n"
-            "history_worker = true\nboard_worker = true\n",
-            set(),
+            "api_worker = true\nruns_worker = true\nhistory_worker = true\nboard_worker = true\n",
+            {"pulls", "autopilot"},
         ),
     ],
 )

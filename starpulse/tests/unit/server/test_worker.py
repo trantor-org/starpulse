@@ -14,7 +14,7 @@ from starpulse._internal.server import server, worker
 from starpulse.tests import fake_board
 
 BOARD = '[board]\ntype = "starpulse.tests.fake_board"\nlanes = ["waiting", "ready", "done"]\nwrites = true\n'
-CONFIG = f"delivery_worker = true\n[release]\n{BOARD}[board.actor]\n"
+CONFIG = f"[release]\n{BOARD}[board.actor]\n"
 WAIT_S = 5.0
 
 
@@ -187,9 +187,9 @@ def test_a_reload_with_an_invalid_config_keeps_the_running_loops(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     loops = Loops(monkeypatch)
-    path = _config(tmp_path, "delivery_worker = true\n")
+    path = _config(tmp_path, "")
     delivery = _delivery(path)
-    path.write_text("delivery_worker = 3\n")
+    path.write_text("pull_requests = 3\n")
 
     delivery.reload(path)
 
@@ -200,9 +200,9 @@ def test_a_reload_that_changes_no_delivery_block_keeps_the_running_loops(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     loops = Loops(monkeypatch)
-    path = _config(tmp_path, "delivery_worker = true\nslow_read_seconds = 1.0\n")
+    path = _config(tmp_path, "slow_read_seconds = 1.0\n")
     delivery = _delivery(path)
-    path.write_text("delivery_worker = true\nslow_read_seconds = 2.0\n")
+    path.write_text("slow_read_seconds = 2.0\n")
 
     delivery.reload(path)
 
@@ -214,9 +214,9 @@ def test_a_reload_that_changes_a_delivery_block_rebuilds_the_loops_in_the_same_p
 ) -> None:
     loops = Loops(monkeypatch)
     monkeypatch.setattr(os, "execv", lambda *args: pytest.fail("re-executed the worker"))
-    path = _config(tmp_path, "delivery_worker = true\npull_requests = true\n")
+    path = _config(tmp_path, "pull_requests = true\n")
     delivery = _delivery(path)
-    path.write_text("delivery_worker = true\npull_requests = false\n")
+    path.write_text("pull_requests = false\n")
 
     delivery.reload(path)
 
@@ -227,10 +227,10 @@ def test_a_changed_delivery_block_the_loops_cannot_build_leaves_the_old_loops_ru
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     loops = Loops(monkeypatch)
-    path = _config(tmp_path, "delivery_worker = true\npull_requests = true\n")
+    path = _config(tmp_path, "pull_requests = true\n")
     delivery = _delivery(path)
     loops.refuse = {False}
-    path.write_text("delivery_worker = true\npull_requests = false\n")
+    path.write_text("pull_requests = false\n")
 
     delivery.reload(path)
 
@@ -241,9 +241,9 @@ def test_a_reload_after_a_rebuild_compares_with_the_rebuilt_config(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     loops = Loops(monkeypatch)
-    path = _config(tmp_path, "delivery_worker = true\npull_requests = true\n")
+    path = _config(tmp_path, "pull_requests = true\n")
     delivery = _delivery(path)
-    path.write_text("delivery_worker = true\npull_requests = false\n")
+    path.write_text("pull_requests = false\n")
     delivery.reload(path)
 
     delivery.reload(path)
@@ -253,9 +253,9 @@ def test_a_reload_after_a_rebuild_compares_with_the_rebuilt_config(
 
 def test_a_changed_board_or_database_is_left_to_a_restart(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     loops = Loops(monkeypatch)
-    path = _config(tmp_path, "delivery_worker = true\n")
+    path = _config(tmp_path, "")
     delivery = _delivery(path)
-    path.write_text('delivery_worker = true\ndatabase_url = "sqlite:///other.sqlite"\n')
+    path.write_text('database_url = "sqlite:///other.sqlite"\n')
 
     delivery.reload(path)
 
@@ -264,7 +264,7 @@ def test_a_changed_board_or_database_is_left_to_a_restart(tmp_path: Path, monkey
 
 def test_stopping_the_delivery_stops_its_loops(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     loops = Loops(monkeypatch)
-    delivery = _delivery(_config(tmp_path, "delivery_worker = true\n"))
+    delivery = _delivery(_config(tmp_path, ""))
 
     delivery.stop()
 
