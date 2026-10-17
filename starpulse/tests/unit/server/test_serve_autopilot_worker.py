@@ -7,6 +7,7 @@ import pytest
 from starpulse._internal.autopilot.remote import Remote
 from starpulse._internal.server import autopilot_service as service
 from starpulse._internal.server import server
+from starpulse._internal.server import worker as api_child
 from starpulse.tests import fake_board
 
 BOARD = '[board]\ntype = "starpulse.tests.fake_board"\nlanes = ["waiting", "ready", "done"]\nwrites = true\n'
@@ -26,7 +27,7 @@ def _serve(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, worker: bool) -> 
     config = tmp_path / "starpulse.toml"
     config.write_text(f"autopilot_worker = {str(worker).lower()}\n{BOARD}")
 
-    server.main(["--config", str(config), "--port", "0"])
+    api_child.main(["api", "--config", str(config), "--port", "0"])
 
     return started, handled
 

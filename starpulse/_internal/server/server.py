@@ -227,6 +227,7 @@ import queue
 import shutil
 import signal
 import socket
+import stat
 import sys
 import threading
 import time
@@ -276,6 +277,7 @@ from starpulse._internal.server.live_push import wire_forwarding, wire_level
 from starpulse._internal.server.snapshot_cache import SnapshotCache
 from starpulse._internal.server.closure import Reader
 from starpulse._internal.server.control import control_file
+from starpulse._internal.server.hold import LISTEN_FD_ENV
 from starpulse._internal.server.supervisor import Supervisor, worker_commands
 from starpulse._internal.server.writes import (
     autopilot,
@@ -1829,11 +1831,20 @@ _LISTEN_FDS_START = 3
 
 
 def inherited_socket(environ: Mapping[str, str]) -> socket.socket | None:
-    """The listening socket the service manager passed in, or `None` to bind `--host` and `--port`.
+    """The listening socket passed in, or `None` to bind `--host` and `--port`.
 
-    The `sd_listen_fds` protocol: `LISTEN_PID` names this process and `LISTEN_FDS` counts the sockets, from fd 3. A
-    socket passed to another process, as a child of the unit's would see, is not ours.
+    A `serve` hands its Page API child, and its own next image when it re-executes, the descriptor `LISTEN_FD_ENV`
+    names. Otherwise the service manager's `sd_listen_fds` protocol: `LISTEN_PID` names this process and `LISTEN_FDS`
+    counts the sockets, from fd 3. A socket passed to another process, as a child of the unit's would see, is not ours.
     """
+    if (handed := environ.get(LISTEN_FD_ENV)) is not None:
+        try:
+            if not stat.S_ISSOCK(os.fstat(int(handed)).st_mode):
+                raise ValueError(f"{LISTEN_FD_ENV}={handed} is not a socket")
+        except OSError as exc:
+            raise ValueError(f"{LISTEN_FD_ENV}={handed} is not a socket: {exc.strerror}") from exc
+        os.set_inheritable(int(handed), False)  # the workers this process starts must not keep it open
+        return socket.socket(fileno=int(handed))
     if environ.get("LISTEN_PID") != str(os.getpid()):
         return None
     count = int(environ.get("LISTEN_FDS", "0"))
@@ -1871,6 +1882,9 @@ class StarPulseServer(ThreadingHTTPServer):
 
     A stream (`open_stream`) leaves the request pool for the length of its connection and is counted against
     `stream_limit` instead, so streams never take a short request's worker; a stream past the limit is refused.
+
+    `drain` waits for the requests taken and not yet answered, a stream not among them, so a process that stops serving
+    finishes them before it exits.
     """
 
     request_queue_size = 128
@@ -1887,6 +1901,8 @@ class StarPulseServer(ThreadingHTTPServer):
         self._streaming = threading.local()  # set on a worker thread that has left the request pool for a stream
         self._idle = 0  # workers waiting for work, less the requests queued for them; negative is a backlog
         self._workers_lock = threading.Lock()
+        self._taken = 0  # requests taken and not yet answered, a stream not among them
+        self._answered = threading.Condition(self._workers_lock)
         super().__init__(address, handler, bind_and_activate=listening is None)
         if listening is not None:
             self.socket.close()  # the one the base class made for a bind that will not happen
@@ -1905,6 +1921,7 @@ class StarPulseServer(ThreadingHTTPServer):
                     threading.stack_size(previous)
             else:
                 self._idle -= 1
+            self._taken += 1
             busy = self._workers - max(self._idle, 0)
             self.accepted[request] = _Arrival(time.monotonic(), busy, self.streams)
             self._work.put((request, client_address))
@@ -1917,8 +1934,19 @@ class StarPulseServer(ThreadingHTTPServer):
                 return False
             self.streams += 1
             self._workers -= 1  # a request may start its replacement
+            self._answer()
         self._streaming.open = True
         return True
+
+    def _answer(self) -> None:
+        """Note one taken request answered, or turned into a stream; the caller holds the lock."""
+        self._taken -= 1
+        self._answered.notify_all()
+
+    def drain(self, timeout: float) -> bool:
+        """Wait up to `timeout` seconds for every request taken to be answered; whether they all were."""
+        with self._answered:
+            return self._answered.wait_for(lambda: self._taken == 0, timeout)
 
     def _run_requests(self) -> None:
         while True:
@@ -1933,6 +1961,8 @@ class StarPulseServer(ThreadingHTTPServer):
                 continue
             self.process_request_thread(*work)
             with self._workers_lock:
+                if not getattr(self._streaming, "open", False):  # a stream was answered when it opened
+                    self._answer()
                 if getattr(self._streaming, "open", False):  # served a stream: its slot is closed, its thread done
                     self.streams -= 1
                     return
@@ -1964,9 +1994,13 @@ class _EventText:
             return text
 
 
-def serve_until_stopped(server: ThreadingHTTPServer, feed: BoardFeed) -> None:
-    """Serve until Ctrl-C or `SIGTERM`, then tell every open stream the server is restarting and save the Board the feed
-    keeps, so the next start resumes from it."""
+#: Seconds a stopping server waits for the requests it took, under the 10 s a supervisor allows before it kills a child.
+DRAIN_S = 8.0
+
+
+def serve_until_stopped(server: StarPulseServer, feed: BoardFeed) -> None:
+    """Serve until Ctrl-C or `SIGTERM`, then tell every open stream the server is restarting, finish the requests taken
+    and save the Board the feed keeps, so the next start resumes from it."""
     # a stopped unit leaves through the save below, as Ctrl-C does
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     try:
@@ -1976,12 +2010,13 @@ def serve_until_stopped(server: ThreadingHTTPServer, feed: BoardFeed) -> None:
             pass
     finally:
         feed.announce("restarting", {"at": time.time()})  # each page says "restarting" rather than shows a failure while the process is away
+        if not server.drain(DRAIN_S):
+            logger.warning("stopping with requests still running after %.0f s", DRAIN_S)
         feed.save()
 
 
-def serve_parser() -> argparse.ArgumentParser:
-    """The `starpulse serve` command line."""
-    parser = argparse.ArgumentParser(prog="starpulse serve", description=__doc__.splitlines()[0] if __doc__ else None)
+def listen_options(parser: argparse.ArgumentParser) -> None:
+    """Add what the Page API listens on and draws, to the `serve` and `worker api` command lines."""
     parser.add_argument(
         "--host",
         default="127.0.0.1",
@@ -1994,6 +2029,12 @@ def serve_parser() -> argparse.ArgumentParser:
         default=6.0,
         help="how far back a task's latest move on a machine counts; Admin's override replaces it",
     )
+
+
+def serve_parser() -> argparse.ArgumentParser:
+    """The `starpulse serve` command line."""
+    parser = argparse.ArgumentParser(prog="starpulse serve", description=__doc__.splitlines()[0] if __doc__ else None)
+    listen_options(parser)
     parser.add_argument("--config", type=Path, help="the TOML config file; default starpulse.toml when it exists")
     parser.add_argument(
         "--hub",
@@ -2085,15 +2126,21 @@ def _keep_released(
         stop.wait(interval_s)
 
 
-def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — serve_forever process boundary
-    logging.basicConfig(level=logging.INFO)  # the GraphQL cost of each pull request read is an INFO line
-    parser = serve_parser()
-    args = parser.parse_args(argv)
-    config = _config(parser, args.config)
-    try:
-        listening = inherited_socket(os.environ)
-    except ValueError as exc:
-        parser.exit(1, f"{exc}\n")
+class Prepared(NamedTuple):
+    """What the config and the environment settle before anything starts: `serve` fails on it before it spawns a child,
+    and the Page API is built from it."""
+
+    instance_tokens: dict[str, str]
+    source_tokens: dict[str, str]
+    refresh_token: str | None
+    gate: Any
+    starts: dict[str, Callable[[str], str]]
+    reruns: dict[str, Any]
+    run_safe: list[str]
+
+
+def prepare(parser: argparse.ArgumentParser, args: argparse.Namespace, config: Config) -> Prepared:
+    """Check `config` and the environment for serving, exiting with the reason when they cannot serve."""
     try:
         instance_tokens = ingest_tokens(config.runs, os.environ)
         source_tokens = ingest_tokens(config.sources, os.environ)
@@ -2120,7 +2167,6 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
             parser.exit(1, f"{exc}\n")
     elif config.oidc is not None:
         parser.exit(1, "[oidc] gates a hub: start one with `starpulse serve --hub`, or remove the table\n")
-    base = args.config.parent if args.config else Path.cwd()
     if not (_STATIC / "index.html").is_file():
         parser.exit(1, f"{_STATIC} has no build; run `pnpm --filter @starpulse/web build` first\n")
     adapters = run_adapters(parser, config)
@@ -2134,13 +2180,42 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     run_safe = [name for name in config.qualified_run_safe() if name.partition("/")[0] in starts]
     if unstartable := sorted({t.start for t in config.triggers if t.start.partition("/")[0] not in starts}):
         parser.exit(1, f"triggers start workflows no adapter can start a run of: {', '.join(unstartable)}\n")
-    if listening is None:  # bound once the config is accepted and before the board, the history or a worker starts
-        try:
-            listening = socket.create_server((args.host, args.port), backlog=StarPulseServer.request_queue_size)
-        except OSError as exc:
-            # the errno's own text: `create_server` appends the address the line already names
-            reason = os.strerror(exc.errno) if exc.errno and exc.errno > 0 else exc.strerror
-            parser.exit(1, f"cannot listen on {args.host}:{args.port}: {reason}; pass --port to serve elsewhere\n")
+    return Prepared(instance_tokens, source_tokens, refresh_token, gate, starts, reruns, run_safe)
+
+
+def listen(parser: argparse.ArgumentParser, args: argparse.Namespace) -> socket.socket:
+    """Bind `--host` and `--port`, exiting with the reason when something holds them."""
+    try:
+        return socket.create_server((args.host, args.port), backlog=StarPulseServer.request_queue_size)
+    except OSError as exc:
+        # the errno's own text: `create_server` appends the address the line already names
+        reason = os.strerror(exc.errno) if exc.errno and exc.errno > 0 else exc.strerror
+        parser.exit(1, f"cannot listen on {args.host}:{args.port}: {reason}; pass --port to serve elsewhere\n")
+
+
+def stay_until_stopped() -> None:  # pragma: no mutate block — process boundary
+    """Block until Ctrl-C or `SIGTERM`: `serve` has no page of its own while a child serves it."""
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+    try:
+        threading.Event().wait()
+    except KeyboardInterrupt:
+        pass
+
+
+def serve_page(  # pragma: no mutate block — serve_forever process boundary
+    parser: argparse.ArgumentParser,
+    args: argparse.Namespace,
+    config: Config,
+    ready: Prepared,
+    listening: socket.socket,
+    supervisor: Supervisor | None = None,
+) -> None:
+    """Build the Page API and serve it on `listening` until stopped: in the `starpulse worker api` child, or in a hub's
+    `serve`, which supervises its other children from the same process (`supervisor`)."""
+    instance_tokens, source_tokens, refresh_token, gate, starts, reruns, run_safe = ready
+    if args.hub:
+        from starpulse._internal.hub import hub  # noqa: PLC0415 - hub-only code; `prepare` found it importable
+    base = args.config.parent if args.config else Path.cwd()
     port = listening.getsockname()[1]
     try:
         board, feed = assemble(config, base, args.hours * 3600, run_safe)
@@ -2290,15 +2365,44 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         pull_refresh=pull_refresh,
         slow_read_s=config.slow_read_seconds,
     )
+    if supervisor:
+        supervisor.start()
+    try:
+        serve_until_stopped(StarPulseServer((args.host, args.port), handler, listening), feed)
+    finally:
+        if supervisor:
+            supervisor.stop()
+
+
+def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — serve_forever process boundary
+    logging.basicConfig(level=logging.INFO)  # the GraphQL cost of each pull request read is an INFO line
+    parser = serve_parser()
+    args = parser.parse_args(argv)
+    config = _config(parser, args.config)
+    try:
+        listening = inherited_socket(os.environ)
+    except ValueError as exc:
+        parser.exit(1, f"{exc}\n")
+    os.environ.pop(LISTEN_FD_ENV, None)  # the workers started below are handed what they hold, not what this process was
+    ready = prepare(parser, args, config)
+    commands = worker_commands(config, args.config, hub=args.hub)
+    if "api" in commands:  # bound once the config is accepted and before the board, the history or a worker starts
+        listening = listening or listen(parser, args)
+        commands["api"] += ["--hours", str(args.hours)]
+    elif args.hub:
+        listening = listening or listen(parser, args)
     supervisor = Supervisor(
-        worker_commands(config, args.config, hub=args.hub),
+        commands,
+        sockets={"api": listening} if "api" in commands else {},
         read=Reader(args.config),
         control=control_file(args.config),
         limits=config.worker_memory,
     )
+    if args.hub:
+        return serve_page(parser, args, config, ready, listening, supervisor)
     supervisor.start()
     try:
-        serve_until_stopped(StarPulseServer((args.host, args.port), handler, listening), feed)
+        stay_until_stopped()
     finally:
         supervisor.stop()
 

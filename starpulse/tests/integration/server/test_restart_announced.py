@@ -53,6 +53,9 @@ class _SignalledServer:
         time.sleep(5)  # the handler leaves before this ends
         raise AssertionError("SIGTERM did not stop the server")
 
+    def drain(self, timeout: float) -> bool:
+        return True
+
 
 def test_sigterm_tells_every_open_stream_the_server_is_restarting_before_the_process_exits(tmp_path: Path) -> None:
     feed = BoardFeed(machines=MACHINES)

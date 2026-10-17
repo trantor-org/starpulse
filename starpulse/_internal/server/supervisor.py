@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 import os
 import signal
+import socket
 import subprocess
 import sys
 import threading
@@ -28,7 +29,7 @@ from typing import Any
 from starpulse._internal.config.config import Config, MemoryLimit
 from starpulse._internal.server.closure import SELF, Reading, ReloadError
 from starpulse._internal.server.control import Control
-from starpulse._internal.server.hold import SUPERVISED_ENV
+from starpulse._internal.server.hold import LISTEN_FD_ENV, SUPERVISED_ENV
 from starpulse._internal.server.rss import rss_reader
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,7 @@ _HANGUP = getattr(signal, "SIGHUP", None)
 
 #: The `starpulse worker` contexts, by the `Config` flag that says an outside runner owns them.
 WORKER_FLAGS = {
+    "api": "api_worker",
     "pulls": "delivery_worker",
     "autopilot": "autopilot_worker",
     "runs": "runs_worker",
@@ -54,6 +56,8 @@ _MB = 1024 * 1024
 
 def worker_commands(config: Config, config_path: Path | None, *, hub: bool = False) -> dict[str, list[str]]:
     """The command of each context `serve` supervises: the ones whose `*_worker` setting is false.
+
+    A hub serves its page in-process, so it gets no Page API child.
 
     Forwarding has work only with a `[forward]` table, so a config without one gets no forwarding child. A hub keeps its
     history threads in-process, so it gets no history child. Search has work only with an `embeddings_url`, and a hub keeps
@@ -78,13 +82,23 @@ def worker_commands(config: Config, config_path: Path | None, *, hub: bool = Fal
         and (context != "history" or not hub)
         and (context != "search" or (config.search.embeddings_url and not hub))
         and (context != "board" or not hub)
+        and (context != "api" or not hub)
     }
 
 
-def spawn_child(command: Sequence[str]) -> subprocess.Popen:
-    """Start a child that dies with `serve` (its stdin pipe closes) and sits outside the terminal's process group."""
+def spawn_child(command: Sequence[str], listening: socket.socket | None = None) -> subprocess.Popen:
+    """Start a child that dies with `serve` (its stdin pipe closes) and sits outside the terminal's process group.
+
+    A `listening` socket is handed to it on the same descriptor number, named by `LISTEN_FD_ENV`."""
+    env = {**os.environ, SUPERVISED_ENV: "1"}
+    if listening is not None:
+        env[LISTEN_FD_ENV] = str(listening.fileno())
     return subprocess.Popen(
-        command, stdin=subprocess.PIPE, env={**os.environ, SUPERVISED_ENV: "1"}, start_new_session=True
+        command,
+        stdin=subprocess.PIPE,
+        env=env,
+        start_new_session=True,
+        pass_fds=() if listening is None else (listening.fileno(),),
     )
 
 
@@ -109,7 +123,8 @@ class Supervisor:
         self,
         commands: Mapping[str, Sequence[str]],
         *,
-        spawn: Callable[[Sequence[str]], Any] = spawn_child,
+        spawn: Callable[..., Any] = spawn_child,
+        sockets: Mapping[str, socket.socket] | None = None,
         first_delay: float = 1.0,
         longest_delay: float = 60.0,
         stable_after: float = 60.0,
@@ -124,6 +139,7 @@ class Supervisor:
     ) -> None:
         self._children = {name: _Child(command) for name, command in commands.items()}
         self._spawn = spawn
+        self._sockets = dict(sockets or {})
         self._first_delay = first_delay
         self._longest_delay = longest_delay
         self._stable_after = stable_after
@@ -168,7 +184,8 @@ class Supervisor:
                     self._check_memory(name, child, now)
 
     def _launch(self, name: str, child: _Child, now: float) -> None:
-        child.proc = self._spawn(child.command)
+        listening = self._sockets.get(name)
+        child.proc = self._spawn(child.command) if listening is None else self._spawn(child.command, listening)
         child.started = child.sampled = now
         logger.info("worker %s started as pid %s", name, child.proc.pid)
 
@@ -272,9 +289,14 @@ class Supervisor:
         return "replaced"
 
     def reexec(self) -> None:
-        """Replace this process with a new one running the same command, after `reload` reported "re-executed"."""
+        """Replace this process with a new one running the same command, after `reload` reported "re-executed".
+
+        The new image adopts the socket it holds (`LISTEN_FD_ENV`), so a connection made meanwhile queues in its backlog."""
         if self._control:
             self._control.stop()
+        for listening in self._sockets.values():  # only the Page API's: one descriptor to name
+            listening.set_inheritable(True)
+            os.environ[LISTEN_FD_ENV] = str(listening.fileno())
         self._execute()
 
     def _end(self, running: list[Any]) -> None:

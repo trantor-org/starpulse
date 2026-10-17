@@ -3,6 +3,7 @@
 import itertools
 import logging
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -13,7 +14,8 @@ import starpulse._internal.server.rss as rss_module
 import starpulse._internal.server.supervisor as supervisor_module
 from starpulse._internal.config.config import Forward, MemoryLimit, load
 from starpulse._internal.config.search import Search
-from starpulse._internal.server.supervisor import Supervisor, worker_commands
+from starpulse._internal.server.hold import LISTEN_FD_ENV
+from starpulse._internal.server.supervisor import Supervisor, spawn_child, worker_commands
 
 STEP = 0.25
 SLEEP = [sys.executable, "-c", "import time; time.sleep(60)"]
@@ -59,7 +61,7 @@ def _wait_for(check, timeout: float = 10.0):
 def test_a_context_whose_worker_setting_is_false_gets_a_child_command_and_a_true_one_gets_none() -> None:
     every = worker_commands(load(None), None)
     only_autopilot = worker_commands(
-        replace(load(None), delivery_worker=True, runs_worker=True, history_worker=True, board_worker=True), Path("/etc/starpulse.toml")
+        replace(load(None), delivery_worker=True, runs_worker=True, history_worker=True, board_worker=True, api_worker=True), Path("/etc/starpulse.toml")
     )
     neither = worker_commands(
         replace(
@@ -70,6 +72,7 @@ def test_a_context_whose_worker_setting_is_false_gets_a_child_command_and_a_true
             forwarding_worker=True,
             history_worker=True,
             board_worker=True,
+            api_worker=True,
         ),
         None,
     )
@@ -77,7 +80,7 @@ def test_a_context_whose_worker_setting_is_false_gets_a_child_command_and_a_true
     assert every["pulls"] == [sys.executable, "-m", "starpulse", "worker", "pulls"]
     assert every["runs"] == [sys.executable, "-m", "starpulse", "worker", "runs"]
     assert every["history"] == [sys.executable, "-m", "starpulse", "worker", "history"]
-    assert set(every) == {"pulls", "autopilot", "runs", "history", "board"}  # forwarding has no child without a [forward] table
+    assert set(every) == {"api", "pulls", "autopilot", "runs", "history", "board"}  # forwarding has no child without a [forward] table
     assert only_autopilot == {
         "autopilot": [sys.executable, "-m", "starpulse", "worker", "autopilot", "--config", "/etc/starpulse.toml"]
     }
@@ -295,3 +298,72 @@ def test_the_worker_parser_takes_the_local_board_flag() -> None:
 
     assert worker_parser().parse_args(["runs", "--local-board"]).local_board is True
     assert worker_parser().parse_args(["runs"]).local_board is False
+
+
+def test_the_api_child_runs_for_a_false_setting_and_never_beside_a_hub() -> None:
+    config = Path("/etc/starpulse.toml")
+
+    assert worker_commands(load(None), config)["api"] == [
+        sys.executable, "-m", "starpulse", "worker", "api", "--config", str(config)
+    ]
+    assert "api" not in worker_commands(replace(load(None), api_worker=True), None)
+    assert "api" not in worker_commands(load(None), None, hub=True)  # a hub serves its page in-process
+
+
+def test_a_child_is_handed_the_listening_socket_on_the_descriptor_its_environment_names(tmp_path: Path) -> None:
+    seen = tmp_path / "port"
+    adopt = (
+        "import os, socket, sys; s = socket.socket(fileno=int(os.environ['" + LISTEN_FD_ENV + "'])); "
+        "open(sys.argv[1], 'w').write(str(s.getsockname()[1]))"
+    )
+    with socket.create_server(("127.0.0.1", 0)) as listening:
+        child = spawn_child([sys.executable, "-c", adopt, str(seen)], listening)
+        assert child.wait(20) == 0
+        assert seen.read_text() == str(listening.getsockname()[1])
+
+
+def test_a_child_started_without_a_socket_is_told_of_none(tmp_path: Path) -> None:
+    seen = tmp_path / "env"
+    child = spawn_child([sys.executable, "-c", "import os, sys; open(sys.argv[1], 'w').write(os.environ.get('" + LISTEN_FD_ENV + "', 'none'))", str(seen)])
+    assert child.wait(20) == 0
+    assert seen.read_text() == "none"
+
+
+class Handed:
+    """A stand-in `Popen` that stays running and records the socket it was started with."""
+
+    made: list[Handed] = []
+
+    def __init__(self, command: list[str], listening: socket.socket | None = None) -> None:
+        self.command = command
+        self.listening = listening
+        self.pid = 3000 + len(self.made)
+        self.ended = False
+        self.made.append(self)
+
+    def poll(self) -> int | None:
+        return 0 if self.ended else None
+
+    def terminate(self) -> None:
+        self.ended = True
+
+    def kill(self) -> None:
+        self.ended = True
+
+    def wait(self, timeout: float | None = None) -> int:
+        return 0
+
+
+def test_the_supervisor_hands_its_socket_to_the_named_child_each_time_it_starts_it() -> None:
+    Handed.made = []
+    with socket.create_server(("127.0.0.1", 0)) as listening:
+        supervisor = Supervisor({"api": SLEEP, "pulls": SLEEP}, spawn=Handed, sockets={"api": listening})
+        supervisor.tick(0.0)
+        Handed.made[0].ended = True  # the api child dies; the next tick starts its replacement
+        supervisor.tick(5.0)  # notes the exit; the restart waits out its delay
+        supervisor.tick(10.0)
+
+    handed = [child.listening for child in Handed.made]
+    assert len(Handed.made) == 3
+    assert handed.count(None) == 1  # pulls never holds the page's socket
+    assert handed.count(listening) == 2

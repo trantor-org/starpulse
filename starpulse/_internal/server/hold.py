@@ -14,6 +14,10 @@ from collections.abc import Callable
 #: Set in a supervised child's environment: its stdin is a pipe from `serve`.
 SUPERVISED_ENV = "STARPULSE_SUPERVISED"
 
+#: Set to a descriptor number when the process was handed the page's listening socket on it: by `serve` to the Page API
+#: child, and by a `serve` that re-executes itself to its next image.
+LISTEN_FD_ENV = "STARPULSE_LISTEN_FD"
+
 
 def hold(stop: threading.Event, reload: Callable[[], None]) -> None:  # pragma: no mutate block — process boundary
     """Block until `SIGTERM`, running `reload` for each `SIGHUP`, one at a time."""
