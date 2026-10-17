@@ -193,7 +193,7 @@ def test_a_push_to_main_runs_no_test_job(name):
 
 def test_every_ci_job_but_dispatch_is_a_test_job():
     jobs = yaml.safe_load((WORKFLOWS / "ci.yml").read_text())["jobs"]
-    assert sorted(jobs) == sorted([*TEST_JOBS, "dispatch"])
+    assert sorted(jobs) == sorted([*TEST_JOBS, "macos-fresh-serve", "dispatch"])
 
 
 def test_the_free_threaded_suite_runs_beside_the_shards_and_is_no_required_check():
@@ -570,3 +570,10 @@ def test_merged_pull_request_dispatch_still_sends_a_current_base_its_head_checks
 def test_merged_pull_request_dispatch_needs_every_required_check_passed_by_the_app(tmp_path, checks):
     tested = run_tree_check(tmp_path, parent="b" * 40, base="b" * 40, head_checks=checks, merge_checks=check_runs())
     assert tested == ""
+
+
+def test_ci_runs_the_fresh_install_smoke_on_a_hosted_macos_runner():
+    """The Linux smoke is trantor's nightly DAG; macOS has no fleet runner, so a hosted one proves the supervisor, resident-size reader and socket handoff there."""
+    smoke = job("ci.yml", "macos-fresh-serve")
+    assert smoke["runs-on"] == "macos-latest"
+    assert any("ci/fresh_serve.py" in step.get("run", "") for step in smoke["steps"])

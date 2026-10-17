@@ -5,7 +5,8 @@ Usage: fresh_serve.py VENV_PYTHON [DEADLINE_SECONDS]
 The interpreter is the one of a virtualenv that holds only the installed wheel. `serve` starts in an empty directory with
 no `starpulse.toml` and a bare environment, so nothing of the checkout is on its path. It must answer HTTP 200 on `/`
 and hold one live `starpulse worker <context>` child for every context `worker_commands` starts for the default config,
-on two checks a moment apart with the same processes, so a child that restarts in a loop fails. Linux only: the children are read from /proc.
+on two checks a moment apart with the same processes, so a child that restarts in a loop fails. The children are read from
+`ps`, so it runs on Linux and macOS.
 """
 
 from __future__ import annotations
@@ -19,7 +20,6 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
-from pathlib import Path
 
 DEADLINE = 60.0
 SETTLE = 5.0
@@ -28,14 +28,11 @@ SETTLE = 5.0
 def live_children(parent: int) -> dict[str, int]:
     """The pid of each live `starpulse worker <context>` child of `parent`, by context."""
     found = {}
-    for entry in Path("/proc").glob("[0-9]*"):
-        try:
-            status = dict(line.split(":\t", 1) for line in (entry / "status").read_text().splitlines() if ":\t" in line)
-            argv = (entry / "cmdline").read_bytes().decode().split("\0")
-        except OSError, ValueError:
-            continue
-        if int(status["PPid"]) == parent and not status["State"].startswith("Z") and "worker" in argv[:-1]:
-            found[argv[argv.index("worker") + 1]] = int(entry.name)
+    table = subprocess.run(["ps", "-axo", "pid=,ppid=,stat=,command="], capture_output=True, text=True, check=True)
+    for row in table.stdout.splitlines():
+        pid, ppid, state, *argv = row.split()
+        if int(ppid) == parent and not state.startswith("Z") and "worker" in argv[:-1]:
+            found[argv[argv.index("worker") + 1]] = int(pid)
     return found
 
 
