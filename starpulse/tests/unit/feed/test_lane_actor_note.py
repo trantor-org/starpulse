@@ -14,6 +14,7 @@ from starpulse._internal.eventlog import lane_events
 from starpulse._internal.eventlog.event_log import EventLog, Tail
 from starpulse._internal.eventlog.history import HistoryStore
 from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.pulls import delivery
 from starpulse.contracts import BoardTask
 from starpulse.tests.machines import MACHINES
 
@@ -177,3 +178,21 @@ def test_the_starts_lane_reconcile_running_while_a_change_is_placed_leaves_the_c
     entries = [e for e in Tail(log, lane_events.STREAM).poll() if e.fields["lane"] == "in_progress"]
 
     assert [(e.fields.get("actor"), e.fields.get("session")) for e in entries] == [("agent", "s1")]
+
+
+def test_an_actor_note_the_follower_has_not_read_yet_still_names_the_move_it_precedes(tmp_path: Path) -> None:
+    """TASK-6045 entered Ready at 10:54:48 on 2026-10-17 in a bare entry 0.31 s after the Delivery worker logged the
+    task actor's note: the watch placed the actor's file before the follower's next poll read the note."""
+    log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
+    feed = BoardFeed(machines=MACHINES)
+    feed.record_lanes(HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", MACHINES), log)
+    feed.put(_task("waiting", "t", 100.0))
+    stalled = threading.Event()
+    stalled.set()  # the follower never polls on its own: only the move can read the note
+    delivery.follow_notes(log, feed, stalled)
+    delivery.NotingFeed(BoardFeed(machines=MACHINES), log).note_actor("T-1", "starpulse/task-actor")
+    feed.put(_task("ready", "t", 110.0))
+
+    entries = [e for e in Tail(log, lane_events.STREAM).poll() if e.fields["lane"] == "ready"]
+
+    assert [e.fields.get("actor") for e in entries] == ["starpulse/task-actor"]

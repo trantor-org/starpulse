@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from pathlib import Path
 
 import pytest
@@ -85,3 +86,25 @@ def test_a_lane_entry_is_appended_only_when_the_history_wrote_a_row(tmp_path: Pa
     assert entry.event_id.startswith("T-2@review@")
     assert entry.fields["labels"] == ["kind-execute"] and entry.fields["milestone"] == "m-1"
     assert "title" not in entry.fields
+
+
+def test_every_lane_entry_appended_from_now_on_without_an_actor_is_counted(tmp_path: Path) -> None:
+    """The counter reads the stream, so a move any writer leaves unnamed counts: the live `put`, the reconcile."""
+    log = EventLog(f"sqlite:///{tmp_path / 'ic.sqlite'}")
+    task = BoardTask(id="T-1", team="demo", title="t", lane="ready")
+    lane_events.append(log, "T-0@ready@1.0", "T-0", "ready", 1.0)  # before the count began
+    stop = threading.Event()
+    unattributed = lane_events.Unattributed()
+    unattributed.follow(log, stop)
+
+    lane_events.publish(log, "T-1@ready@2.0", task, 2.0)
+    lane_events.publish(log, "T-1@done@3.0", task, 3.0, "starpulse/task-actor")
+    lane_events.append(log, "T-2@review@4.0", "T-2", "review", 4.0)
+    log.append("pulls:notes", {"task": "T-3", "actor": None})  # another stream
+
+    done = threading.Event()
+    while unattributed.count() < 2 and not done.wait(0.05):
+        pass
+    stop.set()
+    assert unattributed.count() == 2
+    assert "starpulse_board_lane_unattributed_total 2\n" in unattributed.exposition()
