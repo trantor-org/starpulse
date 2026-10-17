@@ -151,7 +151,7 @@ def refresh_repository(
 
     `linked` are the numbers open tasks cite: one the store lacks, or holds without its `detail`, is read even when
     the listings do not reach it, as an old merged PR is not."""
-    saved = {record["number"]: record for record in store.find(repo=repo, detailed=True)}
+    saved = {record["number"]: record for record in store.find(repo=repo, detailed=True, held_only=True)}
     cursor = max((record["updatedAt"] for record in saved.values()), default=None)
     # a merged row saved before the store read the merge commit is read again until it has one, a few per refresh
     backfill = sorted(
@@ -214,11 +214,15 @@ def listing_drifted(
     if answer["open"]["pageInfo"]["hasNextPage"]:
         logger.warning("pull requests: %s has more than %d open PRs; the rest are not listed", repo, _PAGE)
     listed_open = {item["number"] for item in answer["open"]["nodes"] if item["state"] == "OPEN"}
-    saved = {record["number"]: record for record in store.find(repo=repo, detailed=True)}
+    saved = {record["number"]: record for record in store.find(repo=repo, detailed=True, held_only=True)}
     held_open = {number for number, record in saved.items() if record["state"] == "OPEN"}
     if listed_open != held_open:
         return True
-    return any(number not in saved or not saved[number].get("detail") for number in linked)
+    return any(
+        not any(record["detail"] for record in store.find(repo=repo, number=number, detailed=True))
+        for number in linked
+        if not saved.get(number, {}).get("detail")
+    )
 
 
 def drift_counter() -> str:
