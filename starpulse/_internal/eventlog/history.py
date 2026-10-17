@@ -36,6 +36,7 @@ from sqlalchemy import (
     delete,
     func,
     insert,
+    or_,
     select,
     update,
 )
@@ -111,6 +112,7 @@ _machine_events = Table(
     Column("actor", String),
     Column("occurred_at", Float, nullable=False),
     Index("ix_starpulse_machine_events_task", "task", "machine", "occurred_at"),
+    Index("ix_starpulse_machine_events_run", "run", "machine", "occurred_at"),
 )
 _lane_changes = Table(
     "starpulse_lane_changes",
@@ -783,11 +785,13 @@ class HistoryStore:
         return lane_changes([tuple(row) for row in rows])
 
     def machine_path(self, task: str, flow: str) -> tuple[list[dict], int]:
-        """The task's events on `flow` as `{at, event, state}` in order, and their count."""
+        """The events of the task, or of the run with that id, on `flow` as `{at, event, state}` in order, and their count."""
         c = _machine_events.c
         with self.engine.connect() as db:
             rows = db.execute(
-                select(c.occurred_at, c.event).where(c.task == task, c.machine == flow).order_by(*_STEP_ORDER)
+                select(c.occurred_at, c.event)
+                .where(or_(c.task == task, c.run == task), c.machine == flow)
+                .order_by(*_STEP_ORDER)
             ).all()
         return machine_steps(self._machines[flow], [tuple(row) for row in rows])
 

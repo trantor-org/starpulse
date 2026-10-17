@@ -929,6 +929,17 @@ class BoardFeed:
         with self._lock:
             return list(self._machines.get(flow, {}).values())
 
+    @property
+    def window_s(self) -> float | None:
+        """The seconds back a machine's task counts, or None for no limit."""
+        with self._lock:
+            return self._window_s
+
+    def forget(self, flow: str, task_id: str) -> None:
+        """Drop a task a machine placed, quietly: a snapshot already leaves out one past the window."""
+        with self._lock:
+            self._machines[flow].pop(task_id, None)
+
     def machine_task(self, flow: str, task_id: str) -> dict | None:
         """The task as `flow`'s machine last placed it, or None when it has not been placed there."""
         with self._lock:

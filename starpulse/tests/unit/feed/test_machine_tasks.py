@@ -2,6 +2,7 @@
 
 import itertools
 import json
+import re
 import threading
 import time
 from pathlib import Path
@@ -9,7 +10,7 @@ from typing import Literal
 
 import pytest
 
-from starpulse.contracts.adapters import BoardTask
+from starpulse.contracts.adapters import BoardTask, TaskKeys
 from starpulse._internal.machines.transitions import Table
 from starpulse._internal.feed.board_feed import BoardFeed, follow
 from starpulse._internal.ci.ci import CI_MACHINES
@@ -162,12 +163,11 @@ def test_a_loop_the_state_allows_counts_as_a_step_and_a_delta_without_moving_the
         _entry("board", "READY"),
         _entry("pull-request", "PUSHED"),
         _entry("in-progress", "NOT_AN_EVENT"),
-        _entry("in-progress", "WORKTREE_READY", task=None, run="s-1"),
         ("1-0", {"machine": "in-progress", "event": "WORKTREE_READY", "task": "PROJ-7", "time": "soon"}),
         ("1-0", {"machine": "in-progress", "task": "PROJ-7", "time": "1"}),
         ("1-0", {}),
     ],
-    ids=["board", "machine-the-view-lacks", "event-the-machine-lacks", "run-keyed", "bad-time", "no-event", "empty"],
+    ids=["board", "machine-the-view-lacks", "event-the-machine-lacks", "bad-time", "no-event", "empty"],
 )
 def test_an_entry_that_is_no_task_event_of_a_drawn_machine_is_dropped(entry: tuple) -> None:
     feed, tasks = _feed()
@@ -186,6 +186,45 @@ def test_a_task_whose_latest_move_is_older_than_the_window_is_left_out_of_a_snap
     tasks.handle_entry(*_entry("in-progress", "WORKTREE_READY", task="PROJ-2", at=now - 60))
 
     assert [a["id"] for a in _agents(feed, "in-progress")] == ["PROJ-2"]
+
+
+def test_a_run_keyed_event_places_the_run_on_its_machine_with_its_trail_whatever_the_key_scheme() -> None:
+    feed = BoardFeed(3600, machines=MACHINES)
+    tasks = MachineTasks(feed, keys=TaskKeys(re.compile(r"PROJ-\d+"), re.compile(r"(\d+)")))
+    now = time.time()
+    tasks.handle_entry(*_entry("in-progress", "WORKTREE_READY", task=None, run="r-1", at=now - 5))
+    tasks.handle_entry(*_entry("in-progress", "AC_CHECKPOINTED", task=None, run="r-1", at=now - 1))
+
+    (agent,) = _agents(feed, "in-progress")
+
+    assert (agent["id"], agent["state"], agent["steps"], [t["event"] for t in agent["trail"]]) == (
+        "r-1",
+        "checkpointed",
+        2,
+        ["WORKTREE_READY", "AC_CHECKPOINTED"],
+    )
+
+
+def test_a_run_keyed_event_older_than_the_window_is_not_placed() -> None:
+    feed, tasks = _feed(window_s=3600)
+    tasks.handle_entry(*_entry("in-progress", "WORKTREE_READY", task=None, run="r-old", at=time.time() - 7200))
+
+    assert feed.machine_task("in-progress", "r-old") is None
+
+
+def test_a_run_idle_past_the_window_is_forgotten_when_a_later_run_is_placed_but_a_task_is_kept() -> None:
+    feed, tasks = _feed(window_s=3600)
+    now = time.time()
+    tasks.handle_entry(*_entry("in-progress", "WORKTREE_READY", task=None, run="r-1", at=now - 3000))
+    tasks.handle_entry(*_entry("in-progress", "WORKTREE_READY", task="PROJ-1", at=now - 3000))
+    feed.set_window(1000)
+    tasks.handle_entry(*_entry("in-progress", "WORKTREE_READY", task=None, run="r-2", at=now))
+
+    assert (feed.machine_task("in-progress", "r-1"), feed.machine_task("in-progress", "PROJ-1") is not None) == (
+        None,
+        True,
+    )
+    assert feed.machine_task("in-progress", "r-2") is not None
 
 
 def test_tasks_fed_from_the_event_log_replay_its_retained_machine_events_then_follow_new_ones_and_turn_ready(

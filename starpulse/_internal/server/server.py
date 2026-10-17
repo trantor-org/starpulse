@@ -94,7 +94,7 @@ GET /api/done[?before=T][&limit=N]
 GET /api/history?task=TASK-N[&flow=NAME]
                    {task, path}: the task's Board lane changes as [{at, from, to}], oldest first (`at`
                    epoch seconds). With `flow`, {task, flow, path, steps}: its events on that lifecycle
-                   machine as [{at, event, state}] in order, `steps` their count. A task never seen has an empty path; no `task` is 400
+                   machine as [{at, event, state}] in order, `steps` their count; with `flow`, `task` may be a run id. A task never seen has an empty path; no `task` is 400
                    and an unknown `flow` 404. The machine events are copied from their stream as they
                    arrive into the history database (`database_url`, else starpulse-history.sqlite beside
                    the config), so the path outlives the stream's trim, unless the board adapter keeps

@@ -190,7 +190,7 @@ def test_a_pool_is_a_name_with_its_capacity_and_load() -> None:
         Pool.model_validate({"name": "deliver", "cap": 32, "running": -1, "queued": 0})
 
 
-def test_a_machine_event_an_adapter_wrote_places_its_task_without_a_stream_entry() -> None:
+def test_a_machine_event_an_adapter_wrote_places_its_task_or_run_without_a_stream_entry() -> None:
     feed = BoardFeed(machines=MACHINES)
     tasks = MachineTasks(feed, keys=PROJ)
 
@@ -199,7 +199,8 @@ def test_a_machine_event_an_adapter_wrote_places_its_task_without_a_stream_entry
     tasks.put(MachineEvent(machine="in-progress", event="WORKTREE_READY", task="OPS-5", time=102.0))
 
     assert [(a["id"], a["state"], a["active"]) for a in _agents(feed, "in-progress")] == [
-        ("PROJ-5", "worktree_ready", 100.0)
+        ("PROJ-5", "worktree_ready", 100.0),
+        ("r1", "worktree_ready", 101.0),
     ]
 
 

@@ -160,6 +160,9 @@ def base(tmp_path: Path) -> Iterator[str]:
             f"m{i}-0",
             {"event_id": f"m{i}", "machine": "in-progress", "event": event, "task": "PROJ-1", "time": 100.0 + i},
         )
+    store.record_machine(
+        "r0-0", {"event_id": "r0", "machine": "in-progress", "event": "WORKTREE_READY", "run": "run-9", "time": 300.0}
+    )
     for i, lane in enumerate(("to_do", "ready")):
         store.record_lane(f"l{i}", "PROJ-1", lane, 200.0 + i)
     with _serve(tmp_path, feed, history=store) as server:
@@ -1321,6 +1324,18 @@ def test_task_trace_with_a_flow_is_the_machine_path(base: str, capsys: pytest.Ca
             {"at": 101.0, "event": "RED_PROVEN", "state": "red_proven"},
         ],
         "steps": 2,
+    }
+
+
+def test_task_trace_with_a_flow_takes_a_run_id(base: str, capsys: pytest.CaptureFixture[str]) -> None:
+    code, doc = _run(capsys, ["task", "trace", "run-9", "--flow", "in-progress", "--server", base])
+
+    assert code == 0
+    assert doc == {
+        "task": "run-9",
+        "flow": "in-progress",
+        "path": [{"at": 300.0, "event": "WORKTREE_READY", "state": "worktree_ready"}],
+        "steps": 1,
     }
 
 
