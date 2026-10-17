@@ -65,7 +65,7 @@ export interface Sky {
   milestoneDone: Record<string, number>;
   /** Each distinct set of Board-column verdicts an agent's `move_set` names. */
   moveSets: Record<string, Record<string, Verdict>>;
-  /** Each Ledger event's rows, newest first; empty when the server sent none. */
+  /** The rows of each Ledger the page has open, newest first; an event is absent until its stream's first page arrives, and holds none when its Ledger is empty. */
   ledgers: Record<string, LedgerRow[]>;
   /** The merge Ledger's 24-hour strip; null when the server sent none. */
   mergeStrip: MergeStrip | null;
@@ -167,7 +167,7 @@ export function merge(snap: Snapshot, since = midnight()): Sky {
     settled: snap.settled,
     milestoneDone: snap.milestone_done ?? {},
     moveSets: snap.move_sets ?? {},
-    ledgers: snap.ledgers ?? {},
+    ledgers: {},
     mergeStrip: snap.mergeStrip ?? null,
     mergePins: snap.mergePins ?? [],
     machinePage: snap.machinePage ?? null,
@@ -178,9 +178,9 @@ export function merge(snap: Snapshot, since = midnight()): Sky {
   };
 }
 
-/** `sky` with the Ledger fields `snap` now carries; a Ledger delta changes nothing else, so every other part is the object `sky` held. */
+/** `sky` with the Ledger fields `snap` now carries; a Ledger delta changes nothing else, so every other part is the object `sky` held (the rows of an open Ledger come by its own stream). */
 export function withLedgers(sky: Sky, snap: Snapshot): Sky {
-  return { ...sky, ledgers: snap.ledgers ?? {}, mergeStrip: snap.mergeStrip ?? null, mergePins: snap.mergePins ?? [] };
+  return { ...sky, mergeStrip: snap.mergeStrip ?? null, mergePins: snap.mergePins ?? [] };
 }
 
 /** Whether `a` has left the page: it entered a terminal Board state before the local midnight of the sky's day. A task the server gave no time for stays. */

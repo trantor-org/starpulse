@@ -30,7 +30,6 @@ from starpulse.tests.unit.feed.test_board_feed import _paged_feed
 #: Every GET route the server answers with JSON, as the page asks for it; `/api/events` is a stream, tested apart.
 ROUTES = (
     "/api/snapshot",
-    "/api/merges",
     "/api/machines",
     "/api/history?task=T-1",
     "/api/history?task=T-1&flow=in-progress",
@@ -89,7 +88,8 @@ def server(tmp_path: Path) -> Iterator[ThreadingHTTPServer]:
 
 def _model(route: str) -> object | None:
     path = route.partition("?")[0]
-    return RESPONSES.get("/api/task/" if path.startswith("/api/task/") else path)
+    prefix = next((p for p in ("/api/task/", "/api/ledger/") if path.startswith(p)), path)
+    return RESPONSES.get(prefix)
 
 
 def _validate(server: ThreadingHTTPServer, route: str) -> None:
@@ -124,7 +124,7 @@ def test_api_contract_a_telemetry_window_longer_than_the_history_validates_again
     TypeAdapter(BODIES[kind]).validate_python(body)
 
 
-@pytest.mark.parametrize("route", ["/api/snapshot", "/api/merges"])
+@pytest.mark.parametrize("route", ["/api/snapshot", "/api/ledger/MERGED"])
 def test_api_contract_a_merge_ledger_with_runs_failures_and_pins_validates_against_its_model(
     tmp_path: Path, route: str
 ) -> None:

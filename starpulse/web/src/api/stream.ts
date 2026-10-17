@@ -18,26 +18,17 @@ const EVENTS = "/api/events?snapshot=ref";
 const OPEN = 1;
 const CLOSED = 2;
 
-/** One event's rows with `changed` replacing the same keys or joining by time (newest first), and the `gone` keys dropped; every other row stays as it was. */
-function foldRows(rows: LedgerRow[], changed: LedgerRow[], gone: string[]): LedgerRow[] {
+/** One event's rows with `changed` replacing the same keys or joining by time (newest first); every other row stays as it was. */
+export function foldRows(rows: LedgerRow[], changed: LedgerRow[]): LedgerRow[] {
   const replaced = new Map(changed.map((row) => [row.key, row]));
-  const left = new Set(gone);
   const held = new Set(rows.map((row) => row.key));
-  const kept = rows.filter((row) => !left.has(row.key)).map((row) => replaced.get(row.key) ?? row);
+  const kept = rows.map((row) => replaced.get(row.key) ?? row);
   const added = changed.filter((row) => !held.has(row.key));
   return added.length ? [...kept, ...added].sort((x, y) => y.at - x.at) : kept;
 }
 
-/** The ledgers with a delta's changed rows and gone keys folded in; an event the delta does not name keeps its array. */
-function foldLedgers(ledgers: Snapshot["ledgers"], delta: { ledgers: Record<string, LedgerRow[]>; gone: Record<string, string[]> }) {
-  const next = { ...ledgers };
-  for (const event of new Set([...Object.keys(delta.ledgers), ...Object.keys(delta.gone)]))
-    next[event] = foldRows(ledgers?.[event] ?? [], delta.ledgers[event] ?? [], delta.gone[event] ?? []);
-  return next;
-}
-
 /** The milestone a settled task counts toward in `milestone_done`: the one it completed in, if any. */
-const completedIn = (entry: Settled | null | undefined) => (entry?.state === "completed" && entry.milestone ? entry.milestone : null);
+const completedIn =(entry: Settled | null | undefined) => (entry?.state === "completed" && entry.milestone ? entry.milestone : null);
 
 /** `done` with a task's settling `was` taken back and `now` counted; `done` itself when neither counts. */
 function recount(done: Snapshot["milestone_done"], was: Settled | undefined, now: Settled | null): Snapshot["milestone_done"] {
@@ -51,10 +42,10 @@ function recount(done: Snapshot["milestone_done"], was: Settled | undefined, now
 
 /** `snap` with one delta folded in; `snap` itself is left as it was. */
 export function applyDelta(snap: Snapshot, delta: Delta): Snapshot {
-  // a dags or pulls delta carries the whole of what it replaces, a ledgers delta only the rows that changed or left; whatever a delta leaves as it was keeps its old reference, so the page's work follows what changed
+  // a dags, pulls or ledgers delta carries the whole of what it replaces (a ledgers delta the strip and pins, never rows); whatever a delta leaves as it was keeps its old reference, so the page's work follows what changed
   if (delta.kind === "dags") return { ...snap, dags: keep(snap.dags, delta.dags, (d) => d.name), pools: delta.pools ? keep(snap.pools, delta.pools, (p) => p.name) : snap.pools, error: delta.error };
   if (delta.kind === "pulls") return { ...snap, pulls: keep(snap.pulls, delta.pulls) };
-  if (delta.kind === "ledgers") return { ...snap, ledgers: foldLedgers(snap.ledgers, delta), mergeStrip: keep(snap.mergeStrip, delta.mergeStrip), mergePins: keep(snap.mergePins, delta.mergePins) };
+  if (delta.kind === "ledgers") return { ...snap, mergeStrip: keep(snap.mergeStrip, delta.mergeStrip), mergePins: keep(snap.mergePins, delta.mergePins) };
   if (delta.kind === "claim") return { ...snap, claims: { ...snap.claims, [delta.task]: { reason: delta.reason, at: delta.at } } };
   if (delta.kind === "move") {
     const flows = snap.flows.map((flow) => {

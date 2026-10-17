@@ -700,11 +700,14 @@ step, and the step it is in.
 
 - `MERGED` occurrences are merged pull requests, which carry their tasks, from the last day. Any other event's are tasks
   entering the lane the event reaches within the last day.
-- The snapshot's `ledgers.MERGED` holds only the newest 20 merges (a page); `GET /api/merges?before=<at>&limit=20` returns
-  the next older page as `{merges, more}`, `before` being the `at` of the last row held. Rows sharing the boundary second
-  come together, so a page can run past `limit` and walking it neither repeats nor skips a merge; none is older than 24
-  hours. `mergeStrip` (snapshot, and with `ledgers` in the `ledgers` event; null with no workflow tied to `MERGED`)
-  counts the whole day without the rows: `{since, bucket, buckets}`, 96 buckets of 900 seconds from `since`, each
+- The snapshot holds no Ledger row. A page opening a Ledger reads `GET /api/ledger/<event>/events`: SSE whose first event,
+  `page`, is `{rows, more}` (the newest 20 rows, and whether older ones remain) and whose later `rows` events are
+  `{rows}`, the rows of that event that are new or differ, so a Ledger no page has open costs no frame. The page asks
+  `GET /api/ledger/<event>?before=<at>&limit=20` for each older page as `{rows, more}`, `before` being the `at` of the last
+  row held. Rows sharing the boundary second come together, so a page can run past `limit` and walking it neither repeats
+  nor skips a row; none is older than 24 hours; an event no workflow is tied to is 404. `mergeStrip` (snapshot, and in the
+  `ledgers` event, which carries nothing else; null with no workflow tied to `MERGED`) counts the whole day without the
+  rows: `{since, bucket, buckets}`, 96 buckets of 900 seconds from `since`, each
   `{merges, failed, reruns}`: merges landed, those holding a failed run, and forced reruns started (a run whose
   `[runs.commit]` `force` parameter is set and not `0` or `false`). `mergePins` (same two carriers) lists the pinned
   merges of the last day that the newest page leaves out, so a failure waiting on its cue is never paged out of sight.

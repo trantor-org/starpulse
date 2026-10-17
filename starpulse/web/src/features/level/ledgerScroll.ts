@@ -3,7 +3,7 @@
 // the state and returns the next, in the world units the scene laid the viewport out in, and knows nothing of the canvas, the network or the clock.
 import type { LedgerRow } from "../../api";
 
-/** Merges the server sends at a time: the snapshot's head, and each page `/api/merges` answers. */
+/** Rows the server sends at a time: a Ledger's head when it opens, and each page `/api/ledger/<event>` answers. */
 export const PAGE = 20;
 /** Seconds before a failed page is asked for again while the footer is still in view. */
 const RETRY_S = 5;

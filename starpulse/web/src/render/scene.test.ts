@@ -121,9 +121,9 @@ const boardSky = ({ writes = {}, cues = [], launches = [], free = {}, ledgers, m
     ],
     dags: [...tied, ...loose].map((n) => dag(n, [["run", []]])),
     domains: [{ name: "Board", dags: tied.map((name) => ({ name, runSafe: false })) }, ...Object.entries(free).map(([name, dags]) => ({ name, dags: dags.map((d) => ({ name: d, runSafe: false })) }))],
-    cues, ledgers, mergePins, settled: {}, error: null, now: 1000,
+    cues, mergePins, settled: {}, error: null, now: 1000,
   };
-  const S = merge(snap), moves = new Moves();
+  const S = { ...merge(snap), ledgers: ledgers ?? {} }, moves = new Moves();
   moves.observe(S, 1000);
   return { S, moves, W: 1920, H: 1080, T: 1000 };
 };
@@ -1693,6 +1693,20 @@ describe("a fold's level", () => {
       expect(scene.stars.beta.glyph.h).toBeCloseTo(104 * u);
       expect(scene.stars.beta.glyph.h * cell.ms).toBeCloseTo(43 * u);
       expect(g.rh).toBeCloseTo(43 * u + 2 * g.nr + 12 * u);
+    });
+
+    it("is loading, with no grid, until the stream's first page arrives, and not once an empty page has", () => {
+      const sky = (ledgers: Record<string, LedgerRow[]>) => boardSky({ writes: { alpha: ["MERGED"] }, cues: cues.filter((c) => c.event === "MERGED"), ledgers });
+      const led = (ledgers: Record<string, LedgerRow[]>) => build(sky(ledgers), fold(["review", "done"], "MERGED")).fold!.ledger!;
+
+      expect([led({}).loading, led({}).grid]).toEqual([true, undefined]);
+      expect([led({ MERGED: [] }).loading, led({ MERGED: rows }).loading]).toEqual([false, false]);
+    });
+
+    it("never loads for a task event's Ledger, which holds no merge rows", () => {
+      const sk = boardSky({ writes: { alpha: ["CLAIM"] }, cues });
+
+      expect(build(sk, fold(["ready", "in_progress"], "CLAIM")).fold!.ledger!.loading).toBe(false);
     });
 
     it("draws a task event's Ledger with no rows even when merges are loaded", () => {

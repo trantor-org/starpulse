@@ -30,7 +30,8 @@ import {
 } from "./scene";
 import { Moves, PULSE, TRAVEL, hosted, merge, stateCount, withLedgers, type Move, type Sky } from "./sky";
 import type { KanbanTask } from "../features/kanban/kanban";
-import { openStream, type Link } from "../api/stream";
+import { foldRows, openStream, type Link } from "../api/stream";
+import { openLedger, type LedgerHead } from "../api/ledgerStream";
 import { pushAutopilotStatus } from "../features/autopilot/autopilot";
 import { pushForwardingStatus } from "../features/forwarding/forwarding";
 import { pushLevelStatus } from "../features/orbit/levelData";
@@ -188,6 +189,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   const relay = whenShown(() => layout(true)), publishLater = staged();
   // The stream the page reads its snapshot and every change after it from.
   let stream: { close(): void } | null = null, last = 0;
+  // The open Ledger's rows and the stream that feeds them: the snapshot carries none, so they are held here and put back into every sky `merge` builds.
+  let ledgerRows: Sky["ledgers"] = {}, ledgerOpen: { event: string; stream: { close(): void } } | null = null;
   /** The clock time of the last data drawn, a note's "as of"; whether a newer page build is waiting for the page to be idle; and the wait's cancel. */
   let lastAt: string | null = null, updating = false, cancelReload: (() => void) | null = null;
 
@@ -259,6 +262,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     // a pinned task narrows the rows to the machines it has a session in
     const only = lpin ? { task: lpin.label, machines: heldBy(S.flows, lpin.task, lpin.machines) } : undefined;
     scene = build({ S, moves, W: FW, H, T, host: hostOf(path), pages, ease: sized, routes: bends, scale: laidScale, measure: nameWidth, chrome: chromeBoxes(), held, paging: pg, only }, level());
+    watchLedger(scene.fold?.ledger?.rows === "merge" ? scene.fold.ledger.event : null);
     if (scene.top) {
       scrollGoal = Math.min(scrollGoal, scene.top.max);
       scrollPos = Math.min(scrollPos, scene.top.max);
@@ -524,7 +528,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     const first = !S;
     snap = next;
     T = Date.now() / 1000;
-    S = merge(next);
+    S = { ...merge(next), ledgers: ledgerRows };
     for (const d of S.dags) fans[d.name] = track(fans[d.name] ?? emptyFan(), d, T);
     moves.observe(S, T);
     if (first) runEvents.resync(); // the runs already in flight when the page opens are not announced as new
@@ -550,6 +554,28 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     paintMerge();
     if (away) heartbeat(); // the canvas draws no frame behind another view, but the Recent feed beside it stays current
     else loop.wake();
+  }
+  /** Holds the rows of the one Ledger that is open and follows it: opening another closes the stream of the last and drops its rows, and the page shows a loading state until the first page arrives. */
+  function watchLedger(event: string | null) {
+    if (event === (ledgerOpen?.event ?? null) || (event && !S)) return;
+    ledgerOpen?.stream.close();
+    ledgerOpen = null;
+    ledgerRows = {};
+    if (S) S = { ...S, ledgers: ledgerRows };
+    if (!event || stopped) return;
+    const got = (rows: LedgerRow[]) => {
+      if (ledgerOpen?.event !== event) return;
+      ledgerRows = { [event]: rows };
+      S = { ...S!, ledgers: ledgerRows };
+      relay.request();
+      paintMerge();
+      if (away) heartbeat();
+      else loop.wake();
+    };
+    ledgerOpen = {
+      event,
+      stream: openLedger(event, { head: (page: LedgerHead) => got(page.rows), rows: (changed) => got(foldRows(ledgerRows[event] ?? [], changed)) }),
+    };
   }
   /** A Ledger delta changes the merge rows and strip alone, so the sky, the HUD, the moves and the fans stay as they were and only the layout and the merge panel redraw. */
   function applyLedgers(next: Snapshot) {
@@ -1494,6 +1520,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       publishLater.cancel();
       loop.stop();
       stream?.close();
+      ledgerOpen?.stream.close();
+      ledgerOpen = null;
       cancelReload?.();
       clearTimeout(timer);
       clearInterval(timer);

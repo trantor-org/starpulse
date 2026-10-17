@@ -442,7 +442,6 @@ class Snapshot(_Api):
         default=None,
         description="Each task's latest In Progress claim the board writer refused an agent, and when (epoch seconds).",
     )
-    ledgers: dict[str, list[LedgerRow]] | None = Field(default=None, description="Each Ledger event's rows, newest first.")
     mergeStrip: MergeStrip | None = None
     mergePins: list[LedgerRow] | None = Field(
         default=None, description="The pinned merge rows of the last day that the newest page leaves out."
@@ -512,11 +511,9 @@ class ClaimDelta(_Api):
 
 
 class LedgersDelta(_Api):
-    """The Ledger since the last event: per event the rows that are new or differ (newest first), and the keys of rows
-    that left the page or the window; every other row stands. `mergeStrip` and `mergePins` are whole."""
+    """The merge strip and pins since the last event, whole. A Ledger's rows are not here: a page that has one open
+    reads `GET /api/ledger/<event>/events`."""
 
-    ledgers: dict[str, list[LedgerRow]]
-    gone: dict[str, list[str]]
     mergeStrip: MergeStrip | None
     mergePins: list[LedgerRow]
 
@@ -559,10 +556,11 @@ EVENTS: dict[str, type[BaseModel]] = {
 # --- paged and read routes ---------------------------------------------------------------------------------------
 
 
-class Merges(_Api):
-    """`GET /api/merges`: the next page of merge rows, newest first, and whether older ones remain."""
+class LedgerPage(_Api):
+    """`GET /api/ledger/<event>`, and the first event of `GET /api/ledger/<event>/events`: a Ledger's rows, newest first,
+    and whether older ones remain."""
 
-    merges: list[LedgerRow]
+    rows: list[LedgerRow]
     more: bool
 
 
@@ -571,6 +569,12 @@ class DonePage(_Api):
 
     tasks: list[RawAgent]
     more: bool
+
+
+class LedgerChange(_Api):
+    """A later event of `GET /api/ledger/<event>/events`: the rows that are new or differ; every other row stands."""
+
+    rows: list[LedgerRow]
 
 
 class MachineRow(FlowSnapshot):
@@ -1919,10 +1923,10 @@ class InsightRetracted(_Api):
     retracted: bool
 
 
-#: Each GET route's `200` body, by path; `/api/task/<id>` by its prefix.
+#: Each GET route's `200` body, by path; `/api/task/<id>` and `/api/ledger/<event>` by their prefix.
 RESPONSES: dict[str, Any] = {
     "/api/snapshot": Snapshot,
-    "/api/merges": Merges,
+    "/api/ledger/": LedgerPage,
     "/api/machines": Machines,
     "/api/analytics/health": Health,
     "/api/analytics/sessions": Sessions,
@@ -1984,7 +1988,8 @@ REQUESTS: dict[str, type[BaseModel]] = {
 BODIES: dict[str, Any] = {
     "error": ApiError,
     "snapshot": Snapshot,
-    "merges": Merges | ApiError,
+    "ledger": LedgerPage | ApiError,
+    "ledger_rows": LedgerChange,
     "machines": Machines | ApiError,
     "done": DonePage | ApiError,
     "history": LaneHistory | MachineHistory | ApiError,
@@ -2127,30 +2132,22 @@ def slim_snapshot(data: Any) -> Any:
 
 
 def encode_snapshot(data: Any, held: _Held) -> bytes:
-    """`encode("snapshot", data)`, with the JSON of each board task and ledger row kept in `held` between calls.
+    """`encode("snapshot", data)`, with the JSON of each board task kept in `held` between calls.
 
-    `held` maps `id(object)` to the object and its JSON: the feed replaces a task or a row it changes rather than
+    `held` maps `id(object)` to the object and its JSON: the feed replaces a task it changes rather than
     editing it, so one met again encodes the same, and one no longer listed is forgotten. Those are most of the
     snapshot, so a build after one change validates and dumps only what changed and the rest of the document.
     """
     flows = data["flows"]
-    ledgers = data.get("ledgers")
     if not flows or flows[0]["name"] != "board":
         return encode("snapshot", slim_snapshot(data))
     kept: _Held = {}
-    rows = {event: _dump_all(found, LedgerRow, held, kept) for event, found in (ledgers or {}).items()}
     tasks = _dump_all(flows[0]["agents"], RawAgent, held, kept, _slim_task)
     held.clear()
     held.update(kept)
     drawn = {**slim_snapshot({**data, "flows": [{**flows[0], "agents": []}, *flows[1:]]}), "move_sets": _move_sets(flows[0]["agents"])}
-    if ledgers:
-        drawn["ledgers"] = {}
     body = encode("snapshot", drawn)
     try:
-        if ledgers:
-            named = (json.dumps(event, ensure_ascii=False).encode() for event in rows)
-            events = b",".join(b"%s:[%s]" % (name, b",".join(dumps)) for name, dumps in zip(named, rows.values()))
-            body = _splice(body, b'"ledgers":{}', b'"ledgers":{%s}' % events)
         return _splice(body, b'"agents":[]', b'"agents":[%s]' % b",".join(tasks), after=b'"flows":[{"name":"board"')
     except ValueError:  # the document is not drawn as it was: encode it whole
         return encode("snapshot", slim_snapshot(data))
@@ -2177,7 +2174,8 @@ class ApiContract(_Api):
     ]
     build: BuildEvent
     restarting: RestartingEvent
-    merges: Merges
+    ledger: LedgerPage
+    ledgerChange: LedgerChange
     machines: Machines
     laneHistory: LaneHistory
     machineHistory: MachineHistory

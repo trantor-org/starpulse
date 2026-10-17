@@ -392,8 +392,8 @@ def _seed(now: float, line: list[str] = ()) -> tuple[list[dict], dict, dict]:
 
 
 #: The snapshot keys keyed or filled by real task ids and pull requests (the board writer's refused claims, the merge
-#: ledgers and their pins); the demo page seeds its own ledgers, so these are dropped rather than renamed.
-UNSCRUBBABLE = frozenset({"claims", "ledgers", "mergePins"})
+#: pins); the demo page seeds its own ledgers, so these are dropped rather than renamed.
+UNSCRUBBABLE = frozenset({"claims", "mergePins"})
 
 
 def scrub(live: dict) -> dict:

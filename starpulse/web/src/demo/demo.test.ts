@@ -22,6 +22,8 @@ const BOARD = machine("new", [
 ], "completed");
 const DELIVERY = machine("start", [["start", "red", "RED"], ["red", "green", "GREEN"]]);
 const card = (id: string, state: string): RawAgent => ({ id, title: id, state, model: "" });
+/** A page of the merge Ledger as `GET /api/ledger/MERGED` serves it: the newest, or the rows older than `before`. */
+const ledgerPage = async (s: DemoServer, before?: number) => (await (await s.fetch(`/api/ledger/MERGED?${before === undefined ? "" : `before=${before}&`}limit=${PAGE}`)).json()) as { rows: LedgerRow[]; more: boolean };
 
 function fixture(): DemoFixture {
   return {
@@ -86,13 +88,13 @@ describe("the demo server's 24-hour strip and forced reruns", () => {
   };
   const post = (s: DemoServer, dag: string) => s.fetch(`/api/runs/${dag}/rerun`, { method: "POST" });
 
-  it("sends the day's merges bucketed by quarter-hour with the snapshot, and the pins the newest page leaves out", () => {
+  it("sends the day's merges bucketed by quarter-hour with the snapshot, and the pins the newest page leaves out", async () => {
     const s = failing(), snap = s.snapshot;
 
     expect(snap.mergeStrip!.buckets).toHaveLength(96);
     expect(snap.mergeStrip!.buckets.reduce((n, b) => n + b.merges, 0)).toBeGreaterThan(60);
     expect(snap.mergeStrip!.buckets.reduce((n, b) => n + b.failed, 0)).toBe(2);
-    const head = new Set(snap.ledgers!.MERGED.map((r) => r.key));
+    const head = new Set((await ledgerPage(s)).rows.map((r) => r.key));
     expect(snap.mergePins!.length).toBe(1);
     expect(snap.mergePins!.every((r) => r.pinned && !head.has(r.key))).toBe(true);
   });
@@ -108,7 +110,7 @@ describe("the demo server's 24-hour strip and forced reruns", () => {
     expect(s.snapshot.dags.find((d) => d.name === "apply-on-merge")!.active!.map((r) => r.runId)).toEqual([runId]);
     vi.advanceTimersByTime(5000);
     expect(s.snapshot.dags.find((d) => d.name === "apply-on-merge")!.active ?? []).toEqual([]);
-    expect(s.snapshot.ledgers!.MERGED.flatMap((r) => Object.values(r.fails)).every((f) => f.resolved?.runId === runId)).toBe(true);
+    expect((await ledgerPage(s)).rows.flatMap((r) => Object.values(r.fails)).every((f) => f.resolved?.runId === runId)).toBe(true);
     expect(s.snapshot.mergePins).toEqual([]);
   });
 
@@ -126,52 +128,59 @@ describe("the demo server's 24-hour strip and forced reruns", () => {
 });
 
 describe("the page's snapshot in a demo", () => {
-  it("keeps its own machines and takes the server's workflows and Ledger, so a forced rerun's resolution reaches the page", () => {
+  it("keeps its own machines and takes the server's workflows and Ledger strip and pins, so a forced rerun's resolution reaches the page", () => {
     const own = new DemoServer(tied(), () => 1000).snapshot, served = structuredClone(own);
     served.dags = [];
-    served.ledgers = { MERGED: [] };
     served.mergeStrip = { since: 1, bucket: 900, buckets: [] };
     served.mergePins = [];
     served.flows = [];
 
     const live = demoLive(own, served);
 
-    expect([live.dags, live.ledgers, live.mergeStrip, live.mergePins]).toEqual([[], { MERGED: [] }, served.mergeStrip, []]);
+    expect([live.dags, live.mergeStrip, live.mergePins]).toEqual([[], served.mergeStrip, []]);
     expect(live.flows).toBe(own.flows);
   });
 });
 
 describe("the demo server's Ledger", () => {
-  it("holds merge rows only when a DAG is tied to the merge", () => {
-    expect(new DemoServer(fixture()).snapshot.ledgers).toBeUndefined();
-    expect(new DemoServer(tied(), () => 1000).snapshot.ledgers?.MERGED.length).toBeGreaterThan(5);
+  it("holds merge rows only when a DAG is tied to the merge", async () => {
+    const bare = new DemoServer(fixture()), tiedTo = new DemoServer(tied(), () => 1000);
+
+    expect([bare.snapshot.mergeStrip, (await ledgerPage(bare)).rows]).toEqual([undefined, []]);
+    expect((await ledgerPage(tiedTo)).rows.length).toBeGreaterThan(5);
   });
 
-  it("sends only the newest page as the snapshot's head, as the server does", () => {
-    expect(new DemoServer(tied(), () => 1000).snapshot.ledgers!.MERGED).toHaveLength(PAGE);
+  it("sends no ledger rows with the snapshot, as the server does", () => {
+    expect(new DemoServer(tied(), () => 1000).snapshot).not.toHaveProperty("ledgers");
   });
 
-  it("lands a new merge on top and tells its listeners, the runs in flight finishing, the head staying a page", () => {
-    const s = new DemoServer(tied(), () => 1000), seen: number[] = [];
-    s.subscribe((snap) => seen.push(snap.ledgers!.MERGED.length));
+  it("serves the newest page of rows, as the server does", async () => {
+    expect((await ledgerPage(new DemoServer(tied(), () => 1000))).rows).toHaveLength(PAGE);
+  });
+
+  it("lands a new merge on top and tells its listeners, the runs in flight finishing, the head staying a page", async () => {
+    const s = new DemoServer(tied(), () => 1000), seen: Snapshot[] = [];
+    s.subscribe((snap) => seen.push(snap));
 
     s.land();
+    const { rows } = await ledgerPage(s);
 
-    expect(seen).toEqual([PAGE]);
-    expect(s.snapshot.ledgers!.MERGED[0].runs["main-follow"].status).toBe("running");
-    expect(s.snapshot.ledgers!.MERGED[1].runs["apply-on-merge"].status).toBe("succeeded");
+    expect(seen).toHaveLength(1);
+    expect(rows).toHaveLength(PAGE);
+    expect(rows[0].runs["main-follow"].status).toBe("running");
+    expect(rows[1].runs["apply-on-merge"].status).toBe("succeeded");
   });
 
-  it("serves the older merges a page at a time from /api/merges, newest first and none twice, to the end of the day", async () => {
-    const s = new DemoServer(tied(), () => 1000), head = s.snapshot.ledgers!.MERGED, got: LedgerRow[] = [];
+  it("serves the older merges a page at a time from /api/ledger/MERGED, newest first and none twice, to the end of the day", async () => {
+    const s = new DemoServer(tied(), () => 1000), head = (await ledgerPage(s)).rows, got: LedgerRow[] = [];
     let before = head.at(-1)!.at, more = true;
 
     while (more) {
-      const reply = await s.fetch(`/api/merges?before=${before}&limit=${PAGE}`), body = (await reply.json()) as { merges: LedgerRow[]; more: boolean };
-      expect(body.merges.length).toBeLessThanOrEqual(PAGE);
-      got.push(...body.merges);
-      more = body.more && body.merges.length > 0;
-      before = body.merges.at(-1)?.at ?? before;
+      const body = await ledgerPage(s, before);
+      expect(body.rows.length).toBeLessThanOrEqual(PAGE);
+      got.push(...body.rows);
+      more = body.more && body.rows.length > 0;
+      before = body.rows.at(-1)?.at ?? before;
     }
 
     const all = [...head, ...got];
@@ -181,12 +190,16 @@ describe("the demo server's Ledger", () => {
   });
 
   it("keeps the older merges after a merge lands, the head sliding forward by one", async () => {
-    const s = new DemoServer(tied(), () => 1000), first = s.snapshot.ledgers!.MERGED;
+    const s = new DemoServer(tied(), () => 1000), first = (await ledgerPage(s)).rows;
     s.land();
-    const head = s.snapshot.ledgers!.MERGED, body = (await (await s.fetch(`/api/merges?before=${head.at(-1)!.at}&limit=${PAGE}`)).json()) as { merges: LedgerRow[] };
+    const head = (await ledgerPage(s)).rows, body = await ledgerPage(s, head.at(-1)!.at);
 
     expect(head.slice(1).map((r) => r.key)).toEqual(first.slice(0, PAGE - 1).map((r) => r.key));
-    expect(body.merges[0].key).toBe(first.at(-1)!.key);
+    expect(body.rows[0].key).toBe(first.at(-1)!.key);
+  });
+
+  it("has no rows for an event the demo does not hold", async () => {
+    expect(await (await new DemoServer(tied(), () => 1000).fetch("/api/ledger/CLAIM?limit=20")).json()).toEqual({ rows: [], more: false });
   });
 
   it("has no merge to land without a Ledger", () => {
