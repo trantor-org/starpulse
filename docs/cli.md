@@ -421,8 +421,9 @@ does not assemble exits 2.
 
 `starpulse reload [--config starpulse.toml]` makes the `serve` started from that config pick up changed code and config
 without a restart of the whole server. It is not an agent verb: it reads no server and `help --agent` leaves it out.
-`serve` publishes a loopback endpoint and a random token in `starpulse.control`, mode `0600`, beside the config (else in
-the working directory) and removes the file when it stops; `reload` reads that file, so pass the same `--config`.
+`serve` publishes a loopback endpoint and a random token in `<config stem>.control` (`starpulse.control` for
+`starpulse.toml`, `starpulse-hub.control` for `starpulse-hub.toml`), mode `0600`, beside the config (else `starpulse.control`
+in the working directory) and removes the file when it stops; `reload` reads that file, so pass the same `--config`.
 
 `serve` reads each process's import closure from the installed code in a fresh interpreter, as a child started now would
 load it: the files of the `starpulse` modules the process imports, with their content hashes. It compares that and the
@@ -450,5 +451,5 @@ It prints one JSON object, and the reply is sent before a `serve` that re-execut
 | Exit | Meaning |
 | ---- | ------- |
 | 0 | The reload ran; the JSON names what each did. |
-| 1 | No supervisor is running: no `starpulse.control` beside the config, or nothing answers on its port. Says so on stderr. |
+| 1 | No supervisor is running: no `<config stem>.control` beside the config, or nothing answers on its port. Says so on stderr. |
 | 2 | `serve` refused the reload, such as a closure that does not import; the reason is on stderr and nothing changed. |

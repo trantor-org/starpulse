@@ -1,9 +1,10 @@
 """The local control endpoint a running `starpulse serve` offers, and the `starpulse reload` verb that calls it.
 
 The endpoint listens on an ephemeral loopback port and answers `POST /reload` only to a caller that holds its token. The
-port and a random token are written to a `starpulse.control` file, readable by its owner alone, that sits beside the
-config (else in the working directory) and is removed when the supervisor stops. `starpulse reload` reads that file, so
-it reaches the supervisor started from the same config and finds none when `serve` is not running.
+port and a random token are written to a `<config stem>.control` file (`starpulse.control` for `starpulse.toml`),
+readable by its owner alone, that sits beside the config (else `starpulse.control` in the working directory) and is
+removed when the supervisor stops. `starpulse reload` reads that file, so it reaches the supervisor started from the same
+config, even when another config shares the directory, and finds none when `serve` is not running.
 """
 
 from __future__ import annotations
@@ -36,7 +37,7 @@ class Reloadable(Protocol):
 
 def control_file(config: Path | None) -> Path:
     """Where the supervisor started from `config` publishes its endpoint, and where `starpulse reload` looks."""
-    return (config.parent if config else Path.cwd()) / "starpulse.control"
+    return config.with_suffix(".control") if config else Path.cwd() / "starpulse.control"
 
 
 class Control:

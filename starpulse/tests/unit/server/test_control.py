@@ -66,6 +66,14 @@ def test_the_control_file_sits_beside_the_config_else_in_the_working_directory(
     assert control.control_file(None) == tmp_path / "starpulse.control"
 
 
+def test_two_configs_in_one_directory_keep_separate_control_files(tmp_path: Path) -> None:
+    live = control.control_file(tmp_path / "starpulse.toml")
+    hub = control.control_file(tmp_path / "starpulse-hub.toml")
+
+    assert live != hub
+    assert hub == tmp_path / "starpulse-hub.control"
+
+
 @pytest.mark.usefixtures("running")
 def test_reload_prints_the_supervisors_report_as_json_and_exits_zero(
     config: Path, supervisor: FakeSupervisor, capsys: pytest.CaptureFixture[str]
