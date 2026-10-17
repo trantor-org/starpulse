@@ -53,7 +53,7 @@ def test_serve_supervises_every_worker_and_starts_no_context_in_process(
     assert threads == []
     assert isinstance(handled["autopilot"], Remote)
     [supervisor] = supervisors
-    assert set(supervisor.commands) == {"pulls", "autopilot", "runs"}
+    assert set(supervisor.commands) == {"pulls", "autopilot", "runs", "history"}
     assert supervisor.started
 
 
@@ -69,10 +69,14 @@ def test_serve_offers_the_reload_endpoint_beside_its_config(
 @pytest.mark.parametrize(
     ("settings", "supervised"),
     [
-        ("delivery_worker = true\n", {"autopilot", "runs"}),
-        ("autopilot_worker = true\n", {"pulls", "runs"}),
-        ("runs_worker = true\n", {"pulls", "autopilot"}),
-        ("delivery_worker = true\nautopilot_worker = true\nruns_worker = true\n", set()),
+        ("delivery_worker = true\n", {"autopilot", "runs", "history"}),
+        ("autopilot_worker = true\n", {"pulls", "runs", "history"}),
+        ("runs_worker = true\n", {"pulls", "autopilot", "history"}),
+        ("history_worker = true\n", {"pulls", "autopilot", "runs"}),
+        (
+            "delivery_worker = true\nautopilot_worker = true\nruns_worker = true\nhistory_worker = true\n",
+            set(),
+        ),
     ],
 )
 def test_a_true_worker_setting_gets_neither_a_thread_nor_a_child(
@@ -152,3 +156,14 @@ def test_serve_runs_no_forwarder_thread_and_supervises_a_forwarding_child_for_a_
     assert "forwarder" not in {t.name for t in threading.enumerate()} - before
     assert ("forwarding" in supervisors[0].commands) is supervised
     assert handled["forwarding"] is not None  # the page still reads and sets the forwarding opt-in
+
+
+@pytest.mark.parametrize("settings", ["", "history_worker = true\n"])
+def test_serve_runs_neither_the_recorder_nor_the_prune_thread_whatever_the_history_setting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, supervisors: list[FakeSupervisor], settings: str
+) -> None:
+    before = {t.name for t in threading.enumerate()}
+
+    _serve(tmp_path, monkeypatch, settings)
+
+    assert not {"machine-history", "event-log-prune"} & ({t.name for t in threading.enumerate()} - before)

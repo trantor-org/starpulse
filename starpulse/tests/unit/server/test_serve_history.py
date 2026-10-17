@@ -1,12 +1,13 @@
-"""`serve` records every machine event and lane change into StarPulse's own store."""
+"""`serve` records every lane change, and the History worker every machine event, into StarPulse's own store."""
 
+import threading
 import time
 from pathlib import Path
 
 import pytest
 from sqlalchemy import text
 
-from starpulse._internal.server import server
+from starpulse._internal.server import history_worker, server, worker
 from starpulse._internal.eventlog import events
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import HistoryStore
@@ -21,11 +22,13 @@ def _rows(store: HistoryStore, table: str, columns: str) -> list[tuple]:
 def _until(done) -> None:
     deadline = time.monotonic() + 10
     while not done():
-        assert time.monotonic() < deadline, "serve never recorded it"
+        assert time.monotonic() < deadline, "the history worker never recorded it"
         time.sleep(0.01)
 
 
-def test_serve_records_run_and_task_machine_events(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_serve_and_the_history_worker_record_run_and_task_machine_events(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr(fake_board, "BUILT", [])
     static = tmp_path / "static"
     static.mkdir()
@@ -35,7 +38,11 @@ def test_serve_records_run_and_task_machine_events(tmp_path: Path, monkeypatch: 
     config = tmp_path / "starpulse.toml"
     config.write_text('[board]\ntype = "starpulse.tests.fake_board"\nlanes = ["open", "shut"]\n')
 
+    held: list[threading.Event] = []
+    monkeypatch.setattr(history_worker, "hold", lambda stop, reload: held.append(stop))
+
     server.main(["--config", str(config), "--port", "0"])
+    worker.main(["history", "--config", str(config)])
 
     own = HistoryStore(f"sqlite:///{tmp_path / 'starpulse-history.sqlite'}", {})
     log = EventLog(str(own.engine.url))
@@ -48,3 +55,5 @@ def test_serve_records_run_and_task_machine_events(tmp_path: Path, monkeypatch: 
         (None, "run-1", "authoring-skills", "GUIDANCE_READ"),
     ]
     assert _rows(own, "starpulse_lane_changes", "task, old_status, new_status") == [("FAKE-1", None, "open")]
+    for stop in held:
+        stop.set()

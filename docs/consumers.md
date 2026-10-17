@@ -75,7 +75,7 @@ Call `drain` from a timer, a cron job or a loop; a call with nothing new costs o
   config's `database_url` names. Many processes append and read the same file: the log runs in WAL mode.
 - **At least once.** A crash after the log handed over a row but before the commit reads it again, so key the sink on
   `event_id`, as `INSERT OR IGNORE` does above.
-- **Retention.** `serve` prunes rows older than `event_log_retention_days` and archives them first (see the event log
+- **Retention.** `serve` (through its History child, `starpulse worker history`) prunes rows older than `event_log_retention_days` and archives them first (see the event log
   archive in [Serve and configure](serving.md)). A cursor older than the oldest retained row resumes at that row and the
   log notes the span you missed in `starpulse_gaps`; start a new sink from the archive when you need that span.
 - **A resident reader.** `Tail.run(handle, stop)` polls until `stop` is set and passes each entry to `handle`; pass the
