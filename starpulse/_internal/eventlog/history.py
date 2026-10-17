@@ -41,6 +41,7 @@ from sqlalchemy import (
 )
 from sqlalchemy import event as sa_event
 from sqlalchemy.dialects import postgresql, sqlite
+from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
 
 from starpulse._internal.config.level import Level
@@ -93,6 +94,10 @@ DEFAULT_FILE = "starpulse-history.sqlite"
 #: The most the -wal file keeps after a checkpoint resets it. SQLite keeps the file at its high-water mark otherwise,
 #: so one burst left a 462 MB file holding a few hundred frames.
 _WAL_SIZE_LIMIT = 64 * 1024 * 1024
+
+#: How long a write waits on another process's write lock, in seconds. Every worker opens the store at `serve` start,
+#: and one rebuilding the summaries of a large history holds the lock for seconds.
+_SQLITE_BUSY_TIMEOUT = 60.0
 
 _machine_events = Table(
     "starpulse_machine_events",
@@ -283,7 +288,11 @@ class HistoryStore:
     """
 
     def __init__(self, url: str, machines: Mapping[str, dict], engine: Engine | None = None) -> None:
-        self.engine = engine or create_engine(url)
+        self.engine = engine or (
+            create_engine(url, connect_args={"timeout": _SQLITE_BUSY_TIMEOUT})
+            if make_url(url).get_backend_name() == "sqlite"
+            else create_engine(url)
+        )
         if self.engine.dialect.name == "sqlite":
             sa_event.listen(self.engine, "connect", _sqlite_tune)
         self._machines = machines

@@ -19,9 +19,10 @@ from pathlib import Path
 
 from starpulse._internal.config.config import Config, discover, load
 from starpulse._internal.eventlog.event_log import EventLog
-from starpulse._internal.eventlog.history import HistoryStore, database_url
+from starpulse._internal.eventlog.history import database_url
 from starpulse._internal.hub import forward
 from starpulse._internal.hub.forward_report import Publisher
+from starpulse._internal.server.assembly import assemble, history_store
 from starpulse._internal.server.hold import hold
 
 logger = logging.getLogger(__name__)
@@ -55,11 +56,10 @@ def main(argv: list[str] | None, parser: argparse.ArgumentParser) -> None:
     if config.forward is None:
         parser.exit(1, f"{path}: no [forward] table; the forwarding worker has nothing to send\n")
     base = args.config.parent if args.config else Path.cwd()
-    url = database_url(config.database_url, base)
-    log = EventLog(url)
-    store = HistoryStore(url, {})
+    log = EventLog(database_url(config.database_url, base))
     try:
-        forwarder = forward.build(config, base, log, store, os.environ)
+        _, feed = assemble(config, base, None, [])
+        forwarder = forward.build(config, base, log, history_store(config, base, feed.machines), os.environ)
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")
     stop = threading.Event()
