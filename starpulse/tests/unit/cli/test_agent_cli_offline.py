@@ -136,6 +136,7 @@ class TestConfigCheck:
             "delivery_worker": False,
             "autopilot_worker": False,
             "runs_worker": False,
+            "forwarding_worker": False,
             "slow_read_seconds": 1.0,
             "worker_memory": {
                 "pulls": {"soft_mb": 768, "hard_mb": 1536},

@@ -255,7 +255,7 @@ from starpulse._internal.pulls.pull_refresh import MAX_BODY as MAX_REFRESH_BODY
 from starpulse._internal.pulls.pull_refresh import PullRefresh
 from starpulse._internal.pulls.pull_store import PullSync, drift_counter
 from starpulse._internal.runs import projection as runs_projection
-from starpulse._internal.hub import forward
+from starpulse._internal.hub import forward, forward_report
 from starpulse._internal.server.compression import LEVEL, Encoded, accepts_gzip, compressed, gzip_stream
 from starpulse._internal.server.process_metrics import process_gauges
 from starpulse._internal.hub.forward import Forwarder
@@ -2246,7 +2246,8 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         threading.Thread(
             target=record_lane_events, args=(store, log, threading.Event()), name="lane-history", daemon=True
         ).start()
-    forwarding = threading.Event()  # never set: the forwarder lives as long as the process
+    # `starpulse worker forwarding` runs the forwarder; this process builds one to read the cursor and the opt-in and
+    # to answer the page, and draws the last send and refusal the worker keeps in the log
     try:
         forwarder = forward.build(
             config,
@@ -2264,8 +2265,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         restore(store, feed)
         insights = Insights(store, feed)
     if forwarder is not None:
-        wire_forwarding(feed, forwarder)
-        forward.start(forwarder, forwarding)
+        forward_report.Reported(log, forwarder, wire_forwarding(feed, forwarder)).follow(stop)
     level_cfg = config.level if args.hub else None
     if level_cfg is not None:
 

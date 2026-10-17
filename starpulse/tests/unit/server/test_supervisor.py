@@ -11,7 +11,7 @@ from pathlib import Path
 
 import starpulse._internal.server.rss as rss_module
 import starpulse._internal.server.supervisor as supervisor_module
-from starpulse._internal.config.config import MemoryLimit, load
+from starpulse._internal.config.config import Forward, MemoryLimit, load
 from starpulse._internal.server.supervisor import Supervisor, worker_commands
 
 STEP = 0.25
@@ -60,15 +60,31 @@ def test_a_context_whose_worker_setting_is_false_gets_a_child_command_and_a_true
     only_autopilot = worker_commands(
         replace(load(None), delivery_worker=True, runs_worker=True), Path("/etc/starpulse.toml")
     )
-    neither = worker_commands(replace(load(None), delivery_worker=True, autopilot_worker=True, runs_worker=True), None)
+    neither = worker_commands(
+        replace(load(None), delivery_worker=True, autopilot_worker=True, runs_worker=True, forwarding_worker=True), None
+    )
 
     assert every["pulls"] == [sys.executable, "-m", "starpulse", "worker", "pulls"]
     assert every["runs"] == [sys.executable, "-m", "starpulse", "worker", "runs"]
-    assert set(every) == {"pulls", "autopilot", "runs"}
+    assert set(every) == {"pulls", "autopilot", "runs"}  # forwarding has no child without a [forward] table
     assert only_autopilot == {
         "autopilot": [sys.executable, "-m", "starpulse", "worker", "autopilot", "--config", "/etc/starpulse.toml"]
     }
     assert neither == {}
+
+
+def test_the_forwarding_child_runs_only_for_a_config_with_a_forward_table_and_a_false_setting() -> None:
+    forwarding = replace(load(None), forward=Forward("https://hub.example.test", "HUB_TOKEN"))
+
+    assert worker_commands(forwarding, None)["forwarding"] == [
+        sys.executable,
+        "-m",
+        "starpulse",
+        "worker",
+        "forwarding",
+    ]
+    assert "forwarding" not in worker_commands(replace(forwarding, forwarding_worker=True), None)
+    assert "forwarding" not in worker_commands(load(None), None)
 
 
 def test_a_child_that_exits_repeatedly_is_restarted_after_a_growing_delay() -> None:

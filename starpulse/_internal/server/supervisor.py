@@ -36,19 +36,27 @@ logger = logging.getLogger(__name__)
 _HANGUP = getattr(signal, "SIGHUP", None)
 
 #: The `starpulse worker` contexts, by the `Config` flag that says an outside runner owns them.
-WORKER_FLAGS = {"pulls": "delivery_worker", "autopilot": "autopilot_worker", "runs": "runs_worker"}
+WORKER_FLAGS = {
+    "pulls": "delivery_worker",
+    "autopilot": "autopilot_worker",
+    "runs": "runs_worker",
+    "forwarding": "forwarding_worker",
+}
 
 
 _MB = 1024 * 1024
 
 
 def worker_commands(config: Config, config_path: Path | None) -> dict[str, list[str]]:
-    """The command of each context `serve` supervises: the ones whose `*_worker` setting is false."""
+    """The command of each context `serve` supervises: the ones whose `*_worker` setting is false.
+
+    Forwarding has work only with a `[forward]` table, so a config without one gets no forwarding child.
+    """
     tail = ["--config", str(config_path)] if config_path else []
     return {
         context: [sys.executable, "-m", "starpulse", "worker", context, *tail]
         for context, flag in WORKER_FLAGS.items()
-        if not getattr(config, flag)
+        if not getattr(config, flag) and (context != "forwarding" or config.forward is not None)
     }
 
 

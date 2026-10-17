@@ -74,6 +74,7 @@ _KEYS = {
     "delivery_worker",
     "autopilot_worker",
     "runs_worker",
+    "forwarding_worker",
     "slow_read_seconds",
     "worker_memory",
 }
@@ -455,6 +456,7 @@ WORKER_MEMORY = {
     "pulls": MemoryLimit(768, 1536),
     "autopilot": MemoryLimit(384, 768),
     "runs": MemoryLimit(512, 1024),
+    "forwarding": MemoryLimit(256, 512),
 }
 
 
@@ -560,6 +562,8 @@ class Config:
     """The resident memory limits `serve` holds each worker child to: past `soft_mb` it replaces the child (starts a new one, then stops the old), past `hard_mb` it kills and restarts it. Keyed by context, `pulls`, `autopilot` and `runs`."""
     slow_read_seconds: float = SLOW_READ_S
     """`serve` logs a `slow_read` line for each `GET /api/pulls` that took this many seconds or more, from accept to the last byte written, with the seconds it waited for a handler thread, computed its answer and wrote it."""
+    forwarding_worker: bool = False
+    """The Forwarding context (the forwarder that sends the event log to the hub) runs in `starpulse worker forwarding`, not in `serve`: `serve` starts no forwarder and shows its status from the event log; false: `serve` supervises that worker as a child when `[forward]` is set."""
     analytics: Analytics = field(default_factory=Analytics)
     """What the instance's agents' telemetry is read against (`[analytics]`); no table: no roots, stops or triggers."""
     release: Release | None = None
@@ -787,5 +791,6 @@ def load(path: Path | None) -> Config:
         autopilot_worker=_flag(raw, "autopilot_worker", False),
         runs_worker=_flag(raw, "runs_worker", False),
         worker_memory=_worker_memory(raw.get("worker_memory", {})),
+        forwarding_worker=_flag(raw, "forwarding_worker", False),
         slow_read_seconds=_slow_read(raw.get("slow_read_seconds", SLOW_READ_S)),
     )

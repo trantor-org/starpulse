@@ -53,8 +53,8 @@ short request needs. A stream past the limit gets `503` with `Retry-After: 5` an
 
 ### Worker processes
 
-`serve` is a supervisor over the contexts that run as their own `starpulse worker <context>` process: `pulls` (Delivery), `autopilot` and `runs`. For each one whose `delivery_worker`,
-`autopilot_worker` or `runs_worker` setting is false, the default, `serve` starts the worker as a child with `subprocess`, restarts it with a growing delay (1 s, doubling to 60 s; a child that
+`serve` is a supervisor over the contexts that run as their own `starpulse worker <context>` process: `pulls` (Delivery), `autopilot`, `runs` and `forwarding`. For each one whose `delivery_worker`,
+`autopilot_worker`, `runs_worker` or `forwarding_worker` setting is false, the default, `serve` starts the worker as a child with `subprocess`, restarts it with a growing delay (1 s, doubling to 60 s; a child that
 ran a minute restarts at once) when it exits, and stops it when `serve` stops on `SIGTERM` or Ctrl-C. The children read the same config and `database_url` and meet `serve` only in
 the event log. A true setting means something outside `serve` runs that worker, so `serve` starts no child for it. No unit file is needed to run StarPulse.
 
@@ -67,8 +67,14 @@ the event log. A true setting means something outside `serve` runs that worker, 
 | `pulls` | 768 | 1536 |
 | `autopilot` | 384 | 768 |
 | `runs` | 512 | 1024 |
+| `forwarding` | 256 | 512 |
 
 `[worker_memory.<context>]` overrides either key for a context (whole megabytes, 1 or more; `soft_mb` below `hard_mb`). An unknown context, an unknown key or a soft limit not below the hard one is refused at load by name.
+
+The `forwarding` worker (`starpulse worker forwarding`) sends the event log to the `[forward]` hub, and only exists for a config with that table. `serve` runs no forwarder thread: it builds a
+forwarder only to answer `GET /api/forwarding` and `PUT /api/forwarding`, which writes the opt-in through the event log for the worker, so `serve` still needs the `token_env` variable set. The forward cursor
+lives in the history database, so a restarted worker neither drops nor repeats a forwarded event. The worker's last send, problem and refusal reach `serve` through the event log; `refused` can lag an opt-in
+change by up to one forward interval (5 s). The worker logs `Forwarder:` lines, which a supervised child writes to `serve`'s output.
 
 ### What the page shows when the server restarts
 
@@ -241,6 +247,14 @@ type = "native"
 # state stay in the event log, so a restarted worker neither drops nor repeats a run entry or a trigger start. With the
 # flag set and no worker running, no run is followed and no trigger starts a workflow.
 # runs_worker = false
+
+# Whether something outside `serve` runs the Forwarding context (the forwarder that sends the event log to the `[forward]`
+# hub). False, the default: `serve` supervises it as a child process, `starpulse worker forwarding`, when `[forward]` is
+# set. True: you run `starpulse worker forwarding --config <this file>` yourself and `serve` starts no child for it.
+# Either way `serve` runs no forwarder thread and still answers `GET` and `PUT /api/forwarding` from the event log and
+# the history database. The forward cursor stays in the history database, so a restarted worker neither drops nor repeats
+# a forwarded event. With the flag set and no worker running, nothing is forwarded.
+# forwarding_worker = false
 
 # Let a producer that just saw a pull request close have its record read now instead of at the next minute's refresh:
 # `POST /api/pulls/refresh` with `{"repo": "<owner>/<name>", "number": 12}` and `Authorization: Bearer <token>`. The PR store's
