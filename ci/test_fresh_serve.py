@@ -9,7 +9,7 @@ import threading
 import time
 
 import pytest
-from fresh_serve import check, live_children
+from fresh_serve import check, live_children, worker_contexts
 
 PARENT = (
     "import subprocess, sys, time\n"
@@ -78,3 +78,7 @@ def test_check_reports_a_page_that_is_not_200(parent, page):
         assert "503" in check(page, parent.pid, {"pulls"})
     finally:
         Page.status = 200
+
+
+def test_worker_contexts_are_the_ones_the_default_config_supervises(tmp_path):
+    assert worker_contexts(sys.executable, str(tmp_path)) == {"pulls", "autopilot", "runs", "history", "board"}
