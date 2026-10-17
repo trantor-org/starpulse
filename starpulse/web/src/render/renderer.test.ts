@@ -94,6 +94,27 @@ describe("the Recent feed's lines", () => {
 
     expect(late.key).not.toBe(early.key);
   });
+
+  const SID = "92ead411-c78b-4454-a63e-fcae6a3d6259";
+  const session = (event: string, at = 10) => ({ flow: "harness", task: SID, at, event, to: "active", from: "active" });
+
+  it("leaves out a session's tool and skill uses, keeping its start and stop", () => {
+    const lines = feedOf([session("TOOL_USED", 5), session("SKILL_USED", 6), session("SESSION_STARTED", 4), session("SESSION_STOPPED", 7)], [], [], 20);
+
+    expect(lines.map((l) => l.what)).toEqual(["session_stopped", "session_started"]);
+  });
+
+  it("names a session's line by the task it holds, and lights that task", () => {
+    const [line] = feedOf([session("SESSION_STOPPED")], [], [], 20, new Map([[SID, "TASK-6160"]]));
+
+    expect(line).toMatchObject({ who: "TASK-6160", task: "TASK-6160", where: "harness" });
+  });
+
+  it("shortens the id of a session that holds no task", () => {
+    const [line] = feedOf([session("SESSION_STARTED")], [], [], 20);
+
+    expect(line.who).toBe("92ead411");
+  });
 });
 
 describe("a tied DAG's orbiter", () => {
