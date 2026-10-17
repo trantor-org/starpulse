@@ -26,8 +26,8 @@ from starpulse._internal.config.config import Config, discover, load
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import HistoryStore, database_url
 from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.server.assembly import assemble, history_store
 from starpulse._internal.server.hold import hold
-from starpulse._internal.server.server import assemble, history_store
 from starpulse._internal.server.writes import reconcile_lanes
 
 logger = logging.getLogger(__name__)

@@ -26,9 +26,9 @@ from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import History, database_url
 from starpulse._internal.feed.board_feed import BoardFeed, follow
 from starpulse._internal.feed.machine_tasks import MachineTasks
+from starpulse._internal.server.assembly import assemble, history_store
 from starpulse._internal.server.autopilot_service import start_autopilot
 from starpulse._internal.server.hold import hold
-from starpulse._internal.server.server import assemble, history_store
 
 logger = logging.getLogger(__name__)
 

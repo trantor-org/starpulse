@@ -21,7 +21,7 @@ from pathlib import Path
 
 from starpulse._internal.config.config import ConfigError, discover, load
 from starpulse._internal.eventlog import lane_import
-from starpulse._internal.server.server import assemble, history_store
+from starpulse._internal.server.assembly import assemble, history_store
 
 __all__ = ["main"]
 

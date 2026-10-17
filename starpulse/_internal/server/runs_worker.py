@@ -25,8 +25,9 @@ from starpulse._internal.runs import run_events
 from starpulse._internal.runs.projection import Publisher
 from starpulse._internal.runs.push_runs import PUSHED_INSTANCE, PushRuns
 from starpulse._internal.runs.triggers import run_triggers
+from starpulse._internal.server.assembly import assemble, history_store
 from starpulse._internal.server.hold import hold
-from starpulse._internal.server.server import assemble, history_store, run_adapters, run_starts
+from starpulse._internal.server.server import run_adapters, run_starts
 
 logger = logging.getLogger(__name__)
 
