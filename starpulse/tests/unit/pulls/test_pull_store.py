@@ -200,15 +200,16 @@ def test_a_read_runs_no_sql_because_a_row_step_gives_up_the_gil_and_waits_behind
     store: PullStore,
 ) -> None:
     """A 1,968-row read made 1,968 such steps and took 12-45 s beside a busy thread (TASK-5076), so reads are served
-    from memory."""
+    from memory: the open and recently saved records (the rest are read when asked for, `test_pull_store_window`)."""
     store.save([{**_stored(REPO, 1), "detail": {"files": ["a.py"]}}, _stored(REPO, 2) | {"state": "MERGED"}])
     statements: list[str] = []
     event.listen(store._engine, "before_cursor_execute", lambda *args: statements.append(args[2]))
 
-    everything = store.find()
+    open_ones = store.find(state="OPEN")
+    merged = store.find(REPO, 2)
     one = store.find(REPO, 1, "OPEN", detailed=True)
 
-    assert (len(everything), one[0]["detail"], statements) == (2, {"files": ["a.py"]}, [])
+    assert (len(open_ones), len(merged), one[0]["detail"], statements) == (1, 1, {"files": ["a.py"]}, [])
 
 
 def test_a_store_opened_over_saved_rows_serves_what_the_first_one_did(store: PullStore) -> None:
