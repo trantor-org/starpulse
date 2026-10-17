@@ -25,9 +25,29 @@ def _agent_moves(agent: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 
 def done_ids(snapshot: dict[str, Any]) -> set[str]:
-    """The tasks a dependency no longer waits on: those in the `done` lane and those settled as completed."""
+    """The tasks a dependency no longer waits on: those in the `done` lane, those past their hot day (`cold_done`, held
+    by the full view alone) and those settled as completed."""
     done = {task["id"] for task in board_flow(snapshot)["agents"] if task["state"] == DONE}
+    done |= set(snapshot.get("cold_done", ()))
     return done | {task_id for task_id, entry in snapshot["settled"].items() if entry["state"] == "completed"}
+
+
+def cold_agent(task_id: str, record: dict[str, Any]) -> dict[str, Any]:
+    """A cold done task as a snapshot agent, built from its board record (`GET /api/task`) for a verb to view whole."""
+    return {
+        "id": task_id,
+        "title": record["title"],
+        "state": DONE,
+        "model": record["profile"],
+        "milestone": record["milestone"],
+        "type": record["type"],
+        "labels": record["labels"],
+        "dependencies": record["dependencies"],
+        "criteria": [{"text": item["text"], "checked": item["checked"]} for item in record["acceptanceCriteria"]],
+        "prs": [],
+        "moves": {},
+        "description": record["description"],
+    }
 
 
 def task_view(agent: dict[str, Any], snapshot: dict[str, Any], done: set[str] | None = None) -> dict[str, Any]:

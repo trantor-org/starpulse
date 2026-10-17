@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from starpulse._internal.board.view import board_columns
-from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.feed.board_feed import HOT_S, BoardFeed
 from starpulse._internal.kit.adapter_kit import next_event as _next_event
 from starpulse._internal.kit.adapter_kit import serve as _serve
 from starpulse._internal.kit.adapter_kit import task
@@ -50,6 +50,21 @@ def test_a_held_task_carries_what_starpulse_board_prints_of_it(tmp_path: Path, m
     (held,) = [t for c in document["columns"] for t in c["tasks"]]
     assert (held["id"], held["title"], held["holder"], held["milestone"]) == ("PROJ-1", "Title of PROJ-1", "session-1", "m-7")
     assert held.keys() >= {"criteria", "pause_reason", "waiting_on", "prs", "moves"}
+
+
+def test_a_held_task_does_not_wait_on_a_dependency_that_went_cold_in_done(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("starpulse._internal.server.server._HELD_SETTLE_S", 0)
+    now = time.time()
+    feed = BoardFeed(machines=MACHINES, clock=lambda: now)
+    feed.expect("0-0")
+    feed.put(task("PROJ-2", "Done", observed_at=now - 2 * HOT_S))
+    feed.put(task("PROJ-1", "In Progress", holder="session-1", dependencies=("PROJ-2",)))
+    with _serve(tmp_path, feed) as server:
+        with urllib.request.urlopen(_url(server, "/api/held?holder=session-1"), timeout=5) as resp:
+            _, document = _next_event(resp)
+
+    (held,) = [t for c in document["columns"] for t in c["tasks"]]
+    assert (held["dependencies"], held["waiting_on"]) == (["PROJ-2"], [])
 
 
 def test_a_stream_without_a_holder_is_refused(tmp_path: Path) -> None:

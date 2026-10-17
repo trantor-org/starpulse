@@ -533,7 +533,11 @@ export interface RawAgent {
   milestone?: string | null;
   model: string;
   /**
-   * The verdict on each Board column the task may move to, by state id.
+   * A snapshot's key into its `move_sets` for the task's `moves`; absent when it has none.
+   */
+  move_set?: string | null;
+  /**
+   * The verdict on each Board column the task may move to, by state id; a snapshot names the set in `move_set` instead, and a delta carries it here.
    */
   moves?: {
     [k: string]: Move;
@@ -1883,6 +1887,10 @@ export interface Snapshot {
     [k: string]: Claim;
   } | null;
   /**
+   * The ids of the done tasks past 24 h that the board feed holds as a stub, left out of `flows`: the full view (`?view=full`) only, the page reads them from `/api/done` and `/api/task/<id>`.
+   */
+  cold_done?: string[] | null;
+  /**
    * The DAGs cued by a Board event.
    */
   cues?: Cue[] | null;
@@ -1918,6 +1926,20 @@ export interface Snapshot {
    */
   mergePins?: LedgerRow[] | null;
   mergeStrip?: MergeStrip | null;
+  /**
+   * How many tasks each milestone has completed, counted over every settled task though `settled` holds only the recent ones.
+   */
+  milestone_done?: {
+    [k: string]: number;
+  } | null;
+  /**
+   * Each distinct set of Board-column verdicts a task's `move_set` names, by key.
+   */
+  move_sets?: {
+    [k: string]: {
+      [k: string]: Move;
+    };
+  } | null;
   now: number;
   /**
    * The concurrency pools the DAGs run on.

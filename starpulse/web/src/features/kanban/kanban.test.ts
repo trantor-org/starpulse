@@ -139,6 +139,20 @@ describe("the cards drawn from a snapshot", () => {
     now: 600,
   });
 
+  it("carry the moves their move set names in the snapshot's table, and the moves a delta put on the agent itself", () => {
+    const allowed = { in_progress: { allowed: true } } as never;
+    const guarded = { in_progress: { allowed: false, reason: "needs a plan" } } as never;
+    const snap = snapshot();
+    snap.move_sets = { abc: allowed };
+    const [first, second] = snap.flows[0].agents;
+    snap.flows[0].agents[0] = { ...first, move_set: "abc" };
+    snap.flows[0].agents[1] = { ...second, moves: guarded };
+
+    const cards = Object.fromEntries(kanbanTasks(merge(snap)).map((t) => [t.id, t.moves]));
+
+    expect(cards).toMatchObject({ "PROJ-1": allowed, "PROJ-2": guarded, "PROJ-3": {} });
+  });
+
   it("carry the milestone, profile, labels, pull requests and the machine that last placed the task", () => {
     const [t] = kanbanTasks(merge(snapshot())).filter((x) => x.id === "PROJ-1");
 
@@ -588,10 +602,7 @@ describe("the milestone outline", () => {
 
   it("counts a completed task that has left the Board as done, so finishing one raises the numerator and keeps the total", () => {
     const tasks = [task("T-1", "ready", "m-10"), task("T-2", "done", "m-10"), task("T-3", "ready", "m-9")];
-    const settled = [
-      { state: "completed", milestone: "m-10" }, { state: "completed", milestone: "m-10" },
-      { state: "archived", milestone: "m-10" }, { state: "completed", milestone: "m-8" }, { state: "completed", milestone: "" },
-    ];
+    const settled = { "m-10": 2, "m-8": 1 };
 
     expect(milestoneOutline(tasks, settled)).toEqual([
       { milestone: "m-9", done: 0, total: 1 },

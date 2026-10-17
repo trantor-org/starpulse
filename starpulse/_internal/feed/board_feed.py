@@ -79,6 +79,8 @@ COMPLETED = "completed"
 CRITERIA_INTERVAL = criteria.CACHE_SECONDS
 #: How far back a task's entry into a lane is an occurrence a run can pair with, in seconds: as far as a tied workflow's recent runs reach.
 LEDGER_WINDOW = 86400.0
+#: How long a done task stays hot, in seconds: past it the feed holds only its id, state and entered time.
+HOT_S = 86400.0
 #: How many published changes the feed keeps for a page connecting on a snapshot older than the feed.
 _SENT_LOG = 512
 
@@ -86,6 +88,18 @@ _SENT_LOG = 512
 def cited_pulls(task: BoardTask) -> list[str]:
     """The pull request links among the task's references."""
     return [ref for ref in task.references if _PULL_REQUEST.fullmatch(ref)]
+
+
+def is_cold(agent: dict) -> bool:
+    """Whether the agent is a cold done task: its id, state and entered time, with the record left on the Board."""
+    return "title" not in agent
+
+
+def cooled(agent: dict, clock: Callable[[], float]) -> dict:
+    """The agent, or its cold stub when it has been done for longer than `HOT_S` by `clock`."""
+    if agent["state"] == DONE and clock() - agent["entered"] > HOT_S:
+        return {"id": agent["id"], "state": agent["state"], "entered": agent["entered"]}
+    return agent
 
 
 def task_agent(task: BoardTask) -> dict:
@@ -413,6 +427,7 @@ class BoardFeed:
         except KeyError, TypeError, ValueError:
             logger.warning("StarPulse: replaying: the saved Board cannot be read")
             return None
+        open_ = {task: cooled(agent, self._clock) for task, agent in open_.items()}  # a task done while the feed was down is cold
         with self._lock:
             self._open, self._settled, self._assignees, self._seen, self._saved = open_, settled, assignees, seen, seen
             self._pulls, self._pull_answers = pulls, answers
@@ -423,7 +438,7 @@ class BoardFeed:
             }
             self._dependents = {}  # the saved Board keeps no reverse links; `_link` needs them for the next change
             for task_id, agent in open_.items():
-                self._link(task_id, (), agent["dependencies"])
+                self._link(task_id, (), agent.get("dependencies", ()))
         logger.warning("StarPulse: resuming after %s", cursor)
         return cursor
 
@@ -627,6 +642,7 @@ class BoardFeed:
             if agent:
                 agent["entered"] = self._entered(task, before)
                 agent["workable"], agent["workable_since"] = self._workable(agent)
+                agent = cooled(agent, self._clock)
             self._gated.discard(task.id)
             if agent and task.lane == WAITING and criteria.authored(task.description):
                 self._gated.add(task.id)
@@ -644,8 +660,9 @@ class BoardFeed:
             else:
                 self._open[task.id] = agent
                 self._settled.pop(task.id, None)
-            self._link(task.id, before["dependencies"] if before else (), agent["dependencies"] if agent else ())
-            self._publish("task", {"id": task.id, "agent": agent, "settled": settled})
+            self._link(task.id, (before or {}).get("dependencies", ()), (agent or {}).get("dependencies", ()))
+            if agent is None or not is_cold(agent):  # a page keeps a task that cooled until it reloads
+                self._publish("task", {"id": task.id, "agent": agent, "settled": settled})
             self._reassess(self._dependents.get(task.id, ()))
             if settling:
                 return settled["state"], settled["at"] or self._clock()
@@ -667,7 +684,7 @@ class BoardFeed:
             if gone is None and self._settled.pop(task_id, None) is None:
                 return
             self._gated.discard(task_id)
-            self._link(task_id, gone["dependencies"] if gone else (), ())
+            self._link(task_id, (gone or {}).get("dependencies", ()), ())
             self._publish("task", {"id": task_id, "agent": None, "settled": None})
             self._reassess(self._dependents.get(task_id, ()))
 
@@ -717,7 +734,7 @@ class BoardFeed:
     def _reassess(self, task_ids: Collection[str]) -> None:
         """Work out again whether each open task of `task_ids` is workable and publish those that changed."""
         for task_id in sorted(task_ids):
-            if (agent := self._open.get(task_id)) is None:
+            if (agent := self._open.get(task_id)) is None or is_cold(agent):
                 continue
             workable, since = self._workable(agent)
             if (agent["workable"], agent["workable_since"]) != (workable, since):
@@ -800,7 +817,8 @@ class BoardFeed:
     def pull_requests(self) -> dict[str, list[str]]:
         """Each open task's pull request links, for the tasks that cite any."""
         with self._lock:
-            return {task: list(agent["prs"]) for task, agent in self._open.items() if agent["prs"]}
+            prs = {task: agent["prs"] if not is_cold(agent) else self._cited.get(task) for task, agent in self._open.items()}
+            return {task: list(links) for task, links in prs.items() if links}
 
     def put_insight(self, finding: dict) -> None:
         """Draw a finding an engine posted, replacing the one of its id, and send it as an `insight` event.
@@ -849,6 +867,11 @@ class BoardFeed:
         It takes no lock, so opening a task never waits on the feed: one dict read is atomic, and a placed task's
         entry is replaced, never changed in place.
         """
+        agent = self.held(task_id)
+        return None if agent is not None and is_cold(agent) else agent
+
+    def held(self, task_id: str) -> dict | None:
+        """The open Board task as `task` has it, or its cold stub (`is_cold`) when it is done and past `HOT_S`."""
         return self._open.get(task_id) or self._open.get(self._keys.canonical(task_id) if self._keys else task_id)
 
     def cited(self, task_id: str) -> list[str]:
@@ -859,7 +882,7 @@ class BoardFeed:
     def open_tasks(self) -> list[dict]:
         """Every open Board task as the page draws it, read under the lock so a caller walks a list no placement changes."""
         with self._lock:
-            return list(self._open.values())
+            return self._hot()
 
     def is_done(self, task_id: str) -> bool:
         """Whether the task is done: completed, or in the done lane; a task the Board does not hold is not."""
@@ -871,7 +894,9 @@ class BoardFeed:
         were kept has none."""
         with self._lock:
             named = {task_id: {"title": s["title"], "labels": s.get("labels", [])} for task_id, s in self._settled.items()}
-            named.update({task_id: {"title": a["title"], "labels": a["labels"]} for task_id, a in self._open.items()})
+            named.update(
+                {task_id: {"title": a["title"], "labels": a["labels"]} for task_id, a in self._open.items() if not is_cold(a)}
+            )
             return named
 
     def machine_tasks(self, flow: str) -> list[dict]:
@@ -1080,11 +1105,23 @@ class BoardFeed:
             )
             return {"merges": found, "more": more}
 
+    def cold_page(self, before: float | None, limit: int) -> tuple[list[dict], bool]:
+        """`GET /api/done`: the next `limit` cold done stubs entered before `before` (None: the newest), and whether
+        older ones remain."""
+        with self._lock:
+            cold = sorted((a for a in self._open.values() if is_cold(a)), key=lambda a: a["entered"], reverse=True)
+        older = [a for a in cold if before is None or a["entered"] < before]
+        return older[:limit], len(older) > limit
+
+    def _hot(self) -> list[dict]:
+        """Every open task but the cold done ones; the caller holds the lock."""
+        return [agent for agent in self._open.values() if not is_cold(agent)]
+
     def _flows(self, now: float) -> tuple[list[dict], dict[str, dict]]:
         """Every flow with its tasks as the page draws them, and each machine's derivation (`machine_ties.derive`)."""
         since = now - self._window_s if self._window_s is not None else None
         flows = [
-            {"name": "board", "machine": self._drawn["board"], "agents": list(self._open.values())},
+            {"name": "board", "machine": self._drawn["board"], "agents": self._hot()},
             *(
                 {
                     "name": name,
@@ -1242,6 +1279,7 @@ class BoardFeed:
                 ],
                 "capabilities": dict(self._capabilities),
                 "settled": dict(self._settled),
+                "cold_done": sorted(task for task, agent in self._open.items() if is_cold(agent)),
                 "error": self._error(),
                 "reading": self._replaying(),
                 **declared(self._domains, self._runnable(), self._cues, self._processes),

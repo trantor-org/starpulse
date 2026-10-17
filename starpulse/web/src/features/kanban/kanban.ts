@@ -123,18 +123,19 @@ export interface Outline {
 }
 /**
  * The milestones with a task not Done, by milestone number; tasks with no milestone have no row. A completed task has left the Board for
- * `settled`, so it is counted there, done, or finishing a task would shrink its milestone's total instead of raising its done count.
+ * `settled`, so it is counted in `completed`, each milestone's count of them, done, or finishing a task would shrink its milestone's total
+ * instead of raising its done count.
  */
-export function milestoneOutline(tasks: KanbanTask[], settled: { state: string; milestone?: string }[] = []): Outline[] {
+export function milestoneOutline(tasks: KanbanTask[], completed: Record<string, number> = {}): Outline[] {
   const counts = new Map<string, Outline>();
-  const count = (milestone: string, done: boolean) => {
+  const count = (milestone: string, done: boolean, n = 1) => {
     const row = counts.get(milestone) ?? { milestone, done: 0, total: 0 };
-    row.total++;
-    if (done) row.done++;
+    row.total += n;
+    if (done) row.done += n;
     counts.set(milestone, row);
   };
   for (const t of tasks) if (t.milestone) count(t.milestone, t.lane === "done");
-  for (const s of settled) if (s.milestone && s.state === "completed") count(s.milestone, true);
+  for (const [milestone, n] of Object.entries(completed)) if (milestone && n > 0) count(milestone, true, n);
   return [...counts.values()].filter((r) => r.done < r.total).sort((a, b) => milestoneNumber(a.milestone) - milestoneNumber(b.milestone));
 }
 
@@ -317,7 +318,7 @@ export function kanbanTasks(sky: Sky): KanbanTask[] {
       id: a.id, title: a.title, lane: a.state, milestone: a.milestone ?? "", labels: a.labels ?? [], assignee: a.model, dependencies,
       openDeps: dependencies.filter((d) => open.has(d)).length, prs: cited(a.prs ?? [], sky.pulls[a.id] ?? []), description: a.description ?? "",
       live: latest ? { machine: latest.flow, state: latest.state, at: latest.at, source: sky.flows[latest.flow]?.machine.source } : null,
-      released: a.state === "ready" && a.previous === "waiting", moves: a.moves ?? {}, entered: a.entered ?? 0, created: a.created ?? null, workableSince: a.workable_since ?? null,
+      released: a.state === "ready" && a.previous === "waiting", moves: a.moves ?? (a.move_set ? sky.moveSets[a.move_set] : undefined) ?? {}, entered: a.entered ?? 0, created: a.created ?? null, workableSince: a.workable_since ?? null,
       machines: sessions.get(a.id) ?? [],
     };
   });

@@ -735,6 +735,25 @@ step, and the step it is in.
   contains the merge's commit (read through `gh`), or `null` while no such merge exists. That merge's row lists what it
   applies in `applies`. A pin bump appears only when a task cites its pull request.
 
+## Cold done tasks
+
+A task is hot for 24 h (`HOT_S`) after it enters `done`, then cold: the board feed holds only its `id`, `state` and
+`entered` time, and `GET /api/snapshot` omits it. A hot task keeps its record in `flows`; a lane change out of `done`
+(a reopen) reloads the cold task from its board file onto its new lane within that one change, and cooling itself
+publishes nothing, so a page keeps a card until it reloads. The page's snapshot (`/api/snapshot`) is slim:
+
+- `flows` carries open and hot done tasks, each without `description` and `criteria` (read them from
+  `GET /api/task/<id>`), and its `moves` as `move_set`, a key into the snapshot's `move_sets`;
+- `settled` keeps the tasks created or settled since the start of the day before local midnight, and `milestone_done` (`{milestone: count}`)
+  counts every settled completed task by milestone;
+- `/api/snapshot?view=full` is the whole document the CLI verbs read: full tasks, every `settled` entry and `cold_done`,
+  the ids of the cold done tasks.
+
+`GET /api/done[?before=<entered>][&limit=20]` returns `{tasks, more}`, the next page of cold done tasks, newest done
+first, each `{id, title, state, model, labels, milestone, type, entered}` read from the board on request. `before` is
+the `entered` of the last task held; `limit` is 1-100. A board that cannot read a task answers 404. A cold task has no
+`moves`, so moving it is a 409; `task show` and the held stream read it whole through its record.
+
 ## Machine rows
 
 The machines entered from an open machine (the In Progress one at the top) are its rows, newest activity first: a row is

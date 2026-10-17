@@ -31,7 +31,7 @@ from starpulse._internal.cli import skill_install
 from starpulse.contracts.adapters import Move
 from starpulse._internal.config.level import Level, Orbit, Terminal
 from starpulse._internal.cli import doctor
-from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.feed.board_feed import HOT_S, BoardFeed
 from starpulse._internal.feed.search import SearchIndex
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import HistoryStore
@@ -490,7 +490,7 @@ def test_a_verb_without_a_server_flag_reads_the_server_the_environment_names(
 
 def test_the_snapshot_verb_prints_the_servers_snapshot(base: str, capsys: pytest.CaptureFixture[str]) -> None:
     code, doc = _run(capsys, ["snapshot", "--server", base])
-    with urllib.request.urlopen(f"{base}/api/snapshot", timeout=5) as resp:
+    with urllib.request.urlopen(f"{base}/api/snapshot?view=full", timeout=5) as resp:
         served = json.load(resp)
 
     assert code == 0
@@ -2270,3 +2270,31 @@ def test_canonical_task_key_is_answered_for_a_settled_task_in_either_case(
     code, doc = _run(capsys, ["task", "show", "proj-3", "--server", base])
 
     assert (code, doc["id"]) == (0, "PROJ-3")
+
+
+def test_task_show_reads_a_cold_done_task_whole_from_the_board_and_a_dependent_no_longer_waits_on_it(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    now = time.time()
+    record = {
+        "title": "Old work",
+        "type": "story",
+        "profile": "@agent-a",
+        "labels": ["x"],
+        "milestone": "m-1",
+        "dependencies": [],
+        "description": "Long ago.",
+        "acceptanceCriteria": [{"n": 1, "text": "ships", "checked": True}],
+    }
+    feed = BoardFeed(machines=MACHINES, clock=lambda: now)
+    feed.expect("0-0")
+    feed.put(task("PROJ-9", "Done", observed_at=now - 2 * HOT_S))
+    feed.put(task("PROJ-1", "Ready", dependencies=("PROJ-9",)))
+
+    with _serve(tmp_path, feed, read={"PROJ-9": record}.get) as server:
+        _, cold = _run(capsys, ["task", "show", "proj-9", "--server", _url(server, "")])
+        _, dependent = _run(capsys, ["task", "show", "PROJ-1", "--server", _url(server, "")])
+
+    assert (cold["lane"], cold["title"], cold["description"], cold["milestone"]) == ("done", "Old work", "Long ago.", "m-1")
+    assert cold["criteria"] == [{"text": "ships", "checked": True}]
+    assert dependent["waiting_on"] == []
