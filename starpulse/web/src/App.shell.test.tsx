@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { BOARD_DRAWN } from "./shared/boardDrawn";
 import type { HudStore } from "./render/hud";
+import type { KanbanTask } from "./features/kanban/kanban";
 
 // the canvas renderer needs a browser's 2D context; this one only hands the test the store the page reads
 const held = vi.hoisted(() => ({ store: undefined as HudStore | undefined }));
@@ -78,6 +79,19 @@ describe("the page's first tree", () => {
     expect(marked()).toBe(true);
     expect(mounted("#nav .views")).toBe(true);
     expect(mounted("#rail #legend")).toBe(true);
+  });
+
+  it("counts on the Kanban entry only the cards the Kanban draws, not the Done ones from before today", () => {
+    const now = Date.now() / 1000;
+    const card = (id: string, lane: string, entered: number) => ({ id, lane, entered }) as unknown as KanbanTask;
+    act(() => root.render(<App />));
+    act(() => held.store!.set({
+      tree: { states: ["ready"], subs: {}, children: {} },
+      cards: [card("T-1", "ready", now), card("T-2", "done", now), card("T-3", "done", now - 3 * 86400), card("T-4", "done", now - 9 * 86400)],
+    }));
+    frame();
+
+    expect(host.querySelector('#nav [title="Kanban"] .n')?.textContent).toBe("2");
   });
 
   it("mounts them anyway when no board arrives, so a stream that never answers still shows its status", () => {
