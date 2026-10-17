@@ -96,7 +96,7 @@ session's first claim or task-naming switch, when its launch branch names no tas
 - A turn is the signals that share a Claude Code `prompt.id`; its end is its last signal. A prompt is labelled
   `injected` when its opening matches an `injected_openings` prefix and `human` otherwise; the label is kept and the
   prompt's text never is. With an `[analytics.labeller]` configured, a `human` Claude Code prompt's text is also sent
-  to that Laya typed-decision endpoint, which names its intent (one of the table's `criteria`, else `unsure`); that
+  to that typed-decision endpoint, which names its intent (one of the table's `criteria`, else `unsure`); that
   label is kept on the prompt and the text never is. An endpoint that is unreachable, slower than its `timeout`
   (default 2 s) or answers nothing usable leaves the label empty and ingest goes on. Codex exports no `prompt.id`, so a Codex prompt's turn is the signals up to the next
   prompt, and its prompts are all `human`.

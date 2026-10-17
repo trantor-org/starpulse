@@ -1,4 +1,4 @@
-"""The prompt labeller: a configured Laya typed-decision endpoint names a human prompt's intent, and any failure of it
+"""The prompt labeller: a configured typed-decision endpoint names a human prompt's intent, and any failure of it
 leaves the label empty."""
 
 import json

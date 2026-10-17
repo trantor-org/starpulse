@@ -17,7 +17,7 @@ tasks or skills (`GET /api/analytics/sessions`):
 
 - `injected_openings`: prefixes of a prompt's text. A prompt that opens with one is labelled `injected` (a harness
   or scheduler wrote it), any other `human`; the label is stored and the text never is.
-- `[analytics.labeller]`: the Laya typed-decision endpoint (`url`, the checkpoint `model`, optional `instructions` and a
+- `[analytics.labeller]`: the typed-decision endpoint (`url`, the checkpoint `model`, optional `instructions` and a
   `timeout` in seconds, 2 by default) that names a `human` Claude Code prompt's intent, one of the `criteria` table's
   labels (label to definition) or `unsure`. The prompt's text is sent to it and only the label is kept; an endpoint that
   is unreachable, slow or answers nothing usable leaves the label empty. With none, no prompt is labelled.
@@ -96,7 +96,7 @@ class SkillMachine:
 
 @dataclass(frozen=True)
 class Labeller:
-    """The endpoint that names a human prompt's intent: a Laya typed-decision `url` asked one `choice` question over the
+    """The endpoint that names a human prompt's intent: a typed-decision `url` asked one `choice` question over the
     `criteria` (label to definition) of the checkpoint `model`, given `timeout` seconds to answer."""
 
     url: str

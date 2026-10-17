@@ -206,7 +206,7 @@ class TestConfigCheck:
             'skill = "developing-test-first"\n'
             'stages = [{ name = "RED", activities = ["pytest"], ok = false }]\n'
             "[analytics.labeller]\n"
-            'url = "http://laya/v1"\n'
+            'url = "http://labeller/v1"\n'
             'model = "intent"\n'
             "[analytics.labeller.criteria]\n"
             'approval = "Proceed."\n'
@@ -232,7 +232,7 @@ class TestConfigCheck:
                 }
             ],
             "labeller": {
-                "url": "http://laya/v1",
+                "url": "http://labeller/v1",
                 "model": "intent",
                 "criteria": {"approval": "Proceed."},
                 "instructions": "",
