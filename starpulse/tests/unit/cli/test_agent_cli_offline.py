@@ -137,6 +137,11 @@ class TestConfigCheck:
             "autopilot_worker": False,
             "runs_worker": False,
             "slow_read_seconds": 1.0,
+            "worker_memory": {
+                "pulls": {"soft_mb": 768, "hard_mb": 1536},
+                "autopilot": {"soft_mb": 384, "hard_mb": 768},
+                "runs": {"soft_mb": 512, "hard_mb": 1024},
+            },
             "event_log_retention_days": 7,
             "event_log_archive_dir": "starpulse-archive",
             "ci": [],

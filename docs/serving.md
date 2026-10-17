@@ -60,6 +60,16 @@ the event log. A true setting means something outside `serve` runs that worker, 
 
 `starpulse reload` replaces the children whose installed code changed, tells those whose only change is their config block to re-read it, and re-executes `serve` when its own code changed, so a deploy restarts only what it changed. See [Reloading a running serve](cli.md#reloading-a-running-serve).
 
+`serve` also holds each child to a resident memory limit, sampled every 5 s. Past the soft limit it replaces the child: the new one starts, then the old one is stopped (killed after 10 s if it ignores `SIGTERM`). Past the hard limit it kills the child and starts a new one at once. Each action is logged as a warning naming the context, pid, size and limit. The size is read with the standard library only (`/proc` on Linux, `ps` on macOS); where there is no reader, as on Windows, `serve` logs one warning and runs the children without limits. A true `*_worker` setting means `serve` runs no child for that context, so no limit applies to it.
+
+| Context | `soft_mb` | `hard_mb` |
+| --- | --- | --- |
+| `pulls` | 768 | 1536 |
+| `autopilot` | 384 | 768 |
+| `runs` | 512 | 1024 |
+
+`[worker_memory.<context>]` overrides either key for a context (whole megabytes, 1 or more; `soft_mb` below `hard_mb`). An unknown context, an unknown key or a soft limit not below the hard one is refused at load by name.
+
 ### What the page shows when the server restarts
 
 The page keeps its last Board on screen while the connection is down and says why in the navigator's header, where the dot
@@ -135,6 +145,12 @@ event_log_archive_dir = "starpulse-archive"   # the default
 # and wrote it, `in_flight`, the `/api/pulls` reads running when it began, and `busy` and `streams`, the request workers
 # in use (the read itself included) and the streams open when it was accepted. No other route is timed. Above 0.
 slow_read_seconds = 1   # the default
+
+# The resident memory limits `serve` holds each worker child to, in megabytes (see Worker processes): past `soft_mb` it
+# replaces the child, past `hard_mb` it kills and restarts it. Contexts: `pulls`, `autopilot`, `runs`. Either key may be left out.
+# [worker_memory.pulls]
+# soft_mb = 768    # the default
+# hard_mb = 1536   # the default
 
 # The board adapter: a module under `starpulse`, or the dotted path of one an installed package provides.
 # The rest of the table is that adapter's settings.

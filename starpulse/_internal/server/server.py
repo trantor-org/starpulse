@@ -2313,7 +2313,12 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         pull_refresh=pull_refresh,
         slow_read_s=config.slow_read_seconds,
     )
-    supervisor = Supervisor(worker_commands(config, args.config), read=Reader(args.config), control=control_file(args.config))
+    supervisor = Supervisor(
+        worker_commands(config, args.config),
+        read=Reader(args.config),
+        control=control_file(args.config),
+        limits=config.worker_memory,
+    )
     supervisor.start()
     try:
         serve_until_stopped(StarPulseServer((args.host, args.port), handler, listening), feed)

@@ -75,6 +75,7 @@ _KEYS = {
     "autopilot_worker",
     "runs_worker",
     "slow_read_seconds",
+    "worker_memory",
 }
 _OIDC_KEYS = {
     "issuer",
@@ -93,9 +94,21 @@ _REPO_KEYS = {"name", "path", "applied_by"}
 _FORWARD_KEYS = {"url", "token_env", "batch"}
 _SOURCE_KEYS = {"name", "token_env"}
 
+_MEMORY_KEYS = {"soft_mb", "hard_mb"}
+
 _ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
-__all__ = ["CommitKeys", "Config", "ConfigError", "Forward", "RunsInstance", "Source", "load", "runs_adapter"]
+__all__ = [
+    "CommitKeys",
+    "Config",
+    "ConfigError",
+    "Forward",
+    "MemoryLimit",
+    "RunsInstance",
+    "Source",
+    "load",
+    "runs_adapter",
+]
 
 
 class ConfigError(ValueError):
@@ -429,6 +442,48 @@ def _source(raw: object) -> Source:
     return Source(name, _token_env(raw["token_env"], f"source {name}:"))
 
 
+@dataclass(frozen=True)
+class MemoryLimit:
+    """A worker child's resident memory limits in megabytes: past `soft_mb` it is replaced, past `hard_mb` it is killed."""
+
+    soft_mb: int
+    hard_mb: int
+
+
+#: The limit of each `starpulse worker` context when `worker_memory` does not name one.
+WORKER_MEMORY = {
+    "pulls": MemoryLimit(768, 1536),
+    "autopilot": MemoryLimit(384, 768),
+    "runs": MemoryLimit(512, 1024),
+}
+
+
+def _megabytes(value: object, where: str, key: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+        raise ConfigError(f"{where}: {key} must be a whole number of megabytes, 1 or more")
+    return value
+
+
+def _worker_memory(raw: object) -> dict[str, MemoryLimit]:
+    """The packaged limits with each `[worker_memory.<context>]` key laid over them."""
+    if not isinstance(raw, dict) or not all(isinstance(v, dict) for v in raw.values()):
+        raise ConfigError("worker_memory must be a table of per-context tables")
+    if unknown := sorted(raw.keys() - WORKER_MEMORY.keys()):
+        known = ", ".join(sorted(WORKER_MEMORY))
+        raise ConfigError(f"worker_memory: unknown context(s) {', '.join(unknown)}; known: {known}")
+    limits = dict(WORKER_MEMORY)
+    for context, table in raw.items():
+        where = f"worker_memory.{context}"
+        if unknown := sorted(table.keys() - _MEMORY_KEYS):
+            raise ConfigError(f"{where}: unknown key(s) {', '.join(unknown)}; known: {', '.join(sorted(_MEMORY_KEYS))}")
+        soft = _megabytes(table.get("soft_mb", limits[context].soft_mb), where, "soft_mb")
+        hard = _megabytes(table.get("hard_mb", limits[context].hard_mb), where, "hard_mb")
+        if soft >= hard:
+            raise ConfigError(f"{where}: soft_mb must be below hard_mb")
+        limits[context] = MemoryLimit(soft, hard)
+    return limits
+
+
 def _flag(raw: dict, key: str, default: bool) -> bool:
     value = raw.get(key, default)
     if not isinstance(value, bool):
@@ -501,6 +556,8 @@ class Config:
     """The autopilot (capacity sampler and dispatch loop) runs in `starpulse worker autopilot`, not in `serve`: `serve` starts neither and reads and writes the autopilot's settings through the event log; false: `serve` runs them."""
     runs_worker: bool = False
     """The Runs context (the run adapters, the trigger starts and the pushed-runs follower) runs in `starpulse worker runs`, not in `serve`: `serve` starts none of them and draws the workflows the worker keeps in the event log; false: `serve` supervises that worker as a child."""
+    worker_memory: Mapping[str, MemoryLimit] = field(default_factory=lambda: dict(WORKER_MEMORY))
+    """The resident memory limits `serve` holds each worker child to: past `soft_mb` it replaces the child (starts a new one, then stops the old), past `hard_mb` it kills and restarts it. Keyed by context, `pulls`, `autopilot` and `runs`."""
     slow_read_seconds: float = SLOW_READ_S
     """`serve` logs a `slow_read` line for each `GET /api/pulls` that took this many seconds or more, from accept to the last byte written, with the seconds it waited for a handler thread, computed its answer and wrote it."""
     analytics: Analytics = field(default_factory=Analytics)
@@ -729,5 +786,6 @@ def load(path: Path | None) -> Config:
         delivery_worker=_flag(raw, "delivery_worker", False),
         autopilot_worker=_flag(raw, "autopilot_worker", False),
         runs_worker=_flag(raw, "runs_worker", False),
+        worker_memory=_worker_memory(raw.get("worker_memory", {})),
         slow_read_seconds=_slow_read(raw.get("slow_read_seconds", SLOW_READ_S)),
     )
