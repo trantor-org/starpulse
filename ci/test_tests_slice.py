@@ -38,7 +38,8 @@ def host(tmp_path, monkeypatch):
             own.write_text(IN_SLICE)
 
     monkeypatch.setattr(tests_slice.subprocess, "run", run)
-    monkeypatch.setattr(tests_slice.time, "sleep", sleep)
+    # Swap the module's `time`, not `time.sleep`: the latter is process-wide and counts every other sleeper.
+    monkeypatch.setattr(tests_slice, "time", SimpleNamespace(sleep=sleep))
     host = SimpleNamespace(calls=calls, own=own, root=tmp_path, returncode=0, stderr="", naps=0, lag=2)
     return host
 
