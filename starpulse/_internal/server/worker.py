@@ -21,7 +21,6 @@ import logging
 import threading
 from pathlib import Path
 
-from starpulse._internal.board import replica
 from starpulse._internal.board.seam import Board
 from starpulse._internal.config.config import Config, discover, load
 from starpulse._internal.config.pins import GitHub
@@ -36,8 +35,9 @@ from starpulse._internal.pulls.delivery import (
     keep_metrics,
 )
 from starpulse._internal.pulls.pulls import PullStore
+from starpulse._internal.server.assembly import worker_board
 from starpulse._internal.server.hold import hold
-from starpulse._internal.server.server import assemble, start_delivery
+from starpulse._internal.server.server import start_delivery
 
 logger = logging.getLogger(__name__)
 
@@ -173,13 +173,12 @@ def main(argv: list[str] | None = None) -> None:
     except (OSError, ValueError) as exc:
         parser.exit(1, f"{path}: {exc}\n")
     base = args.config.parent if args.config else Path.cwd()
-    try:
-        board, feed = assemble(config, base, None, [])
-    except ValueError as exc:
-        parser.exit(1, f"{exc}\n")
     log = EventLog(database_url(config.database_url, base))
     stop = threading.Event()
-    replica.read(board, feed, "starpulse-pulls", log, config, stop, local=args.local_board)
+    try:
+        board, feed = worker_board(config, base, log, "starpulse-pulls", stop, local=args.local_board)
+    except ValueError as exc:
+        parser.exit(1, f"{exc}\n")
     Projected(log, feed).apply()  # the pull request answers the pins read: the Board's checkpoint no longer holds them
     pins = GitHub(lambda: feed.pull_answers().get("pins", {}))
     delivery = Delivery(config, board, feed, log, PullStore(log.engine), pins)
