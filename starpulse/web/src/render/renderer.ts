@@ -42,7 +42,7 @@ import { sizes } from "./grow";
 import { draws, hostRun, laneRun, layout as traceLayout, machineRun, sessionRings, subjectOf, traceCard, traceTable, type Place, type Run, type Subject } from "../features/level/trace";
 import { boardTies, hangarLevel, tieLedger, type Ties } from "./dagTies";
 import { hubTip, tieTip } from "./dagTieTips";
-import type { Dag, Delta, LedgerRow, Machine, RawAgent, Snapshot, Writer } from "../api";
+import type { Dag, Delta, FlowSnapshot, LedgerRow, Machine, RawAgent, Snapshot, Writer } from "../api";
 import { fanTip, stepStatus } from "../features/fanout/fanoutModel";
 import { esc, fanList, queueCell, startRun, taskLink, taskPanel } from "./panels";
 import { emptyFan, fanRows, queueRow, stepRuns, track, type Fan } from "../features/fanout/fan";
@@ -140,9 +140,24 @@ export interface Renderer {
   refresh(): void;
 }
 
-/** The Recent feed's newest 40 lines at `now`: each move, each DAG run's line, and a DAG's own line for a run no run line ended. */
-export function feedOf(moves: Move[], dags: Dag[], runs: RunLine[], now: number): Omit<FeedLine, "time">[] {
-  const ev: Omit<FeedLine, "time">[] = moves.filter((e) => e.at <= now).map((e) => ({ key: `m${e.flow}:${e.task ?? ""}:${e.event}:${e.at}`, at: e.at, who: e.task ?? "", what: e.event.toLowerCase(), where: e.flow, task: e.task ?? undefined }));
+/** A session's per-call moves: one a tool or skill use, too many to read in the feed. */
+const CHATTER = new Set(["TOOL_USED", "SKILL_USED"]);
+/** A session id (a UUID), which the feed writes as its first block. */
+const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-/i;
+
+/** The Board task each session holds, by session id: what a session's feed line is named for. */
+export const heldTasks = (board: FlowSnapshot | undefined) => new Map((board?.agents ?? []).flatMap((a) => (a.holder ? [[a.holder, a.id] as const] : [])));
+
+/**
+ * The Recent feed's newest 40 lines at `now`: each move but a session's tool and skill uses, each DAG run's line, and a DAG's own line for a run
+ * no run line ended. A session's line is named for the task it holds in `held`, else for its id's first block.
+ */
+export function feedOf(moves: Move[], dags: Dag[], runs: RunLine[], now: number, held = new Map<string, string>()): Omit<FeedLine, "time">[] {
+  const ev: Omit<FeedLine, "time">[] = moves.filter((e) => e.at <= now && !CHATTER.has(e.event)).map((e) => {
+    const task = (e.task && held.get(e.task)) ?? e.task ?? undefined;
+    const who = task && SESSION_ID.test(task) ? task.slice(0, 8) : task ?? "";
+    return { key: `m${e.flow}:${e.task ?? ""}:${e.event}:${e.at}`, at: e.at, who, what: e.event.toLowerCase(), where: e.flow, task };
+  });
   // a run line already says how its run ended, so the DAG's own line for that run is left out
   const told = new Set(runs.filter((l) => l.tone).map((l) => l.runId));
   for (const d of dags) {
@@ -627,7 +642,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   /** Every quarter second: the feed and the navigator's moving machines, written only when they change. */
   function heartbeat() {
     if (!S) return;
-    const feed: FeedLine[] = feedOf(EVENTS(), S.dags, runEvents.lines, T).map((l) => ({ ...l, time: hhmm(l.at) })), mv = [...new Set(EVENTS().filter((e) => e.from && e.at <= T && T - e.at < TRAVEL).map((e) => e.flow))].sort();
+    const feed: FeedLine[] = feedOf(EVENTS(), S.dags, runEvents.lines, T, heldTasks(S.board)).map((l) => ({ ...l, time: hhmm(l.at) })), mv = [...new Set(EVENTS().filter((e) => e.from && e.at <= T && T - e.at < TRAVEL).map((e) => e.flow))].sort();
     const now = hud.get();
     if (feed.map((f) => f.key + f.at + f.time).join() !== now.feed.map((f) => f.key + f.at + f.time).join()) hud.set({ feed });
     if (mv.join() !== now.moving.join()) hud.set({ moving: mv });
