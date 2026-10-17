@@ -417,6 +417,26 @@ It prints one JSON line: `source`, `store` (the database URL, password hidden), 
 names the file and line; a flag the command does not allow, a file or config that cannot be read, or a board the config
 does not assemble exits 2.
 
+## Replaying history against the machines
+
+`starpulse conform [--config starpulse.toml] [--since WHEN] [--machine NAME]...` replays the history the config's
+`database_url` holds against the machines the project declares and prints each violation. It is not an agent verb: it
+reads no server and `help --agent` leaves it out. `WHEN` is an ISO date or epoch seconds; `--machine` limits the replay
+to a named machine and may repeat, and a name the project does not declare is a usage error.
+
+The `board` machine is judged on the board's lane changes: a move is a violation when no transition leads from the lane
+the task left to the lane it entered, and a task's first lane is judged from the machine's initial state. Every other
+machine the feed draws is judged on its `machine:events` entries, each task replayed from the initial state: an event no
+transition declares from a state the task may be in is a violation, and the task stays where it was. A task in a final
+state may begin again from the initial one.
+
+It prints one JSON line: `machines` (one `{machine, replayed, violations}` per machine with history, where `replayed` is
+the moves judged and each violation is `{source, move, count, tasks}` with up to five example tasks), `replayed` and
+`violations` (totals). The exit code is 0 when no move is a violation, 1 when one is, and 2 for a flag the command does
+not allow, a config that cannot be read, a board the config does not assemble or an unknown `--machine`. Guards are not
+judged: the history keeps the lane and the event but no facts, so a move is checked by its shape. [Conformance
+violations](serving.md#conformance-violations) counts the same judgment live.
+
 ## Reloading a running serve
 
 `starpulse reload [--config starpulse.toml]` makes the `serve` started from that config pick up changed code and config

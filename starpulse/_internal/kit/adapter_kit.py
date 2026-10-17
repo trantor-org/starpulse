@@ -391,6 +391,7 @@ def serve(
     slow_read_s: float = SLOW_READ_S,
     actor_metrics: Callable[[], str] | None = None,
     lane_metrics: Callable[[], str] | None = None,
+    conformance_metrics: Callable[[], str] | None = None,
 ) -> Iterator[ThreadingHTTPServer]:
     """Serve a stub build in `tmp_path` until the `with` block ends."""
     static = tmp_path / "static"
@@ -438,6 +439,7 @@ def serve(
         slow_read_s=slow_read_s,
         actor_metrics=actor_metrics,
         lane_metrics=lane_metrics,
+        conformance_metrics=conformance_metrics,
     )
     server = StarPulseServer(("127.0.0.1", port), handler)
     # A short poll interval: `shutdown` waits out the one in flight, so the default half second is paid by every test.
