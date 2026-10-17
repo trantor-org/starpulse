@@ -77,7 +77,7 @@ STARVED = 2
 WHAT_IF = ("Ready", "In Progress")
 READS: dict[str, str] = {
     "/api/snapshot": "/api/snapshot",
-    "/api/merges": "/api/merges?limit=20",
+    "/api/ledger/": "/api/ledger/MERGED?limit=20",
     "/api/pulls": "/api/pulls",
     "/api/doctor": "/api/doctor",
     "/api/machines": "/api/machines?limit=20",

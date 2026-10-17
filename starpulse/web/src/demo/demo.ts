@@ -20,9 +20,9 @@ let demoN = 0;
 /** Seconds between two merges landing on a demo page's Ledger. */
 const MERGE_EVERY_S = 25;
 
-/** The page's own snapshot with what the demo server keeps live: the runs instances' workflows and the Ledger, its merges, 24-hour strip and pins. The page plays the machines itself. */
+/** The page's own snapshot with what the demo server keeps live: the runs instances' workflows and the Ledger's 24-hour strip and pins. The page plays the machines itself. */
 export function demoLive(prev: Snapshot, next: Snapshot): Snapshot {
-  return { ...prev, dags: next.dags, ledgers: next.ledgers, mergeStrip: next.mergeStrip, mergePins: next.mergePins };
+  return { ...prev, dags: next.dags, mergeStrip: next.mergeStrip, mergePins: next.mergePins };
 }
 
 export function demoStep(prev: Snapshot, random = Math.random): Snapshot {
@@ -132,7 +132,7 @@ const HANDLERS: Record<string, Handler> = {
   "/api/autopilot": (server, _path, _query, init) => server.autopilot(init?.method ?? "GET", String(init?.body ?? "")),
   "/api/harnesses": () => json(HARNESSES),
   "/api/doctor": (server) => json(demoContract(server.snapshot, scenarioOf(globalThis.location?.search ?? ""))),
-  "/api/merges": (server, _path, query) => json(server.mergesBefore(query.has("before") ? Number(query.get("before")) : undefined, Number(query.get("limit") ?? PAGE))),
+  "/api/ledger": (server, path, query) => json(server.ledgerPage(decodeURIComponent(path.slice("/api/ledger/".length)), query.has("before") ? Number(query.get("before")) : undefined, Number(query.get("limit") ?? PAGE))),
   "/api/runs": (server, path, _query, init) => {
     const dag = path.match(/^\/api\/runs\/(.+)\/rerun$/)?.[1];
     return dag && init?.method === "POST" ? server.rerun(decodeURIComponent(dag)) : json({ error: `This demo does not serve ${path}.` }, 404);
@@ -213,7 +213,7 @@ export class DemoServer {
   lanes: Record<string, LaneStep[]>;
   records: Record<string, TaskRecord>;
   private created = new Set<string>();
-  /** Every merge of the demo's day, newest first: the snapshot holds only the newest page, `/api/merges` serves the rest. */
+  /** Every merge of the demo's day, newest first: `/api/ledger/MERGED` serves it a page at a time. */
   private day: LedgerRow[] = [];
   /** When each forced rerun started, and the DAGs whose forced run is still going. */
   private reruns: number[] = [];
@@ -267,17 +267,16 @@ export class DemoServer {
 
   /** A merge lands on the Ledger: the runs in flight finish and the new merge's writer starts. A demo with no merge Ledger has none to land. */
   land() {
-    if (!this.snapshot.ledgers?.[MERGE_EVENT]) return;
+    if (!this.day.length) return;
     const next = structuredClone(this.snapshot);
     this.day = arriveMerge(next, this.day, this.clock());
-    Object.assign(next, this.ledgerFields(next));
+    Object.assign(next, this.ledgerFields());
     this.publish(next);
   }
 
-  /** The Ledger's part of a snapshot: the newest page of merges, the day's strip counted over all of them, and the pins the page leaves out. */
-  private ledgerFields(from: Pick<Snapshot, "ledgers"> = {}): Pick<Snapshot, "ledgers" | "mergeStrip" | "mergePins"> {
-    const head = this.day.slice(0, PAGE);
-    return { ledgers: { ...from.ledgers, [MERGE_EVENT]: head }, mergeStrip: demoStrip(this.day, this.reruns, this.clock()), mergePins: demoPins(this.day, head) };
+  /** The Ledger's part of a snapshot: the day's strip counted over all the merges, and the pins the newest page leaves out. */
+  private ledgerFields(): Pick<Snapshot, "mergeStrip" | "mergePins"> {
+    return { mergeStrip: demoStrip(this.day, this.reruns, this.clock()), mergePins: demoPins(this.day, this.day.slice(0, PAGE)) };
   }
 
   /** `POST /api/runs/<dag>/rerun`: a forced run of a DAG with an unresolved failure, refused as the server refuses one with nothing to rerun or one already going; it clears the failures a few seconds later. */
@@ -306,16 +305,16 @@ export class DemoServer {
     const next = structuredClone(this.snapshot);
     const cell = next.dags.find((d) => d.name === dag);
     if (cell?.active) cell.active = cell.active.filter((a) => a.runId !== runId);
-    Object.assign(next, this.ledgerFields(next));
+    Object.assign(next, this.ledgerFields());
     this.publish(next);
   }
 
-  /** `GET /api/merges`: up to `limit` merges older than `before` (none: the newest), and whether older ones remain. Merges of one second come whole, as the server's do. */
-  mergesBefore(before: number | undefined, limit: number): { merges: LedgerRow[]; more: boolean } {
-    const older = this.day.filter((r) => before === undefined || r.at < before);
+  /** `GET /api/ledger/<event>`: up to `limit` rows older than `before` (none: the newest), and whether older ones remain. Merges of one second come whole, as the server's do; the demo has no other event's rows. */
+  ledgerPage(event: string, before: number | undefined, limit: number): { rows: LedgerRow[]; more: boolean } {
+    const older = event === MERGE_EVENT ? this.day.filter((r) => before === undefined || r.at < before) : [];
     let end = Math.min(limit, older.length);
     while (end > 0 && end < older.length && older[end].at === older[end - 1].at) end++;
-    return { merges: older.slice(0, end), more: end < older.length };
+    return { rows: older.slice(0, end), more: end < older.length };
   }
 
   /** One step of the walk, its Board lane changes recorded; a card it settles stays settled and new work created now takes its place, so the Board never drains.

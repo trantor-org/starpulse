@@ -48,10 +48,11 @@ export interface ApiContract {
   harnesses: Harnesses;
   health: Health;
   laneHistory: LaneHistory;
+  ledger: LedgerPage;
+  ledgerChange: LedgerChange;
   level: Level;
   machineHistory: MachineHistory;
   machines: Machines;
-  merges: Merges;
   milestoneShown: MilestoneShown;
   milestones: Milestones;
   missedLoads: MissedLoads;
@@ -789,16 +790,10 @@ export interface ClaimDelta {
   task: string;
 }
 /**
- * The Ledger since the last event: per event the rows that are new or differ (newest first), and the keys of rows
- * that left the page or the window; every other row stands. `mergeStrip` and `mergePins` are whole.
+ * The merge strip and pins since the last event, whole. A Ledger's rows are not here: a page that has one open
+ * reads `GET /api/ledger/<event>/events`.
  */
 export interface LedgersDelta {
-  gone: {
-    [k: string]: string[];
-  };
-  ledgers: {
-    [k: string]: LedgerRow[];
-  };
   mergePins: LedgerRow[];
   mergeStrip: MergeStrip | null;
 }
@@ -1145,6 +1140,20 @@ export interface LaneStep {
   to: string;
 }
 /**
+ * `GET /api/ledger/<event>`, and the first event of `GET /api/ledger/<event>/events`: a Ledger's rows, newest first,
+ * and whether older ones remain.
+ */
+export interface LedgerPage {
+  more: boolean;
+  rows: LedgerRow[];
+}
+/**
+ * A later event of `GET /api/ledger/<event>/events`: the rows that are new or differ; every other row stands.
+ */
+export interface LedgerChange {
+  rows: LedgerRow[];
+}
+/**
  * `GET /api/level`: the level's flow numbers over a window.
  */
 export interface Level {
@@ -1400,13 +1409,6 @@ export interface Tie {
    * What has to hold for a declared tie to run; empty otherwise.
    */
   when: string;
-}
-/**
- * `GET /api/merges`: the next page of merge rows, newest first, and whether older ones remain.
- */
-export interface Merges {
-  merges: LedgerRow[];
-  more: boolean;
 }
 /**
  * `GET /api/milestones/<id>`: one open milestone.
@@ -1913,12 +1915,6 @@ export interface Snapshot {
    * The findings an engine posted that are still live.
    */
   insights?: Finding[] | null;
-  /**
-   * Each Ledger event's rows, newest first.
-   */
-  ledgers?: {
-    [k: string]: LedgerRow[];
-  } | null;
   machinePage?: MachinePage | null;
   machineStrip?: MachineStrip | null;
   /**

@@ -298,6 +298,8 @@ class BoardFeed:
         self._subscribers: list[queue.Queue] = []
         #: The queues of the pages streaming `/api/events` (a subset of `_subscribers`), which `announce` reaches.
         self._streams: list[queue.Queue] = []
+        #: The pages with a Ledger open: the event each watches and the queue of that event's changed rows.
+        self._watchers: list[tuple[str, queue.Queue]] = []
         self._awaiting = False  # pragma: no mutate — None is falsy too
         self._expected: tuple[int, int] | None = None
         self._seen = (0, 0)
@@ -1067,11 +1069,9 @@ class BoardFeed:
         return None if run is None else {"runId": run["runId"], "params": dict(run.get("params", {}))}
 
     def _head(self, ledgers: dict[str, list[dict]]) -> dict[str, list[dict]]:
-        """`ledgers` with the merge event's rows cut to the newest page; older ones come from `merges`."""
-        if MERGE_EVENT not in ledgers:
-            return ledgers
-        found, _ = page(ledgers[MERGE_EVENT], before=None, limit=PAGE, since=self._clock() - LEDGER_WINDOW)
-        return {**ledgers, MERGE_EVENT: found}
+        """`ledgers` with each event's rows cut to the newest page; older ones come from `ledger_rows`."""
+        since = self._clock() - LEDGER_WINDOW
+        return {event: page(rows, before=None, limit=PAGE, since=since)[0] for event, rows in ledgers.items()}
 
     def _merge_strip(self, ledgers: dict[str, list[dict]]) -> dict | None:
         """The 24-hour strip of the merge ledger (`ledger.strip`), counted over every row rather than the page sent;
@@ -1096,14 +1096,40 @@ class BoardFeed:
         head = self._head(full)
         return {"ledgers": head, "mergeStrip": self._merge_strip(full), "mergePins": self._merge_pins(full, head)}
 
-    def merges(self, before: float | None, limit: int) -> dict:
-        """`GET /api/merges`: the next `limit` merges older than `before` (None: the newest), `{merges, more}`, none
-        from beyond `LEDGER_WINDOW`."""
+    def _ledger_marks(self, full: dict[str, list[dict]]) -> dict:
+        """What the snapshot carries of the Ledger: the merge strip and pins, which the starmap draws always; a
+        Ledger's rows come when a page opens it."""
+        view = self._ledger_view(full)
+        return {"mergeStrip": view["mergeStrip"], "mergePins": view["mergePins"]}
+
+    def ledger_rows(self, event: str, before: float | None, limit: int) -> dict | None:
+        """`GET /api/ledger/<event>`: the next `limit` rows older than `before` (None: the newest), `{rows, more}`, none
+        from beyond `LEDGER_WINDOW`; None when no workflow is tied to `event`."""
         with self._lock:
-            found, more = page(
-                self._ledger_full.get(MERGE_EVENT, ()), before=before, limit=limit, since=self._clock() - LEDGER_WINDOW
-            )
-            return {"merges": found, "more": more}
+            return self._ledger_page(event, before, limit)
+
+    def _ledger_page(self, event: str, before: float | None, limit: int) -> dict | None:
+        if event not in self._ties:
+            return None
+        found, more = page(
+            self._ledger_full.get(event, ()), before=before, limit=limit, since=self._clock() - LEDGER_WINDOW
+        )
+        return {"rows": found, "more": more}
+
+    def watch_ledger(self, event: str) -> tuple[list[dict], bool, queue.Queue] | None:
+        """A page opening `event`'s Ledger: its newest rows, whether older ones remain, and the queue of every change to
+        those rows after them, `{rows}` each; None when no workflow is tied to `event`. Only this event's changes
+        reach the queue, and no stream of `/api/events` carries a row."""
+        with self._lock:
+            if (found := self._ledger_page(event, None, PAGE)) is None:
+                return None
+            changes: queue.Queue = queue.Queue()
+            self._watchers.append((event, changes))
+            return found["rows"], found["more"], changes
+
+    def unwatch_ledger(self, changes: queue.Queue) -> None:
+        with self._lock:
+            self._watchers = [(event, held) for event, held in self._watchers if held is not changes]
 
     def cold_page(self, before: float | None, limit: int) -> tuple[list[dict], bool]:
         """`GET /api/done`: the next `limit` cold done stubs entered before `before` (None: the newest), and whether
@@ -1175,11 +1201,15 @@ class BoardFeed:
                 self._ledger_full = full
                 view = self._ledger_view(full)
                 strip_ = view["mergeStrip"]
-                seen = (view["ledgers"], strip_ and strip_["buckets"], view["mergePins"])
-                if seen != (self._ledgers, self._strip and self._strip["buckets"], self._pins):
-                    changed, gone = _ledger_changes(self._ledgers, view["ledgers"])
-                    self._ledgers, self._strip, self._pins = view["ledgers"], strip_, view["mergePins"]
-                    self._publish("ledgers", {**view, "ledgers": changed, "gone": gone})
+                changed = _ledger_changes(self._ledgers, view["ledgers"])
+                marks = (strip_ and strip_["buckets"], view["mergePins"])
+                shown = (self._strip and self._strip["buckets"], self._pins)
+                self._ledgers, self._strip, self._pins = view["ledgers"], strip_, view["mergePins"]
+                for event, changes in self._watchers:
+                    if event in changed:
+                        changes.put({"rows": changed[event]})
+                if marks != shown:
+                    self._publish("ledgers", {"mergeStrip": strip_, "mergePins": view["mergePins"]})
 
     def _drawn_pools(self) -> list[dict]:
         """Every instance's concurrency pools, each named `<instance>/<pool>` like the `pool` a workflow names."""
@@ -1270,7 +1300,7 @@ class BoardFeed:
                 "dags": self._workflows(),
                 "pools": self._drawn_pools(),
                 "pulls": _drawn_pulls(self._pulls),
-                **self._ledger_view(self._ledger_full),
+                **self._ledger_marks(self._ledger_full),
                 "claims": dict(self._claims),
                 "insights": [
                     finding
@@ -1382,21 +1412,15 @@ def follow(
     return thread
 
 
-def _ledger_changes(
-    sent: Mapping[str, Sequence[dict]], now: Mapping[str, Sequence[dict]]
-) -> tuple[dict[str, list[dict]], dict[str, list[str]]]:
-    """Per event, the rows of `now` that differ from the same key in `sent` (or are new), and the keys of `sent` that `now` lacks."""
+def _ledger_changes(sent: Mapping[str, Sequence[dict]], now: Mapping[str, Sequence[dict]]) -> dict[str, list[dict]]:
+    """Per event, the rows of `now` that differ from the same key in `sent` (or are new). A row that left the page is
+    not named: a page that holds it keeps it."""
     changed: dict[str, list[dict]] = {}
-    gone: dict[str, list[str]] = {}
-    for event in sent.keys() | now.keys():
+    for event, rows in now.items():
         before = {row["key"]: row for row in sent.get(event, ())}
-        rows = [row for row in now.get(event, ()) if before.get(row["key"]) != row]
-        left = before.keys() - {row["key"] for row in now.get(event, ())}
-        if rows:
-            changed[event] = rows
-        if left:
-            gone[event] = sorted(left)
-    return changed, gone
+        if found := [row for row in rows if before.get(row["key"]) != row]:
+            changed[event] = found
+    return changed
 
 
 def _drawn_pulls(pulls: Mapping[str, Sequence[Mapping]]) -> dict[str, list[dict]]:

@@ -291,6 +291,8 @@ export interface LedgerView extends Pick<Ledger, "event" | "rows"> {
   cols: (Tie & { x0: number; x1: number; y0: number; y1: number })[];
   /** A merge Ledger's rows, when the server sent any. */
   grid?: LedgerGrid;
+  /** Whether a merge Ledger's first page is still on its way: the rows are asked for when the Ledger opens. */
+  loading?: boolean;
 }
 /** A fold's level: the DAGs one Board fold stands for. Over a Board path they are the Ledger of the event they are tied to, between the path's two states. */
 export interface FoldView {
@@ -1335,7 +1337,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     const tsc = raw.map((g) => (one(g) ? 1 : Math.min(1.1, 104 / Math.max(1, g.h), 141 / Math.max(1, g.w))));
     const msc = raw.map((g) => (one(g) ? 0.8 : Math.min(0.55, 43 / Math.max(1, g.h), 59 / Math.max(1, g.w))));
     const lines = (t: Tie) => [t.role === "writer" ? `on ${t.on}` : `cue · on ${t.on}`, ...(t.resolves ? [`clears on ${t.resolves === "forced" ? "forced rerun" : "next success"}`] : [])];
-    const merges = led.rows === "merge" ? S.ledgers[led.event] ?? [] : [];
+    const held0 = led.rows === "merge" ? S.ledgers[led.event] : undefined, merges = held0 ?? [];
     // the gutter: the row labels' 340 px (at most a quarter of the level) when there are rows, else what the junction's label needs
     const lead = (u: number, F: number) => Math.max(F * (textW("merge to main", 12.5) + 88), merges.length ? 64 * u + Math.min(340 * F, 0.26 * w) : 0);
     const tw = (u: number) => raw.map((g, i) => g.w * tsc[i] * u + 2 * (one(g) ? 5 : 4) * u), base = (u: number, F: number) => tw(u).map((x) => x + 36 * F);
@@ -1372,7 +1374,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
       return st;
     });
     const writer = stars.find((_, i) => cols[i].role === "writer");
-    f.ledger = { event: led.event, rows: led.rows, mark: { x: writer ? writer.x : (f.p0.x + f.p1.x) / 2, y: yP }, J: { x: sx, y: yH }, bus, cap, cols };
+    f.ledger = { event: led.event, rows: led.rows, loading: led.rows === "merge" && held0 === undefined, mark: { x: writer ? writer.x : (f.p0.x + f.p1.x) / 2, y: yP }, J: { x: sx, y: yH }, bus, cap, cols };
     scene.groups.push({ name: "", head: false, lx: 0, ly: 0, stars });
     let bottom = bus + 40 * F;
     if (merges.length) {

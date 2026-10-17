@@ -1037,15 +1037,13 @@ def test_scrub_drops_the_board_writers_claims_so_no_real_task_id_survives() -> N
     assert "TASK-2620" not in json.dumps(demo)
 
 
-def test_scrub_drops_the_merge_ledgers_that_name_real_tasks_and_pull_requests() -> None:
+def test_scrub_drops_the_merge_pins_that_name_real_tasks_and_pull_requests() -> None:
     live = _live()
     row = {"key": "k", "at": 1.0, "tasks": ["TASK-2620"], "pr": {"url": "https://github.com/o/r/pull/9"}}
-    live["ledgers"] = {"MERGED": [row]}
     live["mergePins"] = [row | {"tasks": ["TASK-2621"]}]
 
     demo = scrub(live)
 
-    assert "ledgers" not in demo
     assert "mergePins" not in demo
     assert not re.search(r"TASK-\d+|/pull/9", json.dumps(demo))
 

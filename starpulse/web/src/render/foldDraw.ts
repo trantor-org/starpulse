@@ -9,7 +9,7 @@ import { pinsOf, portOf, withPins, type Pins } from "../features/level/ledgerPin
 import { AMBER, drawRows, CROSS, type Hits, type Ink } from "../features/level/ledgerRows";
 import { LEDGER_PALETTE } from "./ledgerPalette";
 import { begin, ease as easeScroll, fail, newScroll, place, receive, take, wantsPage, type Scroll } from "../features/level/ledgerScroll";
-import { fetchMerges } from "../features/level/ledgerPage";
+import { fetchLedger } from "../features/level/ledgerPage";
 import { inView } from "../features/level/ledgerStrip";
 import { drawStrip } from "../features/level/ledgerStripDraw";
 import { rerunLine, type RerunStore } from "../features/level/rerun";
@@ -70,14 +70,14 @@ export function foldDraw(dc: DrawCtx, d: Drawing, io: FoldIO) {
   }
   /** The Ledger scrolling or loading is something to animate: the offset easing, a page on its way, or a failed one waiting to be asked again. */
   const scrolling = () => !!ledgerGrid() && (scroll.y !== scroll.ty || scroll.fetching || (scroll.more && scroll.retryAt > dc.clock));
-  /** The footer row came into view: ask for the merges older than the oldest held. */
-  function askPage() {
+  /** The footer row came into view: ask for the `event` rows older than the oldest held. */
+  function askPage(event: string) {
     const gen = scrollGen, before = scroll.rows.at(-1)?.at;
     if (before === undefined) return;
     scroll = begin(scroll);
-    void fetchMerges(before).then((page) => {
+    void fetchLedger(event, before).then((page) => {
       if (gen !== scrollGen) return;
-      scroll = page ? receive(scroll, page.merges, page.more) : fail(scroll, dc.clock);
+      scroll = page ? receive(scroll, page.rows, page.more) : fail(scroll, dc.clock);
       io.wake();
     });
   }
@@ -179,7 +179,7 @@ export function foldDraw(dc: DrawCtx, d: Drawing, io: FoldIO) {
       arrived.set(k, dc.clock);
       arrive(led, f);
     }
-    ledgerSeen = new Set(held.map((r) => r.key));
+    ledgerSeen = led.loading ? null : new Set(held.map((r) => r.key)); // the first page is no arrival
     // the rows scroll under the templates: the head the server sent joins the merges loaded, the offset eases, and the footer coming into view asks for a page
     if (grid) {
       if (dc.clock - scrollAt > 1.5) { scroll = newScroll(); scrollHeld = null; scrollGen++; }
@@ -189,7 +189,7 @@ export function foldDraw(dc: DrawCtx, d: Drawing, io: FoldIO) {
       const port = portOf(grid, pins.shown.length), dt = Math.min(0.1, dc.clock - scrollAt), shape = `${port.view}/${port.rh}`;
       if (held !== scrollHeld || shape !== scrollView) [scroll, scrollHeld, scrollView] = [take(scroll, held, port), held, shape];
       [scroll, scrollAt] = [easeScroll(scroll, dt), dc.clock];
-      if (wantsPage(scroll, port, dc.clock)) askPage();
+      if (wantsPage(scroll, port, dc.clock)) askPage(led.event);
     }
     const hairs = rgba("#94a3b8", 0.1), writer = led.cols.find((c) => c.role === "writer");
     // the grid: a column down from each template, and the spine the junction hangs from
@@ -259,6 +259,7 @@ export function foldDraw(dc: DrawCtx, d: Drawing, io: FoldIO) {
       const ln = statusLine(fm, c, fm.runs[c.dag], { event: led.event, now: io.T, hm: io.hhmm, optional: optionalSteps(held, c.dag), by: (k) => byKey.get(k) });
       text(fitText(`${fm === newest ? "newest" : io.hhmm(fm.at)} ${(fm.sha ?? fm.key).slice(0, 7)} · ${ln.main}`, max, size), s.x, y + labPx(15 + 15 * lines.length), size, rgba(ln.state ? DAG_COLOR[ln.state] ?? CROSS : "#94a3b8", 0.85), "center");
     }
+    if (led.loading) text("loading merges…", led.J.x + 22 / dc.K, led.bus + 40 / dc.K, labPx(11), rgba("#94a3b8", 0.6), "left");
     // the merge rows, each template's cell beside its run's mini step graph; a row still arriving counts its own seconds
     if (grid) {
       const age = (key: string) => {

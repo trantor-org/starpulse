@@ -300,23 +300,24 @@ describe("a Ledger delta's sky", () => {
   const row = (key: string) => ({ key, at: 1, tasks: [], runs: {}, fails: {}, pinned: false });
   const strip = { since: 0, bucket: 900, buckets: [{ merges: 1, failed: 0, reruns: 0 }] };
 
-  it("is the last sky with the Ledger fields swapped, every other part the very objects it held", () => {
-    const before = merge(snap(1000, [task("T-1", "ready")], []), 1000);
-    const next: Snapshot = { ...snap(1000, [task("T-1", "ready")], []), ledgers: { MERGED: [row("k")] }, mergeStrip: strip, mergePins: [row("p")] };
+  it("is the last sky with the strip and pins swapped, every other part the very objects it held, the rows the stream filled among them", () => {
+    const before = { ...merge(snap(1000, [task("T-1", "ready")], []), 1000), ledgers: { MERGED: [row("k")] } };
+    const next: Snapshot = { ...snap(1000, [task("T-1", "ready")], []), mergeStrip: strip, mergePins: [row("p")] };
 
     const after = withLedgers(before, next);
 
-    expect(after).toEqual(merge(next, 1000));
+    expect(after).toEqual({ ...merge(next, 1000), ledgers: before.ledgers });
+    expect(after.ledgers).toBe(before.ledgers);
     expect(after.board).toBe(before.board);
     expect([after.tree, after.dags, after.flows]).toEqual([before.tree, before.dags, before.flows]);
     expect(after.flows).toBe(before.flows);
   });
 
-  it("falls back to the empty Ledger when the delta carries none", () => {
-    const before = withLedgers(merge(snap(1000, [], []), 1000), { ...snap(1000, [], []), ledgers: { MERGED: [row("k")] }, mergeStrip: strip });
+  it("falls back to no strip and no pins when the delta carries none", () => {
+    const before = withLedgers(merge(snap(1000, [], []), 1000), { ...snap(1000, [], []), mergeStrip: strip, mergePins: [row("p")] });
 
     const after = withLedgers(before, snap(1000, [], []));
 
-    expect([after.ledgers, after.mergeStrip, after.mergePins]).toEqual([{}, null, []]);
+    expect([after.mergeStrip, after.mergePins]).toEqual([null, []]);
   });
 });

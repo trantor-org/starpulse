@@ -120,7 +120,6 @@ _SNAPSHOT_KEYS = (
     "dags",
     "pools",
     "pulls",
-    "ledgers",
     "mergeStrip",
     "mergePins",
     "machinePage",

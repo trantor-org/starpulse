@@ -25,11 +25,11 @@ const ROWS: LedgerRow[] = [
 /** The Ledger the page draws for the rows, as the renderer builds it. */
 function ledger(rows: LedgerRow[]) {
   const snap: Snapshot = {
-    graphs: ["board"], flows: [{ name: "board", agents: [], machine: machine() }], cues, ledgers: { MERGED: rows }, settled: {}, error: null, now: 2000,
+    graphs: ["board"], flows: [{ name: "board", agents: [], machine: machine() }], cues, settled: {}, error: null, now: 2000,
     dags: [dag("main-follow", ["only"]), dag("apply-on-merge", ["build", "apply"])],
     domains: [{ name: "Board", dags: [{ name: "main-follow", runSafe: false }, { name: "apply-on-merge", runSafe: false }] }],
   };
-  const S = merge(snap), moves = new Moves();
+  const S = { ...merge(snap), ledgers: { MERGED: rows } }, moves = new Moves();
   moves.observe(S, 2000);
   const src = { flows: [S.flows.board], cues: S.cues }, scene = build({ S, moves, W: 1920, H: 1080, T: 2000 }, ledgerLevel(src, "MERGED")!);
   const led = scene.fold!.ledger!, byKey = new Map(rows.map((r) => [r.key, r]));

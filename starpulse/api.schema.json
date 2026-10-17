@@ -2966,6 +2966,23 @@
       "title": "Launch",
       "type": "object"
     },
+    "LedgerChange": {
+      "additionalProperties": false,
+      "description": "A later event of `GET /api/ledger/<event>/events`: the rows that are new or differ; every other row stands.",
+      "properties": {
+        "rows": {
+          "items": {
+            "$ref": "#/$defs/LedgerRow"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "rows"
+      ],
+      "title": "LedgerChange",
+      "type": "object"
+    },
     "LedgerFail": {
       "additionalProperties": false,
       "description": "A failed run of a cue the merge row holds open: the step it stopped at, and how the failure clears.",
@@ -3016,6 +3033,27 @@
         "resolved"
       ],
       "title": "LedgerFail",
+      "type": "object"
+    },
+    "LedgerPage": {
+      "additionalProperties": false,
+      "description": "`GET /api/ledger/<event>`, and the first event of `GET /api/ledger/<event>/events`: a Ledger's rows, newest first,\nand whether older ones remain.",
+      "properties": {
+        "more": {
+          "type": "boolean"
+        },
+        "rows": {
+          "items": {
+            "$ref": "#/$defs/LedgerRow"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "rows",
+        "more"
+      ],
+      "title": "LedgerPage",
       "type": "object"
     },
     "LedgerPull": {
@@ -3225,26 +3263,8 @@
     },
     "LedgersDelta": {
       "additionalProperties": false,
-      "description": "The Ledger since the last event: per event the rows that are new or differ (newest first), and the keys of rows\nthat left the page or the window; every other row stands. `mergeStrip` and `mergePins` are whole.",
+      "description": "The merge strip and pins since the last event, whole. A Ledger's rows are not here: a page that has one open\nreads `GET /api/ledger/<event>/events`.",
       "properties": {
-        "gone": {
-          "additionalProperties": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "type": "object"
-        },
-        "ledgers": {
-          "additionalProperties": {
-            "items": {
-              "$ref": "#/$defs/LedgerRow"
-            },
-            "type": "array"
-          },
-          "type": "object"
-        },
         "mergePins": {
           "items": {
             "$ref": "#/$defs/LedgerRow"
@@ -3263,8 +3283,6 @@
         }
       },
       "required": [
-        "ledgers",
-        "gone",
         "mergeStrip",
         "mergePins"
       ],
@@ -4102,27 +4120,6 @@
         "buckets"
       ],
       "title": "MergeStrip",
-      "type": "object"
-    },
-    "Merges": {
-      "additionalProperties": false,
-      "description": "`GET /api/merges`: the next page of merge rows, newest first, and whether older ones remain.",
-      "properties": {
-        "merges": {
-          "items": {
-            "$ref": "#/$defs/LedgerRow"
-          },
-          "type": "array"
-        },
-        "more": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "merges",
-        "more"
-      ],
-      "title": "Merges",
       "type": "object"
     },
     "MilestoneArchiveRequest": {
@@ -6378,24 +6375,6 @@
           "default": null,
           "description": "The findings an engine posted that are still live."
         },
-        "ledgers": {
-          "anyOf": [
-            {
-              "additionalProperties": {
-                "items": {
-                  "$ref": "#/$defs/LedgerRow"
-                },
-                "type": "array"
-              },
-              "type": "object"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Each Ledger event's rows, newest first."
-        },
         "machinePage": {
           "anyOf": [
             {
@@ -7895,6 +7874,12 @@
     "laneHistory": {
       "$ref": "#/$defs/LaneHistory"
     },
+    "ledger": {
+      "$ref": "#/$defs/LedgerPage"
+    },
+    "ledgerChange": {
+      "$ref": "#/$defs/LedgerChange"
+    },
     "level": {
       "$ref": "#/$defs/Level"
     },
@@ -7903,9 +7888,6 @@
     },
     "machines": {
       "$ref": "#/$defs/Machines"
-    },
-    "merges": {
-      "$ref": "#/$defs/Merges"
     },
     "milestoneShown": {
       "$ref": "#/$defs/MilestoneShown"
@@ -8034,7 +8016,8 @@
     "events",
     "build",
     "restarting",
-    "merges",
+    "ledger",
+    "ledgerChange",
     "machines",
     "laneHistory",
     "machineHistory",

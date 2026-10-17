@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DemoServer } from "../demo/demo";
-import { applyDelta, openStream } from "./stream";
-import type { ActiveRun, Dag, Delta, LedgerRow, Pool, RawAgent, Snapshot } from ".";
+import { applyDelta, foldRows, openStream } from "./stream";
+import { openLedger } from "./ledgerStream";
+import type { ActiveRun, Dag, LedgerRow, Pool, RawAgent, Snapshot } from ".";
 
 const agent = (id: string, state: string): RawAgent => ({ id, title: id, state, model: "" });
 const board = (agents: RawAgent[], extra: Partial<Snapshot> = {}): Snapshot => ({
@@ -80,48 +81,13 @@ describe("applyDelta", () => {
     });
   });
 
-  describe("a ledgers delta", () => {
-    const row = (key: string, at: number, pinned = false): LedgerRow => ({ key, at, tasks: [key], runs: {}, fails: {}, pinned });
-    const [a, b, c] = [row("a", 30), row("b", 20), row("c", 10)];
-    const ledgerDelta = (ledgers: Record<string, LedgerRow[]>, gone: Record<string, string[]> = {}): Delta => ({
-      kind: "ledgers",
-      ledgers,
-      gone,
-      mergeStrip: null,
-      mergePins: [],
-    });
+  it("takes the strip and pins whole from a ledgers delta, and never touches the sky's rows", () => {
+    const pin: LedgerRow = { key: "p", at: 1, tasks: ["p"], runs: {}, fails: {}, pinned: true };
+    const mergeStrip = { since: 0, bucket: 900, buckets: [] };
 
-    it("replaces the changed row, drops the row that left and keeps every other row's reference", () => {
-      const s = board([], { ledgers: { MERGED: [a, b, c], STARTED: [row("s", 5)] } });
-      const b2 = row("b", 20, true);
+    const next = applyDelta(board([]), { kind: "ledgers", mergeStrip, mergePins: [pin] });
 
-      const next = applyDelta(s, ledgerDelta({ MERGED: [b2] }, { MERGED: ["c"] }));
-
-      expect(next.ledgers!.MERGED).toEqual([a, b2]);
-      expect(next.ledgers!.MERGED[0]).toBe(a);
-      expect(next.ledgers!.MERGED[1]).toBe(b2);
-      expect(next.ledgers!.STARTED).toBe(s.ledgers!.STARTED);
-    });
-
-    it("places a new row by its time among the held ones, newest first", () => {
-      const s = board([], { ledgers: { MERGED: [a, c] } });
-      const fresh = row("n", 40);
-      const middle = row("m", 20);
-
-      const next = applyDelta(s, ledgerDelta({ MERGED: [fresh, middle] }));
-
-      expect(next.ledgers!.MERGED.map((r) => r.key)).toEqual(["n", "a", "m", "c"]);
-      expect(next.ledgers!.MERGED[1]).toBe(a);
-    });
-
-    it("starts an event the snapshot did not hold, and takes the strip and pins whole", () => {
-      const pin = row("p", 1, true);
-      const mergeStrip = { since: 0, bucket: 900, buckets: [] };
-
-      const next = applyDelta(board([]), { kind: "ledgers", ledgers: { MERGED: [a] }, gone: {}, mergeStrip, mergePins: [pin] });
-
-      expect([next.ledgers, next.mergeStrip, next.mergePins]).toEqual([{ MERGED: [a] }, mergeStrip, [pin]]);
-    });
+    expect([next.mergeStrip, next.mergePins, "ledgers" in next]).toEqual([mergeStrip, [pin], false]);
   });
 
   it("takes Dagu's runs and error without touching the tasks", () => {
@@ -156,23 +122,19 @@ describe("applyDelta", () => {
     expect([emptied.pools, kept.pools, replaced.pools]).toEqual([[], [lane], [{ ...lane, running: 2 }]]);
   });
 
-  it("keeps the identity of every DAG and ledger a delta leaves as it was, so only the entry it changes is new", () => {
+  it("keeps the identity of every DAG and pin a delta leaves as it was, so only the entry it changes is new", () => {
     const wire = <T,>(x: T): T => JSON.parse(JSON.stringify(x)) as T; // each delta arrives as freshly parsed JSON
     const dags = [{ name: "ci/a", status: "succeeded", steps: [] }, { name: "ci/b", status: "running", steps: [] }] as unknown as Dag[];
-    const row = (key: string) => ({ key, at: 1 }) as unknown as NonNullable<Snapshot["ledgers"]>[string][number];
-    const ledgers = { pr_opened: [row("a")], pr_merged: [row("b")] };
-    const s = board([], { dags, pools: [{ name: "ci/a", cap: 1, running: 0, queued: 0 }], ledgers, mergePins: [row("p")] });
+    const row = (key: string) => ({ key, at: 1 }) as unknown as LedgerRow;
+    const s = board([], { dags, pools: [{ name: "ci/a", cap: 1, running: 0, queued: 0 }], mergePins: [row("p")] });
 
     const d = applyDelta(s, { kind: "dags", dags: wire(dags.map((x) => (x.name === "ci/b" ? { ...x, status: "failed" } : x))), pools: wire(s.pools!), error: null });
-    const l = applyDelta(s, { kind: "ledgers", ledgers: wire({ pr_merged: [row("c")] }), gone: {}, mergeStrip: null, mergePins: wire(s.mergePins!) });
+    const l = applyDelta(s, { kind: "ledgers", mergeStrip: null, mergePins: wire(s.mergePins!) });
 
     expect(d.dags[0]).toBe(s.dags[0]);
     expect(d.dags[1]).not.toBe(s.dags[1]);
     expect(d.dags[1].status).toBe("failed");
     expect(d.pools).toBe(s.pools);
-    expect(l.ledgers!.pr_opened).toBe(ledgers.pr_opened);
-    expect(l.ledgers!.pr_merged).toHaveLength(2);
-    expect(l.ledgers!.pr_merged[0]).toBe(ledgers.pr_merged[0]);
     expect(l.mergePins).toBe(s.mergePins);
   });
 
@@ -213,6 +175,29 @@ describe("applyDelta", () => {
     applyDelta(s, { kind: "task", id: "PROJ-1", agent: null, settled: settled("archived") });
 
     expect([ids(s), s.settled]).toEqual([["PROJ-1:to_do"], {}]);
+  });
+});
+
+describe("foldRows", () => {
+  const row = (key: string, at: number, pinned = false): LedgerRow => ({ key, at, tasks: [key], runs: {}, fails: {}, pinned });
+  const [a, b, c] = [row("a", 30), row("b", 20), row("c", 10)];
+
+  it("replaces the changed row and keeps every other row's reference", () => {
+    const b2 = row("b", 20, true);
+
+    const next = foldRows([a, b, c], [b2]);
+
+    expect(next).toEqual([a, b2, c]);
+    expect([next[0], next[2]]).toEqual([a, c]);
+    expect(next[0]).toBe(a);
+    expect(next[1]).toBe(b2);
+  });
+
+  it("places a new row by its time among the held ones, newest first", () => {
+    const next = foldRows([a, c], [row("n", 40), row("m", 20)]);
+
+    expect(next.map((r) => r.key)).toEqual(["n", "a", "m", "c"]);
+    expect(next[1]).toBe(a);
   });
 });
 
@@ -385,32 +370,22 @@ describe("openStream", () => {
     expect(kinds).toEqual([undefined, "dags", "pulls", "dags", undefined, "dags"]);
   });
 
-  it("folds the Ledger rows a merge's runs changed into the snapshot", () => {
-    openStream(handlers, open);
-    last().send("snapshot", board([agent("PROJ-1", "to_do")]));
-
-    last().send("ledgers", { ledgers: { MERGED: [{ key: "k", at: 1, tasks: [], runs: {}, fails: {}, pinned: false }] }, gone: {} });
-
-    expect(seen.at(-1)!.ledgers?.MERGED.map((r) => r.key)).toEqual(["k"]);
-    expect(ids(seen.at(-1)!)).toEqual(["PROJ-1:to_do"]);
-  });
-
   it("names the delta each hand-over folded, and none for a connect's snapshot", () => {
     openStream(handlers, open);
     last().send("snapshot", board([agent("PROJ-1", "to_do")]));
-    last().send("ledgers", { ledgers: {}, gone: {} });
+    last().send("ledgers", { mergeStrip: null, mergePins: [] });
     last().send("dags", { dags: [], error: null });
 
     expect(kinds).toEqual([undefined, "ledgers", "dags"]);
   });
 
-  it("folds the 24-hour strip and the pins the head left out with the Ledger rows", () => {
+  it("folds the 24-hour strip and the pins the head left out", () => {
     openStream(handlers, open);
     last().send("snapshot", board([agent("PROJ-1", "to_do")]));
     const mergeStrip = { since: 0, bucket: 900, buckets: [{ merges: 1, failed: 1, reruns: 0 }] };
     const pin = { key: "p", at: 1, tasks: [], runs: {}, fails: {}, pinned: true };
 
-    last().send("ledgers", { ledgers: {}, gone: {}, mergeStrip, mergePins: [pin] });
+    last().send("ledgers", { mergeStrip, mergePins: [pin] });
 
     expect(seen.at(-1)!.mergeStrip).toEqual(mergeStrip);
     expect(seen.at(-1)!.mergePins?.map((r) => r.key)).toEqual(["p"]);
@@ -773,5 +748,34 @@ describe("the page's sources", () => {
     expect(refreshing).toEqual([]);
     // an allowlisted file that no longer holds a timer is a stale entry: drop it from the list
     expect(idle).toEqual([]);
+  });
+});
+
+describe("openLedger", () => {
+  const row = (key: string, at: number): LedgerRow => ({ key, at, tasks: [key], runs: {}, fails: {}, pinned: false });
+
+  beforeEach(() => {
+    FakeSource.made = [];
+  });
+
+  it("opens the one event's stream, hands over its head, then each changed row batch", () => {
+    const heads: unknown[] = [];
+    const changed: LedgerRow[][] = [];
+
+    openLedger("MERGED", { head: (page) => heads.push(page), rows: (rows) => changed.push(rows) }, open);
+    last().send("page", { rows: [row("a", 2)], more: true });
+    last().send("rows", { rows: [row("b", 3)] });
+
+    expect(FakeSource.made.map((f) => f.url)).toEqual(["/api/ledger/MERGED/events"]);
+    expect(heads).toEqual([{ rows: [row("a", 2)], more: true }]);
+    expect(changed).toEqual([[row("b", 3)]]);
+  });
+
+  it("closes its source", () => {
+    const { close } = openLedger("MERGED", { head: () => {}, rows: () => {} }, open);
+
+    close();
+
+    expect(last().readyState).toBe(2);
   });
 });

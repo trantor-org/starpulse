@@ -61,7 +61,7 @@ def test_an_instances_task_key_pairs_a_run_with_the_task_that_entered_the_cued_l
 ) -> None:
     feed = _feed(tmp_path, monkeypatch, '[runs.commit]\ntask = "TICKET"\n')
 
-    (row,) = feed.snapshot()["ledgers"]["SHUT"]
+    (row,) = feed.ledger_rows("SHUT", None, 20)["rows"]
     assert (row["tasks"], row["runs"]["q/nightly"]["inferred"]) == (["FAKE-1"], False)
 
 
@@ -70,5 +70,5 @@ def test_an_instance_with_no_commit_keys_pairs_by_time_and_marks_it_inferred(
 ) -> None:
     feed = _feed(tmp_path, monkeypatch, "")
 
-    (row,) = feed.snapshot()["ledgers"]["SHUT"]
+    (row,) = feed.ledger_rows("SHUT", None, 20)["rows"]
     assert row["runs"]["q/nightly"]["inferred"] is True

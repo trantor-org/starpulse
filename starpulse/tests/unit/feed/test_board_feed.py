@@ -316,7 +316,6 @@ def test_the_board_snapshot_has_the_shape_the_page_reads() -> None:
         "graphs",
         "hint",
         "insights",
-        "ledgers",
         "machinePage",
         "machineStrip",
         "mergePins",
@@ -652,7 +651,7 @@ def test_the_snapshot_carries_each_merge_with_its_tasks_pr_cued_run_and_per_step
 
     feed.set_dags("ci", [_dag("apply", APPLIED)], None)
 
-    (row,) = feed.snapshot()["ledgers"]["MERGED"]
+    (row,) = _head(feed, "MERGED")
     assert (row["sha"], row["tasks"]) == (SHA, ["TASK-1"])
     assert row["pr"] == {"repo": "trantor", "number": 7, "url": MERGED_PR["url"]}
     run = row["runs"]["ci/apply"]
@@ -665,7 +664,7 @@ def test_a_merge_no_run_has_reached_is_a_row_with_no_runs() -> None:
     feed.set_pulls({"TASK-1": [MERGED_PR]})
     feed.set_dags("ci", [_dag("apply")], None)
 
-    assert feed.snapshot()["ledgers"]["MERGED"][0]["runs"] == {}
+    assert _head(feed, "MERGED")[0]["runs"] == {}
 
 
 def test_the_workflow_listing_the_page_draws_leaves_the_recent_runs_to_the_ledgers() -> None:
@@ -681,7 +680,7 @@ def test_a_feed_that_ties_no_workflow_to_an_event_has_no_ledgers() -> None:
     feed = BoardFeed()
     feed.set_pulls({"TASK-1": [MERGED_PR]})
 
-    assert feed.snapshot()["ledgers"] == {}
+    assert feed.ledger_rows("MERGED", None, 20) is None
     assert feed.tied("ci") == frozenset()
 
 
@@ -693,18 +692,18 @@ def test_the_workflows_tied_to_an_instance_are_those_a_cue_or_a_writer_names() -
     assert feed.runs("ci").tied == {"apply", "start"}
 
 
-def test_a_ledgers_event_is_sent_when_a_run_or_a_pull_changes_a_ledger_and_not_when_neither_does() -> None:
+def test_a_ledgers_event_is_sent_when_a_pull_changes_the_strip_and_not_when_only_a_row_changes() -> None:
     feed = ledger_feed()
     _, deltas = feed.subscribe()
 
     feed.set_pulls({"TASK-1": [MERGED_PR]})
-    feed.set_dags("ci", [_dag("apply", APPLIED)], None)
+    feed.set_dags("ci", [_dag("apply", APPLIED)], None)  # pairs the row with its run: the strip and pins stand
     feed.set_dags("ci", [_dag("apply", APPLIED)], "down")  # the same ledgers, a new error
 
     kinds = []
     while not deltas.empty():
         kinds.append(deltas.get_nowait()[0])
-    assert kinds == ["pulls", "ledgers", "dags", "ledgers", "dags"]
+    assert kinds == ["pulls", "ledgers", "dags", "dags"]
 
 
 def test_the_ledger_is_rebuilt_only_when_a_run_of_a_tied_workflow_changes() -> None:
@@ -732,7 +731,7 @@ def test_a_task_entering_the_lane_a_workflows_event_reaches_pairs_with_its_run_b
 
     feed.set_dags("ci", [_dag("start", started)], None)
 
-    rows = feed.snapshot()["ledgers"]["STARTED"]
+    rows = _head(feed, "STARTED")
     assert [r["tasks"] for r in rows] == [["TASK-2"], ["TASK-1"]]
     assert "sha" not in rows[0]
     assert rows[1]["runs"]["ci/start"]["runId"] == "s1"
@@ -767,8 +766,8 @@ def test_a_page_request_reads_the_ledger_last_built_and_queries_no_lane_history(
     feed.set_dags("ci", [_dag("apply", FAILED)], None)
     built = len(asked)
 
-    assert feed.snapshot()["ledgers"]["MERGED"][0]["sha"] == SHA
-    assert feed.merges(before=None, limit=5)["merges"][0]["sha"] == SHA
+    assert _head(feed, "MERGED")[0]["sha"] == SHA
+    assert feed.ledger_rows("MERGED", None, 5)["rows"][0]["sha"] == SHA
     assert feed.open_failure("ci/apply") == {"runId": "r-bad", "params": FAILED["params"]}
     assert len(asked) == built
 
@@ -831,13 +830,12 @@ def test_a_live_move_into_a_tied_lane_refreshes_the_ledger() -> None:
     feed = ledger_feed()
     _recorded_lanes(feed)
     feed.set_dags("ci", [_dag("start")], None)
-    _, deltas = feed.subscribe()
+    _, _, changes = feed.watch_ledger("STARTED")
 
     feed.put(BoardTask(id="TASK-1", team="demo", title="t", lane="in_progress"))
 
-    sent = dict(deltas.get_nowait() for _ in range(deltas.qsize()))
-    assert [r["tasks"] for r in sent["ledgers"]["ledgers"]["STARTED"]] == [["TASK-1"]]
-    assert [r["tasks"] for r in feed.snapshot()["ledgers"]["STARTED"]] == [["TASK-1"]]
+    assert [r["tasks"] for r in changes.get_nowait()["rows"]] == [["TASK-1"]]
+    assert [r["tasks"] for r in _head(feed, "STARTED")] == [["TASK-1"]]
 
 
 def test_the_replay_builds_the_ledger_once_when_it_reaches_the_entry_it_expected() -> None:
@@ -851,12 +849,12 @@ def test_the_replay_builds_the_ledger_once_when_it_reaches_the_entry_it_expected
     feed.seen("1-0")
     feed.put(BoardTask(id="TASK-2", team="demo", title="t", lane="in_progress"))
     assert len(rows) == 2
-    assert feed.snapshot()["ledgers"].get("STARTED", []) == []
+    assert _head(feed, "STARTED") == []
     feed.seen("2-0")
 
     kinds = [deltas.get_nowait()[0] for _ in range(deltas.qsize())]
     assert kinds == ["snapshot"]
-    assert sorted(r["tasks"][0] for r in feed.snapshot()["ledgers"]["STARTED"]) == ["TASK-1", "TASK-2"]
+    assert sorted(r["tasks"][0] for r in _head(feed, "STARTED")) == ["TASK-1", "TASK-2"]
 
 
 REOPEN_MACHINE = {
@@ -934,7 +932,7 @@ def test_a_failed_cued_run_pins_its_merge_with_the_rule_its_cue_declares() -> No
 
     feed.set_dags("ci", [_dag("apply", FAILED)], None)
 
-    (row,) = feed.snapshot()["ledgers"]["MERGED"]
+    (row,) = _head(feed, "MERGED")
     assert row["pinned"] is True
     fail = row["fails"]["ci/apply"]
     assert (fail["runId"], fail["step"], fail["resolves"], fail["resolved"]) == ("r-bad", "deploy", "forced", None)
@@ -943,15 +941,11 @@ def test_a_failed_cued_run_pins_its_merge_with_the_rule_its_cue_declares() -> No
 def test_a_pinned_merge_unpins_on_the_run_its_cue_accepts_and_the_ledgers_event_says_so() -> None:
     feed = cued_feed("forced")
     feed.set_dags("ci", [_dag("apply", FAILED)], None)
-    _, deltas = feed.subscribe()
+    _, _, changes = feed.watch_ledger("MERGED")
 
     feed.set_dags("ci", [_dag("apply", FAILED, FORCED_GREEN)], None)
 
-    sent = {}
-    while not deltas.empty():
-        kind, data = deltas.get_nowait()
-        sent[kind] = data
-    assert sent["ledgers"]["ledgers"]["MERGED"][0]["pinned"] is False
+    assert changes.get_nowait()["rows"][0]["pinned"] is False
 
 
 def test_a_failure_whose_cue_resolves_next_clears_on_any_later_green_run_but_a_forced_one_does_not() -> None:
@@ -961,8 +955,8 @@ def test_a_failure_whose_cue_resolves_next_clears_on_any_later_green_run_but_a_f
     for feed in (nxt, forced):
         feed.set_dags("ci", [_dag("apply", FAILED, later)], None)
 
-    assert nxt.snapshot()["ledgers"]["MERGED"][0]["pinned"] is False
-    assert forced.snapshot()["ledgers"]["MERGED"][0]["pinned"] is True
+    assert _head(nxt, "MERGED")[0]["pinned"] is False
+    assert _head(forced, "MERGED")[0]["pinned"] is True
 
 
 def test_the_open_failure_of_a_workflow_is_its_failed_run_with_the_parameters_it_started_with() -> None:
@@ -1009,7 +1003,7 @@ def test_the_snapshot_links_a_pinned_repositorys_merge_to_the_bump_merge_that_ap
     feed.set_pulls({"TASK-1": [MERGED_PR], "TASK-2": [skills]})
     feed.set_dags("ci", [_dag("apply", APPLIED)], None)
 
-    rows = {row["sha"]: row for row in feed.snapshot()["ledgers"]["MERGED"]}
+    rows = {row["sha"]: row for row in _head(feed, "MERGED")}
 
     assert rows["b" * 40]["appliedBy"] == SHA
     assert rows["b" * 40]["runs"] == {}
@@ -1049,12 +1043,12 @@ def _paged_feed() -> BoardFeed:
 def test_the_snapshot_carries_only_the_newest_page_of_merges_and_the_feed_serves_older_ones_to_the_edge() -> None:
     feed = _paged_feed()
 
-    head = feed.snapshot()["ledgers"]["MERGED"]
-    older = feed.merges(before=head[-1]["at"], limit=20)
+    head = _head(feed, "MERGED")
+    older = feed.ledger_rows("MERGED", head[-1]["at"], 20)
 
     assert [row["tasks"] for row in head[:2]] == [["TASK-24"], ["TASK-23"]]
     assert len(head) == 20
-    assert [row["tasks"] for row in older["merges"]] == [[f"TASK-{n}"] for n in range(4, -1, -1)]
+    assert [row["tasks"] for row in older["rows"]] == [[f"TASK-{n}"] for n in range(4, -1, -1)]
     assert older["more"] is False
 
 
@@ -1067,33 +1061,24 @@ def test_the_snapshot_strip_counts_the_whole_day_of_merges_not_just_the_loaded_p
     assert len(strip["buckets"]) == 96
 
 
-def _ledgers_delta(deltas) -> dict:
-    return dict(deltas.get_nowait() for _ in range(deltas.qsize()))["ledgers"]
-
-
-def test_a_ledgers_delta_carries_the_one_row_a_run_changed_and_not_the_rows_it_left_alone() -> None:
+def test_a_ledger_watcher_is_sent_the_one_row_a_run_changed_and_not_the_rows_it_left_alone() -> None:
     feed = ledger_feed()
     feed.set_pulls(dict(_merged(n, n) for n in range(5)))
-    _, deltas = feed.subscribe()
+    _, _, changes = feed.watch_ledger("MERGED")
 
     feed.set_dags("ci", [_dag("apply", {**APPLIED, "params": {"AFTER": f"{2:040x}"}})], None)
 
-    delta = _ledgers_delta(deltas)
-    assert [row["tasks"] for row in delta["ledgers"]["MERGED"]] == [["TASK-2"]]
-    assert delta["gone"] == {}
+    assert [row["tasks"] for row in changes.get_nowait()["rows"]] == [["TASK-2"]]
 
 
-def test_a_ledgers_delta_names_the_new_row_and_the_key_of_the_row_that_left() -> None:
+def test_a_ledger_watcher_is_sent_the_new_row_and_nothing_for_the_row_that_left() -> None:
     feed = ledger_feed()
     feed.set_pulls(dict(_merged(n, n) for n in range(5)))
-    (oldest,) = (row for row in feed.snapshot()["ledgers"]["MERGED"] if row["tasks"] == ["TASK-0"])
-    _, deltas = feed.subscribe()
+    _, _, changes = feed.watch_ledger("MERGED")
 
     feed.set_pulls(dict(_merged(n, n) for n in range(1, 6)))
 
-    delta = _ledgers_delta(deltas)
-    assert [row["tasks"] for row in delta["ledgers"]["MERGED"]] == [["TASK-5"]]
-    assert delta["gone"] == {"MERGED": [oldest["key"]]}
+    assert [row["tasks"] for row in changes.get_nowait()["rows"]] == [["TASK-5"]]
 
 
 def test_a_pinned_merge_older_than_the_loaded_page_still_rides_the_snapshot_and_the_ledgers_event() -> None:
@@ -1109,7 +1094,7 @@ def test_a_pinned_merge_older_than_the_loaded_page_still_rides_the_snapshot_and_
     snapshot = feed.snapshot()
 
     assert [row["tasks"] for row in snapshot["mergePins"]] == [["TASK-2"]]
-    assert all(row["tasks"] != ["TASK-2"] for row in snapshot["ledgers"]["MERGED"])
+    assert all(row["tasks"] != ["TASK-2"] for row in _head(feed, "MERGED"))
     assert [row["tasks"] for row in sent["ledgers"]["mergePins"]] == [["TASK-2"]]
 
 
@@ -1166,7 +1151,7 @@ def test_the_snapshot_and_the_pulls_event_carry_only_the_fields_the_api_contract
     assert kind == "pulls"
     event("pulls", delta)
     event("snapshot", feed.snapshot())
-    assert feed.snapshot()["ledgers"]["MERGED"][0]["sha"] == SHA
+    assert _head(feed, "MERGED")[0]["sha"] == SHA
 
 
 def test_the_open_tasks_and_a_machines_tasks_can_be_read_without_a_snapshot() -> None:
@@ -1195,3 +1180,70 @@ def test_every_task_open_or_settled_is_named_by_its_title_and_labels() -> None:
         "PROJ-1": {"title": "open one", "labels": ["a"]},
         "PROJ-2": {"title": "done one", "labels": ["validation"]},
     }
+
+
+def test_ledger_deferred_the_snapshot_carries_the_strip_and_pins_but_no_ledger_rows() -> None:
+    feed = _paged_feed()
+
+    snapshot = feed.snapshot()
+
+    assert "ledgers" not in snapshot
+    assert snapshot["mergeStrip"] is not None
+    assert snapshot["mergePins"] is not None
+
+
+def test_ledger_deferred_a_watcher_is_handed_its_events_head_and_whether_older_rows_remain() -> None:
+    feed = _paged_feed()
+
+    rows, more, deltas = feed.watch_ledger("MERGED")
+
+    assert len(rows) == 20
+    assert more is True
+    assert deltas.empty()
+    assert feed.watch_ledger("NOT-AN-EVENT") is None
+
+
+def test_ledger_deferred_a_row_change_reaches_the_watcher_of_its_event_and_no_other() -> None:
+    feed = ledger_feed()
+    _recorded_lanes(feed)
+    feed.set_dags("ci", [_dag("start")], None)
+    merged_rows, _, merged = feed.watch_ledger("MERGED")
+    started_rows, _, started = feed.watch_ledger("STARTED")
+    _, main = feed.subscribe()
+    assert merged_rows == started_rows == []
+
+    feed.put(BoardTask(id="TASK-1", team="demo", title="t", lane="in_progress"))
+
+    delta = started.get_nowait()
+    assert [row["tasks"] for row in delta["rows"]] == [["TASK-1"]]
+    assert merged.empty()
+    assert "ledgers" not in dict(main.get_nowait() for _ in range(main.qsize()))  # nothing for the main stream's rows
+
+
+def test_ledger_deferred_a_ledgers_delta_on_the_main_stream_holds_no_rows() -> None:
+    feed = ledger_feed()
+    _, main = feed.subscribe()
+
+    feed.set_pulls(dict(_merged(n, n) for n in range(3)))
+
+    delta = _ledgers_delta(main)
+    assert set(delta) == {"mergeStrip", "mergePins"}
+
+
+def test_ledger_deferred_a_released_watcher_is_sent_nothing() -> None:
+    feed = ledger_feed()
+    _, _, deltas = feed.watch_ledger("MERGED")
+    feed.unwatch_ledger(deltas)
+
+    feed.set_pulls(dict(_merged(n, n) for n in range(3)))
+
+    assert deltas.empty()
+
+
+def _ledgers_delta(deltas) -> dict:
+    return dict(deltas.get_nowait() for _ in range(deltas.qsize()))["ledgers"]
+
+
+def _head(feed: BoardFeed, event: str) -> list[dict]:
+    """The newest page of `event`'s Ledger, as a page opening it is handed it."""
+    return (feed.ledger_rows(event, None, 20) or {"rows": []})["rows"]

@@ -44,12 +44,15 @@ GET /api/events/body/<key>
 GET /api/snapshot  the document /api/events sends on connect, as one response: without each task's description,
                    criteria and moves (`/api/task/<id>`, `move_sets`) and with only the day's settled tasks;
                    `?view=full` is the whole document, which `starpulse snapshot|board|task` read
-GET /api/merges[?before=T][&limit=N]
-                   {merges, more}: the merge ledger's next `limit` rows (default 20, at most 100) older than `before`
-                   (epoch seconds, the `at` of the last row held; none: the newest), each as the snapshot's
-                   `ledgers.MERGED` row. None is older than 24 hours, `more` says whether older ones remain, and
-                   rows sharing the boundary second all come in one page, so walking `before` neither repeats nor
-                   skips a merge. A `before` that is not a finite number, or a `limit` outside 1-100, is 400
+GET /api/ledger/<event>[?before=T][&limit=N]
+                   {rows, more}: one Ledger's next `limit` rows (default 20, at most 100) older than `before` (epoch
+                   seconds, the `at` of the last row held; none: the newest), each as a `LedgerRow`. None is older than
+                   24 hours, `more` says whether older ones remain, and rows sharing the boundary second all come in
+                   one page, so walking `before` neither repeats nor skips a row. A `before` that is not a finite
+                   number, or a `limit` outside 1-100, is 400; an event no workflow is tied to is 404
+GET /api/ledger/<event>/events
+                   SSE for a page with that Ledger open: `page` ({rows, more}, the newest rows) at once, then `rows`
+                   ({rows}, those that are new or differ) as they change. /api/events carries no Ledger row
 GET /api/pulls[?repo=OWNER/NAME][&number=N][&state=open|merged|closed][&body_contains=TEXT]
                    {pulls}: the pull requests the PR store read from GitHub (one query per repository a minute, the
                    open ones every time, a merged or closed one until it is final, a merged one also until it has its mergeSha), those matching every filter
@@ -376,6 +379,7 @@ if TYPE_CHECKING:  # annotation only: a runtime import would put the autopilot i
 
 _AUTOPILOT = "/api/autopilot"
 _TASK = "/api/task/"
+_LEDGER = "/api/ledger/"
 _SNAPSHOT_BODY = "/api/events/body/"
 _HELD = "/api/held"
 _LANES = "/api/lanes"
@@ -431,7 +435,7 @@ _WRITES = {
     _INSIGHTS: "insight",
     _PULL_REFRESH: "ingest",
 }
-#: The most rows `/api/merges` and `/api/machines` serve at once.
+#: The most rows `/api/ledger/<event>` and `/api/machines` serve at once.
 _PAGE_LIMIT = 100
 
 
@@ -456,12 +460,15 @@ def _page_query(query: dict[str, list[str]], noun: str) -> tuple[float | None, i
     return before, limit
 
 
-def merges_response(feed: BoardFeed, query: dict[str, list[str]]) -> tuple[bytes, int]:
-    """The body and status for `/api/merges`: the merge ledger's next page, older than `before`, at most `limit` long."""
-    asked = _page_query(query, "merges")
+def ledger_response(feed: BoardFeed, event: str, query: dict[str, list[str]]) -> tuple[bytes, int]:
+    """The body and status for `/api/ledger/<event>`: that Ledger's next page, older than `before`, at most `limit`
+    long; 404 for an event no workflow is tied to."""
+    asked = _page_query(query, "ledger")
     if isinstance(asked, bytes):
         return asked, 400
-    return encode("merges", feed.merges(*asked)), 200
+    if (found := feed.ledger_rows(event, *asked)) is None:
+        return _error(f"no ledger for {event}"), 404
+    return encode("ledger", found), 200
 
 
 def machines_response(feed: BoardFeed, query: dict[str, list[str]]) -> tuple[bytes, int]:
@@ -1453,8 +1460,14 @@ def request_handler(
                     self._send(encode("snapshot", snapshots.read().snapshot))
                 else:
                     self._send(snapshots.read().encoded)
-            elif url.path == "/api/merges":
-                self._send(*merges_response(feed, parse_qs(url.query)))
+            elif url.path.startswith(_LEDGER):
+                event, _, tail = url.path.removeprefix(_LEDGER).partition("/")
+                if tail == "events":
+                    self._stream_ledger(unquote(event))
+                elif tail:
+                    self._send(_error(f"unknown route {url.path}"), 404)
+                else:
+                    self._send(*ledger_response(feed, unquote(event), parse_qs(url.query)))
             elif url.path == "/api/doctor":
                 self._send(encode("doctor", contract() if contract else {"ok": True, "checks": []}))
             elif url.path == "/api/machines":
@@ -1617,6 +1630,30 @@ def request_handler(
             else:
                 self._write = self._write_plain
             self.end_headers()
+
+        def _stream_ledger(self, event: str) -> None:
+            """Hold the connection open: `event`'s newest rows as a `page` event (`{rows, more}`), then a `rows` event (`{rows}`) each
+            time rows of that Ledger change. A page reads this while it has the Ledger open; the main stream carries
+            no row."""
+            if not self._admit_stream():
+                return
+            changes = None
+            try:
+                if (watched := feed.watch_ledger(event)) is None:
+                    return self._send(_error(f"no ledger for {event}"), 404)
+                rows, more, changes = watched
+                self._open_stream()
+                self._frame("page", encode("ledger", {"rows": rows, "more": more}).decode())
+                while True:
+                    try:
+                        self._frame("rows", encode("ledger_rows", changes.get(timeout=_PING_S)).decode())
+                    except queue.Empty:
+                        self._write(b": ping\n\n")  # a closed page fails this write, which ends the stream
+            except OSError:
+                pass
+            finally:
+                if changes is not None:
+                    feed.unwatch_ledger(changes)
 
         def _stream_held(self, holder: str) -> None:
             """Hold the connection open: the tasks `holder` holds, then those tasks again each time they change, so a
