@@ -4,8 +4,8 @@ Usage: fresh_serve.py VENV_PYTHON [DEADLINE_SECONDS]
 
 The interpreter is the one of a virtualenv that holds only the installed wheel. `serve` starts in an empty directory with
 no `starpulse.toml` and a bare environment, so nothing of the checkout is on its path. It must answer HTTP 200 on `/`
-and hold one live `starpulse worker <context>` child for every context `WORKER_FLAGS` names, on two checks a moment
-apart with the same processes, so a child that restarts in a loop fails. Linux only: the children are read from /proc.
+and hold one live `starpulse worker <context>` child for every context `worker_commands` starts for the default config,
+on two checks a moment apart with the same processes, so a child that restarts in a loop fails. Linux only: the children are read from /proc.
 """
 
 from __future__ import annotations
@@ -56,7 +56,12 @@ def check(port: int, parent: int, expected: set[str]) -> str | None:
 
 
 def worker_contexts(python: str, cwd: str) -> set[str]:
-    code = "import json; from starpulse._internal.server.supervisor import WORKER_FLAGS; print(json.dumps(sorted(WORKER_FLAGS)))"
+    """The contexts `serve` supervises under the default config, which has no `[forward]` table and no embeddings URL."""
+    code = (
+        "import json; from starpulse._internal.config.config import discover, load;"
+        " from starpulse._internal.server.supervisor import worker_commands;"
+        " print(json.dumps(sorted(worker_commands(load(discover(None)), None))))"
+    )
     return set(
         json.loads(
             subprocess.run([python, "-I", "-c", code], cwd=cwd, capture_output=True, text=True, check=True).stdout
