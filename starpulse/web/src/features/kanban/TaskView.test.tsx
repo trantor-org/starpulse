@@ -7,10 +7,10 @@ import { act, Profiler } from "react";
 import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import type { KanbanTask } from "./kanban";
+import type { KanbanTask } from "./kanbanModel";
 import { TaskView } from "./TaskView";
 import { board, card, props, record, task } from "./taskViewFixtures";
-import { closesOnKey, copyText, copyToClipboard, menuKey, onScrim, type StartCriterion } from "./taskView";
+import { closesOnKey, copyText, copyToClipboard, menuKey, onScrim, type StartCriterion } from "./taskViewModel";
 
 const styles = readFileSync(new NodeURL("../../style.css", import.meta.url), "utf8");
 

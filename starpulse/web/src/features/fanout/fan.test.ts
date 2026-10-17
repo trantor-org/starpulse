@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { emptyFan, fanRows, LINGER_FAILED_S, LINGER_S, queueRow, stepRuns, track } from "./fan";
-import { RunEvents } from "./fanout";
+import { RunEvents } from "./fanoutModel";
 import type { ActiveRun, Dag, Pool, RunStatus } from "../../api";
 
 const STEPS = ["refuse", "lint", "wait_ci"];

@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { KanbanTask } from "./kanban";
+import type { KanbanTask } from "./kanbanModel";
 import { Leaderboard } from "./Leaderboard";
 
 const NOW = 1_000_000;

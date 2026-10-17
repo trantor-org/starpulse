@@ -1,6 +1,6 @@
 // The titles of tasks the snapshot no longer holds: it carries only the day's settled tasks, so an older merge's task is read from its record.
 
-import { fetchRecord } from "../features/kanban/taskView";
+import { fetchRecord } from "../features/kanban/taskViewModel";
 
 export class TaskTitles {
   /** Each task asked for: its title once its record is read, undefined when it has none to give. */

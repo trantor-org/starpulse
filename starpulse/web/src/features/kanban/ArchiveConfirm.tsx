@@ -1,7 +1,7 @@
 // The archive confirm: a reason, a warning for work that outlives the task, and the writer's refusal.
 import { useEffect, useState } from "react";
 import { archiveKey, archiveWarnings, postArchive } from "./archive";
-import type { KanbanTask } from "./kanban";
+import type { KanbanTask } from "./kanbanModel";
 
 export interface ArchiveConfirmProps {
   task: KanbanTask;

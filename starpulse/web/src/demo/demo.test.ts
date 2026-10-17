@@ -3,7 +3,7 @@ import { DemoServer, ROUTES, demoLive, stepRuns, type DemoFixture } from "./demo
 import { PAGE } from "../features/level/ledgerScroll";
 import { fetchHarnesses, postStart } from "../features/kanban/start";
 import type { FlowSnapshot, LedgerRow, Machine, RawAgent, RunStatus, Snapshot } from "../api";
-import type { TaskRecord } from "../features/kanban/taskView";
+import type { TaskRecord } from "../features/kanban/taskViewModel";
 
 const machine = (initial: string, edges: [string, string, string][], final = ""): Machine => {
   const ids = [...new Set(edges.flatMap(([s, t]) => [s, t]))];

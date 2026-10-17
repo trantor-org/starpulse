@@ -1,4 +1,4 @@
-import type { KanbanTask } from "./kanban";
+import type { KanbanTask } from "./kanbanModel";
 
 /** One leaderboard row: a workable task and how long it has been workable. `width` is its bar, a percent of the longest age shown. */
 export interface LeaderRow { id: string; title: string; seconds: number; width: number }

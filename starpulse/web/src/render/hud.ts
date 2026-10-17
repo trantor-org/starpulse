@@ -1,8 +1,8 @@
 // What the React HUD shows. The renderer writes it only when something changed,
 // so the HUD re-renders on events, not on every animation frame.
-import type { KanbanTask } from "../features/kanban/kanban";
+import type { KanbanTask } from "../features/kanban/kanbanModel";
 import { BOARD, type Path, type Tree } from "./levels";
-import type { DagData } from "../features/dags/dags";
+import type { DagData } from "../features/dags/dagsModel";
 import type { Capabilities, Pool } from "../api";
 
 /** One line of the activity feed: a move, a DAG run ending, or a run starting, queueing, changing step or ending. */

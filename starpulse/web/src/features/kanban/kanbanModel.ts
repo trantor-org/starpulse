@@ -1,6 +1,6 @@
 // The Kanban view's model: the Board's open tasks laid out as columns of milestone buckets. Pure, so the view only draws it.
 import { midnight, type Sky } from "../../render/sky";
-import type { TaskRecord } from "./taskView";
+import type { TaskRecord } from "./taskViewModel";
 import type { Option } from "../../shared/ChoiceMenu";
 import type { Move, Pull, TrailStep } from "../../api";
 

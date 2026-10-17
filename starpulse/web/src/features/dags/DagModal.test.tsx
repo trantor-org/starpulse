@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { DagData } from "./dags";
+import type { DagData } from "./dagsModel";
 import { Dags } from "./Dags";
 import type { Dag, DagStep, Machine, RunStatus } from "../../api";
 

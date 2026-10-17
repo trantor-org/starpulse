@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bigPlace, chartHeight, closedProcessKeys, dagData, filterRows, order, processNames, place, RECENCY, refusal, rows, ties, type DagData } from "./dags";
+import { bigPlace, chartHeight, closedProcessKeys, dagData, filterRows, order, processNames, place, RECENCY, refusal, rows, ties, type DagData } from "./dagsModel";
 import type { Dag, DagStep, Machine, RunStatus } from "../../api";
 
 const step = (name: string, depends: string[] = [], status: RunStatus = "succeeded"): DagStep => ({ name, depends, status, kind: null });

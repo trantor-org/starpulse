@@ -1,6 +1,6 @@
 // The Kanban toolbar's Connect a tracker: a modal with one collapsible row per tracker, each expanding to numbered setup steps whose commands copy.
 import { useEffect, useRef, useState } from "react";
-import { copyToClipboard } from "./taskView";
+import { copyToClipboard } from "./taskViewModel";
 
 interface Step { text: string; cmd?: string; out?: string }
 interface Tracker { name: string; badge?: string; about: string; steps: Step[] }

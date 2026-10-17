@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { KanbanTask } from "./kanban";
-import { age, leaderboard } from "./leaderboard";
+import type { KanbanTask } from "./kanbanModel";
+import { age, leaderboard } from "./leaderboardModel";
 
 const NOW = 1_000_000;
 const task = (id: string, lane: string, workableSince: number | null): KanbanTask => ({

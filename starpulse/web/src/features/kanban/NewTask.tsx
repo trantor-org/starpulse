@@ -1,8 +1,8 @@
 // The Kanban toolbar's New task: a button that opens a form, laid out like the task view, for every field a new task takes;
 // the card lands in the board's starting lane.
 import { useState } from "react";
-import { EMPTY_DRAFT, createOutcome, newTaskKey, postCreate, type NewTaskDraft } from "./newTask";
-import { PRIORITIES } from "./taskView";
+import { EMPTY_DRAFT, createOutcome, newTaskKey, postCreate, type NewTaskDraft } from "./newTaskModel";
+import { PRIORITIES } from "./taskViewModel";
 import type { Capabilities } from "../../api";
 
 type Field = Exclude<keyof NewTaskDraft, "acceptanceCriteria">;

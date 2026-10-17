@@ -2,7 +2,7 @@
 // state, the Board's and machines' flow lines, the sun and the DAGs' own step graphs. It draws from the frame's context and primitives (draw.ts)
 // and from what the renderer owns (`BoardIO`, read as it draws); the renderer calls each in its frame order (`drawScene`).
 import type { LedgerRow } from "../api";
-import { fanBadge, stepStatus } from "../features/fanout/fanout";
+import { fanBadge, stepStatus } from "../features/fanout/fanoutModel";
 import { stepStates } from "../features/level/stepStates";
 import { ACT, DAG_COLOR, EXT, easeO, rgba, tierColor, type Drawing, type DrawCtx } from "./draw";
 import { nameLines, touches, type Hub, type Ties } from "./dagTies";

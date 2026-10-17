@@ -2,7 +2,7 @@
 // in In progress for its agent's claim. The session-start service opens the session; the agent's own claim moves the task, and the
 // board writer's refusal of that claim (a `claim` delta) returns the card to its lane.
 import { apiFetch } from "../../api/apiFetch";
-import type { KanbanTask } from "./kanban";
+import type { KanbanTask } from "./kanbanModel";
 import type { MoveStore } from "./move";
 
 /** A harness `GET /api/harnesses` names: its tiers' models and efforts, and whether it can run a session (and why not). */

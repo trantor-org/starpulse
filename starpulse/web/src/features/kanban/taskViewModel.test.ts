@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import type { KanbanTask } from "./kanban";
-import { changedFields, ciHistory, editKey, fetchRecord, markdown, menuKey, saveSection, saveTask, SECTION_FIELDS, toggleItem, type MenuState, type TaskRecord } from "./taskView";
+import type { KanbanTask } from "./kanbanModel";
+import { changedFields, ciHistory, editKey, fetchRecord, markdown, menuKey, saveSection, saveTask, SECTION_FIELDS, toggleItem, type MenuState, type TaskRecord } from "./taskViewModel";
 
 const record = {
   title: "T", profile: "@agent-standard-high", priority: "High", labels: ["needs-review"], milestone: "m-89", dependencies: ["TASK-1"],

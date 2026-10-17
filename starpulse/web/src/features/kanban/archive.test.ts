@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { archiveDialogKey, archiveKey, archiveWarnings, postArchive, withoutArchived } from "./archive";
-import { COLUMNS, NO_PREFS, layout, type KanbanTask } from "./kanban";
+import { COLUMNS, NO_PREFS, layout, type KanbanTask } from "./kanbanModel";
 
 const task = (id: string, lane: string, over: Partial<KanbanTask> = {}): KanbanTask => ({
   id, title: id, lane, milestone: "m-89", labels: [], assignee: "", dependencies: [], openDeps: 0, prs: [], description: "", live: null,

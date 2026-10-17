@@ -1,4 +1,4 @@
-import type { Outline } from "./kanban";
+import type { Outline } from "./kanbanModel";
 
 /** The Kanban's milestone outline in the navigator: one row per open milestone, and a click on one sets the Kanban's milestone filter, a second click on it clears. */
 export function MilestoneOutline({ rows, chosen, choose }: { rows: Outline[]; chosen: string | null; choose: (milestone: string | null) => void }) {

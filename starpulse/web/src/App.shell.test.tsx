@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { BOARD_DRAWN } from "./shared/boardDrawn";
 import type { HudStore } from "./render/hud";
-import type { KanbanTask } from "./features/kanban/kanban";
+import type { KanbanTask } from "./features/kanban/kanbanModel";
 
 // the canvas renderer needs a browser's 2D context; this one only hands the test the store the page reads
 const held = vi.hoisted(() => ({ store: undefined as HudStore | undefined }));

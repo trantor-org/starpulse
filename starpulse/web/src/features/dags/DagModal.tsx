@@ -2,7 +2,7 @@
 // chart, this or the last run, the pool's queue slots, every Board tie with its note, and Run now in the footer.
 import { useEffect } from "react";
 import { chartBox, LedgerNote, lastLine, Orb, Strip, TieChip, type LedgerGo } from "./DagParts";
-import { ago, refusal, short, ties, type DagData, type Row } from "./dags";
+import { ago, refusal, short, ties, type DagData, type Row } from "./dagsModel";
 
 const STATE = (r: Row) => (r.phase === "ok" ? "healthy" : r.phase === "idle" ? "never run" : r.phase === "failed" ? r.d.status : r.phase);
 

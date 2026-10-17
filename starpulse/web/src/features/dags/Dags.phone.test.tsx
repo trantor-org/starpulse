@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Dag } from "../../api";
-import type { DagData } from "./dags";
+import type { DagData } from "./dagsModel";
 import { Dags } from "./Dags";
 
 const dag = (name: string): Dag => ({ name, status: "succeeded", runId: "", startedAt: "", finishedAt: "", steps: [{ name: "scan", depends: [], status: "succeeded", kind: null }], pool: "" });

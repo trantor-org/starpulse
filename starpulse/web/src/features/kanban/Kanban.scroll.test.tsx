@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Kanban } from "./Kanban";
 import type { HudState } from "../../render/hud";
-import type { KanbanTask } from "./kanban";
+import type { KanbanTask } from "./kanbanModel";
 import { MoveStore } from "./move";
 import { StartStore, startLane } from "./start";
 

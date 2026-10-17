@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { TaskRecord } from "../features/kanban/taskView";
+import type { TaskRecord } from "../features/kanban/taskViewModel";
 import { TaskTitles } from "./taskTitles";
 
 const record = (title: string) => ({ title }) as TaskRecord;

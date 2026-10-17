@@ -6,7 +6,7 @@ import { same } from "../../api/same";
 import { DAG_PREFS_KEY, NO_DAG_FILTERS, useFilters } from "../../shared/viewPrefs";
 import { DagModal } from "./DagModal";
 import { lastLine, Orb, poolText, Strip, TieChip, type LedgerGo } from "./DagParts";
-import { closedProcessKeys, filterRows, group, order, PHASES, processNames, RECENCY, recent, refusal, rowEstimate, rows, short, ties, type DagData, type Phase, type Row, type Tie } from "./dags";
+import { closedProcessKeys, filterRows, group, order, PHASES, processNames, RECENCY, recent, refusal, rowEstimate, rows, short, ties, type DagData, type Phase, type Row, type Tie } from "./dagsModel";
 import { ChoiceMenu } from "../../shared/ChoiceMenu";
 import { useViewActive } from "../../shared/Kept";
 import { BOARD, ledgerLevel, type Path } from "../../render/levels";

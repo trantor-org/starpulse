@@ -1,6 +1,6 @@
-import type { KanbanTask } from "./kanban";
+import type { KanbanTask } from "./kanbanModel";
 import type { TaskView } from "./TaskView";
-import type { TaskRecord } from "./taskView";
+import type { TaskRecord } from "./taskViewModel";
 
 /** Test fixtures shared by the task view's test files. */
 export const task: KanbanTask = {
