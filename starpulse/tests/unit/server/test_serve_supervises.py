@@ -8,9 +8,9 @@ import pytest
 from starpulse._internal.autopilot.remote import Remote
 from starpulse._internal.server import autopilot_service as service
 from starpulse._internal.server import server, worker
-from starpulse._internal.server.closure import Reader
+from starpulse._internal.server.closure import ENTRIES, Reader
 from starpulse.tests import fake_board
-from starpulse.tests.conftest import FakeSupervisor
+from starpulse.tests.conftest import FakeForker, FakeSupervisor
 
 BOARD = '[board]\ntype = "starpulse.tests.fake_board"\nlanes = ["waiting", "ready", "done"]\nwrites = true\n'
 
@@ -66,6 +66,19 @@ def test_serve_offers_the_reload_endpoint_beside_its_config(
 
     assert supervisors[0].options["control"] == tmp_path / "starpulse.control"
     assert isinstance(supervisors[0].options["read"], Reader)
+
+
+def test_serve_forks_its_workers_from_one_preloaded_process_it_closes_at_the_end(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, supervisors: list[FakeSupervisor], forkers: list[FakeForker]
+) -> None:
+    _serve(tmp_path, monkeypatch, "")
+
+    [forker] = forkers
+    assert forker.started
+    assert forker.closed
+    assert forker.modules == [ENTRIES[context] for context in supervisors[0].commands if context != "api"]
+    assert supervisors[0].options["spawn"] is forker
+    assert supervisors[0].options["retire"] == forker.retire
 
 
 @pytest.mark.parametrize(

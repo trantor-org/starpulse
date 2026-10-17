@@ -1,9 +1,10 @@
 """`serve` as a supervisor: each context whose `*_worker` setting is false runs as a `starpulse worker <context>` child.
 
-A child is started with `subprocess` on a pipe it exits on when `serve` dies, restarted with a growing delay when it exits and stopped with `serve`. Past its
-soft memory limit a child is replaced (the new one starts, then the old one stops); past its hard limit it is killed and
-restarted. A context
-whose setting is true is run by something outside `serve`, so it gets no child here.
+A child is started by `spawn` (`starpulse._internal.server.zygote.Forker`: a fork of one preloaded process, else
+`subprocess`) with a pipe it exits on when `serve` dies, restarted with a growing delay when it exits and stopped with
+`serve`. Past its soft memory limit a child is replaced (the new one starts, then the old one stops); past its hard
+limit it is killed and restarted. A context whose setting is true is run by something outside `serve`, so it gets no
+child here.
 
 `starpulse reload` (`starpulse._internal.server.control`) calls `Supervisor.reload`: it reads each child's code and config
 again from the installed files (`starpulse._internal.server.closure`) and replaces only the children something changed
@@ -30,7 +31,7 @@ from starpulse._internal.config.config import Config, MemoryLimit
 from starpulse._internal.server.closure import SELF, Reading, ReloadError
 from starpulse._internal.server.control import Control
 from starpulse._internal.server.hold import LISTEN_FD_ENV, SUPERVISED_ENV
-from starpulse._internal.server.rss import rss_reader
+from starpulse._internal.server.memory import memory_reader
 
 logger = logging.getLogger(__name__)
 
@@ -132,9 +133,10 @@ class Supervisor:
         grace: float = 10.0,
         read: Callable[[str], Reading] | None = None,
         execute: Callable[[], None] = _exec_self,
+        retire: Callable[[], None] | None = None,
         control: Path | None = None,
         limits: Mapping[str, MemoryLimit] | None = None,
-        rss: Callable[[int], int] | None = rss_reader(),
+        memory: Callable[[int], int] | None = memory_reader(),
         sample_every: float = 5.0,
     ) -> None:
         self._children = {name: _Child(command) for name, command in commands.items()}
@@ -146,16 +148,17 @@ class Supervisor:
         self._poll = poll
         self._grace = grace
         self._limits = dict(limits or {})
-        self._rss = rss
+        self._memory = memory
         self._sample_every = sample_every
-        if self._limits and rss is None:
-            logger.warning("no resident-size reader on %s; worker memory limits are not enforced", sys.platform)
+        if self._limits and memory is None:
+            logger.warning("no memory reader on %s; worker memory limits are not enforced", sys.platform)
             self._limits = {}
         self._lock = threading.Lock()
         self._halt = threading.Event()
         self._thread: threading.Thread | None = None
         self._read = read
         self._execute = execute
+        self._retire = retire
         self._control = Control(control, self) if control else None
         self._seen: dict[str, Reading] = {}
 
@@ -192,7 +195,7 @@ class Supervisor:
     def _check_memory(self, name: str, child: _Child, now: float) -> None:
         """Replace `child` past its soft limit and kill it past its hard one; the caller holds the lock."""
         try:
-            used = self._rss(child.proc.pid)  # type: ignore[misc]
+            used = self._memory(child.proc.pid)  # type: ignore[misc]
         except OSError, ValueError, IndexError, subprocess.CalledProcessError:
             return
         limit = self._limits[name]
@@ -265,9 +268,14 @@ class Supervisor:
                 self._end([c.proc for c in self._children.values() if c.proc is not None])
                 outcomes = dict.fromkeys(self._children, "replaced")
             else:
+                if self._retire and self._code_changed(after):
+                    self._retire()
                 outcomes = {n: self._apply(n, c, self._seen.get(n), after[n]) for n, c in self._children.items()}
             self._seen = after
         return {"supervisor": "re-executed" if reexec else "kept", "children": outcomes}
+
+    def _code_changed(self, after: Mapping[str, Reading]) -> bool:
+        return any(n not in self._seen or self._seen[n].code != after[n].code for n in self._children)
 
     def _apply(self, name: str, child: _Child, before: Reading | None, now: Reading) -> str:
         if before is None or (before.code, before.restart) != (now.code, now.restart):

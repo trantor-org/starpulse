@@ -54,7 +54,7 @@ short request needs. A stream past the limit gets `503` with `Retry-After: 5` an
 ### Worker processes
 
 `serve` is a supervisor over the contexts that run as their own `starpulse worker <context>` process: `api` (the Page API), `pulls` (Delivery), `autopilot`, `runs`, `forwarding`, `history`, `search` (with an `[search] embeddings_url`) and `board` (the Start Criteria dating and the lane reconcile). For each one whose `api_worker`, `delivery_worker`,
-`autopilot_worker`, `runs_worker`, `forwarding_worker`, `history_worker`, `search_worker` or `board_worker` setting is false, the default, `serve` starts the worker as a child with `subprocess`, restarts it with a growing delay (1 s, doubling to 60 s; a child that
+`autopilot_worker`, `runs_worker`, `forwarding_worker`, `history_worker`, `search_worker` or `board_worker` setting is false, the default, `serve` starts the worker as a child, restarts it with a growing delay (1 s, doubling to 60 s; a child that
 ran a minute restarts at once) when it exits, and stops it when `serve` stops on `SIGTERM` or Ctrl-C. The children read the same config and `database_url` and meet `serve` only in
 the event log. A true setting means something outside `serve` runs that worker, so `serve` starts no child for it. No unit file is needed to run StarPulse.
 
@@ -62,9 +62,13 @@ The `api` child serves the page and the HTTP API. `serve` binds `--host` and `--
 
 Every context is its own child, the light ones (`forwarding`, `history`, `search`) included, so a restart, a reload and a memory limit each reach one context alone. Merging the light ones into one child would save their duplicated import floor; sharing that floor between separate children saves it without giving up the isolation.
 
-`starpulse reload` replaces the children whose installed code changed, tells those whose only change is their config block to re-read it, and re-executes `serve` when its own code changed, so a deploy restarts only what it changed. See [Reloading a running serve](cli.md#reloading-a-running-serve).
+On Linux `serve` starts one preloaded process before any thread, `python -m starpulse._internal.server.zygote`, that imports every supervised context's entry module, freezes what it imported out of the garbage collector's way and waits on a socket from `serve`. Each child is a fork of it that runs the same `starpulse worker <context>` main, so the children share the pages of the interpreter and imports until they write to them, and a context still has its own process to restart, reload and limit. A child still dies with `serve`: it inherits the preloaded process's stdin pipe from `serve`. Where `fork` is not safe (macOS and Windows), or when the preloaded process fails to start or answer (`serve` logs one warning naming the preloaded process and starts every later child with `subprocess` instead), a child is a `subprocess` child with its own imports.
 
-`serve` also holds each child to a resident memory limit, sampled every 5 s. Past the soft limit it replaces the child: the new one starts, then the old one is stopped (killed after 10 s if it ignores `SIGTERM`). Past the hard limit it kills the child and starts a new one at once. Each action is logged as a warning naming the context, pid, size and limit. The size is read with the standard library only (`/proc` on Linux, `ps` on macOS); where there is no reader, as on Windows, `serve` logs one warning and runs the children without limits. A true `*_worker` setting means `serve` runs no child for that context, so no limit applies to it.
+`starpulse reload` replaces the children whose installed code changed, tells those whose only change is their config block to re-read it, and re-executes `serve` when its own code changed, so a deploy restarts only what it changed. A reload that changes code any child runs also retires the preloaded process: it takes no more forks and exits when its last child has, and a new one that imports the installed code forks every replaced child, so a replaced child never runs the old preloaded code. See [Reloading a running serve](cli.md#reloading-a-running-serve).
+
+`starpulse reload` replaces the children whose installed code changed, tells those whose only change is their config block to re-read it, and re-executes `serve` when its own code changed, so a deploy restarts only what it changed. A reload that changes code any child runs also retires the preloaded process: it takes no more forks and exits when its last child has, and a new one that imports the installed code forks every replaced child, so a replaced child never runs the old preloaded code. See [Reloading a running serve](cli.md#reloading-a-running-serve).
+
+`serve` also holds each child to a memory limit, sampled every 5 s. Past the soft limit it replaces the child: the new one starts, then the old one is stopped (killed after 10 s if it ignores `SIGTERM`). Past the hard limit it kills the child and starts a new one at once. Each action is logged as a warning naming the context, pid, size and limit. The size is the proportional set size on Linux (`Pss` in `/proc/<pid>/smaps_rollup`, which divides each page the forked children share among the processes that map it, so the shared floor is not charged to every child) and the resident size on macOS (`ps`), read with the standard library only; where there is no reader, as on Windows, `serve` logs one warning and runs the children without limits. A true `*_worker` setting means `serve` runs no child for that context, so no limit applies to it.
 
 | Context | `soft_mb` | `hard_mb` |
 | --- | --- | --- |
@@ -158,7 +162,7 @@ event_log_archive_dir = "starpulse-archive"   # the default
 # in use (the read itself included) and the streams open when it was accepted. No other route is timed. Above 0.
 slow_read_seconds = 1   # the default
 
-# The resident memory limits `serve` holds each worker child to, in megabytes (see Worker processes): past `soft_mb` it
+# The memory limits (proportional size on Linux, resident size on macOS) `serve` holds each worker child to, in megabytes (see Worker processes): past `soft_mb` it
 # replaces the child, past `hard_mb` it kills and restarts it. Contexts: `pulls`, `autopilot`, `runs`. Either key may be left out.
 # [worker_memory.pulls]
 # soft_mb = 768    # the default

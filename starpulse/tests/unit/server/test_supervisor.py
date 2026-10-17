@@ -10,7 +10,7 @@ import time
 from dataclasses import replace
 from pathlib import Path
 
-import starpulse._internal.server.rss as rss_module
+import starpulse._internal.server.memory as memory_module
 import starpulse._internal.server.supervisor as supervisor_module
 from starpulse._internal.config.config import Forward, MemoryLimit, load
 from starpulse._internal.config.search import Search
@@ -215,7 +215,7 @@ def _limited(sizes: dict[int, int], **kwargs) -> Supervisor:
         {"pulls": SLEEP},
         spawn=Sized,
         limits={"pulls": MemoryLimit(100, 200)},
-        rss=lambda pid: sizes[pid] * MB,
+        memory=lambda pid: sizes[pid] * MB,
         sample_every=1.0,
         **kwargs,
     )
@@ -285,9 +285,9 @@ def test_a_limited_child_that_exits_at_startup_is_restarted_after_its_delay() ->
     assert supervisor.pids() == {"pulls": 1001}
 
 
-def test_without_an_rss_reader_one_warning_is_logged_and_children_run_unlimited(caplog) -> None:
+def test_without_a_memory_reader_one_warning_is_logged_and_children_run_unlimited(caplog) -> None:
     Spawned.made = []
-    supervisor = Supervisor({"pulls": SLEEP}, spawn=Sized, limits={"pulls": MemoryLimit(1, 2)}, rss=None)
+    supervisor = Supervisor({"pulls": SLEEP}, spawn=Sized, limits={"pulls": MemoryLimit(1, 2)}, memory=None)
     with caplog.at_level(logging.WARNING):
         supervisor.tick(0.0)
         supervisor.tick(10.0)
@@ -298,7 +298,7 @@ def test_without_an_rss_reader_one_warning_is_logged_and_children_run_unlimited(
 
 
 def test_this_platform_reads_a_live_processs_resident_size() -> None:
-    reader = rss_module.rss_reader()
+    reader = memory_module.memory_reader()
     assert reader is not None
     assert reader(os.getpid()) > MB
 
