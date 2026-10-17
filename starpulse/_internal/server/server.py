@@ -2438,8 +2438,6 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     commands = worker_commands(config, args.config, hub=args.hub)
     # the Page API child inherits the listening socket, so it starts with `subprocess`; every other worker forks from this
     forker = Forker([ENTRIES[context] for context in commands if context != "api"])
-    if commands.keys() - {"api"}:
-        forker.start()
     if "api" in commands:  # bound once the config is accepted and before the board, the history or a worker starts
         os.environ[STATIC_ENV] = str(_STATIC)
         listening = listening or listen(parser, args)
@@ -2447,6 +2445,8 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         commands["api"] += ["--hours", str(args.hours)]
     elif args.hub:
         listening = listening or listen(parser, args)
+    if commands.keys() - {"api"}:
+        forker.start()  # once the port is bound: a refused start leaves no process behind
     supervisor = Supervisor(
         commands,
         sockets={"api": listening} if "api" in commands else {},
