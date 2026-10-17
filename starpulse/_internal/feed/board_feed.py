@@ -227,6 +227,9 @@ class BoardFeed:
         #: Saved with the Board (`save`) and restored by `resume`, so a restart between a write and its placement keeps it.
         self._movers: dict[str, tuple[tuple[str, str, str], float]] = {}
         self._movers_saved: dict[str, tuple[tuple[str, str, str], float]] = {}
+        #: Reads the notes another process logged before its write, so a move placed before they arrive still finds its
+        #: note (`read_notes`); None reads none.
+        self._read_notes: Callable[[], None] | None = None
         #: Each task placed or retracted is also kept in `_search`; None keeps none.
         self._search: TaskIndex | None = None
         self._capabilities = {"edit": False, "archive": False, "create": False} | dict(capabilities or {})
@@ -542,6 +545,24 @@ class BoardFeed:
             noted = self._movers.pop(key, None)
         return noted[0] if noted and self._clock() - noted[1] <= MOVER_TTL else ("", "", "")
 
+    def read_notes(self, catch_up: Callable[[], None]) -> None:
+        """Call `catch_up` (`delivery.Notes.catch_up`) before taking the note of a move none names yet: the worker logs
+        its note before the write the watch may place first."""
+        self._read_notes = catch_up
+
+    def _writer(self, task_id: str) -> tuple[str, str, str]:
+        """`_mover`, reading the notes logged since the last read first when none names `task_id` yet; a replay's moves
+        are old, and a read that fails leaves the move unnamed."""
+        writer = self._mover(task_id)
+        if writer[0] or self._read_notes is None or self._replaying():
+            return writer
+        try:
+            self._read_notes()
+        except Exception as exc:  # the database is unreachable; the move is placed without its note
+            logger.warning("StarPulse: cannot read the actor notes for %s: %s", task_id, exc)
+            return writer
+        return self._mover(task_id)
+
     def index_tasks(self, search: TaskIndex) -> None:
         """Keep every task the feed places in `search`, and drop each one it retracts.
 
@@ -568,7 +589,7 @@ class BoardFeed:
                     logger.warning("StarPulse: cannot index %s for search: %s", task.id, exc)
             if change is None:
                 return  # the note stays for the lane change of the write that made it: the watch can place an earlier write first
-            writer = self._mover(task.id)
+            writer = self._writer(task.id)
             if self._lanes is not None and self._live_lanes:
                 lane, entered = change
                 try:

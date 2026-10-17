@@ -671,6 +671,12 @@ A write the board refuses is logged and counted, and is not retried until the ta
 - `starpulse_task_actor_pin_held`: a gauge of Waiting tasks whose dependencies are done but wait for a pin bump to
   settle (`Settlement.unapplied`); one that stays above 0 is a pin that never settles.
 
+Each move the actor writes names `starpulse/task-actor` on its `board:lanes` entry. The Delivery worker logs the
+actor's note before the write, and `serve` reads the notes logged since its last read before it places a move no note
+names yet, so a move the file watch places before the note arrives still names the actor. `GET /metrics` carries
+`starpulse_board_lane_unattributed_total`, a counter of the `board:lanes` entries any process appended since `serve`
+started that name no actor. A move made while `serve` was down, and a lane the reconcile repairs, name none.
+
 
 ## Event log archive
 

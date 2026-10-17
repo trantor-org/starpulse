@@ -11,11 +11,12 @@ only while it is opted in to naming (`adapters.runs.forwarded.PERSON`).
 
 from __future__ import annotations
 
+import threading
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from starpulse.contracts import BoardTask
-    from starpulse._internal.eventlog.event_log import EventLog
+    from starpulse._internal.eventlog.event_log import Entry, EventLog
     from starpulse._internal.eventlog.history import HistoryStore
 
 STREAM = "board:lanes"
@@ -23,6 +24,8 @@ STREAM = "board:lanes"
 REPLAYED = "board:lanes:replayed"
 #: The fields a forwarded lane entry may carry.
 FIELDS = ("task", "lane", "time", "team", "milestone", "labels", "assignee", "actor")
+UNATTRIBUTED_METRIC = "starpulse_board_lane_unattributed_total"
+UNATTRIBUTED_HELP = "Lane entries appended to board:lanes since start that name no actor."
 
 
 def entry(task: BoardTask, at: float, actor: str = "", session: str = "", harness: str = "") -> dict[str, Any]:
@@ -51,6 +54,37 @@ def publish(
 def append(log: EventLog, event_id: str, task: str, lane: str, at: float) -> int | None:
     """Append a lane entry of only the task, the lane and the time to `log` under `event_id`, fail-open."""
     return log.append(STREAM, {"task": task, "lane": lane, "time": at}, event_id=event_id)
+
+
+class Unattributed:
+    """Counts the entries appended to the stream from now on that name no actor, whichever process wrote them."""
+
+    def __init__(self) -> None:
+        self._count = 0
+        self._lock = threading.Lock()
+
+    def handle(self, entry: Entry) -> None:
+        if not entry.fields.get("actor"):
+            with self._lock:
+                self._count += 1
+
+    def count(self) -> int:
+        with self._lock:
+            return self._count
+
+    def exposition(self) -> str:
+        """Prometheus text of `count`."""
+        name = UNATTRIBUTED_METRIC
+        return f"# HELP {name} {UNATTRIBUTED_HELP}\n# TYPE {name} counter\n{name} {self.count()}\n"
+
+    def follow(self, log: EventLog, stop: threading.Event) -> threading.Thread:
+        """Count the entries `log` takes from now on, on a thread until `stop`."""
+        from starpulse._internal.eventlog.event_log import Tail  # noqa: PLC0415 - the database stack loads when a log opens
+
+        tail = Tail(log, STREAM, after=log.head() or 0)
+        thread = threading.Thread(target=tail.run, args=(self.handle, stop), name="lane-unattributed", daemon=True)
+        thread.start()
+        return thread
 
 
 def replay(store: HistoryStore, log: EventLog) -> int:

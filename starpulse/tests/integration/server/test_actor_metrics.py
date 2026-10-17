@@ -27,3 +27,12 @@ def test_metrics_has_no_actor_series_without_the_actor(tmp_path: Path) -> None:
         body = _metrics(server)
 
     assert "starpulse_task_actor" not in body
+
+
+def test_metrics_carries_the_unattributed_lane_counter_it_is_given(tmp_path: Path) -> None:
+    with serve(
+        tmp_path, BoardFeed(machines=MACHINES), lane_metrics=lambda: "starpulse_board_lane_unattributed_total 2\n"
+    ) as server:
+        body = _metrics(server)
+
+    assert "starpulse_board_lane_unattributed_total 2" in body.splitlines()

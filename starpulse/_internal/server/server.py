@@ -68,7 +68,8 @@ GET /metrics       Prometheus text: `starpulse_pull_store_age_seconds{repo}`, th
                    each repository holding an open pull request was read (a stale one means reads stopped);
                    `starpulse_pull_reconcile_drift`, how many listing reconciles disagreed with the store and ran a
                    full GitHub refresh; `starpulse_page_build_info{build}`, 1 for the page build id the `build` event
-                   names (none without a build). Also this process's `process_resident_memory_bytes`,
+                   names (none without a build); `starpulse_board_lane_unattributed_total`, the board:lanes entries
+                   any process appended since this one started that name no actor (none on a hub). Also this process's `process_resident_memory_bytes`,
                    `process_threads`, `process_open_fds` and `process_start_time_seconds`, which moves on every
                    restart. With `[board.actor]`, also `starpulse_task_actor_refusals_total` and the
                    `starpulse_task_actor_latency_seconds` histogram
@@ -1386,6 +1387,7 @@ def request_handler(
     pull_refresh: PullRefresh | None = None,
     slow_read_s: float = SLOW_READ_S,
     actor_metrics: Callable[[], str] | None = None,
+    lane_metrics: Callable[[], str] | None = None,
 ) -> type[SimpleHTTPRequestHandler]:
     configured = harnesses or Harnesses((), {})
     harnesses_body = encode("harnesses", configured.as_json())
@@ -1479,6 +1481,7 @@ def request_handler(
                         (pulls.age_gauge(clock()) if pulls else "")
                         + (drift_counter() if pulls else "")
                         + (actor_metrics() if actor_metrics else "")
+                        + (lane_metrics() if lane_metrics else "")
                         + build_gauge(static)
                         + process_gauges()
                     ).encode(),
@@ -2335,6 +2338,12 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     # projection and asks it
     Projected(log, feed).follow(stop)
     follow_notes(log, feed, stop)
+    # a lane move any writer leaves unnamed is counted; a hub's lane entries are its sources'
+    lane_metrics = None
+    if not args.hub:
+        unattributed = lane_events.Unattributed()
+        unattributed.follow(log, stop)
+        lane_metrics = unattributed.exposition
     # `starpulse worker runs` runs the run adapters, the trigger starts and the pushed-runs follower; this process
     # draws the workflows that worker keeps in the log, and starts a run only when the page asks
     runs_projection.Projected(log, feed).follow(stop)
@@ -2411,6 +2420,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         milestones=board,
         pulls=pulls,
         actor_metrics=actor_metrics,
+        lane_metrics=lane_metrics,
         telemetry=TelemetryLog(log),
         autopilot=autopilot_runtime,
         search=search,
