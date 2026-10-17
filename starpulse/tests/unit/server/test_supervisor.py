@@ -253,6 +253,16 @@ def test_a_child_past_its_hard_limit_is_killed_and_started_again(caplog) -> None
     assert "hard" in caplog.text
 
 
+def test_a_limited_child_that_exited_is_not_sampled_while_it_waits_to_start_again() -> None:
+    supervisor = _limited({1000: 50, 1001: 10})
+    supervisor.tick(0.0)
+    Spawned.made[0].terminated = True
+
+    supervisor.tick(1.5)  # exits, then waits out its restart delay with no process to sample
+
+    assert supervisor.pids() == {}
+
+
 def test_a_child_is_sampled_no_oftener_than_the_interval() -> None:
     sizes = {1000: 50, 1001: 10}
     supervisor = _limited(sizes)

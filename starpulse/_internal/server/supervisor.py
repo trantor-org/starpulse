@@ -179,7 +179,7 @@ class Supervisor:
                     )
                 if child.proc is None and now >= child.due:
                     self._launch(name, child, now)
-                elif name in self._limits and now - child.sampled >= self._sample_every:
+                elif child.proc is not None and name in self._limits and now - child.sampled >= self._sample_every:
                     child.sampled = now
                     self._check_memory(name, child, now)
 

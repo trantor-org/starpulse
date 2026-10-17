@@ -3,6 +3,7 @@ the Board from the replica."""
 
 from __future__ import annotations
 
+import os
 import socket
 import sys
 from pathlib import Path
@@ -11,6 +12,7 @@ import pytest
 
 from starpulse._internal.board import replica
 from starpulse._internal.server import server, worker
+from starpulse._internal.server.hold import STATIC_ENV
 from starpulse.tests import fake_board
 from starpulse.tests.conftest import FakeSupervisor
 
@@ -70,6 +72,41 @@ def test_serve_refuses_an_unbuilt_page_before_it_starts_any_child(
 
     assert exited.value.code == 1
     assert supervisors == []
+
+
+def test_serve_stops_with_the_reason_when_the_config_builds_no_page_and_starts_no_child(
+    config: Path, monkeypatch: pytest.MonkeyPatch, supervisors: list[FakeSupervisor], capsys: pytest.CaptureFixture[str]
+) -> None:
+    def refuse(*args: object) -> None:
+        raise ValueError("writers name workflows no configured adapter lists: ['bogus/actor']")
+
+    monkeypatch.setattr(server, "assemble", refuse)
+
+    with pytest.raises(SystemExit) as exited:
+        server.main(["--config", str(config), "--port", "0"])
+
+    assert exited.value.code == 1
+    assert "no configured adapter lists: ['bogus/actor']" in capsys.readouterr().err
+    assert supervisors == []
+
+
+def test_serve_hands_the_api_child_the_page_build_it_checked_and_the_child_serves_it(
+    config: Path, monkeypatch: pytest.MonkeyPatch, supervisors: list[FakeSupervisor], tmp_path: Path
+) -> None:
+    handed = tmp_path / "static"  # the build `serve` checked, as the `config` fixture set it
+    server.main(["--config", str(config), "--port", "0"])
+    assert os.environ[STATIC_ENV] == str(handed)
+
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "index.html").write_text("<html></html>")
+    monkeypatch.setattr(server, "_STATIC", tmp_path / "unbuilt")  # the child's own checkout has no build
+    monkeypatch.setenv(STATIC_ENV, str(elsewhere))
+    monkeypatch.setattr(server, "request_handler", lambda *args, **kwargs: None)
+
+    worker.main(["api", "--config", str(config), "--port", "0"])
+
+    assert server._STATIC == elsewhere
 
 
 def test_the_api_child_reads_the_board_from_the_replica_and_starts_no_adapter_watcher(

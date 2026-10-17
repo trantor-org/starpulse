@@ -277,7 +277,7 @@ from starpulse._internal.server.live_push import wire_forwarding, wire_level
 from starpulse._internal.server.snapshot_cache import SnapshotCache
 from starpulse._internal.server.closure import Reader
 from starpulse._internal.server.control import control_file
-from starpulse._internal.server.hold import LISTEN_FD_ENV
+from starpulse._internal.server.hold import LISTEN_FD_ENV, STATIC_ENV
 from starpulse._internal.server.supervisor import Supervisor, worker_commands
 from starpulse._internal.server.writes import (
     autopilot,
@@ -2183,6 +2183,18 @@ def prepare(parser: argparse.ArgumentParser, args: argparse.Namespace, config: C
     return Prepared(instance_tokens, source_tokens, refresh_token, gate, starts, reruns, run_safe)
 
 
+def refuse_unassemblable(
+    parser: argparse.ArgumentParser, args: argparse.Namespace, config: Config, ready: Prepared
+) -> None:
+    """Exit with the reason when the page cannot be built from `config`, so `serve` fails on it as the Page API child would
+    rather than supervising a child that exits on it at every start."""
+    base = args.config.parent if args.config else Path.cwd()
+    try:
+        assemble(config, base, args.hours * 3600, ready.run_safe)
+    except ValueError as exc:
+        parser.exit(1, f"{exc}\n")
+
+
 def listen(parser: argparse.ArgumentParser, args: argparse.Namespace) -> socket.socket:
     """Bind `--host` and `--port`, exiting with the reason when something holds them."""
     try:
@@ -2387,7 +2399,9 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     ready = prepare(parser, args, config)
     commands = worker_commands(config, args.config, hub=args.hub)
     if "api" in commands:  # bound once the config is accepted and before the board, the history or a worker starts
+        os.environ[STATIC_ENV] = str(_STATIC)
         listening = listening or listen(parser, args)
+        refuse_unassemblable(parser, args, config, ready)
         commands["api"] += ["--hours", str(args.hours)]
     elif args.hub:
         listening = listening or listen(parser, args)

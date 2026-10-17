@@ -14,9 +14,11 @@ from __future__ import annotations
 
 import argparse
 import os
+from pathlib import Path
 
 from starpulse._internal.config.config import Config
-from starpulse._internal.server.hold import LISTEN_FD_ENV
+from starpulse._internal.server import server
+from starpulse._internal.server.hold import LISTEN_FD_ENV, STATIC_ENV
 from starpulse._internal.server.server import _config, inherited_socket, listen, prepare, serve_page
 
 
@@ -28,6 +30,8 @@ def built_blocks(config: Config) -> tuple:
 def main(argv: list[str] | None, parser: argparse.ArgumentParser) -> None:
     args = parser.parse_args(argv)
     config = _config(parser, args.config)
+    if static := os.environ.get(STATIC_ENV):
+        server._STATIC = Path(static)
     ready = prepare(parser, args, config)
     try:
         listening = inherited_socket(os.environ)

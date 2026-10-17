@@ -18,6 +18,9 @@ SUPERVISED_ENV = "STARPULSE_SUPERVISED"
 #: child, and by a `serve` that re-executes itself to its next image.
 LISTEN_FD_ENV = "STARPULSE_LISTEN_FD"
 
+#: The directory of the page build `serve` checked, handed to the Page API child so both serve the same one.
+STATIC_ENV = "STARPULSE_STATIC"
+
 
 def hold(stop: threading.Event, reload: Callable[[], None]) -> None:  # pragma: no mutate block — process boundary
     """Block until `SIGTERM`, running `reload` for each `SIGHUP`, one at a time."""
