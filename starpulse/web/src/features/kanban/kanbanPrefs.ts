@@ -1,5 +1,5 @@
 // The Kanban view's choices kept in the browser: filters, hidden items and folds survive a reload, and an address that names filters starts from them instead.
-import { NO_PREFS, type Prefs } from "./kanban";
+import { NO_PREFS, type Prefs } from "./kanbanModel";
 import { queryString, type PrefStorage } from "../../shared/nav";
 
 export const PREFS_KEY = "fv.kanban.prefs";

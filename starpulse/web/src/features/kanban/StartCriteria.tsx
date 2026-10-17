@@ -1,5 +1,5 @@
 // The task view's Start Criteria: one card per criterion the description declares, with the result the board gave it.
-import { criterionDetail, type StartCriterion } from "./taskView";
+import { criterionDetail, type StartCriterion } from "./taskViewModel";
 
 const MARKS: Record<string, string> = { met: "✓ met", unmet: "○ unmet", error: "error" };
 

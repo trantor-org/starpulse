@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { ArchiveConfirm, type ArchiveConfirmProps } from "./ArchiveConfirm";
-import { COLUMNS, type KanbanTask } from "./kanban";
+import { COLUMNS, type KanbanTask } from "./kanbanModel";
 
 const task = (lane: string, over: Partial<KanbanTask> = {}): KanbanTask => ({
   id: "TASK-9", title: "Redraw the view", lane, milestone: "m-89", labels: [], assignee: "", dependencies: [], openDeps: 0, prs: [],

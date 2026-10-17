@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EMPTY_DRAFT, createBody, createOutcome, postCreate, newTaskKey, type NewTaskDraft } from "./newTask";
+import { EMPTY_DRAFT, createBody, createOutcome, postCreate, newTaskKey, type NewTaskDraft } from "./newTaskModel";
 
 const answer = (status: number, body: unknown) => async () => new Response(JSON.stringify(body), { status });
 const FULL: NewTaskDraft = {

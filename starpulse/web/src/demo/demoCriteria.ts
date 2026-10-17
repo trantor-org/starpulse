@@ -1,5 +1,5 @@
 // The Start Criteria the public preview gives a Waiting task: met, unmet and a time() wait, or one whose evaluator fails.
-import type { StartCriterion } from "../features/kanban/taskView";
+import type { StartCriterion } from "../features/kanban/taskViewModel";
 
 const iso = (sec: number) => new Date(sec * 1000).toISOString();
 

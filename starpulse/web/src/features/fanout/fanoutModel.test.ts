@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fanBadge, fanTip, poolRows, RunEvents, stepRings, stepStatus } from "./fanout";
+import { fanBadge, fanTip, poolRows, RunEvents, stepRings, stepStatus } from "./fanoutModel";
 import type { ActiveRun, Dag, DagStep, Pool, RunStatus } from "../../api";
 
 const pool = (name: string, cap: number, running: number, queued = 0): Pool => ({ name, cap, running, queued });

@@ -2,7 +2,7 @@ import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { Card, HeldBy, StackList, StackView, Stacks } from "./Kanban";
-import { CLOSED, NO_PREFS, layout, stackOf, stackStep, stacksOf, type KanbanTask, type StackEvent } from "./kanban";
+import { CLOSED, NO_PREFS, layout, stackOf, stackStep, stacksOf, type KanbanTask, type StackEvent } from "./kanbanModel";
 import { place } from "./move";
 import { TaskView } from "./TaskView";
 

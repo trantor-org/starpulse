@@ -1,7 +1,7 @@
 // The task view's model: the full record GET /api/task/<id> returns, and the Move to menu's keyboard.
 import { ago, fmtAt } from "../../shared/clock";
 import { apiFetch, PAGE_ACTOR } from "../../api/apiFetch";
-import type { KanbanTask } from "./kanban";
+import type { KanbanTask } from "./kanbanModel";
 
 export interface Item { n: number; text: string; checked: boolean }
 

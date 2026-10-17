@@ -1,7 +1,7 @@
 // What the drawing reads: the pushed snapshot merged into one sky, and the
 // moves the page plays. The approved mockup replayed a saved hour; the page
 // plays each move once, when the stream first delivers it.
-import { stepRings, type StepRing } from "../features/fanout/fanout";
+import { stepRings, type StepRing } from "../features/fanout/fanoutModel";
 import { tree, type Tree } from "./levels";
 import type { Capabilities, Cue, Dag, FlowSnapshot, LedgerRow, MachineEntry, MachinePage, MergeStrip, Move as Verdict, Pool, Pull, RawAgent, Settled, Snapshot, Writer } from "../api";
 

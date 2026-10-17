@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NO_PREFS, hideMilestone, hideTask, toggleFold, type Prefs } from "./kanban";
+import { NO_PREFS, hideMilestone, hideTask, toggleFold, type Prefs } from "./kanbanModel";
 import { PREFS_KEY, linkedTask, loadPrefs, savePrefs, withoutFilters } from "./kanbanPrefs";
 import type { PrefStorage } from "../../shared/nav";
 

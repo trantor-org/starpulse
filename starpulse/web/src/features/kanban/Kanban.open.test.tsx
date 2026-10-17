@@ -4,11 +4,11 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Kanban } from "./Kanban";
 import type { HudState } from "../../render/hud";
-import type { KanbanTask } from "./kanban";
+import type { KanbanTask } from "./kanbanModel";
 import { MoveStore } from "./move";
 import { StartStore, startLane } from "./start";
 import { TaskView } from "./TaskView";
-import { PRE_DRAW_REST_MS, RecordCache, type TaskRecord } from "./taskView";
+import { PRE_DRAW_REST_MS, RecordCache, type TaskRecord } from "./taskViewModel";
 
 // every card asks startLane while it draws, so its calls count the cards a render drew
 vi.mock("./start", async (actual) => {

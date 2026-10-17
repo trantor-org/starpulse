@@ -1,5 +1,5 @@
-import type { KanbanTask } from "./kanban";
-import { age, leaderboard } from "./leaderboard";
+import type { KanbanTask } from "./kanbanModel";
+import { age, leaderboard } from "./leaderboardModel";
 
 /**
  * The Star Map navigator's Leaderboard: for each open status, the workable tasks that have been workable longest, each a row

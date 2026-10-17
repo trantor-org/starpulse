@@ -2,7 +2,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { StartQuestion } from "./Kanban";
-import type { KanbanTask } from "./kanban";
+import type { KanbanTask } from "./kanbanModel";
 import type { Harnesses } from "./start";
 
 const task = { id: "TASK-1", title: "Trim panels", lane: "ready", assignee: "" } as KanbanTask;

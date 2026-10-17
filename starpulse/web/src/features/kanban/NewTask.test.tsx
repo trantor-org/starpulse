@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { NewTaskAction, NewTaskForm, type NewTaskFormProps } from "./NewTask";
-import { EMPTY_DRAFT } from "./newTask";
+import { EMPTY_DRAFT } from "./newTaskModel";
 
 const draw = (over: Partial<NewTaskFormProps> = {}) => renderToStaticMarkup(
   <NewTaskForm draft={EMPTY_DRAFT} busy={false} refused={null} lane="To Do" assignees={["@agent-fast-low"]} milestones={["m-1"]}

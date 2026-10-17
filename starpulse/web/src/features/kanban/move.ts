@@ -1,7 +1,7 @@
 // The Kanban view's moves: what a drag offers, the card that lands at once while the board writer is asked, and the refusal that
 // returns it. The writer decides; the snapshot's verdicts only forecast it, so a late refusal still has to put the card back.
 import { apiFetch, PAGE_ACTOR } from "../../api/apiFetch";
-import type { KanbanTask } from "./kanban";
+import type { KanbanTask } from "./kanbanModel";
 
 /** The writer's answer to a move: done, or refused with its reason and the skill that satisfies it (empty when none). */
 export type Reply = { ok: true } | { ok: false; reason: string; skill: string };

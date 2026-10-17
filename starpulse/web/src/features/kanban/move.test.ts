@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { KanbanTask } from "./kanban";
+import type { KanbanTask } from "./kanbanModel";
 import { MoveStore, codeParts, place, postMove, targets, type Post, type Reply } from "./move";
 
 const OK = { allowed: true, reason: "", skill: "" };

@@ -4,10 +4,10 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Kanban } from "./Kanban";
 import type { HudState } from "../../render/hud";
-import type { KanbanTask } from "./kanban";
+import type { KanbanTask } from "./kanbanModel";
 import { MoveStore } from "./move";
 import { StartStore } from "./start";
-import type { TaskRecord } from "./taskView";
+import type { TaskRecord } from "./taskViewModel";
 
 const card = (id: string): KanbanTask => ({
   id, title: `title ${id}`, lane: "ready", milestone: "", labels: [], assignee: "", dependencies: [], openDeps: 0, prs: [], description: "", live: null, released: false, moves: {}, entered: 0, created: null, workableSince: null, machines: [],

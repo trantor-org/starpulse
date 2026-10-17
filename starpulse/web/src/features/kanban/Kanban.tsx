@@ -13,7 +13,7 @@ import {
   CLOSED, applySuggestion, applyTaskRecord, assigneeOptions, chainOf, clearFilters, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, labelSuggestions, layout, milestoneOptions, milestoneOutline, recent, show, showAll,
   STACKED, stackOf, stackStep, toggleFold, unstacked, whyHidden,
   type KanbanTask, type Prefs, type Stack, type StackEvent, type StackOpen,
-} from "./kanban";
+} from "./kanbanModel";
 import { linkedTask, loadPrefs, savePrefs, withoutFilters } from "./kanbanPrefs";
 import { codeParts, place, targets, type MoveStore, type Refusal, type Target } from "./move";
 import { browserStorage } from "../../shared/nav";
@@ -26,7 +26,7 @@ import { NewTaskAction } from "./NewTask";
 import { SearchClear } from "../../shared/SearchClear";
 import { useScrollRest } from "../../shared/scrollRest";
 import { TaskView } from "./TaskView";
-import { PRE_DRAW_REST_MS, READ_AHEAD_MS, RecordCache, fetchRecord, type TaskRecord } from "./taskView";
+import { PRE_DRAW_REST_MS, READ_AHEAD_MS, RecordCache, fetchRecord, type TaskRecord } from "./taskViewModel";
 import type { Capabilities, Pull } from "../../api";
 
 /** A milestone's header: the key the snapshot carries, or the bucket for tasks with none. */

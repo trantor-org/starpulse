@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../App";
 import { BOARD_DRAWN } from "./boardDrawn";
-import type { DagData } from "../features/dags/dags";
+import type { DagData } from "../features/dags/dagsModel";
 import type { HudStore } from "../render/hud";
 
 // the canvas renderer needs a browser's 2D context; the navigator around it does not. It hands the HUD store to the test, which writes what a snapshot would.

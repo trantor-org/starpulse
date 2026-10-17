@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Kept } from "../../shared/Kept";
-import type { DagData } from "./dags";
+import type { DagData } from "./dagsModel";
 import { Dags } from "./Dags";
 
 const running = { runId: "r1", status: "running" as const, startedAt: "1970-01-01T00:55:00Z", step: "fix", stepStartedAt: "", steps: { fix: "running" as const } };

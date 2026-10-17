@@ -7,11 +7,11 @@ import { PAGE } from "../features/level/ledgerScroll";
 import { MERGE_EVENT } from "../features/level/ledger";
 import { padMachines, shapeBoard } from "./demoMachines";
 import { rankRows } from "../features/level/machineRows";
-import { columnsOf } from "../features/kanban/kanban";
+import { columnsOf } from "../features/kanban/kanbanModel";
 import type { LaneStep } from "../features/level/trace";
 import type { LedgerRow, Machine, RawAgent, Snapshot } from "../api";
 import { criteriaBlock, demoCriteria } from "./demoCriteria";
-import type { TaskRecord } from "../features/kanban/taskView";
+import type { TaskRecord } from "../features/kanban/taskViewModel";
 import { demoServer as installed, embedded, setDemoServer } from "./host";
 
 export { embedded } from "./host";

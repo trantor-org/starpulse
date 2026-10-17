@@ -1,14 +1,14 @@
 // The task view: every section reads in place and edits in place, one at a time, each Save a guarded write of that section's diff.
 import { Fragment, useCallback, useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 import { ago, fmtAt } from "../../shared/clock";
-import { columnsOf, type KanbanTask } from "./kanban";
+import { columnsOf, type KanbanTask } from "./kanbanModel";
 import { startLane, startable } from "./start";
 import { StartCriteria } from "./StartCriteria";
 import type { Capabilities, Pull } from "../../api";
 import {
   PRIORITIES, SECTION_NAMES, ciHistory, closesOnKey, copyText, copyToClipboard, dependencyRows, editKey, fetchRecord, markdown, menuKey, metCount, onScrim, saveSection, sessionOf, toggleItem,
   type CiPull, type DepRow, type Item, type MenuState, type Section, type TaskField, type TaskRecord,
-} from "./taskView";
+} from "./taskViewModel";
 
 export interface TaskViewProps {
   task: KanbanTask;

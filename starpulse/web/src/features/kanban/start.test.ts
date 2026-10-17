@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { KanbanTask } from "./kanban";
+import type { KanbanTask } from "./kanbanModel";
 import { MoveStore, type Post, type Reply } from "./move";
 import {
   StartStore, canDrag, choose, defaultPick, dropAsks, fetchHarnesses, placeClaims, postStart, profileOf, runsOn, startable,

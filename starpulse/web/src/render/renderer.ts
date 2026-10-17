@@ -9,7 +9,7 @@
 // pans only while zoomed in. The path and each level's zoom are kept per browser.
 import { apiFetch } from "../api/apiFetch";
 import { embedded } from "../demo/host";
-import { RunEvents, type RunLine } from "../features/fanout/fanout";
+import { RunEvents, type RunLine } from "../features/fanout/fanoutModel";
 import type { FeedLine, HudState, HudStore } from "./hud";
 import { DAG_COLOR, EXT, OFF, TRACE, drawing, ease, easeO, rgba, tierColor, type DrawCtx, type Hover, type LTask } from "./draw";
 import { animating, frameLoop, framePace } from "./idle";
@@ -29,7 +29,7 @@ import {
   RAMP, TAU, bez, build, curveDist, curveOf, edgePaths, nearestWithin, stateR, turnPage, type BEdge, type Body, type Curve, type GNode, type Hop, type Planet, type Pt, type Scene, type Pager, type Star,
 } from "./scene";
 import { Moves, PULSE, TRAVEL, hosted, merge, stateCount, withLedgers, type Move, type Sky } from "./sky";
-import type { KanbanTask } from "../features/kanban/kanban";
+import type { KanbanTask } from "../features/kanban/kanbanModel";
 import { foldRows, openStream, type Link } from "../api/stream";
 import { openLedger, type LedgerHead } from "../api/ledgerStream";
 import { pushAutopilotStatus } from "../features/autopilot/autopilot";
@@ -43,7 +43,7 @@ import { draws, hostRun, laneRun, layout as traceLayout, machineRun, sessionRing
 import { boardTies, hangarLevel, tieLedger, type Ties } from "./dagTies";
 import { hubTip, tieTip } from "./dagTieTips";
 import type { Dag, Delta, LedgerRow, Machine, RawAgent, Snapshot, Writer } from "../api";
-import { fanTip, stepStatus } from "../features/fanout/fanout";
+import { fanTip, stepStatus } from "../features/fanout/fanoutModel";
 import { esc, fanList, queueCell, startRun, taskLink, taskPanel } from "./panels";
 import { emptyFan, fanRows, queueRow, stepRuns, track, type Fan } from "../features/fanout/fan";
 import { ADMIN_DEFAULTS, type AdminPrefs } from "../features/admin/adminPrefs";
@@ -65,14 +65,14 @@ import { fitLevel, refitView, toScreen, wheelFactor, zoomAbout, zoomedIn, type V
 import { loadFonts } from "./fonts";
 
 /** Kanban and DAGs HUD fields load on the first snapshot (and again after first paint if that path runs first). */
-type DagDataFn = (typeof import("../features/dags/dags"))["dagData"];
-type KanbanTasksFn = (typeof import("../features/kanban/kanban"))["kanbanTasks"];
+type DagDataFn = (typeof import("../features/dags/dagsModel"))["dagData"];
+type KanbanTasksFn = (typeof import("../features/kanban/kanbanModel"))["kanbanTasks"];
 let dagData: DagDataFn | null = null;
 let kanbanTasks: KanbanTasksFn | null = null;
 let hudViewsP: Promise<void> | undefined;
 const loadHudViews = (): Promise<void> => (hudViewsP ??= Promise.all([
-  import("../features/dags/dags"),
-  import("../features/kanban/kanban"),
+  import("../features/dags/dagsModel"),
+  import("../features/kanban/kanbanModel"),
 ]).then(([d, k]) => {
   dagData = d.dagData;
   kanbanTasks = k.kanbanTasks;
