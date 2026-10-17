@@ -1,5 +1,6 @@
 """`starpulse worker runs` runs the Runs context alone, and keeps the workflows `serve` draws in the event log."""
 
+import functools
 import threading
 import time
 from collections.abc import Callable
@@ -82,6 +83,8 @@ def run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, dagu: Dagu, held: list[
     monkeypatch.setattr(fake_board, "BUILT", [])
     monkeypatch.setattr(server, "runs_adapter", lambda kind: dagu)
     monkeypatch.setattr(runs_worker, "hold", lambda stop, reload: held.append(stop))
+    # The trigger reader polls every DEFAULT_POLL_INTERVAL (5 s), the length of WAIT_S: a move can land just after a poll.
+    monkeypatch.setattr(runs_worker, "run_triggers", functools.partial(runs_worker.run_triggers, interval=0.05))
 
     def start(text: str = CONFIG) -> EventLog:
         config = tmp_path / "starpulse.toml"
