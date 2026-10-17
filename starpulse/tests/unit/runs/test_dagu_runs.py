@@ -16,6 +16,7 @@ import pytest
 
 from starpulse._internal.runs import run_events
 from starpulse._internal.runs.dagu import (
+    GRAPH_TTL,
     _STATUS,
     DaguRuns,
     Transport,
@@ -1605,3 +1606,97 @@ def test_the_adapters_rerun_capability_is_the_rerunner_over_the_instances_url(mo
 
     assert rerun("http://dagu.test:8085")("healthcheck", {"FORCE": "1"}) == "run-9"
     assert sent == [("http://dagu.test:8085", "/dags/healthcheck/start", {"params": "FORCE=1"})]
+
+
+def _graph_listing(monkeypatch: pytest.MonkeyPatch, runs: dict[str, dict]) -> list[str]:
+    """Serve a listing of `runs` (name -> latestDAGRun) and an empty step graph for each; returns the URLs asked."""
+    asked: list[str] = []
+
+    def urlopen(url: str, timeout: float) -> _Reply:
+        asked.append(url)
+        listing = {"dags": [{"fileName": n, "latestDAGRun": r} for n, r in runs.items()]}
+        return _Reply(
+            listing
+            if "perPage" in url
+            else {"dag": {"steps": [{"name": "a"}]}, "latestDAGRun": runs.get(url.rsplit("/", 1)[1])}
+        )
+
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    return asked
+
+
+def _details(asked: list[str]) -> list[str]:
+    return [u for u in asked if "perPage" not in u]
+
+
+def test_step_cache_reads_a_finished_dags_graph_once_while_its_latest_run_is_unchanged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    asked = _graph_listing(monkeypatch, {"d": {"dagRunId": "r1", "statusLabel": "succeeded", "finishedAt": "f"}})
+    graphs: dict = {}
+
+    first = dags("http://dagu", graphs=graphs)
+    second = dags("http://dagu", graphs=graphs)
+
+    assert second == first
+    assert _details(asked) == ["http://dagu/api/v1/dags/d"]
+
+
+def test_step_cache_rereads_the_graph_when_the_latest_run_changes(monkeypatch: pytest.MonkeyPatch) -> None:
+    runs = {"d": {"dagRunId": "r1", "statusLabel": "succeeded", "finishedAt": "f"}}
+    asked = _graph_listing(monkeypatch, runs)
+    graphs: dict = {}
+
+    dags("http://dagu", graphs=graphs)
+    runs["d"] = {"dagRunId": "r2", "statusLabel": "succeeded", "finishedAt": "g"}
+    dags("http://dagu", graphs=graphs)
+
+    assert len(_details(asked)) == 2
+
+
+def test_step_cache_rereads_the_graph_of_a_run_still_open(monkeypatch: pytest.MonkeyPatch) -> None:
+    asked = _graph_listing(monkeypatch, {"d": {"dagRunId": "r1", "statusLabel": "running"}})
+    graphs: dict = {}
+
+    dags("http://dagu", graphs=graphs)
+    dags("http://dagu", graphs=graphs)
+
+    assert len(_details(asked)) == 2
+
+
+def test_step_cache_rereads_the_graph_once_its_ttl_has_passed(monkeypatch: pytest.MonkeyPatch) -> None:
+    asked = _graph_listing(monkeypatch, {"d": {"dagRunId": "r1", "statusLabel": "succeeded", "finishedAt": "f"}})
+    graphs: dict = {}
+    now = [0.0]
+
+    dags("http://dagu", graphs=graphs, clock=lambda: now[0])
+    now[0] = GRAPH_TTL - 1
+    dags("http://dagu", graphs=graphs, clock=lambda: now[0])
+    now[0] = GRAPH_TTL
+    dags("http://dagu", graphs=graphs, clock=lambda: now[0])
+
+    assert len(_details(asked)) == 2
+
+
+def test_step_cache_drops_a_dag_that_leaves_the_listing(monkeypatch: pytest.MonkeyPatch) -> None:
+    done = {"dagRunId": "r1", "statusLabel": "succeeded", "finishedAt": "f"}
+    runs = {"gone": done, "kept": done}
+    _graph_listing(monkeypatch, runs)
+    graphs: dict = {}
+
+    dags("http://dagu", graphs=graphs)
+    del runs["gone"]
+    dags("http://dagu", graphs=graphs)
+
+    assert set(graphs) == {"kept"}
+
+
+def test_step_cache_keeps_the_dags_a_partial_listing_leaves_out(monkeypatch: pytest.MonkeyPatch) -> None:
+    done = {"dagRunId": "r1", "statusLabel": "succeeded", "finishedAt": "f"}
+    _graph_listing(monkeypatch, {"a": done, "b": done})
+    graphs: dict = {}
+
+    dags("http://dagu", graphs=graphs)
+    dags("http://dagu", only={"a"}, graphs=graphs)
+
+    assert set(graphs) == {"a", "b"}

@@ -319,24 +319,53 @@ def recent_runs(base_url: str, name: str, finished: dict | None = None) -> list[
     return out
 
 
+#: How long a DAG's step graph is kept once read. Dagu's listing carries no marker of a DAG file's change, so a
+#: graph edited under an unchanged latest run shows up this late.
+GRAPH_TTL = 600.0
+
+
+def _graph(base_url: str, name: str, run: dict, graphs: dict, now: float) -> tuple[str, list[dict]]:
+    """The DAG's pool and steps: kept in `graphs` while its latest run is unchanged and over and the TTL has not passed.
+
+    A run still open is read each time, as its steps move while its status stays `running`; a read that fails is not kept.
+    """
+    marker = (run.get("dagRunId", ""), run.get("statusLabel", ""), run.get("finishedAt", ""))
+    if (kept := graphs.get(name)) and kept[0] == marker and marker[1] not in _OPEN and now - kept[1] < GRAPH_TTL:
+        return kept[2]
+    graph = _steps(base_url, name)
+    graphs[name] = (marker, now, graph)
+    return graph
+
+
 def dags(
-    base_url: str, only: Collection[str] | None = None, recent: Collection[str] = (), finished: dict | None = None
+    base_url: str,
+    only: Collection[str] | None = None,
+    recent: Collection[str] = (),
+    finished: dict | None = None,
+    graphs: dict | None = None,
+    clock: Callable[[], float] = time.monotonic,
 ) -> list[dict]:
     """Every DAG on a Dagu instance, or just those in `only`, with its latest run, its step graph and its pool.
 
     A full listing also reads each DAG's active runs; the listing of `only` leaves them out, as it serves a step read
     after one run entry. A DAG whose detail cannot be read is listed without steps or pool rather than failing the listing.
+    `graphs` keeps each DAG's graph between listings (see `_graph`); a full listing drops the DAGs it no longer shows.
     """
+    graphs = {} if graphs is None else graphs
     in_flight = _in_flight(base_url) if only is None else {}
+    listed = _get(f"{base_url}/api/v1/dags?perPage=200").get("dags", [])
+    if only is None:
+        for gone in graphs.keys() - {d["fileName"] for d in listed}:
+            del graphs[gone]
     out = []
-    for d in _get(f"{base_url}/api/v1/dags?perPage=200").get("dags", []):
+    for d in listed:
         if only is not None and d["fileName"] not in only:
             continue
+        run = d.get("latestDAGRun") or {}
         try:
-            pool, steps = _steps(base_url, d["fileName"])
+            pool, steps = _graph(base_url, d["fileName"], run, graphs, clock())
         except OSError:
             pool, steps = "", []
-        run = d.get("latestDAGRun") or {}
         out.append(
             {
                 "name": d["fileName"],
@@ -599,7 +628,8 @@ def follow(
     stop = stop or threading.Event()
     tied = lambda: getattr(runs, "tied", frozenset())  # noqa: E731
     finished: dict = {}
-    reader = DaguRuns(runs, lambda only=None: dags(url, only, tied(), finished), lambda: pools(url), tied=tied)
+    graphs: dict = {}
+    reader = DaguRuns(runs, lambda only=None: dags(url, only, tied(), finished, graphs), lambda: pools(url), tied=tied)
 
     def read() -> None:
         reader.reconcile()
