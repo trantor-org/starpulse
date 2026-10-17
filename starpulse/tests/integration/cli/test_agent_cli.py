@@ -207,6 +207,26 @@ def _moving_board() -> BoardFeed:
     return feed
 
 
+COLD_RECORDS = {
+    "PROJ-1": {"title": "Cold one", "profile": "agent", "labels": ["a"], "milestone": "m-1", "type": "story"},
+    "PROJ-2": {"title": "Cold two", "profile": "agent", "labels": [], "milestone": "m-2", "type": "story"},
+    "PROJ-3": {"title": "Cold three", "profile": "agent", "labels": [], "milestone": "m-1", "type": "story"},
+}
+
+
+@pytest.fixture
+def cooled(tmp_path: Path) -> Iterator[str]:
+    """A server whose board holds three done tasks past their hot day (two in `m-1`) and one hot done task in `m-1`."""
+    now = 10_000_000.0
+    feed = BoardFeed(machines=MACHINES, clock=lambda: now)
+    feed.expect("0-0")
+    for n in (1, 2, 3):
+        feed.put(task(f"PROJ-{n}", "Done", observed_at=now - 2 * HOT_S - n))
+    feed.put(task("PROJ-4", "Done", observed_at=now - 60, milestone="m-1"))
+    with _serve(tmp_path, feed, read=COLD_RECORDS.get) as server:
+        yield _url(server, "")
+
+
 @pytest.fixture
 def movable(tmp_path: Path, writer: _Writer) -> Iterator[str]:
     """A server whose board writer answers, holding `_moving_board`."""
@@ -2298,3 +2318,12 @@ def test_task_show_reads_a_cold_done_task_whole_from_the_board_and_a_dependent_n
     assert (cold["lane"], cold["title"], cold["description"], cold["milestone"]) == ("done", "Old work", "Long ago.", "m-1")
     assert cold["criteria"] == [{"text": "ships", "checked": True}]
     assert dependent["waiting_on"] == []
+
+
+def test_board_milestone_lists_the_done_tasks_past_their_hot_day(cooled: str, capsys: pytest.CaptureFixture[str]) -> None:
+    code, board = _run(capsys, ["board", "--milestone", "m-1", "--server", cooled])
+
+    done = next(column for column in board["columns"] if column["state"] == "done")
+    assert code == 0
+    assert sorted(t["id"] for t in done["tasks"]) == ["PROJ-1", "PROJ-3", "PROJ-4"]
+    assert {t["lane"] for t in done["tasks"]} == {"done"}
