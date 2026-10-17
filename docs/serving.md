@@ -208,6 +208,10 @@ type = "native"
 # machine = "board.yaml" # as above
 # interval = 60          # seconds between the full rescans that back the file watch up (2 where inotify is missing)
 
+# To draw only a project's machines, for a hub whose tasks arrive as lane entries and machine events instances forward:
+# [board]
+# type = "machines"      # takes no other setting: it draws every file in `.starpulse/machines/` beside this file, the Board machine (`board.yaml`) among them, and follows no task source, reads no board directory and offers no write
+
 # To draw a Jira project instead (read-only; building the board reads the site once, to import the workflow):
 # [board]
 # type = "jira"
