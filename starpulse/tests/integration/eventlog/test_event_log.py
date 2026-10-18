@@ -10,7 +10,7 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import pytest
-from sqlalchemy import select, update
+from sqlalchemy import event, select, text, update
 
 from starpulse._internal.eventlog.event_log import Entry, EventLog, Tail, prune_forever
 from starpulse._internal.eventlog.tables import events, gaps
@@ -37,6 +37,23 @@ def test_one_poll_reads_what_another_process_appended(database_url: str, process
     cursor = processes.submit(_append, database_url, "FIRST").result()
 
     assert [(e.id, e.fields["event"]) for e in tail.poll()] == [(cursor, "FIRST")]
+
+
+def test_an_idle_poll_reads_the_oldest_and_newest_id_without_scanning_the_table(database_url: str) -> None:
+    if not database_url.startswith("sqlite"):
+        pytest.skip("the query plan asserted is SQLite's")
+    log = EventLog(database_url)
+    log.append("machine:events", {"event": "FIRST"})
+    tail = Tail(log, "machine:events")
+    tail.poll()
+    statements: list[str] = []
+    event.listen(log.engine, "before_cursor_execute", lambda conn, cur, stmt, *rest: statements.append(stmt))
+
+    assert tail.poll() == []
+
+    with log.engine.connect() as db:
+        plan = [row[-1] for row in db.execute(text(f"EXPLAIN QUERY PLAN {statements[0]}"))]
+    assert not [step for step in plan if step.startswith("SCAN starpulse_events")], plan
 
 
 def test_a_running_tail_hands_over_what_another_process_appends(
