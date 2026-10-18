@@ -77,7 +77,7 @@ def test_starpulse_emit_in_another_process_reaches_the_tail_of_the_database_the_
     assert tail.poll() == []
 
     subprocess.run(
-        [sys.executable, "-m", "starpulse", "emit", "start", "--workflow", "nightly", "--run", "r1",
+        [sys.executable, "-m", "starpulse", "emit", "StepStarted", "--workflow", "nightly", "--run", "r1",
          "--status", "running", "--config", str(config)],
         cwd=tmp_path, capture_output=True, text=True, check=True, timeout=60,
     )  # fmt: skip
