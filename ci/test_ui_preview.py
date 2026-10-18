@@ -245,7 +245,7 @@ class FakeGh:
     """`gh` as the publish step sees it: a PR's comments, and the calls made against them."""
 
     def __init__(self, existing: list[dict]) -> None:
-        self.comments = {c["id"]: c for c in existing}
+        self.comments = {c["id"]: dict(c) for c in existing}  # an edit must not reach the module's shared OLD
         self.calls: list[tuple[str, ...]] = []
 
     def __call__(self, *args: str) -> str:

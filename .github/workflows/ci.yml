@@ -66,7 +66,7 @@ jobs:
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       - run: uv sync --locked
       # pytest-xdist workers sized to the runner's memory: ci/xdist_workers.py.
-      - run: echo "PYTEST_ADDOPTS=-n $(uv run --no-sync python ci/xdist_workers.py) --dist loadgroup" >> "$GITHUB_ENV"
+      - run: echo "PYTEST_ADDOPTS=-n $(uv run --no-sync python ci/xdist_workers.py) --dist worksteal" >> "$GITHUB_ENV"
       # Postgres-backed integration cases use the runner's Docker; SQLite cases need no container runtime. A selected run
       # can leave a shard no test file: pytest exits 5 for it, which is a pass only while targets were selected.
       - run: |
@@ -113,7 +113,7 @@ jobs:
       - run: uv sync --locked --no-group hub --python 3.14t
       # A dependency that re-enables the GIL on import leaves every test green on the build this job exists to test.
       - run: uv run --no-sync python -c "import sys, starpulse._internal.server.server; sys.exit(sys._is_gil_enabled())"
-      - run: echo "PYTEST_ADDOPTS=-n $(uv run --no-sync python ci/xdist_workers.py) --dist loadgroup" >> "$GITHUB_ENV"
+      - run: echo "PYTEST_ADDOPTS=-n $(uv run --no-sync python ci/xdist_workers.py) --dist worksteal" >> "$GITHUB_ENV"
       # The selected files may leave nothing for pytest to run (exit 5), which is a pass only while targets were selected.
       - run: |
           status=0

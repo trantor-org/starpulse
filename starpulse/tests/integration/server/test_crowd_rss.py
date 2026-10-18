@@ -91,7 +91,6 @@ def test_a_request_thread_is_started_at_the_request_stack_size(tmp_path: Path, m
 
 
 @pytest.mark.skipif(sys._is_gil_enabled(), reason="the live server is 3.14t; GIL heaps return after a crowd")
-@pytest.mark.xdist_group("crowd-rss")
 def test_a_second_gzip_snapshot_crowd_reuses_request_threads_and_holds_rss(tmp_path: Path) -> None:
     ctx = mp.get_context("spawn")
     parent, child = ctx.Pipe()

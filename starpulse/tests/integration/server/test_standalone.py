@@ -2,7 +2,7 @@
 
 import json
 import os
-import shutil
+import random
 import socket
 import subprocess
 import sys
@@ -19,6 +19,7 @@ import pytest
 from starpulse._internal.server import server
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import DEFAULT_FILE, HistoryStore
+from starpulse.tests.page_stub import held
 
 _CLIENT_MODULE = "re" + "dis"
 _ENV_DROPPED = (
@@ -31,24 +32,12 @@ _ENV_DROPPED = (
 # Importing the server pulls numpy, whose BLAS pool spins one thread per core for ~2.5 CPU-s without shortening the start.
 _BLAS_THREADS = {"OPENBLAS_NUM_THREADS": "1", "OMP_NUM_THREADS": "1", "MKL_NUM_THREADS": "1"}
 
-# The `build` stub writes and removes the checkout's shared static directory, so under pytest-xdist these tests share
-# one worker (`--dist loadgroup`): another worker's teardown would delete the page out from under a running server.
-pytestmark = pytest.mark.xdist_group("static-build")
-
 
 @pytest.fixture(scope="module")
 def build() -> Iterator[None]:
-    """The page build the server refuses to start without, stubbed when the checkout has none."""
-    index = server._STATIC / "index.html"
-    if index.is_file():
+    """The page build the server refuses to start without, stubbed (shared with other workers) when the checkout has none."""
+    with held(server._STATIC):
         yield
-        return
-    index.parent.mkdir(exist_ok=True)
-    index.write_text("<!doctype html>")
-    try:
-        yield
-    finally:
-        shutil.rmtree(index.parent)
 
 
 def _env(**overrides: str) -> dict[str, str]:
@@ -58,9 +47,15 @@ def _env(**overrides: str) -> dict[str, str]:
 
 
 def _free_port() -> int:
-    with closing(socket.socket()) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return sock.getsockname()[1]
+    """A port below the ephemeral range, which another worker's outgoing connection can take before the server binds."""
+    while True:
+        port = random.randrange(20_000, 32_768)
+        with closing(socket.socket()) as sock:
+            try:
+                sock.bind(("127.0.0.1", port))
+            except OSError:
+                continue
+            return port
 
 
 def _get(port: int, path: str) -> tuple[int, dict]:

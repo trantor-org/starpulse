@@ -12,11 +12,11 @@ import pytest
 
 CI = Path(__file__).resolve().parent
 
-TESTS = "import time\n\ndef test_fast():\n    pass\n\n\ndef test_slow():\n    time.sleep(0.4)\n"
+TESTS = "import time\n\ndef test_fast():\n    pass\n\n\ndef test_slow():\n    time.sleep(0.8)\n"
 
 
 def run(tree: Path, *args: str, **env: str) -> subprocess.CompletedProcess[str]:
-    """Run pytest in `tree` with the `slow_tests` plugin on, a 0.3 s threshold and no GitHub Actions unless `env` sets it.
+    """Run pytest in `tree` with the `slow_tests` plugin on, a 0.6 s wall threshold and no GitHub Actions unless `env` sets it.
 
     Only the plugins the run needs load: autoloading every installed pytest plugin costs seconds per run.
     """
@@ -28,7 +28,7 @@ def run(tree: Path, *args: str, **env: str) -> subprocess.CompletedProcess[str]:
             **os.environ,
             "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
             "PYTHONPATH": str(CI),
-            "SLOW_TEST_SECONDS": "0.3",
+            "SLOW_TEST_SECONDS": "0.6",
             "SLOW_TEST_CPU_SECONDS": "0.3",
             "PYTEST_ADDOPTS": "",
             "GITHUB_ACTIONS": "",
@@ -51,7 +51,7 @@ def test_a_test_past_the_threshold_is_named_once_with_its_seconds_and_a_fast_one
     assert done.returncode == 0, done.stdout + done.stderr
     flagged = [line for line in done.stdout.splitlines() if "test_x.py::" in line and line.lstrip()[0].isdigit()]
     assert [line.split()[-1] for line in flagged] == ["test_x.py::test_slow"]
-    assert 0.4 <= float(flagged[0].split()[0].rstrip("s")) < 5
+    assert 0.8 <= float(flagged[0].split()[0].rstrip("s")) < 5
     assert "::warning" not in done.stdout
 
 
