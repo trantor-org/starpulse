@@ -231,7 +231,7 @@ def test_hub_mode_is_a_serve_flag_not_a_config_setting(tmp_path: Path) -> None:
 def test_unknown_keys_are_refused_by_name_beside_the_known_ones(tmp_path: Path) -> None:
     assert _refusal(tmp_path, 'zeta = 1\ntrakcer_url = "http://x.test"\n') == (
         "unknown config key(s) trakcer_url, zeta; known: aggregates_only, analytics, api_worker, autopilot, board, board_worker, ci, cursor_context, database_url, event_log_archive_dir, event_log_retention_days, "
-        "flow_metrics_worker, forward, forwarding_worker, harnesses_file, history_worker, hub_retention_days, level, mode, oidc, pull_requests, refresh_token_env, release, repos, runs, runs_worker, search, search_worker, session_start_url, slow_read_seconds, sources, tracker_url, triggers, worker_memory"
+        "flow_metrics_worker, forward, forwarding_worker, harnesses_file, hub_retention_days, level, mode, oidc, pull_requests, refresh_token_env, release, repos, runs, runs_worker, search, search_worker, session_start_url, slow_read_seconds, sources, tracker_url, triggers, worker_memory"
     )
 
 
@@ -556,17 +556,15 @@ def test_flow_metrics_worker_defaults_off_and_is_a_flag(tmp_path: Path) -> None:
     assert _refusal(tmp_path, 'flow_metrics_worker = "yes"\n') == "flow_metrics_worker must be true or false"
 
 
-def test_history_worker_is_an_alias_of_flow_metrics_worker(tmp_path: Path) -> None:
-    assert load(_write(tmp_path, "history_worker = true\n")).flow_metrics_worker is True
-    assert _refusal(tmp_path, 'history_worker = "yes"\n') == "history_worker must be true or false"
-    assert load(_write(tmp_path, "history_worker = true\nflow_metrics_worker = false\n")).flow_metrics_worker is False
+def test_history_worker_key_is_refused_as_unknown(tmp_path: Path) -> None:
+    assert "history_worker" in _refusal(tmp_path, "history_worker = true\n")
 
 
 @pytest.mark.parametrize("key", ["flow_metrics", "history"])
-def test_worker_memory_history_is_an_alias_of_flow_metrics(tmp_path: Path, key: str) -> None:
-    tuned = load(_write(tmp_path, f"[worker_memory.{key}]\nsoft_mb = 10\nhard_mb = 20\n")).worker_memory
+def test_worker_memory_retired_spellings_are_refused_as_unknown(tmp_path: Path, key: str) -> None:
+    assert key in _refusal(tmp_path, f"[worker_memory.{key}]\nsoft_mb = 10\nhard_mb = 20\n")
+    tuned = load(_write(tmp_path, "[worker_memory.flow-metrics]\nsoft_mb = 10\nhard_mb = 20\n")).worker_memory
     assert tuned["flow-metrics"] == MemoryLimit(10, 20)
-    assert "history" not in tuned
 
 
 def test_board_worker_defaults_off_and_is_a_flag(tmp_path: Path) -> None:

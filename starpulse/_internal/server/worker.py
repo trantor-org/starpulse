@@ -43,9 +43,6 @@ logger = logging.getLogger(__name__)
 
 CONTEXTS = ("api", "pulls", "autopilot", "runs", "forwarding", "flow-metrics", "search", "board")
 
-#: A context's old name, accepted for one release.
-ALIASES = {"history": "flow-metrics"}
-
 
 def delivery_blocks(config: Config) -> tuple:
     """What of `config` the Delivery loops are built from; a change to anything else needs no rebuild."""
@@ -127,9 +124,8 @@ def worker_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "context",
-        type=lambda name: ALIASES.get(name, name),
         choices=CONTEXTS,
-        help="the bounded context to run (`history` is the old name of `flow-metrics`)",
+        help="the bounded context to run",
     )
     parser.add_argument(
         "--config",

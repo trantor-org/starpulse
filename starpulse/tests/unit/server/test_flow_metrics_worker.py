@@ -102,7 +102,9 @@ def test_a_restarted_worker_neither_drops_nor_repeats_a_history_row(
     assert store.cursor("machine:events") > first
 
 
-def test_the_history_context_name_still_parses_as_flow_metrics() -> None:
+def test_the_retired_history_context_name_is_refused() -> None:
     from starpulse._internal.server.worker import worker_parser
 
-    assert worker_parser().parse_args(["history"]).context == "flow-metrics"
+    with pytest.raises(SystemExit) as refused:
+        worker_parser().parse_args(["history"])
+    assert refused.value.code == 2

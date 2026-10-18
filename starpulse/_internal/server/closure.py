@@ -50,7 +50,6 @@ _SERVE_KEYS = (
     "runs_worker",
     "forwarding_worker",
     "flow_metrics_worker",
-    "history_worker",
     "search_worker",
     "board_worker",
 )
