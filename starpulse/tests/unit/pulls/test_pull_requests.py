@@ -125,11 +125,6 @@ def _feed(**tasks: list[str]) -> BoardFeed:
     return feed
 
 
-def _drawn(pulls: dict[str, list[dict]]) -> dict[str, list[dict]]:
-    """`pulls` as the page is sent them: without the `files` a record keeps for the feed's own reads."""
-    return {task: [{k: v for k, v in pull.items() if k != "files"} for pull in found] for task, found in pulls.items()}
-
-
 def _pulls(feed: BoardFeed) -> dict:
     return feed.snapshot()["pulls"]
 
@@ -147,9 +142,10 @@ def test_the_snapshot_carries_each_tasks_pr_number_check_rollup_merged_state_and
 
     PullRequests(feed, store, clock=lambda: NOW).refresh()
 
-    assert _pulls(feed) == _drawn(
-        {"PROJ-7": [_record(1750, "failing", threads=2)], "PROJ-8": [_record(1751, "pass", merged=True)]}
-    )
+    assert _pulls(feed) == {
+        "PROJ-7": [_record(1750, "failing", threads=2)],
+        "PROJ-8": [_record(1751, "pass", merged=True)],
+    }
 
 
 def test_a_record_carries_the_merge_commit_and_time_the_changed_files_and_the_commits_behind_main(
@@ -229,7 +225,7 @@ def test_the_next_read_of_the_store_clears_the_stale_marker_and_takes_the_new_va
     store.save([_stored(1750, "pass")])
     source.refresh()
 
-    assert _pulls(feed) == _drawn({"PROJ-7": [_record(1750, "pass")]})
+    assert _pulls(feed) == {"PROJ-7": [_record(1750, "pass")]}
 
 
 def test_a_pr_the_task_no_longer_cites_leaves_the_map_on_the_next_refresh(store: PullStore) -> None:
@@ -256,8 +252,8 @@ def test_a_change_is_published_to_subscribers_and_an_unchanged_refresh_is_not(st
     source.refresh()
 
     assert [changes.get_nowait() for _ in range(changes.qsize())] == [
-        ("pulls", {"pulls": _drawn({"PROJ-7": [_record(1750, "pending")]})}),
-        ("pulls", {"pulls": _drawn({"PROJ-7": [_record(1750, "pass")]})}),
+        ("pulls", {"pulls": {"PROJ-7": [_record(1750, "pending")]}}),
+        ("pulls", {"pulls": {"PROJ-7": [_record(1750, "pass")]}}),
     ]
 
 

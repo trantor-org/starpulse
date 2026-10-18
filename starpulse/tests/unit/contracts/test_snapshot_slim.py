@@ -6,7 +6,7 @@ import time
 from starpulse._internal.feed.board_feed import HOT_S, BoardFeed
 from starpulse._internal.kit.adapter_kit import task
 from starpulse.contracts.adapters import Move
-from starpulse._internal.server.encoding import encode, encode_snapshot, slim_snapshot
+from starpulse._internal.server.encoding import encode, encode_snapshot, event, slim_snapshot
 from starpulse.tests.machines import MACHINES
 
 DAY = 86400.0
@@ -96,3 +96,29 @@ def test_snapshot_slim_is_under_a_quarter_of_the_unslimmed_encoding() -> None:
     snapshot = feed.snapshot()
 
     assert len(encode_snapshot(snapshot, {})) < 0.25 * len(encode("snapshot", snapshot))
+
+
+def test_the_snapshot_and_the_pulls_event_omit_the_fields_of_a_pull_record_the_api_does_not_declare() -> None:
+    record = {
+        "number": 7,
+        "url": "https://github.com/o/r/pull/7",
+        "checks": "pass",
+        "merged": True,
+        "merge_sha": "a" * 40,
+        "merged_at": "2026-10-07T00:00:00Z",
+        "threads": 0,
+        "stale": False,
+        "files": ["README.md"],
+        "applied_by": "b" * 40,
+    }
+    feed = BoardFeed(machines=MACHINES)
+    _, events = feed.subscribe()
+    feed.set_pulls({"TASK-1": [record]})
+
+    kind, delta = events.get_nowait()
+    sent = [json.loads(event(kind, delta))["pulls"], _sent(feed)["pulls"]]
+
+    assert kind == "pulls"
+    for pulls in sent:
+        assert {"files", "applied_by"}.isdisjoint(pulls["TASK-1"][0])
+        assert pulls["TASK-1"][0]["number"] == 7
