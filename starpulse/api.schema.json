@@ -5868,7 +5868,7 @@
     },
     "RunEventRequest": {
       "additionalProperties": false,
-      "description": "`POST /api/runs/events`: one workflow phase a producer reports.",
+      "description": "`POST /api/runs/events`: one workflow or step event a producer reports.",
       "properties": {
         "depends": {
           "anyOf": [
@@ -5884,7 +5884,7 @@
           ],
           "default": null
         },
-        "phase": {
+        "event": {
           "type": "string"
         },
         "run_id": {
@@ -5920,7 +5920,7 @@
         }
       },
       "required": [
-        "phase",
+        "event",
         "workflow",
         "run_id",
         "status"

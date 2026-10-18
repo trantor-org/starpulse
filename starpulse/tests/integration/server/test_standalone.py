@@ -101,7 +101,7 @@ def test_without_a_cache_server_or_any_tool_on_the_path_the_server_serves_histor
                 "-c",
                 (
                     "import sys; from starpulse.__main__ import main; "
-                    f"code = main({['emit', 'start', '--workflow', 'nightly', '--run', 'r1', '--status', 'running', '--config', str(config)]!r}); "
+                    f"code = main({['emit', 'StepStarted', '--workflow', 'nightly', '--run', 'r1', '--status', 'running', '--config', str(config)]!r}); "
                     f"assert {_CLIENT_MODULE!r} not in sys.modules; raise SystemExit(code)"
                 ),
             ],  # fmt: skip
@@ -166,7 +166,7 @@ def test_an_event_posted_with_the_token_in_the_environment_reaches_the_snapshot_
         [sys.executable, "-m", "starpulse._internal.server.server", "--port", str(port), "--config", str(config)],
         env=_env(CRON_INGEST_TOKEN="s3cret"),
     )
-    event = json.dumps({"phase": "start", "workflow": "cron/nightly", "run_id": "r1", "status": "running"}).encode()
+    event = json.dumps({"event": "StepStarted", "workflow": "cron/nightly", "run_id": "r1", "status": "running"}).encode()
 
     def post(token: str) -> int:
         request = urllib.request.Request(

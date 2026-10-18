@@ -354,7 +354,7 @@ def start(url: str) -> Callable[[str], str] | None:
 def _decode(fields: dict) -> tuple[str, float] | None:
     """The workflow and the time an entry of the runs stream reports, or None for one the contract does not allow."""
     try:
-        well_formed = fields["phase"] in run_events.PHASES and fields["status"] in get_args(RunStatus)
+        well_formed = fields["event"] in run_events.EVENTS and fields["status"] in get_args(RunStatus)
         return (fields["workflow"], float(fields["time"])) if well_formed else None
     except KeyError, ValueError, TypeError:
         return None
@@ -425,8 +425,8 @@ def workflow_run_entry(payload: dict) -> dict:
     status = status_of(run["status"], run.get("conclusion"))
     at = datetime.fromisoformat(run["updated_at"]).timestamp()
     workflow = posixpath.basename(run["path"].split("@")[0])
-    phase = "end" if run["status"] == "completed" else "start"
-    return run_events.entry(phase, workflow, str(run["id"]), status, now=at)
+    event = "StepFinished" if run["status"] == "completed" else "StepStarted"
+    return run_events.entry(event, workflow, str(run["id"]), status, now=at)
 
 
 #: Seconds between two readings of a followed repository; a workflow file added since the last one shows at the next.

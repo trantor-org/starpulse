@@ -31,7 +31,7 @@ def appended(log: EventLog) -> list[dict[str, Any]]:
 
 
 def body(**fields: Any) -> bytes:
-    event = {"phase": "start", "workflow": "cron/nightly", "run_id": "r1", "status": "running"} | fields
+    event = {"event": "StepStarted", "workflow": "cron/nightly", "run_id": "r1", "status": "running"} | fields
     return json.dumps({k: v for k, v in event.items() if v is not None}).encode()
 
 
@@ -48,7 +48,7 @@ def test_a_valid_event_with_its_instances_token_is_appended_as_that_instances_en
     assert appended(log) == [
         {
             "time": NOW,
-            "phase": "start",
+            "event": "StepStarted",
             "workflow": "nightly",
             "run_id": "r1",
             "status": "running",
@@ -59,14 +59,14 @@ def test_a_valid_event_with_its_instances_token_is_appended_as_that_instances_en
 
 def test_a_step_event_carries_its_time_step_and_dependencies(push: ingest.Ingest, log: EventLog) -> None:
     status, _ = push(
-        bearer("cron"), body(phase="end", status="succeeded", time=12.5, step="load", depends=["fetch", "clean"])
+        bearer("cron"), body(event="StepFinished", status="succeeded", time=12.5, step="load", depends=["fetch", "clean"])
     )
 
     assert status == 201
     assert appended(log) == [
         {
             "time": 12.5,
-            "phase": "end",
+            "event": "StepFinished",
             "workflow": "nightly",
             "run_id": "r1",
             "status": "succeeded",
@@ -118,7 +118,7 @@ def test_each_instances_token_pushes_its_own_workflows(push: ingest.Ingest, log:
         b"[]",
         body(workflow="nightly"),
         body(workflow="cron/"),
-        body(phase="pause"),
+        body(event="pause"),
         body(status="exploded"),
         body(run_id=""),
         body(run_id=7),

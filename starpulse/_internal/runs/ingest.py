@@ -3,7 +3,7 @@
 A webhook-only engine (Cronicle, Rundeck, a GitHub `workflow_run` relay) posts one contract event as JSON, the fields
 `starpulse emit` takes:
 
-    {"phase": "start", "workflow": "<instance>/<workflow>", "run_id": "r1", "status": "running",
+    {"event": "StepStarted", "workflow": "<instance>/<workflow>", "run_id": "r1", "status": "running",
      "time": 1700000000.0, "step": "load", "depends": ["fetch"]}     # time, step and depends are optional
 
 with `Authorization: Bearer <token>`. Each `[[runs]]` instance that names a `token_env` has its own token, read from
@@ -82,8 +82,8 @@ def _run_event(event: object) -> dict[str, Any] | str:
     for key in ("workflow", "run_id"):
         if not (isinstance(event.get(key), str) and event[key]):
             return f"{key} must be non-empty text"
-    if event.get("phase") not in run_events.PHASES:
-        return f"phase must be one of {', '.join(run_events.PHASES)}"
+    if event.get("event") not in run_events.EVENTS:
+        return f"event must be one of {', '.join(run_events.EVENTS)}"
     if event.get("status") not in get_args(RunStatus):
         return f"status must be one of {', '.join(get_args(RunStatus))}"
     if "time" in event and not _epoch(event["time"]):
@@ -121,7 +121,7 @@ class Ingest:
         if owner != instance:
             return 403, {"error": f"this token may push only {instance}/<workflow>, not {event['workflow']}"}
         entry = run_events.entry(
-            event["phase"],
+            event["event"],
             workflow,
             event["run_id"],
             event["status"],
