@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import io
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
 import yaml
+from coverage_map import publish
 from select_tests import FULL, READERS, SHARD_COUNT, Selection, main, select, shards_for
 
 CI = Path(__file__).resolve().parents[1] / ".github/workflows/ci.yml"
@@ -51,8 +53,19 @@ def repo(tmp_path: Path) -> Path:
         "starpulse/tests/unit/contracts/test_contracts.py": "from starpulse.contracts import adapters\nfrom starpulse.contracts.api import schema\n",
         "starpulse/tests/unit/contracts/test_finding.py": "from starpulse.contracts import adapters\n",
         "starpulse/tests/unit/machines/test_machine_definition.py": "from starpulse._internal.machines import machine_definition\n",
+        "starpulse/_internal/ci/ci.py": "",
+        "starpulse/_internal/harnesses/harness.py": "",
+        "starpulse/_internal/pulls/github.py": "",
+        "starpulse/_internal/cli/skill_install.py": "",
+        "starpulse/tests/unit/pulls/test_github.py": "from starpulse._internal.pulls import github\n",
+        "starpulse/tests/unit/machines/test_github_pull_request_machine.py": "",
+        "starpulse/tests/integration/cli/test_agent_cli.py": "from starpulse._internal.cli import skill_install\n",
         "ci/sizer.py": "",
         "ci/test_sizer.py": "from sizer import X\n",
+        "ci/avoid_list.py": "",
+        "ci/test_avoid_list.py": "import avoid_list\n",
+        "ci/test_ic_imports.py": "",
+        "ci/test_workflow_placement.py": "",
         "ci/ui_preview.py": "",
         "ci/test_page_latency.py": "",
         "ci/test_soak.py": "",
@@ -108,8 +121,6 @@ def test_a_migration_selects_the_tests_of_the_module_that_runs_migrations(repo):
         "uv.lock",
         "starpulse/tests/conftest.py",
         "starpulse/tests/fixtures/jira/search_page_1.json",
-        "starpulse/machines/copilot.yaml",
-        "starpulse/skills/writing-starpulse-adapters/SKILL.md",
         "starpulse/gone.py",  # deleted: what imported it is no longer in the graph
         "some/new/file.txt",
         "scripts/new_tool.py",
@@ -131,16 +142,31 @@ def test_a_change_whose_readers_the_graph_cannot_name_runs_the_full_suite(repo, 
         (
             ".github/workflows/ci.yml",
             [
+                "ci/test_avoid_list.py",
+                "ci/test_ic_imports.py",
                 "ci/test_load.py",
                 "ci/test_page_latency.py",
                 "ci/test_sizer.py",
                 "ci/test_soak.py",
                 "ci/test_ui_preview.py",
+                "ci/test_workflow_placement.py",
             ],
         ),
         ("bench/page_latency.py", ["ci/test_load.py", "ci/test_page_latency.py", "ci/test_soak.py"]),
         ("bench/soak.py", ["ci/test_soak.py"]),
         ("bench/load.py", ["ci/test_load.py"]),
+        (
+            "starpulse/machines/copilot.yaml",
+            [
+                "starpulse/tests/unit/machines/test_github_pull_request_machine.py",
+                "starpulse/tests/unit/pulls/test_github.py",
+            ],
+        ),
+        (
+            "starpulse/skills/writing-starpulse-adapters/SKILL.md",
+            ["starpulse/tests/integration/cli/test_agent_cli.py"],
+        ),
+        ("ci/static_checks.sh", ["ci/test_ic_imports.py", "ci/test_workflow_placement.py"]),
     ],
 )
 def test_a_mapped_non_python_file_selects_the_tests_that_read_it(repo, path, tests):
@@ -167,6 +193,17 @@ def test_a_file_no_test_reads_selects_nothing(repo, path):
 def test_a_non_python_file_whose_mapped_reader_is_gone_runs_the_full_suite(repo):
     (repo / "starpulse/_internal/server/server.py").unlink()
     assert select(repo, ["README.md"]) == FULL
+
+
+def test_a_deleted_test_file_selects_nothing(repo):
+    assert select(repo, ["starpulse/tests/unit/feed/test_gone.py"]) == Selection([])
+
+
+def test_a_module_replaced_by_a_package_selects_the_tests_that_import_the_package(repo):
+    """`contracts/api.py` became `contracts/api/__init__.py`: its importers still import the name."""
+    assert select(repo, ["starpulse/contracts/api.py"]) == Selection(
+        ["starpulse/tests/unit/contracts/test_contracts.py"]
+    )
 
 
 def test_an_adapter_selects_a_subset_and_not_the_ci_tests(repo):
@@ -329,3 +366,98 @@ def test_a_schema_selects_the_tests_of_its_readers_not_the_full_suite(repo, sche
     assert selected
     assert len(selected) < len(select(repo, ["starpulse/__init__.py"]).tests)
     assert select(repo, readers).tests == selected
+
+
+def mapped(**tests: list[str]) -> dict:
+    """A coverage map (`ci/coverage_map.py`) of test file -> the source files its tests execute."""
+    return {
+        "sha": "a" * 40,
+        "collected": len(tests),
+        "tests": {f"{test}::test_it": files for test, files in tests.items()},
+    }
+
+
+LEAF = "starpulse/leaf.py"
+TEST_LEAF = "starpulse/tests/unit/feed/test_leaf.py"
+TEST_HUB = "starpulse/tests/unit/hub/test_hub.py"
+
+
+def test_a_changed_file_in_the_coverage_map_selects_only_the_tests_that_ran_it(repo):
+    coverage = mapped(**{TEST_LEAF: [LEAF], TEST_HUB: ["starpulse/_internal/hub/hub.py"]})
+    assert select(repo, [LEAF], coverage) == Selection([TEST_LEAF])
+
+
+def test_a_file_missing_from_the_coverage_map_falls_back_to_the_import_graph(repo):
+    coverage = mapped(**{TEST_HUB: ["starpulse/_internal/hub/hub.py"]})
+    assert select(repo, [LEAF], coverage) == select(repo, [LEAF])
+
+
+def test_a_new_test_file_the_map_never_saw_selects_itself(repo):
+    new = "starpulse/tests/unit/feed/test_new.py"
+    (repo / new).write_text("from starpulse.leaf import X\n")
+    assert select(repo, [new], mapped(**{TEST_LEAF: [LEAF]})) == Selection([new])
+
+
+def test_a_mapped_conftest_selects_its_tests_instead_of_the_full_suite(repo):
+    conftest = "starpulse/tests/conftest.py"
+    assert select(repo, [conftest], mapped(**{TEST_LEAF: [LEAF, conftest]})) == Selection([TEST_LEAF])
+    assert select(repo, [conftest], mapped(**{TEST_LEAF: [LEAF]})) == FULL
+
+
+def test_a_coverage_map_test_that_no_longer_exists_is_not_selected(repo):
+    coverage = mapped(**{TEST_LEAF: [LEAF], "starpulse/tests/unit/gone/test_gone.py": [LEAF]})
+    assert select(repo, [LEAF], coverage) == Selection([TEST_LEAF])
+
+
+def test_main_selects_by_the_newest_published_map(monkeypatch, capsys, repo, tmp_path):
+    monkeypatch.chdir(repo)
+    maps = tmp_path / "maps"
+    publish(mapped(**{TEST_LEAF: [LEAF]}), maps)
+    monkeypatch.setattr("select_tests.DEFAULT_DIR", maps)
+    monkeypatch.setattr("sys.stdin", io.StringIO(f"{LEAF}\n"))
+    main([])
+    assert f"PYTEST_TARGETS={TEST_LEAF}\n" in capsys.readouterr().out
+
+
+PYPROJECT = '[project]\nname = "starpulse"\n\n[tool.importlinter]\nroot_package = "starpulse"\n'
+
+
+def test_a_pyproject_edit_to_the_import_contracts_alone_selects_the_tests_that_read_them(repo):
+    (repo / "pyproject.toml").write_text(
+        PYPROJECT.replace("root_package", "include_external_packages = true\nroot_package")
+    )
+    assert select(repo, ["pyproject.toml"], pyproject_before=PYPROJECT) == Selection(["ci/test_avoid_list.py"])
+
+
+def test_a_pyproject_edit_outside_the_import_contracts_runs_the_full_suite(repo):
+    (repo / "pyproject.toml").write_text(PYPROJECT.replace('starpulse"\n', 'starpulse2"\n', 1))
+    assert select(repo, ["pyproject.toml"], pyproject_before=PYPROJECT) == FULL
+
+
+def test_a_pyproject_with_no_earlier_version_to_compare_runs_the_full_suite(repo):
+    (repo / "pyproject.toml").write_text(PYPROJECT)
+    assert select(repo, ["pyproject.toml"]) == FULL
+
+
+def test_a_non_python_file_selects_a_mapped_reader_by_the_map_not_the_import_graph(repo):
+    reader = "starpulse/_internal/pulls/github.py"
+    ran = "starpulse/tests/unit/machines/test_github_pull_request_machine.py"
+    coverage = mapped(**{ran: [reader]})
+    assert select(repo, ["starpulse/machines/copilot.yaml"], coverage) == Selection([ran])
+
+
+def test_main_compares_pyproject_with_the_base_it_is_given(monkeypatch, capsys, repo, tmp_path):
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr("select_tests.DEFAULT_DIR", tmp_path / "no-maps")
+    git = ["git", "-c", "user.name=t", "-c", "user.email=t@t"]
+    (repo / "pyproject.toml").write_text(PYPROJECT)
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run([*git, "commit", "-qm", "base"], cwd=repo, check=True)
+    base = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True
+    ).stdout.strip()
+    (repo / "pyproject.toml").write_text(PYPROJECT + '[[tool.importlinter.contracts]]\nname = "c"\n')
+    monkeypatch.setattr("sys.stdin", io.StringIO("pyproject.toml\n"))
+    main(["--base", base])
+    assert "PYTEST_TARGETS=ci/test_avoid_list.py\n" in capsys.readouterr().out

@@ -2,40 +2,50 @@
 
     git diff --name-only HEAD^1 HEAD | python ci/select_tests.py >> "$GITHUB_OUTPUT"
 
-A changed Python module selects every test file that imports it directly or through other modules, read from the
-import statements under `starpulse/` and `ci/`; a changed test file selects itself. A non-Python file selects the tests
-of the Python files that read it (`READERS`), a file no test reads selects nothing (`INERT`), and a change whose
-readers the import graph cannot name (`FULL_SUITE`, a deleted module, or any path this file does not know) runs
-everything. A push to main selects the same way; the nightly scheduled run is the full suite, so what a selection
-misses fails there.
+The newest coverage map the nightly published (`ci/coverage_map.py`) decides first: a changed file selects the tests
+whose recorded run executed it, and a changed test file selects itself. A file the map does not name (a new file, or a
+module only imported) falls back to the import graph read from the import statements under `starpulse/` and `ci/`: it
+selects every test file that imports it directly or through other modules. A non-Python file selects the tests of the
+Python files that read it (`READERS`), each reader as changed as the file it opens, a file no test reads selects nothing
+(`INERT`), and a change whose readers cannot be named (`FULL_SUITE`: a dependency, `conftest.py`, a fixture, or a
+`pyproject.toml` edit outside `LINT_TABLES`, told apart with `--base`; a deleted module; or any path this file does not
+know) runs everything. A push to main selects the same way; the nightly scheduled run is the full suite, so what a
+selection misses fails there.
 
 Prints `PYTEST_TARGETS` (empty means the whole suite) and `PYTEST_SHARDS` (a JSON list of the shard indexes to launch:
-empty when no test is selected, all six for a full run). `--full` prints the whole suite without reading a diff.
+empty when no test is selected, all six for a full run). `--full` prints the whole suite without reading a diff;
+`--base REF` names the commit the diff starts from.
 """
 
 from __future__ import annotations
 
+import argparse
 import ast
 import json
 import re
+import subprocess
 import sys
+import tomllib
 from dataclasses import dataclass
 from fnmatch import fnmatch
 from functools import cache
 from pathlib import Path
 
+from coverage_map import DEFAULT_DIR, latest
 from shard import SECONDS
 
 #: Read by every test, by pytest itself or by a loader the graph cannot follow (YAML, JSON, skill files).
 FULL_SUITE = (
-    "pyproject.toml",
+    "pyproject.toml",  # unless its edit is only to `LINT_TABLES`
     "uv.lock",
     "conftest.py",
     "*/conftest.py",
     "starpulse/tests/fixtures/*",
-    "starpulse/machines/*",
-    "starpulse/skills/*",
 )
+
+#: The `[tool.*]` tables of `pyproject.toml` that only a lint step reads; an edit to nothing else leaves every test's
+#: inputs as they were.
+LINT_TABLES = ("importlinter",)
 
 #: Non-Python files and the Python files that open them by path; each reader counts as changed.
 READERS = {
@@ -60,6 +70,18 @@ READERS = {
         "starpulse/_internal/config/triggers.py",
     ),
     "starpulse/_internal/eventlog/migrations/*": ("starpulse/_internal/hub/hub.py",),
+    "pyproject.toml": ("ci/avoid_list.py",),
+    "ci/static_checks.sh": ("ci/test_workflow_placement.py", "ci/test_ic_imports.py"),
+    "starpulse/machines/*": (
+        "starpulse/_internal/ci/ci.py",
+        "starpulse/_internal/harnesses/harness.py",
+        "starpulse/_internal/pulls/github.py",
+        "starpulse/tests/unit/machines/test_github_pull_request_machine.py",
+    ),
+    "starpulse/skills/*": (
+        "starpulse/_internal/cli/skill_install.py",
+        "starpulse/tests/integration/cli/test_agent_cli.py",
+    ),
     "bench/page_latency.py": ("ci/test_page_latency.py", "ci/test_soak.py", "ci/test_load.py"),
     "bench/soak.py": ("ci/test_soak.py",),
     "bench/load.py": ("ci/test_load.py",),
@@ -145,6 +167,12 @@ def _modules(root: Path) -> dict[str, Path]:
     return found
 
 
+def _module_name(path: str) -> str:
+    """The module name `_modules` gives a `.py` file path, whether or not the file exists."""
+    parts = Path(path).with_suffix("").parts
+    return parts[-1] if parts[0] == "ci" else ".".join(parts)
+
+
 def _imports(module: str, path: Path) -> frozenset[str]:
     """Every module name the file imports, with its parent packages, which importing it runs."""
     return _imports_of(module, path.name == "__init__.py", path.read_text())
@@ -220,14 +248,55 @@ def _is_adapter(path: Path) -> bool:
     return "board" in defined or {"start", "follow"} <= defined
 
 
-def select(root: Path, changed: list[str]) -> Selection:
-    modules = _modules(root)
+def _covering(coverage: dict | None) -> dict[str, set[str]]:
+    """Source file -> the test files with a test that ran it, from the nightly coverage map (`ci/coverage_map.py`)."""
+    covering: dict[str, set[str]] = {}
+    for nodeid, files in (coverage or {"tests": {}})["tests"].items():
+        for file in files:
+            covering.setdefault(file, set()).add(nodeid.partition("::")[0])
+    return covering
+
+
+def _only_lint_tables(root: Path, before: str | None) -> bool:
+    """Whether `pyproject.toml` differs from its `before` text only in `LINT_TABLES`; without a `before`, it may not."""
+    if before is None:
+        return False
+
+    def without_lint(text: str) -> dict:
+        config = tomllib.loads(text)
+        for table in LINT_TABLES:
+            config.get("tool", {}).pop(table, None)
+        return config
+
+    try:
+        return without_lint(before) == without_lint((root / "pyproject.toml").read_text())
+    except tomllib.TOMLDecodeError:
+        return False
+
+
+def _route(
+    root: Path,
+    changed: list[str],
+    covering: dict[str, set[str]],
+    modules: dict[str, Path],
+    pyproject_before: str | None,
+) -> tuple[set[str], set[str]] | None:
+    """The test files the map names and the modules whose importers are affected, or None when only the full suite is safe."""
     module_of = {str(path.relative_to(root)): name for name, path in modules.items()}
     tests = {name for name, path in modules.items() if path.name.startswith("test_")}
+    covered: set[str] = set()
     affected: set[str] = set()
-    for path in changed:
+    pending = list(changed)
+    while pending:
+        path = pending.pop()
+        if path in covering:  # the map names the tests that ran it; the rules below are for what it never saw
+            covered |= covering[path]
+            continue
+        if path == "pyproject.toml" and _only_lint_tables(root, pyproject_before):
+            pending.extend(READERS[path])
+            continue
         if any(fnmatch(path, pattern) for pattern in FULL_SUITE):
-            return FULL
+            return None
         if any(fnmatch(path, pattern) for pattern in INERT):
             continue
         if fnmatch(path, WORKFLOWS):
@@ -236,13 +305,31 @@ def select(root: Path, changed: list[str]) -> Selection:
         readers = next((files for pattern, files in READERS.items() if fnmatch(path, pattern)), None)
         if readers is not None:
             if not all(reader in module_of for reader in readers):
-                return FULL
-            affected |= {module_of[reader] for reader in readers}
+                return None
+            pending.extend(readers)  # each reader is as changed as the file it opens
         elif path in module_of:
             affected.add(module_of[path])
+        elif Path(path).name.startswith("test_") and path.endswith(".py"):
+            continue  # a deleted test file takes its tests with it
+        elif _module_name(path) in modules:
+            affected.add(_module_name(path))  # a module replaced by a package: importers still import the name
         else:
-            return FULL  # a deleted module, or a path nothing here knows
+            return None  # a deleted module, or a path nothing here knows
+    return covered, affected
 
+
+def select(
+    root: Path, changed: list[str], coverage: dict | None = None, pyproject_before: str | None = None
+) -> Selection:
+    modules = _modules(root)
+    covering = _covering(coverage)
+    routed = _route(root, changed, covering, modules, pyproject_before)
+    if routed is None:
+        return FULL
+    covered, affected = routed
+    module_of = {str(path.relative_to(root)): name for name, path in modules.items()}
+    path_of = {name: path for path, name in module_of.items()}
+    tests = {name for name, path in modules.items() if path.name.startswith("test_")}
     imports = {name: _imports(name, path) & modules.keys() for name, path in modules.items()}
     for conftest in (path for path in modules.values() if path.name == "conftest.py"):
         always, fixtures = _conftest_uses(conftest)
@@ -263,10 +350,17 @@ def select(root: Path, changed: list[str]) -> Selection:
         return frozenset(a for a, word in adapters.items() if re.search(rf"\b{word}\b", text))
 
     def reaches(name: str) -> set[str]:
-        """Modules `name` imports transitively, plus each adapter a loader it reaches would load by a name it holds."""
+        """Modules `name` imports transitively, plus each adapter a loader it reaches would load by a name it holds.
+
+        A module the map names but not for this test is only imported by it, so what it imports does not count.
+        """
+        test = path_of[name]
         seen, stack = {name}, [name]
         while stack:
-            for dep in imports[stack.pop()] - seen:
+            module = stack.pop()
+            if test not in covering.get(path_of[module], (test,)):
+                continue
+            for dep in imports[module] - seen:
                 seen.add(dep)
                 stack.append(dep)
             if not stack and seen & set(NAMED_LOADERS):
@@ -275,12 +369,31 @@ def select(root: Path, changed: list[str]) -> Selection:
                 stack.extend(named)
         return seen
 
-    return Selection(sorted(str(modules[t].relative_to(root)) for t in tests if reaches(t) & affected))
+    reached = {str(modules[t].relative_to(root)) for t in tests if reaches(t) & affected}
+    return Selection(sorted(reached | {test for test in covered if (root / test).is_file()}))
+
+
+def _file_at(root: Path, ref: str, path: str) -> str | None:
+    """`path` as `ref` held it, or None when git cannot show it."""
+    shown = subprocess.run(["git", "-C", str(root), "show", f"{ref}:{path}"], capture_output=True, text=True)
+    return shown.stdout if shown.returncode == 0 else None
 
 
 def main(argv: list[str]) -> None:
-    """Print the selection for the diff on stdin, or the whole suite for `--full` (the schedule, a dispatch: no diff)."""
-    selection = FULL if argv == ["--full"] else select(Path.cwd(), [line.strip() for line in sys.stdin if line.strip()])
+    """Print the selection for the diff on stdin, or the whole suite for `--full` (the schedule, a dispatch: no diff).
+
+    `--base REF` names the commit the diff starts from, so an edit to `pyproject.toml` can be told from a dependency one.
+    """
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--full", action="store_true")
+    parser.add_argument("--base")
+    args = parser.parse_args(argv)
+    if args.full:
+        selection = FULL
+    else:
+        changed = [line.strip() for line in sys.stdin if line.strip()]
+        before = _file_at(Path.cwd(), args.base, "pyproject.toml") if args.base else None
+        selection = select(Path.cwd(), changed, latest(DEFAULT_DIR), before)
     targets = selection.tests or []
     print(f"PYTEST_TARGETS={' '.join(targets)}")
     print(f"PYTEST_SHARDS={json.dumps(shards_for(selection))}")

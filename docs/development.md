@@ -80,8 +80,11 @@ workspace App's check runs from trantor's `ci-sp-*` Dagu DAGs; a push to main ru
 that very commit, and the full suite runs nightly and on a manual dispatch as this repository's `ci.yml`. Trantor's nightly `starpulse-fresh-serve` Dagu DAG (02:15 MST, on a dedicated worker so it competes with no other CI) builds main's wheel, installs it into an empty virtualenv, starts `starpulse serve` from an empty directory with no config and a bare environment, and runs `ci/fresh_serve.py`, which fails unless `/` answers HTTP 200 and every worker the supervisor names (read from the pid `serve` logs for its context, since a zygote-forked child shows the zygote's argv in `ps`) is alive below `serve` on two checks five seconds apart with the same processes. It proves the out-of-the-box install is the production install. The `macos-fresh-serve` job in `ci.yml` runs the same script on a GitHub-hosted macOS runner in the nightly run and on a manual dispatch (the fleet is Linux), so the supervisor, the resident-size reader and the Page API's handed socket are proven there too; prove a pull request by dispatching `ci.yml` on its branch. CI's `static-checks` job imports every module an IC instance can load without the hub extras
 (`ci/ic_imports.py`) rather than running the suite a second time. This repository is public, so its `ci/public_names.py` check fails
 when a tracked file other than a workflow, the runner-label list or a test names the operator's private hosts; docs, comments and fixtures use neutral names.
-A pull request's CI runs only the test files its changes can reach, chosen by `ci/select_tests.py` from the import
-graph; a dependency, `conftest.py`, fixture, machine, schema or skill change runs the whole suite.
+A pull request's CI runs only the test files its changes can reach, chosen by `ci/select_tests.py` from the per-test
+coverage map the nightly full suite records (`ci/coverage_map.py`): a changed file selects the tests that executed it. A
+file the map lacks, such as a new module, falls back to the import graph, and a changed test file selects itself. A
+machine, skill or `pyproject.toml` lint-table edit selects the tests of the code that reads it; only a dependency,
+`conftest.py` or fixture change, or any other `pyproject.toml` edit, runs the whole suite.
 `uv run lint-imports` checks the tiers under `starpulse/_internal`, top to bottom: `api` over `cli` (the server's routes and
 the hub, then the command line), `adapters`, `level`, `feed` and `ci`, `eventlog`, then `config`, `machines` and
 `contracts`. A package imports its own tier or one below; none import upward, and `feed` and `ci` never import each other.
