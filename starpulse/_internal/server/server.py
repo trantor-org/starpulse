@@ -1055,7 +1055,6 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     if "api" in commands:  # bound once the config is accepted and before the board, the history or a worker starts
         os.environ[STATIC_ENV] = str(_STATIC)
         listening = listening or listen(parser, args)
-        refuse_unassemblable(parser, args, config, ready)
         commands["api"] += ["--hours", str(args.hours)]
     elif args.hub:
         listening = listening or listen(parser, args)
@@ -1079,6 +1078,8 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
             forker.close()
     supervisor.start()
     try:
+        if "api" in commands:  # beside the children, which load the same stack: the page waits on them, not on this
+            refuse_unassemblable(parser, args, config, ready)
         stay_until_stopped()
     finally:
         supervisor.stop()
