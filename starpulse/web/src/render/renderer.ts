@@ -9,9 +9,9 @@
 // pans only while zoomed in. The path and each level's zoom are kept per browser.
 import { apiFetch } from "../api/apiFetch";
 import { embedded } from "../demo/host";
-import { RunEvents, type RunLine } from "../features/fanout/fanoutModel";
+import { RunEvents } from "../features/fanout/fanoutModel";
 import type { FeedLine, HudState, HudStore } from "./hud";
-import { DAG_COLOR, EXT, OFF, TRACE, drawing, ease, easeO, rgba, tierColor, type DrawCtx, type Hover, type LTask } from "./draw";
+import { DAG_COLOR, drawing, ease, easeO, type DrawCtx, type Hover, type LTask } from "./draw";
 import { animating, frameLoop, framePace } from "./idle";
 import { BOARD, hostOf, pathKey, pathLedger, pathTo, startPath, taskKicker, topFlow, type Level, type Path } from "./levels";
 import { optionalSteps } from "../features/level/ledger";
@@ -39,10 +39,10 @@ import { UPDATING, linkHud } from "./connection";
 import { keep as reuse } from "../api/same";
 import { createHistory } from "../api/history";
 import { sizes } from "./grow";
-import { draws, hostRun, laneRun, layout as traceLayout, machineRun, sessionRings, subjectOf, traceCard, traceTable, type Place, type Run, type Subject } from "../features/level/trace";
+import { hostRun, laneRun, machineRun, subjectOf, traceCard, traceTable, type Run, type Subject } from "../features/level/trace";
 import { boardTies, hangarLevel, tieLedger, type Ties } from "./dagTies";
 import { hubTip, tieTip } from "./dagTieTips";
-import type { Dag, Delta, FlowSnapshot, LedgerRow, Machine, RawTask, Snapshot, Writer } from "../api";
+import type { Dag, Delta, LedgerRow, Machine, RawTask, Snapshot, Writer } from "../api";
 import { fanTip, stepStatus } from "../features/fanout/fanoutModel";
 import { esc, fanList, queueCell, startRun, taskLink, taskPanel } from "./panels";
 import { emptyFan, fanRows, queueRow, stepRuns, track, type Fan } from "../features/fanout/fan";
@@ -63,110 +63,18 @@ import { staged } from "./staged";
 import { whenShown } from "./shown";
 import { fitLevel, refitView, toScreen, wheelFactor, zoomAbout, zoomedIn, type View } from "./zoom";
 import { loadFonts } from "./fonts";
-
-/** Kanban and DAGs HUD fields load on the first snapshot (and again after first paint if that path runs first). */
-type DagDataFn = (typeof import("../features/dags/dagsModel"))["dagData"];
-type KanbanTasksFn = (typeof import("../features/kanban/kanbanModel"))["kanbanTasks"];
-let dagData: DagDataFn | null = null;
-let kanbanTasks: KanbanTasksFn | null = null;
-let hudViewsP: Promise<void> | undefined;
-const loadHudViews = (): Promise<void> => (hudViewsP ??= Promise.all([
-  import("../features/dags/dagsModel"),
-  import("../features/kanban/kanbanModel"),
-]).then(([d, k]) => {
-  dagData = d.dagData;
-  kanbanTasks = k.kanbanTasks;
-}));
-
-const finished = (iso: string) => (iso ? Date.parse(iso) / 1000 : NaN);
-
-// Browser storage can be absent (a private window) or hold anything; the page works without it.
-function recall<T>(key: string): T | null {
-  try {
-    return JSON.parse(localStorage.getItem(key) ?? "null") as T | null;
-  } catch {
-    return null;
-  }
-}
-function keep(key: string, value: unknown) {
-  try {
-    if (value === null) localStorage.removeItem(key);
-    else localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // storage is off: the page just forgets
-  }
-}
+import { feedOf, finished, heldTasks } from "./feed";
+import { dagData, kanbanTasks, loadHudViews } from "./hudViews";
+import type { Probe, Renderer } from "./rendererTypes";
+import { keep, recall } from "./stored";
+import { traceDraw } from "./traceDraw";
 
 // the seeded night sky and its twinkle, the same as the current board's backdrop
 let seed = 7;
 const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
 const STARS = Array.from({ length: 160 }, () => ({ x: rnd(), y: rnd(), r: rnd() * 1.1 + 0.2, p: rnd() * TAU }));
 
-/** What the Playwright probe reads: the level, where its box sits on screen, and what a click there opens. */
-export interface Probe {
-  path: string;
-  /** Whether a snapshot has arrived and no transition or fly-to is running. */
-  ready: boolean;
-  /** The canvas the level is centred in; an open panel floats over it. */
-  canvas: { w: number; h: number };
-  /** Whether a click panel is open. */
-  panel: boolean;
-  centre: Pt;
-  zoomed: boolean;
-  /** What a click opens: another level, or a panel beside this one. */
-  targets: { name: string; opens: "level" | "panel" | "none"; x: number; y: number }[];
-  /** The level's fit zoom. */
-  fit: number;
-  /** Board only: each state's screen disc. */
-  states: { id: string; x: number; y: number; r: number; sun?: number }[];
-}
 
-export interface Renderer {
-  start(): void;
-  stop(): void;
-  /** Open a level; the old one zooms through (fx, fy). `then` gives the view to land on. */
-  go(path: Path, fx?: number, fy?: number, then?: () => View): void;
-  /** Fly back to the level's fit. */
-  fitView(): void;
-  /** Whether the Star Map is the view showing; while another view hides it, the canvas draws no frame. */
-  show(on: boolean): void;
-  /** Light the body a navigator search result stands for, as a hover over it would; null clears it. With `near`, a task the level does not draw lights its state instead. */
-  spot(target: Target | null, near?: boolean): void;
-  /** Open a task's panel on the level showing: pinned, as a click on it would, where the level draws it, else its Board panel. */
-  openTask(id: string): void;
-  /** Pin a task on the Board and open its panel, as a click on it would. */
-  selectTask(id: string): void;
-  /** The Admin view changed how times are written: write the subtitle, the Recent feed and the header clock again. */
-  refresh(): void;
-}
-
-/** A session's per-call moves: one a tool or skill use, too many to read in the feed. */
-const CHATTER = new Set(["TOOL_USED", "SKILL_USED"]);
-/** A session id (a UUID), which the feed writes as its first block. */
-const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-/i;
-
-/** The Board task each session holds, by session id: what a session's feed line is named for. */
-export const heldTasks = (board: FlowSnapshot | undefined) => new Map((board?.agents ?? []).flatMap((a) => (a.holder ? [[a.holder, a.id] as const] : [])));
-
-/**
- * The Recent feed's newest 40 lines at `now`: each move but a session's tool and skill uses, each DAG run's line, and a DAG's own line for a run
- * no run line ended. A session's line is named for the task it holds in `held`, else for its id's first block.
- */
-export function feedOf(moves: Move[], dags: Dag[], runs: RunLine[], now: number, held = new Map<string, string>()): Omit<FeedLine, "time">[] {
-  const ev: Omit<FeedLine, "time">[] = moves.filter((e) => e.at <= now && !CHATTER.has(e.event)).map((e) => {
-    const task = (e.task && held.get(e.task)) ?? e.task ?? undefined;
-    const who = task && SESSION_ID.test(task) ? task.slice(0, 8) : task ?? "";
-    return { key: `m${e.flow}:${e.task ?? ""}:${e.event}:${e.at}`, at: e.at, who, what: e.event.toLowerCase(), where: e.flow, task };
-  });
-  // a run line already says how its run ended, so the DAG's own line for that run is left out
-  const told = new Set(runs.filter((l) => l.tone).map((l) => l.runId));
-  for (const d of dags) {
-    const f = finished(d.finishedAt);
-    if (f <= now && !told.has(d.runId)) ev.push({ key: `d${d.name}`, at: f, who: d.name, what: "", where: d.status, dag: d.name });
-  }
-  ev.push(...runs);
-  return ev.sort((a, b) => b.at - a.at).slice(0, 40);
-}
 
 /** `onDrawn` runs once, in the frame whose canvas first shows the level (the page's first paint). */
 export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLElement; panel: HTMLElement }, demo: boolean, prefs: () => AdminPrefs = () => ADMIN_DEFAULTS, onDrawn?: () => void): Renderer {
@@ -214,7 +122,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     cx, get K() { return K; }, get ZS() { return ZS; }, get clock() { return clock; }, get scale() { return prefs().scale * (scene?.labelScale ?? 1); }, get hover() { return hover; },
   };
   const pen = drawing(dc);
-  const { nameWidth, text, labPx, label, circle, dot, arrow, badge, pill } = pen;
+  const { nameWidth, labPx } = pen;
   let mled: MachineLedgerDrawing | null = null;
   let foldDrawing: FoldDrawing | null = null;
   let extrasCancel: (() => void) | null = null;
@@ -1180,126 +1088,10 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     });
     return null;
   };
-  /** Where the traced task sits now, or null when this level does not draw it. */
-  function bodyOf(s: Subject): (Pt & { model: string }) | null {
-    const sc = scene!;
-    if (s.kind === "task") return sc.tasks.find((t) => t.id === s.id && !t.gone) ?? null;
-    const m = sc.machineTasks.find((t) => t.id === s.id && t.flow === s.flow);
-    return m && m._x !== undefined ? { x: m._x, y: m._y!, model: m.model } : null;
-  }
-  type Mode = "board" | "state" | "machine";
-  /** A state level's body by the name its trail gives it, and the name a trace shows for it. */
-  // a trail host is a body's name, or `primary#state` for a state of the primary
-  const planetOf = (name: string) => scene!.planets.find((p) => p.name === name.split("#")[0]);
-  const planetName = (name: string) => {
-    const p = planetOf(name), st = name.includes("#") ? p?.states[name.split("#")[1]] : undefined;
-    return st ? st.name : p ? p.title || p.label || p.name : name;
-  };
-  const placesOf = (mode: Mode): Record<string, Place> => {
-    const sc = scene!;
-    // a state level's bodies: the primary's rim is its dark halo, a moon's or sub-state's its disc
-    if (mode === "state") return Object.fromEntries(sc.planets.flatMap((p) => {
-      const r = p.moon || p.subState ? p.R : p.R + 14, states = p.primary ? Object.values(p.states) : [];
-      return [
-        [p.name, { id: p.name, name: planetName(p.name), x: p.x, y: p.y, r, R: r + 12 / K, color: p.subState ? "#e879f9" : p.moon ? "#c4b5fd" : "#c084fc", lab: { x: p.x, y: p.y + r + 16 / K } }],
-        ...states.map((m) => {
-          const id = `${p.name}#${m.id}`, mr = stateR(m);
-          return [id, { id, name: m.name, x: m.x, y: m.y, r: mr, R: mr + 8 / K, color: m.color, lab: m.lab ?? { x: m.x, y: m.y + mr + 12 } }];
-        }),
-      ];
-    }));
-    if (mode === "board") return Object.fromEntries(Object.values(sc.galaxies).map((g) => [g.id, { id: g.id, name: g.name, x: g.x, y: g.y, r: g.r, R: g.R, color: g.color, lab: g.lab }]));
-    return Object.fromEntries(Object.values(sc.mStates).map((m) => {
-      const r = stateR(m);
-      return [m.id, { id: m.id, name: m.name, x: m.x, y: m.y, r, R: r + 12 / K, color: m.color, lab: m.lab ?? { x: m.x, y: m.y + r + 16 } }];
-    }));
-  };
-  const edgeOf = (mode: Mode) => (from: string, to: string): Curve | null => {
-    const sc = scene!;
-    if (mode === "state") {
-      // inside the primary, its machine's path; between bodies, the hop the level draws
-      const [fa, fs] = from.split("#"), [ta, ts] = to.split("#");
-      if (fs && ts) {
-        const e = planetOf(from)?.edges.find((q) => q.a && q.b && q.source === fs && q.target === ts);
-        return e ? curveOf(e.a!, e.b!) : null;
-      }
-      const h = sc.hops.find((q) => q.from === fa && q.to === ta);
-      return h ? { p0: h.p0, c: h.c, p1: h.p1 } : null;
-    }
-    if (mode === "board") {
-      const e = sc.bEdges.find((q) => q.p0 && q.source === from && q.target === to);
-      return e ? { p0: e.p0!, c: e.c!, p1: e.p1! } : null;
-    }
-    const e = sc.mEdges.find((q) => q.a && q.b && q.source === from && q.target === to);
-    return e ? curveOf(e.a!, e.b!) : null;
-  };
-  // A hovered task lights the path it took through this level, in order; a pinned one is the focused setting, and everything else steps back
-  // under a dark veil from the click itself. A state level lights the bodies (primary, moons, sub-states) the task's session moved through.
-  function drawTrace() {
-    const t = draws(hover, pin, !mouse && spotted?.kind === "task" ? { kind: "task", id: spotted.id } : null).trace, sc = scene!;
-    if (!t || !S || !pinnable(t.subject)) return;
-    const body = bodyOf(t.subject), mode = level().kind as Mode, board = mode === "board", run = runFor(t.subject);
-    if (typeof run !== "string" && (board ? sc.bEdges.length : mode === "state" ? sc.planets.length : sc.mEdges.length)) {
-      const { routes, pills, first } = traceLayout(run, placesOf(mode), edgeOf(mode), board, K), thick = 2.6 / Math.max(1, ZS);
-      if (t.veil) {
-        const m = cx.getTransform(), dpr = devicePixelRatio || 1;
-        cx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        cx.fillStyle = "rgba(4,6,11,0.66)";
-        cx.fillRect(0, 0, W, H);
-        cx.setTransform(m);
-      }
-      for (const r of routes) {
-        const { p0, c, p1 } = r.curve, g = cx.createLinearGradient(r.from.x, r.from.y, r.to.x, r.to.y);
-        g.addColorStop(0, rgba(r.off ? OFF : r.from.color, 0.95));
-        g.addColorStop(1, rgba(r.off ? OFF : r.to.color, 0.95));
-        cx.strokeStyle = g;
-        cx.lineWidth = thick;
-        cx.setLineDash(r.off ? [5 / K, 5 / K] : []);
-        cx.beginPath();
-        for (let i = 0; i <= 24; i++) {
-          const q = bez(p0, c, p1, r.t0 + ((r.t1 - r.t0) * i) / 24);
-          if (i) cx.lineTo(q.x, q.y);
-          else cx.moveTo(q.x, q.y);
-        }
-        cx.stroke();
-        cx.setLineDash([]);
-        arrow(bez(p0, c, p1, r.t1 - 0.02), bez(p0, c, p1, r.t1), rgba(r.off ? OFF : r.to.color, 0.95), 9);
-      }
-      // each visited state's rim and name firm up, with the time it held the task beside it
-      for (const p of pills) {
-        circle(p.place.x, p.place.y, p.place.r, rgba(p.place.color, 1), 2.2 / Math.max(1, ZS));
-        if (mode !== "state") label(p.place.name, p.place.lab.x, p.place.lab.y, true, null, board ? 13 : 12.5); // a state level's bodies keep their own names
-        pill(p.text, p.x, p.y, p.place.color);
-      }
-      for (const r of routes) badge(r.badge, r.nums, r.off ? OFF : TRACE);
-      if (first) {
-        circle(first.x, first.y, first.r, rgba(first.color, 0.9), 1.6 / Math.max(1, ZS));
-        if (board) label(first.name, first.lab.x, first.lab.y, true, null, 13);
-      }
-      // on the Board, the lifecycle machines the task has sessions in: the moon is ringed with the count, and a sub-state it holds too
-      if (board) {
-        const ses = sessionRings(S.flows, t.subject.id, sc.moons, sc.subStates);
-        for (const [m, n] of ses.moons) {
-          circle(m.x, m.y, (m.r ?? 8) + 6, rgba(TRACE, 0.95), 1.6 / Math.max(1, ZS));
-          text(`${n} session${n === 1 ? "" : "s"}`, m.x, m.y - (m.r ?? 8) - 14 / K, labPx(9.5), TRACE, "center", 600);
-        }
-        for (const m of ses.subs) circle(m.x, m.y, (m.r ?? 6) + 5, rgba(TRACE, 0.95), 1.4 / Math.max(1, ZS));
-      }
-    }
-    // a rail-spotted task the level draws no dot for still has its path; its state body is lit in its place
-    if (!body) return;
-    circle(body.x, body.y, 9 / K, rgba(TRACE, 0.9), 1.6 / K);
-    dot(body.x, body.y, 4.5 / K, rgba(tierColor(body.model), 1));
-  }
-  /** A mapped machine's level names, above its states and in its colour, whose events move it. */
-  function drawSource() {
-    const lv = level(), src = lv.kind === "machine" ? sourceOf(lv.flow) : undefined, st = Object.values(scene!.mStates);
-    if (!src || !st.length) return;
-    const top = Math.min(...st.map((s) => s.y)), xs = st.map((s) => s.x);
-    cx.letterSpacing = `${0.6 / K}px`;
-    text(`mapped from ${src} · ${src} moves it, StarPulse observes`, (Math.min(...xs) + Math.max(...xs)) / 2, top - 70 / K, labPx(11), rgba(EXT, 0.8), "center", 300);
-    cx.letterSpacing = "0px";
-  }
+  const { drawTrace, drawSource, planetName } = traceDraw(dc, pen, {
+    get S() { return S; }, get scene() { return scene; }, get hover() { return hover; }, get pin() { return pin; }, get mouse() { return mouse; },
+    get spotted() { return spotted; }, get W() { return W; }, get H() { return H; }, level, pinnable, runFor, sourceOf,
+  });
   // ---- the machine ledger's scroll, the footer that loads older machines, and the 24 h strip along the bottom ----
   let railHover: Rail | null = null, railMoving = false;
   /** What the rail is under (x, y) of the ledger: the back-to-newest chip, the thumb, a tick of the strip or the footer. */

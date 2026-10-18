@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 
 from starpulse._internal.cli import agent_cli as cli
+from starpulse._internal.cli import agent_wire
 
 VALID = Path(__file__).parent.parent.parent.parent / "machines" / "harness.yaml"
 
@@ -368,7 +369,7 @@ class TestMachineShow:
 
     @pytest.fixture(autouse=True)
     def served(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(cli, "_get_snapshot", lambda url: {"flows": [self.FLOW]})
+        monkeypatch.setattr(agent_wire, "get_snapshot", lambda url: {"flows": [self.FLOW]})
 
     def test_it_returns_the_subflows_launches_and_writers_the_machine_declares(
         self, capsys: pytest.CaptureFixture[str]
@@ -385,7 +386,7 @@ class TestMachineShow:
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
         bare = {**self.FLOW, "machine": {key: self.FLOW["machine"][key] for key in ("states", "transitions")}}
-        monkeypatch.setattr(cli, "_get_snapshot", lambda url: {"flows": [bare]})
+        monkeypatch.setattr(agent_wire, "get_snapshot", lambda url: {"flows": [bare]})
 
         _, document = _run(capsys, ["machine", "show", "in-progress"])
 
