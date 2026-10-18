@@ -131,7 +131,7 @@ def test_a_start_entry_marks_the_dag_running_with_its_steps_not_started_and_push
     with dagu({"d1": ["a", "b"], "d2": ["c"]}) as (base_url, _):
         feed, runs, changes = follow(base_url)
 
-        runs.handle_entry(*run_entry("start", "d1", "r1", "running", at=101.0))
+        runs.handle_entry(*run_entry("StepStarted", "d1", "r1", "running", at=101.0))
 
     d1 = dag(feed, "d1")
     assert (d1["status"], d1["runId"], d1["startedAt"], d1["finishedAt"]) == (
@@ -150,11 +150,11 @@ def test_an_end_entry_sets_the_terminal_status_and_reads_each_steps_status_from_
     labels: dict[str, str] = {}
     with dagu({"d1": ["a", "b"]}, labels) as (base_url, calls):
         feed, runs, _ = follow(base_url)
-        runs.handle_entry(*run_entry("start", "d1", "r1", "running", at=101.0))
+        runs.handle_entry(*run_entry("StepStarted", "d1", "r1", "running", at=101.0))
         labels["b"] = "failed"
         calls.clear()
 
-        runs.handle_entry(*run_entry("end", "d1", "r1", "failed", at=105.0))
+        runs.handle_entry(*run_entry("StepFinished", "d1", "r1", "failed", at=105.0))
 
     d1 = dag(feed, "d1")
     assert (d1["status"], d1["finishedAt"]) == ("failed", "1970-01-01T00:01:45Z")
@@ -177,7 +177,7 @@ def test_an_end_entry_keeps_the_step_statuses_the_dag_had_when_dagu_cannot_be_re
     runs = DaguRuns(feed.runs("ci"), fetch, clock=lambda: LISTED_AT)
     runs.reconcile()
 
-    runs.handle_entry(*run_entry("end", "d1", "r0", "failed", at=105.0))
+    runs.handle_entry(*run_entry("StepFinished", "d1", "r0", "failed", at=105.0))
 
     assert (dag(feed, "d1")["status"], statuses(feed, "d1")) == ("failed", {"a": "succeeded"})
 
@@ -185,12 +185,12 @@ def test_an_end_entry_keeps_the_step_statuses_the_dag_had_when_dagu_cannot_be_re
 def test_the_end_of_a_run_that_is_neither_the_one_drawn_nor_an_active_one_changes_nothing() -> None:
     with dagu({"d1": ["a"]}) as (base_url, _):
         feed, runs, changes = follow(base_url)
-        runs.handle_entry(*run_entry("start", "d1", "r1", "running", at=101.0))
-        runs.handle_entry(*run_entry("start", "d1", "r2", "running", at=102.0))
+        runs.handle_entry(*run_entry("StepStarted", "d1", "r1", "running", at=101.0))
+        runs.handle_entry(*run_entry("StepStarted", "d1", "r2", "running", at=102.0))
         while not changes.empty():
             changes.get_nowait()
 
-        runs.handle_entry(*run_entry("end", "d1", "r0", "failed", at=103.0))
+        runs.handle_entry(*run_entry("StepFinished", "d1", "r0", "failed", at=103.0))
 
     assert (dag(feed, "d1")["status"], dag(feed, "d1")["runId"]) == ("running", "r2")
     assert changes.empty()
@@ -200,7 +200,7 @@ def test_an_entry_from_before_the_listing_is_already_in_it_and_changes_nothing()
     with dagu({"d1": ["a"]}) as (base_url, _):
         feed, runs, changes = follow(base_url)
 
-        runs.handle_entry(*run_entry("start", "d1", "r1", "running", at=LISTED_AT - 1))
+        runs.handle_entry(*run_entry("StepStarted", "d1", "r1", "running", at=LISTED_AT - 1))
 
     assert dag(feed, "d1")["status"] == "succeeded"
     assert changes.empty()
@@ -210,8 +210,8 @@ def test_a_malformed_entry_is_dropped() -> None:
     with dagu({"d1": ["a"]}) as (base_url, _):
         feed, runs, changes = follow(base_url)
 
-        runs.handle_entry("9-0", {"workflow": "d1", "phase": "start", "time": "soon"})
-        runs.handle_entry("9-1", {"workflow": "d1", "phase": "paused", "time": "101.0", "run_id": "r1"})
+        runs.handle_entry("9-0", {"workflow": "d1", "event": "StepStarted", "time": "soon"})
+        runs.handle_entry("9-1", {"workflow": "d1", "event": "paused", "time": "101.0", "run_id": "r1"})
 
     assert dag(feed, "d1")["status"] == "succeeded"
     assert changes.empty()
@@ -223,10 +223,10 @@ def test_a_start_costs_dagu_nothing_and_an_end_one_listing_and_that_dags_step_re
         calls.clear()
 
         for n in range(1, 21):
-            runs.handle_entry(*run_entry("start", "d1", f"r{n}", "running", at=LISTED_AT + 2 * n))
+            runs.handle_entry(*run_entry("StepStarted", "d1", f"r{n}", "running", at=LISTED_AT + 2 * n))
         assert calls == []
 
-        runs.handle_entry(*run_entry("end", "d1", "r20", "succeeded", at=LISTED_AT + 50))
+        runs.handle_entry(*run_entry("StepFinished", "d1", "r20", "succeeded", at=LISTED_AT + 50))
 
     assert calls == [LISTING, "/api/v1/dags/d1"]
     assert dag(feed, "d1")["runId"] == "r20"
@@ -238,7 +238,7 @@ def test_a_run_of_a_dag_the_listing_lacks_triggers_one_more_listing() -> None:
         feed, runs, _ = follow(base_url)
         steps["d3"] = ["x", "y"]
 
-        runs.handle_entry(*run_entry("start", "d3", "r1", "running", at=101.0))
+        runs.handle_entry(*run_entry("StepStarted", "d3", "r1", "running", at=101.0))
 
     assert calls.count(LISTING) == 2
     assert (dag(feed, "d3")["status"], statuses(feed, "d3")) == ("running", {"x": "not_started", "y": "not_started"})
@@ -305,7 +305,7 @@ def test_a_dagu_that_was_down_at_the_listing_is_read_again_when_a_run_arrives() 
     runs.reconcile()
     assert (feed.snapshot()["dags"], feed.snapshot()["error"]) == ([], "ci: refused")
 
-    runs.handle_entry(*run_entry("start", "d1", "r1", "running", at=101.0))
+    runs.handle_entry(*run_entry("StepStarted", "d1", "r1", "running", at=101.0))
 
     assert (dag(feed, "d1")["status"], feed.snapshot()["error"]) == ("running", None)
 
@@ -317,7 +317,7 @@ def test_a_start_clears_the_finish_time_the_listing_gave_the_dag() -> None:
     runs = DaguRuns(feed.runs("ci"), lambda only=None: listed, clock=lambda: LISTED_AT)
     runs.reconcile()
 
-    runs.handle_entry(*run_entry("start", "d1", "r1", "running", at=101.0))
+    runs.handle_entry(*run_entry("StepStarted", "d1", "r1", "running", at=101.0))
 
     assert dag(feed, "d1")["finishedAt"] == ""
 
@@ -327,7 +327,7 @@ def test_an_entry_is_applied_before_any_listing_has_been_taken() -> None:
     listed = [{"name": "d1", "status": "succeeded", "runId": "", "startedAt": "", "finishedAt": "", "steps": []}]
     runs = DaguRuns(feed.runs("ci"), lambda only=None: listed, clock=lambda: 0.0)
 
-    runs.handle_entry(*run_entry("start", "d1", "r1", "running", at=0.5))
+    runs.handle_entry(*run_entry("StepStarted", "d1", "r1", "running", at=0.5))
 
     assert dag(feed, "d1")["status"] == "running"
 
@@ -336,7 +336,7 @@ def test_an_entry_stamped_at_the_moment_of_the_listing_is_applied() -> None:
     with dagu({"d1": ["a"]}) as (base_url, _):
         feed, runs, _ = follow(base_url)
 
-        runs.handle_entry(*run_entry("start", "d1", "r1", "running", at=LISTED_AT))
+        runs.handle_entry(*run_entry("StepStarted", "d1", "r1", "running", at=LISTED_AT))
 
     assert dag(feed, "d1")["status"] == "running"
 
@@ -349,7 +349,7 @@ def test_a_relist_that_postdates_the_entry_drops_it() -> None:
     runs.reconcile()
     listed.append({"name": "d2", "status": "succeeded", "runId": "", "startedAt": "", "finishedAt": "", "steps": []})
 
-    runs.handle_entry(*run_entry("start", "d2", "r1", "running", at=100.0))
+    runs.handle_entry(*run_entry("StepStarted", "d2", "r1", "running", at=100.0))
 
     assert dag(feed, "d2")["status"] == "succeeded"
 
@@ -362,7 +362,7 @@ def test_an_entry_stamped_at_the_moment_of_the_relist_is_applied() -> None:
     runs.reconcile()
     listed.append({"name": "d2", "status": "succeeded", "runId": "", "startedAt": "", "finishedAt": "", "steps": []})
 
-    runs.handle_entry(*run_entry("start", "d2", "r1", "running", at=200.0))
+    runs.handle_entry(*run_entry("StepStarted", "d2", "r1", "running", at=200.0))
 
     assert dag(feed, "d2")["status"] == "running"
 
@@ -371,7 +371,7 @@ def test_an_entry_for_a_dag_nobody_lists_changes_nothing() -> None:
     with dagu({"d1": ["a"]}) as (base_url, _):
         feed, runs, changes = follow(base_url)
 
-        runs.handle_entry(*run_entry("start", "ghost", "r1", "running", at=101.0))
+        runs.handle_entry(*run_entry("StepStarted", "ghost", "r1", "running", at=101.0))
 
     assert [d["name"] for d in feed.snapshot()["dags"]] == ["ci/d1"]
     assert changes.empty()
@@ -380,7 +380,7 @@ def test_an_entry_for_a_dag_nobody_lists_changes_nothing() -> None:
 def test_an_entry_from_another_instance_never_moves_a_dag_of_the_same_name() -> None:
     with dagu({"d1": ["a"]}) as (base_url, _):
         feed, runs, changes = follow(base_url)
-        entry = run_entry("start", "d1", "r1", "running", at=101.0)[1] | {"instance": "cron"}
+        entry = run_entry("StepStarted", "d1", "r1", "running", at=101.0)[1] | {"instance": "cron"}
 
         runs.handle_entry("9-0", entry)
 
@@ -391,7 +391,7 @@ def test_an_entry_from_another_instance_never_moves_a_dag_of_the_same_name() -> 
 def test_a_step_entry_of_a_run_that_is_neither_in_flight_nor_the_one_drawn_changes_nothing() -> None:
     with dagu({"d1": ["a"]}) as (base_url, _):
         feed, runs, changes = follow(base_url)
-        entry = run_entry("start", "d1", "r1", "running", at=101.0)[1] | {"step": "a"}
+        entry = run_entry("StepStarted", "d1", "r1", "running", at=101.0)[1] | {"step": "a"}
 
         runs.handle_entry("9-0", entry)
 
@@ -402,7 +402,7 @@ def test_a_step_entry_of_a_run_that_is_neither_in_flight_nor_the_one_drawn_chang
 def test_an_entry_missing_a_field_is_dropped() -> None:
     with dagu({"d1": ["a"]}) as (base_url, _):
         feed, runs, changes = follow(base_url)
-        whole = {"workflow": "d1", "phase": "start", "time": "101.0", "run_id": "r1", "status": "running"}
+        whole = {"workflow": "d1", "event": "StepStarted", "time": "101.0", "run_id": "r1", "status": "running"}
 
         for missing in whole:
             runs.handle_entry("9-0", {k: v for k, v in whole.items() if k != missing})
@@ -639,8 +639,8 @@ def test_an_end_entry_maps_each_steps_label_and_keeps_the_raw_one() -> None:
     labels = {"b": "rejected"}
     with dagu({"d1": ["a", "b"]}, labels) as (base_url, _):
         feed, runs, _ = follow(base_url)
-        runs.handle_entry(*run_entry("start", "d1", "r1", "running", 101.0))
-        runs.handle_entry(*run_entry("end", "d1", "r1", "failed", 105.0))
+        runs.handle_entry(*run_entry("StepStarted", "d1", "r1", "running", 101.0))
+        runs.handle_entry(*run_entry("StepFinished", "d1", "r1", "failed", 105.0))
 
     assert (dag(feed, "d1")["status"], "raw" in dag(feed, "d1")) == ("failed", False)
     assert [(s["status"], s.get("raw")) for s in dag(feed, "d1")["steps"]] == [
@@ -652,8 +652,8 @@ def test_an_end_entry_maps_each_steps_label_and_keeps_the_raw_one() -> None:
 def test_an_end_entry_with_a_status_the_contract_lacks_is_dropped() -> None:
     with dagu({"d1": ["a"]}) as (base_url, _):
         feed, runs, _ = follow(base_url)
-        runs.handle_entry(*run_entry("start", "d1", "r1", "running", 101.0))
-        runs.handle_entry(*run_entry("end", "d1", "r1", "paused", 105.0))
+        runs.handle_entry(*run_entry("StepStarted", "d1", "r1", "running", 101.0))
+        runs.handle_entry(*run_entry("StepFinished", "d1", "r1", "paused", 105.0))
 
     assert dag(feed, "d1")["status"] == "running"
 
@@ -724,9 +724,9 @@ def test_a_run_appended_to_the_log_moves_its_dag_and_the_end_reads_the_steps_aga
         follow_instance(base_url, feed.runs("ci"), log, interval=0.01)
         _wait_until(lambda: feed.snapshot()["dags"])
 
-        _run_event(log, "start", "running")
+        _run_event(log, "StepStarted", "running")
         _wait_until(lambda: dag(feed, "d1")["status"] == "running")
-        _run_event(log, "end", "failed")
+        _run_event(log, "StepFinished", "failed")
         _wait_until(lambda: dag(feed, "d1")["status"] == "failed")
 
     assert calls.count(LISTING) == 2  # the first listing, then the ended run's step read
@@ -740,12 +740,12 @@ def test_the_tail_starts_at_the_log_head_so_no_retained_entry_is_replayed_and_a_
     real_handle = DaguRuns.handle_entry
     monkeypatch.setattr(DaguRuns, "handle_entry", lambda self, entry_id, fields: (handled.append(entry_id), real_handle(self, entry_id, fields))[1])
     for _ in range(3):  # the retention the listing already covers
-        _run_event(log, "start", "running", workflow="d1", at=1.0)
+        _run_event(log, "StepStarted", "running", workflow="d1", at=1.0)
     feed = BoardFeed()
     with dagu({"d1": ["a"], "d2": ["b"]}) as (base_url, _):
         follow_instance(base_url, feed.runs("ci"), log, interval=0.01)
         _wait_until(lambda: feed.snapshot()["dags"])
-        _run_event(log, "start", "running", workflow="d2")
+        _run_event(log, "StepStarted", "running", workflow="d2")
         _wait_until(lambda: dag(feed, "d2")["status"] == "running")
 
     assert handled == ["4"]
@@ -764,7 +764,7 @@ def test_a_followed_instance_reads_only_the_named_dag_when_an_entry_names_a_new_
         calls.clear()
         steps["d3"] = ["c"]
 
-        _run_event(log, "start", "running", workflow="d3")
+        _run_event(log, "StepStarted", "running", workflow="d3")
         _wait_until(lambda: any(d["name"] == "ci/d3" for d in feed.snapshot()["dags"]))
 
     assert calls == [LISTING, "/api/v1/dags/d3"]
@@ -932,7 +932,7 @@ def test_a_new_run_clears_the_raw_status_the_last_one_left_on_the_dag_and_its_st
     runs = DaguRuns(feed.runs("ci"), lambda only=None: listed, clock=lambda: LISTED_AT)
     runs.reconcile()
 
-    runs.handle_entry(*run_entry("start", "d1", "r1", "running", at=101.0))
+    runs.handle_entry(*run_entry("StepStarted", "d1", "r1", "running", at=101.0))
 
     started = dag(feed, "d1")
     assert "raw" not in started
@@ -977,7 +977,7 @@ def test_a_streamed_state_outlives_an_older_listing_and_a_newer_listing_replaces
 
         def listing_overtaken_by_an_entry(only=None) -> list[dict]:
             read = dags(base_url, only)  # Dagu still said queued when this listing read it
-            runs.handle_entry(*run_entry("start", "d1", "r1", "running", at=111.0))
+            runs.handle_entry(*run_entry("StepStarted", "d1", "r1", "running", at=111.0))
             return read
 
         runs._fetch = listing_overtaken_by_an_entry
@@ -1021,7 +1021,7 @@ def test_an_entry_stamped_at_the_moment_a_listing_began_outlives_that_listing() 
 
         def listing_overtaken_by_an_entry(only=None) -> list[dict]:
             read = dags(base_url, only)
-            runs.handle_entry(*run_entry("start", "d1", "r1", "running", at=100.0))
+            runs.handle_entry(*run_entry("StepStarted", "d1", "r1", "running", at=100.0))
             return read
 
         runs._fetch = listing_overtaken_by_an_entry
@@ -1187,7 +1187,7 @@ def test_the_pools_travel_with_the_dags_delta_and_a_run_entry_keeps_them() -> No
     with dagu(DELIVER, **LANE, queues=queues) as (base_url, _):
         feed, runs, changes = follow(base_url)
 
-        runs.handle_entry(*run_entry("start", "deliver", "r9", "running", at=101.0))
+        runs.handle_entry(*run_entry("StepStarted", "deliver", "r9", "running", at=101.0))
 
     kind, delta = changes.get_nowait()
     assert (kind, delta["pools"]) == ("dags", [{"name": "ci/deliver", "cap": 32, "running": 2, "queued": 0}])
@@ -1225,7 +1225,7 @@ def test_a_start_entry_adds_its_run_to_the_active_ones_with_every_step_not_start
     with dagu(DELIVER, **LANE, in_flight=(LINTING,)) as (base_url, _):
         feed, runs, _ = follow(base_url)
 
-        runs.handle_entry(*run_entry("start", "deliver", "r9", "running", at=101.0))
+        runs.handle_entry(*run_entry("StepStarted", "deliver", "r9", "running", at=101.0))
 
     started = dag(feed, "deliver")["active"][-1]
     assert active_ids(feed) == ["r1", "r9"]
@@ -1244,7 +1244,7 @@ def test_an_end_entry_drops_its_run_from_the_active_ones_and_keeps_the_others() 
     with dagu(DELIVER, **LANE, latest=latest, in_flight=(LINTING, WAITING)) as (base_url, _):
         feed, runs, _ = follow(base_url)
 
-        runs.handle_entry(*run_entry("end", "deliver", "r2", "succeeded", at=105.0))
+        runs.handle_entry(*run_entry("StepFinished", "deliver", "r2", "succeeded", at=105.0))
 
     assert (dag(feed, "deliver")["status"], active_ids(feed)) == ("succeeded", ["r1"])
 
@@ -1254,7 +1254,7 @@ def test_the_end_of_a_run_that_is_no_longer_the_one_drawn_still_leaves_the_activ
     with dagu(DELIVER, **LANE, latest=latest, in_flight=(LINTING, WAITING)) as (base_url, _):
         feed, runs, changes = follow(base_url)
 
-        runs.handle_entry(*run_entry("end", "deliver", "r1", "succeeded", at=105.0))
+        runs.handle_entry(*run_entry("StepFinished", "deliver", "r1", "succeeded", at=105.0))
 
     assert (dag(feed, "deliver")["runId"], dag(feed, "deliver")["status"], active_ids(feed)) == (
         "r2",
@@ -1279,12 +1279,12 @@ def test_step_entries_of_two_concurrent_runs_each_move_only_the_run_they_name() 
     with dagu(DELIVER, **LANE) as (base_url, _):
         feed, runs, _ = follow(base_url)
         for entry in (
-            run_entry("start", "deliver", "r1", "running", at=101.0),
-            run_entry("start", "deliver", "r2", "running", at=102.0),
-            step_entry("start", "deliver", "r1", "refuse", "running", at=103.0),
-            step_entry("start", "deliver", "r2", "refuse", "running", at=104.0),
-            step_entry("end", "deliver", "r2", "refuse", "succeeded", at=105.0),
-            step_entry("start", "deliver", "r2", "lint", "running", at=106.0),
+            run_entry("StepStarted", "deliver", "r1", "running", at=101.0),
+            run_entry("StepStarted", "deliver", "r2", "running", at=102.0),
+            step_entry("StepStarted", "deliver", "r1", "refuse", "running", at=103.0),
+            step_entry("StepStarted", "deliver", "r2", "refuse", "running", at=104.0),
+            step_entry("StepFinished", "deliver", "r2", "refuse", "succeeded", at=105.0),
+            step_entry("StepStarted", "deliver", "r2", "lint", "running", at=106.0),
         ):
             runs.handle_entry(*entry)
 
@@ -1310,11 +1310,11 @@ def test_the_end_of_a_runs_current_step_leaves_it_between_steps_and_the_other_ru
     with dagu(DELIVER, **LANE) as (base_url, _):
         feed, runs, _ = follow(base_url)
         for entry in (
-            run_entry("start", "deliver", "r1", "running", at=101.0),
-            run_entry("start", "deliver", "r2", "running", at=102.0),
-            step_entry("start", "deliver", "r1", "refuse", "running", at=103.0),
-            step_entry("start", "deliver", "r2", "refuse", "running", at=104.0),
-            step_entry("end", "deliver", "r1", "refuse", "succeeded", at=105.0),
+            run_entry("StepStarted", "deliver", "r1", "running", at=101.0),
+            run_entry("StepStarted", "deliver", "r2", "running", at=102.0),
+            step_entry("StepStarted", "deliver", "r1", "refuse", "running", at=103.0),
+            step_entry("StepStarted", "deliver", "r2", "refuse", "running", at=104.0),
+            step_entry("StepFinished", "deliver", "r1", "refuse", "succeeded", at=105.0),
         ):
             runs.handle_entry(*entry)
 
@@ -1328,13 +1328,13 @@ def test_only_a_step_entry_of_the_latest_run_moves_the_steps_the_dag_itself_show
     with dagu(DELIVER, **LANE) as (base_url, _):
         feed, runs, _ = follow(base_url)
         for entry in (
-            run_entry("start", "deliver", "r1", "running", at=101.0),
-            run_entry("start", "deliver", "r2", "running", at=102.0),
-            step_entry("start", "deliver", "r1", "refuse", "running", at=103.0),
+            run_entry("StepStarted", "deliver", "r1", "running", at=101.0),
+            run_entry("StepStarted", "deliver", "r2", "running", at=102.0),
+            step_entry("StepStarted", "deliver", "r1", "refuse", "running", at=103.0),
         ):
             runs.handle_entry(*entry)
         before = statuses(feed, "deliver")
-        runs.handle_entry(*step_entry("start", "deliver", "r2", "refuse", "running", at=104.0))
+        runs.handle_entry(*step_entry("StepStarted", "deliver", "r2", "refuse", "running", at=104.0))
 
     assert (before["refuse"], statuses(feed, "deliver")["refuse"], dag(feed, "deliver")["runId"]) == (
         "not_started",
@@ -1484,7 +1484,7 @@ def test_a_start_entry_adds_the_run_to_a_tied_dags_recent_runs_with_its_paramete
             Past("apply", "r5", label="running", started_at="2026-10-05T23:40:00Z", params=f"AFTER={'b' * 40}"),
         )
 
-        runs.handle_entry(*run_entry("start", "apply", "r5", "running", at=101.0))
+        runs.handle_entry(*run_entry("StepStarted", "apply", "r5", "running", at=101.0))
 
     assert sink.recent()["r5"]["params"] == {"AFTER": "b" * 40}
     assert sink.recent()["r5"]["status"] == "running"
@@ -1494,7 +1494,7 @@ def test_a_start_entry_dagu_does_not_list_yet_still_shows_the_run_with_no_parame
     with dagu(APPLY, history=()) as (base_url, _):
         sink, runs = follow_tied(base_url)
 
-        runs.handle_entry(*run_entry("start", "apply", "r5", "running", at=101.0))
+        runs.handle_entry(*run_entry("StepStarted", "apply", "r5", "running", at=101.0))
 
     run = sink.recent()["r5"]
     assert (run["status"], run["params"], run["startedAt"]) == ("running", {}, "1970-01-01T00:01:41Z")
@@ -1505,8 +1505,8 @@ def test_a_step_entry_moves_that_step_of_the_run_in_the_tied_dags_recent_runs() 
     with dagu(APPLY, history=(running,)) as (base_url, _):
         sink, runs = follow_tied(base_url)
 
-        runs.handle_entry(*step_entry("end", "apply", "r5", "validate", "succeeded", at=101.0))
-        runs.handle_entry(*step_entry("start", "apply", "r5", "deploy", "running", at=102.0))
+        runs.handle_entry(*step_entry("StepFinished", "apply", "r5", "validate", "succeeded", at=101.0))
+        runs.handle_entry(*step_entry("StepStarted", "apply", "r5", "deploy", "running", at=102.0))
 
     assert sink.recent()["r5"]["steps"] == {"validate": "succeeded", "deploy": "running"}
 
@@ -1524,7 +1524,7 @@ def test_an_end_entry_closes_the_run_in_the_tied_dags_recent_runs() -> None:
             nodes=(("deploy", "failed"),),
         )
 
-        runs.handle_entry(*run_entry("end", "apply", "r5", "failed", at=101.0))
+        runs.handle_entry(*run_entry("StepFinished", "apply", "r5", "failed", at=101.0))
 
     run = sink.recent()["r5"]
     assert (run["status"], run["finishedAt"], run["steps"]) == ("failed", "2026-10-05T23:41:00Z", {"deploy": "failed"})
@@ -1536,7 +1536,7 @@ def test_the_end_of_a_run_no_longer_the_latest_closes_it_in_recent_runs_without_
         sink, runs = follow_tied(base_url)
         calls.clear()
 
-        runs.handle_entry(*run_entry("end", "apply", "r4", "aborted", at=101.0))
+        runs.handle_entry(*run_entry("StepFinished", "apply", "r4", "aborted", at=101.0))
 
     assert (sink.recent()["r4"]["status"], sink.recent()["r4"]["finishedAt"]) == ("aborted", "1970-01-01T00:01:41Z")
     assert calls == []
@@ -1545,7 +1545,7 @@ def test_the_end_of_a_run_no_longer_the_latest_closes_it_in_recent_runs_without_
 def test_a_dag_no_cue_ties_gets_no_recent_runs_from_a_reader_that_ties_none() -> None:
     with dagu(APPLY, history=(APPLIED,)) as (base_url, calls):
         sink, runs = follow_tied(base_url, set())
-        runs.handle_entry(*run_entry("start", "apply", "r5", "running", at=101.0))
+        runs.handle_entry(*run_entry("StepStarted", "apply", "r5", "running", at=101.0))
 
     assert "recent" not in sink.dags[0]
     assert not [c for c in calls if "name=" in c]

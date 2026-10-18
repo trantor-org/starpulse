@@ -27,7 +27,7 @@ MACHINE_ENTRY = {
 }
 RUN_ENTRY = {
     "time": 100.0,
-    "phase": "end",
+    "event": "StepFinished",
     "workflow": "nightly",
     "run_id": "r1",
     "status": "succeeded",

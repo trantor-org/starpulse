@@ -22,7 +22,7 @@ MOVED = {
 RAN = {
     "event_id": "e2",
     "stream": run_events.STREAM,
-    "fields": {"time": 2.0, "phase": "end", "workflow": "nightly", "run_id": "r1", "status": "succeeded"},
+    "fields": {"time": 2.0, "event": "StepFinished", "workflow": "nightly", "run_id": "r1", "status": "succeeded"},
 }
 
 

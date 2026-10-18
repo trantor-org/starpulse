@@ -31,17 +31,17 @@ def appended(log: EventLog) -> list[dict[str, Any]]:
 
 
 def test_a_run_start_becomes_one_entry_with_the_flags_it_was_given(log: EventLog) -> None:
-    code = run("start", "--workflow", "nightly", "--run", "r1", "--status", "running", log=log)
+    code = run("StepStarted", "--workflow", "nightly", "--run", "r1", "--status", "running", log=log)
 
     assert code == 0
     assert appended(log) == [
-        {"time": NOW, "phase": "start", "workflow": "nightly", "run_id": "r1", "status": "running"}
+        {"time": NOW, "event": "StepStarted", "workflow": "nightly", "run_id": "r1", "status": "running"}
     ]
 
 
 def test_a_step_entry_carries_its_name_and_the_steps_it_depends_on(log: EventLog) -> None:
     run(
-        "end", "--workflow", "nightly", "--run", "r1", "--status", "succeeded",
+        "StepFinished", "--workflow", "nightly", "--run", "r1", "--status", "succeeded",
         "--step", "load", "--depends", "fetch,clean",
         log=log,
     )  # fmt: skip
@@ -49,7 +49,7 @@ def test_a_step_entry_carries_its_name_and_the_steps_it_depends_on(log: EventLog
     assert appended(log) == [
         {
             "time": NOW,
-            "phase": "end",
+            "event": "StepFinished",
             "workflow": "nightly",
             "run_id": "r1",
             "status": "succeeded",
@@ -64,7 +64,7 @@ def test_a_status_outside_the_contract_is_refused_naming_the_allowed_values(
     status: str, log: EventLog, capsys: pytest.CaptureFixture[str]
 ) -> None:
     with pytest.raises(SystemExit) as refused:
-        run("end", "--workflow", "w", "--run", "r", "--status", status, log=log)
+        run("StepFinished", "--workflow", "w", "--run", "r", "--status", status, log=log)
 
     assert refused.value.code != 0
     error = capsys.readouterr().err
@@ -75,7 +75,7 @@ def test_a_status_outside_the_contract_is_refused_naming_the_allowed_values(
 
 def test_depends_without_a_step_is_refused(log: EventLog, capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit) as refused:
-        run("start", "--workflow", "w", "--run", "r", "--status", "running", "--depends", "a", log=log)
+        run("StepStarted", "--workflow", "w", "--run", "r", "--status", "running", "--depends", "a", log=log)
 
     assert refused.value.code != 0
     assert "error: --depends needs --step" in capsys.readouterr().err
@@ -86,7 +86,7 @@ def test_a_store_that_refuses_the_entry_exits_one_so_the_caller_can_tell(
 ) -> None:
     unreachable = EventLog(f"sqlite:///{tmp_path / 'missing-directory' / 'events.sqlite'}")
 
-    code = run("start", "--workflow", "w", "--run", "r", "--status", "running", log=unreachable)
+    code = run("StepStarted", "--workflow", "w", "--run", "r", "--status", "running", log=unreachable)
 
     assert code == 1
     assert "runs:events" in capsys.readouterr().err
@@ -96,7 +96,7 @@ def test_config_names_the_database_the_entry_is_appended_to(tmp_path: Path) -> N
     config = tmp_path / "view.toml"
     config.write_text(f'database_url = "sqlite:///{tmp_path / "chosen.sqlite"}"\n')
 
-    code = emit.main(["start", "--workflow", "w", "--run", "r", "--status", "running", "--config", str(config)])
+    code = emit.main(["StepStarted", "--workflow", "w", "--run", "r", "--status", "running", "--config", str(config)])
 
     assert code == 0
     assert [
@@ -108,7 +108,7 @@ def test_a_config_without_a_database_url_appends_to_the_history_file_beside_it(t
     config = tmp_path / "view.toml"
     config.write_text('tracker_url = "http://tracker"\n')
 
-    emit.main(["start", "--workflow", "w", "--run", "r", "--status", "running", "--config", str(config)])
+    emit.main(["StepStarted", "--workflow", "w", "--run", "r", "--status", "running", "--config", str(config)])
 
     assert [
         e.fields["run_id"] for e in Tail(EventLog(f"sqlite:///{tmp_path / DEFAULT_FILE}"), "runs:events").poll()
@@ -121,7 +121,7 @@ def test_without_a_config_flag_the_starpulse_toml_in_the_working_directory_is_us
     (tmp_path / "starpulse.toml").write_text(f'database_url = "sqlite:///{tmp_path / "found.sqlite"}"\n')
     monkeypatch.chdir(tmp_path)
 
-    emit.main(["start", "--workflow", "w", "--run", "r", "--status", "running"])
+    emit.main(["StepStarted", "--workflow", "w", "--run", "r", "--status", "running"])
 
     assert [
         e.fields["workflow"] for e in Tail(EventLog(f"sqlite:///{tmp_path / 'found.sqlite'}"), "runs:events").poll()
@@ -133,7 +133,7 @@ def test_without_any_config_the_entry_goes_to_the_history_file_in_the_working_di
 ) -> None:
     monkeypatch.chdir(tmp_path)
 
-    emit.main(["start", "--workflow", "w", "--run", "r", "--status", "running"])
+    emit.main(["StepStarted", "--workflow", "w", "--run", "r", "--status", "running"])
 
     assert [
         e.fields["workflow"] for e in Tail(EventLog(f"sqlite:///{tmp_path / DEFAULT_FILE}"), "runs:events").poll()
@@ -147,7 +147,7 @@ def test_a_config_that_cannot_be_read_is_a_usage_error_and_appends_nothing(
     config.write_text("mode = [\n")
 
     with pytest.raises(SystemExit) as refused:
-        emit.main(["start", "--workflow", "w", "--run", "r", "--status", "running", "--config", str(config)])
+        emit.main(["StepStarted", "--workflow", "w", "--run", "r", "--status", "running", "--config", str(config)])
 
     assert refused.value.code == 2
     assert str(config) in capsys.readouterr().err
@@ -156,7 +156,7 @@ def test_a_config_that_cannot_be_read_is_a_usage_error_and_appends_nothing(
 
 def test_the_command_line_refuses_a_bad_status_with_a_usage_error_naming_the_allowed_values() -> None:
     result = subprocess.run(
-        [sys.executable, "-m", "starpulse", "emit", "end", "--workflow", "w", "--run", "r", "--status", "done"],
+        [sys.executable, "-m", "starpulse", "emit", "StepFinished", "--workflow", "w", "--run", "r", "--status", "done"],
         capture_output=True,
         text=True,
         timeout=60,
@@ -175,7 +175,7 @@ def test_the_help_names_the_command_and_each_flag(capsys: pytest.CaptureFixture[
     text = " ".join(capsys.readouterr().out.split())
     for expected in (
         "usage: starpulse emit",
-        "{start,end,StepStarted,StepFinished}",
+        "{StepStarted,StepFinished}",
         "push a workflow run, or one of its steps, onto the event log",
         "the TOML config whose database holds the event log",
         "the run's id",
@@ -193,13 +193,13 @@ def test_a_missing_required_flag_is_a_usage_error(
     argv = [part for flag, value in flags.items() if flag != missing for part in (flag, value)]
 
     with pytest.raises(SystemExit) as refused:
-        run("start", *argv, log=log)
+        run("StepStarted", *argv, log=log)
 
     assert refused.value.code == 2
     assert f"required: {missing}" in capsys.readouterr().err
 
 
-def test_a_phase_other_than_start_or_end_is_refused(log: EventLog, capsys: pytest.CaptureFixture[str]) -> None:
+def test_an_event_other_than_a_step_event_is_refused(log: EventLog, capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit) as refused:
         run("pause", "--workflow", "w", "--run", "r", "--status", "running", log=log)
 
@@ -207,8 +207,8 @@ def test_a_phase_other_than_start_or_end_is_refused(log: EventLog, capsys: pytes
     assert "invalid choice: 'pause'" in capsys.readouterr().err
 
 
-@pytest.mark.parametrize(("event", "phase"), [("StepStarted", "start"), ("StepFinished", "end")])
-def test_a_step_event_is_recorded_and_read_back_beside_its_phase(log: EventLog, event: str, phase: str) -> None:
+@pytest.mark.parametrize("event", ["StepStarted", "StepFinished"])
+def test_a_step_event_is_recorded_and_read_back(log: EventLog, event: str) -> None:
     code = run(event, "--workflow", "nightly", "--run", "r1", "--status", "running", "--step", "load", log=log)
 
     assert code == 0
@@ -216,7 +216,6 @@ def test_a_step_event_is_recorded_and_read_back_beside_its_phase(log: EventLog, 
         {
             "time": NOW,
             "event": event,
-            "phase": phase,
             "workflow": "nightly",
             "run_id": "r1",
             "status": "running",

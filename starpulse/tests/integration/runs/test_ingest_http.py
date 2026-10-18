@@ -25,7 +25,7 @@ from starpulse._internal.config.config import load
 from starpulse._internal.eventlog.event_log import EventLog, Tail
 
 TOKENS = {"cron": "cron-secret", "rundeck": "rundeck-secret"}
-EVENT = {"phase": "start", "workflow": "cron/nightly", "run_id": "r1", "status": "running"}
+EVENT = {"event": "StepStarted", "workflow": "cron/nightly", "run_id": "r1", "status": "running"}
 
 
 class Stack:
@@ -154,7 +154,7 @@ def test_a_push_only_instance_from_the_readmes_config_draws_its_pushed_run_with_
         stack = Stack(server, feed, log)
         # docs/sources.md's curl example
         status, _ = stack.post(
-            {"phase": "start", "workflow": "cron/nightly", "run_id": "2026-10-03", "status": "running"}, "cron-secret"
+            {"event": "StepStarted", "workflow": "cron/nightly", "run_id": "2026-10-03", "status": "running"}, "cron-secret"
         )
         dag = stack.until_drawn("pushed/cron/nightly")
     stop.set()

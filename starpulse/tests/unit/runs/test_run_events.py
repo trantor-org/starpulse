@@ -8,9 +8,9 @@ from starpulse._internal.runs import run_events
 
 
 def test_an_entry_omits_the_step_and_depends_of_a_run_level_event() -> None:
-    assert run_events.entry("end", "w", "r", "failed", now=5.0) == {
+    assert run_events.entry("StepFinished", "w", "r", "failed", now=5.0) == {
         "time": 5.0,
-        "phase": "end",
+        "event": "StepFinished",
         "workflow": "w",
         "run_id": "r",
         "status": "failed",
@@ -18,9 +18,9 @@ def test_an_entry_omits_the_step_and_depends_of_a_run_level_event() -> None:
 
 
 def test_a_step_entry_names_the_step_and_the_steps_it_waits_on() -> None:
-    assert run_events.entry("start", "w", "r", "running", now=5.0, step="load", depends=["fetch"]) == {
+    assert run_events.entry("StepStarted", "w", "r", "running", now=5.0, step="load", depends=["fetch"]) == {
         "time": 5.0,
-        "phase": "start",
+        "event": "StepStarted",
         "workflow": "w",
         "run_id": "r",
         "status": "running",
@@ -30,15 +30,14 @@ def test_a_step_entry_names_the_step_and_the_steps_it_waits_on() -> None:
 
 
 def test_an_entry_from_an_instance_names_it() -> None:
-    assert run_events.entry("start", "w", "r", "running", now=5.0, instance="cron")["instance"] == "cron"
+    assert run_events.entry("StepStarted", "w", "r", "running", now=5.0, instance="cron")["instance"] == "cron"
 
 
-@pytest.mark.parametrize(("event", "phase"), [("StepStarted", "start"), ("StepFinished", "end")])
-def test_a_step_event_entry_carries_its_event_beside_the_phase_it_maps_to(event: str, phase: str) -> None:
+@pytest.mark.parametrize("event", ["StepStarted", "StepFinished"])
+def test_a_step_event_entry_carries_its_event(event: str) -> None:
     assert run_events.entry(event, "w", "r", "running", now=5.0) == {
         "time": 5.0,
         "event": event,
-        "phase": phase,
         "workflow": "w",
         "run_id": "r",
         "status": "running",

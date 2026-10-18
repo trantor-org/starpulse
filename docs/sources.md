@@ -323,12 +323,11 @@ Both answer 501 with no telemetry stream, 503 when it cannot be read, and 400 fo
 ## Report runs from any scheduler
 
 ```sh
-starpulse emit start --workflow nightly --run 2026-10-03 --status running
-starpulse emit end   --workflow nightly --run 2026-10-03 --status succeeded --step load --depends fetch
+starpulse emit StepStarted --workflow nightly --run 2026-10-03 --status running
+starpulse emit StepFinished --workflow nightly --run 2026-10-03 --status succeeded --step load --depends fetch
 ```
 
-`StepStarted` and `StepFinished` are accepted beside `start` and `end` (`starpulse emit StepStarted ...`): the entry
-records that event and the phase it implies.
+A run's own entry names no `--step`; a step's names it.
 
 A workflow no adapter lists is drawn from the step graph its `emit` calls add up to, and that graph is kept in
 the history store across restarts.
@@ -339,10 +338,10 @@ config (`token_env`, in [the config file](serving.md#config-file)), set it where
 
 ```sh
 curl -X POST http://localhost:8766/api/runs/events -H "Authorization: Bearer $CRON_INGEST_TOKEN" \
-  -d '{"phase": "start", "workflow": "cron/nightly", "run_id": "2026-10-03", "status": "running"}'
+  -d '{"event": "StepStarted", "workflow": "cron/nightly", "run_id": "2026-10-03", "status": "running"}'
 ```
 
-The body takes `emit`'s fields as JSON (`phase`, `workflow`, `run_id`, `status`, and optionally `time`, `step` and
+The body takes `emit`'s fields as JSON (`event`, `workflow`, `run_id`, `status`, and optionally `time`, `step` and
 `depends`) with the workflow named `<instance>/<workflow>`. A token pushes only its own instance's workflows: a
 missing or wrong token answers 401, another instance's workflow 403, an event the contract does not allow 400, and
 none of them writes anything. The page draws an accepted event as `pushed/<instance>/<workflow>`.

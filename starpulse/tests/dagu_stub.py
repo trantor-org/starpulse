@@ -175,14 +175,14 @@ def dagu(
         server.shutdown()
 
 
-def run_entry(phase: str, workflow: str, run_id: str, status: str, at: float) -> tuple:
+def run_entry(event: str, workflow: str, run_id: str, status: str, at: float) -> tuple:
     """`(stream id, fields)` for one `runs:events` entry, its values strings as `StreamProducer` writes them."""
-    fields = {"event_id": f"{workflow}-{run_id}-{phase}", "time": str(at), "phase": phase, "workflow": workflow}
+    fields = {"event_id": f"{workflow}-{run_id}-{event}", "time": str(at), "event": event, "workflow": workflow}
     fields |= {"run_id": run_id, "status": status}
     return f"{next(_ids)}-0", fields
 
 
-def step_entry(phase: str, workflow: str, run_id: str, step: str, status: str, at: float) -> tuple:
+def step_entry(event: str, workflow: str, run_id: str, step: str, status: str, at: float) -> tuple:
     """`(stream id, fields)` for one `runs:events` entry about a step of a run."""
-    entry_id, fields = run_entry(phase, workflow, run_id, status, at)
-    return entry_id, fields | {"event_id": f"{workflow}-{run_id}-{step}-{phase}", "step": step}
+    entry_id, fields = run_entry(event, workflow, run_id, status, at)
+    return entry_id, fields | {"event_id": f"{workflow}-{run_id}-{step}-{event}", "step": step}

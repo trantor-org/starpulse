@@ -399,7 +399,7 @@ def dags(
 class _Run:
     """One decoded run entry of the runs stream."""
 
-    phase: str
+    event: str
     dag: str
     run_id: str
     status: str
@@ -411,7 +411,7 @@ def _decode(fields: dict) -> _Run | None:
     """The run (or, with `step`, the step of a run) an entry reports, or None for one the contract does not allow."""
     try:
         run = _Run(
-            fields["phase"],
+            fields["event"],
             fields["workflow"],
             fields["run_id"],
             fields["status"],
@@ -420,7 +420,7 @@ def _decode(fields: dict) -> _Run | None:
         )
     except KeyError, ValueError:
         return None
-    well_formed = run.phase in run_events.PHASES and run.status in get_args(RunStatus)
+    well_formed = run.event in run_events.EVENTS and run.status in get_args(RunStatus)
     return run if well_formed else None
 
 
@@ -459,7 +459,7 @@ def _patched(recent: list[dict], run: _Run) -> list[dict]:
         if entry["runId"] == run.run_id:
             if run.step:
                 entry = {**entry, "steps": entry["steps"] | {run.step: run.status}}
-            elif run.phase != "start":
+            elif run.event != "StepStarted":
                 entry = _restated(entry, run.status) | {"finishedAt": _iso(run.at)}
         out.append(entry)
     return out
@@ -564,7 +564,7 @@ class DaguRuns:
             moved = _stepped(dag, run) or (dag if tied and known else None)
             if moved is None:
                 return  # a step of a run that is neither in flight nor the one drawn
-        elif run.phase == "start":
+        elif run.event == "StepStarted":
             if tied and (listed := self._listed(run.dag)):
                 fresh = listed.get("recent")
             begun = {
@@ -599,7 +599,7 @@ class DaguRuns:
             return  # the end of a run that is no longer the one drawn
         if tied:
             recent = fresh if fresh is not None else _patched(dag.get("recent", []), run)
-            moved = {**moved, "recent": _begun(recent, run) if run.phase == "start" and not run.step else recent}
+            moved = {**moved, "recent": _begun(recent, run) if run.event == "StepStarted" and not run.step else recent}
         self._dags[run.dag] = moved
         self._streamed[run.dag] = run.at
         self._sink.set_dags(list(self._dags.values()), None)

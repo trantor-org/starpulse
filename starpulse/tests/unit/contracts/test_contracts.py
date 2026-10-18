@@ -81,13 +81,13 @@ def test_each_contract_has_a_json_schema_and_the_checked_in_copy_is_current(name
     assert checked_in == SCHEMAS[name], "regenerate with `.venv/bin/python -m starpulse.contracts`"
 
 
-def test_a_run_event_validates_with_a_step_event_or_with_a_phase_alone() -> None:
-    fields = {"time": 1.0, "phase": "start", "workflow": "w", "run_id": "r", "status": "running"}
+def test_a_run_event_validates_only_with_a_step_event() -> None:
+    fields = {"time": 1.0, "event": "StepStarted", "workflow": "w", "run_id": "r", "status": "running"}
 
-    assert RunEvent.model_validate(fields).event == ""
-    assert RunEvent.model_validate({**fields, "event": "StepStarted"}).event == "StepStarted"
-    with pytest.raises(ValidationError):
-        RunEvent.model_validate({**fields, "event": "Started"})
+    assert RunEvent.model_validate(fields).event == "StepStarted"
+    for refused in ({**fields, "event": "Started"}, {k: v for k, v in fields.items() if k != "event"}):
+        with pytest.raises(ValidationError):
+            RunEvent.model_validate(refused)
 
 
 def test_a_machine_event_is_keyed_by_exactly_one_of_task_or_run() -> None:

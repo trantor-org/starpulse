@@ -47,10 +47,10 @@ def test_an_entry_each_producer_writes_validates_against_its_streams_schema(tmp_
     )
     events.publish("in-progress", "WORKTREE_READY", actor="agent", task="T-1", now=5.0, log=log)
     lane_events.publish(log, "T-1@in_progress@5.0", task, 5.0)
-    log.append(run_events.STREAM, run_events.entry("start", "nightly", "r1", "running", now=6.0))
+    log.append(run_events.STREAM, run_events.entry("StepStarted", "nightly", "r1", "running", now=6.0))
     log.append(
         run_events.STREAM,
-        run_events.entry("end", "nightly", "r1", "succeeded", now=7.0, step="load", depends=["fetch"], instance="ana"),
+        run_events.entry("StepFinished", "nightly", "r1", "succeeded", now=7.0, step="load", depends=["fetch"], instance="ana"),
     )
 
     entries = Tail(log, "reader", streams=sorted(_declared_streams())).poll()
@@ -66,11 +66,11 @@ def test_an_entry_each_producer_writes_validates_against_its_streams_schema(tmp_
 @pytest.mark.parametrize(
     "bad",
     [
-        {"time": 1.0, "phase": "pause", "workflow": "w", "run_id": "r", "status": "running"},
-        {"time": 1.0, "phase": "start", "workflow": "w", "run_id": "r", "status": "weird"},
-        {"time": 1.0, "phase": "start", "workflow": "", "run_id": "r", "status": "running"},
-        {"time": 1.0, "phase": "start", "workflow": "w", "run_id": "r", "status": "running", "title": "x"},
-        {"time": 1.0, "phase": "start", "workflow": "w", "run_id": "r", "status": "running", "depends": ["a"]},
+        {"time": 1.0, "event": "pause", "workflow": "w", "run_id": "r", "status": "running"},
+        {"time": 1.0, "event": "StepStarted", "workflow": "w", "run_id": "r", "status": "weird"},
+        {"time": 1.0, "event": "StepStarted", "workflow": "", "run_id": "r", "status": "running"},
+        {"time": 1.0, "event": "StepStarted", "workflow": "w", "run_id": "r", "status": "running", "title": "x"},
+        {"time": 1.0, "event": "StepStarted", "workflow": "w", "run_id": "r", "status": "running", "depends": ["a"]},
     ],
 )
 def test_a_run_event_the_ingest_would_refuse_is_not_a_run_event_record(bad: dict) -> None:

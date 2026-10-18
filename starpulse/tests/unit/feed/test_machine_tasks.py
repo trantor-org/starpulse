@@ -233,7 +233,7 @@ def test_tasks_fed_from_the_event_log_replay_its_retained_machine_events_then_fo
     log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
     _, fields = _entry("in-progress", "WORKTREE_READY", task="PROJ-1")
     log.append(machine_events.STREAM, fields)
-    log.append("runs:events", {"phase": "start"})  # another stream's row
+    log.append("runs:events", {"event": "StepStarted"})  # another stream's row
     feed, tasks = _feed()
     stop = threading.Event()
 

@@ -179,7 +179,7 @@ const CAPS: Record<string, number> = { claude: 3, cursor: 2 };
 /** The fields `adapters.runs.forwarded.FIELDS` lets leave the IC, by stream; `actor` and `assignee` name a person. */
 const CONTRACT = {
   "machine:events": ["machine", "event", "task", "run", "actor", "assignee", "time"],
-  "runs:events": ["time", "phase", "workflow", "run_id", "status", "step", "depends"],
+  "runs:events": ["time", "event", "workflow", "run_id", "status", "step", "depends"],
 };
 const PERSON = ["actor", "assignee"];
 

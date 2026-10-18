@@ -203,7 +203,7 @@ def test_a_callback_whose_state_the_hub_never_issued_is_refused(hub: Hub) -> Non
 
 def test_a_viewer_session_does_not_pass_on_the_instance_ingest_route(hub: Hub) -> None:
     cookie = session_of(sign_in(hub, "alice", ["ops"]))
-    event = json.dumps({"phase": "start", "workflow": "cron/nightly", "run_id": "r1", "status": "running"}).encode()
+    event = json.dumps({"event": "StepStarted", "workflow": "cron/nightly", "run_id": "r1", "status": "running"}).encode()
     post = {"Content-Type": "application/json", "Cookie": cookie}
 
     assert hub.call("/api/runs/events", "POST", post, event)[0] == 401

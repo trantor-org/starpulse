@@ -58,7 +58,7 @@ def _move(log: EventLog, task: str, at: float) -> None:
 
 
 def _push(log: EventLog, workflow: str) -> None:
-    log.append(run_events.STREAM, run_events.entry("start", workflow, "r1", "running", now=START))
+    log.append(run_events.STREAM, run_events.entry("StepStarted", workflow, "r1", "running", now=START))
 
 
 def _pushed(log: EventLog) -> list[str]:

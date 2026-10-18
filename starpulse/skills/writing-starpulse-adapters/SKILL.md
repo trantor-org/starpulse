@@ -52,7 +52,7 @@ Done when every kit check passes against records your adapter actually produced.
 
 ## Report runs from any scheduler
 
-Call `starpulse emit start|end --workflow W --run ID --status S` from a cron line, a systemd unit or a scheduler hook,
+Call `starpulse emit StepStarted|StepFinished --workflow W --run ID --status S` from a cron line, a systemd unit or a scheduler hook,
 at each start and end. Add `--step NAME` for a step's entry, with `--depends a,b` naming the steps it waits on. Status is
 `not_started`, `queued`, `running`, `succeeded`, `failed`, `aborted` or `skipped`. The command finds the database event
 log from `--config` or the default `starpulse.toml`, like `starpulse serve`. Exit 1 means the event log refused the entry,

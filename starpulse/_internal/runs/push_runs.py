@@ -39,7 +39,7 @@ class GraphStore(Protocol):
 class _Entry:
     """One decoded `runs:events` entry."""
 
-    phase: str
+    event: str
     workflow: str
     run_id: str
     status: str
@@ -60,7 +60,7 @@ def _decode(fields: dict) -> _Entry | None:
         step = fields.get("step") or None
         depends = fields["depends"] if step and "depends" in fields else None
         entry = _Entry(
-            fields["phase"],
+            fields["event"],
             fields["workflow"],
             fields["run_id"],
             fields["status"],
@@ -72,7 +72,7 @@ def _decode(fields: dict) -> _Entry | None:
     except KeyError, ValueError, TypeError:
         return None
     well_formed = depends is None or isinstance(depends, list) and all(isinstance(d, str) for d in depends)
-    return entry if entry.phase in run_events.PHASES and entry.status in get_args(RunStatus) and well_formed else None
+    return entry if entry.event in run_events.EVENTS and entry.status in get_args(RunStatus) and well_formed else None
 
 
 def _iso(at: float) -> str:
@@ -190,7 +190,7 @@ class PushRuns:
             if dag is None or dag["runId"] != entry.run_id:
                 return False
             self._report_step(dag, entry.step, entry.depends, entry.status)
-        elif entry.phase == "start":
+        elif entry.event == "StepStarted":
             steps = [{**step, "status": "not_started"} for step in dag["steps"]] if dag else []
             self._dags[entry.key] = (dag or _dag(entry.key, {})) | {
                 "status": entry.status,

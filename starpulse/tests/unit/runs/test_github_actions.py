@@ -317,7 +317,7 @@ class Followed:
         self.github = Recorded(runs={"ci": "ci-success"})  # CI has since succeeded
 
     def entry(self, workflow: str, *, at: float = LISTED_AT + 1, **fields) -> None:
-        sent = run_events.entry("end", workflow, "1", "succeeded", now=at) | fields
+        sent = run_events.entry("StepFinished", workflow, "1", "succeeded", now=at) | fields
         self.runs.handle_entry("1-0", sent)
 
     def status(self, workflow: str) -> str:
@@ -344,7 +344,7 @@ def test_an_entry_leaves_the_workflows_that_may_run_now_as_the_listing_found_the
         {"workflow": "ci.yml", "at": LISTED_AT - 1},  # already in the listing
         {"workflow": "nightly.yml"},  # a workflow the repository did not list
         {"workflow": "ci.yml", "status": "exploded"},  # not the contract's
-        {"workflow": "ci.yml", "phase": "middle"},
+        {"workflow": "ci.yml", "event": "middle"},
     ],
 )
 def test_an_entry_the_listing_already_holds_or_the_contract_does_not_allow_asks_github_nothing(entry: dict) -> None:
@@ -396,11 +396,11 @@ def hook(**run) -> dict:
 @pytest.mark.parametrize(
     ("run", "expected"),
     [
-        ({}, ("end", "succeeded")),
-        ({"status": "in_progress", "conclusion": None}, ("start", "running")),
-        ({"status": "queued", "conclusion": None}, ("start", "queued")),
-        ({"conclusion": "cancelled"}, ("end", "aborted")),
-        ({"path": ".github/workflows/ci.yml@refs/heads/main"}, ("end", "succeeded")),
+        ({}, ("StepFinished", "succeeded")),
+        ({"status": "in_progress", "conclusion": None}, ("StepStarted", "running")),
+        ({"status": "queued", "conclusion": None}, ("StepStarted", "queued")),
+        ({"conclusion": "cancelled"}, ("StepFinished", "aborted")),
+        ({"path": ".github/workflows/ci.yml@refs/heads/main"}, ("StepFinished", "succeeded")),
     ],
 )
 def test_a_workflow_run_webhook_becomes_the_stream_entry_for_its_workflow_file(run: dict, expected: tuple) -> None:
@@ -436,7 +436,7 @@ def test_following_a_repository_lists_it_then_moves_a_workflow_by_the_entries_on
     follow_repository(f"https://github.com/{REPO}", feed.runs("gh"), log, interval=0.01)
     wait_until(lambda: feed.snapshot()["dags"])
     served[0] = Recorded(runs={"ci": "ci-success"})
-    log.append(run_events.STREAM, run_events.entry("end", "ci.yml", "1", "succeeded", now=time.time() + 60))
+    log.append(run_events.STREAM, run_events.entry("StepFinished", "ci.yml", "1", "succeeded", now=time.time() + 60))
     wait_until(lambda: next(d for d in feed.snapshot()["dags"] if d["name"] == "gh/ci.yml")["status"] == "succeeded")
 
     assert [(t.name, t.daemon) for t in started if t.name.startswith("github-")] == [
@@ -456,12 +456,12 @@ def test_the_tail_starts_at_the_log_head_so_no_retained_entry_is_replayed_and_a_
     monkeypatch.setattr(GitHubRuns, "handle_entry", lambda self, entry_id, fields: (handled.append(entry_id), real_handle(self, entry_id, fields))[1])
     log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
     for _ in range(3):  # the retention the listing already covers
-        log.append(run_events.STREAM, run_events.entry("end", "ci.yml", "1", "succeeded", now=1.0))
+        log.append(run_events.STREAM, run_events.entry("StepFinished", "ci.yml", "1", "succeeded", now=1.0))
     feed = BoardFeed()
 
     follow_repository(f"https://github.com/{REPO}", feed.runs("gh"), log, interval=0.01)
     wait_until(lambda: feed.snapshot()["dags"])
-    log.append(run_events.STREAM, run_events.entry("end", "ci.yml", "2", "succeeded", now=time.time() + 60))
+    log.append(run_events.STREAM, run_events.entry("StepFinished", "ci.yml", "2", "succeeded", now=time.time() + 60))
     wait_until(lambda: handled)
 
     assert handled == ["4"]

@@ -136,7 +136,7 @@ def test_only_the_machine_and_runs_streams_are_forwarded_and_the_cursor_passes_t
     rig.move("T-1")
     rig.log.append(
         run_events.STREAM,
-        run_events.entry("end", "nightly", "r1", "succeeded", now=2.0),
+        run_events.entry("StepFinished", "nightly", "r1", "succeeded", now=2.0),
     )
     rig.log.append("claude:session", {"secret": "y"})
 

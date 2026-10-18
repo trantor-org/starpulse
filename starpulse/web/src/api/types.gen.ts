@@ -1787,11 +1787,11 @@ export interface AutopilotRequest {
   quietHours?: QuietHours | null;
 }
 /**
- * `POST /api/runs/events`: one workflow phase a producer reports.
+ * `POST /api/runs/events`: one workflow or step event a producer reports.
  */
 export interface RunEventRequest {
   depends?: string[] | null;
-  phase: string;
+  event: string;
   run_id: string;
   status: string;
   step?: string | null;

@@ -1864,9 +1864,9 @@ class AutopilotRequest(_Api):
 
 
 class RunEventRequest(_Api):
-    """`POST /api/runs/events`: one workflow phase a producer reports."""
+    """`POST /api/runs/events`: one workflow or step event a producer reports."""
 
-    phase: str
+    event: str
     workflow: str
     run_id: str
     status: str
