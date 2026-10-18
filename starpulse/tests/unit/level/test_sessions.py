@@ -188,6 +188,28 @@ def test_rejections_compactions_skills_and_interrupts_are_counted_by_their_name(
     assert (row["skills"], row["interrupts"]) == ({"a": 2}, 1)
 
 
+def test_the_first_human_prompt_after_a_main_thread_reply_that_opens_with_a_question_is_no_operator_prompt() -> None:
+    found = [
+        sig("prompt", 0, detail="human", branch="claude/task-4-x"),
+        sig("reply", 10, detail="asks"),
+        sig("prompt", 20, detail="injected"),  # a notification does not answer it
+        sig("prompt", 30, detail="human", label="approval"),  # the answer
+        sig("prompt", 40, detail="human", label="correction"),
+        sig("reply", 50, detail=""),
+        sig("prompt", 60, detail="human"),
+        sig("reply", 70, detail="asks", origin="side"),  # a subagent's question is not the operator's to answer
+        sig("prompt", 80, detail="human"),
+    ]
+
+    row = only(session_health(found, KEYS))
+    (health,) = slice_health([row])
+
+    assert row["prompts"] == 6
+    assert row["operator_prompts"] == 3
+    assert row["prompt_labels"] == {"correction": 1}
+    assert (health["interventions"], health["clean"]) == (3, False)
+
+
 def test_operator_prompts_are_counted_by_the_label_the_labeller_gave_them_and_user_rejects_apart_from_hook_ones() -> (
     None
 ):

@@ -6,8 +6,9 @@ by its `event.timestamp`. Codex names its event in the `event.name` attribute, w
 `eventName`, since the attribute is what the exporter sets.
 
 What a signal keeps is a count, a duration, a model or effort name, a tool, skill or decision name and the branch;
-the reply, tool output and account fields every such record also carries are never read; a prompt's text is read only
-for its origin label and, when the instance configures a labeller, sent to it for its intent label, and never kept; and
+the tool output and account fields every such record also carries are never read; a prompt's text is read only
+for its origin label and, when the instance configures a labeller, sent to it for its intent label, and never kept; a
+reply's text is read only for whether its first sentence asks, and never kept; and
 a shell tool's input is read only for the `git switch` or `git checkout` ref it names, which is kept as a `branch`
 signal.
 
@@ -122,6 +123,16 @@ def _label(text: Any, injected: tuple[str, ...]) -> str:
     return "injected" if opening.startswith(injected) else "human"
 
 
+# A reply asks the operator when its first sentence ends in a question mark.
+_OPENING_QUESTION = re.compile(r"(?:[^.!?\n]|[.!?](?!\s))*\?(?:\s|$)")
+
+
+def _asks(text: Any) -> str:
+    """`asks` for a reply whose first sentence ends in a question mark, empty for any other, or when the export
+    carried no text (reply logging off, or the exporter's `<REDACTED>`). Only the mark leaves this function."""
+    return "asks" if _OPENING_QUESTION.match(str(text or "").strip()) else ""
+
+
 def _claude_origin(query_source: str) -> str:
     if query_source == "compact":
         return "auxiliary"
@@ -168,7 +179,8 @@ def _claude(name: str, a: dict[str, Any]) -> Iterator[dict[str, Any]]:
     elif name == "skill_activated":
         yield {"kind": "skill", "name": str(a.get("skill.name") or "")}
     elif name == "assistant_response":
-        yield {"kind": "reply"}
+        source = str(a.get("query_source") or "")
+        yield {"kind": "reply", "origin": _claude_origin(source), "detail": _asks(a.get("response"))}
     elif name == "compaction":
         yield {"kind": "compaction", "name": str(a.get("trigger") or "")}
 

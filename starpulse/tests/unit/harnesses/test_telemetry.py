@@ -332,6 +332,30 @@ def test_a_prompt_is_labelled_by_its_opening_and_its_text_is_kept_nowhere() -> N
     assert sentinel not in repr(found)
 
 
+def test_a_reply_is_marked_when_its_first_sentence_asks_and_its_text_is_kept_nowhere() -> None:
+    sentinel = "SENTINEL-5c1e02"
+    found = signals(
+        export(
+            claude("assistant_response", 1, response=f"Restart `foo.service` now? It drops two clients. {sentinel}"),
+            claude("assistant_response", 2, response=f"Restarted it. Want me to prune? {sentinel}"),
+            claude("assistant_response", 3, response=f"Run v1.2. Is it up? {sentinel}"),
+            claude("assistant_response", 4, response=f"Is v1.2 up?\n\n{sentinel}", query_source="agent:general"),
+            claude("assistant_response", 5, response="<REDACTED>"),
+            claude("assistant_response", 6),
+        )
+    )
+
+    assert [(s.kind, s.detail, s.origin) for s in found] == [
+        ("reply", "asks", "main"),
+        ("reply", "", "main"),
+        ("reply", "", "main"),
+        ("reply", "asks", "side"),
+        ("reply", "", "main"),
+        ("reply", "", "main"),
+    ]
+    assert sentinel not in repr(found)
+
+
 KEYS = TaskKeys(key=re.compile(r"TASK-\d+"), branch=re.compile(r"(?:[\w.-]+/)*task-(\d+)"), key_format="TASK-{}")
 
 
