@@ -88,3 +88,9 @@ def test_check_reports_a_page_that_is_not_200(table, log, page):
 
 def test_worker_contexts_are_the_ones_the_default_config_supervises(tmp_path):
     assert worker_contexts(sys.executable, str(tmp_path)) == {"api", "pulls", "autopilot", "runs", "flow-metrics", "board"}
+
+
+def test_live_children_reads_a_hyphenated_context_name(table, log):
+    log.write_text(LOG + "INFO:starpulse:worker flow-metrics started as pid 203\n")
+    table[203] = (200, "S")
+    assert live_children(100, log)["flow-metrics"] == 203

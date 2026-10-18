@@ -26,7 +26,7 @@ from pathlib import Path
 
 DEADLINE = 60.0
 SETTLE = 5.0
-STARTED = re.compile(r"worker (\w+) started as pid (\d+)")
+STARTED = re.compile(r"worker ([\w-]+) started as pid (\d+)")
 
 
 def process_table() -> dict[int, tuple[int, str]]:
