@@ -57,6 +57,31 @@ def test_the_snapshot_leaves_a_tasks_detail_out_and_its_full_view_keeps_it(tmp_p
     assert full["moves"]["in_progress"]["allowed"] is True
 
 
+def test_the_full_view_sends_a_pull_request_without_the_fields_the_feed_keeps_for_itself(tmp_path: Path) -> None:
+    feed = BoardFeed(machines=MACHINES)
+    feed.put(task("PROJ-1"))
+    pull = {
+        "number": 7,
+        "url": "https://github.com/o/r/pull/7",
+        "checks": "pass",
+        "merged": False,
+        "merge_sha": None,
+        "merged_at": None,
+        "files": ["a.py"],
+        "threads": 0,
+        "behind_main": 0,
+        "stale": False,
+    }
+    feed.set_pulls({"PROJ-1": [pull]})
+
+    with _serve(tmp_path, feed) as server:
+        with urllib.request.urlopen(_url(server, "/api/snapshot?view=full"), timeout=5) as resp:
+            sent = json.load(resp)["pulls"]["PROJ-1"][0]
+
+    assert sent["number"] == 7
+    assert "files" not in sent
+
+
 def test_a_snapshot_is_built_once_however_many_pages_ask(tmp_path: Path, builds: Counter[int]) -> None:
     feed = BoardFeed(machines=MACHINES)
     feed.put(task("PROJ-1"))

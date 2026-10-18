@@ -143,7 +143,7 @@ from starpulse._internal.server.routes import (
     _WRITES,
     _is_rerun,
 )
-from starpulse._internal.server.encoding import encode, event
+from starpulse._internal.server.encoding import encode, event, full_snapshot
 from starpulse._internal.config.level import Level
 from starpulse._internal.config.config import SLOW_READ_S
 from starpulse._internal.config.harnesses import Harnesses
@@ -700,7 +700,7 @@ def request_handler(
                 self._snapshot_body(url.path.removeprefix(_SNAPSHOT_BODY))
             elif url.path == "/api/snapshot":
                 if parse_qs(url.query).get("view") == ["full"]:
-                    self._send(encode("snapshot", snapshots.read().snapshot))
+                    self._send(encode("snapshot", full_snapshot(snapshots.read().snapshot)))
                 else:
                     self._send(snapshots.read().encoded)
             elif url.path.startswith(_LEDGER):
