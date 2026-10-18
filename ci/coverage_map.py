@@ -3,7 +3,7 @@
 The nightly shards run pytest with `--cov-context=test`; each writes a coverage data file, and the `coverage-map` job
 combines them. `build` turns the combined file into `{"sha", "collected", "tests": {node id: [source files]}}`, the
 files relative to the checkout, a test's setup, call and teardown merged. `publish` writes it as `<sha>.json` plus
-`latest.json` in `--out` (default: a directory in the ai-vm-1 runner user's cache, where the `ci-sp-python` select step
+`latest.json` in `--out` (default: a directory in the CI runner user's cache, where the `ci-sp-python` select step
 reads it). `latest` prints the newest map's sha and how many of the collected tests it covers.
 
   build DATA --sha SHA --collected FILE [--root DIR] [--out DIR]   write the map of the combined coverage file DATA
@@ -20,7 +20,7 @@ from pathlib import Path
 
 import coverage
 
-#: Where ai-vm-1 keeps the maps; the nightly's runner and the `ci-sp-python` DAG both run as the same user.
+#: Where the CI runner host keeps the maps; the nightly's runner and the `ci-sp-python` DAG both run as the same user.
 DEFAULT_DIR = Path(
     os.environ.get("STARPULSE_COVERAGE_MAP_DIR") or Path.home() / ".cache" / "starpulse-ci" / "coverage-map"
 )

@@ -48,7 +48,7 @@ The same nightly and dispatch runs record which source files each test executes:
 `--cov --cov-context=test` (line coverage of `starpulse` and `ci`, `[tool.coverage.run]`) and uploads its data as
 `coverage-data-<shard>`. The `coverage-map` job, after all shards pass and no required check, combines them
 and `ci/coverage_map.py build` writes `<sha>.json` and `latest.json` (`{sha, collected, tests: {node id: [files]}}`) to
-`$STARPULSE_COVERAGE_MAP_DIR`, default `~/.cache/starpulse-ci/coverage-map` of the ai-vm-1 runner user, which the
+`$STARPULSE_COVERAGE_MAP_DIR`, default `~/.cache/starpulse-ci/coverage-map` of the CI runner user, which the
 `ci-sp-python` select step also runs as. A parametrized case with no context of its own takes its function's files; a
 collected test with no files is left out. `uv run python ci/coverage_map.py latest` prints the newest map's sha and how
 many collected tests it names; it exits 1 before the first nightly published one.
