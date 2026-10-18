@@ -29,10 +29,10 @@ if TYPE_CHECKING:  # annotation only: the event log opens the database stack
 
 JOBS_STREAM = "ci:jobs"
 MACHINE_STREAM = "machine:events"
-PULL_MACHINE = "github-pull-request"
+GITHUB_MACHINE = "github-pull-request"
 TASK_MACHINE = "in-progress"
 JOB_RESULTS = {"succeeded": "pass", "failed": "failing"}  # a canceled or unknown job says nothing of its check
-CLOSING = {(PULL_MACHINE, "PR_MERGED"), (PULL_MACHINE, "PR_CLOSED")}
+CLOSING = {(GITHUB_MACHINE, "PR_MERGED"), (GITHUB_MACHINE, "PR_CLOSED")}
 
 Record = dict[str, Any]
 
@@ -95,20 +95,20 @@ def _threads(_record: Record, fields: Mapping[str, Any], _at: float) -> Record:
 
 #: What each event causes in the record, by (machine, event); a push leaves the head to the next `ci:jobs` entry.
 _DELTAS: dict[tuple[str, str], Callable[[Record, Mapping[str, Any], float], Record]] = {
-    (PULL_MACHINE, "PR_OPENED"): lambda *_: {"state": "OPEN"},
+    (GITHUB_MACHINE, "PR_OPENED"): lambda *_: {"state": "OPEN"},
     (TASK_MACHINE, "PR_READY"): lambda *_: {"isDraft": False},
     (TASK_MACHINE, "PUSHED"): lambda *_: {"checks": "pending", "requiredChecks": [], "mergeable": "UNKNOWN"},
-    (PULL_MACHINE, "CHECKS_PASSED"): lambda *_: {"checks": "pass"},
-    (PULL_MACHINE, "CHECKS_FAILED"): lambda *_: {"checks": "failing"},
-    (PULL_MACHINE, "CONFLICTED"): lambda *_: {"mergeable": "CONFLICTING"},
-    (PULL_MACHINE, "MERGEABLE"): lambda *_: {"mergeable": "MERGEABLE"},
-    (PULL_MACHINE, "THREADS_CHANGED"): _threads,
-    (PULL_MACHINE, "PR_MERGED"): _closed("MERGED"),
-    (PULL_MACHINE, "PR_CLOSED"): _closed("CLOSED"),
+    (GITHUB_MACHINE, "CHECKS_PASSED"): lambda *_: {"checks": "pass"},
+    (GITHUB_MACHINE, "CHECKS_FAILED"): lambda *_: {"checks": "failing"},
+    (GITHUB_MACHINE, "CONFLICTED"): lambda *_: {"mergeable": "CONFLICTING"},
+    (GITHUB_MACHINE, "MERGEABLE"): lambda *_: {"mergeable": "MERGEABLE"},
+    (GITHUB_MACHINE, "THREADS_CHANGED"): _threads,
+    (GITHUB_MACHINE, "PR_MERGED"): _closed("MERGED"),
+    (GITHUB_MACHINE, "PR_CLOSED"): _closed("CLOSED"),
 }
 
 
-class PullProjection:
+class RecordProjection:
     """Keeps `store`'s records current from the machine events handed to `handle`, calling `changed` after each
     event that changed one."""
 

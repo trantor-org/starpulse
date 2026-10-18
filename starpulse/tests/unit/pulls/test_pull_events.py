@@ -6,7 +6,7 @@ from sqlalchemy import create_engine
 from starpulse._internal.eventlog.event_log import Entry
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import task
-from starpulse._internal.pulls.pull_events import PullProjection
+from starpulse._internal.pulls.pull_events import RecordProjection
 from starpulse._internal.pulls.pulls import PullStore
 
 URL = "https://github.com/acme/widgets/pull/7"
@@ -19,12 +19,12 @@ def _entry(machine: str, event: str, key: str = "PROJ-1", at: float = T0, **extr
     return Entry(1, "machine:events", fields["event_id"], fields | extra, at)
 
 
-def _projection(references: list[str] | None = None, **fields: str) -> tuple[PullProjection, PullStore, list[int]]:
+def _projection(references: list[str] | None = None, **fields: str) -> tuple[RecordProjection, PullStore, list[int]]:
     feed = BoardFeed()
     feed.put(task("PROJ-1", "In Progress", references=[URL] if references is None else references, **fields))
     store = PullStore(create_engine("sqlite://"))
     changes: list[int] = []
-    return PullProjection(store, feed, lambda: changes.append(1)), store, changes
+    return RecordProjection(store, feed, lambda: changes.append(1)), store, changes
 
 
 def _record(store: PullStore) -> dict:

@@ -35,7 +35,7 @@ from starpulse._internal.pulls.delivery import (
     follow_refreshes,
     keep_metrics,
 )
-from starpulse._internal.pulls.pull_events import JOBS_STREAM, MACHINE_STREAM, PullProjection
+from starpulse._internal.pulls.pull_events import JOBS_STREAM, MACHINE_STREAM, RecordProjection
 from starpulse._internal.pulls.pulls import PullStore
 from starpulse._internal.server.assembly import worker_board
 from starpulse._internal.server.hold import hold
@@ -88,7 +88,7 @@ class Delivery:
             raise
         if sync:
             follow_refreshes(log, sync.request, stop)
-            projection = PullProjection(pulls, feed, sync.project)
+            projection = RecordProjection(pulls, feed, sync.project)
             follow_events(log, feed, {MACHINE_STREAM: projection.handle, JOBS_STREAM: projection.handle_job}, stop)
         if actor:
             keep_metrics(log, actor.exposition, stop)
