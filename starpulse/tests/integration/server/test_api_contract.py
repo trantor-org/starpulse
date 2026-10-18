@@ -6,7 +6,6 @@ import urllib.request
 from collections.abc import Iterator
 from dataclasses import replace
 from http.server import ThreadingHTTPServer
-from pathlib import Path
 
 import pytest
 from pydantic import TypeAdapter
@@ -52,8 +51,10 @@ ROUTES = (
 LEVEL = Level("board", "done", (Terminal("done", "goal"),), gates=("review",), orbit=Orbit("working", ("in_progress", "review")))
 
 
-@pytest.fixture
-def server(tmp_path: Path) -> Iterator[ThreadingHTTPServer]:
+@pytest.fixture(scope="module")
+def server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[ThreadingHTTPServer]:
+    """One server for the module: every test reads it with GET and none writes to it."""
+    tmp_path = tmp_path_factory.mktemp("contract")
     feed = BoardFeed(machines=MACHINES)
     feed.put(task("T-1", "In Progress"))
     store = HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", MACHINES)
@@ -124,9 +125,14 @@ def test_api_contract_a_telemetry_window_longer_than_the_history_validates_again
     TypeAdapter(BODIES[kind]).validate_python(body)
 
 
+@pytest.fixture(scope="module")
+def paged_server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[ThreadingHTTPServer]:
+    with serve(tmp_path_factory.mktemp("paged"), _paged_feed()) as server:
+        yield server
+
+
 @pytest.mark.parametrize("route", ["/api/snapshot", "/api/ledger/MERGED"])
 def test_api_contract_a_merge_ledger_with_runs_failures_and_pins_validates_against_its_model(
-    tmp_path: Path, route: str
+    paged_server: ThreadingHTTPServer, route: str
 ) -> None:
-    with serve(tmp_path, _paged_feed()) as server:
-        _validate(server, route)
+    _validate(paged_server, route)
