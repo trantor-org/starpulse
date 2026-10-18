@@ -53,6 +53,7 @@ class PullStore:
         self.rev = 0
         self._lock = threading.Lock()
         self._listeners: list[Callable[[], None]] = []
+        self._save_listeners: list[Callable[[list[tuple[str, int]]], None]] = []
         create_tables(engine, [pull_requests])
         self._held: dict[tuple[str, int], dict[str, Any]] = {}
         since = (datetime.now(UTC) - window).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -93,19 +94,28 @@ class PullStore:
                     delete(pull_requests).where(*(pull_requests.c[key] == row[key] for key in ("repo", "number")))
                 )
             db.execute(insert(pull_requests), rows)
-        self._hold(
-            select(pull_requests).where(
-                tuple_(pull_requests.c.repo, pull_requests.c.number).in_([(row["repo"], row["number"]) for row in rows])
-            )
-        )
+        keys = [(row["repo"], row["number"]) for row in rows]
+        self.refresh(keys)
+        for announce in self._save_listeners:
+            announce(keys)
+
+    def refresh(self, keys: Iterable[tuple[str, int]]) -> None:
+        """Take the database's rows of `keys` (repository, number) into memory, as after a save: the way a process that
+        does not write the store sees what another one saved."""
+        self._hold(select(pull_requests).where(tuple_(pull_requests.c.repo, pull_requests.c.number).in_(list(keys))))
         self.rev += 1
         for listener in self._listeners:
             listener()
 
     def subscribe(self, listener: Callable[[], None]) -> None:
-        """Call `listener` in the saving thread after each save, so an answer built from the store is ready before a
-        reader asks for it."""
+        """Call `listener` in the refreshing thread after each save or refresh, so an answer built from the store is
+        ready before a reader asks for it."""
         self._listeners.append(listener)
+
+    def subscribe_saves(self, listener: Callable[[list[tuple[str, int]]], None]) -> None:
+        """Call `listener` with the keys of each save this store makes, never of a refresh, so the other processes
+        holding the store can refresh them."""
+        self._save_listeners.append(listener)
 
     def repos(self) -> list[str]:
         """The repositories the store holds a record of."""

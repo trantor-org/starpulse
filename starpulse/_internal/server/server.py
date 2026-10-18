@@ -244,7 +244,7 @@ from starpulse._internal.board.seam import (
 from starpulse._internal.harnesses.session_start import starter
 from starpulse._internal.runs.ingest import ForwardIngest, Ingest
 from starpulse._internal.runs.ingest import tokens as ingest_tokens
-from starpulse._internal.pulls.delivery import Projected, follow_notes, metrics_of, request_refresh
+from starpulse._internal.pulls.delivery import Projected, follow_notes, follow_saves, metrics_of, request_refresh
 from starpulse._internal.pulls.task_actor import TaskActor, moves_of
 from starpulse._internal.pulls.unblock import READY, UNBLOCK_S, Unblocker
 from starpulse._internal.config.pins import GitHub
@@ -921,7 +921,9 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     follow(tasks, log, machine_events.STREAM, tasks.handle_entry)
     refusals = ClaimRefusals(feed)
     follow(refusals, log, CLAIMS_STREAM, refusals.handle_entry)
+    saved_after = log.head() or 0  # before the store loads: a save between the two is announced past it
     pulls = PullStore(log.engine)
+    follow_saves(pulls, log, stop, saved_after)
     pull_refresh = None
     actor_metrics = None
     # `starpulse worker pulls` runs the context, as a child of this process or beside it; this process reads its

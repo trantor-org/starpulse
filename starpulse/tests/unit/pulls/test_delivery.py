@@ -9,6 +9,7 @@ import pytest
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.pulls import delivery
+from starpulse._internal.pulls.pulls import PullStore
 
 PULLS = {"TASK-1": [{"number": 7, "url": "https://github.com/acme/widgets/pull/7", "checks": "pass"}]}
 ANSWERS = {"records": {}, "pins": {}}
@@ -182,3 +183,47 @@ def test_the_workers_metrics_are_served_from_the_log(log: EventLog) -> None:
 
 def test_no_metrics_before_the_worker_has_published_any(log: EventLog) -> None:
     assert delivery.metrics_of(log)() == ""
+
+
+def _pull(state: str, checks: str, fetched: float) -> dict:
+    return {
+        "repo": "acme/widgets",
+        "number": 7,
+        "state": state,
+        "isDraft": False,
+        "mergeable": "MERGEABLE",
+        "baseRefName": "main",
+        "headRefOid": "a" * 40,
+        "body": "",
+        "checks": checks,
+        "requiredChecks": [],
+        "threads": 0,
+        "updatedAt": "2026-10-18T18:00:00Z",
+        "mergedAt": None,
+        "mergeSha": None,
+        "fetchedAt": fetched,
+        "detail": None,
+    }
+
+
+def test_a_save_the_worker_makes_reaches_the_record_the_serving_store_holds(log: EventLog, stop: threading.Event) -> None:
+    worker = PullStore(log.engine)
+    delivery.announce_saves(worker, log)
+    worker.save([_pull("OPEN", "pending", 100.0)])
+    serving = PullStore(log.engine)
+    refreshed = threading.Event()
+    serving.subscribe(refreshed.set)
+    delivery.follow_saves(serving, log, stop, log.head() or 0)
+
+    worker.save([_pull("OPEN", "pass", 200.0)])
+
+    assert refreshed.wait(WAIT_S)
+    assert [(pull["checks"], pull["fetchedAt"]) for pull in serving.find(repo="acme/widgets", number=7)] == [
+        ("pass", 200.0)
+    ]
+
+
+def test_a_serving_store_that_saves_announces_nothing(log: EventLog) -> None:
+    PullStore(log.engine).save([_pull("OPEN", "pass", 100.0)])
+
+    assert log.last(delivery.SAVED_STREAM) is None

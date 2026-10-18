@@ -5,6 +5,8 @@ keeps the store read-only. What the worker projects, and what `serve` must say b
 
 - the worker keeps its latest projection in the `PROJECTION` setting and announces each change on `PROJECTED_STREAM`;
   `serve` applies it to its feed (`Projected`), so snapshots keep drawing pull request state;
+- the worker announces the records of each save on `SAVED_STREAM` (`announce_saves`); `serve` holds records in memory
+  and takes those from the database again (`follow_saves`), so `/api/pulls` never answers from before a save;
 - a page's refresh request lands on `REFRESH_STREAM` (`request_refresh`) and the worker asks `PullSync` for it;
 - the task actor's lane attributions land on `NOTES_STREAM` so the serving feed names the actor on the lane move the
   board file's change produces (`NotingFeed`, `follow_notes`); the note is logged before the write, so a move placed
@@ -14,6 +16,7 @@ keeps the store read-only. What the worker projects, and what `serve` must say b
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
 from collections.abc import Callable, Mapping
@@ -21,12 +24,14 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     from starpulse._internal.eventlog.event_log import Entry, EventLog
+    from starpulse._internal.pulls.pulls import PullStore
 
 logger = logging.getLogger(__name__)
 
 PROJECTION = "pulls.projection"
 METRICS = "pulls.metrics"
 PROJECTED_STREAM = "pulls:projected"
+SAVED_STREAM = "pulls:saved"
 REFRESH_STREAM = "pulls:refresh"
 NOTES_STREAM = "pulls:notes"
 #: Seconds between the worker's writes of its metrics.
@@ -89,6 +94,21 @@ class Projected:
         after = self._log.head() or 0
         self.apply()
         return _follow("pull-projected", self._log, PROJECTED_STREAM, after, lambda _entry: self.apply(), stop)
+
+
+def announce_saves(store: PullStore, log: EventLog) -> None:
+    """Announce the keys of each save `store` makes on `SAVED_STREAM`, for the serving store to refresh."""
+    store.subscribe_saves(lambda keys: log.append(SAVED_STREAM, {"keys": json.dumps(keys)}))
+
+
+def follow_saves(store: PullStore, log: EventLog, stop: threading.Event, after: int) -> threading.Thread:
+    """Refresh `store` with the records of each save announced past `after`, on a thread until `stop`. `after` is read
+    before the store loads, so a save between the load and the follow is not missed."""
+
+    def handle(entry: Entry) -> None:
+        store.refresh([(repo, int(number)) for repo, number in json.loads(entry.fields["keys"])])
+
+    return _follow("pull-saved", log, SAVED_STREAM, after, handle, stop)
 
 
 def request_refresh(log: EventLog, tracked: Callable[[], list[str]]) -> Callable[[str, int], bool]:
