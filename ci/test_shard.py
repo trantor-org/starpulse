@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from shard import SECONDS, STATIC_BUILD, assign, weigh
+from shard import SECONDS, assign, weigh
 
 CI = Path(__file__).resolve().parent
 
@@ -68,10 +68,3 @@ def test_the_shards_of_a_tree_collect_exactly_the_tests_of_the_whole_tree(tmp_pa
     whole = collected(tmp_path)
     assert whole == 15
     assert sum(collected(tmp_path, SHARD_INDEX=str(i), SHARD_COUNT="3") for i in (1, 2, 3)) == whole
-
-
-@pytest.mark.parametrize("count", [2, 3, 4])
-def test_the_files_sharing_the_static_build_stub_land_in_one_shard(count):
-    weights = {f"test_{i}.py": 5 for i in range(12)} | dict.fromkeys(STATIC_BUILD, 5)
-    homes = {index for index, shard in enumerate(assign(weights, count)) for file in STATIC_BUILD if file in shard}
-    assert len(homes) == 1

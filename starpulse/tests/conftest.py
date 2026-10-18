@@ -3,12 +3,16 @@
 Standalone, the Postgres server is a throwaway container when Docker or Podman is available. A host project that runs
 these tests inside its own suite may already provide `pg_engine` from a pytest plugin on a container it shares;
 trantor's workspace plugin `db.testing` does, and then none is started here.
+
+Under pytest-xdist the controller starts one Postgres server for the run and every worker gets a database of its own on
+it (`starpulse.tests.shared_postgres`), so a run of N workers starts one container, not N.
 """
 
 import importlib.util
 import shutil
 import sqlite3
 import sys
+import tempfile
 import threading
 import time
 import uuid
@@ -19,6 +23,7 @@ from typing import Any
 
 import pytest
 from sqlalchemy import Engine, create_engine, event, text
+from sqlalchemy.engine import make_url
 from tests_slice import join_slice
 
 from starpulse._internal.board import upstream_backlog
@@ -26,6 +31,7 @@ from starpulse._internal.eventlog import event_log
 from starpulse._internal.eventlog.history import HistoryStore
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.mock_issuer import IMAGE, answers
+from starpulse.tests.shared_postgres import publish_error, publish_url, wait_for_url, worker_database
 
 #: StarPulse's own tables, emptied before each Postgres test so it starts empty.
 _TABLES = (
@@ -117,6 +123,22 @@ def _container_skip_reason() -> str | None:
     return None
 
 
+def _retried(start: Callable[[], Any]) -> Any:  # pragma: no mutate block — container lifecycle
+    """Start a container, twice more if a starved Docker daemon times the request out: a start is cheap to repeat.
+
+    The timed-out request may still have created Ryuk, whose name a second try would collide with, so a retry runs
+    without it; the run stops what it started itself.
+    """
+    from testcontainers.core.config import testcontainers_config  # noqa: PLC0415
+
+    for _ in range(2):
+        try:
+            return start()
+        except Exception:  # noqa: BLE001, S112
+            testcontainers_config.ryuk_disabled = True
+    return start()
+
+
 def _start_postgres() -> Any:  # pragma: no mutate block — container lifecycle
     from testcontainers.community.postgres import PostgresContainer  # noqa: PLC0415
     from testcontainers.core.config import testcontainers_config  # noqa: PLC0415
@@ -124,20 +146,27 @@ def _start_postgres() -> Any:  # pragma: no mutate block — container lifecycle
     # The readiness probe (psql in the container) sleeps this long between tries; the 1 s default left the server
     # up and idle for up to a second before the first test could use it.
     testcontainers_config.sleep_time = 0.1
-    # The data directory in memory and no sync: a throwaway server need not survive a crash, and initdb's syncs
-    # took seconds on a disk the runners share.
-    return join_slice(
-        PostgresContainer("postgres:17-alpine", driver="psycopg")
-        .with_env("POSTGRES_INITDB_ARGS", "--no-sync")
-        .with_tmpfs_mount("/var/lib/postgresql/data")
-        .with_command("postgres -c fsync=off -c synchronous_commit=off -c full_page_writes=off")
-    ).start()
+
+    def start() -> Any:
+        # The data directory in memory and no sync: a throwaway server need not survive a crash, and initdb's syncs
+        # took seconds on a disk the runners share.
+        return join_slice(
+            PostgresContainer("postgres:17-alpine", driver="psycopg")
+            .with_env("POSTGRES_INITDB_ARGS", "--no-sync")
+            .with_tmpfs_mount("/var/lib/postgresql/data")
+            .with_command(
+                # Every worker of a run connects to this one server.
+                "postgres -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=500"
+            )
+        ).start()
+
+    return _retried(start)
 
 
 def _start_issuer() -> tuple[Any, str]:  # pragma: no mutate block — container lifecycle
     from testcontainers.core.container import DockerContainer  # noqa: PLC0415
 
-    container = join_slice(DockerContainer(IMAGE).with_exposed_ports(8080)).start()
+    container = _retried(lambda: join_slice(DockerContainer(IMAGE).with_exposed_ports(8080)).start())
     address = f"http://127.0.0.1:{container.get_exposed_port(8080)}/default"
     deadline = time.monotonic() + 60
     while not answers(f"{address}/.well-known/openid-configuration"):
@@ -162,11 +191,45 @@ def _containers_wanted(item: pytest.Item) -> set[str]:  # pragma: no mutate bloc
     return wanted
 
 
+#: Where the controller of this xdist run publishes its Postgres, on a worker; None in a controller or a plain run.
+_SHARED_POSTGRES: Path | None = None
+#: In the controller of an xdist run, the directory it publishes its Postgres in; None elsewhere.
+_SHARED_POSTGRES_ROOT: Path | None = None
+
+
 def _warm_wanted(wanted: set[str]) -> None:  # pragma: no mutate block — container lifecycle
-    if "postgres" in wanted and "db.testing" not in sys.modules:
+    if "postgres" in wanted and "db.testing" not in sys.modules and _SHARED_POSTGRES is None:
         _warm("postgres", _start_postgres)
     if "issuer" in wanted:
         _warm("issuer", _start_issuer)
+
+
+def _distributes(config: pytest.Config) -> bool:
+    return bool(config.pluginmanager.hasplugin("xdist") and config.getoption("numprocesses", None))
+
+
+def _publish_when_up(root: Path, future: Future) -> None:  # pragma: no mutate block — container lifecycle
+    if (error := future.exception()) is not None:
+        publish_error(root, repr(error))
+    else:
+        publish_url(root, future.result().get_connection_url())
+
+
+def pytest_configure(config: pytest.Config) -> None:  # pragma: no mutate block — container lifecycle
+    """A worker learns where its controller's Postgres is; a controller starts that Postgres while the workers collect."""
+    global _SHARED_POSTGRES, _SHARED_POSTGRES_ROOT  # noqa: PLW0603
+    workerinput = getattr(config, "workerinput", None)
+    if workerinput is not None:
+        _SHARED_POSTGRES = Path(workerinput["shared_postgres"]) if workerinput.get("shared_postgres") else None
+    elif _distributes(config) and "db.testing" not in sys.modules and not _container_skip_reason():
+        _SHARED_POSTGRES_ROOT = Path(tempfile.mkdtemp(prefix="starpulse-postgres-"))
+        root = _SHARED_POSTGRES_ROOT
+        _warm("postgres", _start_postgres).add_done_callback(lambda future: _publish_when_up(root, future))
+
+
+def pytest_configure_node(node: Any) -> None:  # pragma: no mutate block — container lifecycle
+    if _SHARED_POSTGRES_ROOT is not None:
+        node.workerinput["shared_postgres"] = str(_SHARED_POSTGRES_ROOT)
 
 
 def pytest_itemcollected(item: pytest.Item) -> None:  # pragma: no mutate block — container lifecycle
@@ -191,14 +254,21 @@ def pytest_sessionfinish(session: pytest.Session) -> None:  # pragma: no mutate 
         if not future.cancel() and future.exception() is None:
             (future.result() if name == "postgres" else future.result()[0]).stop()
     _WARM.clear()
+    if _SHARED_POSTGRES_ROOT is not None:
+        shutil.rmtree(_SHARED_POSTGRES_ROOT, ignore_errors=True)
 
 
 if "db.testing" not in sys.modules:
 
     @pytest.fixture(scope="session")
-    def pg_engine() -> Iterator[Engine]:  # pragma: no mutate block — container lifecycle
+    def pg_engine(request: pytest.FixtureRequest) -> Iterator[Engine]:  # pragma: no mutate block — container lifecycle
         if reason := _container_skip_reason():
             pytest.skip(reason)
+        if _SHARED_POSTGRES is not None:
+            server = make_url(wait_for_url(_SHARED_POSTGRES, timeout=120))
+            with worker_database(server, request.config.workerinput["workerid"]) as engine:
+                yield engine
+            return
         container = _warm("postgres", _start_postgres).result()
         engine = create_engine(container.get_connection_url())
         try:

@@ -15,8 +15,6 @@ from starpulse._internal.server.closure import SELF, Reading
 from starpulse._internal.server.supervisor import Supervisor
 from starpulse.tests.integration.server.test_standalone import _env, build  # noqa: F401 - `build` is a fixture
 
-pytestmark = pytest.mark.xdist_group("static-build")
-
 
 def _snapshot(port: int) -> None:
     with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/snapshot", timeout=30) as resp:

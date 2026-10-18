@@ -40,9 +40,6 @@ def _until(check: Callable[[], object], proc: subprocess.Popen, what: str) -> ob
         time.sleep(0.2)
 
 
-# The `build` stub writes and removes the checkout's shared static directory: in the group `test_standalone.py` names, so
-# another xdist worker's teardown cannot delete the page out from under the hub this test starts.
-@pytest.mark.xdist_group("static-build")
 @pytest.mark.usefixtures("build")
 # About 3 s for the hub process to import, migrate and serve, then about 4 s because the event is appended from this
 # process and a Postgres append by another process reaches the hub's idle history consumer only on its 5 s fallback

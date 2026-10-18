@@ -17,8 +17,11 @@ as a process on Postgres; `addopts` deselects them, so no default, pull-request 
 `uv run pytest -m e2e` runs them. Each piece such a test composes keeps a fast integration test of its own.
 `uv sync --no-group hub --python 3.14t` is the free-threaded build, which CI runs the same selected tests on (`python-ft`, on a pull request and the nightly run, not a required check): `psycopg-binary`
 has no 3.14t wheel, so hub mode stays on 3.14. `test_memray_flagged.py` skips there, since memray reports no allocation for a small test's list on that build.
-`uv run pytest -n 4 --dist loadgroup` spreads it over four pytest-xdist workers (CI starts two per runner); `loadgroup` keeps the tests that
-share checkout state on one worker. CI sizes `-n` to its runner's memory with `ci/xdist_workers.py`.
+`uv run pytest -n 4 --dist worksteal` spreads it over four pytest-xdist workers (CI starts two per runner); `worksteal`
+lets an idle worker take tests queued behind a busy one, so one slow file spreads across workers. Tests are safe to run
+on any worker: a controller-owned Postgres container serves the run, each worker with its own database
+(`starpulse/tests/shared_postgres.py`), and tests that stub the checkout's `static` directory share it through
+`starpulse/tests/page_stub.py`. CI sizes `-n` to its runner's memory with `ci/xdist_workers.py`.
 CI splits the suite by test file across the `python-shard` matrix (`ci/shard.py`: `SHARD_INDEX` of `SHARD_COUNT`, both unset
 locally). A `select` job runs `ci/select_tests.py` once and sizes the matrix from the selection: no shard when it selects no
 test, one shard per minute of the selected files' test time (never more than the files), and all six for the nightly and a
