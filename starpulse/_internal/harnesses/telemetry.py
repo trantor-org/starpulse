@@ -33,7 +33,7 @@ from starpulse._internal.config.analytics import Analytics
 from starpulse._internal.harnesses.activity import SHELLS, activities, elide_heredocs, paths, writes_file
 from starpulse._internal.harnesses.labeller import intent_label
 from starpulse._internal.harnesses.otlp import BRANCH, _attributes, _epoch, _records
-from starpulse._internal.level.signals import CLAUDE_CODE, CODEX, Signal, claim_key, claimed, main_thread_source
+from starpulse._internal.signals import CLAUDE_CODE, CODEX, Signal, claim_key, claimed, main_thread_source
 from starpulse.contracts.adapters import TaskKeys
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack

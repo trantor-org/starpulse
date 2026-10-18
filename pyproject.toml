@@ -99,14 +99,14 @@ layers = [
     "starpulse._internal.feed | starpulse._internal.ci",
     # core
     "starpulse._internal.eventlog",
-    "starpulse._internal.config | starpulse._internal.machines",
+    "starpulse._internal.config | starpulse._internal.machines | starpulse._internal.github_api | starpulse._internal.signals",
     "starpulse.contracts",
 ]
 
 # Bounded contexts, from trantor's Bounded Contexts map: one per StarPulse context, id `context-<glossary slug>`.
 # forbidden_modules is every other context's packages except the map's upstreams (direct imports; transitive stay
-# allowed). The shared kernel (`config`, `eventlog`, `machines`, `contracts`) and the entrypoints belong to no context.
-# ignore_imports are the map's code imports with no map edge. `ci/avoid_list.py` reads source_modules.
+# allowed). The shared kernel (`config`, `eventlog`, `machines`, `github_api`, `signals`, `contracts`) and the entrypoints
+# belong to no context. `ci/avoid_list.py` reads source_modules.
 
 [[tool.importlinter.contracts]]
 id = "context-board"
@@ -158,9 +158,6 @@ forbidden_modules = [
     "starpulse._internal.pulls", "starpulse._internal.ci",
     "starpulse._internal.runs",
 ]
-ignore_imports = [
-    "starpulse._internal.harnesses.** -> starpulse._internal.level.signals",
-]
 
 [[tool.importlinter.contracts]]
 id = "context-delivery"
@@ -173,9 +170,6 @@ forbidden_modules = [
     "starpulse._internal.level",
     "starpulse._internal.harnesses",
     "starpulse._internal.runs",
-]
-ignore_imports = [
-    "starpulse._internal.pulls.** -> starpulse._internal.runs.github_actions",
 ]
 
 [[tool.importlinter.contracts]]

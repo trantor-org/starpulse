@@ -10,7 +10,7 @@ import pytest
 from starpulse._internal.config.analytics import Analytics
 from starpulse._internal.harnesses.telemetry import CLAUDE_CODE, CODEX, Signal, signals
 from starpulse._internal.level.sessions import grouped, session_health, slice_health
-from starpulse._internal.level.signals import claim_key
+from starpulse._internal.signals import claim_key
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.tests.unit.harnesses.test_telemetry import FIXTURES, claude, export, recorded
 

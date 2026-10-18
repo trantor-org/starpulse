@@ -24,7 +24,7 @@ from starpulse._internal.config.analytics import Analytics, MachineStage, SkillM
 from starpulse._internal.config.level import Level, Terminal
 from starpulse._internal.level.cells import MIN_N, cell_of
 from starpulse._internal.level.sessions import session_health, slice_health
-from starpulse._internal.level.signals import CLAUDE_CODE, Signal
+from starpulse._internal.signals import CLAUDE_CODE, Signal
 from starpulse._internal.level.steps import NO_SKILL, Owned, owned_steps
 from starpulse._internal.level.trajectories import absorb
 from starpulse.contracts.adapters import TaskKeys
