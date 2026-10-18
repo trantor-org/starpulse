@@ -17,3 +17,14 @@ events:
     - {from: [open, checks_failed, checks_passed], to: merged}
   PR_CLOSED:
     - {from: [open, checks_failed, checks_passed], to: closed}
+  CONFLICTED:
+    - {from: open, to: open}
+    - {from: checks_failed, to: checks_failed}
+    - {from: checks_passed, to: checks_passed}
+  MERGEABLE:
+    - {from: open, to: open}
+    - {from: checks_failed, to: checks_failed}
+    - {from: checks_passed, to: checks_passed}
+writers:
+  CONFLICTED: [{actor: ci, trigger: "the pre-push hook on a task branch and main-follow, from a local git merge-tree"}]
+  MERGEABLE: [{actor: ci, trigger: "the pre-push hook on a task branch and main-follow, from a local git merge-tree"}]
