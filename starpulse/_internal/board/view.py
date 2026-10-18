@@ -61,7 +61,7 @@ def task_view(agent: dict[str, Any], snapshot: dict[str, Any], done: set[str] | 
         "title": agent["title"],
         "lane": agent["state"],
         "assignee": agent["model"],
-        "holder": agent.get("assignee", ""),
+        "holder": agent.get("holder", ""),
         "milestone": agent["milestone"],
         "type": agent.get("type", ""),
         "labels": agent["labels"],

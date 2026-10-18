@@ -146,7 +146,7 @@ const CHATTER = new Set(["TOOL_USED", "SKILL_USED"]);
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-/i;
 
 /** The Board task each session holds, by session id: what a session's feed line is named for. */
-export const heldTasks = (board: FlowSnapshot | undefined) => new Map((board?.agents ?? []).flatMap((a) => (a.assignee ? [[a.assignee, a.id] as const] : [])));
+export const heldTasks = (board: FlowSnapshot | undefined) => new Map((board?.agents ?? []).flatMap((a) => (a.holder ? [[a.holder, a.id] as const] : [])));
 
 /**
  * The Recent feed's newest 40 lines at `now`: each move but a session's tool and skill uses, each DAG run's line, and a DAG's own line for a run

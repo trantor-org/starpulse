@@ -94,7 +94,7 @@ def test_a_claim_moves_the_task_in_progress_and_records_the_session_as_its_holde
     )
 
     _scan(tmp_path, feed)
-    assert [(agent["state"], agent["assignee"]) for agent in feed.open_tasks()] == [("in_progress", "s-1")]
+    assert [(agent["state"], agent["holder"]) for agent in feed.open_tasks()] == [("in_progress", "s-1")]
 
 
 def test_a_claim_names_a_session_and_a_task(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

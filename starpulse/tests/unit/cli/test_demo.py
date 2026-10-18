@@ -291,7 +291,7 @@ def test_scrub_keeps_when_each_board_task_entered_its_lane_so_the_demo_orders_it
 
 def test_scrub_drops_the_session_holding_each_board_task() -> None:
     live = _live()
-    live["flows"][0]["agents"] = [{"id": "PROJ-1", "title": SECRET, "state": "in_progress", "assignee": "session-1"}]
+    live["flows"][0]["agents"] = [{"id": "PROJ-1", "title": SECRET, "state": "in_progress", "holder": "session-1"}]
 
     demo = scrub(live)
 

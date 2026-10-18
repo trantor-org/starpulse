@@ -531,10 +531,6 @@ export interface TaskDelta {
 export interface RawTask {
   active?: number | null;
   /**
-   * The session that last claimed a Board task; empty when none has, absent off the Board.
-   */
-  assignee?: string | null;
-  /**
    * When a Board task was created, in epoch seconds; null or absent when unknown.
    */
   created?: number | null;
@@ -554,6 +550,10 @@ export interface RawTask {
    * When a Board task entered its lane, epoch seconds; absent when the server holds no time for it.
    */
   entered?: number | null;
+  /**
+   * The session that last claimed a Board task; empty when none has, absent off the Board.
+   */
+  holder?: string | null;
   id: string;
   labels?: string[] | null;
   /**

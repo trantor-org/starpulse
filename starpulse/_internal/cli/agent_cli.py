@@ -339,7 +339,7 @@ def _board(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, An
             and (not args.type or agent.get("type", "") == args.type)
             and (not args.label or args.label in agent["labels"])
             and (not args.assignee or agent["model"] == args.assignee)
-            and (not args.holder or agent.get("assignee", "") == args.holder)
+            and (not args.holder or agent.get("holder", "") == args.holder)
         )
 
     board = board_columns(snapshot, kept, args.state)

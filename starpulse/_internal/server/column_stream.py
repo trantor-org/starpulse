@@ -102,7 +102,7 @@ class Interest:
         self._states = states
 
     def _shows(self, agent: dict[str, Any]) -> bool:
-        return (self._assignee is None or agent.get("assignee", "") == self._assignee) and (
+        return (self._assignee is None or agent.get("holder", "") == self._assignee) and (
             not self._states or agent["state"] in self._states
         )
 
