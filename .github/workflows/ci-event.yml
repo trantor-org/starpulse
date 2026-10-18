@@ -38,9 +38,17 @@ jobs:
           # shellcheck disable=SC1091
           . /home/adinb/trantor/events/lib/dagu_events/dagu_events.env
           set +a
+          # The four submits are independent, so run them concurrently and fail the job if any one fails.
+          pids=()
           for dag in ci-sp-python ci-sp-web ci-sp-contract ci-sp-static; do
             /home/adinb/trantor/.venv/bin/python /home/adinb/trantor/bin/dagu_event.py submit \
               --dag "$dag" --repository "$REPOSITORY" --before "$BEFORE" --after "$AFTER" \
               --delivery "$DELIVERY" --run-attempt "$RUN_ATTEMPT" --pull-request "$PULL_REQUEST" \
-              --event-name "$EVENT_NAME" --merge-queue-ref "$MERGE_QUEUE_REF" --no-observe
+              --event-name "$EVENT_NAME" --merge-queue-ref "$MERGE_QUEUE_REF" --no-observe &
+            pids+=($!)
           done
+          status=0
+          for pid in "${pids[@]}"; do
+            wait "$pid" || status=1
+          done
+          exit "$status"
