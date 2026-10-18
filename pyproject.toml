@@ -104,6 +104,24 @@ layers = [
     "starpulse.contracts",
 ]
 
+[[tool.importlinter.contracts]]
+id = "page-contract"
+name = "Only the server and the kit import the page contract"
+type = "forbidden"
+# The wire DTOs in `contracts.api` are the inbound adapter's published language: the server maps features onto them and
+# encodes them, and the kit drives a server. Every other tier reads `contracts.adapters` and the rest of `contracts`.
+source_modules = [
+    "starpulse._internal.cli", "starpulse._internal.hub",
+    "starpulse._internal.pulls", "starpulse._internal.autopilot",
+    "starpulse._internal.board", "starpulse._internal.runs", "starpulse._internal.harnesses",
+    "starpulse._internal.level",
+    "starpulse._internal.feed", "starpulse._internal.ci",
+    "starpulse._internal.eventlog",
+    "starpulse._internal.config", "starpulse._internal.machines", "starpulse._internal.github_api",
+    "starpulse._internal.signals",
+]
+forbidden_modules = ["starpulse.contracts.api"]
+
 # Bounded contexts, from trantor's Bounded Contexts map: one per StarPulse context, id `context-<glossary slug>`.
 # forbidden_modules is every other context's packages except the map's upstreams (direct imports; transitive stay
 # allowed). The shared kernel (`config`, `eventlog`, `machines`, `github_api`, `signals`, `contracts`) and the entrypoints
