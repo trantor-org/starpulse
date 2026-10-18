@@ -5,7 +5,7 @@ Emission is fail-open (`EventLog.append` never raises): a missing entry means th
 run did not happen.
 
 Each entry carries `event_id` plus these fields (absent when empty): `time` (epoch seconds), `phase`
-(`start` or `end`), `workflow`, `run_id`, `status` (one of `contracts.RunStatus`), and, for a step's entry,
+(`start` or `end`) and, when emitted as one, `event` (`StepStarted` or `StepFinished`, which implies the phase), `workflow`, `run_id`, `status` (one of `contracts.RunStatus`), and, for a step's entry,
 `step` (its name) and `depends` (a JSON list of the step names it waits on). An entry the HTTP ingest wrote also
 carries `instance`, the runs adapter instance whose token pushed it: it is that instance's, so another instance's
 reader ignores it.
@@ -17,10 +17,12 @@ from typing import Any
 
 STREAM = "runs:events"
 PHASES = ("start", "end")
+#: The Runs glossary's Step events, each recorded beside the phase it implies until readers move off `phase`.
+EVENTS = {"StepStarted": "start", "StepFinished": "end"}
 
 
 def entry(
-    phase: str,
+    verb: str,
     workflow: str,
     run_id: str,
     status: str,
@@ -30,10 +32,12 @@ def entry(
     depends: list[str] | None = None,
     instance: str | None = None,
 ) -> dict[str, Any]:
-    """One stream entry; `step` and `depends` make it a step's rather than the run's, `instance` an ingested one's."""
+    """One stream entry for a phase or Step event `verb`; `step` and `depends` make it a step's rather than the run's,
+    `instance` an ingested one's."""
     return {
         "time": now,
-        "phase": phase,
+        **({"event": verb} if verb in EVENTS else {}),
+        "phase": EVENTS.get(verb, verb),
         "workflow": workflow,
         "run_id": run_id,
         "status": status,

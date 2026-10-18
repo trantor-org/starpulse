@@ -1,9 +1,10 @@
-"""`starpulse emit start|end`: append a workflow run, or one of its steps, to the event log.
+"""`starpulse emit start|end|StepStarted|StepFinished`: append a workflow run, or one of its steps, to the event log.
 
     python -m starpulse emit start --workflow nightly --run 2026-10-03 --status running
     python -m starpulse emit end   --workflow nightly --run 2026-10-03 --status succeeded --step load --depends fetch,clean
 
-A scheduler hook (cron, systemd, Cronicle, Rundeck, an Airflow callback) calls it at each start and end. A step's
+`StepStarted` and `StepFinished` are the Runs glossary's names for `start` and `end`: the entry records the event beside
+the phase it implies, until readers move off `phase`. A scheduler hook (cron, systemd, Cronicle, Rundeck, an Airflow callback) calls it at each start and end. A step's
 entries name the step and, optionally, the steps it waits on; a workflow no adapter lists draws the step graph those
 entries add up to. The log is in the database `--config` names (default `starpulse.toml` in the working directory,
 as `serve` finds it), so a hook that runs from no fixed directory passes `--config`. The exit code is 1 when the log
@@ -29,7 +30,7 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="starpulse emit", description="push a workflow run, or one of its steps, onto the event log"
     )
-    parser.add_argument("phase", choices=run_events.PHASES)
+    parser.add_argument("phase", choices=(*run_events.PHASES, *run_events.EVENTS))
     parser.add_argument("--workflow", required=True)
     parser.add_argument("--run", required=True, help="the run's id")
     parser.add_argument("--status", required=True, choices=get_args(RunStatus))
