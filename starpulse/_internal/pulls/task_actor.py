@@ -30,7 +30,7 @@ from starpulse._internal.config.pins import Pins
 from starpulse._internal.feed import criteria
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.pulls.pull_requests import PULL_URL
-from starpulse._internal.pulls.release import Settlement
+from starpulse._internal.pulls.unblock import PinGate
 
 if TYPE_CHECKING:  # annotation only: the pull store opens the database stack
     from starpulse._internal.pulls.pulls import PullStore
@@ -100,8 +100,8 @@ class TaskActor:
     """Moves each open task whose lane waits on a fact that holds, once per change of that fact.
 
     `waits` is `{lane: {fact kind: event}}` (`Compiled.waits`) and `moves` is `{(lane, event): target lane}`, from the
-    Board machine's transitions. `edit` is the board's task editor. `repos`, `settle` and `pins` are the `[release]`
-    settle rule (`release.Settlement`): a dependency in a pinned repository settles on the parent's pin bump.
+    Board machine's transitions. `edit` is the board's task editor. `repos`, `pin_rule` and `pins` are the `[release]`
+    pin-bump rule (`unblock.PinGate`): a dependency in a pinned repository is merged on the parent's pin bump.
     `evaluate` is the board's Start Criteria evaluator (`Board.evaluate`; None: no criteria fact ever holds) and `holds`
     the reasons the board adapter withholds a task's `deps_done` (`Board.holds`; None: it holds none).
     """
@@ -114,7 +114,7 @@ class TaskActor:
         waits: Mapping[str, Mapping[str, str]],
         moves: Mapping[tuple[str, str], str],
         repos: Sequence[Repo] = (),
-        settle: str | None = None,
+        pin_rule: str | None = None,
         pins: Pins | None = None,
         clock: Callable[[], float] = time.monotonic,
         evaluate: Callable[[str, str], list[dict[str, Any]]] | None = None,
@@ -136,7 +136,7 @@ class TaskActor:
         self._results: dict[str, tuple[float, tuple[tuple[str, str], ...]]] = {}
         #: Tasks whose `deps_done` the board adapter holds; a task created re-derives them.
         self._held: set[str] = set()
-        self._settlement = Settlement(feed, store, repos, settle, pins)
+        self._gate = PinGate(feed, store, repos, pin_rule, pins)
         self._lock = threading.RLock()
         #: Each open task's lane, dependencies and pull requests as the actor last saw them.
         self._seen: dict[str, tuple[str, tuple[str, ...], tuple[str, ...]]] = {}
@@ -194,7 +194,7 @@ class TaskActor:
                 *self._handoff.lines(
                     HANDOFF_METRIC, "Seconds from a pull request store save to the task actor reading it."
                 ),
-                f"# HELP {PIN_HELD_METRIC} Waiting tasks whose dependencies are done but wait for a pin bump to settle.",
+                f"# HELP {PIN_HELD_METRIC} Waiting tasks whose dependencies are done but wait for a pin bump to merge.",
                 f"# TYPE {PIN_HELD_METRIC} gauge",
                 f"{PIN_HELD_METRIC} {pin_held}",
                 f"# HELP {CRITERIA_ERRORS_METRIC} Start Criteria the evaluator could not evaluate, per gated task; such a gate never passes.",
@@ -331,7 +331,7 @@ class TaskActor:
         name, agent = data["id"], data["agent"]
         with self._lock:
             before = self._seen.get(name)
-            if agent is None:  # settled or gone: the tasks that waited on it may now proceed
+            if agent is None:  # merged or gone: the tasks that waited on it may now proceed
                 self._forget(name)
                 self._derive_all(self._dependents(name), observed)
                 return
@@ -443,7 +443,7 @@ class TaskActor:
         return proof, f"{MERGE_EVIDENCE} {proof}"
 
     def _deps_done(self, agent: dict[str, Any]) -> tuple[Any, str] | None:
-        """The dependencies when the task has some, every one is done and settled, and no Start Criteria gate it."""
+        """The dependencies when the task has some, every one is done and merged, and no Start Criteria gate it."""
         dependencies = tuple(agent["dependencies"])
         self._pin_held.discard(agent["id"])
         self._held.discard(agent["id"])
@@ -453,14 +453,14 @@ class TaskActor:
             or criteria.authored(agent["description"])
         ):
             return None
-        if self._settlement.unapplied(agent):
+        if self._gate.unapplied(agent):
             self._pin_held.add(agent["id"])
             return None
         if reasons := self._held_by(agent["id"]):
             self._held.add(agent["id"])
             self._note_hold(agent, reasons)
             return None
-        return dependencies, "Every dependency has settled."
+        return dependencies, "Every dependency has merged."
 
     def _held_by(self, name: str) -> tuple[str, ...]:
         """Why the board adapter withholds the task's `deps_done`; a hold that raises holds it with that error."""

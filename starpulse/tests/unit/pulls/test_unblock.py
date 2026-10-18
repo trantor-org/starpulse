@@ -1,4 +1,4 @@
-"""A Waiting task moves to Ready once every dependency settles; a pinned repository's dependency settles on its bump."""
+"""A Waiting task moves to Ready once every dependency merges; a pinned repository's dependency merges on its bump."""
 
 import subprocess
 from collections.abc import Mapping, Sequence
@@ -13,7 +13,7 @@ from starpulse._internal.config.config import Repo
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.pulls.pulls import PullStore
-from starpulse._internal.pulls.release import Releaser
+from starpulse._internal.pulls.unblock import Unblocker
 
 CHILD, PARENT = "c" * 40, "p" * 40
 CHILD_PR = "https://github.com/acme/starpulse/pull/10"
@@ -91,9 +91,9 @@ def _board(*tasks: Any) -> BoardFeed:
     return feed
 
 
-def _release(feed: BoardFeed, store: PullStore, settle: str | None = None, pins: Pins | None = None) -> list[str]:
+def _unblock(feed: BoardFeed, store: PullStore, pin_rule: str | None = None, pins: Pins | None = None) -> list[str]:
     edits = Edits()
-    Releaser(feed, store, edits, repos=REPOS, settle=settle, pins=pins or Pins()).release()
+    Unblocker(feed, store, edits, repos=REPOS, pin_rule=pin_rule, pins=pins or Pins()).unblock()
     return edits.moved
 
 
@@ -105,7 +105,7 @@ def test_a_waiting_task_whose_dependencies_are_all_done_moves_to_ready(store: Pu
     )
     edits = Edits()
 
-    moved = Releaser(feed, store, edits).release()
+    moved = Unblocker(feed, store, edits).unblock()
 
     assert moved == ["TASK-3"]
     assert [(name, changes) for name, changes, _ in edits.calls] == [("TASK-3", {"status": "ready"})]
@@ -118,23 +118,23 @@ def test_a_task_with_an_open_dependency_stays_waiting(store: PullStore) -> None:
         task("TASK-3", "Waiting", dependencies=("TASK-1", "TASK-2")),
     )
 
-    assert _release(feed, store) == []
+    assert _unblock(feed, store) == []
 
 
-def test_a_board_with_no_dependencies_has_nothing_to_release(store: PullStore) -> None:
+def test_a_board_with_no_dependencies_has_nothing_to_unblock(store: PullStore) -> None:
     feed = _board(task("TASK-1", "Waiting"), task("TASK-2", "Ready"), task("TASK-3", "Done"))
 
-    assert _release(feed, store) == []
+    assert _unblock(feed, store) == []
 
 
-def test_only_waiting_tasks_are_released(store: PullStore) -> None:
+def test_only_waiting_tasks_are_unblocked(store: PullStore) -> None:
     feed = _board(
         task("TASK-1", "Done"),
         task("TASK-2", "In Progress", dependencies=("TASK-1",)),
         task("TASK-3", "Review", dependencies=("TASK-1",)),
     )
 
-    assert _release(feed, store) == []
+    assert _unblock(feed, store) == []
 
 
 def test_a_task_gated_by_start_criteria_is_left_to_them(store: PullStore) -> None:
@@ -143,7 +143,7 @@ def test_a_task_gated_by_start_criteria_is_left_to_them(store: PullStore) -> Non
         task("TASK-2", "Waiting", dependencies=("TASK-1",), description=NEEDS_CRITERIA),
     )
 
-    assert _release(feed, store) == []
+    assert _unblock(feed, store) == []
 
 
 def test_a_completed_dependency_is_done(store: PullStore) -> None:
@@ -152,16 +152,16 @@ def test_a_completed_dependency_is_done(store: PullStore) -> None:
         task("TASK-2", "Waiting", dependencies=("TASK-1",)),
     )
 
-    assert _release(feed, store) == ["TASK-2"]
+    assert _unblock(feed, store) == ["TASK-2"]
 
 
-def test_an_archived_dependency_never_releases_its_dependent(store: PullStore) -> None:
+def test_an_archived_dependency_never_unblocks_its_dependent(store: PullStore) -> None:
     feed = _board(
         task("TASK-1", "Done", settled="archived", settled_at=5.0),
         task("TASK-2", "Waiting", dependencies=("TASK-1",)),
     )
 
-    assert _release(feed, store) == []
+    assert _unblock(feed, store) == []
 
 
 def _pinned(*extra: Any, references: tuple[str, ...] = (CHILD_PR,)) -> BoardFeed:
@@ -172,24 +172,24 @@ def _pinned(*extra: Any, references: tuple[str, ...] = (CHILD_PR,)) -> BoardFeed
     )
 
 
-def test_without_a_settle_rule_a_pinned_dependency_settles_on_done_alone(store: PullStore) -> None:
+def test_without_a_merge_rule_a_pinned_dependency_merges_on_done_alone(store: PullStore) -> None:
     store.save([_pull("acme/starpulse", 10, state="MERGED", sha=CHILD, at=WHEN)])
 
-    assert _release(_pinned(), store) == ["TASK-2"]
+    assert _unblock(_pinned(), store) == ["TASK-2"]
 
 
-def test_a_pin_settled_dependency_waits_for_its_bump_merge(store: PullStore) -> None:
+def test_a_pin_merged_dependency_waits_for_its_bump_merge(store: PullStore) -> None:
     store.save([_pull("acme/starpulse", 10, state="MERGED", sha=CHILD, at=WHEN)])
     feed = _pinned()
 
-    assert _release(feed, store, "pin-bump") == []
+    assert _unblock(feed, store, "pin-bump") == []
 
     store.save([_pull("acme/trantor", 50, state="MERGED", sha=PARENT, at=LATER, files=["starpulse"])])
 
-    assert _release(feed, store, "pin-bump") == ["TASK-2"]
+    assert _unblock(feed, store, "pin-bump") == ["TASK-2"]
 
 
-def test_a_release_pass_after_a_restart_reads_no_pin_answer_the_board_saved(
+def test_an_unblock_pass_after_a_restart_reads_no_pin_answer_the_board_saved(
     store: PullStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     asked: list[str] = []
@@ -209,13 +209,13 @@ def test_a_release_pass_after_a_restart_reads_no_pin_answer_the_board_saved(
     feed.set_pulls({}, {"pins": saved})  # what `BoardFeed.resume` restores
     edits = Edits()
 
-    Releaser(feed, store, edits, repos=REPOS, settle="pin-bump").release()
+    Unblocker(feed, store, edits, repos=REPOS, pin_rule="pin-bump").unblock()
 
     assert asked == []
     assert edits.moved == ["TASK-2"]
 
 
-def test_a_pin_pushed_to_the_parent_default_branch_without_a_pull_request_settles_the_dependency(
+def test_a_pin_pushed_to_the_parent_default_branch_without_a_pull_request_merges_the_dependency(
     store: PullStore,
 ) -> None:
     store.save(
@@ -225,7 +225,7 @@ def test_a_pin_pushed_to_the_parent_default_branch_without_a_pull_request_settle
         ]
     )
 
-    assert _release(_pinned(), store, "pin-bump", Pins(tip=PARENT)) == ["TASK-2"]
+    assert _unblock(_pinned(), store, "pin-bump", Pins(tip=PARENT)) == ["TASK-2"]
 
 
 def test_a_parent_default_branch_that_does_not_pin_the_merge_holds_the_dependent(store: PullStore) -> None:
@@ -236,10 +236,10 @@ def test_a_parent_default_branch_that_does_not_pin_the_merge_holds_the_dependent
         ]
     )
 
-    assert _release(_pinned(), store, "pin-bump", Pins(tip="d" * 40)) == []
+    assert _unblock(_pinned(), store, "pin-bump", Pins(tip="d" * 40)) == []
 
 
-def test_a_bump_merged_before_the_child_does_not_settle_it(store: PullStore) -> None:
+def test_a_bump_merged_before_the_child_does_not_merge_it(store: PullStore) -> None:
     store.save(
         [
             _pull("acme/starpulse", 10, state="MERGED", sha=CHILD, at=LATER),
@@ -247,10 +247,10 @@ def test_a_bump_merged_before_the_child_does_not_settle_it(store: PullStore) -> 
         ]
     )
 
-    assert _release(_pinned(), store, "pin-bump") == []
+    assert _unblock(_pinned(), store, "pin-bump") == []
 
 
-def test_a_merge_that_does_not_move_the_pin_does_not_settle_the_dependency(store: PullStore) -> None:
+def test_a_merge_that_does_not_move_the_pin_does_not_merge_the_dependency(store: PullStore) -> None:
     store.save(
         [
             _pull("acme/starpulse", 10, state="MERGED", sha=CHILD, at=WHEN),
@@ -258,26 +258,26 @@ def test_a_merge_that_does_not_move_the_pin_does_not_settle_the_dependency(store
         ]
     )
 
-    assert _release(_pinned(), store, "pin-bump") == []
+    assert _unblock(_pinned(), store, "pin-bump") == []
 
 
 def test_a_pinned_pull_request_the_store_lacks_or_holds_open_holds_the_dependent(store: PullStore) -> None:
     feed = _pinned()
-    assert _release(feed, store, "pin-bump") == []
+    assert _unblock(feed, store, "pin-bump") == []
 
     store.save([_pull("acme/starpulse", 10, state="OPEN", sha=None, at=None)])
 
-    assert _release(feed, store, "pin-bump") == []
+    assert _unblock(feed, store, "pin-bump") == []
 
 
 def test_a_closed_pinned_pull_request_never_reaches_the_pin_and_is_ignored(store: PullStore) -> None:
     store.save([_pull("acme/starpulse", 10, state="CLOSED", sha=None, at=None)])
 
-    assert _release(_pinned(), store, "pin-bump") == ["TASK-2"]
+    assert _unblock(_pinned(), store, "pin-bump") == ["TASK-2"]
 
 
-def test_a_dependency_citing_an_unpinned_repository_settles_on_done_alone(store: PullStore) -> None:
-    assert _release(_pinned(references=(OTHER_PR,)), store, "pin-bump") == ["TASK-2"]
+def test_a_dependency_citing_an_unpinned_repository_merges_on_done_alone(store: PullStore) -> None:
+    assert _unblock(_pinned(references=(OTHER_PR,)), store, "pin-bump") == ["TASK-2"]
 
 
 def test_a_completed_dependency_still_holds_its_dependent_until_its_bump_merges(store: PullStore) -> None:
@@ -287,23 +287,23 @@ def test_a_completed_dependency_still_holds_its_dependent_until_its_bump_merges(
         task("TASK-2", "Waiting", dependencies=("TASK-1",)),
     )
 
-    assert _release(feed, store, "pin-bump") == []
+    assert _unblock(feed, store, "pin-bump") == []
 
 
-def test_a_released_task_the_board_has_not_read_back_is_not_written_twice(store: PullStore) -> None:
+def test_a_unblocked_task_the_board_has_not_read_back_is_not_written_twice(store: PullStore) -> None:
     feed = _board(task("TASK-1", "Done"), task("TASK-2", "Waiting", dependencies=("TASK-1",)))
     edits = Edits()
-    releaser = Releaser(feed, store, edits)
+    unblocker = Unblocker(feed, store, edits)
 
-    assert releaser.release() == ["TASK-2"]
-    assert releaser.release() == []
+    assert unblocker.unblock() == ["TASK-2"]
+    assert unblocker.unblock() == []
     assert len(edits.calls) == 1
 
     feed.put(task("TASK-2", "Ready", dependencies=("TASK-1",)))
-    assert releaser.release() == []
+    assert unblocker.unblock() == []
     feed.put(task("TASK-2", "Waiting", dependencies=("TASK-1",)))
 
-    assert releaser.release() == ["TASK-2"]
+    assert unblocker.unblock() == ["TASK-2"]
 
 
 def test_a_refused_move_is_tried_again_on_the_next_pass(store: PullStore) -> None:
@@ -315,8 +315,8 @@ def test_a_refused_move_is_tried_again_on_the_next_pass(store: PullStore) -> Non
         calls.append(name)
         return next(answers)
 
-    releaser = Releaser(feed, store, edit)
+    unblocker = Unblocker(feed, store, edit)
 
-    assert releaser.release() == []
-    assert releaser.release() == ["TASK-2"]
+    assert unblocker.unblock() == []
+    assert unblocker.unblock() == ["TASK-2"]
     assert calls == ["TASK-2", "TASK-2"]

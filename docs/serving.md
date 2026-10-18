@@ -663,7 +663,7 @@ A write the board refuses is logged and counted, and is not retried until the ta
 - `starpulse_task_actor_criteria_errors{task}`: the Start Criteria of a gated task that could not be evaluated; such a
   gate never passes.
 - `starpulse_task_actor_pin_held`: a gauge of Waiting tasks whose dependencies are done but wait for a pin bump to
-  settle (`Settlement.unapplied`); one that stays above 0 is a pin that never settles.
+  merge (`PinGate.unapplied`); one that stays above 0 is a pin that never merges.
 
 Each move the actor writes names `starpulse/task-actor` on its `board:lanes` entry. The Delivery worker logs the
 actor's note before the write, and `serve` reads the notes logged since its last read before it places a move no note

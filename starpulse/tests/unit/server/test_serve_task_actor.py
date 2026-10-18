@@ -1,4 +1,4 @@
-"""`serve` runs the task actor when `[board.actor]` is configured, and then Releaser's polling thread does not start."""
+"""`serve` runs the task actor when `[board.actor]` is configured, and Unblocker's polling thread does not start."""
 
 from collections.abc import Callable
 from pathlib import Path
@@ -47,7 +47,7 @@ def _serve(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, text: str, gh: bool 
     monkeypatch.setattr(server, "TaskActor", Actor)
     monkeypatch.setattr(Actor, "built", [])
     polled: list[object] = []
-    monkeypatch.setattr(server, "_keep_released", lambda *args: polled.append(args))
+    monkeypatch.setattr(server, "_keep_unblocked", lambda *args: polled.append(args))
     config = tmp_path / "starpulse.toml"
     config.write_text(text)
 
@@ -56,7 +56,7 @@ def _serve(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, text: str, gh: bool 
     return polled
 
 
-def test_the_actor_starts_and_releasers_thread_does_not(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_the_actor_starts_and_unblockers_thread_does_not(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     polled = _serve(tmp_path, monkeypatch, f"[release]\n{BOARD}[board.actor]\n")
 
     assert [actor.started for actor in Actor.built] == [True]
@@ -71,7 +71,7 @@ def test_the_actor_is_given_the_boards_criteria_evaluator_and_holds(
     assert {"evaluate", "holds"} <= Actor.built[0].kwargs.keys()
 
 
-def test_without_the_table_releasers_thread_starts_and_no_actor_does(
+def test_without_the_table_unblockers_thread_starts_and_no_actor_does(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     polled = _serve(tmp_path, monkeypatch, f"[release]\n{BOARD}")

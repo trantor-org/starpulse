@@ -224,7 +224,11 @@ class EventLog:
 
     @property
     def appends(self) -> int:
-        """How many appends and commits by other processes this log has seen: the `seen` for `wait_for_append`."""
+        """How many appends and commits by other processes this log has seen: the `seen` for `wait_for_append`.
+
+        Reading it starts the commit watch first, so a commit elsewhere after the read is counted, not taken into the
+        watch's baseline."""
+        self._watch()
         return self._appends
 
     def wait_for_append(self, seen: int, timeout: float, stop: threading.Event) -> None:
@@ -245,21 +249,27 @@ class EventLog:
 
     def _watch(self) -> None:
         """Start, once, the thread that wakes waiters on another process's SQLite commit; nothing on Postgres or an
-        in-memory database, which have no other process to see."""
+        in-memory database, which have no other process to see. Returns once the thread has read its baseline (or
+        failed to), so a commit after this call wakes waiters."""
         with self._lock:
             if self._watching:
                 return
             self._watching = True
         url = make_url(self.url)
         if url.get_backend_name() == "sqlite" and url.database not in (None, "", ":memory:"):
+            baseline = threading.Event()
             threading.Thread(
-                target=self._watch_data_version, args=(url.database,), name="eventlog-data-version", daemon=True
+                target=self._watch_data_version,
+                args=(url.database, baseline),
+                name="eventlog-data-version",
+                daemon=True,
             ).start()
+            baseline.wait(_SQLITE_BUSY_TIMEOUT)
 
-    def _watch_data_version(self, database: str) -> None:
-        """Wake waiters whenever another connection commits to `database`. `PRAGMA data_version` changes only for
-        commits made through other connections, and a connection without a transaction holds no read lock, so this
-        one never stalls a checkpoint."""
+    def _watch_data_version(self, database: str, baseline: threading.Event) -> None:
+        """Wake waiters whenever another connection commits to `database`, setting `baseline` after the first read.
+        `PRAGMA data_version` changes only for commits made through other connections, and a connection without a
+        transaction holds no read lock, so this one never stalls a checkpoint."""
         version = None
         connection = None
         while True:
@@ -273,6 +283,7 @@ class EventLog:
             except sqlite3.Error as exc:  # the file is locked or gone; the interval still delivers
                 logger.debug("EventLog: data_version check failed: %s", exc)
                 connection, version = None, None
+            baseline.set()
             time.sleep(_DATA_VERSION_INTERVAL)
 
     def prune(self, retention: float, now: float | None = None, *, archive_dir: Path) -> int:
