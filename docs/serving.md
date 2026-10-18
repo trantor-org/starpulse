@@ -54,7 +54,7 @@ short request needs. A stream past the limit gets `503` with `Retry-After: 5` an
 ### Worker processes
 
 `serve` is a supervisor over the contexts that run as their own `starpulse worker <context>` process: `api` (the Page API), `pulls` (Delivery), `autopilot`, `runs`, `forwarding`, `history`, `search` (with an `[search] embeddings_url`) and `board` (the Start Criteria dating and the lane reconcile). `serve` always starts `pulls` and `autopilot` as children; for each other one whose `api_worker`,
-`runs_worker`, `forwarding_worker`, `history_worker`, `search_worker` or `board_worker` setting is false, the default, it starts the worker as a child, restarts it with a growing delay (1 s, doubling to 60 s; a child that
+`runs_worker`, `forwarding_worker`, `search_worker` or `board_worker` setting is false, the default, it starts the worker as a child, restarts it with a growing delay (1 s, doubling to 60 s; a child that
 ran a minute restarts at once) when it exits, and stops it when `serve` stops on `SIGTERM` or Ctrl-C. The children read the same config and `database_url` and meet `serve` only in
 the event log. A true setting means something outside `serve` runs that worker, so `serve` starts no child for it. No unit file is needed to run StarPulse.
 
@@ -260,11 +260,11 @@ type = "native"
 
 # Whether something outside `serve` runs the History context's writers (the machine-history recorder and the hourly
 # prune of the event log). False, the default: `serve` supervises them as one child process, `starpulse worker
-# history`. True: you run `starpulse worker history --config <this file>` yourself and `serve` starts neither thread.
+# flow-metrics`. True: you run `starpulse worker flow-metrics --config <this file>` yourself and `serve` starts neither thread.
 # They run together because both write the history database. The recorder's cursor is saved with the rows it covers, so
 # a restarted worker neither drops nor repeats a history row. A hub (`serve --hub`) keeps both threads in-process and
 # ignores this setting. With the flag set and no worker running, no machine event is recorded and the log is not pruned.
-# history_worker = false
+# flow_metrics_worker = false
 
 # Whether something outside `serve` runs the Search context's embedding catch-up (the thread that fills vectors for the
 # indexed task text). False, the default: with `[search] embeddings_url` set, `serve` supervises it as a child process,
