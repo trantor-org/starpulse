@@ -25,6 +25,12 @@ events:
     - {from: open, to: open}
     - {from: checks_failed, to: checks_failed}
     - {from: checks_passed, to: checks_passed}
+  THREADS_CHANGED:
+    - {from: open, to: open}
+    - {from: checks_failed, to: checks_failed}
+    - {from: checks_passed, to: checks_passed}
 writers:
   CONFLICTED: [{actor: ci, trigger: "the pre-push hook on a task branch and main-follow, from a local git merge-tree"}]
   MERGEABLE: [{actor: ci, trigger: "the pre-push hook on a task branch and main-follow, from a local git merge-tree"}]
+  THREADS_CHANGED:
+    - {actor: reviewer, trigger: ".github/workflows/review-threads.yml"}
