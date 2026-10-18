@@ -240,19 +240,26 @@ def test_a_filtered_search_runs_the_fts_match_before_the_facets_narrowing(engine
     assert "0:M" in plan
 
 
-def _seed_many(index: SearchIndex, count: int = 2500) -> None:
-    for number in range(count):
-        index.index(
+@pytest.fixture(scope="module")
+def many(tmp_path_factory: pytest.TempPathFactory):
+    """An engine holding 2,500 tasks, half labelled `disk`: seeded once, as the searches timed over it only read it."""
+    engine = create_engine(f"sqlite:///{tmp_path_factory.mktemp('many') / 'search.sqlite'}")
+    seeding = SearchIndex.open(engine)
+    assert seeding is not None
+    for number in range(2500):
+        seeding.index(
             _task(
                 f"T-{number}",
                 title=f"drain item {number}",
                 labels=["disk"] if number % 2 == 0 else ["other"],
             )
         )
+    return engine
 
 
-def test_a_finished_since_filtered_search_of_200_words_returns_in_under_one_second(index: SearchIndex) -> None:
-    _seed_many(index)
+def test_a_finished_since_filtered_search_of_200_words_returns_in_under_one_second(many) -> None:
+    index = SearchIndex.open(many)  # an index of its own, so no search an earlier test ran is held warm
+    assert index is not None
     query = "drain " + " ".join(f"unique{n}" for n in range(200))
 
     started = time.perf_counter()
@@ -260,8 +267,9 @@ def test_a_finished_since_filtered_search_of_200_words_returns_in_under_one_seco
     assert time.perf_counter() - started < 1.0
 
 
-def test_a_label_filtered_search_of_200_words_returns_in_under_one_second(index: SearchIndex) -> None:
-    _seed_many(index)
+def test_a_label_filtered_search_of_200_words_returns_in_under_one_second(many) -> None:
+    index = SearchIndex.open(many)
+    assert index is not None
     query = "drain " + " ".join(f"unique{n}" for n in range(200))
 
     started = time.perf_counter()

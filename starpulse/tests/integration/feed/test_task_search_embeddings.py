@@ -1,9 +1,7 @@
 """Search ranks by meaning only when an embeddings URL is configured, and is lexical, calling nothing, without one."""
 
-import array
 import json
 import math
-import random
 import socket
 import threading
 import time
@@ -11,6 +9,7 @@ from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import numpy as np
 import pytest
 from sqlalchemy import create_engine, event, text
 
@@ -59,7 +58,7 @@ class _Endpoint:
 
         self._server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         self.url = f"http://127.0.0.1:{self._server.server_address[1]}/v1/embeddings"
-        threading.Thread(target=self._server.serve_forever, daemon=True).start()
+        threading.Thread(target=self._server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
 
     def vector(self, text: str) -> list[float]:
         return next((vector for word, vector in self.rules if word in text.lower()), [0.0, 0.0])
@@ -396,20 +395,17 @@ def test_a_write_does_not_wait_for_a_search_loading_the_vectors(engine, endpoint
 
 def test_five_thousand_embedded_tasks_are_scored_in_under_a_tenth_of_a_second(engine, endpoint: _Endpoint) -> None:
     dimension, count = 1024, 5000
-    rng = random.Random(7)
-    query = array.array("f", (rng.random() - 0.5 for _ in range(dimension)))
-    endpoint.vector = lambda text: list(query)
+    rng = np.random.default_rng(7)
+    query = rng.random(dimension, dtype=np.float32) - 0.5
+    endpoint.vector = lambda text: query.tolist()
     index = _open(engine, Search(endpoint.url, "m"))
-    vectors: dict[str, array.array] = {}
+    weights = np.arange(count, dtype=np.float32)[:, None] / count / 2  # each a little nearer the query (cosine to 0.7)
+    held = weights * query + (1 - weights) * (rng.random((count, dimension), dtype=np.float32) - 0.5)  # none tied
+    rows = [(f"PROJ-{number}", search_module._row(f"PROJ-{number}")) for number in range(count)]
     with engine.begin() as connection:
-        for number in range(count):
-            noise = array.array("f", (rng.random() - 0.5 for _ in range(dimension)))
-            weight = number / count / 2  # each task a little nearer the query than the last (cosine to 0.7), none tied
-            held = array.array("f", (weight * q + (1 - weight) * n for q, n in zip(query, noise, strict=True)))
-            task_id, row = f"PROJ-{number}", search_module._row(f"PROJ-{number}")
-            vectors[task_id] = held
-            connection.execute(
-                search_module._INSERT,
+        connection.execute(
+            search_module._INSERT,
+            [
                 {
                     "row": row,
                     "task": task_id,
@@ -419,15 +415,21 @@ def test_five_thousand_embedded_tasks_are_scored_in_under_a_tenth_of_a_second(en
                     "notes": "",
                     "lane": "to_do",
                     "digest": task_id,
-                },
-            )
-            connection.execute(
-                text("INSERT INTO starpulse_task_vectors (task_row, model, vector) VALUES (:row, :model, :vector)"),
-                {"row": row, "model": index._recipe, "vector": held.tobytes()},
-            )
+                }
+                for task_id, row in rows
+            ],
+        )
+        connection.execute(
+            text("INSERT INTO starpulse_task_vectors (task_row, model, vector) VALUES (:row, :model, :vector)"),
+            [
+                {"row": row, "model": index._recipe, "vector": held[number].tobytes()}
+                for number, (_, row) in enumerate(rows)
+            ],
+        )
+    exact = held.astype(np.float64)  # the oracle scores in double precision, apart from the index's float32 matrix
+    similarities = exact @ query / (np.linalg.norm(exact, axis=1) * np.linalg.norm(query.astype(np.float64)))
     expected = sorted(
-        ((task_id, search_module._cosine(query, held)) for task_id, held in vectors.items()),
-        key=lambda pair: -pair[1],
+        ((task_id, float(similarities[number])) for number, (task_id, _) in enumerate(rows)), key=lambda pair: -pair[1]
     )
     expected = [(task_id, sim) for task_id, sim in expected if sim >= search_module._RECALL_FLOOR][:10]
     assert expected  # the floor leaves hits to compare
