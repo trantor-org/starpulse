@@ -20,6 +20,8 @@ from starpulse._internal.kit.adapter_kit import serve, url
 from starpulse.contracts.adapters import BoardTask, TaskKeys
 from starpulse.tests.machines import MACHINES
 
+pytestmark = pytest.mark.usefixtures("sqlite_stores_from_template")
+
 KEYS = TaskKeys(
     key=re.compile(r"TASK-\d+"),
     branch=re.compile(r"(?:refs/heads/)?(?:[\w.-]+/)*task-(\d+)", re.IGNORECASE),
@@ -83,8 +85,10 @@ def _get(server: ThreadingHTTPServer, path: str) -> tuple[int, dict]:
         return exc.code, json.loads(exc.read())
 
 
-@pytest.fixture
-def server(tmp_path: Path) -> Iterator[ThreadingHTTPServer]:
+@pytest.fixture(scope="module")
+def server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[ThreadingHTTPServer]:
+    """One server for the module: every case only reads it."""
+    tmp_path = tmp_path_factory.mktemp("server")
     telemetry = TelemetryLog(EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}"))
     for payload in corpus():
         telemetry.publish(signals(payload))

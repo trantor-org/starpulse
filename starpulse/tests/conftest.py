@@ -70,6 +70,35 @@ def _event_log_without_sync() -> Iterator[None]:
     event_log._sqlite_pragmas = production
 
 
+@pytest.fixture(scope="session")
+def _sqlite_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """A SQLite store the migration chain built once on this worker, at its head."""
+    path = tmp_path_factory.mktemp("template") / "store.sqlite"
+    engine = create_engine(f"sqlite:///{path}")
+    event_log.migrate(engine)
+    engine.dispose()
+    return path
+
+
+@pytest.fixture(scope="module")
+def sqlite_stores_from_template(_sqlite_template: Path) -> Iterator[None]:
+    """Each new SQLite store a module's tests open starts as a copy of the template, which the chain then finds at its
+    head: the chain's upgrade of an empty file is a fifth of a second, paid by each store of each test otherwise."""
+    production = event_log.migrate
+    copying = threading.Lock()
+
+    def from_template(engine: Engine) -> None:
+        database = engine.url.database
+        with copying:
+            if engine.dialect.name == "sqlite" and database and database != ":memory:" and not Path(database).exists():
+                shutil.copyfile(_sqlite_template, database)
+        production(engine)
+
+    event_log.migrate = from_template
+    yield
+    event_log.migrate = production
+
+
 #: Containers the run starts in the background as soon as collection shows a test needs one, so the first test to ask
 #: for it finds it up (or waits only for what is left) and is not charged the whole start. Keyed by what they serve.
 _WARM: dict[str, Future] = {}
@@ -109,7 +138,7 @@ def _start_issuer() -> tuple[Any, str]:  # pragma: no mutate block — container
     deadline = time.monotonic() + 60
     while not answers(f"{address}/.well-known/openid-configuration"):
         assert time.monotonic() < deadline, "the mock issuer never answered"
-        time.sleep(0.5)
+        time.sleep(0.1)
     return container, address
 
 
