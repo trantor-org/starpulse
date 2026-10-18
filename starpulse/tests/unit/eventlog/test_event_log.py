@@ -295,6 +295,17 @@ def test_an_append_through_another_connection_reaches_a_waiting_tail_before_its_
     assert [e.fields["n"] for e in running.entries] == ["elsewhere"]
 
 
+def test_a_commit_elsewhere_after_appends_is_read_ends_the_wait_that_follows(log: EventLog, tmp_path: Path) -> None:
+    other = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
+    log.engine  # noqa: B018 - create the tables before reading the baseline
+    seen = log.appends
+    other.append("a", {"n": "between"})
+
+    log.wait_for_append(seen, timeout=2, stop=threading.Event())
+
+    assert log.appends != seen
+
+
 def test_setting_stop_ends_a_tail_waiting_out_a_long_interval(log: EventLog) -> None:
     with _RunningTail(log) as running:
         started = time.monotonic()
