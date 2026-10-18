@@ -712,7 +712,7 @@ describe("openStream", () => {
 });
 
 describe("the page's sources", () => {
-  const sources = import.meta.glob<string>(["../**/*.ts", "../**/*.tsx", "!../**/*.test.ts", "!../api/types.gen.ts"], { query: "?raw", import: "default", eager: true });
+  const sources = import.meta.glob<string>(["../**/*.ts", "../**/*.tsx", "!../**/*.test.ts", "!../**/*.test.tsx", "!../api/types.gen.ts"], { query: "?raw", import: "default", eager: true });
 
   it("name no snapshot endpoint and keep no timed poll of one: every flow arrives over the stream", () => {
     const polling = Object.entries(sources).filter(([, text]) => /api\/snapshot|fetchSnapshot|\bpoll/i.test(text));

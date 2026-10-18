@@ -57,6 +57,8 @@ const chip = (label: string) => all(".fchip").find((c) => c.textContent!.startsW
 beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   post.mockReset();
+  // The view ticks its clock each second; a frozen interval keeps a slow run from aging the fixture's elapsed times.
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
   localStorage.clear();
   vi.stubGlobal("IntersectionObserver", class { observe() {} unobserve() {} disconnect() {} });
   host = document.body.appendChild(document.createElement("div"));
@@ -66,6 +68,8 @@ afterEach(() => {
   act(() => root.unmount());
   host.remove();
   vi.unstubAllGlobals();
+
+  vi.useRealTimers();
 });
 
 describe("the DAGs view's catalog", () => {

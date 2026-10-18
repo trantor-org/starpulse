@@ -47,12 +47,16 @@ const cells = () => Object.fromEntries(all(".dgm table tr").map((tr) => [tr.chil
 beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   post.mockReset();
+  // The view ticks its clock each second; a frozen interval keeps a slow run from aging the fixture's elapsed times.
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
   host = document.body.appendChild(document.createElement("div"));
   root = createRoot(host);
 });
 afterEach(() => {
   act(() => root.unmount());
   host.remove();
+
+  vi.useRealTimers();
 });
 
 describe("opening a DAG's modal", () => {

@@ -96,7 +96,8 @@ def test_the_what_if_route_takes_the_lanes_it_is_asked_for():
 
 
 def test_every_read_route_the_server_answers_is_timed():
-    server = (Path(__file__).resolve().parents[1] / "starpulse" / "_internal" / "server" / "server.py").read_text()
+    package = Path(__file__).resolve().parents[1] / "starpulse" / "_internal" / "server"
+    server = "".join(module.read_text() for module in package.glob("*.py"))
     for route in pl.READS:
         assert route.removesuffix("/<id>") in server, route
 

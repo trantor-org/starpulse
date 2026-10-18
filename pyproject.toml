@@ -78,6 +78,7 @@ starpulse = ["static/**/*", "schemas/*.json", "machine.schema.json", "machines/*
 root_package = "starpulse"
 
 [[tool.importlinter.contracts]]
+id = "layers"
 name = "entrypoints, producers, derived features and the core are layered, and siblings in a tier are independent"
 type = "layers"
 # Four tiers, each importing only the tiers below it and `contracts`. Features on one `|` line are independent; a line
@@ -100,6 +101,94 @@ layers = [
     "starpulse._internal.eventlog",
     "starpulse._internal.config | starpulse._internal.machines",
     "starpulse.contracts",
+]
+
+# Bounded contexts, from trantor's Bounded Contexts map: one per StarPulse context, id `context-<glossary slug>`.
+# forbidden_modules is every other context's packages except the map's upstreams (direct imports; transitive stay
+# allowed). The shared kernel (`config`, `eventlog`, `machines`, `contracts`) and the entrypoints belong to no context.
+# ignore_imports are the map's code imports with no map edge. `ci/avoid_list.py` reads source_modules.
+
+[[tool.importlinter.contracts]]
+id = "context-board"
+name = "Board imports no other StarPulse context"
+type = "forbidden"
+allow_indirect_imports = true
+source_modules = ["starpulse._internal.board", "starpulse._internal.feed"]
+forbidden_modules = [
+    "starpulse._internal.autopilot",
+    "starpulse._internal.level",
+    "starpulse._internal.harnesses",
+    "starpulse._internal.pulls", "starpulse._internal.ci",
+    "starpulse._internal.runs",
+]
+
+[[tool.importlinter.contracts]]
+id = "context-autopilot"
+name = "Autopilot imports only Board, Harness Telemetry and Flow Metrics among StarPulse contexts"
+type = "forbidden"
+allow_indirect_imports = true
+source_modules = ["starpulse._internal.autopilot"]
+forbidden_modules = [
+    "starpulse._internal.pulls", "starpulse._internal.ci",
+    "starpulse._internal.runs",
+]
+
+[[tool.importlinter.contracts]]
+id = "context-flow-metrics"
+name = "Flow Metrics imports only Board and Runs among StarPulse contexts"
+type = "forbidden"
+allow_indirect_imports = true
+source_modules = ["starpulse._internal.level"]
+forbidden_modules = [
+    "starpulse._internal.autopilot",
+    "starpulse._internal.harnesses",
+    "starpulse._internal.pulls", "starpulse._internal.ci",
+]
+
+[[tool.importlinter.contracts]]
+id = "context-harness-telemetry"
+name = "Harness Telemetry imports no other StarPulse context"
+type = "forbidden"
+allow_indirect_imports = true
+source_modules = ["starpulse._internal.harnesses"]
+forbidden_modules = [
+    "starpulse._internal.board", "starpulse._internal.feed",
+    "starpulse._internal.autopilot",
+    "starpulse._internal.level",
+    "starpulse._internal.pulls", "starpulse._internal.ci",
+    "starpulse._internal.runs",
+]
+ignore_imports = [
+    "starpulse._internal.harnesses.** -> starpulse._internal.level.signals",
+]
+
+[[tool.importlinter.contracts]]
+id = "context-delivery"
+name = "Delivery imports only Board among StarPulse contexts"
+type = "forbidden"
+allow_indirect_imports = true
+source_modules = ["starpulse._internal.pulls", "starpulse._internal.ci"]
+forbidden_modules = [
+    "starpulse._internal.autopilot",
+    "starpulse._internal.level",
+    "starpulse._internal.harnesses",
+    "starpulse._internal.runs",
+]
+ignore_imports = [
+    "starpulse._internal.pulls.** -> starpulse._internal.runs.github_actions",
+]
+
+[[tool.importlinter.contracts]]
+id = "context-runs"
+name = "Runs imports only Board among StarPulse contexts"
+type = "forbidden"
+allow_indirect_imports = true
+source_modules = ["starpulse._internal.runs"]
+forbidden_modules = [
+    "starpulse._internal.autopilot",
+    "starpulse._internal.level",
+    "starpulse._internal.harnesses",
+    "starpulse._internal.pulls", "starpulse._internal.ci",
 ]
 
 [tool.pytest.ini_options]

@@ -68,6 +68,11 @@ graph; a dependency, `conftest.py`, fixture, machine, schema or skill change run
 `uv run lint-imports` checks the tiers under `starpulse/_internal`, top to bottom: `api` over `cli` (the server's routes and
 the hub, then the command line), `adapters`, `level`, `feed` and `ci`, `eventlog`, then `config`, `machines` and
 `contracts`. A package imports its own tier or one below; none import upward, and `feed` and `ci` never import each other.
+The `context-*` contracts hold each bounded context of trantor's Bounded Contexts map (Board, Delivery, Autopilot, Runs,
+Flow Metrics, Harness Telemetry) to the contexts the map names upstream of it; `config`, `eventlog`, `machines` and
+`contracts` are the shared kernel and belong to none. CI's `static-checks` job also runs `ci/avoid_list.py`, which fails
+a change that adds a def, class or module-level name inside a context's packages holding a word that context's glossary
+in trantor-docs lists under `_Avoid_`.
 The top level holds only the public modules the [Public surface](public-surface.md#public-surface) lists, each a facade over its feature.
 `pnpm --dir starpulse/web run check` typechecks, lints, tests and builds the page.
 The page's `web/src` is organized by feature: `api/` (types, `apiFetch`, the event stream), `features/<name>/` (a view with its
