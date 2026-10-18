@@ -692,7 +692,8 @@ def request_handler(
             if url.path == "/api/events":
                 self._stream_events(parse_qs(url.query).get("snapshot") == ["ref"])
             elif url.path == _HELD:
-                self._stream_held(parse_qs(url.query).get("holder", [""])[0])
+                query = parse_qs(url.query)
+                self._stream_held((query.get("assignee") or query.get("holder") or [""])[0])  # legacy `holder`
             elif url.path == _LANES:
                 self._stream_columns("lanes", None, parse_qs(url.query).get("state", []))
             elif url.path.startswith(_SNAPSHOT_BODY):
@@ -899,15 +900,15 @@ def request_handler(
                 if changes is not None:
                     feed.unwatch_ledger(changes)
 
-        def _stream_held(self, holder: str) -> None:
-            """Hold the connection open: the tasks `holder` holds, then those tasks again each time they change, so a
+        def _stream_held(self, assignee: str) -> None:
+            """Hold the connection open: the tasks `assignee` holds, then those tasks again each time they change, so a
             session's band redraws on a change instead of asking."""
-            if not holder:
-                return self._send(_error(f"name the session: {_HELD}?holder=<session>"), 400)
-            self._stream_columns("held", holder)
+            if not assignee:
+                return self._send(_error(f"name the session: {_HELD}?assignee=<session>"), 400)
+            self._stream_columns("held", assignee)
 
-        def _stream_columns(self, event: str, holder: str | None, states: Sequence[str] = ()) -> None:
-            """Hold the connection open: the Board's columns (only `states`, when named) with the tasks `holder` holds
+        def _stream_columns(self, event: str, assignee: str | None, states: Sequence[str] = ()) -> None:
+            """Hold the connection open: the Board's columns (only `states`, when named) with the tasks `assignee` holds
             (all, when None), as `event`, then again each time a change alters that view. A burst of changes settles
             before one reread, and the streams that reread for a change read one build of the columns."""
             if not self._admit_stream():
@@ -925,11 +926,11 @@ def request_handler(
                 self._open_stream()
                 sent = None
                 while True:
-                    view, text = column_views.render(served, holder, states)
+                    view, text = column_views.render(served, assignee, states)
                     if view != sent:
                         self._frame(event, text)
                         sent = view
-                        interest = Interest(view, holder, states)
+                        interest = Interest(view, assignee, states)
                     self._wait_touched(changes, interest)
                     time.sleep(views._HELD_SETTLE_S)
                     while not changes.empty():

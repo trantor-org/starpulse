@@ -4,35 +4,35 @@ from starpulse._internal.server.column_stream import Interest
 
 
 def _task(
-    task_id: str, holder: str = "", state: str = "in_progress", dependencies: tuple[str, ...] = (), prs: tuple = ()
+    task_id: str, assignee: str = "", state: str = "in_progress", dependencies: tuple[str, ...] = (), prs: tuple = ()
 ) -> dict:
-    return {"id": task_id, "holder": holder, "lane": state, "dependencies": list(dependencies), "prs": list(prs)}
+    return {"id": task_id, "assignee": assignee, "lane": state, "dependencies": list(dependencies), "prs": list(prs)}
 
 
 def _view(*tasks: dict) -> dict:
     return {"columns": [{"state": "in_progress", "name": "In Progress", "tasks": list(tasks)}]}
 
 
-def _change(task_id: str, holder: str = "", state: str = "in_progress") -> tuple[str, dict]:
-    return "task", {"id": task_id, "agent": {"id": task_id, "holder": holder, "state": state}, "settled": None}
+def _change(task_id: str, assignee: str = "", state: str = "in_progress") -> tuple[str, dict]:
+    return "task", {"id": task_id, "agent": {"id": task_id, "assignee": assignee, "state": state}, "settled": None}
 
 
-def _held(holder: str, *tasks: dict) -> Interest:
-    return Interest(_view(*tasks), holder, ())
+def _held(assignee: str, *tasks: dict) -> Interest:
+    return Interest(_view(*tasks), assignee, ())
 
 
 def test_a_held_stream_is_touched_by_its_own_tasks_before_or_after_a_change() -> None:
     interest = _held("a", _task("T-1", "a"))
 
-    assert interest.touched_by(*_change("T-1", holder="b"))  # handed away: it held it before
-    assert interest.touched_by(*_change("T-2", holder="a"))  # taken: it holds it after
-    assert not interest.touched_by(*_change("T-3", holder="b"))
+    assert interest.touched_by(*_change("T-1", assignee="b"))  # handed away: it held it before
+    assert interest.touched_by(*_change("T-2", assignee="a"))  # taken: it holds it after
+    assert not interest.touched_by(*_change("T-3", assignee="b"))
 
 
 def test_a_held_stream_is_touched_by_a_dependency_of_its_tasks_and_by_a_removal() -> None:
     interest = _held("a", _task("T-1", "a", dependencies=("T-0",)))
 
-    assert interest.touched_by(*_change("T-0", holder="b", state="done"))
+    assert interest.touched_by(*_change("T-0", assignee="b", state="done"))
     assert interest.touched_by("task", {"id": "T-1", "agent": None, "settled": {"state": "archived"}})
     assert not interest.touched_by("task", {"id": "T-9", "agent": None, "settled": None})
 

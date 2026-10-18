@@ -6,20 +6,20 @@ What a release keeps compatible; a minor `0.y` release may break it, and its not
 internal and can change in any release.
 
 - The `starpulse` command line: its verbs, their JSON output and their exit codes ([each verb](cli.md)). The task write
-  verbs are `task create TITLE [--description --priority --milestone --assignee --status --type --label --dependency --ac
+  verbs are `task create TITLE [--description --priority --milestone --profile --status --type --label --dependency --ac
   --reference --documentation --dod]`, which
   returns `{task}`; `task edit TASK [--title --type --priority --milestone --label --dependency --reference
   --documentation --modified-file --description --plan --notes --append-notes --final-summary --ac --reword-ac
   --remove-ac --check-ac --uncheck-ac --dod --reword-dod --remove-dod --check-dod --uncheck-dod --comment --base]`,
   which returns
   `{task, changed}` and is refused whole (exit 1) when a field it changes is stale against its base;
-  `task assign TASK ASSIGNEE`, which returns `{task, assignee, changed}`; `task archive TASK [--reason]`, which returns
+  `task profile TASK PROFILE` (alias `task assign`), which returns `{task, profile, changed}`; `task archive TASK [--reason]`, which returns
   `{task}`; `task verdict TASK CHECK pass|miss`, which returns `{task, check, verdict}`, and `task miss TASK CHECK --title`,
   which returns `{task, check, verdict, fix}`, each refused (exit 1) for a check that is undeclared or already judged; `task restore TASK`, which returns `{task}` and is refused (exit 1) for a task that is open, not archived or
   whose file name is taken; `task retire TASK`, which returns `{task}` and is refused (exit 1) for a task that is open;
   `task retired [TASK]`, which returns `{tasks}`, each `{task, name, text}`; `task import-retired FILE...`, which returns
   `{tasks}`, the imported ids; `task complete TASK`, which returns `{task}` and is refused (exit 1) for a task that is not Done;
-  `task claim TASK`, `task park TASK` and `task review TASK`, which return `{ok, task, to, holder, reason, skill}` ([cli](cli.md)) and are refused (exit 1) with the reason and skill of the guard or rule that judged them; and
+  `task claim TASK`, `task park TASK` and `task review TASK`, which return `{ok, task, to, assignee, reason, skill}` ([cli](cli.md)) and are refused (exit 1) with the reason and skill of the guard or rule that judged them; and
   `task checkpoint-ac TASK CRITERION EVIDENCE`, which returns `{task, criterion, changed}` and is refused (exit 1) for a
   criterion the task lacks. Each exits 0 on success, 1 refused, 2 usage, 3 when the board cannot write tasks and, for
   every verb but `create`, 4 for an unknown task.

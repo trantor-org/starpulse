@@ -48,13 +48,16 @@ def board(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any
     if args.state and args.state not in (ids := [s["id"] for s in states]):
         raise agent_wire.CliError("usage", f"unknown state {args.state}; the board has {', '.join(ids)}")
 
+    legacy = (args.assignee or "").startswith("@")  # `--assignee` named the profile before it named the session
+    profile, session = args.profile or (args.assignee if legacy else None), None if legacy else args.assignee
+
     def kept(agent: dict[str, Any]) -> bool:
         return (
             (not args.milestone or agent["milestone"] == args.milestone)
             and (not args.type or agent.get("type", "") == args.type)
             and (not args.label or args.label in agent["labels"])
-            and (not args.assignee or agent["model"] == args.assignee)
-            and (not args.holder or agent.get("holder", "") == args.holder)
+            and (not profile or agent["model"] == profile)
+            and (not session or agent.get("assignee", "") == session)
         )
 
     board = board_columns(snapshot, kept, args.state)
@@ -130,7 +133,7 @@ def writer_flags(sub: argparse.ArgumentParser) -> None:
     sub.add_argument(
         "--session",
         default="",
-        help="the session writing, recorded as the holder of a claimed task and on the change (else `STARPULSE_SESSION`)",
+        help="the session writing, recorded as the assignee of a claimed task and on the change (else `STARPULSE_SESSION`)",
     )
     sub.add_argument(
         "--harness", default="", help="the harness of that session (`claude`, `cursor`), else `STARPULSE_HARNESS`"
@@ -191,7 +194,7 @@ def _lifecycle(
             "ok": True,
             "task": args.task,
             "to": reply.get("to", ""),
-            "holder": reply.get("holder", ""),
+            "assignee": reply.get("assignee", ""),
             "reason": "",
             "skill": "",
         }
@@ -200,7 +203,7 @@ def _lifecycle(
             "ok": False,
             "task": args.task,
             "to": "",
-            "holder": "",
+            "assignee": "",
             "reason": message,
             "skill": reply.get("skill", ""),
         }
@@ -217,7 +220,7 @@ def _kept(output: dict[str, Any], keys: Sequence[str]) -> dict[str, Any]:
 
 
 def task_claim(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    """Claim the task for the session: it moves to In Progress with that session as holder, refused when another holds it."""
+    """Claim the task for the session: it moves to In Progress with that session as assignee, refused when another holds it."""
     return _kept(_lifecycle(args, environ, "claim", {}), CLAIM_KEYS)
 
 
@@ -280,7 +283,7 @@ def create_flags(sub: argparse.ArgumentParser) -> None:
     sub.add_argument("--description", help="the task's Description section")
     sub.add_argument("--priority", help="`high`, `medium` or `low`")
     sub.add_argument("--milestone", help="the milestone's id (`m-106`)")
-    sub.add_argument("--assignee", help="who or which agent profile holds it (`@agent-standard-high`)")
+    sub.add_argument("--profile", "--assignee", dest="profile", help="the agent profile it is routed to (`@agent-standard-high`)")
     sub.add_argument("--label", action="append", help="a label; repeat for several")
     sub.add_argument("--dependency", action="append", help="a task it depends on; repeat for several")
     sub.add_argument("--ac", action="append", help="an Acceptance Criterion; repeat for several, in order")
@@ -297,7 +300,7 @@ def _created_task(args: argparse.Namespace) -> dict[str, Any]:
         "description": args.description,
         "priority": args.priority,
         "milestone": args.milestone,
-        "profile": args.assignee,
+        "profile": args.profile,
         "labels": args.label,
         "dependencies": args.dependency,
         "acceptanceCriteria": args.ac,
@@ -434,8 +437,8 @@ def task_edit(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str,
 
 
 def task_assign(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    changed = _task_edit_call(args, environ, {"profile": args.assignee}, None)
-    return {"task": args.task, "assignee": args.assignee, "changed": changed}
+    changed = _task_edit_call(args, environ, {"profile": args.profile}, None)
+    return {"task": args.task, "profile": args.profile, "changed": changed}
 
 
 def task_archive(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:

@@ -391,8 +391,11 @@ class LaneEvent(_Contract):
     team: str = Field(default="", description="The task's team key; empty on an entry replayed from the history.")
     milestone: str = Field(default="", description="The task's milestone; empty when it has none.")
     labels: tuple[str, ...] = Field(default=(), description="The task's labels; empty when it has none.")
+    profile: str = Field(
+        default="", description="Which agent profile or model the task was routed to; empty when unrouted, and a person's name."
+    )
     assignee: str = Field(
-        default="", description="Who or which agent model held the task; empty when unassigned, and a person's name."
+        default="", description="The legacy name of `profile`, read on an entry an older instance wrote or forwarded."
     )
     actor: str = Field(
         default="",

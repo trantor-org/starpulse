@@ -1,7 +1,7 @@
 """What an IC sends a hub, and the filter that keeps a person's name at home.
 
 The forwarder reads only the machine, runs and lane streams. Each entry is cut down to the fields the stream's contract
-names (`FIELDS`), so a field a producer added never leaves the IC. `actor` and `assignee` name a person, so they
+names (`FIELDS`), so a field a producer added never leaves the IC. `actor`, `profile` and `assignee` name a person, so they
 leave only while the IC is opted in (`OptIn`).
 """
 

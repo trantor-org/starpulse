@@ -555,7 +555,7 @@ def test_a_task_is_claimed_through_the_server_and_the_lifecycle_routes_answer_po
                 urllib.request.urlopen(_url(server, path), timeout=5)
             gets.append((got.value.code, got.value.headers["Allow"]))
 
-    assert claimed == (200, {"task": "PROJ-3", "to": "in_progress", "holder": "s-1"})
+    assert claimed == (200, {"task": "PROJ-3", "to": "in_progress", "assignee": "s-1"})
     assert sessionless[0] == 400
     assert moved == [("PROJ-3", "In Progress")]
     assert (parked[0], parked[1]["error"]) == (404, "this board does not edit tasks")

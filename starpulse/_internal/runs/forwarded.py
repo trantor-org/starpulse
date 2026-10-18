@@ -15,7 +15,7 @@ FIELDS: dict[str, tuple[str, ...]] = {
     run_events.STREAM: ("time", "event", "workflow", "run_id", "status", "step", "depends"),
     lane_events.STREAM: lane_events.FIELDS,
 }
-PERSON = ("actor", "assignee")
+PERSON = ("actor", "assignee", "profile")
 
 
 def project(stream: str, fields: dict[str, Any], *, opt_in: bool) -> dict[str, Any]:

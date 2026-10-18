@@ -46,7 +46,7 @@ class Completed(_Api):
 class Claimed(_Api):
     task: str
     to: str
-    holder: str
+    assignee: str
 
 
 class Parked(_Api):

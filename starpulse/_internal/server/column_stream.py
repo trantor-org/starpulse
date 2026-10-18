@@ -34,29 +34,29 @@ class ColumnViews:
         self._views: dict[tuple[str | None, tuple[str, ...]], tuple[list[dict[str, Any]], dict[str, Any]]] = {}
         self._frames: dict[tuple[str | None, tuple[str, ...]], tuple[dict[str, Any], str]] = {}
 
-    def render(self, served: Served, holder: str | None, states: Sequence[str]) -> tuple[dict[str, Any], str]:
-        """The view of `holder` and `states` in `served` with its JSON, made on the one worker thread."""
-        return self._worker.submit(self._render, served, holder, states).result()
+    def render(self, served: Served, assignee: str | None, states: Sequence[str]) -> tuple[dict[str, Any], str]:
+        """The view of `assignee` and `states` in `served` with its JSON, made on the one worker thread."""
+        return self._worker.submit(self._render, served, assignee, states).result()
 
-    def _render(self, served: Served, holder: str | None, states: Sequence[str]) -> tuple[dict[str, Any], str]:
-        view = self.view(served, holder, states)
-        return view, self.frame(view, holder, states)
+    def _render(self, served: Served, assignee: str | None, states: Sequence[str]) -> tuple[dict[str, Any], str]:
+        view = self.view(served, assignee, states)
+        return view, self.frame(view, assignee, states)
 
-    def view(self, served: Served, holder: str | None, states: Sequence[str]) -> dict[str, Any]:
-        """The view of `holder` and `states` in `served`, filtered once however many streams with them read it."""
-        columns, key = self.of(served), (holder, tuple(states))
+    def view(self, served: Served, assignee: str | None, states: Sequence[str]) -> dict[str, Any]:
+        """The view of `assignee` and `states` in `served`, filtered once however many streams with them read it."""
+        columns, key = self.of(served), (assignee, tuple(states))
         with self._lock:
             held = self._views.get(key)
         if held is not None and held[0] is columns:
             return held[1]
-        view = column_view(columns, holder, states)
+        view = column_view(columns, assignee, states)
         with self._lock:
             self._views[key] = (columns, view)
         return view
 
-    def frame(self, view: dict[str, Any], holder: str | None, states: Sequence[str]) -> str:
-        """`view` as JSON, encoded once however many streams with the same holder and states send it."""
-        key = (holder, tuple(states))
+    def frame(self, view: dict[str, Any], assignee: str | None, states: Sequence[str]) -> str:
+        """`view` as JSON, encoded once however many streams with the same assignee and states send it."""
+        key = (assignee, tuple(states))
         with self._lock:
             held = self._frames.get(key)
         if held is not None and held[0] == view:
@@ -79,11 +79,11 @@ class ColumnViews:
             return self._columns
 
 
-def column_view(columns: list[dict[str, Any]], holder: str | None, states: Sequence[str]) -> dict[str, Any]:
-    """The columns of `states` (all when none), each with the tasks `holder` holds (every task when None)."""
+def column_view(columns: list[dict[str, Any]], assignee: str | None, states: Sequence[str]) -> dict[str, Any]:
+    """The columns of `states` (all when none), each with the tasks `assignee` holds (every task when None)."""
     return {
         "columns": [
-            {**column, "tasks": [t for t in column["tasks"] if holder is None or t["holder"] == holder]}
+            {**column, "tasks": [t for t in column["tasks"] if assignee is None or t["assignee"] == assignee]}
             for column in columns
             if not states or column["state"] in states
         ]
@@ -92,17 +92,17 @@ def column_view(columns: list[dict[str, Any]], holder: str | None, states: Seque
 
 class Interest:
     """The changes that alter a stream's view: those to a task it shows, to one a shown task waits on, or to one that
-    its `holder` and `states` would show after the change."""
+    its `assignee` and `states` would show after the change."""
 
-    def __init__(self, view: dict[str, Any], holder: str | None, states: Sequence[str]) -> None:
+    def __init__(self, view: dict[str, Any], assignee: str | None, states: Sequence[str]) -> None:
         tasks = [task for column in view["columns"] for task in column["tasks"]]
         self._ids = {t["id"] for t in tasks} | {dependency for t in tasks for dependency in t["dependencies"]}
         self._pulled = any(t["prs"] for t in tasks)
-        self._assignee = holder
+        self._assignee = assignee
         self._states = states
 
     def _shows(self, agent: dict[str, Any]) -> bool:
-        return (self._assignee is None or agent.get("holder", "") == self._assignee) and (
+        return (self._assignee is None or agent.get("assignee", "") == self._assignee) and (
             not self._states or agent["state"] in self._states
         )
 

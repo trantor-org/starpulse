@@ -10,7 +10,7 @@
     starpulse task trace PROJ-45 --flow in-progress
     starpulse task create "Rotate the secret" --priority high --label ops --ac "It rotates"
     starpulse task edit PROJ-45 --title "Rotate the signing secret" --label ops --label security
-    starpulse task assign PROJ-45 @agent-standard-high
+    starpulse task profile PROJ-45 @agent-standard-high
     starpulse task archive PROJ-45 --reason "superseded"
     starpulse task verdict PROJ-45 live pass --evidence "up=1"
     starpulse task miss PROJ-45 live --title "Repair live" --evidence "up=0"
@@ -51,10 +51,10 @@
     starpulse help --agent
 
 Every verb writes one JSON document to stdout, an error as `{"error": "...", "code": "..."}`, and nothing to stderr.
-Every task write (`move`, `create`, `edit`, `assign`, `archive`, `checkpoint-ac`) is made as the actor `agent`, naming its
+Every task write (`move`, `create`, `edit`, `profile`, `archive`, `checkpoint-ac`) is made as the actor `agent`, naming its
 session and harness when `--session` and `--harness`, or `STARPULSE_SESSION` and `STARPULSE_HARNESS`, give them: the change's
 lane entry records both, a create stamps `created_by: <harness>:<session>`, a claim (a move to `in_progress`) records the
-session as the task's holder, and the board writer may answer with `advice`. A move the board machine declares for the operator alone, or that the
+session as the task's assignee, and the board writer may answer with `advice`. A move the board machine declares for the operator alone, or that the
 board's guard refuses, is `{"ok": false, "reason": "...", "skill": "..."}`, the verdict, and exit 1.
 `task claim` moves a task to In Progress holding the session (an opaque string) and is refused while another session
 holds it or the session holds another In Progress task; `task park` takes exactly one of `--until-task`, `--until` and
@@ -72,12 +72,12 @@ verbs, generated from the parser below, so a verb added here is listed with its 
 line, `{"event": "task|move|pulls|claim|dags", "data": {...}}`, per change that `--machine` and `--task` leave in, until
 it is interrupted (exit 0) or the server ends the stream (an error line, exit 3). `runs start` calls the server's Run
 now path, so its LAN and `run_safe` guards apply to the agent as they do to the page.
-`task create`, `task edit` and `task assign` write a task through the server's create and edit routes, as the Kanban page
+`task create`, `task edit` and `task profile` write a task through the server's create and edit routes, as the Kanban page
 does. `task edit` sends every field given in one write, which the server refuses whole (exit 1) when any field it
 changes is no longer the value the edit was based on: that value is read from the task at the call, or is `--base`, the
 JSON object of values the caller read earlier. A `--label`, `--dependency`, `--reference`, `--documentation` or
-`--modified-file` given at all replaces that whole list, and a blank value clears a field. `task assign` is an edit of
-the assignee alone, reported as the `profile` field. A board that cannot create, read or edit tasks answers exit 3.
+`--modified-file` given at all replaces that whole list, and a blank value clears a field. `task profile` (alias `task assign`) is an edit of
+the profile alone, reported as the `profile` field. A board that cannot create, read or edit tasks answers exit 3.
 `task verdict` comments the verdict (`pass`, or `miss` with `--fix` naming the task filed for it) of a check the task's
 `## Post-merge Checks` block declares, `--evidence` with it; a verdict is final, so a second, an undeclared check or a
 malformed block is refused (exit 1). `task miss` files the fix task (`--title` and the `task create` detail flags) and
@@ -571,8 +571,9 @@ def _leaves(
     """Each verb the parser dispatches to, as its words (`task show`) and its own parser."""
     for action in parser._actions:  # argparse offers no public way to list a parser's subcommands
         if isinstance(action, argparse._SubParsersAction):
-            for name, sub in action.choices.items():
-                yield from _leaves(sub, (*path, name))
+            named = {id(sub): name for name, sub in reversed(action.choices.items())}  # an alias shares its verb's parser
+            for sub in dict.fromkeys(action.choices.values()):
+                yield from _leaves(sub, (*path, named[id(sub)]))
             return
     yield " ".join(path), parser
 
@@ -640,8 +641,9 @@ def _parser() -> argparse.ArgumentParser:
         exit_codes: Sequence[int],
         *,
         reads_server: bool = True,
+        aliases: Sequence[str] = (),
     ) -> argparse.ArgumentParser:
-        sub = group.add_parser(name, description=summary, help=summary, allow_abbrev=False)
+        sub = group.add_parser(name, description=summary, help=summary, allow_abbrev=False, aliases=aliases)
         sub.set_defaults(run=run, outputs=list(outputs), exit_codes=list(exit_codes))
         if reads_server:
             sub.add_argument(
@@ -669,8 +671,10 @@ def _parser() -> argparse.ArgumentParser:
     board.add_argument("--milestone", help="only tasks in this milestone")
     board.add_argument("--type", help="only tasks of this type (`spike`)")
     board.add_argument("--label", help="only tasks with this label")
-    board.add_argument("--assignee", help="only tasks held by this assignee (`@agent-standard-high`)")
-    board.add_argument("--holder", help="only tasks this session last claimed, as its harness names it")
+    board.add_argument("--profile", help="only tasks routed to this agent profile (`@agent-standard-high`)")
+    board.add_argument(
+        "--assignee", "--holder", dest="assignee", help="only tasks this session last claimed, as its harness names it"
+    )
     search = leaf(
         verbs,
         "search",
@@ -844,15 +848,16 @@ def _parser() -> argparse.ArgumentParser:
     )
     assign = leaf(
         task_verbs,
-        "assign",
-        "set the task's assignee, refused when the board's writer refuses it",
+        "profile",
+        "set the task's agent profile, refused when the board's writer refuses it",
         agent_tasks.task_assign,
-        ("task", "assignee", "changed"),
+        ("task", "profile", "changed"),
         (0, 1, 2, 3, 4),
+        aliases=("assign",),
     )
     agent_tasks.writer_flags(assign)
     assign.add_argument("task", help="the task's key (`PROJ-45`)")
-    assign.add_argument("assignee", help="who or which agent profile holds it (`@agent-standard-high`); blank clears")
+    assign.add_argument("profile", help="the agent profile it is routed to (`@agent-standard-high`); blank clears")
     archive = leaf(
         task_verbs,
         "archive",

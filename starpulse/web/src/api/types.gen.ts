@@ -134,7 +134,7 @@ export interface Completed {
   task: string;
 }
 export interface Claimed {
-  holder: string;
+  assignee: string;
   task: string;
   to: string;
 }
@@ -531,6 +531,10 @@ export interface TaskDelta {
 export interface RawTask {
   active?: number | null;
   /**
+   * The session that last claimed a Board task; empty when none has, absent off the Board.
+   */
+  assignee?: string | null;
+  /**
    * When a Board task was created, in epoch seconds; null or absent when unknown.
    */
   created?: number | null;
@@ -550,10 +554,6 @@ export interface RawTask {
    * When a Board task entered its lane, epoch seconds; absent when the server holds no time for it.
    */
   entered?: number | null;
-  /**
-   * The session that last claimed a Board task; empty when none has, absent off the Board.
-   */
-  holder?: string | null;
   id: string;
   labels?: string[] | null;
   /**
@@ -579,6 +579,10 @@ export interface RawTask {
    * The Board lane the task left on its last move; absent before it has moved.
    */
   previous?: string | null;
+  /**
+   * The agent profile a Board task is routed to; empty when none, absent off the Board.
+   */
+  profile?: string | null;
   /**
    * A task's pull requests: the PR URLs among its references.
    */
@@ -1673,8 +1677,8 @@ export interface CompleteRequest {
   task: string;
 }
 /**
- * `POST /api/claim`: move `task` to In Progress and record `session` as its holder, an opaque string; the same
- * holder claiming again changes nothing, and a holder already on another open claim is refused.
+ * `POST /api/claim`: move `task` to In Progress and record `session` as its assignee, an opaque string; the same
+ * assignee claiming again changes nothing, and an assignee already on another open claim is refused.
  */
 export interface ClaimRequest {
   actor?: string | null;

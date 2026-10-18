@@ -562,8 +562,8 @@ def test_the_board_lists_each_column_with_its_tasks_dependencies_prs_and_moves(
         "id": "PROJ-1",
         "title": "Title of PROJ-1",
         "lane": "to_do",
-        "assignee": "@agent-a",
-        "holder": "",
+        "profile": "@agent-a",
+        "assignee": "",
         "milestone": "m-1",
         "type": "",
         "labels": ["cli"],
@@ -596,10 +596,14 @@ def test_the_board_lists_each_column_with_its_tasks_dependencies_prs_and_moves(
         (["--state", "ready"], ["PROJ-2", "PROJ-5"]),
         (["--milestone", "m-2"], ["PROJ-2", "PROJ-4"]),
         (["--label", "cli"], ["PROJ-1", "PROJ-2"]),
-        (["--assignee", "@agent-a"], ["PROJ-1", "PROJ-4"]),
-        (["--milestone", "m-2", "--label", "api", "--assignee", "@agent-a"], ["PROJ-4"]),
-        (["--holder", "session-1"], ["PROJ-4"]),
+        (["--profile", "@agent-a"], ["PROJ-1", "PROJ-4"]),
+        (["--assignee", "@agent-a"], ["PROJ-1", "PROJ-4"]),  # the legacy `--assignee` named the profile
+        (["--milestone", "m-2", "--label", "api", "--profile", "@agent-a"], ["PROJ-4"]),
+        (["--assignee", "session-1"], ["PROJ-4"]),
+        (["--assignee", "session-2"], []),
+        (["--holder", "session-1"], ["PROJ-4"]),  # the legacy alias of `--assignee`
         (["--holder", "session-2"], []),
+        (["--profile", "@agent-a", "--assignee", "session-1"], ["PROJ-4"]),
         (["--milestone", "m-9"], []),
         (["--type", "spike"], ["PROJ-2"]),
         (["--type", "story", "--state", "in_progress"], ["PROJ-4"]),
@@ -618,14 +622,14 @@ def test_the_board_keeps_only_the_tasks_every_filter_matches(
 def test_each_task_names_the_session_holding_it(base: str, capsys: pytest.CaptureFixture[str]) -> None:
     _, doc = _run(capsys, ["board", "--server", base])
 
-    held = {t["id"]: t["holder"] for c in doc["columns"] for t in c["tasks"]}
+    held = {t["id"]: t["assignee"] for c in doc["columns"] for t in c["tasks"]}
     assert held == {"PROJ-1": "", "PROJ-2": "", "PROJ-4": "session-1", "PROJ-5": ""}
 
 
 def test_each_task_prints_its_criteria_with_their_checked_state_and_its_pause_reason(
     base: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    code, doc = _run(capsys, ["board", "--holder", "session-1", "--server", base])
+    code, doc = _run(capsys, ["board", "--assignee", "session-1", "--server", base])
 
     assert code == 0
     [task] = [t for c in doc["columns"] for t in c["tasks"]]
@@ -716,8 +720,8 @@ def test_task_show_reports_a_settled_task_by_where_it_settled(base: str, capsys:
         "id": "PROJ-3",
         "title": "",
         "lane": "completed",
+        "profile": "",
         "assignee": "",
-        "holder": "",
         "milestone": "",
         "type": "",
         "labels": [],
@@ -864,7 +868,7 @@ def test_task_move_on_a_board_with_no_writer_exits_3_and_says_so(bare: str, caps
 def test_task_create_writes_a_task_with_the_details_given_and_reports_its_id(
     tasked: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    argv = ["task", "create", "Rotate the secret", "--priority", "High", "--milestone", "m-3", "--assignee", "@agent-a"]
+    argv = ["task", "create", "Rotate the secret", "--priority", "High", "--milestone", "m-3", "--profile", "@agent-a"]
     argv += ["--description", "Rotate it.", "--label", "ops", "--label", "sec", "--dependency", "task-1"]
     argv += ["--ac", "It rotates", "--ac", "It logs", "--server", tasked]
 
@@ -880,6 +884,15 @@ def test_task_create_writes_a_task_with_the_details_given_and_reports_its_id(
     assert "- task-1" in written
     assert "Rotate it." in written
     assert "- [ ] #1 It rotates\n- [ ] #2 It logs" in written
+
+
+def test_task_create_still_reads_assignee_as_the_profile(
+    tasked: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["task", "create", "Rotate", "--assignee", "@agent-a", "--server", tasked])
+
+    assert (code, doc) == (0, {"task": "task-2"})
+    assert "- '@agent-a'" in _task_file(tmp_path, "task-2").read_text()
 
 
 def test_task_create_takes_the_status_type_references_and_definition_of_done_in_the_one_write(
@@ -987,16 +1000,25 @@ def test_task_edit_with_a_base_that_is_no_json_object_is_a_usage_error(
     assert "--base" in doc["error"]
 
 
-def test_task_assign_sets_the_assignee_and_nothing_else(
+def test_task_profile_sets_the_profile_and_nothing_else(
     tasked: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    code, doc = _run(capsys, ["task", "assign", "task-1", "@agent-fast-low", "--server", tasked])
+    code, doc = _run(capsys, ["task", "profile", "task-1", "@agent-fast-low", "--server", tasked])
 
-    assert (code, doc) == (0, {"task": "task-1", "assignee": "@agent-fast-low", "changed": ["profile"]})
+    assert (code, doc) == (0, {"task": "task-1", "profile": "@agent-fast-low", "changed": ["profile"]})
     written = _task_file(tmp_path).read_text()
     assert "- '@agent-fast-low'" in written
     assert "@agent-standard-high" not in written
     assert "title: Draw the board" in written
+
+
+def test_task_assign_is_the_legacy_alias_of_task_profile(
+    tasked: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["task", "assign", "task-1", "@agent-fast-low", "--server", tasked])
+
+    assert (code, doc) == (0, {"task": "task-1", "profile": "@agent-fast-low", "changed": ["profile"]})
+    assert "- '@agent-fast-low'" in _task_file(tmp_path).read_text()
 
 
 def test_task_edit_on_a_board_that_cannot_edit_exits_3_and_says_so(
@@ -1152,14 +1174,14 @@ def test_task_complete_of_a_task_that_is_not_done_is_refused_and_moves_nothing(
     assert not (tmp_path / ".starpulse" / "board" / "completed").exists()
 
 
-def test_task_claim_records_the_session_as_the_holder_and_names_it(
+def test_task_claim_records_the_session_as_the_assignee_and_names_it(
     lifecycled: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
     code, doc = _run(capsys, ["task", "claim", "task-1", "--server", lifecycled], {"STARPULSE_SESSION": "s-7"})
 
     assert (code, doc) == (
         0,
-        {"ok": True, "task": "task-1", "to": "in_progress", "holder": "s-7", "reason": "", "skill": ""},
+        {"ok": True, "task": "task-1", "to": "in_progress", "assignee": "s-7", "reason": "", "skill": ""},
     )
 
 
@@ -1279,7 +1301,7 @@ def test_the_manifest_lists_each_verbs_arguments_outputs_and_exit_codes(capsys: 
     }
     board = next(v for v in doc["verbs"] if v["verb"] == "board")
     flags = {flag for arg in board["arguments"] for flag in arg["flags"]}
-    assert {"--state", "--milestone", "--label", "--assignee", "--holder", "--server"} <= flags
+    assert {"--state", "--milestone", "--label", "--profile", "--assignee", "--holder", "--server"} <= flags
     assert board["exit_codes"] == [0, 2, 3]
     assert "columns" in board["outputs"]
     show = next(v for v in doc["verbs"] if v["verb"] == "task show")
@@ -1321,7 +1343,7 @@ def test_the_manifest_describes_every_verb_and_each_of_its_arguments(capsys: pyt
         "task trace",
         "task create",
         "task edit",
-        "task assign",
+        "task profile",
         "task archive",
         "task verdict",
         "task miss",
@@ -2064,11 +2086,11 @@ CASES = {
     ("task edit", 2): ["task", "edit", "task-1", "--server", "{tasked}"],
     ("task edit", 3): ["task", "edit", "task-1", "--title", "Draw the lanes", "--server", "{down}"],
     ("task edit", 4): ["task", "edit", "task-99", "--title", "Draw the lanes", "--server", "{tasked}"],
-    ("task assign", 0): ["task", "assign", "task-1", "@agent-fast-low", "--server", "{tasked}"],
-    ("task assign", 1): ["task", "assign", "task-1", "@agent-fast-low", "--server", "{readonly}"],
-    ("task assign", 2): ["task", "assign", "task-1"],
-    ("task assign", 3): ["task", "assign", "task-1", "@agent-fast-low", "--server", "{down}"],
-    ("task assign", 4): ["task", "assign", "task-99", "@agent-fast-low", "--server", "{tasked}"],
+    ("task profile", 0): ["task", "profile", "task-1", "@agent-fast-low", "--server", "{tasked}"],
+    ("task profile", 1): ["task", "profile", "task-1", "@agent-fast-low", "--server", "{readonly}"],
+    ("task profile", 2): ["task", "profile", "task-1"],
+    ("task profile", 3): ["task", "profile", "task-1", "@agent-fast-low", "--server", "{down}"],
+    ("task profile", 4): ["task", "profile", "task-99", "@agent-fast-low", "--server", "{tasked}"],
     ("task archive", 0): ["task", "archive", "task-1", "--reason", "superseded", "--server", "{tasked}"],
     ("task archive", 1): ["task", "archive", "task-1", "--server", "{readonly}"],
     ("task archive", 2): ["task", "archive"],
