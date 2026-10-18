@@ -101,6 +101,11 @@ def _drawn_pulls(pulls: dict[str, list[dict[str, Any]]]) -> dict[str, list[dict[
     }
 
 
+def full_snapshot(data: Any) -> Any:
+    """`data` as `?view=full` sends it: whole, but with each pull request drawn as the page is sent it."""
+    return {**data, "pulls": _drawn_pulls(data["pulls"])} if data.get("pulls") else data
+
+
 def slim_snapshot(data: Any) -> Any:
     """`data` as the page is sent it: each Board task without its description, criteria and moves (it reads them
     from `/api/task/<id>` on open, and the moves through the `move_sets` table), only the recent settled tasks, and
