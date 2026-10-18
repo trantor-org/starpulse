@@ -36,7 +36,10 @@ class RawTask(_Api):
     title: str
     state: str
     model: str
-    holder: str | None = Field(
+    profile: str | None = Field(
+        default=None, description="The agent profile a Board task is routed to; empty when none, absent off the Board."
+    )
+    assignee: str | None = Field(
         default=None,
         description="The session that last claimed a Board task; empty when none has, absent off the Board.",
     )

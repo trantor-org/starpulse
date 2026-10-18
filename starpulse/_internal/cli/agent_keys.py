@@ -110,8 +110,8 @@ TASK_KEYS = (
     "id",
     "title",
     "lane",
+    "profile",
     "assignee",
-    "holder",
     "milestone",
     "type",
     "labels",
@@ -128,7 +128,7 @@ TASK_KEYS = (
 MOVE_KEYS = ("ok", "task", "to", "reason", "skill", "advice")
 
 
-CLAIM_KEYS = ("ok", "task", "to", "holder", "reason", "skill")
+CLAIM_KEYS = ("ok", "task", "to", "assignee", "reason", "skill")
 
 
 LIFECYCLE_KEYS = ("ok", "task", "to", "reason", "skill")

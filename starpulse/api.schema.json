@@ -811,7 +811,7 @@
     },
     "ClaimRequest": {
       "additionalProperties": false,
-      "description": "`POST /api/claim`: move `task` to In Progress and record `session` as its holder, an opaque string; the same\nholder claiming again changes nothing, and a holder already on another open claim is refused.",
+      "description": "`POST /api/claim`: move `task` to In Progress and record `session` as its assignee, an opaque string; the same\nassignee claiming again changes nothing, and an assignee already on another open claim is refused.",
       "properties": {
         "actor": {
           "anyOf": [
@@ -859,7 +859,7 @@
     "Claimed": {
       "additionalProperties": false,
       "properties": {
-        "holder": {
+        "assignee": {
           "type": "string"
         },
         "task": {
@@ -872,7 +872,7 @@
       "required": [
         "task",
         "to",
-        "holder"
+        "assignee"
       ],
       "title": "Claimed",
       "type": "object"
@@ -5247,6 +5247,18 @@
           ],
           "default": null
         },
+        "assignee": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The session that last claimed a Board task; empty when none has, absent off the Board."
+        },
         "created": {
           "anyOf": [
             {
@@ -5312,18 +5324,6 @@
           ],
           "default": null,
           "description": "When a Board task entered its lane, epoch seconds; absent when the server holds no time for it."
-        },
-        "holder": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "The session that last claimed a Board task; empty when none has, absent off the Board."
         },
         "id": {
           "type": "string"
@@ -5407,6 +5407,18 @@
           ],
           "default": null,
           "description": "The Board lane the task left on its last move; absent before it has moved."
+        },
+        "profile": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The agent profile a Board task is routed to; empty when none, absent off the Board."
         },
         "prs": {
           "anyOf": [

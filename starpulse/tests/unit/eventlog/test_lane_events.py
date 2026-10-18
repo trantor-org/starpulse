@@ -108,3 +108,23 @@ def test_every_lane_entry_appended_from_now_on_without_an_actor_is_counted(tmp_p
     stop.set()
     assert unattributed.count() == 2
     assert "starpulse_board_lane_unattributed_total 2\n" in unattributed.exposition()
+
+
+def test_a_lane_entry_names_the_profile_under_profile_and_the_hub_still_keeps_a_legacy_assignee(tmp_path: Path) -> None:
+    task = BoardTask(id="T-1", team="demo", title="t", lane="ready", profile="@agent-standard-high", assignee="s-1")
+
+    fields = lane_events.entry(task, 2.0)
+
+    assert (fields["profile"], "assignee" in fields) == ("@agent-standard-high", False)
+    log = EventLog(f"sqlite:///{tmp_path / 'hub.sqlite'}")
+    legacy = {**GOOD, "assignee": "@agent-standard-high"}  # an instance that has not flipped yet
+    body = {
+        "opt_in": True,
+        "instance": "i-1",
+        "events": [{"event_id": "T-1@in_progress@5.0", "stream": lane_events.STREAM, "fields": legacy}],
+    }
+    status, answer = ForwardIngest({"ana": "tok"}, log)("Bearer tok", json.dumps(body).encode())
+
+    assert (status, answer) == (200, {"accepted": 1, "rejected": 0})
+    [entry] = Tail(log, lane_events.STREAM).poll()
+    assert entry.fields["assignee"] == "@agent-standard-high"

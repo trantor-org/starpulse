@@ -83,18 +83,18 @@ def _review(feed: BoardFeed, built: Board, **body: object) -> tuple[int, dict[st
     return review_task(LAN, json.dumps(body).encode(), feed, built.read, built.edit)
 
 
-def test_a_claim_moves_the_task_in_progress_and_records_the_session_as_its_holder(
+def test_a_claim_moves_the_task_in_progress_and_records_the_session_as_its_assignee(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     feed, built = _lifecycle(tmp_path, monkeypatch, {"task-1": ("Ready", {})})
 
     assert _claim(feed, built, task="task-1", session="s-1") == (
         200,
-        {"task": "task-1", "to": "in_progress", "holder": "s-1"},
+        {"task": "task-1", "to": "in_progress", "assignee": "s-1"},
     )
 
     _scan(tmp_path, feed)
-    assert [(agent["state"], agent["holder"]) for agent in feed.open_tasks()] == [("in_progress", "s-1")]
+    assert [(agent["state"], agent["assignee"]) for agent in feed.open_tasks()] == [("in_progress", "s-1")]
 
 
 def test_a_claim_names_a_session_and_a_task(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -129,7 +129,7 @@ def test_a_session_that_claims_the_task_it_holds_again_is_told_so_and_writes_not
 
     assert _claim(feed, built, task="task-1", session="s-1") == (
         200,
-        {"task": "task-1", "to": "in_progress", "holder": "s-1"},
+        {"task": "task-1", "to": "in_progress", "assignee": "s-1"},
     )
     assert _text(tmp_path, "task-1") == before
 

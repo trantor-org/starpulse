@@ -157,7 +157,7 @@ def _lane_event(fields: dict[str, Any]) -> str | None:
         if not (isinstance(fields.get(key), str) and fields[key]):
             return f"{key} must be non-empty text"
     if any(key in fields and not isinstance(fields[key], str) for key in ("team", "milestone", *PERSON)):
-        return "team, milestone and assignee must be text"
+        return "team, milestone, profile and assignee must be text"
     if not _epoch(fields.get("time")):
         return "time must be epoch seconds"
     labels = fields.get("labels", [])

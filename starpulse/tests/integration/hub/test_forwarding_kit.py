@@ -166,8 +166,8 @@ def test_the_bytes_a_non_opted_instance_sends_hold_no_name_and_no_assignee(kit: 
     assert kit.wire.bodies
     for body in kit.wire.bodies:
         assert ASSIGNEE.encode() not in body
-        assert all("assignee" not in e["fields"] for e in json.loads(body)["events"])
-    assert all("assignee" not in e.fields for e in kit.at_the_hub())
+        assert all("profile" not in e["fields"] for e in json.loads(body)["events"])
+    assert all("profile" not in e.fields for e in kit.at_the_hub())
 
 
 def test_an_opted_in_instance_sends_the_names_and_the_hub_keeps_them(kit: Kit) -> None:
@@ -177,7 +177,7 @@ def test_an_opted_in_instance_sends_the_names_and_the_hub_keeps_them(kit: Kit) -
     kit.drain(kit.forwarder())
 
     [stored] = kit.at_the_hub()
-    assert stored.fields["assignee"] == ASSIGNEE
+    assert stored.fields["profile"] == ASSIGNEE
 
 
 def test_an_opt_out_applies_while_the_hub_is_unreachable(kit: Kit) -> None:
@@ -194,7 +194,7 @@ def test_an_opt_out_applies_while_the_hub_is_unreachable(kit: Kit) -> None:
     kit.wire.down = False
     kit.drain(forwarder)
     assert all(ASSIGNEE.encode() not in body for body in kit.wire.bodies)
-    assert all("assignee" not in e.fields for e in kit.at_the_hub())
+    assert all("profile" not in e.fields for e in kit.at_the_hub())
 
 
 def test_an_opt_out_made_in_the_panel_stops_the_names_in_the_next_batch_with_the_hub_down(
@@ -216,20 +216,20 @@ def test_an_opt_out_made_in_the_panel_stops_the_names_in_the_next_batch_with_the
 
     with serve(tmp_path / "ic", forwarding=forwarder) as ic:
         listed = panel(ic, True)
-        assert listed["names"] is True and listed["next"][0]["fields"]["assignee"] == ASSIGNEE
+        assert listed["names"] is True and listed["next"][0]["fields"]["profile"] == ASSIGNEE
         kit.wire.down = True
         assert forwarder.step() is None  # named, and refused by the network
 
         reached = kit.wire.attempts
         listed = panel(ic, False)
         assert kit.wire.attempts == reached  # the toggle needed no hub
-        assert listed["names"] is False and "assignee" not in listed["next"][0]["fields"]
+        assert listed["names"] is False and "profile" not in listed["next"][0]["fields"]
         assert "unreachable" in listed["problem"]
 
     kit.wire.down = False
     kit.drain(forwarder)
     assert all(ASSIGNEE.encode() not in body for body in kit.wire.bodies)
-    assert all("assignee" not in e.fields for e in kit.at_the_hub())
+    assert all("profile" not in e.fields for e in kit.at_the_hub())
 
 
 def test_a_wrong_or_revoked_token_answers_401_and_writes_nothing(kit: Kit) -> None:
@@ -256,4 +256,4 @@ def test_a_hub_for_aggregates_only_refuses_an_opt_in_and_takes_the_batch_without
     assert forwarder.step() == 1
     assert kit.wire.statuses == [403, 200]
     [stored] = kit.at_the_hub()
-    assert "assignee" not in stored.fields
+    assert "profile" not in stored.fields

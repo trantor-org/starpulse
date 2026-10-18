@@ -3,9 +3,9 @@
 `BoardFeed` appends an entry beside each lane change it records in the history (`HistoryStore.record_lane`), under
 the same `<task>@<lane>@<entered>` event id, so the log, the history and a hub that folds the entry agree on one id.
 An entry carries `task`, `lane` (the Board machine state id) and `time` (epoch seconds when the task entered the lane),
-the task's facets `team`, `milestone` and `labels` (absent when empty), `assignee` when the task has one and `actor`
+the task's facets `team`, `milestone` and `labels` (absent when empty), `profile` when the task has one and `actor`
 (`operator`, `agent`, `anonymous` or `<instance>/<workflow>`) when the move was a write the board's server judged,
-with the `session` and `harness` that write named. It never carries a title, a description or a holder. `assignee` names a person, so it leaves the instance
+with the `session` and `harness` that write named. It never carries a title, a description or a holder. `profile` names a person, so it leaves the instance
 only while it is opted in to naming (`adapters.runs.forwarded.PERSON`).
 """
 
@@ -23,7 +23,8 @@ STREAM = "board:lanes"
 #: The cursor name under which a store records that its lane history has been put in the log.
 REPLAYED = "board:lanes:replayed"
 #: The fields a forwarded lane entry may carry.
-FIELDS = ("task", "lane", "time", "team", "milestone", "labels", "assignee", "actor")
+#: `assignee` is the legacy name of `profile`, still forwarded by an instance that has not flipped it.
+FIELDS = ("task", "lane", "time", "team", "milestone", "labels", "profile", "assignee", "actor")
 #: The actor of a move the replay of the Board placed with no note naming its writer: written while `serve` was down.
 REPLAY_ACTOR = "starpulse/replay"
 #: The actor of a lane the reconcile recorded, which no write's note names.
@@ -33,7 +34,7 @@ UNATTRIBUTED_HELP = "Lane entries appended to board:lanes since start that name 
 
 
 def entry(task: BoardTask, at: float, actor: str = "", session: str = "", harness: str = "") -> dict[str, Any]:
-    """The entry's fields for `task` entering its lane at epoch `at`; a facet, assignee, actor, session or harness it
+    """The entry's fields for `task` entering its lane at epoch `at`; a facet, profile, actor, session or harness it
     lacks is absent."""
     fields: dict[str, Any] = {"task": task.id, "lane": task.lane, "time": at, "team": task.team}
     if task.milestone:
@@ -41,7 +42,7 @@ def entry(task: BoardTask, at: float, actor: str = "", session: str = "", harnes
     if task.labels:
         fields["labels"] = list(task.labels)
     if task.profile:
-        fields["assignee"] = task.profile
+        fields["profile"] = task.profile
     for name, value in (("actor", actor), ("session", session), ("harness", harness)):
         if value:
             fields[name] = value

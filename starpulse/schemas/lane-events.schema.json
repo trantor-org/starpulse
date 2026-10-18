@@ -41,9 +41,15 @@
       "title": "Labels",
       "type": "array"
     },
+    "profile": {
+      "default": "",
+      "description": "Which agent profile or model the task was routed to; empty when unrouted, and a person's name.",
+      "title": "Profile",
+      "type": "string"
+    },
     "assignee": {
       "default": "",
-      "description": "Who or which agent model held the task; empty when unassigned, and a person's name.",
+      "description": "The legacy name of `profile`, read on an entry an older instance wrote or forwarded.",
       "title": "Assignee",
       "type": "string"
     },

@@ -29,7 +29,7 @@ def test_a_stream_never_builds_the_snapshot_on_its_own_thread(tmp_path: Path, mo
     feed = BoardFeed(machines=MACHINES)
     feed.put(task("PROJ-1", "In Progress", assignee="session-1"))
     with _serve(tmp_path, feed) as server:
-        with urllib.request.urlopen(_url(server, "/api/held?holder=session-1"), timeout=5) as resp:
+        with urllib.request.urlopen(_url(server, "/api/held?assignee=session-1"), timeout=5) as resp:
             _next_event(resp)
             feed.put(task("PROJ-2", "In Progress", assignee="session-1"))
             _, document = _next_event(resp)

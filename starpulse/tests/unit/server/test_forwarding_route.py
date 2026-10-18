@@ -160,6 +160,6 @@ def test_the_contract_lists_the_lane_streams_fields_and_marks_the_assignee_and_a
 
     assert status == 200
     lanes = body["contract"]["board:lanes"]
-    assert [entry["field"] for entry in lanes] == ["task", "lane", "time", "team", "milestone", "labels", "assignee", "actor"]
-    assert [entry["field"] for entry in lanes if entry["person"]] == ["assignee", "actor"]
+    assert [entry["field"] for entry in lanes] == ["task", "lane", "time", "team", "milestone", "labels", "profile", "assignee", "actor"]
+    assert [entry["field"] for entry in lanes if entry["person"]] == ["profile", "assignee", "actor"]
     assert "title" not in {entry["field"] for entry in lanes}

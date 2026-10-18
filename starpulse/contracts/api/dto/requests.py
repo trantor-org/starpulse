@@ -79,8 +79,8 @@ class CompleteRequest(_Api):
 
 
 class ClaimRequest(_Writer):
-    """`POST /api/claim`: move `task` to In Progress and record `session` as its holder, an opaque string; the same
-    holder claiming again changes nothing, and a holder already on another open claim is refused."""
+    """`POST /api/claim`: move `task` to In Progress and record `session` as its assignee, an opaque string; the same
+    assignee claiming again changes nothing, and an assignee already on another open claim is refused."""
 
     task: str
 

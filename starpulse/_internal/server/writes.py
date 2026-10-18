@@ -21,9 +21,9 @@ POST /api/move     {task, to[, actor, session, harness]}: set a Board task's sta
                    `actor` (the page names `operator`; absent, `agent` with a session, else `anonymous`). An actor outside the event's declared writers
                    is refused 409 before the writer is asked; a board with no writer answers 501
 POST /api/claim    {task, session[, actor, harness]}: move a task to In Progress holding `session`, an opaque string; 409
-                   when the task is In Progress under another holder, or `session` already holds another In Progress
+                   when the task is In Progress under another assignee, or `session` already holds another In Progress
                    task, with the writer's or the machine's refusal as for a move; the same session claiming its own
-                   task again answers 200. {task, to, holder}
+                   task again answers 200. {task, to, assignee}
 POST /api/park     {task, untilTask | until | operator[, comment, session, actor, harness]}: park the In Progress
                    task for exactly one typed reason, in one write that picks the lane: `untilTask` (task ids that
                    must reach Done) and `until` (start criteria, each an {id, kind, ...} object) go to Waiting,
@@ -414,7 +414,7 @@ def _move(
 
 _IN_PROGRESS = "in_progress"
 _BAD_CLAIM = {
-    "error": 'a claim needs {"task": "TASK-N", "session": "<holder>"} and may name an "actor" and a "harness" '
+    "error": 'a claim needs {"task": "TASK-N", "session": "<assignee>"} and may name an "actor" and a "harness" '
     "(non-empty strings)"
 }
 
@@ -437,19 +437,19 @@ def claim_task(source: str, raw: bytes, feed: BoardFeed, writer: MoveWriter) -> 
         return 400, _BAD_CLAIM
     if (agent := _held(feed, task)) is None:
         return _not_held(feed, task)
-    held = {"task": task, "to": _IN_PROGRESS, "holder": who.session}
+    held = {"task": task, "to": _IN_PROGRESS, "assignee": who.session}
     if agent["state"] == _IN_PROGRESS:
-        if agent.get("holder") == who.session:
+        if agent.get("assignee") == who.session:
             return 200, held
-        return 409, {"error": f"{task} is already In Progress, held by {agent.get('holder') or 'no session'}"}
-    others = [a["id"] for a in feed.open_tasks() if a["state"] == _IN_PROGRESS and a.get("holder") == who.session]
+        return 409, {"error": f"{task} is already In Progress, held by {agent.get('assignee') or 'no session'}"}
+    others = [a["id"] for a in feed.open_tasks() if a["state"] == _IN_PROGRESS and a.get("assignee") == who.session]
     if others:
         return 409, {
             "error": f"this session already holds {others[0]} In Progress: park it, defer it or finish it before "
             f"claiming {task}"
         }
     status, body = _move(feed, agent, task, _IN_PROGRESS, who, writer)
-    return (200, {**body, "holder": who.session}) if status == 200 else (status, body)
+    return (200, {**body, "assignee": who.session}) if status == 200 else (status, body)
 
 
 class _Refusal(Exception):

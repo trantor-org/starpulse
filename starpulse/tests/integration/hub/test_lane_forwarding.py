@@ -116,15 +116,15 @@ def test_a_lane_entry_leaves_without_assignee_until_opt_in_and_never_carries_a_t
     assert sent["stream"] == lane_events.STREAM
     assert sent["fields"] == {"task": "T-1", "lane": "in_progress", "time": T0, "team": "demo"}
     [stored] = Tail(site.hub_log, lane_events.STREAM).poll()
-    assert "assignee" not in stored.fields
+    assert "profile" not in stored.fields
 
     site.opt_in.set(True)
     site.move("T-1", "review", at=H, assignee="bob-the-assignee")
     site.drain(forwarder)
 
     named = site.bodies[-1]["events"][0]["fields"]
-    assert named["assignee"] == "bob-the-assignee"
-    assert all("assignee" not in e["fields"] for body in site.bodies[:-1] for e in body["events"])
+    assert named["profile"] == "bob-the-assignee"
+    assert all("profile" not in e["fields"] for body in site.bodies[:-1] for e in body["events"])
     assert all("secret title" not in json.dumps(body) for body in site.bodies)
     assert all("secret title" not in json.dumps(e.fields) for e in Tail(site.hub_log, lane_events.STREAM).poll())
 

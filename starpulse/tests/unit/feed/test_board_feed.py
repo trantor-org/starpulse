@@ -11,7 +11,7 @@ from sqlalchemy import text
 
 from starpulse._internal.config.config import CommitKeys
 from starpulse._internal.eventlog.history import HistoryStore
-from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.feed.board_feed import BoardFeed, current_keys
 from starpulse._internal.feed.machine_tasks import MachineTasks
 from starpulse.contracts.adapters import BoardTask, MachineEvent, TaskKeys
 from starpulse._internal.server.encoding import event
@@ -401,7 +401,8 @@ def test_a_board_task_an_adapter_wrote_is_an_agent_in_its_lane() -> None:
             "title": "Add thing",
             "state": "in_progress",
             "model": "claude-opus",
-            "holder": "",
+            "profile": "claude-opus",
+            "assignee": "",
             "labels": ["spike"],
             "milestone": "m-3",
             "type": "",
@@ -1243,3 +1244,17 @@ def test_a_task_card_carries_the_dagu_runs_its_dag_run_ids_name() -> None:
     assert [kind for kind, _ in (deltas.get_nowait(), deltas.get_nowait())] == ["dags", "task"]
     feed.put(BoardTask(id="TASK-7", team="demo", title="t", lane="review"))  # a reread keeps them
     assert len(_agents(feed)[0]["runs"]) == 1
+
+
+def test_an_agent_saved_before_the_flip_is_read_with_its_holder_as_the_assignee_and_its_model_as_the_profile() -> None:
+    saved = {"id": "PROJ-1", "state": "in_progress", "model": "@agent-standard-high", "holder": "s-1"}
+
+    assert current_keys(saved) == {
+        "id": "PROJ-1",
+        "state": "in_progress",
+        "model": "@agent-standard-high",
+        "profile": "@agent-standard-high",
+        "assignee": "s-1",
+    }
+    flipped = {"id": "PROJ-1", "state": "done", "profile": "", "assignee": "s-2"}
+    assert current_keys(flipped) is flipped

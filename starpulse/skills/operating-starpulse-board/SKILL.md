@@ -12,7 +12,7 @@ hand edit skips it.
 
 ## Pick what to work on
 
-1. Run `starpulse board`. Each column is `{state, name, tasks}`; narrow it with `--state`, `--assignee`, `--label` or
+1. Run `starpulse board`. Each column is `{state, name, tasks}`; narrow it with `--state`, `--profile`, `--assignee`, `--label` or
    `--milestone`. Take the state ids from this output rather than assuming them.
 2. Choose a task in the column that holds ready work whose `waiting_on` is empty. A non-empty `waiting_on` lists the
    dependencies that have not completed.
