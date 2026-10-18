@@ -1,6 +1,7 @@
 // The Kanban view's moves: what a drag offers, the card that lands at once while the board writer is asked, and the refusal that
 // returns it. The writer decides; the snapshot's verdicts only forecast it, so a late refusal still has to put the card back.
 import { apiFetch, PAGE_ACTOR } from "../../api/apiFetch";
+import type { Move } from "../../api";
 import type { KanbanTask } from "./kanbanModel";
 
 /** The writer's answer to a move: done, or refused with its reason and the skill that satisfies it (empty when none). */
@@ -28,10 +29,17 @@ export interface MoveState {
 /** What dropping on a column does: the card's own column, an allowed move, one a declared guard refuses, or none the machine offers. */
 export type Target = { kind: "here" | "ok" | "no" } | { kind: "guard"; reason: string; skill: string };
 
+/** The verdict as the page's operator meets it: the snapshot's own, or a refusal naming who writes the move when the board machine declares writers and the operator is none of them. */
+export const asOperator = (verdict: Move): Move => {
+  const writers = verdict.writers ?? [];
+  if (!writers.length || writers.includes(PAGE_ACTOR)) return verdict;
+  return { ...verdict, allowed: false, reason: `only the ${writers.join(" or ")} may make this move, not the ${PAGE_ACTOR}` };
+};
+
 export const targets = (task: KanbanTask, columns: string[]): Record<string, Target> =>
   Object.fromEntries(
     columns.map((column): [string, Target] => {
-      const verdict = task.moves[column];
+      const verdict = task.moves[column] && asOperator(task.moves[column]);
       if (column === task.lane) return [column, { kind: "here" }];
       if (!verdict) return [column, { kind: "no" }];
       return [column, verdict.allowed ? { kind: "ok" } : { kind: "guard", reason: verdict.reason ?? "", skill: verdict.skill ?? "" }];
@@ -59,7 +67,7 @@ export class MoveStore {
   async drop(task: KanbanTask, to: string): Promise<void> {
     const { id, lane: from } = task;
     if (to === from || this.state.pending[id]) return;
-    const verdict = task.moves[to];
+    const verdict = task.moves[to] && asOperator(task.moves[to]);
     if (!verdict || !verdict.allowed) {
       const refusal = { from, to, reason: verdict?.reason ?? `the board machine has no move from ${from} to ${to}`, skill: verdict?.skill ?? "" };
       this.set({ refused: { ...this.state.refused, [id]: refusal } });

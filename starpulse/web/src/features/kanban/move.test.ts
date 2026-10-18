@@ -197,3 +197,26 @@ describe("a reason's code spans", () => {
     expect(codeParts("an `open")).toEqual([{ code: false, text: "an `open" }]);
   });
 });
+
+describe("a move the board machine leaves to the agent alone", () => {
+  const AGENT_ONLY = { ...OK, writers: ["agent"] };
+  const t = task("PROJ-1", "needs_attention", { review: AGENT_ONLY, ready: { ...OK, writers: ["operator"] } });
+
+  it("is no drop for the operator, with the writers it names, while a move the operator writes stays allowed", () => {
+    const columns = ["needs_attention", "review", "ready"];
+    expect(targets(t, columns)).toEqual({
+      needs_attention: { kind: "here" },
+      review: { kind: "guard", reason: "only the agent may make this move, not the operator", skill: "" },
+      ready: { kind: "ok" },
+    });
+  });
+
+  it("is refused on the card with no request", async () => {
+    const { post } = writer();
+    const store = new MoveStore(post, () => 900);
+    await store.drop(t, "review");
+
+    expect(post).not.toHaveBeenCalled();
+    expect(store.get().refused["PROJ-1"].reason).toBe("only the agent may make this move, not the operator");
+  });
+});
