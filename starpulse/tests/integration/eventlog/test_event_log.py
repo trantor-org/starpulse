@@ -1,37 +1,47 @@
 """The event log across processes, on SQLite and on Postgres: a second process's append reaches a running tail."""
 
+import multiprocessing
 import subprocess
 import sys
 import threading
 import time
+from collections.abc import Iterator
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
+import pytest
 from sqlalchemy import select, update
 
 from starpulse._internal.eventlog.event_log import Entry, EventLog, Tail, prune_forever
 from starpulse._internal.eventlog.tables import events, gaps
 
-_APPEND = (
-    "import sys; from starpulse.event_log import EventLog; "
-    "print(EventLog(sys.argv[1]).append('machine:events', {'event': sys.argv[2]}))"
-)
+
+def _append(url: str, event: str) -> int | None:
+    return EventLog(url).append("machine:events", {"event": event})
 
 
-def _append_in_another_process(url: str, event: str) -> int | None:
-    done = subprocess.run([sys.executable, "-c", _APPEND, url, event], capture_output=True, text=True, check=True)
-    return None if done.stdout.strip() == "None" else int(done.stdout)
+@pytest.fixture(scope="module")
+def processes() -> Iterator[ProcessPoolExecutor]:
+    """A new process for each append, forked from a server that imported the event log once: a new interpreter
+    importing it for each append was most of what these tests waited on."""
+    context = multiprocessing.get_context("forkserver")
+    context.set_forkserver_preload([__name__])
+    with ProcessPoolExecutor(6, mp_context=context, max_tasks_per_child=1) as pool:
+        yield pool
 
 
-def test_one_poll_reads_what_another_process_appended(database_url: str) -> None:
+def test_one_poll_reads_what_another_process_appended(database_url: str, processes: ProcessPoolExecutor) -> None:
     tail = Tail(EventLog(database_url), "machine:events")
     assert tail.poll() == []
 
-    cursor = _append_in_another_process(database_url, "FIRST")
+    cursor = processes.submit(_append, database_url, "FIRST").result()
 
     assert [(e.id, e.fields["event"]) for e in tail.poll()] == [(cursor, "FIRST")]
 
 
-def test_a_running_tail_hands_over_what_another_process_appends(database_url: str) -> None:
+def test_a_running_tail_hands_over_what_another_process_appends(
+    database_url: str, processes: ProcessPoolExecutor
+) -> None:
     seen: list[Entry] = []
     arrived = threading.Event()
 
@@ -45,7 +55,7 @@ def test_a_running_tail_hands_over_what_another_process_appends(database_url: st
     )
     reader.start()
     try:
-        _append_in_another_process(database_url, "LATER")
+        processes.submit(_append, database_url, "LATER").result()
         assert arrived.wait(timeout=5)
     finally:
         stop.set()
@@ -54,14 +64,12 @@ def test_a_running_tail_hands_over_what_another_process_appends(database_url: st
     assert [e.fields["event"] for e in seen] == ["LATER"]
 
 
-def test_appends_from_several_processes_are_all_read_once_in_cursor_order(database_url: str) -> None:
-    processes = [
-        subprocess.Popen([sys.executable, "-c", _APPEND, database_url, f"E{i}"], stdout=subprocess.PIPE, text=True)
-        for i in range(6)
-    ]
-    for process in processes:
-        process.communicate()
-        assert process.returncode == 0
+def test_appends_from_several_processes_are_all_read_once_in_cursor_order(
+    database_url: str, processes: ProcessPoolExecutor
+) -> None:
+    appends = [processes.submit(_append, database_url, f"E{i}") for i in range(6)]
+    for append in appends:
+        append.result()
 
     entries = Tail(EventLog(database_url), "machine:events").poll()
 

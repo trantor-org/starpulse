@@ -27,7 +27,7 @@ from starpulse._internal.eventlog.history import HistoryStore
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.mock_issuer import IMAGE, answers
 
-#: StarPulse's own tables, dropped before each Postgres test so it starts empty.
+#: StarPulse's own tables, emptied before each Postgres test so it starts empty.
 _TABLES = (
     "starpulse_machine_events",
     "starpulse_lane_changes",
@@ -90,7 +90,11 @@ def _container_skip_reason() -> str | None:
 
 def _start_postgres() -> Any:  # pragma: no mutate block — container lifecycle
     from testcontainers.community.postgres import PostgresContainer  # noqa: PLC0415
+    from testcontainers.core.config import testcontainers_config  # noqa: PLC0415
 
+    # The readiness probe (psql in the container) sleeps this long between tries; the 1 s default left the server
+    # up and idle for up to a second before the first test could use it.
+    testcontainers_config.sleep_time = 0.1
     # The data directory in memory and no sync: a throwaway server need not survive a crash, and initdb's syncs
     # took seconds on a disk the runners share.
     return join_slice(
@@ -174,25 +178,35 @@ if "db.testing" not in sys.modules:
             engine.dispose()
 
 
+def _empty(engine: Engine) -> None:
+    """Empty the StarPulse tables an earlier test left on the shared server. Truncating keeps their schema, which the
+    next store then only checks, where dropping them made it create every table and index again for each test."""
+    with engine.begin() as db:
+        left = db.execute(
+            text("SELECT tablename FROM pg_tables WHERE schemaname = current_schema() AND tablename = ANY(:names)"),
+            {"names": list(_TABLES)},
+        ).scalars()
+        if names := ", ".join(left):
+            db.execute(text(f"TRUNCATE {names} RESTART IDENTITY CASCADE"))
+
+
 @pytest.fixture(params=["sqlite", "postgres"])
 def store(request: pytest.FixtureRequest, tmp_path: Path) -> HistoryStore:
     """An empty history store: a SQLite file, or StarPulse's tables on a Postgres server."""
     if request.param == "sqlite":
         return HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", MACHINES)
     engine: Engine = request.getfixturevalue("pg_engine")
-    with engine.begin() as db:
-        db.execute(text(f"DROP TABLE IF EXISTS {', '.join(_TABLES)}"))
+    _empty(engine)
     return HistoryStore(engine.url.render_as_string(hide_password=False), MACHINES, engine=engine)
 
 
 @pytest.fixture(params=["sqlite", "postgres"])
 def database_url(request: pytest.FixtureRequest, tmp_path: Path) -> str:
-    """The URL of an empty database for the event log: a SQLite file, or a Postgres server with StarPulse's tables dropped."""
+    """The URL of an empty database for the event log: a SQLite file, or a Postgres server with StarPulse's tables emptied."""
     if request.param == "sqlite":
         return f"sqlite:///{tmp_path / 'events.sqlite'}"
     engine: Engine = request.getfixturevalue("pg_engine")
-    with engine.begin() as db:
-        db.execute(text(f"DROP TABLE IF EXISTS {', '.join(_TABLES)}"))
+    _empty(engine)
     return engine.url.render_as_string(hide_password=False)
 
 
