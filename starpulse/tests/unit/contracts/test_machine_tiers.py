@@ -5,7 +5,8 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from starpulse.contracts.api import SCHEMA, Machine
+from starpulse.contracts.api.dto.machine import Machine
+from starpulse.contracts.api.schema import SCHEMA
 
 STATES = [
     {"id": "new", "name": "New", "initial": True, "final": False},

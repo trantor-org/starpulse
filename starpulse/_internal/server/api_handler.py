@@ -144,7 +144,7 @@ from starpulse._internal.server.routes import (
     _WRITES,
     _is_rerun,
 )
-from starpulse.contracts.api import encode, event
+from starpulse._internal.server.encoding import encode, event
 from starpulse._internal.config.level import Level
 from starpulse._internal.config.config import SLOW_READ_S
 from starpulse._internal.config.harnesses import Harnesses

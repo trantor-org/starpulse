@@ -21,7 +21,7 @@ public_names() {
   uv run --no-project --python 3.14 python ci/public_names.py
 }
 
-# The page's API types are generated from starpulse/contracts/api.py: regenerate both outputs, fail when either differs.
+# The page's API types are generated from starpulse/contracts/api/: regenerate both outputs, fail when either differs.
 api_types() {
   uv sync --locked &&
     pnpm --dir starpulse/web install --frozen-lockfile &&

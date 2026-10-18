@@ -2,7 +2,7 @@
 
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import task
-from starpulse.contracts.api import encode, encode_snapshot, slim_snapshot
+from starpulse._internal.server.encoding import encode, encode_snapshot, slim_snapshot
 from starpulse.tests.machines import MACHINES
 
 

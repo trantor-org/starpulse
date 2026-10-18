@@ -15,7 +15,7 @@ from sqlalchemy import create_engine
 from starpulse._internal.autopilot.runtime import build
 from starpulse._internal.config.autopilot import Autopilot
 from starpulse._internal.kit.adapter_kit import serve, task, url
-from starpulse.contracts.api import BODIES, RESPONSES
+from starpulse.contracts.api.registry import BODIES, RESPONSES
 from starpulse._internal.config.level import Level, Orbit, Terminal
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.eventlog.event_log import EventLog
@@ -94,7 +94,7 @@ def _model(route: str) -> object | None:
 
 def _validate(server: ThreadingHTTPServer, route: str) -> None:
     model = _model(route)
-    assert model is not None, f"{route} has no response model in contracts.api.RESPONSES"
+    assert model is not None, f"{route} has no response model in contracts.api.registry.RESPONSES"
 
     with urllib.request.urlopen(url(server, route), timeout=5) as resp:
         body = json.loads(resp.read())

@@ -38,7 +38,7 @@ from starpulse._internal.machines.snapshot import declared, qualifier
 from starpulse._internal.machines.stays import LaneRow
 from starpulse._internal.machines.transitions import DEFAULT_STATUSES, DONE, WAITING, board_machine, lane_id
 from starpulse.contracts.adapters import BoardTask, TaskKeys
-from starpulse.contracts.api import Pull
+from starpulse.contracts.api.dto.cue import Pull
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     from starpulse._internal.eventlog.event_log import EventLog

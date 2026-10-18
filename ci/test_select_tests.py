@@ -302,7 +302,7 @@ def test_a_module_conftest_code_uses_outside_a_fixture_selects_every_test_the_co
     [
         (
             "starpulse/api.schema.json",
-            ["starpulse/contracts/api.py", "starpulse/contracts/__main__.py"],
+            ["starpulse/contracts/api/schema.py", "starpulse/contracts/api/__main__.py"],
         ),
         (
             "starpulse/schemas/board.schema.json",
