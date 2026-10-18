@@ -409,7 +409,8 @@ url = "systemd-tmpfiles-clean, apt-daily.timer, user/claude-sessions-snapshot"
   entry has `user/`) streams the D-Bus `PropertiesChanged` signals of the units, and a change to a timer or its service
   re-reads only that timer, a third of a second after the signals settle. The whole allowlist is listed every 10 minutes
   as a backstop, and every 30 s while a monitor is down or the last read failed. Idle, the adapter starts no `systemctl`
-  between those. The adapter reads no event-log entries. There is no Run now: starting a root unit needs a polkit grant,
+  between those. Each `gdbus` child ends with the stream that reads it (terminated when the stream closes, SIGTERM from the
+  kernel when its parent thread dies), so a restart leaves none behind. The adapter reads no event-log entries. There is no Run now: starting a root unit needs a polkit grant,
   so the adapter offers no start. `systemctl` and `gdbus` (`libglib2.0-bin`) must run on the host that serves StarPulse.
 
 ## Show pull requests and Copilot work

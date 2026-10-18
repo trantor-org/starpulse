@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import queue
 import re
 import threading
@@ -10,8 +11,8 @@ import time
 import pytest
 
 from starpulse._internal.config.adapter_types import BUILT_IN, module_name
-from starpulse._internal.runs import systemd
 from starpulse._internal.kit.adapter_kit import RunsAdapterKit
+from starpulse._internal.runs import systemd
 from starpulse.contracts.adapters import TaskKeys
 
 STARTED = "Thu 2026-10-08 20:00:01 UTC"
@@ -273,7 +274,10 @@ def started(sink: Sink) -> dict[str, str]:
             "proxmox-fan-metrics.service",
         ),
         ("/org/freedesktop/systemd1/unit/a_2etimer: org.freedesktop.DBus.Properties.PropertiesChanged ()", "a.timer"),
-        ("/org/freedesktop/systemd1: org.freedesktop.systemd1.Manager.JobNew (uint32 1, objectpath '/x', 'a.service')", None),
+        (
+            "/org/freedesktop/systemd1: org.freedesktop.systemd1.Manager.JobNew (uint32 1, objectpath '/x', 'a.service')",
+            None,
+        ),
         ("/org/freedesktop/systemd1/unit/a_2eservice: org.freedesktop.systemd1.Unit.Other ()", None),
         ("Monitoring signals on object /org/freedesktop/systemd1 owned by org.freedesktop.systemd1", None),
     ],
@@ -427,3 +431,19 @@ def test_a_dead_monitor_falls_back_to_the_short_listing_interval() -> None:
     assert wait_for(lambda: started(sink)["a"] == FIRED_ISO)
     stop.set()
     thread.join(timeout=2)
+
+
+def test_closing_the_monitor_terminates_its_gdbus_child(tmp_path, monkeypatch) -> None:
+    pidfile = tmp_path / "pid"
+    fake = tmp_path / "gdbus"
+    fake.write_text(f"#!/bin/sh\necho $$ > {pidfile}\necho line\nexec sleep 60\n")
+    fake.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{tmp_path}:/usr/bin:/bin")
+    lines = systemd.monitor(user=False)
+    assert next(lines) == "line\n"
+    pid = int(pidfile.read_text())
+
+    lines.close()
+
+    with pytest.raises(ProcessLookupError):
+        os.kill(pid, 0)

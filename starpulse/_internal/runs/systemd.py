@@ -11,17 +11,19 @@ polkit grant, so a timer has no Run now.
 
 from __future__ import annotations
 
+import ctypes
 import os
 import queue
 import re
+import signal
 import subprocess
 import threading
 import time
 from collections.abc import Callable, Iterable, Iterator
 from datetime import UTC, datetime
 
-from starpulse.contracts.adapters import RunsSink, RunStatus
 from starpulse._internal.eventlog.event_log import EventLog
+from starpulse.contracts.adapters import RunsSink, RunStatus
 
 #: `systemctl`'s arguments (`--user` first for the user manager) to its standard output; a failing call raises `OSError`.
 Systemctl = Callable[[list[str]], str]
@@ -153,7 +155,7 @@ def systemctl(args: list[str]) -> str:  # pragma: no mutate block — process bo
 
 def start(url: str) -> None:
     """No start capability: starting a system timer's service needs a polkit grant, so a timer has no Run now."""
-    return None
+    return
 
 
 #: Seconds between two listings of the allowlist while a monitor is down; a timer that fired shows at the next.
@@ -166,6 +168,7 @@ BACKSTOP_INTERVAL = 600.0
 DEBOUNCE = 0.3
 
 _MONITORED = "org.freedesktop.systemd1"
+_PR_SET_PDEATHSIG = 1
 _CHANGED = re.compile(r"^/org/freedesktop/systemd1/unit/(\S+): org\.freedesktop\.DBus\.Properties\.PropertiesChanged\b")
 _ESCAPED = re.compile(r"_([0-9a-f]{2})")
 
@@ -221,13 +224,25 @@ def serve(
             due = min(due, next_due())
 
 
+def _die_with_parent() -> None:  # pragma: no mutate block — process boundary
+    """Run in the child before exec: have the kernel SIGTERM it when the thread that spawned it ends."""
+    ctypes.CDLL(None, use_errno=True).prctl(_PR_SET_PDEATHSIG, signal.SIGTERM)
+
+
 def monitor(user: bool) -> Iterator[str]:  # pragma: no mutate block — process boundary
-    """The lines `gdbus monitor` prints for one manager's bus until it exits."""
+    """The lines `gdbus monitor` prints for one manager's bus until it exits; closing the generator ends the child."""
     bus = "--session" if user else "--system"
     with subprocess.Popen(
-        ["gdbus", "monitor", bus, "--dest", _MONITORED], stdout=subprocess.PIPE, text=True, bufsize=1
+        ["gdbus", "monitor", bus, "--dest", _MONITORED],
+        stdout=subprocess.PIPE,
+        text=True,
+        bufsize=1,
+        preexec_fn=_die_with_parent,
     ) as process:
-        yield from process.stdout
+        try:
+            yield from process.stdout
+        finally:
+            process.terminate()
     raise OSError(f"gdbus monitor {bus} exited with {process.returncode}")
 
 
