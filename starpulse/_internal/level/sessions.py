@@ -34,6 +34,8 @@ from the events' own durations and from the turns' edges, never from the gaps be
 A prompt is `injected` when its label says so and `human` otherwise, so a Codex prompt, which is unlabelled, is human.
 `operator_prompts` are the human prompts after a task's claim: after the claim signal that brought the session to the
 task, or after the session's first prompt for the task it launched on or, on a task-less launch branch, claimed first.
+The first human prompt after a main-thread `reply` whose `detail` is `asks` (it opens with a question) answers it
+and is no operator prompt, still a prompt and a wait.
 `prompt_labels` counts those the instance's labeller named, by intent, and `user_rejects` the rejected tool decisions
 whose source is `user_reject` or `user_abort`; neither changes `operator_prompts` or `interventions`. `interrupts` are
 the turns Claude Code started and never closed with a reply (one still running counts until its reply lands) and the interrupted turns Codex
@@ -246,6 +248,7 @@ def session_health(
         by_task: dict[str | None, dict[str, Any]] = {}
         last: dict[str, dict[str, str]] = defaultdict(dict)
         armed: set[str | None] = set()  # tasks whose human prompts now count as the operator's steering
+        asked = False  # the last main-thread reply opened with a question no human prompt has answered yet
         loaded: set[str | None] = set()  # tasks that loaded the completion skill
         steps: dict[str | None, int] = defaultdict(int)  # requests before a task's first edit
         open_turns: dict[str, dict[str, Any]] = {}  # a Claude Code turn's row until a reply closes it
@@ -264,16 +267,19 @@ def session_health(
                 if prompts > 1:
                     gap = max(s.time - ends[ids[at - 1]], 0.0)
                     row["idle_s" if injected else "operator_wait_s"] += gap
-                if not injected and task in armed:
+                if not injected and task in armed and not asked:
                     row["operator_prompts"] += 1
                     if s.label:
                         _count(row, "prompt_labels", s.label)
+                asked = asked and injected
                 if prompts == 1:
                     armed.add(task)
                 if s.turn:
                     open_turns[s.turn] = row
             elif s.kind == "reply":
                 open_turns.pop(s.turn, None)
+                if s.origin == "main":
+                    asked = s.detail == "asks"
             elif s.kind in {"request", "tool", "hook"}:
                 row["agent_s"] += s.seconds
                 if s.kind == "tool" and s.name in operator_tools and at:
