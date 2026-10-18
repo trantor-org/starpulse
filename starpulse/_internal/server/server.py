@@ -1060,12 +1060,14 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         listening = listening or listen(parser, args)
     if commands.keys() - {"api"}:
         forker.start()  # once the port is bound: a refused start leaves no process behind
+    reader = Reader(args.config)
     supervisor = Supervisor(
         commands,
         sockets={"api": listening} if "api" in commands else {},
         spawn=forker,
         retire=forker.retire,
-        read=Reader(args.config),
+        read=reader,
+        baseline=reader.at_start,
         control=control_file(args.config),
         limits=config.worker_memory,
     )

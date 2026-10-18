@@ -247,3 +247,75 @@ def test_a_reload_that_changes_only_config_leaves_the_preloaded_process_alone(in
     running.stop()
 
     assert events == ["spawn", "spawn"]
+
+
+class Probe:
+    """A reader that counts how many times it is asked to probe the installed code."""
+
+    def __init__(self) -> None:
+        self.reads = 0
+
+    def __call__(self, name: str) -> Reading:
+        self.reads += 1
+        return reading()
+
+
+def test_start_takes_the_baseline_from_the_start_reader_and_reads_no_code() -> None:
+    Child.made = []
+    probe = Probe()
+    start = Supervisor(
+        {name: [name] for name in NAMES},
+        spawn=Child,
+        read=probe,
+        baseline=lambda name: Reading(frozenset(), "db", "config", files={"module.py": "v1"}),
+        poll=60.0,
+    )
+
+    start.start()
+    start.stop()
+
+    assert probe.reads == 0
+    assert len(Child.made) == len(NAMES)
+
+
+@pytest.mark.parametrize(("code", "outcome"), [("v1", "kept"), ("v2", "replaced")])
+def test_reload_compares_each_closure_to_the_hashes_taken_at_start(
+    install: Install, code: str, outcome: str
+) -> None:
+    Child.made = []
+    install.now["autopilot"] = reading(code=code)
+    running = Supervisor(
+        {name: [name] for name in NAMES},
+        spawn=Child,
+        read=install,
+        baseline=lambda name: Reading(frozenset(), "db", "config", files={"module.py": "v1"}),
+        execute=lambda: None,
+        poll=60.0,
+    )
+    running.start()
+
+    report = running.reload()
+    again = running.reload()
+    running.stop()
+
+    assert report == {"supervisor": "kept", "children": {"pulls": "kept", "autopilot": outcome}}
+    assert again == {"supervisor": "kept", "children": {"pulls": "kept", "autopilot": "kept"}}
+
+
+def test_serve_re_executes_when_its_own_closure_changed_since_start(install: Install, executed: list[bool]) -> None:
+    Child.made = []
+    install.now[SELF] = reading(code="v2")
+    running = Supervisor(
+        {name: [name] for name in NAMES},
+        spawn=Child,
+        read=install,
+        baseline=lambda name: Reading(frozenset(), "db", "config", files={"module.py": "v1"}),
+        execute=lambda: executed.append(True),
+        poll=60.0,
+    )
+    running.start()
+
+    report = running.reload()
+    running.stop()
+
+    assert report["supervisor"] == "re-executed"

@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from starpulse._internal.server import closure
-from starpulse._internal.server.closure import SELF, Reader, ReloadError, code_of
+from starpulse._internal.server.closure import SELF, Reader, Reading, ReloadError, code_of, package_hashes
 from starpulse._internal.server.supervisor import WORKER_FLAGS
 
 
@@ -112,3 +112,42 @@ def test_a_config_that_does_not_load_is_a_reload_error(tmp_path: Path) -> None:
 
     with pytest.raises(ReloadError, match="starpulse.toml"):
         reader("pulls")
+
+
+def test_a_start_reading_is_unchanged_while_every_closure_file_keeps_the_hash_it_had_at_start() -> None:
+    start = Reading(frozenset(), "db", "config", files={"a.py": "1", "b.py": "2", "unused.py": "3"})
+
+    assert start.same_code(Reading(frozenset({("a.py", "1"), ("b.py", "2")}), "db", "config"))
+    assert not start.same_code(Reading(frozenset({("a.py", "1"), ("b.py", "changed")}), "db", "config"))
+    assert not start.same_code(Reading(frozenset({("a.py", "1"), ("new.py", "9")}), "db", "config"))
+
+
+def test_a_full_reading_compares_its_closure_to_the_new_one() -> None:
+    old = Reading(frozenset({("a.py", "1")}), "db", "config")
+
+    assert old.same_code(Reading(frozenset({("a.py", "1")}), "db", "config"))
+    assert not old.same_code(Reading(frozenset({("a.py", "1"), ("b.py", "2")}), "db", "config"))
+
+
+def test_the_start_reading_runs_no_probe_and_its_hashes_cover_the_files_a_closure_names(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reader = Reader(None)
+    probes = []
+    monkeypatch.setattr(closure, "code_of", lambda entry, package="starpulse": probes.append(entry))
+
+    start = reader.at_start("pulls")
+
+    assert probes == []
+    monkeypatch.undo()
+    assert dict(reader("pulls").code).items() <= start.files.items()
+
+
+def test_package_hashes_name_each_module_file_of_the_package_with_its_content_hash(
+    package: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.syspath_prepend(str(package.parent))
+    hashes = package_hashes("demo")
+
+    assert hashes[str(package / "unused.py")] == sha256((package / "unused.py").read_bytes()).hexdigest()
+    assert set(hashes) == {str(package / name) for name in ("__init__.py", "entry.py", "used.py", "unused.py")}

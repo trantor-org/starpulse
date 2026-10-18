@@ -132,6 +132,7 @@ class Supervisor:
         poll: float = 0.5,
         grace: float = 10.0,
         read: Callable[[str], Reading] | None = None,
+        baseline: Callable[[str], Reading] | None = None,
         execute: Callable[[], None] = _exec_self,
         retire: Callable[[], None] | None = None,
         control: Path | None = None,
@@ -157,6 +158,7 @@ class Supervisor:
         self._halt = threading.Event()
         self._thread: threading.Thread | None = None
         self._read = read
+        self._baseline = baseline or read
         self._execute = execute
         self._retire = retire
         self._control = Control(control, self) if control else None
@@ -231,7 +233,7 @@ class Supervisor:
         """Start every child and keep them running on a background thread until `stop`."""
         if self._read:
             try:
-                self._seen = self._readings()
+                self._seen = self._readings(self._baseline)
             except ReloadError as exc:
                 logger.warning("reload: no baseline for the installed code: %s", exc)
         self.tick(time.monotonic())
@@ -244,12 +246,13 @@ class Supervisor:
         while not self._halt.wait(self._poll):
             self.tick(time.monotonic())
 
-    def _readings(self) -> dict[str, Reading]:
-        if self._read is None:
+    def _readings(self, read: Callable[[str], Reading] | None = None) -> dict[str, Reading]:
+        read = read or self._read
+        if read is None:
             raise ReloadError("this supervisor reads no installed code")
         names = [*self._children, SELF]
         with ThreadPoolExecutor(len(names)) as pool:
-            return dict(zip(names, pool.map(self._read, names), strict=True))
+            return dict(zip(names, pool.map(read, names), strict=True))
 
     def reload(self) -> dict[str, Any]:
         """Replace each child whose code or database changed since the last reading, tell each whose only change is its
@@ -262,7 +265,7 @@ class Supervisor:
             if self._halt.is_set():
                 raise ReloadError("serve is stopping")
             own = self._seen.get(SELF)
-            reexec = own is not None and own.code != after[SELF].code
+            reexec = own is not None and not own.same_code(after[SELF])
             if reexec:
                 self._halt.set()
                 self._end([c.proc for c in self._children.values() if c.proc is not None])
@@ -275,10 +278,10 @@ class Supervisor:
         return {"supervisor": "re-executed" if reexec else "kept", "children": outcomes}
 
     def _code_changed(self, after: Mapping[str, Reading]) -> bool:
-        return any(n not in self._seen or self._seen[n].code != after[n].code for n in self._children)
+        return any(n not in self._seen or not self._seen[n].same_code(after[n]) for n in self._children)
 
     def _apply(self, name: str, child: _Child, before: Reading | None, now: Reading) -> str:
-        if before is None or (before.code, before.restart) != (now.code, now.restart):
+        if before is None or not before.same_code(now) or before.restart != now.restart:
             return self._replace(name, child)
         if before.live == now.live:
             return "kept"
