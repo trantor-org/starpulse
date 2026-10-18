@@ -97,7 +97,7 @@ def _serve(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, text: str, *, gh: bo
     monkeypatch.setattr(Follower, "started", [])
     monkeypatch.setattr(server, "Projected", Follower)
     polled: list[object] = []
-    monkeypatch.setattr(server, "_keep_released", lambda *args: polled.append(args))
+    monkeypatch.setattr(server, "_keep_unblocked", lambda *args: polled.append(args))
     config = tmp_path / "starpulse.toml"
     config.write_text(text)
 

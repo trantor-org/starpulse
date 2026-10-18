@@ -111,7 +111,7 @@ def test_a_ready_task_with_an_unresolved_dependency_moves_to_waiting(store: Pull
     assert until(lambda: board.moved() == [("TASK-2", "waiting")])
 
 
-def test_a_pin_bump_settle_holds_the_dependent_until_the_pin_bump_merge_projects(
+def test_a_pin_bump_rule_holds_the_dependent_until_the_pin_bump_merge_projects(
     store: PullStore, stop: threading.Event
 ) -> None:
     board = Board(
@@ -120,7 +120,7 @@ def test_a_pin_bump_settle_holds_the_dependent_until_the_pin_bump_merge_projects
         task("TASK-2", "Waiting", dependencies=("TASK-1",)),
     )
     store.save([pull(10, state="MERGED", repo="acme/starpulse", sha=CHILD)])
-    actor = running(board, store, stop, repos=REPOS, settle="pin-bump", pins=Pins())
+    actor = running(board, store, stop, repos=REPOS, pin_rule="pin-bump", pins=Pins())
     assert board.moved() == []
     assert "\nstarpulse_task_actor_pin_held 1\n" in actor.exposition()
 
