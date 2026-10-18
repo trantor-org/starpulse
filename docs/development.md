@@ -44,6 +44,14 @@ With `TEST_COST_REPORT=1` the flagged tests' node id, wall s, CPU s and peak MB 
 (`TEST_COST_REPORT_PATH` moves it), and each shard reruns exactly those tests one by one under `pytest --memray`
 (`ci/memray_flagged.py`), then uploads the report and `memray/` (one allocation report per test plus `stats.json`) as the
 `test-cost-<shard>` artifact; a test whose rerun left no report is named in `stats.json` and a `::warning`.
+The same nightly and dispatch runs record which source files each test executes: every shard runs
+`--cov --cov-context=test` (line coverage of `starpulse` and `ci`, `[tool.coverage.run]`) and uploads its data as
+`coverage-data-<shard>`. The `coverage-map` job, after all shards pass and no required check, combines them
+and `ci/coverage_map.py build` writes `<sha>.json` and `latest.json` (`{sha, collected, tests: {node id: [files]}}`) to
+`$STARPULSE_COVERAGE_MAP_DIR`, default `~/.cache/starpulse-ci/coverage-map` of the CI runner user, which the
+`ci-sp-python` select step also runs as. A parametrized case with no context of its own takes its function's files; a
+collected test with no files is left out. `uv run python ci/coverage_map.py latest` prints the newest map's sha and how
+many collected tests it names; it exits 1 before the first nightly published one.
 Each background context has a leak gate, `starpulse/tests/unit/leaks/test_context_budgets.py`: it drives the context's loop
 for a fixed number of iterations against a fixture board and a throwaway SQLite store, and fails when the memory still held
 afterwards exceeds the context's budget (`pull-events: retained 41000 B over 200 iterations, budget 32768 B exceeded`).

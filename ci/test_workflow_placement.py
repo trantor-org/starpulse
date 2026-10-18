@@ -182,7 +182,16 @@ def test_trantor_tests_of_this_package_gate_every_merge():
 
 
 #: Every ci.yml job but `dispatch`: the jobs that test a tree.
-TEST_JOBS = ["select", "python-shard", "python-ft", "python", "web", "static-checks", "trantor-contract"]
+TEST_JOBS = [
+    "select",
+    "python-shard",
+    "coverage-map",
+    "python-ft",
+    "python",
+    "web",
+    "static-checks",
+    "trantor-contract",
+]
 
 
 @pytest.mark.parametrize("name", TEST_JOBS)
@@ -194,6 +203,14 @@ def test_a_push_to_main_runs_no_test_job(name):
 def test_every_ci_job_but_dispatch_is_a_test_job():
     jobs = yaml.safe_load((WORKFLOWS / "ci.yml").read_text())["jobs"]
     assert sorted(jobs) == sorted([*TEST_JOBS, "macos-fresh-serve", "dispatch"])
+
+
+def test_the_coverage_map_is_published_only_by_a_green_nightly_and_is_no_required_check():
+    """A red shard's coverage data would leave tests out of the map the select step reads."""
+    assert "python-shard" in needs("ci.yml", "coverage-map")
+    assert "needs.python-shard.result == 'success'" in job("ci.yml", "coverage-map")["if"]
+    assert "coverage-map" not in needs("ci.yml", "python")
+    assert "coverage-map" not in APP_CHECKS
 
 
 def test_the_free_threaded_suite_runs_beside_the_shards_and_is_no_required_check():
