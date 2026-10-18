@@ -116,7 +116,7 @@ def test_a_claim_of_a_task_another_session_holds_is_refused_naming_the_holder(
     status, body = _claim(feed, built, task="task-1", session="s-2")
 
     assert status == 409 and "s-1" in body["error"] and "already In Progress" in body["error"]
-    assert "**Holder:** s-1" in _text(tmp_path, "task-1")
+    assert "**Assignee:** s-1" in _text(tmp_path, "task-1")
 
 
 def test_a_session_that_claims_the_task_it_holds_again_is_told_so_and_writes_nothing(

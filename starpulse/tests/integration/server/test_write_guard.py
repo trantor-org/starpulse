@@ -26,7 +26,7 @@ _FOREIGN = "https://evil.example"
 _WRITES = [
     ("POST", "/api/run/dagu/nightly", {}),
     ("POST", "/api/move", {"task": "PROJ-3", "to": "in_progress"}),
-    ("POST", "/api/start", {"task": "PROJ-3", "assignee": "@agent-deep-high", "harness": "claude"}),
+    ("POST", "/api/start", {"task": "PROJ-3", "profile": "@agent-deep-high", "harness": "claude"}),
     ("POST", "/api/edit", {"task": "PROJ-3", "base": {}, "changes": {"title": "x"}}),
     ("POST", "/api/archive", {"task": "PROJ-3", "reason": "obsolete"}),
     ("POST", "/api/restore", {"task": "PROJ-3"}),

@@ -88,7 +88,7 @@ class MoveWriter(Protocol):
     """A board writer: set a task's status on behalf of `actor` (`operator` or `agent`), and say what it did.
 
     A move that names the mover's `session` calls the writer with it as a fourth argument; a move that names none calls it
-    with three, so a writer that predates sessions keeps working. A writer records the session as the task's holder when
+    with three, so a writer that predates sessions keeps working. A writer records the session as the task's assignee when
     the move is a claim."""
 
     def __call__(self, task: str, status: str, actor: str, session: str = "") -> Written: ...

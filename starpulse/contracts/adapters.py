@@ -112,10 +112,10 @@ class BoardTask(_Contract):
         description="When the board saw the task in this state, in epoch seconds; None when it does not say. A move "
         "read live is dated by it, not by when StarPulse read it.",
     )
-    assignee: str = Field(default="", description="Who or which agent model holds the task; empty when unassigned.")
-    holder: str = Field(
+    profile: str = Field(default="", description="Which agent profile or model the task is routed to; empty when unrouted.")
+    assignee: str = Field(
         default="",
-        description="The session that last claimed the task, as its harness names it; empty when none has. `assignee` stays who or which agent model the task is for.",
+        description="The session that last claimed the task, as its harness names it; empty when none has. `profile` is who or which agent model the task is for.",
     )
     labels: tuple[str, ...] = Field(default=(), description="The task's labels.")
     milestone: str = Field(default="", description="The milestone the task belongs to; empty when it has none.")

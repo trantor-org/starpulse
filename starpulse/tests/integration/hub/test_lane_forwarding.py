@@ -60,7 +60,7 @@ class Site:
 
     def move(self, task: str, lane: str, *, at: float, assignee: str = "") -> None:
         self.clock.now = T0 + at
-        self.feed.put(BoardTask(id=task, team="demo", title=f"secret title of {task}", lane=lane, assignee=assignee))
+        self.feed.put(BoardTask(id=task, team="demo", title=f"secret title of {task}", lane=lane, profile=assignee))
 
     def send(self, _url: str, token: str, body: bytes) -> tuple[int, dict[str, Any]]:
         self.bodies.append(json.loads(body))

@@ -24,14 +24,14 @@ def _held(document: dict) -> list[tuple[str, str]]:
 def test_a_session_is_sent_its_tasks_then_only_a_change_to_them(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("starpulse._internal.server.server._HELD_SETTLE_S", 0)
     feed = BoardFeed(machines=MACHINES)
-    feed.put(task("PROJ-1", "In Progress", holder="session-1"))
-    feed.put(task("PROJ-2", "In Progress", holder="session-2"))
+    feed.put(task("PROJ-1", "In Progress", assignee="session-1"))
+    feed.put(task("PROJ-2", "In Progress", assignee="session-2"))
     with _serve(tmp_path, feed) as server:
         with urllib.request.urlopen(_url(server, "/api/held?holder=session-1"), timeout=5) as resp:
             head = (resp.status, resp.headers["Content-Type"], resp.headers["Cache-Control"])
             first = _next_event(resp)
-            feed.put(task("PROJ-2", "Review", holder="session-2"))  # another session's task: nothing to send
-            feed.put(task("PROJ-3", "In Progress", holder="session-1"))
+            feed.put(task("PROJ-2", "Review", assignee="session-2"))  # another session's task: nothing to send
+            feed.put(task("PROJ-3", "In Progress", assignee="session-1"))
             second = _next_event(resp)
 
     assert head == (200, "text/event-stream", "no-store")
@@ -42,7 +42,7 @@ def test_a_session_is_sent_its_tasks_then_only_a_change_to_them(tmp_path: Path, 
 def test_a_held_task_carries_what_starpulse_board_prints_of_it(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("starpulse._internal.server.server._HELD_SETTLE_S", 0)
     feed = BoardFeed(machines=MACHINES)
-    feed.put(task("PROJ-1", "In Progress", holder="session-1", milestone="m-7"))
+    feed.put(task("PROJ-1", "In Progress", assignee="session-1", milestone="m-7"))
     with _serve(tmp_path, feed) as server:
         with urllib.request.urlopen(_url(server, "/api/held?holder=session-1"), timeout=5) as resp:
             _, document = _next_event(resp)
@@ -58,7 +58,7 @@ def test_a_held_task_does_not_wait_on_a_dependency_that_went_cold_in_done(tmp_pa
     feed = BoardFeed(machines=MACHINES, clock=lambda: now)
     feed.expect("0-0")
     feed.put(task("PROJ-2", "Done", observed_at=now - 2 * HOT_S))
-    feed.put(task("PROJ-1", "In Progress", holder="session-1", dependencies=("PROJ-2",)))
+    feed.put(task("PROJ-1", "In Progress", assignee="session-1", dependencies=("PROJ-2",)))
     with _serve(tmp_path, feed) as server:
         with urllib.request.urlopen(_url(server, "/api/held?holder=session-1"), timeout=5) as resp:
             _, document = _next_event(resp)
@@ -82,7 +82,7 @@ def _lanes(document: dict) -> dict[str, list[str]]:
 def test_the_lanes_stream_sends_on_connect_and_again_only_on_a_change(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("starpulse._internal.server.server._HELD_SETTLE_S", 0)
     feed = BoardFeed(machines=MACHINES)
-    feed.put(task("PROJ-1", "In Progress", holder="session-1"))
+    feed.put(task("PROJ-1", "In Progress", assignee="session-1"))
     feed.put(task("PROJ-2", "Ready"))
     feed.put(task("PROJ-9", "Done"))
     with _serve(tmp_path, feed) as server:
@@ -119,14 +119,14 @@ def test_held_and_lanes_streams_share_one_build_of_the_columns_per_change(tmp_pa
     feed = BoardFeed(machines=MACHINES)
     sessions = [f"session-{n}" for n in range(4)]
     for n, session in enumerate(sessions):
-        feed.put(task(f"PROJ-{n}", "In Progress", holder=session))
+        feed.put(task(f"PROJ-{n}", "In Progress", assignee=session))
     with _serve(tmp_path, feed) as server, ExitStack() as streams:
         held = [streams.enter_context(urllib.request.urlopen(_url(server, f"/api/held?holder={s}"), timeout=5)) for s in sessions]
         lanes = streams.enter_context(urllib.request.urlopen(_url(server, "/api/lanes?state=in_progress"), timeout=5))
         for resp in [*held, lanes]:
             _next_event(resp)
         calls.clear()
-        feed.put(task("PROJ-0", "In Progress", holder="session-0", title="Renamed"))
+        feed.put(task("PROJ-0", "In Progress", assignee="session-0", title="Renamed"))
         _next_event(held[0])
         _next_event(lanes)
         builds = _builds_after_quiet(calls)

@@ -40,8 +40,8 @@ def entry(task: BoardTask, at: float, actor: str = "", session: str = "", harnes
         fields["milestone"] = task.milestone
     if task.labels:
         fields["labels"] = list(task.labels)
-    if task.assignee:
-        fields["assignee"] = task.assignee
+    if task.profile:
+        fields["assignee"] = task.profile
     for name, value in (("actor", actor), ("session", session), ("harness", harness)):
         if value:
             fields[name] = value

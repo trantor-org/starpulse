@@ -72,7 +72,7 @@ class Kit:
 
     def move(self, task: str) -> None:
         """A real lane change: the Board feed places the task and appends the entry beside the history's row."""
-        self.feed.put(BoardTask(id=task, team="demo", title=f"title of {task}", lane="in_progress", assignee=ASSIGNEE))
+        self.feed.put(BoardTask(id=task, team="demo", title=f"title of {task}", lane="in_progress", profile=ASSIGNEE))
 
     def forwarder(self, token: str = TOKEN) -> Forwarder:
         """A forwarder as a restarted process builds it: a new store connection, nothing remembered."""

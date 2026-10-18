@@ -65,6 +65,9 @@ from starpulse._internal.board.upstream_backlog import (
 from starpulse._internal.board.upstream_backlog import (
     _assignee as _assignee_of,
 )
+from starpulse._internal.board.upstream_backlog import (
+    _profile as _profile_of,
+)
 from starpulse._internal.eventlog.tables import retired_tasks
 from starpulse._internal.feed import criteria
 from starpulse._internal.machines.transitions import DONE, WAITING
@@ -232,10 +235,10 @@ def _types(settings: Mapping[str, Any]) -> tuple[str, ...]:
 
 
 def _stamped(frontmatter: dict, *, created: bool = False) -> dict:
-    """`frontmatter` with `updated_date` (and `created_date` on a new task) set to now in UTC, after the assignee or status."""
+    """`frontmatter` with `updated_date` (and `created_date` on a new task) set to now in UTC, after the profile or status."""
     now = f"{datetime.now(timezone.utc):{_STAMP}}"
     stamps = {key: now for key in ("created_date", "updated_date") if created or key == "updated_date"}
-    anchor = "assignee" if "assignee" in frontmatter else "status"
+    anchor = next((key for key in ("profile", "assignee") if key in frontmatter), "status")
     stamped: dict[str, Any] = {}
     for key, value in frontmatter.items():
         stamped[key] = stamps.get(key, value)
@@ -385,7 +388,7 @@ def _reader(root: Path, evaluate: Callable[[str, str], list[dict[str, Any]]]) ->
             "title": str(frontmatter.get("title") or ""),
             "type": str(frontmatter.get("type") or ""),
             "status": str(frontmatter.get("status") or ""),
-            "profile": next(iter(_strings(frontmatter.get("assignee"))), ""),
+            "profile": _profile_of(frontmatter),
             "priority": str(frontmatter.get("priority") or ""),
             "labels": list(_strings(frontmatter.get("labels"))),
             "milestone": str(frontmatter.get("milestone") or ""),
@@ -505,9 +508,10 @@ def _set_front(frontmatter: dict, field: str, value: Any, spelled: Mapping[str, 
         if not text:
             del frontmatter[field]
     elif field == "profile":
-        frontmatter["assignee"] = [_text(field, value)]
-        if not frontmatter["assignee"][0]:
-            del frontmatter["assignee"]
+        frontmatter.pop("assignee", None)
+        frontmatter["profile"] = [_text(field, value)]
+        if not frontmatter["profile"][0]:
+            del frontmatter["profile"]
     elif field == "status":
         if lane_id(_text(field, value)) not in spelled:
             raise ValueError(f"{value!r} is not a status of this board: {', '.join(spelled.values())}")
@@ -550,7 +554,7 @@ def _editor(root: Path, statuses: tuple[str, ...], guard: _Guard = _Guard()) -> 
 
     `changes` holds the new value of each field `read` names except `comments`, which `comment` appends to: one text, or a
     list appended in order, each blank one skipped; `appendNotes` is one more, text added to the end of the notes. An
-    empty priority, milestone, assignee or type and an empty references, documentation or modified-files list removes its
+    empty priority, milestone, profile or type and an empty references, documentation or modified-files list removes its
     key, a status is spelled as its lane is, and a checklist item without a number is new.
     """
     spelled = {lane_id(status): status for status in statuses}
@@ -815,17 +819,17 @@ def _restorer(root: Path, retired: _Retired) -> TaskRestorer:
 
 
 def _assign(body: str, session: str) -> str:
-    """`body` with `**Holder:** <session>` appended to its notes, which the board reads the holder from.
+    """`body` with `**Assignee:** <session>` appended to its notes, which the board reads the assignee from.
 
-    A session the notes already name as holder is not named again: a claim's edit may have recorded it before the move.
+    A session the notes already name as assignee is not named again: a claim's edit may have recorded it before the move.
     """
-    return body if _assignee_of(body) == session else _append_notes(body, f"**Holder:** {session}")
+    return body if _assignee_of(body) == session else _append_notes(body, f"**Assignee:** {session}")
 
 
 def _writer(root: Path, statuses: tuple[str, ...], guard: _Guard = _Guard()) -> MoveWriter:
     """A board writer that sets a status in the task's file. A lane's status is the board's own spelling of it.
 
-    An agent's claim (a move to `In Progress` that names its session) also records the session as the task's holder.
+    An agent's claim (a move to `In Progress` that names its session) also records the session as the task's assignee.
     """
     spelled = {lane_id(status): status for status in statuses}
 
@@ -880,7 +884,8 @@ def _next_id(root: Path, prefix: str, retired: _Retired) -> str:
 
 #: The details `_new_task` writes itself; any other detail is set as `edit` sets that field.
 _NEW_TASK_DETAILS = {
-    "assignee",
+    "profile",
+    "assignee",  # the legacy name of `profile`
     "labels",
     "milestone",
     "dependencies",
@@ -894,8 +899,8 @@ _NEW_TASK_DETAILS = {
 def _new_task(task: str, title: str, status: str, details: Mapping[str, Any]) -> str:
     """A new task file as Backlog.md writes one: its front matter, then its Description and Acceptance Criteria."""
     frontmatter: dict[str, Any] = {"id": task, "title": title, "status": status}
-    if "assignee" in details:
-        frontmatter["assignee"] = [details["assignee"]]
+    if profile := details.get("profile", details.get("assignee")):
+        frontmatter["profile"] = [profile]
     keys = ("labels", "milestone", "dependencies", "priority", "created_by")
     frontmatter |= {key: details[key] for key in keys if key in details}
     text = f"---\n{yaml.safe_dump(frontmatter, sort_keys=False, allow_unicode=True)}---\n"
@@ -989,7 +994,7 @@ def _holds(command: object, base: Path) -> Callable[[str], list[str]] | None:
 def board(settings: Mapping[str, Any], base: Path) -> Board:
     """The native board at `settings["path"]` (default `.starpulse/board`), created empty when absent, as the project named for `base`'s directory, polled every `interval` seconds.
 
-    Moves, assignee changes, creates, edits and archives write the task files directly, and `read` returns a task's record from its file. Any lane reaches any other unless `machine` names a
+    Moves, profile changes, creates, edits and archives write the task files directly, and `read` returns a task's record from its file. Any lane reaches any other unless `machine` names a
     machine file, whose transitions and `writers` then decide which moves are offered, and to whom.
     """
     if unknown := sorted(settings.keys() - _SETTINGS):
@@ -1005,9 +1010,10 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         rules.load(settings.get("rules")), _hook(settings.get("validate")), _state_of(root, retired), _types(settings)
     )
 
-    def assign(task: str, assignee: str, /, actor: str = OPERATOR) -> Written:
+    def assign(task: str, profile: str, /, actor: str = OPERATOR) -> Written:
         def edit(frontmatter: dict, body: str) -> str:
-            frontmatter["assignee"] = [assignee]
+            frontmatter.pop("assignee", None)
+            frontmatter["profile"] = [profile]
             return body
 
         return _update(root, task, edit, guard, actor)

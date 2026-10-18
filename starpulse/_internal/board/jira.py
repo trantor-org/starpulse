@@ -216,7 +216,7 @@ class JiraProject:
             settled="completed" if settled else None,
             created_at=_when(fields.get("created")),
             settled_at=_when(fields.get("resolutiondate")) if settled else None,
-            assignee=(fields.get("assignee") or {}).get("displayName", ""),
+            profile=(fields.get("assignee") or {}).get("displayName", ""),
             labels=tuple(fields.get("labels") or ()),
             description=fields.get("description") or "",
             moves={} if settled else dict(self._moves.get(lane, {})),

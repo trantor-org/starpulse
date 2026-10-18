@@ -134,7 +134,7 @@ def _looping(tmp_path: Path) -> Runtime:
     feed = BoardFeed(machines={**MACHINES, **HARNESS_MACHINES})
     feed.put(
         BoardTask(
-            id="T-4", team="demo", title="Serve it", lane="ready", labels=["size-1"], assignee="@agent-standard-high"
+            id="T-4", team="demo", title="Serve it", lane="ready", labels=["size-1"], profile="@agent-standard-high"
         )
     )
     runtime = build(
@@ -185,7 +185,7 @@ def test_a_get_with_a_loop_names_a_harness_usage_pause(tmp_path: Path) -> None:
     feed = BoardFeed(machines={**MACHINES, **HARNESS_MACHINES})
     feed.put(
         BoardTask(
-            id="T-4", team="demo", title="Serve it", lane="ready", labels=["size-1"], assignee="@agent-standard-high"
+            id="T-4", team="demo", title="Serve it", lane="ready", labels=["size-1"], profile="@agent-standard-high"
         )
     )
 

@@ -34,7 +34,7 @@ def test_a_task_refused_for_headroom_starts_when_a_sample_leaves_room_with_nothi
     # A size-8 standard task prices 16 percent of CPU: at 70 of 80 it is refused though CPU is not full, and at 10 it fits.
     feed = BoardFeed(machines={**MACHINES, **HARNESS_MACHINES})
     feed.put(
-        BoardTask(id="T-1", team="demo", title="T-1", lane="ready", labels=["size-8"], assignee="@agent-standard-high")
+        BoardTask(id="T-1", team="demo", title="T-1", lane="ready", labels=["size-8"], profile="@agent-standard-high")
     )
     host = {"cpu": 70.0, "memory": 5.0}
     started: list[str] = []

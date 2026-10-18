@@ -252,16 +252,16 @@ export class StartStore {
   }
 }
 
-/** POST the start to the server, which saves a changed assignee and asks the session-start service for the session. */
+/** POST the start to the server, which saves a changed profile and asks the session-start service for the session. */
 export async function postStart(
   task: string,
-  assignee: string,
+  profile: string,
   harness: string,
   fetcher: typeof apiFetch = apiFetch,
 ): Promise<StartReply> {
   let response: Response;
   try {
-    response = await fetcher("/api/start", { method: "POST", body: JSON.stringify({ task, assignee, harness }) });
+    response = await fetcher("/api/start", { method: "POST", body: JSON.stringify({ task, profile, harness }) });
   } catch {
     return { ok: false, reason: "the start did not reach the server" };
   }

@@ -136,16 +136,16 @@
       "description": "When the board saw the task in this state, in epoch seconds; None when it does not say. A move read live is dated by it, not by when StarPulse read it.",
       "title": "Observed At"
     },
-    "assignee": {
+    "profile": {
       "default": "",
-      "description": "Who or which agent model holds the task; empty when unassigned.",
-      "title": "Assignee",
+      "description": "Which agent profile or model the task is routed to; empty when unrouted.",
+      "title": "Profile",
       "type": "string"
     },
-    "holder": {
+    "assignee": {
       "default": "",
-      "description": "The session that last claimed the task, as its harness names it; empty when none has. `assignee` stays who or which agent model the task is for.",
-      "title": "Holder",
+      "description": "The session that last claimed the task, as its harness names it; empty when none has. `profile` is who or which agent model the task is for.",
+      "title": "Assignee",
       "type": "string"
     },
     "labels": {

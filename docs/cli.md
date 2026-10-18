@@ -129,7 +129,7 @@ lists exactly the verbs there are.
 
 `search` reads `GET /api/search?q=QUERY[&limit=N][&label=L]...[&finished_within_days=N]`: the words of `q` are each a quoted phrase and all must match, so
 punctuation (`PROJ-45`, `NEAR`, `title:`) is text and never query syntax. A task is searchable by its key, title,
-description, acceptance criteria and notes (its `**Holder:**` claim marker is not text), and a match in the title
+description, acceptance criteria and notes (its `**Assignee:**` claim marker, or the legacy `**Holder:**`, is not text), and a match in the title
 ranks above one in the description, which ranks above one in a criterion or a note; words are matched by their
 stem (`rotation` finds `rotate`). `score` is higher for a better match, `lane` is the lane the task is in now (or
 `completed` or `archived` once it settled) and `snippet` is the text around the match. The index is a SQLite FTS5
@@ -277,10 +277,10 @@ A move may also name the mover's session: `POST /api/move` takes `{task, to, act
 `starpulse task move` sends `--session`, else `STARPULSE_SESSION`, and `--harness`, else `STARPULSE_HARNESS`; the
 task `create`, `edit`, `assign`, `archive` and `checkpoint` verbs send the same two. A move that names one calls the writer with it as a fourth argument,
 `writer(task, status, actor, session)`; one that names none calls it with three, so a writer written before sessions
-keeps working. The writer records the session as the task's holder when the move is a claim, `BoardTask.holder`
+keeps working. The writer records the session as the task's assignee when the move is a claim, `BoardTask.assignee`
 carries it back, and a `Written.advice` string rides in the move's answer (`advice` in the CLI document, empty when
-the writer has none). The native and Backlog.md adapters' writers record the holder as a `**Holder:** <session>` line in the
-task's notes, in the same edit as the `In Progress` status, because the Backlog CLI drops a frontmatter key it
+the writer has none). The native and Backlog.md adapters' writers record the assignee as a `**Assignee:** <session>` line in the
+task's notes (a `**Holder:**` line from before the rename is still read), in the same edit as the `In Progress` status, because the Backlog CLI drops a frontmatter key it
 does not know.
 
 `doctor` runs every check even when one fails, so one call names every fault. The checks: `config` (the config file

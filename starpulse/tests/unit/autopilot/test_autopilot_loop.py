@@ -118,7 +118,7 @@ class Rig:
     def put(self, task: str, lane: str = "ready", size: int = 8, deps: tuple[str, ...] = ()) -> None:
         self.feed.put(
             BoardTask(
-                id=task, team="demo", title=task, lane=lane, labels=[f"size-{size}"], assignee=PROFILE, dependencies=deps
+                id=task, team="demo", title=task, lane=lane, labels=[f"size-{size}"], profile=PROFILE, dependencies=deps
             )
         )
 

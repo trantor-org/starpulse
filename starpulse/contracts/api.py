@@ -1678,10 +1678,14 @@ class MoveRequest(_Writer):
 
 
 class StartRequest(_Api):
-    """`POST /api/start`: start a session for `task` on `assignee`; `harness` defaults to `claude`."""
+    """`POST /api/start`: start a session for `task` on `profile`; `harness` defaults to `claude`.
+
+    `assignee` is the legacy name of `profile` and is read when `profile` is absent.
+    """
 
     task: str
-    assignee: str
+    profile: str | None = None
+    assignee: str | None = None
     harness: str | None = None
     mode: str | None = None
 
@@ -1762,6 +1766,7 @@ class CreateRequest(_Writer):
     description: str | None = None
     priority: str | None = None
     milestone: str | None = None
+    profile: str | None = None
     assignee: str | None = None
     labels: list[str] | None = None
     dependencies: list[str] | None = None

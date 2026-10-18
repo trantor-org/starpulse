@@ -204,26 +204,28 @@ def test_a_move_the_machine_allows_rewrites_the_status_in_the_task_file(tmp_path
     assert [(task.id, task.lane) for task in scanned(tmp_path)] == [("task-1", "done")]
 
 
-def test_an_agents_claim_records_its_session_as_the_holder_and_an_operators_move_does_not(tmp_path: Path) -> None:
-    _, built = project(tmp_path, "To Do")
+def test_an_agents_claim_records_its_session_as_the_assignee_and_an_operators_move_does_not(tmp_path: Path) -> None:
+    path, built = project(tmp_path, "To Do")
     assert built.writer is not None
 
     assert built.writer("task-1", "In Progress", "agent", "0d617371").ok
-    assert [(task.lane, task.holder) for task in scanned(tmp_path)] == [("in_progress", "0d617371")]
+    assert [(task.lane, task.assignee) for task in scanned(tmp_path)] == [("in_progress", "0d617371")]
     assert built.writer("task-1", "Done", "operator").ok
-    assert [task.holder for task in scanned(tmp_path)] == ["0d617371"]
+    assert [task.assignee for task in scanned(tmp_path)] == ["0d617371"]
+    assert "**Assignee:** 0d617371" in path.read_text()
+    assert "**Holder:**" not in path.read_text()
 
 
-def test_a_session_that_claims_a_task_it_already_holds_leaves_one_holder_line(tmp_path: Path) -> None:
+def test_a_session_that_claims_a_task_it_already_holds_leaves_one_assignee_line(tmp_path: Path) -> None:
     path, built = project(tmp_path, "To Do")
     assert built.writer is not None
 
     assert built.writer("task-1", "In Progress", "agent", "0d617371").ok
     assert built.writer("task-1", "In Progress", "agent", "0d617371").ok
 
-    assert path.read_text().count("**Holder:** 0d617371") == 1
+    assert path.read_text().count("**Assignee:** 0d617371") == 1
     assert built.writer("task-1", "In Progress", "agent", "e5f6a7b8").ok
-    assert [task.holder for task in scanned(tmp_path)] == ["e5f6a7b8"]
+    assert [task.assignee for task in scanned(tmp_path)] == ["e5f6a7b8"]
 
 
 def test_a_move_the_machine_leaves_to_the_operator_is_refused_to_an_agent_with_its_reason(
@@ -252,8 +254,26 @@ def test_an_assignee_change_is_written_to_the_task_file(tmp_path: Path) -> None:
 
     assert built.assign("task-1", "@agent-deep-high").ok
 
-    assert [task.assignee for task in scanned(tmp_path)] == ["@agent-deep-high"]
+    assert [task.profile for task in scanned(tmp_path)] == ["@agent-deep-high"]
     assert "status: In Progress\n" in path.read_text()
+    assert yaml.safe_load(path.read_text().split("---")[1])["profile"] == ["@agent-deep-high"]
+    assert "assignee:" not in path.read_text()
+
+
+def test_a_task_file_in_the_legacy_forms_reads_to_the_same_assignee_and_profile_as_the_new_ones(tmp_path: Path) -> None:
+    notes = "<!-- SECTION:NOTES:BEGIN -->\n{marker} 0d617371\n<!-- SECTION:NOTES:END -->\n"
+    path, _ = project(tmp_path)
+    forms = (
+        ({"assignee": '["@agent-deep-high"]'}, "**Holder:**"),
+        ({"profile": '["@agent-deep-high"]'}, "**Assignee:**"),
+    )
+    read = []
+    for fields, marker in forms:
+        path = write_task(tmp_path, "task-1", "In Progress", **fields)
+        path.write_text(path.read_text() + notes.format(marker=marker))
+        read.append([(task.profile, task.assignee) for task in scanned(tmp_path)])
+
+    assert read == [[("@agent-deep-high", "0d617371")]] * 2
 
 
 def test_a_task_the_board_does_not_hold_is_refused_by_both_writers(tmp_path: Path) -> None:
