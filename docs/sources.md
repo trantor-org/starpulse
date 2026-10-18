@@ -327,6 +327,9 @@ starpulse emit start --workflow nightly --run 2026-10-03 --status running
 starpulse emit end   --workflow nightly --run 2026-10-03 --status succeeded --step load --depends fetch
 ```
 
+`StepStarted` and `StepFinished` are accepted beside `start` and `end` (`starpulse emit StepStarted ...`): the entry
+records that event and the phase it implies.
+
 A workflow no adapter lists is drawn from the step graph its `emit` calls add up to, and that graph is kept in
 the history store across restarts.
 

@@ -12,7 +12,7 @@ __all__ = ["FIELDS", "PERSON", "project"]
 #: The fields each forwarded stream may carry, and the ones among them that name a person.
 FIELDS: dict[str, tuple[str, ...]] = {
     events.STREAM: ("machine", "event", "task", "run", "actor", "assignee", "time"),
-    run_events.STREAM: ("time", "phase", "workflow", "run_id", "status", "step", "depends"),
+    run_events.STREAM: ("time", "phase", "event", "workflow", "run_id", "status", "step", "depends"),
     lane_events.STREAM: lane_events.FIELDS,
 }
 PERSON = ("actor", "assignee")

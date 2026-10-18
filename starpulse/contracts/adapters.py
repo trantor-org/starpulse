@@ -362,6 +362,9 @@ class RunEvent(_Contract):
 
     time: float = Field(ge=0, allow_inf_nan=False, description="When it happened, in epoch seconds.")
     phase: Literal["start", "end"] = Field(description="Whether the run or step started or ended.")
+    event: Literal["", "StepStarted", "StepFinished"] = Field(
+        default="", description="The Step event the entry records, which implies its `phase`; empty for a bare phase."
+    )
     workflow: str = Field(min_length=1, description="The workflow's name, unique on its scheduler.")
     run_id: str = Field(min_length=1, description="The run's id.")
     status: RunStatus = Field(description="The run's status, or the step's when `step` is set.")

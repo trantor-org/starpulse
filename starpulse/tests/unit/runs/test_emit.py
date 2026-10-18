@@ -175,7 +175,7 @@ def test_the_help_names_the_command_and_each_flag(capsys: pytest.CaptureFixture[
     text = " ".join(capsys.readouterr().out.split())
     for expected in (
         "usage: starpulse emit",
-        "{start,end}",
+        "{start,end,StepStarted,StepFinished}",
         "push a workflow run, or one of its steps, onto the event log",
         "the TOML config whose database holds the event log",
         "the run's id",
@@ -205,3 +205,21 @@ def test_a_phase_other_than_start_or_end_is_refused(log: EventLog, capsys: pytes
 
     assert refused.value.code == 2
     assert "invalid choice: 'pause'" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(("event", "phase"), [("StepStarted", "start"), ("StepFinished", "end")])
+def test_a_step_event_is_recorded_and_read_back_beside_its_phase(log: EventLog, event: str, phase: str) -> None:
+    code = run(event, "--workflow", "nightly", "--run", "r1", "--status", "running", "--step", "load", log=log)
+
+    assert code == 0
+    assert appended(log) == [
+        {
+            "time": NOW,
+            "event": event,
+            "phase": phase,
+            "workflow": "nightly",
+            "run_id": "r1",
+            "status": "running",
+            "step": "load",
+        }
+    ]
