@@ -4,10 +4,15 @@ A process is its import closure (the files of the `starpulse` modules its entry 
 config blocks it is built from. `code_of` reads the closure from the installed code in a fresh interpreter, as the
 supervisor's children do when they start, so it sees what a child started now would load rather than what this process
 has already imported.
+
+`serve` starts without reading any closure: its start `Reading` holds `package_hashes`, the hash of every module file,
+and a closure is unchanged since then while each of its files still has the hash it had.
 """
 
 from __future__ import annotations
 
+import importlib.machinery
+import importlib.util
 import subprocess
 import sys
 from collections.abc import Mapping
@@ -120,6 +125,32 @@ class Reading:
     code: frozenset[tuple[str, str]]
     restart: object  # config blocks a running process cannot take in place
     live: object  # config blocks a running process re-reads on `SIGHUP`
+    files: Mapping[str, str] | None = None  # a start reading: the hash of every module file, in place of a closure
+
+    def same_code(self, after: Reading) -> bool:
+        """Whether the closure in `after` is what this reading ran from."""
+        if self.files is None:
+            return self.code == after.code
+        return all(self.files.get(file) == digest for file, digest in after.code)
+
+
+def package_hashes(package: str = "starpulse") -> dict[str, str]:
+    """The content hash of each module file under `package` as installed, which no interpreter has to import to read.
+
+    Raises `ReloadError` when `package` is not installed or a file cannot be read."""
+    spec = importlib.util.find_spec(package)
+    if spec is None or not spec.submodule_search_locations:
+        raise ReloadError(f"{package} is not installed")
+    suffixes = (".py", *importlib.machinery.EXTENSION_SUFFIXES)
+    try:
+        return {
+            str(file): sha256(file.read_bytes()).hexdigest()
+            for root in spec.submodule_search_locations
+            for file in Path(root).rglob("*")
+            if file.name.endswith(suffixes)
+        }
+    except OSError as exc:
+        raise ReloadError(f"{package}: {exc}") from exc
 
 
 def code_of(entry: str, package: str = "starpulse") -> frozenset[tuple[str, str]]:
@@ -175,10 +206,21 @@ class Reader:
 
     def __init__(self, config_path: Path | None) -> None:
         self._path = discover(config_path)
+        self._hashes: dict[str, str] | None = None
 
-    def __call__(self, name: str) -> Reading:
+    def _blocks(self, name: str) -> tuple[object, object]:
         try:
             config = load(self._path)
         except (OSError, ValueError) as exc:
             raise ReloadError(f"{self._path}: {exc}") from exc
-        return Reading(code_of(ENTRIES[name]), *_blocks(name, config))
+        return _blocks(name, config)
+
+    def at_start(self, name: str) -> Reading:
+        """The reading of `name` as `serve` starts it: its config blocks and the hash of each module file, no closure."""
+        if self._hashes is None:
+            self._hashes = package_hashes()
+        return Reading(frozenset(), *self._blocks(name), files=self._hashes)
+
+    def __call__(self, name: str) -> Reading:
+        blocks = self._blocks(name)
+        return Reading(code_of(ENTRIES[name]), *blocks)
