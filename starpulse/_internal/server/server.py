@@ -945,7 +945,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         actor_metrics = metrics_of(log)
     if refresh_token:
         pull_refresh = PullRefresh(refresh_token, request_refresh(log, PullSync(pulls, feed, config.repos).tracked))
-    # `starpulse worker history` runs the machine-history recorder and the event log's prune; a hub keeps its recorder
+    # `starpulse worker flow-metrics` runs the machine-history recorder and the event log's prune; a hub keeps its recorder
     # in-process (and prunes by partition), and its sources' lane changes become its Board trajectories
     if args.hub:
         threading.Thread(

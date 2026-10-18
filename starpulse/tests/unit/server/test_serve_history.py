@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import text
 
-from starpulse._internal.server import board_worker, history_worker, server, worker
+from starpulse._internal.server import board_worker, flow_metrics_worker, server, worker
 from starpulse._internal.eventlog import events
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import HistoryStore
@@ -26,7 +26,7 @@ def _until(done) -> None:
         time.sleep(0.01)
 
 
-def test_serve_and_the_history_worker_record_run_and_task_machine_events(
+def test_serve_and_the_flow_metrics_worker_record_run_and_task_machine_events(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(fake_board, "BUILT", [])
@@ -39,12 +39,12 @@ def test_serve_and_the_history_worker_record_run_and_task_machine_events(
     config.write_text('[board]\ntype = "starpulse.tests.fake_board"\nlanes = ["open", "shut"]\n')
 
     held: list[threading.Event] = []
-    monkeypatch.setattr(history_worker, "hold", lambda stop, reload: held.append(stop))
+    monkeypatch.setattr(flow_metrics_worker, "hold", lambda stop, reload: held.append(stop))
     monkeypatch.setattr(board_worker, "hold", lambda stop, reload: held.append(stop))
 
     worker.main(["board", "--config", str(config)])  # the Board child serve reads its Board from
     worker.main(["api", "--config", str(config), "--port", "0"])
-    worker.main(["history", "--config", str(config)])
+    worker.main(["flow-metrics", "--config", str(config)])
 
     own = HistoryStore(f"sqlite:///{tmp_path / 'starpulse-history.sqlite'}", {})
     log = EventLog(str(own.engine.url))

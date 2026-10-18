@@ -128,7 +128,7 @@ EDITS = {
     "runs": ('"nightly", "task-duplicate-retrain"', '"nightly"', {"api", "runs"}),
     "forward": ("batch = 50", "batch = 10", {"api", "forwarding", "board"}),
     "search": ('model = "small"', 'model = "large"', {"api", "search"}),
-    "board": ("interval = 1", "interval = 2", {"api", "pulls", "autopilot", "runs", "history", "board"}),
+    "board": ("interval = 1", "interval = 2", {"api", "pulls", "autopilot", "runs", "flow-metrics", "board"}),
 }
 
 
