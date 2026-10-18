@@ -608,8 +608,9 @@ DRAIN_S = 8.0
 def serve_until_stopped(server: StarPulseServer, feed: BoardFeed) -> None:
     """Serve until Ctrl-C or `SIGTERM`, then tell every open stream the server is restarting, finish the requests taken
     and save the Board the feed keeps, so the next start resumes from it."""
-    # a stopped unit leaves through the save below, as Ctrl-C does
-    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+    # a stopped unit leaves through the save below. The loop is asked to end rather than interrupted: an exception
+    # raised in it between `accept` and `process_request` counting the connection would drop that connection unanswered
+    signal.signal(signal.SIGTERM, lambda *_: threading.Thread(target=server.shutdown, daemon=True).start())
     try:
         try:
             server.serve_forever()

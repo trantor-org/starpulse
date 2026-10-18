@@ -6,7 +6,6 @@ import logging
 import os
 import signal
 import threading
-import time
 from pathlib import Path
 
 import pytest
@@ -246,10 +245,15 @@ def test_saving_a_board_under_a_new_projection_hash_removes_the_row_under_the_ol
 class _Server:
     """A server that runs until a signal ends it."""
 
+    def __init__(self) -> None:
+        self._stopped = threading.Event()
+
     def serve_forever(self) -> None:
         os.kill(os.getpid(), signal.SIGTERM)
-        time.sleep(5)  # the handler leaves before this ends
-        raise AssertionError("SIGTERM did not stop the server")
+        assert self._stopped.wait(5), "SIGTERM did not stop the server"
+
+    def shutdown(self) -> None:
+        self._stopped.set()
 
     def drain(self, timeout: float) -> bool:
         return True
@@ -271,8 +275,7 @@ def test_a_stopped_server_saves_the_board_before_it_exits() -> None:
     feed.resume(store, STREAM, lambda cursor: False)
     before = signal.getsignal(signal.SIGTERM)
     try:
-        with pytest.raises(SystemExit):
-            serve_until_stopped(_Server(), feed)  # type: ignore[arg-type]
+        serve_until_stopped(_Server(), feed)  # type: ignore[arg-type]
     finally:
         signal.signal(signal.SIGTERM, before)
 

@@ -2,12 +2,10 @@
 
 import os
 import signal
-import time
+import threading
 import urllib.request
 from http.client import HTTPResponse
 from pathlib import Path
-
-import pytest
 
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import next_event, serve, task, url
@@ -48,10 +46,15 @@ def test_a_rebuilt_page_is_named_by_a_different_build(tmp_path: Path) -> None:
 class _SignalledServer:
     """A server that runs until its own SIGTERM ends it."""
 
+    def __init__(self) -> None:
+        self._stopped = threading.Event()
+
     def serve_forever(self) -> None:
         os.kill(os.getpid(), signal.SIGTERM)
-        time.sleep(5)  # the handler leaves before this ends
-        raise AssertionError("SIGTERM did not stop the server")
+        assert self._stopped.wait(5), "SIGTERM did not stop the server"
+
+    def shutdown(self) -> None:
+        self._stopped.set()
 
     def drain(self, timeout: float) -> bool:
         return True
@@ -66,8 +69,7 @@ def test_sigterm_tells_every_open_stream_the_server_is_restarting_before_the_pro
             assert next_event(resp, connection=True)[0] == "build"
         before = signal.getsignal(signal.SIGTERM)
         try:
-            with pytest.raises(SystemExit):
-                serve_until_stopped(_SignalledServer(), feed)  # type: ignore[arg-type]
+            serve_until_stopped(_SignalledServer(), feed)  # type: ignore[arg-type]
         finally:
             signal.signal(signal.SIGTERM, before)
 
