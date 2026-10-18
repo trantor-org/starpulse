@@ -46,7 +46,6 @@ OVER_CEILING = {
     "starpulse/tests/integration/server/test_standalone.py::test_a_lane_event_a_trigger_matches_starts_the_run_through_the_adapter_and_one_it_does_not_match_starts_none": "TASK-6309",
     "starpulse/tests/integration/server/test_standalone.py::test_an_event_posted_with_the_token_in_the_environment_reaches_the_snapshot_and_a_wrong_token_does_not": "TASK-6309",
     "starpulse/tests/integration/server/test_standalone.py::test_serve_answers_on_the_listening_socket_the_service_manager_passes_in_and_binds_no_port_of_its_own": "TASK-6309",
-    "starpulse/tests/integration/server/test_standalone.py::test_serve_binds_host_and_port_unless_a_socket_is_passed_to_this_process": "TASK-6309",
     "starpulse/tests/integration/server/test_standalone.py::test_the_served_snapshot_sizes_each_suns_share_from_the_history_the_server_keeps": "TASK-6309",
     "starpulse/tests/integration/server/test_standalone.py::test_without_a_cache_server_or_any_tool_on_the_path_the_server_serves_history_and_what_emit_pushed": "TASK-6309",
     "starpulse/tests/unit/server/test_closure.py::test_the_pulls_closure_holds_no_autopilot_module_and_the_autopilot_closure_holds_them": "TASK-6323",
