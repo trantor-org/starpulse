@@ -907,6 +907,9 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     if search is not None:
         feed.index_tasks(search)  # `starpulse worker search` catches the vectors up off the feed's path
     stop = threading.Event()
+    # the actor notes are followed before the Board is read: a note logged while the replay places its move is missed
+    # for good by a follower that starts after it, and that move enters its lane naming no one
+    follow_notes(log, feed, stop)
     if args.hub:  # a hub has no Board child: it reads its Board itself
         board.start(feed, f"starpulse-{port}", log)
     else:
@@ -924,7 +927,6 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     # `starpulse worker pulls` runs the context, as a child of this process or beside it; this process reads its
     # projection and asks it
     Projected(log, feed).follow(stop)
-    follow_notes(log, feed, stop)
     # a lane move any writer leaves unnamed is counted; a hub's lane entries are its sources'
     lane_metrics = None
     if not args.hub:
