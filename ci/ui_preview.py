@@ -478,18 +478,27 @@ def _serve(directory: Path) -> Iterator[int]:  # pragma: no cover — process bo
         httpd.shutdown()
 
 
-def _shoot(url: str, out: Path) -> Path:  # pragma: no cover — process boundary
+#: Extra tries after the first when a playwright-cli call exits non-zero; the shared daemon sometimes answers `Session closed`.
+_SHOOT_RETRIES = 2
+
+
+def _shoot(url: str, out: Path) -> Path:
     """Open `url` in headless Chromium, give it `_SETTLE_MS` to draw, and save the viewport to `out`."""
     # every runner on the host shares one playwright-cli daemon, so a session named per process keeps a concurrent job's `close` off this browser
     pw = [*_PLAYWRIGHT_CLI, f"-s=starpulse-ui-preview-{os.getpid()}"]
-    try:
-        _run(*pw, "open", url)
-        _run(*pw, "resize", *map(str, _VIEWPORT))
-        _run(*pw, "run-code", f"async page => {{ await page.waitForTimeout({_SETTLE_MS}); }}")
-        _run(*pw, "screenshot", f"--filename={out.resolve().as_posix()}")
-    finally:
-        _run(*pw, "close")
-    return out
+    for attempt in range(_SHOOT_RETRIES + 1):
+        try:
+            _run(*pw, "open", url)
+            _run(*pw, "resize", *map(str, _VIEWPORT))
+            _run(*pw, "run-code", f"async page => {{ await page.waitForTimeout({_SETTLE_MS}); }}")
+            _run(*pw, "screenshot", f"--filename={out.resolve().as_posix()}")
+            return out
+        except RuntimeError:
+            if attempt == _SHOOT_RETRIES:
+                raise
+        finally:
+            _run(*pw, "close")
+    raise AssertionError("unreachable")
 
 
 def _compare(repo: str, base: str, head: str) -> dict[str, Any] | None:  # pragma: no cover — process boundary
