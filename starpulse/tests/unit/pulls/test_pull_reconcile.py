@@ -11,6 +11,7 @@ from starpulse._internal.pulls.pull_store import (
     PullSync,
     drift_count,
     drift_counter,
+    refresh_pull,
     refresh_repository,
 )
 from starpulse._internal.pulls.pulls import PullStore
@@ -94,6 +95,30 @@ def test_reconcile_full_refreshes_and_counts_drift_when_open_set_differs() -> No
     assert drift_count() == before + 1
     assert {r["number"] for r in store.find(repo=REPO)} == {1, 2}
     assert DRIFT_METRIC in drift_counter()
+
+
+def test_a_drift_refresh_does_not_reread_a_cited_pr_only_the_database_holds(tmp_path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'pulls.sqlite'}")
+    merged = _pr_node(5) | {"state": "MERGED", "mergedAt": "2020-01-01T00:00:00Z", "mergeCommit": {"oid": "def"}}
+    refresh_pull(REPO, 5, PullStore(engine), 100.0, lambda repo, query: {"p5": merged})
+    store = PullStore(engine)  # a new process: the old merged PR is past the hold window, so only the database has it
+    feed = BoardFeed()
+    feed.put(task("PROJ-1", "In Review", references=[f"https://github.com/{REPO}/pull/5"]))
+    queries: list[str] = []
+
+    def graphql(repo: str, query: str) -> dict:
+        queries.append(query)
+        nodes = [_open_node(1)]
+        return {
+            "open": {"pageInfo": {"hasNextPage": False}, "nodes": nodes},
+            "recent": {"nodes": nodes},
+            "p1": _pr_node(1),
+        }
+
+    PullSync(store, feed, (), graphql, lambda: 200.0).reconcile()
+
+    assert any("pullRequest(number: 1)" in q for q in queries)
+    assert all("pullRequest(number: 5)" not in q for q in queries)
 
 
 def test_run_forever_uses_reconcile_not_blind_refresh(monkeypatch: pytest.MonkeyPatch) -> None:
