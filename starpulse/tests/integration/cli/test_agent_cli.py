@@ -27,7 +27,7 @@ from starpulse._internal.kit.adapter_kit import url as _url
 from starpulse._internal.server.server import _no_writer
 from starpulse._internal.board.view import task_view
 from starpulse._internal.cli import agent_cli as cli
-from starpulse._internal.cli import skill_install
+from starpulse._internal.cli import agent_wire, skill_install
 from starpulse.contracts.adapters import Move
 from starpulse.tests.unit.board.test_native_lifecycle import PULL, REVIEW_NEEDS_PR, _lifecycle
 from starpulse._internal.config.level import Level, Orbit, Terminal
@@ -523,7 +523,7 @@ def test_a_server_that_answers_json_that_is_no_snapshot_is_unavailable(
 def test_the_server_is_the_flag_else_the_environment_else_the_default_port(
     flag: str | None, env: dict[str, str], expected: str
 ) -> None:
-    assert cli.server_url(flag, env) == expected
+    assert agent_wire.server_url(flag, env) == expected
 
 
 @pytest.mark.parametrize("argv", [["snapshot"], ["board"], ["task", "show", "PROJ-1"]])

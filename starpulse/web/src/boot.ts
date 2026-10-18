@@ -4,7 +4,8 @@
 import { AdminStore } from "./features/admin/adminPrefs";
 import { HudStore } from "./render/hud";
 import { loadLateFonts } from "./render/fonts";
-import { renderer, type Renderer } from "./render/renderer";
+import { renderer } from "./render/renderer";
+import type { Renderer } from "./render/rendererTypes";
 import { NO_BOARD_MS, markDrawn } from "./shared/boardMark";
 import { retired, viewOf } from "./shared/nav";
 

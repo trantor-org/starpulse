@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { arrivalRings, tierColor } from "./draw";
 import { dagRings, orbiterLook } from "./boardDraw";
 import { DAG_COLOR } from "./draw";
-import { feedOf } from "./renderer";
+import { feedOf } from "./feed";
 import { nameLines } from "./dagTies";
 import { PULSE } from "./sky";
 import type { Dag } from "../api";
