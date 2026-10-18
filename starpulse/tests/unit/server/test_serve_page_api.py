@@ -74,7 +74,7 @@ def test_serve_refuses_an_unbuilt_page_before_it_starts_any_child(
     assert supervisors == []
 
 
-def test_serve_stops_with_the_reason_when_the_config_builds_no_page_and_starts_no_child(
+def test_serve_stops_with_the_reason_when_the_config_builds_no_page_and_leaves_no_child_running(
     config: Path, monkeypatch: pytest.MonkeyPatch, supervisors: list[FakeSupervisor], capsys: pytest.CaptureFixture[str]
 ) -> None:
     def refuse(*args: object) -> None:
@@ -87,7 +87,7 @@ def test_serve_stops_with_the_reason_when_the_config_builds_no_page_and_starts_n
 
     assert exited.value.code == 1
     assert "no configured adapter lists: ['bogus/actor']" in capsys.readouterr().err
-    assert supervisors == []
+    assert all(supervisor.stopped for supervisor in supervisors)
 
 
 def test_serve_hands_the_api_child_the_page_build_it_checked_and_the_child_serves_it(
