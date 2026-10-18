@@ -248,8 +248,8 @@ from starpulse._internal.harnesses.session_start import starter
 from starpulse._internal.runs.ingest import ForwardIngest, Ingest
 from starpulse._internal.runs.ingest import tokens as ingest_tokens
 from starpulse._internal.pulls.delivery import Projected, follow_notes, metrics_of, request_refresh
-from starpulse._internal.pulls.release import READY, RELEASE_S, Releaser
 from starpulse._internal.pulls.task_actor import TaskActor, moves_of
+from starpulse._internal.pulls.unblock import READY, UNBLOCK_S, Unblocker
 from starpulse._internal.config.pins import GitHub
 from starpulse._internal.pulls.pull_requests import PullRequests
 from starpulse._internal.pulls.pull_refresh import PullRefresh
@@ -682,7 +682,7 @@ def start_delivery(
     after_project: Callable[[], None] | None = None,
 ) -> tuple[TaskActor | None, PullSync | None]:
     """Start the Delivery context: the task actor, the pull store's sync with the projection it feeds, and the
-    release of dependents, as `config` asks. Returns the actor and the sync, each None when not started.
+    unblock of dependents, as `config` asks. Returns the actor and the sync, each None when not started.
 
     `actor_feed` is the feed the actor notes its writes on (the worker's relays them to `serve`); `after_project`
     runs after each projection. Raises `ValueError` naming a table the board cannot serve.
@@ -724,23 +724,25 @@ def start_delivery(
         lanes = {state["id"] for state in feed.machines["board"]["states"]}
         if board.edit is None or not {WAITING, READY} <= lanes:
             raise ValueError("[release] needs a board that edits tasks and draws waiting and ready lanes")
-        if actor is None:  # the actor settles and releases on the facts, so the polling pass would only repeat it
-            releaser = Releaser(feed, pulls, board.edit, config.repos, config.release.settle, pins)
-            threading.Thread(target=_keep_released, args=(releaser, feed, stop), name="board-release", daemon=True).start()
+        if actor is None:  # the actor merges and unblocks on the facts, so the polling pass would only repeat it
+            unblocker = Unblocker(feed, pulls, board.edit, config.repos, config.release.settle, pins)
+            threading.Thread(
+                target=_keep_unblocked, args=(unblocker, feed, stop), name="board-unblock", daemon=True
+            ).start()
     return actor, sync
 
 
-def _keep_released(
-    releaser: Releaser, feed: BoardFeed, stop: threading.Event, interval_s: float = RELEASE_S
+def _keep_unblocked(
+    unblocker: Unblocker, feed: BoardFeed, stop: threading.Event, interval_s: float = UNBLOCK_S
 ) -> None:  # pragma: no mutate block
-    """Once the Board replay is done, release the Waiting tasks whose dependencies settled every `interval_s` seconds
+    """Once the Board replay is done, unblock the Waiting tasks whose dependencies merged every `interval_s` seconds
     until `stop`; a failed pass is logged and never ends the loop."""
     feed.wait_replayed()
     while not stop.is_set():
         try:
-            releaser.release()
+            unblocker.unblock()
         except Exception:
-            logger.exception("release: the pass failed")
+            logger.exception("unblock: the pass failed")
         stop.wait(interval_s)
 
 

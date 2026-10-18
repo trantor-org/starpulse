@@ -1,4 +1,4 @@
-"""The pull store's sync and the board-release loop end when the stop event they were built with is set."""
+"""The pull store's sync and the board-unblock loop end when the stop event they were built with is set."""
 
 import threading
 
@@ -58,15 +58,15 @@ def test_run_forever_returns_once_the_sync_is_stopped() -> None:
     assert not thread.is_alive()
 
 
-def test_the_release_loop_returns_once_it_is_stopped() -> None:
+def test_the_unblock_loop_returns_once_it_is_stopped() -> None:
     stop = threading.Event()
     passes: list[bool] = []
 
-    class Releaser:
-        def release(self) -> None:
+    class Unblocker:
+        def unblock(self) -> None:
             passes.append(True)
 
-    thread = threading.Thread(target=server._keep_released, args=(Releaser(), BoardFeed(), stop, 3600.0), daemon=True)
+    thread = threading.Thread(target=server._keep_unblocked, args=(Unblocker(), BoardFeed(), stop, 3600.0), daemon=True)
     thread.start()
     stop.set()
     thread.join(WAIT_S)
