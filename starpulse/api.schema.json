@@ -5001,7 +5001,7 @@
           "type": "integer"
         },
         "stale": {
-          "description": "True when the last read failed and this is the read before it.",
+          "description": "Always false: nothing polls GitHub, so a record is current until a newer event lands.",
           "type": "boolean"
         },
         "threads": {

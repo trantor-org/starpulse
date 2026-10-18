@@ -1,4 +1,4 @@
-"""The pull store's sync and the board-unblock loop end when the stop event they were built with is set."""
+"""The pull store's refresh thread and the board-unblock loop end when the stop event they were built with is set."""
 
 import threading
 
@@ -19,7 +19,7 @@ def _sync(stop: threading.Event, graphql=lambda repo, query: {}) -> PullSync:
     return PullSync(PullStore(create_engine("sqlite://")), feed, (), graphql, lambda: 1.0, stop=stop)
 
 
-def test_a_stopped_sync_reads_no_repository() -> None:
+def test_a_stopped_sync_serves_no_request() -> None:
     stop = threading.Event()
     stop.set()
     asked: list[str] = []
@@ -28,28 +28,17 @@ def test_a_stopped_sync_reads_no_repository() -> None:
         asked.append(repo)
         return {}
 
-    _sync(stop, graphql).reconcile()
-    _sync(stop, graphql).refresh()
+    sync = _sync(stop, graphql)
+    sync.request("acme/widgets", 1)
+    sync.run_forever()
 
     assert asked == []
-
-
-def test_a_stopped_sync_projects_nothing() -> None:
-    stop = threading.Event()
-    stop.set()
-    projected: list[bool] = []
-    sync = _sync(stop)
-    sync._project = lambda: projected.append(True)
-
-    sync.reconcile()
-
-    assert projected == []
 
 
 def test_run_forever_returns_once_the_sync_is_stopped() -> None:
     stop = threading.Event()
     sync = _sync(stop)
-    thread = threading.Thread(target=sync.run_forever, args=(3600.0,), daemon=True)
+    thread = threading.Thread(target=sync.run_forever, daemon=True)
     thread.start()
 
     stop.set()

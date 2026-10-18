@@ -41,4 +41,6 @@ class Pull(_Api):
     behind_main: int | None = Field(
         default=None, description="Commits `main` holds that the PR's head lacks; null once the head branch is gone."
     )
-    stale: bool = Field(description="True when the last read failed and this is the read before it.")
+    stale: bool = Field(
+        description="Always false: nothing polls GitHub, so a record is current until a newer event lands."
+    )

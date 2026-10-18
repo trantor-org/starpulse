@@ -20,6 +20,9 @@ class Sync:
     def request(self, repo: str, number: int) -> None:
         pass
 
+    def project(self) -> None:
+        pass
+
 
 @pytest.mark.parametrize(("line", "kept"), [("", True), ("pull_requests = false\n", False)])
 def test_serve_starts_the_pull_store_only_when_configured(

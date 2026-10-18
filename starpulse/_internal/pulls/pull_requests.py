@@ -5,8 +5,8 @@ whether it merged or how many review threads are open. The PR store (`pull_store
 keeps, for each pull request, those facts and the detail the Board needs beside them (merge commit and time, commits
 behind main, changed files and the CI history). `PullRequests` reads the records of the PRs open tasks cite from the
 store, never from GitHub, and keeps them in the feed so a snapshot is served from memory. For the pin bumps of
-`[[repos]]`, `pins.link` finds the parent merge that applies each child merge. A record the store last read over
-`STALE_S` ago, while the PR is open, is marked `stale`.
+`[[repos]]`, `pins.link` finds the parent merge that applies each child merge. A record is current until a newer
+event lands, so `stale` is always false; its `fetchedAt` is the time of the last event that touched it.
 """
 
 from __future__ import annotations
@@ -15,8 +15,7 @@ import json
 import logging
 import re
 import subprocess
-import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Protocol
 
 from starpulse._internal.ci.ci_trail import PullHistory, parse
@@ -29,10 +28,6 @@ if TYPE_CHECKING:  # annotation only: the pull store opens the database stack
 
 logger = logging.getLogger(__name__)
 
-#: Seconds between reads of GitHub.
-REFRESH_S = 60.0
-#: Seconds after which an open PR's stored record no longer counts as current (the PR store's readers' bound).
-STALE_S = 180.0
 _GH_TIMEOUT_S = 30
 PULL_URL = re.compile(r"https://github\.com/([^/\s]+/[^/\s]+)/pull/(\d+)/?")
 
@@ -90,14 +85,12 @@ class PullRequests:
         repos: Sequence[Repo] = (),
         pins: Pins | None = None,
         trail: CiRecorder | None = None,
-        clock: Callable[[], float] = time.time,
     ) -> None:
         self._feed = feed
         self._store = store
         self._repos = repos
         self._pins = pins or GitHub(lambda: feed.pull_answers().get("pins", {}))
         self._trail = trail
-        self._clock = clock
         self._last: dict[str, dict] = {}
 
     def _stored(self, urls: Sequence[str]) -> dict[str, dict]:
@@ -115,7 +108,6 @@ class PullRequests:
         """Project every open task's PRs from the store once."""
         wanted = self._feed.pull_requests()
         stored = self._stored(list(dict.fromkeys(url for prs in wanted.values() for url in prs)))
-        now = self._clock()
         self._last = {
             url: {
                 "number": record["number"],
@@ -127,7 +119,7 @@ class PullRequests:
                 "files": record["detail"]["files"],
                 "threads": record["threads"],
                 "behind_main": record["detail"]["behindMain"],
-                "stale": record["state"] == "OPEN" and now - record["fetchedAt"] > STALE_S,
+                "stale": False,
             }
             for url, record in stored.items()
         }

@@ -54,20 +54,17 @@ GET /api/ledger/<event>/events
                    SSE for a page with that Ledger open: `page` ({rows, more}, the newest rows) at once, then `rows`
                    ({rows}, those that are new or differ) as they change. /api/events carries no Ledger row
 GET /api/pulls[?repo=OWNER/NAME][&number=N][&state=open|merged|closed][&body_contains=TEXT]
-                   {pulls}: the pull requests the PR store read from GitHub (one query per repository a minute, the
-                   open ones every time, a merged or closed one until it is final, a merged one also until it has its mergeSha), those matching every filter
+                   {pulls}: the pull requests the PR store holds, kept current by the lifecycle events of the tasks that cite
+                   them (and by a read `POST /api/pulls/refresh` asks of GitHub), those matching every filter
                    given, by repository then number, each {repo, number, state (OPEN, MERGED, CLOSED), isDraft,
                    mergeable, baseRefName, headRefOid, body, checks (pass, failing, pending, none: the required
                    checks at the head commit), requiredChecks [{name, result}], threads (unresolved), headRefName
                    (the head branch), unresolvedThreads [{id, author}] (each unresolved thread's id and its first
                    comment's author login, null for a deleted account; the first 100 threads), updatedAt,
                    mergedAt and mergeSha (ISO 8601 UTC merge time and merge commit; null until merged, and for a
-                   merge stored before they were kept), and fetchedAt (epoch seconds this record was read)}. A `number` that is not an integer, or a `state`
+                   merge stored before they were kept), and fetchedAt (epoch seconds of the last event or read that changed this record)}. A `number` that is not an integer, or a `state`
                    that is none of those, is 400
-GET /metrics       Prometheus text: `starpulse_pull_store_age_seconds{repo}`, the seconds since the newest record of
-                   each repository holding an open pull request was read (a stale one means reads stopped);
-                   `starpulse_pull_reconcile_drift`, how many listing reconciles disagreed with the store and ran a
-                   full GitHub refresh; `starpulse_page_build_info{build}`, 1 for the page build id the `build` event
+GET /metrics       Prometheus text: `starpulse_page_build_info{build}`, 1 for the page build id the `build` event
                    names (none without a build); `starpulse_board_lane_unattributed_total`, the board:lanes entries
                    any process appended since this one started that name no actor (none on a hub); `starpulse_machine_conformance_violations_total{machine}` and
                    `starpulse_machine_conformance_events_total{machine}`, the recorded moves of each machine that no
@@ -354,6 +351,7 @@ def _level_view(
     view: Callable[..., dict[str, Any]],
 ) -> tuple[bytes, int]:
     from starpulse._internal.eventlog.history import LevelHistory, SummarisedLevel  # noqa: PLC0415 - the database stack loads when a store does
+
     if level is None:
         return _error("this server has no level: add a [level] table and serve with --hub"), 404
     window = _hours(query, "hours", _HEALTH_HOURS)
@@ -444,10 +442,6 @@ def autopilot_remote(config: Config, base: Path, feed: BoardFeed, log: EventLog)
     return Remote(log, base / (config.autopilot.state_dir or ""))
 
 
-
-
-
-
 #: The first file descriptor a service manager passes (`sd_listen_fds(3)`): 0, 1 and 2 are stdio.
 _LISTEN_FDS_START = 3
 
@@ -482,8 +476,6 @@ def inherited_socket(environ: Mapping[str, str]) -> socket.socket | None:
 #: is hundreds of megabytes of RSS the free-threaded allocator does not return when those threads exit (live: threads
 #: and FDs back after starpulse-load, RSS not). 256 KiB encodes a 1 MB snapshot.
 REQUEST_STACK = 256 * 1024
-
-
 
 
 class StarPulseServer(ThreadingHTTPServer):
@@ -624,7 +616,9 @@ def serve_until_stopped(server: StarPulseServer, feed: BoardFeed) -> None:
         except KeyboardInterrupt:
             pass
     finally:
-        feed.announce("restarting", {"at": time.time()})  # each page says "restarting" rather than shows a failure while the process is away
+        feed.announce(
+            "restarting", {"at": time.time()}
+        )  # each page says "restarting" rather than shows a failure while the process is away
         if not server.drain(DRAIN_S):
             logger.warning("stopping with requests still running after %.0f s", DRAIN_S)
         feed.save()
@@ -689,6 +683,7 @@ def start_delivery(
     """
     from starpulse._internal.ci.ci_trail import CiTrail  # noqa: PLC0415 - the database stack loads when a store does
     from starpulse._internal.feed.board_feed import WAITING  # noqa: PLC0415 - the database stack loads when a store does
+
     # without the GitHub CLI there is no source, and a task simply carries no PR state; a config can turn the store off
     actor = None
     if config.task_actor:
@@ -809,6 +804,7 @@ def refuse_unassemblable(
     """Exit with the reason when the page cannot be built from `config`, so `serve` fails on it as the Page API child would
     rather than supervising a child that exits on it at every start."""
     from starpulse._internal.server.assembly import assemble  # noqa: PLC0415 - the database stack loads after the config is accepted
+
     base = args.config.parent if args.config else Path.cwd()
     try:
         assemble(config, base, args.hours * 3600, ready.run_safe)
@@ -858,6 +854,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     from starpulse._internal.level.insights import Insights, InsightStore, restore  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse._internal.pulls.pulls import PullStore  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse._internal.server.assembly import assemble, history_store  # noqa: PLC0415 - the database stack loads after the config is accepted
+
     instance_tokens, source_tokens, refresh_token, gate, starts, reruns, run_safe = ready
     if args.hub:
         from starpulse._internal.hub import hub  # noqa: PLC0415 - hub-only code; `prepare` found it importable
@@ -1043,7 +1040,9 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         listening = inherited_socket(os.environ)
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")
-    os.environ.pop(LISTEN_FD_ENV, None)  # the workers started below are handed what they hold, not what this process was
+    os.environ.pop(
+        LISTEN_FD_ENV, None
+    )  # the workers started below are handed what they hold, not what this process was
     ready = prepare(parser, args, config)
     commands = worker_commands(config, args.config, hub=args.hub)
     # the Page API child inherits the listening socket, so it starts with `subprocess`; every other worker forks from this
@@ -1081,5 +1080,3 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
 
 if __name__ == "__main__":
     main()
-
-

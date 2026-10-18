@@ -6,7 +6,6 @@ from pathlib import Path
 import pytest
 from sqlalchemy import Engine, create_engine, event
 
-from starpulse._internal.pulls.pull_store import listing_drifted
 from starpulse._internal.pulls.pulls import PullStore
 
 REPO = "acme/widgets"
@@ -108,11 +107,3 @@ def test_held_only_leaves_out_what_a_read_of_the_database_would_add(engine: Engi
 
     assert [r["number"] for r in store.find(repo=REPO, held_only=True)] == [1, 2]
     assert not seen
-
-
-def test_a_cited_pull_request_outside_the_window_with_its_detail_is_not_drift(engine: Engine) -> None:
-    store = PullStore(engine, window=timedelta(days=7))
-    listing = {"open": {"pageInfo": {"hasNextPage": False}, "nodes": [{"number": 1, "state": "OPEN"}]}}
-
-    assert not listing_drifted(REPO, store, lambda *_: listing, linked=[3])
-    assert listing_drifted(REPO, store, lambda *_: listing, linked=[99])

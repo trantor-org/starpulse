@@ -1,4 +1,4 @@
-"""The pull requests StarPulse read from GitHub, kept in its own store and served at `GET /api/pulls`."""
+"""The pull requests StarPulse keeps in its own store, projected from lifecycle events, and serves at `GET /api/pulls`."""
 
 from __future__ import annotations
 
@@ -7,10 +7,10 @@ from collections.abc import Callable, Iterable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import Engine, case, delete, func, insert, or_, select, tuple_, update
+from sqlalchemy import Engine, delete, insert, or_, select, tuple_
 
 from starpulse._internal.eventlog.event_log import create_tables
-from starpulse._internal.eventlog.tables import pull_checks, pull_requests
+from starpulse._internal.eventlog.tables import pull_requests
 
 #: The GraphQL names a record is served under, by column.
 _FIELDS = {
@@ -37,9 +37,6 @@ _LATER = {"head_ref": "headRefName", "unresolved": "unresolvedThreads"}
 #: How long after its last update a closed or merged pull request stays in memory: about 250 a day, 12 KB each.
 HOLD_WINDOW = timedelta(hours=24)
 
-AGE_METRIC = "starpulse_pull_store_age_seconds"
-AGE_HELP = "Seconds since GitHub was last read successfully for a repository holding an open pull request."
-
 
 class PullStore:
     """Pull request records by (repository, number), in the database `engine` opens.
@@ -56,7 +53,7 @@ class PullStore:
         self.rev = 0
         self._lock = threading.Lock()
         self._listeners: list[Callable[[], None]] = []
-        create_tables(engine, [pull_requests, pull_checks])
+        create_tables(engine, [pull_requests])
         self._held: dict[tuple[str, int], dict[str, Any]] = {}
         since = (datetime.now(UTC) - window).strftime("%Y-%m-%dT%H:%M:%SZ")
         self._hold(
@@ -114,35 +111,6 @@ class PullStore:
         """The repositories the store holds a record of."""
         with self._engine.connect() as db:
             return list(db.execute(select(pull_requests.c.repo).distinct().order_by(pull_requests.c.repo)).scalars())
-
-    def mark_checked(self, repo: str, now: float) -> None:
-        """Note that GitHub answered a read of `repo` at epoch `now`, though no record changed. The note is stored, for
-        the server's gauge to read: the worker that marks it runs in another process."""
-        with self._engine.begin() as db:
-            if not db.execute(update(pull_checks).where(pull_checks.c.repo == repo).values(checked_at=now)).rowcount:
-                db.execute(insert(pull_checks).values(repo=repo, checked_at=now))
-
-    def age_gauge(self, now: float) -> str:
-        """Prometheus text of the seconds since GitHub was last read for each repository, as of epoch `now`: the
-        later of its newest record's read and its last `mark_checked`, since a listing that agrees with the store
-        rewrites nothing.
-
-        Only a repository holding an open PR is polled every cycle; one with none ages without being stale and is
-        left out."""
-        newest = (
-            select(pull_requests.c.repo, func.max(pull_requests.c.fetched_at).label("newest"))
-            .group_by(pull_requests.c.repo)
-            .having(func.sum(case((pull_requests.c.state == "OPEN", 1), else_=0)) > 0)
-            .order_by(pull_requests.c.repo)
-        )
-        with self._engine.connect() as db:
-            rows = db.execute(newest).all()
-            checked = dict(db.execute(select(pull_checks.c.repo, pull_checks.c.checked_at)).all())
-        samples = [
-            f'{AGE_METRIC}{{repo="{repo}"}} {now - max(fetched, checked.get(repo, fetched)):g}'
-            for repo, fetched in rows
-        ]
-        return "\n".join([f"# HELP {AGE_METRIC} {AGE_HELP}", f"# TYPE {AGE_METRIC} gauge", *samples]) + "\n"
 
     def find(
         self,

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
@@ -110,6 +110,27 @@ def follow_refreshes(log: EventLog, request: Callable[[str, int], Any], stop: th
         request(entry.fields["repo"], int(entry.fields["number"]))
 
     return _follow("pull-refresh", log, REFRESH_STREAM, log.head() or 0, handle, stop)
+
+
+def follow_events(
+    log: EventLog, feed: Any, handlers: Mapping[str, Callable[[Entry], None]], stop: threading.Event
+) -> list[threading.Thread]:
+    """Hand each stream of `handlers` (name to handler) every entry the log retains, then each new one, one thread
+    per stream until `stop`. Each waits for the Board replay: an event lands on the pull requests its task cites,
+    which the feed knows only once it has read the Board. An entry applied twice leaves the store as once did, so a
+    restart replays them all."""
+    from starpulse._internal.eventlog.event_log import Tail  # noqa: PLC0415 - the database stack loads when a log opens
+
+    def run(stream: str, handle: Callable[[Entry], None]) -> None:
+        feed.wait_replayed()
+        Tail(log, stream, after=0, interval=POLL_S).run(handle, stop)
+
+    threads = [
+        threading.Thread(target=run, args=item, name=f"pull-events-{item[0]}", daemon=True) for item in handlers.items()
+    ]
+    for thread in threads:
+        thread.start()
+    return threads
 
 
 class NotingFeed:

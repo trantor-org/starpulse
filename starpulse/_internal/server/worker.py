@@ -1,6 +1,6 @@
 """`starpulse worker <context>`: one bounded context as its own process, beside `serve`.
 
-`api` is the Page API, run by `starpulse._internal.server.api_worker` on the socket `serve` hands it; `pulls` is the Delivery context (the pull request store's sync and projection, the task actor and the release of
+`api` is the Page API, run by `starpulse._internal.server.api_worker` on the socket `serve` hands it; `pulls` is the Delivery context (the pull request store's projection from the machine events and its manual refresh, the task actor and the release of
 dependents); `autopilot` is the Autopilot context, run by `starpulse._internal.server.autopilot_worker`; `runs` is the
 Runs context, run by `starpulse._internal.server.runs_worker`; `forwarding` is the Forwarding context, run by
 `starpulse._internal.server.forwarding_worker`; `flow-metrics` is the Flow Metrics context, run by
@@ -31,9 +31,11 @@ from starpulse._internal.pulls.delivery import (
     NotingFeed,
     Projected,
     Publisher,
+    follow_events,
     follow_refreshes,
     keep_metrics,
 )
+from starpulse._internal.pulls.pull_events import JOBS_STREAM, MACHINE_STREAM, PullProjection
 from starpulse._internal.pulls.pulls import PullStore
 from starpulse._internal.server.assembly import worker_board
 from starpulse._internal.server.hold import hold
@@ -86,6 +88,8 @@ class Delivery:
             raise
         if sync:
             follow_refreshes(log, sync.request, stop)
+            projection = PullProjection(pulls, feed, sync.project)
+            follow_events(log, feed, {MACHINE_STREAM: projection.handle, JOBS_STREAM: projection.handle_job}, stop)
         if actor:
             keep_metrics(log, actor.exposition, stop)
 

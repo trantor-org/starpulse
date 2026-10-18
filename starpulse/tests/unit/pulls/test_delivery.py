@@ -130,6 +130,27 @@ def test_a_refresh_asked_before_the_worker_started_is_not_replayed(log: EventLog
     assert asked == [("acme/widgets", 2)]
 
 
+def test_each_followed_stream_hands_its_entries_to_its_own_handler_from_the_first(
+    log: EventLog, stop: threading.Event
+) -> None:
+    log.append("machine:events", {"task": "TASK-1"})
+    log.append("ci:jobs", {"job": "lint"})
+    seen: dict[str, list] = {"machine:events": [], "ci:jobs": []}
+    done = threading.Event()
+
+    def taking(stream: str):
+        def handle(entry) -> None:
+            seen[stream].append(entry.fields)
+            done.set() if all(seen.values()) else None
+
+        return handle
+
+    delivery.follow_events(log, Feed(), {name: taking(name) for name in seen}, stop)
+
+    assert done.wait(WAIT_S)
+    assert seen == {"machine:events": [{"task": "TASK-1"}], "ci:jobs": [{"job": "lint"}]}
+
+
 def test_the_workers_actor_notes_reach_the_serving_feed(log: EventLog, stop: threading.Event) -> None:
     serving = Feed()
     delivery.follow_notes(log, serving, stop)
