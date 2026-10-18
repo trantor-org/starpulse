@@ -55,7 +55,7 @@ def test_serve_supervises_every_worker_and_starts_no_context_in_process(
     assert threads == []
     assert isinstance(handled["autopilot"], Remote)
     [supervisor] = supervisors
-    assert set(supervisor.commands) == {"api", "pulls", "autopilot", "runs", "history", "board"}
+    assert set(supervisor.commands) == {"api", "pulls", "autopilot", "runs", "flow-metrics", "board"}
     assert supervisor.started
 
 
@@ -84,12 +84,12 @@ def test_serve_forks_its_workers_from_one_preloaded_process_it_closes_at_the_end
 @pytest.mark.parametrize(
     ("settings", "supervised"),
     [
-        ("api_worker = true\n", {"pulls", "autopilot", "runs", "history", "board"}),
-        ("runs_worker = true\n", {"api", "pulls", "autopilot", "history", "board"}),
-        ("history_worker = true\n", {"api", "pulls", "autopilot", "runs", "board"}),
-        ("board_worker = true\n", {"api", "pulls", "autopilot", "runs", "history"}),
+        ("api_worker = true\n", {"pulls", "autopilot", "runs", "flow-metrics", "board"}),
+        ("runs_worker = true\n", {"api", "pulls", "autopilot", "flow-metrics", "board"}),
+        ("flow_metrics_worker = true\n", {"api", "pulls", "autopilot", "runs", "board"}),
+        ("board_worker = true\n", {"api", "pulls", "autopilot", "runs", "flow-metrics"}),
         (
-            "api_worker = true\nruns_worker = true\nhistory_worker = true\nboard_worker = true\n",
+            "api_worker = true\nruns_worker = true\nflow_metrics_worker = true\nboard_worker = true\n",
             {"pulls", "autopilot"},
         ),
     ],
@@ -173,7 +173,7 @@ def test_serve_runs_no_forwarder_thread_and_supervises_a_forwarding_child_for_a_
     assert handled["forwarding"] is not None  # the page still reads and sets the forwarding opt-in
 
 
-@pytest.mark.parametrize("settings", ["", "history_worker = true\n"])
+@pytest.mark.parametrize("settings", ["", "flow_metrics_worker = true\n"])
 def test_serve_runs_neither_the_recorder_nor_the_prune_thread_whatever_the_history_setting(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, supervisors: list[FakeSupervisor], settings: str
 ) -> None:

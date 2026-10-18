@@ -1,4 +1,4 @@
-"""`starpulse worker history`: the History context (the recorder that copies the event log's machine events into the
+"""`starpulse worker flow-metrics`: the Flow Metrics context (the recorder that copies the event log's machine events into the
 history store, and the hourly prune of the event log) as its own process, beside `serve`.
 
 It reads the config and the history database `serve` does and meets `serve` only in the database: the page reads the

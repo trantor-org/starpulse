@@ -3,8 +3,8 @@
 `api` is the Page API, run by `starpulse._internal.server.api_worker` on the socket `serve` hands it; `pulls` is the Delivery context (the pull request store's sync and projection, the task actor and the release of
 dependents); `autopilot` is the Autopilot context, run by `starpulse._internal.server.autopilot_worker`; `runs` is the
 Runs context, run by `starpulse._internal.server.runs_worker`; `forwarding` is the Forwarding context, run by
-`starpulse._internal.server.forwarding_worker`; `history` is the History context, run by
-`starpulse._internal.server.history_worker`; `search` is the Search context's embedding catch-up, run by
+`starpulse._internal.server.forwarding_worker`; `flow-metrics` is the Flow Metrics context, run by
+`starpulse._internal.server.flow_metrics_worker`; `search` is the Search context's embedding catch-up, run by
 `starpulse._internal.server.search_worker`; `board` is the Board context's writers (the Start Criteria dating and the
 lane reconcile), run by `starpulse._internal.server.board_worker`.
 
@@ -41,7 +41,10 @@ from starpulse._internal.server.server import listen_options, start_delivery
 
 logger = logging.getLogger(__name__)
 
-CONTEXTS = ("api", "pulls", "autopilot", "runs", "forwarding", "history", "search", "board")
+CONTEXTS = ("api", "pulls", "autopilot", "runs", "forwarding", "flow-metrics", "search", "board")
+
+#: A context's old name, accepted for one release.
+ALIASES = {"history": "flow-metrics"}
 
 
 def delivery_blocks(config: Config) -> tuple:
@@ -122,7 +125,12 @@ def worker_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="starpulse worker", description="Run one bounded context of StarPulse as its own process."
     )
-    parser.add_argument("context", choices=CONTEXTS, help="the bounded context to run")
+    parser.add_argument(
+        "context",
+        type=lambda name: ALIASES.get(name, name),
+        choices=CONTEXTS,
+        help="the bounded context to run (`history` is the old name of `flow-metrics`)",
+    )
     parser.add_argument(
         "--config",
         type=Path,
@@ -161,10 +169,10 @@ def main(argv: list[str] | None = None) -> None:
         from starpulse._internal.server import forwarding_worker
 
         return forwarding_worker.main(argv, parser)
-    if args.context == "history":
-        from starpulse._internal.server import history_worker
+    if args.context == "flow-metrics":
+        from starpulse._internal.server import flow_metrics_worker
 
-        return history_worker.main(argv, parser)
+        return flow_metrics_worker.main(argv, parser)
     if args.context == "search":
         from starpulse._internal.server import search_worker
 

@@ -1,4 +1,4 @@
-"""`starpulse worker history` records the log's machine events into the history store and prunes the log, alone."""
+"""`starpulse worker flow-metrics` records the log's machine events into the history store and prunes the log, alone."""
 
 import threading
 import time
@@ -11,7 +11,7 @@ from sqlalchemy import select
 from starpulse._internal.eventlog import events
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import HistoryStore, _machine_events
-from starpulse._internal.server import assembly, history_worker, worker
+from starpulse._internal.server import assembly, flow_metrics_worker, worker
 from starpulse.tests import fake_board
 
 BOARD = '[board]\ntype = "starpulse.tests.fake_board"\nlanes = ["waiting", "ready", "done"]\nwrites = true\n'
@@ -52,13 +52,13 @@ def held() -> list[threading.Event]:
 def run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, pruned: list[dict], held: list[threading.Event]):
     """`worker.main` on `text`, holding returns at once; yields the log and store the worker shares with `serve`."""
     monkeypatch.setattr(fake_board, "BUILT", [])
-    monkeypatch.setattr(history_worker, "hold", lambda stop, reload: held.append(stop))
+    monkeypatch.setattr(flow_metrics_worker, "hold", lambda stop, reload: held.append(stop))
     url = f"sqlite:///{(tmp_path / 'starpulse-history.sqlite').resolve()}"
 
     def start(text: str = BOARD) -> tuple[EventLog, HistoryStore]:
         config = tmp_path / "starpulse.toml"
         config.write_text(text)
-        worker.main(["history", "--config", str(config)])
+        worker.main(["flow-metrics", "--config", str(config)])
         return EventLog(url), HistoryStore(url, {})
 
     yield start
@@ -100,3 +100,9 @@ def test_a_restarted_worker_neither_drops_nor_repeats_a_history_row(
     time.sleep(0.2)
     assert _recorded(store) == ["T-1", "T-2"]  # T-1 once, T-2 once
     assert store.cursor("machine:events") > first
+
+
+def test_the_history_context_name_still_parses_as_flow_metrics() -> None:
+    from starpulse._internal.server.worker import worker_parser
+
+    assert worker_parser().parse_args(["history"]).context == "flow-metrics"
