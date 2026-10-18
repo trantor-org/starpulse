@@ -65,7 +65,7 @@ def test_a_context_whose_worker_setting_is_false_gets_a_child_command_and_a_true
             load(None),
             runs_worker=True,
             forwarding_worker=True,
-            history_worker=True,
+            flow_metrics_worker=True,
             board_worker=True,
             api_worker=True,
         ),
@@ -74,18 +74,18 @@ def test_a_context_whose_worker_setting_is_false_gets_a_child_command_and_a_true
 
     assert every["pulls"] == [sys.executable, "-m", "starpulse", "worker", "pulls"]
     assert every["runs"] == [sys.executable, "-m", "starpulse", "worker", "runs"]
-    assert every["history"] == [sys.executable, "-m", "starpulse", "worker", "history"]
-    assert set(every) == {"api", "pulls", "autopilot", "runs", "history", "board"}  # forwarding has no child without a [forward] table
+    assert every["flow-metrics"] == [sys.executable, "-m", "starpulse", "worker", "flow-metrics"]
+    assert set(every) == {"api", "pulls", "autopilot", "runs", "flow-metrics", "board"}  # forwarding has no child without a [forward] table
     assert only_delivery_and_autopilot == {
         context: [sys.executable, "-m", "starpulse", "worker", context, "--config", "/etc/starpulse.toml"]
         for context in ("pulls", "autopilot")
     }
 
 
-def test_the_history_child_runs_for_a_false_setting_and_never_beside_a_hub() -> None:
-    assert "history" in worker_commands(load(None), None)
-    assert "history" not in worker_commands(replace(load(None), history_worker=True), None)
-    assert "history" not in worker_commands(load(None), None, hub=True)  # a hub keeps its history threads in-process
+def test_the_flow_metrics_child_runs_for_a_false_setting_and_never_beside_a_hub() -> None:
+    assert "flow-metrics" in worker_commands(load(None), None)
+    assert "flow-metrics" not in worker_commands(replace(load(None), flow_metrics_worker=True), None)
+    assert "flow-metrics" not in worker_commands(load(None), None, hub=True)  # a hub keeps its history threads in-process
 
 
 def test_the_board_child_runs_for_a_false_setting_and_no_hub() -> None:

@@ -27,13 +27,13 @@ ENTRIES = {
     "autopilot": "starpulse._internal.server.autopilot_worker",
     "runs": "starpulse._internal.server.runs_worker",
     "forwarding": "starpulse._internal.server.forwarding_worker",
-    "history": "starpulse._internal.server.history_worker",
+    "flow-metrics": "starpulse._internal.server.flow_metrics_worker",
     "search": "starpulse._internal.server.search_worker",
     "board": "starpulse._internal.server.board_worker",
 }
 
 _CHILDREN = tuple(name for name in ENTRIES if name != SELF)
-_BOARD_READERS = ("pulls", "autopilot", "runs", "history", "board")
+_BOARD_READERS = ("pulls", "autopilot", "runs", "flow-metrics", "board")
 
 
 #: The keys `serve` alone reads: whether each child runs, its memory limit, and the hub's own settings.
@@ -49,6 +49,7 @@ _SERVE_KEYS = (
     "api_worker",
     "runs_worker",
     "forwarding_worker",
+    "flow_metrics_worker",
     "history_worker",
     "search_worker",
     "board_worker",
@@ -80,8 +81,8 @@ CONFIG_OWNERS: dict[str, tuple[str, ...]] = {
     "autopilot": _owned_by("autopilot"),
     "level": _owned_by("autopilot"),
     "session_start_url": _owned_by("autopilot"),
-    "event_log_retention_days": _owned_by("history"),
-    "event_log_archive_dir": _owned_by("history"),
+    "event_log_retention_days": _owned_by("flow-metrics"),
+    "event_log_archive_dir": _owned_by("flow-metrics"),
     **dict.fromkeys(_SERVE_KEYS, (SELF,)),
 }
 
@@ -145,7 +146,7 @@ def _blocks(name: str, config: Config) -> tuple[object, object]:
         autopilot_worker,
         board_worker,
         forwarding_worker,
-        history_worker,
+        flow_metrics_worker,
         runs_worker,
         search_worker,
         worker,
@@ -161,8 +162,8 @@ def _blocks(name: str, config: Config) -> tuple[object, object]:
         return runs_worker.built_blocks(config), ()
     if name == "forwarding":
         return forwarding_worker.built_blocks(config), ()
-    if name == "history":
-        return history_worker.built_blocks(config), ()
+    if name == "flow-metrics":
+        return flow_metrics_worker.built_blocks(config), ()
     if name == "search":
         return search_worker.built_blocks(config), ()
     if name == "board":

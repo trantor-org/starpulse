@@ -73,6 +73,7 @@ _KEYS = {
     "pull_requests",
     "runs_worker",
     "forwarding_worker",
+    "flow_metrics_worker",
     "history_worker",
     "search_worker",
     "board_worker",
@@ -459,7 +460,7 @@ WORKER_MEMORY = {
     "autopilot": MemoryLimit(384, 768),
     "runs": MemoryLimit(512, 1024),
     "forwarding": MemoryLimit(256, 512),
-    "history": MemoryLimit(384, 768),
+    "flow-metrics": MemoryLimit(384, 768),
     "search": MemoryLimit(384, 768),
     "board": MemoryLimit(768, 1536),
 }
@@ -471,10 +472,15 @@ def _megabytes(value: object, where: str, key: str) -> int:
     return value
 
 
+#: The `[worker_memory.<context>]` spellings of the Flow Metrics context; `history` was its name, kept for one release.
+_MEMORY_ALIASES = {"flow_metrics": "flow-metrics", "history": "flow-metrics"}
+
+
 def _worker_memory(raw: object) -> dict[str, MemoryLimit]:
     """The packaged limits with each `[worker_memory.<context>]` key laid over them."""
     if not isinstance(raw, dict) or not all(isinstance(v, dict) for v in raw.values()):
         raise ConfigError("worker_memory must be a table of per-context tables")
+    raw = {_MEMORY_ALIASES.get(context, context): table for context, table in raw.items()}
     if unknown := sorted(raw.keys() - WORKER_MEMORY.keys()):
         known = ", ".join(sorted(WORKER_MEMORY))
         raise ConfigError(f"worker_memory: unknown context(s) {', '.join(unknown)}; known: {known}")
@@ -565,8 +571,8 @@ class Config:
     """`serve` logs a `slow_read` line for each `GET /api/pulls` that took this many seconds or more, from accept to the last byte written, with the seconds it waited for a handler thread, computed its answer and wrote it."""
     forwarding_worker: bool = False
     """The Forwarding context (the forwarder that sends the event log to the hub) runs in `starpulse worker forwarding`, not in `serve`: `serve` starts no forwarder and shows its status from the event log; false: `serve` supervises that worker as a child when `[forward]` is set."""
-    history_worker: bool = False
-    """The History context (the recorder that copies the event log's machine events into the history store, and the hourly prune of the log) runs in `starpulse worker history`, not in `serve`: `serve` starts neither thread; false: `serve` supervises that worker as a child. A hub keeps both in-process whatever this says."""
+    flow_metrics_worker: bool = False
+    """The Flow Metrics context (the recorder that copies the event log's machine events into the history store, and the hourly prune of the log) runs in `starpulse worker flow-metrics`, not in `serve`; the config key `history_worker` is its old name, still read when this is unset: `serve` starts neither thread; false: `serve` supervises that worker as a child. A hub keeps both in-process whatever this says."""
     search_worker: bool = False
     """The Search context's embedding catch-up (the thread that fills vectors for indexed task text) runs in `starpulse worker search`, not in `serve`: `serve` starts no thread; false: `serve` supervises that worker as a child when `[search]` names an `embeddings_url`. A hub keeps no search index whatever this says."""
     board_worker: bool = False
@@ -799,7 +805,7 @@ def load(path: Path | None) -> Config:
         runs_worker=_flag(raw, "runs_worker", False),
         worker_memory=_worker_memory(raw.get("worker_memory", {})),
         forwarding_worker=_flag(raw, "forwarding_worker", False),
-        history_worker=_flag(raw, "history_worker", False),
+        flow_metrics_worker=_flag(raw, "flow_metrics_worker", _flag(raw, "history_worker", False)),
         search_worker=_flag(raw, "search_worker", False),
         board_worker=_flag(raw, "board_worker", False),
         api_worker=_flag(raw, "api_worker", False),
