@@ -263,6 +263,19 @@ def test_native_doc_archive_moves_the_file_under_archive_docs_and_off_the_list(s
     assert built.create_doc("Next", {}).output == "doc-85"
 
 
+def test_native_doc_archive_by_path_moves_that_file_when_an_id_recurs(served: tuple[Board, Path]) -> None:
+    built, docs = served
+    recurred = docs / "specs" / "doc-84 - Recurred.md"
+    recurred.write_text("---\nid: doc-84\ntitle: Recurred\n---\n")
+
+    assert built.archive_doc is not None
+    assert built.archive_doc(f"specs/{recurred.name}").ok
+
+    assert not recurred.exists()
+    assert (docs / REAL).is_file()
+    assert (docs.parent / "archive" / "docs" / recurred.name).is_file()
+
+
 ARCHIVED = "doc-84 - Nightly-infrastructure-audit-—-2026-10-04.md"
 
 

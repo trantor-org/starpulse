@@ -90,7 +90,10 @@ def _files(root: Path, folder: str = "docs") -> list[tuple[Path, str, dict, str]
 
 
 def _find(root: Path, doc: str, folder: str = "docs") -> tuple[Path, str, dict, str] | None:
-    return next((file for file in _files(root, folder) if str(file[2]["id"]).strip() == doc), None)
+    """The doc `doc` names: a path under `folder` (the record's `path`) before an id, which a recurred id shares."""
+    files = _files(root, folder)
+    by_path = (file for file in files if file[0].relative_to(root / folder).as_posix() == doc)
+    return next(by_path, None) or next((file for file in files if str(file[2]["id"]).strip() == doc), None)
 
 
 def _record(root: Path, path: Path, frontmatter: dict) -> dict[str, Any]:
