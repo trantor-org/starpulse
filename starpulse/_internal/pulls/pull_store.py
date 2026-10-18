@@ -170,7 +170,7 @@ def refresh_repository(
         if number not in held
         and saved.get(number, {}).get("state") != item["state"]
         and (item["state"] == "OPEN" or cursor is None or item["updatedAt"] > cursor)
-    } | {number for number in linked if number not in held and not saved.get(number, {}).get("detail")}
+    } | {number for number in linked if number not in held and _lacks_detail(store, repo, number, saved)}
     nodes = {number: answer[f"p{number}"] for number in held[:_BATCH]}
     for batch in itertools.batched(held[_BATCH:], _BATCH):
         answer = graphql(repo, _query(batch, listing=False))
@@ -220,11 +220,15 @@ def listing_drifted(
     held_open = {number for number, record in saved.items() if record["state"] == "OPEN"}
     if listed_open != held_open:
         return True
-    return any(
-        not any(record["detail"] for record in store.find(repo=repo, number=number, detailed=True))
-        for number in linked
-        if not saved.get(number, {}).get("detail")
-    )
+    return any(_lacks_detail(store, repo, number, saved) for number in linked)
+
+
+def _lacks_detail(store: PullStore, repo: str, number: int, saved: dict[int, dict]) -> bool:
+    """True when neither the held records `saved` nor the database has pull request `number`'s `detail`: a merged PR
+    past the hold window is only in the database, and reading it again on every refresh drains the GraphQL budget."""
+    if saved.get(number, {}).get("detail"):
+        return False
+    return not any(record["detail"] for record in store.find(repo=repo, number=number, detailed=True))
 
 
 def drift_counter() -> str:
