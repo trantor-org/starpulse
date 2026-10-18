@@ -430,7 +430,10 @@ class Tail:
         """
         engine = self.log.engine
         with engine.connect() as db:
-            oldest, head = db.execute(select(func.min(events.c.id), func.max(events.c.id))).one()
+            # Scalar subqueries: SQLite answers a lone min or max from the primary key, but scans an index for both.
+            oldest, head = db.execute(
+                select(select(func.min(events.c.id)).scalar_subquery(), select(func.max(events.c.id)).scalar_subquery())
+            ).one()
             cursor = self.cursor
             if head is None or head == cursor:  # idle: the one query above is the whole poll
                 return []
