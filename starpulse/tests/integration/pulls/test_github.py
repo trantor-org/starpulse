@@ -18,7 +18,7 @@ from urllib.parse import quote
 import pytest
 
 from starpulse._internal.pulls.github import GITHUB_MACHINES, GitHubAdapter, poll, read
-from starpulse._internal.runs.github_actions import connect
+from starpulse._internal.github_api import connect
 from starpulse._internal.kit.adapter_kit import MachineEventsAdapterKit
 from starpulse.contracts.adapters import TaskKeys
 from starpulse._internal.eventlog.event_log import EventLog, Tail

@@ -32,7 +32,7 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
 
-from starpulse._internal.runs.github_actions import Transport, _get, connect, repo_of
+from starpulse._internal.github_api import Transport, connect, get, repo_of
 from starpulse.contracts.adapters import TaskKeys
 from starpulse._internal.machines.machine_definition import load_machine
 from starpulse._internal.machines.snapshot import describe
@@ -131,7 +131,7 @@ def _items(transport: Transport, path: str) -> list[dict]:
     """Every item of the list endpoint `path` (which carries `?per_page=100`), page by page."""
     items: list[dict] = []
     for page in range(1, _MAX_PAGES + 1):
-        got = _get(transport, f"{path}&page={page}")["items"]
+        got = get(transport, f"{path}&page={page}")["items"]
         items += got
         if len(got) < _PAGE:
             break
@@ -142,13 +142,13 @@ def read(transport: Transport, repo: str, number: int) -> dict:
     """Pull request `number` of `repo` as `GitHubAdapter.events` takes it: the pull, its timeline, its reviews, the check
     runs of its head commit and the workflow runs of its branch, each as GitHub answers."""
     base = f"/repos/{repo}"
-    pull = _get(transport, f"{base}/pulls/{number}")
+    pull = get(transport, f"{base}/pulls/{number}")
     return {
         "pull": pull,
         "timeline": _items(transport, f"{base}/issues/{number}/timeline?per_page={_PAGE}"),
         "reviews": _items(transport, f"{base}/pulls/{number}/reviews?per_page={_PAGE}"),
-        "check_runs": _get(transport, f"{base}/commits/{pull['head']['sha']}/check-runs?per_page={_PAGE}"),
-        "runs": _get(transport, f"{base}/actions/runs?branch={quote(pull['head']['ref'], safe='')}&per_page={_PAGE}"),
+        "check_runs": get(transport, f"{base}/commits/{pull['head']['sha']}/check-runs?per_page={_PAGE}"),
+        "runs": get(transport, f"{base}/actions/runs?branch={quote(pull['head']['ref'], safe='')}&per_page={_PAGE}"),
     }
 
 
@@ -162,7 +162,7 @@ def poll(transport: Transport, repo: str, adapter: GitHubAdapter, log: EventLog,
     An open pull request is read every poll, since its checks finish without touching its update time; a closed one only
     when its `updated_at` is not the one `seen` holds. An event already in the log is not appended again.
     """
-    listed = _get(transport, f"/repos/{repo}/pulls?state=all&sort=updated&direction=desc&per_page={RECENT}")["items"]
+    listed = get(transport, f"/repos/{repo}/pulls?state=all&sort=updated&direction=desc&per_page={RECENT}")["items"]
     for pull in listed:
         if pull["state"] != "open" and seen.get(pull["number"]) == pull["updated_at"]:
             continue

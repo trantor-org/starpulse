@@ -20,7 +20,7 @@ from typing import Any
 
 from starpulse._internal.config.analytics import Analytics, SkillLoad
 from starpulse._internal.level.sessions import attributed, grouped, session_kind
-from starpulse._internal.level.signals import Signal
+from starpulse._internal.signals import Signal
 from starpulse.contracts.adapters import TaskKeys
 
 __all__ = ["Case", "Missed", "cases", "missed_loads"]

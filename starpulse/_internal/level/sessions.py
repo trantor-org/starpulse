@@ -54,7 +54,7 @@ from collections.abc import Iterable, Iterator, Sequence
 from typing import Any
 
 from starpulse._internal.config.analytics import Analytics
-from starpulse._internal.level.signals import CODEX, Signal, claim_key, claimed, main_thread_source
+from starpulse._internal.signals import CODEX, Signal, claim_key, claimed, main_thread_source
 from starpulse.contracts.adapters import TaskKeys
 
 __all__ = ["attributed", "grouped", "session_health", "session_kind", "slice_health"]

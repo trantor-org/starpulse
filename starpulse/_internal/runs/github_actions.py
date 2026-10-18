@@ -11,14 +11,11 @@ repository again: two calls, plus those of a workflow whose latest run changed o
 from __future__ import annotations
 
 import base64
-import json
 import os
 import posixpath
-import re
 import threading
 import time
 import urllib.error
-import urllib.request
 from collections.abc import Callable, Collection
 from datetime import datetime
 from typing import Any, NamedTuple, get_args
@@ -26,6 +23,7 @@ from urllib.parse import quote
 
 import yaml
 
+from starpulse._internal.github_api import GitHubError, Transport, connect, get, repo_of
 from starpulse._internal.runs import run_events
 from starpulse.contracts.adapters import RunsSink, RunStatus, StartFailedError
 from starpulse._internal.eventlog.event_log import DEFAULT_POLL_INTERVAL, EventLog, Tail
@@ -68,9 +66,6 @@ def status_of(status: str, conclusion: str | None) -> RunStatus:
     return mapped
 
 
-#: `(method, path, body)` to the GitHub REST API, answered with the HTTP status and the decoded body.
-Transport = Callable[[str, str, dict | None], tuple[int, dict]]
-
 #: What a workflow with several jobs of one name, such as a matrix, reports: the first of these any of them has.
 _PRECEDENCE: tuple[RunStatus, ...] = ("failed", "running", "queued", "aborted", "skipped", "succeeded", "not_started")
 
@@ -82,24 +77,9 @@ def _reported(status: str, conclusion: str | None) -> dict[str, Any]:
     return {"status": mapped} | ({"raw": label} if label != mapped else {})
 
 
-class GitHubError(OSError):
-    """GitHub answered a read with a status other than 200."""
-
-    def __init__(self, status: int, path: str) -> None:
-        super().__init__(f"GitHub answered HTTP {status} for {path}")
-        self.status = status
-
-
-def _get(transport: Transport, path: str) -> dict:
-    status, body = transport("GET", path, None)
-    if status != 200:
-        raise GitHubError(status, path)
-    return body
-
-
 def _definition(transport: Transport, repo: str, path: str) -> dict:
     """The workflow file at `path` on the repository's default branch, parsed; empty when it is not a mapping."""
-    content = _get(transport, f"/repos/{repo}/contents/{quote(path)}")["content"]
+    content = get(transport, f"/repos/{repo}/contents/{quote(path)}")["content"]
     document = yaml.safe_load(base64.b64decode(content))
     return document if isinstance(document, dict) else {}
 
@@ -202,7 +182,7 @@ class Repository:
         with self._lock:
             workflows = [
                 w
-                for w in _get(self._transport, f"/repos/{self._repo}/actions/workflows?per_page=100")["workflows"]
+                for w in get(self._transport, f"/repos/{self._repo}/actions/workflows?per_page=100")["workflows"]
                 if w["state"] == "active"
             ]
             latest = {} if only is not None else self._latest()
@@ -222,7 +202,7 @@ class Repository:
 
     def _latest(self) -> dict[int, dict]:
         """The newest run of each workflow among the repository's latest runs, by workflow id."""
-        runs = _get(self._transport, f"/repos/{self._repo}/actions/runs?per_page=100")["workflow_runs"]
+        runs = get(self._transport, f"/repos/{self._repo}/actions/runs?per_page=100")["workflow_runs"]
         latest: dict[int, dict] = {}
         for run in runs:  # newest first
             latest.setdefault(run["workflow_id"], run)
@@ -240,9 +220,9 @@ class Repository:
         repo, path = self._repo, workflow["path"]
         name = posixpath.basename(path)
         if run is None:
-            runs = _get(self._transport, f"/repos/{repo}/actions/workflows/{workflow['id']}/runs?per_page=1")
+            runs = get(self._transport, f"/repos/{repo}/actions/workflows/{workflow['id']}/runs?per_page=1")
             run = next(iter(runs["workflow_runs"]), None)
-        ran = _get(self._transport, f"/repos/{repo}/actions/runs/{run['id']}/jobs?per_page=100")["jobs"] if run else []
+        ran = get(self._transport, f"/repos/{repo}/actions/runs/{run['id']}/jobs?per_page=100")["jobs"] if run else []
         seen = self._read.get(name)
         if seen is not None and seen.stamp[0] == workflow["updated_at"]:
             definition = seen.definition
@@ -280,32 +260,6 @@ def declares_dispatch(definition: dict) -> bool:
     return isinstance(on, str | list | dict) and (on == "workflow_dispatch" or "workflow_dispatch" in on)
 
 
-def connect(token: str | None, timeout: float = 30.0) -> Transport:  # pragma: no mutate block — HTTP boundary
-    """A transport to the GitHub API (`GITHUB_API_URL`, else api.github.com), signed in with `token` when there is one."""
-    base = os.environ.get("GITHUB_API_URL", "https://api.github.com").rstrip("/")
-    headers = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"} | (
-        {"Authorization": f"Bearer {token}"} if token else {}
-    )
-
-    def send(method: str, path: str, body: dict | None) -> tuple[int, dict]:
-        request = urllib.request.Request(
-            base + path, data=None if body is None else json.dumps(body).encode(), method=method, headers=headers
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=timeout) as response:
-                raw = response.read()
-                decoded = json.loads(raw) if raw else {}
-                if isinstance(decoded, list):  # a list endpoint's array comes back as `{"items": [...]}`
-                    decoded = {"items": decoded}
-                return response.status, decoded if isinstance(decoded, dict) else {}
-        except urllib.error.HTTPError as exc:
-            return exc.code, {}
-        except json.JSONDecodeError as exc:
-            raise OSError(f"GitHub returned malformed JSON: {exc}") from exc
-
-    return send
-
-
 def starter(transport: Transport, repo: str) -> Callable[[str], str]:
     """The adapter's start capability: dispatches a workflow of `repo` on its default branch and returns the run's id.
 
@@ -317,7 +271,7 @@ def starter(transport: Transport, repo: str) -> Callable[[str], str]:
         try:
             if not declares_dispatch(_definition(transport, repo, f".github/workflows/{workflow}")):
                 raise StartFailedError(f"{workflow} declares no workflow_dispatch trigger")
-            ref = _get(transport, f"/repos/{repo}")["default_branch"]
+            ref = get(transport, f"/repos/{repo}")["default_branch"]
             status, body = transport(
                 "POST",
                 f"/repos/{repo}/actions/workflows/{quote(workflow, safe='')}/dispatches",
@@ -332,17 +286,6 @@ def starter(transport: Transport, repo: str) -> Callable[[str], str]:
         return str(body.get("workflow_run_id", ""))
 
     return start
-
-
-_REPO = re.compile(r"(?:https://github\.com/)?([\w.-]+)/([\w.-]+?)(?:\.git)?/?")
-
-
-def repo_of(url: str) -> str:
-    """`owner/name` of the repository `url` names, as `owner/name` or its github.com address."""
-    match = _REPO.fullmatch(url)
-    if match is None:
-        raise ValueError(f"{url!r} is not a GitHub repository: use owner/name or https://github.com/owner/name")
-    return f"{match[1]}/{match[2]}"
 
 
 def start(url: str) -> Callable[[str], str] | None:
