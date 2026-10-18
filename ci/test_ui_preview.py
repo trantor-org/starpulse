@@ -7,16 +7,18 @@ import json
 from pathlib import Path
 
 import pytest
+import ui_preview
 import yaml
+from starpulse._internal.cli import demo
 from ui_preview import (
     DEMO_BRANCH,
     DEMO_REPO,
     ELEMENTS,
-    STARPULSE,
     MAIN_FOLDER,
     MARKER,
     MOCKUP,
     PAGES,
+    STARPULSE,
     UI_GLOBS,
     DemoLeakError,
     comment_body,
@@ -39,8 +41,6 @@ from ui_preview import (
     surfaces,
     unpublish_demos,
 )
-
-from starpulse._internal.cli import demo
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -512,3 +512,36 @@ def test_the_workflow_reports_a_failed_pull_request_render() -> None:
     step = next(s for s in steps if s.get("name") == "Report a failed render")
     assert "failure()" in step["if"] and "pull_request" in step["if"]
     assert "--failed" in step["run"]
+
+
+def _fake_run(calls: list[tuple[str, ...]], failures: int, monkeypatch: pytest.MonkeyPatch) -> None:
+    left = [failures]
+
+    def run(*cmd: str, env: object = None) -> str:
+        calls.append(cmd)
+        if cmd[len(_PW) :][0] == "open" and left[0]:
+            left[0] -= 1
+            raise RuntimeError("Error: Session closed")
+        return ""
+
+    monkeypatch.setattr(ui_preview, "_run", run)
+
+
+_PW = ui_preview._PLAYWRIGHT_CLI + ("-s=x",)
+
+
+def test_shoot_retries_a_closed_session(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    calls: list[tuple[str, ...]] = []
+    _fake_run(calls, 1, monkeypatch)
+    assert ui_preview._shoot("http://x", tmp_path / "a.png") == tmp_path / "a.png"
+    verbs = [c[len(_PW) :][0] for c in calls]
+    assert verbs.count("open") == 2
+    assert verbs.count("close") == 2
+
+
+def test_shoot_raises_when_every_try_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    calls: list[tuple[str, ...]] = []
+    _fake_run(calls, 99, monkeypatch)
+    with pytest.raises(RuntimeError, match="Session closed"):
+        ui_preview._shoot("http://x", tmp_path / "a.png")
+    assert [c[len(_PW) :][0] for c in calls].count("open") == 3
