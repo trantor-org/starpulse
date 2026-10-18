@@ -2,12 +2,12 @@ import { describe, expect, it } from "vitest";
 import type { FanRow, QueueRow } from "../features/fanout/fan";
 import { fanList, queueCell, startRun, taskPanel } from "./panels";
 import { merge } from "./sky";
-import type { RawAgent, Snapshot } from "../api";
+import type { RawTask, Snapshot } from "../api";
 
-const task = (extra: Partial<RawAgent> = {}): RawAgent => ({
+const task = (extra: Partial<RawTask> = {}): RawTask => ({
   id: "PROJ-7", title: "Draw <flows>", state: "in_progress", model: "@agent-standard-high", labels: ["size-3"], description: "Draw the flow.", ...extra,
 });
-const sky = (tasks: RawAgent[], boardUrl: string | null = "http://board/") =>
+const sky = (tasks: RawTask[], boardUrl: string | null = "http://board/") =>
   merge({
     graphs: ["board"],
     flows: [{ name: "board", agents: tasks, machine: { states: [{ id: "in_progress", name: "In Progress", initial: true, final: false }], transitions: [] } }],
@@ -17,7 +17,7 @@ const sky = (tasks: RawAgent[], boardUrl: string | null = "http://board/") =>
     error: null,
     now: 0,
   } as Snapshot);
-const panel = (o: RawAgent, boardUrl?: string | null, search = "") => taskPanel(o, sky([o], boardUrl), (id) => (id === "in_progress" ? "In Progress" : id), search);
+const panel = (o: RawTask, boardUrl?: string | null, search = "") => taskPanel(o, sky([o], boardUrl), (id) => (id === "in_progress" ? "In Progress" : id), search);
 
 describe("the task panel", () => {
   it("shows the task's state, profile and labels, and leaves its description to the Kanban", () => {

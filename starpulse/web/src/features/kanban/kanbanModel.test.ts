@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { NO_PREFS, applySuggestion, applyTaskRecord, assigneeOptions, chainOf, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, kanbanTasks, labelSuggestions, layout, milestoneOptions, milestoneOutline, recent, show, showAll, stackOf, toggleFold, whyHidden, type KanbanTask } from "./kanbanModel";
 import { merge, midnight } from "../../render/sky";
 import type { TaskRecord } from "./taskViewModel";
-import type { Pull, RawAgent, Snapshot } from "../../api";
+import type { Pull, RawTask, Snapshot } from "../../api";
 
 const NAMES = { ready: "Ready", waiting: "Waiting", in_progress: "In progress", review: "Review", needs_attention: "Needs attention", done: "Done" };
 const task = (id: string, lane: string, milestone = "", at = 0, entered = 0): KanbanTask => ({
@@ -121,7 +121,7 @@ describe("hiding", () => {
 
 describe("the cards drawn from a snapshot", () => {
   const pull = (number: number, checks: Pull["checks"], threads = 0): Pull => ({ number, url: `https://github.com/o/r/pull/${number}`, checks, merged: false, merge_sha: null, merged_at: null, threads, stale: false });
-  const agent = (id: string, state: string, extra: Partial<RawAgent> = {}): RawAgent => ({ id, title: `title ${id}`, state, model: "", ...extra });
+  const agent = (id: string, state: string, extra: Partial<RawTask> = {}): RawTask => ({ id, title: `title ${id}`, state, model: "", ...extra });
   const machine = { states: [], transitions: [] } as never;
   const snapshot = (): Snapshot => ({
     graphs: ["board", "dagu", "in-progress"],

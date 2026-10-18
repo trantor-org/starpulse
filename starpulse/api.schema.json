@@ -2129,7 +2129,7 @@
       "properties": {
         "agents": {
           "items": {
-            "$ref": "#/$defs/RawAgent"
+            "$ref": "#/$defs/RawTask"
           },
           "type": "array"
         },
@@ -4043,7 +4043,7 @@
       "properties": {
         "agents": {
           "items": {
-            "$ref": "#/$defs/RawAgent"
+            "$ref": "#/$defs/RawTask"
           },
           "type": "array"
         },
@@ -4617,7 +4617,7 @@
       "description": "A task a machine event placed on another machine.",
       "properties": {
         "agent": {
-          "$ref": "#/$defs/RawAgent"
+          "$ref": "#/$defs/RawTask"
         },
         "flow": {
           "type": "string"
@@ -5221,7 +5221,7 @@
       "title": "QuietHours",
       "type": "object"
     },
-    "RawAgent": {
+    "RawTask": {
       "additionalProperties": false,
       "description": "A Backlog task. On the board its state is its lane; on every other machine, the state its latest machine event left it in.",
       "properties": {
@@ -5235,6 +5235,18 @@
             }
           ],
           "default": null
+        },
+        "assignee": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The session that last claimed a Board task; empty when none has, absent off the Board."
         },
         "created": {
           "anyOf": [
@@ -5301,18 +5313,6 @@
           ],
           "default": null,
           "description": "When a Board task entered its lane, epoch seconds; absent when the server holds no time for it."
-        },
-        "holder": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "The session that last claimed a Board task; empty when none has, absent off the Board."
         },
         "id": {
           "type": "string"
@@ -5513,7 +5513,7 @@
         "state",
         "model"
       ],
-      "title": "RawAgent",
+      "title": "RawTask",
       "type": "object"
     },
     "RequiredCheck": {
@@ -7345,7 +7345,7 @@
         "agent": {
           "anyOf": [
             {
-              "$ref": "#/$defs/RawAgent"
+              "$ref": "#/$defs/RawTask"
             },
             {
               "type": "null"

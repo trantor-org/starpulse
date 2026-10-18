@@ -142,14 +142,14 @@ class TaskRun(_Api):
     started_at: str = Field(alias="startedAt")
 
 
-class RawAgent(_Api):
+class RawTask(_Api):
     """A Backlog task. On the board its state is its lane; on every other machine, the state its latest machine event left it in."""
 
     id: str
     title: str
     state: str
     model: str
-    holder: str | None = Field(
+    assignee: str | None = Field(
         default=None,
         description="The session that last claimed a Board task; empty when none has, absent off the Board.",
     )
@@ -256,7 +256,7 @@ class MachineTies(_Api):
 class FlowSnapshot(_Api):
     name: str
     machine: Machine
-    agents: list[RawAgent]
+    agents: list[RawTask]
     ties: list[Tie] | None = None
     parent: str | None = None
     depth: int | None = None
@@ -512,7 +512,7 @@ class TaskDelta(_Api):
     """A Board task that moved (`agent` null once it left the lanes)."""
 
     id: str
-    agent: RawAgent | None
+    agent: RawTask | None
     settled: Settled | None
 
 
@@ -521,7 +521,7 @@ class MoveDelta(_Api):
 
     flow: str
     id: str
-    agent: RawAgent
+    agent: RawTask
 
 
 class DagsDelta(_Api):
@@ -599,7 +599,7 @@ class LedgerPage(_Api):
 class DonePage(_Api):
     """`GET /api/done`: the next page of done tasks past their hot day, newest first, and whether older ones remain."""
 
-    tasks: list[RawAgent]
+    tasks: list[RawTask]
     more: bool
 
 
@@ -2264,7 +2264,7 @@ def encode_snapshot(data: Any, held: _Held) -> bytes:
     if not flows or flows[0]["name"] != "board":
         return encode("snapshot", slim_snapshot(data))
     kept: _Held = {}
-    tasks = _dump_all(flows[0]["agents"], RawAgent, held, kept, _slim_task)
+    tasks = _dump_all(flows[0]["agents"], RawTask, held, kept, _slim_task)
     held.clear()
     held.update(kept)
     drawn = {

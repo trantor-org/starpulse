@@ -9,7 +9,7 @@ import { padMachines, shapeBoard } from "./demoMachines";
 import { rankRows } from "../features/level/machineRows";
 import { columnsOf } from "../features/kanban/kanbanModel";
 import type { LaneStep } from "../features/level/trace";
-import type { LedgerRow, Machine, RawAgent, Snapshot } from "../api";
+import type { LedgerRow, Machine, RawTask, Snapshot } from "../api";
 import { criteriaBlock, demoCriteria } from "./demoCriteria";
 import type { TaskRecord } from "../features/kanban/taskViewModel";
 import { demoServer as installed, embedded, setDemoServer } from "./host";
@@ -416,7 +416,7 @@ export class DemoServer {
     const ids = board.agents.map((a) => a.id).concat(Object.keys(next.settled));
     const id = `${prefix}${Math.max(0, ...ids.map((n) => Number(n.match(/\d+$/)?.[0] ?? 0))) + 1}`;
     const lane = startingLane(board.machine);
-    const card: RawAgent = {
+    const card: RawTask = {
       id, title: title.trim(), state: lane, model: text("assignee"), labels: list("labels"), milestone: text("milestone"),
       dependencies: list("dependencies"), description: text("description"),
     };
@@ -535,7 +535,7 @@ export class DemoServer {
 
   private verdicts(snap: Snapshot): Snapshot {
     const flows = snap.flows.map((f) =>
-      f.name !== "board" ? f : { ...f, agents: f.agents.map((a): RawAgent => ({ ...a, moves: Object.fromEntries(columns(f.machine, a.state).map((c) => [c, ALLOWED])) })) },
+      f.name !== "board" ? f : { ...f, agents: f.agents.map((a): RawTask => ({ ...a, moves: Object.fromEntries(columns(f.machine, a.state).map((c) => [c, ALLOWED])) })) },
     );
     return { ...snap, flows };
   }
@@ -548,7 +548,7 @@ const startingLane = (machine: Machine): string => {
   return lanes.includes(initial) ? initial : lanes[0];
 };
 
-const demoRecord = (card: RawAgent, now: number, failing = false): TaskRecord => {
+const demoRecord = (card: RawTask, now: number, failing = false): TaskRecord => {
   const criteria = card.state === "waiting" ? demoCriteria(now, failing) : undefined;
   return {
     title: card.title,

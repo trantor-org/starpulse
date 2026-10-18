@@ -14,7 +14,7 @@ def _view(*tasks: dict) -> dict:
 
 
 def _change(task_id: str, holder: str = "", state: str = "in_progress") -> tuple[str, dict]:
-    return "task", {"id": task_id, "agent": {"id": task_id, "holder": holder, "state": state}, "settled": None}
+    return "task", {"id": task_id, "agent": {"id": task_id, "assignee": holder, "state": state}, "settled": None}
 
 
 def _held(holder: str, *tasks: dict) -> Interest:

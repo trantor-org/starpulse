@@ -42,7 +42,7 @@ import { sizes } from "./grow";
 import { draws, hostRun, laneRun, layout as traceLayout, machineRun, sessionRings, subjectOf, traceCard, traceTable, type Place, type Run, type Subject } from "../features/level/trace";
 import { boardTies, hangarLevel, tieLedger, type Ties } from "./dagTies";
 import { hubTip, tieTip } from "./dagTieTips";
-import type { Dag, Delta, FlowSnapshot, LedgerRow, Machine, RawAgent, Snapshot, Writer } from "../api";
+import type { Dag, Delta, FlowSnapshot, LedgerRow, Machine, RawTask, Snapshot, Writer } from "../api";
 import { fanTip, stepStatus } from "../features/fanout/fanoutModel";
 import { esc, fanList, queueCell, startRun, taskLink, taskPanel } from "./panels";
 import { emptyFan, fanRows, queueRow, stepRuns, track, type Fan } from "../features/fanout/fan";
@@ -146,7 +146,7 @@ const CHATTER = new Set(["TOOL_USED", "SKILL_USED"]);
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-/i;
 
 /** The Board task each session holds, by session id: what a session's feed line is named for. */
-export const heldTasks = (board: FlowSnapshot | undefined) => new Map((board?.agents ?? []).flatMap((a) => (a.holder ? [[a.holder, a.id] as const] : [])));
+export const heldTasks = (board: FlowSnapshot | undefined) => new Map((board?.agents ?? []).flatMap((a) => (a.assignee ? [[a.assignee, a.id] as const] : [])));
 
 /**
  * The Recent feed's newest 40 lines at `now`: each move but a session's tool and skill uses, each DAG run's line, and a DAG's own line for a run
@@ -1082,7 +1082,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   const ledgerOfEdge = (e: BEdge) => (S ? pathLedger(boardSource(), e.events) : null);
   /** A state's name in one machine of the ledger. */
   const stName = (m: string, s: string) => S?.flows[m]?.machine.states.find((x) => x.id === s)?.name ?? s;
-  const boardTitle = (a: RawAgent) => S?.board.agents.find((b) => b.id === a.task)?.title ?? "";
+  const boardTitle = (a: RawTask) => S?.board.agents.find((b) => b.id === a.task)?.title ?? "";
   /** A click on a ledger task pins its path and lists its sessions and its steps in the panel. */
   function openLedgerTask(o: LTask) {
     const sky = S!, all = sessionsOf(sky.flows, o.flow, o.agent);

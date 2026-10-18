@@ -439,10 +439,10 @@ def claim_task(source: str, raw: bytes, feed: BoardFeed, writer: MoveWriter) -> 
         return _not_held(feed, task)
     held = {"task": task, "to": _IN_PROGRESS, "holder": who.session}
     if agent["state"] == _IN_PROGRESS:
-        if agent.get("holder") == who.session:
+        if agent.get("assignee") == who.session:
             return 200, held
-        return 409, {"error": f"{task} is already In Progress, held by {agent.get('holder') or 'no session'}"}
-    others = [a["id"] for a in feed.open_tasks() if a["state"] == _IN_PROGRESS and a.get("holder") == who.session]
+        return 409, {"error": f"{task} is already In Progress, held by {agent.get('assignee') or 'no session'}"}
+    others = [a["id"] for a in feed.open_tasks() if a["state"] == _IN_PROGRESS and a.get("assignee") == who.session]
     if others:
         return 409, {
             "error": f"this session already holds {others[0]} In Progress: park it, defer it or finish it before "

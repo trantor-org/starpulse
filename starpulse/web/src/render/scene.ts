@@ -13,7 +13,7 @@ import { ledgerOf, type Ledger, type Tie } from "../features/level/ledger";
 import type { Viewport } from "../features/level/ledgerScroll";
 import { countText, daily, HOUR, hosted, stale, stateCount, type Move, type Moves, type Sky } from "./sky";
 import { pinsOf } from "../features/level/ledgerPins";
-import type { Dag, DagStep, RawAgent, Transition, Writer } from "../api";
+import type { Dag, DagStep, RawTask, Transition, Writer } from "../api";
 
 export const TAU = Math.PI * 2;
 export const BOARD_COLOR: Record<string, string> = { new: "#94a3b8", ready: "#60a5fa", waiting: "#fbbf24", blocked: "#fb7185", intoprogress: "#a78bfa",
@@ -217,7 +217,7 @@ export interface Arrive extends Pt {
   age: number;
 }
 /** A task orbiting its host; update() places it each frame. */
-export interface Body extends RawAgent {
+export interface Body extends RawTask {
   host: Host;
   R: number;
   a0: number;
@@ -234,7 +234,7 @@ export interface Body extends RawAgent {
   bev: Move[];
 }
 /** A task a lifecycle machine placed, drawn on the state its latest event left it in. */
-export interface MachineTask extends RawAgent {
+export interface MachineTask extends RawTask {
   flow: string;
   _x?: number;
   _y?: number;
@@ -799,7 +799,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
       return s;
     });
   };
-  const attach = (list: RawAgent[], host: Host, r0: number, gap: number, ringGap: number, big: boolean, speed = 1) => {
+  const attach = (list: RawTask[], host: Host, r0: number, gap: number, ringGap: number, big: boolean, speed = 1) => {
     const o = rings(list.length, r0, gap, ringGap);
     list.forEach((a, i) => scene.tasks.push({ ...a, host, ...o.slots[i], w: o.slots[i].w * speed, big, x: host.x, y: host.y, ang: 0, moving: false, arrive: null, gone: false, via: null, bev: [] }));
     host.rings = o.radii;
@@ -809,7 +809,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     // The Board's places come from its machine and its declared main line: the columns it draws when no tiers are configured.
     const states = board.machine.states, transitions = board.machine.transitions;
     const BP = boardPlaces(states, transitions, board.machine.mainLine ?? undefined);
-    const byState: Record<string, RawAgent[]> = {};
+    const byState: Record<string, RawTask[]> = {};
     // a starting state orbits no task, as each is drawn where it went; a terminal state orbits those that entered it since local midnight and the day's
     // arrivals there not already in it
     const initial = new Set(states.filter((s) => s.initial).map((s) => s.id)), final = new Set(states.filter((s) => s.final).map((s) => s.id));
@@ -819,7 +819,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     // is open), else the moon of the machine it works when that is not its state's primary, else its state.
     const flowsOf = (sid: string) => (SUBS[sid] || []).filter((f) => S.flows[f]);
     const subStatesOf = (f: string) => S.flows[f].machine.states.filter((q) => S.child[f]?.[q.id]);
-    const deepest = (a: RawAgent): { flow: string; state?: string } | null => {
+    const deepest = (a: RawTask): { flow: string; state?: string } | null => {
       const q = S.latest[a.id], fs = flowsOf(a.state);
       if (a.today || !q || !fs.includes(q.flow)) return null;
       if (S.child[q.flow]?.[q.state]) return { flow: q.flow, state: q.state };
@@ -1190,7 +1190,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
         for (const e of EVENTS) if (e.task === a.id && e.at >= T - HOUR && subs.includes(e.flow)) seen.add(rawHostAt(a.id, e.at));
         return seen;
       });
-      const byPlanet = new Map<Planet, RawAgent[]>(scene.planets.map((p) => [p, []]));
+      const byPlanet = new Map<Planet, RawTask[]>(scene.planets.map((p) => [p, []]));
       list.forEach((a, i) => {
         const seen = new Set([...rawVisits[i]].map(shown));
         for (const name of seen) byPlanet.get(scene.planets.find((p) => p.name === name)!)!.push(a);

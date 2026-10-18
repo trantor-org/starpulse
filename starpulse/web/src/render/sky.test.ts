@@ -1,18 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { countText, hosted, merge, Moves, RING, stateCount, TRAVEL, withLedgers } from "./sky";
-import type { ActiveRun, Dag, Machine, RawAgent, Snapshot } from "../api";
+import type { ActiveRun, Dag, Machine, RawTask, Snapshot } from "../api";
 
 const machine = (ids: string[], extra: Partial<Machine> = {}): Machine => ({
   states: ids.map((id, i) => ({ id, name: id.replace(/_/g, " "), initial: i === 0, final: false })),
   transitions: [],
   ...extra,
 });
-const task = (id: string, state: string): RawAgent => ({ id, title: id, state, model: "@agent-deep-high", labels: [], description: `about ${id}` });
-const placed = (id: string, trail: [string, string, number][]): RawAgent => ({
+const task = (id: string, state: string): RawTask => ({ id, title: id, state, model: "@agent-deep-high", labels: [], description: `about ${id}` });
+const placed = (id: string, trail: [string, string, number][]): RawTask => ({
   id, title: id, state: trail.at(-1)![0], model: "", task: id, steps: trail.length,
   trail: trail.map(([state, event, at]) => ({ state, event, at })),
 });
-const snap = (now: number, tasks: RawAgent[], machineTasks: RawAgent[], finishedAt = "2026-09-30T20:00:00Z"): Snapshot => ({
+const snap = (now: number, tasks: RawTask[], machineTasks: RawTask[], finishedAt = "2026-09-30T20:00:00Z"): Snapshot => ({
   graphs: ["board", "in-progress", "triaging-cr-reviews", "auditing-docs", "runs"],
   flows: [
     { name: "board", agents: tasks, machine: machine(["ready", "in_progress", "review"], {

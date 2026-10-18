@@ -1,7 +1,7 @@
 // The canvas drawing primitives every level shares: text, names, rings, discs, black holes, comets, pulses, flow lines, arrows and
 // badges. `drawing(dc)` binds them to a canvas and the zoom, scale and clock of the frame being drawn; the renderer and the machine
 // ledger's drawing (machineLedgerDraw.ts) take the same set, so the two draw in one hand.
-import type { ContractReport, LedgerRow, RawAgent } from "../api";
+import type { ContractReport, LedgerRow, RawTask } from "../api";
 import { labelPx } from "../features/admin/adminPrefs";
 import type { Hub, Orbiter } from "./dagTies";
 import {
@@ -32,7 +32,7 @@ export const easeO = (u: number) => 1 - Math.pow(1 - u, 3);
 export const arrivalRings = (age: number): number[] => (age > 0 && age < 1 ? [age] : []);
 
 /** A task's session in one machine of the machine ledger. */
-export type LTask = { flow: string; agent: RawAgent };
+export type LTask = { flow: string; agent: RawTask };
 /** What the pointer is over, or what a navigator search result stands for. */
 export type Hover =
   | { kind: "mtask"; o: MachineTask }
