@@ -31,6 +31,7 @@ from starpulse._internal.pulls.delivery import (
     NotingFeed,
     Projected,
     Publisher,
+    announce_saves,
     follow_events,
     follow_refreshes,
     keep_metrics,
@@ -195,7 +196,9 @@ def main(argv: list[str] | None = None) -> None:
         parser.exit(1, f"{exc}\n")
     Projected(log, feed).apply()  # the pull request answers the pins read: the Board's checkpoint no longer holds them
     pins = GitHub(lambda: feed.pull_answers().get("pins", {}))
-    delivery = Delivery(config, board, feed, log, PullStore(log.engine), pins)
+    store = PullStore(log.engine)
+    announce_saves(store, log)  # `serve` holds records in memory and takes each save from the database again
+    delivery = Delivery(config, board, feed, log, store, pins)
     try:
         delivery.start()
     except ValueError as exc:
