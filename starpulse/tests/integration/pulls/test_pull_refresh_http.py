@@ -17,7 +17,7 @@ from sqlalchemy import create_engine
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import serve, url
 from starpulse._internal.pulls.pull_refresh import PullRefresh
-from starpulse._internal.pulls.pull_store import PullSync, refresh_repository
+from starpulse._internal.pulls.pull_store import PullSync, refresh_pull
 from starpulse._internal.pulls.pulls import PullStore
 from starpulse.tests.unit.pulls.test_pull_store import NEW, REPO, Github
 
@@ -52,24 +52,12 @@ def stack(tmp_path: Path) -> Iterator[Stack]:
     github = Github()
     github.add(1)
     store = PullStore(create_engine(f"sqlite:///{tmp_path / 'pulls.sqlite'}"))
-    refresh_repository(REPO, store, 100.0, github)
+    refresh_pull(REPO, 1, store, 100.0, github)
     projections = threading.Semaphore(0)
     feed = BoardFeed()
     sync = PullSync(store, feed, (), github, lambda: 160.0, projections.release)
-    refreshed = threading.Event()
-    reconcile = sync.reconcile
-
-    def reconcile_then_signal() -> None:
-        reconcile()
-        refreshed.set()
-
-    sync.reconcile = reconcile_then_signal  # type: ignore[method-assign]
-    threading.Thread(target=sync.run_forever, args=(3600.0,), daemon=True).start()
-    # the thread projects the saved store, then makes its first listing reconcile; the next is an hour away. A
-    # projection asked for while another runs coalesces with it, so the reconcile is awaited itself, not counted
-    # in projections.
-    assert projections.acquire(timeout=5)
-    assert refreshed.wait(timeout=5)
+    threading.Thread(target=sync.run_forever, daemon=True).start()
+    assert projections.acquire(timeout=5)  # the thread projects the saved store, then waits for a request
     github.add(1, state="MERGED", updated=NEW, merged_at=NEW)  # merged on GitHub; the store has not heard
     github.queries.clear()
     with serve(tmp_path, feed, pull_refresh=PullRefresh(TOKEN, sync.request)) as server:

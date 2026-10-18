@@ -4,7 +4,6 @@ import json
 import logging
 import re
 import subprocess
-import threading
 from pathlib import Path
 
 import pytest
@@ -13,9 +12,9 @@ from sqlalchemy import create_engine, event
 from starpulse._internal.config.config import Repo
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import task
-from starpulse._internal.pulls.pull_requests import GhUnavailableError, query_github
-from starpulse._internal.pulls.pull_store import PullSync, refresh_repository
-from starpulse._internal.pulls.pulls import AGE_HELP, PullStore
+from starpulse._internal.pulls.pull_requests import query_github
+from starpulse._internal.pulls.pull_store import PullSync, refresh_pull
+from starpulse._internal.pulls.pulls import PullStore
 
 REPO = "acme/widgets"
 OLD, NEW = "2026-10-07T12:00:00Z", "2026-10-07T13:00:00Z"
@@ -35,8 +34,6 @@ class Github:
     def __init__(self) -> None:
         self.pulls: dict[int, dict] = {}
         self.queries: list[str] = []
-        #: PRs that exist but sit beyond the listings' reach, as an old merged PR does.
-        self.unlisted: set[int] = set()
 
     def add(
         self,
@@ -114,22 +111,6 @@ class Github:
         assert repo == REPO
         self.queries.append(query)
         answer: dict = {}
-        if "open: pullRequests" in query:
-            listed = [(n, p) for n, p in self.pulls.items() if n not in self.unlisted]
-            answer["open"] = {
-                "pageInfo": {"hasNextPage": False},
-                "nodes": [
-                    {"number": n, "state": p["state"], "updatedAt": p["updated"]}
-                    for n, p in listed
-                    if p["state"] == "OPEN"
-                ],
-            }
-            answer["recent"] = {
-                "nodes": [
-                    {"number": n, "state": p["state"], "updatedAt": p["updated"]}
-                    for n, p in sorted(listed, key=lambda item: item[1]["updated"], reverse=True)
-                ]
-            }
         for number in re.findall(r"p(\d+): pullRequest", query):
             answer[f"p{number}"] = self._node(int(number)) if int(number) in self.pulls else None
         return answer
@@ -155,6 +136,12 @@ def _stored(repo: str, number: int) -> dict:
     }
 
 
+def _read(store: PullStore, github: Github, now: float, *numbers: int) -> None:
+    """Read each of `numbers` (every PR `github` holds when none are named) as a refresh request does."""
+    for number in numbers or tuple(github.pulls):
+        refresh_pull(REPO, number, store, now, github)
+
+
 @pytest.fixture
 def store(tmp_path: Path) -> PullStore:
     return PullStore(create_engine(f"sqlite:///{tmp_path / 'pulls.sqlite'}"))
@@ -166,7 +153,7 @@ def test_a_record_names_each_unresolved_thread_by_id_and_first_comment_author_an
     github = Github()
     github.add(1, threads=(False, True, False), author="adinballew", branch="claude/task-4087-serve")
 
-    refresh_repository(REPO, store, 100.0, github)
+    _read(store, github, 100.0)
 
     [pull] = store.find()
     assert pull["unresolvedThreads"] == [
@@ -183,7 +170,7 @@ def test_a_thread_whose_first_comment_has_no_author_is_recorded_with_a_null_auth
     github = Github()
     github.add(1, threads=(False,), author=None)
 
-    refresh_repository(REPO, store, 100.0, github)
+    _read(store, github, 100.0)
 
     assert [pull["unresolvedThreads"] for pull in store.find()] == [[{"id": "PRRT_1_0", "author": None}]]
 
@@ -218,118 +205,18 @@ def test_a_store_opened_over_saved_rows_serves_what_the_first_one_did(store: Pul
     assert PullStore(store._engine).find(detailed=True) == store.find(detailed=True)
 
 
-def test_a_refresh_sends_one_query_for_the_repository_and_none_for_a_final_record(store: PullStore) -> None:
-    github = Github()
-    github.add(1, checks={"lint": "SUCCESS"})
-    github.add(2, state="MERGED")
-    refresh_repository(REPO, store, 100.0, github)
-    github.queries.clear()
-
-    refresh_repository(REPO, store, 160.0, github)
-
-    (query,) = github.queries
-    assert "p1: pullRequest(number: 1)" in query
-    assert "pullRequest(number: 2)" not in query
-    assert "states: OPEN" in query
-    assert "orderBy: {field: UPDATED_AT, direction: DESC}" in query
-
-
-def test_a_pr_opened_since_the_last_refresh_costs_one_more_query_for_it_alone(store: PullStore) -> None:
-    github = Github()
-    github.add(1)
-    refresh_repository(REPO, store, 100.0, github)
-    github.add(7, updated=NEW, body="Session: abc")
-    github.queries.clear()
-
-    refresh_repository(REPO, store, 160.0, github)
-
-    listing, follow_up = github.queries
-    assert "p1: pullRequest" in listing
-    assert "p7: pullRequest" not in listing
-    assert "p7: pullRequest(number: 7)" in follow_up
-    assert "p1: pullRequest" not in follow_up
-    assert "open: pullRequests" not in follow_up
-    assert [pull["body"] for pull in store.find(number=7)] == ["Session: abc"]
-
-
-def test_a_cold_store_reads_the_listing_then_every_pr_it_named_in_one_more_query(store: PullStore) -> None:
-    github = Github()
-    github.add(1)
-    github.add(2, state="MERGED")
-
-    refresh_repository(REPO, store, 100.0, github)
-
-    assert len(github.queries) == 2
-    assert {pull["number"]: pull["state"] for pull in store.find()} == {1: "OPEN", 2: "MERGED"}
-
-
-def test_a_pr_merged_since_the_last_refresh_is_recorded_final_and_asked_for_no_more(store: PullStore) -> None:
-    github = Github()
-    github.add(1)
-    refresh_repository(REPO, store, 100.0, github)
-    github.add(1, state="MERGED", updated=NEW)
-
-    refresh_repository(REPO, store, 160.0, github)
-    github.queries.clear()
-    refresh_repository(REPO, store, 220.0, github)
-
-    assert [pull["state"] for pull in store.find(number=1)] == ["MERGED"]
-    (query,) = github.queries
-    assert "pullRequest(number: 1)" not in query
-
-
-def test_a_final_pr_the_store_never_saw_is_read_only_when_updated_since_the_cursor(store: PullStore) -> None:
-    github = Github()
-    github.add(1, updated=NEW)
-    refresh_repository(REPO, store, 100.0, github)
-    github.add(2, state="MERGED", updated=OLD)  # merged and last touched before the newest record the store holds
-    github.add(3, state="CLOSED", updated="2026-10-07T14:00:00Z")
-
-    refresh_repository(REPO, store, 160.0, github)
-
-    assert [pull["number"] for pull in store.find()] == [1, 3]
-
-
-def test_a_merged_row_saved_without_its_merge_sha_is_read_again_until_it_has_one(store: PullStore) -> None:
-    github = Github()
-    github.add(1, state="MERGED", merged_at=OLD)
-    github.add(2, state="MERGED", merged_at=OLD)
-    store.save(
-        [
-            {**_stored(REPO, 1), "state": "MERGED"},  # saved before the store read the merge commit
-            {**_stored(REPO, 2), "state": "MERGED", "mergedAt": OLD, "mergeSha": "a" * 40},
-        ]
-    )
-
-    refresh_repository(REPO, store, 100.0, github)
-
-    assert {pull["number"]: (pull["mergedAt"], pull["mergeSha"]) for pull in store.find()} == {
-        1: (OLD, f"{1:040x}"[::-1]),
-        2: (OLD, "a" * 40),
-    }
-    (query,) = github.queries
-    assert "pullRequest(number: 1)" in query
-    assert "pullRequest(number: 2)" not in query
-    github.queries.clear()
-
-    refresh_repository(REPO, store, 160.0, github)
-
-    (query,) = github.queries
-    assert "pullRequest(number: 1)" not in query
-
-
-def test_a_required_check_turning_red_with_updated_at_unchanged_reaches_the_store_on_the_next_refresh(
+def test_a_required_check_turning_red_with_updated_at_unchanged_reaches_the_store_on_the_next_read(
     store: PullStore,
 ) -> None:
     github = Github()
     github.add(1, checks={"lint": "IN_PROGRESS", "test": "SUCCESS"})
-    refresh_repository(REPO, store, 100.0, github)
+    _read(store, github, 100.0)
     (before,) = store.find(number=1)
 
     github.add(
         1, checks={"lint": "FAILURE", "test": "SUCCESS"}
     )  # updatedAt stays OLD: a check finishing does not bump it
-    refresh_repository(REPO, store, 160.0, github)
+    _read(store, github, 160.0)
     (after,) = store.find(number=1)
 
     assert (before["checks"], before["updatedAt"]) == ("pending", OLD)
@@ -341,7 +228,7 @@ def test_a_record_carries_the_facts_pr_status_prints(store: PullStore) -> None:
     github = Github()
     github.add(4, checks={"lint": "SUCCESS"}, threads=(True, False, False))
 
-    refresh_repository(REPO, store, 100.0, github)
+    _read(store, github, 100.0)
 
     assert store.find(number=4) == [
         {
@@ -370,7 +257,7 @@ def test_a_merged_prs_record_keeps_what_the_task_consumers_read_beside_the_serve
     github = Github()
     github.add(5, state="MERGED", merged_at=NEW, files=("a.py", "b.py"), behind=3)
 
-    refresh_repository(REPO, store, 100.0, github)
+    _read(store, github, 100.0)
 
     (record,) = store.find(number=5, detailed=True)
     assert record["detail"] == {
@@ -388,40 +275,6 @@ def test_a_merged_prs_record_keeps_what_the_task_consumers_read_beside_the_serve
         },
     }
     assert "detail" not in store.find(number=5)[0]
-
-
-def test_a_pr_an_open_task_cites_is_read_when_the_store_lacks_it_or_holds_it_without_detail(store: PullStore) -> None:
-    github = Github()
-    github.add(1)
-    github.add(8, state="MERGED", merged_at=OLD, updated="2026-10-01T00:00:00Z")
-    github.add(9, state="MERGED", merged_at=OLD, updated="2026-10-01T00:00:00Z")
-    github.unlisted = {8, 9}
-    store.save([{**_stored(REPO, 9), "state": "MERGED"}])  # saved by a version that kept no detail
-
-    refresh_repository(REPO, store, 100.0, github, linked={8, 9, 77})  # 77 does not exist on GitHub
-
-    assert {pull["number"]: pull["detail"] is not None for pull in store.find(detailed=True)} == {
-        1: True,
-        8: True,
-        9: True,
-    }
-
-
-def test_merged_rows_without_a_merge_sha_are_read_a_few_per_refresh_until_none_is_left(store: PullStore) -> None:
-    github = Github()
-    for number in range(1, 151):
-        github.add(number, state="MERGED", merged_at=OLD)
-    store.save([{**_stored(REPO, number), "state": "MERGED"} for number in range(1, 151)])
-
-    refreshes = 0
-    while any(pull["mergeSha"] is None for pull in store.find()):
-        github.queries.clear()
-        refresh_repository(REPO, store, 100.0 + refreshes, github)
-        refreshes += 1
-        assert len(re.findall(r"p\d+: pullRequest", github.queries[0])) <= 25
-        assert refreshes <= 10
-
-    assert refreshes == 6
 
 
 def test_a_query_too_large_for_an_argument_reaches_gh_on_stdin(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -444,7 +297,7 @@ def test_each_query_logs_the_rate_limit_cost_github_returned(
 ) -> None:
     github = Github()
     github.add(1)
-    costs = iter([2, 1])
+    costs = iter([2])
 
     def gh(command: list[str], **kwargs: str) -> subprocess.CompletedProcess[str]:
         query = json.loads(kwargs["input"])["query"]
@@ -456,92 +309,10 @@ def test_each_query_logs_the_rate_limit_cost_github_returned(
     monkeypatch.setattr(subprocess, "run", gh)
 
     with caplog.at_level(logging.INFO, logger="starpulse._internal.pulls.pull_requests"):
-        refresh_repository(REPO, store, 100.0)
+        refresh_pull(REPO, 1, store, 100.0)
 
     logged = [record.getMessage() for record in caplog.records if "cost" in record.getMessage()]
-    assert [(REPO in message, f"cost {cost}" in message) for message, cost in zip(logged, (2, 1), strict=True)] == [
-        (True, True),
-        (True, True),
-    ]
-
-
-def test_a_sync_reads_the_repositories_the_tasks_the_store_and_the_config_name_and_survives_one_that_fails(
-    store: PullStore,
-) -> None:
-    store.save([{**_stored("acme/old", 1), "state": "MERGED"}])
-    feed = BoardFeed()
-    feed.put(task("PROJ-7", "In Progress", references=["https://github.com/acme/widgets/pull/9"]))
-    asked: list[str] = []
-
-    def graphql(repo: str, query: str) -> dict:
-        asked.append(repo)
-        if repo == "acme/widgets":
-            raise GhUnavailableError("widgets is not readable")
-        return {"open": {"pageInfo": {"hasNextPage": False}, "nodes": []}, "recent": {"nodes": []}}
-
-    PullSync(store, feed, (Repo("skills", "skills", "pin-bump"),), graphql, lambda: 100.0).refresh()
-
-    assert sorted(asked) == ["acme/old", "acme/skills", "acme/widgets"]
-
-
-def test_a_sync_reads_the_prs_open_tasks_cite_that_the_listings_do_not_reach() -> None:
-    feed = BoardFeed()
-    feed.put(task("PROJ-7", "In Progress", references=["https://github.com/acme/widgets/pull/9", "x"]))
-    asked: list[str] = []
-
-    def graphql(repo: str, query: str) -> dict:
-        asked.append(query)
-        return {"open": {"pageInfo": {"hasNextPage": False}, "nodes": []}, "recent": {"nodes": []}} | {"p9": None}
-
-    PullSync(PullStore(create_engine("sqlite://")), feed, (), graphql, lambda: 100.0).refresh()
-
-    assert "p9: pullRequest(number: 9)" in asked[-1]
-
-
-def test_a_sync_projects_the_boards_pull_requests_after_each_read_and_survives_a_projection_that_fails(
-    store: PullStore, caplog: pytest.LogCaptureFixture
-) -> None:
-    store.save([{**_stored("acme/old", 1), "state": "MERGED"}])
-    calls: list[str] = []
-
-    def graphql(repo: str, query: str) -> dict:
-        calls.append("read")
-        return {"open": {"pageInfo": {"hasNextPage": False}, "nodes": []}, "recent": {"nodes": []}}
-
-    def project() -> None:
-        calls.append("project")
-        raise RuntimeError("bad record")
-
-    PullSync(store, BoardFeed(), (), graphql, lambda: 100.0, project).refresh()
-
-    assert calls == ["read", "project"]
-    assert "failed to project" in caplog.text
-
-
-def test_a_projection_that_is_slow_on_a_cold_pin_memo_does_not_delay_the_first_read(
-    store: PullStore, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    read, projected, finished = threading.Event(), [], threading.Event()
-
-    def graphql(repo: str, query: str) -> dict:
-        read.set()
-        return {"open": {"pageInfo": {"hasNextPage": False}, "nodes": []}, "recent": {"nodes": []}, "p1": None}
-
-    def project() -> None:
-        projected.append(read.wait(5))  # a pin walk that needs the first read to finish first
-        finished.set()
-
-    def stop(_self: PullSync, seconds: float) -> None:
-        raise KeyboardInterrupt
-
-    store.save([{**_stored("acme/old", 1), "state": "MERGED"}])
-    monkeypatch.setattr(PullSync, "_idle", stop)
-
-    with pytest.raises(KeyboardInterrupt):
-        PullSync(store, BoardFeed(), (), graphql, lambda: 100.0, project).run_forever(1.0)
-
-    assert finished.wait(10)
-    assert projected[0] is True  # the read ran while the first projection was still walking
+    assert [(REPO in message, "cost 2" in message) for message in logged] == [(True, True)]
 
 
 def test_a_pr_with_no_commits_is_recorded_with_an_empty_rollup_and_leaves_the_others_saved(store: PullStore) -> None:
@@ -551,39 +322,12 @@ def test_a_pr_with_no_commits_is_recorded_with_an_empty_rollup_and_leaves_the_ot
     node = github._node
     github._node = lambda number: node(number) | ({"commits": {"nodes": []}} if number == 2 else {})  # type: ignore[method-assign]
 
-    refresh_repository(REPO, store, 100.0, github)
+    _read(store, github, 100.0)
 
     assert {pull["number"]: (pull["checks"], pull["requiredChecks"]) for pull in store.find()} == {
         1: ("pass", [{"name": "lint", "result": "pass"}]),
         2: ("none", []),
     }
-
-
-def test_an_error_reading_one_repository_does_not_stop_the_others_or_end_run_forever(
-    store: PullStore, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    store.save([{**_stored("acme/a", 1), "state": "MERGED"}, {**_stored("acme/b", 2), "state": "MERGED"}])
-    asked: list[str] = []
-
-    def graphql(repo: str, query: str) -> dict:
-        asked.append(repo)
-        if repo == "acme/a":
-            raise IndexError("list index out of range")
-        return {"open": {"pageInfo": {"hasNextPage": False}, "nodes": []}, "recent": {"nodes": []}}
-
-    sleeps: list[float] = []
-
-    def sleep(seconds: float) -> None:
-        sleeps.append(seconds)
-        if len(sleeps) == 2:
-            raise KeyboardInterrupt  # ends the loop the test is watching
-
-    monkeypatch.setattr(PullSync, "_idle", lambda _self, seconds: sleep(seconds))
-
-    with pytest.raises(KeyboardInterrupt):
-        PullSync(store, BoardFeed(), (), graphql, lambda: 100.0).run_forever(1.0)
-
-    assert asked == ["acme/a", "acme/b", "acme/a", "acme/b"]
 
 
 def test_a_refresh_request_reads_that_pr_alone_and_publishes_its_merge_without_the_next_refresh(
@@ -592,7 +336,7 @@ def test_a_refresh_request_reads_that_pr_alone_and_publishes_its_merge_without_t
     github = Github()
     github.add(1)
     github.add(2)
-    refresh_repository(REPO, store, 100.0, github)
+    _read(store, github, 100.0)
     github.add(1, state="MERGED", updated=NEW, merged_at=NEW)
     github.queries.clear()
     projected: list[str] = []
@@ -609,141 +353,78 @@ def test_a_refresh_request_reads_that_pr_alone_and_publishes_its_merge_without_t
     assert projected == ["project"]
 
 
-def test_a_request_that_arrives_during_a_refresh_is_read_before_that_refresh_projects(store: PullStore) -> None:
-    github = Github()
-    github.add(1)
-    refresh_repository(REPO, store, 100.0, github)
-    github.add(1, state="MERGED", updated=NEW, merged_at=NEW)
-    github.queries.clear()
-    projected: list[str] = []
-
-    def graphql(repo: str, query: str) -> dict:
-        if "open: pullRequests" in query:
-            github.pulls[1]["state"] = "OPEN"  # the cycle's read still answers open, and the merge lands during it
-            answer = github(repo, query)
-            github.pulls[1]["state"] = "MERGED"
-            assert sync.request(REPO, 1) is True
-            return answer
-        return github(repo, query)
-
-    sync = PullSync(
-        store, BoardFeed(), (), graphql, lambda: 160.0, lambda: projected.append(store.find(number=1)[0]["state"])
-    )
-
-    sync.refresh()
-
-    assert projected == ["MERGED"]  # one projection, and it already holds the requested read
-    assert ["open: pullRequests" in query for query in github.queries] == [True, False]
-
-
-def _record(repo: str, number: int, state: str, fetched: float) -> dict:
-    return {
-        "repo": repo,
-        "number": number,
-        "state": state,
-        "isDraft": False,
-        "mergeable": "MERGEABLE",
-        "baseRefName": "main",
-        "headRefOid": f"{number:040x}",
-        "body": "",
-        "checks": "none",
-        "requiredChecks": [],
-        "threads": 0,
-        "updatedAt": OLD,
-        "mergedAt": None,
-        "mergeSha": None,
-        "fetchedAt": fetched,
-    }
-
-
-def test_age_gauge_reports_each_repository_newest_fetched_at_age_in_seconds(tmp_path: Path) -> None:
-    store = PullStore(create_engine(f"sqlite:///{tmp_path / 'pulls.sqlite'}"))
-    store.save(
-        [
-            _record("acme/widgets", 1, "OPEN", 900.0),
-            _record("acme/widgets", 2, "OPEN", 940.0),
-            _record("acme/skills", 7, "OPEN", 400.0),
-        ]
-    )
-
-    assert store.age_gauge(1000.0).splitlines() == [
-        f"# HELP starpulse_pull_store_age_seconds {AGE_HELP}",
-        "# TYPE starpulse_pull_store_age_seconds gauge",
-        'starpulse_pull_store_age_seconds{repo="acme/skills"} 600',
-        'starpulse_pull_store_age_seconds{repo="acme/widgets"} 60',
-    ]
-
-
-def test_age_gauge_leaves_out_a_repository_holding_no_open_pull_request(tmp_path: Path) -> None:
-    """A refresh rewrites only the open and the changed PRs, so a repository with none open ages without being stale."""
-    store = PullStore(create_engine(f"sqlite:///{tmp_path / 'pulls.sqlite'}"))
-    store.save([_record("acme/widgets", 1, "MERGED", 100.0), _record("acme/skills", 1, "OPEN", 990.0)])
-
-    assert 'repo="acme/widgets"' not in store.age_gauge(1000.0)
-    assert 'starpulse_pull_store_age_seconds{repo="acme/skills"} 10' in store.age_gauge(1000.0)
-
-
-def test_a_check_marked_by_another_process_resets_this_stores_age_gauge(tmp_path: Path) -> None:
-    """The pulls worker marks the listing checks and the server serves the gauge, each with its own `PullStore`."""
-    engine = create_engine(f"sqlite:///{tmp_path / 'pulls.sqlite'}")
-    server, worker = PullStore(engine), PullStore(engine)
-    server.save([_record("acme/widgets", 1, "OPEN", 100.0)])
-
-    worker.mark_checked("acme/widgets", 990.0)
-
-    assert 'starpulse_pull_store_age_seconds{repo="acme/widgets"} 10' in server.age_gauge(1000.0)
-
-
 def test_a_merged_pr_is_recorded_with_its_merge_commit_and_time_and_an_open_one_with_neither(store: PullStore) -> None:
     github = Github()
     github.add(1)
     github.add(2, state="MERGED", merged_at="2026-10-07T12:30:00Z")
 
-    refresh_repository(REPO, store, 100.0, github)
+    _read(store, github, 100.0)
 
     open_pull, merged = store.find()
     assert (open_pull["mergedAt"], open_pull["mergeSha"]) == (None, None)
     assert (merged["mergedAt"], merged["mergeSha"]) == ("2026-10-07T12:30:00Z", f"{2:040x}"[::-1])
 
 
-def _asked(query: str) -> list[int]:
-    return [int(number) for number in re.findall(r"p(\d+): pullRequest", query)]
+def test_a_sync_tracks_the_repositories_the_tasks_the_store_and_the_config_name(store: PullStore) -> None:
+    store.save([{**_stored("acme/old", 1), "state": "MERGED"}])
+    feed = BoardFeed()
+    feed.put(task("PROJ-7", "In Progress", references=["https://github.com/acme/widgets/pull/9"]))
+
+    sync = PullSync(store, feed, (Repo("skills", "skills", "pin-bump"),))
+
+    assert sync.tracked() == ["acme/old", "acme/skills", "acme/widgets"]
 
 
-def test_no_query_asks_for_more_pull_requests_than_one_batch_however_many_are_open_or_unseen(store: PullStore) -> None:
-    github = Github()
-    for number in range(1, 61):
-        github.add(number, state="OPEN" if number % 2 else "MERGED")
+def test_a_request_for_a_repository_nothing_tracks_is_refused_and_queues_no_read(store: PullStore) -> None:
+    asked: list[str] = []
+    sync = PullSync(store, BoardFeed(), (), lambda repo, query: asked.append(repo) or {})
 
-    refresh_repository(REPO, store, 100.0, github)  # cold: all 60 are unseen
-    assert max(len(_asked(query)) for query in github.queries) == 25, "GitHub refuses a query of too many nodes"
-    assert len(store.find()) == 60
+    assert sync.request("acme/unknown", 1) is False
+    sync.serve_requests()
 
-    github.queries.clear()
-    refresh_repository(REPO, store, 160.0, github)  # warm: the 30 open ones are held
-    assert [len(_asked(query)) for query in github.queries] == [25, 5]
-    assert sum("open: pullRequests" in query for query in github.queries) == 1
+    assert asked == []
 
 
-def test_a_batch_that_fails_keeps_the_earlier_batches_saved_and_the_next_refresh_asks_only_for_the_rest(
-    store: PullStore,
+def test_a_request_is_read_alone_and_projected_and_a_projection_that_fails_ends_nothing(
+    store: PullStore, caplog: pytest.LogCaptureFixture
 ) -> None:
     github = Github()
-    for number in range(1, 61):  # 60 is the oldest, so the batches run 60 down to 1
-        github.add(number, state="MERGED", merged_at=OLD, updated=f"2026-10-07T12:{60 - number:02d}:00Z")
-    failing = iter([False, False, True])
+    github.add(1, checks={"lint": "SUCCESS"})
+    github.add(2)
+    store.save([_stored(REPO, 2)])
+    calls: list[str] = []
 
-    def flaky(repo: str, query: str) -> dict:
-        if next(failing, False):
-            raise GhUnavailableError("gh: HTTP 504")
+    def project() -> None:
+        calls.append("project")
+        raise RuntimeError("bad record")
+
+    sync = PullSync(store, BoardFeed(), (), github, lambda: 100.0, project)
+
+    assert sync.request(REPO, 1) is True
+    sync.serve_requests()
+
+    assert calls == ["project"]
+    assert "failed to project" in caplog.text
+    assert [(pull["number"], pull["checks"]) for pull in store.find()] == [(1, "pass"), (2, "none")]
+
+
+def test_a_request_that_cannot_be_read_is_logged_and_the_next_one_is_still_served(
+    store: PullStore, caplog: pytest.LogCaptureFixture
+) -> None:
+    github = Github()
+    github.add(2)
+
+    def graphql(repo: str, query: str) -> dict:
+        if "p1: pullRequest" in query:
+            raise IndexError("list index out of range")
         return github(repo, query)
 
-    with pytest.raises(GhUnavailableError):
-        refresh_repository(REPO, store, 100.0, flaky)
-    assert sorted(pull["number"] for pull in store.find()) == list(range(36, 61))
+    sync = PullSync(store, BoardFeed(), (), graphql, lambda: 100.0)
+    store.save([_stored(REPO, 1)])
 
-    github.queries.clear()
-    refresh_repository(REPO, store, 160.0, github)
+    sync.request(REPO, 1)
+    sync.request(REPO, 2)
+    sync.serve_requests()
 
-    assert sorted(number for query in github.queries for number in _asked(query)) == list(range(1, 36))
-    assert len(store.find()) == 60
+    assert "acme/widgets#1 failed to refresh" in caplog.text
+    assert [pull["number"] for pull in store.find()] == [1, 2]

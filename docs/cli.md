@@ -366,29 +366,23 @@ stream; a stream that drops is retried with backoff while the pane stays open. T
 ## The pull-request store
 
 With `gh` available and the config's `pull_requests` not false, `starpulse worker pulls` (a child `serve` supervises) keeps a store of pull requests (table
-`starpulse_pull_requests`) and refreshes it every minute, one GraphQL query per repository: every open pull request, plus any other pull request updated since the newest
-`updatedAt` the store holds for that repository. A merged or closed record is final and is never read again, except a merged one saved without its `mergeSha`
-(stored before the store read the merge commit), which is re-read on every refresh until it has one. An open
-pull request is re-read on every refresh even when its `updatedAt` is unchanged, because a check finishing does not
-bump it. A query reads at most 25 pull requests, so pull requests the store has not seen yet, or open ones beyond the
-first 25, cost one follow-up query per 25; each batch of newly seen ones is saved as it lands, so a query GitHub
-refuses or times out on does not repeat the batches already read. The
-repositories are those of open tasks' pull request links, the `[[repos]]` entries under a linked owner, and those
-already stored. Each query's `rateLimit` cost is logged (`pull requests: <repo> query cost N, remaining N, resets T`).
-A repository with more than 100 open pull requests is read for the first 100, with a warning.
+`starpulse_pull_requests`) as a projection of the lifecycle events, and polls GitHub for nothing. A task's `machine:events` entry (`PR_OPENED`, `PR_READY`, `PUSHED`, `CHECKS_PASSED`, `CHECKS_FAILED`,
+`CONFLICTED`, `MERGEABLE`, `THREADS_CHANGED`, `PR_MERGED`, `PR_CLOSED`) lands on the pull requests the Board says the task cites, and a completed `ci:jobs` entry sets the head commit and its job's result on the
+record of the pull request it names. An entry applied twice leaves the record as once did, so the log may be replayed from any point. A close applies only when the task cites a single open pull request.
+`POST /api/pulls/refresh` reads one pull request alone from GitHub (one GraphQL query, its `rateLimit` cost logged as `pull requests: <repo> query cost N, remaining N, resets T`) and replaces its record:
+the way a pull request no task's events name enters the store, and the way a record gets its head branch, base, merge commit and changed files. The
+repositories a refresh may name are those of open tasks' pull request links, the `[[repos]]` entries under a linked owner, and those already stored.
 
 `GET /api/pulls[?repo=owner/name][&number=N][&state=OPEN|MERGED|CLOSED][&body_contains=text]` serves the store,
 `{pulls: [...]}`, ordered by repository then number. Each record holds `repo`, `number`, `state`, `isDraft`,
 `mergeable`, `baseRefName`, `headRefOid`, `body`, `checks` (`pass`, `failing`, `pending` or `none`), `requiredChecks`
 (`{name, result}`), `threads` (open review threads), `headRefName` (the head branch), `unresolvedThreads`
 (`{id, author}`: each open thread's id and its first comment's author login, `null` for a deleted account, among the
-first 100 threads), `updatedAt` and `fetchedAt` (epoch seconds of the read). `headRefName` and `unresolvedThreads` are
+first 100 threads), `updatedAt` and `fetchedAt` (epoch seconds of the last event or read that changed the record). `headRefName` and `unresolvedThreads` are
 `null` for a record saved before they were kept; its reader asks GitHub. A `number` that is not an
 integer or an unknown `state` answers 400.
 
-`GET /metrics` serves Prometheus text: `starpulse_pull_store_age_seconds{repo="owner/name"}`, the seconds since the newest
-record of each repository holding an open pull request was read. The refresh reads those every minute, so a value past a
-few minutes means the refresh stopped; a repository with none open is left out, because nothing rewrites it.
+`GET /metrics` serves Prometheus text:
 `starpulse_page_build_info{build="<id>"} 1` names the page build the server holds, the id its `build` event sends, so
 a rebuild moves the series; a server whose `static/` holds no build serves none. The same route carries the server
 process's own gauges, `process_resident_memory_bytes`, `process_threads`,

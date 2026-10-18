@@ -229,10 +229,10 @@ type = "native"
 # [ci]
 # states = ["in_progress", "review"]
 
-# With `gh` on the PATH, `serve` keeps a pull request store, refreshed from GitHub every minute, that `/api/pulls`, the `ci`
-# trail and `[release]` read. false never refreshes it: no GitHub reads, `POST /api/pulls/refresh` answers 404, tasks carry
+# With `gh` on the PATH, `serve` keeps a pull request store, current from the lifecycle events, that `/api/pulls`, the `ci`
+# trail and `[release]` read. false never updates it: no event is applied, `POST /api/pulls/refresh` answers 404, tasks carry
 # no PR state, and `/api/pulls` answers only from rows the database already holds. Set it on a second instance beside one
-# that reads the same repositories, so the GitHub budget pays for one store.
+# that reads the same repositories, so one store is kept.
 # pull_requests = true
 
 # Whether something outside `serve` runs the Page API (the page and the HTTP API). False, the default: `serve` binds the

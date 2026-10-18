@@ -2,7 +2,7 @@
 
 The body is `{"repo": "<owner>/<name>", "number": <pull request number>}` with `Authorization: Bearer <token>`, the
 token the config's `refresh_token_env` names. The PR store's thread reads that pull request alone, as soon as it is
-asked, and publishes it as a refresh does; the listing reconcile stays the drift fallback for a request that is lost.
+asked, and publishes it as the lifecycle events do; a request that is lost leaves the record as the events made it.
 
 The answers: 202 when the request is queued; 401 for a missing or wrong token; 403 for a repository the instance does
 not track; 400 for a body that is not a repository and a pull request number. A refusal queues nothing.

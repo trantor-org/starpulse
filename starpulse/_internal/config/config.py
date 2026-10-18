@@ -556,7 +556,7 @@ class Config:
     refresh_token_env: str | None = None
     """The environment variable holding the token `POST /api/pulls/refresh` accepts; none: the route answers 404."""
     pull_requests: bool = True
-    """`serve` keeps the pull request store, refreshing it from GitHub every minute; false: no store, so an instance beside another that reads the same repositories spends none of the GitHub budget on a store no one reads."""
+    """`serve` keeps the pull request store, current from the lifecycle events (GitHub is read only for a pull request a refresh asks for); false: no store is kept, so an instance beside another that reads the same repositories keeps no second copy."""
     runs_worker: bool = False
     """The Runs context (the run adapters, the trigger starts and the pushed-runs follower) runs in `starpulse worker runs`, not in `serve`: `serve` starts none of them and draws the workflows the worker keeps in the event log; false: `serve` supervises that worker as a child."""
     worker_memory: Mapping[str, MemoryLimit] = field(default_factory=lambda: dict(WORKER_MEMORY))

@@ -36,7 +36,6 @@ from starpulse._internal.board.seam import (
 from starpulse._internal.runs.ingest import MAX_BODY, MAX_FORWARD_BODY, ForwardIngest, Ingest
 from starpulse._internal.pulls.pull_refresh import MAX_BODY as MAX_REFRESH_BODY
 from starpulse._internal.pulls.pull_refresh import PullRefresh
-from starpulse._internal.pulls.pull_store import drift_counter
 from starpulse._internal.server.compression import LEVEL, Encoded, accepts_gzip, compressed, gzip_stream
 from starpulse._internal.server.process_metrics import process_gauges
 from starpulse._internal.hub.forward import Forwarder
@@ -729,9 +728,7 @@ def request_handler(
             elif url.path == "/metrics":
                 self._send(
                     (
-                        (pulls.age_gauge(clock()) if pulls else "")
-                        + (drift_counter() if pulls else "")
-                        + (actor_metrics() if actor_metrics else "")
+                        (actor_metrics() if actor_metrics else "")
                         + (lane_metrics() if lane_metrics else "")
                         + (conformance_metrics() if conformance_metrics else "")
                         + build_gauge(static)

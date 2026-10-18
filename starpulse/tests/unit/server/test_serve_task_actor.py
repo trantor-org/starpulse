@@ -92,6 +92,9 @@ class Sync:
     def request(self) -> None:
         pass
 
+    def project(self) -> None:
+        pass
+
 
 class Projection:
     refreshed = 0

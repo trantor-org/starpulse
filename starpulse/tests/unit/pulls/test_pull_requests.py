@@ -12,7 +12,7 @@ from starpulse._internal.config.config import Repo
 from starpulse._internal.config.pins import GitHub
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import task
-from starpulse._internal.pulls.pull_requests import STALE_S, GhUnavailableError, PullRequests, query_github
+from starpulse._internal.pulls.pull_requests import GhUnavailableError, PullRequests, query_github
 from starpulse._internal.pulls.pulls import PullStore
 
 REPO = "https://github.com/acme/widgets/pull"
@@ -140,7 +140,7 @@ def test_the_snapshot_carries_each_tasks_pr_number_check_rollup_merged_state_and
     store.save([_stored(1750, "failing", threads=2), _stored(1751, "pass", state="MERGED")])
     feed = _feed(proj_7=[FIRST], proj_8=[SECOND])
 
-    PullRequests(feed, store, clock=lambda: NOW).refresh()
+    PullRequests(feed, store).refresh()
 
     assert _pulls(feed) == {
         "PROJ-7": [_record(1750, "failing", threads=2)],
@@ -159,7 +159,7 @@ def test_a_record_carries_the_merge_commit_and_time_the_changed_files_and_the_co
     )
     feed = _feed(proj_7=[FIRST, SECOND])
 
-    PullRequests(feed, store, clock=lambda: NOW).refresh()
+    PullRequests(feed, store).refresh()
 
     assert _records(feed) == {
         FIRST: _record(1750, "pass", merged=True, merge_sha=SHA, merged_at=MERGED_AT, files=["a.py", "b.py"]),
@@ -171,7 +171,7 @@ def test_a_task_with_several_prs_carries_them_in_the_order_it_cites_them(store: 
     store.save([_stored(1750), _stored(1751, "pending")])
     feed = _feed(proj_7=[SECOND, FIRST])
 
-    PullRequests(feed, store, clock=lambda: NOW).refresh()
+    PullRequests(feed, store).refresh()
 
     assert [pr["number"] for pr in _pulls(feed)["PROJ-7"]] == [1751, 1750]
 
@@ -181,7 +181,7 @@ def test_a_task_with_no_pr_and_a_settled_tasks_pr_are_not_in_the_map(store: Pull
     feed = _feed(proj_7=[])
     feed.put(task("PROJ-8", "Done", settled="completed", references=[FIRST]))
 
-    PullRequests(feed, store, clock=lambda: NOW).refresh()
+    PullRequests(feed, store).refresh()
 
     assert _pulls(feed) == {}
 
@@ -190,7 +190,7 @@ def test_a_pr_the_store_does_not_hold_is_left_out_beside_the_ones_it_does(store:
     store.save([_stored(1750)])
     feed = _feed(proj_7=[FIRST, SECOND])
 
-    PullRequests(feed, store, clock=lambda: NOW).refresh()
+    PullRequests(feed, store).refresh()
 
     assert [pr["number"] for pr in _pulls(feed)["PROJ-7"]] == [1750]
 
@@ -199,27 +199,24 @@ def test_a_pr_the_store_holds_without_detail_is_left_out_until_the_store_reads_i
     store.save([{**_stored(1750), "detail": None}])
     feed = _feed(proj_7=[FIRST])
 
-    PullRequests(feed, store, clock=lambda: NOW).refresh()
+    PullRequests(feed, store).refresh()
 
     assert _pulls(feed) == {}
 
 
-def test_an_open_pr_the_store_last_read_over_the_stale_age_ago_is_marked_stale_and_a_merged_one_is_not(
-    store: PullStore,
-) -> None:
-    old = NOW - STALE_S - 1
-    store.save([_stored(1750, fetched=old), _stored(1751, state="MERGED", fetched=old)])
-    feed = _feed(proj_7=[FIRST, SECOND])
-
-    PullRequests(feed, store, clock=lambda: NOW).refresh()
-
-    assert [pr["stale"] for pr in _pulls(feed)["PROJ-7"]] == [True, False]
-
-
-def test_the_next_read_of_the_store_clears_the_stale_marker_and_takes_the_new_value(store: PullStore) -> None:
-    store.save([_stored(1750, "pending", fetched=NOW - STALE_S - 1)])
+def test_an_open_pr_no_event_has_touched_for_a_day_is_not_marked_stale(store: PullStore) -> None:
+    store.save([_stored(1750, fetched=NOW - 86_400)])
     feed = _feed(proj_7=[FIRST])
-    source = PullRequests(feed, store, clock=lambda: NOW)
+
+    PullRequests(feed, store).refresh()
+
+    assert [pr["stale"] for pr in _pulls(feed)["PROJ-7"]] == [False]
+
+
+def test_the_next_read_of_the_store_takes_the_new_value(store: PullStore) -> None:
+    store.save([_stored(1750, "pending", fetched=NOW - 3_600)])
+    feed = _feed(proj_7=[FIRST])
+    source = PullRequests(feed, store)
     source.refresh()
 
     store.save([_stored(1750, "pass")])
@@ -231,7 +228,7 @@ def test_the_next_read_of_the_store_clears_the_stale_marker_and_takes_the_new_va
 def test_a_pr_the_task_no_longer_cites_leaves_the_map_on_the_next_refresh(store: PullStore) -> None:
     store.save([_stored(1750), _stored(1751)])
     feed = _feed(proj_7=[FIRST, SECOND])
-    source = PullRequests(feed, store, clock=lambda: NOW)
+    source = PullRequests(feed, store)
     source.refresh()
 
     feed.put(task("PROJ-7", "In Progress", references=[SECOND]))
@@ -244,7 +241,7 @@ def test_a_change_is_published_to_subscribers_and_an_unchanged_refresh_is_not(st
     store.save([_stored(1750, "pending")])
     feed = _feed(proj_7=[FIRST])
     _, changes = feed.subscribe()
-    source = PullRequests(feed, store, clock=lambda: NOW)
+    source = PullRequests(feed, store)
 
     source.refresh()
     source.refresh()
@@ -278,7 +275,7 @@ def test_a_refresh_hands_each_tasks_ci_histories_from_the_stored_detail_to_the_c
     store.save([_stored(1750, ci=_ci(mergeable="CONFLICTING", suites=(suite,))), _stored(1751)])
     trail = _Trail()
 
-    PullRequests(_feed(proj_7=[FIRST, SECOND]), store, trail=trail, clock=lambda: NOW).refresh()
+    PullRequests(_feed(proj_7=[FIRST, SECOND]), store, trail=trail).refresh()
 
     (recorded,) = trail.recorded
     first, second = recorded["PROJ-7"]
@@ -295,7 +292,7 @@ def test_a_refresh_hands_each_tasks_ci_histories_from_the_stored_detail_to_the_c
 def test_a_task_citing_a_pr_the_store_does_not_hold_hands_the_ci_trail_nothing_for_it(store: PullStore) -> None:
     trail = _Trail()
 
-    PullRequests(_feed(proj_7=[FIRST]), store, trail=trail, clock=lambda: NOW).refresh()
+    PullRequests(_feed(proj_7=[FIRST]), store, trail=trail).refresh()
 
     assert trail.recorded == [{"PROJ-7": []}]
 
@@ -327,7 +324,7 @@ def _pinned(store: PullStore) -> BoardFeed:
 def test_a_merged_pr_of_a_pinned_repository_carries_the_parent_merge_that_applies_it(store: PullStore) -> None:
     feed = _pinned(store)
 
-    PullRequests(feed, store, repos=REPOS, pins=_Pins(), clock=lambda: NOW).refresh()
+    PullRequests(feed, store, repos=REPOS, pins=_Pins()).refresh()
 
     assert _records(feed)[CHILD]["applied_by"] == SHA
     assert "applied_by" not in _records(feed)[FIRST]
@@ -344,13 +341,13 @@ def test_pin_answers_saved_with_the_board_spare_a_restarted_projector_every_poin
 
     monkeypatch.setattr(subprocess, "run", gh)
     before = _pinned(store)
-    PullRequests(before, store, repos=REPOS, pins=GitHub(), clock=lambda: NOW).refresh()
+    PullRequests(before, store, repos=REPOS, pins=GitHub()).refresh()
     assert len(asked) == 2
 
     after = _feed(proj_7=[FIRST], proj_8=[CHILD])
     after.set_pulls({}, before.pull_answers())  # what `BoardFeed.resume` restores
     asked.clear()
-    PullRequests(after, store, repos=REPOS, clock=lambda: NOW).refresh()
+    PullRequests(after, store, repos=REPOS).refresh()
 
     assert asked == []
     assert _records(after)[CHILD]["applied_by"] == SHA

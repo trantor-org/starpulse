@@ -43,7 +43,7 @@ With `TEST_COST_REPORT=1` the flagged tests' node id, wall s, CPU s and peak MB 
 `test-cost-<shard>` artifact; a test whose rerun left no report is named in `stats.json` and a `::warning`.
 Each background context has a leak gate, `starpulse/tests/unit/leaks/test_context_budgets.py`: it drives the context's loop
 for a fixed number of iterations against a fixture board and a throwaway SQLite store, and fails when the memory still held
-afterwards exceeds the context's budget (`pull-sync: retained 41000 B over 200 iterations, budget 32768 B exceeded`).
+afterwards exceeds the context's budget (`pull-events: retained 41000 B over 200 iterations, budget 32768 B exceeded`).
 It is an ordinary test, so `ci/select_tests.py` runs it on a pull request that reaches a context's sources and skips it on
 one that reaches none. Run it locally with `uv run pytest starpulse/tests/unit/leaks`. The harness is
 [`starpulse/tests/leak_gate.py`](../starpulse/tests/leak_gate.py): it warms the loop up, then measures two consecutive windows
@@ -51,7 +51,7 @@ under `memray.Tracker` and takes the smaller one's leaked allocations after `gc.
 SQLite allocation per process) lands in one window and never fails the gate, while a leak shows in both. To change a
 budget, edit the context's `Budget(iterations, retained_bytes)` in `BUDGETS` there: measure the new baseline with the gate
 (the failure message prints the retained bytes) and set the budget about twice the baseline, never to the leak's size.
-Baselines on CPython 3.14.6 and memray 1.20.0, 200 iterations: pull-sync 13 752 B, autopilot 42 760 B; budgets 32 KiB and
+Baselines on CPython 3.14.6 and memray 1.20.0, 200 iterations: pull-events 12 880 B, autopilot 42 760 B; budgets 32 KiB and
 96 KiB. The gate skips on 3.14t, where memray reports no allocation, and under `pytest --memray`, which cannot nest a
 tracker. A context joins by adding a driver to `test_context_budgets.py` and an entry to `BUDGETS`.
 `starpulse/tests/conftest.py` keeps the suite's fixed costs low: every SQLite connection runs `PRAGMA synchronous=OFF`, and one

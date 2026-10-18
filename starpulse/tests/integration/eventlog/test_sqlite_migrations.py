@@ -46,13 +46,12 @@ def _a_pre_alembic_store(path: Path) -> Engine:
     metadata.create_all(engine, tables=tables)
     with engine.begin() as db:
         db.execute(text(f"DROP INDEX {_RETIRED_AT_INDEX}"))
-        db.execute(text("DROP TABLE starpulse_pull_checks"))
         db.execute(text("DROP INDEX ix_starpulse_machine_events_run"))
     return engine
 
 
 def test_the_chain_has_one_head() -> None:
-    assert ScriptDirectory(str(_MIGRATIONS)).get_heads() == ["0023"]
+    assert ScriptDirectory(str(_MIGRATIONS)).get_heads() == ["0024"]
 
 
 def test_a_fresh_store_is_built_by_the_chain_and_matches_the_declared_schema(tmp_path: Path) -> None:

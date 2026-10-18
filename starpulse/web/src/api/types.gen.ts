@@ -815,7 +815,7 @@ export interface Pull {
   merged_at: string | null;
   number: number;
   /**
-   * True when the last read failed and this is the read before it.
+   * Always false: nothing polls GitHub, so a record is current until a newer event lands.
    */
   stale: boolean;
   /**
