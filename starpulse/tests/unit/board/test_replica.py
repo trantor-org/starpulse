@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -378,3 +379,15 @@ def test_the_board_child_starts_the_adapter_on_a_publisher_that_has_resumed(
     assert group == "starpulse-board"
     publisher.put(_task("T-1", "to_do"))
     assert len(_deltas(log)) == 1
+
+
+def test_replica_legacy_key_entry_is_applied_with_the_holder_as_assignee(log: EventLog, stop: threading.Event) -> None:
+    retained = _task("T-1", "review", profile="agent-a", assignee="s-1").model_dump(mode="json")
+    retained["assignee"], retained["holder"] = retained["profile"], retained.pop("assignee")
+    del retained["profile"]
+    log.append(replica.REPLICA_STREAM, {"id": "T-1", "digest": "d", "task": json.dumps(retained)})
+    log.append(replica.REPLICA_STREAM, {"id": "T-2", "digest": "d", "task": '{"unknown_key": 1}'})
+    reader = _reader(log, stop)
+
+    assert _eventually(lambda: _states(reader) == {"T-1": "review"})
+    assert reader.snapshot()["flows"][0]["agents"][0]["holder"] == "s-1"
