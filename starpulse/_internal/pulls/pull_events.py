@@ -125,8 +125,8 @@ class RecordProjection:
     def _body(self, key: str) -> str:
         """The body a record opened by events carries: the task and the session holding it, so the lookups readers make
         by either find it."""
-        holder = (self._feed.task(key) or {}).get("holder") or ""
-        return f"{key} {holder}".strip()
+        assignee = (self._feed.task(key) or {}).get("assignee") or ""
+        return f"{key} {assignee}".strip()
 
     def handle(self, entry: Entry) -> None:
         """Apply one `machine:events` entry; one that is no event of a task's pull request, or whose time is unreadable,
