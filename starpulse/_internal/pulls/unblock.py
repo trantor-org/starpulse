@@ -1,13 +1,13 @@
-"""Release a Waiting task to Ready when every task it depends on has settled.
+"""Unblock a Waiting task to Ready when every task it depends on has merged.
 
-A dependency settles when its task is Done (completed, or in the `done` lane). With `[release] settle = "pin-bump"` a
-dependency that cites a pull request in a `[[repos]]` repository settles only once the parent's pin bump has merged:
+A dependency is merged when its task is Done (completed, or in the `done` lane). With the `[release]` pin-bump rule a
+dependency that cites a pull request in a `[[repos]]` repository is merged only once the parent's pin bump has merged:
 the merge in the PR store whose submodule pointer at the repository's path contains the dependency's merge commit
 (`pins.link`). A pull request the store does not hold or holds open holds the dependent, the fail-closed direction; a
 closed, unmerged one never reaches the pin and is ignored. A task that Start Criteria also gate is left to them.
 The bump is looked for among the merged pull requests of the child's owner in repositories that are not pinned, so
-one a task never cited still settles the dependency; one older than the store's records is not found and holds it.
-A pin pushed to the parent's default branch with no pull request settles it too: the branch head's pointer is read.
+one a task never cited still counts as merged; one older than the store's records is not found and holds it.
+A pin pushed to the parent's default branch with no pull request counts too: the branch head's pointer is read.
 """
 
 from __future__ import annotations
@@ -29,25 +29,25 @@ if TYPE_CHECKING:  # annotation only: the pull store opens the database stack
 logger = logging.getLogger(__name__)
 
 #: Seconds between passes over the Waiting tasks.
-RELEASE_S = 30.0
+UNBLOCK_S = 30.0
 READY = "ready"
-COMMENT = "Every dependency has settled; StarPulse moved this task to Ready."
+COMMENT = "Every dependency has merged; StarPulse moved this task to Ready."
 
 
-class Settlement:
-    """Whether a task's dependencies in a pinned repository have reached the parent's pin, under `[release] settle`."""
+class PinGate:
+    """Whether a dependency in a pinned repository has reached the parent's pin under the `[release]` pin-bump rule."""
 
     def __init__(
         self,
         feed: BoardFeed,
         store: PullStore,
         repos: Sequence[Repo] = (),
-        settle: str | None = None,
+        pin_rule: str | None = None,
         pins: Pins | None = None,
     ) -> None:
         self._feed = feed
         self._store = store
-        self._pinned = {repo.name: repo.path for repo in repos} if settle == "pin-bump" else {}
+        self._pinned = {repo.name: repo.path for repo in repos} if pin_rule == "pin-bump" else {}
         self._repos = repos
         self._pins = pins or GitHub(lambda: feed.pull_answers().get("pins", {}))
 
@@ -104,8 +104,8 @@ class Settlement:
         ]
 
 
-class Releaser:
-    """Moves each Waiting task whose dependencies have settled to Ready, through the board's task editor."""
+class Unblocker:
+    """Moves each Waiting task whose dependencies have merged to Ready, through the board's task editor."""
 
     def __init__(
         self,
@@ -113,17 +113,17 @@ class Releaser:
         store: PullStore,
         edit: TaskEditor,
         repos: Sequence[Repo] = (),
-        settle: str | None = None,
+        pin_rule: str | None = None,
         pins: Pins | None = None,
     ) -> None:
         self._feed = feed
         self._edit = edit
-        self._settlement = Settlement(feed, store, repos, settle, pins)
-        #: Tasks released that the feed still shows Waiting, so the board's next read is not written over again.
+        self._gate = PinGate(feed, store, repos, pin_rule, pins)
+        #: Tasks unblocked that the feed still shows Waiting, so the board's next read is not written over again.
         self._sent: set[str] = set()
 
-    def release(self) -> list[str]:
-        """Move every releasable Waiting task to Ready once; the ids moved. A refused or failed write is logged and
+    def unblock(self) -> list[str]:
+        """Move every unblockable Waiting task to Ready once; the ids moved. A refused or failed write is logged and
         tried again on the next pass."""
         waiting = [
             agent
@@ -136,18 +136,18 @@ class Releaser:
             name = agent["id"]
             if name in self._sent or not agent["workable"] or criteria.authored(agent["description"]):
                 continue
-            if self._settlement.unapplied(agent):
+            if self._gate.unapplied(agent):
                 continue
             try:
                 written = self._edit(name, {"status": READY}, COMMENT)
             except Exception:  # one task's write must not end the pass
-                logger.exception("release: cannot move %s to Ready", name)
+                logger.exception("unblock: cannot move %s to Ready", name)
                 continue
             if written.ok:
                 self._sent.add(name)
                 moved.append(name)
             else:
-                logger.warning("release: %s was not moved to Ready: %s", name, written.output)
+                logger.warning("unblock: %s was not moved to Ready: %s", name, written.output)
         return moved
 
 
