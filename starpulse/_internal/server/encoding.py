@@ -11,6 +11,7 @@ from typing import Any
 
 from pydantic import TypeAdapter
 
+from starpulse.contracts.api.dto.cue import Pull
 from starpulse.contracts.api.dto.task import RawTask
 from starpulse.contracts.api.registry import BODIES, EVENTS
 
@@ -91,6 +92,15 @@ def _milestone_done(settled: dict[str, Any]) -> dict[str, int]:
     return dict(Counter(e["milestone"] for e in settled.values() if e["milestone"] and e["state"] == "completed"))
 
 
+def _drawn_pulls(pulls: dict[str, list[dict[str, Any]]]) -> dict[str, list[dict[str, Any]]]:
+    """Each task's pull requests with only the fields `Pull` declares: a record also keeps what the feed reads itself,
+    such as `files` and `applied_by`, which the page is not sent."""
+    return {
+        task: [{k: v for k, v in pull.items() if k in Pull.model_fields} for pull in found]
+        for task, found in pulls.items()
+    }
+
+
 def slim_snapshot(data: Any) -> Any:
     """`data` as the page is sent it: each Board task without its description, criteria and moves (it reads them
     from `/api/task/<id>` on open, and the moves through the `move_sets` table), only the recent settled tasks, and
@@ -99,6 +109,8 @@ def slim_snapshot(data: Any) -> Any:
     board = flows[0] if flows and flows[0]["name"] == "board" else None
     drawn = {**data, "milestone_done": _milestone_done(data["settled"]), "settled": _recent_settled(data)}
     drawn.pop("cold_done", None)
+    if data.get("pulls"):
+        drawn["pulls"] = _drawn_pulls(data["pulls"])
     if board:
         drawn["move_sets"] = _move_sets(board["agents"])
         drawn["flows"] = [{**board, "agents": [_slim_task(task) for task in board["agents"]]}, *flows[1:]]
@@ -139,4 +151,6 @@ def _splice(body: bytes, marker: bytes, drawn: bytes, after: bytes = b"") -> byt
 def event(name: str, data: Any) -> str:
     """The JSON text of the `data` of `/api/events`' event `name`, raising `ValidationError` for one its model refuses."""
     model = EVENTS[name]
+    if name == "pulls":
+        data = {**data, "pulls": _drawn_pulls(data["pulls"])}
     return model.model_validate(data).model_dump_json(by_alias=True, exclude_unset=True)

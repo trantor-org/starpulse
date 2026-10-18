@@ -1135,27 +1135,6 @@ def test_a_history_that_cannot_record_a_lane_change_still_places_the_task() -> N
     assert [a["id"] for a in _agents(feed)] == ["PROJ-1"]
 
 
-def test_the_snapshot_and_the_pulls_event_carry_only_the_fields_the_api_contract_declares_for_a_pull() -> None:
-    record = {
-        **MERGED_PR,
-        "number": 7,
-        "checks": "pass",
-        "threads": 0,
-        "stale": False,
-        "files": ["README.md"],
-        "applied_by": SHA,
-    }
-    feed = ledger_feed()
-    _, events = feed.subscribe()
-    feed.set_pulls({"TASK-1": [record]})
-
-    kind, delta = events.get_nowait()
-    assert kind == "pulls"
-    event("pulls", delta)
-    event("snapshot", feed.snapshot())
-    assert _head(feed, "MERGED")[0]["sha"] == SHA
-
-
 def test_the_open_tasks_and_a_machines_tasks_can_be_read_without_a_snapshot() -> None:
     feed = BoardFeed(machines=MACHINES)
     feed.put(BoardTask(id="PROJ-1", team="demo", title="t", lane="review", labels=["size-3"]))

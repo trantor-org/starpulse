@@ -38,7 +38,6 @@ from starpulse._internal.machines.snapshot import declared, qualifier
 from starpulse._internal.machines.stays import LaneRow
 from starpulse._internal.machines.transitions import DEFAULT_STATUSES, DONE, WAITING, board_machine, lane_id
 from starpulse.contracts.adapters import BoardTask, TaskKeys
-from starpulse.contracts.api.dto.cue import Pull
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     from starpulse._internal.eventlog.event_log import EventLog
@@ -881,7 +880,7 @@ class BoardFeed:
                 return
             self._pulls_unsaved = True
             self._pulls = pulls
-            self._publish("pulls", {"pulls": _drawn_pulls(pulls)})
+            self._publish("pulls", {"pulls": pulls})
         self._refresh_ledgers()
 
     def refuse_claim(self, task: str, reason: str, at: float, *, publish: bool = True) -> None:
@@ -1360,7 +1359,7 @@ class BoardFeed:
                 **self._machine_fields(flows, derived, now),
                 "dags": self._workflows(),
                 "pools": self._drawn_pools(),
-                "pulls": _drawn_pulls(self._pulls),
+                "pulls": self._pulls,
                 **self._ledger_marks(self._ledger_full),
                 "claims": dict(self._claims),
                 "insights": [
@@ -1484,12 +1483,3 @@ def _ledger_changes(sent: Mapping[str, Sequence[dict]], now: Mapping[str, Sequen
         if found := [row for row in rows if before.get(row["key"]) != row]:
             changed[event] = found
     return changed
-
-
-def _drawn_pulls(pulls: Mapping[str, Sequence[Mapping]]) -> dict[str, list[dict]]:
-    """Each task's pull requests with only the fields the API's `Pull` declares: a record also keeps what the feed reads
-    itself, such as `files` and `applied_by`, which the page is not sent."""
-    return {
-        task: [{k: v for k, v in pull.items() if k in Pull.model_fields} for pull in found]
-        for task, found in pulls.items()
-    }
