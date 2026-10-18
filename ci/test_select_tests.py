@@ -4,21 +4,14 @@ from __future__ import annotations
 
 import io
 import json
-from functools import cache
 from pathlib import Path
 
 import pytest
 import yaml
-from select_tests import FULL, SHARD_COUNT, Selection, main, select, shards_for
+from select_tests import FULL, READERS, SHARD_COUNT, Selection, main, select, shards_for
 
 CI = Path(__file__).resolve().parents[1] / ".github/workflows/ci.yml"
 ROOT = Path(__file__).resolve().parents[1]
-
-
-@cache
-def _every_test_the_package_reaches() -> int:
-    """How many test files a change to the package's own `__init__.py` selects, read once for the real repository."""
-    return len(select(ROOT, ["starpulse/__init__.py"]).tests)
 
 
 @pytest.fixture
@@ -47,6 +40,15 @@ def repo(tmp_path: Path) -> Path:
         "starpulse/tests/unit/contracts/test_neutrality.py": "",
         "starpulse/tests/unit/eventlog/test_consumer_pattern.py": "",
         "starpulse/tests/unit/config/test_builtin_types.py": "",
+        "starpulse/contracts/__init__.py": "",
+        "starpulse/contracts/api.py": "",
+        "starpulse/contracts/__main__.py": "",
+        "starpulse/contracts/adapters.py": "",
+        "starpulse/_internal/machines/machine_definition.py": "",
+        "starpulse/_internal/config/triggers.py": "",
+        "starpulse/tests/unit/contracts/test_contracts.py": "from starpulse.contracts import adapters, api\n",
+        "starpulse/tests/unit/contracts/test_finding.py": "from starpulse.contracts import adapters\n",
+        "starpulse/tests/unit/machines/test_machine_definition.py": "from starpulse._internal.machines import machine_definition\n",
         "ci/sizer.py": "",
         "ci/test_sizer.py": "from sizer import X\n",
         "ci/ui_preview.py": "",
@@ -165,17 +167,22 @@ def test_a_non_python_file_whose_mapped_reader_is_gone_runs_the_full_suite(repo)
     assert select(repo, ["README.md"]) == FULL
 
 
-def test_the_real_repository_selects_a_subset_for_one_adapter():
-    root = Path(__file__).resolve().parents[1]
-    selected = select(root, ["starpulse/_internal/board/jira.py"]).tests
-    assert "starpulse/tests/integration/board/test_jira.py" in selected
-    assert "ci/test_workflow_placement.py" not in selected
+def test_an_adapter_selects_a_subset_and_not_the_ci_tests(repo):
+    selected = select(repo, ["starpulse/_internal/board/jira.py"]).tests
+    assert "starpulse/tests/unit/board/test_board.py" in selected
+    assert "ci/test_sizer.py" not in selected
 
 
-def test_a_diff_touching_a_python_source_file_selects_a_target_and_so_launches_a_shard():
+def test_every_file_the_readers_map_names_exists_in_the_real_repository():
+    """The one check the fixture repository cannot make: a stale entry sends `select` to the full suite for its file."""
+    missing = [reader for readers in READERS.values() for reader in readers if not (ROOT / reader).is_file()]
+    assert not missing
+
+
+def test_a_diff_touching_a_python_source_file_selects_a_target_and_so_launches_a_shard(repo):
     """The blind spot of sizing the matrix from the selection: a selector that finds nothing turns a real change green."""
-    for changed in ("ci/shard.py", "starpulse/__init__.py"):
-        selection = select(ROOT, [changed])
+    for changed in ("ci/sizer.py", "starpulse/__init__.py"):
+        selection = select(repo, [changed])
         assert selection.tests
         assert shards_for(selection)
 
@@ -206,33 +213,34 @@ def test_the_full_suite_launches_every_shard():
     assert shards_for(FULL) == list(range(1, SHARD_COUNT + 1)) == [1, 2, 3, 4, 5, 6]
 
 
-def _printed(monkeypatch, capsys, stdin: str, *args: str) -> dict[str, str]:
+def _printed(monkeypatch, capsys, repo, stdin: str, *args: str) -> dict[str, str]:
+    monkeypatch.chdir(repo)
     monkeypatch.setattr("sys.stdin", io.StringIO(stdin))
     main(list(args))
     return dict(line.split("=", 1) for line in capsys.readouterr().out.splitlines())
 
 
-def test_a_diff_selecting_no_test_prints_no_target_and_no_shard(monkeypatch, capsys):
-    printed = _printed(monkeypatch, capsys, "CONTRIBUTING.md\n")
+def test_a_diff_selecting_no_test_prints_no_target_and_no_shard(monkeypatch, capsys, repo):
+    printed = _printed(monkeypatch, capsys, repo, "CONTRIBUTING.md\n")
     assert printed["PYTEST_TARGETS"] == ""
     assert json.loads(printed["PYTEST_SHARDS"]) == []
 
 
-def test_a_diff_selecting_a_test_prints_its_target_and_the_shards_it_needs(monkeypatch, capsys):
-    printed = _printed(monkeypatch, capsys, "ci/shard.py\n")
-    assert "ci/test_shard.py" in printed["PYTEST_TARGETS"].split()
+def test_a_diff_selecting_a_test_prints_its_target_and_the_shards_it_needs(monkeypatch, capsys, repo):
+    printed = _printed(monkeypatch, capsys, repo, "ci/sizer.py\n")
+    assert "ci/test_sizer.py" in printed["PYTEST_TARGETS"].split()
     assert json.loads(printed["PYTEST_SHARDS"])
 
 
-def test_a_diff_that_runs_the_full_suite_prints_no_target_and_every_shard(monkeypatch, capsys):
-    printed = _printed(monkeypatch, capsys, "pyproject.toml\n")
+def test_a_diff_that_runs_the_full_suite_prints_no_target_and_every_shard(monkeypatch, capsys, repo):
+    printed = _printed(monkeypatch, capsys, repo, "pyproject.toml\n")
     assert printed["PYTEST_TARGETS"] == ""
     assert json.loads(printed["PYTEST_SHARDS"]) == [1, 2, 3, 4, 5, 6]
 
 
-def test_full_prints_every_shard_whatever_the_diff(monkeypatch, capsys):
+def test_full_prints_every_shard_whatever_the_diff(monkeypatch, capsys, repo):
     """The nightly schedule and a manual dispatch have no diff: they read none and run everything."""
-    printed = _printed(monkeypatch, capsys, "", "--full")
+    printed = _printed(monkeypatch, capsys, repo, "", "--full")
     assert printed["PYTEST_TARGETS"] == ""
     assert json.loads(printed["PYTEST_SHARDS"]) == [1, 2, 3, 4, 5, 6]
 
@@ -314,10 +322,8 @@ def test_a_module_conftest_code_uses_outside_a_fixture_selects_every_test_the_co
         ),
     ],
 )
-# Stays slow: the first case on each worker parses the import graph of every module in the repository, which is the
-# selection under test; later cases reuse the cached parse.
-def test_a_schema_selects_the_tests_of_its_readers_not_the_full_suite(schema, readers):
-    selected = select(ROOT, [schema]).tests
+def test_a_schema_selects_the_tests_of_its_readers_not_the_full_suite(repo, schema, readers):
+    selected = select(repo, [schema]).tests
     assert selected
-    assert len(selected) < _every_test_the_package_reaches()
-    assert select(ROOT, readers).tests == selected
+    assert len(selected) < len(select(repo, ["starpulse/__init__.py"]).tests)
+    assert select(repo, readers).tests == selected
