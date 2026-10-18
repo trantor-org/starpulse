@@ -8,6 +8,7 @@ export interface ApiContract {
     | Moved
     | Edited
     | Archived
+    | Judged
     | Restored
     | Retired
     | RetiredImported
@@ -65,6 +66,8 @@ export interface ApiContract {
     | StartRequest
     | EditRequest
     | ArchiveRequest
+    | VerdictRequest
+    | MissRequest
     | RestoreRequest
     | RetireRequest
     | RetiredImportRequest
@@ -111,6 +114,12 @@ export interface Edited {
 }
 export interface Archived {
   task: string;
+}
+export interface Judged {
+  check: string;
+  fix?: string | null;
+  task: string;
+  verdict: string;
 }
 export interface Restored {
   task: string;
@@ -1592,6 +1601,49 @@ export interface ArchiveRequest {
   task: string;
 }
 /**
+ * `POST /api/verdict`: record `verdict` (`pass` or `miss`) for `check` of `task`'s `## Post-merge Checks`.
+ *
+ * A `miss` names the task `fix` that repairs it; `evidence` is kept in the verdict's comment.
+ */
+export interface VerdictRequest {
+  actor?: string | null;
+  check: string;
+  evidence?: string | null;
+  fix?: string | null;
+  harness?: string | null;
+  session?: string | null;
+  task: string;
+  verdict: string;
+}
+/**
+ * `POST /api/miss`: file the task `fix` and record `check` of `task` as missed, naming it, in one write.
+ */
+export interface MissRequest {
+  actor?: string | null;
+  check: string;
+  evidence?: string | null;
+  fix: CreateRequest;
+  harness?: string | null;
+  session?: string | null;
+  task: string;
+}
+/**
+ * `POST /api/tasks`: create a task in the board's starting lane, stamped `created_by: <harness>:<session>`.
+ */
+export interface CreateRequest {
+  acceptanceCriteria?: string[] | null;
+  actor?: string | null;
+  assignee?: string | null;
+  dependencies?: string[] | null;
+  description?: string | null;
+  harness?: string | null;
+  labels?: string[] | null;
+  milestone?: string | null;
+  priority?: string | null;
+  session?: string | null;
+  title: string;
+}
+/**
  * `POST /api/restore`: return the archived task `task` to the board's tasks, unchanged.
  */
 export interface RestoreRequest {
@@ -1656,22 +1708,6 @@ export interface ReviewRequest {
   session?: string | null;
   summary?: string | null;
   task: string;
-}
-/**
- * `POST /api/tasks`: create a task in the board's starting lane, stamped `created_by: <harness>:<session>`.
- */
-export interface CreateRequest {
-  acceptanceCriteria?: string[] | null;
-  actor?: string | null;
-  assignee?: string | null;
-  dependencies?: string[] | null;
-  description?: string | null;
-  harness?: string | null;
-  labels?: string[] | null;
-  milestone?: string | null;
-  priority?: string | null;
-  session?: string | null;
-  title: string;
 }
 /**
  * `POST /api/milestones`: open a milestone; only the title is required.

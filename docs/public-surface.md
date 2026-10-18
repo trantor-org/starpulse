@@ -14,7 +14,8 @@ internal and can change in any release.
   which returns
   `{task, changed}` and is refused whole (exit 1) when a field it changes is stale against its base;
   `task assign TASK ASSIGNEE`, which returns `{task, assignee, changed}`; `task archive TASK [--reason]`, which returns
-  `{task}`; `task restore TASK`, which returns `{task}` and is refused (exit 1) for a task that is open, not archived or
+  `{task}`; `task verdict TASK CHECK pass|miss`, which returns `{task, check, verdict}`, and `task miss TASK CHECK --title`,
+  which returns `{task, check, verdict, fix}`, each refused (exit 1) for a check that is undeclared or already judged; `task restore TASK`, which returns `{task}` and is refused (exit 1) for a task that is open, not archived or
   whose file name is taken; `task retire TASK`, which returns `{task}` and is refused (exit 1) for a task that is open;
   `task retired [TASK]`, which returns `{tasks}`, each `{task, name, text}`; `task import-retired FILE...`, which returns
   `{tasks}`, the imported ids; `task complete TASK`, which returns `{task}` and is refused (exit 1) for a task that is not Done;
@@ -136,15 +137,39 @@ the value under that key:
 | `checklist` | `{ sections = ["acceptance_criteria", "definition_of_done"], all_checked = true }` or `{ sections = ["acceptance_criteria"], min_items = 3 }` | every item of the named lists is checked (an empty or absent list holds), and/or the named lists hold at least `min_items` items between them; `all_checked` and `min_items` combine |
 | `body` | `{ region = "description", matches = "AGENTS\\.md\\b" }` | the regular expression is found in the body, or in one region of it (`description`, `plan`, `acceptance_criteria`, `definition_of_done`, each between its `<!-- ...:BEGIN -->` and `:END -->` markers); an absent region holds nothing |
 | `block` | `{ heading = "Start Criteria", key = "start_criteria" }` | the section under the `## ` heading holds a fenced `yaml` block that parses to a mapping whose `key` is a non-empty list; an absent section, fence or list fails |
+| `post_merge_checks` | `{}` | the body's `## Post-merge Checks` section is absent, or holds a fenced `yaml` block whose `post_merge_checks` list is valid (see Post-merge checks); a malformed check fails |
 | `all_of`, `any_of`, `exactly_one`, `none_of` | a non-empty list of primitives | all, at least one, exactly one or none of them hold |
 
-A write names its actor, which `unless_actor` matches. `POST /api/move`, `/api/edit`, `/api/archive` and `/api/tasks`
+A write names its actor, which `unless_actor` matches. `POST /api/move`, `/api/edit`, `/api/archive`, `/api/verdict`, `/api/miss` and `/api/tasks`
 take an optional `actor`, `session` and `harness`, each non-empty text (anything else is a 400). The page names
 `operator`; `starpulse` verbs name `agent`, their session and their harness. A write naming no actor is `agent` when it
 names a session and `anonymous` when it names none, never `operator`, so an unnamed write is not judged as the
 operator's. The write's `board:lanes` row carries all three, and a create stamps `created_by: <harness>:<session>` in
 the task (`anonymous` when it names no session). `POST /api/start` takes an optional `actor` and calls a board writer's
 `assign` with it only when named.
+
+## Post-merge checks
+
+A task declares what must hold after its merge in a `## Post-merge Checks` section: a fenced `yaml` block whose
+`post_merge_checks` key is a list of checks. A check is `{id, text, within, pass}` with optional `when` and `fail`:
+`id` names it (unique in the task), `text` states the claim, `within` is the deadline after the merge as a positive
+duration (`90m`, `12h` or `1d`), and `when`, `fail` and `pass` are criteria. A criterion is a table with a `kind` the
+client names, the keys that kind reads and an optional `id`. StarPulse evaluates no criterion, so it accepts any kind,
+and sets no ceiling on `within`; the client decides both.
+
+```yaml
+post_merge_checks:
+  - {id: live, text: The service answers, within: 1d, pass: {kind: prom, expr: up}}
+```
+
+`POST /api/verdict` `{task, check, verdict: "pass"|"miss"[, evidence, fix]}` records a check's verdict as a comment on
+its task: `[post-merge-check] <id> PASS` or `MISS`, then `Fix: <task>` for a miss and the evidence. It answers 200
+`{task, check, verdict[, fix]}`, 409 for a malformed block, an undeclared check or a check that already has a verdict (a
+verdict is final), 400 for a `miss` that names no `fix` task, and 404 for a `fix` the board does not hold.
+`POST /api/miss` `{task, check, fix: {title, ...as a create}[, evidence]}` files the fix task and records the MISS
+verdict naming it in one call, answering 200 `{task, check, verdict, fix}`. When the verdict is refused after the fix
+is filed, the fix is archived again, so a refused miss leaves neither. Both take the optional `actor`, `session` and
+`harness` of every write.
 
 ## Versioning
 

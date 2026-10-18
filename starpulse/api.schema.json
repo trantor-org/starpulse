@@ -2978,6 +2978,38 @@
       "title": "InsightRetracted",
       "type": "object"
     },
+    "Judged": {
+      "additionalProperties": false,
+      "properties": {
+        "check": {
+          "type": "string"
+        },
+        "fix": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "task": {
+          "type": "string"
+        },
+        "verdict": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "check",
+        "verdict"
+      ],
+      "title": "Judged",
+      "type": "object"
+    },
     "LaneHistory": {
       "additionalProperties": false,
       "description": "`GET /api/history?task=`: a task's lane changes, oldest first.",
@@ -4424,6 +4456,72 @@
         "milestones"
       ],
       "title": "Milestones",
+      "type": "object"
+    },
+    "MissRequest": {
+      "additionalProperties": false,
+      "description": "`POST /api/miss`: file the task `fix` and record `check` of `task` as missed, naming it, in one write.",
+      "properties": {
+        "actor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "check": {
+          "type": "string"
+        },
+        "evidence": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "fix": {
+          "$ref": "#/$defs/CreateRequest"
+        },
+        "harness": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "session": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "task": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "check",
+        "fix"
+      ],
+      "title": "MissRequest",
       "type": "object"
     },
     "MissedLoads": {
@@ -7920,6 +8018,83 @@
       "title": "Variant",
       "type": "object"
     },
+    "VerdictRequest": {
+      "additionalProperties": false,
+      "description": "`POST /api/verdict`: record `verdict` (`pass` or `miss`) for `check` of `task`'s `## Post-merge Checks`.\n\nA `miss` names the task `fix` that repairs it; `evidence` is kept in the verdict's comment.",
+      "properties": {
+        "actor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "check": {
+          "type": "string"
+        },
+        "evidence": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "fix": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "harness": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "session": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "task": {
+          "type": "string"
+        },
+        "verdict": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "check",
+        "verdict"
+      ],
+      "title": "VerdictRequest",
+      "type": "object"
+    },
     "WhatIf": {
       "additionalProperties": false,
       "description": "`GET /api/level/what-if`: the chain with one transition's probability changed, from the usual first state.",
@@ -8080,6 +8255,9 @@
           },
           {
             "$ref": "#/$defs/Archived"
+          },
+          {
+            "$ref": "#/$defs/Judged"
           },
           {
             "$ref": "#/$defs/Restored"
@@ -8274,6 +8452,12 @@
           },
           {
             "$ref": "#/$defs/ArchiveRequest"
+          },
+          {
+            "$ref": "#/$defs/VerdictRequest"
+          },
+          {
+            "$ref": "#/$defs/MissRequest"
           },
           {
             "$ref": "#/$defs/RestoreRequest"

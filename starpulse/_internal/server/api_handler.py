@@ -55,6 +55,8 @@ from starpulse._internal.server.writes import (
     create_task,
     doc_record,
     import_retired,
+    record_miss,
+    record_verdict,
     docs_list,
     edit_doc,
     edit_milestone,
@@ -116,6 +118,7 @@ from starpulse._internal.server.routes import (
     _LEDGER,
     _MILESTONES,
     _MILESTONE_ARCHIVE,
+    _MISS,
     _MILESTONE_EDIT,
     _MILESTONE_WRITES,
     _MOVE,
@@ -136,6 +139,7 @@ from starpulse._internal.server.routes import (
     _TASK,
     _TASKS,
     _TASK_WRITES,
+    _VERDICT,
     _WINDOW,
     _WRITES,
     _is_rerun,
@@ -258,7 +262,6 @@ class Arrival(NamedTuple):
     at: float
     busy: int = 0
     streams: int = 0
-
 
 
 #: The Vite build names every file under it by its content's digest, so a new build never reuses a name.
@@ -386,6 +389,8 @@ class _ApiHandler(SimpleHTTPRequestHandler):
                 _START,
                 _EDIT,
                 _ARCHIVE,
+                _VERDICT,
+                _MISS,
                 _RESTORE,
                 _COMPLETE,
                 _CLAIM,
@@ -417,11 +422,7 @@ class _ApiHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlsplit(self.path).path
-        if (
-            path in _TASK_WRITES
-            or path.startswith(_RUN)
-            or _is_rerun(path)
-        ) and self._refused_write():
+        if (path in _TASK_WRITES or path.startswith(_RUN) or _is_rerun(path)) and self._refused_write():
             return
         kind = _WRITES.get(path, "run")
         if path in _TASK_WRITES:
@@ -433,6 +434,12 @@ class _ApiHandler(SimpleHTTPRequestHandler):
                 status, body = edit_task(self.client_address[0], raw, self.feed, self.read, self.edit)
             elif path == _ARCHIVE:
                 status, body = archive_task(self.client_address[0], raw, self.feed, self.archive)
+            elif path == _VERDICT:
+                status, body = record_verdict(self.client_address[0], raw, self.feed, self.read, self.edit)
+            elif path == _MISS:
+                status, body = record_miss(
+                    self.client_address[0], raw, self.feed, self.read, self.edit, self.archive, self.create
+                )
             elif path == _RESTORE:
                 status, body = restore_task(self.client_address[0], raw, self.restore)
             elif path == _RETIRE:
@@ -629,7 +636,10 @@ def request_handler(
     lane_metrics: Callable[[], str] | None = None,
     conformance_metrics: Callable[[], str] | None = None,
 ) -> type[SimpleHTTPRequestHandler]:
-    from starpulse._internal.server import server as views  # late: `server` imports this module and keeps the views and stream timings its tests patch
+    from starpulse._internal.server import (
+        server as views,
+    )  # late: `server` imports this module and keeps the views and stream timings its tests patch
+
     configured = harnesses or Harnesses((), {})
     harnesses_body = encode("harnesses", configured.as_json())
     snapshots = SnapshotCache(feed)
@@ -827,7 +837,9 @@ def request_handler(
                 self._open_stream()
                 self._frame("snapshot", f"ref {_SNAPSHOT_BODY}{served.key}" if by_ref else served.body.decode())
                 if (build := page_build(static)) is not None:
-                    self._frame("build", _build_text(build))  # a page holding another build than this one is out of date
+                    self._frame(
+                        "build", _build_text(build)
+                    )  # a page holding another build than this one is out of date
                 for change in missed:
                     self._event(*change)
                 while True:
@@ -910,7 +922,9 @@ def request_handler(
                     served = snapshots.after_current()
                 missed, changes = attached
                 if missed:
-                    served = snapshots.after_current()  # the view must include what was published after the snapshot it started from
+                    served = (
+                        snapshots.after_current()
+                    )  # the view must include what was published after the snapshot it started from
                 self._open_stream()
                 sent = None
                 while True:
