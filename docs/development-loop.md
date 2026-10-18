@@ -61,9 +61,9 @@ covers.
 
 ## 3. CI runs only what a change reaches, and the full suite runs nightly
 
-**What.** A pull request, and a push to `main`, run the tests that the changed files can reach, chosen from the
-import graph. A path the selector does not know runs the full suite, so a miss costs time and never coverage. The
-whole suite runs on a nightly schedule. Lint runs in a git hook on a commit's staged paths, not in the pull-request
+**What.** A pull request, and a push to `main`, run the tests that the changed files can reach, chosen from a
+per-test coverage map the nightly run records, with the import graph for a file the map lacks. A path the selector does
+not know runs the full suite, so a miss costs time and never coverage. The whole suite runs on a nightly schedule. Lint runs in a git hook on a commit's staged paths, not in the pull-request
 run. One required check always runs and carries its conditions on steps inside it, because GitHub treats a required
 check that never reports as pending forever, not as passing.
 

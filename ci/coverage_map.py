@@ -18,8 +18,6 @@ import os
 import sys
 from pathlib import Path
 
-import coverage
-
 #: Where the CI runner host keeps the maps; the nightly's runner and the `ci-sp-python` DAG both run as the same user.
 DEFAULT_DIR = Path(
     os.environ.get("STARPULSE_COVERAGE_MAP_DIR") or Path.home() / ".cache" / "starpulse-ci" / "coverage-map"
@@ -33,6 +31,8 @@ def build(data_file: Path, root: Path, *, sha: str, collected: list[str]) -> dic
     A parametrized case that left no context of its own (its sibling's run covered the same lines) takes its function's
     files; a test with no files at all is left out, which `ratio` counts against the map.
     """
+    import coverage  # noqa: PLC0415  only the nightly's `build` has it; `ci/select_tests.py` imports `latest` from a bare env
+
     data = coverage.CoverageData(str(data_file))
     data.read()
     ran: dict[str, set[str]] = {}
