@@ -30,7 +30,7 @@ def test_a_module_that_imports_a_missing_package_is_a_failure(tmp_path, monkeypa
 
 
 def test_static_checks_runs_the_import_check_without_the_hub_group_and_no_pytest():
-    runs = (ROOT / "ci/static_checks.sh").read_text()
+    runs = (ROOT / "ci/static_checks.sh").read_text().partition("\nic() {")[2].partition("\n}")[0]
     assert "uv sync --locked --no-group hub" in runs
     assert "ci/ic_imports.py" in runs
     assert "pytest" not in runs

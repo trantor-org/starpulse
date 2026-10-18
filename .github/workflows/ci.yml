@@ -162,8 +162,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm run check
 
-  # The short static checks in one job (ci/static_checks.sh runs them at once): ic, public-names, api-types and
-  # tier-policy.
+  # The short static checks in one job (ci/static_checks.sh runs them at once): ic, public-names, api-types,
+  # tier-policy and avoid-list.
   static-checks:
     # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved.
     if: github.event_name != 'push'
@@ -178,9 +178,11 @@ jobs:
           client-id: ${{ secrets.WORKSPACE_APP_CLIENT_ID }}
           private-key: ${{ secrets.WORKSPACE_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
-          repositories: trantor
+          repositories: trantor,trantor-docs
+      # Depth 2: avoid-list diffs against HEAD^1.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 2
           sparse-checkout: /*
           sparse-checkout-cone-mode: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -189,6 +191,12 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
           path: .trantor
           sparse-checkout: lib
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: trantor-org/trantor-docs
+          token: ${{ steps.app-token.outputs.token }}
+          path: .trantor-docs
+          sparse-checkout: governance/architecture
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:

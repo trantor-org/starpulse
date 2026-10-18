@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The short static checks, run at once in one job so a run takes one runner for them, not four:
+# The short static checks, run at once in one job so a run takes one runner for them, not five:
 # the job's wall time is its slowest check (api-types), not their sum. Each check logs to its own file, printed as a
 # group when all have finished; one that fails is named and fails the job, and the others still run to completion.
 # shellcheck disable=SC2317 # the checks are invoked through "$check"
@@ -37,7 +37,18 @@ tier_policy() {
     python ci/trantor_tier_policy.py .trantor/lib/linting/check_config_checks/tier_policy.py
 }
 
-checks=(api_types ic public_names tier_policy)
+# trantor's glossary avoid-list gate over the names this change adds to a context package (the `context-*` import
+# contracts), with trantor-docs' glossaries at .trantor-docs. The base is AVOID_LIST_BASE, the event's base that trantor's
+# ci-sp-static DAG passes its depth-1 clone, else HEAD^1, the commit the nightly job's push sits on; a depth-1 clone given
+# no base fetches that parent from the public origin.
+avoid_list() {
+  local base=${AVOID_LIST_BASE:-HEAD^1}
+  git rev-parse -q --verify "$base^{commit}" >/dev/null || git fetch -q --deepen 1 origin "$(git rev-parse HEAD)"
+  uv run --no-project --python 3.14 --with pytest python -m pytest -q -p no:cacheprovider ci/test_avoid_list.py &&
+    uv run --no-project --python 3.14 python ci/avoid_list.py .trantor/lib .trantor-docs/governance/architecture "$base"
+}
+
+checks=(api_types ic public_names tier_policy avoid_list)
 pids=()
 for check in "${checks[@]}"; do
   "$check" >"$logs/$check.log" 2>&1 &
