@@ -1,15 +1,21 @@
-"""Name every test that is slow or costly, never fail one, but only when `TEST_COST_REPORT=1` (the nightly full suite).
+"""Fail a slow test in the gate; name every slow or costly test, failing none, when `TEST_COST_REPORT=1` (the nightly).
 
-A run without it prints no section, no annotation and no summary row and writes no report. With it, the flagged tests'
-node id, wall seconds, CPU seconds and peak-RSS growth in MB are also written to the JSON file `TEST_COST_REPORT_PATH`
-(default `test-cost.json`) as `{"tests": [...]}`, empty when nothing was flagged; ci/test_cost_memray.py reruns exactly them.
+A run without it is the gate (the `ci-sp-python` shards, a local run): a test whose wall time passes the gate's bound,
+`SLOW_TEST_FAIL_SECONDS` (default three times the 5 s ceiling), fails at teardown unless it carries `@pytest.mark.slow`
+or an `OVER_CEILING` entry, and the run prints no section, no annotation and no summary row and writes no report. The
+bound keeps the gate's test window inside its budget (trantor's StarPulse CI under 30 s spec: no selected test over
+~15 s) and sits above the ceiling because the gate's host is shared: one 0.7 s test took 9.4 s at a load of 4.6 per CPU.
+The nightly names every test over the ceiling itself. A budget test that cannot fit is marked `nightly`, which the gate
+deselects. With `TEST_COST_REPORT=1`, the flagged tests' node id, wall seconds, CPU seconds and peak-RSS growth in MB
+are also written to the JSON file `TEST_COST_REPORT_PATH` (default `test-cost.json`) as `{"tests": [...]}`, empty when
+nothing was flagged; ci/memray_flagged.py reruns exactly them.
 
 Slow: setup, call and teardown together take more than `SLOW_TEST_SECONDS` (default 5) of wall time. Costly: they burn
 more than `SLOW_TEST_CPU_SECONDS` (default 5) of CPU, this process plus the children it waited for. Wall time on a
 saturated host measures the host; CPU seconds measure the test. Each phase's CPU seconds and growth of the worker's peak
-RSS ride on its report, so under xdist they reach the controller, which alone prints. CI runner timing is noisy, so a
-flagged test never fails the run. The lists print at the end, worst first. Under GitHub Actions each flagged test is also a
-warning annotation on its `def` line and a row in the job summary.
+RSS ride on its report, so under xdist they reach the controller, which alone prints. The nightly only reports. The
+lists print at the end, worst first. Under GitHub Actions each flagged test is also a warning annotation on its `def`
+line and a row in the job summary.
 
 Containers a test starts (Postgres, mock-oauth2) run outside the process tree, so their CPU and memory are not counted.
 """
@@ -26,10 +32,31 @@ import pytest
 
 SECONDS = float(os.environ.get("SLOW_TEST_SECONDS") or 5)
 CPU_SECONDS = float(os.environ.get("SLOW_TEST_CPU_SECONDS") or 5)
+FAIL_SECONDS = float(os.environ.get("SLOW_TEST_FAIL_SECONDS") or 3 * SECONDS)
 GAP = "CPU counts this process and the children it waited for; containers a test starts (Postgres, mock-oauth2) run outside it and are not counted."
+
+# Tests at or over 4 s, a 1 s margin under the ceiling, when the gate's bound landed, each the slice that brings it under: the ceiling's grace, removed by that slice.
+# Keyed `path::name`, without parameters or xdist group, so every case of a parametrized test shares its entry.
+OVER_CEILING = {
+    "ci/test_demo_workspace.py::test_in_progress_opens_the_delivery_machine_and_at_least_three_more_lifecycle_machines": "TASK-6321",
+    "ci/test_demo_workspace.py::test_the_demo_places_sessions_on_the_delivery_machine_and_on_at_least_three_lifecycle_machines": "TASK-6321",
+    "ci/test_public_names.py::test_the_tracked_tree_holds_no_denied_name": "TASK-6322",
+    "ci/test_shard.py::test_the_shards_of_a_tree_collect_exactly_the_tests_of_the_whole_tree": "TASK-6326",
+    "starpulse/tests/integration/server/test_api_swap.py::test_the_swapped_api_child_answers_every_request_made_across_the_swap": "TASK-6319",
+    "starpulse/tests/integration/server/test_standalone.py::test_a_lane_event_a_trigger_matches_starts_the_run_through_the_adapter_and_one_it_does_not_match_starts_none": "TASK-6309",
+    "starpulse/tests/integration/server/test_standalone.py::test_an_event_posted_with_the_token_in_the_environment_reaches_the_snapshot_and_a_wrong_token_does_not": "TASK-6309",
+    "starpulse/tests/integration/server/test_standalone.py::test_serve_answers_on_the_listening_socket_the_service_manager_passes_in_and_binds_no_port_of_its_own": "TASK-6309",
+    "starpulse/tests/integration/server/test_standalone.py::test_serve_binds_host_and_port_unless_a_socket_is_passed_to_this_process": "TASK-6309",
+    "starpulse/tests/integration/server/test_standalone.py::test_the_served_snapshot_sizes_each_suns_share_from_the_history_the_server_keeps": "TASK-6309",
+    "starpulse/tests/integration/server/test_standalone.py::test_without_a_cache_server_or_any_tool_on_the_path_the_server_serves_history_and_what_emit_pushed": "TASK-6309",
+    "starpulse/tests/unit/server/test_closure.py::test_the_pulls_closure_holds_no_autopilot_module_and_the_autopilot_closure_holds_them": "TASK-6323",
+    "starpulse/tests/unit/server/test_flow_reads.py::test_a_reader_never_sees_a_window_older_than_the_last_write_that_completed": "TASK-6324",
+}
 
 _cost: defaultdict[str, list[float]] = defaultdict(lambda: [0.0, 0.0, 0.0])
 _line: dict[str, tuple[str, int]] = {}
+_wall: defaultdict[str, float] = defaultdict(float)
+_failed: set[str] = set()
 _last = [0.0, 0.0]
 
 
@@ -50,6 +77,15 @@ def pytest_runtest_makereport(item, call):
     cpu, peak = _now()
     report.user_properties += [("cpu_s", cpu - _last[0]), ("peak_mb", max(0.0, peak - _last[1]))]
     _last[:] = cpu, peak
+    _wall[item.nodeid] += report.duration
+    wall = _wall[item.nodeid]
+    if report.failed:
+        _failed.add(item.nodeid)
+    exempt = item.get_closest_marker("slow") or f"{item.nodeid.split('::')[0]}::{item.originalname}" in OVER_CEILING
+    over = call.when == "teardown" and wall > FAIL_SECONDS and not exempt
+    if over and os.environ.get("TEST_COST_REPORT") != "1" and item.nodeid not in _failed:
+        report.outcome = "failed"
+        report.longrepr = f"{item.nodeid} took {wall:.1f} s, over the gate's {FAIL_SECONDS:g} s bound: make it faster, mark it slow or nightly"
     return report
 
 

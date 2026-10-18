@@ -25,7 +25,8 @@ from starpulse.contracts.adapters import BoardTask
 from starpulse.tests.leak_gate import BUDGETS, check, measures_allocations
 from starpulse.tests.machines import MACHINES
 
-pytestmark = measures_allocations
+# Budget tests run in the nightly only: they measure a workload, so they cannot fit the gate's 5 s ceiling.
+pytestmark = [measures_allocations, pytest.mark.nightly]
 
 REPO = "acme/widgets"
 PROFILE = "@agent-standard-high"

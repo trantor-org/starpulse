@@ -9,7 +9,8 @@ import pytest
 
 from starpulse.tests.leak_gate import Budget, LeakBudgetExceededError, check, measures_allocations
 
-pytestmark = measures_allocations
+# Budget tests run in the nightly only: they measure a workload, so they cannot fit the gate's 5 s ceiling.
+pytestmark = [measures_allocations, pytest.mark.nightly]
 
 LEAKED: list[bytearray] = []
 BUDGET = Budget(iterations=200, retained_bytes=50_000)

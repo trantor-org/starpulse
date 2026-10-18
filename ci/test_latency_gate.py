@@ -17,6 +17,9 @@ import pytest
 import seeded_server
 from starpulse._internal.eventlog.history import HistoryStore
 
+# Each test starts the seeded server, a budget-sized start; they run in the nightly only.
+pytestmark = pytest.mark.nightly
+
 ROOT = Path(__file__).resolve().parents[1]
 
 

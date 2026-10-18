@@ -262,7 +262,8 @@ def test_the_replay_rate_is_a_multiple_of_the_live_rate_and_the_default_passes_a
 
 
 # Stays slow: it starts the seeded server as a subprocess, which imports the server and a month of lane history before it
-# answers; that start is what the soak runs against.
+# answers; that start is what the soak runs against, so the soak runs in the nightly only.
+@pytest.mark.nightly
 def test_the_soak_starts_a_seeded_server_replays_into_it_and_tears_it_down():
     with soak.seeded(3000) as server:
         assert server.pid > 0 and server.failure() is None

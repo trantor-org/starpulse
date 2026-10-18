@@ -68,7 +68,9 @@ jobs:
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       - run: uv sync --locked
       # pytest-xdist workers sized to the runner's memory: ci/xdist_workers.py.
-      - run: echo "PYTEST_ADDOPTS=-n $(uv run --no-sync python ci/xdist_workers.py) --dist worksteal" >> "$GITHUB_ENV"
+      # The nightly and a manual dispatch (TEST_COST_REPORT set) add `-m "not e2e"`: the nightly-marked budget tests the gate
+      # deselects (pyproject addopts).
+      - run: echo "PYTEST_ADDOPTS=-n $(uv run --no-sync python ci/xdist_workers.py) --dist worksteal ${TEST_COST_REPORT:+-m 'not e2e'}" >> "$GITHUB_ENV"
       # The nightly suite records which source files each test runs (pyproject's [tool.coverage.run]); ci/coverage_map.py
       # turns the shards' data into the map the select step reads.
       - if: ${{ env.TEST_COST_REPORT == '1' }}
@@ -133,6 +135,8 @@ jobs:
     timeout-minutes: 45
     env:
       PYTEST_TARGETS: ${{ needs.select.outputs.PYTEST_TARGETS }}
+      # The build is slower than the 5 s ceiling was set on: name slow tests here (ci/slow_tests.py), never fail them.
+      TEST_COST_REPORT: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

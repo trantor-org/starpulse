@@ -130,6 +130,42 @@ def test_a_run_without_test_cost_report_prints_no_section_and_writes_no_report(t
 
 
 @pytest.mark.parametrize("workers", [[], ["-n", "1"]], ids=["serial", "xdist"])
+def test_without_test_cost_report_a_test_past_the_ceiling_fails_unless_exempt(tmp_path, workers):
+    marked = "import pytest\n\n\n@pytest.mark.slow\ndef test_marked():\n    __import__('time').sleep(0.4)\n"
+    listed = "\n\n@pytest.mark.parametrize('n', [1])\ndef test_listed(n):\n    __import__('time').sleep(0.4)\n"
+    (tmp_path / "test_x.py").write_text(TESTS + "\n\n" + marked + listed)
+    (tmp_path / "conftest.py").write_text(
+        "import slow_tests\n\nslow_tests.OVER_CEILING['test_x.py::test_listed'] = 'TASK-0'\n"
+    )
+
+    done = run(tmp_path, *workers, "-rE", TEST_COST_REPORT="", SLOW_TEST_FAIL_SECONDS="0.3")
+
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert "1 error" in done.stdout and "4 passed" in done.stdout, done.stdout
+    assert "test_x.py::test_slow" in done.stdout and "over the gate's 0.3 s bound" in done.stdout
+    assert not [line for line in done.stdout.splitlines() if line.startswith("ERROR") and "test_slow" not in line]
+
+
+def test_without_test_cost_report_a_slow_test_that_already_failed_is_not_failed_again(tmp_path):
+    slow_setup = (
+        "import pytest\n\n\n@pytest.fixture\ndef broken():\n    __import__('time').sleep(0.4)\n    raise OSError\n"
+    )
+    (tmp_path / "test_x.py").write_text(slow_setup + "\n\ndef test_broken(broken):\n    pass\n")
+
+    done = run(tmp_path, "-rE", TEST_COST_REPORT="", SLOW_TEST_FAIL_SECONDS="0.3")
+
+    assert "1 error" in done.stdout and "bound" not in done.stdout, done.stdout
+
+
+def test_without_test_cost_report_a_test_over_the_ceiling_but_under_three_times_it_passes(tmp_path):
+    (tmp_path / "test_x.py").write_text(TESTS)
+
+    done = run(tmp_path, TEST_COST_REPORT="", SLOW_TEST_SECONDS="0.3")
+
+    assert done.returncode == 0, done.stdout + done.stderr
+
+
+@pytest.mark.parametrize("workers", [[], ["-n", "1"]], ids=["serial", "xdist"])
 def test_a_run_with_test_cost_report_writes_each_flagged_test_with_its_wall_cpu_and_peak_to_the_json_report(
     tmp_path, workers
 ):
