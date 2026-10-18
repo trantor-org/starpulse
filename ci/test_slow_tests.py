@@ -30,6 +30,7 @@ def run(tree: Path, *args: str, **env: str) -> subprocess.CompletedProcess[str]:
             "PYTHONPATH": str(CI),
             "SLOW_TEST_SECONDS": "0.3",
             "SLOW_TEST_CPU_SECONDS": "0.3",
+            "PYTEST_ADDOPTS": "",
             "GITHUB_ACTIONS": "",
             "TEST_COST_REPORT": "1",
             "TEST_COST_REPORT_PATH": str(tree / "test-cost.json"),
