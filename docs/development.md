@@ -30,16 +30,22 @@ passes when `select` did and every shard it launched did, including when it laun
 shard fails it.
 A test that runs past 120 s (`timeout` in `[tool.pytest.ini_options]`, from pytest-timeout) fails with a timeout error;
 a test that needs longer carries `@pytest.mark.timeout(<seconds>)` with the reason beside it.
-The screen below runs only in the nightly full suite and a manual `workflow_dispatch`, where `ci.yml` sets `TEST_COST_REPORT=1`;
-a pull request, merge-queue, push or local run prints no section, annotation or summary row and writes no report.
-A test whose setup, call and teardown together pass 5 s (`SLOW_TEST_SECONDS` overrides it) is named at the end of the
-run, slowest first (`ci/slow_tests.py`); in CI each is also a warning annotation on its `def` line and a row in the job
-summary. A test that burns more than 5 CPU-s (`SLOW_TEST_CPU_SECONDS` overrides it; self plus waited-for children)
+A test's ceiling is 5 s for setup, call and teardown together (`SLOW_TEST_SECONDS` overrides it). In every run but the
+nightly, the pull-request gate and a local run included, a test fails at teardown past three times that
+(`SLOW_TEST_FAIL_SECONDS` overrides it; `ci/slow_tests.py`): the gate's host is shared, and one 0.7 s test took 9.4 s at a
+load of 4.6 per CPU. A test that already failed or errored is not failed again. Make a slow test faster, or keep it slow with `@pytest.mark.slow` and a `# Stays slow: <reason>`
+comment directly above it naming what the test must pay for (a server process, a container, a cold import).
+`OVER_CEILING` there lists the tests at or over 4 s when the bound landed, each with the slice that brings it under; that
+slice removes its entry. A budget test (leak, latency, soak) carries
+`@pytest.mark.nightly`: `addopts` deselects it, and only the nightly suite and a manual dispatch run it (`-m "not e2e"`
+in `ci.yml`'s `python-shard`).
+The screen below runs only in the nightly full suite and a manual `workflow_dispatch`, where `ci.yml` sets `TEST_COST_REPORT=1`
+(and on `python-ft`, which reports and never fails the ceiling); any other run prints no section, annotation or summary row
+and writes no report. A test over 5 s is named at the end of the run, slowest first; in CI each is also a warning annotation
+on its `def` line and a row in the job summary. A test that burns more than 5 CPU-s (`SLOW_TEST_CPU_SECONDS` overrides it; self plus waited-for children)
 is named beside them with its CPU seconds and the growth of its worker's peak RSS, and the summary table has Wall s,
 CPU s and Peak MB columns. Containers a test starts (Postgres, mock-oauth2) run outside the process tree, so their CPU
-and memory are not counted. None of it fails the run: make the test faster, or keep it slow with a `# Stays slow:
-<reason>` comment directly above its `def`, naming what the test must pay for (a server process, a container, a cold
-import).
+and memory are not counted. None of the screen fails the run.
 With `TEST_COST_REPORT=1` the flagged tests' node id, wall s, CPU s and peak MB also go to `test-cost.json`
 (`TEST_COST_REPORT_PATH` moves it), and each shard reruns exactly those tests one by one under `pytest --memray`
 (`ci/memray_flagged.py`), then uploads the report and `memray/` (one allocation report per test plus `stats.json`) as the
@@ -55,8 +61,8 @@ many collected tests it names; it exits 1 before the first nightly published one
 Each background context has a leak gate, `starpulse/tests/unit/leaks/test_context_budgets.py`: it drives the context's loop
 for a fixed number of iterations against a fixture board and a throwaway SQLite store, and fails when the memory still held
 afterwards exceeds the context's budget (`pull-events: retained 41000 B over 200 iterations, budget 32768 B exceeded`).
-It is an ordinary test, so `ci/select_tests.py` runs it on a pull request that reaches a context's sources and skips it on
-one that reaches none. Run it locally with `uv run pytest starpulse/tests/unit/leaks`. The harness is
+It is marked `nightly`, so the nightly suite runs it and no pull request does. Run it locally with
+`uv run pytest -m nightly starpulse/tests/unit/leaks`. The harness is
 [`starpulse/tests/leak_gate.py`](../starpulse/tests/leak_gate.py): it warms the loop up, then measures two consecutive windows
 under `memray.Tracker` and takes the smaller one's leaked allocations after `gc.collect()`, so a one-time allocation (one 1 MiB
 SQLite allocation per process) lands in one window and never fails the gate, while a leak shows in both. To change a

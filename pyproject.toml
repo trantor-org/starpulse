@@ -187,9 +187,14 @@ forbidden_modules = [
 ]
 
 [tool.pytest.ini_options]
-# `starpulse/tests/e2e/` runs only when asked for, `uv run pytest -m e2e`: a later `-m` replaces this one.
-addopts = ["--import-mode=importlib", "-m", "not e2e"]
-markers = ["e2e: an operator's entry point end to end; deselected unless `-m e2e` asks for it"]
+# `starpulse/tests/e2e/` runs only when asked for, `uv run pytest -m e2e`, and nightly tests only in the nightly suite,
+# `-m "not e2e"`: a later `-m` replaces this one.
+addopts = ["--import-mode=importlib", "-m", "not e2e and not nightly"]
+markers = [
+    "e2e: an operator's entry point end to end; deselected unless `-m e2e` asks for it",
+    "nightly: a budget test (leak, latency, soak) too slow for the gate's 5 s ceiling; only the nightly suite runs it",
+    "slow: a gate test excused from the 5 s ceiling (ci/slow_tests.py)",
+]
 # A test that never returns fails after this many seconds instead of holding the job: one spinning worker grows
 # by about 6.5 MB/s through log capture.
 timeout = 120
