@@ -36,6 +36,20 @@ REPLICA_STREAM = "board:replica"
 POLL_S = 0.5
 
 
+def _read(raw: str) -> BoardTask | None:
+    """A retained task entry as the task it recorded; None, with one warning, when no current key set reads it.
+
+    Before the rename an entry held the session as `holder` and the agent profile as `assignee`."""
+    try:
+        fields = json.loads(raw)
+        if "holder" in fields:
+            fields["profile"], fields["assignee"] = fields.pop("assignee", ""), fields.pop("holder")
+        return BoardTask.model_validate(fields)
+    except ValueError as exc:  # ValidationError and JSONDecodeError both subclass it
+        logger.warning("StarPulse: skipping an unreadable retained task in %s: %s", REPLICA_STREAM, exc)
+        return None
+
+
 def key(board: Board, config: Config) -> str:
     """Where the Board's checkpoint is kept: it changes with the adapter's projection and the `[board]` table, so a
     checkpoint of another projection is never resumed."""
@@ -212,7 +226,8 @@ def follow(
                 if "ready" in entry.fields:
                     feed.expect(str(log.last(REPLICA_STREAM) or entry.id))
                 elif task := entry.fields.get("task"):
-                    feed.put(BoardTask.model_validate_json(task))
+                    if placed := _read(task):
+                        feed.put(placed)
                 else:
                     feed.retract(entry.fields["id"])
             finally:
