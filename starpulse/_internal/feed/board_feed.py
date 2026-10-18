@@ -111,8 +111,8 @@ def task_agent(task: BoardTask) -> dict:
         "id": task.id,
         "title": task.title,
         "state": task.lane,
-        "model": task.assignee,
-        "holder": task.holder,
+        "model": task.profile,
+        "holder": task.assignee,
         "labels": list(task.labels),
         "milestone": task.milestone,
         "type": task.type,
@@ -137,7 +137,7 @@ def settled_entry(task: BoardTask) -> dict | None:
         "at": task.settled_at,
         "created": task.created_at,
         "title": task.title,
-        "model": task.assignee,
+        "model": task.profile,
         "milestone": task.milestone,
         "labels": list(task.labels),
     }
@@ -659,7 +659,7 @@ class BoardFeed:
         """
         with self._lock:
             filed = self._settled.get(task.id)
-            self._assignees[task.id] = task.assignee
+            self._assignees[task.id] = task.profile
             self._cited[task.id] = cited_pulls(task)
             agent, settled = (None, settled_entry(task)) if task.settled else (task_agent(task), None)
             if agent:

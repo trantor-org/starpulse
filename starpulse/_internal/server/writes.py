@@ -65,7 +65,7 @@ POST /api/retired/import
                    {name, text}: keep a retired task file a client held in the history store through the board's
                    `import_retired`, and answer 200 {task}; the same file again is accepted, 409 for other text under a
                    kept number, a task on the board or a file with no id, 404 when the board does not import
-POST /api/tasks    {title, description, priority, labels, milestone, assignee, dependencies, acceptanceCriteria[,
+POST /api/tasks    {title, description, priority, labels, milestone, profile, dependencies, acceptanceCriteria[,
                    actor, session, harness]}: create, stamping `created_by: <harness>:<session>`
                    a task in the board's starting lane through the board's `create`, and answer 201 {task}
                    with its id; only the title is required. 400 for a missing, blank or over-long title or a detail of
@@ -89,7 +89,7 @@ POST /api/docs, /api/docs/edit, /api/docs/archive, /api/docs/restore
                    through the board's `create_doc`, `edit_doc`, `archive_doc` and `restore_doc`; 400 for a malformed body or
                    detail, 403 outside loopback and RFC 1918, 404 for a board without the writer or a doc that is not open,
                    409 for the writer's refusal. A GET answers 405. These routes read the same Board as the milestone routes
-POST /api/start    {task, assignee, harness[, mode, actor]}: start a task's session at `session_start_url` on
+POST /api/start    {task, profile, harness[, mode, actor]}: start a task's session at `session_start_url` on
                    `harness` (`mode` defaults to `interactive`; see Start in the README)
 GET /api/forwarding
                    what this instance's forwarder would send the hub next, as the Admin view lists it: {configured,
@@ -171,7 +171,7 @@ _LAN = (
 _TITLE_MAX = 300
 #: The details a create takes besides its title, as one text value or a list of them. A create takes every one in its
 #: single write: a second write to finish a task is refused as not on the board until the next scan places the card.
-_CREATE_TEXT = ("description", "priority", "milestone", "assignee", "status", "type")
+_CREATE_TEXT = ("description", "priority", "milestone", "profile", "assignee", "status", "type")
 _CREATE_LISTS = (
     "labels",
     "dependencies",
@@ -1225,10 +1225,10 @@ def start_task(
     harnesses: Harnesses | None = None,
     clock: Callable[[], float] = time.time,
 ) -> tuple[int, dict[str, Any]]:
-    """Start a session for the task `raw` names, on the assignee and harness it names, for a browser at `source`: the
+    """Start a session for the task `raw` names, on the profile and harness it names, for a browser at `source`: the
     HTTP status and JSON body.
 
-    A changed assignee is saved through the guarded writer first, since the session-start service reads the
+    A changed profile is saved through the guarded writer first, since the session-start service reads the
     profile from the task. `harness` selects which configured harness opens the session; `mode` defaults to
     `interactive`. `at` is when the start began, so the page applies only a refused claim made after it.
     """
@@ -1236,14 +1236,14 @@ def start_task(
         return 403, {"error": "Starting a session answers only loopback and private network (RFC 1918) browsers"}
     try:
         request = json.loads(raw)
-        task, assignee = request["task"], request["assignee"]
+        task, profile = request["task"], request["profile"] if "profile" in request else request["assignee"]
         harness = request.get("harness", "claude")
         mode = request.get("mode", "interactive")
         named = _named_actor(request)
     except ValueError, TypeError, KeyError:
-        task = assignee = harness = mode = named = None
-    if not isinstance(task, str) or not isinstance(assignee, str):
-        return 400, {"error": 'a start needs {"task": "TASK-N", "assignee": "@agent-<tier>-<effort>"}'}
+        task = profile = harness = mode = named = None
+    if not isinstance(task, str) or not isinstance(profile, str):
+        return 400, {"error": 'a start needs {"task": "TASK-N", "profile": "@agent-<tier>-<effort>"}'}
     if not isinstance(harness, str) or not harness:
         return 400, {"error": "harness must be a non-empty name from agent-harnesses.toml"}
     if not isinstance(mode, str) or mode not in _START_MODES:
@@ -1264,7 +1264,7 @@ def start_task(
             "error": f"{task} is in {agent['state']}: a session starts only a ready, waiting or needs_attention task"
         }
     at = clock()
-    if assignee != agent["model"] and not (written := assign(task, assignee, **named)).ok:
+    if profile != agent["model"] and not (written := assign(task, profile, **named)).ok:
         return 409, {"error": written.output, "skill": written.skill}
     try:
         try:

@@ -251,13 +251,13 @@ describe("a started card", () => {
 });
 
 describe("the requests", () => {
-  it("POSTs the task, assignee and harness to /api/start and reads the session and when the start began", async () => {
+  it("POSTs the task, profile and harness to /api/start and reads the session and when the start began", async () => {
     const fetcher = vi.fn<typeof fetch>(() => Promise.resolve(new Response(JSON.stringify({ task: "TASK-D1", url: SESSION, at: 1000 }))));
 
     expect(await postStart("TASK-D1", "@agent-deep-high", "claude", fetcher)).toEqual({ ok: true, url: SESSION, at: 1000 });
     expect(fetcher).toHaveBeenCalledWith("/api/start", {
       method: "POST",
-      body: JSON.stringify({ task: "TASK-D1", assignee: "@agent-deep-high", harness: "claude" }),
+      body: JSON.stringify({ task: "TASK-D1", profile: "@agent-deep-high", harness: "claude" }),
     });
   });
 

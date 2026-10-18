@@ -24,7 +24,7 @@ FRONT = {
     "type": "type",
     "status": "status",
     "priority": "priority",
-    "profile": "assignee",
+    "profile": "profile",
     "labels": "labels",
     "milestone": "milestone",
     "dependencies": "dependencies",
@@ -155,7 +155,9 @@ def test_field_round_trip_edits_one_field_and_nothing_else(served: tuple[Board, 
     if field in FRONT:
         assert body == before_body
         assert {key: item for key, item in _unstamped(frontmatter).items() if key != FRONT[field]} == {
-            key: item for key, item in before_frontmatter.items() if key not in (FRONT[field], "updated_date")
+            key: item
+            for key, item in before_frontmatter.items()
+            if key not in (FRONT[field], "updated_date") and (field != "profile" or key != "assignee")  # the legacy spelling
         }
     else:
         assert _unstamped(frontmatter) == {key: item for key, item in before_frontmatter.items() if key != "updated_date"}

@@ -64,7 +64,7 @@ _DONE_LANE = "done"
 _DESCRIPTION = re.compile(r"<!-- SECTION:DESCRIPTION:BEGIN -->(.*?)<!-- SECTION:DESCRIPTION:END -->", re.S)
 _HEADED_DESCRIPTION = re.compile(r"^## Description\s*\n(.*?)(?=^## |\Z)", re.S | re.M)
 _NOTES = re.compile(r"<!-- SECTION:NOTES:BEGIN -->(.*?)<!-- SECTION:NOTES:END -->", re.S)
-_HOLDER = re.compile(r"^\*\*Holder:\*\* (\S+)[ \t]*$", re.M)
+_ASSIGNEE = re.compile(r"^\*\*(?:Assignee|Holder):\*\* (\S+)[ \t]*$", re.M)
 _CRITERIA = re.compile(r"<!-- AC:BEGIN -->(.*?)<!-- AC:END -->", re.S)
 _ITEM = re.compile(r"^- \[([ xX])\] #(\d+) (.*?)[ \t]*$", re.M)
 _NEEDS_ATTENTION = re.compile(
@@ -177,14 +177,22 @@ def _description(body: str) -> str:
     return described.group(1).strip() if described else ""
 
 
+def _profile(frontmatter: dict) -> str:
+    """The profile a task is routed to: its `profile` field, else the legacy `assignee` field, else empty."""
+    profiles = _strings(frontmatter.get("profile")) or _strings(frontmatter.get("assignee"))
+    return profiles[0] if profiles else ""
+
+
 def _assignee(body: str) -> str:
-    """The session a claim recorded in the task's notes: the last `**Holder:** <id>` line there, else empty.
+    """The session a claim recorded in the task's notes: the last `**Assignee:** <id>` line there, else empty.
+
+    `**Holder:** <id>` is the legacy marker, read until the task files migrate.
 
     The marker lives in the notes because the Backlog CLI rewrites a task file's frontmatter and drops a key it
     does not know, while the notes section survives every edit.
     """
     notes = _NOTES.search(body)
-    held = _HOLDER.findall(notes.group(1)) if notes else []
+    held = _ASSIGNEE.findall(notes.group(1)) if notes else []
     return held[-1] if held else ""
 
 
@@ -201,9 +209,9 @@ def _pause_reason(body: str, lane: str) -> str:
 
 
 def _notes(body: str) -> str:
-    """The task's notes without the holder markers, trimmed; empty when it has none."""
+    """The task's notes without the assignee markers, trimmed; empty when it has none."""
     found = _NOTES.search(body)
-    return _HOLDER.sub("", found.group(1)).strip() if found else ""
+    return _ASSIGNEE.sub("", found.group(1)).strip() if found else ""
 
 
 def _split(text: str) -> tuple[Any, str]:
@@ -391,7 +399,6 @@ class UpstreamBacklog:
             return None
         from starpulse.contracts.adapters import BoardTask  # noqa: PLC0415 - import cost, paid on first use
 
-        assignees = _strings(frontmatter.get("assignee"))
         criteria = _criteria(body)
         dependencies = _strings(frontmatter.get("dependencies"))
         return BoardTask(
@@ -404,8 +411,8 @@ class UpstreamBacklog:
             settled=settled,
             created_at=_when(frontmatter.get("created_date")),
             settled_at=_when(frontmatter.get("updated_date")) if settled else None,
-            assignee=assignees[0] if assignees else "",
-            holder=_assignee(body),
+            profile=_profile(frontmatter),
+            assignee=_assignee(body),
             labels=_strings(frontmatter.get("labels")),
             milestone=str(frontmatter.get("milestone") or "").strip(),
             type=str(frontmatter.get("type") or "").strip(),
@@ -475,7 +482,7 @@ def cli_writer(root: Path, statuses: tuple[str, ...], command: list[str]) -> Mov
     """A board writer that sets a status with the `backlog` CLI run in the project and answers with its output.
 
     A lane's status is the project's own spelling of it (`QA` for a move to `Qa`). An agent's claim (a move to
-    `In Progress` that names its session) also appends the `**Holder:** <session>` marker to the task's notes, in
+    `In Progress` that names its session) also appends the `**Assignee:** <session>` marker to the task's notes, in
     the same edit as the status, so the board can say which session holds the task.
     """
     spelled = {lane_id(status): status for status in statuses}
@@ -483,7 +490,7 @@ def cli_writer(root: Path, statuses: tuple[str, ...], command: list[str]) -> Mov
     def write(task: str, status: str, actor: str, session: str = "") -> Written:
         argv = [*command, "task", "edit", task, "-s", spelled.get(lane_id(status), status)]
         if actor != "operator" and session and lane_id(status) == "in_progress":
-            argv += ["--append-notes", f"**Holder:** {session}"]
+            argv += ["--append-notes", f"**Assignee:** {session}"]
         try:
             done = subprocess.run(argv, cwd=root.parent, capture_output=True, text=True, timeout=30.0, check=False)
         except (OSError, subprocess.TimeoutExpired) as error:

@@ -93,7 +93,7 @@ _DETAILS = {
     "priority": "High",
     "labels": ["docs", "ui"],
     "milestone": "m-1",
-    "assignee": "@agent-fast-low",
+    "profile": "@agent-fast-low",
     "dependencies": ["task-1"],
     "acceptanceCriteria": ["The quickstart names every lane", "A reader can create a task"],
 }
@@ -115,7 +115,7 @@ def test_a_create_writes_every_detail_as_backlog_markdown_and_the_next_scan_read
         "id": "task-2",
         "title": "Write the quickstart",
         "status": "To Do",
-        "assignee": ["@agent-fast-low"],
+        "profile": ["@agent-fast-low"],
         "labels": ["docs", "ui"],
         "milestone": "m-1",
         "dependencies": ["task-1"],
@@ -137,6 +137,18 @@ def test_a_create_writes_every_detail_as_backlog_markdown_and_the_next_scan_read
         "dependencies": ["task-1"],
         "description": "Explain the three lanes.\nThen the toolbar.",
     }
+
+
+def test_a_create_naming_the_legacy_assignee_detail_writes_it_as_the_profile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    built, _ = _serving(tmp_path, monkeypatch)
+    assert built.create is not None
+
+    assert create_task("127.0.0.1", _raw(title="Old name", assignee="@agent-fast-low"), built.create)[0] == 201
+
+    text = next(_tasks(tmp_path).glob("*.md")).read_text()
+    assert "profile:\n- '@agent-fast-low'\n" in text and "assignee:" not in text
 
 
 def test_a_create_that_names_a_status_type_and_documentation_lands_whole_in_one_write(

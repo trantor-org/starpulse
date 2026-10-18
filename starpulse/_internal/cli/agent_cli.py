@@ -634,7 +634,7 @@ def _created_task(args: argparse.Namespace) -> dict[str, Any]:
         "description": args.description,
         "priority": args.priority,
         "milestone": args.milestone,
-        "assignee": args.assignee,
+        "profile": args.assignee,
         "labels": args.label,
         "dependencies": args.dependency,
         "acceptanceCriteria": args.ac,

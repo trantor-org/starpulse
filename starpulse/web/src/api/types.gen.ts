@@ -1566,12 +1566,15 @@ export interface MoveRequest {
   to: string;
 }
 /**
- * `POST /api/start`: start a session for `task` on `assignee`; `harness` defaults to `claude`.
+ * `POST /api/start`: start a session for `task` on `profile`; `harness` defaults to `claude`.
+ *
+ * `assignee` is the legacy name of `profile` and is read when `profile` is absent.
  */
 export interface StartRequest {
-  assignee: string;
+  assignee?: string | null;
   harness?: string | null;
   mode?: string | null;
+  profile?: string | null;
   task: string;
 }
 /**
@@ -1640,6 +1643,7 @@ export interface CreateRequest {
   labels?: string[] | null;
   milestone?: string | null;
   priority?: string | null;
+  profile?: string | null;
   session?: string | null;
   title: string;
 }

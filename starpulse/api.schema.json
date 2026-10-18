@@ -1185,6 +1185,17 @@
           ],
           "default": null
         },
+        "profile": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "session": {
           "anyOf": [
             {
@@ -6992,10 +7003,18 @@
     },
     "StartRequest": {
       "additionalProperties": false,
-      "description": "`POST /api/start`: start a session for `task` on `assignee`; `harness` defaults to `claude`.",
+      "description": "`POST /api/start`: start a session for `task` on `profile`; `harness` defaults to `claude`.\n\n`assignee` is the legacy name of `profile` and is read when `profile` is absent.",
       "properties": {
         "assignee": {
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "harness": {
           "anyOf": [
@@ -7019,13 +7038,23 @@
           ],
           "default": null
         },
+        "profile": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "task": {
           "type": "string"
         }
       },
       "required": [
-        "task",
-        "assignee"
+        "task"
       ],
       "title": "StartRequest",
       "type": "object"

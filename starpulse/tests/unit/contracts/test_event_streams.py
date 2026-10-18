@@ -43,7 +43,7 @@ def test_every_stream_a_producer_declares_has_a_contract_schema() -> None:
 def test_an_entry_each_producer_writes_validates_against_its_streams_schema(tmp_path: Path) -> None:
     log = EventLog(f"sqlite:///{tmp_path / 'log.sqlite'}")
     task = contracts.BoardTask(
-        id="T-1", title="t", team="core", lane="in_progress", milestone="m-1", labels=("a",), assignee="ana"
+        id="T-1", title="t", team="core", lane="in_progress", milestone="m-1", labels=("a",), profile="ana"
     )
     events.publish("in-progress", "WORKTREE_READY", actor="agent", task="T-1", now=5.0, log=log)
     lane_events.publish(log, "T-1@in_progress@5.0", task, 5.0)

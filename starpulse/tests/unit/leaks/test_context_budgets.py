@@ -126,7 +126,7 @@ def _autopilot_step(tmp_path: Path) -> tuple[Callable[[], None], list[int]]:
     def put(task_id: str, lane: str) -> None:
         feed.put(
             BoardTask(
-                id=task_id, team="demo", title=task_id, lane=lane, labels=["size-8"], assignee=PROFILE, dependencies=()
+                id=task_id, team="demo", title=task_id, lane=lane, labels=["size-8"], profile=PROFILE, dependencies=()
             )
         )
 

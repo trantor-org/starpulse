@@ -72,7 +72,7 @@ class TestUpstreamBoardAdapter(BoardAdapterKit):
         (tmp_path / "board.yaml").write_text(_OPERATOR_ONLY)
         root = tmp_path / "backlog"
         write_config(root)
-        write_task(root, "tasks", "task-1", "To Do", dependencies="[task-2]", assignee="['@ada']", labels="[spike]")
+        write_task(root, "tasks", "task-1", "To Do", dependencies="[task-2]", profile="['@ada']", labels="[spike]")
         write_task(root, "tasks", "task-2", "Doing", references="[https://github.com/o/r/pull/9]")
         write_task(root, "completed", "task-3", "Done")
         write_task(root, "archive/tasks", "task-4", "To Do")
@@ -166,7 +166,7 @@ def test_a_task_file_becomes_a_board_task(tmp_path: Path) -> None:
         "tasks",
         "task-7",
         "Doing",
-        assignee="\n  - '@ada'\n  - '@bo'",
+        profile="\n  - '@ada'\n  - '@bo'",
         labels="[spike, ui]",
         dependencies="[task-2, task-3]",
         references="[https://github.com/o/r/pull/9, docs/x.md]",
@@ -180,7 +180,7 @@ def test_a_task_file_becomes_a_board_task(tmp_path: Path) -> None:
             lane="doing",
             dependencies=("task-2", "task-3"),
             references=("https://github.com/o/r/pull/9", "docs/x.md"),
-            assignee="@ada",
+            profile="@ada",
             labels=("spike", "ui"),
             description="Why task-7",
             moves={lane: Move(allowed=True) for lane in ("to_do", "review", "done")},
@@ -215,30 +215,36 @@ def _notes(*lines: str) -> str:
 
 
 @pytest.mark.parametrize(
-    ("notes", "holder"),
+    ("notes", "assignee"),
     [
         (
-            _notes("**Holder:** 0d617371-1999-5360-a76f-a26c28d4878d", "Wired the writer."),
+            _notes("**Assignee:** 0d617371-1999-5360-a76f-a26c28d4878d", "Wired the writer."),
             "0d617371-1999-5360-a76f-a26c28d4878d",
         ),
-        (_notes("**Holder:** first", "text", "**Holder:** second"), "second"),  # a later claim by another session wins
+        (
+            _notes("**Holder:** 0d617371-1999-5360-a76f-a26c28d4878d", "Wired the writer."),  # the legacy marker
+            "0d617371-1999-5360-a76f-a26c28d4878d",
+        ),
+        (_notes("**Assignee:** first", "text", "**Assignee:** second"), "second"),  # a later claim wins
+        (_notes("**Holder:** first", "text", "**Assignee:** second"), "second"),
         (_notes("Wired the writer."), ""),
+        (_notes("see **Assignee:** quoted mid-line"), ""),
         (_notes("see **Holder:** quoted mid-line"), ""),
     ],
 )
-def test_the_holder_is_the_last_marker_line_in_the_notes(tmp_path: Path, notes: str, holder: str) -> None:
+def test_the_assignee_is_the_last_marker_line_in_the_notes(tmp_path: Path, notes: str, assignee: str) -> None:
     write_config(tmp_path)
     task = write_task(tmp_path, "tasks", "task-1", "To Do")
     task.write_text(task.read_text() + f"\n## Implementation Notes\n\n{notes}\n")
 
-    assert [t.holder for t in scanned(tmp_path)] == [holder]
+    assert [t.assignee for t in scanned(tmp_path)] == [assignee]
 
 
-def test_a_marker_outside_the_notes_section_is_not_a_holder(tmp_path: Path) -> None:
+def test_a_marker_outside_the_notes_section_is_not_an_assignee(tmp_path: Path) -> None:
     write_config(tmp_path)
     write_task(tmp_path, "tasks", "task-1", "To Do", body="**Holder:** in-the-description")
 
-    assert [t.holder for t in scanned(tmp_path)] == [""]
+    assert [t.assignee for t in scanned(tmp_path)] == [""]
 
 
 _CRITERIA_TWO_OF_FOUR = (
@@ -788,27 +794,27 @@ def claiming_project(tmp_path: Path):
     return root, board({"command": command}, tmp_path)
 
 
-def test_an_agent_claim_with_a_session_records_it_as_the_holder_in_the_same_edit(tmp_path: Path) -> None:
+def test_an_agent_claim_with_a_session_records_it_as_the_assignee_in_the_same_edit(tmp_path: Path) -> None:
     root, built = claiming_project(tmp_path)
 
     written = built.writer("task-1", "In Progress", "agent", "0d617371-1999-5360-a76f-a26c28d4878d")
 
     assert written.ok, written.output
     assert "status: In Progress\n" in next((root / "tasks").glob("*.md")).read_text()
-    assert [t.holder for t in scanned(root)] == ["0d617371-1999-5360-a76f-a26c28d4878d"]
+    assert [t.assignee for t in scanned(root)] == ["0d617371-1999-5360-a76f-a26c28d4878d"]
 
 
 @pytest.mark.parametrize(
     ("status", "actor", "session"),
     [("Review", "agent", "s1"), ("In Progress", "agent", ""), ("In Progress", "operator", "s1")],
 )
-def test_only_an_agent_claim_that_names_a_session_records_a_holder(
+def test_only_an_agent_claim_that_names_a_session_records_an_assignee(
     tmp_path: Path, status: str, actor: str, session: str
 ) -> None:
     root, built = claiming_project(tmp_path)
 
     assert built.writer("task-1", status, actor, session).ok
-    assert [t.holder for t in scanned(root)] == [""]
+    assert [t.assignee for t in scanned(root)] == [""]
 
 
 def test_the_board_writer_names_the_configured_status_a_lane_stands_for(tmp_path: Path) -> None:
@@ -965,13 +971,13 @@ def test_a_task_carries_the_text_of_each_acceptance_criterion_checked_or_not(tmp
     assert scanned(tmp_path)[0].acceptance_criteria == ("It draws", "It scrolls")
 
 
-def test_a_task_carries_its_notes_without_the_holder_marker(tmp_path: Path) -> None:
+def test_a_task_carries_its_notes_without_the_assignee_marker(tmp_path: Path) -> None:
     write_config(tmp_path)
     task = write_task(tmp_path, "tasks", "task-1", "To Do")
     task.write_text(
         task.read_text()
         + "\n## Implementation Notes\n\n"
-        + _notes("**Holder:** 0d617371", "Wired the writer.", "Second line")
+        + _notes("**Assignee:** 0d617371", "Wired the writer.", "Second line")
         + "\n"
     )
 

@@ -174,7 +174,7 @@ def test_a_task_carries_what_its_issue_says() -> None:
         by_id = {t.id: t for t in scanned(project(url))}
 
     pay1 = by_id["PAY-1"]
-    assert (pay1.title, pay1.lane, pay1.assignee, pay1.labels) == (
+    assert (pay1.title, pay1.lane, pay1.profile, pay1.labels) == (
         "Capture card payments",
         "to_do",
         "Ada Lovelace",
@@ -182,7 +182,7 @@ def test_a_task_carries_what_its_issue_says() -> None:
     )
     assert pay1.description == "Accept a card payment end to end."
     assert pay1.created_at == 1790612100.0  # 2026-09-28T09:15 MST
-    assert (by_id["PAY-2"].assignee, by_id["PAY-2"].description) == ("", "")
+    assert (by_id["PAY-2"].profile, by_id["PAY-2"].description) == ("", "")
 
 
 def test_only_the_issues_a_task_is_blocked_by_are_its_dependencies() -> None:
