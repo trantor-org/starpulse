@@ -3,7 +3,7 @@
 // plays each move once, when the stream first delivers it.
 import { stepRings, type StepRing } from "../features/fanout/fanoutModel";
 import { tree, type Tree } from "./levels";
-import type { Capabilities, Cue, Dag, FlowSnapshot, LedgerRow, MachineEntry, MachinePage, MergeStrip, Move as Verdict, Pool, Pull, RawAgent, Settled, Snapshot, Writer } from "../api";
+import type { Capabilities, Cue, Dag, FlowSnapshot, LedgerRow, MachineEntry, MachinePage, MergeStrip, Move as Verdict, Pool, Pull, RawTask, Settled, Snapshot, Writer } from "../api";
 
 /** Seconds one move takes to cross its path, the arrival rings, and a finished DAG's flare. */
 export const TRAVEL = 3;
@@ -76,7 +76,7 @@ export interface Sky {
   /** The last 24 hours of machine entries, oldest first; empty when the server sent none. */
   machineEntries: MachineEntry[];
   /** The day's arrivals on each starting and terminal Board state: tasks created, or settled there, since local midnight. */
-  today: Record<string, RawAgent[]>;
+  today: Record<string, RawTask[]>;
   error: string | null;
   /** The server was still reading its board, so this sky's Board is partial. */
   reading: boolean;
@@ -85,7 +85,7 @@ export interface Sky {
 const EMPTY: FlowSnapshot = { name: "board", machine: { states: [], transitions: [] }, agents: [] };
 
 /** A machine's task with what the Board knows of it (title, profile, labels, dependencies, pull requests, description) laid over the machine's own place for it. */
-const joined = (a: RawAgent, board: Map<string, RawAgent>): RawAgent => {
+const joined = (a: RawTask, board: Map<string, RawTask>): RawTask => {
   const b = board.get(a.task ?? a.id);
   return b ? { ...a, title: b.title, model: b.model || a.model, labels: b.labels, dependencies: b.dependencies, prs: b.prs, runs: b.runs, description: b.description } : a;
 };
@@ -94,7 +94,7 @@ const joined = (a: RawAgent, board: Map<string, RawAgent>): RawAgent => {
  * A machine's tasks at one Board state. A flow several states open (the mapped CI machine under In Progress and Review) shows each
  * state only the tasks whose Board task sits there; a flow one state opens, or a level above any state, shows them all.
  */
-export function hosted(sky: Pick<Sky, "flows" | "board" | "tree">, flow: string, host?: string): RawAgent[] {
+export function hosted(sky: Pick<Sky, "flows" | "board" | "tree">, flow: string, host?: string): RawTask[] {
   const agents = sky.flows[flow]?.agents ?? [];
   if (host === undefined || Object.values(sky.tree.subs).filter((fs) => fs.includes(flow)).length < 2) return agents;
   const state = boardStates(sky.board);
@@ -116,8 +116,8 @@ export const midnight = (now = new Date()) => new Date(now.getFullYear(), now.ge
 export const daily = (s: { initial: boolean; final: boolean }) => s.initial || s.final;
 
 /** The tasks created since `since` on each starting state, and those settled since then on the terminal state each settled in. */
-function arrivals(board: FlowSnapshot, settled: Record<string, Settled>, since: number): Record<string, RawAgent[]> {
-  const out: Record<string, RawAgent[]> = {}, dot = (id: string, title: string, model: string, state: string): RawAgent => ({ id, title, model, state, today: true });
+function arrivals(board: FlowSnapshot, settled: Record<string, Settled>, since: number): Record<string, RawTask[]> {
+  const out: Record<string, RawTask[]> = {}, dot = (id: string, title: string, model: string, state: string): RawTask => ({ id, title, model, state, today: true });
   const settledDots = Object.entries(settled);
   for (const s of board.machine.states.filter(daily)) {
     const list = s.initial
@@ -184,7 +184,7 @@ export function withLedgers(sky: Sky, snap: Snapshot): Sky {
 }
 
 /** Whether `a` has left the page: it entered a terminal Board state before the local midnight of the sky's day. A task the server gave no time for stays. */
-export const stale = (sky: Pick<Sky, "board" | "now">, a: RawAgent): boolean =>
+export const stale = (sky: Pick<Sky, "board" | "now">, a: RawTask): boolean =>
   !!a.entered && a.entered < midnight(new Date(sky.now * 1000)) && !!sky.board.machine.states.find((s) => s.id === a.state)?.final;
 
 /** A Board state's count: a starting state's is the day's arrivals alone, as it is a concept no task stays in; any other's is the tasks in it,

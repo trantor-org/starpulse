@@ -2,10 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DemoServer } from "../demo/demo";
 import { applyDelta, foldRows, openStream } from "./stream";
 import { openLedger } from "./ledgerStream";
-import type { ActiveRun, Dag, LedgerRow, Pool, RawAgent, Snapshot } from ".";
+import type { ActiveRun, Dag, LedgerRow, Pool, RawTask, Snapshot } from ".";
 
-const agent = (id: string, state: string): RawAgent => ({ id, title: id, state, model: "" });
-const board = (agents: RawAgent[], extra: Partial<Snapshot> = {}): Snapshot => ({
+const agent = (id: string, state: string): RawTask => ({ id, title: id, state, model: "" });
+const board = (agents: RawTask[], extra: Partial<Snapshot> = {}): Snapshot => ({
   graphs: ["board", "runs"],
   dags: [],
   flows: [{ name: "board", machine: { states: [], transitions: [] } as never, agents }],

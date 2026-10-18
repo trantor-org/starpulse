@@ -98,11 +98,11 @@ class Interest:
         tasks = [task for column in view["columns"] for task in column["tasks"]]
         self._ids = {t["id"] for t in tasks} | {dependency for t in tasks for dependency in t["dependencies"]}
         self._pulled = any(t["prs"] for t in tasks)
-        self._holder = holder
+        self._assignee = holder
         self._states = states
 
     def _shows(self, agent: dict[str, Any]) -> bool:
-        return (self._holder is None or agent.get("holder", "") == self._holder) and (
+        return (self._assignee is None or agent.get("holder", "") == self._assignee) and (
             not self._states or agent["state"] in self._states
         )
 

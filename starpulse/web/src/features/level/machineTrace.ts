@@ -1,10 +1,10 @@
 // A task's path across the machine ledger: every session it has in the template and in the machines entered from it, in time order. Pure; the
 // renderer draws it over the ledger (drawTop, drawLane in machineLedgerDraw.ts).
-import type { FlowSnapshot, RawAgent } from "../../api";
+import type { FlowSnapshot, RawTask } from "../../api";
 
 export interface Session {
   machine: string;
-  agent: RawAgent;
+  agent: RawTask;
 }
 /** A state of one machine. */
 export interface Spot {
@@ -24,8 +24,8 @@ export interface Step {
 }
 
 /** When a session started: its first move, else its last activity. */
-export const start = (a: RawAgent) => a.trail?.[0]?.at ?? a.active ?? 0;
-function stateAt(a: RawAgent, t: number): string | null {
+export const start = (a: RawTask) => a.trail?.[0]?.at ?? a.active ?? 0;
+function stateAt(a: RawTask, t: number): string | null {
   let s: string | null = null;
   for (const x of a.trail ?? []) if (x.at <= t) s = x.state;
   return s;
@@ -33,7 +33,7 @@ function stateAt(a: RawAgent, t: number): string | null {
 const initOf = (f: FlowSnapshot) => (f.machine.states.find((s) => s.initial) ?? f.machine.states[0])?.id;
 
 /** Every session of the task `agent` (in `machine`) belongs to, across the machines; a session with no task is only itself. */
-export function sessionsOf(flows: Record<string, FlowSnapshot>, machine: string, agent: RawAgent): Session[] {
+export function sessionsOf(flows: Record<string, FlowSnapshot>, machine: string, agent: RawTask): Session[] {
   if (!agent.task) return [{ machine, agent }];
   return Object.values(flows).flatMap((f) => f.agents.filter((a) => a.task === agent.task).map((a) => ({ machine: f.name, agent: a })));
 }

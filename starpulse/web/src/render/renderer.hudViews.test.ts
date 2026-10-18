@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // Away-first open (Kanban/DAGs) never paints the canvas, so HUD cards/dagData must load from the first snapshot, not first paint.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Machine, RawAgent, Snapshot } from "../api";
+import type { Machine, RawTask, Snapshot } from "../api";
 import { HudStore } from "./hud";
 
 const push = vi.hoisted(() => ({ snapshot: null as null | ((s: Snapshot) => void) }));
@@ -21,8 +21,8 @@ const machine = (ids: string[]): Machine => ({
   states: ids.map((id, i) => ({ id, name: id, initial: i === 0, final: false })),
   transitions: [],
 });
-const task = (id: string, state: string): RawAgent => ({ id, title: id, state, model: "@agent-standard-high", labels: [] });
-const snap = (tasks: RawAgent[]): Snapshot => ({
+const task = (id: string, state: string): RawTask => ({ id, title: id, state, model: "@agent-standard-high", labels: [] });
+const snap = (tasks: RawTask[]): Snapshot => ({
   graphs: ["board"],
   flows: [{ name: "board", agents: tasks, machine: machine(["ready", "in_progress", "review"]) }],
   dags: [{ name: "dagu/deliver", status: "succeeded", runId: "r1", startedAt: "", finishedAt: "2026-10-11T00:00:00Z", steps: [] }],

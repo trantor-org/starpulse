@@ -3,7 +3,7 @@ import { apiFetch } from "../api/apiFetch";
 import { queryString } from "../shared/nav";
 import type { FanRow, QueueRow } from "../features/fanout/fan";
 import type { Sky } from "./sky";
-import type { RawAgent } from "../api";
+import type { RawTask } from "../api";
 
 export const esc = (s: unknown) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
@@ -35,7 +35,7 @@ export function taskLink(id: string, text: string, sky: Sky, search = globalThis
 }
 
 /** The panel of one Board task: where it stands, what it waits on, its pull requests and the machines it sits on; its description is the Kanban's. */
-export function taskPanel(o: RawAgent, sky: Sky, stateName: (id: string) => string, search = globalThis.location?.search ?? ""): string {
+export function taskPanel(o: RawTask, sky: Sky, stateName: (id: string) => string, search = globalThis.location?.search ?? ""): string {
   const onBoard = (id: string, text: string) => taskLink(id, text, sky, search);
   const machines = Object.values(sky.flows).filter((f) => f.name !== "board").flatMap((f) => f.agents.filter((s) => s.task === o.id).map((s) => `${esc(f.name)} · ${esc(s.state)}`));
   const deps = (o.dependencies ?? []).map((id) => onBoard(id, id));

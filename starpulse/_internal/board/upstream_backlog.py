@@ -177,7 +177,7 @@ def _description(body: str) -> str:
     return described.group(1).strip() if described else ""
 
 
-def _holder(body: str) -> str:
+def _assignee(body: str) -> str:
     """The session a claim recorded in the task's notes: the last `**Holder:** <id>` line there, else empty.
 
     The marker lives in the notes because the Backlog CLI rewrites a task file's frontmatter and drops a key it
@@ -405,7 +405,7 @@ class UpstreamBacklog:
             created_at=_when(frontmatter.get("created_date")),
             settled_at=_when(frontmatter.get("updated_date")) if settled else None,
             assignee=assignees[0] if assignees else "",
-            holder=_holder(body),
+            holder=_assignee(body),
             labels=_strings(frontmatter.get("labels")),
             milestone=str(frontmatter.get("milestone") or "").strip(),
             type=str(frontmatter.get("type") or "").strip(),

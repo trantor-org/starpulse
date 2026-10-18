@@ -2,7 +2,7 @@
 // and the path a hovered or pinned task takes through them, all in screen pixels (machineLedger.ts places them). It draws from the frame's
 // context and from what the renderer owns (`LedgerIO`, read as it draws), and keeps what it drew this frame (`Ledger`) for the renderer's
 // hit testing.
-import type { MachineEntry, RawAgent } from "../api";
+import type { MachineEntry, RawTask } from "../api";
 import { sizes as ledgerSizes, slot as ledgerSlot } from "../features/level/machineLedger";
 import { entryAt, entryPath, PAGE, rowLabels } from "../features/level/machineLanes";
 import type { Paging } from "../features/level/machinePaging";
@@ -63,7 +63,7 @@ export interface Ledger {
   sliding: boolean;
   drawTop(): void;
   /** One object per session while its snapshot stands, so the hover card is rewritten only when the session changes. */
-  ltaskOf(flow: string, agent: RawAgent): LTask;
+  ltaskOf(flow: string, agent: RawTask): LTask;
   pinnedTask(): LTask | null;
   /** Whether the ledger lays out a state: the top machine's, or a row's. */
   ledgerHas(s: Spot): boolean;
@@ -207,7 +207,7 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
   }
   /** What the ledger drew this frame: each task's dot, each state and each name, for the hover, the trace and the names over the veil. */
   /** One object per session while its snapshot stands, so the hover card is rewritten only when the session changes. */
-  function ltaskOf(flow: string, agent: RawAgent): LTask {
+  function ltaskOf(flow: string, agent: RawTask): LTask {
     const k = `${flow}:${agent.id}`, o = led.ltasks.get(k);
     if (o?.agent === agent) return o;
     const n = { flow, agent };

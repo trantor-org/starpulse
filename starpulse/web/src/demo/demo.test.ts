@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { DemoServer, ROUTES, demoLive, stepRuns, type DemoFixture } from "./demo";
 import { PAGE } from "../features/level/ledgerScroll";
 import { fetchHarnesses, postStart } from "../features/kanban/start";
-import type { FlowSnapshot, LedgerRow, Machine, RawAgent, RunStatus, Snapshot } from "../api";
+import type { FlowSnapshot, LedgerRow, Machine, RawTask, RunStatus, Snapshot } from "../api";
 import type { TaskRecord } from "../features/kanban/taskViewModel";
 
 const machine = (initial: string, edges: [string, string, string][], final = ""): Machine => {
@@ -21,7 +21,7 @@ const BOARD = machine("new", [
   ["done", "completed", "SWEEP"],
 ], "completed");
 const DELIVERY = machine("start", [["start", "red", "RED"], ["red", "green", "GREEN"]]);
-const card = (id: string, state: string): RawAgent => ({ id, title: id, state, model: "" });
+const card = (id: string, state: string): RawTask => ({ id, title: id, state, model: "" });
 /** A page of the merge Ledger as `GET /api/ledger/MERGED` serves it: the newest, or the rows older than `before`. */
 const ledgerPage = async (s: DemoServer, before?: number) => (await (await s.fetch(`/api/ledger/MERGED?${before === undefined ? "" : `before=${before}&`}limit=${PAGE}`)).json()) as { rows: LedgerRow[]; more: boolean };
 

@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { heldBy, sessionsOf, traceSteps } from "./machineTrace";
-import type { FlowSnapshot, RawAgent } from "../../api";
+import type { FlowSnapshot, RawTask } from "../../api";
 
 /** A machine whose states run in a line, `a → b → c`, with no line back. */
-function flow(name: string, ids: string[], agents: RawAgent[] = []): FlowSnapshot {
+function flow(name: string, ids: string[], agents: RawTask[] = []): FlowSnapshot {
   return {
     name,
     machine: { states: ids.map((id, i) => ({ id, name: id, initial: !i, final: i === ids.length - 1 })), transitions: ids.slice(1).map((t, i) => ({ source: ids[i], target: t, event: t })) },
@@ -18,7 +18,7 @@ function flow(name: string, ids: string[], agents: RawAgent[] = []): FlowSnapsho
   };
 }
 /** A session of `task` that held each state from the time beside it. */
-const session = (task: string | null, ...trail: [string, number][]): RawAgent => ({
+const session = (task: string | null, ...trail: [string, number][]): RawTask => ({
   id: `${task}-${trail[0][1]}`, title: "", model: "", task, state: trail.at(-1)![0], trail: trail.map(([state, at]) => ({ state, event: state.toUpperCase(), at })), active: trail.at(-1)![1],
 });
 const everywhere = () => true;

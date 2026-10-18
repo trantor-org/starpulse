@@ -63,7 +63,7 @@ from starpulse._internal.board.upstream_backlog import (
     project_board,
 )
 from starpulse._internal.board.upstream_backlog import (
-    _holder as _holder_of,
+    _assignee as _assignee_of,
 )
 from starpulse._internal.eventlog.tables import retired_tasks
 from starpulse._internal.feed import criteria
@@ -814,12 +814,12 @@ def _restorer(root: Path, retired: _Retired) -> TaskRestorer:
     return restore
 
 
-def _holder(body: str, session: str) -> str:
+def _assign(body: str, session: str) -> str:
     """`body` with `**Holder:** <session>` appended to its notes, which the board reads the holder from.
 
     A session the notes already name as holder is not named again: a claim's edit may have recorded it before the move.
     """
-    return body if _holder_of(body) == session else _append_notes(body, f"**Holder:** {session}")
+    return body if _assignee_of(body) == session else _append_notes(body, f"**Holder:** {session}")
 
 
 def _writer(root: Path, statuses: tuple[str, ...], guard: _Guard = _Guard()) -> MoveWriter:
@@ -834,7 +834,7 @@ def _writer(root: Path, statuses: tuple[str, ...], guard: _Guard = _Guard()) -> 
 
         def edit(frontmatter: dict, body: str) -> str:
             frontmatter["status"] = spelled.get(lane_id(status), status)
-            return _holder(body, session) if claim else body
+            return _assign(body, session) if claim else body
 
         return _update(root, task, edit, guard, actor)
 

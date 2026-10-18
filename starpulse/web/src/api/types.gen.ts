@@ -521,14 +521,14 @@ export interface DocSummary {
  * A Board task that moved (`agent` null once it left the lanes).
  */
 export interface TaskDelta {
-  agent: RawAgent | null;
+  agent: RawTask | null;
   id: string;
   settled: Settled | null;
 }
 /**
  * A Backlog task. On the board its state is its lane; on every other machine, the state its latest machine event left it in.
  */
-export interface RawAgent {
+export interface RawTask {
   active?: number | null;
   /**
    * When a Board task was created, in epoch seconds; null or absent when unknown.
@@ -671,7 +671,7 @@ export interface Settled {
  * A task a machine event placed on another machine.
  */
 export interface MoveDelta {
-  agent: RawAgent;
+  agent: RawTask;
   flow: string;
   id: string;
 }
@@ -1331,7 +1331,7 @@ export interface Machines {
  * A machine of `GET /api/machines`: whole, with its derivation.
  */
 export interface MachineRow {
-  agents: RawAgent[];
+  agents: RawTask[];
   chain: string[];
   depth: number;
   last: number | null;
@@ -2123,7 +2123,7 @@ export interface DomainProcess {
   name: string;
 }
 export interface FlowSnapshot {
-  agents: RawAgent[];
+  agents: RawTask[];
   chain?: string[] | null;
   depth?: number | null;
   last?: number | null;
