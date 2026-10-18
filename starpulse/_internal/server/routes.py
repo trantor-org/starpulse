@@ -154,7 +154,7 @@ _TASK_WRITES = frozenset(
 )
 
 
-#: The body each write route answers, by `contracts.api.BODIES`; a run and a rerun answer `run`.
+#: The body each write route answers, by `contracts.api.registry.BODIES`; a run and a rerun answer `run`.
 _WRITES = {
     _MOVE: "move",
     _START: "start",

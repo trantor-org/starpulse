@@ -268,7 +268,7 @@ from starpulse._internal.server.writes import (
 from starpulse._internal.server.api_handler import _CONTRACT_TTL_S, Arrival, _cached, _no_writer, request_handler
 from starpulse._internal.server.responses import _HEALTH_HOURS, _error, _hours
 from starpulse._internal.server.responses import health_response, history_response  # noqa: F401 - the read routes stay importable from here
-from starpulse.contracts.api import encode, event
+from starpulse._internal.server.encoding import encode, event
 from starpulse._internal.config.level import Level
 from starpulse._internal.eventlog.conformance_monitor import Conformance
 from starpulse._internal.eventlog.level_metrics import RunWindow, WindowPastHistory, level_metrics

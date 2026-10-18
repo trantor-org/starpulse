@@ -18,7 +18,7 @@ from starpulse._internal.board.seam import Board
 from starpulse._internal.kit.adapter_kit import serve, url
 from starpulse._internal.server.writes import create_doc
 from starpulse._internal.cli import agent_cli as cli
-from starpulse.contracts.api import RESPONSES
+from starpulse.contracts.api.registry import RESPONSES
 from starpulse._internal.feed.board_feed import BoardFeed
 
 FIXTURE = Path(__file__).resolve().parent.parent.parent / "fixtures" / "native_board" / "docs"

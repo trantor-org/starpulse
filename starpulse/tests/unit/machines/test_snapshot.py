@@ -9,7 +9,7 @@ from statemachine import State, StateChart
 from starpulse._internal.machines import snapshot
 from starpulse._internal.machines.machine_definition import MachineDefinitionError, load_machine
 from starpulse._internal.machines.snapshot import describe
-from starpulse.contracts.api import Cite, Transition
+from starpulse.contracts.api.dto.machine import Cite, Transition
 
 
 class _Tiny(StateChart):

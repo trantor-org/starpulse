@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 from starpulse._internal.board.seam import (
     TaskReader,
 )
-from starpulse.contracts.api import encode
+from starpulse._internal.server.encoding import encode
 from starpulse._internal.eventlog.level_metrics import WindowPastHistory
 from starpulse._internal.level import analytics
 from starpulse._internal.level.clusters import Cluster, cluster_key, dispersion, trace, trace_clusters
