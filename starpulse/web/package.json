@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit -p .",
     "lint": "oxlint . --deny-warnings --report-unused-disable-directives",
     "test": "scripts/in-tests-slice.sh vitest run",
-    "check": "pnpm run typecheck && pnpm run lint && pnpm run test && pnpm run build"
+    "check": "scripts/check.sh"
   },
   "dependencies": {
     "@fontsource/inter": "^5.3.0",
