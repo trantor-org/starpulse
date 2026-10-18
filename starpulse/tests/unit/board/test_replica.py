@@ -390,4 +390,4 @@ def test_replica_legacy_key_entry_is_applied_with_the_holder_as_assignee(log: Ev
     reader = _reader(log, stop)
 
     assert _eventually(lambda: _states(reader) == {"T-1": "review"})
-    assert reader.snapshot()["flows"][0]["agents"][0]["holder"] == "s-1"
+    assert reader.snapshot()["flows"][0]["agents"][0]["assignee"] == "s-1"
