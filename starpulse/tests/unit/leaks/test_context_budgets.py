@@ -15,11 +15,11 @@ from starpulse._internal.autopilot.sampler import Sampler
 from starpulse._internal.autopilot.toggle import Toggle
 from starpulse._internal.board.seam import Written
 from starpulse._internal.config.autopilot import Autopilot
-from starpulse._internal.eventlog.event_log import EventLog
+from starpulse._internal.eventlog.event_log import Entry, EventLog
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.harnesses.harness import HARNESS_MACHINES
 from starpulse._internal.kit.adapter_kit import task
-from starpulse._internal.pulls.pull_store import PullSync
+from starpulse._internal.pulls.pull_events import RecordProjection
 from starpulse._internal.pulls.pulls import PullStore
 from starpulse.contracts.adapters import BoardTask
 from starpulse.tests.leak_gate import BUDGETS, check, measures_allocations
@@ -33,52 +33,19 @@ TASK_IDS = ("T-1", "T-2", "T-3")
 MINUTE = 60.0
 
 
-def _pr_node(number: int, updated: str) -> dict:
-    return {
-        "number": number,
-        "state": "OPEN",
-        "isDraft": False,
-        "mergeable": "MERGEABLE",
-        "baseRefName": "main",
-        "headRefName": "feat",
-        "headRefOid": "abc",
-        "body": f"PR {number}",
-        "updatedAt": updated,
-        "createdAt": "2020-01-01T00:00:00Z",
-        "mergedAt": None,
-        "mergeCommit": None,
-        "files": {"nodes": []},
-        "headRef": {"compare": {"aheadBy": 0}},
-        "ciCommits": {"nodes": []},
-        "timelineItems": {"nodes": []},
-        "commits": {"nodes": [{"commit": {"statusCheckRollup": {"contexts": {"nodes": []}}}}]},
-        "reviewThreads": {"nodes": []},
-    }
-
-
-def _pull_sync_step() -> Callable[[], None]:
-    """A reconcile whose listing drifts from the store every pass, so each one refreshes the repository in full."""
+def _pull_events_step() -> Callable[[], None]:
+    """An event pass whose checks flip every time, so each one patches and saves the task's pull request record."""
     store = PullStore(create_engine("sqlite://"))
     feed = BoardFeed()
     feed.put(task("PROJ-1", "In Progress", references=[f"https://github.com/{REPO}/pull/1"]))
-    updates = cycle(f"2020-01-0{day}T00:00:00Z" for day in range(1, 8))
+    projection = RecordProjection(store, feed, lambda: None)
+    events = cycle(("CHECKS_PASSED", "CHECKS_FAILED"))
     clock = cycle(float(second) for second in range(1_000, 1_000_000, 60))
 
-    def graphql(repo: str, query: str) -> dict:
-        updated = _updated[0]
-        nodes = [{"number": 1, "state": "OPEN", "updatedAt": updated}]
-        return {
-            "open": {"pageInfo": {"hasNextPage": False}, "nodes": nodes},
-            "recent": {"nodes": nodes},
-            "p1": _pr_node(1, updated),
-        }
-
-    _updated = [next(updates)]
-    sync = PullSync(store, feed, (), graphql, lambda: next(clock))
-
     def step() -> None:
-        _updated[0] = next(updates)
-        sync.reconcile()
+        at = next(clock)
+        fields = {"machine": "github-pull-request", "event": next(events), "task": "PROJ-1", "time": str(at)}
+        projection.handle(Entry(1, "machine:events", f"{at}", fields, at))
 
     return step
 
@@ -140,8 +107,8 @@ def _autopilot_step(tmp_path: Path) -> tuple[Callable[[], None], list[int]]:
     return step, starts
 
 
-def test_pull_sync_stays_within_its_retained_memory_budget() -> None:
-    check("pull-sync", _pull_sync_step(), BUDGETS["pull-sync"])
+def test_pull_events_stay_within_their_retained_memory_budget() -> None:
+    check("pull-events", _pull_events_step(), BUDGETS["pull-events"])
 
 
 def test_autopilot_stays_within_its_retained_memory_budget(tmp_path: Path) -> None:

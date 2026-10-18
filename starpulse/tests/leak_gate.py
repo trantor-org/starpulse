@@ -85,6 +85,6 @@ def check(context: str, step: Callable[[], None], budget: Budget) -> int:
 # Retained bytes after `iterations` runs of the context's loop, measured on CPython 3.14 and declared with headroom.
 # A context that now holds more has leaked or grown: find the cause before raising its budget.
 BUDGETS: dict[str, Budget] = {
-    "pull-sync": Budget(iterations=200, retained_bytes=32 * 1024),
+    "pull-events": Budget(iterations=200, retained_bytes=32 * 1024),
     "autopilot": Budget(iterations=200, retained_bytes=96 * 1024),
 }
