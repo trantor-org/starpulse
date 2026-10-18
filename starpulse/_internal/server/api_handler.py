@@ -48,6 +48,7 @@ from starpulse._internal.server.writes import (
     archive_doc,
     archive_milestone,
     archive_task,
+    claim_task,
     complete_task,
     create_doc,
     create_milestone,
@@ -63,11 +64,13 @@ from starpulse._internal.server.writes import (
     milestone_record,
     milestones_list,
     move_task,
+    park_task,
     rerun_dag,
     restore_doc,
     restore_task,
     retire_task,
     retired_list,
+    review_task,
     run_dag,
     start_task,
     task_record,
@@ -96,6 +99,7 @@ from starpulse._internal.server.responses import (
 from starpulse._internal.server.routes import (
     _ARCHIVE,
     _AUTOPILOT,
+    _CLAIM,
     _COMPLETE,
     _DOCS,
     _DOC_ARCHIVE,
@@ -116,6 +120,7 @@ from starpulse._internal.server.routes import (
     _MILESTONE_WRITES,
     _MOVE,
     _PAGES,
+    _PARK,
     _PULL_REFRESH,
     _RERUN,
     _RERUN_TAIL,
@@ -123,6 +128,7 @@ from starpulse._internal.server.routes import (
     _RETIRE,
     _RETIRED,
     _RETIRED_IMPORT,
+    _REVIEW,
     _RETIRED_WRITES,
     _RUN,
     _SNAPSHOT_BODY,
@@ -382,6 +388,9 @@ class _ApiHandler(SimpleHTTPRequestHandler):
                 _ARCHIVE,
                 _RESTORE,
                 _COMPLETE,
+                _CLAIM,
+                _PARK,
+                _REVIEW,
                 _TASKS,
                 _INGEST,
                 _FORWARD,
@@ -430,6 +439,12 @@ class _ApiHandler(SimpleHTTPRequestHandler):
                 status, body = retire_task(self.client_address[0], raw, self.milestones)
             elif path == _RETIRED_IMPORT:
                 status, body = import_retired(self.client_address[0], raw, self.milestones)
+            elif path == _CLAIM:
+                status, body = claim_task(self.client_address[0], raw, self.feed, self.writer)
+            elif path == _PARK:
+                status, body = park_task(self.client_address[0], raw, self.feed, self.read, self.edit)
+            elif path == _REVIEW:
+                status, body = review_task(self.client_address[0], raw, self.feed, self.read, self.edit)
             elif path == _COMPLETE:
                 status, body = complete_task(self.client_address[0], raw, self.feed, self.complete)
             elif path == _TASKS:

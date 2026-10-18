@@ -236,7 +236,9 @@ def test_a_board_task_from_an_adapter_that_predates_criteria_state_still_validat
     assert {"acceptance_checked", "pause_reason"}.isdisjoint(contracts.SCHEMAS["board"]["required"])
 
 
-@pytest.mark.parametrize("route", ["/api/move", "/api/edit", "/api/archive", "/api/tasks"])
+@pytest.mark.parametrize(
+    "route", ["/api/move", "/api/edit", "/api/archive", "/api/tasks", "/api/claim", "/api/park", "/api/review"]
+)
 def test_each_task_write_schema_names_its_actor_session_and_harness(route: str) -> None:
     assert {"actor", "session", "harness"} <= set(REQUESTS[route].model_json_schema()["properties"])
 

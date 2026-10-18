@@ -20,6 +20,19 @@ POST /api/runs/<instance>/<workflow>/rerun
 POST /api/move     {task, to[, actor, session, harness]}: set a Board task's status through the board adapter's writer, as
                    `actor` (the page names `operator`; absent, `agent` with a session, else `anonymous`). An actor outside the event's declared writers
                    is refused 409 before the writer is asked; a board with no writer answers 501
+POST /api/claim    {task, session[, actor, harness]}: move a task to In Progress holding `session`, an opaque string; 409
+                   when the task is In Progress under another holder, or `session` already holds another In Progress
+                   task, with the writer's or the machine's refusal as for a move; the same session claiming its own
+                   task again answers 200. {task, to, holder}
+POST /api/park     {task, untilTask | until | operator[, comment, session, actor, harness]}: park the In Progress
+                   task for exactly one typed reason, in one write that picks the lane: `untilTask` (task ids that
+                   must reach Done) and `until` (start criteria, each an {id, kind, ...} object) go to Waiting,
+                   `operator` (text only the operator can answer) to Needs attention. {task, to}; refusals as for an
+                   edit, 409 when the task is not In Progress, a task waited on is itself, unknown or Done, or the task
+                   has an open dependency and is given criteria
+POST /api/review   {task, references, summary, comment[, session, actor, harness]}: move the task to Review with the
+                   pull requests and final summary it ships in the same write, so the configured rules judge the
+                   evidence and a refusal writes nothing. {task, to}; refusals as for an edit
 GET /api/task/<id> {task, record}: every editable field of a task from the board's `read`, which the snapshot's
                    entry does not carry; 404 when the board cannot read or the task is not on it
 POST /api/edit     {task, base, changes, comment[, actor, session, harness]}: one write of every change through the board's `edit`. 409 with the
@@ -90,11 +103,14 @@ import contextlib
 import ipaddress
 import json
 import logging
+import re
 import threading
 import time
 from collections.abc import Callable, Collection, Mapping
 from typing import TYPE_CHECKING, Any, NamedTuple
 from urllib.parse import urlsplit
+
+import yaml
 
 from starpulse._internal.board.seam import (
     AGENT,
@@ -345,11 +361,30 @@ def move_task(source: str, raw: bytes, feed: BoardFeed, writer: MoveWriter) -> t
         }
     if (agent := _held(feed, task)) is None:
         return _not_held(feed, task)
+    return _move(feed, agent, task, column, who, writer)
+
+
+def _status(column: str) -> str:
+    """The status a board column is written as; the board spells it as its lanes do."""
+    return column.replace("_", " ").title()
+
+
+def _move_refusal(agent: dict, task: str, column: str, who: _Who) -> tuple[int, dict[str, str]] | None:
+    """The 409 for a move to `column` that the machine does not offer `who` from the task's state, else None."""
     if column not in agent.get("moves", {}):  # a cold done task holds no moves
         return 409, {"error": f"{task} cannot move from {agent['state']} to {column}"}
     if not (move := Move.model_validate(agent["moves"][column])).permits(who.actor):
         return 409, {"error": move.for_actor(who.actor).reason, "skill": move.skill}
-    status = column.replace("_", " ").title()
+    return None
+
+
+def _move(
+    feed: BoardFeed, agent: dict, task: str, column: str, who: _Who, writer: MoveWriter
+) -> tuple[int, dict[str, str]]:
+    """Move the held task `agent` to `column` as `who` through `writer`: the HTTP status and JSON body of the move."""
+    if (refused := _move_refusal(agent, task, column, who)) is not None:
+        return refused
+    status = _status(column)
     written = _written_by(
         feed,
         task,
@@ -361,6 +396,236 @@ def move_task(source: str, raw: bytes, feed: BoardFeed, writer: MoveWriter) -> t
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
     return 200, {"task": task, "to": column, **({"advice": written.advice} if written.advice else {})}
+
+
+_IN_PROGRESS = "in_progress"
+_BAD_CLAIM = {
+    "error": 'a claim needs {"task": "TASK-N", "session": "<holder>"} and may name an "actor" and a "harness" '
+    "(non-empty strings)"
+}
+
+
+def claim_task(source: str, raw: bytes, feed: BoardFeed, writer: MoveWriter) -> tuple[int, dict[str, str]]:
+    """Move the task `raw` names to In Progress holding the session `raw` names, for a browser at `source`: the HTTP
+    status and JSON body.
+
+    The holder is an opaque string. A task already In Progress under that holder answers 200 without a write; under
+    another, or when the holder already has another task In Progress, it is refused 409 naming the holder or the task.
+    """
+    if not _on_lan(source):
+        return 403, {"error": "Claiming a task answers only loopback and private network (RFC 1918) browsers"}
+    try:
+        request = json.loads(raw)
+        task, who = request["task"], _named_who(request)
+    except ValueError, TypeError, KeyError:
+        task = who = None
+    if not (isinstance(task, str) and who is not None and who.session):
+        return 400, _BAD_CLAIM
+    if (agent := _held(feed, task)) is None:
+        return _not_held(feed, task)
+    held = {"task": task, "to": _IN_PROGRESS, "holder": who.session}
+    if agent["state"] == _IN_PROGRESS:
+        if agent.get("holder") == who.session:
+            return 200, held
+        return 409, {"error": f"{task} is already In Progress, held by {agent.get('holder') or 'no session'}"}
+    others = [a["id"] for a in feed.open_tasks() if a["state"] == _IN_PROGRESS and a.get("holder") == who.session]
+    if others:
+        return 409, {
+            "error": f"this session already holds {others[0]} In Progress: park it, defer it or finish it before "
+            f"claiming {task}"
+        }
+    status, body = _move(feed, agent, task, _IN_PROGRESS, who, writer)
+    return (200, {**body, "holder": who.session}) if status == 200 else (status, body)
+
+
+class _Refusal(Exception):
+    """A lifecycle write refused before it is made: the HTTP status and JSON body to answer with."""
+
+    def __init__(self, status: int, body: dict[str, str]) -> None:
+        super().__init__(body["error"])
+        self.answer = (status, body)
+
+
+def _lifecycle_edit(
+    feed: BoardFeed,
+    task: str,
+    column: str,
+    who: _Who,
+    comment: str,
+    read: TaskReader,
+    edit: TaskEditor,
+    plan: Callable[[dict[str, Any]], dict[str, Any]],
+) -> tuple[int, dict[str, Any]]:
+    """Move `task` to `column` in one `edit` of the fields `plan` draws from its current record, as `who`.
+
+    The board's rules judge the record the edit makes, so a refusal returns their reason and skill with nothing written;
+    a `plan` that refuses raises `_Refusal`.
+    """
+    with _EDIT_LOCK:
+        if (current := read(task)) is None:
+            return 404, {"error": f"{task} has no record to read"}
+        try:
+            changes = {"status": _status(column), **plan(current)}
+        except _Refusal as refusal:
+            return refusal.answer
+        written = _written_by(feed, task, who, lambda: edit(task, changes, comment, actor=who.actor))
+    if not written.ok:
+        return 409, {"error": written.output, "skill": written.skill}
+    return 200, {"task": task, "to": column}
+
+
+def _section_set(description: str, heading: str, content: str) -> str:
+    """`description` with its `## <heading>` section replaced by `content`, or ending with it when it had none."""
+    kept = re.sub(rf"^## {re.escape(heading)}\s*$.*?(?=^## |\Z)", "", description, flags=re.M | re.S)
+    return f"{kept.strip()}\n\n## {heading}\n\n{content.strip()}".strip()
+
+
+def _wait_on_tasks(feed: BoardFeed, task: str, current: dict[str, Any], ids: Any) -> dict[str, Any]:
+    """The edit that makes the task wait on the tasks `ids` names, kept after the dependencies it has."""
+    if not (isinstance(ids, list) and ids and all(isinstance(name, str) and name.strip() for name in ids)):
+        raise _Refusal(400, {"error": 'untilTask needs a non-empty list of task ids: {"untilTask": ["TASK-N"]}'})
+    waits = list(dict.fromkeys(name.strip() for name in ids))
+    for name in waits:
+        if name.casefold() == task.casefold():
+            raise _Refusal(409, {"error": f"{task} cannot wait on itself"})
+        if feed.is_done(name):
+            raise _Refusal(409, {"error": f"{name} is already Done: there is nothing to wait for"})
+        if _held(feed, name) is None:
+            raise _Refusal(*_not_held(feed, name))
+    return {"dependencies": list(dict.fromkeys([*current["dependencies"], *waits]))}
+
+
+def _wait_on_criteria(feed: BoardFeed, task: str, current: dict[str, Any], found: Any) -> dict[str, Any]:
+    """The edit that makes the task wait for the start criteria `found`, which replace those it has.
+
+    Only the shape is judged here: what a criterion observes is for the client that evaluates it.
+    """
+    if not (
+        isinstance(found, list)
+        and found
+        and all(isinstance(item, dict) and all(_nonblank(item.get(key)) for key in ("id", "kind")) for item in found)
+        and len({item["id"] for item in found}) == len(found)
+    ):
+        raise _Refusal(400, {"error": 'until needs a non-empty list of criteria, each with a unique "id" and a "kind"'})
+    if open_ := [name for name in current["dependencies"] if not feed.is_done(name)]:
+        raise _Refusal(
+            409,
+            {"error": f"{task} already waits on {', '.join(open_)}; a task is gated by one reason, never both"},
+        )
+    block = "```yaml\n" + yaml.safe_dump({"start_criteria": found}, sort_keys=False) + "```"
+    return {
+        "description": _section_set(current["description"], "Start Criteria", block),
+        **({"dependencies": []} if current["dependencies"] else {}),  # Done dependencies gate nothing
+    }
+
+
+def _wait_on_operator(current: dict[str, Any], reason: Any) -> dict[str, Any]:
+    """The edit that records `reason` as what only the operator can clear."""
+    if not _nonblank(reason):
+        raise _Refusal(400, {"error": "operator needs the reason, in text, that only the operator can clear"})
+    return {"description": _section_set(current["description"], "Needs attention", reason)}
+
+
+def _nonblank(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+_BAD_PARK = {
+    "error": 'a park needs {"task": "TASK-N"} and exactly one reason: "untilTask" (task ids that must reach Done), '
+    '"until" (criteria, each an object with an "id" and a "kind") or "operator" (text), and may name a "comment"'
+}
+_PARK_LANES = {"untilTask": "waiting", "until": "waiting", "operator": "needs_attention"}
+
+
+def park_task(
+    source: str, raw: bytes, feed: BoardFeed, read: TaskReader | None, edit: TaskEditor | None
+) -> tuple[int, dict[str, Any]]:
+    """Park the In Progress task `raw` names for the one reason it names, for a browser at `source`: the HTTP status and
+    JSON body.
+
+    The reason picks the lane and writes its gate in the same edit: `untilTask` adds dependencies and `until` writes the
+    Start Criteria block, both to Waiting, and `operator` writes the Needs attention section to Needs attention. The
+    machine must offer the writer that lane, and the board's rules judge the record the edit makes.
+    """
+    if not _on_lan(source):
+        return 403, {"error": "Parking a task answers only loopback and private network (RFC 1918) browsers"}
+    try:
+        request = json.loads(raw)
+        task, comment, who = request["task"], request.get("comment", ""), _named_who(request)
+        reasons = [key for key in _PARK_LANES if key in request]
+    except ValueError, TypeError, KeyError:
+        task = comment = who = reasons = None
+    if not (isinstance(task, str) and isinstance(comment, str) and reasons and len(reasons) == 1):
+        return 400, _BAD_PARK
+    if who is None:
+        return 400, _BAD_WHO
+    if read is None or edit is None:
+        return 404, {"error": "this board does not edit tasks"}
+    if (agent := _held(feed, task)) is None:
+        return _not_held(feed, task)
+    if agent["state"] != _IN_PROGRESS:
+        return 409, {"error": f"only an In Progress task can be parked: {task} is {agent['state']}"}
+    reason = reasons[0]
+    column, value = _PARK_LANES[reason], request[reason]
+    if (refused := _move_refusal(agent, task, column, who)) is not None:
+        return refused
+    plans = {
+        "untilTask": lambda current: _wait_on_tasks(feed, task, current, value),
+        "until": lambda current: _wait_on_criteria(feed, task, current, value),
+        "operator": lambda current: _wait_on_operator(current, value),
+    }
+    return _lifecycle_edit(feed, task, column, who, comment, read, edit, plans[reason])
+
+
+_BAD_REVIEW = {
+    "error": 'a review needs {"task": "TASK-N"} and may name "references" (a list of pull request links), a "summary" '
+    'and a "comment" (text)'
+}
+
+
+def review_task(
+    source: str, raw: bytes, feed: BoardFeed, read: TaskReader | None, edit: TaskEditor | None
+) -> tuple[int, dict[str, Any]]:
+    """Move the task `raw` names to Review with the evidence it names, for a browser at `source`: the HTTP status and
+    JSON body.
+
+    The `references` join those the task has and a non-blank `summary` becomes its final summary, in the one edit that
+    makes the move. The board's rules judge the record that edit makes, so a task whose evidence they refuse stays where
+    it is and the answer carries their reason and skill.
+    """
+    if not _on_lan(source):
+        return 403, {"error": "Reviewing a task answers only loopback and private network (RFC 1918) browsers"}
+    try:
+        request = json.loads(raw)
+        task, links = request["task"], request.get("references", [])
+        summary, comment, who = request.get("summary", ""), request.get("comment", ""), _named_who(request)
+    except ValueError, TypeError, KeyError:
+        task = links = summary = comment = who = None
+    if not (
+        isinstance(task, str)
+        and isinstance(links, list)
+        and all(_nonblank(link) for link in links)
+        and isinstance(summary, str)
+        and isinstance(comment, str)
+    ):
+        return 400, _BAD_REVIEW
+    if who is None:
+        return 400, _BAD_WHO
+    if read is None or edit is None:
+        return 404, {"error": "this board does not edit tasks"}
+    if (agent := _held(feed, task)) is None:
+        return _not_held(feed, task)
+    if (refused := _move_refusal(agent, task, "review", who)) is not None:
+        return refused
+
+    def plan(current: dict[str, Any]) -> dict[str, Any]:
+        references = list(dict.fromkeys([*current["references"], *(link.strip() for link in links)]))
+        return {
+            **({"references": references} if references != current["references"] else {}),
+            **({"finalSummary": summary.strip()} if summary.strip() else {}),
+        }
+
+    return _lifecycle_edit(feed, task, "review", who, comment, read, edit, plan)
 
 
 def task_record(feed: BoardFeed, read: TaskReader | None, task: str) -> tuple[int, dict[str, Any]]:
