@@ -80,6 +80,8 @@ def _await_page(proc: subprocess.Popen, port: int) -> None:
             time.sleep(0.2)
 
 
+# Top-level settings of a config come before its tables. The Flow Metrics child sizes history no test here reads.
+_NO_FLOW_METRICS = "flow_metrics_worker = true\n"
 _INGEST_CONFIG = '[[runs]]\nname = "cron"\ntype = "dagu"\nurl = "http://127.0.0.1:9"\ntoken_env = "CRON_INGEST_TOKEN"\n'
 
 _FAKE_RUNS = '''
@@ -124,24 +126,29 @@ _INGEST_TOKEN = "s3cret"
 
 
 class Served(NamedTuple):
-    """The two servers the module shares: `plain` binds `--port`, `activated` listens on the socket a service manager passes."""
+    """The server most tests share, which binds `--port`."""
 
     plain_proc: subprocess.Popen
     plain_port: int
-    home: Path  # the directory of `plain`'s config, history file and board
+    home: Path  # the directory of the server's config, history file and board
     marker: Path  # the file the fake runs adapter appends each started workflow to
-    env: dict[str, str]  # `plain`'s environment, for a command that must see what it sees
-    activated_port: int  # the port the passed socket listens on
-    named_port: int  # the port `--port` names for `activated`, which must stay closed
+    env: dict[str, str]  # the server's environment, for a command that must see what it sees
+
+
+class Activated(NamedTuple):
+    """The server that listens on the socket a service manager passes."""
+
+    port: int  # the port the passed socket listens on
+    named_port: int  # the port `--port` names, which must stay closed
 
 
 @pytest.fixture(scope="module")
 def served(build: None, tmp_path_factory: pytest.TempPathFactory) -> Iterator[Served]:
-    """Both servers, started together: a server is ~8 s of imports and workers, and each test below owns only the names, runs and events it sends."""
+    """The server, started once: it is ~4 s of imports and workers, and each test below owns only the names, runs and events it sends."""
     home = tmp_path_factory.mktemp("plain")
     marker = home / "started.txt"
     config = home / "starpulse.toml"
-    config.write_text(_INGEST_CONFIG + "\n" + _fake_runs(home, str(marker)))
+    config.write_text(_NO_FLOW_METRICS + _INGEST_CONFIG + "\n" + _fake_runs(home, str(marker)))
     history = HistoryStore(f"sqlite:///{home / DEFAULT_FILE}", {})
     day = 86400.0
     history.record_lane("l1", "T-1", "In Progress", time.time() - 3 * day)  # a first sighting: enters In Progress
@@ -154,32 +161,35 @@ def served(build: None, tmp_path_factory: pytest.TempPathFactory) -> Iterator[Se
         LISTEN_FDS="1",  # a socket meant for another process: every test here proves the server binds its own port anyway
         LISTEN_PID="1",
     )
-    named = _free_port()  # what --port says of `activated`; the server must leave it closed
-    activated_config = tmp_path_factory.mktemp("activated") / "starpulse.toml"
-    activated_config.write_text("")
-    procs: list[subprocess.Popen] = []
+    plain_port = _free_port()
+    proc = subprocess.Popen(_serve_command(plain_port, config), env=env)
+    try:
+        _await_page(proc, plain_port)
+        yield Served(proc, plain_port, home, marker, env)
+    finally:
+        proc.terminate()
+        proc.wait(timeout=30)
+
+
+@pytest.fixture(scope="module")
+def activated(build: None, tmp_path_factory: pytest.TempPathFactory) -> Iterator[Activated]:
+    """The server on a passed socket, which serves the page and nothing else: it runs no worker."""
+    named = _free_port()  # what --port says of it; the server must leave it closed
+    config = tmp_path_factory.mktemp("activated") / "starpulse.toml"
+    config.write_text(_NO_FLOW_METRICS + "board_worker = true\nruns_worker = true\n")
     with closing(socket.socket()) as passed:
         passed.bind(("127.0.0.1", 0))
         passed.listen(16)
         fd = passed.fileno()
-        plain_port = _free_port()
+        proc = subprocess.Popen(
+            [sys.executable, "-c", _ACTIVATE, str(fd), *_serve_command(named, config)], env=_env(), pass_fds=(fd,)
+        )
         try:
-            procs.append(subprocess.Popen(_serve_command(plain_port, config), env=env))
-            procs.append(
-                subprocess.Popen(
-                    [sys.executable, "-c", _ACTIVATE, str(fd), *_serve_command(named, activated_config)],
-                    env=_env(),
-                    pass_fds=(fd,),
-                )
-            )
-            _await_page(procs[0], plain_port)
-            _await_page(procs[1], passed.getsockname()[1])
-            yield Served(procs[0], plain_port, home, marker, env, passed.getsockname()[1], named)
+            _await_page(proc, passed.getsockname()[1])
+            yield Activated(passed.getsockname()[1], named)
         finally:
-            for proc in procs:
-                proc.terminate()
-            for proc in procs:
-                proc.wait(timeout=30)
+            proc.terminate()
+            proc.wait(timeout=30)
 
 
 def test_without_a_cache_server_or_any_tool_on_the_path_the_server_serves_history_and_what_emit_pushed(
@@ -274,12 +284,12 @@ def test_a_lane_event_a_trigger_matches_starts_the_run_through_the_adapter_and_o
             assert time.monotonic() < deadline, "the trigger consumer never started"
             time.sleep(0.2)
         assert log.append("board:lanes", {"task": "TASK-1", "lane": "review", "time": 1.0}, event_id="TASK-1@review@1")
-        assert log.append("board:lanes", {"task": "TASK-1", "lane": "done", "time": 2.0}, event_id="TASK-1@done@2")
-        while not served.marker.exists():
+        last = log.append("board:lanes", {"task": "TASK-1", "lane": "done", "time": 2.0}, event_id="TASK-1@done@2")
+        assert last
+        while (history.cursor("triggers") or 0) < last:  # the consumer has handled both events
             assert served.plain_proc.poll() is None, "the server exited"
-            assert time.monotonic() < deadline, "the matching event never started the run"
-            time.sleep(0.2)
-        time.sleep(1)  # a second start, were there one, would be read by now
+            assert time.monotonic() < deadline, "the consumer never handled the events"
+            time.sleep(0.05)
         assert served.marker.read_text() == "reconcile\n"
     finally:
         history.engine.dispose()
@@ -303,10 +313,10 @@ def test_a_trigger_whose_adapter_cannot_start_a_run_stops_the_server_naming_the_
 
 
 def test_serve_answers_on_the_listening_socket_the_service_manager_passes_in_and_binds_no_port_of_its_own(
-    served: Served,
+    activated: Activated,
 ) -> None:
-    assert _get(served.activated_port, "/api/history?task=PROJ-1") == (200, {"task": "PROJ-1", "path": []})
-    with pytest.raises(OSError), closing(socket.create_connection(("127.0.0.1", served.named_port), timeout=2)):
+    assert _get(activated.port, "/api/history?task=PROJ-1") == (200, {"task": "PROJ-1", "path": []})
+    with pytest.raises(OSError), closing(socket.create_connection(("127.0.0.1", activated.named_port), timeout=2)):
         pass
 
 
