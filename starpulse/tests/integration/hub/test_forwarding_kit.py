@@ -26,6 +26,8 @@ from starpulse._internal.eventlog import lane_events
 from starpulse._internal.eventlog.event_log import EventLog, Tail
 from starpulse._internal.eventlog.history import HistoryStore
 
+pytestmark = pytest.mark.usefixtures("sqlite_stores_from_template")
+
 TOKEN = "ana-secret"
 ASSIGNEE = "bob-the-assignee"
 

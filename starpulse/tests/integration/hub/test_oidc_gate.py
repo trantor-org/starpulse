@@ -37,6 +37,8 @@ from starpulse.tests.machines import MACHINES
 from starpulse.tests.mock_issuer import Answer, call, session_of
 from starpulse.tests.unit.level.test_analytics import NOW, ROWS
 
+pytestmark = pytest.mark.usefixtures("sqlite_stores_from_template")
+
 ALLOWED = ("ops", "admins")
 INSTANCE_TOKEN = "cron-secret"
 FORWARD_TOKEN = "laptop-secret"
@@ -89,8 +91,17 @@ class Hub:
 OFFLINE_ISSUER = "http://issuer.invalid"
 
 
+@pytest.fixture(scope="module")
+def level_history(tmp_path_factory: pytest.TempPathFactory) -> HistoryStore:
+    """One seeded level history for the module: the hub only reads it, and no credential writes to it."""
+    store = HistoryStore(f"sqlite:///{tmp_path_factory.mktemp('level') / 'level.sqlite'}", MACHINES)
+    for i, (task_id, at, _old, new) in enumerate(ROWS):
+        store.record_lane(f"a/{i}", task_id, new, at)
+    return store
+
+
 @contextmanager
-def running_hub(issuer: str, tmp_path: Path) -> Iterator[Hub]:
+def running_hub(issuer: str, tmp_path: Path, store: HistoryStore) -> Iterator[Hub]:
     # The server binds port 0 and the gate is built once that port is known: a port picked and released first can be
     # taken by a parallel worker before the server binds it.
     gates: list[Gate] = []
@@ -98,9 +109,6 @@ def running_hub(issuer: str, tmp_path: Path) -> Iterator[Hub]:
     now = [1_000_000.0]
     feed = BoardFeed(machines=MACHINES)
     insights = Insights(InsightStore(f"sqlite:///{tmp_path / 'history.sqlite'}"), feed)
-    store = HistoryStore(f"sqlite:///{tmp_path / 'level.sqlite'}", MACHINES)
-    for i, (task_id, at, _old, new) in enumerate(ROWS):
-        store.record_lane(f"a/{i}", task_id, new, at)
     with serve(
         tmp_path,
         feed,
@@ -134,15 +142,15 @@ def running_hub(issuer: str, tmp_path: Path) -> Iterator[Hub]:
 
 
 @pytest.fixture
-def hub(issuer: str, tmp_path: Path) -> Iterator[Hub]:
-    with running_hub(issuer, tmp_path) as running:
+def hub(issuer: str, tmp_path: Path, level_history: HistoryStore) -> Iterator[Hub]:
+    with running_hub(issuer, tmp_path, level_history) as running:
         yield running
 
 
 @pytest.fixture
-def offline_hub(tmp_path: Path) -> Iterator[Hub]:
+def offline_hub(tmp_path: Path, level_history: HistoryStore) -> Iterator[Hub]:
     """A hub no sign-in can reach the issuer from: it starts no issuer container."""
-    with running_hub(OFFLINE_ISSUER, tmp_path) as running:
+    with running_hub(OFFLINE_ISSUER, tmp_path, level_history) as running:
         yield running
 
 

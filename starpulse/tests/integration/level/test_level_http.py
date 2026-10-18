@@ -19,6 +19,8 @@ from starpulse._internal.eventlog.history import HistoryStore
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.unit.level.test_analytics import BOARD, NOW, ROWS, H
 
+pytestmark = pytest.mark.usefixtures("sqlite_stores_from_template")
+
 LEVEL = Level(
     "board",
     "done",
@@ -36,17 +38,19 @@ def _get(server: ThreadingHTTPServer, query: str = "", path: str = "/api/level")
         return exc.code, json.loads(exc.read())
 
 
-@pytest.fixture
-def store(tmp_path: Path) -> HistoryStore:
-    store = HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", MACHINES)
+@pytest.fixture(scope="module")
+def store(tmp_path_factory: pytest.TempPathFactory) -> HistoryStore:
+    """One seeded history for the module: every case only reads it."""
+    store = HistoryStore(f"sqlite:///{tmp_path_factory.mktemp('history') / 'history.sqlite'}", MACHINES)
     for i, (task, at, _old, new) in enumerate(ROWS):
         store.record_lane(f"{'a' if task in 'AB' else 'b'}/{i}", task, new, at)
     return store
 
 
-@pytest.fixture
-def server(tmp_path: Path, store: HistoryStore) -> Iterator[ThreadingHTTPServer]:
-    with serve(tmp_path, BoardFeed(machines=MACHINES), history=store, clock=lambda: NOW, level=LEVEL) as server:
+@pytest.fixture(scope="module")
+def server(tmp_path_factory: pytest.TempPathFactory, store: HistoryStore) -> Iterator[ThreadingHTTPServer]:
+    build = tmp_path_factory.mktemp("server")
+    with serve(build, BoardFeed(machines=MACHINES), history=store, clock=lambda: NOW, level=LEVEL) as server:
         yield server
 
 
