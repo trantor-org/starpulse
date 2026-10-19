@@ -200,7 +200,7 @@ _SHARED_POSTGRES_ROOT: Path | None = None
 def _warm_wanted(wanted: set[str]) -> None:  # pragma: no mutate block — container lifecycle
     if "postgres" in wanted and "db.testing" not in sys.modules and _SHARED_POSTGRES is None:
         _warm("postgres", _start_postgres)
-    if "issuer" in wanted:
+    if "issuer" in wanted and _SHARED_POSTGRES is None:
         _warm("issuer", _start_issuer)
 
 
@@ -208,23 +208,32 @@ def _distributes(config: pytest.Config) -> bool:
     return bool(config.pluginmanager.hasplugin("xdist") and config.getoption("numprocesses", None))
 
 
-def _publish_when_up(root: Path, future: Future) -> None:  # pragma: no mutate block — container lifecycle
+def _publish_when_up(root: Path, future: Future, service: str) -> None:  # pragma: no mutate block — container lifecycle
     if (error := future.exception()) is not None:
-        publish_error(root, repr(error))
+        publish_error(root, repr(error), service)
+    elif service == "issuer":
+        publish_url(root, future.result()[1], service)
     else:
-        publish_url(root, future.result().get_connection_url())
+        publish_url(root, future.result().get_connection_url(), service)
 
 
 def pytest_configure(config: pytest.Config) -> None:  # pragma: no mutate block — container lifecycle
-    """A worker learns where its controller's Postgres is; a controller starts that Postgres while the workers collect."""
+    """A worker learns where its controller's Postgres and issuer are; a controller starts both while the workers collect."""
     global _SHARED_POSTGRES, _SHARED_POSTGRES_ROOT  # noqa: PLW0603
     workerinput = getattr(config, "workerinput", None)
     if workerinput is not None:
         _SHARED_POSTGRES = Path(workerinput["shared_postgres"]) if workerinput.get("shared_postgres") else None
-    elif _distributes(config) and "db.testing" not in sys.modules and not _container_skip_reason():
+    elif _distributes(config) and not _container_skip_reason():
         _SHARED_POSTGRES_ROOT = Path(tempfile.mkdtemp(prefix="starpulse-postgres-"))
         root = _SHARED_POSTGRES_ROOT
-        _warm("postgres", _start_postgres).add_done_callback(lambda future: _publish_when_up(root, future))
+        # One issuer for the run too: a JVM per worker was 8 of them, 140-207 MiB each, on a capped slice.
+        starts = {"issuer": _start_issuer}
+        if "db.testing" not in sys.modules:
+            starts["postgres"] = _start_postgres
+        for service, start in starts.items():
+            _warm(service, start).add_done_callback(
+                lambda future, service=service: _publish_when_up(root, future, service)
+            )
 
 
 def pytest_configure_node(node: Any) -> None:  # pragma: no mutate block — container lifecycle
@@ -329,6 +338,8 @@ def issuer() -> str:  # pragma: no mutate block — container lifecycle
     """The address of a mock OpenID Connect issuer container, for the hub's sign-in cases."""
     if reason := _container_skip_reason():
         pytest.skip(reason)
+    if _SHARED_POSTGRES is not None:
+        return wait_for_url(_SHARED_POSTGRES, timeout=120, service="issuer")
     return _warm("issuer", _start_issuer).result()[1]
 
 
