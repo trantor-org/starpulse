@@ -13,12 +13,16 @@ from __future__ import annotations
 import datetime
 import subprocess
 import sys
+import types
 from pathlib import Path
 
 
 def violations(lib: Path, root: Path, today: str) -> list[str]:
     """One message per production module tracked under *root* that is over the limit with no entry lasting to *today*."""
     sys.path.insert(0, str(lib))
+    # Its history read needs trantor's `git_cli` and the settings stack under it, outside starpulse's dependencies; the
+    # constants read here never call it.
+    sys.modules.setdefault("git_cli", types.ModuleType("git_cli"))
     from linting.check_config_checks import busy_modules as busy
 
     subdir, pathspecs, package_of = next(entry for entry in busy.REPOS if entry[0] == "starpulse")
