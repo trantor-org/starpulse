@@ -1,7 +1,7 @@
 """The board:lanes stream contract: one entry per task lane change a Board feed applied.
 
-`BoardFeed` appends an entry beside each lane change it records in the history (`HistoryStore.record_lane`), under
-the same `<task>@<lane>@<entered>` event id, so the log, the history and a hub that folds the entry agree on one id.
+`BoardFeed` records an entry with each lane change it records in the history (`HistoryStore.record_lane`, one
+transaction), under the same `<task>@<lane>@<entered>` event id, so the log, the history and a hub that folds the entry agree on one id.
 An entry carries `task`, `lane` (the Board machine state id) and `time` (epoch seconds when the task entered the lane),
 the task's facets `team`, `milestone` and `labels` (absent when empty), `profile` when the task has one and `actor`
 (`operator`, `agent`, `anonymous` or `<instance>/<workflow>`) when the move was a write the board's server judged,
@@ -49,18 +49,15 @@ def entry(task: BoardTask, at: float, actor: str = "", session: str = "", harnes
     return fields
 
 
-def publish(
-    log: EventLog, event_id: str, task: BoardTask, at: float, actor: str = "", session: str = "", harness: str = ""
-) -> int | None:
-    """Append the lane entry for `task` to `log` under `event_id`, fail-open; an id the log holds is not appended again."""
-    return log.append(STREAM, entry(task, at, actor, session, harness), event_id=event_id)
+def change(task: str, lane: str, at: float, actor: str = "") -> dict[str, Any]:
+    """The fields of a lane entry of only the task, the lane, the time and the `actor` where given."""
+    return {"task": task, "lane": lane, "time": at, **({"actor": actor} if actor else {})}
 
 
 def append(log: EventLog, event_id: str, task: str, lane: str, at: float, actor: str = "") -> int | None:
     """Append a lane entry of only the task, the lane, the time and the `actor` where given to `log` under `event_id`,
     fail-open."""
-    fields = {"task": task, "lane": lane, "time": at, **({"actor": actor} if actor else {})}
-    return log.append(STREAM, fields, event_id=event_id)
+    return log.append(STREAM, change(task, lane, at, actor), event_id=event_id)
 
 
 class Unattributed:

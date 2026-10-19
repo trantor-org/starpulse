@@ -36,7 +36,7 @@ from typing import Any, NamedTuple
 
 from sqlalchemy import Engine, Table, create_engine, delete, event, func, select
 from sqlalchemy.dialects import postgresql, sqlite
-from sqlalchemy.engine import make_url
+from sqlalchemy.engine import Connection, make_url
 from sqlalchemy.exc import SQLAlchemyError
 
 from starpulse._internal.eventlog import DEFAULT_POLL_INTERVAL
@@ -207,26 +207,17 @@ class EventLog:
         try:
             engine = self.engine
             key = event_id or str(fields.get("event_id") or "") or uuid.uuid4().hex
-            known = select(events.c.id).where(events.c.event_id == key)
-            statement = (
-                _dialect(engine)
-                .insert(events)
-                .values(stream=stream, event_id=key, fields=dict(fields), at=time.time())
-                .on_conflict_do_nothing()  # any unique key: the hub keys a row on (event_id, at), the IC log on event_id
-                .returning(events.c.id)
-            )
             with engine.begin() as db:
-                # Look first: an ignored insert still spends an id, and a hole in the ids would read as a pruned span.
-                cursor = db.execute(known).scalar()
-                if cursor is None:
-                    cursor = db.execute(statement).scalar()
-                if cursor is None:  # another process appended this event_id between the look and the insert
-                    cursor = db.execute(known).scalar()
+                cursor = insert_event(db, stream, fields, key)
         except Exception as exc:  # fail open, see module docstring
             logger.warning("EventLog: append to %s failed (event dropped): %s", stream, exc)
             return None
         self._wake()
         return cursor
+
+    def committed(self) -> None:
+        """Wake the readers of this process after a transaction of the store inserted an event row (`insert_event`)."""
+        self._wake()
 
     @property
     def appends(self) -> int:
@@ -538,6 +529,27 @@ def _archive(directory: Path, rows: Sequence[Any]) -> None:
         os.fsync(fd)  # a new day's file must survive a crash as an entry of the directory
     finally:
         os.close(fd)
+
+
+def insert_event(db: Connection, stream: str, fields: Mapping[str, Any], key: str) -> int | None:
+    """Insert the event row `key` in `db`'s open transaction and return its cursor; a row holding `key` is not inserted
+    again and its cursor is returned. The caller's commit makes it durable: a state change that inserts its event here
+    lands with it or not at all."""
+    known = select(events.c.id).where(events.c.event_id == key)
+    statement = (
+        _dialect(db.engine)
+        .insert(events)
+        .values(stream=stream, event_id=key, fields=dict(fields), at=time.time())
+        .on_conflict_do_nothing()  # any unique key: the hub keys a row on (event_id, at), the IC log on event_id
+        .returning(events.c.id)
+    )
+    # Look first: an ignored insert still spends an id, and a hole in the ids would read as a pruned span.
+    cursor = db.execute(known).scalar()
+    if cursor is None:
+        cursor = db.execute(statement).scalar()
+    if cursor is None:  # another process appended this event_id between the look and the insert
+        cursor = db.execute(known).scalar()
+    return cursor
 
 
 def _create_engine(url: str) -> Engine:

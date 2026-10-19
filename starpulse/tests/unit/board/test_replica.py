@@ -290,7 +290,7 @@ class Lanes:
     def __init__(self) -> None:
         self.recorded: list[str] = []
 
-    def record_lane(self, event_id: str, task: str, status: str, at: float) -> bool:
+    def record_lane(self, event_id: str, task: str, status: str, at: float, *, event: object = None) -> bool:
         self.recorded.append(event_id)
         return True
 

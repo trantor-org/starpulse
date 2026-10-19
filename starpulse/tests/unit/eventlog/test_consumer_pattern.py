@@ -35,7 +35,7 @@ def log(tmp_path: Path) -> EventLog:
 def _write_one_of_each(log: EventLog) -> None:
     task = BoardTask(id="T-1", title="t", team="core", lane="in_progress")
     events.publish("in-progress", "WORKTREE_READY", actor="agent", task="T-1", now=5.0, log=log)
-    lane_events.publish(log, "T-1@in_progress@5.0", task, 5.0)
+    log.append(lane_events.STREAM, lane_events.entry(task, 5.0), event_id="T-1@in_progress@5.0")
     log.append(run_events.STREAM, run_events.entry("StepStarted", "nightly", "r1", "running", now=6.0))
 
 
