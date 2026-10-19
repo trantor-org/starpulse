@@ -43,7 +43,6 @@ OVER_CEILING = {
     "ci/test_public_names.py::test_the_tracked_tree_holds_no_denied_name": "TASK-6322",
     "ci/test_shard.py::test_the_shards_of_a_tree_collect_exactly_the_tests_of_the_whole_tree": "TASK-6326",
     "starpulse/tests/integration/server/test_api_swap.py::test_the_swapped_api_child_answers_every_request_made_across_the_swap": "TASK-6319",
-    "starpulse/tests/unit/server/test_closure.py::test_the_pulls_closure_holds_no_autopilot_module_and_the_autopilot_closure_holds_them": "TASK-6323",
     "starpulse/tests/unit/server/test_flow_reads.py::test_a_reader_never_sees_a_window_older_than_the_last_write_that_completed": "TASK-6324",
 }
 

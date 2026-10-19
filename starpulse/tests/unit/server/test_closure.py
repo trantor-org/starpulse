@@ -51,15 +51,20 @@ def test_an_entry_that_does_not_import_is_a_reload_error_naming_why(package: Pat
         code_of("demo.entry", "demo")
 
 
-def test_the_pulls_closure_holds_no_autopilot_module_and_the_autopilot_closure_holds_them() -> None:
-    reader = Reader(None)
+def _closure_names(entry: str) -> set[str]:
+    return {Path(file).name for file, _ in Reader(None)(entry).code}
 
-    pulls = {Path(file).name for file, _ in reader("pulls").code}
-    autopilot = {Path(file).name for file, _ in reader("autopilot").code}
 
-    assert "loop.py" not in pulls
-    assert {"loop.py", "autopilot_worker.py"} <= autopilot
-    assert "supervisor.py" in {Path(file).name for file, _ in reader(SELF).code}
+def test_the_pulls_closure_holds_no_autopilot_module() -> None:
+    assert "loop.py" not in _closure_names("pulls")
+
+
+def test_the_autopilot_closure_holds_the_autopilot_modules() -> None:
+    assert {"loop.py", "autopilot_worker.py"} <= _closure_names("autopilot")
+
+
+def test_the_serve_closure_holds_the_supervisor() -> None:
+    assert "supervisor.py" in _closure_names(SELF)
 
 
 def _toml(tmp_path: Path, text: str) -> Path:
