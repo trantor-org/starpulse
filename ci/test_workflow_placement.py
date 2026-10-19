@@ -14,7 +14,7 @@ import yaml
 WORKFLOWS = Path(__file__).resolve().parents[1] / ".github/workflows"
 AI_VM_1_LANE = ["self-hosted", "ai-vm-1"]
 HOSTED = "ubuntu-latest"
-#: The required checks the workspace App reports (trantor's `ci-sp-*` Dagu DAGs, submitted by ci-event.yml): the
+#: The required checks the workspace App reports (trantor's `ci-sp-*` Dagu DAGs, submitted by trantor's webhook receiver): the
 #: contexts of trantor's infrastructure/github/starpulse.tf that ci.yml no longer runs on a pull request or a candidate.
 APP_CHECKS = ["python", "web", "static-checks", "trantor-contract"]
 CI_TEST_JOBS = ["select", "python-shard", "python", "web", "static-checks", "trantor-contract"]
@@ -343,49 +343,6 @@ def test_trantor_contract_re_locks_only_when_this_trees_dependencies_moved_off_t
     assert "uv sync --all-packages --locked || " in sync
     assert sync.index("uv lock") > sync.index("--locked")  # the re-lock is the fallback, never the first command
     assert not [run for run in runs if run.lstrip().startswith("uv lock")]
-
-
-def test_main_follow_submit_runs_on_the_merge_event_lane_and_never_for_a_fork():
-    """The submit reaches trantor's Dagu from the host, and this repository is public: a fork's close must not run it.
-
-    The file is read from the base branch under `pull_request_target`, so a fork cannot edit the condition away.
-    The merge-event lane is one runner no CI job targets, so the close never queues behind the same merge's jobs.
-    """
-    document = yaml.safe_load((WORKFLOWS / "main-follow-on-close.yml").read_text())
-    follow = document["jobs"]["follow"]
-
-    assert document[True] == {"pull_request_target": {"types": ["closed"]}}
-    assert follow["runs-on"] == ["self-hosted", "merge-event"]
-    assert follow["if"] == "github.event.pull_request.head.repo.full_name == github.repository"
-
-
-def test_main_follow_submit_passes_the_merged_outcome_of_the_close():
-    """The reconciler settles a close from its payload; without `--merged` it would read GitHub for the outcome."""
-    step = yaml.safe_load((WORKFLOWS / "main-follow-on-close.yml").read_text())["jobs"]["follow"]["steps"][0]
-
-    assert step["env"]["MERGED"] == "${{ github.event.pull_request.merged }}"
-    assert '--action closed --merged "$MERGED"' in step["run"]
-
-
-def test_main_follow_submit_names_its_run_by_the_close_time_the_webhook_uses():
-    """The receiver keys the same close's run to `closed_at`, so a delivery and this fallback start one Dagu run."""
-    step = yaml.safe_load((WORKFLOWS / "main-follow-on-close.yml").read_text())["jobs"]["follow"]["steps"][0]
-
-    assert step["env"]["EVENT_AT"] == "${{ github.event.pull_request.closed_at }}"
-    assert 'DELIVERY="$(date -d "$EVENT_AT" +%s)"' in step["run"]
-    assert '--delivery "$DELIVERY"' in step["run"]
-    assert "DELIVERY" not in step["env"]
-
-
-def test_only_the_close_submit_targets_the_merge_event_lane():
-    """Two jobs per merge fill the lane's two relay slots, and the next merge's close waits for one to re-register."""
-    on_the_lane = sorted(
-        path.name
-        for path in WORKFLOWS.glob("*.yml")
-        for spec in yaml.safe_load(path.read_text())["jobs"].values()
-        if "merge-event" in str(spec["runs-on"])
-    )
-    assert on_the_lane == ["main-follow-on-close.yml"]
 
 
 def run_step(step: dict, tmp_path, env: dict[str, str], *, uv_exit: int = 0) -> int:

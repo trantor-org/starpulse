@@ -1,7 +1,7 @@
 name: CI
 
 # A pull request and a merge-queue candidate are not here: their required checks (`python`, `web`, `static-checks`,
-# `trantor-contract`) are the workspace App's check runs, posted by trantor's `ci-sp-*` Dagu DAGs, which ci-event.yml
+# `trantor-contract`) are the workspace App's check runs, posted by trantor's `ci-sp-*` Dagu DAGs, which trantor's webhook receiver
 # submits (trantor's ci.md). What runs here is the nightly suite and a manual dispatch; a push to main runs none.
 on:
   push:

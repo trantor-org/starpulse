@@ -3,7 +3,7 @@ name: Comment merge-queue eviction
 # Rationale: trantor docs/infrastructure/ci/rulesets.md, Eviction comment
 # GitHub shows an eviction as one timeline line and deletes the queue branch after the run; this leaves one
 # comment on the pull request naming the `dequeued` reason and, for `failed_checks`, linking each failing check
-# on the queue commit. It checks out nothing: it runs the script from the ai-vm-1 workspace, as ci-event.yml does.
+# on the queue commit. It checks out nothing: it runs the script from the ai-vm-1 workspace, from the host.
 on:
   pull_request:
     types: [dequeued]
