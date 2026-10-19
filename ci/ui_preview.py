@@ -241,6 +241,8 @@ DEMO_REPO = "trantor-org/starpulse"
 DEMO_BRANCH = "gh-pages"
 #: The folder in it that always holds main's demos.
 MAIN_FOLDER = "main"
+#: `--touches` exit status for a change that reaches no UI path; any other non-zero status is an error.
+NO_UI = 3
 #: The hosts a public demo may link to: XML namespaces, the mockup's web font and React's error decoder.
 DEMO_URL_HOSTS = frozenset({"www.w3.org", "fonts.googleapis.com", "fonts.gstatic.com", "react.dev"})
 #: Identifiers the scrub must have removed, by the name a refusal gives them. The scrub's own synthetic UUIDs
@@ -523,6 +525,12 @@ def main(argv: Sequence[str] | None = None) -> int:  # pragma: no cover — proc
     parser.add_argument(
         "--scan", type=Path, metavar="DIR", help="leak-scan the demos built into DIR, publishing nothing"
     )
+    parser.add_argument(
+        "--touches",
+        type=Path,
+        metavar="FILE",
+        help=f"print the surfaces the changed paths in FILE reach, exiting {NO_UI} when none, rendering nothing",
+    )
     parser.add_argument("--main", action="store_true", help="publish this checkout's demos as main's live demo")
     parser.add_argument("--repo", help="owner/name")
     parser.add_argument("--pr", type=int)
@@ -532,6 +540,12 @@ def main(argv: Sequence[str] | None = None) -> int:  # pragma: no cover — proc
     parser.add_argument("--action", help="the pull_request event's action")
     parser.add_argument("--out", type=Path, default=Path(".tmp/ui-preview"), help="where screenshots and demos go")
     args = parser.parse_args(argv)
+    if args.touches:
+        reached = surfaces(args.touches.read_text().split())
+        if not reached:
+            return NO_UI
+        print(*reached, sep="\n")
+        return 0
     if args.scan:
         try:
             scan_demos(sorted(args.scan.glob("*.html")))
