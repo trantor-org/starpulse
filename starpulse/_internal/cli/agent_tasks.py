@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -85,6 +86,35 @@ def _cold_done(base: str) -> Iterator[dict[str, Any]]:
         before = f"&before={page['tasks'][-1]['entered']}"
 
 
+# Code, an existing link or a bare URL is kept as written; only a bare id outside them is linked.
+# A three-digit floor and the `] ` guard keep a criterion's `- [ ] #N` index unlinked.
+_LINKABLE = re.compile(
+    r"(?P<kept>```.*?```|`[^`\n]*`|\[[^\]]*\]\([^)]*\)|https?://\S+)"
+    r"|\b(?P<task>TASK-\d+)\b|(?<![\w/&])(?<!\] )#(?P<pull>\d{3,})\b",
+    re.DOTALL,
+)
+
+
+def linkify(text: str, base: str, pulls: Sequence[Mapping[str, Any]] = ()) -> str:
+    """`text` with each bare `TASK-N` linked to its card on the Board at `base`, and each `#N` to the task's pull
+    request whose link ends `/pull/N`. A `#N` no pull request of the task has is left bare."""
+    urls = {url.rsplit("/", 1)[-1]: url for url in (pull["url"] for pull in pulls)}
+
+    def link(match: re.Match[str]) -> str:
+        if task := match["task"]:
+            return f"[{task}]({base.rstrip('/')}/?view=kanban&task={task})"
+        if (pull := match["pull"]) and pull in urls:
+            return f"[#{pull}]({urls[pull]})"
+        return match[0]
+
+    return _LINKABLE.sub(link, text)
+
+
+def _described(view: dict[str, Any], description: str, base: str) -> dict[str, Any]:
+    """`view` with the task's `description`, its ids linked."""
+    return {**view, "description": linkify(description, base, view["prs"])}
+
+
 def show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     snapshot = agent_wire.snapshot(args, environ)
     wanted = args.task.casefold()
@@ -111,7 +141,8 @@ def show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]
             "moves": {},
             "description": "",
         }
-    return {**task_view(agent, snapshot), "description": agent["description"]}
+    base = agent_wire.server_url(args.server, environ)
+    return _described(task_view(agent, snapshot), agent["description"], base)
 
 
 def _show_cold(base: str, task_id: str, snapshot: dict[str, Any]) -> dict[str, Any]:
@@ -120,7 +151,7 @@ def _show_cold(base: str, task_id: str, snapshot: dict[str, Any]) -> dict[str, A
     if status != 200:
         raise agent_wire.CliError("unavailable", f"{base} answered {status} for the record of {task_id}")
     agent = cold_agent(task_id, document["record"])
-    return {**task_view(agent, snapshot), "description": agent["description"]}
+    return _described(task_view(agent, snapshot), agent["description"], base)
 
 
 def moves(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:

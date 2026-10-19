@@ -94,7 +94,7 @@ def base(tmp_path: Path) -> Iterator[str]:
             profile="@agent-a",
             dependencies=("PROJ-2", "PROJ-3"),
             references=(PULL, "docs/plan.md"),
-            description="Add the verbs.",
+            description="Add the verbs, as in `TASK-9` and TASK-9.",
             moves={
                 "in_progress": Move(allowed=False, reason="claim it first", skill="starting-tasks"),
                 "ready": Move(allowed=True),
@@ -679,7 +679,7 @@ def test_task_show_gives_the_lane_dependencies_what_it_waits_on_prs_and_moves(
 
     assert code == 0
     assert doc["lane"] == "to_do"
-    assert doc["description"] == "Add the verbs."
+    assert doc["description"] == f"Add the verbs, as in `TASK-9` and [TASK-9]({base}/?view=kanban&task=TASK-9)."
     assert doc["dependencies"] == ["PROJ-2", "PROJ-3"]
     assert doc["waiting_on"] == ["PROJ-2"]  # PROJ-3 is completed
     assert doc["prs"][0]["threads"] == 2
