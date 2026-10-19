@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from starpulse._internal.server import zygote
 from starpulse._internal.server.closure import SELF, Reading
 from starpulse._internal.server.supervisor import Supervisor
 from starpulse._internal.server.zygote import Forker
@@ -110,6 +111,19 @@ def test_a_child_handed_a_listening_socket_starts_with_the_fallback_and_the_sock
     assert child == "child"
     assert started == [([*PREFIX, "api"], listening)]
     assert handed._current is None  # no preloaded process was started for it
+    listening.close()
+
+
+def test_a_platform_that_cannot_fork_starts_the_child_with_the_socket_the_forker_holds(monkeypatch) -> None:
+    monkeypatch.setattr(zygote, "fork_supported", lambda: False)  # macOS
+    started: list[tuple[object, ...]] = []
+    listening = socket.socket()
+    held = Forker([], entry=ENTRY, fallback=lambda *args: started.append(args) or "child", listening=listening)
+
+    child = held([*PREFIX, "api"], listening)
+
+    assert child == "child"
+    assert started == [([*PREFIX, "api"], listening)]
     listening.close()
 
 
