@@ -45,8 +45,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-#: The modules whose code turns a task file into what the feed saves. A change to any of them keeps the saved Board but
-#: reads every task file again (`_projection`); a change to the project's config or machine starts from a full scan.
+#: The modules whose code turns a task file into what the feed saves. A change to any of them, or to the project's config
+#: or machine, keeps the saved Board but reads every task file again (`_projection`).
 _PROJECTION = (__name__, "starpulse._internal.feed.board_feed", "starpulse.contracts.adapters")
 
 DEFAULT_PREFIX = "task"
@@ -570,12 +570,12 @@ def project_board(
         # once per task, and a write meeting it waits for the task it places.
         # A restart resumes the Board the last run saved and re-reads only the files changed since it.
         feed.await_stream()
-        files, projection = None, _projection()
-        if feed.resume(log, _state_key(root, board_file), lambda _cursor: True) is not None:
+        files, projection = None, _projection(root, board_file)
+        if feed.resume(log, _state_key(root), lambda _cursor: True) is not None:
             kept = feed.source()
             files = kept.get("files")
             if files and kept.get("projection") != projection:
-                # Other projection code: the saved Board stays what readers serve, every file is read again with the
+                # Other projection code, config or machine: the saved Board stays what readers serve, every file is read again with the
                 # new code, and a file gone meanwhile still retracts its task.
                 files = {name: [0, 0, task_id] for name, (_mtime, _size, task_id) in files.items()}
         moves = board_moves(drawn, declared, lane_ids)
@@ -598,28 +598,27 @@ def project_board(
         cues=lambda qualify: cues,
         waits=compiled.waits if compiled else {},
         source=str(root),
-        state_key=lambda: _state_key(root, board_file),
+        state_key=lambda: _state_key(root),
         **writers(config),
     )
 
 
-def _projection() -> str:
-    """A hash of the code that projects a task file, saved beside the file fingerprints: a Board saved under other code
-    keeps its tasks, but its fingerprints no longer say a file is placed."""
+def _projection(root: Path, machine: Path | None) -> str:
+    """A hash of the code, config and machine that project a task file, saved beside the file fingerprints: a Board saved
+    under another keeps its tasks, but its fingerprints no longer say a file is placed."""
     digest = hashlib.sha256()
     for name in _PROJECTION:
         digest.update(inspect.getsource(importlib.import_module(name)).encode())
-    return digest.hexdigest()[:12]
-
-
-def _state_key(root: Path, machine: Path | None) -> str:
-    """The key a native board's Board is saved under: the project and a hash of the config and machine that project its
-    tasks, so a change to either starts the next run from a full scan. The projection code is not in it (`_projection`)."""
-    digest = hashlib.sha256()
     for path in (root / "config.yml", machine):
         if path is not None and path.is_file():
             digest.update(path.read_bytes())
-    return f"native:{root.resolve()}@{digest.hexdigest()[:12]}"
+    return digest.hexdigest()[:12]
+
+
+def _state_key(root: Path) -> str:
+    """The key a native board's Board is saved under: the project alone, so a deploy that changes what projects its tasks
+    keeps the saved Board (`_projection`)."""
+    return f"native:{root.resolve()}"
 
 
 def board(settings: Mapping[str, Any], base: Path) -> Board:

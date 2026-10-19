@@ -784,6 +784,22 @@ def test_a_child_restarted_on_other_projection_code_publishes_only_the_tasks_tha
     assert sorted(_published_tasks(tmp_path)) == ["task-1", "task-2", "task-2"]
 
 
+def test_a_child_restarted_on_another_board_config_keeps_its_board_and_publishes_only_what_it_moves(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_config(tmp_path / "backlog")
+    for task_id in ("task-1", "task-2"):
+        write_task(tmp_path / "backlog", "tasks", task_id, "To Do")
+    _child_restarted(tmp_path, monkeypatch).save()
+    # a deploy that edits the config without changing what a task projects to: every file is read again
+    with (tmp_path / "backlog" / "config.yml").open("a") as config:
+        config.write("auto_commit: false\n")
+
+    _child_restarted(tmp_path, monkeypatch)
+
+    assert sorted(_published_tasks(tmp_path)) == ["task-1", "task-2"]
+
+
 def test_a_reader_restarted_across_a_projection_change_serves_its_last_board_without_reading(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -127,8 +127,9 @@ stream adapter's read up to its start is: the feed builds the Ledger once, after
 task write that meets the scan waits for it, so even a full scan serves the whole board in seconds. The native board
 also keeps itself saved: the feed saves its Board with each scanned file's fingerprint (modification time and size)
 and task, and a restart resumes that Board and re-reads only the files added, changed or removed since, so unchanged
-files are never read again. The save is keyed by a hash of the projection code, the project's `config.yml` and the
-machine file; a change to any of them, or a save that cannot be read, starts from a full scan instead.
+files are never read again. The save is keyed by the project alone and records a hash of the projection code, the
+project's `config.yml` and the machine file; a deploy that changes any of them keeps the saved Board, reads every file
+again and publishes only the tasks that project differently. A save that cannot be read starts from a full scan.
 An adapter with a writer subclasses
 `BoardAdapterKit` with `writer` set, and the kit then checks that a move the operator may make is written and one
 the machine leaves to the operator is refused to the agent. A board kit also declares `teams`, the team key the
