@@ -258,6 +258,11 @@ class _Guard:
     #: The names a task's `type` may take; empty accepts any.
     types: tuple[str, ...] = ()
 
+    def standing(self, front: Mapping[str, Any], body: str, lane: str) -> tuple[str, str] | None:
+        """The reason and skill of the board rule that refuses moving the task to `lane`, or None (`rules.standing_refusal`)."""
+        broken = rules.standing_refusal(self.rules, front, body, lane)
+        return None if broken is None else (broken.reason, broken.skill)
+
     def refusal(
         self, path: Path, before: str | None, frontmatter: dict, body: str, text: str, actor: str
     ) -> Written | None:
@@ -1049,6 +1054,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             "archive_milestone": native_milestones.archiver(root),
         },
         retired.changes(),
+        guard.standing,
     )
 
     def attach(log: EventLog) -> None:
