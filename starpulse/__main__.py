@@ -1,6 +1,6 @@
-"""`starpulse serve|emit|forward|<verb> ...` (or `python -m starpulse`): the package's command line.
+"""`starpulse serve|forward|<verb> ...` (or `python -m starpulse`): the package's command line.
 
-`serve` runs the view (`starpulse._internal.server.server`), `emit` pushes a workflow run onto the runs stream (`starpulse._internal.runs.emit`) and
+`serve` runs the view (`starpulse._internal.server.server`) and
 `forward` sets the opt-in that lets a person's name leave for a hub (`starpulse._internal.hub.forward`), `connect` writes the
 config's `[board]` for a tracker after checking it answers (`starpulse._internal.cli.connect`) and `import-history` adds a
 board's earlier lane changes to the store (`starpulse._internal.server.history_import`) and `conform` replays the recorded
@@ -27,7 +27,6 @@ def _lazy(module: str) -> Callable[[list[str]], int | None]:
 
 COMMANDS: dict[str, Callable[[list[str]], int | None]] = {
     "serve": _lazy("starpulse._internal.server.server"),
-    "emit": _lazy("starpulse._internal.runs.emit"),
     "forward": _lazy("starpulse._internal.hub.forward"),
     "connect": _lazy("starpulse._internal.cli.connect"),
     "worker": _lazy("starpulse._internal.server.worker"),

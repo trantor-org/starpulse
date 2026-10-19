@@ -8,10 +8,8 @@ The `[board]` table names the board adapter by `type` (`starpulse.board`); the r
 adapter's settings. `database_url` is the SQLAlchemy URL of the history store (`starpulse.history`).
 
 Each `[[runs]]` table is one instance of a runs adapter: its `name`, the adapter module `type` (a built-in name from
-`config.adapter_types`, or the dotted path of a module an installed package provides), the `url` it reads (an instance with a
-`token_env` and neither `type` nor `url` is push-only: it pulls nothing and draws what the ingest receives), the workflows Run now may start (`run_safe`) and the `domains` that
-group its workflows on the page, and optionally `token_env`, the name of the environment variable that holds the
-token the HTTP ingest accepts for it (the token itself is never in this file). A workflow is shown as `<instance>/<workflow>`, so two instances can
+`config.adapter_types`, or the dotted path of a module an installed package provides), the `url` it reads, the workflows Run now may start (`run_safe`) and the `domains` that
+group its workflows on the page. A workflow is shown as `<instance>/<workflow>`, so two instances can
 carry the same workflow name.
 
 The optional `[level]` table configures the flow graph a hub draws above the Board (`starpulse._internal.config.level`).
@@ -30,11 +28,11 @@ from types import ModuleType
 from urllib.parse import urlsplit
 
 from starpulse._internal.config.adapter_types import module_name
+from starpulse._internal.config.analytics import Analytics, AnalyticsError, parse_analytics
 from starpulse._internal.config.autopilot import Autopilot, AutopilotError, parse_autopilot
 from starpulse._internal.config.cursor_context import CursorContext, CursorContextError, parse_cursor_context
-from starpulse._internal.config.level import Level, LevelError, parse_level
 from starpulse._internal.config.harnesses import Harnesses, load_harnesses
-from starpulse._internal.config.analytics import Analytics, AnalyticsError, parse_analytics
+from starpulse._internal.config.level import Level, LevelError, parse_level
 from starpulse._internal.config.search import Search, SearchError, parse_search
 
 #: The default of `slow_read_seconds`.
@@ -90,7 +88,7 @@ _OIDC_KEYS = {
     "engine_token_env",
     "reader_token_env",
 }
-_INSTANCE_KEYS = {"name", "type", "url", "run_safe", "domains", "token_env", "commit"}
+_INSTANCE_KEYS = {"name", "type", "url", "run_safe", "domains", "commit"}
 _COMMIT_KEYS = {"after", "before", "force", "task"}
 _REPO_KEYS = {"name", "path", "applied_by"}
 _FORWARD_KEYS = {"url", "token_env", "batch"}
@@ -156,8 +154,6 @@ class RunsInstance:
     """The page's groups of this instance's workflows, in the order it lays them out; a nested domain lists its workflows name-sorted."""
     processes: Mapping[str, tuple[tuple[str, tuple[str, ...]], ...]] = field(default_factory=dict)
     """Each domain's ordered `(process, workflows)` packages; an empty tuple is a flat domain."""
-    token_env: str | None = None
-    """The environment variable holding this instance's ingest token; none: the instance takes no pushed events."""
     commit: CommitKeys | None = None
     """The `[runs.commit]` table; none: a run pairs with a merge only by the time it started."""
 
@@ -300,9 +296,7 @@ def runs_adapter(kind: str) -> ModuleType:
 def _instance(raw: object) -> RunsInstance:
     if not isinstance(raw, dict):
         raise ConfigError("runs must be a list of [[runs]] tables")
-    # An instance with a token and neither half of a pull adapter pulls nothing: it draws what the ingest receives.
-    push_only = "token_env" in raw and "type" not in raw and "url" not in raw
-    for key in ("name",) if push_only else ("name", "type", "url"):
+    for key in ("name", "type", "url"):
         if key not in raw:
             raise ConfigError(f"a runs instance needs {key}")
     name = raw["name"]
@@ -314,22 +308,16 @@ def _instance(raw: object) -> RunsInstance:
             [f"runs.{name}.{key}" for key in unknown],
         )
     kind, url = raw.get("type"), raw.get("url")
-    if not push_only:
-        try:
-            runs_adapter(kind)
-        except ConfigError as exc:
-            raise ConfigError(f"runs instance {name}: {exc}") from exc
-        if not isinstance(url, str):
-            raise ConfigError(f"runs instance {name}: url must be text")
+    try:
+        runs_adapter(kind)
+    except ConfigError as exc:
+        raise ConfigError(f"runs instance {name}: {exc}") from exc
+    if not isinstance(url, str):
+        raise ConfigError(f"runs instance {name}: url must be text")
     run_safe, domains = raw.get("run_safe", []), raw.get("domains", {})
     if not _names(run_safe):
         raise ConfigError(f"runs instance {name}: run_safe must be a list of workflow names")
-    if push_only and run_safe:
-        raise ConfigError(f"runs instance {name}: a push-only instance has no start, so run_safe does not apply")
     flat, processes = _domains(domains, name)
-    token_env = raw.get("token_env")
-    if token_env is not None and not (isinstance(token_env, str) and _ENV_NAME.fullmatch(token_env)):
-        raise ConfigError(f"runs instance {name}: token_env must be the name of an environment variable")
     return RunsInstance(
         name,
         kind,
@@ -337,7 +325,6 @@ def _instance(raw: object) -> RunsInstance:
         tuple(run_safe),
         flat,
         processes,
-        token_env,
         _commit(raw["commit"], name) if "commit" in raw else None,
     )
 
@@ -484,7 +471,7 @@ def _producer(raw: object) -> Producer:
     return Producer(name, _token_env(raw["token_env"], f"{who}:"), machines, actors)
 
 
-def _producers(raw: object, runs: Sequence[RunsInstance] = ()) -> tuple[Producer, ...]:
+def _producers(raw: object) -> tuple[Producer, ...]:
     if not isinstance(raw, list):
         raise ConfigError("producers must be a list of [[producers]] tables")
     producers = tuple(_producer(table) for table in raw)
@@ -495,9 +482,6 @@ def _producers(raw: object, runs: Sequence[RunsInstance] = ()) -> tuple[Producer
             raise ConfigError(
                 f"producers {shared.name} and {producer.name} share token_env {producer.token_env}; each needs its own token"
             )
-    pushing = {instance.name for instance in runs if instance.token_env}
-    if clash := next((p for p in producers if p.name in pushing), None):
-        raise ConfigError(f"producer {clash.name} is also a [[runs]] instance with a token_env; name them apart")
     return producers
 
 
@@ -639,12 +623,6 @@ class Config:
     """The optional embeddings service that ranks search by meaning (`[search]`); no table: search is lexical only."""
     cursor_context: CursorContext = field(default_factory=CursorContext)
     """The context limit a Cursor task session is reset at (`[cursor_context]`); no table: 150000 of a 200000 window."""
-
-    def ingest_producers(self) -> tuple[Producer, ...]:
-        """The producers the CloudEvents ingest takes: `[[producers]]`, then each `[[runs]]` instance with a `token_env`
-        folded in as a producer that writes no machine, which is how its pushed runs reach the ingest."""
-        pushing = tuple(Producer(i.name, i.token_env, (), ()) for i in self.runs if i.token_env)
-        return self.producers + pushing
 
     def qualified_domains(self) -> dict[str, tuple[str, ...]]:
         """Every instance's domains as `<instance>/<workflow>`, one entry per domain name, in first-seen order."""
@@ -788,11 +766,6 @@ def load(path: Path | None) -> Config:
     for at, instance in enumerate(runs):
         if any(instance.name == earlier.name for earlier in runs[:at]):
             raise ConfigError(f"runs instance {instance.name} is configured twice")
-        if instance.token_env and (shared := next((e for e in runs[:at] if e.token_env == instance.token_env), None)):
-            raise ConfigError(
-                f"runs instances {shared.name} and {instance.name} share token_env {instance.token_env}; "
-                "each needs its own token"
-            )
     if not isinstance(session_start_url := raw.get("session_start_url"), str | None):
         raise ConfigError("session_start_url must be text")
     retention = _retention(raw.get("hub_retention_days", 14), "hub_retention_days")
@@ -841,7 +814,7 @@ def load(path: Path | None) -> Config:
         _forward(raw.get("forward")),
         _sources(raw.get("sources", [])),
         _flag(raw, "aggregates_only", False),
-        producers=_producers(raw.get("producers", []), runs),
+        producers=_producers(raw.get("producers", [])),
         event_log_retention_days=log_retention,
         event_log_archive_dir=_archive_dir(raw.get("event_log_archive_dir", "starpulse-archive")),
         repos=repos,

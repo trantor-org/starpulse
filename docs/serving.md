@@ -317,8 +317,6 @@ type = "dagu"
 url = "http://dagu.example.com:8080"
 run_safe = ["nightly"]                   # the workflows the page's Run now may start
 domains = { Data = ["nightly", "etl"] }  # how the page groups this instance's workflows
-token_env = "DAGU_INGEST_TOKEN"          # deprecated, goes in 0.5: the push token for this instance, read as a `[[producers]]` entry
-                                         # of the same name (so name them apart); declare `[[producers]]` instead (docs/sources.md)
 
 # Optional: a producer that posts machine events as CloudEvents (see docs/sources.md, Post machine events as CloudEvents).
 # `POST /api/machine-events` answers 404 until one is declared. A producer writes only the machines and actors listed here.

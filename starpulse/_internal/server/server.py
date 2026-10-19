@@ -10,7 +10,7 @@ GET /auth/login, /auth/callback
                    a hub's sign-in (`serve --hub`; an IC instance has no sign-in): login sends the browser to the OpenID
                    Connect issuer, the callback finishes the sign-in with a session cookie and sends it to /, or
                    answers 403 naming why an account outside `allowed_groups` was refused. Every other route of a hub,
-                   this one included, answers 401 until then; a bearer token is no session (see POST /api/runs/events),
+                   this one included, answers 401 until then; a bearer token is no session (see POST /api/machine-events),
                    except that a GET or HEAD carrying the hub's reader token (`reader_token_env`) is served
 GET /              the page, built by `pnpm --filter @starpulse/web build` into static/: one view
                    that drills Board → Board state → machine, or Board → workflow. It holds one
@@ -200,17 +200,6 @@ POST /api/machine-events
                    contract refuses, 401 for a missing or wrong token, 403 for another producer's source, machine or
                    actor, 413 over the limit, 503 when the log refuses it, 404 when no producer is declared. A batch is
                    checked whole, and a refusal writes nothing. A GET answers 405
-POST /api/runs/events
-                   deprecated in 0.4, removed in 0.5: a shim over `POST /api/machine-events`. It takes
-                   {event, workflow: "<instance>/<workflow>", run_id, status[, time, step, depends]} with `Authorization:
-                   Bearer <token>` and writes the Step CloudEvent that body names through the ingest, as the producer
-                   its token belongs to: a producer declared in `[[producers]]`, or a `[[runs]]` instance with a
-                   `token_env` (itself deprecated: a warning at start names the `[[producers]]` entry to declare), and a
-                   token pushes only its own instance's workflows. 201 {accepted, deprecated} when the log took the
-                   event, which the page draws as `pushed/<instance>/<workflow>`; 401 for a missing or wrong token,
-                   403 for another instance's workflow, 400 for an event the contract does not allow, 413 over 64 KiB,
-                   503 when the log refuses it, 404 when no producer or instance has a token. A refusal writes
-                   nothing. A GET answers 405
 POST /api/insights
                    a hub's fourth contract (`serve --hub` with `engine_token_env` in `[oidc]`; any other server answers
                    404): an external engine posts one `Finding` {id, engine {name, version}, scope {team, machine,
@@ -254,7 +243,7 @@ from starpulse._internal.board.seam import (
 )
 from starpulse._internal.harnesses.session_start import starter
 from starpulse._internal.runs.cloudevents import CloudEventsIngest
-from starpulse._internal.runs.ingest import ForwardIngest, Ingest
+from starpulse._internal.runs.ingest import ForwardIngest
 from starpulse._internal.runs.ingest import tokens as ingest_tokens
 from starpulse._internal.pulls.delivery import Projected, follow_notes, follow_saves, metrics_of, request_refresh
 from starpulse._internal.pulls.task_actor import TaskActor, moves_of
@@ -773,7 +762,6 @@ class Prepared(NamedTuple):
     """What the config and the environment settle before anything starts: `serve` fails on it before it spawns a child,
     and the Page API is built from it."""
 
-    instance_tokens: dict[str, str]
     source_tokens: dict[str, str]
     refresh_token: str | None
     gate: Any
@@ -786,17 +774,10 @@ class Prepared(NamedTuple):
 def prepare(parser: argparse.ArgumentParser, args: argparse.Namespace, config: Config) -> Prepared:
     """Check `config` and the environment for serving, exiting with the reason when they cannot serve."""
     try:
-        instance_tokens = ingest_tokens(config.runs, os.environ)
         source_tokens = ingest_tokens(config.sources, os.environ)
-        producer_tokens = ingest_tokens(config.ingest_producers(), os.environ)
+        producer_tokens = ingest_tokens(config.producers, os.environ)
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")
-    if instance_tokens:
-        print(
-            f"starpulse: [[runs]] token_env ({', '.join(instance_tokens)}) is deprecated and goes in 0.5: "
-            "declare each push token as a [[producers]] entry and post to /api/machine-events",
-            file=sys.stderr,
-        )
     refresh_token = os.environ.get(config.refresh_token_env or "")
     if config.refresh_token_env and not refresh_token:
         parser.exit(1, f"refresh_token_env: {config.refresh_token_env} is not set\n")
@@ -812,7 +793,7 @@ def prepare(parser: argparse.ArgumentParser, args: argparse.Namespace, config: C
         if config.oidc is None:
             parser.exit(1, "hub mode needs an [oidc] table: viewers sign in before anything is drawn\n")
         try:
-            gate = oidc.build(config.oidc, os.environ, instance_tokens)
+            gate = oidc.build(config.oidc, os.environ)
             hub.prepare(config.database_url)
         except (ValueError, hub.HubError) as exc:  # HubError is a ValueError, named for the reader
             parser.exit(1, f"{exc}\n")
@@ -829,7 +810,7 @@ def prepare(parser: argparse.ArgumentParser, args: argparse.Namespace, config: C
         if (factory := getattr(adapter, "rerun", None)) and (rerun := factory(instance.url))
     }
     run_safe = [name for name in config.qualified_run_safe() if name.partition("/")[0] in starts]
-    return Prepared(instance_tokens, source_tokens, refresh_token, gate, starts, reruns, run_safe, producer_tokens)
+    return Prepared(source_tokens, refresh_token, gate, starts, reruns, run_safe, producer_tokens)
 
 
 def refuse_unassemblable(
@@ -889,7 +870,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     from starpulse._internal.pulls.pulls import PullStore  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse._internal.server.assembly import assemble, history_store  # noqa: PLC0415 - the database stack loads after the config is accepted
 
-    instance_tokens, source_tokens, refresh_token, gate, starts, reruns, run_safe, producer_tokens = ready
+    source_tokens, refresh_token, gate, starts, reruns, run_safe, producer_tokens = ready
     if args.hub:
         from starpulse._internal.hub import hub  # noqa: PLC0415 - hub-only code; `prepare` found it importable
     base = args.config.parent if args.config else Path.cwd()
@@ -1027,7 +1008,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
 
     cloudevents = (
         CloudEventsIngest(
-            {p.name: p for p in config.ingest_producers()}, producer_tokens, log, {**feed.machines, **GITHUB_MACHINES}
+            {p.name: p for p in config.producers}, producer_tokens, log, {**feed.machines, **GITHUB_MACHINES}
         )
         if producer_tokens
         else None
@@ -1049,7 +1030,6 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         board.create,
         complete=board.complete,
         restore=board.restore,
-        ingest=Ingest(cloudevents) if instance_tokens else None,
         gate=gate,
         forward=ForwardIngest(source_tokens, log, aggregates_only=config.aggregates_only) if source_tokens else None,
         level=config.level if args.hub else None,

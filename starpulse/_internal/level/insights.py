@@ -123,7 +123,7 @@ class Insights:
         self._store, self._feed, self._clock = store, feed, clock
 
     def __call__(self, _authorization: str | None, raw: bytes) -> tuple[int, dict[str, Any]]:
-        """Answer a pushed body as `Ingest` does; the gate has already checked the engine token, so the header is unread."""
+        """Answer a pushed body as `ForwardIngest` does; the gate has already checked the engine token, so the header is unread."""
         return self.post(raw)
 
     def post(self, raw: bytes) -> tuple[int, dict[str, Any]]:

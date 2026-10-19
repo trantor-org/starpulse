@@ -40,7 +40,6 @@ from starpulse.contracts.api.dto.requests import (
     RetiredImportRequest,
     RetireRequest,
     ReviewRequest,
-    RunEventRequest,
     StartRequest,
     VerdictRequest,
     WindowRequest,
@@ -167,7 +166,6 @@ REQUESTS: dict[str, type[BaseModel]] = {
     "/api/history-window": WindowRequest,
     "/api/forwarding": ForwardingRequest,
     "/api/autopilot": AutopilotRequest,
-    "/api/runs/events": RunEventRequest,
     "/api/forward": ForwardRequest,
     "/api/insights": Finding,
 }

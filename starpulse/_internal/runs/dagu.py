@@ -3,7 +3,7 @@
 `dags` reads one Dagu instance, by URL, into those records. `start` and `follow` are what a runs adapter module
 offers the server for one configured instance: its start capability, and the reading of its workflows. The page used to poll Dagu: one listing
 plus one request per DAG every few seconds. Dagu's `handler_on` hooks now publish each run's start and end
-through `starpulse emit`, so one listing at start and at every reconnect gives each DAG its step graph
+to `POST /api/machine-events`, so one listing at start and at every reconnect gives each DAG its step graph
 and latest run, and the entries on the runs stream after it move them (`DaguRuns`). A listing every 30 s keeps
 the page right for a run no entry reported, such as one on a Dagu without the hooks.
 """

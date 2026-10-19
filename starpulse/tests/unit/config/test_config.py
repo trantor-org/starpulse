@@ -135,36 +135,21 @@ def test_an_instance_needs_a_name_a_type_and_a_url(tmp_path: Path, missing: str)
     assert _refusal(tmp_path, text) == f"a runs instance needs {missing}"
 
 
-def test_an_instance_with_a_token_and_no_type_or_url_is_push_only(tmp_path: Path) -> None:
-    (only,) = load(_write(tmp_path, '[[runs]]\nname = "cron"\ntoken_env = "CRON_INGEST_TOKEN"\n')).runs
-
-    assert (only.name, only.type, only.url, only.token_env) == ("cron", None, None, "CRON_INGEST_TOKEN")
-
-
-def test_an_instance_with_neither_a_type_nor_a_token_is_refused(tmp_path: Path) -> None:
+def test_an_instance_with_no_type_is_refused(tmp_path: Path) -> None:
     assert _refusal(tmp_path, '[[runs]]\nname = "cron"\n') == "a runs instance needs type"
 
 
-@pytest.mark.parametrize("given", ['type = "dagu"', 'url = "http://ci.test"'])
-def test_a_push_only_instance_takes_neither_half_of_a_pull_adapter(tmp_path: Path, given: str) -> None:
-    text = f'[[runs]]\nname = "cron"\ntoken_env = "CRON_INGEST_TOKEN"\n{given}\n'
+def test_a_token_env_on_an_instance_is_an_unknown_key(tmp_path: Path) -> None:
+    text = '[[runs]]\nname = "cron"\ntype = "dagu"\nurl = "http://ci.test"\ntoken_env = "CRON_INGEST_TOKEN"\n'
 
-    assert _refusal(tmp_path, text) == f"a runs instance needs {'url' if given.startswith('type') else 'type'}"
-
-
-def test_a_push_only_instance_has_nothing_to_start_so_run_safe_is_refused(tmp_path: Path) -> None:
-    text = '[[runs]]\nname = "cron"\ntoken_env = "CRON_INGEST_TOKEN"\nrun_safe = ["nightly"]\n'
-
-    assert _refusal(tmp_path, text) == (
-        "runs instance cron: a push-only instance has no start, so run_safe does not apply"
-    )
+    assert "unknown key(s) token_env" in _refusal(tmp_path, text)
 
 
 def test_an_unknown_instance_key_is_refused_by_name_beside_the_known_ones(tmp_path: Path) -> None:
     text = '[[runs]]\nname = "ci"\ntype = "dagu"\nurl = "http://ci.test"\nrunsafe = []\nzeta = 1\n'
 
     assert _refusal(tmp_path, text) == (
-        "runs instance ci: unknown key(s) runsafe, zeta; known: commit, domains, name, run_safe, token_env, type, url"
+        "runs instance ci: unknown key(s) runsafe, zeta; known: commit, domains, name, run_safe, type, url"
     )
 
 
@@ -323,34 +308,6 @@ def test_a_session_start_address_that_is_not_text_is_refused(tmp_path: Path) -> 
 )
 def test_a_board_or_database_setting_of_the_wrong_shape_is_refused(tmp_path: Path, text: str, refusal: str) -> None:
     assert _refusal(tmp_path, text) == refusal
-
-
-def test_an_instance_names_the_environment_variable_that_holds_its_ingest_token(tmp_path: Path) -> None:
-    text = '[[runs]]\nname = "cron"\ntype = "dagu"\nurl = "http://cron.test"\ntoken_env = "CRON_INGEST_TOKEN"\n'
-
-    (cron,) = load(_write(tmp_path, text)).runs
-
-    assert cron.token_env == "CRON_INGEST_TOKEN"
-
-
-def test_an_instance_with_no_token_env_takes_no_pushed_events(tmp_path: Path) -> None:
-    (prod, _) = load(_write(tmp_path, _TWO_INSTANCES)).runs
-
-    assert prod.token_env is None
-
-
-@pytest.mark.parametrize("value", ["1", '""', '"has space"', '"9LIVES"', "[]"])
-def test_a_token_env_that_is_not_an_environment_variable_name_is_refused(tmp_path: Path, value: str) -> None:
-    text = f'[[runs]]\nname = "cron"\ntype = "dagu"\nurl = "http://cron.test"\ntoken_env = {value}\n'
-
-    assert _refusal(tmp_path, text) == "runs instance cron: token_env must be the name of an environment variable"
-
-
-def test_two_instances_cannot_share_a_token_env(tmp_path: Path) -> None:
-    one = '[[runs]]\nname = "{}"\ntype = "dagu"\nurl = "http://x.test"\ntoken_env = "SHARED"\n'
-    text = one.format("a") + one.format("b")
-
-    assert _refusal(tmp_path, text) == "runs instances a and b share token_env SHARED; each needs its own token"
 
 
 def test_a_hub_keeps_two_weeks_of_raw_events_unless_the_config_says_otherwise(tmp_path: Path) -> None:
@@ -548,30 +505,11 @@ def test_producers_are_the_systems_that_post_machine_events_each_with_its_token_
     assert load(None).producers == ()
 
 
-def test_a_runs_instance_with_a_push_token_folds_into_the_producers_that_write_no_machine(tmp_path: Path) -> None:
-    text = (
-        '[[runs]]\nname = "cron"\ntoken_env = "CRON_TOKEN"\n\n'
-        '[[runs]]\nname = "ci"\ntype = "dagu"\nurl = "http://ci.test"\n\n'
-        '[[producers]]\nname = "gha"\ntoken_env = "GHA_TOKEN"\nmachines = ["ci"]\nactors = ["ci"]\n'
-    )
-
-    config = load(_write(tmp_path, text))
-
-    assert config.ingest_producers() == (Producer("gha", "GHA_TOKEN", ("ci",), ("ci",)), Producer("cron", "CRON_TOKEN", (), ()))
-    assert config.producers == (Producer("gha", "GHA_TOKEN", ("ci",), ("ci",)),)
-
-
-def test_a_runs_instance_and_a_producer_with_one_name_are_refused(tmp_path: Path) -> None:
-    text = '[[runs]]\nname = "cron"\ntoken_env = "CRON_TOKEN"\n\n' + "[[producers]]\n" + _PRODUCER.replace("dagu", "cron")
-
-    assert _refusal(tmp_path, text) == "producer cron is also a [[runs]] instance with a token_env; name them apart"
-
-
-def test_a_producer_that_lists_no_machines_or_actors_only_reports_runs(tmp_path: Path) -> None:
+def test_a_producer_that_lists_no_machines_or_actors__is_still_a_producer(tmp_path: Path) -> None:
     config_file = tmp_path / "starpulse.toml"
     config_file.write_text('[[producers]]\nname = "cron"\ntoken_env = "CRON_TOKEN"\n')
 
-    (producer,) = load(config_file).ingest_producers()
+    (producer,) = load(config_file).producers
 
     assert (producer.name, producer.machines, producer.actors) == ("cron", (), ())
 

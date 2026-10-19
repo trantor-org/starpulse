@@ -1,4 +1,4 @@
-"""`PushRuns`: workflows known only from `starpulse emit` entries, and the step graph their steps teach."""
+"""`PushRuns`: workflows known only from CloudEvent run entries, and the step graph their steps teach."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ START = 1_700_000_000.0
 def fields(
     phase: str, status: str, *, run: str = "r1", at: float = START, workflow: str = "nightly", **step: Any
 ) -> dict:
-    """An entry as the event log holds it: the JSON `starpulse emit` appended, a list still a list."""
+    """An entry as the event log holds it: the JSON the ingest appended, a list still a list."""
     return run_events.entry(phase, workflow, run, status, now=at, **step)
 
 

@@ -351,15 +351,6 @@ events add up to, and that graph is kept in the history store across restarts. A
 producer: a missing or wrong token answers 401, another producer's `source` 403, an event the contract does not allow
 400, and none of them writes anything; the other answers are the machine events' table below.
 
-### The 0.4 shims
-
-`POST /api/runs/events`, `starpulse emit` and a `[[runs]]` instance's `token_env` still work in 0.4 as shims over the
-ingest and go in 0.5. Each prints a deprecation notice (the endpoint's 201 carries it as `deprecated`; `emit` writes it to
-stderr; `serve` warns at start), and a `[[runs]]` push token is read as a producer of the same name, so it must not
-share a name with a `[[producers]]` entry. To move off them, declare a `[[producers]]` entry and post the Step event
-above: the endpoint's body (`event`, `workflow` named `<instance>/<workflow>`, `run_id`, `status`, optionally `time`,
-`step` and `depends`) maps to `type`, the plain workflow name in `data`, `subject` and `data.status`.
-
 ## Post machine events as CloudEvents
 
 A build job, a bot or any service that is not on the host posts a lifecycle machine's event over HTTP as a

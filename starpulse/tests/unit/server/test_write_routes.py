@@ -99,7 +99,8 @@ def test_a_put_of_the_history_window_is_guarded_like_a_post(routes: WriteRoutes)
         ("GET", "/api/move"),
         ("PUT", "/api/move"),
         ("DELETE", "/api/move"),
-        ("POST", "/api/runs/events"),  # no ingest configured
+        ("POST", "/api/runs/events"),  # the 0.4 shim, removed in 0.5
+        ("POST", "/api/forward"),  # no forward ingest configured
         ("DELETE", "/api/insights/abc"),  # no insights configured: the window's DELETE, which is no such path
     ],
 )
@@ -110,9 +111,9 @@ def test_a_method_and_path_that_are_no_write_route_are_left_to_the_server(
 
 
 def test_a_push_reaches_its_ingest_with_the_token_and_the_whole_body(feed: BoardFeed, tmp_path: Path) -> None:
-    routes = _routes(feed, tmp_path, ingest=_unauthorised)
+    routes = _routes(feed, tmp_path, forward=_unauthorised)
 
-    response = _write(routes, "POST", "/api/runs/events", body=b"payload", headers={"Authorization": "Bearer t"})
+    response = _write(routes, "POST", "/api/forward", body=b"payload", headers={"Authorization": "Bearer t"})
 
     assert response is not None
     assert response.status == 401
@@ -121,12 +122,12 @@ def test_a_push_reaches_its_ingest_with_the_token_and_the_whole_body(feed: Board
 
 
 def test_a_push_over_its_limit_is_refused_unread_and_closes_the_connection(feed: BoardFeed, tmp_path: Path) -> None:
-    routes = _routes(feed, tmp_path, ingest=_unauthorised)
+    routes = _routes(feed, tmp_path, forward=_unauthorised)
 
     def unread(size: int) -> bytes:
         raise AssertionError("an oversized body is not read")
 
-    request = WriteRequest("POST", "/api/runs/events", "127.0.0.1", {"Content-Length": str(10**9)}, unread)
+    request = WriteRequest("POST", "/api/forward", "127.0.0.1", {"Content-Length": str(10**9)}, unread)
     response = routes(request)
 
     assert response is not None
@@ -135,9 +136,9 @@ def test_a_push_over_its_limit_is_refused_unread_and_closes_the_connection(feed:
 
 
 def test_an_unreadable_length_on_a_push_is_read_as_empty(feed: BoardFeed, tmp_path: Path) -> None:
-    routes = _routes(feed, tmp_path, ingest=_unauthorised)
+    routes = _routes(feed, tmp_path, forward=_unauthorised)
     request = WriteRequest(
-        "POST", "/api/runs/events", "127.0.0.1", {"Content-Length": "many"}, lambda size: b"x" * size
+        "POST", "/api/forward", "127.0.0.1", {"Content-Length": "many"}, lambda size: b"x" * size
     )
 
     response = routes(request)
@@ -150,7 +151,8 @@ def test_an_unreadable_length_on_a_push_is_read_as_empty(feed: BoardFeed, tmp_pa
     ("path", "post_only"),
     [
         ("/api/move", True),
-        ("/api/runs/events", True),
+        ("/api/forward", True),
+        ("/api/runs/events", False),
         ("/api/run/instance/workflow", True),
         ("/api/runs/instance/workflow/rerun", True),
         ("/api/doctor", False),

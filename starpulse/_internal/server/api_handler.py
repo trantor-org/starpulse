@@ -39,7 +39,7 @@ from starpulse._internal.harnesses.telemetry import TelemetryLog
 from starpulse._internal.hub.forward import Forwarder
 from starpulse._internal.pulls.pull_refresh import PullRefresh
 from starpulse._internal.runs.cloudevents import CloudEventsIngest
-from starpulse._internal.runs.ingest import ForwardIngest, Ingest
+from starpulse._internal.runs.ingest import ForwardIngest
 from starpulse._internal.server.compression import LEVEL, Encoded, accepts_gzip, compressed, gzip_stream
 from starpulse._internal.server.encoding import encode, event
 from starpulse._internal.server.reads import Arrival, ReadRoutes, Request, Response
@@ -316,7 +316,6 @@ def request_handler(
     archive: TaskArchiver | None = None,
     create: TaskCreator | None = None,
     clock: Callable[[], float] = time.time,
-    ingest: Ingest | None = None,
     gate: Callable[[BaseHTTPRequestHandler], bool] | None = None,
     forward: ForwardIngest | None = None,
     level: Level | None = None,
@@ -381,7 +380,6 @@ def request_handler(
         restore=restore,
         complete=complete,
         create=create,
-        ingest=ingest,
         events=events,
         forward=forward,
         insights=insights,

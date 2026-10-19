@@ -1,4 +1,4 @@
-"""Workflows known only from `starpulse emit`: their latest run, and a step graph learned from the steps reported.
+"""Workflows known only from CloudEvents pushed to `POST /api/machine-events`: their latest run, and a step graph learned from the steps reported.
 
 A pushed workflow has no listing to read its steps from, so each step an entry names joins the graph, with the
 steps it said it waits on. The graph is kept in the history store, so after a restart the workflow is drawn with

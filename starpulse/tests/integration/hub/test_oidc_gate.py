@@ -22,7 +22,7 @@ pytest.importorskip("jwt", reason="the hub extras are not installed")
 
 from starpulse._internal.config.config import Producer
 from starpulse._internal.runs.cloudevents import CloudEventsIngest
-from starpulse._internal.runs.ingest import ForwardIngest, Ingest
+from starpulse._internal.runs.ingest import ForwardIngest
 from starpulse._internal.server import server
 from starpulse._internal.server import writes
 from starpulse._internal.kit.adapter_kit import serve, url
@@ -119,7 +119,6 @@ def running_hub(issuer: str, tmp_path: Path, store: HistoryStore) -> Iterator[Hu
         clock=lambda: NOW,
         level=LEVEL,
         gate=lambda handler: gates[0](handler),
-        ingest=Ingest(events),
         events=events,
         forward=ForwardIngest({"laptop": FORWARD_TOKEN}, log),
         insights=insights,
@@ -213,13 +212,22 @@ def test_a_callback_whose_state_the_hub_never_issued_is_refused(hub: Hub) -> Non
     assert hub.call("/auth/callback?code=x&state=forged", headers={"Cookie": cookie})[0] == 400
 
 
-def test_a_viewer_session_does_not_pass_on_the_instance_ingest_route(hub: Hub) -> None:
+def test_a_viewer_session_does_not_pass_on_the_instance_token_route(hub: Hub) -> None:
     cookie = session_of(sign_in(hub, "alice", ["ops"]))
-    event = json.dumps({"event": "StepStarted", "workflow": "cron/nightly", "run_id": "r1", "status": "running"}).encode()
-    post = {"Content-Type": "application/json", "Cookie": cookie}
+    event = json.dumps(
+        {
+            "specversion": "1.0",
+            "id": "e1",
+            "source": "cron",
+            "type": "StepStarted",
+            "subject": "r1",
+            "data": {"workflow": "nightly", "status": "running"},
+        }
+    ).encode()
+    post = {"Content-Type": "application/cloudevents+json", "Cookie": cookie}
 
-    assert hub.call("/api/runs/events", "POST", post, event)[0] == 401
-    assert hub.call("/api/runs/events", "POST", {**post, "Authorization": f"Bearer {INSTANCE_TOKEN}"}, event)[0] == 201
+    assert hub.call("/api/machine-events", "POST", post, event)[0] == 401
+    assert hub.call("/api/machine-events", "POST", {**post, "Authorization": f"Bearer {INSTANCE_TOKEN}"}, event)[0] == 201
 
 
 def test_a_viewer_session_does_not_pass_on_the_forward_route_but_a_source_token_does(hub: Hub) -> None:
@@ -246,7 +254,7 @@ def test_the_engine_token_passes_only_on_engine_routes(hub: Hub) -> None:
     assert hub.call(PROBE, headers=viewer)[0] == 401
     assert hub.call(PROBE)[0] == 401
     assert hub.call("/api/snapshot", headers=engine)[0] == 401
-    assert hub.call("/api/runs/events", "POST", {**engine, "Content-Type": "application/json"}, b"{}")[0] == 401
+    assert hub.call("/api/machine-events", "POST", {**engine, "Content-Type": "application/json"}, b"{}")[0] == 401
 
 
 FINDING = {
@@ -288,7 +296,6 @@ def test_the_built_in_routes_open_to_the_gate_are_the_sign_in_the_instance_token
 ):
     assert {path for path, access in ROUTES.items() if access == PUBLIC} == SIGN_IN
     assert {path for path, access in ROUTES.items() if access == INSTANCE} == {
-        "/api/runs/events",
         "/api/forward",
         "/api/machine-events",
     }
@@ -341,7 +348,7 @@ def test_the_reader_token_writes_nothing(hub: Hub) -> None:
         ("POST", "/api/move"),
         ("PUT", "/api/history-window"),
         ("DELETE", "/api/history-window"),
-        ("POST", "/api/runs/events"),
+        ("POST", "/api/machine-events"),
         ("POST", "/api/forward"),
         ("POST", "/api/insights"),
         ("DELETE", "/api/insights/slow-review"),

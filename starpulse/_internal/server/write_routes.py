@@ -24,7 +24,6 @@ from starpulse._internal.server.routes import (
     _EDIT,
     _FORWARD,
     _FORWARDING,
-    _INGEST,
     _INSIGHTS,
     _MACHINE_EVENTS,
     _MILESTONE_ARCHIVE,
@@ -102,7 +101,7 @@ if TYPE_CHECKING:  # annotation only: a runtime import would put the autopilot i
     from starpulse._internal.level.insights import Insights
     from starpulse._internal.pulls.pull_refresh import PullRefresh
     from starpulse._internal.runs.cloudevents import CloudEventsIngest
-    from starpulse._internal.runs.ingest import ForwardIngest, Ingest
+    from starpulse._internal.runs.ingest import ForwardIngest
 
 
 class Headers(Protocol):
@@ -148,7 +147,6 @@ class WriteRoutes:
         restore: TaskRestorer | None = None,
         complete: TaskCompleter | None = None,
         create: TaskCreator | None = None,
-        ingest: Ingest | None = None,
         events: CloudEventsIngest | None = None,
         forward: ForwardIngest | None = None,
         insights: Insights | None = None,
@@ -190,7 +188,6 @@ class WriteRoutes:
         }
         # The pushes a deployment may leave unconfigured: their route is then none, and a POST of it answers 404.
         self._pushes: dict[str, tuple[Pushed | None, int]] = {
-            _INGEST: (ingest, MAX_BODY),
             _FORWARD: (forward, MAX_FORWARD_BODY),
             _INSIGHTS: (insights, MAX_BODY),
             _PULL_REFRESH: (pull_refresh, MAX_REFRESH_BODY),
@@ -205,7 +202,6 @@ class WriteRoutes:
             or path
             in {
                 *_TASK_WRITES,
-                _INGEST,
                 _MACHINE_EVENTS,
                 _FORWARD,
                 _INSIGHTS,

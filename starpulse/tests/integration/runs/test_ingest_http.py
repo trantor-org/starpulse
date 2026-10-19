@@ -1,4 +1,4 @@
-"""`POST /api/runs/events`, the 0.4 shim over the CloudEvents ingest, and the run events that ingest takes directly."""
+"""The run events `POST /api/machine-events` takes: who may post them, what reaches the log and what the page draws."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ import pytest
 from starpulse._internal.config.config import Producer
 from starpulse._internal.runs import run_events
 from starpulse._internal.runs.cloudevents import SINGLE, CloudEventsIngest
-from starpulse._internal.runs.ingest import MAX_BODY, Ingest
+from starpulse._internal.runs.ingest import MAX_FORWARD_BODY
 from starpulse._internal.runs.ingest import tokens as ingest_tokens
 from starpulse._internal.runs.push_runs import PUSHED_INSTANCE, PushRuns
 from starpulse._internal.kit.adapter_kit import serve, url
@@ -27,7 +27,6 @@ from starpulse._internal.config.config import load
 from starpulse._internal.eventlog.event_log import EventLog, Tail
 
 TOKENS = {"cron": "cron-secret", "rundeck": "rundeck-secret"}
-EVENT = {"event": "StepStarted", "workflow": "cron/nightly", "run_id": "r1", "status": "running"}
 PRODUCERS = tuple(Producer(name, f"{name.upper()}_TOKEN", machines=(), actors=()) for name in TOKENS)
 
 
@@ -49,7 +48,7 @@ class Stack:
         self.server, self.feed, self.log = server, feed, log
 
     def post(
-        self, event: Any, token: str | None = None, path: str = "/api/runs/events", content_type: str | None = None
+        self, event: Any, token: str | None = None, path: str = "/api/machine-events", content_type: str | None = SINGLE
     ) -> tuple[int, dict]:
         raw = event if isinstance(event, bytes) else json.dumps(event).encode()
         request = urllib.request.Request(url(self.server, path), data=raw, method="POST")
@@ -86,32 +85,27 @@ def stack(tmp_path: Path) -> Iterator[Stack]:
     stop = threading.Event()
     follow(pushed, log, run_events.STREAM, pushed.handle_entry, stop=stop, interval=0.01)
     events = CloudEventsIngest({p.name: p for p in PRODUCERS}, TOKENS, log, {})
-    with serve(tmp_path, feed, ingest=Ingest(events), events=events) as server:
+    with serve(tmp_path, feed, events=events) as server:
         yield Stack(server, feed, log)
     stop.set()
 
 
-def test_an_event_posted_with_its_instances_token_shows_in_the_snapshot(stack: Stack) -> None:
-    status, answer = stack.post(EVENT, "cron-secret")
+def test_an_event_posted_with_its_producers_token_shows_in_the_snapshot(stack: Stack) -> None:
+    status, answer = stack.post(run_cloudevent(), "cron-secret")
 
-    assert (status, answer["accepted"]) == (201, True)
+    assert (status, answer) == (201, {"accepted": True})
     dag = stack.until_drawn("pushed/cron/nightly")
     assert (dag["status"], dag["runId"]) == ("running", "r1")
 
 
-def test_the_shim_answers_with_a_deprecation_notice_naming_the_ingest(stack: Stack) -> None:
-    _, answer = stack.post(EVENT, "cron-secret")
-
-    assert "/api/machine-events" in answer["deprecated"]
-    assert "0.5" in answer["deprecated"]
-
-
-def test_the_shim_writes_the_entry_through_the_ingest_under_its_instance(stack: Stack) -> None:
-    stack.post(EVENT | {"time": 1700000000.0, "step": "load", "depends": ["fetch"]}, "cron-secret")
+def test_a_step_event_is_written_to_the_log_under_its_producer(stack: Stack) -> None:
+    stack.post(
+        run_cloudevent(data={"workflow": "nightly", "status": "running", "step": "load", "depends": ["fetch"]}),
+        "cron-secret",
+    )
 
     (entry,) = stack.entries()
-    assert entry == {
-        "time": 1700000000.0,
+    assert {key: entry[key] for key in ("event", "workflow", "run_id", "status", "step", "depends", "instance")} == {
         "event": "StepStarted",
         "workflow": "nightly",
         "run_id": "r1",
@@ -120,14 +114,6 @@ def test_the_shim_writes_the_entry_through_the_ingest_under_its_instance(stack: 
         "depends": ["fetch"],
         "instance": "cron",
     }
-
-
-def test_a_run_event_posted_to_the_ingest_draws_like_one_pushed_to_the_shim(stack: Stack) -> None:
-    status, answer = stack.post(run_cloudevent(), "cron-secret", "/api/machine-events", SINGLE)
-
-    assert (status, answer) == (201, {"accepted": True})
-    dag = stack.until_drawn("pushed/cron/nightly")
-    assert (dag["status"], dag["runId"]) == ("running", "r1")
 
 
 @pytest.mark.parametrize(
@@ -149,40 +135,31 @@ def test_a_run_event_the_contract_refuses_answers_4xx_and_writes_nothing(
 
 
 def test_a_missing_or_wrong_token_answers_401_and_writes_nothing(stack: Stack) -> None:
-    assert stack.post(EVENT)[0] == 401
-    assert stack.post(EVENT, "wrong")[0] == 401
-    assert stack.post(EVENT, "rundeck-secret-")[0] == 401
+    assert stack.post(run_cloudevent())[0] == 401
+    assert stack.post(run_cloudevent(), "wrong")[0] == 401
+    assert stack.post(run_cloudevent(), "cron-secret-")[0] == 401
 
     assert stack.entries() == []
     assert stack.drawn() == {}
 
 
-def test_a_token_for_one_instance_cannot_post_another_instances_workflow(stack: Stack) -> None:
-    status, _ = stack.post(EVENT | {"workflow": "rundeck/nightly"}, "cron-secret")
-
-    assert status == 403
-    assert stack.entries() == []
-    assert stack.drawn() == {}
-
-
-def test_the_same_workflow_name_pushed_by_two_instances_stays_two_workflows(stack: Stack) -> None:
-    stack.post(EVENT, "cron-secret")
-    stack.post(EVENT | {"workflow": "rundeck/nightly", "run_id": "d9", "status": "failed"}, "rundeck-secret")
+def test_the_same_workflow_name_posted_by_two_producers_stays_two_workflows(stack: Stack) -> None:
+    stack.post(run_cloudevent(), "cron-secret")
+    failed = run_cloudevent(source="rundeck", subject="d9", data={"workflow": "nightly", "status": "failed"})
+    stack.post(failed, "rundeck-secret")
 
     assert stack.until_drawn("pushed/cron/nightly")["runId"] == "r1"
-    deadline = time.monotonic() + 5
-    while "pushed/rundeck/nightly" not in stack.drawn() and time.monotonic() < deadline:
-        time.sleep(0.01)
-    assert stack.drawn()["pushed/rundeck/nightly"]["status"] == "failed"
+    assert stack.until_drawn("pushed/rundeck/nightly")["status"] == "failed"
 
 
 def test_a_body_larger_than_the_limit_answers_413_and_writes_nothing(stack: Stack) -> None:
     # The server answers on the declared length and closes unread, so sending the body would race that close.
     connection = http.client.HTTPConnection("127.0.0.1", stack.server.server_port, timeout=5)
     try:
-        connection.putrequest("POST", "/api/runs/events")
+        connection.putrequest("POST", "/api/machine-events")
         connection.putheader("Authorization", "Bearer cron-secret")
-        connection.putheader("Content-Length", str(MAX_BODY + 1))
+        connection.putheader("Content-Type", SINGLE)
+        connection.putheader("Content-Length", str(MAX_FORWARD_BODY + 1))
         connection.endheaders()
         status = connection.getresponse().status
     finally:
@@ -192,42 +169,45 @@ def test_a_body_larger_than_the_limit_answers_413_and_writes_nothing(stack: Stac
     assert stack.entries() == []
 
 
-def test_a_get_answers_405_and_the_route_is_not_the_run_route(stack: Stack) -> None:
-    request = urllib.request.Request(url(stack.server, "/api/runs/events"))
+def test_a_get_answers_405(stack: Stack) -> None:
+    request = urllib.request.Request(url(stack.server, "/api/machine-events"))
     with pytest.raises(urllib.error.HTTPError) as got:
         urllib.request.urlopen(request, timeout=5)
 
     assert (got.value.code, got.value.headers["Allow"]) == (405, "POST")
 
 
-def test_a_server_with_no_instance_token_has_no_ingest_route(tmp_path: Path) -> None:
+def test_the_removed_runs_events_route_answers_404_and_writes_nothing(stack: Stack) -> None:
+    event = {"event": "StepStarted", "workflow": "cron/nightly", "run_id": "r1", "status": "running"}
+
+    assert stack.post(event, "cron-secret", "/api/runs/events", None)[0] == 404
+    assert stack.entries() == []
+
+
+def test_a_server_with_no_producer_has_no_ingest_route(tmp_path: Path) -> None:
     log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
     with serve(tmp_path, BoardFeed()) as server:
-        status, _ = Stack(server, BoardFeed(), log).post(EVENT, "cron-secret")
+        status, _ = Stack(server, BoardFeed(), log).post(run_cloudevent(), "cron-secret")
 
     assert status == 404
     assert Tail(log, run_events.STREAM).poll() == []
 
 
-def test_a_push_only_instance_from_the_readmes_config_draws_its_pushed_run_with_no_run_now(tmp_path: Path) -> None:
+def test_a_producer_from_the_documented_config_draws_its_pushed_run_with_no_run_now(tmp_path: Path) -> None:
     config_file = tmp_path / "starpulse.toml"
-    config_file.write_text('[[runs]]\nname = "cron"\ntoken_env = "CRON_INGEST_TOKEN"\n')
+    config_file.write_text('[[producers]]\nname = "cron"\ntoken_env = "CRON_INGEST_TOKEN"\n')
     config = load(config_file)
     log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
     feed = BoardFeed(domains=config.qualified_domains(), run_safe=config.qualified_run_safe())
     pushed = PushRuns(feed.runs(PUSHED_INSTANCE), None)
     stop = threading.Event()
     follow(pushed, log, run_events.STREAM, pushed.handle_entry, stop=stop, interval=0.01)
-    producers = config.ingest_producers()
-    tokens = ingest_tokens(producers, {"CRON_INGEST_TOKEN": "cron-secret"})
-    events = CloudEventsIngest({p.name: p for p in producers}, tokens, log, {})
+    tokens = ingest_tokens(config.producers, {"CRON_INGEST_TOKEN": "cron-secret"})
+    events = CloudEventsIngest({p.name: p for p in config.producers}, tokens, log, {})
 
-    with serve(tmp_path, feed, ingest=Ingest(events), events=events) as server:
+    with serve(tmp_path, feed, events=events) as server:
         stack = Stack(server, feed, log)
-        # docs/sources.md's curl example
-        status, _ = stack.post(
-            {"event": "StepStarted", "workflow": "cron/nightly", "run_id": "2026-10-03", "status": "running"}, "cron-secret"
-        )
+        status, _ = stack.post(run_cloudevent(subject="2026-10-03"), "cron-secret")
         dag = stack.until_drawn("pushed/cron/nightly")
     stop.set()
 
