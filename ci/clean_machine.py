@@ -116,27 +116,35 @@ def logged(directory: Path) -> list[tuple[str, str]]:
     return found
 
 
-class Moves:
-    """The `(flow, id)` of every `move` event `/api/events` carries once opened; `opened` is set at its first event."""
+class Placed:
+    """The `(flow, id)` of every task `/api/events` places once opened; `opened` is set at its first event.
+
+    A `move` event places one task. A machine that is still replaying its history when an event lands sends the
+    placement in the snapshot that ends the replay instead, so a snapshot's flows count as well.
+    """
 
     def __init__(self, port: int) -> None:
-        self.moves: list[tuple[str, str]] = []
+        self.tasks: set[tuple[str, str]] = set()
         self.opened = threading.Event()
         self._port = port
         threading.Thread(target=self._read, daemon=True).start()
 
     def _read(self) -> None:
-        name = ""
+        name, first = "", True
         try:
             with urllib.request.urlopen(f"http://127.0.0.1:{self._port}/api/events", timeout=DEADLINE) as stream:
                 for raw in stream:
                     line = raw.decode().rstrip("\n")
                     if line.startswith("event:"):
                         name = line.removeprefix("event:").strip()
+                        first = not self.opened.is_set()
                         self.opened.set()
                     elif line.startswith("data:") and name == "move":
                         data = json.loads(line.removeprefix("data:").strip())
-                        self.moves.append((data["flow"], data["id"]))
+                        self.tasks.add((data["flow"], data["id"]))
+                    elif line.startswith("data:") and name == "snapshot" and not first:
+                        for flow in json.loads(line.removeprefix("data:").strip()).get("flows", []):
+                            self.tasks |= {(flow["name"], agent["id"]) for agent in flow["agents"]}
         except OSError:
             pass  # the server went down at the end of the run
 
@@ -172,7 +180,7 @@ def smoke(python: str, deadline: float) -> str | None:
         try:
             if problem := wait_for_page(port, serve, deadline):
                 return problem
-            stream = Moves(port)
+            stream = Placed(port)
             if not stream.opened.wait(deadline):
                 return "SSE /api/events sent nothing"
             events = [cloudevent("e1", "BUILT", "r1"), cloudevent("e2", "SHIPPED", "r1")]
@@ -182,12 +190,12 @@ def smoke(python: str, deadline: float) -> str | None:
                     return f"{event['type']} answered HTTP {status}, not 201"
                 sent.append((event["type"], event["run"]))
             end = time.monotonic() + deadline
-            while time.monotonic() < end and (logged(base) != sent or len(stream.moves) < len(sent)):
+            while time.monotonic() < end and (logged(base) != sent or ("delivery", "r1") not in stream.tasks):
                 time.sleep(0.5)
             if (found := logged(base)) != sent:
                 return f"the event log holds {found}, not {sent}"
-            if stream.moves != [("delivery", "r1")] * len(sent):
-                return f"SSE /api/events carried {stream.moves}"
+            if ("delivery", "r1") not in stream.tasks:
+                return f"SSE /api/events placed {sorted(stream.tasks)}, not delivery/r1"
             if (status := post(port, cloudevent("e3", "UNDECLARED", "r2"))) // 100 != 4:
                 return f"an undeclared event answered HTTP {status}, not 4xx"
             if (status := post(port, cloudevent("e4", "BUILT", "r3"), token="wrong")) // 100 != 4:

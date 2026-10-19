@@ -5,10 +5,13 @@ from __future__ import annotations
 import json
 import socket
 import sqlite3
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import clean_machine
 import pytest
-from clean_machine import cloudevent, logged, redis_answering, smoke
+from clean_machine import Placed, cloudevent, logged, redis_answering, smoke
 
 
 @pytest.fixture
@@ -77,3 +80,50 @@ def test_the_posted_event_is_keyed_by_run_and_names_its_producer_machine_and_act
         "machine": "delivery",
         "actor": "ci",
     }
+
+
+def serve_stream(body: str):
+    """A server whose `/api/events` sends `body` and closes."""
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.end_headers()
+            self.wfile.write(body.encode())
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
+def snapshot(*flows):
+    return f"event: snapshot\ndata: {json.dumps({'flows': [{'name': n, 'agents': [{'id': i} for i in ids]} for n, ids in flows]})}\n\n"
+
+
+def placed_from(body: str) -> set:
+    server = serve_stream(body)
+    try:
+        stream = Placed(server.server_port)
+        assert stream.opened.wait(5)
+        time.sleep(0.5)  # the server has closed after sending, so the reader has taken every frame by now
+        return stream.tasks
+    finally:
+        server.shutdown()
+
+
+def test_a_move_event_places_its_task():
+    move = 'event: move\ndata: {"flow": "delivery", "id": "r1"}\n\n'
+
+    assert placed_from(snapshot(("delivery", [])) + move) == {("delivery", "r1")}
+
+
+def test_a_snapshot_after_the_first_places_the_tasks_a_replaying_machine_held():
+    assert placed_from(snapshot(("delivery", [])) + snapshot(("delivery", ["r1"]))) == {("delivery", "r1")}
+
+
+def test_the_snapshot_held_at_open_places_nothing_so_it_cannot_stand_for_a_posted_event():
+    assert placed_from(snapshot(("delivery", ["r1"]))) == set()
