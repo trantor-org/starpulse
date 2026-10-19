@@ -256,7 +256,6 @@ from starpulse._internal.harnesses.session_start import starter
 from starpulse._internal.runs.cloudevents import CloudEventsIngest
 from starpulse._internal.runs.ingest import ForwardIngest, Ingest
 from starpulse._internal.runs.ingest import tokens as ingest_tokens
-from starpulse._internal.pulls.github import GITHUB_MACHINES
 from starpulse._internal.pulls.delivery import Projected, follow_notes, follow_saves, metrics_of, request_refresh
 from starpulse._internal.pulls.task_actor import TaskActor, moves_of
 from starpulse._internal.pulls.unblock import READY, UNBLOCK_S, Unblocker
@@ -1023,6 +1022,8 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         wire_level(feed, _level_body)
     announce(port, feed.snapshot()["hint"])
     autopilot_runtime = autopilot_remote(config, base, feed, log)
+    from starpulse._internal.pulls.github import GITHUB_MACHINES  # noqa: PLC0415 - the database stack loads after the config is accepted
+
     cloudevents = (
         CloudEventsIngest(
             {p.name: p for p in config.ingest_producers()}, producer_tokens, log, {**feed.machines, **GITHUB_MACHINES}
