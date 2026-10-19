@@ -107,10 +107,8 @@ def test_a_failed_or_cancelled_release_soak_files_a_github_issue_naming_the_tag_
 
 
 def test_release_soak_runs_for_a_tag_or_a_dispatch_and_publishing_only_for_a_tag_push():
-    """A pull request or a merge-queue candidate never takes a runner for hours, and a dispatch on a tag's ref publishes nothing."""
-    assert job("release.yml", "soak")["if"] == (
-        "github.event_name != 'pull_request' && github.event_name != 'merge_group'"
-    )
+    """A dispatch on a tag's ref publishes nothing."""
+    assert "if" not in job("release.yml", "soak")
     assert job("release.yml", "github-release")["if"] == "github.event_name == 'push'"
     assert job("release.yml", "pypi")["if"] == "github.event_name == 'push'"
 
@@ -423,21 +421,10 @@ def test_a_shard_with_no_selected_files_passes_but_a_failing_or_empty_full_run_d
     assert run_step(pytest_step(), tmp_path, {"PYTEST_TARGETS": targets}, uv_exit=pytest_exit) == status
 
 
-def test_release_build_reports_on_a_merge_queue_candidate():
-    """`build` is the one required check still an Actions job: the queue waits for it on the candidate."""
+def test_release_runs_only_the_tag_and_dispatch_events():
+    """A pull request and a merge-queue candidate get the required `build` from the Dagu DAG, not from this workflow."""
     document = yaml.safe_load((WORKFLOWS / "release.yml").read_text())
-    assert document[True]["merge_group"] == {"types": ["checks_requested"]}
-    assert "merge_group" not in job("release.yml", "build").get("if", "")
-
-
-@pytest.mark.parametrize(
-    ("workflow", "name"),
-    [("release.yml", "soak"), ("release.yml", "github-release"), ("release.yml", "pypi")],
-)
-def test_a_merge_queue_candidate_soaks_and_publishes_nothing(workflow, name):
-    """The candidate is not on main yet, and a soak holds a runner for hours."""
-    condition = job(workflow, name)["if"]
-    assert "github.event_name == 'push'" in condition or "github.event_name != 'merge_group'" in condition
+    assert set(document[True]) == {"push", "workflow_dispatch"}
 
 
 def test_ci_runs_the_fresh_install_smoke_on_a_hosted_macos_runner():
