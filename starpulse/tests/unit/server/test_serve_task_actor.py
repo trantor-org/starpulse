@@ -1,5 +1,6 @@
 """`serve` runs the task actor when `[board.actor]` is configured, and Unblocker's polling thread does not start."""
 
+import threading
 from collections.abc import Callable
 from pathlib import Path
 
@@ -36,7 +37,19 @@ class Actor:
         return "starpulse_task_actor_refusals_total 0\n"
 
 
-def _serve(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, text: str, gh: bool = False) -> list[object]:
+class Polled(list[object]):
+    """Unblocker calls; serve runs `_keep_unblocked` on a daemon thread, so `called` says when one landed."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.called = threading.Event()
+
+    def record(self, *args: object) -> None:
+        self.append(args)
+        self.called.set()
+
+
+def _serve(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, text: str, gh: bool = False) -> Polled:
     monkeypatch.setattr(fake_board, "BUILT", [])
     static = tmp_path / "static"
     static.mkdir()
@@ -46,8 +59,8 @@ def _serve(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, text: str, gh: bool 
     monkeypatch.setattr(server.shutil, "which", lambda name: f"/usr/bin/{name}" if gh else None)
     monkeypatch.setattr(server, "TaskActor", Actor)
     monkeypatch.setattr(Actor, "built", [])
-    polled: list[object] = []
-    monkeypatch.setattr(server, "_keep_unblocked", lambda *args: polled.append(args))
+    polled = Polled()
+    monkeypatch.setattr(server, "_keep_unblocked", polled.record)
     config = tmp_path / "starpulse.toml"
     config.write_text(text)
 
@@ -77,6 +90,7 @@ def test_without_the_table_unblockers_thread_starts_and_no_actor_does(
     polled = _serve(tmp_path, monkeypatch, f"[release]\n{BOARD}")
 
     assert Actor.built == []
+    assert polled.called.wait(timeout=10)
     assert len(polled) == 1
 
 
