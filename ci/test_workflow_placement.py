@@ -171,7 +171,9 @@ def test_trantor_tier_policy_gates_every_merge():
 def test_trantor_tests_of_this_package_gate_every_merge():
     """A commit failing trantor's tests of this package fails every bump that pins it, so it must not reach main."""
     contract = job("ci.yml", "trantor-contract")
-    checkouts = [step.get("with", {}) for step in contract["steps"] if step.get("uses", "").startswith("actions/checkout")]
+    checkouts = [
+        step.get("with", {}) for step in contract["steps"] if step.get("uses", "").startswith("actions/checkout")
+    ]
     runs = "\n".join(step["run"] for step in contract["steps"] if "run" in step)
     assert contract["runs-on"] == AI_VM_1_LANE
     assert checkouts[0]["sparse-checkout"] == "/*"  # a sparse root checkout empties every later job on the runner
@@ -181,7 +183,7 @@ def test_trantor_tests_of_this_package_gate_every_merge():
     assert "trantor-contract" in APP_CHECKS
 
 
-#: Every ci.yml job but `dispatch`: the jobs that test a tree.
+#: Every ci.yml job but the macOS smoke: the jobs that test a tree.
 TEST_JOBS = [
     "select",
     "python-shard",
@@ -200,9 +202,9 @@ def test_a_push_to_main_runs_no_test_job(name):
     assert "github.event_name != 'push'" in job("ci.yml", name)["if"]
 
 
-def test_every_ci_job_but_dispatch_is_a_test_job():
+def test_every_ci_job_but_the_macos_smoke_is_a_test_job():
     jobs = yaml.safe_load((WORKFLOWS / "ci.yml").read_text())["jobs"]
-    assert sorted(jobs) == sorted([*TEST_JOBS, "macos-fresh-serve", "dispatch"])
+    assert sorted(jobs) == sorted([*TEST_JOBS, "macos-fresh-serve"])
 
 
 def test_the_coverage_map_is_published_only_by_a_green_nightly_and_is_no_required_check():
@@ -239,11 +241,6 @@ def test_the_free_threaded_environment_lives_outside_the_checkout_and_is_set_in_
     assert "runner" not in str(ft.get("env", {}))
     runs = "\n".join(step["run"] for step in ft["steps"] if "run" in step)
     assert 'UV_PROJECT_ENVIRONMENT=$RUNNER_TEMP/ft-venv" >> "$GITHUB_ENV"' in runs
-
-
-def test_the_push_dispatch_waits_on_no_test_job():
-    """Its test jobs skip on a push, and a job needing a skipped job is skipped; trantor re-checks the queue run."""
-    assert "needs" not in job("ci.yml", "dispatch")
 
 
 STATIC_SCRIPT = WORKFLOWS.parents[1] / "ci/static_checks.sh"
@@ -391,56 +388,6 @@ def test_only_the_close_submit_targets_the_merge_event_lane():
     assert on_the_lane == ["main-follow-on-close.yml"]
 
 
-def test_merged_pull_request_dispatch_runs_on_the_general_lane():
-    assert job("dispatch-merged.yml", "dispatch")["runs-on"] == ["self-hosted", "ai-vm-1"]
-
-
-def test_merged_pull_request_dispatch_skips_unmerged_and_fork_pull_requests():
-    condition = job("dispatch-merged.yml", "dispatch")["if"]
-    assert "merged == true" in condition
-    assert "head.repo.full_name == github.repository" in condition
-
-
-PIN_SCRIPT = '"$HOME/trantor/bin/starpulse_ops/starpulse_pin.sh"'
-PIN_STEP = "Pin the starpulse SHA"
-
-
-def pin_step(workflow: str) -> dict:
-    return next(step for step in job(workflow, "dispatch")["steps"] if step["name"] == PIN_STEP)
-
-
-def test_merged_pull_request_dispatch_pins_only_after_the_tree_check_passes():
-    steps = job("dispatch-merged.yml", "dispatch")["steps"]
-    pin = pin_step("dispatch-merged.yml")
-    assert steps.index(pin) > next(i for i, step in enumerate(steps) if step.get("id") == "tested")
-    assert pin["if"] == "steps.tested.outputs.tested == 'true'"
-    assert pin["env"]["DISPATCH_SHA"] == "${{ github.event.pull_request.merge_commit_sha }}"
-
-
-def test_the_push_fallback_pins_the_pushed_commit():
-    assert pin_step("ci.yml")["env"]["DISPATCH_SHA"] == "${{ github.sha }}"
-
-
-@pytest.mark.parametrize("workflow", ["dispatch-merged.yml", "ci.yml"])
-def test_the_dispatch_jobs_pin_in_their_own_job_and_send_trantor_no_dispatch(workflow):
-    """A second Actions job for the pin cost 11 s of queue and runner setup; the jobs run trantor's script instead."""
-    pin = pin_step(workflow)
-    assert pin["run"].strip() == PIN_SCRIPT
-    assert pin["env"]["PIN_DEPLOY_KEY"] == "${{ secrets.TRANTOR_PIN_DEPLOY_KEY }}"
-    assert pin["env"]["APP_CLIENT_ID"] == "${{ secrets.WORKSPACE_APP_CLIENT_ID }}"
-    assert pin["env"]["APP_PRIVATE_KEY"] == "${{ secrets.WORKSPACE_APP_PRIVATE_KEY }}"
-    assert pin["env"]["OWNER"] == "${{ github.repository_owner }}"
-    assert all("uses" not in step for step in job(workflow, "dispatch")["steps"]), "no marketplace action"
-    assert "repository_dispatch" not in (WORKFLOWS / workflow).read_text()
-    assert "/dispatches" not in (WORKFLOWS / workflow).read_text()
-
-
-def test_a_merged_pull_request_run_is_titled_with_the_sha_it_pins():
-    """bin/ci/merge_latency.py finds the run that pinned a SHA by this title."""
-    title = yaml.safe_load((WORKFLOWS / "dispatch-merged.yml").read_text())["run-name"]
-    assert title == "Pin ${{ github.event.pull_request.merge_commit_sha }}"
-
-
 def run_step(step: dict, tmp_path, env: dict[str, str], *, uv_exit: int = 0) -> int:
     """Run a workflow step's shell with the given environment and a stub `uv` that exits `uv_exit`; return its status."""
     stub = tmp_path / "uv"
@@ -528,87 +475,12 @@ def test_release_build_reports_on_a_merge_queue_candidate():
 
 @pytest.mark.parametrize(
     ("workflow", "name"),
-    [("ci.yml", "dispatch"), ("release.yml", "soak"), ("release.yml", "github-release"), ("release.yml", "pypi")],
+    [("release.yml", "soak"), ("release.yml", "github-release"), ("release.yml", "pypi")],
 )
-def test_a_merge_queue_candidate_dispatches_soaks_and_publishes_nothing(workflow, name):
-    """The candidate is not on main yet: dispatching it pins a SHA trantor cannot fetch, and a soak holds a runner for hours."""
+def test_a_merge_queue_candidate_soaks_and_publishes_nothing(workflow, name):
+    """The candidate is not on main yet, and a soak holds a runner for hours."""
     condition = job(workflow, name)["if"]
     assert "github.event_name == 'push'" in condition or "github.event_name != 'merge_group'" in condition
-
-
-def check_runs(*names: str, slug: str = "trantor-agent", conclusion: str = "success") -> str:
-    runs = [{"name": n, "app": {"slug": slug}, "status": "completed", "conclusion": conclusion} for n in names]
-    return json.dumps({"check_runs": runs})
-
-
-def run_tree_check(tmp_path, *, parent, base, head_checks, merge_checks):
-    """Run dispatch-merged.yml's tree check against a stub `gh` and return what it wrote to GITHUB_OUTPUT.
-
-    The stub answers the commit read with `parent` and each commit's check runs from the canned JSON, applying the
-    step's own `--jq` filter with the real jq.
-    """
-    step = next(s for s in job("dispatch-merged.yml", "dispatch")["steps"] if s.get("id") == "tested")
-    (tmp_path / "head.json").write_text(head_checks)
-    (tmp_path / "merge.json").write_text(merge_checks)
-    stub = tmp_path / "gh"
-    stub.write_text(
-        "#!/usr/bin/env bash\n"
-        'case "$2" in\n'
-        f'  */commits/{"h" * 40}/check-runs*) jq -r "$4" "{tmp_path}/head.json" ;;\n'
-        f'  */commits/{"m" * 40}/check-runs*) jq -r "$4" "{tmp_path}/merge.json" ;;\n'
-        f'  */commits/*) echo "{parent}" ;;\n'
-        '  *) echo "unexpected gh call: $*" >&2; exit 1 ;;\n'
-        "esac\n"
-    )
-    stub.chmod(0o755)
-    output = tmp_path / "output"
-    output.write_text("")
-    env = {
-        "PATH": f"{tmp_path}:/usr/bin:/bin",
-        "GITHUB_OUTPUT": str(output),
-        "REPOSITORY": "trantor-org/starpulse",
-        "MERGE_SHA": "m" * 40,
-        "BASE_SHA": base,
-        "HEAD_SHA": "h" * 40,
-        "PASSED": step["env"]["PASSED"],
-    }
-    subprocess.run(["bash", "-e", "-c", step["run"]], env=env, check=True, capture_output=True, text=True)
-    return output.read_text()
-
-
-def test_merged_pull_request_dispatch_sends_a_queue_merge_its_candidates_checks_tested(tmp_path):
-    """A queue merge's base is stale, but the App's passing checks on the merge commit tested exactly that tree."""
-    tested = run_tree_check(
-        tmp_path, parent="p" * 40, base="b" * 40, head_checks=check_runs(), merge_checks=check_runs(*APP_CHECKS)
-    )
-    assert tested == "tested=true\n"
-
-
-def test_merged_pull_request_dispatch_leaves_a_stale_base_with_no_passing_candidate_to_the_push_run(tmp_path):
-    tested = run_tree_check(
-        tmp_path, parent="p" * 40, base="b" * 40, head_checks=check_runs(*APP_CHECKS), merge_checks=check_runs()
-    )
-    assert tested == ""
-
-
-def test_merged_pull_request_dispatch_still_sends_a_current_base_its_head_checks_tested(tmp_path):
-    tested = run_tree_check(
-        tmp_path, parent="b" * 40, base="b" * 40, head_checks=check_runs(*APP_CHECKS), merge_checks=check_runs()
-    )
-    assert tested == "tested=true\n"
-
-
-@pytest.mark.parametrize(
-    "checks",
-    [
-        pytest.param(check_runs(*APP_CHECKS[:3]), id="missing-contract"),
-        pytest.param(check_runs(*APP_CHECKS, conclusion="failure"), id="failed"),
-        pytest.param(check_runs(*APP_CHECKS, slug="github-actions"), id="another-app"),
-    ],
-)
-def test_merged_pull_request_dispatch_needs_every_required_check_passed_by_the_app(tmp_path, checks):
-    tested = run_tree_check(tmp_path, parent="b" * 40, base="b" * 40, head_checks=checks, merge_checks=check_runs())
-    assert tested == ""
 
 
 def test_ci_runs_the_fresh_install_smoke_on_a_hosted_macos_runner():
