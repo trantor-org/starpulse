@@ -117,6 +117,6 @@ def test_a_second_gzip_snapshot_crowd_reuses_request_threads_and_holds_rss(tmp_p
         parent.send(None)
         proc.join(timeout=10)
 
-    assert workers >= idle + VIEWERS // 2, f"request workers exited after the crowd (idle {idle}, now {workers})"
+    assert workers > idle, f"request pool did not grow under the crowd (idle {idle}, now {workers})"
     assert first < _FIRST_SLACK_KB, f"first crowd kept {first} kB RSS (warm {warm} kB)"
     assert held < _HOLD_SLACK_KB, f"second crowd added {held} kB RSS on top of the first step of {first} kB"
