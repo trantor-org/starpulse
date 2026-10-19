@@ -940,9 +940,11 @@ class BoardFeed:
             return named
 
     def machine_tasks(self, flow: str) -> list[dict]:
-        """Every task as `flow`'s machine last placed it; none for a machine the feed does not draw."""
+        """Every task as `flow`'s machine last placed it within the window, as the snapshot draws it; none for a machine
+        the feed does not draw."""
         with self._lock:
-            return list(self._machines.get(flow, {}).values())
+            since = time.time() - self._window_s if self._window_s is not None else None
+            return [a for a in self._machines.get(flow, {}).values() if since is None or a["active"] >= since]
 
     @property
     def window_s(self) -> float | None:
