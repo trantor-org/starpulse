@@ -358,6 +358,14 @@ def test_main_follow_submit_runs_on_the_merge_event_lane_and_never_for_a_fork():
     assert follow["if"] == "github.event.pull_request.head.repo.full_name == github.repository"
 
 
+def test_main_follow_submit_passes_the_merged_outcome_of_the_close():
+    """The reconciler settles a close from its payload; without `--merged` it would read GitHub for the outcome."""
+    step = yaml.safe_load((WORKFLOWS / "main-follow-on-close.yml").read_text())["jobs"]["follow"]["steps"][0]
+
+    assert step["env"]["MERGED"] == "${{ github.event.pull_request.merged }}"
+    assert '--action closed --merged "$MERGED"' in step["run"]
+
+
 def test_only_the_close_submit_targets_the_merge_event_lane():
     """Two jobs per merge fill the lane's two relay slots, and the next merge's close waits for one to re-register."""
     on_the_lane = sorted(
