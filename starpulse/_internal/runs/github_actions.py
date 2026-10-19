@@ -255,7 +255,7 @@ def listing(transport: Transport, repo: str, only: Collection[str] | None = None
 
 
 def declares_dispatch(definition: dict) -> bool:
-    """Whether the workflow file lists `workflow_dispatch` among its triggers, as a name, a list or a mapping."""
+    """Whether the workflow file lists `workflow_dispatch` among its `on:` events, as a name, a list or a mapping."""
     on = definition.get("on", definition.get(True))  # YAML 1.1 reads an unquoted `on` key as true
     return isinstance(on, str | list | dict) and (on == "workflow_dispatch" or "workflow_dispatch" in on)
 

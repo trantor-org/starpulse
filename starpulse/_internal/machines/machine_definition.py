@@ -3,7 +3,7 @@
 A machine is declared in YAML and validated against `machine.schema.json`, the
 published schema. States carry `initial` or `final`; each event lists
 transitions from one or more states to one state. A guard is either a `when:`
-field match on the event that triggers the transition (`equals`, `in`,
+field match on the event that fires the transition (`equals`, `in`,
 `exists`) or the name of a guard an adapter registers in Python through a
 `Registry`; a transition may name a registered `action` the same way. Config
 holds no expressions or code, so a shared definition is never executable.

@@ -130,11 +130,11 @@ def _performs(case: Case, trigger: SkillLoad) -> bool:
     return shaped and case.tool_calls > 0
 
 
-def missed_loads(found: Iterable[Case], triggers: Sequence[SkillLoad]) -> list[Missed]:
+def missed_loads(found: Iterable[Case], loads: Sequence[SkillLoad]) -> list[Missed]:
     """Per trigger, the cases of `found` that performed it and those that did so without loading its skill."""
     held = list(found)
     result = []
-    for trigger in triggers:
+    for trigger in loads:
         performed = tuple(c for c in held if _performs(c, trigger))
         result.append(Missed(trigger.skill, performed, tuple(c for c in performed if trigger.skill not in c.skills)))
     return result
