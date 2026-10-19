@@ -37,7 +37,7 @@ uv run python bench/ic_event_log.py .tmp/bench-events.db
 ```
 
 The script replaces the file it is given, along with its `-wal` and `-shm` files. Each append opens a fresh
-connection, as a short-lived `starpulse emit` does. It prints one line per table size: appends per second, the
+connection, as a short-lived writer process does. It prints one line per table size: appends per second, the
 append and cursor-poll p50 and p99, and the database size.
 
 ## Flow reads

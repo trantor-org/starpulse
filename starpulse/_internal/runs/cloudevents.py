@@ -156,7 +156,7 @@ class CloudEventsIngest:
             now=_epoch(event.get("time"), self._clock()),
             step=data.get("step"),
             depends=data.get("depends"),
-            instance=None if producer.name == run_events.LOCAL else producer.name,
+            instance=producer.name,
         )
 
     def _machine_entry(self, producer: Producer, event: dict[str, Any], event_id: str) -> dict[str, Any]:

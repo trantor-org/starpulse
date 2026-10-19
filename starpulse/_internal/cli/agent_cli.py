@@ -571,7 +571,9 @@ def _leaves(
     """Each verb the parser dispatches to, as its words (`task show`) and its own parser."""
     for action in parser._actions:  # argparse offers no public way to list a parser's subcommands
         if isinstance(action, argparse._SubParsersAction):
-            named = {id(sub): name for name, sub in reversed(action.choices.items())}  # an alias shares its verb's parser
+            named = {
+                id(sub): name for name, sub in reversed(action.choices.items())
+            }  # an alias shares its verb's parser
             for sub in dict.fromkeys(action.choices.values()):
                 yield from _leaves(sub, (*path, named[id(sub)]))
             return
@@ -597,7 +599,7 @@ def _manifest(parser: argparse.ArgumentParser) -> dict[str, Any]:
             for verb, leaf in _leaves(parser)
             if leaf.get_default(
                 "run"
-            )  # `serve`, `emit`, `forward`, `connect`, `worker`, `import-history`, `conform` and `reload` are listed for `--help` but read no running server
+            )  # `serve`, `forward`, `connect`, `worker`, `import-history`, `conform` and `reload` are listed for `--help` but read no running server
         ],
     }
 
@@ -607,12 +609,11 @@ def _parser() -> argparse.ArgumentParser:
     parser = _Parser(
         prog="starpulse",
         description="StarPulse: workflows and tasks. These verbs read a running server as JSON.",
-        epilog="`starpulse serve` runs the server, `starpulse emit` (deprecated: post to the ingest) pushes a workflow run and `starpulse forward` sets the hub opt-in, `starpulse connect` sets up a tracker, `starpulse worker pulls` runs the pull request delivery loops alone, `starpulse worker autopilot` runs the autopilot alone `starpulse import-history` adds earlier lane changes to the store, `starpulse conform` replays the recorded history against the machines the project declares and `starpulse reload` replaces the serve children whose code changed; each has its own --help.",
+        epilog="`starpulse serve` runs the server, `starpulse forward` sets the hub opt-in, `starpulse connect` sets up a tracker, `starpulse worker pulls` runs the pull request delivery loops alone, `starpulse worker autopilot` runs the autopilot alone `starpulse import-history` adds earlier lane changes to the store, `starpulse conform` replays the recorded history against the machines the project declares and `starpulse reload` replaces the serve children whose code changed; each has its own --help.",
     )
     verbs = parser.add_subparsers(dest="command", required=True, metavar="command")
     # Listed so `--help` shows how to start the server; `__main__` hands these words to their own parsers before this one.
     verbs.add_parser("serve", help="run StarPulse's server", add_help=False)
-    verbs.add_parser("emit", help="deprecated: push a workflow run onto the runs stream", add_help=False)
     verbs.add_parser("forward", help="let a person's name leave this instance for the hub, or stop it", add_help=False)
     verbs.add_parser("connect", help="set up a native, Backlog.md or Jira board in starpulse.toml", add_help=False)
     verbs.add_parser(

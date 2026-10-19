@@ -66,7 +66,7 @@ from starpulse._internal.level.insights import Insights, InsightStore
 from starpulse._internal.pulls.pull_refresh import PullRefresh
 from starpulse._internal.pulls.pulls import PullStore
 from starpulse._internal.runs.cloudevents import CloudEventsIngest
-from starpulse._internal.runs.ingest import ForwardIngest, Ingest
+from starpulse._internal.runs.ingest import ForwardIngest
 from starpulse._internal.server.assembly import assemble as _assemble
 from starpulse._internal.server.server import StarPulseServer, request_handler
 from starpulse._internal.server.writes import move_task
@@ -371,7 +371,6 @@ def serve(
     archive: TaskArchiver | None = None,
     create: TaskCreator | None = None,
     clock: Callable[[], float] = time.time,
-    ingest: Ingest | None = None,
     gate: Callable[[BaseHTTPRequestHandler], bool] | None = None,
     insights: Insights | None = None,
     events: CloudEventsIngest | None = None,
@@ -419,7 +418,6 @@ def serve(
         archive,
         create,
         clock,
-        ingest,
         gate,
         forward,
         level,

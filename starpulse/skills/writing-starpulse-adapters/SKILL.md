@@ -82,9 +82,6 @@ refused and nothing was written: 401 for a missing or wrong token, 403 for anoth
 400 for an event its machine does not declare or a malformed one, 413 for an oversize body. 503 means the database is
 unreachable, so retry. A missing entry never means the run failed.
 
-`starpulse emit` and `POST /api/runs/events` are 0.4 shims over this path, deprecated and removed in 0.5: do not write
-new callers against them.
-
 A scheduler worth a full adapter is a `[[runs]]` instance (`name`, `type`, `url`) whose module offers `start(url)` and
 `follow(url, runs, group)`, publishing `Dag`s through `RunsSink.set_dags(dags, error, pools, startable)` (a `Dag` lists its running and queued runs in `active`,
 `pools` is the list of concurrency pools, empty when the scheduler has none, and `startable` names the workflows

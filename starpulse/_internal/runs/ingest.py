@@ -1,19 +1,5 @@
-"""The HTTP runs ingest: `POST /api/runs/events`, deprecated in 0.4 as a shim over the CloudEvents ingest
-(`POST /api/machine-events`), which takes the same run events as Step CloudEvents and goes in 0.5.
-
-A webhook-only engine (Cronicle, Rundeck, a GitHub `workflow_run` relay) posts one contract event as JSON, the fields
-`starpulse emit` takes:
-
-    {"event": "StepStarted", "workflow": "<instance>/<workflow>", "run_id": "r1", "status": "running",
-     "time": 1700000000.0, "step": "load", "depends": ["fetch"]}     # time, step and depends are optional
-
-with `Authorization: Bearer <token>`. Each `[[runs]]` instance that names a `token_env` has its own token, read from
-that environment variable at start, and a token pushes only workflows of its own instance: the `<instance>/` prefix
-of `workflow` must be the instance the token belongs to. The entry appended to the event log carries the plain
-workflow and an `instance` field (`run_events`), so no other instance's reader moves on it.
-
-The answers: 201 when the log took the entry; 401 for a missing or wrong token; 403 for another instance's workflow;
-400 for an event the contract does not allow; 503 when the log refused it; every refusal writes nothing.
+"""The HTTP push ingests that remain beside the CloudEvents ingest (`POST /api/machine-events`): `POST /api/forward`, a
+forwarder's batch of events from an instance, plus the token and run-event helpers every push route shares.
 """
 
 from __future__ import annotations
@@ -21,12 +7,10 @@ from __future__ import annotations
 import hmac
 import json
 import math
-import uuid
 from collections.abc import Iterable, Mapping
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, get_args
 
-from starpulse._internal.config.config import MAX_BATCH, RunsInstance, Source
+from starpulse._internal.config.config import MAX_BATCH, Producer, Source
 from starpulse._internal.eventlog import lane_events
 from starpulse._internal.runs import run_events
 from starpulse._internal.runs.forwarded import FIELDS, PERSON, project
@@ -34,17 +18,14 @@ from starpulse.contracts.adapters import RunStatus
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     from starpulse._internal.eventlog.event_log import EventLog
-    from starpulse._internal.runs.cloudevents import CloudEventsIngest
 
 #: The largest event body accepted: a run event is a few hundred bytes, so this only stops a sender filling memory.
 MAX_BODY = 64 * 1024
 #: The largest forwarded batch accepted: `MAX_BATCH` events of a few hundred bytes each, with room for long keys.
 MAX_FORWARD_BODY = 1024 * 1024
-#: The notice the 0.4 shims (`POST /api/runs/events`, `starpulse emit`) give; both go in 0.5.
-DEPRECATED = "POST /api/runs/events is deprecated and goes in 0.5: post the Step CloudEvent to /api/machine-events"
 
 
-def tokens(instances: Iterable[RunsInstance | Source], environ: Mapping[str, str]) -> dict[str, str]:
+def tokens(instances: Iterable[Producer | Source], environ: Mapping[str, str]) -> dict[str, str]:
     """Each instance's ingest token, by instance name, from the variable its `token_env` names.
 
     Raises `ValueError` for a named variable that is unset or empty, and for two instances holding one token, since a
@@ -69,15 +50,6 @@ def token_owner(tokens: Mapping[str, str], authorization: str | None) -> str | N
         if hmac.compare_digest(token.encode(), presented.encode()) and scheme.lower() == "bearer" and presented:
             owner = name
     return owner
-
-
-def _decoded(raw: bytes) -> dict[str, Any] | str:
-    """The event's fields the contract allows, or the reason it is refused."""
-    try:
-        event = json.loads(raw)
-    except ValueError:
-        return "the body is not JSON"
-    return run_event(event)
 
 
 def run_event(event: object) -> dict[str, Any] | str:
@@ -105,50 +77,6 @@ def run_event(event: object) -> dict[str, Any] | str:
 
 def _epoch(value: object) -> bool:
     return isinstance(value, int | float) and not isinstance(value, bool) and math.isfinite(value) and value >= 0
-
-
-class Ingest:
-    """Answers one `POST /api/runs/events`, the 0.4 shim: it decodes the old body into a Step CloudEvent and
-    writes it through `events`, so the ingest owns the entry. `(authorization header, body)` to `(status, JSON body)`."""
-
-    def __init__(self, events: CloudEventsIngest) -> None:
-        self._events = events
-
-    def __call__(self, authorization: str | None, raw: bytes) -> tuple[int, dict[str, Any]]:
-        if (instance := self._events.owner(authorization)) is None:
-            return 401, {"error": "a valid instance token is required: Authorization: Bearer <token>"}
-        if isinstance(event := _decoded(raw), str):
-            return 400, {"error": event}
-        owner, _, workflow = event["workflow"].partition("/")
-        if not workflow:
-            return 400, {"error": "workflow must be <instance>/<workflow>"}
-        if owner != instance:
-            return 403, {"error": f"this token may push only {instance}/<workflow>, not {event['workflow']}"}
-        try:
-            sent = cloudevent(event, instance, workflow)
-        except (OverflowError, OSError, ValueError):
-            return 400, {"error": "time must be epoch seconds"}
-        status, answer = self._events.write(instance, [sent])
-        return status, {**answer, "deprecated": DEPRECATED} if status == 201 else answer
-
-
-def cloudevent(event: dict[str, Any], source: str, workflow: str) -> dict[str, Any]:
-    """The Step CloudEvent for a decoded old-shape run `event` of `workflow`, posted by producer `source`."""
-    step, depends = event.get("step"), event.get("depends")
-    return {
-        "specversion": "1.0",
-        "id": uuid.uuid4().hex,
-        "source": source,
-        "type": event["event"],
-        "subject": event["run_id"],
-        **({"time": datetime.fromtimestamp(event["time"], UTC).isoformat()} if "time" in event else {}),
-        "data": {
-            "workflow": workflow,
-            "status": event["status"],
-            **({"step": step} if step else {}),
-            **({"depends": depends} if depends else {}),
-        },
-    }
 
 
 def _machine_event(fields: dict[str, Any]) -> str | None:

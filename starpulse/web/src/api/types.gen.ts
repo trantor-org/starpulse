@@ -86,7 +86,6 @@ export interface ApiContract {
     | WindowRequest
     | ForwardingRequest
     | AutopilotRequest
-    | RunEventRequest
     | ForwardRequest
   )[];
   restarting: RestartingEvent;
@@ -1797,18 +1796,6 @@ export interface AutopilotRequest {
   enabled?: boolean | null;
   harness?: string | null;
   quietHours?: QuietHours | null;
-}
-/**
- * `POST /api/runs/events`: one workflow or step event a producer reports.
- */
-export interface RunEventRequest {
-  depends?: string[] | null;
-  event: string;
-  run_id: string;
-  status: string;
-  step?: string | null;
-  time?: number | null;
-  workflow: string;
 }
 /**
  * `POST /api/forward`: a batch of events an instance's forwarder sends a hub.

@@ -42,7 +42,6 @@ from starpulse.contracts.api.dto.requests import (
     RetiredImportRequest,
     RetireRequest,
     ReviewRequest,
-    RunEventRequest,
     StartRequest,
     VerdictRequest,
     WindowRequest,
@@ -159,7 +158,6 @@ class ApiContract(_Api):
         | WindowRequest
         | ForwardingRequest
         | AutopilotRequest
-        | RunEventRequest
         | ForwardRequest
     ]
     answers: list[

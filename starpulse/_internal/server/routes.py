@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-
 if TYPE_CHECKING:  # annotation only: a runtime import would put the autopilot in the Delivery worker's import closure
     pass
 
@@ -108,9 +107,6 @@ _DOC_ARCHIVE = "/api/docs/archive"
 _DOC_RESTORE = "/api/docs/restore"
 
 
-_INGEST = "/api/runs/events"
-
-
 _MACHINE_EVENTS = "/api/machine-events"
 
 
@@ -180,7 +176,6 @@ _WRITES = {
     _DOC_EDIT: "doc_edit",
     _DOC_ARCHIVE: "doc_archive",
     _DOC_RESTORE: "doc_restore",
-    _INGEST: "ingest",
     _MACHINE_EVENTS: "ingest",
     _FORWARD: "forward",
     _INSIGHTS: "insight",
@@ -189,5 +184,5 @@ _WRITES = {
 
 
 def _is_rerun(path: str) -> bool:
-    """Whether `path` is `/api/runs/<instance>/<workflow>/rerun`; the ingest route `/api/runs/events` is not."""
+    """Whether `path` is `/api/runs/<instance>/<workflow>/rerun`."""
     return path.startswith(_RERUN) and path.endswith(_RERUN_TAIL) and path.count("/") == 5

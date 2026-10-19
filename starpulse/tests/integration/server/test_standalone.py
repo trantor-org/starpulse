@@ -81,7 +81,7 @@ def _await_page(proc: subprocess.Popen, port: int) -> None:
 
 # Top-level settings of a config come before its tables. The Flow Metrics child sizes history no test here reads.
 _NO_FLOW_METRICS = "flow_metrics_worker = true\n"
-_INGEST_CONFIG = '[[runs]]\nname = "cron"\ntype = "dagu"\nurl = "http://127.0.0.1:9"\ntoken_env = "CRON_INGEST_TOKEN"\n'
+_INGEST_CONFIG = '[[producers]]\nname = "cron"\ntoken_env = "CRON_INGEST_TOKEN"\n'
 
 # sd_listen_fds: the socket is fd 3 and LISTEN_PID is the server's own pid, which `exec` keeps
 _ACTIVATE = (
@@ -155,34 +155,12 @@ def activated(build: None, tmp_path_factory: pytest.TempPathFactory) -> Iterator
             proc.wait(timeout=30)
 
 
-def test_without_a_cache_server_or_any_tool_on_the_path_the_server_serves_history_and_what_emit_pushed(
+def test_without_a_cache_server_or_any_tool_on_the_path_the_server_serves_history(
     served: Served,
 ) -> None:
     assert _get(served.plain_port, "/api/history?task=PROJ-1") == (200, {"task": "PROJ-1", "path": []})
     assert (served.home / DEFAULT_FILE).is_file()
     assert (served.home / ".starpulse" / "board" / "config.yml").is_file()  # the first serve made its own board
-
-    emitted = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            (
-                "import sys; from starpulse.__main__ import main; "
-                f"code = main({['emit', 'StepStarted', '--workflow', 'nightly', '--run', 'r1', '--status', 'running', '--config', str(served.home / 'starpulse.toml')]!r}); "
-                f"assert {_CLIENT_MODULE!r} not in sys.modules; raise SystemExit(code)"
-            ),
-        ],  # fmt: skip
-        env=served.env,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    assert emitted.returncode == 0, emitted.stderr
-    deadline = time.monotonic() + 30
-    while "pushed/nightly" not in [d["name"] for d in _get(served.plain_port, "/api/snapshot")[1]["dags"]]:
-        assert served.plain_proc.poll() is None, "the server exited"
-        assert time.monotonic() < deadline, "the emitted run never reached the snapshot"
-        time.sleep(0.2)
 
 
 def test_the_served_snapshot_sizes_each_suns_share_from_the_history_the_server_keeps(served: Served) -> None:
@@ -194,14 +172,23 @@ def test_the_served_snapshot_sizes_each_suns_share_from_the_history_the_server_k
 def test_an_event_posted_with_the_token_in_the_environment_reaches_the_snapshot_and_a_wrong_token_does_not(
     served: Served,
 ) -> None:
-    event = json.dumps({"event": "StepStarted", "workflow": "cron/nightly", "run_id": "r1", "status": "running"}).encode()
+    event = json.dumps(
+        {
+            "specversion": "1.0",
+            "id": "e1",
+            "source": "cron",
+            "type": "StepStarted",
+            "subject": "r1",
+            "data": {"workflow": "nightly", "status": "running"},
+        }
+    ).encode()
 
     def post(token: str) -> int:
         request = urllib.request.Request(
-            f"http://127.0.0.1:{served.plain_port}/api/runs/events",
+            f"http://127.0.0.1:{served.plain_port}/api/machine-events",
             data=event,
             method="POST",
-            headers={"Authorization": token},
+            headers={"Authorization": token, "Content-Type": "application/cloudevents+json"},
         )
         try:
             with urllib.request.urlopen(request, timeout=5) as resp:

@@ -9,7 +9,7 @@ so an IC instance runs without them. `Gate` is the callable the server's handler
   a state held in a cookie, and a nonce), verifies the ID token's signature, issuer, audience, expiry and nonce, and
   refuses an account whose groups claim holds none of `allowed_groups`, saying so on the page. A refused account gets no
   session.
-- An instance route (`/api/runs/events`) is open to the gate and checks its own per-instance bearer token. An engine
+- A producer route (`/api/machine-events`) is open to the gate and checks its own per-instance bearer token. An engine
   route (`/api/insights`, `/api/insights/<id>`) needs the engine token. Neither token is ever a viewer's session, and a session is never either token: each
   credential is accepted only on its own routes.
 - The reader token (`reader_token_env`) is an agent's read-only stand-in for a session: a GET or HEAD of a viewer route
@@ -48,7 +48,6 @@ PUBLIC, VIEWER, INSTANCE, ENGINE = "public", "viewer", "instance", "engine"
 ROUTES: Mapping[str, str] = {
     "/auth/login": PUBLIC,
     "/auth/callback": PUBLIC,
-    "/api/runs/events": INSTANCE,
     "/api/machine-events": INSTANCE,
     "/api/forward": INSTANCE,
     "/api/insights": ENGINE,
@@ -369,16 +368,16 @@ class Gate:
         return claims
 
 
-def build(settings: OidcSettings, environ: Mapping[str, str], instance_tokens: Mapping[str, str]) -> Gate:
+def build(settings: OidcSettings, environ: Mapping[str, str]) -> Gate:
     """The gate `settings` describe, with the client secret and the engine and reader tokens read from the variables
     they name.
 
-    Raises `ValueError` naming a variable that is unset, and the holder whose token equals another's (an instance, the
+    Raises `ValueError` naming a variable that is unset, and the holder whose token equals another's (the
     engine or the reader), since a token must say whose it is."""
     secret = environ.get(settings.client_secret_env)
     if not secret:
         raise ValueError(f"oidc: {settings.client_secret_env} is not set")
-    held = {f"instance {name}": token for name, token in instance_tokens.items()}
+    held: dict[str, str] = {}
     tokens: dict[str, str | None] = {"engine": None, "reader": None}
     for role, env in (("engine", settings.engine_token_env), ("reader", settings.reader_token_env)):
         if not env:

@@ -215,18 +215,6 @@ class AutopilotRequest(_Api):
     quietHours: QuietHours | None = None
 
 
-class RunEventRequest(_Api):
-    """`POST /api/runs/events`: one workflow or step event a producer reports."""
-
-    event: str
-    workflow: str
-    run_id: str
-    status: str
-    time: float | None = None
-    step: str | None = None
-    depends: list[str] | None = None
-
-
 class ForwardedEvent(_Api):
     event_id: str
     stream: str

@@ -5933,68 +5933,6 @@
       "title": "RunDiffs",
       "type": "object"
     },
-    "RunEventRequest": {
-      "additionalProperties": false,
-      "description": "`POST /api/runs/events`: one workflow or step event a producer reports.",
-      "properties": {
-        "depends": {
-          "anyOf": [
-            {
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "event": {
-          "type": "string"
-        },
-        "run_id": {
-          "type": "string"
-        },
-        "status": {
-          "type": "string"
-        },
-        "step": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "time": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "workflow": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "event",
-        "workflow",
-        "run_id",
-        "status"
-      ],
-      "title": "RunEventRequest",
-      "type": "object"
-    },
     "RunGate": {
       "additionalProperties": false,
       "properties": {
@@ -8597,9 +8535,6 @@
           },
           {
             "$ref": "#/$defs/AutopilotRequest"
-          },
-          {
-            "$ref": "#/$defs/RunEventRequest"
           },
           {
             "$ref": "#/$defs/ForwardRequest"

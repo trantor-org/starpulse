@@ -2,7 +2,7 @@
 
 Measures the instance-side event log under the load a busy instance puts on it.
 Each append opens a fresh connection, as a short-lived
-``starpulse emit`` does.
+a short-lived writer process does.
 
 Run this file with ``uv run python``, passing a scratch SQLite path, which it
 replaces.

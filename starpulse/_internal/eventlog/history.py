@@ -6,7 +6,7 @@ StarPulse owns these tables and creates them on first use.
 
 A consumer copies `machine:events` (every entry, task- or run-keyed) into it, a board adapter that reads a
 stream may record each lane change it reads, and a trim past an entry a consumer never read is recorded as a
-gap. It also keeps the step graphs `push_runs` learns from `starpulse emit`, so a restart restores them.
+gap. It also keeps the step graphs `push_runs` learns from the pushed run events, so a restart restores them.
 `/api/history` reads the paths back through `lane_path` and `machine_path`.
 """
 

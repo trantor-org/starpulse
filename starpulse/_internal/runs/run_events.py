@@ -1,13 +1,13 @@
 """The runs stream contract: one entry when a workflow run or one of its steps starts or ends.
 
-The CloudEvents ingest writes it (`POST /api/machine-events`, with the 0.4 shims `POST /api/runs/events` and
-`starpulse emit` over it), so a workflow needs no adapter to be seen. Emission is fail-open (`EventLog.append` never raises): a missing entry means the emit failed, never that the
-run did not happen.
+The CloudEvents ingest writes it (`POST /api/machine-events`), so a workflow needs no adapter to be seen.
+Emission is fail-open (`EventLog.append` never raises): a missing entry means the emit failed,
+never that the run did not happen.
 
 Each entry carries `event_id` plus these fields (absent when empty): `time` (epoch seconds), `event` (`StepStarted`
 or `StepFinished`), `workflow`, `run_id`, `status` (one of `contracts.RunStatus`), and, for a step's entry,
-`step` (its name) and `depends` (a JSON list of the step names it waits on). An entry the HTTP ingest wrote also
-carries `instance`, the runs adapter instance whose token pushed it: it is that instance's, so another instance's
+`step` (its name) and `depends` (a JSON list of the step names it waits on). An entry the ingest wrote also
+carries `instance`, the producer that posted it: it is that instance's, so another instance's
 reader ignores it.
 """
 
@@ -18,8 +18,6 @@ from typing import Any
 STREAM = "runs:events"
 #: The Runs glossary's Step events; a run's own entry names no `step`.
 EVENTS = ("StepStarted", "StepFinished")
-#: The producer name of `starpulse emit` on the machine's own log: its entries carry no `instance`, so they are local.
-LOCAL = "local"
 
 
 def entry(
