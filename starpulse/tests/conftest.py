@@ -8,6 +8,7 @@ Under pytest-xdist the controller starts one Postgres server for the run and eve
 it (`starpulse.tests.shared_postgres`), so a run of N workers starts one container, not N.
 """
 
+import contextlib
 import importlib.util
 import shutil
 import sqlite3
@@ -123,20 +124,36 @@ def _container_skip_reason() -> str | None:
     return None
 
 
-def _retried(start: Callable[[], Any]) -> Any:  # pragma: no mutate block — container lifecycle
-    """Start a container, twice more if a starved Docker daemon times the request out: a start is cheap to repeat.
+#: The names of containers whose start failed, removed again when the session finishes.
+_ABANDONED: list[str] = []
+
+
+def _remove_container(name: str) -> None:  # pragma: no mutate block — container lifecycle
+    import docker  # noqa: PLC0415
+
+    # Gone already, or not created yet: the session-end sweep tries again.
+    with contextlib.suppress(Exception):
+        docker.from_env().containers.get(name).remove(force=True)
+
+
+def _retried(make: Callable[[], Any]) -> Any:  # pragma: no mutate block — container lifecycle
+    """Start the container `make` builds, twice more if a starved Docker daemon times the request out.
 
     The timed-out request may still have created Ryuk, whose name a second try would collide with, so a retry runs
-    without it; the run stops what it started itself.
+    without it; the run stops what it started itself. It may also have created the container, which no handle then
+    reaches: each attempt is named, so a failed one is removed by name now and again when the session finishes.
     """
     from testcontainers.core.config import testcontainers_config  # noqa: PLC0415
 
     for _ in range(2):
+        name = f"starpulse-test-{uuid.uuid4().hex[:12]}"
         try:
-            return start()
-        except Exception:  # noqa: BLE001, S112
+            return make().with_name(name).start()
+        except Exception:
+            _ABANDONED.append(name)
+            _remove_container(name)
             testcontainers_config.ryuk_disabled = True
-    return start()
+    return make().with_name(f"starpulse-test-{uuid.uuid4().hex[:12]}").start()
 
 
 def _start_postgres() -> Any:  # pragma: no mutate block — container lifecycle
@@ -147,7 +164,7 @@ def _start_postgres() -> Any:  # pragma: no mutate block — container lifecycle
     # up and idle for up to a second before the first test could use it.
     testcontainers_config.sleep_time = 0.1
 
-    def start() -> Any:
+    def make() -> Any:
         # The data directory in memory and no sync: a throwaway server need not survive a crash, and initdb's syncs
         # took seconds on a disk the runners share.
         return join_slice(
@@ -158,15 +175,15 @@ def _start_postgres() -> Any:  # pragma: no mutate block — container lifecycle
                 # Every worker of a run connects to this one server.
                 "postgres -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=500"
             )
-        ).start()
+        )
 
-    return _retried(start)
+    return _retried(make)
 
 
 def _start_issuer() -> tuple[Any, str]:  # pragma: no mutate block — container lifecycle
     from testcontainers.core.container import DockerContainer  # noqa: PLC0415
 
-    container = _retried(lambda: join_slice(DockerContainer(IMAGE).with_exposed_ports(8080)).start())
+    container = _retried(lambda: join_slice(DockerContainer(IMAGE).with_exposed_ports(8080)))
     address = f"http://127.0.0.1:{container.get_exposed_port(8080)}/default"
     deadline = time.monotonic() + 60
     while not answers(f"{address}/.well-known/openid-configuration"):
@@ -254,6 +271,9 @@ def pytest_sessionfinish(session: pytest.Session) -> None:  # pragma: no mutate 
         if not future.cancel() and future.exception() is None:
             (future.result() if name == "postgres" else future.result()[0]).stop()
     _WARM.clear()
+    for name in _ABANDONED:
+        _remove_container(name)
+    _ABANDONED.clear()
     if _SHARED_POSTGRES_ROOT is not None:
         shutil.rmtree(_SHARED_POSTGRES_ROOT, ignore_errors=True)
 
