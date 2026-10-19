@@ -341,3 +341,31 @@ jobs:
       - run: uv build --wheel --out-dir "$RUNNER_TEMP/dist"
       - run: uv venv "$RUNNER_TEMP/fresh" && uv pip install --python "$RUNNER_TEMP/fresh/bin/python" "$RUNNER_TEMP"/dist/*.whl
       - run: python3 -I ci/fresh_serve.py "$RUNNER_TEMP/fresh/bin/python"
+
+  # The CloudEvents ingest on a machine with no Redis: ci/clean_machine.py first fails if a Redis port answers, then serves
+  # the installed wheel from an empty directory that declares one machine and one producer, posts the machine's events over
+  # HTTP, reads them back from the event log and the SSE stream, and fails unless an undeclared event is refused 4xx. A
+  # GitHub-hosted runner has no Redis service, which is the point: nothing the proof reads can have come through one. Not a
+  # required check: a pull request is proven by dispatching this workflow on its branch.
+  clean-machine-ingest:
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: /*
+          sparse-checkout-cone-mode: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: 12.6.0
+      # The wheel carries the built page (starpulse/static is not tracked).
+      - run: pnpm install --frozen-lockfile && pnpm run build
+        working-directory: starpulse/web
+      - run: uv build --wheel --out-dir "$RUNNER_TEMP/dist"
+      - run: uv venv "$RUNNER_TEMP/clean" && uv pip install --python "$RUNNER_TEMP/clean/bin/python" "$RUNNER_TEMP"/dist/*.whl
+      - run: python3 -I ci/clean_machine.py "$RUNNER_TEMP/clean/bin/python"

@@ -182,6 +182,7 @@ export interface RunStarted {
 }
 export interface Accepted {
   accepted: boolean;
+  deprecated?: string | null;
 }
 export interface ForwardAccepted {
   accepted: number;

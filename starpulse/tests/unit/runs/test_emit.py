@@ -1,4 +1,4 @@
-"""`starpulse emit`: the push path onto the event log."""
+"""`starpulse emit`, the 0.4 shim over the CloudEvents ingest: it writes a Step event through the ingest."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from typing import Any, get_args
 import pytest
 
 from starpulse._internal.runs import emit
+from starpulse._internal.runs.cloudevents import CloudEventsIngest
 from starpulse.contracts.adapters import RunStatus
 from starpulse._internal.eventlog.event_log import EventLog, Tail
 from starpulse._internal.eventlog.history import DEFAULT_FILE
@@ -37,6 +38,42 @@ def test_a_run_start_becomes_one_entry_with_the_flags_it_was_given(log: EventLog
     assert appended(log) == [
         {"time": NOW, "event": "StepStarted", "workflow": "nightly", "run_id": "r1", "status": "running"}
     ]
+
+
+def test_emit_writes_a_step_cloudevent_through_the_ingest_as_the_local_producer(
+    log: EventLog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    written: list[tuple[str, list]] = []
+    write = CloudEventsIngest.write
+
+    def spy(self: CloudEventsIngest, name: str, sent: list) -> tuple[int, dict]:
+        written.append((name, sent))
+        return write(self, name, sent)
+
+    monkeypatch.setattr(CloudEventsIngest, "write", spy)
+
+    run("StepStarted", "--workflow", "nightly", "--run", "r1", "--status", "running", "--step", "load", log=log)
+
+    ((name, (sent,)),) = written
+    assert name == "local"
+    assert {k: sent[k] for k in ("specversion", "source", "type", "subject", "data")} == {
+        "specversion": "1.0",
+        "source": "local",
+        "type": "StepStarted",
+        "subject": "r1",
+        "data": {"workflow": "nightly", "status": "running", "step": "load"},
+    }
+
+
+def test_emit_prints_a_deprecation_notice_naming_the_ingest_and_the_release_that_drops_it(
+    log: EventLog, capsys: pytest.CaptureFixture[str]
+) -> None:
+    run("StepStarted", "--workflow", "w", "--run", "r", "--status", "running", log=log)
+
+    notice = capsys.readouterr().err
+    assert "starpulse emit is deprecated" in notice
+    assert "/api/machine-events" in notice
+    assert "0.5" in notice
 
 
 def test_a_step_entry_carries_its_name_and_the_steps_it_depends_on(log: EventLog) -> None:

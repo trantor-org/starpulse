@@ -1,4 +1,5 @@
-"""The HTTP runs ingest: `POST /api/runs/events`, the push path for a producer that cannot reach the event log.
+"""The HTTP runs ingest: `POST /api/runs/events`, deprecated in 0.4 as a shim over the CloudEvents ingest
+(`POST /api/machine-events`), which takes the same run events as Step CloudEvents and goes in 0.5.
 
 A webhook-only engine (Cronicle, Rundeck, a GitHub `workflow_run` relay) posts one contract event as JSON, the fields
 `starpulse emit` takes:
@@ -20,8 +21,9 @@ from __future__ import annotations
 import hmac
 import json
 import math
-import time
-from collections.abc import Callable, Iterable, Mapping
+import uuid
+from collections.abc import Iterable, Mapping
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, get_args
 
 from starpulse._internal.config.config import MAX_BATCH, RunsInstance, Source
@@ -32,11 +34,14 @@ from starpulse.contracts.adapters import RunStatus
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     from starpulse._internal.eventlog.event_log import EventLog
+    from starpulse._internal.runs.cloudevents import CloudEventsIngest
 
 #: The largest event body accepted: a run event is a few hundred bytes, so this only stops a sender filling memory.
 MAX_BODY = 64 * 1024
 #: The largest forwarded batch accepted: `MAX_BATCH` events of a few hundred bytes each, with room for long keys.
 MAX_FORWARD_BODY = 1024 * 1024
+#: The notice the 0.4 shims (`POST /api/runs/events`, `starpulse emit`) give; both go in 0.5.
+DEPRECATED = "POST /api/runs/events is deprecated and goes in 0.5: post the Step CloudEvent to /api/machine-events"
 
 
 def tokens(instances: Iterable[RunsInstance | Source], environ: Mapping[str, str]) -> dict[str, str]:
@@ -72,10 +77,10 @@ def _decoded(raw: bytes) -> dict[str, Any] | str:
         event = json.loads(raw)
     except ValueError:
         return "the body is not JSON"
-    return _run_event(event)
+    return run_event(event)
 
 
-def _run_event(event: object) -> dict[str, Any] | str:
+def run_event(event: object) -> dict[str, Any] | str:
     """`event` when it is a run event the contract allows, else the reason it is refused."""
     if not isinstance(event, dict):
         return "the body must be a JSON object"
@@ -103,15 +108,14 @@ def _epoch(value: object) -> bool:
 
 
 class Ingest:
-    """Answers one `POST /api/runs/events`: `(authorization header, body)` to `(status, JSON body)`."""
+    """Answers one `POST /api/runs/events`, the 0.4 shim: it decodes the old body into a Step CloudEvent and
+    writes it through `events`, so the ingest owns the entry. `(authorization header, body)` to `(status, JSON body)`."""
 
-    def __init__(self, tokens: Mapping[str, str], log: EventLog, clock: Callable[[], float] = time.time) -> None:
-        self._tokens = dict(tokens)
-        self._log = log
-        self._clock = clock
+    def __init__(self, events: CloudEventsIngest) -> None:
+        self._events = events
 
     def __call__(self, authorization: str | None, raw: bytes) -> tuple[int, dict[str, Any]]:
-        if (instance := token_owner(self._tokens, authorization)) is None:
+        if (instance := self._events.owner(authorization)) is None:
             return 401, {"error": "a valid instance token is required: Authorization: Bearer <token>"}
         if isinstance(event := _decoded(raw), str):
             return 400, {"error": event}
@@ -120,19 +124,31 @@ class Ingest:
             return 400, {"error": "workflow must be <instance>/<workflow>"}
         if owner != instance:
             return 403, {"error": f"this token may push only {instance}/<workflow>, not {event['workflow']}"}
-        entry = run_events.entry(
-            event["event"],
-            workflow,
-            event["run_id"],
-            event["status"],
-            now=float(event["time"]) if "time" in event else self._clock(),
-            step=event.get("step"),
-            depends=event.get("depends"),
-            instance=instance,
-        )
-        if self._log.append(run_events.STREAM, entry) is None:
-            return 503, {"error": "the event log refused the entry; retry"}
-        return 201, {"accepted": True}
+        try:
+            sent = cloudevent(event, instance, workflow)
+        except (OverflowError, OSError, ValueError):
+            return 400, {"error": "time must be epoch seconds"}
+        status, answer = self._events.write(instance, [sent])
+        return status, {**answer, "deprecated": DEPRECATED} if status == 201 else answer
+
+
+def cloudevent(event: dict[str, Any], source: str, workflow: str) -> dict[str, Any]:
+    """The Step CloudEvent for a decoded old-shape run `event` of `workflow`, posted by producer `source`."""
+    step, depends = event.get("step"), event.get("depends")
+    return {
+        "specversion": "1.0",
+        "id": uuid.uuid4().hex,
+        "source": source,
+        "type": event["event"],
+        "subject": event["run_id"],
+        **({"time": datetime.fromtimestamp(event["time"], UTC).isoformat()} if "time" in event else {}),
+        "data": {
+            "workflow": workflow,
+            "status": event["status"],
+            **({"step": step} if step else {}),
+            **({"depends": depends} if depends else {}),
+        },
+    }
 
 
 def _machine_event(fields: dict[str, Any]) -> str | None:
@@ -230,7 +246,7 @@ def _forwarded(source: str, opt_in: bool, item: object) -> tuple[str, str, dict[
         return None
     kept = project(stream, fields, opt_in=opt_in)
     if stream == run_events.STREAM:
-        if isinstance(_run_event(kept), str):
+        if isinstance(run_event(kept), str):
             return None
         kept["instance"] = source
     elif stream == lane_events.STREAM:

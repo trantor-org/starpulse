@@ -32,7 +32,7 @@ reader_token_env = "STARPULSE_TOKEN"                   # optional: an agent's re
 
 Before sign-in every path but `/auth/login` and `/auth/callback` answers 401, including the page, `/api/events` and every
 write. Sign-in sets an `HttpOnly` session cookie that lasts eight hours; sessions live in the hub's memory, so a restart
-signs everyone out. The credentials are separate: a per-instance token passes only on `POST /api/runs/events` and `POST /api/forward`, the
+signs everyone out. The credentials are separate: a producer or instance token passes only on `POST /api/machine-events`, its deprecated `POST /api/runs/events` shim and `POST /api/forward`, the
 engine token only on the engine's routes, and neither signs a viewer in. The reader token is for an agent that reads
 the hub without a browser: a `GET` or `HEAD` of a viewer route with `Authorization: Bearer <reader token>` is served as
 a signed-in viewer's would be, and the same token on any write, instance or engine route answers 401. Set the same

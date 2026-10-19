@@ -1,5 +1,8 @@
 """`starpulse emit StepStarted|StepFinished`: append a workflow run, or one of its steps, to the event log.
 
+Deprecated in 0.4 and gone in 0.5: it builds the Step CloudEvent a producer would post to `POST /api/machine-events`
+and writes it through the same ingest, in this process, as the producer `local`; it prints that notice to stderr.
+
     python -m starpulse emit StepStarted --workflow nightly --run 2026-10-03 --status running
     python -m starpulse emit StepFinished --workflow nightly --run 2026-10-03 --status succeeded --step load --depends fetch,clean
 
@@ -19,10 +22,18 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import get_args
 
-from starpulse._internal.runs import run_events
-from starpulse.contracts.adapters import RunStatus
+from starpulse._internal.config.config import Producer
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import open_event_log
+from starpulse._internal.runs import run_events
+from starpulse._internal.runs.cloudevents import CloudEventsIngest
+from starpulse._internal.runs.ingest import cloudevent
+from starpulse.contracts.adapters import RunStatus
+
+DEPRECATED = (
+    "starpulse emit is deprecated and goes in 0.5: post the Step CloudEvent to the server's /api/machine-events "
+    "(docs/serving.md)"
+)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -55,15 +66,20 @@ def main(
     if args.depends and not args.step:
         parser.error("--depends needs --step")
     depends = [name for name in (args.depends or "").split(",") if name]
-    event = run_events.entry(
-        args.event, args.workflow, args.run, args.status, now=now(), step=args.step, depends=depends
-    )
     if log is None:
         try:
             log = open_event_log(args.config)
         except (OSError, ValueError) as exc:
             parser.error(f"{args.config or 'starpulse.toml'}: {exc}")
-    if log.append(run_events.STREAM, event) is None:
+    print(DEPRECATED, file=sys.stderr)
+    local = Producer(run_events.LOCAL, "", (), ())
+    ingest = CloudEventsIngest({local.name: local}, {}, log, {})
+    event = {"event": args.event, "run_id": args.run, "status": args.status, "time": now()}
+    sent = cloudevent(event | {"step": args.step, "depends": depends}, local.name, args.workflow)
+    status, answer = ingest.write(local.name, [sent])
+    if status == 503:
         print(f"starpulse emit: {run_events.STREAM} refused the entry (is the database reachable?)", file=sys.stderr)
         return 1
+    if status != 201:
+        parser.error(answer["error"])
     return 0
