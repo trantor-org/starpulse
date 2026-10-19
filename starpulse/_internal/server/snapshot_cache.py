@@ -3,7 +3,7 @@
 Encoding the snapshot costs about 100 ms of the interpreter, which every other request thread waits out, and gzipping
 it tens of ms more, so the server does both once per change to the feed instead of once per request, and encodes only
 the board tasks that changed. A background thread rebuilds it shortly after a change, so a page that connects finds it
-current. `get` is strict: a request that finds it out of date builds it itself, once however many ask at the same
+current; it keeps a snapshot a request built meanwhile. `get` is strict: a request that finds it out of date builds it itself, once however many ask at the same
 time, so what is served includes every change made before the request. `read`, which serves `/api/snapshot`, serves
 the held snapshot while it is within the TTL, so a feed that changes every second never makes a request build; the
 background thread rebuilds ahead of the TTL, and `require_current` makes the next `read` after a write hold it.
