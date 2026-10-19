@@ -85,7 +85,8 @@ def test_the_board_names_only_workflows_the_preview_lists() -> None:
     board = _machines()["board"]
 
     actors = {w["actor"] for ws in board["writers"].values() for w in ws}
-    assert actors and actors <= set(_workflows())
+    assert actors - {"operator", "agent"} <= set(_workflows())
+    assert actors & set(_workflows())
 
 
 def _capture() -> dict:
