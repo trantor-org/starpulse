@@ -1,12 +1,17 @@
 name: Release
 
 # A `v<version>` tag publishes that version: a GitHub Release with generated notes and the built files,
-# then PyPI through trusted publishing. The soak of the page runs beside that publish and does not hold it. A manual
-# dispatch builds and soaks any ref and publishes nothing, whatever ref it names. A pull request and a merge-queue
-# candidate do not run this workflow: the required `build` check is the workspace's Dagu DAG.
+# then PyPI through trusted publishing. A merge to main that changes the wheel publishes the same way as a pre-release,
+# a PEP 440 beta (`X.Y.ZbN`) cut at the merged commit; main never carries the beta's version. The soak of the page runs
+# beside a tag's publish and does not hold it. A manual dispatch builds and soaks any ref and publishes nothing, whatever
+# ref it names. A pull request and a merge-queue candidate do not run this workflow: the required `build` check is the
+# workspace's Dagu DAG.
 on:
   push:
     tags: ["v*"]
+    branches: [main]
+    # The wheel: the `starpulse` package without its tests, and the project file that names its dependencies and version.
+    paths: ["starpulse/**", "!starpulse/tests/**", "pyproject.toml"]
   workflow_dispatch:
     inputs:
       duration:
@@ -19,9 +24,11 @@ permissions:
 
 jobs:
   build:
-    # A dispatch builds on the self-hosted ai-vm-1 fleet; a tag builds on a clean hosted runner, since what it builds
-    # is published.
-    runs-on: ${{ startsWith(github.ref, 'refs/tags/v') && 'ubuntu-latest' || fromJSON('["self-hosted", "ai-vm-1"]') }}
+    # A dispatch builds on the self-hosted ai-vm-1 fleet; a tag or a merge to main builds on a clean hosted runner, since
+    # what it builds is published.
+    runs-on: ${{ github.event_name == 'push' && 'ubuntu-latest' || fromJSON('["self-hosted", "ai-vm-1"]') }}
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -42,6 +49,13 @@ jobs:
       - name: The tag names the package's version
         if: startsWith(github.ref, 'refs/tags/v')
         run: test "${GITHUB_REF_NAME#v}" = "$(uv version --short)"
+      # The bump rewrites this checkout only: no commit, no tag. `--increment PATCH` fixes the base so a later beta never
+      # sorts below an earlier one, and the run number makes the beta number unique and rising.
+      - name: A merge to main names a beta version
+        if: github.ref_type == 'branch' && github.event_name == 'push'
+        run: uv run cz bump --prerelease beta --increment PATCH --prerelease-offset "$GITHUB_RUN_NUMBER" --files-only --yes
+      - id: tag
+        run: echo "tag=v$(uv version --short)" >> "$GITHUB_OUTPUT"
       - run: uv build
       - name: The wheel carries the page
         run: unzip -l dist/*.whl | grep -q 'starpulse/static/index.html'
@@ -56,6 +70,7 @@ jobs:
   # paint, which they do not time. Publishing does not wait for it: a page over budget or leaking fails this job while
   # the GitHub Release and PyPI still ship.
   soak:
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
     needs: build
     runs-on: [self-hosted, ai-vm-1]
     # The 4 h hold, plus the page's build and the seeded server's start.
@@ -116,7 +131,7 @@ jobs:
             --body "The release soak for \`${TAG}\` failed or was cancelled. Run: ${RUN_URL}"
 
   github-release:
-    # A push here is a tag: only `v*` tags trigger it. A dispatch names a ref, which may be a tag, and publishes nothing.
+    # A push here is a tag or a merge to main. A dispatch names a ref, which may be a tag, and publishes nothing.
     if: github.event_name == 'push'
     needs: [build]
     runs-on: ubuntu-latest
@@ -127,9 +142,14 @@ jobs:
         with:
           name: dist
           path: dist/
-      - run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes
+      # A tag release verifies the tag it was pushed with. A beta has no tag yet: the release creates it at the merged
+      # commit, as a pre-release. A tag made with the workflow token starts no run of this workflow.
+      - run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then flags=(--verify-tag); else flags=(--target "$GITHUB_SHA" --prerelease); fi
+          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --generate-notes "${flags[@]}"
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.build.outputs.tag }}
 
   pypi:
     if: github.event_name == 'push'

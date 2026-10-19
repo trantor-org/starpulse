@@ -6,6 +6,7 @@ import json
 import re
 import subprocess
 import time
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -46,14 +47,15 @@ def test_ci_runs_only_the_nightly_dispatch_and_push_events():
     assert set(document[True]) == {"push", "schedule", "workflow_dispatch"}
 
 
-def test_release_build_runs_hosted_for_a_tag_and_on_the_ai_vm_1_fleet_otherwise():
+def test_release_build_runs_hosted_for_a_push_and_on_the_ai_vm_1_fleet_otherwise():
+    """A tag and a merge to main both publish what the build makes, so both build on a clean hosted runner."""
     runs_on = job("release.yml", "build")["runs-on"]
     match = re.fullmatch(
-        r"\$\{\{ startsWith\(github\.ref, 'refs/tags/v'\) && '([^']+)' \|\| fromJSON\('([^']+)'\) \}\}", runs_on
+        r"\$\{\{ github\.event_name == 'push' && '([^']+)' \|\| fromJSON\('([^']+)'\) \}\}", runs_on
     )
     assert match, runs_on
-    tag_runner, other_runner = match.groups()
-    assert tag_runner == HOSTED
+    push_runner, other_runner = match.groups()
+    assert push_runner == HOSTED
     assert json.loads(other_runner) == AI_VM_1_LANE
 
 
@@ -106,9 +108,9 @@ def test_a_failed_or_cancelled_release_soak_files_a_github_issue_naming_the_tag_
     assert "${TAG}" in step["run"] and "${RUN_URL}" in step["run"]
 
 
-def test_release_soak_runs_for_a_tag_or_a_dispatch_and_publishing_only_for_a_tag_push():
-    """A dispatch on a tag's ref publishes nothing."""
-    assert "if" not in job("release.yml", "soak")
+def test_release_soak_runs_for_a_tag_or_a_dispatch_and_publishing_only_for_a_push():
+    """A merge to main never takes a runner for hours, and a dispatch on a tag's ref publishes nothing."""
+    assert job("release.yml", "soak")["if"] == "github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'"
     assert job("release.yml", "github-release")["if"] == "github.event_name == 'push'"
     assert job("release.yml", "pypi")["if"] == "github.event_name == 'push'"
 
@@ -421,10 +423,50 @@ def test_a_shard_with_no_selected_files_passes_but_a_failing_or_empty_full_run_d
     assert run_step(pytest_step(), tmp_path, {"PYTEST_TARGETS": targets}, uv_exit=pytest_exit) == status
 
 
-def test_release_runs_only_the_tag_and_dispatch_events():
+def test_release_runs_only_the_push_and_dispatch_events():
     """A pull request and a merge-queue candidate get the required `build` from the Dagu DAG, not from this workflow."""
     document = yaml.safe_load((WORKFLOWS / "release.yml").read_text())
     assert set(document[True]) == {"push", "workflow_dispatch"}
+
+
+def test_a_merge_to_main_that_changes_the_wheel_triggers_a_release_run():
+    """The wheel is the `starpulse` package without its tests, plus the project file that names its dependencies and version."""
+    push = yaml.safe_load((WORKFLOWS / "release.yml").read_text())[True]["push"]
+    assert push["tags"] == ["v*"]
+    assert push["branches"] == ["main"]
+    assert push["paths"] == ["starpulse/**", "!starpulse/tests/**", "pyproject.toml"]
+
+
+def test_a_merge_to_main_publishes_a_beta_version_that_only_the_runner_holds():
+    """`cz bump` rewrites the runner's checkout only (no commit, no tag), so main never carries a beta and a run cannot loop."""
+    build = job("release.yml", "build")
+    step = next(s for s in build["steps"] if "cz bump" in s.get("run", ""))
+    command = step["run"]
+
+    assert step["if"] == "github.ref_type == 'branch' && github.event_name == 'push'"
+    assert "--prerelease beta" in command and "--files-only" in command
+    assert "--increment PATCH" in command
+    assert '--prerelease-offset "$GITHUB_RUN_NUMBER"' in command
+    assert build["outputs"]["tag"] == "${{ steps.tag.outputs.tag }}"
+    tag_step = next(s for s in build["steps"] if s.get("id") == "tag")
+    assert 'echo "tag=v$(uv version --short)" >> "$GITHUB_OUTPUT"' in tag_step["run"]
+
+
+def test_a_beta_release_is_a_prerelease_cut_at_the_merged_commit_and_a_tag_release_verifies_its_tag():
+    release = job("release.yml", "github-release")
+    step = next(s for s in release["steps"] if "gh release create" in s.get("run", ""))
+
+    assert step["env"]["TAG"] == "${{ needs.build.outputs.tag }}"
+    assert 'flags=(--verify-tag)' in step["run"]
+    assert 'flags=(--target "$GITHUB_SHA" --prerelease)' in step["run"]
+    assert '"$TAG"' in step["run"] and '"${flags[@]}"' in step["run"]
+
+
+def test_starpulse_names_its_commitizen_version_source_and_treats_a_breaking_change_as_a_minor_before_1_0():
+    commitizen = tomllib.loads((WORKFLOWS.parents[1] / "pyproject.toml").read_text())["tool"]["commitizen"]
+    assert commitizen["version_provider"] == "uv"
+    assert commitizen["tag_format"] == "v$version"
+    assert commitizen["major_version_zero"] is True
 
 
 def test_ci_runs_the_fresh_install_smoke_on_a_hosted_macos_runner():
