@@ -542,6 +542,34 @@ def test_producers_are_the_systems_that_post_machine_events_each_with_its_token_
     assert load(None).producers == ()
 
 
+def test_a_runs_instance_with_a_push_token_folds_into_the_producers_that_write_no_machine(tmp_path: Path) -> None:
+    text = (
+        '[[runs]]\nname = "cron"\ntoken_env = "CRON_TOKEN"\n\n'
+        '[[runs]]\nname = "ci"\ntype = "dagu"\nurl = "http://ci.test"\n\n'
+        '[[producers]]\nname = "gha"\ntoken_env = "GHA_TOKEN"\nmachines = ["ci"]\nactors = ["ci"]\n'
+    )
+
+    config = load(_write(tmp_path, text))
+
+    assert config.ingest_producers() == (Producer("gha", "GHA_TOKEN", ("ci",), ("ci",)), Producer("cron", "CRON_TOKEN", (), ()))
+    assert config.producers == (Producer("gha", "GHA_TOKEN", ("ci",), ("ci",)),)
+
+
+def test_a_runs_instance_and_a_producer_with_one_name_are_refused(tmp_path: Path) -> None:
+    text = '[[runs]]\nname = "cron"\ntoken_env = "CRON_TOKEN"\n\n' + "[[producers]]\n" + _PRODUCER.replace("dagu", "cron")
+
+    assert _refusal(tmp_path, text) == "producer cron is also a [[runs]] instance with a token_env; name them apart"
+
+
+def test_a_producer_that_lists_no_machines_or_actors_only_reports_runs(tmp_path: Path) -> None:
+    config_file = tmp_path / "starpulse.toml"
+    config_file.write_text('[[producers]]\nname = "cron"\ntoken_env = "CRON_TOKEN"\n')
+
+    (producer,) = load(config_file).ingest_producers()
+
+    assert (producer.name, producer.machines, producer.actors) == ("cron", (), ())
+
+
 _PRODUCER = 'name = "dagu"\ntoken_env = "T"\nmachines = ["ci"]\nactors = ["ci"]\n'
 
 
@@ -550,8 +578,6 @@ _PRODUCER = 'name = "dagu"\ntoken_env = "T"\nmachines = ["ci"]\nactors = ["ci"]\
     [
         ('[[producers]]\ntoken_env = "T"\nmachines = ["ci"]\nactors = ["ci"]\n', "a producer needs name"),
         ('[[producers]]\nname = "d"\nmachines = ["ci"]\nactors = ["ci"]\n', "a producer needs token_env"),
-        ('[[producers]]\nname = "d"\ntoken_env = "T"\nactors = ["ci"]\n', "a producer needs machines"),
-        ('[[producers]]\nname = "d"\ntoken_env = "T"\nmachines = ["ci"]\n', "a producer needs actors"),
         (
             '[[producers]]\nname = "a/b"\ntoken_env = "T"\nmachines = ["ci"]\nactors = ["ci"]\n',
             "producer names must be non-empty text without a /",

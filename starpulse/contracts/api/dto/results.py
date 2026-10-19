@@ -105,6 +105,7 @@ class RunStarted(_Api):
 
 class Accepted(_Api):
     accepted: bool
+    deprecated: str | None = None
 
 
 class ForwardAccepted(_Api):

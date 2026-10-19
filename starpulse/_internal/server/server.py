@@ -191,15 +191,26 @@ GET /api/level/what-if?from=STATE&to=STATE&p=P[&hours=N]
                    missing or unparsed parameter, a state no ended run left, a `p` outside 0 to 1, no other exit,
                    or a chain that never finishes; the window and its other refusals are `/api/level`'s
 GET /api/harnesses  {tiers, harnesses} from the config's `harnesses_file`; both empty with no file
+POST /api/machine-events
+                   post machine events and runs as CloudEvents 1.0 JSON (`application/cloudevents+json`, or a JSON array
+                   as `application/cloudevents-batch+json`), with `Authorization: Bearer <token>` of a `[[producers]]`
+                   entry; the one write path for both, needing no Redis (docs/sources.md). A machine event is written to
+                   `machine:events`; a `StepStarted` or `StepFinished` with no `machine`, `subject` the run's id and
+                   `data` {workflow, status[, step, depends]}, to `runs:events`. 201 {accepted}; 400 for an event the
+                   contract refuses, 401 for a missing or wrong token, 403 for another producer's source, machine or
+                   actor, 413 over the limit, 503 when the log refuses it, 404 when no producer is declared. A batch is
+                   checked whole, and a refusal writes nothing. A GET answers 405
 POST /api/runs/events
-                   push one run event from a producer that cannot reach the event log, with `Authorization: Bearer
-                   <token>`: {phase, workflow: "<instance>/<workflow>", run_id, status[, time, step, depends]}, the
-                   fields of `starpulse emit`. Each `[[runs]]` instance with a `token_env` has its own token, read from
-                   that environment variable at start, and a token pushes only its own instance's workflows. 201
-                   {accepted} when the log took the event, which the page draws as `pushed/<instance>/<workflow>`;
-                   401 for a missing or wrong token, 403 for another instance's workflow, 400 for an event the contract
-                   does not allow, 413 over 64 KiB, 503 when the log refuses it, 404 when no instance has a token. A
-                   refusal writes nothing. A GET answers 405
+                   deprecated in 0.4, removed in 0.5: a shim over `POST /api/machine-events`. It takes
+                   {event, workflow: "<instance>/<workflow>", run_id, status[, time, step, depends]} with `Authorization:
+                   Bearer <token>` and writes the Step CloudEvent that body names through the ingest, as the producer
+                   its token belongs to: a producer declared in `[[producers]]`, or a `[[runs]]` instance with a
+                   `token_env` (itself deprecated: a warning at start names the `[[producers]]` entry to declare), and a
+                   token pushes only its own instance's workflows. 201 {accepted, deprecated} when the log took the
+                   event, which the page draws as `pushed/<instance>/<workflow>`; 401 for a missing or wrong token,
+                   403 for another instance's workflow, 400 for an event the contract does not allow, 413 over 64 KiB,
+                   503 when the log refuses it, 404 when no producer or instance has a token. A refusal writes
+                   nothing. A GET answers 405
 POST /api/insights
                    a hub's fourth contract (`serve --hub` with `engine_token_env` in `[oidc]`; any other server answers
                    404): an external engine posts one `Finding` {id, engine {name, version}, scope {team, machine,
@@ -774,9 +785,15 @@ def prepare(parser: argparse.ArgumentParser, args: argparse.Namespace, config: C
     try:
         instance_tokens = ingest_tokens(config.runs, os.environ)
         source_tokens = ingest_tokens(config.sources, os.environ)
-        producer_tokens = ingest_tokens(config.producers, os.environ)
+        producer_tokens = ingest_tokens(config.ingest_producers(), os.environ)
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")
+    if instance_tokens:
+        print(
+            f"starpulse: [[runs]] token_env ({', '.join(instance_tokens)}) is deprecated and goes in 0.5: "
+            "declare each push token as a [[producers]] entry and post to /api/machine-events",
+            file=sys.stderr,
+        )
     refresh_token = os.environ.get(config.refresh_token_env or "")
     if config.refresh_token_env and not refresh_token:
         parser.exit(1, f"refresh_token_env: {config.refresh_token_env} is not set\n")
@@ -1005,6 +1022,11 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         wire_level(feed, _level_body)
     announce(port, feed.snapshot()["hint"])
     autopilot_runtime = autopilot_remote(config, base, feed, log)
+    cloudevents = (
+        CloudEventsIngest({p.name: p for p in config.ingest_producers()}, producer_tokens, log, feed.machines)
+        if producer_tokens
+        else None
+    )
     handler = request_handler(
         feed,
         _STATIC,
@@ -1022,14 +1044,12 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         board.create,
         complete=board.complete,
         restore=board.restore,
-        ingest=Ingest(instance_tokens, log) if instance_tokens else None,
+        ingest=Ingest(cloudevents) if instance_tokens else None,
         gate=gate,
         forward=ForwardIngest(source_tokens, log, aggregates_only=config.aggregates_only) if source_tokens else None,
         level=config.level if args.hub else None,
         insights=insights,
-        events=CloudEventsIngest({p.name: p for p in config.producers}, producer_tokens, log, feed.machines)
-        if producer_tokens
-        else None,
+        events=cloudevents,
         forwarding=forwarder,
         reruns=reruns,
         contract=_cached(lambda: doctor.contract(feed.snapshot(), config, doctor.LIVE), _CONTRACT_TTL_S),

@@ -204,7 +204,7 @@ def test_a_push_to_main_runs_no_test_job(name):
 
 def test_every_ci_job_but_the_macos_smoke_is_a_test_job():
     jobs = yaml.safe_load((WORKFLOWS / "ci.yml").read_text())["jobs"]
-    assert sorted(jobs) == sorted([*TEST_JOBS, "macos-fresh-serve"])
+    assert sorted(jobs) == sorted([*TEST_JOBS, "macos-fresh-serve", "clean-machine-ingest"])
 
 
 def test_the_coverage_map_is_published_only_by_a_green_nightly_and_is_no_required_check():
@@ -445,3 +445,11 @@ def test_ci_runs_the_fresh_install_smoke_on_a_hosted_macos_runner():
     smoke = job("ci.yml", "macos-fresh-serve")
     assert smoke["runs-on"] == "macos-latest"
     assert any("ci/fresh_serve.py" in step.get("run", "") for step in smoke["steps"])
+
+
+def test_ci_proves_the_ingest_on_a_hosted_runner_with_no_redis():
+    """The ai-vm-1 fleet sits beside a Redis; a hosted runner has none, so only it can show the ingest needs none."""
+    proof = job("ci.yml", "clean-machine-ingest")
+    assert proof["runs-on"] == "ubuntu-latest"
+    assert "github.event_name != 'push'" in proof["if"]
+    assert any("ci/clean_machine.py" in step.get("run", "") for step in proof["steps"])

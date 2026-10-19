@@ -1,7 +1,7 @@
 """The runs stream contract: one entry when a workflow run or one of its steps starts or ends.
 
-`starpulse emit` writes it from any scheduler hook or script, so a workflow needs no adapter to be seen.
-Emission is fail-open (`EventLog.append` never raises): a missing entry means the emit failed, never that the
+The CloudEvents ingest writes it (`POST /api/machine-events`, with the 0.4 shims `POST /api/runs/events` and
+`starpulse emit` over it), so a workflow needs no adapter to be seen. Emission is fail-open (`EventLog.append` never raises): a missing entry means the emit failed, never that the
 run did not happen.
 
 Each entry carries `event_id` plus these fields (absent when empty): `time` (epoch seconds), `event` (`StepStarted`
@@ -18,6 +18,8 @@ from typing import Any
 STREAM = "runs:events"
 #: The Runs glossary's Step events; a run's own entry names no `step`.
 EVENTS = ("StepStarted", "StepFinished")
+#: The producer name of `starpulse emit` on the machine's own log: its entries carry no `instance`, so they are local.
+LOCAL = "local"
 
 
 def entry(

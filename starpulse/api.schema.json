@@ -5,6 +5,17 @@
       "properties": {
         "accepted": {
           "type": "boolean"
+        },
+        "deprecated": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [

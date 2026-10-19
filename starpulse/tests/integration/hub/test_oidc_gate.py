@@ -20,6 +20,8 @@ import pytest
 
 pytest.importorskip("jwt", reason="the hub extras are not installed")
 
+from starpulse._internal.config.config import Producer
+from starpulse._internal.runs.cloudevents import CloudEventsIngest
 from starpulse._internal.runs.ingest import ForwardIngest, Ingest
 from starpulse._internal.server import server
 from starpulse._internal.server import writes
@@ -109,6 +111,7 @@ def running_hub(issuer: str, tmp_path: Path, store: HistoryStore) -> Iterator[Hu
     now = [1_000_000.0]
     feed = BoardFeed(machines=MACHINES)
     insights = Insights(InsightStore(f"sqlite:///{tmp_path / 'history.sqlite'}"), feed)
+    events = CloudEventsIngest({"cron": Producer("cron", "CRON", (), ())}, {"cron": INSTANCE_TOKEN}, log, {})
     with serve(
         tmp_path,
         feed,
@@ -116,7 +119,8 @@ def running_hub(issuer: str, tmp_path: Path, store: HistoryStore) -> Iterator[Hu
         clock=lambda: NOW,
         level=LEVEL,
         gate=lambda handler: gates[0](handler),
-        ingest=Ingest({"cron": INSTANCE_TOKEN}, log),
+        ingest=Ingest(events),
+        events=events,
         forward=ForwardIngest({"laptop": FORWARD_TOKEN}, log),
         insights=insights,
     ) as running:

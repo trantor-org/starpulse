@@ -468,7 +468,7 @@ def _name_list(raw: dict, key: str, who: str) -> tuple[str, ...]:
 def _producer(raw: object) -> Producer:
     if not isinstance(raw, dict):
         raise ConfigError("producers must be a list of [[producers]] tables")
-    for key in ("name", "token_env", "machines", "actors"):
+    for key in ("name", "token_env"):
         if key not in raw:
             raise ConfigError(f"a producer needs {key}")
     name = raw["name"]
@@ -476,12 +476,12 @@ def _producer(raw: object) -> Producer:
         raise ConfigError("producer names must be non-empty text without a /")
     who = f"producer {name}"
     _unknown(raw, _PRODUCER_KEYS, who)
-    return Producer(
-        name, _token_env(raw["token_env"], f"{who}:"), _name_list(raw, "machines", who), _name_list(raw, "actors", who)
-    )
+    machines = _name_list(raw, "machines", who) if "machines" in raw else ()
+    actors = _name_list(raw, "actors", who) if "actors" in raw else ()
+    return Producer(name, _token_env(raw["token_env"], f"{who}:"), machines, actors)
 
 
-def _producers(raw: object) -> tuple[Producer, ...]:
+def _producers(raw: object, runs: Sequence[RunsInstance] = ()) -> tuple[Producer, ...]:
     if not isinstance(raw, list):
         raise ConfigError("producers must be a list of [[producers]] tables")
     producers = tuple(_producer(table) for table in raw)
@@ -492,6 +492,9 @@ def _producers(raw: object) -> tuple[Producer, ...]:
             raise ConfigError(
                 f"producers {shared.name} and {producer.name} share token_env {producer.token_env}; each needs its own token"
             )
+    pushing = {instance.name for instance in runs if instance.token_env}
+    if clash := next((p for p in producers if p.name in pushing), None):
+        raise ConfigError(f"producer {clash.name} is also a [[runs]] instance with a token_env; name them apart")
     return producers
 
 
@@ -635,6 +638,12 @@ class Config:
     """The optional embeddings service that ranks search by meaning (`[search]`); no table: search is lexical only."""
     cursor_context: CursorContext = field(default_factory=CursorContext)
     """The context limit a Cursor task session is reset at (`[cursor_context]`); no table: 150000 of a 200000 window."""
+
+    def ingest_producers(self) -> tuple[Producer, ...]:
+        """The producers the CloudEvents ingest takes: `[[producers]]`, then each `[[runs]]` instance with a `token_env`
+        folded in as a producer that writes no machine, which is how its pushed runs reach the ingest."""
+        pushing = tuple(Producer(i.name, i.token_env, (), ()) for i in self.runs if i.token_env)
+        return self.producers + pushing
 
     def qualified_domains(self) -> dict[str, tuple[str, ...]]:
         """Every instance's domains as `<instance>/<workflow>`, one entry per domain name, in first-seen order."""
@@ -835,7 +844,7 @@ def load(path: Path | None) -> Config:
         _forward(raw.get("forward")),
         _sources(raw.get("sources", [])),
         _flag(raw, "aggregates_only", False),
-        producers=_producers(raw.get("producers", [])),
+        producers=_producers(raw.get("producers", []), runs),
         event_log_retention_days=log_retention,
         event_log_archive_dir=_archive_dir(raw.get("event_log_archive_dir", "starpulse-archive")),
         repos=repos,

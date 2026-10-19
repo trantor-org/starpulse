@@ -322,39 +322,43 @@ Both answer 501 with no telemetry stream, 503 when it cannot be read, and 400 fo
 
 ## Report runs from any scheduler
 
-```sh
-starpulse emit StepStarted --workflow nightly --run 2026-10-03 --status running
-starpulse emit StepFinished --workflow nightly --run 2026-10-03 --status succeeded --step load --depends fetch
-```
-
-A run's own entry names no `--step`; a step's names it.
-
-A workflow no adapter lists is drawn from the step graph its `emit` calls add up to, and that graph is kept in
-the history store across restarts.
-
-A producer on another host, or an engine that can only send webhooks (Cronicle, Rundeck, a GitHub `workflow_run`
-relay), posts the same event to the server instead. Name an environment variable for the instance's token in the
-config (`token_env`, in [the config file](serving.md#config-file)), set it where `serve` runs, and send the token as a bearer:
-
-```sh
-curl -X POST http://localhost:8766/api/runs/events -H "Authorization: Bearer $CRON_INGEST_TOKEN" \
-  -d '{"event": "StepStarted", "workflow": "cron/nightly", "run_id": "2026-10-03", "status": "running"}'
-```
-
-The body takes `emit`'s fields as JSON (`event`, `workflow`, `run_id`, `status`, and optionally `time`, `step` and
-`depends`) with the workflow named `<instance>/<workflow>`. A token pushes only its own instance's workflows: a
-missing or wrong token answers 401, another instance's workflow 403, an event the contract does not allow 400, and
-none of them writes anything. The page draws an accepted event as `pushed/<instance>/<workflow>`.
-
-An instance that only receives pushes needs no adapter: give the `[[runs]]` table a `name` and a `token_env`, and
-leave out `type` and `url`. It pulls nothing, has no Run now (so no `run_safe`), and draws only what the ingest
-receives from its token:
+A cron line, a systemd unit, an engine that can only send webhooks (Cronicle, Rundeck, a GitHub `workflow_run` relay) or
+a producer on another host reports a run as a Step CloudEvent to the same ingest that takes machine events
+([Post machine events as CloudEvents](#post-machine-events-as-cloudevents)). Declare it as a `[[producers]]` entry; a
+producer that only reports runs leaves out `machines` and `actors`, needs no adapter, pulls nothing and has no Run now (so no
+`run_safe`):
 
 ```toml
-[[runs]]
+[[producers]]
 name = "cron"
 token_env = "CRON_INGEST_TOKEN"
 ```
+
+Set the token where `serve` runs and send it as a bearer:
+
+```sh
+curl -X POST http://localhost:8766/api/machine-events -H "Authorization: Bearer $CRON_INGEST_TOKEN" \
+  -H "Content-Type: application/cloudevents+json" \
+  -d '{"specversion": "1.0", "id": "2026-10-03-start", "source": "cron", "type": "StepStarted", "subject": "2026-10-03",
+       "data": {"workflow": "nightly", "status": "running"}}'
+```
+
+A Step event is `type` `StepStarted` or `StepFinished` with no `machine`. `subject` is the run's id; `data` holds the
+`workflow`, the `status` (`not_started`, `queued`, `running`, `succeeded`, `failed`, `aborted` or `skipped`) and, for a
+step's own entry, `step` and optionally `depends`, the steps it waits on. A run's own entry names no `step`. The page
+draws an accepted event as `pushed/<source>/<workflow>`. A workflow no adapter lists is drawn from the step graph its
+events add up to, and that graph is kept in the history store across restarts. A token writes only as its own
+producer: a missing or wrong token answers 401, another producer's `source` 403, an event the contract does not allow
+400, and none of them writes anything; the other answers are the machine events' table below.
+
+### The 0.4 shims
+
+`POST /api/runs/events`, `starpulse emit` and a `[[runs]]` instance's `token_env` still work in 0.4 as shims over the
+ingest and go in 0.5. Each prints a deprecation notice (the endpoint's 201 carries it as `deprecated`; `emit` writes it to
+stderr; `serve` warns at start), and a `[[runs]]` push token is read as a producer of the same name, so it must not
+share a name with a `[[producers]]` entry. To move off them, declare a `[[producers]]` entry and post the Step event
+above: the endpoint's body (`event`, `workflow` named `<instance>/<workflow>`, `run_id`, `status`, optionally `time`,
+`step` and `depends`) maps to `type`, the plain workflow name in `data`, `subject` and `data.status`.
 
 ## Post machine events as CloudEvents
 
@@ -427,8 +431,7 @@ run_safe = ["ui-preview.yml"]
 - **Events.** The repository is read every 60 s: the workflow list and the repository's latest runs, two calls however
   many workflows it has, and a workflow again only when it is new, its file or latest run changed, or its latest run has
   not ended (its jobs move without the run moving). A quiet repository costs about 120 calls an hour. A `workflow_run`
-  webhook, mapped with `starpulse._internal.runs.github_actions.workflow_run_entry` and sent to the ingest (or
-  `starpulse emit`), reads that workflow again at once; the adapter does not receive webhooks itself, so a deployment
+  webhook, mapped with `starpulse._internal.runs.github_actions.workflow_run_entry` and sent to the ingest, reads that workflow again at once; the adapter does not receive webhooks itself, so a deployment
   with no relay GitHub can reach shows a run within the 60 s.
 
 ## systemd timers

@@ -9,7 +9,8 @@ from typing import Any
 import pytest
 
 from starpulse._internal.runs import ingest, run_events
-from starpulse._internal.config.config import RunsInstance
+from starpulse._internal.runs.cloudevents import CloudEventsIngest
+from starpulse._internal.config.config import Producer, RunsInstance
 from starpulse._internal.eventlog.event_log import EventLog, Tail
 
 NOW = 1_700_000_000.0
@@ -23,7 +24,12 @@ def log(tmp_path: Path) -> EventLog:
 
 @pytest.fixture
 def push(log: EventLog) -> ingest.Ingest:
-    return ingest.Ingest(TOKENS, log, clock=lambda: NOW)
+    return shim(log)
+
+
+def shim(log: EventLog) -> ingest.Ingest:
+    producers = {name: Producer(name, f"{name.upper()}_TOKEN", (), ()) for name in TOKENS}
+    return ingest.Ingest(CloudEventsIngest(producers, TOKENS, log, {}, clock=lambda: NOW))
 
 
 def appended(log: EventLog) -> list[dict[str, Any]]:
@@ -44,7 +50,7 @@ def test_a_valid_event_with_its_instances_token_is_appended_as_that_instances_en
 ) -> None:
     status, answer = push(bearer("cron"), body())
 
-    assert (status, answer) == (201, {"accepted": True})
+    assert (status, answer["accepted"]) == (201, True)
     assert appended(log) == [
         {
             "time": NOW,
@@ -145,7 +151,7 @@ def test_a_log_that_refuses_the_entry_answers_503() -> None:
         def append(self, *_args: Any, **_kwargs: Any) -> None:
             return None
 
-    status, answer = ingest.Ingest(TOKENS, Down("sqlite://"), clock=lambda: NOW)(bearer("cron"), body())
+    status, answer = shim(Down("sqlite://"))(bearer("cron"), body())
 
     assert status == 503
     assert "error" in answer

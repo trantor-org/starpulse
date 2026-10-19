@@ -607,12 +607,12 @@ def _parser() -> argparse.ArgumentParser:
     parser = _Parser(
         prog="starpulse",
         description="StarPulse: workflows and tasks. These verbs read a running server as JSON.",
-        epilog="`starpulse serve` runs the server, `starpulse emit` pushes a workflow run and `starpulse forward` sets the hub opt-in, `starpulse connect` sets up a tracker, `starpulse worker pulls` runs the pull request delivery loops alone, `starpulse worker autopilot` runs the autopilot alone `starpulse import-history` adds earlier lane changes to the store, `starpulse conform` replays the recorded history against the machines the project declares and `starpulse reload` replaces the serve children whose code changed; each has its own --help.",
+        epilog="`starpulse serve` runs the server, `starpulse emit` (deprecated: post to the ingest) pushes a workflow run and `starpulse forward` sets the hub opt-in, `starpulse connect` sets up a tracker, `starpulse worker pulls` runs the pull request delivery loops alone, `starpulse worker autopilot` runs the autopilot alone `starpulse import-history` adds earlier lane changes to the store, `starpulse conform` replays the recorded history against the machines the project declares and `starpulse reload` replaces the serve children whose code changed; each has its own --help.",
     )
     verbs = parser.add_subparsers(dest="command", required=True, metavar="command")
     # Listed so `--help` shows how to start the server; `__main__` hands these words to their own parsers before this one.
     verbs.add_parser("serve", help="run StarPulse's server", add_help=False)
-    verbs.add_parser("emit", help="push a workflow run onto the runs stream", add_help=False)
+    verbs.add_parser("emit", help="deprecated: push a workflow run onto the runs stream", add_help=False)
     verbs.add_parser("forward", help="let a person's name leave this instance for the hub, or stop it", add_help=False)
     verbs.add_parser("connect", help="set up a native, Backlog.md or Jira board in starpulse.toml", add_help=False)
     verbs.add_parser(

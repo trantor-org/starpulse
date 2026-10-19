@@ -302,7 +302,7 @@ contract to read answers `{ok: true, checks: []}`.
 `skills` reads no server. The package bundles four skills: `operating-starpulse-board` (what to work next, why a task
 cannot move, moving it), `authoring-starpulse-machines` (machine YAML, writers, guards, subflows, `machine validate`
 and `machine import mermaid`), `writing-starpulse-adapters` (the board, machine-events and runs contracts, the adapter
-kit, `emit`) and `setting-up-starpulse` (starting the server, config, `doctor`), and `skills install`
+kit, the CloudEvents ingest) and `setting-up-starpulse` (starting the server, config, `doctor`), and `skills install`
 copies them to `.claude/skills` (`--claude`) or `.agents/skills` (`--codex`) in the working directory, or with `--user`
 to `~/.claude/skills` or `~/.agents/skills`. An install records what it wrote, so a copy you edited afterwards is
 refused (exit 1) until you pass `--force`, while one the package has since updated is replaced; `skills list` reports
