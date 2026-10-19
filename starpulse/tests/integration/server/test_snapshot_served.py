@@ -275,3 +275,31 @@ def test_a_snapshot_read_straight_after_a_write_holds_the_write(tmp_path: Path) 
 
     assert b'"written"' not in before
     assert b'"written"' in after
+
+
+def test_a_snapshot_change_with_pull_files_is_sent_and_the_stream_stays_open(tmp_path: Path) -> None:
+    feed = BoardFeed(machines=MACHINES)
+    feed.put(task("PROJ-1"))
+    pull = {
+        "number": 7,
+        "url": "https://github.com/o/r/pull/7",
+        "checks": "pass",
+        "merged": False,
+        "merge_sha": None,
+        "merged_at": None,
+        "files": ["a.py"],
+        "threads": 0,
+        "behind_main": 0,
+        "stale": False,
+    }
+    feed.set_pulls({"PROJ-1": [pull]})
+
+    with _serve(tmp_path, feed) as server:
+        with urllib.request.urlopen(_url(server, "/api/events"), timeout=5) as resp:
+            assert _next_event(resp)[0] == "snapshot"
+            feed.set_window(1000)
+            name, data = _next_event(resp)
+            assert name == "snapshot"
+            assert "files" not in data["pulls"]["PROJ-1"][0]
+            feed.put(task("PROJ-2"))
+            assert _next_event(resp)[0] == "task"

@@ -122,3 +122,26 @@ def test_the_snapshot_and_the_pulls_event_omit_the_fields_of_a_pull_record_the_a
     for pulls in sent:
         assert {"files", "applied_by"}.isdisjoint(pulls["TASK-1"][0])
         assert pulls["TASK-1"][0]["number"] == 7
+
+
+def test_a_snapshot_event_omits_the_fields_of_a_pull_record_the_api_does_not_declare() -> None:
+    record = {
+        "number": 7,
+        "url": "https://github.com/o/r/pull/7",
+        "checks": "pass",
+        "merged": False,
+        "merge_sha": None,
+        "merged_at": None,
+        "threads": 0,
+        "behind_main": 0,
+        "stale": False,
+        "files": ["README.md"],
+        "applied_by": "b" * 40,
+    }
+    feed = BoardFeed(machines=MACHINES)
+    feed.set_pulls({"TASK-1": [record]})
+
+    sent = json.loads(event("snapshot", feed.snapshot()))["pulls"]["TASK-1"][0]
+
+    assert {"files", "applied_by"}.isdisjoint(sent)
+    assert sent["number"] == 7
