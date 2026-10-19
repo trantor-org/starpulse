@@ -49,7 +49,7 @@ class _SignalledServer:
     def __init__(self) -> None:
         self._stopped = threading.Event()
 
-    def serve_forever(self) -> None:
+    def serve_forever(self, poll_interval: float = 0.5) -> None:
         os.kill(os.getpid(), signal.SIGTERM)
         assert self._stopped.wait(5), "SIGTERM did not stop the server"
 

@@ -613,7 +613,7 @@ def serve_until_stopped(server: StarPulseServer, feed: BoardFeed) -> None:
     signal.signal(signal.SIGTERM, lambda *_: threading.Thread(target=server.shutdown, daemon=True).start())
     try:
         try:
-            server.serve_forever()
+            server.serve_forever(poll_interval=0.05)  # `shutdown` waits out one poll: a swap and a stop each pay it
         except KeyboardInterrupt:
             pass
     finally:
