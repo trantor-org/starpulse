@@ -258,7 +258,7 @@ Locust reads only `/api`, so each virtualenv gets a placeholder `index.html`.
 The state directory is what the server serves: a `starpulse.toml`, the SQLite history its `database_url` names at
 `/tmp/work/` (the container copies the read-only directory there before each run, so every run starts from the same
 state) and the `.starpulse/` board and machines it reads. Copy a live instance's with SQLite's backup API, and drop
-the config's tables that reach out (`[search]`, `[[runs]]`, `[[triggers]]`, `[[repos]]`, `[autopilot]`, `[forward]`,
+the config's tables that reach out (`[search]`, `[[runs]]`, `[[repos]]`, `[autopilot]`, `[forward]`,
 `session_start_url`, the board's `criteria`): the container runs with `--network none` either way.
 
 Each run serves the copy on `SERVER_CPUS` (default `0-7`) through `serve.py`, which reports `sys._is_gil_enabled()`

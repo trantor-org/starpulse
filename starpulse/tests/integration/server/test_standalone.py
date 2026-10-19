@@ -17,7 +17,6 @@ from typing import NamedTuple
 import pytest
 
 from starpulse._internal.server import server
-from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import DEFAULT_FILE, HistoryStore
 from starpulse.tests.page_stub import held
 
@@ -84,39 +83,6 @@ def _await_page(proc: subprocess.Popen, port: int) -> None:
 _NO_FLOW_METRICS = "flow_metrics_worker = true\n"
 _INGEST_CONFIG = '[[runs]]\nname = "cron"\ntype = "dagu"\nurl = "http://127.0.0.1:9"\ntoken_env = "CRON_INGEST_TOKEN"\n'
 
-_FAKE_RUNS = '''
-from pathlib import Path
-
-
-def start(url):
-    if url.endswith(".none"):
-        return None
-
-    def run(workflow):
-        with Path(url).open("a") as marker:
-            marker.write(workflow + "\\n")
-        return "run-1"
-
-    return run
-
-
-def follow(url, runs, log):
-    pass
-'''
-
-
-def _fake_runs(tmp_path: Path, url: str) -> str:
-    """A package with a runs adapter whose `start` appends the workflow to the file `url` names, and its config."""
-    package = tmp_path / "fakes"
-    package.mkdir()
-    (package / "__init__.py").write_text("")
-    (package / "runs.py").write_text(_FAKE_RUNS)
-    return (
-        f'[[runs]]\nname = "fake"\ntype = "fakes.runs"\nurl = "{url}"\n\n'
-        '[[triggers]]\non = "lane"\nstart = "fake/reconcile"\nwhen = { lane = { equals = "done" } }\n'
-    )
-
-
 # sd_listen_fds: the socket is fd 3 and LISTEN_PID is the server's own pid, which `exec` keeps
 _ACTIVATE = (
     "import os, sys; os.dup2(int(sys.argv[1]), 3); "
@@ -131,7 +97,6 @@ class Served(NamedTuple):
     plain_proc: subprocess.Popen
     plain_port: int
     home: Path  # the directory of the server's config, history file and board
-    marker: Path  # the file the fake runs adapter appends each started workflow to
     env: dict[str, str]  # the server's environment, for a command that must see what it sees
 
 
@@ -146,9 +111,8 @@ class Activated(NamedTuple):
 def served(build: None, tmp_path_factory: pytest.TempPathFactory) -> Iterator[Served]:
     """The server, started once: it is ~4 s of imports and workers, and each test below owns only the names, runs and events it sends."""
     home = tmp_path_factory.mktemp("plain")
-    marker = home / "started.txt"
     config = home / "starpulse.toml"
-    config.write_text(_NO_FLOW_METRICS + _INGEST_CONFIG + "\n" + _fake_runs(home, str(marker)))
+    config.write_text(_NO_FLOW_METRICS + _INGEST_CONFIG)
     history = HistoryStore(f"sqlite:///{home / DEFAULT_FILE}", {})
     day = 86400.0
     history.record_lane("l1", "T-1", "In Progress", time.time() - 3 * day)  # a first sighting: enters In Progress
@@ -156,7 +120,6 @@ def served(build: None, tmp_path_factory: pytest.TempPathFactory) -> Iterator[Se
     history.engine.dispose()
     env = _env(
         PATH=str(tmp_path_factory.mktemp("empty-path")),  # an empty directory: no docker, podman or gh resolves
-        PYTHONPATH=os.pathsep.join([str(home), os.environ.get("PYTHONPATH", "")]),
         CRON_INGEST_TOKEN=_INGEST_TOKEN,
         LISTEN_FDS="1",  # a socket meant for another process: every test here proves the server binds its own port anyway
         LISTEN_PID="1",
@@ -165,7 +128,7 @@ def served(build: None, tmp_path_factory: pytest.TempPathFactory) -> Iterator[Se
     proc = subprocess.Popen(_serve_command(plain_port, config), env=env)
     try:
         _await_page(proc, plain_port)
-        yield Served(proc, plain_port, home, marker, env)
+        yield Served(proc, plain_port, home, env)
     finally:
         proc.terminate()
         proc.wait(timeout=30)
@@ -270,46 +233,6 @@ def test_an_instance_whose_token_variable_is_unset_stops_the_server_naming_it(tm
 
     assert started.returncode == 1
     assert "runs instance cron: CRON_INGEST_TOKEN is not set" in started.stderr
-
-
-def test_a_lane_event_a_trigger_matches_starts_the_run_through_the_adapter_and_one_it_does_not_match_starts_none(
-    served: Served,
-) -> None:
-    history = HistoryStore(f"sqlite:///{served.home / DEFAULT_FILE}", {})
-    log = EventLog(f"sqlite:///{served.home / DEFAULT_FILE}")
-    try:
-        deadline = time.monotonic() + 30
-        while history.cursor("triggers") is None:  # the consumer has taken its place at the log's head
-            assert served.plain_proc.poll() is None, "the server exited before serving"
-            assert time.monotonic() < deadline, "the trigger consumer never started"
-            time.sleep(0.2)
-        assert log.append("board:lanes", {"task": "TASK-1", "lane": "review", "time": 1.0}, event_id="TASK-1@review@1")
-        last = log.append("board:lanes", {"task": "TASK-1", "lane": "done", "time": 2.0}, event_id="TASK-1@done@2")
-        assert last
-        while (history.cursor("triggers") or 0) < last:  # the consumer has handled both events
-            assert served.plain_proc.poll() is None, "the server exited"
-            assert time.monotonic() < deadline, "the consumer never handled the events"
-            time.sleep(0.05)
-        assert served.marker.read_text() == "reconcile\n"
-    finally:
-        history.engine.dispose()
-
-
-@pytest.mark.usefixtures("build")
-def test_a_trigger_whose_adapter_cannot_start_a_run_stops_the_server_naming_the_workflow(tmp_path: Path) -> None:
-    config = tmp_path / "starpulse.toml"
-    config.write_text(_fake_runs(tmp_path, str(tmp_path / "started.none")))
-
-    started = subprocess.run(
-        _serve_command(_free_port(), config),
-        env=_env(PYTHONPATH=os.pathsep.join([str(tmp_path), os.environ.get("PYTHONPATH", "")])),
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-
-    assert started.returncode == 1
-    assert "no adapter can start a run of: fake/reconcile" in started.stderr
 
 
 def test_serve_answers_on_the_listening_socket_the_service_manager_passes_in_and_binds_no_port_of_its_own(

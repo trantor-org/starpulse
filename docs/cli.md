@@ -453,7 +453,7 @@ load it: the files of the `starpulse` modules the process imports, with their co
 process's config blocks with the last reading, taken when `serve` started or at the last `reload`, then:
 
 - **replaced**: a child whose closure changed, or whose `database_url`, `board_type` or `board` changed, is ended and
-  started again with a new pid. The `runs` child builds its adapters and triggers once, so a `runs` or `triggers`
+  started again with a new pid. The `runs` child builds its adapters once, so a `runs`
   change also replaces it.
 - **reloaded**: a child whose only change is its own config block (`pull_requests`, `repos`, `ci`, `release`,
   `task_actor` for `pulls`; `autopilot`, `level`, `session_start_url` for `autopilot`) keeps its pid and re-reads the

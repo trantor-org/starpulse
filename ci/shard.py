@@ -27,7 +27,6 @@ SECONDS = {
     "starpulse/tests/unit/eventlog/test_history_summaries.py": 55,
     "starpulse/tests/integration/hub/test_forwarding_kit.py": 51,
     "starpulse/tests/unit/runs/test_dagu_runs.py": 34,
-    "starpulse/tests/unit/runs/test_triggers.py": 33,
     "starpulse/tests/integration/server/test_standalone.py": 33,
     "starpulse/tests/unit/server/test_forwarding_route.py": 29,
     "ci/test_soak.py": 25,

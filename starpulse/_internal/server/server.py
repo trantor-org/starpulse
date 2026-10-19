@@ -826,8 +826,6 @@ def prepare(parser: argparse.ArgumentParser, args: argparse.Namespace, config: C
         if (factory := getattr(adapter, "rerun", None)) and (rerun := factory(instance.url))
     }
     run_safe = [name for name in config.qualified_run_safe() if name.partition("/")[0] in starts]
-    if unstartable := sorted({t.start for t in config.triggers if t.start.partition("/")[0] not in starts}):
-        parser.exit(1, f"triggers start workflows no adapter can start a run of: {', '.join(unstartable)}\n")
     return Prepared(instance_tokens, source_tokens, refresh_token, gate, starts, reruns, run_safe, producer_tokens)
 
 
@@ -908,8 +906,8 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     if config.forward is not None:
         # before the adapter starts, so the history precedes the live changes in the log
         lane_events.replay(store, log)
-    # a lane entry reaches the log for the hub it is forwarded to and for the triggers that start a run on it
-    feed.record_lanes(store, log if config.forward is not None or config.triggers else None)
+    # a lane entry reaches the log for the hub it is forwarded to
+    feed.record_lanes(store, log if config.forward is not None else None)
     # `starpulse worker board` dates when each task's Start Criteria were met and reconciles the lanes the history
     # missed; this process rereads the dates it keeps. A hub has no such worker and runs both in-process.
     if args.hub:
@@ -974,7 +972,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         conformance = Conformance(feed.machines)
         conformance.follow(log, stop)
         conformance_metrics = conformance.exposition
-    # `starpulse worker runs` runs the run adapters, the trigger starts and the pushed-runs follower; this process
+    # `starpulse worker runs` runs the run adapters and the pushed-runs follower; this process
     # draws the workflows that worker keeps in the log, and starts a run only when the page asks
     runs_projection.Projected(log, feed).follow(stop)
     if config.task_actor:

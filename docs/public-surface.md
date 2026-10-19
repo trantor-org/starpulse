@@ -58,7 +58,7 @@ internal and can change in any release.
   last. An id no state has is ignored, and a machine with no `tiers` (or an empty list) draws the Board's own columns,
   as before. The Star Map draws one row unless a second row makes the sun more than 5% larger, and keeps each state's
   footprint the same whatever it holds.
-- The config file's keys, among them each `[[triggers]]` table's `on`, `start` and `when` ([Triggers](serving.md#triggers)),
+- The config file's keys, among them
   the `[analytics]` table's `roots`, `stop_activities`, `lifecycle_skills`, `injected_openings`, `operator_tools`, `claims`,
   `completion_skill`, `completion_call`, the optional `[analytics.labeller]` table's `url`, `model`, `instructions`,
   `criteria` and `timeout`, each `[[analytics.skill_loads]]`'s
