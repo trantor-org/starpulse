@@ -1647,7 +1647,7 @@ requires-dist = [
     { name = "psycopg", extras = ["binary"], marker = "extra == 'postgres'", specifier = ">=3.2" },
     { name = "pydantic", specifier = ">=2" },
     { name = "pyjwt", extras = ["crypto"], marker = "extra == 'hub'", specifier = ">=2.9" },
-    { name = "python-statemachine", specifier = "==3.2.2" },
+    { name = "python-statemachine", specifier = ">=3.2.1,<4" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "sqlalchemy", specifier = ">=2.1.1" },
 ]
