@@ -13,6 +13,7 @@ import hashlib
 import importlib
 import inspect
 import logging
+import os
 import re
 import shlex
 import subprocess
@@ -31,7 +32,6 @@ except ImportError:
     from yaml import SafeLoader as _FrontmatterLoader
 
 from starpulse._internal.board import project_machines
-from starpulse._internal.board.dir_watch import DirWatch
 from starpulse._internal.board.seam import Board, MoveWriter, Written
 from starpulse._internal.machines.transitions import DEFAULT_STATUSES, board_machine, lane_id
 from starpulse.contracts.task_keys import TaskKeys
@@ -50,8 +50,8 @@ logger = logging.getLogger(__name__)
 _PROJECTION = (__name__, "starpulse._internal.feed.board_feed", "starpulse.contracts.adapters")
 
 DEFAULT_PREFIX = "task"
-#: Seconds between the full scans that back the file watch up, unless the board sets `interval`.
-BACKSTOP = 60.0
+#: Seconds between the scans that find a changed task file, unless the board sets `interval`.
+POLL_INTERVAL = 2.0
 #: Where a task file sits decides whether it is in a lane or has left them; subtasks are ids like `task-1.1`.
 _FOLDERS: tuple[tuple[str, Literal["completed", "archived"] | None], ...] = (
     ("tasks", None),
@@ -271,31 +271,34 @@ class UpstreamBacklog:
         self._refusal = refusal
         self._moves = moves if moves is not None else board_moves(board_machine(self.config.statuses))
         self._lanes = {lane_id(status) for status in self.config.statuses}
-        self._seen: dict[Path, tuple[int, int]] = {}
-        self._ids: dict[Path, str] = {}
+        # keyed by the listing's path string, so a scan of unchanged files builds no Path
+        self._seen: dict[str, tuple[int, int]] = {}
+        self._ids: dict[str, str] = {}
         self._kept = kept
         self._stop = threading.Event()
-        self._watching: DirWatch | None = None
         for name, (mtime_ns, size, task_id) in (files or {}).items():
-            self._seen[root / name] = (mtime_ns, size)
+            self._seen[str(root / name)] = (mtime_ns, size)
             if task_id:
-                self._ids[root / name] = task_id
+                self._ids[str(root / name)] = task_id
 
     def files(self) -> dict[str, list]:
         """Each file scanned, by its path under the project, with its fingerprint and the task it holds (or None)."""
         return {
-            str(path.relative_to(self.root)): [*fingerprint, self._ids.get(path)]
+            os.path.relpath(path, self.root): [*fingerprint, self._ids.get(path)]
             for path, fingerprint in self._seen.items()
         }
 
     def scan(self) -> None:
-        """Publish every task file that is new or changed since the last scan, and retract a task whose file is gone."""
-        present: set[Path] = set()
+        """Publish every task file that is new or changed since the last scan, and retract a task whose file is gone.
+
+        One `os.scandir` pass over the folders: a file whose time and size match the last scan is not read."""
+        present: set[str] = set()
         changed = False
         for folder, settled in _FOLDERS:
-            for path in sorted((self.root / folder).glob("*.md")):
+            for path, fingerprint in _listing(self.root / folder):
                 present.add(path)
-                changed |= self._place(path, settled)
+                if self._seen.get(path) != fingerprint:
+                    changed |= self._place(path, settled, fingerprint)
         for gone in self._seen.keys() - present:
             self._forget(gone)
             changed = True
@@ -303,33 +306,16 @@ class UpstreamBacklog:
         if changed:
             self._kept(self.files())
 
-    def scan_files(self, paths: Collection[Path]) -> None:
-        """Do what `scan` does for `paths` alone: the files a watch named, without touching the rest of the board."""
-        settled_by_folder = {self.root / folder: settled for folder, settled in _FOLDERS}
-        changed = False
-        for path in sorted(
-            paths, key=lambda path: not path.exists()
-        ):  # a file that arrived is placed before its old name goes
-            if path.exists() and path.parent in settled_by_folder:
-                changed |= self._place(path, settled_by_folder[path.parent])
-            elif path in self._seen:
-                self._forget(path)
-                changed = True
-        self._settle(changed)
-        if changed:
-            self._kept(self.files())
-
-    def _place(self, path: Path, settled: Literal["completed", "archived"] | None) -> bool:
-        """Publish the task `path` holds unless it is unchanged since last placed; whether the file's fingerprint moved."""
+    def _place(
+        self, path: str, settled: Literal["completed", "archived"] | None, fingerprint: tuple[int, int]
+    ) -> bool:
+        """Publish the task `path` holds, listed with `fingerprint`; whether it was read."""
+        file = Path(path)
         try:
-            stat = path.stat()
-            fingerprint = (stat.st_mtime_ns, stat.st_size)
-            if self._seen.get(path) == fingerprint:
-                return False
-            text = path.read_text()
+            text = file.read_text()
         except OSError:
             return False  # moved or removed while scanning; the next scan sees where it went
-        task = self._task(path, text, settled)
+        task = self._task(file, text, settled)
         if task is None:
             self._ids.pop(path, None)
         else:
@@ -340,7 +326,7 @@ class UpstreamBacklog:
         )
         return True
 
-    def _forget(self, gone: Path) -> None:
+    def _forget(self, gone: str) -> None:
         """Drop a file that is no longer there, retracting its task unless another file now holds it."""
         # a file moved between folders is back under its id; only an id no file holds is retracted
         task_id = self._ids.pop(gone, None)
@@ -435,23 +421,16 @@ class UpstreamBacklog:
 
     def start(
         self, interval: float = 2.0, scanned: Callable[[], None] = lambda: None
-    ) -> threading.Thread:  # pragma: no mutate block — watch thread plumbing
-        """Scan now, then place each file a watch names as it lands and rescan all of them every `interval` seconds,
-        on a daemon thread, and return it; `scanned` runs once, after the first scan.
-
-        The full scan is the backstop for a change the watch missed: it runs whenever `interval` passes quietly.
-        """
+    ) -> threading.Thread:  # pragma: no mutate block — poll thread plumbing
+        """Scan now and every `interval` seconds after, on a daemon thread, and return it; `scanned` runs once, after
+        the first scan."""
 
         def run() -> None:
-            watch = self._watching = DirWatch(self.root / folder for folder, _ in _FOLDERS)  # before the first scan
             self.scan()
             scanned()
             try:
-                while not self._stop.is_set():
-                    if (changed := watch.wait(interval)) is None:
-                        self.scan()
-                    elif changed:
-                        self.scan_files(changed)
+                while not self._stop.wait(interval):
+                    self.scan()
             finally:
                 _live.pop(self, None)
 
@@ -463,8 +442,24 @@ class UpstreamBacklog:
     def stop(self) -> None:
         """End the thread `start` began: it leaves its loop at once, even while it waits out `interval`."""
         self._stop.set()
-        if self._watching:
-            self._watching.wake()
+
+
+def _listing(folder: Path) -> list[tuple[str, tuple[int, int]]]:
+    """Each `.md` file in `folder`, in name order, with its modification time and size; none when the folder is gone."""
+    try:
+        with os.scandir(folder) as entries:
+            files = [entry for entry in entries if entry.name.endswith(".md") and entry.is_file()]
+            files.sort(key=lambda entry: entry.name)
+            stats = []
+            for entry in files:
+                try:
+                    stat = entry.stat()
+                except OSError:
+                    continue  # removed mid-listing; the next scan sees where it went
+                stats.append((entry.path, (stat.st_mtime_ns, stat.st_size)))
+    except OSError:
+        return []
+    return stats
 
 
 #: The `[board]` settings this adapter reads: `path` is the project's `backlog/` directory, relative to the config;
@@ -529,7 +524,7 @@ def project_board(
     and `writers` then decide which moves are offered and to whom. `retired` is the scan's reader of retired task text;
     `refusal` is the reason and skill of a board rule that refuses a task's move to a lane.
     """
-    interval = float(settings.get("interval", BACKSTOP))
+    interval = float(settings.get("interval", POLL_INTERVAL))
     config = read_config(root)
     require_project(root, config)
     board_file = base / str(settings["machine"]) if "machine" in settings else None

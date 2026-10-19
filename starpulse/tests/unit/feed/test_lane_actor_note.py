@@ -8,7 +8,6 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.board.upstream_backlog import BACKSTOP as BACKSTOP_SCAN_S
 from starpulse._internal.board.upstream_backlog import upstream_keys
 from starpulse._internal.eventlog import lane_events
 from starpulse._internal.eventlog.event_log import EventLog, Tail
@@ -42,16 +41,16 @@ def test_a_poll_that_changes_no_lane_leaves_the_actor_for_the_move_after_it(
     assert (entry.fields.get("actor"), entry.fields.get("session")) == ("agent", "s1")
 
 
-def test_a_lane_change_the_backstop_scan_places_still_names_the_actor_that_wrote_it(tmp_path: Path) -> None:
-    """The watch can miss a write, and the board's full scan, 60 s apart, places it: TASK-5016 entered Done 60.18 s
-    after its write with no actor."""
+def test_a_lane_change_a_slow_scan_places_still_names_the_actor_that_wrote_it(tmp_path: Path) -> None:
+    """A scan on a busy host can place a write long after it lands: TASK-5016 entered Done 60.18 s after its write
+    with no actor."""
     now = [100.0]
     log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
     feed = BoardFeed(machines=MACHINES, clock=lambda: now[0])
     feed.record_lanes(HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", MACHINES), log)
     feed.put(_task("review", "t", 100.0))
     feed.note_actor("T-1", "starpulse/task-actor")
-    now[0] += 2 * BACKSTOP_SCAN_S  # the scan that follows the write by a full interval, run long
+    now[0] += 120.0  # a scan that places the write two minutes late
     feed.put(_task("done", "t", now[0]))
 
     entry = [e for e in Tail(log, lane_events.STREAM).poll() if e.fields["lane"] == "done"][0]

@@ -216,7 +216,7 @@ type = "native"
 # path = "backlog"       # the project's backlog/ directory, relative to this file
 # command = "backlog"    # the upstream Backlog.md CLI (`npm i -g backlog.md`) that writes a move (`backlog task edit <id> -s <status>`); a fork of it that lacks `backlog init` is not it
 # machine = "board.yaml" # as above
-# interval = 60          # seconds between the full rescans that back the file poll up
+# interval = 2           # seconds between the scans that find a changed task file
 
 # To draw only a project's machines, for a hub whose tasks arrive as lane entries and machine events instances forward:
 # [board]
@@ -658,7 +658,7 @@ A write the board refuses is logged and counted, and is not retried until the ta
 
 Each move the actor writes names `starpulse/task-actor` on its `board:lanes` entry. The Delivery worker logs the
 actor's note before the write, and `serve` reads the notes logged since its last read before it places a move no note
-names yet, so a move the file watch places before the note arrives still names the actor. `GET /metrics` carries
+names yet, so a move the file scan places before the note arrives still names the actor. `GET /metrics` carries
 `starpulse_board_lane_unattributed_total`, a counter of the `board:lanes` entries any process appended since `serve`
 started that name no actor. A move placed while `serve` replays the Board that no note names, one made while it was down, names `starpulse/replay`, and a lane the reconcile repairs names `starpulse/lane-reconcile`.
 
