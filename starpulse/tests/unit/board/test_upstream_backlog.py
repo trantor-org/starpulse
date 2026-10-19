@@ -10,11 +10,13 @@ import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
+from sqlalchemy import delete
 
-from starpulse._internal.board import upstream_backlog
+from starpulse._internal.board import replica, upstream_backlog
 from starpulse._internal.board.upstream_backlog import (
     BacklogConfig,
     UpstreamBacklog,
@@ -25,7 +27,9 @@ from starpulse._internal.board.upstream_backlog import (
     read_config,
     upstream_keys,
 )
-from starpulse._internal.eventlog.event_log import EventLog
+from starpulse._internal.config.config import load
+from starpulse._internal.eventlog.event_log import EventLog, Tail
+from starpulse._internal.eventlog.tables import events
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import BoardAdapterKit
 from starpulse._internal.machines.machine_definition import Writer
@@ -701,25 +705,105 @@ def test_a_task_file_added_edited_or_removed_while_the_server_was_down_is_placed
     assert _lanes(resumed) == {"task-1": "review", "task-3": "to_do", "task-4": "doing"}
 
 
-@pytest.mark.parametrize("saved", ["other code", "unreadable"])
-def test_a_saved_board_from_other_code_or_one_that_cannot_be_read_is_replaced_by_a_full_scan(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, saved: str
+def test_a_saved_board_that_cannot_be_read_is_replaced_by_a_full_scan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     write_config(tmp_path / "backlog")
     for task_id in ("task-1", "task-2"):
         write_task(tmp_path / "backlog", "tasks", task_id, "To Do")
     first, _ = _restarted(tmp_path, monkeypatch)
     first.save()
-    if saved == "other code":
-        monkeypatch.setattr(upstream_backlog, "_PROJECTION", (*upstream_backlog._PROJECTION, "json"))
-    else:
-        with sqlite3.connect(tmp_path / "log.sqlite") as db:
-            assert db.execute("UPDATE starpulse_board_state SET state = '{\"open\": 1}'").rowcount == 1
+    with sqlite3.connect(tmp_path / "log.sqlite") as db:
+        assert db.execute("UPDATE starpulse_board_state SET state = '{\"open\": 1}'").rowcount == 1
 
     resumed, read = _restarted(tmp_path, monkeypatch)
 
     assert sorted(read) == ["task-1 - Title of task-1.md", "task-2 - Title of task-2.md"]
     assert _lanes(resumed) == {"task-1": "to_do", "task-2": "to_do"}
+
+
+def test_other_projection_code_keeps_the_saved_board_and_reads_every_file_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "backlog"
+    write_config(root)
+    for task_id in ("task-1", "task-2", "task-3"):
+        write_task(root, "tasks", task_id, "To Do")
+    first, _ = _restarted(tmp_path, monkeypatch)
+    first.save()
+    (root / "tasks" / "task-2 - Title of task-2.md").unlink()
+    (root / "tasks" / "task-3 - Title of task-3.md").unlink()
+    write_task(root, "tasks", "task-2", "Doing", title="Moved")
+    monkeypatch.setattr(upstream_backlog, "_PROJECTION", (*upstream_backlog._PROJECTION, "json"))
+
+    resumed, read = _restarted(tmp_path, monkeypatch)
+
+    # task-1 is read again though its file is unchanged; task-3's file is gone, so only its task is retracted
+    assert sorted(read) == ["task-1 - Title of task-1.md", "task-2 - Moved.md"]
+    assert _lanes(resumed) == {"task-1": "to_do", "task-2": "doing"}
+
+
+def _child_restarted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> replica.Publisher:
+    """The Board child over `tmp_path`'s board and log, once its first scan is read."""
+    monkeypatch.setattr(upstream_backlog, "DirWatch", _DeafWatch)
+    log = EventLog(f"sqlite:///{tmp_path / 'log.sqlite'}")
+    publisher = replica.publish(board({"interval": "3600"}, tmp_path), BoardFeed(), "test", log, load(None))
+    assert publisher.ready.wait(timeout=5)
+    return publisher
+
+
+def _published_tasks(tmp_path: Path) -> list[str]:
+    tail = Tail(EventLog(f"sqlite:///{tmp_path / 'log.sqlite'}"), replica.REPLICA_STREAM)
+    return [entry.fields["id"] for entry in tail.poll() if entry.fields.get("task")]
+
+
+def test_a_child_restarted_on_other_projection_code_publishes_only_the_tasks_that_project_differently(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_config(tmp_path / "backlog")
+    for task_id in ("task-1", "task-2"):
+        write_task(tmp_path / "backlog", "tasks", task_id, "To Do")
+    _child_restarted(tmp_path, monkeypatch).save()
+    assert sorted(_published_tasks(tmp_path)) == ["task-1", "task-2"]
+    monkeypatch.setattr(upstream_backlog, "_PROJECTION", (*upstream_backlog._PROJECTION, "json"))
+
+    _child_restarted(tmp_path, monkeypatch).save()
+    assert sorted(_published_tasks(tmp_path)) == ["task-1", "task-2"]  # the same projection: nothing is published
+
+    parse = UpstreamBacklog._task
+
+    def retitled(self: UpstreamBacklog, path: Path, *args: Any) -> BoardTask | None:
+        task = parse(self, path, *args)
+        return task.model_copy(update={"title": "Retitled"}) if task and task.id == "task-2" else task
+
+    monkeypatch.setattr(upstream_backlog, "_PROJECTION", (*upstream_backlog._PROJECTION, "os"))
+    monkeypatch.setattr(UpstreamBacklog, "_task", retitled)
+
+    _child_restarted(tmp_path, monkeypatch)
+
+    assert sorted(_published_tasks(tmp_path)) == ["task-1", "task-2", "task-2"]
+
+
+def test_a_reader_restarted_across_a_projection_change_serves_its_last_board_without_reading(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_config(tmp_path / "backlog")
+    write_task(tmp_path / "backlog", "tasks", "task-1", "To Do")
+    _child_restarted(tmp_path, monkeypatch).save()
+    log = EventLog(f"sqlite:///{tmp_path / 'log.sqlite'}")
+    with log.engine.begin() as db:  # the retention pruned the stream: only the saved Board still holds the tasks
+        db.execute(delete(events))
+    monkeypatch.setattr(upstream_backlog, "_PROJECTION", (*upstream_backlog._PROJECTION, "json"))
+    reader, stop = BoardFeed(), threading.Event()
+
+    reader.await_stream()
+    replica.read(board({"interval": "3600"}, tmp_path), reader, "test", log, load(None), stop, local=False)
+    try:
+        assert reader.ready.wait(timeout=5)
+        assert _lanes(reader) == {"task-1": "to_do"}
+        assert reader.snapshot()["reading"] is False
+    finally:
+        stop.set()
 
 
 def test_a_board_setting_the_adapter_does_not_read_is_refused_beside_the_known_ones(tmp_path: Path) -> None:
@@ -734,6 +818,7 @@ _FAKE_BACKLOG = """\
 #!{python}
 import re, sys
 from pathlib import Path
+from typing import Any
 args = sys.argv[1:]
 assert args[:2] == ["task", "edit"] and args[3] == "-s", args
 for path in (Path.cwd() / "backlog" / "tasks").glob("*.md"):
