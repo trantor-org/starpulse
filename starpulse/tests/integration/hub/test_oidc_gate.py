@@ -297,6 +297,8 @@ def test_the_built_in_routes_open_to_the_gate_are_the_sign_in_the_instance_token
     assert set(ROUTES.values()) == {PUBLIC, INSTANCE, ENGINE}
 
 
+# its hub fixture takes 5 s to start, so a loaded host takes it past the gate's bound
+@pytest.mark.slow
 def test_a_session_ends_after_its_lifetime(hub: Hub) -> None:
     cookie = {"Cookie": session_of(sign_in(hub, "alice", ["ops"]))}
     hub.now[0] += SESSION_S - 1

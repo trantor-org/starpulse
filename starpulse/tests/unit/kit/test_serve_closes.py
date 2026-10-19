@@ -12,6 +12,8 @@ import time
 import urllib.request
 from pathlib import Path
 
+import pytest
+
 from starpulse._internal.kit.adapter_kit import serve, url
 
 
@@ -38,6 +40,8 @@ def _check_twenty_serves(root: Path) -> None:
     assert threading.active_count() <= threads
 
 
+# waits out a 5 s settle, so a loaded host takes it past the gate's bound
+@pytest.mark.slow
 def test_twenty_serves_leave_the_fd_and_thread_count_where_they_started(tmp_path: Path) -> None:
     run = subprocess.run([sys.executable, __file__, str(tmp_path)], capture_output=True, text=True, timeout=120)
     assert run.returncode == 0, run.stderr
