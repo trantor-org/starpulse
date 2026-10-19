@@ -1151,6 +1151,16 @@ def test_the_open_tasks_and_a_machines_tasks_can_be_read_without_a_snapshot() ->
     assert feed.machine_tasks("not-a-machine") == []
 
 
+def test_a_machines_tasks_leave_out_one_past_the_window_as_the_snapshot_does() -> None:
+    feed = BoardFeed(machines=MACHINES, window_s=3600)
+    machine_tasks = MachineTasks(feed)
+    now = time.time()
+    machine_tasks.put(MachineEvent(machine="in-progress", event="WORKTREE_READY", task="PROJ-1", time=now - 7200))
+    machine_tasks.put(MachineEvent(machine="in-progress", event="WORKTREE_READY", task="PROJ-2", time=now))
+
+    assert [t["id"] for t in feed.machine_tasks("in-progress")] == ["PROJ-2"]
+
+
 def test_every_task_open_or_settled_is_named_by_its_title_and_labels() -> None:
     feed = BoardFeed()
     feed.put(BoardTask(id="PROJ-1", team="demo", title="open one", lane="ready", labels=["a"]))
