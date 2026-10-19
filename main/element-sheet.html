@@ -685,6 +685,7 @@ body.dragging, body.dragging * { user-select: none; }
 #admin .seg button { all: unset; padding: 4px 12px; font-size: calc(11.5px * var(--fs)); color: var(--ink-3); }
 #admin .seg button + button { border-left: 1px solid color-mix(in srgb, var(--slate) 20%, transparent); }
 #admin .seg button[aria-pressed=true] { background: color-mix(in srgb, var(--agent) 18%, transparent); color: var(--agent-hi); }
+#admin .seg button:disabled { opacity: .45; }
 #admin .seg button:focus-visible, #admin .sw:focus-visible { outline: 1px solid var(--agent); outline-offset: 1px; }
 #admin .sw { all: unset; position: relative; display: block; width: 30px; height: 16px; border-radius: 8px; background: color-mix(in srgb, var(--slate) 25%, transparent); transition: background .15s; }
 #admin .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--ink); transition: left .15s; }
@@ -795,6 +796,14 @@ html.still *, html.still *::before, html.still *::after { animation: none !impor
 
 @media (prefers-reduced-motion: no-preference) { .kept:not([inert]) #dg :is(.trow:is(:hover, .spot, :focus-visible), .dgm) svg.dstrip path.link { animation: dag-stream .42s linear infinite; } }
 @keyframes dag-stream { to { stroke-dashoffset: -6; } }
+
+#dg .bucket .bucket { margin-left: 12px; }
+#dg .bucket > .bh { top: var(--headh, 20px); }
+#dg .bucket.process { margin-left: calc(14px * var(--fs)); gap: 7px; }
+#dg .bucket.process + .bucket.process { margin-top: 2px; }
+#dg .bucket.process > .bh { top: var(--subtop, 17px); z-index: 1; margin: 0 -8px 0 -10px; padding: 4px 10px 4px; color: var(--slate-4); background: var(--sticky); border-bottom: 1px dashed color-mix(in srgb, var(--slate) 10%, transparent); }
+#dg .bucket.process > .bh:hover { color: var(--ink-2); }
+#dg .bucket.process > .bh .census { margin-left: 6px; }
 #dg .fw #dgq { width: calc(270px * var(--fs)); max-width: 100%; }
 .census { display: inline-flex; align-items: center; gap: 10px; margin-left: 8px; font-size: calc(11px * var(--fs)); font-weight: 400; letter-spacing: 0; color: var(--muted); font-variant-numeric: tabular-nums; }
 .census > span { display: inline-flex; align-items: center; gap: 5px; }
