@@ -106,9 +106,7 @@ class Projected:
 
     def follow(self, stop: threading.Event) -> threading.Thread:
         """Apply the kept reports now, then each one announced after, on a thread until `stop`."""
-        from starpulse._internal.eventlog.event_log import Tail  # noqa: PLC0415 - the database stack loads when a log opens
-
-        tail = Tail(self._log, PROJECTED_STREAM, after=self._log.head() or 0, interval=POLL_S)
+        tail = self._log.tail(PROJECTED_STREAM, after=self._log.head() or 0, interval=POLL_S)
         self.apply()
         thread = threading.Thread(
             target=tail.run, args=(lambda _entry: self.apply(), stop), name="runs-projected", daemon=True

@@ -83,9 +83,7 @@ class Unattributed:
 
     def follow(self, log: EventLog, stop: threading.Event) -> threading.Thread:
         """Count the entries `log` takes from now on, on a thread until `stop`."""
-        from starpulse._internal.eventlog.event_log import Tail  # noqa: PLC0415 - the database stack loads when a log opens
-
-        tail = Tail(log, STREAM, after=log.head() or 0)
+        tail = log.tail(STREAM, after=log.head() or 0)
         thread = threading.Thread(target=tail.run, args=(self.handle, stop), name="lane-unattributed", daemon=True)
         thread.start()
         return thread

@@ -325,6 +325,12 @@ class EventLog:
         with self.engine.connect() as db:
             return db.execute(select(func.max(events.c.id))).scalar()
 
+    def tail(self, stream: str, **kwargs: Any) -> Tail:
+        """A `Tail` of `stream` on this log, the one way a reader outside this module comes by one: `kwargs` are the
+        `Tail`'s own (`after`, `interval`, `batch`, `streams`). `Tail.catch_up` reads what is retained, `Tail.run`
+        follows what is appended."""
+        return Tail(self, stream, **kwargs)
+
     def oldest(self) -> int | None:
         """The cursor of the oldest row the log retains, or None when it holds none; raises when the database does."""
         with self.engine.connect() as db:
@@ -414,6 +420,13 @@ class Tail:
             self.log.record_gap(self.stream, cursor, oldest, oldest - cursor - 1)
         self.cursor = rows[-1].id if len(rows) == self.batch else head
         return [Entry(r.id, r.stream, r.event_id, r.fields, r.at) for r in rows]
+
+    def catch_up(self, handle: Callable[[Entry], None]) -> None:
+        """Pass `handle` every entry past the cursor now retained, then return: the boundary before `run` follows live.
+        A poll that fails raises, as `poll` does."""
+        while batch := self.poll():
+            for entry in batch:
+                handle(entry)
 
     def run(
         self,
