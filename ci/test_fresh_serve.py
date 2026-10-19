@@ -94,3 +94,14 @@ def test_live_children_reads_a_hyphenated_context_name(table, log):
     log.write_text(LOG + "INFO:starpulse:worker flow-metrics started as pid 203\n")
     table[203] = (200, "S")
     assert live_children(100, log)["flow-metrics"] == 203
+
+
+def test_a_failed_smoke_carries_what_serve_logged(tmp_path, monkeypatch):
+    monkeypatch.setattr(fresh_serve, "worker_contexts", lambda python, cwd: set())
+    serve = tmp_path / "python"
+    serve.write_text("#!/bin/sh\necho 'cannot hand the socket' >&2\nexit 3\n")
+    serve.chmod(0o755)
+    problem = fresh_serve.smoke(str(serve), 5.0)
+    assert problem is not None
+    assert "serve exited 3" in problem
+    assert "cannot hand the socket" in problem
