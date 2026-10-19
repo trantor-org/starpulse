@@ -69,6 +69,10 @@ class _Sink:
         self._inner = inner
 
     @property
+    def instance(self) -> str:
+        return self._instance
+
+    @property
     def tied(self) -> frozenset[str]:
         return getattr(self._inner, "tied", frozenset())
 

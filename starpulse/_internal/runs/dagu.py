@@ -478,7 +478,8 @@ class DaguRuns:
 
     `pools` reads the instance's concurrency pools alongside each full listing. `tied` names the workflows whose
     recent runs (`Dag.recent`) are kept: `fetch` reads them with each listing, and an entry moves them in step with
-    the run it reports, a start reading the run once more for the parameters it began with.
+    the run it reports, a start reading the run once more for the parameters it began with. An ingested entry
+    carries its producer as `instance`: it is applied when that is this reader's `instance`, dropped when another's.
 
     Entries and reconnects arrive on the consumer thread and the periodic reconcile runs on its own, so the
     DAGs are held under a lock; the sink holds the page-facing state and its own.
@@ -491,8 +492,10 @@ class DaguRuns:
         pools: Callable[[], list[dict]] = list,
         *,
         tied: Callable[[], Collection[str]] = frozenset,
+        instance: str | None = None,
         clock: Callable[[], float] = time.time,
     ) -> None:
+        self._instance = instance
         self._sink = sink
         self._fetch = fetch
         self._pools = pools
@@ -544,7 +547,9 @@ class DaguRuns:
 
     def _apply(self, fields: dict) -> None:
         run = _decode(fields)
-        if run is None or fields.get("instance") or run.at < self._listed_at:  # an ingested entry is another instance's
+        producer = fields.get("instance")
+        foreign = producer and producer != self._instance  # an ingested entry is its producer's, applied only by that instance
+        if run is None or foreign or run.at < self._listed_at:
             return
         dag = self._dags.get(run.dag)
         if dag is None:  # a DAG file added since the listing
@@ -643,7 +648,7 @@ def follow(
     tied = lambda: getattr(runs, "tied", frozenset())  # noqa: E731
     finished: dict = {}
     graphs: dict = {}
-    reader = DaguRuns(runs, lambda only=None: dags(url, only, tied(), finished, graphs), lambda: pools(url), tied=tied)
+    reader = DaguRuns(runs, lambda only=None: dags(url, only, tied(), finished, graphs), lambda: pools(url), tied=tied, instance=getattr(runs, "instance", None))
 
     def read() -> None:
         tail = Tail.at_head(log, run_events.STREAM, interval=interval)  # before the listing: what it holds is not replayed

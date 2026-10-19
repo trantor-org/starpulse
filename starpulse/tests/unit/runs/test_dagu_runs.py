@@ -101,11 +101,11 @@ def deliver(*, in_flight: tuple[InFlight, ...], **stub) -> dict:
         return next(d for d in dags(base_url) if d["name"] == "deliver")
 
 
-def follow(base_url: str) -> tuple[BoardFeed, DaguRuns, queue.Queue]:
+def follow(base_url: str, instance: str | None = "ci") -> tuple[BoardFeed, DaguRuns, queue.Queue]:
     """A runs reader that has taken its one listing, and the queue of changes a page would get."""
     feed = BoardFeed()
     runs = DaguRuns(
-        feed.runs("ci"), lambda only=None: dags(base_url, only), lambda: pools(base_url), clock=lambda: LISTED_AT
+        feed.runs("ci"), lambda only=None: dags(base_url, only), lambda: pools(base_url), instance=instance, clock=lambda: LISTED_AT
     )
     runs.reconcile()
     _, changes = feed.subscribe()
@@ -375,6 +375,16 @@ def test_an_entry_for_a_dag_nobody_lists_changes_nothing() -> None:
 
     assert [d["name"] for d in feed.snapshot()["dags"]] == ["ci/d1"]
     assert changes.empty()
+
+
+def test_an_ingested_entry_stamped_with_the_followed_instance_moves_its_dag() -> None:
+    with dagu({"d1": ["a"]}) as (base_url, _):
+        feed, runs, _ = follow(base_url)
+        entry = run_entry("StepStarted", "d1", "r1", "running", at=101.0)[1] | {"instance": "ci"}
+
+        runs.handle_entry("9-0", entry)
+
+    assert (dag(feed, "d1")["status"], dag(feed, "d1")["runId"]) == ("running", "r1")
 
 
 def test_an_entry_from_another_instance_never_moves_a_dag_of_the_same_name() -> None:
