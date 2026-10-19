@@ -8,14 +8,13 @@ import hashlib
 import io
 import logging
 import os
-import queue
 import threading
 import time
-from collections.abc import Callable, Collection, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping
 from http.server import BaseHTTPRequestHandler, SimpleHTTPRequestHandler
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-from urllib.parse import SplitResult, parse_qs, unquote, urlsplit
+from urllib.parse import urlsplit
 
 from pydantic import ValidationError
 
@@ -31,100 +30,24 @@ from starpulse._internal.board.seam import (
     TaskRestorer,
     Written,
 )
-from starpulse._internal.runs.cloudevents import CloudEventsIngest
-from starpulse._internal.runs.ingest import MAX_BODY, MAX_FORWARD_BODY, ForwardIngest, Ingest
-from starpulse._internal.pulls.pull_refresh import MAX_BODY as MAX_REFRESH_BODY
-from starpulse._internal.pulls.pull_refresh import PullRefresh
-from starpulse._internal.server.compression import LEVEL, Encoded, accepts_gzip, compressed, gzip_stream
-from starpulse._internal.hub.forward import Forwarder
-from starpulse._internal.server.column_stream import ColumnViews, Interest
-from starpulse._internal.server.snapshot_cache import SnapshotCache
-from starpulse._internal.server.writes import (
-    autopilot,
-    OPERATOR,
-    archive_doc,
-    archive_milestone,
-    archive_task,
-    claim_task,
-    complete_task,
-    create_doc,
-    create_milestone,
-    create_task,
-    import_retired,
-    record_miss,
-    record_verdict,
-    edit_doc,
-    edit_milestone,
-    edit_task,
-    forwarding,
-    history_window,
-    move_task,
-    park_task,
-    rerun_dag,
-    restore_doc,
-    restore_task,
-    retire_task,
-    review_task,
-    run_dag,
-    start_task,
-    write_refusal,
-)
-from starpulse._internal.server.responses import (
-    _error,
-)
-from starpulse._internal.server.reads import Arrival, ReadRoutes, Request
-from starpulse._internal.server.routes import (
-    _ARCHIVE,
-    _AUTOPILOT,
-    _CLAIM,
-    _COMPLETE,
-    _DOCS,
-    _DOC_ARCHIVE,
-    _DOC_EDIT,
-    _DOC_RESTORE,
-    _DOC_WRITES,
-    _EDIT,
-    _FORWARD,
-    _FORWARDING,
-    _HELD,
-    _INGEST,
-    _INSIGHTS,
-    _LANES,
-    _LEDGER,
-    _MACHINE_EVENTS,
-    _MILESTONES,
-    _MILESTONE_ARCHIVE,
-    _MISS,
-    _MILESTONE_EDIT,
-    _MILESTONE_WRITES,
-    _MOVE,
-    _PAGES,
-    _PARK,
-    _PULL_REFRESH,
-    _RERUN,
-    _RERUN_TAIL,
-    _RESTORE,
-    _RETIRE,
-    _RETIRED_IMPORT,
-    _REVIEW,
-    _RETIRED_WRITES,
-    _RUN,
-    _SNAPSHOT_BODY,
-    _START,
-    _TASKS,
-    _TASK_WRITES,
-    _VERDICT,
-    _WINDOW,
-    _WRITES,
-    _is_rerun,
-)
-from starpulse._internal.server.encoding import encode, event
-from starpulse._internal.config.level import Level
+from starpulse._internal.config.analytics import Analytics
 from starpulse._internal.config.config import SLOW_READ_S
 from starpulse._internal.config.harnesses import Harnesses
+from starpulse._internal.config.level import Level
 from starpulse._internal.feed.history_window import HistoryWindow
-from starpulse._internal.config.analytics import Analytics
 from starpulse._internal.harnesses.telemetry import TelemetryLog
+from starpulse._internal.hub.forward import Forwarder
+from starpulse._internal.pulls.pull_refresh import PullRefresh
+from starpulse._internal.runs.cloudevents import CloudEventsIngest
+from starpulse._internal.runs.ingest import ForwardIngest, Ingest
+from starpulse._internal.server.compression import LEVEL, Encoded, accepts_gzip, compressed, gzip_stream
+from starpulse._internal.server.encoding import encode, event
+from starpulse._internal.server.reads import Arrival, ReadRoutes, Request, Response
+from starpulse._internal.server.routes import _PAGES
+from starpulse._internal.server.snapshot_cache import SnapshotCache
+from starpulse._internal.server.streams import Stream, Streams
+from starpulse._internal.server.write_routes import WriteRequest, WriteRoutes
+from starpulse._internal.server.writes import OPERATOR
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the autopilot in the Delivery worker's import closure
     from starpulse._internal.autopilot.remote import Remote
@@ -197,30 +120,11 @@ class _ApiHandler(SimpleHTTPRequestHandler):
     #: The page's scripts are `text/javascript` on every host: the host's MIME table may call them `application/javascript`.
     extensions_map = {**SimpleHTTPRequestHandler.extensions_map, ".js": "text/javascript", ".mjs": "text/javascript"}
 
-    starts: Mapping[str, Callable[[str], str]]
-    reruns: Mapping[str, Callable[[str, Mapping[str, str]], str]]
-    run_safe: Collection[str]
-    feed: BoardFeed
-    window: HistoryWindow
-    writer: MoveWriter
-    assign: AssigneeWriter
-    start_session: Callable[..., str] | None
-    harnesses: Harnesses | None
-    read: TaskReader | None
-    edit: TaskEditor | None
-    archive: TaskArchiver | None
-    restore: TaskRestorer | None
-    complete: TaskCompleter | None
-    create: TaskCreator | None
-    ingest: Ingest | None
-    events: CloudEventsIngest | None
-    insights: Insights | None
     gate: Callable[[BaseHTTPRequestHandler], bool] | None
-    forward: ForwardIngest | None
-    pull_refresh: PullRefresh | None
-    forwarding: Forwarder | None
-    autopilot: Runtime | Remote | None
-    milestones: Board | None
+    routes: ReadRoutes
+    writes: WriteRoutes
+    streams: Streams
+    flows: Collection[str]
 
     #: Whether the response being written is a hashed build asset's file, which a browser may keep for good.
     _immutable = False
@@ -258,178 +162,6 @@ class _ApiHandler(SimpleHTTPRequestHandler):
         """Parse the request, then let the gate (a hub's sign-in) answer or admit it before any route sees it."""
         return super().parse_request() and (self.gate is None or self.gate(self))
 
-    def do_GET(self) -> None:
-        path = urlsplit(self.path).path
-        if (
-            path.startswith(_RUN)
-            or _is_rerun(path)
-            or path
-            in {
-                _MOVE,
-                _START,
-                _EDIT,
-                _ARCHIVE,
-                _VERDICT,
-                _MISS,
-                _RESTORE,
-                _COMPLETE,
-                _CLAIM,
-                _PARK,
-                _REVIEW,
-                _TASKS,
-                _INGEST,
-                _MACHINE_EVENTS,
-                _FORWARD,
-                _INSIGHTS,
-                _PULL_REFRESH,
-                *_MILESTONE_WRITES,
-                *_DOC_WRITES,
-                *_RETIRED_WRITES,
-            }
-        ):
-            self.send_response(405)
-            self.send_header("Allow", "POST")  # pragma: no mutate: names are case-insensitive
-            self.end_headers()
-        else:
-            super().do_GET()
-
-    def _refused_write(self) -> bool:
-        """Answer a write another web page may have sent with its refusal; whether it did."""
-        headers = self.headers
-        if (refusal := write_refusal(headers.get("Origin"), headers.get("Host"), headers.get("Content-Type"))) is None:
-            return False
-        self._send(encode("error", refusal[1]), refusal[0])
-        return True
-
-    def do_POST(self) -> None:
-        path = urlsplit(self.path).path
-        if (path in _TASK_WRITES or path.startswith(_RUN) or _is_rerun(path)) and self._refused_write():
-            return
-        kind = _WRITES.get(path, "run")
-        if path in _TASK_WRITES:
-            declared = self.headers.get("Content-Length")  # pragma: no mutate: header names are case-insensitive
-            raw = self.rfile.read(int(declared or 0))
-            if path == _MOVE:
-                status, body = move_task(self.client_address[0], raw, self.feed, self.writer)
-            elif path == _EDIT:
-                status, body = edit_task(self.client_address[0], raw, self.feed, self.read, self.edit)
-            elif path == _ARCHIVE:
-                status, body = archive_task(self.client_address[0], raw, self.feed, self.archive)
-            elif path == _VERDICT:
-                status, body = record_verdict(self.client_address[0], raw, self.feed, self.read, self.edit)
-            elif path == _MISS:
-                status, body = record_miss(
-                    self.client_address[0], raw, self.feed, self.read, self.edit, self.archive, self.create
-                )
-            elif path == _RESTORE:
-                status, body = restore_task(self.client_address[0], raw, self.restore)
-            elif path == _RETIRE:
-                status, body = retire_task(self.client_address[0], raw, self.milestones)
-            elif path == _RETIRED_IMPORT:
-                status, body = import_retired(self.client_address[0], raw, self.milestones)
-            elif path == _CLAIM:
-                status, body = claim_task(self.client_address[0], raw, self.feed, self.writer)
-            elif path == _PARK:
-                status, body = park_task(self.client_address[0], raw, self.feed, self.read, self.edit)
-            elif path == _REVIEW:
-                status, body = review_task(self.client_address[0], raw, self.feed, self.read, self.edit)
-            elif path == _COMPLETE:
-                status, body = complete_task(self.client_address[0], raw, self.feed, self.complete)
-            elif path == _TASKS:
-                status, body = create_task(self.client_address[0], raw, self.create, self.feed)
-            elif path == _MILESTONES:
-                status, body = create_milestone(self.client_address[0], raw, self.milestones)
-            elif path == _MILESTONE_EDIT:
-                status, body = edit_milestone(self.client_address[0], raw, self.milestones)
-            elif path == _MILESTONE_ARCHIVE:
-                status, body = archive_milestone(self.client_address[0], raw, self.milestones)
-            elif path == _DOCS:
-                status, body = create_doc(self.client_address[0], raw, self.milestones)
-            elif path == _DOC_EDIT:
-                status, body = edit_doc(self.client_address[0], raw, self.milestones)
-            elif path == _DOC_ARCHIVE:
-                status, body = archive_doc(self.client_address[0], raw, self.milestones)
-            elif path == _DOC_RESTORE:
-                status, body = restore_doc(self.client_address[0], raw, self.milestones)
-            else:
-                status, body = start_task(
-                    self.client_address[0], raw, self.feed, self.assign, self.start_session, self.harnesses
-                )
-        elif path == _INGEST and self.ingest is not None:
-            status, body = self._pushed(self.ingest, MAX_BODY)
-        elif path == _MACHINE_EVENTS and self.events is not None:
-            content_type = self.headers.get("Content-Type")
-            status, body = self._pushed(lambda auth, raw: self.events(auth, content_type, raw), MAX_FORWARD_BODY)
-        elif path == _FORWARD and self.forward is not None:
-            status, body = self._pushed(self.forward, MAX_FORWARD_BODY)
-        elif path == _INSIGHTS and self.insights is not None:
-            status, body = self._pushed(self.insights, MAX_BODY)
-        elif path == _PULL_REFRESH and self.pull_refresh is not None:
-            status, body = self._pushed(self.pull_refresh, MAX_REFRESH_BODY)
-        elif _is_rerun(path):
-            name = unquote(path.removeprefix(_RERUN).removesuffix(_RERUN_TAIL))
-            status, body = rerun_dag(self.client_address[0], name, self.feed, self.reruns, self.run_safe)
-        elif path.startswith(_RUN):
-            status, body = run_dag(self.client_address[0], unquote(path.removeprefix(_RUN)), self.starts, self.run_safe)
-        else:
-            self.send_error(404)
-            return
-        self._send(encode(kind, body), status)
-
-    def _pushed(self, ingest: Callable[[str | None, bytes], tuple[int, dict]], limit: int) -> tuple[int, dict]:
-        """Answer one token-guarded push; a body over `limit` is refused unread and the connection closed."""
-        try:
-            declared = int(self.headers.get("Content-Length") or 0)  # pragma: no mutate: case-insensitive
-        except ValueError:
-            declared = 0
-        if declared > limit:
-            self.close_connection = True  # the body was not read, so the connection cannot carry another request
-            return 413, {"error": f"a body is at most {limit} bytes"}
-        return ingest(self.headers.get("Authorization"), self.rfile.read(max(declared, 0)))
-
-    def do_PUT(self) -> None:
-        self._window("PUT")
-
-    def do_DELETE(self) -> None:
-        path = urlsplit(self.path).path
-        if path.startswith(f"{_INSIGHTS}/") and self.insights is not None:
-            status, body = self.insights.retract(unquote(path.removeprefix(f"{_INSIGHTS}/")))
-            self._send(encode("insight", body), status)
-        else:
-            self._window("DELETE")
-
-    def _window(self, method: str) -> None:
-        """Answer the route a PUT or DELETE names: the history window's, or a PUT to the forwarding opt-in or the autopilot switch."""
-        path = urlsplit(self.path).path
-        if path == _AUTOPILOT and method == "PUT":
-            if self._refused_write():
-                return
-            declared = self.headers.get("Content-Length")  # pragma: no mutate: header names are case-insensitive
-            self._send(*self._autopilot(method, self.rfile.read(int(declared or 0))))
-            return
-        if path == _FORWARDING and method == "PUT":
-            if self._refused_write():
-                return
-            declared = self.headers.get("Content-Length")  # pragma: no mutate: header names are case-insensitive
-            self._send(*self._forwarding(method, self.rfile.read(int(declared or 0))))
-            return
-        if path != _WINDOW:
-            self.send_error(404)
-            return
-        if method != "GET" and self._refused_write():
-            return
-        declared = self.headers.get("Content-Length")  # pragma: no mutate: header names are case-insensitive
-        status, body = history_window(self.client_address[0], method, self.rfile.read(int(declared or 0)), self.window)
-        self._send(encode("window", body), status)
-
-    def _autopilot(self, method: str, raw: bytes) -> tuple[bytes, int]:
-        status, body = autopilot(self.client_address[0], method, raw, self.autopilot)
-        return encode("autopilot", body), status
-
-    def _forwarding(self, method: str, raw: bytes) -> tuple[bytes, int]:
-        status, body = forwarding(self.client_address[0], method, raw, self.forwarding)
-        return encode("forwarding", body), status
-
     def _send(
         self,
         body: bytes | Encoded,
@@ -437,9 +169,13 @@ class _ApiHandler(SimpleHTTPRequestHandler):
         cache: str = "no-store",
         content_type: str = "application/json",
         retry_after: int | None = None,
+        close: bool = False,
     ) -> None:
         """`body` as JSON unless told otherwise; an `Encoded` one is sent as the gzip it already holds to a page that
-        accepts gzip. `retry_after` is the seconds a refused client is asked to wait."""
+        accepts gzip. `retry_after` is the seconds a refused client is asked to wait; `close` ends the connection after
+        the answer."""
+        if close:
+            self.close_connection = True
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Cache-Control", cache)
@@ -455,6 +191,88 @@ class _ApiHandler(SimpleHTTPRequestHandler):
             self.send_header("Content-Encoding", "gzip")
         self.end_headers()
         self.wfile.write(body)
+
+    def do_GET(self) -> None:
+        url = urlsplit(self.path)
+        request = Request(url.path, url.query, self.client_address[0])
+        stream = self.streams(request, lambda: self.server.open_stream())  # type: ignore[attr-defined]
+        if stream is None:
+            self._read(request)
+        elif isinstance(stream, Response):
+            self._send(*stream)
+        else:
+            self._stream(stream)
+
+    def do_POST(self) -> None:
+        self._answer_write("POST")
+
+    def do_PUT(self) -> None:
+        self._answer_write("PUT")
+
+    def do_DELETE(self) -> None:
+        self._answer_write("DELETE")
+
+    def _answer_write(self, method: str) -> None:
+        """Answer a write through `writes`; a method and path it does not name are a 404."""
+        request = WriteRequest(method, urlsplit(self.path).path, self.client_address[0], self.headers, self.rfile.read)
+        response = self.writes(request)
+        if response is None:
+            self.send_error(404)
+        else:
+            self._send(*response)
+
+    def _read(self, request: Request) -> None:
+        """Answer a read route through `routes`, timed as it asks; the page and the static files are not one."""
+        with self.routes.watch(request, self.queued_s, self.arrival) as timing:
+            response = self.routes(request)
+            timing.computed()
+            if response is not None:
+                self._send(*response)
+        if response is None:
+            self._page(request.path)
+
+    def _page(self, path: str) -> None:
+        if self.writes.post_only(path):
+            self.send_response(405)
+            self.send_header("Allow", "POST")  # pragma: no mutate: names are case-insensitive
+            self.end_headers()
+            return
+        if path in _PAGES or path.startswith("/flow/") and path[6:] in self.flows - {"board"}:
+            self.path = "/index.html"
+        super().do_GET()
+
+    def list_directory(self, path: str | os.PathLike[str]) -> None:
+        self.send_error(404)
+
+    def _stream(self, stream: Stream) -> None:
+        """Hold the connection open and write `stream`'s frames until the page leaves."""
+        try:
+            self._open_stream()
+            for frame in stream.frames:
+                self._write_frame(frame)
+        except OSError:
+            pass
+        finally:
+            stream.frames.close()
+            stream.release()
+
+    def _open_stream(self) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")  # pragma: no mutate: names are case-insensitive
+        self.send_header("Cache-Control", "no-store")  # pragma: no mutate: names are case-insensitive
+        if accepts_gzip(self.headers.get("Accept-Encoding")):
+            self.send_header("Content-Encoding", "gzip")  # pragma: no mutate: names are case-insensitive
+            self._write_frame = gzip_stream(self.wfile)
+        else:
+            self._write_frame = self._write_plain
+        self.end_headers()
+
+    def _write_plain(self, data: bytes) -> None:
+        self.wfile.write(data)
+        self.wfile.flush()
+
+    def log_message(self, format: str, *args: Any) -> None:
+        pass
 
 
 def _no_writer(task: str, status: str, actor: str = OPERATOR) -> Written:
@@ -521,13 +339,9 @@ def request_handler(
     lane_metrics: Callable[[], str] | None = None,
     conformance_metrics: Callable[[], str] | None = None,
 ) -> type[SimpleHTTPRequestHandler]:
-    from starpulse._internal.server import (
-        server as views,
-    )  # late: `server` imports this module and keeps the views and stream timings its tests patch
 
     configured = harnesses or Harnesses((), {})
     snapshots = SnapshotCache(feed)
-    column_views = ColumnViews()
     routes = ReadRoutes(
         feed,
         history,
@@ -551,35 +365,42 @@ def request_handler(
         conformance_metrics=conformance_metrics,
         page_gauge=lambda: build_gauge(static),
     )
-    event_text = views.EventText()
+    writes = WriteRoutes(
+        feed,
+        window,
+        writer,
+        assign,
+        starts,
+        run_safe,
+        reruns=reruns,
+        harnesses=configured,
+        start_session=start_session,
+        read=read,
+        edit=edit,
+        archive=archive,
+        restore=restore,
+        complete=complete,
+        create=create,
+        ingest=ingest,
+        events=events,
+        forward=forward,
+        insights=insights,
+        pull_refresh=pull_refresh,
+        forwarder=forwarding,
+        autopilot_switch=autopilot,
+        milestones=milestones,
+    )
+
+    def build_frame() -> str | None:
+        build = page_build(static)
+        return None if build is None else _build_text(build)
+
+    streams = Streams(feed, snapshots, build_frame)
     flows = feed.machines.keys()
 
     class Handler(_ApiHandler):
         def __init__(self, *args: Any, **kwargs: Any) -> None:
-            self.starts = starts  # set first: the base __init__ handles the request
-            self.reruns = reruns or {}
-            self.run_safe = run_safe
-            self.feed = feed
-            self.window = window
-            self.writer = writer
-            self.assign = assign
-            self.start_session = start_session
-            self.harnesses = configured
-            self.read = read
-            self.edit = edit
-            self.archive = archive
-            self.restore = restore
-            self.complete = complete
-            self.create = create
-            self.ingest = ingest
-            self.insights = insights
-            self.events = events
-            self.gate = gate
-            self.forward = forward
-            self.pull_refresh = pull_refresh
-            self.forwarding = forwarding
-            self.autopilot = autopilot
-            self.milestones = milestones
+            self.gate = gate  # set first: the base __init__ handles the request
             super().__init__(*args, directory=str(static), **kwargs)  # pragma: no mutate: the server passes no kwargs
 
         def _send(self, body: bytes | Encoded, *args: Any, **kwargs: Any) -> None:
@@ -594,187 +415,5 @@ def request_handler(
             self.queued_s = now - arrival.at
             self.arrival = arrival
 
-        def do_GET(self) -> None:
-            url = urlsplit(self.path)
-            if url.path == "/api/events":
-                self._stream_events(parse_qs(url.query).get("snapshot") == ["ref"])
-            elif url.path == _HELD:
-                query = parse_qs(url.query)
-                self._stream_held((query.get("assignee") or query.get("holder") or [""])[0])  # legacy `holder`
-            elif url.path == _LANES:
-                self._stream_columns("lanes", None, parse_qs(url.query).get("state", []))
-            elif url.path.startswith(_LEDGER) and url.path.removeprefix(_LEDGER).endswith("/events"):
-                self._stream_ledger(unquote(url.path.removeprefix(_LEDGER).partition("/")[0]))
-            else:
-                self._read(url)
-
-        def _read(self, url: SplitResult) -> None:
-            """Answer a read route through `routes`, timed as it asks; the page and the static files are not one."""
-            request = Request(url.path, url.query, self.client_address[0])
-            with routes.watch(request, self.queued_s, self.arrival) as timing:
-                response = routes(request)
-                timing.computed()
-                if response is not None:
-                    self._send(*response)
-            if response is None:
-                self._page(url.path)
-
-        def _page(self, path: str) -> None:
-            if path in _PAGES or path.startswith("/flow/") and path[6:] in flows - {"board"}:
-                self.path = "/index.html"
-            super().do_GET()
-
-        def list_directory(self, path: str | os.PathLike[str]) -> None:
-            self.send_error(404)
-
-        def _stream_events(self, by_ref: bool = False) -> None:
-            """Hold the connection open: the Board's snapshot, then each change as it happens. `by_ref` sends the snapshot
-            as `ref <path>`, the path its body is read from: a browser reads a long event on its main thread, a fetched
-            body off it."""
-            if not self._admit_stream():
-                return
-            changes = None
-            try:
-                # The held snapshot is sent as it is, however many changes it lacks, so a page connecting while the next
-                # one is built is not held up by it: it applies those changes after it.
-                served = snapshots.latest() or snapshots.get()
-                while (attached := feed.watch_from(served.sent)) is None:
-                    served = snapshots.get()
-                missed, changes = attached
-                self._open_stream()
-                self._frame("snapshot", f"ref {_SNAPSHOT_BODY}{served.key}" if by_ref else served.body.decode())
-                if (build := page_build(static)) is not None:
-                    self._frame(
-                        "build", _build_text(build)
-                    )  # a page holding another build than this one is out of date
-                for change in missed:
-                    self._event(*change)
-                while True:
-                    try:
-                        change = changes.get(timeout=views._PING_S)
-                    except queue.Empty:
-                        self._write(b": ping\n\n")  # a closed page fails this write, which ends the stream
-                        continue
-                    try:
-                        self._event(*change)
-                    finally:
-                        changes.task_done()  # `feed.announce` waits for the marks of what it queued
-            except OSError:
-                pass
-            except ValidationError:
-                logger.exception("StarPulse: /api/events sent a body its model refuses; the stream ends")
-            finally:
-                if changes is not None:
-                    feed.unsubscribe(changes)
-
-        def _admit_stream(self) -> bool:
-            """Move this connection's worker into the stream pool, or answer 503 when that pool is full."""
-            if self.server.open_stream():  # type: ignore[attr-defined]
-                return True
-            self._send(_error("too many open streams; retry shortly"), 503, retry_after=_STREAM_RETRY_S)
-            return False
-
-        def _open_stream(self) -> None:
-            self.send_response(200)
-            self.send_header("Content-Type", "text/event-stream")  # pragma: no mutate: names are case-insensitive
-            self.send_header("Cache-Control", "no-store")  # pragma: no mutate: names are case-insensitive
-            if accepts_gzip(self.headers.get("Accept-Encoding")):
-                self.send_header("Content-Encoding", "gzip")  # pragma: no mutate: names are case-insensitive
-                self._write = gzip_stream(self.wfile)
-            else:
-                self._write = self._write_plain
-            self.end_headers()
-
-        def _stream_ledger(self, event: str) -> None:
-            """Hold the connection open: `event`'s newest rows as a `page` event (`{rows, more}`), then a `rows` event (`{rows}`) each
-            time rows of that Ledger change. A page reads this while it has the Ledger open; the main stream carries
-            no row."""
-            if not self._admit_stream():
-                return
-            changes = None
-            try:
-                if (watched := feed.watch_ledger(event)) is None:
-                    return self._send(_error(f"no ledger for {event}"), 404)
-                rows, more, changes = watched
-                self._open_stream()
-                self._frame("page", encode("ledger", {"rows": rows, "more": more}).decode())
-                while True:
-                    try:
-                        self._frame("rows", encode("ledger_rows", changes.get(timeout=views._PING_S)).decode())
-                    except queue.Empty:
-                        self._write(b": ping\n\n")  # a closed page fails this write, which ends the stream
-            except OSError:
-                pass
-            finally:
-                if changes is not None:
-                    feed.unwatch_ledger(changes)
-
-        def _stream_held(self, assignee: str) -> None:
-            """Hold the connection open: the tasks `assignee` holds, then those tasks again each time they change, so a
-            session's band redraws on a change instead of asking."""
-            if not assignee:
-                return self._send(_error(f"name the session: {_HELD}?assignee=<session>"), 400)
-            self._stream_columns("held", assignee)
-
-        def _stream_columns(self, event: str, assignee: str | None, states: Sequence[str] = ()) -> None:
-            """Hold the connection open: the Board's columns (only `states`, when named) with the tasks `assignee` holds
-            (all, when None), as `event`, then again each time a change alters that view. A burst of changes settles
-            before one reread, and the streams that reread for a change read one build of the columns."""
-            if not self._admit_stream():
-                return
-            changes = None
-            try:
-                served = snapshots.after_current()
-                while (attached := feed.watch_from(served.sent)) is None:
-                    served = snapshots.after_current()
-                missed, changes = attached
-                if missed:
-                    served = (
-                        snapshots.after_current()
-                    )  # the view must include what was published after the snapshot it started from
-                self._open_stream()
-                sent = None
-                while True:
-                    view, text = column_views.render(served, assignee, states)
-                    if view != sent:
-                        self._frame(event, text)
-                        sent = view
-                        interest = Interest(view, assignee, states)
-                    self._wait_touched(changes, interest)
-                    time.sleep(views._HELD_SETTLE_S)
-                    while not changes.empty():
-                        changes.get_nowait()
-                        changes.task_done()
-                    served = snapshots.after_current()
-            except OSError:
-                pass
-            finally:
-                if changes is not None:
-                    feed.unsubscribe(changes)
-
-        def _wait_touched(self, changes: queue.Queue, interest: Interest) -> None:
-            """Take changes off `changes` until one alters the view `interest` describes, pinging while none arrives."""
-            while True:
-                try:
-                    change = changes.get(timeout=views._PING_S)
-                except queue.Empty:
-                    self._write(b": ping\n\n")  # a closed session fails this write, which ends the stream
-                    continue
-                changes.task_done()  # `feed.announce` waits for the marks of what it queued
-                if interest.touched_by(*change):
-                    return
-
-        def _event(self, name: str, data: dict) -> None:
-            self._frame(name, event_text(name, data))
-
-        def _frame(self, name: str, data: str) -> None:
-            self._write(f"event: {name}\ndata: {data}\n\n".encode())
-
-        def _write_plain(self, data: bytes) -> None:
-            self.wfile.write(data)
-            self.wfile.flush()
-
-        def log_message(self, format: str, *args: Any) -> None:
-            pass
-
+    Handler.routes, Handler.writes, Handler.streams, Handler.flows = routes, writes, streams, flows
     return Handler
