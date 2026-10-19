@@ -56,6 +56,7 @@ def collected(tree: Path, **env: str) -> int:
             **os.environ,
             "PYTHONPATH": str(CI),
             "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",  # xdist, cov, memray and timeout shard no test; a quarter of each launch
+            "PYTEST_ADDOPTS": "",  # CI's `-n`/`--dist` need the xdist this child does not load
             "SHARD_INDEX": "",
             "SHARD_COUNT": "",
             **env,
