@@ -368,4 +368,5 @@ jobs:
         working-directory: starpulse/web
       - run: uv build --wheel --out-dir "$RUNNER_TEMP/dist"
       - run: uv venv "$RUNNER_TEMP/clean" && uv pip install --python "$RUNNER_TEMP/clean/bin/python" "$RUNNER_TEMP"/dist/*.whl
+      # Fails if a Redis port answers: the runner has none, so a pass shows the ingest needs no Redis.
       - run: python3 -I ci/clean_machine.py "$RUNNER_TEMP/clean/bin/python"
