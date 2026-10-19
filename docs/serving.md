@@ -127,6 +127,15 @@ reload does not reload it again.
 A demo page plays these states with `?link=`: `restart`, `update` (a restart that ships a new build) and `drop` play from
 live; `restarting`, `retrying`, `offline` and `updating` hold one state.
 
+## Portable database contract
+
+Board and lifecycle state (task lanes, lane changes, machine events, runs) lives in StarPulse's database, SQLite by
+default or Postgres by `database_url`, and nowhere else. A project that embeds StarPulse, such as an agent workspace,
+reads and writes that state through the `starpulse` CLI, the HTTP API or a board adapter ([adapters](adapters.md)),
+and keeps no copy of its own: code in the project that stores or derives board state is a gap in this contract, and
+the missing capability is filed against StarPulse. Because the database is the whole state, moving to another host is
+copying the SQLite file (or pointing `database_url` at the same Postgres), with no project-side migration.
+
 ## Config file
 
 `starpulse serve --config starpulse.toml` reads one TOML file; `starpulse.toml` in the working directory is read
