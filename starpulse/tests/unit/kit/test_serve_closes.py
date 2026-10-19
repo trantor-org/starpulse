@@ -1,7 +1,12 @@
-"""`serve` leaves nothing open behind it: no listening socket, no settings database, no request worker."""
+"""`serve` leaves nothing open behind it: no listening socket, no settings database, no request worker.
 
-import gc
+The count runs in a fresh interpreter: fds and threads are process-wide, so
+sockets other tests left in a shared xdist worker would move the baseline.
+"""
+
 import os
+import subprocess
+import sys
 import threading
 import time
 import urllib.request
@@ -11,17 +16,16 @@ from starpulse._internal.kit.adapter_kit import serve, url
 
 
 def _fds() -> int:
-    gc.collect()  # unclosed sockets from earlier tests in this worker die lazily
     return len(os.listdir("/proc/self/fd"))
 
 
-def test_twenty_serves_leave_the_fd_and_thread_count_where_they_started(tmp_path: Path) -> None:
+def _check_twenty_serves(root: Path) -> None:
     def once(n: int) -> None:
-        with serve(tmp_path / str(n)) as server:
+        with serve(root / str(n)) as server:
             urllib.request.urlopen(url(server, "/api/history-window")).close()
 
     for n in range(20):
-        (tmp_path / str(n)).mkdir()
+        (root / str(n)).mkdir()
     once(0)  # warm one-time imports and pools
     time.sleep(0.2)
     fds, threads = _fds(), threading.active_count()
@@ -32,3 +36,12 @@ def test_twenty_serves_leave_the_fd_and_thread_count_where_they_started(tmp_path
         time.sleep(0.05)
     assert _fds() <= fds
     assert threading.active_count() <= threads
+
+
+def test_twenty_serves_leave_the_fd_and_thread_count_where_they_started(tmp_path: Path) -> None:
+    run = subprocess.run([sys.executable, __file__, str(tmp_path)], capture_output=True, text=True, timeout=120)
+    assert run.returncode == 0, run.stderr
+
+
+if __name__ == "__main__":
+    _check_twenty_serves(Path(sys.argv[1]))
