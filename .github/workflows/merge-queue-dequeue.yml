@@ -3,7 +3,7 @@ name: Comment merge-queue eviction
 # Rationale: trantor docs/infrastructure/ci/rulesets.md, Eviction comment
 # GitHub shows an eviction as one timeline line and deletes the queue branch after the run; this leaves one
 # comment on the pull request naming the `dequeued` reason and, for `failed_checks`, linking each failing check
-# on the queue commit. It checks out nothing: it runs the script from the ai-vm-1 workspace, from the host.
+# on the queue commit. It runs ci/merge_queue_dequeue.py from the default branch's checkout.
 on:
   pull_request:
     types: [dequeued]
@@ -11,6 +11,7 @@ on:
 permissions:
   actions: read
   checks: read
+  contents: read
   pull-requests: write
 
 # One comment per pull request, rewritten in place; two evictions in a row queue rather than race.
@@ -24,12 +25,17 @@ jobs:
     runs-on: [self-hosted, ai-vm-1]
     timeout-minutes: 5
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Never the pull request's merge ref: the step holds a token that writes to pull requests.
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: /*
+          sparse-checkout-cone-mode: false
       - name: Comment
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           PULL_REQUEST: ${{ github.event.pull_request.number }}
           REASON: ${{ github.event.reason }}
-        run: >-
-          /home/adinb/trantor/.venv/bin/python /home/adinb/trantor/bin/ci/merge_queue_dequeue.py
-          --repo "$REPOSITORY" --pr "$PULL_REQUEST" --reason "$REASON"
+        run: python3 ci/merge_queue_dequeue.py --repo "$REPOSITORY" --pr "$PULL_REQUEST" --reason "$REASON"
