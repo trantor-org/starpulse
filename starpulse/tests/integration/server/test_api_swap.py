@@ -22,6 +22,8 @@ def _snapshot(port: int) -> None:
         resp.read()
 
 
+# starts two real API children (4 s alone), so a loaded host takes it past the gate's bound
+@pytest.mark.slow
 def test_the_swapped_api_child_answers_every_request_made_across_the_swap(
     build: None,
     tmp_path: Path,
