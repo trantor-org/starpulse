@@ -1200,22 +1200,3 @@ def test_an_idle_adapter_stats_no_task_file_between_full_scans(tmp_path: Path, m
 
         # an earlier test's watcher thread may still be winding down in this worker: count only this board's files
         assert [path for path in statted if path.suffix == ".md" and tmp_path in path.parents] == []
-
-
-@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
-def test_a_board_without_inotify_still_polls_at_its_interval(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    def refuse(_folders: object) -> None:
-        raise OSError("no inotify")
-
-    monkeypatch.setattr(upstream_backlog, "DirWatch", refuse)
-    write_config(tmp_path)
-    placed: list[BoardTask] = []
-    adapter = UpstreamBacklog(tmp_path, placed.append)
-    thread = adapter.start(interval=0.01)
-
-    write_task(tmp_path, "tasks", "task-1", "To Do")
-
-    assert _await(lambda: [t.id for t in placed] == ["task-1"])
-    monkeypatch.setattr(adapter, "scan", lambda: (_ for _ in ()).throw(SystemExit))
-    thread.join(timeout=5)
-    assert not thread.is_alive()

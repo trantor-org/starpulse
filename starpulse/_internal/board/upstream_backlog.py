@@ -50,8 +50,6 @@ logger = logging.getLogger(__name__)
 _PROJECTION = (__name__, "starpulse._internal.feed.board_feed", "starpulse.contracts.adapters")
 
 DEFAULT_PREFIX = "task"
-#: Seconds between scans where no file watch can run.
-_POLL = 2.0
 #: Seconds between the full scans that back the file watch up, unless the board sets `interval`.
 BACKSTOP = 60.0
 #: Where a task file sits decides whether it is in a lane or has left them; subtasks are ids like `task-1.1`.
@@ -441,27 +439,20 @@ class UpstreamBacklog:
         """Scan now, then place each file a watch names as it lands and rescan all of them every `interval` seconds,
         on a daemon thread, and return it; `scanned` runs once, after the first scan.
 
-        The full scan is the backstop for an event the watch missed. Where the watch cannot start (no inotify), it is
-        the only scan, and runs at least every `_POLL` seconds.
+        The full scan is the backstop for a change the watch missed: it runs whenever `interval` passes quietly.
         """
 
         def run() -> None:
-            watch = self._watching = self._watch()  # before the first scan, so a file written during it is not missed
+            watch = self._watching = DirWatch(self.root / folder for folder, _ in _FOLDERS)  # before the first scan
             self.scan()
             scanned()
             try:
                 while not self._stop.is_set():
-                    if watch is None:
-                        if self._stop.wait(min(interval, _POLL)):
-                            break
-                        self.scan()
-                    elif (changed := watch.wait(interval)) is None:
+                    if (changed := watch.wait(interval)) is None:
                         self.scan()
                     elif changed:
                         self.scan_files(changed)
             finally:
-                if watch:
-                    watch.close()
                 _live.pop(self, None)
 
         thread = threading.Thread(target=run, name="upstream-backlog", daemon=True)
@@ -474,14 +465,6 @@ class UpstreamBacklog:
         self._stop.set()
         if self._watching:
             self._watching.wake()
-
-    def _watch(self) -> DirWatch | None:
-        """A watch on the task folders, or None where the system cannot give one."""
-        try:
-            return DirWatch(self.root / folder for folder, _ in _FOLDERS)
-        except OSError as error:
-            logger.warning("%s: no file watch (%s); polling every %.0f s", self.root, error, _POLL)
-            return None
 
 
 #: The `[board]` settings this adapter reads: `path` is the project's `backlog/` directory, relative to the config;
