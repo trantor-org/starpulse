@@ -1,5 +1,6 @@
 """`serve` leaves nothing open behind it: no listening socket, no settings database, no request worker."""
 
+import gc
 import os
 import threading
 import time
@@ -10,6 +11,7 @@ from starpulse._internal.kit.adapter_kit import serve, url
 
 
 def _fds() -> int:
+    gc.collect()  # unclosed sockets from earlier tests in this worker die lazily
     return len(os.listdir("/proc/self/fd"))
 
 
