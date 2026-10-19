@@ -182,7 +182,10 @@ class Release:
 
     settle: str | None = None
     """`pin-bump` holds a dependency whose pull request is in a `[[repos]]` repository until the parent's pin bump applies
-    it; none: a dependency settles when its task is Done."""
+    it; `release` holds one whose pull request is in `repo` until the running build contains its merge commit; none: a
+    dependency settles when its task is Done."""
+    repo: str | None = None
+    """The name of the repository the running build comes from, for `settle = "release"`."""
 
 
 @dataclass(frozen=True)
@@ -375,7 +378,9 @@ def _commit(raw: object, instance: str) -> CommitKeys:
     if not isinstance(raw, dict):
         raise ConfigError(f"{who}: commit must be a [runs.commit] table")
     if unknown := sorted(raw.keys() - _COMMIT_KEYS):
-        raise ConfigError(f"{who}: commit: unknown key(s) {', '.join(unknown)}; known: {', '.join(sorted(_COMMIT_KEYS))}")
+        raise ConfigError(
+            f"{who}: commit: unknown key(s) {', '.join(unknown)}; known: {', '.join(sorted(_COMMIT_KEYS))}"
+        )
     for key, name in raw.items():
         if not (isinstance(name, str) and _ENV_NAME.fullmatch(name)):
             raise ConfigError(f"{who}: commit.{key} must be the name of a run parameter")
@@ -717,14 +722,23 @@ def _release(raw: Mapping[str, object], repos: Sequence[Repo]) -> Release | None
     if "release" not in raw:
         return None
     table = raw["release"]
-    if not isinstance(table, dict) or not table.keys() <= {"settle"}:
-        raise ConfigError("release: the [release] table takes only settle")
-    if (settle := table.get("settle")) is None:
+    if not isinstance(table, dict) or not table.keys() <= {"settle", "repo"}:
+        raise ConfigError("release: the [release] table takes only settle and repo")
+    settle, repo = table.get("settle"), table.get("repo")
+    if repo is not None and settle != "release":
+        raise ConfigError("release: repo is only for settle = release")
+    if settle is None:
         return Release()
-    if settle != "pin-bump":
-        raise ConfigError("release: settle must be pin-bump")
+    if settle not in ("pin-bump", "release"):
+        raise ConfigError("release: settle must be pin-bump or release")
+    if settle == "release":
+        if not isinstance(repo, str) or not repo:
+            raise ConfigError("release: settle = release needs a repo, the repository the running build comes from")
+        return Release(settle="release", repo=repo)
     if not repos:
-        raise ConfigError("release: settle = pin-bump needs a [[repos]] entry to say which repositories the parent pins")
+        raise ConfigError(
+            "release: settle = pin-bump needs a [[repos]] entry to say which repositories the parent pins"
+        )
     return Release(settle="pin-bump")
 
 
@@ -820,7 +834,7 @@ def load(path: Path | None) -> Config:
         raise ConfigError(f"board type {kind!r} is not a module name")
     try:
         found = importlib.util.find_spec(module_name(kind))
-    except (ModuleNotFoundError, ValueError):
+    except ModuleNotFoundError, ValueError:
         found = None
     if found is None:
         raise ConfigError(f"no board adapter of type {kind}")

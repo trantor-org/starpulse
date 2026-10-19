@@ -8,7 +8,7 @@ import time
 import pytest
 
 from starpulse._internal.config.config import Repo
-from starpulse._internal.config.pins import _RETRY_WAIT_S, GitHub, contained, link
+from starpulse._internal.config.pins import _RETRY_WAIT_S, GitHub, build_commit, contained, link
 
 REPOS = (Repo(name="skills", path="skills", applied_by="pin-bump"),)
 CHILD_SHA, LATER_SHA = "c1" * 20, "c2" * 20
@@ -288,3 +288,17 @@ def test_a_history_page_says_whether_it_holds_a_merge_or_is_too_short_to_tell(
     history: dict | None, answer: bool | None
 ) -> None:
     assert contained(CHILD_SHA, MERGED_AT, history) is answer
+
+
+@pytest.mark.parametrize(
+    ("version", "commit"),
+    [
+        ("0.4.0.post3+g1a2b3c4", "1a2b3c4"),
+        ("0.4.0.post3+g1a2b3c4.d20261019", "1a2b3c4"),
+        ("0.4.0", None),
+        ("0.4.0+local", None),
+        ("0.4.0b2", None),
+    ],
+)
+def test_a_build_carries_its_commit_in_the_local_part_of_its_version(version: str, commit: str | None) -> None:
+    assert build_commit(version) == commit

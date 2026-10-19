@@ -16,11 +16,14 @@ import re
 import subprocess
 import time
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
+from functools import cache
+from importlib import metadata
 from typing import Protocol
 
 from starpulse._internal.config.config import Repo
 
-__all__ = ["GitHub", "Pins", "contained", "link"]
+__all__ = ["GitHub", "LiveBuild", "Pins", "build_commit", "contained", "link", "running_commit"]
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +37,29 @@ _CONTAINS = {"ahead", "identical"}
 _COMMIT_ID = re.compile(r"[0-9a-f]{40}")
 #: What `_api` answers for a path GitHub has none of; no `jq` output holds a NUL, so it is never a pointer.
 _MISSING = "\0missing"
+
+
+@dataclass(frozen=True)
+class LiveBuild:
+    """The repository the running build comes from and a read of the commit that build is at."""
+
+    repo: str
+    commit: Callable[[], str | None]
+
+
+_BUILD_COMMIT = re.compile(r"\+g([0-9a-f]{7,40})(?:\.|$)")
+
+
+def build_commit(version: str) -> str | None:
+    """The commit a build was made at: the `g<sha>` in its PEP 440 local version (`0.4.0.post3+g1a2b3c4`), or None."""
+    found = _BUILD_COMMIT.search(version)
+    return found[1] if found else None
+
+
+@cache
+def running_commit() -> str | None:
+    """The commit this process's build is at, read once: a reload that does not restart it keeps the code it imported."""
+    return build_commit(metadata.version("starpulse"))
 
 
 class Pins(Protocol):

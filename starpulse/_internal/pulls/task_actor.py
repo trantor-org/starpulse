@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, Any
 
 from starpulse._internal.board.seam import HELD, MERGE_EVIDENCE, TaskEditor, Written
 from starpulse._internal.config.config import Repo
-from starpulse._internal.config.pins import Pins
+from starpulse._internal.config.pins import LiveBuild, Pins
 from starpulse._internal.feed import criteria
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.pulls.pull_requests import PULL_URL
@@ -120,6 +120,7 @@ class TaskActor:
         evaluate: Callable[[str, str], list[dict[str, Any]]] | None = None,
         holds: Callable[[str], Sequence[str]] | None = None,
         fresh_s: float = criteria.CACHE_SECONDS,
+        live: LiveBuild | None = None,
     ) -> None:
         self._feed = feed
         self._store = store
@@ -136,7 +137,7 @@ class TaskActor:
         self._results: dict[str, tuple[float, tuple[tuple[str, str], ...]]] = {}
         #: Tasks whose `deps_done` the board adapter holds; a task created re-derives them.
         self._held: set[str] = set()
-        self._gate = PinGate(feed, store, repos, pin_rule, pins)
+        self._gate = PinGate(feed, store, repos, pin_rule, pins, live)
         self._lock = threading.RLock()
         #: Each open task's lane, dependencies and pull requests as the actor last saw them.
         self._seen: dict[str, tuple[str, tuple[str, ...], tuple[str, ...]]] = {}

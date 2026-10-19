@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 
 from starpulse._internal.board.seam import TaskEditor
 from starpulse._internal.config.config import Repo
-from starpulse._internal.config.pins import GitHub, Pins, link
+from starpulse._internal.config.pins import GitHub, LiveBuild, Pins, link
 from starpulse._internal.feed import criteria
 from starpulse._internal.feed.board_feed import WAITING, BoardFeed
 from starpulse._internal.pulls.pull_requests import PULL_URL
@@ -35,7 +35,8 @@ COMMENT = "Every dependency has merged; StarPulse moved this task to Ready."
 
 
 class PinGate:
-    """Whether a dependency in a pinned repository has reached the parent's pin under the `[release]` pin-bump rule."""
+    """Whether a dependency's merge has not reached live state: the parent's pin under `[release]` pin-bump, or the
+    running build under `release`."""
 
     def __init__(
         self,
@@ -44,20 +45,26 @@ class PinGate:
         repos: Sequence[Repo] = (),
         pin_rule: str | None = None,
         pins: Pins | None = None,
+        live: LiveBuild | None = None,
     ) -> None:
         self._feed = feed
         self._store = store
+        self._live = live
         self._pinned = {repo.name: repo.path for repo in repos} if pin_rule == "pin-bump" else {}
         self._repos = repos
         self._pins = pins or GitHub(lambda: feed.pull_answers().get("pins", {}))
 
     def unapplied(self, agent: dict[str, Any]) -> bool:
-        """Whether a dependency's merged change in a pinned repository is not in the parent's pin yet."""
+        """Whether a dependency's merged change is not in the parent's pin, or the running build, yet."""
         merges: list[dict] | None = None  # read once, and only for a task that needs the evidence
         for dependency in agent["dependencies"]:
             for url in self._feed.cited(dependency):
                 found = PULL_URL.fullmatch(url)
-                if found is None or (path := self._pinned.get(found[1].partition("/")[2])) is None:
+                if found is None:
+                    continue
+                name = found[1].partition("/")[2]
+                path = self._pinned.get(name)
+                if path is None and (self._live is None or self._live.repo != name):
                     continue
                 records = self._store.find(repo=found[1], number=int(found[2]))
                 if not records:
@@ -67,6 +74,10 @@ class PinGate:
                     continue
                 if child["state"] != "MERGED" or not child["mergeSha"] or not child["mergedAt"]:
                     return True
+                if path is None:
+                    if not self._built(found[1], child["mergeSha"]):
+                        return True
+                    continue
                 if merges is None:
                     merges = self._merges()
                 owner = found[1].partition("/")[0]
@@ -80,6 +91,12 @@ class PinGate:
                 if not applied and not self._at_head(found[1], child["mergeSha"], path):
                     return True
         return False
+
+    def _built(self, repo: str, sha: str) -> bool:
+        """Whether the running build contains `sha`: a build with no commit contains nothing."""
+        assert self._live is not None
+        commit = self._live.commit()
+        return commit is not None and self._pins.reaches(repo, sha, commit)
 
     def _at_head(self, child: str, sha: str, path: str) -> bool:
         """Whether a parent's default branch pins `sha` of `child` at `path`: a pin pushed there with no bump PR."""
@@ -115,10 +132,11 @@ class Unblocker:
         repos: Sequence[Repo] = (),
         pin_rule: str | None = None,
         pins: Pins | None = None,
+        live: LiveBuild | None = None,
     ) -> None:
         self._feed = feed
         self._edit = edit
-        self._gate = PinGate(feed, store, repos, pin_rule, pins)
+        self._gate = PinGate(feed, store, repos, pin_rule, pins, live)
         #: Tasks unblocked that the feed still shows Waiting, so the board's next read is not written over again.
         self._sent: set[str] = set()
 

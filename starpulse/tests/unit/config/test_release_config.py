@@ -30,11 +30,19 @@ def test_the_pin_bump_rule_is_named_by_the_release_table(tmp_path: Path) -> None
     assert config.release == Release(settle="pin-bump")
 
 
+def test_the_release_rule_names_the_repository_the_running_build_comes_from(tmp_path: Path) -> None:
+    config = load(_write(tmp_path, '[release]\nsettle = "release"\nrepo = "starpulse"\n'))
+
+    assert config.release == Release(settle="release", repo="starpulse")
+
+
 @pytest.mark.parametrize(
     ("text", "message"),
     [
-        (f'{REPOS}\n[release]\nsettle = "merged"\n', "settle must be pin-bump"),
-        ('[release]\nwhen = "now"\n', "the .release. table takes only settle"),
+        (f'{REPOS}\n[release]\nsettle = "merged"\n', "settle must be pin-bump or release"),
+        ('[release]\nsettle = "release"\n', "settle = release needs a repo"),
+        (f'{REPOS}\n[release]\nsettle = "pin-bump"\nrepo = "starpulse"\n', "repo is only for settle = release"),
+        ('[release]\nwhen = "now"\n', "the .release. table takes only settle and repo"),
         ('[release]\nsettle = "pin-bump"\n', "settle = pin-bump needs a .\\[repos\\]. entry"),
     ],
 )
