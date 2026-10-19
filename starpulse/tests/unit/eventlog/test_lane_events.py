@@ -97,8 +97,8 @@ def test_every_lane_entry_appended_from_now_on_without_an_actor_is_counted(tmp_p
     unattributed = lane_events.Unattributed()
     unattributed.follow(log, stop)
 
-    lane_events.publish(log, "T-1@ready@2.0", task, 2.0)
-    lane_events.publish(log, "T-1@done@3.0", task, 3.0, "starpulse/task-actor")
+    log.append(lane_events.STREAM, lane_events.entry(task, 2.0), event_id="T-1@ready@2.0")
+    log.append(lane_events.STREAM, lane_events.entry(task, 3.0, "starpulse/task-actor"), event_id="T-1@done@3.0")
     lane_events.append(log, "T-2@review@4.0", "T-2", "review", 4.0)
     log.append("pulls:notes", {"task": "T-3", "actor": None})  # another stream
 

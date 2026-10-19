@@ -114,7 +114,7 @@ def test_a_create_the_watch_places_before_the_create_answers_still_names_its_wri
     could place the new task first: TASK-5549 entered Ready at 18:05:47 on 2026-10-14 with no actor."""
     log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
     feed = BoardFeed(machines=MACHINES)
-    feed.record_lanes(HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", MACHINES), log)
+    feed.record_lanes(HistoryStore(f"sqlite:///{tmp_path / 'events.sqlite'}", MACHINES), log)
     watch: list[threading.Thread] = []
 
     def create(title: str, details: Any, /, actor: str = "operator") -> Written:

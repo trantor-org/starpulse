@@ -30,7 +30,7 @@ def test_a_poll_that_changes_no_lane_leaves_the_actor_for_the_move_after_it(
 ) -> None:
     log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
     feed = BoardFeed(machines=MACHINES)
-    feed.record_lanes(HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", MACHINES), log)
+    feed.record_lanes(HistoryStore(f"sqlite:///{tmp_path / 'events.sqlite'}", MACHINES), log)
     feed.put(_task(before, "t", 100.0))
     feed.note_actor("T-1", "agent", "s1", "claude")  # the move's write notes its writer before the file lands
     feed.put(_task(before, "t edited", 110.0))  # the watch places the write before it: the same lane
@@ -47,7 +47,7 @@ def test_a_lane_change_a_slow_scan_places_still_names_the_actor_that_wrote_it(tm
     now = [100.0]
     log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
     feed = BoardFeed(machines=MACHINES, clock=lambda: now[0])
-    feed.record_lanes(HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", MACHINES), log)
+    feed.record_lanes(HistoryStore(f"sqlite:///{tmp_path / 'events.sqlite'}", MACHINES), log)
     feed.put(_task("review", "t", 100.0))
     feed.note_actor("T-1", "starpulse/task-actor")
     now[0] += 120.0  # a scan that places the write two minutes late
@@ -65,7 +65,7 @@ def test_a_note_under_the_files_lowercase_id_names_the_actor_of_the_move_placed_
     places the move as `TASK-4613`: TASK-4613's six lane entries on 2026-10-16 carried no actor."""
     log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
     feed = BoardFeed(keys=upstream_keys("TASK"), machines=MACHINES)
-    feed.record_lanes(HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", MACHINES), log)
+    feed.record_lanes(HistoryStore(f"sqlite:///{tmp_path / 'events.sqlite'}", MACHINES), log)
     feed.put(BoardTask(id="TASK-12", team="demo", title="t", lane="ready", observed_at=100.0))
     feed.note_actor("task-12", "agent", "s1", "claude")
     feed.put(BoardTask(id="TASK-12", team="demo", title="t", lane="in_progress", observed_at=110.0))
@@ -90,7 +90,7 @@ class _BoardStore:
 
 def test_a_note_set_before_a_restart_names_its_writer_on_the_first_place_after_it(tmp_path: Path) -> None:
     board, log = _BoardStore(), EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
-    history = HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", MACHINES)
+    history = HistoryStore(f"sqlite:///{tmp_path / 'events.sqlite'}", MACHINES)
     before = BoardFeed(machines=MACHINES)
     before.resume(board, "board:tasks", lambda cursor: True)
     before.put(_task("in_progress", "t", 100.0))
@@ -116,7 +116,7 @@ def test_a_note_set_after_resuming_a_saved_board_is_saved_by_the_stop_and_names_
     saw no change and dropped the note: TASK-5601 entered Done at 07:47:14 on 2026-10-15, written before the restart
     and placed after it, with no actor."""
     board, log = _BoardStore(), EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
-    history = HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", MACHINES)
+    history = HistoryStore(f"sqlite:///{tmp_path / 'events.sqlite'}", MACHINES)
     first = BoardFeed(machines=MACHINES)
     first.resume(board, "board:tasks", lambda cursor: True)
     first.put(_task("review", "t", 100.0))
@@ -163,7 +163,7 @@ def test_the_starts_lane_reconcile_running_while_a_change_is_placed_leaves_the_c
     reconcile recorded the change the watch had placed but not yet recorded, so the watch's entry, naming the claim's
     writer, was a repeat it dropped."""
     log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
-    history = HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", MACHINES)
+    history = HistoryStore(f"sqlite:///{tmp_path / 'events.sqlite'}", MACHINES)
     feed = BoardFeed(machines=MACHINES)
     feed.record_lanes(history, log)
     feed.put(_task("ready", "t", 100.0))
@@ -184,7 +184,7 @@ def test_an_actor_note_the_follower_has_not_read_yet_still_names_the_move_it_pre
     task actor's note: the watch placed the actor's file before the follower's next poll read the note."""
     log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
     feed = BoardFeed(machines=MACHINES)
-    feed.record_lanes(HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", MACHINES), log)
+    feed.record_lanes(HistoryStore(f"sqlite:///{tmp_path / 'events.sqlite'}", MACHINES), log)
     feed.put(_task("waiting", "t", 100.0))
     stalled = threading.Event()
     stalled.set()  # the follower never polls on its own: only the move can read the note
@@ -202,7 +202,7 @@ def test_a_move_the_replay_places_with_no_note_names_the_component_that_placed_i
     entries: no note names a write nobody saw, and the replay reads none."""
     log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
     feed = BoardFeed(machines=MACHINES)
-    feed.record_lanes(HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", MACHINES), log)
+    feed.record_lanes(HistoryStore(f"sqlite:///{tmp_path / 'events.sqlite'}", MACHINES), log)
     feed.expect("9-0")  # the board is not read yet
     feed.put(_task("ready", "t", 100.0))
     feed.put(_task("in_progress", "t", 110.0))
@@ -218,7 +218,7 @@ def test_a_move_the_replay_places_with_no_note_names_the_component_that_placed_i
 def test_a_move_placed_after_the_replay_with_no_note_stays_unattributed(tmp_path: Path) -> None:
     log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
     feed = BoardFeed(machines=MACHINES)
-    feed.record_lanes(HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", MACHINES), log)
+    feed.record_lanes(HistoryStore(f"sqlite:///{tmp_path / 'events.sqlite'}", MACHINES), log)
     feed.expect("0-0")  # an empty board is read at once
     feed.put(_task("ready", "t", 100.0))
 
@@ -229,7 +229,7 @@ def test_a_lane_the_reconcile_records_names_the_reconcile_as_its_actor(tmp_path:
     """TASK-5577 entered In Progress at 11:07:20 on 2026-10-16 and TASK-5822 at 10:55:47 on 2026-10-17, each in a bare
     entry the Board child's reconcile appended."""
     log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
-    history = HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", MACHINES)
+    history = HistoryStore(f"sqlite:///{tmp_path / 'events.sqlite'}", MACHINES)
     history.record_lane("T-1@ready@100.0", "T-1", "ready", 100.0)
     feed = BoardFeed(machines=MACHINES)
     feed.record_lanes(history, log, live=False)

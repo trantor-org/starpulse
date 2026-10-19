@@ -53,7 +53,7 @@ from starpulse._internal.machines.transitions import lane_id
 from starpulse._internal.config.config import discover, load
 from starpulse._internal.eventlog import events as machine_events
 from starpulse._internal.eventlog import lane_events, lane_repair
-from starpulse._internal.eventlog.event_log import DEFAULT_POLL_INTERVAL, EventLog, Tail, create_tables
+from starpulse._internal.eventlog.event_log import DEFAULT_POLL_INTERVAL, EventLog, Tail, create_tables, insert_event
 from starpulse._internal.eventlog.summaries import (
     BOARD,
     SUMMARY_TABLES,
@@ -392,16 +392,28 @@ class HistoryStore:
         save = self._insert(_cursors).values(stream=stream, after_id=after_id)
         db.execute(save.on_conflict_do_update(index_elements=["stream"], set_={"after_id": save.excluded.after_id}))
 
-    def record_lane(self, event_id: str, task: str, status: str, at: float, *, cursor: int | None = None) -> bool:
+    def record_lane(
+        self,
+        event_id: str,
+        task: str,
+        status: str,
+        at: float,
+        *,
+        cursor: int | None = None,
+        event: Mapping[str, Any] | None = None,
+    ) -> bool:
         """Write a task's lane change and fold it into the summaries; True when a row was written. The status is kept as
         its lane id (`In Progress` is `in_progress`). One that repeats the task's last (a reconcile) is no change, and
         neither is an event id or a move (task, lane, time) the store already holds: a second writer adds no row.
 
         A forwarded change (`<source>/<id>`) repeats only the last status of the same source's task: two sources may
-        key a task alike. `cursor`, the entry's id in the log, is saved in the same transaction.
+        key a task alike. `cursor`, the entry's id in the log, is saved in the same transaction, as is the lane `event`
+        (the `board:lanes` fields, under `event_id`) a change writes: both land or neither does.
         """
         with self.engine.begin() as db:
             written = self._fold_lane(db, event_id, task, status, at)
+            if written and event is not None:
+                insert_event(db, lane_events.STREAM, event, event_id)
             if cursor is not None:
                 self._save_cursor(db, lane_events.STREAM, cursor)
         if written:

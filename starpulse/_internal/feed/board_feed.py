@@ -161,8 +161,11 @@ def stream_id(entry_id: str) -> tuple[int, int]:
 class LaneRecorder(Protocol):
     """Where a feed keeps each lane change it applies, idempotent on the event id (`HistoryStore`)."""
 
-    def record_lane(self, event_id: str, task: str, status: str, at: float) -> bool | None:
-        """Keep one lane change; True when it wrote a row, False for a repeat of the task's last lane or a known id."""
+    def record_lane(
+        self, event_id: str, task: str, status: str, at: float, *, event: Mapping[str, Any] | None = None
+    ) -> bool | None:
+        """Keep one lane change, and with it the lane `event` (the `board:lanes` fields) in the same transaction; True
+        when it wrote a row, False for a repeat of the task's last lane or a known id."""
 
 
 class TaskIndex(Protocol):
@@ -597,10 +600,11 @@ class BoardFeed:
                         # a file stamped in a zone behind the moves' would settle before them and open the trajectory
                         entered = max(entered, path[-1]["at"]) if path else entered
                     event_id = f"{task.id}@{lane}@{entered}"
-                    if self._lanes.record_lane(event_id, task.id, lane, entered) and self._lane_log is not None:
-                        lane_events.publish(
-                            self._lane_log, event_id, task.model_copy(update={"lane": lane}), entered, *writer
-                        )
+                    event = None
+                    if self._lane_log is not None:
+                        event = lane_events.entry(task.model_copy(update={"lane": lane}), entered, *writer)
+                    if self._lanes.record_lane(event_id, task.id, lane, entered, event=event) and event is not None:
+                        self._lane_log.committed()
                 except Exception as exc:  # the history is down; the task is placed and the next change is recorded
                     logger.warning("StarPulse: cannot record the lane change of %s: %s", task.id, exc)
         if not self._replaying():
@@ -636,10 +640,13 @@ class BoardFeed:
             at = max(entered, before[1])
             event_id = f"{task_id}@{lane}@{at}"
             try:
-                if self._lanes.record_lane(event_id, task_id, lane, at):
+                event = None
+                if self._lane_log is not None:
+                    event = lane_events.change(task_id, lane, at, lane_events.RECONCILE_ACTOR)
+                if self._lanes.record_lane(event_id, task_id, lane, at, event=event):
                     recorded += 1
-                    if self._lane_log is not None:
-                        lane_events.append(self._lane_log, event_id, task_id, lane, at, lane_events.RECONCILE_ACTOR)
+                    if event is not None:
+                        self._lane_log.committed()
             except Exception as exc:  # the history is down; the next start goes again
                 logger.warning("StarPulse: cannot reconcile the lane of %s: %s", task_id, exc)
         return recorded

@@ -819,7 +819,7 @@ def _recorded_lanes(feed: BoardFeed) -> list[tuple]:
     rows: list[tuple] = []
 
     class Lanes:
-        def record_lane(self, event_id: str, task: str, status: str, at: float) -> bool:
+        def record_lane(self, event_id: str, task: str, status: str, at: float, **_: object) -> bool:
             rows.append((task, at, "To Do", status))
             return True
 
@@ -1125,7 +1125,7 @@ def test_a_lane_change_is_recorded_once_and_a_replay_of_its_event_id_adds_no_row
 
 def test_a_history_that_cannot_record_a_lane_change_still_places_the_task() -> None:
     class Down:
-        def record_lane(self, *_args: object) -> None:
+        def record_lane(self, *_args: object, **_kwargs: object) -> None:
             raise OSError("history down")
 
     feed = BoardFeed(clock=lambda: 5.0)

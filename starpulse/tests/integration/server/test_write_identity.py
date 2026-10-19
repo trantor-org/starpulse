@@ -32,7 +32,7 @@ def _served(tmp_path: Path) -> Iterator[tuple[str, BoardFeed, EventLog]]:
     built = native.board({}, tmp_path)
     log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
     feed = BoardFeed(machines=MACHINES)
-    feed.record_lanes(HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", MACHINES), log)
+    feed.record_lanes(HistoryStore(f"sqlite:///{tmp_path / 'events.sqlite'}", MACHINES), log)
     for key in keys:
         feed.put(task(key, "In Progress", moves={"done": Move(allowed=True)}))
     with serve(
