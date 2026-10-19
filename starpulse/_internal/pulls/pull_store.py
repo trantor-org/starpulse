@@ -181,6 +181,17 @@ class PullSync:
         self._wake.set()
         return True
 
+    def reconcile_open(self) -> int:
+        """Queue a read of each pull request the store holds OPEN, and say how many: one the retired listing poll left
+        open, and no event will close, closes on its read. Each read is one pull request alone, so a clean store costs
+        one read per genuinely open pull request."""
+        stale = self._store.find(state="OPEN", held_only=True)
+        for record in stale:
+            self._requests.put((record["repo"], record["number"]))
+        if stale:
+            self._wake.set()
+        return len(stale)
+
     def _read_requests(self) -> bool:
         """Read each queued pull request alone, and say whether any was queued; one that cannot be read is logged
         and left to the next refresh."""
@@ -235,13 +246,14 @@ class PullSync:
 
     def run_forever(self) -> None:  # pragma: no mutate block — timer loop
         """Once the Board replay is done, so the first projection sees every task, project what the store already
-        holds, then serve each refresh asked for until `stop`. Projection runs on its own thread: a cold pin memo
+        holds and read each pull request it holds OPEN (`reconcile_open`), then serve each refresh asked for until `stop`. Projection runs on its own thread: a cold pin memo
         makes it walk hundreds of `gh` reads, and a refresh must not wait behind that."""
         threading.Thread(target=self._wake_on_stop, name="pull-stop", daemon=True).start()
         self._feed.wait_replayed()
         self._projecting = True
         threading.Thread(target=self._project_forever, name="pull-project", daemon=True).start()
         self.project()
+        self.reconcile_open()
         while not self._stop.is_set():
             self._wake.wait()
             self._wake.clear()  # before the drain: a request queued after it sets the event again
