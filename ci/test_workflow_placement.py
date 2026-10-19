@@ -316,6 +316,7 @@ def test_static_checks_passes_when_every_check_passes(tmp_path):
         ("ci/public_names.py", "public-names"),
         ("gen:types", "api-types"),
         ("ci/trantor_tier_policy.py", "tier-policy"),
+        ("ci/busy_modules.py", "busy-modules"),
     ],
 )
 def test_static_checks_fails_naming_the_failed_check_and_still_runs_the_others(tmp_path, fail_on, name):
@@ -323,7 +324,10 @@ def test_static_checks_fails_naming_the_failed_check_and_still_runs_the_others(t
     assert result.returncode == 1
     assert re.findall(r"static check failed: (\S+)", result.stdout) == [name]
     calls = (tmp_path / "calls").read_text()
-    assert all(command in calls for command in ("ci/ic_imports.py", "ci/public_names.py", "ci/trantor_tier_policy.py"))
+    assert all(
+        command in calls
+        for command in ("ci/ic_imports.py", "ci/public_names.py", "ci/trantor_tier_policy.py", "ci/busy_modules.py")
+    )
 
 
 def test_static_checks_runs_its_checks_concurrently(tmp_path):
