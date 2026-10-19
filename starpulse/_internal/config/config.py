@@ -62,6 +62,7 @@ _KEYS = {
     "oidc",
     "forward",
     "sources",
+    "producers",
     "aggregates_only",
     "autopilot",
     "release",
@@ -96,6 +97,7 @@ _COMMIT_KEYS = {"after", "before", "force", "task"}
 _REPO_KEYS = {"name", "path", "applied_by"}
 _FORWARD_KEYS = {"url", "token_env", "batch"}
 _SOURCE_KEYS = {"name", "token_env"}
+_PRODUCER_KEYS = {"name", "token_env", "machines", "actors"}
 
 _MEMORY_KEYS = {"soft_mb", "hard_mb"}
 
@@ -261,6 +263,17 @@ class Source:
 
     name: str
     token_env: str
+
+
+@dataclass(frozen=True)
+class Producer:
+    """A system that posts machine events as CloudEvents; `token_env` names the variable holding its token, and it may
+    write only the `machines` and `actors` named here."""
+
+    name: str
+    token_env: str
+    machines: tuple[str, ...]
+    actors: tuple[str, ...]
 
 
 def runs_adapter(kind: str) -> ModuleType:
@@ -445,6 +458,43 @@ def _source(raw: object) -> Source:
     return Source(name, _token_env(raw["token_env"], f"source {name}:"))
 
 
+def _name_list(raw: dict, key: str, who: str) -> tuple[str, ...]:
+    names = raw[key]
+    if not (isinstance(names, list) and names and all(isinstance(name, str) and name for name in names)):
+        raise ConfigError(f"{who}: {key} must be a non-empty list of text")
+    return tuple(names)
+
+
+def _producer(raw: object) -> Producer:
+    if not isinstance(raw, dict):
+        raise ConfigError("producers must be a list of [[producers]] tables")
+    for key in ("name", "token_env", "machines", "actors"):
+        if key not in raw:
+            raise ConfigError(f"a producer needs {key}")
+    name = raw["name"]
+    if not isinstance(name, str) or not name or "/" in name:
+        raise ConfigError("producer names must be non-empty text without a /")
+    who = f"producer {name}"
+    _unknown(raw, _PRODUCER_KEYS, who)
+    return Producer(
+        name, _token_env(raw["token_env"], f"{who}:"), _name_list(raw, "machines", who), _name_list(raw, "actors", who)
+    )
+
+
+def _producers(raw: object) -> tuple[Producer, ...]:
+    if not isinstance(raw, list):
+        raise ConfigError("producers must be a list of [[producers]] tables")
+    producers = tuple(_producer(table) for table in raw)
+    for at, producer in enumerate(producers):
+        if any(producer.name == earlier.name for earlier in producers[:at]):
+            raise ConfigError(f"producer {producer.name} is configured twice")
+        if shared := next((p for p in producers[:at] if p.token_env == producer.token_env), None):
+            raise ConfigError(
+                f"producers {shared.name} and {producer.name} share token_env {producer.token_env}; each needs its own token"
+            )
+    return producers
+
+
 @dataclass(frozen=True)
 class MemoryLimit:
     """A worker child's memory limits in megabytes: past `soft_mb` it is replaced, past `hard_mb` it is killed."""
@@ -541,6 +591,8 @@ class Config:
     """The instances this hub takes forwarded events from, by their tokens."""
     aggregates_only: bool = False
     """A hub that takes aggregates only refuses an instance's opt-in to be named."""
+    producers: tuple[Producer, ...] = ()
+    """The systems that post machine events as CloudEvents, each with its token variable, machines and actors."""
     event_log_retention_days: int = 7
     """`serve` prunes the event log's rows older than this many days, hourly, so the table and every reader's boot replay stay bounded; a reader that was behind the oldest retained row records a gap."""
     event_log_archive_dir: str = "starpulse-archive"
@@ -783,6 +835,7 @@ def load(path: Path | None) -> Config:
         _forward(raw.get("forward")),
         _sources(raw.get("sources", [])),
         _flag(raw, "aggregates_only", False),
+        producers=_producers(raw.get("producers", [])),
         event_log_retention_days=log_retention,
         event_log_archive_dir=_archive_dir(raw.get("event_log_archive_dir", "starpulse-archive")),
         repos=repos,

@@ -65,6 +65,7 @@ from starpulse._internal.hub.forward import Forwarder
 from starpulse._internal.level.insights import Insights, InsightStore
 from starpulse._internal.pulls.pull_refresh import PullRefresh
 from starpulse._internal.pulls.pulls import PullStore
+from starpulse._internal.runs.cloudevents import CloudEventsIngest
 from starpulse._internal.runs.ingest import ForwardIngest, Ingest
 from starpulse._internal.server.assembly import assemble as _assemble
 from starpulse._internal.server.server import StarPulseServer, request_handler
@@ -373,6 +374,7 @@ def serve(
     ingest: Ingest | None = None,
     gate: Callable[[BaseHTTPRequestHandler], bool] | None = None,
     insights: Insights | None = None,
+    events: CloudEventsIngest | None = None,
     port: int = 0,
     forward: ForwardIngest | None = None,
     level: Level | None = None,
@@ -422,6 +424,7 @@ def serve(
         forward,
         level,
         insights=insights,
+        events=events,
         forwarding=forwarding,
         autopilot=autopilot,
         reruns=reruns,

@@ -111,6 +111,9 @@ _DOC_RESTORE = "/api/docs/restore"
 _INGEST = "/api/runs/events"
 
 
+_MACHINE_EVENTS = "/api/machine-events"
+
+
 _FORWARD = "/api/forward"
 
 
@@ -178,6 +181,7 @@ _WRITES = {
     _DOC_ARCHIVE: "doc_archive",
     _DOC_RESTORE: "doc_restore",
     _INGEST: "ingest",
+    _MACHINE_EVENTS: "ingest",
     _FORWARD: "forward",
     _INSIGHTS: "insight",
     _PULL_REFRESH: "ingest",

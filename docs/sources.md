@@ -356,6 +356,52 @@ name = "cron"
 token_env = "CRON_INGEST_TOKEN"
 ```
 
+## Post machine events as CloudEvents
+
+A build job, a bot or any service that is not on the host posts a lifecycle machine's event over HTTP as a
+[CloudEvents](https://cloudevents.io) 1.0 JSON event. Declare the producer, set its token in the server's
+environment, and the server accepts `POST /api/machine-events` (404 until one is declared):
+
+```toml
+[[producers]]
+name = "ci-bot"
+token_env = "CI_BOT_TOKEN"
+machines = ["delivery"]
+actors = ["ci"]
+```
+
+```bash
+curl -X POST "$STARPULSE_URL/api/machine-events" \
+  -H "Authorization: Bearer $CI_BOT_TOKEN" -H "Content-Type: application/cloudevents+json" \
+  -d '{"specversion": "1.0", "id": "build-41", "source": "ci-bot", "type": "BUILT", "subject": "PROJ-1",
+       "time": "2026-10-18T22:00:00Z", "machine": "delivery", "actor": "ci", "data": {"sha": "abc123"}}'
+```
+
+`application/cloudevents-batch+json` takes a JSON array of up to 200 such events. The attributes map to a
+`machine:events` entry:
+
+| CloudEvents | Entry | |
+|---|---|---|
+| `id` | `event_id`, as `<source>/<id>` | posting an event again writes it once |
+| `source` | the producer | must be the token's own producer `name` |
+| `type` | `event` | an event the machine declares |
+| `subject` or `run` | `task` or `run` | exactly one of the two |
+| `machine`, `actor` | the same | extensions; the machine must be drawn, the actor one of the event's declared writers |
+| `time` | `time` | optional RFC 3339 with an offset; the server's clock when left out |
+| `data` | `data` | optional JSON object, at most 8 KiB as JSON |
+
+A batch is checked whole before anything is appended, so one refused event writes none of them. An accepted event is
+a `machine:events` row like any other: it moves the task on the page and in the `/api/events` stream. The answers:
+
+| Status | Meaning |
+|---|---|
+| 201 | every event is in the log |
+| 400 | not JSON, a wrong content type, `specversion` other than `1.0`, an event or actor the machine does not declare, a machine the server does not draw, an entry keyed by neither or both of `subject` and `run`, a bad `time`, or `data` that is not an object |
+| 401 | a missing or unknown token |
+| 403 | a `source`, `machine` or `actor` the producer is not declared for |
+| 413 | `data` over 8 KiB, or a body over the ingest's size limit |
+| 503 | the event log did not take an entry; every entry has a stable id, so post the batch again |
+
 ## GitHub Actions
 
 `type = "github_actions"` reads one repository's workflows: each active workflow file is a workflow named for the file

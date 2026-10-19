@@ -312,6 +312,14 @@ token_env = "DAGU_INGEST_TOKEN"          # the environment variable holding the 
                                          # this instance; the token never goes in this file; omit the key and the instance takes no pushed events
                                          # an instance with `token_env` and neither `type` nor `url` is push-only (see docs/sources.md)
 
+# Optional: a producer that posts machine events as CloudEvents (see docs/sources.md, Post machine events as CloudEvents).
+# `POST /api/machine-events` answers 404 until one is declared. A producer writes only the machines and actors listed here.
+[[producers]]
+name = "ci-bot"                          # the CloudEvents `source` its events carry; unique
+token_env = "CI_BOT_TOKEN"               # the environment variable holding its bearer token; never the token; no two producers share one
+machines = ["delivery"]                  # the drawn machines it may write; at least one
+actors = ["ci"]                          # the actors it may write as; at least one
+
 # Optional: the run parameters that carry what a run applies, so the Ledger pairs a run with its merge for certain.
 # Each value names a parameter; a key left out is a parameter this instance has none of.
 [runs.commit]

@@ -56,7 +56,7 @@ def tokens(instances: Iterable[RunsInstance | Source], environ: Mapping[str, str
     return found
 
 
-def _owner(tokens: Mapping[str, str], authorization: str | None) -> str | None:
+def token_owner(tokens: Mapping[str, str], authorization: str | None) -> str | None:
     """The instance the bearer token belongs to; every token is compared, so the time taken names none of them."""
     scheme, _, presented = (authorization or "").partition(" ")
     owner = None
@@ -111,7 +111,7 @@ class Ingest:
         self._clock = clock
 
     def __call__(self, authorization: str | None, raw: bytes) -> tuple[int, dict[str, Any]]:
-        if (instance := _owner(self._tokens, authorization)) is None:
+        if (instance := token_owner(self._tokens, authorization)) is None:
             return 401, {"error": "a valid instance token is required: Authorization: Bearer <token>"}
         if isinstance(event := _decoded(raw), str):
             return 400, {"error": event}
@@ -133,7 +133,6 @@ class Ingest:
         if self._log.append(run_events.STREAM, entry) is None:
             return 503, {"error": "the event log refused the entry; retry"}
         return 201, {"accepted": True}
-
 
 
 def _machine_event(fields: dict[str, Any]) -> str | None:
@@ -190,7 +189,7 @@ class ForwardIngest:
         self._aggregates_only = aggregates_only
 
     def __call__(self, authorization: str | None, raw: bytes) -> tuple[int, dict[str, Any]]:
-        if (source := _owner(self._tokens, authorization)) is None:
+        if (source := token_owner(self._tokens, authorization)) is None:
             return 401, {"error": "a valid source token is required: Authorization: Bearer <token>"}
         try:
             body = json.loads(raw)

@@ -33,6 +33,7 @@ from starpulse._internal.board.seam import (
     TaskRestorer,
     Written,
 )
+from starpulse._internal.runs.cloudevents import CloudEventsIngest
 from starpulse._internal.runs.ingest import MAX_BODY, MAX_FORWARD_BODY, ForwardIngest, Ingest
 from starpulse._internal.pulls.pull_refresh import MAX_BODY as MAX_REFRESH_BODY
 from starpulse._internal.pulls.pull_refresh import PullRefresh
@@ -115,6 +116,7 @@ from starpulse._internal.server.routes import (
     _INSIGHTS,
     _LANES,
     _LEDGER,
+    _MACHINE_EVENTS,
     _MILESTONES,
     _MILESTONE_ARCHIVE,
     _MISS,
@@ -333,6 +335,7 @@ class _ApiHandler(SimpleHTTPRequestHandler):
     complete: TaskCompleter | None
     create: TaskCreator | None
     ingest: Ingest | None
+    events: CloudEventsIngest | None
     insights: Insights | None
     gate: Callable[[BaseHTTPRequestHandler], bool] | None
     forward: ForwardIngest | None
@@ -397,6 +400,7 @@ class _ApiHandler(SimpleHTTPRequestHandler):
                 _REVIEW,
                 _TASKS,
                 _INGEST,
+                _MACHINE_EVENTS,
                 _FORWARD,
                 _INSIGHTS,
                 _PULL_REFRESH,
@@ -475,6 +479,9 @@ class _ApiHandler(SimpleHTTPRequestHandler):
                 )
         elif path == _INGEST and self.ingest is not None:
             status, body = self._pushed(self.ingest, MAX_BODY)
+        elif path == _MACHINE_EVENTS and self.events is not None:
+            content_type = self.headers.get("Content-Type")
+            status, body = self._pushed(lambda auth, raw: self.events(auth, content_type, raw), MAX_FORWARD_BODY)
         elif path == _FORWARD and self.forward is not None:
             status, body = self._pushed(self.forward, MAX_FORWARD_BODY)
         elif path == _INSIGHTS and self.insights is not None:
@@ -618,6 +625,7 @@ def request_handler(
     forward: ForwardIngest | None = None,
     level: Level | None = None,
     insights: Insights | None = None,
+    events: CloudEventsIngest | None = None,
     forwarding: Forwarder | None = None,
     autopilot: Runtime | Remote | None = None,
     reruns: Mapping[str, Callable[[str, Mapping[str, str]], str]] | None = None,
@@ -667,6 +675,7 @@ def request_handler(
             self.create = create
             self.ingest = ingest
             self.insights = insights
+            self.events = events
             self.gate = gate
             self.forward = forward
             self.pull_refresh = pull_refresh

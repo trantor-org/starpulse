@@ -242,6 +242,7 @@ from starpulse._internal.board.seam import (
     Board,
 )
 from starpulse._internal.harnesses.session_start import starter
+from starpulse._internal.runs.cloudevents import CloudEventsIngest
 from starpulse._internal.runs.ingest import ForwardIngest, Ingest
 from starpulse._internal.runs.ingest import tokens as ingest_tokens
 from starpulse._internal.pulls.delivery import Projected, follow_notes, follow_saves, metrics_of, request_refresh
@@ -765,6 +766,7 @@ class Prepared(NamedTuple):
     starts: dict[str, Callable[[str], str]]
     reruns: dict[str, Any]
     run_safe: list[str]
+    producer_tokens: dict[str, str]
 
 
 def prepare(parser: argparse.ArgumentParser, args: argparse.Namespace, config: Config) -> Prepared:
@@ -772,6 +774,7 @@ def prepare(parser: argparse.ArgumentParser, args: argparse.Namespace, config: C
     try:
         instance_tokens = ingest_tokens(config.runs, os.environ)
         source_tokens = ingest_tokens(config.sources, os.environ)
+        producer_tokens = ingest_tokens(config.producers, os.environ)
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")
     refresh_token = os.environ.get(config.refresh_token_env or "")
@@ -808,7 +811,7 @@ def prepare(parser: argparse.ArgumentParser, args: argparse.Namespace, config: C
     run_safe = [name for name in config.qualified_run_safe() if name.partition("/")[0] in starts]
     if unstartable := sorted({t.start for t in config.triggers if t.start.partition("/")[0] not in starts}):
         parser.exit(1, f"triggers start workflows no adapter can start a run of: {', '.join(unstartable)}\n")
-    return Prepared(instance_tokens, source_tokens, refresh_token, gate, starts, reruns, run_safe)
+    return Prepared(instance_tokens, source_tokens, refresh_token, gate, starts, reruns, run_safe, producer_tokens)
 
 
 def refuse_unassemblable(
@@ -868,7 +871,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     from starpulse._internal.pulls.pulls import PullStore  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse._internal.server.assembly import assemble, history_store  # noqa: PLC0415 - the database stack loads after the config is accepted
 
-    instance_tokens, source_tokens, refresh_token, gate, starts, reruns, run_safe = ready
+    instance_tokens, source_tokens, refresh_token, gate, starts, reruns, run_safe, producer_tokens = ready
     if args.hub:
         from starpulse._internal.hub import hub  # noqa: PLC0415 - hub-only code; `prepare` found it importable
     base = args.config.parent if args.config else Path.cwd()
@@ -1024,6 +1027,9 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         forward=ForwardIngest(source_tokens, log, aggregates_only=config.aggregates_only) if source_tokens else None,
         level=config.level if args.hub else None,
         insights=insights,
+        events=CloudEventsIngest({p.name: p for p in config.producers}, producer_tokens, log, feed.machines)
+        if producer_tokens
+        else None,
         forwarding=forwarder,
         reruns=reruns,
         contract=_cached(lambda: doctor.contract(feed.snapshot(), config, doctor.LIVE), _CONTRACT_TTL_S),

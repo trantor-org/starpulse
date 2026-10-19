@@ -15,7 +15,7 @@ When a consumer needs a field the contract lacks, the field is added to the cont
 
 | Stream | Contract | One entry is |
 |---|---|---|
-| `machine:events` | `machine-events` (`MachineEvent`) | a lifecycle machine's event for a task or run |
+| `machine:events` | `machine-events` (`MachineEvent`) | a lifecycle machine's event for a task or run; a producer's CloudEvent over HTTP adds `source` and `data` (docs/sources.md) |
 | `board:lanes` | `lane-events` (`LaneEvent`) | a task entering a Board lane, with its team, milestone and labels, and the actor, session and harness of a server write that moved it |
 | `runs:events` | `run-events` (`RunEvent`) | a workflow run, or one of its steps, starting or ending |
 

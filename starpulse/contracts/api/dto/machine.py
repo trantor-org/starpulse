@@ -70,9 +70,7 @@ class Machine(_Api):
     launches: dict[str, Launch] | None = Field(
         default=None, description="Only the board machine: the skill flow each launching DAG starts."
     )
-    writers: dict[str, list[Writer]] | None = Field(
-        default=None, description="Only the board machine: its writers per event."
-    )
+    writers: dict[str, list[Writer]] | None = Field(default=None, description="Its YAML-declared writers per event.")
     dagActors: list[str] | None = Field(
         default=None, description="Only the board machine: the writers that are runs workflows."
     )
