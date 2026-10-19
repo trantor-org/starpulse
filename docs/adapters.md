@@ -116,8 +116,8 @@ numbered from 1). `appendNotes` adds a line to the end of the notes, a non-blank
 `comment` adds a comment, and `read` returns the comments as `{created, text}`, which an edit cannot set. `complete(task)`
 refuses a task that is not Done and moves one that is to `completed/`.
 `starpulse._internal.board.upstream_backlog` is the reference adapter for a tracker with its own
-writer: it watches a Backlog.md project's Markdown files (a poll every 0.25 s of `tasks/`, `completed/` and `archive/tasks/`, so a changed file
-is placed within a quarter second; a full rescan every `interval` seconds, 60 by default, backs the poll up), puts every task in the team named by its `config.yml`'s
+writer: it polls a Backlog.md project's Markdown files (one `os.scandir` pass over `tasks/`, `completed/` and `archive/tasks/` every `interval` seconds,
+2 by default, that re-reads only a file whose modification time or size changed and retracts a task whose file is gone), puts every task in the team named by its `config.yml`'s
 `project_name` (a project that sets none is refused, so no task lands in a default team), takes
 the machine from the project's own statuses (any lane reaches any other, unless `machine` names a machine file
 whose states are those lanes and whose `writers` reserve a move to an actor, such as `operator`), and writes moves
