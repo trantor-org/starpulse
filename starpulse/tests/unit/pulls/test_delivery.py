@@ -11,7 +11,7 @@ from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.pulls import delivery
 from starpulse._internal.pulls.pulls import PullStore
-from starpulse._internal.server.api_handler import _PullReads
+from starpulse._internal.server.reads import _PullReads
 
 PULLS = {"TASK-1": [{"number": 7, "url": "https://github.com/acme/widgets/pull/7", "checks": "pass"}]}
 ANSWERS = {"records": {}, "pins": {}}

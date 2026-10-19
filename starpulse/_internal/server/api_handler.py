@@ -11,13 +11,11 @@ import os
 import queue
 import threading
 import time
-from collections import OrderedDict
-from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
-from contextlib import contextmanager
+from collections.abc import Callable, Collection, Mapping, Sequence
 from http.server import BaseHTTPRequestHandler, SimpleHTTPRequestHandler
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, NamedTuple
-from urllib.parse import parse_qs, unquote, urlsplit
+from typing import TYPE_CHECKING, Any
+from urllib.parse import SplitResult, parse_qs, unquote, urlsplit
 
 from pydantic import ValidationError
 
@@ -38,7 +36,6 @@ from starpulse._internal.runs.ingest import MAX_BODY, MAX_FORWARD_BODY, ForwardI
 from starpulse._internal.pulls.pull_refresh import MAX_BODY as MAX_REFRESH_BODY
 from starpulse._internal.pulls.pull_refresh import PullRefresh
 from starpulse._internal.server.compression import LEVEL, Encoded, accepts_gzip, compressed, gzip_stream
-from starpulse._internal.server.process_metrics import process_gauges
 from starpulse._internal.hub.forward import Forwarder
 from starpulse._internal.server.column_stream import ColumnViews, Interest
 from starpulse._internal.server.snapshot_cache import SnapshotCache
@@ -53,51 +50,29 @@ from starpulse._internal.server.writes import (
     create_doc,
     create_milestone,
     create_task,
-    doc_record,
     import_retired,
     record_miss,
     record_verdict,
-    docs_list,
     edit_doc,
     edit_milestone,
     edit_task,
     forwarding,
     history_window,
-    milestone_record,
-    milestones_list,
     move_task,
     park_task,
     rerun_dag,
     restore_doc,
     restore_task,
     retire_task,
-    retired_list,
     review_task,
     run_dag,
     start_task,
-    task_record,
     write_refusal,
 )
 from starpulse._internal.server.responses import (
     _error,
-    cells_response,
-    cost_to_go_response,
-    diff_response,
-    done_response,
-    graph_response,
-    health_response,
-    history_response,
-    ledger_response,
-    machines_response,
-    missed_loads_response,
-    pulls_response,
-    search_response,
-    sessions_response,
-    stages_response,
-    steps_response,
-    trace_clusters_response,
-    transitions_response,
 )
+from starpulse._internal.server.reads import Arrival, ReadRoutes, Request
 from starpulse._internal.server.routes import (
     _ARCHIVE,
     _AUTOPILOT,
@@ -130,14 +105,12 @@ from starpulse._internal.server.routes import (
     _RERUN_TAIL,
     _RESTORE,
     _RETIRE,
-    _RETIRED,
     _RETIRED_IMPORT,
     _REVIEW,
     _RETIRED_WRITES,
     _RUN,
     _SNAPSHOT_BODY,
     _START,
-    _TASK,
     _TASKS,
     _TASK_WRITES,
     _VERDICT,
@@ -145,7 +118,7 @@ from starpulse._internal.server.routes import (
     _WRITES,
     _is_rerun,
 )
-from starpulse._internal.server.encoding import encode, event, full_snapshot
+from starpulse._internal.server.encoding import encode, event
 from starpulse._internal.config.level import Level
 from starpulse._internal.config.config import SLOW_READ_S
 from starpulse._internal.config.harnesses import Harnesses
@@ -168,101 +141,6 @@ logger = logging.getLogger(__name__)
 
 #: Seconds a stream refused for a full stream pool is asked to wait before it reconnects.
 _STREAM_RETRY_S = 5
-
-
-class _PullReads:
-    """`/api/pulls`' answers, by query, held until the store saves: the unfiltered list is ~1 MB to read, encode and
-    gzip, and every page asks for it. A save builds the unfiltered answer itself, in the poller's thread, so a reader
-    finds it held; readers asking together for any other answer share one computation, since each extra one only
-    waits behind the rest for the GIL."""
-
-    #: How many distinct queries are held; past it the oldest is dropped.
-    KEEP = 16
-
-    def __init__(self, pulls: PullStore | None) -> None:
-        self._pulls = pulls
-        self._held: OrderedDict[str, tuple[int, Encoded, int]] = OrderedDict()
-        self._lock = threading.Lock()
-        self._computing = threading.Lock()
-        if pulls:
-            pulls.subscribe(lambda: self(""))
-
-    def _current(self, query: str) -> tuple[int, Encoded, int] | None:
-        rev = self._pulls.rev if self._pulls else 0
-        with self._lock:
-            held = self._held.get(query)
-        return held if held and held[0] == rev else None
-
-    def __call__(self, query: str) -> tuple[Encoded, int]:
-        held = self._current(query)
-        if held is None:
-            with self._computing:
-                held = self._current(query)
-                if held is None:
-                    rev = self._pulls.rev if self._pulls else 0
-                    body, status = pulls_response(self._pulls, parse_qs(query))
-                    held = (rev, Encoded.of(body), status)
-                    with self._lock:
-                        self._held[query] = held
-                        while len(self._held) > self.KEEP:
-                            self._held.popitem(last=False)
-        return held[1], held[2]
-
-
-class _SlowReads:
-    """Logs each `/api/pulls` read that took `threshold_s` seconds or more from accept to the last byte written, with
-    the seconds it waited for a handler thread, computed its answer and wrote it, the reads in flight when it began, and
-    the request workers busy and streams open when it was accepted, so a stall of the whole process can be told apart by
-    the phase, and the occupant of the pool, that held the time."""
-
-    class _Read:
-        def __init__(self, started: float) -> None:
-            self.started = started
-            self.computed_at: float | None = None
-
-        def computed(self) -> None:
-            self.computed_at = time.monotonic()
-
-    def __init__(self, threshold_s: float) -> None:
-        self._threshold_s = threshold_s
-        self._lock = threading.Lock()
-        self._in_flight = 0
-
-    @contextmanager
-    def watch(self, query: str, queued_s: float, arrival: Arrival) -> Iterator[_Read]:
-        with self._lock:
-            self._in_flight += 1
-            in_flight = self._in_flight
-        read = self._Read(time.monotonic())
-        try:
-            yield read
-        finally:  # a write that fails on a closed socket is the slow read most worth the line
-            ended = time.monotonic()
-            with self._lock:
-                self._in_flight -= 1
-            computed_at = read.computed_at if read.computed_at is not None else ended
-            compute_s, write_s = computed_at - read.started, ended - computed_at
-            if queued_s + compute_s + write_s >= self._threshold_s:
-                logger.warning(
-                    "slow_read route=/api/pulls query=%s queue_s=%.3f compute_s=%.3f write_s=%.3f in_flight=%d"
-                    " busy=%d streams=%d",
-                    query,
-                    queued_s,
-                    compute_s,
-                    write_s,
-                    in_flight,
-                    arrival.busy,
-                    arrival.streams,
-                )
-
-
-class Arrival(NamedTuple):
-    """A connection when it was accepted: the time, the request workers busy or about to be (itself included) and the
-    streams open."""
-
-    at: float
-    busy: int = 0
-    streams: int = 0
 
 
 #: The Vite build names every file under it by its content's digest, so a new build never reuses a name.
@@ -648,11 +526,31 @@ def request_handler(
     )  # late: `server` imports this module and keeps the views and stream timings its tests patch
 
     configured = harnesses or Harnesses((), {})
-    harnesses_body = encode("harnesses", configured.as_json())
     snapshots = SnapshotCache(feed)
     column_views = ColumnViews()
-    pull_reads = _PullReads(pulls)
-    slow_reads = _SlowReads(slow_read_s)
+    routes = ReadRoutes(
+        feed,
+        history,
+        snapshots,
+        window,
+        read=read,
+        search=search,
+        telemetry=telemetry,
+        analytics=analytics,
+        level=level,
+        clock=clock,
+        contract=contract,
+        milestones=milestones,
+        pulls=pulls,
+        forwarder=forwarding,
+        autopilot=autopilot,
+        harnesses=configured,
+        slow_read_s=slow_read_s,
+        actor_metrics=actor_metrics,
+        lane_metrics=lane_metrics,
+        conformance_metrics=conformance_metrics,
+        page_gauge=lambda: build_gauge(static),
+    )
     event_text = views.EventText()
     flows = feed.machines.keys()
 
@@ -705,127 +603,29 @@ def request_handler(
                 self._stream_held((query.get("assignee") or query.get("holder") or [""])[0])  # legacy `holder`
             elif url.path == _LANES:
                 self._stream_columns("lanes", None, parse_qs(url.query).get("state", []))
-            elif url.path.startswith(_SNAPSHOT_BODY):
-                self._snapshot_body(url.path.removeprefix(_SNAPSHOT_BODY))
-            elif url.path == "/api/snapshot":
-                if parse_qs(url.query).get("view") == ["full"]:
-                    self._send(encode("snapshot", full_snapshot(snapshots.read().snapshot)))
-                else:
-                    self._send(snapshots.read().encoded)
-            elif url.path.startswith(_LEDGER):
-                event, _, tail = url.path.removeprefix(_LEDGER).partition("/")
-                if tail == "events":
-                    self._stream_ledger(unquote(event))
-                elif tail:
-                    self._send(_error(f"unknown route {url.path}"), 404)
-                else:
-                    self._send(*ledger_response(feed, unquote(event), parse_qs(url.query)))
-            elif url.path == "/api/doctor":
-                self._send(encode("doctor", contract() if contract else {"ok": True, "checks": []}))
-            elif url.path == "/api/machines":
-                self._send(*machines_response(feed, parse_qs(url.query)))
-            elif url.path == "/api/done":
-                self._send(*done_response(feed, read, parse_qs(url.query)))
-            elif url.path == "/api/history":
-                self._send(*history_response(history, parse_qs(url.query), flows, feed.keys))
-            elif url.path == "/api/pulls":
-                with slow_reads.watch(url.query, self.queued_s, self.arrival) as timing:
-                    body, status = pull_reads(url.query)
-                    timing.computed()
-                    self._send(body, status)
-            elif url.path == "/api/search":
-                self._send(*search_response(search, parse_qs(url.query)))
-            elif url.path == "/metrics":
-                self._send(
-                    (
-                        (actor_metrics() if actor_metrics else "")
-                        + (lane_metrics() if lane_metrics else "")
-                        + (conformance_metrics() if conformance_metrics else "")
-                        + build_gauge(static)
-                        + process_gauges()
-                    ).encode(),
-                    content_type="text/plain; version=0.0.4; charset=utf-8",
-                )
-            elif url.path == "/api/analytics/health":
-                self._send(*health_response(history, parse_qs(url.query), feed.machines, clock()))
-            elif url.path == "/api/analytics/sessions":
-                self._send(*sessions_response(telemetry, parse_qs(url.query), feed.keys, clock(), analytics))
-            elif url.path == "/api/analytics/steps":
-                self._send(*steps_response(telemetry, parse_qs(url.query), feed.keys, clock(), analytics))
-            elif url.path == "/api/analytics/transitions":
-                self._send(
-                    *transitions_response(telemetry, parse_qs(url.query), feed.keys, feed.titled, clock(), analytics)
-                )
-            elif url.path == "/api/analytics/cells":
-                self._send(*cells_response(telemetry, parse_qs(url.query), feed.keys, feed.titled, clock(), analytics))
-            elif url.path == "/api/analytics/graph":
-                self._send(*graph_response(telemetry, parse_qs(url.query), feed.keys, feed.titled, clock(), analytics))
-            elif url.path == "/api/analytics/stages":
-                self._send(*stages_response(telemetry, parse_qs(url.query), feed.keys, feed.titled, clock(), analytics))
-            elif url.path == "/api/analytics/cost-to-go":
-                self._send(
-                    *cost_to_go_response(telemetry, parse_qs(url.query), feed.keys, feed.titled, clock(), analytics)
-                )
-            elif url.path == "/api/analytics/diff":
-                self._send(*diff_response(telemetry, parse_qs(url.query), feed.keys, feed.titled, clock(), analytics))
-            elif url.path == "/api/analytics/missed-loads":
-                self._send(
-                    *missed_loads_response(
-                        telemetry, parse_qs(url.query), feed.keys, feed.titled, analytics or Analytics(), clock()
-                    )
-                )
-            elif url.path == "/api/analytics/trace-clusters":
-                self._send(
-                    *trace_clusters_response(
-                        telemetry, parse_qs(url.query), feed.keys, feed.titled, analytics or Analytics(), clock()
-                    )
-                )
-            elif url.path == "/api/level":
-                self._send(*views.level_response(history, parse_qs(url.query), level, feed.machines, clock()))
-            elif url.path == "/api/level/trajectories":
-                self._send(*views.trajectories_response(history, parse_qs(url.query), level, feed.machines, clock()))
-            elif url.path == "/api/level/what-if":
-                self._send(*views.what_if_response(history, parse_qs(url.query), level, feed.machines, clock()))
-            elif url.path.startswith(_TASK):
-                status, body = task_record(feed, read, unquote(url.path.removeprefix(_TASK)))
-                self._send(encode("task", body), status)
-            elif url.path == _MILESTONES:
-                status, body = milestones_list(self.milestones)
-                self._send(encode("milestones", body), status)
-            elif url.path.startswith(f"{_MILESTONES}/") and url.path not in _MILESTONE_WRITES:
-                status, body = milestone_record(self.milestones, unquote(url.path.removeprefix(f"{_MILESTONES}/")))
-                self._send(encode("milestone", body), status)
-            elif url.path == _DOCS:
-                status, body = docs_list(self.milestones)
-                self._send(encode("docs", body), status)
-            elif url.path.startswith(f"{_DOCS}/") and url.path not in _DOC_WRITES:
-                status, body = doc_record(self.milestones, unquote(url.path.removeprefix(f"{_DOCS}/")))
-                self._send(encode("doc", body), status)
-            elif url.path == _RETIRED:
-                status, body = retired_list(self.milestones, parse_qs(url.query).get("task", [""])[0])
-                self._send(encode("retired", body), status)
-            elif url.path == "/api/harnesses":
-                self._send(harnesses_body)
-            elif url.path == _WINDOW:
-                self._window("GET")  # pragma: no mutate: any method but PUT and DELETE reads the window
-            elif url.path == _FORWARDING:
-                self._send(*self._forwarding("GET", b""))
-            elif url.path == _AUTOPILOT:
-                self._send(*self._autopilot("GET", b""))
-            elif url.path in _PAGES or url.path.startswith("/flow/") and url.path[6:] in flows - {"board"}:
-                self.path = "/index.html"
-                super().do_GET()
+            elif url.path.startswith(_LEDGER) and url.path.removeprefix(_LEDGER).endswith("/events"):
+                self._stream_ledger(unquote(url.path.removeprefix(_LEDGER).partition("/")[0]))
             else:
-                super().do_GET()
+                self._read(url)
+
+        def _read(self, url: SplitResult) -> None:
+            """Answer a read route through `routes`, timed as it asks; the page and the static files are not one."""
+            request = Request(url.path, url.query, self.client_address[0])
+            with routes.watch(request, self.queued_s, self.arrival) as timing:
+                response = routes(request)
+                timing.computed()
+                if response is not None:
+                    self._send(*response)
+            if response is None:
+                self._page(url.path)
+
+        def _page(self, path: str) -> None:
+            if path in _PAGES or path.startswith("/flow/") and path[6:] in flows - {"board"}:
+                self.path = "/index.html"
+            super().do_GET()
 
         def list_directory(self, path: str | os.PathLike[str]) -> None:
             self.send_error(404)
-
-        def _snapshot_body(self, key: str) -> None:
-            body = snapshots.body(key)
-            if body is None:
-                return self._send(encode("error", {"error": f"no snapshot {key} is held"}), 404)
-            self._send(body, cache="max-age=3600, immutable")
 
         def _stream_events(self, by_ref: bool = False) -> None:
             """Hold the connection open: the Board's snapshot, then each change as it happens. `by_ref` sends the snapshot
