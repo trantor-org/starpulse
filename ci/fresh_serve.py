@@ -26,6 +26,7 @@ from pathlib import Path
 
 DEADLINE = 60.0
 SETTLE = 5.0
+LOG_TAIL = 20000
 STARTED = re.compile(r"worker ([\w-]+) started as pid (\d+)")
 
 
@@ -114,13 +115,14 @@ def smoke(python: str, deadline: float) -> str | None:
                         return None
                     problem = problem or "a child restarted"
                 time.sleep(0.5)
-            return problem if serve.poll() is None else f"serve exited {serve.returncode}"
+            problem = problem if serve.poll() is None else f"serve exited {serve.returncode}"
         finally:
             serve.terminate()
             try:
                 serve.wait(10)
             except subprocess.TimeoutExpired:
                 serve.kill()
+        return f"{problem}\n--- serve stderr ---\n{log.read_text()[-LOG_TAIL:]}"
 
 
 def main(argv: list[str]) -> int:

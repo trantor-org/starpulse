@@ -54,10 +54,18 @@ def stack(tmp_path: Path) -> Iterator[Stack]:
     store = PullStore(create_engine(f"sqlite:///{tmp_path / 'pulls.sqlite'}"))
     refresh_pull(REPO, 1, store, 100.0, github)
     projections = threading.Semaphore(0)
+    reconciled = threading.Event()
+
+    def read(repo: str, query: str) -> dict:
+        answer = github(repo, query)
+        reconciled.set()
+        return answer
+
     feed = BoardFeed()
-    sync = PullSync(store, feed, (), github, lambda: 160.0, projections.release)
+    sync = PullSync(store, feed, (), read, lambda: 160.0, projections.release)
     threading.Thread(target=sync.run_forever, daemon=True).start()
-    assert projections.acquire(timeout=5)  # the thread projects the saved store, then waits for a request
+    assert projections.acquire(timeout=5)  # the thread projects the saved store
+    assert reconciled.wait(5)  # then reads the pull request it holds OPEN, and waits for a request
     github.add(1, state="MERGED", updated=NEW, merged_at=NEW)  # merged on GitHub; the store has not heard
     github.queries.clear()
     with serve(tmp_path, feed, pull_refresh=PullRefresh(TOKEN, sync.request)) as server:

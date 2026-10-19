@@ -339,12 +339,13 @@ class Forker:
         return [self._listening.fileno()]
 
     def __call__(self, command: Sequence[str], listening: socket.socket | None = None) -> Any:
+        handed = () if listening is None else (listening,)  # every start but a fork must still pass the socket on
         if (
             listening is not None and listening is not self._listening
         ):  # a fork inherits only what the preloaded process holds
-            return self._fallback(command, listening)
+            return self._fallback(command, *handed)
         if list(command[: len(_PREFIX)]) != _PREFIX:
-            return self._fallback(command)
+            return self._fallback(command, *handed)
         self.start()
         if self._current is not None:
             try:
@@ -352,7 +353,7 @@ class Forker:
                 return self._current.fork(command[len(_PREFIX) :], env)
             except (OSError, ValueError, KeyError) as exc:
                 self._fail(exc)
-        return self._fallback(command)
+        return self._fallback(command, *handed)
 
     def _fail(self, exc: Exception) -> None:
         logger.warning("the preloaded process failed (%s); workers start with subprocess from now on", exc)
