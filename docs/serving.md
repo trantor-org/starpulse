@@ -368,6 +368,8 @@ applied_by = "pin-bump"
 # `waiting` and `ready` lanes, else `serve` refuses to start.
 # [release]
 # settle = "pin-bump"  # optional: a dependency citing a pull request in a [[repos]] repository settles only once the parent pins its merge commit
+# settle = "release"   # or: a dependency citing a pull request in `repo` settles only once the running build contains its merge commit
+# repo = "owner/name"  # settle = "release" only: the repository the running build is released from
 
 # Optional: what harness telemetry is read against for missed skill loads and trace clusters (see Find missed skill
 # loads and recurring work in docs/sources.md). Every key is optional; with no table nothing is declared, and no
@@ -595,6 +597,19 @@ one never reaches the pin and is ignored. The bump is looked for among the store
 cites still settles the dependency, while one older than the store's records is not found and holds it. The pointer and
 containment reads are the memoized `gh` calls the pull request projection makes; a path a merge does not pin (GitHub's
 404) is a remembered answer too, so only a read `gh` could not make is asked again.
+
+`settle = "release"` with `repo = "owner/name"` is the rule for a repository this process is itself released from, so a
+merge is live once the running build holds it, not once a parent pins it (it needs no `[[repos]]`, and `repo` is refused
+under any other rule). A dependency task that cites a pull request in `repo` settles only when:
+
+- the pull request is merged and the PR store holds its merge commit;
+- the running build's commit contains that merge commit (`Pins.reaches`, the GitHub `compare` the pin rule uses).
+
+The running build's commit is the `+g<sha>` of the PEP 440 local version of the installed `starpulse` distribution (a wheel
+tagged `<tag>.post<n>+g<sha>`), read once per process. A build with no such commit (a release tag, a source checkout)
+holds every such dependent, the fail-closed direction, as do a pull request the store does not hold or holds open; a
+closed, unmerged one is ignored. A dependency citing a pull request in any other repository settles on Done. The rule is
+re-derived each poll, so a restart onto the new build settles the dependents its merge is now live in.
 
 ## Task actor
 

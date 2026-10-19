@@ -259,7 +259,7 @@ from starpulse._internal.runs.ingest import tokens as ingest_tokens
 from starpulse._internal.pulls.delivery import Projected, follow_notes, follow_saves, metrics_of, request_refresh
 from starpulse._internal.pulls.task_actor import TaskActor, moves_of
 from starpulse._internal.pulls.unblock import READY, UNBLOCK_S, Unblocker
-from starpulse._internal.config.pins import GitHub
+from starpulse._internal.config.pins import GitHub, LiveBuild, running_commit
 from starpulse._internal.pulls.pull_requests import PullRequests
 from starpulse._internal.pulls.pull_refresh import PullRefresh
 from starpulse._internal.pulls.pull_store import PullSync
@@ -710,6 +710,8 @@ def start_delivery(
     from starpulse._internal.feed.board_feed import WAITING  # noqa: PLC0415 - the database stack loads when a store does
 
     # without the GitHub CLI there is no source, and a task simply carries no PR state; a config can turn the store off
+    release = config.release
+    live = LiveBuild(release.repo, running_commit) if release and release.settle == "release" else None
     actor = None
     if config.task_actor:
         if board.edit is None:
@@ -725,6 +727,7 @@ def start_delivery(
             pins,
             evaluate=board.evaluate,
             holds=board.holds,
+            live=live,
         )
         actor.start(stop)
     sync = None
@@ -745,7 +748,7 @@ def start_delivery(
         if board.edit is None or not {WAITING, READY} <= lanes:
             raise ValueError("[release] needs a board that edits tasks and draws waiting and ready lanes")
         if actor is None:  # the actor merges and unblocks on the facts, so the polling pass would only repeat it
-            unblocker = Unblocker(feed, pulls, board.edit, config.repos, config.release.settle, pins)
+            unblocker = Unblocker(feed, pulls, board.edit, config.repos, config.release.settle, pins, live)
             threading.Thread(
                 target=_keep_unblocked, args=(unblocker, feed, stop), name="board-unblock", daemon=True
             ).start()

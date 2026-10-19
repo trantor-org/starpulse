@@ -10,6 +10,7 @@ from sqlalchemy import create_engine
 
 from starpulse._internal.board.seam import Written
 from starpulse._internal.config.config import Repo
+from starpulse._internal.config.pins import LiveBuild
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.pulls.pulls import PullStore
@@ -320,3 +321,49 @@ def test_a_refused_move_is_tried_again_on_the_next_pass(store: PullStore) -> Non
     assert unblocker.unblock() == []
     assert unblocker.unblock() == ["TASK-2"]
     assert calls == ["TASK-2", "TASK-2"]
+
+
+def _live(feed: BoardFeed, store: PullStore, commit: str | None) -> list[str]:
+    edits = Edits()
+    Unblocker(feed, store, edits, pins=Pins(), live=LiveBuild("starpulse", lambda: commit)).unblock()
+    return edits.moved
+
+
+def _merged_child(store: PullStore) -> None:
+    store.save([_pull("acme/starpulse", 10, state="MERGED", sha=CHILD, at=WHEN)])
+
+
+def test_a_merge_the_running_build_contains_settles_its_dependency(store: PullStore) -> None:
+    _merged_child(store)
+
+    assert _live(_pinned(), store, CHILD) == ["TASK-2"]
+
+
+def test_a_merge_the_running_build_lacks_holds_its_dependent(store: PullStore) -> None:
+    _merged_child(store)
+
+    assert _live(_pinned(), store, "d" * 40) == []
+
+
+def test_a_build_with_no_commit_holds_the_dependent(store: PullStore) -> None:
+    _merged_child(store)
+
+    assert _live(_pinned(), store, None) == []
+
+
+def test_a_release_pull_request_the_store_lacks_or_holds_open_holds_the_dependent(store: PullStore) -> None:
+    assert _live(_pinned(), store, CHILD) == []
+
+    store.save([_pull("acme/starpulse", 10, state="OPEN", sha=None, at=None)])
+
+    assert _live(_pinned(), store, CHILD) == []
+
+
+def test_a_closed_release_pull_request_is_ignored(store: PullStore) -> None:
+    store.save([_pull("acme/starpulse", 10, state="CLOSED", sha=None, at=None)])
+
+    assert _live(_pinned(), store, None) == ["TASK-2"]
+
+
+def test_a_dependency_in_another_repository_settles_on_done_alone_under_the_release_rule(store: PullStore) -> None:
+    assert _live(_pinned(references=(OTHER_PR,)), store, None) == ["TASK-2"]
