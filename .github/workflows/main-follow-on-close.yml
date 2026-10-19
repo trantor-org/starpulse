@@ -2,7 +2,7 @@ name: Follow main on pull request close
 
 # Enqueues trantor's `main-follow` Dagu DAG on ai-vm-1 when a pull request in this
 # repository closes, merged or not, so a task whose PR closed moves to Done in seconds
-# instead of waiting for the five-minute schedule. trantor, unraid and skills call trantor's
+# instead of waiting for the thirty-minute schedule. trantor, unraid and skills call trantor's
 # reusable main-follow-submit.yml instead; this repository is public, and a public repository
 # cannot call a private repository's workflow, so it keeps the full file. Rationale: trantor's
 # docs/adr/local-main-follows-the-merge-event.md
@@ -36,12 +36,15 @@ jobs:
           BEFORE: ${{ github.event.pull_request.base.sha }}
           AFTER: ${{ github.event.pull_request.head.sha }}
           REPOSITORY: ${{ github.repository }}
-          DELIVERY: ${{ github.run_id }}
+          # The close's own time, not the workflow run: the webhook receiver keys the same run to it, so a delivery and
+          # this fallback for one close name one Dagu run.
+          EVENT_AT: ${{ github.event.pull_request.closed_at }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
           PULL_REQUEST: ${{ github.event.pull_request.number }}
           MERGED: ${{ github.event.pull_request.merged }}
           TRANTOR_NOTIFY: "1"
         run: |
+          DELIVERY="$(date -d "$EVENT_AT" +%s)"
           set -a
           # shellcheck disable=SC1091
           . /home/adinb/trantor/events/lib/dagu_events/dagu_events.env

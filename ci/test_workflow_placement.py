@@ -370,6 +370,16 @@ def test_main_follow_submit_passes_the_merged_outcome_of_the_close():
     assert '--action closed --merged "$MERGED"' in step["run"]
 
 
+def test_main_follow_submit_names_its_run_by_the_close_time_the_webhook_uses():
+    """The receiver keys the same close's run to `closed_at`, so a delivery and this fallback start one Dagu run."""
+    step = yaml.safe_load((WORKFLOWS / "main-follow-on-close.yml").read_text())["jobs"]["follow"]["steps"][0]
+
+    assert step["env"]["EVENT_AT"] == "${{ github.event.pull_request.closed_at }}"
+    assert 'DELIVERY="$(date -d "$EVENT_AT" +%s)"' in step["run"]
+    assert '--delivery "$DELIVERY"' in step["run"]
+    assert "DELIVERY" not in step["env"]
+
+
 def test_only_the_close_submit_targets_the_merge_event_lane():
     """Two jobs per merge fill the lane's two relay slots, and the next merge's close waits for one to re-register."""
     on_the_lane = sorted(

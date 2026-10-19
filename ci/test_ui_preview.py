@@ -67,6 +67,25 @@ def test_surfaces_follow_the_changed_paths(changed: list[str], expected: list[st
     assert surfaces(changed) == expected
 
 
+@pytest.mark.parametrize(
+    ("changed", "code", "printed"),
+    [
+        (["README.md", "starpulse/web/src/style.css"], 0, f"{STARPULSE}\n{ui_preview.ELEMENTS}\n"),
+        (["README.md", "ci/select_tests.py"], ui_preview.NO_UI, ""),
+        ([], ui_preview.NO_UI, ""),
+    ],
+)
+def test_touches_tells_a_runner_whether_a_change_reaches_a_ui_path(
+    changed: list[str], code: int, printed: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The Dagu runner gates its build on this exit status, with the paths `git diff --name-only` listed."""
+    listing = tmp_path / "changed.txt"
+    listing.write_text("".join(f"{path}\n" for path in changed))
+
+    assert main(["--touches", str(listing)]) == code
+    assert capsys.readouterr().out == printed
+
+
 KANBAN = "starpulse/web/src/features/kanban/Kanban.tsx"
 DAGS = "starpulse/web/src/features/dags/Dags.tsx"
 ORBIT = "starpulse/web/src/features/orbit/orbitDraw.ts"
