@@ -48,7 +48,14 @@ avoid_list() {
     uv run --no-project --python 3.14 python ci/avoid_list.py .trantor/lib .trantor-docs/governance/architecture "$base"
 }
 
-checks=(api_types ic public_names tier_policy avoid_list)
+# trantor's 1,500-line busy-module limit and split-pending list over this tree's tracked production modules, so a module
+# over it fails here, not on the next trantor commit after the pin bump.
+busy_modules() {
+  uv run --no-project --python 3.14 --with pytest --with pyyaml python -m pytest -q -p no:cacheprovider ci/test_busy_modules.py &&
+    uv run --no-project --python 3.14 --with pyyaml python ci/busy_modules.py .trantor/lib
+}
+
+checks=(api_types ic public_names tier_policy avoid_list busy_modules)
 pids=()
 for check in "${checks[@]}"; do
   "$check" >"$logs/$check.log" 2>&1 &
