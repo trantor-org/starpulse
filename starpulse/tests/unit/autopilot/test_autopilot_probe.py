@@ -1,13 +1,18 @@
 """The built-in probe reads the host's CPU and memory from `/proc`, so a fresh install needs no monitoring stack."""
 
+import os
 from pathlib import Path
+
+import pytest
 
 from starpulse._internal.autopilot.probe import LocalProbe
 
 
 def _proc(tmp_path: Path, *, idle: int, busy: int, available_kb: int, total_kb: int = 1000) -> Path:
     (tmp_path / "stat").write_text(f"cpu  {busy} 0 0 {idle} 0 0 0 0 0 0\ncpu0 1 0 0 1 0 0 0 0 0 0\n")
-    (tmp_path / "meminfo").write_text(f"MemTotal:       {total_kb} kB\nMemFree: 5 kB\nMemAvailable:   {available_kb} kB\n")
+    (tmp_path / "meminfo").write_text(
+        f"MemTotal:       {total_kb} kB\nMemFree: 5 kB\nMemAvailable:   {available_kb} kB\n"
+    )
     return tmp_path
 
 
@@ -37,3 +42,19 @@ def test_a_reading_with_no_ticks_since_the_last_one_repeats_it(tmp_path: Path) -
     first = probe()["cpu"]
 
     assert probe()["cpu"] == first
+
+
+def test_without_a_proc_the_cpu_is_the_load_share_and_memory_reads_zero(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(os, "getloadavg", lambda: (2.0, 0.0, 0.0))
+    monkeypatch.setattr(os, "cpu_count", lambda: 4)
+
+    assert LocalProbe(tmp_path / "missing")() == {"cpu": 50.0, "memory": 0.0}
+
+
+def test_a_load_above_the_core_count_reads_as_a_full_cpu(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(os, "getloadavg", lambda: (9.0, 0.0, 0.0))
+    monkeypatch.setattr(os, "cpu_count", lambda: 4)
+
+    assert LocalProbe(tmp_path / "missing")()["cpu"] == 100.0

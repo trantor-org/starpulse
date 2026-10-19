@@ -29,7 +29,10 @@ class DirWatch:
 
     def __init__(self, folders: Iterable[Path]) -> None:
         self._libc = ctypes.CDLL(None, use_errno=True)
-        self._fd = self._libc.inotify_init1(_FLAGS)
+        try:
+            self._fd = self._libc.inotify_init1(_FLAGS)
+        except AttributeError as error:  # ctypes raises this, not OSError, where libc lacks the symbol (macOS)
+            raise OSError(f"inotify is not available: {error}") from error
         if self._fd < 0:
             raise OSError(ctypes.get_errno(), "inotify_init1 failed")
         self._wake_read, self._wake_write = os.pipe()
