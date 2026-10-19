@@ -423,3 +423,19 @@ def test_a_hold_comment_the_task_last_recorded_is_not_written_again_until_the_re
     built.edit("task-5", {}, other)  # type: ignore[misc]
     built.edit("task-5", {}, held)  # type: ignore[misc]  # the reason came back: a new fact
     assert _file(base).read_text().count(held) == 2
+
+
+def test_doc_create_task_files_the_doc_and_links_it_on_the_task_in_its_documentation(
+    served: tuple[Board, BoardFeed, Path], tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    built, feed, base = served
+
+    with serve(tmp_path, feed, read=built.read, edit=built.edit, milestones=built) as server:
+        argv = ["doc", "create", "TASK-5 working notes", "--body", "Current state", "--task", "task-5"]
+        code = cli.main([*argv, "--server", f"http://127.0.0.1:{server.server_port}"], {})
+    out = capsys.readouterr()
+
+    assert (code, out.err) == (0, "")
+    assert json.loads(out.out) == {"doc": "doc-1", "task": "task-5", "changed": ["documentation"]}
+    frontmatter, _ = _split(_file(base).read_text())
+    assert frontmatter["documentation"] == [".starpulse/board/docs/doc-1 - TASK-5-working-notes.md"]

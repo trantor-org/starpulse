@@ -554,19 +554,58 @@ def _apply(task: str, frontmatter: dict, body: str, changes: Mapping[str, Any], 
     return body
 
 
-def _editor(root: Path, statuses: tuple[str, ...], guard: _Guard = _Guard()) -> TaskEditor:
+_DOC_ID = re.compile(r"doc-\d+")
+_Linker = Callable[[Mapping[str, Any]], Mapping[str, Any]]
+
+
+def _unlinked(changes: Mapping[str, Any]) -> Mapping[str, Any]:
+    return changes
+
+
+def _doc_linker(root: Path, base: Path) -> _Linker:
+    """`changes` with each doc id in its `documentation` list read as that open doc's file, keeping one link per file; an
+    id no open doc has raises ValueError.
+
+    The file is named from the repository the board sits in (the nearest folder above it holding `.git`), as a task's
+    other links are, else from `base`.
+    """
+    read = native_docs.reader(root)
+
+    def prefix() -> Path:
+        board = root.resolve()
+        top = next((folder for folder in board.parents if (folder / ".git").exists()), base.resolve())
+        return Path(os.path.relpath(board, top))
+
+    def link(changes: Mapping[str, Any]) -> Mapping[str, Any]:
+        listed = changes.get("documentation")
+        if not isinstance(listed, list) or not all(isinstance(item, str) for item in listed):
+            return changes  # `_set_front` refuses a value that is not a list of text
+        paths = []
+        for item in listed:
+            if _DOC_ID.fullmatch(doc := item.strip()):
+                if (record := read(doc)) is None:
+                    raise ValueError(f"{doc} is not an open doc")
+                item = (prefix() / "docs" / record["path"]).as_posix()
+            paths.append(item)
+        return {**changes, "documentation": list(dict.fromkeys(paths))}
+
+    return link
+
+
+def _editor(root: Path, statuses: tuple[str, ...], guard: _Guard = _Guard(), link: _Linker = _unlinked) -> TaskEditor:
     """A board writer that applies every change to a task's file in one write, or refuses the whole edit.
 
     `changes` holds the new value of each field `read` names except `comments`, which `comment` appends to: one text, or a
     list appended in order, each blank one skipped; `appendNotes` is one more, text added to the end of the notes. An
     empty priority, milestone, profile or type and an empty references, documentation or modified-files list removes its
-    key, a status is spelled as its lane is, and a checklist item without a number is new.
+    key, a status is spelled as its lane is, a checklist item without a number is new, and `link` reads a doc id in the
+    documentation list as its file.
     """
     spelled = {lane_id(status): status for status in statuses}
 
     def edit(task: str, changes: Mapping[str, Any], comment: str | Sequence[str], /, actor: str = OPERATOR) -> Written:
         def apply(frontmatter: dict, body: str) -> str:
-            body = _apply(task, frontmatter, body, changes, spelled)
+            body = _apply(task, frontmatter, body, link(changes), spelled)
             for text in [comment] if isinstance(comment, str) else comment:
                 recorded = _recorded(text, _comments(body))
                 body = _comment(body, text) if text.strip() and not recorded else body
@@ -944,7 +983,12 @@ def _file_name(task: str, title: str, form: str) -> str:
 
 
 def _creator(
-    root: Path, config: BacklogConfig, retired: _Retired, guard: _Guard = _Guard(), file_name: str = "title"
+    root: Path,
+    config: BacklogConfig,
+    retired: _Retired,
+    guard: _Guard = _Guard(),
+    file_name: str = "title",
+    link: _Linker = _unlinked,
 ) -> TaskCreator:
     """A board writer that makes a task file with the next id, named in the `file_name` form, in one write.
 
@@ -962,7 +1006,7 @@ def _creator(
             frontmatter, body = _split(_new_task(task, title, config.statuses[0], details))
             rest = {field: value for field, value in details.items() if field not in _NEW_TASK_DETAILS}
             try:
-                body = _apply(task, frontmatter, body, rest, spelled)
+                body = _apply(task, frontmatter, body, link(rest), spelled)
                 if refused := _land(path, None, _stamped(frontmatter, created=True), body, guard, actor):
                     return refused
             except ValueError as refusal:
@@ -1009,6 +1053,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         raise ValueError(f"board: task_file_name {file_name!r} is not one of {', '.join(sorted(_FILE_NAMES))}")
     root = base / str(settings.get("path", DEFAULT_PATH))
     _create(root, base.resolve().name)
+    link = _doc_linker(root, base)
     evaluate = criteria.evaluator(settings.get("criteria"), base)
     retired = _Retired()
     guard = _Guard(
@@ -1030,11 +1075,11 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         lambda config: {
             "writer": _writer(root, config.statuses, guard),
             "assign": assign,
-            "create": _creator(root, config, retired, guard, file_name),
+            "create": _creator(root, config, retired, guard, file_name, link),
             "read": _reader(root, evaluate.latest if isinstance(evaluate, criteria.Evaluator) else evaluate),
             "evaluate": evaluate,
             "holds": _holds(settings.get("holds"), base),
-            "edit": _editor(root, config.statuses, guard),
+            "edit": _editor(root, config.statuses, guard, link),
             "archive": _archiver(root, config.statuses, guard),
             "restore": _restorer(root, retired),
             "complete": _completer(root),
