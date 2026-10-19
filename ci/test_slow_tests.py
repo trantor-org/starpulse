@@ -16,7 +16,7 @@ TESTS = "import time\n\ndef test_fast():\n    pass\n\n\ndef test_slow():\n    ti
 
 
 def run(tree: Path, *args: str, **env: str) -> subprocess.CompletedProcess[str]:
-    """Run pytest in `tree` with the `slow_tests` plugin on, a 0.6 s wall threshold and no GitHub Actions unless `env` sets it.
+    """Run pytest in `tree` with the `slow_tests` plugin on, a 0.6 s wall threshold, a 60 s gate bound and no GitHub Actions unless `env` sets it.
 
     Only the plugins the run needs load: autoloading every installed pytest plugin costs seconds per run.
     """
@@ -30,6 +30,7 @@ def run(tree: Path, *args: str, **env: str) -> subprocess.CompletedProcess[str]:
             "PYTHONPATH": str(CI),
             "SLOW_TEST_SECONDS": "0.6",
             "SLOW_TEST_CPU_SECONDS": "0.3",
+            "SLOW_TEST_FAIL_SECONDS": "60",
             "PYTEST_ADDOPTS": "",
             "GITHUB_ACTIONS": "",
             "TEST_COST_REPORT": "1",
@@ -160,7 +161,7 @@ def test_without_test_cost_report_a_slow_test_that_already_failed_is_not_failed_
 def test_without_test_cost_report_a_test_over_the_ceiling_but_under_three_times_it_passes(tmp_path):
     (tmp_path / "test_x.py").write_text(TESTS)
 
-    done = run(tmp_path, TEST_COST_REPORT="", SLOW_TEST_SECONDS="0.3")
+    done = run(tmp_path, TEST_COST_REPORT="", SLOW_TEST_FAIL_SECONDS="")
 
     assert done.returncode == 0, done.stdout + done.stderr
 
