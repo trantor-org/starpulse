@@ -28,9 +28,9 @@ import sys
 import time
 import traceback
 from collections.abc import Callable, Sequence
-from typing import Any, NoReturn
+from typing import IO, Any, NoReturn
 
-from starpulse._internal.server.hold import SUPERVISED_ENV
+from starpulse._internal.server.hold import LISTEN_FD_ENV, SUPERVISED_ENV
 from starpulse._internal.server.supervisor import spawn_child
 
 logger = logging.getLogger(__name__)
@@ -64,10 +64,11 @@ def _exit_code(value: object) -> int:
 
 
 def _child(
-    control: socket.socket, run: Callable[[list[str]], Any], argv: list[str]
+    control: socket.socket, run: Callable[[list[str]], Any], argv: list[str], env: dict[str, str]
 ) -> NoReturn:  # pragma: no mutate block — process boundary
-    """What a fork becomes: the worker `run` with `argv`, then the process ends with its status."""
+    """What a fork becomes: the worker `run` with `argv` and `env` added, then the process ends with its status."""
     control.close()
+    os.environ.update(env)
     sys.argv = ["starpulse", *argv]
     try:
         code = _exit_code(run(argv))
@@ -118,7 +119,7 @@ def _serve(
             pid = os.fork()
             if not pid:
                 requests.close()
-                _child(control, run, request["argv"])
+                _child(control, run, request["argv"], request.get("env", {}))
             children.add(pid)
             reply: dict[str, Any] = {"pid": pid}
         elif request["op"] == "exit":
@@ -129,18 +130,24 @@ def _serve(
         control.sendall(json.dumps(reply).encode() + b"\n")
 
 
-def main(argv: list[str]) -> None:  # pragma: no mutate block — process boundary
-    """`argv` is the control socket's descriptor, the entry (`module:function`) and the modules to preload."""
-    fd, entry, *modules = argv
-    logging.basicConfig(level=logging.INFO)
-    control = socket.socket(fileno=int(fd))
+def _preload(control: socket.socket, entry: str, modules: Sequence[str]) -> None:  # pragma: no mutate block — process boundary
+    """Import `modules` and `entry`'s module, then answer `control`."""
+    gc.disable()  # the imports build a graph that lives to exit; collecting during them is time the first fork waits on
     for module in modules:
         importlib.import_module(module)
     name, _, function = entry.partition(":")
     run = getattr(importlib.import_module(name), function)
     gc.collect()
     gc.freeze()
+    gc.enable()
     _serve(control, run)
+
+
+def main(argv: list[str]) -> None:  # pragma: no mutate block — process boundary
+    """`argv` is the control socket's descriptor, the entry (`module:function`) and the modules to preload."""
+    fd, entry, *modules = argv
+    logging.basicConfig(level=logging.INFO)
+    _preload(socket.socket(fileno=int(fd)), entry, modules)
 
 
 # `serve`'s side
@@ -192,19 +199,65 @@ class _Forked:
         return code
 
 
+class _Forkproc(_Forked):
+    """A preloaded process `serve` forked itself, shaped like the `Popen` the other kind is."""
+
+    def __init__(self, pid: int, stdin: IO[bytes]) -> None:
+        self.pid = pid
+        self.stdin = stdin
+        self._status: int | None = None
+
+    def poll(self) -> int | None:
+        if self._status is None:
+            done, status = os.waitpid(self.pid, os.WNOHANG)
+            if done:
+                self._status = os.waitstatus_to_exitcode(status)
+        return self._status
+
+    def send_signal(self, sig: int) -> None:
+        if self._status is None:
+            os.kill(self.pid, sig)
+
+
+def _fork_preloaded(ours: socket.socket, theirs: socket.socket, entry: str, modules: Sequence[str]) -> _Forkproc:
+    """Fork the preloaded process from `serve` before it has threads: it starts with `serve`'s imports already loaded."""
+    reader, writer = os.pipe()
+    pid = os.fork()
+    if pid:
+        os.close(reader)
+        return _Forkproc(pid, os.fdopen(writer, "wb"))
+    try:  # pragma: no mutate block — process boundary
+        os.setsid()
+        os.dup2(reader, 0)
+        os.close(reader)
+        os.close(writer)
+        ours.close()
+        os.environ[SUPERVISED_ENV] = "1"
+        _preload(theirs, entry, modules)
+    except BaseException:
+        traceback.print_exc()
+        os._exit(1)
+    os._exit(0)
+
+
 class _Preloaded:
     """One preloaded process and the socket `serve` asks it over."""
 
-    def __init__(self, modules: Sequence[str], entry: str) -> None:
+    def __init__(
+        self, modules: Sequence[str], entry: str, inherited: Sequence[int] = (), *, forked: bool = False
+    ) -> None:
         ours, theirs = socket.socketpair()
-        # its stdin pipe from `serve` is the one every fork inherits, so a child still ends when `serve` dies
-        self.proc = subprocess.Popen(
-            [sys.executable, "-m", __name__, str(theirs.fileno()), entry, *modules],
-            stdin=subprocess.PIPE,
-            env={**os.environ, SUPERVISED_ENV: "1"},
-            start_new_session=True,
-            pass_fds=[theirs.fileno()],
-        )
+        if forked:
+            self.proc = _fork_preloaded(ours, theirs, entry, modules)
+        else:
+            # its stdin pipe from `serve` is the one every fork inherits, so a child still ends when `serve` dies
+            self.proc = subprocess.Popen(
+                [sys.executable, "-m", __name__, str(theirs.fileno()), entry, *modules],
+                stdin=subprocess.PIPE,
+                env={**os.environ, SUPERVISED_ENV: "1"},
+                start_new_session=True,
+                pass_fds=[theirs.fileno(), *inherited],
+            )
         theirs.close()
         ours.settimeout(_ANSWER_S)
         self._control = ours
@@ -217,8 +270,8 @@ class _Preloaded:
             raise ConnectionError("the preloaded process closed its socket")
         return json.loads(line)
 
-    def fork(self, argv: Sequence[str]) -> _Forked:
-        return _Forked(self.ask({"op": "fork", "argv": list(argv)})["pid"], self)
+    def fork(self, argv: Sequence[str], env: dict[str, str]) -> _Forked:
+        return _Forked(self.ask({"op": "fork", "argv": list(argv), "env": env})["pid"], self)
 
     def exit_code(self, pid: int) -> int:
         """The code the preloaded process reaped `pid` with; -1 when it is gone and took the code with it."""
@@ -251,14 +304,17 @@ class Forker:
     """The `Supervisor`'s `spawn`: forks a worker command's child from a preloaded process, else starts it with `fallback`.
 
     The `Supervisor` calls it, `retire` and nothing else under its lock, so it takes none of its own. `modules` are what
-    the preloaded process imports and `entry` is the function a child runs with the command's arguments."""
+    the preloaded process imports and `entry` is the function a child runs with the command's arguments. `listening`
+    is the socket `serve` hands the Page API: the preloaded process inherits it, so that child forks like the others."""
 
     def __init__(
         self,
         modules: Sequence[str],
         entry: str = ENTRY,
         fallback: Callable[..., Any] = spawn_child,
+        listening: socket.socket | None = None,
     ) -> None:
+        self._listening = listening
         self._modules = list(modules)
         self._entry = entry
         self._fallback = fallback
@@ -266,23 +322,34 @@ class Forker:
         self._retired: list[_Preloaded] = []
         self._failed = not fork_supported()
 
-    def start(self) -> None:
-        """Start the preloaded process now, so its imports overlap the rest of `serve`'s start."""
+    def start(self, *, forked: bool = False) -> None:
+        """Start the preloaded process now, so its imports overlap the rest of `serve`'s start.
+
+        `forked` forks it from this process, which has not started a thread, so it begins with what `serve` imported."""
         if self._current is None and not self._failed:
             try:
-                self._current = _Preloaded(self._modules, self._entry)
+                self._current = _Preloaded(self._modules, self._entry, self._inherited(), forked=forked)
             except OSError as exc:
                 self._fail(exc)
 
+    def _inherited(self) -> list[int]:
+        if self._listening is None:
+            return []
+        self._listening.set_inheritable(True)
+        return [self._listening.fileno()]
+
     def __call__(self, command: Sequence[str], listening: socket.socket | None = None) -> Any:
-        if listening is not None:  # a child handed a listening socket inherits it from `serve`, which a fork cannot
+        if (
+            listening is not None and listening is not self._listening
+        ):  # a fork inherits only what the preloaded process holds
             return self._fallback(command, listening)
         if list(command[: len(_PREFIX)]) != _PREFIX:
             return self._fallback(command)
         self.start()
         if self._current is not None:
             try:
-                return self._current.fork(command[len(_PREFIX) :])
+                env = {} if listening is None else {LISTEN_FD_ENV: str(listening.fileno())}
+                return self._current.fork(command[len(_PREFIX) :], env)
             except (OSError, ValueError, KeyError) as exc:
                 self._fail(exc)
         return self._fallback(command)

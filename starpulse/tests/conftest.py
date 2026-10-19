@@ -366,14 +366,16 @@ class FakeForker:
 
     made: list[FakeForker] = []
 
-    def __init__(self, modules: list[str]) -> None:
+    def __init__(self, modules: list[str], listening: object = None) -> None:
         self.modules = modules
+        self.listening = listening
         self.started = False
         self.closed = False
         type(self).made.append(self)
 
-    def start(self) -> None:
+    def start(self, *, forked: bool = False) -> None:
         self.started = True
+        self.forked = forked
 
     def retire(self) -> None:
         pass
