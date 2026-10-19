@@ -57,6 +57,22 @@ def test_a_forked_child_is_not_a_child_of_serve_and_ends_when_it_is_terminated(f
     assert child.poll() == 0
 
 
+def test_a_preloaded_process_serve_forked_itself_forks_children_and_ends_with_the_forker() -> None:
+    forked = Forker([], entry=ENTRY)
+    forked.start(forked=True)
+    preloaded = forked._current.proc
+    try:
+        child = forked([*PREFIX, "hold"])
+
+        assert _parent(child.pid) == preloaded.pid
+        assert preloaded.poll() is None
+        child.terminate()
+        assert child.wait(10) == 0
+    finally:
+        forked.close()
+    assert preloaded.poll() is not None
+
+
 def test_a_forked_child_reports_the_exit_code_its_entry_ended_with(forker: Forker) -> None:
     child = forker([*PREFIX, "exit", "3"])
 
@@ -95,6 +111,24 @@ def test_a_child_handed_a_listening_socket_starts_with_the_fallback_and_the_sock
     assert started == [([*PREFIX, "api"], listening)]
     assert handed._current is None  # no preloaded process was started for it
     listening.close()
+
+
+def test_a_child_handed_the_socket_the_forker_holds_forks_with_it_named_in_its_environment(tmp_path: Path) -> None:
+    listening = socket.socket()
+    listening.bind(("127.0.0.1", 0))
+    listening.listen()
+    held = Forker([], entry=ENTRY, fallback=lambda *args: pytest.fail("a held socket forks"), listening=listening)
+    report = tmp_path / "port"
+    try:
+        child = held([*PREFIX, "port", str(report)], listening)
+
+        assert _wait_for(report.exists)
+        assert report.read_text() == str(listening.getsockname()[1])
+        assert held._current is not None  # the preloaded process, not a subprocess, started it
+        child.kill()
+    finally:
+        held.close()
+        listening.close()
 
 
 def test_a_preloaded_process_that_fails_leaves_the_child_to_subprocess_with_a_warning(caplog) -> None:

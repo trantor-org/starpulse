@@ -1036,6 +1036,22 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
             supervisor.stop()
 
 
+#: What `serve_page` imports once the config is accepted; the preloaded process imports it too, so the Page API child
+#: forks with it loaded.
+DATABASE_STACK = (
+    "starpulse._internal.board.replica",
+    "starpulse._internal.eventlog.event_log",
+    "starpulse._internal.eventlog.history",
+    "starpulse._internal.feed.board_feed",
+    "starpulse._internal.feed.claim_refusals",
+    "starpulse._internal.feed.machine_tasks",
+    "starpulse._internal.feed.search",
+    "starpulse._internal.level.insights",
+    "starpulse._internal.pulls.pulls",
+    "starpulse._internal.server.assembly",
+)
+
+
 def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — serve_forever process boundary
     logging.basicConfig(level=logging.INFO)  # the GraphQL cost of each pull request read is an INFO line
     parser = serve_parser()
@@ -1050,16 +1066,19 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     )  # the workers started below are handed what they hold, not what this process was
     ready = prepare(parser, args, config)
     commands = worker_commands(config, args.config, hub=args.hub)
-    # the Page API child inherits the listening socket, so it starts with `subprocess`; every other worker forks from this
-    forker = Forker([ENTRIES[context] for context in commands if context != "api"])
     if "api" in commands:  # bound once the config is accepted and before the board, the history or a worker starts
         os.environ[STATIC_ENV] = str(_STATIC)
         listening = listening or listen(parser, args)
         commands["api"] += ["--hours", str(args.hours)]
     elif args.hub:
         listening = listening or listen(parser, args)
-    if commands.keys() - {"api"}:
-        forker.start()  # once the port is bound: a refused start leaves no process behind
+    # the preloaded process inherits the bound socket, so the Page API child forks from it like every other worker
+    forker = Forker(
+        [*DATABASE_STACK, *(ENTRIES[context] for context in commands)],
+        listening=listening if "api" in commands else None,
+    )
+    if commands:
+        forker.start(forked=True)  # once the port is bound: a refused start leaves no process behind
     reader = Reader(args.config)
     supervisor = Supervisor(
         commands,

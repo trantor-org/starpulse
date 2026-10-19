@@ -9,6 +9,7 @@ from starpulse._internal.autopilot.remote import Remote
 from starpulse._internal.server import autopilot_service as service
 from starpulse._internal.server import server, worker
 from starpulse._internal.server.closure import ENTRIES, Reader
+from starpulse._internal.server.server import DATABASE_STACK
 from starpulse.tests import fake_board
 from starpulse.tests.conftest import FakeForker, FakeSupervisor
 
@@ -76,7 +77,8 @@ def test_serve_forks_its_workers_from_one_preloaded_process_it_closes_at_the_end
     [forker] = forkers
     assert forker.started
     assert forker.closed
-    assert forker.modules == [ENTRIES[context] for context in supervisors[0].commands if context != "api"]
+    assert forker.modules == [*DATABASE_STACK, *(ENTRIES[context] for context in supervisors[0].commands)]
+    assert forker.listening is not None  # the Page API child forks with the socket it serves
     assert supervisors[0].options["spawn"] is forker
     assert supervisors[0].options["retire"] == forker.retire
 
