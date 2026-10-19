@@ -20,7 +20,7 @@ from typing import Any
 
 #: The comment's first line; the only thing that makes a comment this script's.
 MARKER = "<!-- trantor:merge-queue-dequeue -->"
-#: Who posts it: the Actions token's bot, or the workspace App that runs the same script from the ai-vm-1 workspace.
+#: Who posts it: the Actions token's bot, or the workspace App that runs the same script from the operator's workspace.
 AUTHORS = frozenset({"github-actions[bot]", "trantor-agent[bot]"})
 
 #: The `reason` of the timeline's removal event, which the `dequeued` payload repeats. GitHub documents it as a free
