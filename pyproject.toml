@@ -35,6 +35,7 @@ bench = [
     "playwright>=1.63.0",
 ]
 dev = [
+    "commitizen>=4.19.2",
     "import-linter>=2.15",
     "pytest>=9",
     "pytest-cov>=7.1.0",
@@ -227,3 +228,12 @@ pythonpath = ["ci"]
 [tool.coverage.run]
 source = ["starpulse", "ci"]
 relative_files = true
+
+# `cz bump` names the beta that release.yml publishes for a merge to main (see its build job); a stable release is still
+# a version bump merged by hand and a matching tag.
+[tool.commitizen]
+name = "cz_conventional_commits"
+version_provider = "uv"
+tag_format = "v$version"
+# A breaking change is a minor bump before 1.0 (the releases ADR), so cz never proposes 1.0.0.
+major_version_zero = true
