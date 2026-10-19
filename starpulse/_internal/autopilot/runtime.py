@@ -177,7 +177,7 @@ def build(
     sampler = Sampler(
         policy.limits,
         probe or LocalProbe(),
-        sessions=lambda: sessions_in_flight(feed.machine_tasks(HARNESS.name)),
+        sessions=lambda: sessions_in_flight(feed.machine_tasks(HARNESS.name), clock()),
         review=lambda: review_points(feed.open_tasks(), policy.review_lane, policy.unsized_points),
         on_crossing=crossed,
         clock=clock,
