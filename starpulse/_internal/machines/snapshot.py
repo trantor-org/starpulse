@@ -7,7 +7,7 @@ board adapter (`starpulse._internal.board.seam`); this module holds the shape of
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from typing import Any
 
 __all__ = ["Qualify", "describe", "is_workflow", "qualifier", "writers"]
@@ -36,10 +36,10 @@ def _titled(name: str) -> str:
 
 
 def describe(machine: Any) -> dict:
-    """The machine's states and transitions, self-loops included, its `source` when a third party moves it, and the
-    workflows among its YAML-declared writers. A transition its YAML cites carries the `cite`.
+    """The machine's states and transitions, self-loops included, its `source` when a third party moves it, and its
+    YAML-declared writers. A transition its YAML cites carries the `cite`.
 
-    A writer is a workflow when its actor is named `<instance>/<workflow>`; a machine with none carries no
+    A writer is a workflow when its actor is named `<instance>/<workflow>`; a machine that declares none carries no
     `writers`.
     """
     cited = getattr(machine, "citations", {})
@@ -56,9 +56,8 @@ def describe(machine: Any) -> dict:
     }
     if source := getattr(machine, "source", None):
         body["source"] = source
-    drawn = {event: _workflows(ws) for event, ws in writers(machine).items()}
-    if workflow_writers := {event: ws for event, ws in drawn.items() if ws}:
-        body["writers"] = workflow_writers
+    if declared_writers := {event: ws for event, ws in writers(machine).items() if ws}:
+        body["writers"] = declared_writers
     return body
 
 
@@ -67,10 +66,6 @@ def writers(machine: Any) -> dict[str, list[dict]]:
     from starpulse._internal.machines.machine_definition import writers_of  # noqa: PLC0415 - import cost, paid on first use
 
     return {event: [dataclasses.asdict(w) for w in ws] for event, ws in writers_of(machine).items()}
-
-
-def _workflows(writers: Iterable[dict]) -> list[dict]:
-    return [w for w in writers if is_workflow(w["actor"])]
 
 
 def is_workflow(actor: str) -> bool:

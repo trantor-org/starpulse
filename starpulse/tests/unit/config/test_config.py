@@ -12,6 +12,7 @@ from starpulse._internal.config.config import (
     Forward,
     MemoryLimit,
     OidcSettings,
+    Producer,
     Repo,
     Source,
     load,
@@ -231,7 +232,7 @@ def test_hub_mode_is_a_serve_flag_not_a_config_setting(tmp_path: Path) -> None:
 def test_unknown_keys_are_refused_by_name_beside_the_known_ones(tmp_path: Path) -> None:
     assert _refusal(tmp_path, 'zeta = 1\ntrakcer_url = "http://x.test"\n') == (
         "unknown config key(s) trakcer_url, zeta; known: aggregates_only, analytics, api_worker, autopilot, board, board_worker, ci, cursor_context, database_url, event_log_archive_dir, event_log_retention_days, "
-        "flow_metrics_worker, forward, forwarding_worker, harnesses_file, hub_retention_days, level, mode, oidc, pull_requests, refresh_token_env, release, repos, runs, runs_worker, search, search_worker, session_start_url, slow_read_seconds, sources, tracker_url, triggers, worker_memory"
+        "flow_metrics_worker, forward, forwarding_worker, harnesses_file, hub_retention_days, level, mode, oidc, producers, pull_requests, refresh_token_env, release, repos, runs, runs_worker, search, search_worker, session_start_url, slow_read_seconds, sources, tracker_url, triggers, worker_memory"
     )
 
 
@@ -521,6 +522,72 @@ def test_sources_are_the_instances_a_hub_accepts_events_from_each_with_its_own_t
     ],
 )
 def test_a_sources_table_that_cannot_run_is_refused_with_its_reason(tmp_path: Path, text: str, reason: str) -> None:
+    assert _refusal(tmp_path, text) == reason
+
+
+def test_producers_are_the_systems_that_post_machine_events_each_with_its_token_variable_machines_and_actors(
+    tmp_path: Path,
+) -> None:
+    text = (
+        '[[producers]]\nname = "dagu"\ntoken_env = "DAGU_TOKEN"\nmachines = ["board", "ci"]\nactors = ["dagu/nightly"]\n\n'
+        '[[producers]]\nname = "gha"\ntoken_env = "GHA_TOKEN"\nmachines = ["ci"]\nactors = ["ci"]\n'
+    )
+
+    config = load(_write(tmp_path, text))
+
+    assert config.producers == (
+        Producer("dagu", "DAGU_TOKEN", ("board", "ci"), ("dagu/nightly",)),
+        Producer("gha", "GHA_TOKEN", ("ci",), ("ci",)),
+    )
+    assert load(None).producers == ()
+
+
+_PRODUCER = 'name = "dagu"\ntoken_env = "T"\nmachines = ["ci"]\nactors = ["ci"]\n'
+
+
+@pytest.mark.parametrize(
+    ("text", "reason"),
+    [
+        ('[[producers]]\ntoken_env = "T"\nmachines = ["ci"]\nactors = ["ci"]\n', "a producer needs name"),
+        ('[[producers]]\nname = "d"\nmachines = ["ci"]\nactors = ["ci"]\n', "a producer needs token_env"),
+        ('[[producers]]\nname = "d"\ntoken_env = "T"\nactors = ["ci"]\n', "a producer needs machines"),
+        ('[[producers]]\nname = "d"\ntoken_env = "T"\nmachines = ["ci"]\n', "a producer needs actors"),
+        (
+            '[[producers]]\nname = "a/b"\ntoken_env = "T"\nmachines = ["ci"]\nactors = ["ci"]\n',
+            "producer names must be non-empty text without a /",
+        ),
+        (
+            '[[producers]]\nname = "d"\ntoken_env = "T 1"\nmachines = ["ci"]\nactors = ["ci"]\n',
+            "producer d: token_env must be the name of an environment variable",
+        ),
+        (
+            '[[producers]]\nname = "d"\ntoken_env = "T"\nmachines = []\nactors = ["ci"]\n',
+            "producer d: machines must be a non-empty list of text",
+        ),
+        (
+            '[[producers]]\nname = "d"\ntoken_env = "T"\nmachines = ["ci"]\nactors = [1]\n',
+            "producer d: actors must be a non-empty list of text",
+        ),
+        (
+            "[[producers]]\n" + _PRODUCER + 'url = "x"\n',
+            "producer dagu: unknown key(s) url; known: actors, machines, name, token_env",
+        ),
+        (
+            "[[producers]]\n"
+            + _PRODUCER
+            + '[[producers]]\nname = "dagu"\ntoken_env = "U"\nmachines = ["ci"]\nactors = ["ci"]\n',
+            "producer dagu is configured twice",
+        ),
+        (
+            "[[producers]]\n"
+            + _PRODUCER
+            + '[[producers]]\nname = "gha"\ntoken_env = "T"\nmachines = ["ci"]\nactors = ["ci"]\n',
+            "producers dagu and gha share token_env T; each needs its own token",
+        ),
+        ("producers = 1\n", "producers must be a list of [[producers]] tables"),
+    ],
+)
+def test_a_producers_table_that_cannot_run_is_refused_with_its_reason(tmp_path: Path, text: str, reason: str) -> None:
     assert _refusal(tmp_path, text) == reason
 
 

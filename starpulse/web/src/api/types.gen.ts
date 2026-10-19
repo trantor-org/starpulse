@@ -1376,7 +1376,7 @@ export interface Machine {
   tiers?: string[][] | null;
   transitions: Transition[];
   /**
-   * Only the board machine: its writers per event.
+   * Its YAML-declared writers per event.
    */
   writers?: {
     [k: string]: Writer[];

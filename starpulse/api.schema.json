@@ -3917,7 +3917,7 @@
             }
           ],
           "default": null,
-          "description": "Only the board machine: its writers per event."
+          "description": "Its YAML-declared writers per event."
         }
       },
       "required": [

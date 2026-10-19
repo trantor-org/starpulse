@@ -54,6 +54,26 @@
       "description": "When it happened, in epoch seconds; a stream carries it as text and it is read as a number.",
       "title": "Time",
       "type": "number"
+    },
+    "source": {
+      "default": "",
+      "description": "The producer that posted it through the CloudEvents ingest; empty from a local writer.",
+      "title": "Source",
+      "type": "string"
+    },
+    "data": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The JSON object the producer attached through the CloudEvents ingest, if any.",
+      "title": "Data"
     }
   },
   "required": [

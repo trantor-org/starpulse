@@ -283,7 +283,11 @@ def test_the_built_in_routes_open_to_the_gate_are_the_sign_in_the_instance_token
     None
 ):
     assert {path for path, access in ROUTES.items() if access == PUBLIC} == SIGN_IN
-    assert {path for path, access in ROUTES.items() if access == INSTANCE} == {"/api/runs/events", "/api/forward"}
+    assert {path for path, access in ROUTES.items() if access == INSTANCE} == {
+        "/api/runs/events",
+        "/api/forward",
+        "/api/machine-events",
+    }
     assert {path for path, access in ROUTES.items() if access == ENGINE} == {"/api/insights"}
     assert ROUTE_PREFIXES == {"/api/insights/": ENGINE}
     assert set(ROUTES.values()) == {PUBLIC, INSTANCE, ENGINE}

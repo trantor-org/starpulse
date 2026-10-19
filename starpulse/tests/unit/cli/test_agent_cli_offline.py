@@ -107,6 +107,29 @@ class TestConfigCheck:
         assert "colour" in document["errors"][0]
         assert document["config"] is None
 
+    def test_a_producers_table_is_validated_and_shown(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        file = tmp_path / "starpulse.toml"
+        file.write_text(
+            '[[producers]]\nname = "ci"\ntoken_env = "CI_TOKEN"\nmachines = ["delivery"]\nactors = ["ci"]\n'
+        )
+
+        code, document = _run(capsys, ["config", "check", "--config", str(file)])
+
+        assert code == 0
+        assert document["config"]["producers"] == [
+            {"name": "ci", "token_env": "CI_TOKEN", "machines": ["delivery"], "actors": ["ci"]}
+        ]
+
+    def test_a_producers_table_missing_its_token_env_is_refused(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        file = tmp_path / "starpulse.toml"
+        file.write_text('[[producers]]\nname = "ci"\nmachines = ["delivery"]\nactors = ["ci"]\n')
+
+        code, document = _run(capsys, ["config", "check", "--config", str(file)])
+
+        assert (code, document["ok"], "token_env" in document["errors"][0]) == (1, False, True)
+
     def test_the_effective_config_shows_every_default(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
         file = tmp_path / "starpulse.toml"
         file.write_text('tracker_url = "http://tracker.example"\n')
@@ -132,6 +155,7 @@ class TestConfigCheck:
             "forward": None,
             "sources": [],
             "aggregates_only": False,
+            "producers": [],
             "refresh_token_env": None,
             "pull_requests": True,
             "runs_worker": False,

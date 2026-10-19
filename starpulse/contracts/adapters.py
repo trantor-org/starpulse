@@ -12,7 +12,7 @@ Each model is also published as a JSON Schema under `schemas/`, regenerated with
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal, Protocol, Self
+from typing import Any, Literal, Protocol, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -161,6 +161,12 @@ class MachineEvent(_Contract):
     actor: str = Field(default="", description="Who or what fired the event: an agent, a hook, a DAG.")
     time: float = Field(
         description="When it happened, in epoch seconds; a stream carries it as text and it is read as a number."
+    )
+    source: str = Field(
+        default="", description="The producer that posted it through the CloudEvents ingest; empty from a local writer."
+    )
+    data: dict[str, Any] | None = Field(
+        default=None, description="The JSON object the producer attached through the CloudEvents ingest, if any."
     )
 
     @model_validator(mode="after")
@@ -431,4 +437,3 @@ EVENT_STREAMS: dict[str, str] = {
 #: Each contract's JSON Schema, by the same names.
 SCHEMAS: dict[str, dict] = {name: model.model_json_schema() for name, model in CONTRACTS.items()}
 SCHEMA_DIR = Path(__file__).parents[1] / "schemas"
-

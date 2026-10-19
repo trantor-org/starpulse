@@ -49,6 +49,7 @@ ROUTES: Mapping[str, str] = {
     "/auth/login": PUBLIC,
     "/auth/callback": PUBLIC,
     "/api/runs/events": INSTANCE,
+    "/api/machine-events": INSTANCE,
     "/api/forward": INSTANCE,
     "/api/insights": ENGINE,
 }

@@ -35,6 +35,7 @@ ATTRIBUTE = {
     "search": "search",
     "cursor_context": "cursor_context",
     "pull_requests": "pull_requests",
+    "producers": "producers",
 }
 
 
