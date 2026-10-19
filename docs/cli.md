@@ -385,8 +385,8 @@ integer or an unknown `state` answers 400.
 `GET /metrics` serves Prometheus text:
 `starpulse_page_build_info{build="<id>"} 1` names the page build the server holds, the id its `build` event sends, so
 a rebuild moves the series; a server whose `static/` holds no build serves none. The same route carries the server
-process's own gauges, `process_resident_memory_bytes`, `process_threads`,
-`process_open_fds` and `process_start_time_seconds`; the last changes on every restart, so a growth rule can tell one
+process's own metrics, `process_resident_memory_bytes`, the `process_cpu_seconds_total` counter,
+`process_threads`, `process_open_fds` and `process_start_time_seconds`; the last changes on every restart, so a growth rule can tell one
 process lifetime from the next. A host with no `/proc` serves none of them.
 
 `waiting_on` is the dependencies neither in the `done` lane (hot or cold) nor settled as completed. `criteria` and `pause_reason` come
