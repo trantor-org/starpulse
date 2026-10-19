@@ -1,4 +1,4 @@
-"""The server process's own resident memory, threads, open files and start time, as Prometheus gauges."""
+"""The server process's own resident memory, CPU time, threads, open files and start time, as Prometheus metrics."""
 
 import os
 import time
@@ -17,6 +17,8 @@ def process_gauges(proc: Path = Path("/proc/self"), *, started: float = STARTED)
             int(line.split()[1]) for line in (proc / "status").read_text().splitlines() if line.startswith("Threads:")
         )
         open_fds = len(os.listdir(proc / "fd"))
+        # Fields 14 and 15 (utime, stime) follow the parenthesised command name, which may itself hold spaces.
+        cpu_ticks = sum(int(field) for field in (proc / "stat").read_text().rpartition(")")[2].split()[11:13])
     except OSError, IndexError, StopIteration, ValueError:
         return ""
     gauges = [
@@ -25,8 +27,16 @@ def process_gauges(proc: Path = Path("/proc/self"), *, started: float = STARTED)
             "Resident memory size in bytes.",
             resident_pages * os.sysconf("SC_PAGE_SIZE"),
         ),
+        (
+            "process_cpu_seconds_total",
+            "Total user and system CPU time in seconds.",
+            cpu_ticks / os.sysconf("SC_CLK_TCK"),
+        ),
         ("process_threads", "Number of OS threads in the process.", threads),
         ("process_open_fds", "Number of open file descriptors.", open_fds),
         ("process_start_time_seconds", "Start time of the process since the Unix epoch in seconds.", started),
     ]
-    return "".join(f"# HELP {name} {help_}\n# TYPE {name} gauge\n{name} {value}\n" for name, help_, value in gauges)
+    return "".join(
+        f"# HELP {name} {help_}\n# TYPE {name} {'counter' if name.endswith('_total') else 'gauge'}\n{name} {value}\n"
+        for name, help_, value in gauges
+    )
