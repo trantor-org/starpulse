@@ -39,6 +39,7 @@ jobs:
           DELIVERY: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
           PULL_REQUEST: ${{ github.event.pull_request.number }}
+          MERGED: ${{ github.event.pull_request.merged }}
           TRANTOR_NOTIFY: "1"
         run: |
           set -a
@@ -46,6 +47,6 @@ jobs:
           . /home/adinb/trantor/events/lib/dagu_events/dagu_events.env
           set +a
           /home/adinb/trantor/.venv/bin/python /home/adinb/trantor/bin/dagu_event.py submit \
-            --dag main-follow --repository "$REPOSITORY" --before "$BEFORE" --after "$AFTER" \
+            --dag main-follow --action closed --merged "$MERGED" --repository "$REPOSITORY" --before "$BEFORE" --after "$AFTER" \
             --delivery "$DELIVERY" --run-attempt "$RUN_ATTEMPT" \
             --pull-request "$PULL_REQUEST" --no-observe
