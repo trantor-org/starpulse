@@ -31,9 +31,10 @@ api_types() {
 }
 
 # trantor's check-config test-tier policy over this tree, with trantor's lib checked out at .trantor. GIT_CLI_LIST_TIMEOUT
-# is read by git_cli.list_timeout: unset is the fail-sentinel 0 and times out ls-files immediately.
+# is read by git_cli.list_timeout: unset is the fail-sentinel 0 and times out ls-files immediately. Every check that loads
+# trantor's lib runs `--with pydantic-settings`: its git_cli reads trantor_settings, which needs it.
 tier_policy() {
-  PYTHONPATH=.trantor/lib GIT_CLI_LIST_TIMEOUT=60 uv run --no-project --python 3.14 --with pyyaml \
+  PYTHONPATH=.trantor/lib GIT_CLI_LIST_TIMEOUT=60 uv run --no-project --python 3.14 --with pyyaml --with pydantic-settings \
     python ci/trantor_tier_policy.py .trantor/lib/linting/check_config_checks/tier_policy.py
 }
 
@@ -44,15 +45,15 @@ tier_policy() {
 avoid_list() {
   local base=${AVOID_LIST_BASE:-HEAD^1}
   git rev-parse -q --verify "$base^{commit}" >/dev/null || git fetch -q --deepen 1 origin "$(git rev-parse HEAD)"
-  uv run --no-project --python 3.14 --with pytest python -m pytest -q -p no:cacheprovider ci/test_avoid_list.py &&
-    uv run --no-project --python 3.14 python ci/avoid_list.py .trantor/lib .trantor-docs/governance/architecture "$base"
+  uv run --no-project --python 3.14 --with pytest --with pydantic-settings python -m pytest -q -p no:cacheprovider ci/test_avoid_list.py &&
+    uv run --no-project --python 3.14 --with pydantic-settings python ci/avoid_list.py .trantor/lib .trantor-docs/governance/architecture "$base"
 }
 
 # trantor's 1,500-line busy-module limit and split-pending list over this tree's tracked production modules, so a module
 # over it fails here, not on the next trantor commit after the pin bump.
 busy_modules() {
-  uv run --no-project --python 3.14 --with pytest --with pyyaml python -m pytest -q -p no:cacheprovider ci/test_busy_modules.py &&
-    uv run --no-project --python 3.14 --with pyyaml python ci/busy_modules.py .trantor/lib
+  uv run --no-project --python 3.14 --with pytest --with pyyaml --with pydantic-settings python -m pytest -q -p no:cacheprovider ci/test_busy_modules.py &&
+    uv run --no-project --python 3.14 --with pyyaml --with pydantic-settings python ci/busy_modules.py .trantor/lib
 }
 
 checks=(api_types ic public_names tier_policy avoid_list busy_modules)
