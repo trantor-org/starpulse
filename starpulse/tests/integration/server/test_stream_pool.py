@@ -51,6 +51,7 @@ def test_a_full_stream_pool_does_not_delay_a_short_read(tmp_path: Path, caplog: 
         with urllib.request.urlopen(url(server, "/api/pulls"), timeout=5) as resp:
             status = resp.status
         elapsed = time.monotonic() - started
+        assert server.drain(5)  # the read logs after its last byte is sent, which the client returns on
 
     (line,) = [r.getMessage() for r in caplog.records if "slow_read" in r.getMessage()]
     assert status == 200
@@ -94,6 +95,7 @@ def test_slow_read_names_the_busy_request_workers_and_open_streams_that_held_the
         _open(server, streams)
         _open(server, streams)
         urllib.request.urlopen(url(server, "/api/pulls"), timeout=5).read()
+        assert server.drain(5)  # the read logs after its last byte is sent, which the client returns on
 
     (line,) = [r.getMessage() for r in caplog.records if "slow_read" in r.getMessage()]
     fields = dict(re.findall(r" (busy|streams)=([0-9]+)", line))
