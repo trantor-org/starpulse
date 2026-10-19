@@ -90,6 +90,7 @@ The modules an adapter may import, each exporting exactly the names in its `__al
 - `starpulse.config`: loading the config file, the runs adapter a `type` names, and `CONFIG_OWNERS` (the processes that read each key) with `restarts_serve` (whether a change to the raw tables needs `serve` itself restarted).
 - `starpulse.harnesses`: loading the harness file, the tiers and efforts an agent profile names.
 - `starpulse.conformance`: replaying recorded moves (`check_lanes`, `check_events`) and event traces (`conform`, `replay`, `runs`) against a declared machine, and the paths and gate `bypasses` a machine generates.
+- `starpulse.diagram`: `machine_dot(base)`, the Graphviz DOT of each machine under a project's `.starpulse/machines/`, as `machine show --format dot` prints it, with no server.
 - `starpulse.mermaid_import`: drafting a machine definition from a Mermaid state diagram.
 - `starpulse.otlp`: decoding Claude Code's OpenTelemetry log export.
 
