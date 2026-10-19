@@ -51,6 +51,12 @@ def test_the_swapped_api_child_answers_every_request_made_across_the_swap(
                 failed.append(exc)
             time.sleep(0.05)
 
+    def answered_by(count: int, reason: str) -> None:
+        deadline = time.monotonic() + 60
+        while len(answered) < count:
+            assert time.monotonic() < deadline, reason
+            time.sleep(0.05)
+
     with closing(socket.create_server(("127.0.0.1", 0), backlog=128)) as listening:
         port = listening.getsockname()[1]
         supervisor = Supervisor({"api": command}, sockets={"api": listening}, read=read, poll=0.1)
@@ -63,20 +69,16 @@ def test_the_swapped_api_child_answers_every_request_made_across_the_swap(
                     break
                 except OSError:
                     assert time.monotonic() < deadline, "the first API child never answered"
-                    time.sleep(0.2)
+                    time.sleep(0.05)
             first = supervisor.pids()["api"]
             clients = [threading.Thread(target=ask, args=(port,), daemon=True) for _ in range(4)]
             for client in clients:
                 client.start()
-            time.sleep(1)
+            answered_by(8, "the first API child never answered the clients")
             version[0] = 1
             assert supervisor.reload()["children"] == {"api": "replaced"}
             second = supervisor.pids()["api"]
-            deadline = time.monotonic() + 60
-            before = len(answered)
-            while len(answered) < before + 20:  # the new child answers what queued while it started
-                assert time.monotonic() < deadline, "the replacement never answered"
-                time.sleep(0.2)
+            answered_by(len(answered) + 8, "the replacement never answered")  # what queued while it started
         finally:
             halt.set()
             supervisor.stop()

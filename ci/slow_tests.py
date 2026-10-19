@@ -40,7 +40,6 @@ GAP = "CPU counts this process and the children it waited for; containers a test
 OVER_CEILING = {
     "ci/test_demo_workspace.py::test_in_progress_opens_the_delivery_machine_and_at_least_three_more_lifecycle_machines": "TASK-6321",
     "ci/test_demo_workspace.py::test_the_demo_places_sessions_on_the_delivery_machine_and_on_at_least_three_lifecycle_machines": "TASK-6321",
-    "starpulse/tests/integration/server/test_api_swap.py::test_the_swapped_api_child_answers_every_request_made_across_the_swap": "TASK-6319",
     "starpulse/tests/unit/server/test_flow_reads.py::test_a_reader_never_sees_a_window_older_than_the_last_write_that_completed": "TASK-6324",
 }
 

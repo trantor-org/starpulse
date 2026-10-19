@@ -117,7 +117,7 @@ class _Stopping:
         self.order = order
         self.drained = drained
 
-    def serve_forever(self) -> None:
+    def serve_forever(self, poll_interval: float = 0.5) -> None:
         raise KeyboardInterrupt
 
     def drain(self, timeout: float) -> bool:
