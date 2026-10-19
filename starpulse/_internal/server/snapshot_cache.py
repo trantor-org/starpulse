@@ -71,8 +71,9 @@ class SnapshotCache:
         #: Each board task's JSON, kept between builds so one that changed is the only one encoded afresh.
         self._tasks: dict[int, tuple[Any, bytes]] = {}
 
-    def _current(self, held: Served | None) -> bool:
-        return held is not None and held.rev == self._feed.rev and self._clock() - held.at < self._ttl_s
+    def _current(self, held: Served | None, max_age_s: float | None = None) -> bool:
+        age_limit = self._ttl_s if max_age_s is None else max_age_s
+        return held is not None and held.rev == self._feed.rev and self._clock() - held.at < age_limit
 
     def get(self) -> Served:
         """The snapshot as of now, encoded: the one held when no change was published since it was taken."""
@@ -106,9 +107,11 @@ class SnapshotCache:
         """Make `read` serve nothing older than the feed is now: called once a write has published its change."""
         self._floor = self._feed.rev
 
-    def _build(self, force: bool = False) -> Served:
+    def _build(self, max_age_s: float | None = None) -> Served:
+        """The snapshot held when it is current and younger than `max_age_s` (the TTL by default), else a new one. The
+        check is made holding the build lock, so a caller that waited out another's build takes that build."""
         with self._building:
-            if not force and self._current(held := self._held):
+            if self._current(held := self._held, max_age_s):
                 return held  # type: ignore[return-value]
             rev, sent, snapshot = self._feed.snapshot_at()
             encoded = Encoded.of(encode_snapshot(snapshot, self._tasks))
@@ -147,8 +150,6 @@ class SnapshotCache:
             if changed:
                 time.sleep(self._settle_s)
             try:
-                held = self._held
-                if held is None or held.rev != self._feed.rev or self._clock() - held.at >= self._ttl_s / 2:
-                    self._build(force=True)
+                self._build(self._ttl_s / 2)
             except Exception:
                 logger.exception("StarPulse: the snapshot could not be rebuilt; a request that asks for it sees why")

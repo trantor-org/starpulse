@@ -1,5 +1,6 @@
 """`read` answers from the held snapshot while the background rebuild catches up; a write makes the next one current."""
 
+import threading
 import time
 
 from starpulse._internal.feed.board_feed import BoardFeed
@@ -44,3 +45,28 @@ def test_the_background_rebuilds_before_the_ttl_so_no_request_finds_it_expired()
 
     assert cache._held is not first
     assert cache._held.at - first.at < 0.4  # type: ignore[union-attr]
+
+
+def test_the_background_does_not_rebuild_a_snapshot_a_request_built_while_it_waited() -> None:
+    feed, cache = _cache(settle_s=0)
+    taken = []
+    started = threading.Event()
+    release = threading.Event()
+    snapshot_at = feed.snapshot_at
+
+    def slow() -> tuple[int, int, dict]:
+        taken.append(1)
+        started.set()
+        release.wait(5)
+        return snapshot_at()
+
+    feed.snapshot_at = slow  # type: ignore[method-assign]
+    request = threading.Thread(target=cache.get)
+    request.start()
+    assert started.wait(5)
+    time.sleep(0.2)  # the background thread reaches its check while the request still holds the build
+    release.set()
+    request.join(5)
+    time.sleep(0.2)
+
+    assert len(taken) == 1

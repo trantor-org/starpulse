@@ -21,9 +21,9 @@ def test_a_stream_never_builds_the_snapshot_on_its_own_thread(tmp_path: Path, mo
     builders: list[str] = []
     build = SnapshotCache._build
 
-    def recording(self: SnapshotCache, force: bool = False):
+    def recording(self: SnapshotCache, max_age_s: float | None = None):
         builders.append(threading.current_thread().name)
-        return build(self, force)
+        return build(self, max_age_s)
 
     monkeypatch.setattr(SnapshotCache, "_build", recording)
     feed = BoardFeed(machines=MACHINES)
