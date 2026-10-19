@@ -400,16 +400,14 @@ def serve(
     (static / "assets" / "index-abc123.js").write_text("")
     (tmp_path / "secret.txt").write_text("")
     served = feed or BoardFeed()
+    log = EventLog(f"sqlite:///{tmp_path / 'settings.sqlite'}")
     handler = request_handler(
         served,
         static,
         starts or {},
         run_safe,
         history or HistoryStore("sqlite://", feed.machines if feed else {}),
-        window
-        or HistoryWindow(
-            served, 6, EventLog(f"sqlite:///{tmp_path / 'settings.sqlite'}"), tmp_path / "starpulse-settings.json"
-        ),
+        window or HistoryWindow(served, 6, log, tmp_path / "starpulse-settings.json"),
         writer or _no_writer,
         harnesses,
         assign or _no_writer,
@@ -448,6 +446,8 @@ def serve(
         yield server
     finally:
         server.shutdown()
+        server.server_close()
+        log.close()
 
 
 def url(server: ThreadingHTTPServer, path: str) -> str:

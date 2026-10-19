@@ -342,6 +342,23 @@ def _no_upstream_backlog_thread_outlives_its_test() -> Iterator[None]:
     assert not leaked, "an upstream-backlog thread outlived its test"
 
 
+@pytest.fixture(autouse=True)
+def _sqlite_engines_close_with_their_test() -> Iterator[None]:
+    """Dispose every SQLite engine the test connected through: an `EventLog` or `HistoryStore` it built is never closed
+    by the code under test, and its pooled connections hold three descriptors each until the worker process ends."""
+    used: list[Engine] = []
+
+    def note(connection: Any) -> None:
+        if connection.engine.dialect.name == "sqlite" and connection.engine not in used:
+            used.append(connection.engine)
+
+    event.listen(Engine, "engine_connect", note)
+    yield
+    event.remove(Engine, "engine_connect", note)
+    for engine in used:
+        engine.dispose()
+
+
 class FakeSupervisor:
     """What an in-process `server.main` supervises with: records its commands and starts no child process."""
 

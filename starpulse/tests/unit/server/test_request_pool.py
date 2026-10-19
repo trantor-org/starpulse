@@ -82,3 +82,17 @@ def test_idle_workers_exit_after_the_timeout() -> None:
         assert _until(lambda: len(server.served_by) == 4)
     finally:
         server.server_close()
+
+
+def test_server_close_retires_idle_workers_before_the_timeout() -> None:
+    server = _Recording()
+    server.idle_timeout = 30.0
+    for n in range(3):
+        server.release.clear()
+        server.process_request(object(), ("127.0.0.1", n))
+    server.release.set()
+    assert _until(lambda: len(server.served_by) == 3)
+    workers = set(server.served_by)
+    server.server_close()
+    assert _until(lambda: server._workers == 0)
+    assert _until(lambda: not _alive(list(workers)))

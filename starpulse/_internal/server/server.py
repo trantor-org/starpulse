@@ -502,7 +502,7 @@ class StarPulseServer(ThreadingHTTPServer):
         self, address: tuple[str, int], handler: type[BaseHTTPRequestHandler], listening: socket.socket | None = None
     ) -> None:
         self.accepted: dict[socket.socket, Arrival] = {}  # each request as accepted, until its thread takes it up
-        self._work: queue.SimpleQueue[tuple[Any, Any]] = queue.SimpleQueue()
+        self._work: queue.SimpleQueue[tuple[Any, Any] | None] = queue.SimpleQueue()
         self._workers = 0  # request workers, not the threads serving streams
         self.streams = 0  # streams open, each on a thread that has left the request pool
         self._streaming = threading.local()  # set on a worker thread that has left the request pool for a stream
@@ -555,6 +555,13 @@ class StarPulseServer(ThreadingHTTPServer):
         with self._answered:
             return self._answered.wait_for(lambda: self._taken == 0, timeout)
 
+    def server_close(self) -> None:
+        """Close the listening socket and wake every request worker to exit once it has finished its request."""
+        super().server_close()
+        with self._workers_lock:
+            for _ in range(self._workers):
+                self._work.put(None)
+
     def _run_requests(self) -> None:
         while True:
             try:
@@ -566,6 +573,11 @@ class StarPulseServer(ThreadingHTTPServer):
                         self._workers -= 1
                         return
                 continue
+            if work is None:  # `server_close` retiring this worker
+                with self._workers_lock:
+                    self._idle -= 1
+                    self._workers -= 1
+                return
             self.process_request_thread(*work)
             with self._workers_lock:
                 if not getattr(self._streaming, "open", False):  # a stream was answered when it opened
@@ -1034,6 +1046,8 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     finally:
         if supervisor:
             supervisor.stop()
+        log.close()
+        store.engine.dispose()
 
 
 #: What `serve_page` imports once the config is accepted; the preloaded process imports it too, so the Page API child
