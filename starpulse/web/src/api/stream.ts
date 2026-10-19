@@ -101,7 +101,7 @@ export interface StreamHandlers {
   live(on: boolean): void;
   /** What the connection is doing, each time that changes: `restarting` from the server's announcement, even while the connection is still open. */
   link?(state: Link): void;
-  /** The server named a page build other than the one the page holds, once per such build. */
+  /** The server named a page build other than the one the page holds, once per such build, once that server has read its board. */
   build?(id: string): void;
   /** Autopilot capacity and next pick: not part of the snapshot; the Kanban strip applies each body. */
   autopilot?(status: AutopilotStatus): void;
@@ -157,6 +157,7 @@ export function openStream(
     state = snap;
     held.clear(); // the snapshot is the page's truth again, so what the next event says is news
     hand();
+    tell();
   };
   const later = (fn: (e: Event) => void) => (e: Event) => void (waiting ? waiting.push(() => fn(e)) : fn(e));
 
@@ -204,6 +205,13 @@ export function openStream(
   /** The page build the page's own first connection named, which the page was loaded from. */
   let own: string | null = null;
   let told: string | null = null;
+  /** A build the page has not reported yet because its server was still reading its board: a page reloaded onto it then would draw the partial Board. */
+  let pending: string | null = null;
+  const tell = () => {
+    if (pending === null || state?.reading) return;
+    handlers.build?.((told = pending));
+    pending = null;
+  };
 
   const connect = (adopt: EarlyStream | null = null) => {
     const src = adopt?.src ?? open(EVENTS);
@@ -258,11 +266,17 @@ export function openStream(
       show("restarting");
       goesLost();
     });
-    src.addEventListener("build", (e) => {
-      const id = (JSON.parse((e as MessageEvent<string>).data) as { id: string }).id;
-      if (own === null) own = id;
-      else if (id !== own && id !== told) handlers.build?.((told = id));
-    });
+    src.addEventListener(
+      "build",
+      later((e) => {
+        const id = (JSON.parse((e as MessageEvent<string>).data) as { id: string }).id;
+        if (own === null) own = id;
+        else if (id !== own && id !== told) {
+          pending = id;
+          tell();
+        }
+      }),
+    );
     src.onopen = up;
     src.onerror = () => {
       src.close(); // not the browser's own retry, which waits seconds
