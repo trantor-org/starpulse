@@ -236,7 +236,9 @@ def test_a_snapshot_is_gzipped_when_built_not_by_the_request_that_reads_it(
     real = gzip.compress
 
     def counting(data: bytes, *args: object, **kwargs: object) -> bytes:
-        compressions.append(len(data))
+        # a cache an earlier test in this process left running rebuilds on its own timer; only this feed's task counts
+        if b"x" * 100_000 in data:
+            compressions.append(len(data))
         return real(data, *args, **kwargs)  # type: ignore[arg-type]
 
     monkeypatch.setattr(gzip, "compress", counting)
