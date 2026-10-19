@@ -185,12 +185,15 @@ class Request(NamedTuple):
 
 
 class Response(NamedTuple):
-    """What a route answers, in the order a server's `_send` takes it."""
+    """What a route answers, in the order a server's `_send` takes it. `retry_after` is the seconds a refused client is
+    asked to wait; `close` ends the connection after the answer, since a request body was left unread."""
 
     body: bytes | Encoded
     status: int = 200
     cache: str = "no-store"
     content_type: str = "application/json"
+    retry_after: int | None = None
+    close: bool = False
 
 
 Query = dict[str, list[str]]
