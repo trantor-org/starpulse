@@ -34,7 +34,7 @@ def test_a_refused_claim_is_appended_to_board_claims_with_its_task_actor_reason_
 
     written = built.writer("task-1", "In Progress", "agent", "session-1")
 
-    [row] = Tail(log, CLAIMS_STREAM).poll()
+    [row] = Tail.replay(log, CLAIMS_STREAM).poll()
     assert not written.ok
     assert (row.fields["task"], row.fields["actor"], row.fields["reason"]) == ("task-1", "agent", written.output)
     assert float(row.fields["time"]) > 0
@@ -49,7 +49,7 @@ def test_a_refused_write_that_is_not_an_agent_claim_appends_no_claim_refusal(
 
     built.writer("task-1", status, actor, session)
 
-    assert Tail(log, CLAIMS_STREAM).poll() == []
+    assert Tail.replay(log, CLAIMS_STREAM).poll() == []
 
 
 def test_the_claim_refusal_view_shows_the_writers_refusal_read_from_the_log_alone(tmp_path: Path) -> None:
@@ -59,7 +59,7 @@ def test_the_claim_refusal_view_shows_the_writers_refusal_read_from_the_log_alon
     view = ClaimRefusals(feed)
 
     built.writer("task-1", "In Progress", "agent", "session-1")
-    for row in Tail(log, CLAIMS_STREAM).poll():  # the event log is the only source: no Redis, no bridge
+    for row in Tail.replay(log, CLAIMS_STREAM).poll():  # the event log is the only source: no Redis, no bridge
         view.handle_entry(str(row.id), row.fields)
 
     [(task, shown)] = feed.snapshot()["claims"].items()

@@ -23,7 +23,7 @@ def test_a_lane_change_and_its_event_land_together(tmp_path: Path) -> None:
 
     written = store.record_lane(ID, "T-1", "ready", 100.0, event=FIELDS)
 
-    assert (written, store.lane_changes(), [e.fields for e in Tail(log, lane_events.STREAM).poll()]) == (
+    assert (written, store.lane_changes(), [e.fields for e in Tail.replay(log, lane_events.STREAM).poll()]) == (
         True,
         [(ID, "T-1", "ready", 100.0)],
         [FIELDS],
@@ -38,7 +38,7 @@ def test_an_event_the_store_refuses_rolls_the_lane_change_back(tmp_path: Path) -
     except Exception:  # noqa: BLE001 - the refusal is the setup; what it left behind is the assertion
         pass
 
-    assert (store.lane_changes(), Tail(log, lane_events.STREAM).poll()) == ([], [])
+    assert (store.lane_changes(), Tail.replay(log, lane_events.STREAM).poll()) == ([], [])
 
 
 def test_a_repeated_lane_change_adds_no_event(tmp_path: Path) -> None:
@@ -47,4 +47,4 @@ def test_a_repeated_lane_change_adds_no_event(tmp_path: Path) -> None:
 
     written = store.record_lane(ID, "T-1", "ready", 100.0, event=FIELDS)
 
-    assert (written, len(Tail(log, lane_events.STREAM).poll())) == (False, 1)
+    assert (written, len(Tail.replay(log, lane_events.STREAM).poll())) == (False, 1)

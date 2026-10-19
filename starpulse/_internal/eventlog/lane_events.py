@@ -18,8 +18,8 @@ import threading
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from starpulse.contracts import BoardTask
     from starpulse._internal.eventlog.event_log import Entry, EventLog
+    from starpulse.contracts import BoardTask
 
 STREAM = "board:lanes"
 #: The actor of a change no write of the server recorded: the feed placed a lane nobody wrote through it.
@@ -42,9 +42,7 @@ def entry(task: BoardTask, at: float, actor: str = "", session: str = "", harnes
         fields["labels"] = list(task.labels)
     if task.profile:
         fields["profile"] = task.profile
-    for name, value in (("actor", actor), ("session", session), ("harness", harness)):
-        if value:
-            fields[name] = value
+    fields.update({name: value for name, value in (("actor", actor), ("session", session), ("harness", harness)) if value})
     return fields
 
 
@@ -84,7 +82,8 @@ class Unattributed:
 
     def follow(self, log: EventLog, stop: threading.Event) -> threading.Thread:
         """Count the entries `log` takes from now on, on a thread until `stop`."""
-        tail = log.tail(STREAM, after=log.head() or 0)
+        from starpulse._internal.eventlog.event_log import Tail  # noqa: PLC0415 - the database stack loads when a log opens
+        tail = Tail.live(log, STREAM)
         thread = threading.Thread(target=tail.run, args=(self.handle, stop), name="lane-unattributed", daemon=True)
         thread.start()
         return thread

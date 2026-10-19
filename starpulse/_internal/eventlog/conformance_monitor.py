@@ -80,7 +80,8 @@ class Conformance:
         """Read what `log` retains, then follow it on a thread per stream until `stop`; the retained part is counted on return."""
         threads = []
         for stream, handle in ((lane_events.STREAM, self.handle_lane), (events.STREAM, self.handle_event)):
-            tail = log.tail(stream)
+            from starpulse._internal.eventlog.event_log import Tail  # noqa: PLC0415 - the database stack loads when a log opens
+            tail = Tail.replay(log, stream)
             tail.catch_up(handle)
             thread = threading.Thread(target=tail.run, args=(handle, stop), name=f"conformance-{stream}", daemon=True)
             thread.start()

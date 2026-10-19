@@ -53,7 +53,7 @@ def test_an_entry_each_producer_writes_validates_against_its_streams_schema(tmp_
         run_events.entry("StepFinished", "nightly", "r1", "succeeded", now=7.0, step="load", depends=["fetch"], instance="ana"),
     )
 
-    entries = Tail(log, "reader", streams=sorted(_declared_streams())).poll()
+    entries = Tail.replay(log, "reader", streams=sorted(_declared_streams())).poll()
 
     assert len(entries) == 4
     assert [e.stream for e in entries if e.stream not in STREAMS] == []

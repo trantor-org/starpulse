@@ -6,13 +6,13 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine
 
-from starpulse._internal.config.config import Producer
-from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.ci.ci import CI_MACHINES
 from starpulse._internal.ci.ci_trail import CiTrail, parse
-from starpulse._internal.feed.machine_tasks import MachineTasks
+from starpulse._internal.config.config import Producer
 from starpulse._internal.eventlog import events
 from starpulse._internal.eventlog.event_log import Entry, EventLog, Tail
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.feed.machine_tasks import MachineTasks
 from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.pulls.github import GITHUB_MACHINES
 from starpulse._internal.pulls.pull_events import RecordProjection
@@ -83,7 +83,7 @@ class _Trail:
         self.trail = CiTrail(self.log, clock=lambda: _epoch(self.minute))
         self.feed = BoardFeed(None, machines={**MACHINES, **CI_MACHINES})
         self.tasks = MachineTasks(self.feed)
-        self.tail = Tail(self.log, events.STREAM)
+        self.tail = Tail.replay(self.log, events.STREAM)
 
     def poll(self, minute: float, **pulls: dict) -> None:
         """One poll at `minute`: the nodes by pull request URL, for the one task."""
@@ -102,7 +102,7 @@ class _Trail:
         return [(step["state"], step["event"], step["at"]) for step in self.agent()["trail"]]
 
     def logged(self) -> int:
-        return len(Tail(self.log, events.STREAM).poll())
+        return len(Tail.replay(self.log, events.STREAM).poll())
 
 
 @pytest.fixture
@@ -232,7 +232,7 @@ class _PullRequest:
         feed.put(task("PROJ-1", "In Progress", references=[f"https://github.com/{PULL[0]}/pull/{PULL[1]}"]))
         self.store = PullStore(create_engine("sqlite://"))
         self.projection = RecordProjection(self.store, feed)
-        self.tail = Tail(self.log, events.STREAM)
+        self.tail = Tail.replay(self.log, events.STREAM)
         opened = {"machine": "github-pull-request", "event": "PR_OPENED", "task": "PROJ-1", "time": str(_epoch(-5))}
         self.projection.handle(Entry(0, events.STREAM, "opened", opened, _epoch(-5)))
 
@@ -269,4 +269,4 @@ def test_ci_job_cloud_events_are_read_from_machine_events_not_only_ci_jobs(pull:
 
     record = pull.record()
     assert (record["headRefOid"], record["requiredChecks"]) == (NEXT_HEAD, [{"name": "test", "result": "pass"}])
-    assert Tail(pull.log, "ci:jobs").poll() == []
+    assert Tail.replay(pull.log, "ci:jobs").poll() == []

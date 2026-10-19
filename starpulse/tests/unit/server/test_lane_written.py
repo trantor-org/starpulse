@@ -38,7 +38,7 @@ def test_a_write_then_its_placement_gives_one_history_row_and_one_entry_with_the
     )
     feed.put(_task("in_progress", 120.0))  # the watch places the write
 
-    entries = [e for e in Tail(log, lane_events.STREAM).poll() if e.fields["lane"] == "in_progress"]
+    entries = [e for e in Tail.replay(log, lane_events.STREAM).poll() if e.fields["lane"] == "in_progress"]
     assert written.ok
     assert len(entries) == 1
     assert [step["to"] for step in store.lane_path("T-1")] == ["ready", "in_progress"]
@@ -54,7 +54,7 @@ def test_a_write_that_moves_no_lane_records_nothing_and_the_placement_is_externa
     _record_written(feed, "T-1", _Who("agent", "s1", "claude"), lambda: Written(True, "Updated task T-1"))
     feed.put(_task("in_progress", 120.0))
 
-    entry = [e for e in Tail(log, lane_events.STREAM).poll() if e.fields["lane"] == "in_progress"][0]
+    entry = [e for e in Tail.replay(log, lane_events.STREAM).poll() if e.fields["lane"] == "in_progress"][0]
     assert [step["to"] for step in store.lane_path("T-1")] == ["ready", "in_progress"]
     assert entry.fields.get("actor") == lane_events.EXTERNAL_ACTOR
 

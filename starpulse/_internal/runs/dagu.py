@@ -24,9 +24,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, get_args
 
+from starpulse._internal.eventlog.event_log import DEFAULT_POLL_INTERVAL, EventLog, Tail
 from starpulse._internal.runs import run_events
 from starpulse.contracts.adapters import RunsSink, RunStatus, StartFailedError
-from starpulse._internal.eventlog.event_log import DEFAULT_POLL_INTERVAL, EventLog, Tail
 
 #: Seconds between two listings of a followed Dagu instance.
 RECONCILE_INTERVAL = 30.0
@@ -651,7 +651,7 @@ def follow(
     reader = DaguRuns(runs, lambda only=None: dags(url, only, tied(), finished, graphs), lambda: pools(url), tied=tied, instance=getattr(runs, "instance", None))
 
     def read() -> None:
-        tail = Tail.at_head(log, run_events.STREAM, interval=interval)  # before the listing: what it holds is not replayed
+        tail = Tail.live(log, run_events.STREAM, interval=interval)  # before the listing: what it holds is not replayed
         reader.reconcile()
         tail.run(lambda entry: reader.handle_entry(str(entry.id), entry.fields), stop)
 

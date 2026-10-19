@@ -51,7 +51,7 @@ def _page_move(server: str, key: str) -> None:
 
 def _actors(log: EventLog) -> dict[str, str | None]:
     """The actor each task's Done entry names, None where the entry names none."""
-    entries = Tail(log, lane_events.STREAM).poll()
+    entries = Tail.replay(log, lane_events.STREAM).poll()
     return {e.fields["task"]: e.fields.get("actor") for e in entries if e.fields["lane"] == "done"}
 
 
@@ -66,5 +66,5 @@ def test_a_page_move_and_a_cli_move_each_leave_a_lane_entry_naming_their_actor(
         feed.put(task("task-2", "Done"))
 
     assert _actors(log) == {"task-1": "operator", "task-2": "agent"}
-    for entry in Tail(log, lane_events.STREAM).poll():
+    for entry in Tail.replay(log, lane_events.STREAM).poll():
         LaneEvent.model_validate(entry.fields)

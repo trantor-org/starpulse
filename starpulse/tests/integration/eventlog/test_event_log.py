@@ -31,7 +31,7 @@ def processes() -> Iterator[ProcessPoolExecutor]:
 
 
 def test_one_poll_reads_what_another_process_appended(database_url: str, processes: ProcessPoolExecutor) -> None:
-    tail = Tail(EventLog(database_url), "machine:events")
+    tail = Tail.replay(EventLog(database_url), "machine:events")
     assert tail.poll() == []
 
     cursor = processes.submit(_append, database_url, "FIRST").result()
@@ -44,7 +44,7 @@ def test_an_idle_poll_reads_the_oldest_and_newest_id_without_scanning_the_table(
         pytest.skip("the query plan asserted is SQLite's")
     log = EventLog(database_url)
     log.append("machine:events", {"event": "FIRST"})
-    tail = Tail(log, "machine:events")
+    tail = Tail.replay(log, "machine:events")
     tail.poll()
     statements: list[str] = []
     event.listen(log.engine, "before_cursor_execute", lambda conn, cur, stmt, *rest: statements.append(stmt))
@@ -68,7 +68,7 @@ def test_a_running_tail_hands_over_what_another_process_appends(
 
     stop = threading.Event()
     reader = threading.Thread(
-        target=Tail(EventLog(database_url), "machine:events", interval=0.05).run, args=(handle, stop)
+        target=Tail.replay(EventLog(database_url), "machine:events", interval=0.05).run, args=(handle, stop)
     )
     reader.start()
     try:
@@ -88,7 +88,7 @@ def test_appends_from_several_processes_are_all_read_once_in_cursor_order(
     for append in appends:
         append.result()
 
-    entries = Tail(EventLog(database_url), "machine:events").poll()
+    entries = Tail.replay(EventLog(database_url), "machine:events").poll()
 
     assert sorted(e.fields["event"] for e in entries) == [f"E{i}" for i in range(6)]
     assert [e.id for e in entries] == sorted(e.id for e in entries)
@@ -98,7 +98,7 @@ def test_a_reader_left_behind_by_the_prune_timer_records_a_gap(database_url: str
     log = EventLog(database_url)
     for n in range(1, 5):
         log.append("machine:events", {"n": n})
-    reader = Tail(log, "machine:events")
+    reader = Tail.replay(log, "machine:events")
     assert [e.id for e in reader.poll()] == [1, 2, 3, 4]
     for n in range(5, 8):
         log.append("machine:events", {"n": n})
@@ -137,7 +137,7 @@ _FORMER_TAIL_CALLERS = (
 
 
 def _tail_constructions(path: Path) -> list[int]:
-    """The line of each `Tail(...)` call in `path`, found in its syntax tree so a comment or docstring is not one."""
+    """The line of each `Tail.replay(...)` call in `path`, found in its syntax tree so a comment or docstring is not one."""
     calls = [node for node in ast.walk(ast.parse(path.read_text())) if isinstance(node, ast.Call)]
     named = [
         call for call in calls if getattr(call.func, "id", None) == "Tail" or getattr(call.func, "attr", None) == "Tail"

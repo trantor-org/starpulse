@@ -63,7 +63,7 @@ class Stack:
             return exc.code, json.loads(body) if exc.headers.get_content_type() == "application/json" else {}
 
     def entries(self) -> list[dict]:
-        return [entry.fields for entry in Tail(self.log, run_events.STREAM).poll()]
+        return [entry.fields for entry in Tail.replay(self.log, run_events.STREAM).poll()]
 
     def drawn(self) -> dict[str, dict]:
         return {dag["name"]: dag for dag in self.feed.snapshot()["dags"]}
@@ -189,7 +189,7 @@ def test_a_server_with_no_producer_has_no_ingest_route(tmp_path: Path) -> None:
         status, _ = Stack(server, BoardFeed(), log).post(run_cloudevent(), "cron-secret")
 
     assert status == 404
-    assert Tail(log, run_events.STREAM).poll() == []
+    assert Tail.replay(log, run_events.STREAM).poll() == []
 
 
 def test_a_producer_from_the_documented_config_draws_its_pushed_run_with_no_run_now(tmp_path: Path) -> None:

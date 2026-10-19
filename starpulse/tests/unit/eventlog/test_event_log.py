@@ -44,7 +44,7 @@ def test_append_returns_the_next_cursor_and_keeps_the_fields(log: EventLog) -> N
     second = log.append("machine:events", {"machine": "m", "event": "B"})
 
     assert (first, second) == (1, 2)
-    [entry, _] = Tail(log, "machine:events").poll()
+    [entry, _] = Tail.replay(log, "machine:events").poll()
     assert (entry.id, entry.stream, entry.fields["event"]) == (1, "machine:events", "A")
 
 
@@ -53,7 +53,7 @@ def test_an_append_mints_an_event_id_unless_the_fields_or_caller_supply_one(log:
     log.append("s", {"event_id": "from-fields"})
     log.append("s", {"event_id": "ignored"}, event_id="from-caller")
 
-    ids = [e.event_id for e in Tail(log, "s").poll()]
+    ids = [e.event_id for e in Tail.replay(log, "s").poll()]
 
     assert ids[0] not in {"from-fields", "from-caller", ""}
     assert ids[1:] == ["from-fields", "from-caller"]
@@ -65,7 +65,7 @@ def test_a_repeated_event_id_is_one_row_and_returns_the_first_cursor(log: EventL
     after = log.append("s", {"event_id": "e-2"})
 
     assert (first, again, after) == (1, 1, 2)
-    assert [e.fields.get("n") for e in Tail(log, "s").poll()] == ["1", None]
+    assert [e.fields.get("n") for e in Tail.replay(log, "s").poll()] == ["1", None]
 
 
 def test_an_append_to_an_unreachable_database_returns_none_without_raising(tmp_path: Path) -> None:
@@ -93,7 +93,7 @@ def test_a_new_tail_replays_its_stream_from_the_start_of_retention_in_order(log:
     log.append("a", {"n": "1"})
     log.append("b", {"n": "other stream"})
     log.append("a", {"n": "2"})
-    tail = Tail(log, "a")
+    tail = Tail.replay(log, "a")
 
     assert [e.fields["n"] for e in tail.poll()] == ["1", "2"]
     assert tail.poll() == []
@@ -101,7 +101,7 @@ def test_a_new_tail_replays_its_stream_from_the_start_of_retention_in_order(log:
 
 
 def test_a_tail_returns_only_what_was_appended_since_its_last_poll(log: EventLog) -> None:
-    tail = Tail(log, "a")
+    tail = Tail.replay(log, "a")
     log.append("a", {"n": "1"})
     assert [e.id for e in tail.poll()] == [1]
 
@@ -120,30 +120,30 @@ def test_a_tail_resumes_after_the_cursor_it_is_given(log: EventLog) -> None:
     assert _gaps(log) == []
 
 
-def test_a_tail_at_the_head_reads_only_what_is_appended_after_it_was_taken(log: EventLog) -> None:
+def test_a_live_tail_reads_only_what_is_appended_after_it_was_taken(log: EventLog) -> None:
     for n in range(3):
         log.append("a", {"n": str(n)})
     log.append("b", {"n": "other"})
 
-    tail = Tail.at_head(log, "a")
+    tail = Tail.live(log, "a")
     log.append("a", {"n": "3"})
 
     assert [e.id for e in tail.poll()] == [5]
     assert _gaps(log) == []
 
 
-def test_a_tail_at_the_head_of_an_empty_stream_reads_everything_appended_later(log: EventLog) -> None:
-    tail = Tail.at_head(log, "a")
+def test_a_live_tail_of_an_empty_stream_reads_everything_appended_later(log: EventLog) -> None:
+    tail = Tail.live(log, "a")
     log.append("a", {"n": "1"})
 
     assert [e.id for e in tail.poll()] == [1]
 
 
-def test_a_tail_at_the_head_replays_the_retention_when_the_log_cannot_be_reached(log: EventLog) -> None:
+def test_a_live_tail_replays_the_retention_when_the_log_cannot_be_reached(log: EventLog) -> None:
     log.append("a", {"n": "1"})
     log.last = lambda stream: (_ for _ in ()).throw(OperationalError("select", {}, Exception("down")))  # type: ignore[method-assign]
 
-    assert Tail.at_head(log, "a").cursor is None
+    assert Tail.live(log, "a").cursor is None
 
 
 def test_a_tail_over_several_streams_reads_them_in_log_order_under_one_cursor(log: EventLog) -> None:
@@ -152,7 +152,7 @@ def test_a_tail_over_several_streams_reads_them_in_log_order_under_one_cursor(lo
     log.append("b", {"n": 3})
     log.append("a", {"n": 4})
 
-    tail = Tail(log, "forward", streams=("a", "b"))
+    tail = Tail.replay(log, "forward", streams=("a", "b"))
 
     assert [(e.stream, e.fields["n"]) for e in tail.poll()] == [("a", 1), ("b", 3), ("a", 4)]
     assert tail.cursor == 4
@@ -173,7 +173,7 @@ def test_a_gap_before_a_multi_stream_tail_is_recorded_under_the_readers_name(log
 def test_a_poll_reads_at_most_one_batch(log: EventLog) -> None:
     for n in range(5):
         log.append("a", {"n": str(n)})
-    tail = Tail(log, "a", batch=2)
+    tail = Tail.replay(log, "a", batch=2)
 
     assert [[e.id for e in tail.poll()] for _ in range(3)] == [[1, 2], [3, 4], [5]]
 
@@ -207,12 +207,12 @@ def test_a_replay_from_the_start_of_retention_is_not_a_gap(log: EventLog, archiv
     log.prune(retention=0, now=time.time() + 10, archive_dir=archive)
     log.append("a", {"n": "new"})
 
-    assert [e.fields["n"] for e in Tail(log, "a").poll()] == ["new"]
+    assert [e.fields["n"] for e in Tail.replay(log, "a").poll()] == ["new"]
     assert _gaps(log) == []
 
 
 def test_a_tail_that_kept_up_across_a_prune_of_everything_it_read_is_no_gap(log: EventLog, archive: Path) -> None:
-    tail = Tail(log, "a")
+    tail = Tail.replay(log, "a")
     log.append("a", {"n": "1"})
     tail.poll()
     log.prune(retention=0, now=time.time() + 10, archive_dir=archive)
@@ -226,16 +226,16 @@ def test_a_prune_removes_only_rows_older_than_the_retention(log: EventLog, archi
     log.append("a", {"n": "old"})
     time.sleep(0.05)
     log.append("a", {"n": "new"})
-    newest = Tail(log, "a").poll()[-1].at
+    newest = Tail.replay(log, "a").poll()[-1].at
 
     assert (
         log.prune(retention=0.02, now=newest + 0.01, archive_dir=archive) == 1
     )  # the cutoff falls between the two rows
-    assert [e.fields["n"] for e in Tail(log, "a").poll()] == ["new"]
+    assert [e.fields["n"] for e in Tail.replay(log, "a").poll()] == ["new"]
 
 
 def test_a_tail_defaults_to_the_fallback_poll_interval(log: EventLog) -> None:
-    assert Tail(log, "a").interval == DEFAULT_POLL_INTERVAL
+    assert Tail.replay(log, "a").interval == DEFAULT_POLL_INTERVAL
 
 
 class _RunningTail:
@@ -246,7 +246,7 @@ class _RunningTail:
         self.entries: list = []
         self.stop = threading.Event()
         self.first_poll = threading.Event()
-        self.tail = Tail(log, "a", interval=interval)
+        self.tail = Tail.replay(log, "a", interval=interval)
         poll = self.tail.poll
 
         def polled() -> list:
@@ -332,7 +332,7 @@ def test_an_idle_tail_issues_one_log_query_per_interval(log: EventLog) -> None:
 def test_a_poll_returns_its_connection_so_no_read_transaction_outlasts_it(log: EventLog, appended: bool) -> None:
     if appended:
         log.append("a", {"n": "1"})
-    tail = Tail(log, "a")
+    tail = Tail.replay(log, "a")
 
     tail.poll()
 
@@ -355,7 +355,7 @@ def test_run_hands_each_entry_to_the_handler_and_stops_when_asked(log: EventLog)
         if len(seen) == 3:
             stop.set()
 
-    Tail(log, "a", interval=0.01).run(handle, stop)
+    Tail.replay(log, "a", interval=0.01).run(handle, stop)
 
     assert seen == [1, 2, 3]
 
@@ -365,7 +365,7 @@ def test_run_keeps_polling_after_a_failed_poll_and_after_a_failing_handler(
 ) -> None:
     log.append("a", {"n": "1"})
     log.append("a", {"n": "2"})
-    tail = Tail(log, "a", interval=0.01)
+    tail = Tail.replay(log, "a", interval=0.01)
     real_poll = tail.poll
     calls = {"n": 0}
 
@@ -411,7 +411,7 @@ def test_run_reads_an_entry_again_when_its_handler_fails_with_a_transient_error(
         if len(seen) == 3:
             stop.set()
 
-    Tail(log, "a", interval=0.01).run(handle, stop, transient=(OperationalError,))
+    Tail.replay(log, "a", interval=0.01).run(handle, stop, transient=(OperationalError,))
 
     assert seen == [1, 2, 2]
 
@@ -572,8 +572,21 @@ def test_a_failed_archive_write_deletes_no_row(log: EventLog, archive: Path, mon
         log.prune(retention=0, now=at + 1, archive_dir=archive)
     monkeypatch.undo()
 
-    assert [e.id for e in Tail(log, "a").poll()] == [1, 2, 3]
+    assert [e.id for e in Tail.replay(log, "a").poll()] == [1, 2, 3]
     day = archive / "2026-09-04.jsonl.gz"
     assert not day.exists() or day.stat().st_size == 0  # no torn member is left for a reader to trip on
     assert log.prune(retention=0, now=at + 1, archive_dir=archive) == 3  # the retry archives them once
     assert [r["id"] for r in _read(day)] == [1, 2, 3]
+
+
+def test_a_replay_tail_reads_everything_the_log_retains(log: EventLog) -> None:
+    log.append("a", {"n": "1"})
+    tail = Tail.replay(log, "a")
+    log.append("a", {"n": "2"})
+
+    assert [e.id for e in tail.poll()] == [1, 2]
+
+
+def test_a_tail_needs_its_start_named() -> None:
+    with pytest.raises(TypeError):
+        Tail(None, "a")  # type: ignore[call-arg]

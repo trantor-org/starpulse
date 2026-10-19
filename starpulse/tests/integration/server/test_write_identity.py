@@ -56,7 +56,7 @@ def _post(server: str, path: str, body: dict[str, Any]) -> dict[str, Any]:
 
 def _row(log: EventLog, key: str, lane: str) -> dict[str, Any]:
     """The `board:lanes` entry that has `key` enter `lane`."""
-    rows = [e.fields for e in Tail(log, lane_events.STREAM).poll() if e.fields["task"] == key]
+    rows = [e.fields for e in Tail.replay(log, lane_events.STREAM).poll() if e.fields["task"] == key]
     return next(fields for fields in rows if fields["lane"] == lane)
 
 

@@ -21,7 +21,7 @@ def _publish(log: EventLog, **keys: Any) -> int | None:
 
 
 def _appended(log: EventLog) -> list[dict[str, Any]]:
-    return [entry.fields for entry in Tail(log, events.STREAM).poll()]
+    return [entry.fields for entry in Tail.replay(log, events.STREAM).poll()]
 
 
 def test_a_task_event_is_appended_with_its_machine_event_task_actor_and_time(log: EventLog) -> None:

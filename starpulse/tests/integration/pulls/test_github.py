@@ -17,11 +17,11 @@ from urllib.parse import quote
 
 import pytest
 
-from starpulse._internal.pulls.github import GITHUB_MACHINES, GitHubAdapter, poll, read
+from starpulse._internal.eventlog.event_log import EventLog, Tail
 from starpulse._internal.github_api import connect
 from starpulse._internal.kit.adapter_kit import MachineEventsAdapterKit
+from starpulse._internal.pulls.github import GITHUB_MACHINES, GitHubAdapter, poll, read
 from starpulse.contracts.adapters import TaskKeys
-from starpulse._internal.eventlog.event_log import EventLog, Tail
 from starpulse.tests.machines import MACHINES
 
 FIXTURES = Path(__file__).parents[2] / "fixtures" / "github"
@@ -203,7 +203,7 @@ def log_of(tmp_path: Path) -> EventLog:
 def logged(log: EventLog) -> list[tuple[str, str, str | None, str | None]]:
     return [
         (e.fields["machine"], e.fields["event"], e.fields.get("task"), e.fields.get("run"))
-        for e in Tail(log, "machine:events").poll()
+        for e in Tail.replay(log, "machine:events").poll()
     ]
 
 
