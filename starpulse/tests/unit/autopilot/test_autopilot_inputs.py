@@ -31,6 +31,18 @@ def test_an_empty_review_lane_is_no_load() -> None:
 
 
 def test_a_session_is_in_flight_while_its_harness_task_is_active() -> None:
-    agents = [{"state": "active"}, {"state": "active"}, {"state": "stopped"}, {"state": "idle"}]
+    agents = [
+        {"state": "active", "active": 990.0},
+        {"state": "active", "active": 995.0},
+        {"state": "stopped", "active": 999.0},
+        {"state": "idle", "active": 999.0},
+    ]
 
-    assert sessions_in_flight(agents) == 2
+    assert sessions_in_flight(agents, now=1000.0, stale_s=60.0) == 2
+
+
+def test_an_active_session_with_no_event_past_the_bound_is_not_in_flight() -> None:
+    """A session killed mid-tool never gets its Stop, so its machine reads active until the history window drops it."""
+    agents = [{"state": "active", "active": 1000.0 - 61.0}, {"state": "active", "active": 1000.0 - 60.0}]
+
+    assert sessions_in_flight(agents, now=1000.0, stale_s=60.0) == 1
