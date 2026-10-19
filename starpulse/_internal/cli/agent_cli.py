@@ -76,7 +76,7 @@ now path, so its LAN and `run_safe` guards apply to the agent as they do to the 
 does. `task edit` sends every field given in one write, which the server refuses whole (exit 1) when any field it
 changes is no longer the value the edit was based on: that value is read from the task at the call, or is `--base`, the
 JSON object of values the caller read earlier. A `--label`, `--dependency`, `--reference`, `--documentation` or
-`--modified-file` given at all replaces that whole list, and a blank value clears a field. `task profile` (alias `task assign`) is an edit of
+`--modified-file` given at all replaces that whole list, and a blank value clears a field. `task profile` is an edit of
 the profile alone, reported as the `profile` field. A board that cannot create, read or edit tasks answers exit 3.
 `task verdict` comments the verdict (`pass`, or `miss` with `--fix` naming the task filed for it) of a check the task's
 `## Post-merge Checks` block declares, `--evidence` with it; a verdict is final, so a second, an undeclared check or a
@@ -858,7 +858,6 @@ def _parser() -> argparse.ArgumentParser:
         agent_tasks.task_assign,
         ("task", "profile", "changed"),
         (0, 1, 2, 3, 4),
-        aliases=("assign",),
     )
     agent_tasks.writer_flags(assign)
     assign.add_argument("task", help="the task's key (`PROJ-45`)")

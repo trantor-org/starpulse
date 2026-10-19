@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import threading
 from pathlib import Path
 
@@ -10,7 +9,7 @@ import pytest
 
 from starpulse._internal.runs import run_events
 from starpulse._internal.hub import forward
-from starpulse._internal.hub.forward import OPT_IN_FILE, OptIn, build, project, start
+from starpulse._internal.hub.forward import OptIn, build, project, start
 from starpulse._internal.config.config import Config, Forward
 from starpulse._internal.eventlog import events
 from starpulse._internal.eventlog.event_log import EventLog
@@ -63,7 +62,7 @@ def test_a_run_event_keeps_its_contract_fields_and_leaves_the_local_instance_beh
 
 
 def _opt_in(tmp_path: Path) -> OptIn:
-    return OptIn(EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}"), tmp_path / OPT_IN_FILE)
+    return OptIn(EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}"))
 
 
 def test_a_new_instance_is_opted_out(tmp_path: Path) -> None:
@@ -79,28 +78,10 @@ def test_opting_in_and_out_is_read_at_once_by_every_reader(tmp_path: Path) -> No
     assert reader.get() is False
 
 
-def test_an_opt_in_file_from_before_the_store_is_imported_once(tmp_path: Path) -> None:
-    (tmp_path / OPT_IN_FILE).write_text(json.dumps({"opt_in": True}))
-
-    assert _opt_in(tmp_path).get() is True
-
-    _opt_in(tmp_path).set(False)
-    (tmp_path / OPT_IN_FILE).write_text(json.dumps({"opt_in": True}))
-    assert _opt_in(tmp_path).get() is False  # the row wins; the file is not read again
-
-
-@pytest.mark.parametrize("text", ["", "not json", "[]", '{"opt_in": "yes"}', '{"opt_in": 1}', "{}"])
-def test_a_file_that_does_not_say_true_leaves_the_instance_opted_out(tmp_path: Path, text: str) -> None:
-    (tmp_path / OPT_IN_FILE).write_text(text)
-
-    assert _opt_in(tmp_path).get() is False
-
-
 def test_the_opt_in_is_one_row_in_the_store_not_a_file(tmp_path: Path) -> None:
     _opt_in(tmp_path).set(True)
 
     assert EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}").setting("forward.opt_in") is True
-    assert not (tmp_path / OPT_IN_FILE).exists()
 
 
 def _toml(tmp_path: Path) -> Path:
@@ -133,7 +114,7 @@ def test_the_forward_command_without_a_config_flag_uses_the_working_directory(
 
     assert forward.main(["opt-in"]) == 0
 
-    assert OptIn(open_event_log(), tmp_path / OPT_IN_FILE).get() is True
+    assert OptIn(open_event_log()).get() is True
 
 
 def test_the_forward_command_refuses_an_unknown_action(tmp_path: Path) -> None:
@@ -191,7 +172,7 @@ def _ic(tmp_path: Path) -> tuple[EventLog, HistoryStore]:
 def test_no_forward_block_builds_no_forwarder(tmp_path: Path) -> None:
     log, store = _ic(tmp_path)
 
-    assert build(_config(), tmp_path, log, store, {}) is None
+    assert build(_config(), log, store, {}) is None
 
 
 def test_a_forward_block_starts_a_forwarder_that_stops_with_the_event(tmp_path: Path) -> None:
@@ -199,7 +180,7 @@ def test_a_forward_block_starts_a_forwarder_that_stops_with_the_event(tmp_path: 
     stop = threading.Event()
     config = _config(Forward("http://127.0.0.1:9", "HUB_TOKEN", 50))
 
-    forwarder = build(config, tmp_path, log, store, {"HUB_TOKEN": "secret"})
+    forwarder = build(config, log, store, {"HUB_TOKEN": "secret"})
     assert forwarder is not None
     thread = start(forwarder, stop)
 
@@ -214,7 +195,7 @@ def test_a_forward_block_without_its_token_is_refused_by_name(tmp_path: Path) ->
     config = _config(Forward("http://127.0.0.1:9", "HUB_TOKEN", 50))
 
     with pytest.raises(ValueError, match="HUB_TOKEN is not set"):
-        build(config, tmp_path, log, store, {})
+        build(config, log, store, {})
 
 
 def test_a_hub_does_not_forward(tmp_path: Path) -> None:
@@ -222,4 +203,4 @@ def test_a_hub_does_not_forward(tmp_path: Path) -> None:
     config = _config(Forward("http://127.0.0.1:9", "HUB_TOKEN", 50))
 
     with pytest.raises(ValueError, match="hub"):
-        build(config, tmp_path, log, store, {"HUB_TOKEN": "secret"}, hub=True)
+        build(config, log, store, {"HUB_TOKEN": "secret"}, hub=True)

@@ -39,18 +39,6 @@ def test_a_session_is_sent_its_tasks_then_only_a_change_to_them(tmp_path: Path, 
     assert (second[0], _held(second[1])) == ("held", [("PROJ-1", "in_progress"), ("PROJ-3", "in_progress")])
 
 
-def test_the_legacy_holder_parameter_still_names_the_session(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("starpulse._internal.server.server._HELD_SETTLE_S", 0)
-    feed = BoardFeed(machines=MACHINES)
-    feed.put(task("PROJ-1", "In Progress", assignee="session-1"))
-    feed.put(task("PROJ-2", "In Progress", assignee="session-2"))
-    with _serve(tmp_path, feed) as server:
-        with urllib.request.urlopen(_url(server, "/api/held?holder=session-1"), timeout=5) as resp:
-            _, document = _next_event(resp)
-
-    assert _held(document) == [("PROJ-1", "in_progress")]
-
-
 def test_a_held_task_carries_what_starpulse_board_prints_of_it(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("starpulse._internal.server.server._HELD_SETTLE_S", 0)
     feed = BoardFeed(machines=MACHINES)

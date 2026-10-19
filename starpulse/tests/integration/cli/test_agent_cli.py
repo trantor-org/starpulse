@@ -1012,15 +1012,6 @@ def test_task_profile_sets_the_profile_and_nothing_else(
     assert "title: Draw the board" in written
 
 
-def test_task_assign_is_the_legacy_alias_of_task_profile(
-    tasked: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    code, doc = _run(capsys, ["task", "assign", "task-1", "@agent-fast-low", "--server", tasked])
-
-    assert (code, doc) == (0, {"task": "task-1", "profile": "@agent-fast-low", "changed": ["profile"]})
-    assert "- '@agent-fast-low'" in _task_file(tmp_path).read_text()
-
-
 def test_task_edit_on_a_board_that_cannot_edit_exits_3_and_says_so(
     bare: str, capsys: pytest.CaptureFixture[str]
 ) -> None:

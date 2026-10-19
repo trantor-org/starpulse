@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from starpulse._internal.runs.ingest import ForwardIngest
-from starpulse._internal.hub.forward import OPT_IN_FILE, Forwarder, OptIn
+from starpulse._internal.hub.forward import Forwarder, OptIn
 from starpulse.contracts import BoardTask
 from starpulse._internal.config.level import Level, Orbit, Terminal
 from starpulse._internal.eventlog.level_metrics import level_metrics
@@ -55,7 +55,7 @@ class Site:
         self.feed = BoardFeed(machines=machines, clock=self.clock)
         self.feed.record_lanes(self.ic_store, self.ic_log)
         self.ingest = ForwardIngest({"ana": TOKEN}, self.hub_log)
-        self.opt_in = OptIn(self.ic_log, tmp_path / OPT_IN_FILE)
+        self.opt_in = OptIn(self.ic_log)
         self.bodies: list[dict[str, Any]] = []
 
     def move(self, task: str, lane: str, *, at: float, assignee: str = "") -> None:

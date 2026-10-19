@@ -17,7 +17,7 @@ class Rig:
         self.log = EventLog(url)
         self.store = HistoryStore(url, {})
         self.forwarder = Forwarder(
-            self.log, self.store, Forward("https://hub.example.test", "T"), "tok", OptIn(self.log, tmp_path / "opt")
+            self.log, self.store, Forward("https://hub.example.test", "T"), "tok", OptIn(self.log)
         )
 
     def stream_head(self) -> int:
@@ -53,7 +53,7 @@ def test_serve_adopts_what_the_worker_kept_and_pushes_it(rig: Rig, tmp_path: Pat
     rig.forwarder._refused = True
     forward_report.Publisher(rig.log, rig.forwarder)()
     serving = Forwarder(
-        rig.log, rig.store, Forward("https://hub.example.test", "T"), "tok", OptIn(rig.log, tmp_path / "opt")
+        rig.log, rig.store, Forward("https://hub.example.test", "T"), "tok", OptIn(rig.log)
     )
     pushed: list[int] = []
 
