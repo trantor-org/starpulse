@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 def built_blocks(config: Config) -> tuple:
     """What of `config` the worker's board, history and lane log were built from at start; a change needs a restart."""
-    return (config.database_url, config.board_type, config.board, config.forward, config.triggers)
+    return (config.database_url, config.board_type, config.board, config.forward)
 
 
 def reload(path: Path, config: Config) -> None:
@@ -46,7 +46,7 @@ def reload(path: Path, config: Config) -> None:
         logger.error("reload: %s: %s; keeping the running config", path, exc)
         return
     if built_blocks(new) != built_blocks(config):
-        logger.warning("reload: a database, board, forward or trigger setting changed; restart the worker to apply it")
+        logger.warning("reload: a database, board or forward setting changed; restart the worker to apply it")
     else:
         logger.info("reload: no Board setting changed")
 
@@ -61,7 +61,7 @@ def start_writers(
 ) -> tuple[threading.Thread, threading.Thread]:
     """Start the criteria thread, which runs until `stop` is set, and the lane reconcile, which ends after its one pass.
     Both wait for `feed` to have read the Board. A reconciled lane also reaches `lane_log`, for the hub it is forwarded
-    to and the triggers that start a run on it. A `live` feed also records each lane a task enters as it places it; the
+    to. A `live` feed also records each lane a task enters as it places it; the
     Board child places none live, as `serve` records the ones its replica puts with whoever moved them."""
     feed.date_lanes(store.lane_path)
     feed.record_lanes(store, lane_log, live=live)
@@ -93,7 +93,7 @@ def main(argv: list[str] | None, parser: argparse.ArgumentParser) -> None:
     log = EventLog(database_url(config.database_url, base))
     store = history_store(config, base, feed.machines)
     stop = threading.Event()
-    lane_log = log if config.forward is not None or config.triggers else None
+    lane_log = log if config.forward is not None else None
     start_writers(feed, store, board.evaluate, stop, lane_log, live=False)
     replica.publish(board, feed, "starpulse-board", log, config)
     hold(stop, lambda: reload(path, config))

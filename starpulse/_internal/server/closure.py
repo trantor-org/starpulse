@@ -76,7 +76,6 @@ CONFIG_OWNERS: dict[str, tuple[str, ...]] = {
     "database_url": _CHILDREN,
     "board": _owned_by(*_BOARD_READERS),
     "runs": _owned_by("runs"),
-    "triggers": _owned_by("runs", "board"),
     "forward": _owned_by("forwarding", "board"),
     "search": _owned_by("search"),
     "release": _owned_by("pulls"),

@@ -49,7 +49,6 @@ def repo(tmp_path: Path) -> Path:
         "starpulse/contracts/__main__.py": "",
         "starpulse/contracts/adapters.py": "",
         "starpulse/_internal/machines/machine_definition.py": "",
-        "starpulse/_internal/config/triggers.py": "",
         "starpulse/tests/unit/contracts/test_contracts.py": "from starpulse.contracts import adapters\nfrom starpulse.contracts.api import schema\n",
         "starpulse/tests/unit/contracts/test_finding.py": "from starpulse.contracts import adapters\n",
         "starpulse/tests/unit/machines/test_machine_definition.py": "from starpulse._internal.machines import machine_definition\n",
@@ -357,7 +356,7 @@ def test_a_module_conftest_code_uses_outside_a_fixture_selects_every_test_the_co
         ),
         (
             "starpulse/machine.schema.json",
-            ["starpulse/_internal/machines/machine_definition.py", "starpulse/_internal/config/triggers.py"],
+            ["starpulse/_internal/machines/machine_definition.py"],
         ),
     ],
 )

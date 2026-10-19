@@ -36,7 +36,6 @@ from starpulse._internal.config.level import Level, LevelError, parse_level
 from starpulse._internal.config.harnesses import Harnesses, load_harnesses
 from starpulse._internal.config.analytics import Analytics, AnalyticsError, parse_analytics
 from starpulse._internal.config.search import Search, SearchError, parse_search
-from starpulse._internal.config.triggers import Trigger, TriggerError, parse_triggers
 
 #: The default of `slow_read_seconds`.
 SLOW_READ_S = 1.0
@@ -66,7 +65,6 @@ _KEYS = {
     "aggregates_only",
     "autopilot",
     "release",
-    "triggers",
     "analytics",
     "search",
     "cursor_context",
@@ -606,14 +604,12 @@ class Config:
     """The Board states the shipped `ci` machine is attached to as a sub-flow (`[ci] states`); none: it is not drawn."""
     autopilot: Autopilot = field(default_factory=Autopilot)
     """The policy the autopilot runs under (`[autopilot]`); every key is optional, so no block is the defaults."""
-    triggers: tuple[Trigger, ...] = ()
-    """The runs to start when a board event arrives (`[[triggers]]`); none: no event starts a run."""
     refresh_token_env: str | None = None
     """The environment variable holding the token `POST /api/pulls/refresh` accepts; none: the route answers 404."""
     pull_requests: bool = True
     """`serve` keeps the pull request store, current from the lifecycle events (GitHub is read only for a pull request a refresh asks for); false: no store is kept, so an instance beside another that reads the same repositories keeps no second copy."""
     runs_worker: bool = False
-    """The Runs context (the run adapters, the trigger starts and the pushed-runs follower) runs in `starpulse worker runs`, not in `serve`: `serve` starts none of them and draws the workflows the worker keeps in the event log; false: `serve` supervises that worker as a child."""
+    """The Runs context (the run adapters and the pushed-runs follower) runs in `starpulse worker runs`, not in `serve`: `serve` starts none of them and draws the workflows the worker keeps in the event log; false: `serve` supervises that worker as a child."""
     worker_memory: Mapping[str, MemoryLimit] = field(default_factory=lambda: dict(WORKER_MEMORY))
     """The memory limits `serve` holds each worker child to: past `soft_mb` it replaces the child (starts a new one, then stops the old), past `hard_mb` it kills and restarts it. Keyed by context, `pulls`, `autopilot`, `runs`, `forwarding`, `history` and `search`."""
     slow_read_seconds: float = SLOW_READ_S
@@ -697,19 +693,6 @@ def _cursor_context(raw: object) -> CursorContext:
         return parse_cursor_context(raw)
     except CursorContextError as exc:
         raise ConfigError(str(exc)) from exc
-
-
-def _triggers(raw: object, runs: Sequence[RunsInstance]) -> tuple[Trigger, ...]:
-    """The `[[triggers]]` tables as triggers, each naming a workflow of an instance that can start one."""
-    try:
-        triggers = parse_triggers(raw)
-    except TriggerError as exc:
-        raise ConfigError(str(exc)) from exc
-    startable = {instance.name for instance in runs if instance.type}
-    for at, trigger in enumerate(triggers):
-        if (name := trigger.start.partition("/")[0]) not in startable:
-            raise ConfigError(f"triggers[{at}]: start names {name}, which is no configured runs instance with a type")
-    return triggers
 
 
 def _release(raw: Mapping[str, object], repos: Sequence[Repo]) -> Release | None:
@@ -850,7 +833,6 @@ def load(path: Path | None) -> Config:
         repos=repos,
         ci=_ci(raw),
         autopilot=_autopilot(raw.get("autopilot")),
-        triggers=_triggers(raw.get("triggers"), runs),
         analytics=_analytics(raw.get("analytics")),
         release=_release(raw, repos),
         task_actor=actor is not None,

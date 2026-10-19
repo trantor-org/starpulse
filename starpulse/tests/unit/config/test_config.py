@@ -232,8 +232,14 @@ def test_hub_mode_is_a_serve_flag_not_a_config_setting(tmp_path: Path) -> None:
 def test_unknown_keys_are_refused_by_name_beside_the_known_ones(tmp_path: Path) -> None:
     assert _refusal(tmp_path, 'zeta = 1\ntrakcer_url = "http://x.test"\n') == (
         "unknown config key(s) trakcer_url, zeta; known: aggregates_only, analytics, api_worker, autopilot, board, board_worker, ci, cursor_context, database_url, event_log_archive_dir, event_log_retention_days, "
-        "flow_metrics_worker, forward, forwarding_worker, harnesses_file, hub_retention_days, level, mode, oidc, producers, pull_requests, refresh_token_env, release, repos, runs, runs_worker, search, search_worker, session_start_url, slow_read_seconds, sources, tracker_url, triggers, worker_memory"
+        "flow_metrics_worker, forward, forwarding_worker, harnesses_file, hub_retention_days, level, mode, oidc, producers, pull_requests, refresh_token_env, release, repos, runs, runs_worker, search, search_worker, session_start_url, slow_read_seconds, sources, tracker_url, worker_memory"
     )
+
+
+def test_a_triggers_table_is_refused_by_name_as_an_unknown_key(tmp_path: Path) -> None:
+    refusal = _refusal(tmp_path, '[[triggers]]\non = "lane"\nstart = "dagu/review-run"\n')
+
+    assert refusal.startswith("unknown config key(s) triggers;")
 
 
 @pytest.mark.parametrize("old", ['adapters = ["backlog"]', 'orchestrator_url = "http://x.test"', "run_safe = []"])

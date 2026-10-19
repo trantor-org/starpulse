@@ -328,7 +328,7 @@ def _named[F: Callable[..., Any]](name: str, table: Mapping[str, F], path: Path)
 
 
 def field_matches(when: Mapping[str, Mapping[str, Any]], fields: Mapping[str, Any]) -> bool:
-    """Whether every field `when` lists matches `fields`: the grammar a guard's `when:` and a trigger's `when` share."""
+    """Whether every field `when` lists matches `fields`: the grammar a guard's `when:` uses."""
     return all(_holds(match, name in fields, fields.get(name)) for name, match in when.items())
 
 

@@ -121,7 +121,7 @@ def test_serve_stops_its_children_however_it_ends(
     assert supervisors[0].stopped
 
 
-RUNS = '[[runs]]\nname = "dagu"\ntype = "dagu"\nurl = "http://dagu.invalid"\n[[triggers]]\non = "lane"\nstart = "dagu/reconcile"\n'
+RUNS = '[[runs]]\nname = "dagu"\ntype = "dagu"\nurl = "http://dagu.invalid"\n'
 
 
 class Dagu:
@@ -139,18 +139,15 @@ class Dagu:
 
 
 @pytest.mark.parametrize("settings", ["", "runs_worker = true\n"])
-def test_serve_follows_no_run_adapter_and_starts_no_trigger_or_pushed_run_reader(
+def test_serve_follows_no_run_adapter_and_starts_no_pushed_run_reader(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, supervisors: list[FakeSupervisor], settings: str
 ) -> None:
     monkeypatch.setattr(Dagu, "followed", [])
     monkeypatch.setattr(server, "_adapter", lambda parser, instance: Dagu)
     monkeypatch.setattr(server, "PushRuns", lambda *args: pytest.fail("serve follows pushed runs"), raising=False)
-    before = {t.name for t in threading.enumerate()}
-
     handled, _ = _serve(tmp_path, monkeypatch, settings + RUNS)
 
     assert Dagu.followed == []
-    assert "board-triggers" not in {t.name for t in threading.enumerate()} - before
     assert "dagu" in handled["args"][2]  # the page's Run now still reaches the adapter
 
 

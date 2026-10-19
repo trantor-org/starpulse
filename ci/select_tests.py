@@ -67,7 +67,6 @@ READERS = {
     ),
     "starpulse/machine.schema.json": (
         "starpulse/_internal/machines/machine_definition.py",
-        "starpulse/_internal/config/triggers.py",
     ),
     "starpulse/_internal/eventlog/migrations/*": ("starpulse/_internal/hub/hub.py",),
     "pyproject.toml": ("ci/avoid_list.py",),

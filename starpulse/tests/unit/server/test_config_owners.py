@@ -30,7 +30,6 @@ ATTRIBUTE = {
     "forward": "forward",
     "autopilot": "autopilot",
     "release": "release",
-    "triggers": "triggers",
     "analytics": "analytics",
     "search": "search",
     "cursor_context": "cursor_context",

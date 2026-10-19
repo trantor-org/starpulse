@@ -112,7 +112,7 @@ def starter(transport: Transport) -> Callable[[str], str]:
     Dagu's `/start` hands a run to a worker without consulting `maxActiveRuns` (only its queue enforces it) or the
     body's `singleton`, so a burst of starts runs them all at once. The start is refused with `StartFailedError`
     while the DAG's running and queued runs have reached that limit; the caller drops it, as it does any refusal.
-    The check and the start run under one lock, so starts racing in this process (the trigger reader and a Run now)
+    The check and the start run under one lock, so starts racing in this process (two Run nows)
     cannot both find room.
     """
     lock = threading.Lock()
@@ -185,7 +185,7 @@ def _kind(step: dict) -> str | None:
 _RUNNING, _QUEUED = 1, 5
 #: How far back `/dag-runs` looks for runs still in flight; without a `fromDate` it starts at UTC midnight.
 _IN_FLIGHT_LOOKBACK = 7 * 86400
-#: How far back a start looks for the DAG's active runs. It reads on every trigger entry, and Dagu answers a week's
+#: How far back a start looks for the DAG's active runs. It reads on every start, and Dagu answers a week's
 #: window about four times slower than a day's; a run older than this is not seen, so its DAG starts again.
 _START_LOOKBACK = 86400
 
