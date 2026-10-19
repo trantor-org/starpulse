@@ -614,7 +614,7 @@ class Config:
     api_worker: bool = False
     """The Page API (the HTTP server for the page, its JSON and its event stream) runs in `starpulse worker api`, not in a child of `serve`: `serve` binds no socket and starts no API child; false: `serve` binds the listening socket, hands it to a `starpulse worker api` child it supervises and replaces that child behind the socket on a reload. A hub serves its page in-process whatever this says."""
     analytics: Analytics = field(default_factory=Analytics)
-    """What the instance's agents' telemetry is read against (`[analytics]`); no table: no roots, stops or triggers."""
+    """What the instance's agents' telemetry is read against (`[analytics]`); no table: no roots or stops."""
     release: Release | None = None
     """The `[release]` table: None releases no task, so a config without it leaves release to whoever does it today."""
     task_actor: bool = False
@@ -755,6 +755,8 @@ def _archive_dir(value: object) -> str:
 def load(path: Path | None) -> Config:
     """The config in `path`, or the defaults when there is none."""
     raw = tomllib.loads(path.read_text()) if path else {}
+    if "triggers" in raw:
+        raise ConfigError("[[triggers]] removed in 0.4: start runs from your orchestrator", ["triggers"])
     if unknown := sorted(raw.keys() - _KEYS):
         raise ConfigError(f"unknown config key(s) {', '.join(unknown)}; known: {', '.join(sorted(_KEYS))}", unknown)
     if (mode := raw.get("mode", "ic")) != "ic":

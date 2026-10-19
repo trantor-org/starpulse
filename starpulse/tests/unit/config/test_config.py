@@ -221,10 +221,10 @@ def test_unknown_keys_are_refused_by_name_beside_the_known_ones(tmp_path: Path) 
     )
 
 
-def test_a_triggers_table_is_refused_by_name_as_an_unknown_key(tmp_path: Path) -> None:
+def test_a_triggers_table_is_refused_by_name_as_a_removed_table(tmp_path: Path) -> None:
     refusal = _refusal(tmp_path, '[[triggers]]\non = "lane"\nstart = "dagu/review-run"\n')
 
-    assert refusal.startswith("unknown config key(s) triggers;")
+    assert refusal == "[[triggers]] removed in 0.4: start runs from your orchestrator"
 
 
 @pytest.mark.parametrize("old", ['adapters = ["backlog"]', 'orchestrator_url = "http://x.test"', "run_safe = []"])
