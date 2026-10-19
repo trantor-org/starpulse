@@ -62,7 +62,10 @@ class DirWatch:
         None means "rescan everything": a missed event leaves no trace, so only the caller's full scan covers it, and so
         does a new folder, whose files may have landed before it was watched.
         """
-        ready = select.select([self._fd, self._wake_read], [], [], timeout)[0]
+        poller = select.poll()
+        poller.register(self._fd, select.POLLIN)
+        poller.register(self._wake_read, select.POLLIN)
+        ready = {fd for fd, _ in poller.poll(timeout * 1000)}
         if not ready:
             return None
         if self._wake_read in ready:

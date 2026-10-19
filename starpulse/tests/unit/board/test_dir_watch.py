@@ -1,5 +1,8 @@
 """The inotify watch on a board's task folders: the files that changed, read as they land."""
 
+import contextlib
+import os
+import resource
 import threading
 import time
 from pathlib import Path
@@ -63,3 +66,19 @@ def test_wait_wakes_for_a_write_from_another_thread(tmp_path: Path) -> None:
     assert watch.wait(30) == {tmp_path / "task-2.md"}
     assert time.monotonic() - started < 5
     watch.close()
+
+
+def test_wait_works_when_its_fds_are_past_the_select_limit(tmp_path: Path) -> None:
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    resource.setrlimit(resource.RLIMIT_NOFILE, (min(max(soft, 2048), hard), hard))
+    with contextlib.ExitStack() as held:
+        for _ in range(1100):
+            held.callback(os.close, os.open(os.devnull, os.O_RDONLY))
+        watch = DirWatch([tmp_path])
+        (tmp_path / "task-3.md").write_text("x")
+
+        assert watch.wait(5) == {tmp_path / "task-3.md"}
+        watch.wake()
+        assert watch.wait(5) == set()
+        watch.close()
+    resource.setrlimit(resource.RLIMIT_NOFILE, (soft, hard))
