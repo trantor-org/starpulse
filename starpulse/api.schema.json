@@ -5588,8 +5588,41 @@
     },
     "RestoreRequest": {
       "additionalProperties": false,
-      "description": "`POST /api/restore`: return the archived task `task` to the board's tasks, unchanged.",
+      "description": "`POST /api/restore`: return the archived task `task` to the board's tasks, unchanged; the writer names who did.",
       "properties": {
+        "actor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "harness": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "session": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "task": {
           "type": "string"
         }

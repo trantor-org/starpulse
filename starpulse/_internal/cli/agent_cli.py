@@ -909,6 +909,7 @@ def _parser() -> argparse.ArgumentParser:
         ("task",),
         (0, 1, 2, 3),
     )
+    agent_tasks.writer_flags(restore)
     restore.add_argument("task", help="the archived or retired task's key (`PROJ-45`)")
     retire = leaf(
         task_verbs,
