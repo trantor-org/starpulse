@@ -59,7 +59,7 @@ def main(argv: list[str] | None, parser: argparse.ArgumentParser) -> None:
     log = EventLog(database_url(config.database_url, base))
     try:
         _, feed = assemble(config, base, None, [])
-        forwarder = forward.build(config, base, log, history_store(config, base, feed.machines), os.environ)
+        forwarder = forward.build(config, log, history_store(config, base, feed.machines), os.environ)
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")
     stop = threading.Event()

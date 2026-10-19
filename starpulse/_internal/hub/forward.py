@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from starpulse._internal.config.config import discover
-from starpulse._internal.eventlog import lane_events, operator_settings
+from starpulse._internal.eventlog import lane_events
 from starpulse._internal.runs.forwarded import FIELDS, PERSON, project
 
 if TYPE_CHECKING:
@@ -32,11 +32,9 @@ logger = logging.getLogger(__name__)
 #: How many of the next entries the status lists; the rest are only counted as "more".
 PREVIEW = 10
 
-__all__ = ["FIELDS", "OPT_IN_FILE", "PERSON", "PREVIEW", "Forwarder", "OptIn", "build", "main", "post", "project", "start"]
+__all__ = ["FIELDS", "PERSON", "PREVIEW", "Forwarder", "OptIn", "build", "main", "post", "project", "start"]
 
 
-#: The opt-in's file before it moved into the store; a file by this name beside the config is imported once.
-OPT_IN_FILE = "starpulse-forward.json"
 KEY = "forward.opt_in"
 
 
@@ -44,19 +42,21 @@ class OptIn:
     """Whether this instance lets a person's name leave: the flag in the history store, off unless it says `true`.
 
     It is a setting, not config, so flipping it needs no restart and no hub: the forwarder reads it before every batch,
-    and one that is missing or unreadable leaves the instance opted out. `legacy` is the flag's old file, imported
-    when the store holds no row.
+    and one that is missing or unreadable leaves the instance opted out.
     """
 
-    def __init__(self, log: EventLog, legacy: Path) -> None:
+    def __init__(self, log: EventLog) -> None:
         self.log = log
-        self.legacy = legacy
 
     def get(self) -> bool:
-        return operator_settings.read(self.log, KEY, self.legacy, "opt_in") is True
+        try:
+            return self.log.setting(KEY) is True
+        except Exception as exc:  # fail closed: an unreadable setting is an unset one
+            logger.warning("settings: reading %s failed: %s", KEY, exc)
+            return False
 
     def set(self, value: bool) -> None:
-        operator_settings.write(self.log, KEY, value, self.legacy)
+        self.log.set_setting(KEY, value)
 
 
 #: How long one POST to the hub may take, and how long the forwarder rests when it has caught up.
@@ -328,7 +328,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     config = discover(args.config)
     from starpulse._internal.eventlog.history import open_event_log  # noqa: PLC0415 - the database stack loads when a log opens
 
-    flag = OptIn(open_event_log(config), (config.parent if config else Path.cwd()) / OPT_IN_FILE)
+    flag = OptIn(open_event_log(config))
     if args.action != "status":
         flag.set(args.action == "opt-in")
     print(f"forward: {'opted in' if flag.get() else 'opted out'}")
@@ -336,11 +336,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def build(
-    config: Config, base: Path, log: EventLog, store: HistoryStore, environ: Mapping[str, str], *, hub: bool = False
+    config: Config, log: EventLog, store: HistoryStore, environ: Mapping[str, str], *, hub: bool = False
 ) -> Forwarder | None:
     """The forwarder `[forward]` configures; None without one.
 
-    `base` is the config's directory, where an opt-in file from before the store is imported from. Raises `ValueError` for `[forward]` on a hub, which
+    Raises `ValueError` for `[forward]` on a hub, which
     is an IC's setting, and for a `token_env` that names an unset variable.
     """
     if config.forward is None:
@@ -349,7 +349,7 @@ def build(
         raise ValueError("[forward] sends an IC's events to a hub; a hub does not forward")
     if not (token := environ.get(config.forward.token_env)):
         raise ValueError(f"[forward]: {config.forward.token_env} is not set")
-    return Forwarder(log, store, config.forward, token, OptIn(log, base / OPT_IN_FILE), status_ttl=STATUS_TTL)
+    return Forwarder(log, store, config.forward, token, OptIn(log), status_ttl=STATUS_TTL)
 
 
 def start(forwarder: Forwarder, stop: threading.Event, after_step: Callable[[], None] | None = None) -> threading.Thread:

@@ -13,7 +13,7 @@ internal and can change in any release.
   --remove-ac --check-ac --uncheck-ac --dod --reword-dod --remove-dod --check-dod --uncheck-dod --comment --base]`,
   which returns
   `{task, changed}` and is refused whole (exit 1) when a field it changes is stale against its base;
-  `task profile TASK PROFILE` (alias `task assign`), which returns `{task, profile, changed}`; `task archive TASK [--reason]`, which returns
+  `task profile TASK PROFILE`, which returns `{task, profile, changed}`; `task archive TASK [--reason]`, which returns
   `{task}`; `task verdict TASK CHECK pass|miss`, which returns `{task, check, verdict}`, and `task miss TASK CHECK --title`,
   which returns `{task, check, verdict, fix}`, each refused (exit 1) for a check that is undeclared or already judged; `task restore TASK`, which returns `{task}` and is refused (exit 1) for a task that is open, not archived or
   whose file name is taken; `task retire TASK`, which returns `{task}` and is refused (exit 1) for a task that is open;

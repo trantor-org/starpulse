@@ -18,7 +18,7 @@ import pytest
 from starpulse._internal.runs.ingest import ForwardIngest
 from starpulse._internal.hub import forward
 from starpulse._internal.kit.adapter_kit import serve, url
-from starpulse._internal.hub.forward import OPT_IN_FILE, Forwarder, OptIn, post
+from starpulse._internal.hub.forward import Forwarder, OptIn, post
 from starpulse.contracts import BoardTask
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.config.config import Forward
@@ -70,7 +70,7 @@ class Kit:
         self.feed.record_lanes(HistoryStore(self.ic_url, {}), self.ic_log)
         self.forward = Forward(hub_url, "HUB_TOKEN", 3)
         self.wire = Wire()
-        self.opt_in = OptIn(self.ic_log, tmp_path / OPT_IN_FILE)
+        self.opt_in = OptIn(self.ic_log)
 
     def move(self, task: str) -> None:
         """A real lane change: the Board feed places the task and appends the entry beside the history's row."""

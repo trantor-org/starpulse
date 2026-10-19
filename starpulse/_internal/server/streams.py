@@ -73,7 +73,7 @@ class Streams:
         if path == "/api/events":
             return self._admitted(admit, lambda: self._events(query.get("snapshot") == ["ref"]))
         if path == _HELD:
-            assignee = (query.get("assignee") or query.get("holder") or [""])[0]  # legacy `holder`
+            assignee = (query.get("assignee") or [""])[0]
             if not assignee:
                 return Response(_error(f"name the session: {_HELD}?assignee=<session>"), 400)
             return self._admitted(admit, lambda: self._columns("held", assignee))

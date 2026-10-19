@@ -977,7 +977,6 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     try:
         forwarder = forward.build(
             config,
-            base,
             log,
             store,
             os.environ,
