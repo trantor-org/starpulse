@@ -122,13 +122,15 @@ else:
 
         wait_time = between(0.5, 2)
         paths: Once[dict[str, str]] = Once(gevent.lock.BoundedSemaphore())
+        stream: gevent.Greenlet | None = None
 
         def on_start(self) -> None:
             self.routes = Viewer.paths.get(self._paths)
             self.stream = gevent.spawn(self._watch)
 
         def on_stop(self) -> None:
-            self.stream.kill(block=False)
+            if self.stream:
+                self.stream.kill(block=False)
 
         def _paths(self) -> dict[str, str]:
             """Each read route's path, filled from this server's own records; a route with none to read, or that does not
