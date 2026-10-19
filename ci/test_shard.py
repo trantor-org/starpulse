@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -51,7 +52,15 @@ def collected(tree: Path, **env: str) -> int:
     run = subprocess.run(
         [sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "shard", "-p", "no:cacheprovider"],
         cwd=tree,
-        env={**os.environ, "PYTHONPATH": str(CI), "SHARD_INDEX": "", "SHARD_COUNT": "", **env},
+        env={
+            **os.environ,
+            "PYTHONPATH": str(CI),
+            "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",  # xdist, cov, memray and timeout shard no test; a quarter of each launch
+            "PYTEST_ADDOPTS": "",  # CI's `-n`/`--dist` need the xdist this child does not load
+            "SHARD_INDEX": "",
+            "SHARD_COUNT": "",
+            **env,
+        },
         capture_output=True,
         text=True,
         check=False,
@@ -65,6 +74,8 @@ def test_the_shards_of_a_tree_collect_exactly_the_tests_of_the_whole_tree(tmp_pa
     for i, tests in enumerate([5, 3, 3, 2, 1, 1]):
         body = "\n".join(f"def test_{j}():\n    pass\n" for j in range(tests))
         (tmp_path / f"test_file_{i}.py").write_text(body)
-    whole = collected(tmp_path)
+    shard_envs = [{"SHARD_INDEX": str(i), "SHARD_COUNT": "3"} for i in (1, 2, 3)]
+    with ThreadPoolExecutor() as pool:  # the four launches overlap: each is a subprocess, so the wall is one launch
+        whole, *shards = pool.map(lambda env: collected(tmp_path, **env), [{}, *shard_envs])
     assert whole == 15
-    assert sum(collected(tmp_path, SHARD_INDEX=str(i), SHARD_COUNT="3") for i in (1, 2, 3)) == whole
+    assert sum(shards) == whole
