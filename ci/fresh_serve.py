@@ -26,7 +26,7 @@ from pathlib import Path
 
 DEADLINE = 60.0
 SETTLE = 5.0
-LOG_TAIL = 6000
+LOG_TAIL = 20000
 STARTED = re.compile(r"worker ([\w-]+) started as pid (\d+)")
 
 
