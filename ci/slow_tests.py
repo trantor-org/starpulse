@@ -37,10 +37,7 @@ GAP = "CPU counts this process and the children it waited for; containers a test
 
 # Tests at or over 4 s, a 1 s margin under the ceiling, when the gate's bound landed, each the slice that brings it under: the ceiling's grace, removed by that slice.
 # Keyed `path::name`, without parameters or xdist group, so every case of a parametrized test shares its entry.
-OVER_CEILING = {
-    "ci/test_demo_workspace.py::test_in_progress_opens_the_delivery_machine_and_at_least_three_more_lifecycle_machines": "TASK-6321",
-    "ci/test_demo_workspace.py::test_the_demo_places_sessions_on_the_delivery_machine_and_on_at_least_three_lifecycle_machines": "TASK-6321",
-}
+OVER_CEILING = {}
 
 _cost: defaultdict[str, list[float]] = defaultdict(lambda: [0.0, 0.0, 0.0])
 _line: dict[str, tuple[str, int]] = {}
