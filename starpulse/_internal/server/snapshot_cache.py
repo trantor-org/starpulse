@@ -143,7 +143,8 @@ class SnapshotCache:
                     self._thread.start()
 
     def _refresh(self) -> None:
-        """Rebuild after each change, and halfway through the TTL with none, so a request never finds it expired."""
+        """Rebuild after each change, and halfway through the TTL with none, so a request never finds it expired. A
+        snapshot a request built while this waited out the settle or a build is held, not built again."""
         while True:
             changed = self._feed.revised.wait(self._ttl_s / 2)
             self._feed.revised.clear()
