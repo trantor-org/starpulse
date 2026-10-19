@@ -8,6 +8,8 @@ closed, unmerged one never reaches the pin and is ignored. A task that Start Cri
 The bump is looked for among the merged pull requests of the child's owner in repositories that are not pinned, so
 one a task never cited still counts as merged; one older than the store's records is not found and holds it.
 A pin pushed to the parent's default branch with no pull request counts too: the branch head's pointer is read.
+With the `[release]` release rule a dependency that cites a merged pull request in the `repo` it names is merged only
+once the running build's commit contains the merge commit (`PinGate._built`); a build with no commit holds it.
 """
 
 from __future__ import annotations
