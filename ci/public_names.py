@@ -18,7 +18,8 @@ from pathlib import Path
 
 # Each name has one character in a class so this line does not match its own patterns.
 DENIED = re.compile(r"ai-v[m](-\d+)?|unrai[d]|proxmo[x]|\bTowe[r]\b", re.IGNORECASE)
-EXEMPT = re.compile(r"^\.github/(workflows/|actionlint\.yaml$)|(^|/)(tests/|test_[^/]*$)")
+CANDIDATE = re.compile(r"ai-v[m]|unrai[d]|proxmo[x]|towe[r]")  # DENIED's names, lowercased and loosened, to skip files that cannot match
+EXEMPT =re.compile(r"^\.github/(workflows/|actionlint\.yaml$)|(^|/)(tests/|test_[^/]*$)")
 
 
 def violations(files: Iterable[Path], root: Path) -> list[str]:
@@ -28,9 +29,12 @@ def violations(files: Iterable[Path], root: Path) -> list[str]:
         if EXEMPT.search(rel):
             continue
         try:
-            lines = path.read_text().splitlines()
+            text = path.read_text()
         except UnicodeDecodeError, OSError:  # a binary file, or a tracked symlink to nothing
             continue
+        if not CANDIDATE.search(text.lower()):  # one scan skips the per-line IGNORECASE alternation on the ~98% of files that hold no name
+            continue
+        lines = text.splitlines()
         rows += [f"{rel}:{n}: {m.group()}" for n, line in enumerate(lines, 1) for m in DENIED.finditer(line)]
     return rows
 
