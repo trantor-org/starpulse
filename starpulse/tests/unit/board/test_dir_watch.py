@@ -1,11 +1,14 @@
 """The inotify watch on a board's task folders: the files that changed, read as they land."""
 
 import contextlib
+import ctypes
 import os
 import resource
 import threading
 import time
 from pathlib import Path
+
+import pytest
 
 from starpulse._internal.board.dir_watch import DirWatch
 
@@ -82,3 +85,16 @@ def test_wait_works_when_its_fds_are_past_the_select_limit(tmp_path: Path) -> No
         assert watch.wait(5) == set()
         watch.close()
     resource.setrlimit(resource.RLIMIT_NOFILE, (soft, hard))
+
+
+def test_a_libc_without_inotify_raises_oserror_so_the_caller_polls(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class _Libc:
+        def __getattr__(self, name: str) -> object:
+            raise AttributeError(f"dlsym(RTLD_DEFAULT, {name}): symbol not found")
+
+    monkeypatch.setattr(ctypes, "CDLL", lambda *args, **kwargs: _Libc())
+
+    with pytest.raises(OSError, match="inotify"):
+        DirWatch([tmp_path])
