@@ -172,7 +172,7 @@ class WriteRoutes:
             _ARCHIVE: lambda client, raw: archive_task(client, raw, feed, archive),
             _VERDICT: lambda client, raw: record_verdict(client, raw, feed, read, edit),
             _MISS: lambda client, raw: record_miss(client, raw, feed, read, edit, archive, create),
-            _RESTORE: lambda client, raw: restore_task(client, raw, restore),
+            _RESTORE: lambda client, raw: restore_task(client, raw, feed, restore),
             _RETIRE: lambda client, raw: retire_task(client, raw, milestones),
             _RETIRED_IMPORT: lambda client, raw: import_retired(client, raw, milestones),
             _CLAIM: lambda client, raw: claim_task(client, raw, feed, writer),

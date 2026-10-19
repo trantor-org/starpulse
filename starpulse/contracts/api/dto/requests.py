@@ -53,8 +53,8 @@ class ArchiveRequest(_Writer):
     reason: str | None = None
 
 
-class RestoreRequest(_Api):
-    """`POST /api/restore`: return the archived task `task` to the board's tasks, unchanged."""
+class RestoreRequest(_Writer):
+    """`POST /api/restore`: return the archived task `task` to the board's tasks, unchanged; the writer names who did."""
 
     task: str
 

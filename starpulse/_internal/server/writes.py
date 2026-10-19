@@ -52,7 +52,7 @@ POST /api/archive  {task, reason[, actor, session, harness]}: archive a task fro
 POST /api/complete {task}: move a Done task into the board's completed tasks through its `complete`; refusals
                    as for an edit (409 for a task that is not Done), 404 when the board does not complete or the task is
                    not on it
-POST /api/restore  {task}: return an archived task to the board's tasks, unchanged, through its `restore`; 409 with the
+POST /api/restore  {task[, actor, session, harness]}: return an archived task to the board's tasks, unchanged, through its `restore`; 409 with the
                    writer's refusal for a task that is not archived, is already open or completed, or whose file name is
                    taken, 404 when the board does not restore
 POST /api/retire   {task}: take a finished task (Done, completed or archived) off the board into the history store's
@@ -896,24 +896,28 @@ def complete_task(
     return 200, {"task": task}
 
 
-def restore_task(source: str, raw: bytes, restore: TaskRestorer | None) -> tuple[int, dict[str, Any]]:
+def restore_task(source: str, raw: bytes, feed: BoardFeed, restore: TaskRestorer | None) -> tuple[int, dict[str, Any]]:
     """Return the archived task `raw` names to the board's tasks through `restore`, for a browser at `source`: the HTTP
     status and JSON body.
 
-    The writer owns every other refusal (no archived file, the number already open, the name taken), which answers 409 with
-    its reason.
+    The restore places the task in a lane, so its writer is noted on the feed as any other move's is. The writer owns
+    every other refusal (no archived file, the number already open, the name taken), which answers 409 with its reason.
     """
     if not _on_lan(source):
         return 403, {"error": "Restoring a task answers only loopback and private network (RFC 1918) browsers"}
     try:
-        task = json.loads(raw)["task"]
+        request = json.loads(raw)
+        task = request["task"]
+        who = _named_who(request)
     except ValueError, TypeError, KeyError:
-        task = None
+        task = who = None
     if not isinstance(task, str):
         return 400, {"error": 'a restore needs {"task": "TASK-N"}'}
+    if who is None:
+        return 400, _BAD_WHO
     if restore is None:
         return 404, {"error": "this board does not restore tasks"}
-    written = restore(task)
+    written = _written_by(feed, task, who, lambda: restore(task))
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
     return 200, {"task": task}

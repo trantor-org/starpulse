@@ -1653,9 +1653,12 @@ export interface CreateRequest {
   title: string;
 }
 /**
- * `POST /api/restore`: return the archived task `task` to the board's tasks, unchanged.
+ * `POST /api/restore`: return the archived task `task` to the board's tasks, unchanged; the writer names who did.
  */
 export interface RestoreRequest {
+  actor?: string | null;
+  harness?: string | null;
+  session?: string | null;
   task: string;
 }
 /**

@@ -293,8 +293,8 @@ def test_the_restore_route_answers_the_task_and_the_writers_refusal(served: tupl
     built, feed, base = served
     assert archive_task(LAN, _raw(task="task-5"), feed, built.archive)[0] == 200
 
-    restored = writes.restore_task(LAN, _raw(task="task-5"), built.restore)
-    again = writes.restore_task(LAN, _raw(task="task-5"), built.restore)
+    restored = writes.restore_task(LAN, _raw(task="task-5"), feed, built.restore)
+    again = writes.restore_task(LAN, _raw(task="task-5"), feed, built.restore)
 
     assert restored == (200, {"task": "task-5"})
     assert again[0] == 409
@@ -313,13 +313,13 @@ def test_the_restore_route_refuses_a_non_lan_caller_and_a_malformed_body(
     built, feed, base = served
     assert archive_task(LAN, _raw(task="task-5"), feed, built.archive)[0] == 200
 
-    assert writes.restore_task(source, raw, built.restore)[0] == status
+    assert writes.restore_task(source, raw, feed, built.restore)[0] == status
 
     assert _archived(base).read_text() == FILE
 
 
 def test_the_restore_route_on_a_board_that_does_not_restore_is_404() -> None:
-    assert writes.restore_task(LAN, _raw(task="task-5"), None)[0] == 404
+    assert writes.restore_task(LAN, _raw(task="task-5"), BoardFeed(), None)[0] == 404
 
 
 def _edit_verb(
@@ -439,3 +439,20 @@ def test_doc_create_task_files_the_doc_and_links_it_on_the_task_in_its_documenta
     assert json.loads(out.out) == {"doc": "doc-1", "task": "task-5", "changed": ["documentation"]}
     frontmatter, _ = _split(_file(base).read_text())
     assert frontmatter["documentation"] == [".starpulse/board/docs/doc-1 - TASK-5-working-notes.md"]
+
+
+def test_a_restore_notes_its_writer_on_the_feed_so_the_lane_entry_it_places_names_one(
+    served: tuple[Board, BoardFeed, Path],
+) -> None:
+    built, feed, _ = served
+    assert archive_task(LAN, _raw(task="task-5"), feed, built.archive)[0] == 200
+    feed._mover("task-5")  # the archive's note is spent by its own placement
+
+    assert (
+        writes.restore_task(
+            LAN, _raw(task="task-5", actor="agent", session="s1", harness="claude"), feed, built.restore
+        )[0]
+        == 200
+    )
+
+    assert feed._mover("task-5") == ("agent", "s1", "claude")
