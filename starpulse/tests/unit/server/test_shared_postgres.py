@@ -41,3 +41,18 @@ def test_each_worker_database_is_its_own_and_is_dropped_afterwards(pg_engine):
         name = first.url.database
     with pg_engine.connect() as db:
         assert db.execute(text("SELECT 1 FROM pg_database WHERE datname = :name"), {"name": name}).first() is None
+
+
+def test_each_service_a_controller_shares_has_its_own_address(tmp_path):
+    publish_url(tmp_path, "postgresql://db")
+    publish_url(tmp_path, "http://127.0.0.1:1/default", service="issuer")
+    assert wait_for_url(tmp_path, timeout=5, service="issuer") == "http://127.0.0.1:1/default"
+    assert wait_for_url(tmp_path, timeout=5) == "postgresql://db"
+
+
+def test_one_service_failing_to_start_leaves_another_usable(tmp_path):
+    publish_error(tmp_path, "no image", service="issuer")
+    publish_url(tmp_path, "postgresql://db")
+    assert wait_for_url(tmp_path, timeout=5) == "postgresql://db"
+    with pytest.raises(RuntimeError, match="no image"):
+        wait_for_url(tmp_path, timeout=5, service="issuer")
