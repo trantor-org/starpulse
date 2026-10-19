@@ -156,6 +156,6 @@ def _splice(body: bytes, marker: bytes, drawn: bytes, after: bytes = b"") -> byt
 def event(name: str, data: Any) -> str:
     """The JSON text of the `data` of `/api/events`' event `name`, raising `ValidationError` for one its model refuses."""
     model = EVENTS[name]
-    if name == "pulls":
+    if name in ("pulls", "snapshot") and data.get("pulls"):
         data = {**data, "pulls": _drawn_pulls(data["pulls"])}
     return model.model_validate(data).model_dump_json(by_alias=True, exclude_unset=True)
