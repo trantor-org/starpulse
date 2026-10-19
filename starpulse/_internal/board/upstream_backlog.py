@@ -254,12 +254,14 @@ class UpstreamBacklog:
         files: Mapping[str, list] | None = None,
         kept: Callable[[dict[str, list]], None] = lambda _files: None,
         retired: Callable[[bool], Iterable[str] | None] = lambda _force=False: None,
+        refusal: Callable[[Mapping[str, Any], str, str], tuple[str, str] | None] = lambda *_: None,
     ) -> None:
         """`files` are the fingerprints a saved Board was placed from (`files`), so the first scan reads only the files
         changed since; `kept` is handed them after each scan that placed or retracted a task. `retired` streams the
         text of every retired task, or answers None while that is unchanged since it last answered (a `True` argument
         streams it regardless); a scan settles the ones in the done lane as completed, so a task depending on one is
-        not left waiting on a file that is gone. Only their ids are kept, never their text."""
+        not left waiting on a file that is gone. Only their ids are kept, never their text. `refusal` answers, from a task's front matter and body and a lane,
+        the reason and skill of a rule that refuses the move there, which the task's move to that lane then carries."""
         self.root = root
         self.config = read_config(root)
         self._team = require_project(root, self.config)
@@ -268,6 +270,7 @@ class UpstreamBacklog:
         self._retired = retired
         self._settled_retired: set[str] = set()
         self._retired_done: set[str] = set()
+        self._refusal = refusal
         self._moves = moves if moves is not None else board_moves(board_machine(self.config.statuses))
         self._lanes = {lane_id(status) for status in self.config.statuses}
         self._seen: dict[Path, tuple[int, int]] = {}
@@ -421,8 +424,16 @@ class UpstreamBacklog:
             acceptance_checked=tuple(checked for checked, _ in criteria),
             pause_reason=_pause_reason(body, lane),
             notes=_notes(body),
-            moves={} if settled else dict(self._moves.get(lane, {})),
+            moves={} if settled else self._offered(lane, frontmatter, body),
         )
+
+    def _offered(self, lane: str, frontmatter: dict, body: str) -> dict[str, Move]:
+        """The moves out of `lane`, each refused when a board rule refuses it for this task."""
+        moves = dict(self._moves.get(lane, {}))
+        for target, move in moves.items():
+            if refused := self._refusal(frontmatter, body, target):
+                moves[target] = move.model_copy(update={"allowed": False, "reason": refused[0], "skill": refused[1]})
+        return moves
 
     def start(
         self, interval: float = 2.0, scanned: Callable[[], None] = lambda: None
@@ -527,11 +538,13 @@ def project_board(
     base: Path,
     writers: Callable[[BacklogConfig], Mapping[str, Any]],
     retired: Callable[[bool], Iterable[str] | None] = lambda _force=False: None,
+    refusal: Callable[[Mapping[str, Any], str, str], tuple[str, str] | None] = lambda *_: None,
 ) -> Board:
     """The Board of the Markdown project in `root`, polled every `settings["interval"]` seconds, with the writers `writers` builds.
 
     Any lane reaches any other unless `settings["machine"]` names a machine file (relative to `base`), whose transitions
-    and `writers` then decide which moves are offered and to whom. `retired` is the scan's reader of retired task text.
+    and `writers` then decide which moves are offered and to whom. `retired` is the scan's reader of retired task text;
+    `refusal` is the reason and skill of a board rule that refuses a task's move to a lane.
     """
     interval = float(settings.get("interval", BACKSTOP))
     config = read_config(root)
@@ -569,6 +582,7 @@ def project_board(
             files=files,
             kept=lambda scanned: feed.keep_source({"files": scanned}),
             retired=retired,
+            refusal=refusal,
         ).start(interval, scanned=lambda: feed.expect("0-0"))
         threading.Thread(target=feed.keep_saved, args=(threading.Event(),), name="board-state", daemon=True).start()
 

@@ -21,7 +21,7 @@ from starpulse._internal.board import post_merge_checks
 from starpulse._internal.board.sections import fenced_list, under
 from starpulse._internal.machines.transitions import lane_id
 
-__all__ = ["Record", "Rule", "load", "refusal"]
+__all__ = ["Record", "Rule", "load", "refusal", "standing_refusal"]
 
 
 @dataclass(frozen=True)
@@ -359,3 +359,22 @@ def load(declared: object) -> tuple[Rule, ...]:
 def refusal(rules: tuple[Rule, ...], before: Record | None, after: Record, actor: str) -> Rule | None:
     """The first rule the write by `actor` from `before` (None for a create) to `after` breaks, or None for none."""
     return next((rule for rule in rules if rule.judges(before, after, actor) and not rule.require(after)), None)
+
+
+def standing_refusal(rules: tuple[Rule, ...], front: Mapping[str, Any], body: str, lane: str) -> Rule | None:
+    """The first rule that refuses moving the task to `lane` whoever moves it and whatever other tasks hold, or None.
+
+    A rule that exempts an actor, or reads another task's state, can change its verdict without the task's file
+    changing; the write still enforces it, but a standing verdict recorded with the task leaves it out."""
+    read: list[str] = []
+
+    def unread(task: str) -> None:
+        read.append(task)
+
+    before = Record(front, body, unread)
+    after = Record({**front, "status": lane}, body, unread)
+    for rule in rules:
+        read.clear()
+        if not rule.exempt and rule.judges(before, after, "") and not rule.require(after) and not read:
+            return rule
+    return None

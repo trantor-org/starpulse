@@ -119,17 +119,22 @@ cues:
 
 
 def served_with_machine(
-    base: Path, machine: str, tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+    base: Path,
+    machine: str,
+    tmp_path_factory: pytest.TempPathFactory,
+    monkeypatch: pytest.MonkeyPatch,
+    rules: str = "",
+    **fields: object,
 ) -> BoardFeed:
-    """A native board holding `task-1` in To Do whose `board.yaml` is `machine`, served from `starpulse.toml`."""
+    """A native board holding `task-1` in To Do (with `fields`) whose `board.yaml` is `machine`, served from a `starpulse.toml` that appends `rules`."""
     monkeypatch.setattr(UpstreamBacklog, "start", lambda self, interval, scanned: (self.scan(), scanned()))
     (base / "board.yaml").write_text(machine)
-    (base / "starpulse.toml").write_text('[board]\ntype = "native"\nmachine = "board.yaml"\n')
+    (base / "starpulse.toml").write_text('[board]\ntype = "native"\nmachine = "board.yaml"\n' + rules)
     native_root(base).mkdir(parents=True)
     (native_root(base) / "config.yml").write_text(
         yaml.safe_dump({"project_name": "demo", "statuses": LANES, "task_prefix": "task"})
     )
-    write_task(base, "task-1", "To Do")
+    write_task(base, "task-1", "To Do", **fields)
     built, feed = assemble(load(base / "starpulse.toml"), base, None, ())
     built.start(feed, "test", EventLog(f"sqlite:///{tmp_path_factory.mktemp('log') / 'events.sqlite'}"))
     return feed
@@ -143,6 +148,27 @@ def test_a_machine_may_declare_an_initial_and_a_final_state_that_are_not_lanes(
     flow = feed.snapshot()["flows"][0]
     assert [state["id"] for state in flow["machine"]["states"]] == ["new", "to_do", "in_progress", "done", "archived"]
     assert flow["agents"][0]["moves"] == {"in_progress": {"allowed": True, "reason": "", "skill": "", "writers": ()}}
+
+
+def test_a_move_a_board_rule_refuses_is_offered_as_refused_with_the_rules_reason(
+    tmp_path: Path, tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rule = (
+        '\n[[board.rules]]\non = { to = "In Progress" }\n'
+        'require = { none_of = [{ field = { field = "type", in = ["retro"] } }] }\n'
+        'reason = "A retro ships no pull request"\nskill = "running-milestone-retros"\n'
+    )
+    feed = served_with_machine(tmp_path, _WITH_CREATION_AND_ARCHIVE, tmp_path_factory, monkeypatch, rule, type="retro")
+
+    moves = feed.snapshot()["flows"][0]["agents"][0]["moves"]
+    assert moves == {
+        "in_progress": {
+            "allowed": False,
+            "reason": "A retro ships no pull request",
+            "skill": "running-milestone-retros",
+            "writers": (),
+        }
+    }
 
 
 def test_a_machine_state_that_is_neither_a_lane_nor_initial_nor_final_is_still_refused(tmp_path: Path) -> None:

@@ -5,6 +5,7 @@ from typing import Any
 
 import pytest
 
+from starpulse._internal.board import rules
 from starpulse._internal.board.native import board
 from starpulse._internal.board.seam import Board
 from starpulse._internal.config.config import load
@@ -477,3 +478,12 @@ unless_actor = ["dagu/reconciler"]
     assert built.writer("task-1", "Done", "agent") == (False, DONE_NEEDS_PR["reason"], "completing-tasks", False, "")
     assert built.writer("task-1", "Done", "dagu/reconciler").ok
     assert "status: Done\n" in path.read_text()
+
+
+def test_a_standing_refusal_leaves_out_a_rule_that_exempts_an_actor_or_reads_another_task() -> None:
+    gated: dict[str, Any] = {"on": {"to": "Done"}, "require": {"dependencies": {"all_in": ["Done"]}}, "reason": "r"}
+    exempting = {**DONE_NEEDS_PR, "unless_actor": ["operator"]}
+    front = {"status": "In Progress", "dependencies": ["task-2"]}
+
+    assert rules.standing_refusal(rules.load([gated, exempting]), front, "", "done") is None
+    assert rules.standing_refusal(rules.load([DONE_NEEDS_PR]), front, "", "done") is not None
