@@ -114,6 +114,12 @@ class EventLog:
         self._appends = 0
         self._watching = False
 
+    def close(self) -> None:
+        """Release the database connections the log holds; the log reopens on its next use."""
+        with self._lock:
+            if self._engine is not None:
+                self._engine.dispose()
+
     @property
     def engine(self) -> Engine:
         """The engine with the log's tables created; raises while the database cannot be opened."""
