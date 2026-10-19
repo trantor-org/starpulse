@@ -372,6 +372,8 @@ record of the pull request it names. An entry applied twice leaves the record as
 `POST /api/pulls/refresh` reads one pull request alone from GitHub (one GraphQL query, its `rateLimit` cost logged as `pull requests: <repo> query cost N, remaining N, resets T`) and replaces its record:
 the way a pull request no task's events name enters the store, and the way a record gets its head branch, base, merge commit and changed files. The
 repositories a refresh may name are those of open tasks' pull request links, the `[[repos]]` entries under a linked owner, and those already stored.
+At each start the worker reads every record it holds OPEN the same way, one pull request at a time, so a record whose close no event
+reached (one an older listing poll wrote) closes once and the OPEN set matches GitHub's.
 
 `GET /api/pulls[?repo=owner/name][&number=N][&state=OPEN|MERGED|CLOSED][&body_contains=text]` serves the store,
 `{pulls: [...]}`, ordered by repository then number. Each record holds `repo`, `number`, `state`, `isDraft`,

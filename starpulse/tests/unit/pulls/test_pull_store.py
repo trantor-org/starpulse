@@ -428,3 +428,40 @@ def test_a_request_that_cannot_be_read_is_logged_and_the_next_one_is_still_serve
 
     assert "acme/widgets#1 failed to refresh" in caplog.text
     assert [pull["number"] for pull in store.find()] == [1, 2]
+
+
+def test_reconciling_the_open_records_closes_each_one_github_reports_closed_and_lists_nothing(
+    store: PullStore,
+) -> None:
+    github = Github()
+    github.add(1)
+    github.add(2)
+    github.add(3, state="MERGED", updated=NEW, merged_at=NEW)
+    github.add(4, state="CLOSED", updated=NEW)
+    store.save([_stored(REPO, number) for number in (1, 2, 3, 4)])
+    github.queries.clear()
+    sync = PullSync(store, BoardFeed(), (), github, lambda: 160.0)
+
+    assert sync.reconcile_open() == 4
+    sync.serve_requests()
+
+    assert {pull["number"]: pull["state"] for pull in store.find()} == {1: "OPEN", 2: "OPEN", 3: "MERGED", 4: "CLOSED"}
+    assert len(github.queries) == 4
+    assert all("pullRequests" not in query for query in github.queries)  # a read of one pull request, never a listing
+
+
+def test_a_second_reconcile_reads_only_the_records_still_open(store: PullStore) -> None:
+    github = Github()
+    github.add(1)
+    github.add(2, state="MERGED", updated=NEW, merged_at=NEW)
+    store.save([_stored(REPO, 1), _stored(REPO, 2)])
+    sync = PullSync(store, BoardFeed(), (), github, lambda: 160.0)
+    sync.reconcile_open()
+    sync.serve_requests()
+    github.queries.clear()
+
+    assert sync.reconcile_open() == 1
+    sync.serve_requests()
+
+    (query,) = github.queries
+    assert "p1: pullRequest(number: 1)" in query
