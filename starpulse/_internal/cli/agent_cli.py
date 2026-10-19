@@ -806,7 +806,11 @@ def _parser() -> argparse.ArgumentParser:
     edit.add_argument("--label", action="append", help="a label; given at all, replaces the whole list (blank clears)")
     edit.add_argument("--dependency", action="append", help="a task it depends on; replaces the whole list")
     edit.add_argument("--reference", action="append", help="a reference; replaces the whole list")
-    edit.add_argument("--documentation", action="append", help="a documentation link; replaces the whole list")
+    edit.add_argument(
+        "--documentation",
+        action="append",
+        help="a documentation link or an open doc's id (`doc-12`); replaces the whole list",
+    )
     edit.add_argument(
         "--modified-file", action="append", dest="modified_file", help="a modified file; replaces the whole list"
     )
@@ -1089,6 +1093,8 @@ def _parser() -> argparse.ArgumentParser:
     )
     doc_create.add_argument("title", help="the doc's title")
     doc_create.add_argument("--folder", help="a folder under the board's docs (`specs`); default: docs itself")
+    doc_create.add_argument("--task", help="also link the new doc in this task's documentation (`PROJ-45`)")
+    agent_tasks.writer_flags(doc_create)
     doc_update = leaf(
         doc_verbs,
         "update",

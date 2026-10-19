@@ -290,7 +290,11 @@ def create_flags(sub: argparse.ArgumentParser) -> None:
     sub.add_argument("--status", help="the lane to open it in, else the board's first (`Waiting`)")
     sub.add_argument("--type", help="the task's type (`bug`)")
     sub.add_argument("--reference", action="append", help="a reference; repeat for several")
-    sub.add_argument("--documentation", action="append", help="a documentation link; repeat for several")
+    sub.add_argument(
+        "--documentation",
+        action="append",
+        help="a documentation link, or an open doc's id (`doc-12`) for its file; repeat for several",
+    )
     sub.add_argument("--dod", action="append", help="a Definition of Done item; repeat for several, in order")
 
 
@@ -562,7 +566,12 @@ def doc_create(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str
     base, path = agent_wire.server_url(args.server, environ), "/api/docs"
     body = {"title": args.title, **_doc_fields(args), **({"folder": args.folder} if args.folder is not None else {})}
     status, reply = agent_wire.post(base, path, body)
-    return {"doc": _record_call(base, path, status, reply, ok=(201,), noun="doc")["doc"]}
+    doc = _record_call(base, path, status, reply, ok=(201,), noun="doc")["doc"]
+    if args.task is None:
+        return {"doc": doc}
+    linked = _read_record(args, environ)["documentation"]  # the server reads the id as the doc's file
+    changed = _task_edit_call(args, environ, {"documentation": [*linked, doc]}, {"documentation": linked})
+    return {"doc": doc, "task": args.task, "changed": changed}
 
 
 def doc_update(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:

@@ -15,11 +15,12 @@ from pydantic import TypeAdapter
 
 from starpulse._internal.board import native, native_docs
 from starpulse._internal.board.seam import Board
+from starpulse._internal.board.upstream_backlog import _split
+from starpulse._internal.cli import agent_cli as cli
+from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import serve, url
 from starpulse._internal.server.writes import create_doc
-from starpulse._internal.cli import agent_cli as cli
 from starpulse.contracts.api.registry import RESPONSES
-from starpulse._internal.feed.board_feed import BoardFeed
 
 FIXTURE = Path(__file__).resolve().parent.parent.parent / "fixtures" / "native_board" / "docs"
 REAL = "specs/doc-84 - Nightly-infrastructure-audit-—-2026-10-04.md"
@@ -509,3 +510,57 @@ def test_native_doc_cli_update_with_nothing_to_change_is_a_usage_error(
         code, doc = _verb(capsys, server, "doc", "update", "doc-84")
 
     assert (code, doc["code"]) == (2, "usage")
+
+
+LINKED = f".starpulse/board/docs/{REAL}"
+
+
+def _documentation(docs: Path, task: str) -> list[str]:
+    path = next((docs.parent / "tasks").glob(f"{task.lower()} - *.md"), None) or next(
+        (docs.parent / "tasks").glob(f"{task.lower()}*.md")
+    )
+    return _split(path.read_text())[0]["documentation"]
+
+
+def test_native_task_create_links_a_doc_named_by_its_id_at_the_doc_files_path(served: tuple[Board, Path]) -> None:
+    built, docs = served
+
+    written = built.create("Audit", {"documentation": ["doc-84"]})
+
+    assert written.ok, written.output
+    assert _documentation(docs, written.output) == [LINKED]
+
+
+def test_native_task_edit_resolves_a_doc_id_and_keeps_one_link_per_file(served: tuple[Board, Path]) -> None:
+    built, docs = served
+    task = built.create("Audit", {"documentation": [LINKED]}).output
+
+    assert built.edit is not None
+    written = built.edit(task, {"documentation": [LINKED, "docs/other.md", "doc-84"]}, "")
+
+    assert written.ok, written.output
+    assert _documentation(docs, task) == [LINKED, "docs/other.md"]
+
+
+def test_native_task_edit_refuses_a_doc_id_no_open_doc_has_and_writes_nothing(served: tuple[Board, Path]) -> None:
+    built, docs = served
+    task = built.create("Audit", {}).output
+    before = next((docs.parent / "tasks").glob("*.md")).read_text()
+
+    assert built.edit is not None
+    written = built.edit(task, {"documentation": ["doc-999"]}, "")
+
+    assert (written.ok, written.output) == (False, f"{task}: doc-999 is not an open doc")
+    assert next((docs.parent / "tasks").glob("*.md")).read_text() == before
+
+
+def test_native_task_links_a_doc_id_from_the_repository_root_whatever_base_the_settings_name(tmp_path: Path) -> None:
+    (tmp_path / ".git").mkdir()
+    built = native.board({"path": "board"}, tmp_path / ".starpulse")
+    docs = tmp_path / ".starpulse" / "board" / "docs"
+    shutil.copytree(FIXTURE, docs)
+
+    written = built.create("Audit", {"documentation": ["doc-84"]})
+
+    assert written.ok, written.output
+    assert _documentation(docs, written.output) == [LINKED]
