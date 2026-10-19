@@ -5,7 +5,6 @@
 import { Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { NO_STARMAP_FILTERS, STARMAP_PREFS_KEY, useFilters } from "./shared/viewPrefs";
 import { AdminStore } from "./features/admin/adminPrefs";
-import { ForwardingStore } from "./features/forwarding/forwarding";
 import { HistoryWindowStore } from "./features/admin/historyWindow";
 import { HudStore, type FeedLine, type HudState } from "./render/hud";
 import { LevelStore } from "./features/orbit/levelData";
@@ -49,7 +48,6 @@ export function App() {
   // once it is, the views not yet opened also mount hidden in the background, so a first switch to one only unhides it
   const [admin] = useState(() => held?.admin ?? new AdminStore());
   const [historyWindow] = useState(() => new HistoryWindowStore());
-  const [forwarding] = useState(() => new ForwardingStore());
   // the level above the Board: asked for once, its navigator entry shown only when the server has one, then again only while its view is shown
   const [levels] = useState(() => new LevelStore());
   useEffect(() => {
@@ -165,7 +163,7 @@ export function App() {
         </Suspense>
       </Kept>
       <Kept name="dags" on={view === "dags"} warm={drawn}><Suspense fallback={null}><Dags data={hud.dagData} openPath={open} spot={spottedDag} opening={openingDag} /></Suspense></Kept>
-      <Kept name="admin" on={view === "admin"} warm={drawn}><Suspense fallback={null}><AdminPage store={admin} window={historyWindow} forwarding={forwarding} hint={hud.hint} /></Suspense></Kept>
+      <Kept name="admin" on={view === "admin"} warm={drawn}><Suspense fallback={null}><AdminPage store={admin} window={historyWindow} hint={hud.hint} /></Suspense></Kept>
       <Kept name="graph" on={view === "graph"} warm={drawn}>
         <Suspense fallback={null}><OrbitCard state={level} retry={() => void levels.refresh()} motion={prefs.motion} names={hud.names} /></Suspense>
       </Kept>

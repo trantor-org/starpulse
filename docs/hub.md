@@ -242,9 +242,9 @@ batch = 50                   # events per request, 1 to 200
   opted in is rebuilt from the log, so it goes out without names after an opt-out. A hub with `aggregates_only`
   answers an opt-in 403, and the forwarder sends that batch, and the ones after it, without names until the instance
   opts out and in again.
-- **The Admin view's Forwarding card** lists what the next batch carries, as the forwarder cuts it, with the hub, when it
-  last took a batch, why it did not, and a switch for the opt-in. `GET /api/forwarding` answers that status (`{"configured":
-  false}` with no `[forward]` block) and `PUT /api/forwarding` takes `{"opt_in": bool}`, the flag the CLI sets; both answer
+- **Forwarding status.** `GET /api/forwarding` reports what the next batch carries, as the forwarder cuts it, with the
+  hub, when it last took a batch and why it did not. It answers `{"configured":
+  false}` with no `[forward]` block, and `PUT /api/forwarding` takes `{"opt_in": bool}`, the flag the CLI sets; both answer
   only a loopback or private-network browser, and the page's own origin on a write.
 - **Exactly once.** The forwarder reads the instance's event log from a cursor stored in the instance's own database
   (`forward:<url>`), not from a Redis consumer group. The cursor moves only after the hub answers 200, so a batch

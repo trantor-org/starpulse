@@ -128,7 +128,6 @@ const HANDLERS: Record<string, Handler> = {
   "/api/edit": (server, _path, _query, init) => server.edit(String(init?.body ?? "{}")),
   "/api/archive": (server, _path, _query, init) => server.archive(String(init?.body ?? "{}")),
   "/api/tasks": (server, _path, _query, init) => server.create(String(init?.body ?? "{}")),
-  "/api/forwarding": (server, _path, _query, init) => server.forwarding(init?.method ?? "GET", String(init?.body ?? "")),
   "/api/autopilot": (server, _path, _query, init) => server.autopilot(init?.method ?? "GET", String(init?.body ?? "")),
   "/api/harnesses": () => json(HARNESSES),
   "/api/doctor": (server) => json(demoContract(server.snapshot, scenarioOf(globalThis.location?.search ?? ""))),
@@ -152,8 +151,6 @@ const HANDLERS: Record<string, Handler> = {
   },
 };
 
-/** The hub a demo page pretends to forward to: `refused` answers an opt-in 403 (a hub that keeps no names), `down` never answers, `none` is an instance with no `[forward]` block. */
-export type ForwardDemo = "refused" | "down" | "none";
 /**
  * The autopilot a demo page pretends to run: `off` is paused, `over` a host past its RAM limit, `empty` a queue with nothing eligible,
  * `refused` a switch only a loopback or private-network browser may flip, `down` a server with no autopilot, `quiet` inside its quiet hours,
@@ -176,12 +173,6 @@ const HARNESSES = {
 const PILOT = { cpu: 80, memory: 85, sessions: 4, review: 24 };
 /** Each harness's session cap, as `[autopilot.session_limits]` sets it on the live server. */
 const CAPS: Record<string, number> = { claude: 3, cursor: 2 };
-/** The fields `adapters.runs.forwarded.FIELDS` lets leave the IC, by stream; `actor` and `assignee` name a person. */
-const CONTRACT = {
-  "machine:events": ["machine", "event", "task", "run", "actor", "assignee", "time"],
-  "runs:events": ["time", "event", "workflow", "run_id", "status", "step", "depends"],
-};
-const PERSON = ["actor", "assignee"];
 
 /**
  * Every /api route the page requests, and how a demo page answers it: `null` for one the demo serves (`/api/events` by
@@ -218,7 +209,6 @@ export class DemoServer {
   /** When each forced rerun started, and the DAGs whose forced run is still going. */
   private reruns: number[] = [];
   private forcing = new Set<string>();
-  private optIn = false;
   private admitting: boolean;
   private harness = "claude";
   private quietHours: typeof NIGHT | null;
@@ -226,7 +216,7 @@ export class DemoServer {
   private timer: ReturnType<typeof setTimeout> | undefined;
   private merges: ReturnType<typeof setInterval> | undefined;
 
-  constructor(fixture: DemoFixture, private clock: () => number = () => Date.now() / 1000, private refuseEdits = false, private forward?: ForwardDemo, private failingEvaluator = false, private pilot?: AutopilotDemo) {
+  constructor(fixture: DemoFixture, private clock: () => number = () => Date.now() / 1000, private refuseEdits = false, private failingEvaluator = false, private pilot?: AutopilotDemo) {
     this.admitting = pilot !== "off";
     // the credits state opens on the paused harness, so the page draws its disabled option and the pick it holds
     if (pilot === "credits") this.harness = "cursor";
@@ -430,36 +420,6 @@ export class DemoServer {
     return json({ task: id }, 201);
   }
 
-  /** `/api/forwarding` as starpulse._internal.server.server answers it: the moves the forwarder would send next, cut as it cuts them, and a PUT that flips the opt-in. */
-  forwarding(method: string, raw: string): Response {
-    if (this.forward === "none") return method === "PUT" ? json({ error: "this instance forwards nothing" }, 404) : json({ configured: false });
-    if (method === "PUT") {
-      let sent: unknown;
-      try { sent = (JSON.parse(raw) as { opt_in?: unknown }).opt_in; } catch { sent = undefined; }
-      if (typeof sent !== "boolean") return json({ error: 'forwarding takes {"opt_in": true} or {"opt_in": false}' }, 400);
-      this.optIn = sent;
-    } else if (method !== "GET") return json({ error: `${method} is not served here` }, 405);
-    const names = this.optIn && this.forward !== "refused";
-    const at = this.clock();
-    const board = this.snapshot.flows.find((f) => f.name === "board");
-    return json({
-      configured: true,
-      url: "hub.demo/api/forward",
-      optIn: this.optIn,
-      names,
-      refused: this.optIn && this.forward === "refused",
-      lastSent: this.forward === "down" ? null : at - 12,
-      problem: this.forward === "down" ? "hub unreachable: connection refused" : this.optIn && this.forward === "refused" ? "hub answered 403: this hub keeps aggregates only" : null,
-      next: (board?.agents ?? []).slice(0, 10).map((a, i) => ({
-        stream: "machine:events",
-        fields: { machine: "board", event: "MOVED", task: a.id, ...(names ? { actor: "demo-agent" } : {}), time: at - 5 * (i + 1) },
-        kept: ["from", "to"],
-      })),
-      more: false,
-      contract: Object.fromEntries(Object.entries(CONTRACT).map(([stream, fields]) => [stream, fields.map((field) => ({ field, person: PERSON.includes(field) }))])),
-    });
-  }
-
   /**
    * `/api/autopilot` as starpulse._internal.server.writes.autopilot answers it, with the sessions in flight and the next pick the
    * strip also draws: the Board's In Progress cards are the sessions and its first unblocked Ready card is the pick.
@@ -580,12 +540,11 @@ export function ensureDemoServer(): DemoServer | null {
   const fixture = embedded() as DemoFixture | null;
   const query = new URLSearchParams(globalThis.location?.search ?? "");
   const refuseEdits = query.get("edit") === "refuse";
-  const forward = (["refused", "down", "none"] as const).find((state) => state === query.get("forward"));
   const autopilot = (["off", "over", "empty", "refused", "down", "quiet", "credits"] as const).find((state) => state === query.get("autopilot"));
   const many = Number(query.get("many")) || 0; // `?many=N` grows the machines under the open one to N
   const shaped = fixture ? shapeBoard(fixture, query.get("board")) : null; // `?board=no-archived|no-attention|unlisted|fourteen` reshapes the Board for a Star Map review
   if (!shaped) return null;
-  const server = new DemoServer(many ? padMachines(shaped, many) : shaped, undefined, refuseEdits, forward, query.get("evaluator") === "error", autopilot);
+  const server = new DemoServer(many ? padMachines(shaped, many) : shaped, undefined, refuseEdits, query.get("evaluator") === "error", autopilot);
   setDemoServer(server);
   return server;
 }
