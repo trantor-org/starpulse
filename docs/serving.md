@@ -114,7 +114,8 @@ Two events on `/api/events` carry what the page needs:
 - `build` ({id}): the page build the server is serving, the first 12 hex digits of the SHA-256 of `static/index.html`
   (whose asset names carry each bundle's hash, so a rebuilt page has a new id). It follows the `snapshot` on every connect.
   The first build a page's first connection names is the build it was loaded from; a later connection that names another
-  makes the page show `updating when idle`.
+  makes the page show `updating when idle`, once that connection's snapshot no longer carries `reading`: a page reloaded
+  onto a server still reading its board would draw the partial Board it holds.
 - `restarting` ({at}): sent to every open stream when the server receives `SIGTERM`, before it exits, after it has
   waited up to one second in all for the open streams to write the frame. The server then saves the Board and stops.
 

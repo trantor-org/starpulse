@@ -696,6 +696,21 @@ describe("openStream", () => {
       expect(builds).toEqual(["bbb"]);
     });
 
+    it("holds a new build while its server is still reading its board, so the page reloads onto the Board it read", () => {
+      openStream(watching, open);
+      last().send("snapshot", board([agent("PROJ-1", "to_do")]));
+      last().send("build", { id: "aaa" });
+
+      dropAndWait(0); // a deploy restarted the server
+      last().send("snapshot", board([], { reading: true }));
+      last().send("build", { id: "bbb" });
+      last().send("snapshot", board([agent("PROJ-1", "to_do")], { reading: true }));
+      expect(builds).toEqual([]);
+
+      last().send("snapshot", board([agent("PROJ-1", "to_do")], { reading: false }));
+      expect(builds).toEqual(["bbb"]);
+    });
+
     it("takes the build the connection index.html opened named as the page's own", () => {
       const early = new FakeSource(EVENTS);
       early.readyState = 1;
