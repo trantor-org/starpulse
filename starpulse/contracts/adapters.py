@@ -3,7 +3,7 @@
 An adapter is a producer of these records for StarPulse: a Backlog.md or Jira reader writes
 `BoardTask`s, a harness or git hook writes `MachineEvent`s, and a scheduler reader writes `Dag`s, each with its
 `ActiveRun`s, and the `Pool`s they run on. An external engine, a fourth kind of producer, posts `Finding`s through the
-hub's insights API; a finding is about a team, machine, state or task, and the contract has no
+insights API; a finding is about a team, machine, state or task, and the contract has no
 field for a person.
 Each model is also published as a JSON Schema under `schemas/`, regenerated with
 `python -m starpulse.contracts`; `starpulse._internal.kit.adapter_kit` runs an adapter's output against them.

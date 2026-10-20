@@ -20,7 +20,7 @@ references:
 documentation:
   - >-
     backlog/docs/specs/doc-82 -
-    Flow-View-hub-configured-flow-graph-and-orbit-card.md
+    Flow-View-core-configured-flow-graph-and-orbit-card.md
 modified_files:
   - 'trantor-org/starpulse:README.md'
   - 'trantor-org/starpulse:starpulse/github.py'
@@ -40,7 +40,7 @@ ordinal: 2577000
 <!-- SECTION:DESCRIPTION:BEGIN -->
 Decision H13 of doc-82 and the ADR's Copilot mapping. Actions runs belong to m-78 (TASK-2511).
 
-ADR: The Flow View Hub Draws a Configured Flow Graph Above the Board. Spec: doc-82.
+ADR: The Flow View Core Draws a Configured Flow Graph Above the Board. Spec: doc-82.
 
 ## Duplicate Search
 
@@ -48,7 +48,7 @@ github adapter pull requests copilot
 
 ## Duplicate Resolution
 
-Distinct scope: the only candidate is TASK-2433, the slicing task that created this slice. Also distinct: TASK-2511, TASK-2516 are the m-80 retro, sibling hub slices, or shipped trantor-only flow-view work (TASK-2356 is trantor's /api/history over its own Postgres machine events), none covering this slice's package scope.
+Distinct scope: the only candidate is TASK-2433, the slicing task that created this slice. Also distinct: TASK-2511, TASK-2516 are the m-80 retro, sibling core slices, or shipped trantor-only flow-view work (TASK-2356 is trantor's /api/history over its own Postgres machine events), none covering this slice's package scope.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -77,7 +77,7 @@ Distinct scope: the only candidate is TASK-2433, the slicing task that created t
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Package work ships as a PR in trantor-org/starpulse (child); trantor gitlink bump is Renovate's, never committed here. ADR decision: none needed; H13 of doc-82 and the Flow View hub ADR (Copilot mapping) cover it. Fixtures are recorded off public Copilot PRs (jeremytrimble/specview#46 and #38), scrubbed of ids and text.
+Package work ships as a PR in trantor-org/starpulse (child); trantor gitlink bump is Renovate's, never committed here. ADR decision: none needed; H13 of doc-82 and the Flow View core ADR (Copilot mapping) cover it. Fixtures are recorded off public Copilot PRs (jeremytrimble/specview#46 and #38), scrubbed of ids and text.
 
 **Assignee:** 37a688b6-bfa8-4d9c-8b81-0b83aba08da1
 <!-- SECTION:NOTES:END -->

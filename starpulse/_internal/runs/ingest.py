@@ -7,7 +7,7 @@ import math
 from collections.abc import Iterable, Mapping
 from typing import Any, get_args
 
-from starpulse._internal.config.config import Producer, Source
+from starpulse._internal.config.config import Producer
 from starpulse._internal.runs import run_events
 from starpulse.contracts.adapters import RunStatus
 
@@ -17,11 +17,11 @@ MAX_BODY = 64 * 1024
 MAX_BATCH_BODY = 1024 * 1024
 
 
-def tokens(instances: Iterable[Producer | Source], environ: Mapping[str, str]) -> dict[str, str]:
+def tokens(instances: Iterable[Producer], environ: Mapping[str, str]) -> dict[str, str]:
     """Each instance's ingest token, by instance name, from the variable its `token_env` names.
 
     Raises `ValueError` for a named variable that is unset or empty, and for two instances holding one token, since a
-    token must say which instance it speaks for. A `Source` is an instance here too."""
+    token must say which instance it speaks for."""
     found: dict[str, str] = {}
     for instance in instances:
         if not instance.token_env:

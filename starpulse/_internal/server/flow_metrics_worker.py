@@ -64,6 +64,6 @@ def main(argv: list[str] | None, parser: argparse.ArgumentParser) -> None:
     log = EventLog(database_url(config.database_url, base))
     store = history_store(config, base, feed.machines)
     stop = threading.Event()
-    keep_event_log(log, config, base, hub=False, stop=stop)
+    keep_event_log(log, config, base, stop=stop)
     threading.Thread(target=record_machine_events, args=(store, log, stop), name="machine-history", daemon=True).start()
     hold(stop, lambda: reload(path, config))

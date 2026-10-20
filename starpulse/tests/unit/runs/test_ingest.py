@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from starpulse._internal.config.config import Source
+from starpulse._internal.config.config import Producer
 from starpulse._internal.runs import ingest
 
 TOKENS = {"cron": "s3cret-cron", "dagu": "s3cret-dagu"}
@@ -59,7 +59,7 @@ def test_an_event_the_contract_does_not_allow_is_refused_with_its_reason(sent: o
 
 
 def test_tokens_are_read_from_the_environment_for_each_instance_that_names_one() -> None:
-    instances = [Source("cron", "CRON_TOKEN"), Source("dagu", "")]
+    instances = [Producer("cron", "CRON_TOKEN", (), ()), Producer("dagu", "", (), ())]
 
     assert ingest.tokens(instances, {"CRON_TOKEN": "s3", "OTHER": "x"}) == {"cron": "s3"}
 
@@ -67,11 +67,11 @@ def test_tokens_are_read_from_the_environment_for_each_instance_that_names_one()
 @pytest.mark.parametrize("environ", [{}, {"CRON_TOKEN": ""}])
 def test_an_instance_whose_token_variable_is_unset_or_empty_is_an_error(environ: dict[str, str]) -> None:
     with pytest.raises(ValueError, match="runs instance cron: CRON_TOKEN is not set"):
-        ingest.tokens([Source("cron", "CRON_TOKEN")], environ)
+        ingest.tokens([Producer("cron", "CRON_TOKEN", (), ())], environ)
 
 
 def test_two_instances_holding_the_same_token_is_an_error() -> None:
-    instances = [Source("a", "A_TOKEN"), Source("b", "B_TOKEN")]
+    instances = [Producer("a", "A_TOKEN", (), ()), Producer("b", "B_TOKEN", (), ())]
 
     with pytest.raises(ValueError, match="runs instances a and b hold the same token"):
         ingest.tokens(instances, {"A_TOKEN": "same", "B_TOKEN": "same"})

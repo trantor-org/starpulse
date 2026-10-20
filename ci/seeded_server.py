@@ -1,8 +1,8 @@
 """The latency gate's server: `ci/preview.toml`'s synthetic workspace with a board of tasks, a lane history and a level.
 
-`ci/preview.toml` names a board that places no task, and the level is a hub's: an IC instance parses a `[level]`
-table and draws none. The gate (`bench/page_latency.py`, run nightly by trantor's whole-repo gate) needs every route and page
-surface to answer something, so this serves the preview workspace with the real request handler and the built page,
+`ci/preview.toml` names a board that places no task, and an IC instance parses a `[level]` table and draws none. The
+gate (`bench/page_latency.py`, run nightly by trantor's whole-repo gate) needs every route and page surface to answer
+something, so this serves the preview workspace with the real request handler and the built page,
 and seeds what `starpulse serve` would hold after a month at a working team's scale: a Kanban of open tasks, the
 lane history behind each, the finished runs the level reads, the milestone and doc files of a native board, and an
 autopilot with one capacity reading. It writes nothing outside its directory.

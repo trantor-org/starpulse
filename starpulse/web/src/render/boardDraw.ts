@@ -5,7 +5,7 @@ import type { LedgerRow } from "../api";
 import { fanBadge, stepStatus } from "../features/fanout/fanoutModel";
 import { stepStates } from "../features/level/stepStates";
 import { ACT, DAG_COLOR, EXT, easeO, rgba, tierColor, type Drawing, type DrawCtx } from "./draw";
-import { nameLines, touches, type Hub, type Ties } from "./dagTies";
+import { nameLines, touches, type Pivot, type Ties } from "./dagTies";
 import {
   BOARD_COLOR, SUN_R, TAU, bez, clip, curveOf, stateR, taskSlot, terminal, textW,
   type BEdge, type Curve, type GNode, type MEdge, type MState, type Planet, type Scene,
@@ -89,7 +89,7 @@ export function boardDraw(dc: DrawCtx, d: Drawing, io: BoardIO) {
   function drawTies() {
     const tz = io.ties();
     if (!tz) return;
-    for (const h of tz.hubs) drawHub(h);
+    for (const h of tz.pivots) drawPivot(h);
     const run = new Set<BEdge>();
     for (const t of touches(tz, io.events(), ran, io.T)) {
       const e = t.anchor.edge, age = (io.T - t.at - TRAVEL) / PULSE;
@@ -102,9 +102,9 @@ export function boardDraw(dc: DrawCtx, d: Drawing, io: BoardIO) {
   }
   /** A hangar: a faint arc behind its orbiters, broken where it would cross a name, one orbiter per DAG and the hangar's name alone. Whether a
    *  DAG runs or failed is its orbiter's to show: the Spinner, or red with a dashed ring. */
-  function drawHub(h: Hub) {
-    const TEAL = "#5eead4", hubHot = isHot("hub", h);
-    cx.strokeStyle = rgba(TEAL, hubHot ? 0.4 : 0.22);
+  function drawPivot(h: Pivot) {
+    const TEAL = "#5eead4", pivotHot = isHot("pivot", h);
+    cx.strokeStyle = rgba(TEAL, pivotHot ? 0.4 : 0.22);
     cx.lineWidth = 1 / dc.K;
     for (const [a0, a1] of h.arcs) {
       cx.beginPath();
@@ -132,7 +132,7 @@ export function boardDraw(dc: DrawCtx, d: Drawing, io: BoardIO) {
     }
     const ls = labPx(11.5);
     cx.letterSpacing = `${0.6 / dc.K}px`;
-    nameLines(h.orbs).forEach((n, i) => text(n, h.lab.x, h.lab.y + i * (ls + 2 / dc.K), ls, rgba("#cfd9ea", hubHot ? 0.95 : 0.58), h.align, 300));
+    nameLines(h.orbs).forEach((n, i) => text(n, h.lab.x, h.lab.y + i * (ls + 2 / dc.K), ls, rgba("#cfd9ea", pivotHot ? 0.95 : 0.58), h.align, 300));
     cx.letterSpacing = "0px";
   }
   function drawSun() {
@@ -326,7 +326,7 @@ export function boardDraw(dc: DrawCtx, d: Drawing, io: BoardIO) {
       // a skill moon: a still disc, brighter while it has sessions and ringed in amber while one moves, named beside it away from the primary, past
       // the DAGs that orbit it; hover adds its states and sessions
       if (p.moon) {
-        const sd = p.x < sc.hub!.x ? -1 : 1;
+        const sd = p.x < sc.pivot!.x ? -1 : 1;
         const src = p.pager ? undefined : io.sourceOf(p.name);
         machine(p.x, p.y, p.R, hot, p.n ? 0.32 : 0.14, !!src);
         if (mv.length) circle(p.x, p.y, p.R + 4, rgba(ACT, 0.85), 1.5);
@@ -361,9 +361,9 @@ export function boardDraw(dc: DrawCtx, d: Drawing, io: BoardIO) {
       const nt = sc.tasks.filter((k) => k.host === p && !k.gone).length, size = p.primary ? 14 : 12;
       const sub = `${psrc ? `mapped from ${psrc} · ` : ""}${Object.keys(p.states).length} states${nt ? ` · ${nt} task${nt === 1 ? "" : "s"} orbiting` : ""} · ${p.n} task${p.n === 1 ? "" : "s"}${mv.length ? ` · ${mv.length} moving` : ""}`;
       let ux = 0, uy = 1;
-      const hub = sc.hub;
-      if (hub && p !== hub) {
-        const dx = p.x - hub.x, dy = p.y - hub.y, L = Math.hypot(dx, dy) || 1;
+      const pivot = sc.pivot;
+      if (pivot && p !== pivot) {
+        const dx = p.x - pivot.x, dy = p.y - pivot.y, L = Math.hypot(dx, dy) || 1;
         [ux, uy] = [dx / L, dy / L];
       }
       const off = Math.max(p.outer || 0, p.R + 14) + 20, hw = Math.max(textW(p.name, size), textW(sub, size - 2)) / 2;

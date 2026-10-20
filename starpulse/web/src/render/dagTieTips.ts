@@ -1,6 +1,6 @@
 // The tooltips of the DAGs tied to a Board state (D7b). Status lives here and in the drill-in, never as text on the map.
 import type { Dag } from "../api";
-import type { Hub, Orbiter } from "./dagTies";
+import type { Pivot, Orbiter } from "./dagTies";
 import { esc } from "./panels";
 import type { Sky } from "./sky";
 
@@ -14,7 +14,7 @@ interface Ctx {
 export const tieStatus = (d: Dag | undefined) => (d?.status === "failed" ? "failed · unresolved" : (d?.status ?? ""));
 
 /** A hangar's tooltip: the DAGs it holds with their status, and what a click and a right-click do. */
-export function hubTip(h: Pick<Hub, "state" | "orbs">, { sky, stateName }: Ctx): string {
+export function pivotTip(h: Pick<Pivot, "state" | "orbs">, { sky, stateName }: Ctx): string {
   const rows = h.orbs.map((o) => `${esc(o.label)} <span class="k">${o.primary?.kind === "cue" ? "cued by" : "writes"} ${esc(o.primary?.event ?? "")} · ${esc(tieStatus(sky.dagBy[o.dag]))}</span>`);
   return `<div class="k">DAGs that act on ${esc(stateName(h.state))} · click opens their Ledger · right-click comes back</div><div class="n">DAGs · ${esc(stateName(h.state))}</div>${rows.join("<br>")}`;
 }

@@ -78,7 +78,7 @@ READERS = {
     "starpulse/machine.schema.json": (
         "starpulse/_internal/machines/machine_definition.py",
     ),
-    "starpulse/_internal/eventlog/migrations/*": ("starpulse/_internal/hub/hub.py",),
+    "starpulse/_internal/eventlog/migrations/*": ("starpulse/_internal/eventlog/event_log.py",),
     "pyproject.toml": ("ci/avoid_list.py",),
     "ci/static_checks.sh": ("ci/test_workflow_placement.py", "ci/test_ic_imports.py"),
     "starpulse/machines/*": (
@@ -106,7 +106,6 @@ INERT = (
     "docs/cli.md",
     "docs/development.md",
     "docs/development-loop.md",
-    "docs/hub.md",
     "docs/security.md",
     "LICENSE",
     ".gitignore",
@@ -117,7 +116,6 @@ INERT = (
     "bench/README.md",
     "bench/flow_reads.py",
     "bench/free_threading/*",  # the interpreter A/B image and its scripts, run by hand
-    "bench/hub_ingest.py",
     "bench/ic_event_log.py",
 )
 

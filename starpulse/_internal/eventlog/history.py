@@ -670,7 +670,7 @@ class HistoryStore:
 
         The Board's trajectories are its lane changes, each lane read as the state of that name or id (a lane that is
         no state is skipped); another machine's are its events placed as `machine_steps` places them. A source is the
-        `<source>/` an event id carries, which is how the hub namespaces a source's event; an id with none is no
+        `<source>/` an event id carries, which namespaces a source's event; an id with none is no
         source's and its run is `UNATTRIBUTED`. A run is one source's one task.
         """
         machine = self._machines[flow]
@@ -842,8 +842,7 @@ def record_lane_events(
 ) -> None:
     """Fold the log's lane entries into `store`'s lane history until `stop`, resuming after the cursor the store holds.
 
-    This is how a hub learns the lane changes its sources send; it reads as `record_machine_events` reads, and
-    each entry is written with its cursor in one transaction.
+    It reads as `record_machine_events` reads, and each entry is written with its cursor in one transaction.
     """
     stream = lane_events.STREAM
     while not stop.is_set():

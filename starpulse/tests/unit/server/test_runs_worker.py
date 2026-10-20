@@ -70,7 +70,7 @@ def run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, dagu: Dagu, held: list[
     def start(text: str = CONFIG) -> EventLog:
         config = tmp_path / "starpulse.toml"
         config.write_text(text)
-        worker.main(["runs", "--config", str(config), "--local-board"])
+        worker.main(["runs", "--config", str(config)])
         url = f"sqlite:///{(tmp_path / 'starpulse-history.sqlite').resolve()}"
         return EventLog(url)
 

@@ -60,7 +60,7 @@ def main(argv: list[str] | None, parser: argparse.ArgumentParser) -> None:
     log = EventLog(database_url(config.database_url, base))
     stop = threading.Event()
     try:
-        _, feed = worker_board(config, base, log, "starpulse-runs", stop, local=args.local_board)
+        _, feed = worker_board(config, base, log, "starpulse-runs", stop)
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")
     store = history_store(config, base, feed.machines)

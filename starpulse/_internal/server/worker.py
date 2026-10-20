@@ -134,15 +134,7 @@ def worker_parser() -> argparse.ArgumentParser:
         default=None,
         help="the config `serve` runs from; default: starpulse.toml in the working directory, else the defaults",
     )
-    parser.add_argument(
-        "--local-board",
-        action="store_true",
-        dest="local_board",
-        help="start the board adapter in this process instead of reading the replica the Board child publishes "
-        "(a worker a hub manages: a hub runs no Board child)",
-    )
     listen_options(parser)  # read by `api`: where the page listens when `serve` hands it no socket
-    parser.set_defaults(hub=False)  # the Page API child serves an instance; a hub serves its page in `serve`
     return parser
 
 
@@ -183,7 +175,7 @@ def main(argv: list[str] | None = None) -> None:
     log = EventLog(database_url(config.database_url, base))
     stop = threading.Event()
     try:
-        board, feed = worker_board(config, base, log, "starpulse-pulls", stop, local=args.local_board)
+        board, feed = worker_board(config, base, log, "starpulse-pulls", stop)
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")
     # the task actor records the lane of each write it makes under its own name; the placements of the Board are `serve`'s

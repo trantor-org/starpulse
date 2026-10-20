@@ -68,10 +68,10 @@ def test_the_control_file_sits_beside_the_config_else_in_the_working_directory(
 
 def test_two_configs_in_one_directory_keep_separate_control_files(tmp_path: Path) -> None:
     live = control.control_file(tmp_path / "starpulse.toml")
-    hub = control.control_file(tmp_path / "starpulse-hub.toml")
+    other = control.control_file(tmp_path / "starpulse-other.toml")
 
-    assert live != hub
-    assert hub == tmp_path / "starpulse-hub.control"
+    assert live != other
+    assert other == tmp_path / "starpulse-other.control"
 
 
 @pytest.mark.usefixtures("running")

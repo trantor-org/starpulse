@@ -1,10 +1,10 @@
-"""Import every module an IC instance can load, in an environment without the hub extras.
+"""Import every module an IC instance can load, in an environment without the Postgres driver.
 
-    uv sync --locked --no-group hub && uv run --no-sync python ci/ic_imports.py
+    uv sync --locked --no-group postgres && uv run --no-sync python ci/ic_imports.py
 
-An IC instance is `starpulse serve` without `--hub`. A module it loads that imports the Postgres driver or PyJWT
-at import time fails here, in seconds, instead of in a second run of the whole suite. `HUB_ONLY` names the
-modules that import a hub extra directly; everything else under `starpulse/` except the tests must import without one.
+A module an IC instance loads that imports the Postgres driver at import time fails here, in seconds, instead of in
+a second run of the whole suite. `POSTGRES_ONLY` names the modules that import it directly; everything else under
+`starpulse/` except the tests must import without it.
 Prints each module that fails and exits 1.
 """
 
@@ -15,14 +15,14 @@ import sys
 from collections.abc import Iterable
 from pathlib import Path
 
-HUB_ONLY = ("starpulse._internal.hub.hub", "starpulse._internal.hub.oidc", "starpulse._internal.eventlog.migrations")
+POSTGRES_ONLY = ("starpulse._internal.eventlog.migrations",)
 
 
 def ic_modules(root: Path) -> list[str]:
-    """The dotted names of every non-test module under `root/starpulse` outside `HUB_ONLY`."""
+    """The dotted names of every non-test module under `root/starpulse` outside `POSTGRES_ONLY`."""
     names = (".".join(path.relative_to(root).with_suffix("").parts) for path in (root / "starpulse").rglob("*.py"))
     modules = (name.removesuffix(".__init__") for name in names)
-    return sorted(m for m in modules if not m.startswith(HUB_ONLY) and ".tests" not in m)
+    return sorted(m for m in modules if not m.startswith(POSTGRES_ONLY) and ".tests" not in m)
 
 
 def failures(modules: Iterable[str]) -> list[tuple[str, str]]:

@@ -3,8 +3,8 @@
 A board write that moves a task records the change when it is written, under the request's actor
 (`HistoryStore.record_lane`, one transaction); `BoardFeed` records the change of any other placement (a file edited by
 hand, a board adapter whose writer does not say the lane it set) as `external`. Both use the
-`<task>@<lane>@<entered>` event id, and a lane the history already holds is no change, so the log, the history and a hub
-that folds the entry agree on one entry per change.
+`<task>@<lane>@<entered>` event id, and a lane the history already holds is no change, so the log and the history
+agree on one entry per change.
 An entry carries `task`, `lane` (the Board machine state id) and `time` (epoch seconds when the task entered the lane),
 the task's facets `team`, `milestone` and `labels` (absent when empty; a change recorded at write time carries none),
 `profile` when the task has one and `actor` (`operator`, `agent`, `anonymous`, `<instance>/<workflow>`,

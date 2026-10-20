@@ -1,4 +1,4 @@
-"""A SQLite store is versioned by the same Alembic chain as the hub's Postgres database: a fresh file is built by it, a
+"""A SQLite store is versioned by the same Alembic chain as the Postgres database: a fresh file is built by it, a
 store from before the chain is stamped and upgraded, and nothing but the chain changes its schema."""
 
 from concurrent.futures import ThreadPoolExecutor
@@ -18,7 +18,7 @@ from starpulse._internal.eventlog.tables import VERSION_TABLE, checkpoints, day_
 from starpulse.tests.machines import MACHINES
 
 _MIGRATIONS = Path(history.__file__).parent / "migrations"
-#: Objects only one dialect carries: the Postgres hub's rollups, SQLite's lane-change index.
+#: Objects only one dialect carries: Postgres's rollups, SQLite's lane-change index.
 _SQLITE_ONLY_INDEX = "ix_starpulse_lane_changes_observed"
 #: The index revision 0020 added to the declared schema, so the release before the chain had none.
 _RETIRED_AT_INDEX = "ix_starpulse_retired_tasks_retired_at"
@@ -42,7 +42,7 @@ def _indexes(engine: Engine, table: str) -> set[str]:
 
 
 def _a_pre_alembic_store(path: Path) -> Engine:
-    """A store as the release before the chain left it: every table but the hub's rollups, no version table."""
+    """A store as the release before the chain left it: every table but the rollups, no version table."""
     engine = create_engine(f"sqlite:///{path}")
     tables = [table for table in metadata.sorted_tables if table not in (day_rollups, checkpoints)]
     metadata.create_all(engine, tables=tables)

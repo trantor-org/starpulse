@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { boardTies, hangarLevel, nameLines, nameOf, obstacles, over, tieLedger, touches, type Hub, type Orbiter } from "./dagTies";
+import { boardTies, hangarLevel, nameLines, nameOf, obstacles, over, tieLedger, touches, type Pivot, type Orbiter } from "./dagTies";
 import { BOARD, startPath, tree } from "./levels";
 import { crumbs } from "../features/level/Crumb";
 import { backStep } from "../shared/nav";
@@ -60,26 +60,26 @@ const unitOf = (sc: Scene) => 1 / fitLevel(sc, 1920, 1080).k;
 
 describe("the tied DAGs of the Board level", () => {
   const ctx = liveSky(), sc = build(ctx, { kind: "board" }), ties = boardTies(sc, ctx.S, unitOf(sc));
-  const hubOf = (state: string) => ties.hubs.find((h) => h.state === state);
+  const pivotOf = (state: string) => ties.pivots.find((h) => h.state === state);
 
   it("puts each DAG in the hangar of the state most of its ties act on", () => {
     // board-autopilot writes from new (1), ready (2) and in_progress (1); reconciliation's four ties each act on another state, so the first wins
-    expect(hubOf("ready")?.orbs.map((o) => o.dag)).toEqual(["dagu/board-autopilot"]);
-    expect(hubOf("waiting")?.orbs.map((o) => o.dag)).toEqual(["dagu/board-dependency-reconciliation"]);
-    expect(hubOf("review")?.orbs.map((o) => o.dag)).toEqual(["dagu/main-follow"]);
+    expect(pivotOf("ready")?.orbs.map((o) => o.dag)).toEqual(["dagu/board-autopilot"]);
+    expect(pivotOf("waiting")?.orbs.map((o) => o.dag)).toEqual(["dagu/board-dependency-reconciliation"]);
+    expect(pivotOf("review")?.orbs.map((o) => o.dag)).toEqual(["dagu/main-follow"]);
     // a cue belongs to the state its event lands in, beside the DAG that writes that state's transition
-    expect(hubOf("done")?.orbs.map((o) => o.dag).sort()).toEqual(["dagu/apply-on-merge", "dagu/backlog-sweep", "dagu/healthcheck"]);
-    expect(ties.hubs).toHaveLength(4);
+    expect(pivotOf("done")?.orbs.map((o) => o.dag).sort()).toEqual(["dagu/apply-on-merge", "dagu/backlog-sweep", "dagu/healthcheck"]);
+    expect(ties.pivots).toHaveLength(4);
   });
 
   it("leaves launch-only and untied DAGs out", () => {
-    const drawn = ties.hubs.flatMap((h) => h.orbs.map((o) => o.dag));
+    const drawn = ties.pivots.flatMap((h) => h.orbs.map((o) => o.dag));
     for (const d of [...LAUNCH_ONLY, ...UNTIED]) expect(drawn).not.toContain(d);
     expect(new Set(drawn).size).toBe(drawn.length);
   });
 
   it("docks each orbiter by a transition of its state, on its ring", () => {
-    for (const h of ties.hubs)
+    for (const h of ties.pivots)
       for (const o of h.orbs) {
         expect(o.primary?.state).toBe(h.state);
         expect(Math.hypot(o.x - h.c.x, o.y - h.c.y)).toBeCloseTo(h.orbit, 6);
@@ -95,9 +95,9 @@ describe("the hangar names, placed round the ring", () => {
     const ties = boardTies(sc, ctx.S, u, ts * (sc.labelScale ?? 1));
 
     it(`keep every name box clear of moon labels and other orbiters at ${ts * 100}% text`, () => {
-      expect(ties.hubs.length).toBeGreaterThan(0);
-      for (const h of ties.hubs) {
-        const others = ties.hubs.filter((x) => x !== h);
+      expect(ties.pivots.length).toBeGreaterThan(0);
+      for (const h of ties.pivots) {
+        const others = ties.pivots.filter((x) => x !== h);
         // every moon and its label, and the other hangars' name boxes and orbiters. A state's disc and name (each state's first two boxes) are
         // left out: the Board's fixed footprints reserve no room for a hangar's chain, a gap TASK-3839 accepts, so a hangar beside a tightly
         // packed neighbour may touch it
@@ -107,7 +107,7 @@ describe("the hangar names, placed round the ring", () => {
     });
 
     it(`break the ring arc where it would cross the name at ${ts * 100}% text`, () => {
-      for (const h of ties.hubs) {
+      for (const h of ties.pivots) {
         expect(h.arcs.length).toBeGreaterThan(0);
         for (const [a0, a1] of h.arcs)
           for (let a = a0; a <= a1; a += 0.01) {
@@ -122,25 +122,25 @@ describe("the hangar names, placed round the ring", () => {
 describe("the hangar names beside the Board's paths", () => {
   // the Board in the demo's tiers, with the two states of this live Board the demo does not have each in a tier after them
   const tiered = () => liveSky({}, {}, [["new"], ["ready", "waiting"], ["needs_attention"], ["in_progress"], ["review"], ["done", "archived"], ["blocked"], ["completed"]]);
-  const crossed = (sc: Scene, h: Hub) => sc.bEdges.filter((e) => e.p0 && sample(e as Curve, 200).some((p) => p.x > h.box[0] && p.x < h.box[2] && p.y > h.box[1] && p.y < h.box[3])).map((e) => `${e.source}>${e.target}`);
+  const crossed = (sc: Scene, h: Pivot) => sc.bEdges.filter((e) => e.p0 && sample(e as Curve, 200).some((p) => p.x > h.box[0] && p.x < h.box[2] && p.y > h.box[1] && p.y < h.box[3])).map((e) => `${e.source}>${e.target}`);
 
   it("keep every name off the paths where a side of its DAGs is clear of them", () => {
     // on a 2560x1440 screen each hangar has a spot clear of every path within a quarter turn, at each text size
     const ctx = tiered(), sc = build(ctx, { kind: "board" }), u = 1 / fitLevel(sc, 2560, 1440).k;
     for (const ts of [1, 1.25, 1.5])
-      for (const h of boardTies(sc, ctx.S, u, ts * (sc.labelScale ?? 1)).hubs) expect(crossed(sc, h), `${h.state} name at ${ts}`).toEqual([]);
+      for (const h of boardTies(sc, ctx.S, u, ts * (sc.labelScale ?? 1)).pivots) expect(crossed(sc, h), `${h.state} name at ${ts}`).toEqual([]);
   });
 
   it("turn a hangar past a quarter turn when every nearer spot for its name is under a path", () => {
     // on a 1920x1080 screen Ready's paths to In Progress run under every spot within a quarter turn of its DAG's transition
     const ctx = tiered(), sc = build(ctx, { kind: "board" }), u = 1 / fitLevel(sc, 1920, 1080).k;
     for (const ts of [1, 1.25, 1.5])
-      for (const h of boardTies(sc, ctx.S, u, ts * (sc.labelScale ?? 1)).hubs) expect(crossed(sc, h), `${h.state} name at ${ts}`).toEqual([]);
+      for (const h of boardTies(sc, ctx.S, u, ts * (sc.labelScale ?? 1)).pivots) expect(crossed(sc, h), `${h.state} name at ${ts}`).toEqual([]);
   });
 });
 
 describe("a hangar's name", () => {
-  const orbs = (...labels: string[]) => labels.map((label) => ({ label })) as Hub["orbs"];
+  const orbs = (...labels: string[]) => labels.map((label) => ({ label })) as Pivot["orbs"];
 
   it("is its one DAG's name, or how many DAGs it holds", () => {
     expect(nameOf(orbs("main-follow"))).toBe("main-follow");
@@ -194,7 +194,7 @@ describe("the comet a tied DAG's Board transition runs", () => {
 
 describe("the sub-machine a tied DAG writes", () => {
   const ctx = liveSky({}, { "dagu/main-follow": "investigating" }), sc = build(ctx, { kind: "board" }), ties = boardTies(sc, ctx.S, unitOf(sc));
-  const orb = (dag: string) => ties.hubs.flatMap((h) => h.orbs).find((o) => o.dag === dag)!;
+  const orb = (dag: string) => ties.pivots.flatMap((h) => h.orbs).find((o) => o.dag === dag)!;
 
   it("anchors a tied DAG that writes its launched machine's events at that machine", () => {
     expect(orb("dagu/main-follow").subs.map((a) => a.flow)).toEqual(["investigating"]);
@@ -208,19 +208,19 @@ describe("the sub-machine a tied DAG writes", () => {
 
   it("keeps the sub-machine writer's Board ties and hangar as they were", () => {
     expect(orb("dagu/main-follow").primary?.event).toBe("MERGED");
-    expect(ties.hubs).toHaveLength(4);
+    expect(ties.pivots).toHaveLength(4);
   });
 });
 
 describe("what a click on a hangar or an orbiter opens", () => {
   const ctx = liveSky(), sc = build(ctx, { kind: "board" }), ties = boardTies(sc, ctx.S, unitOf(sc));
   const src = { flows: [ctx.S.board], cues: ctx.S.cues };
-  const hub = (state: string) => ties.hubs.find((h) => h.state === state)!;
-  const orb = (dag: string) => ties.hubs.flatMap((h) => h.orbs).find((o) => o.dag === dag)!;
+  const pivot = (state: string) => ties.pivots.find((h) => h.state === state)!;
+  const orb = (dag: string) => ties.pivots.flatMap((h) => h.orbs).find((o) => o.dag === dag)!;
   const fake = (dag: string, ...events: string[]) => ({ dag, anchors: events.map((event) => ({ kind: "write", event })), primary: { kind: "write", event: events[0] } }) as unknown as Orbiter;
 
   it("opens a hangar into the Ledger of the transition its first DAG docks by", () => {
-    const l = hangarLevel(src, hub("review").orbs);
+    const l = hangarLevel(src, pivot("review").orbs);
     expect(l).toMatchObject({ kind: "fold", event: "MERGED", path: ["review", "done"] });
     expect(l.dags).toContain("dagu/main-follow");
   });
@@ -246,7 +246,7 @@ describe("what a click on a hangar or an orbiter opens", () => {
   });
 
   it("is a level a right-click steps out of, named Board › DAGs, that survives a reload", () => {
-    const fold = hangarLevel(src, hub("done").orbs), path = [...BOARD, fold];
+    const fold = hangarLevel(src, pivot("done").orbs), path = [...BOARD, fold];
     expect(crumbs(path, []).map((c) => c.label)).toEqual(["Board", "DAGs"]);
     expect(backStep({ panel: false, focus: null, scrolled: false, depth: path.length })).toBe("up");
     expect(path.slice(0, -1)).toEqual(BOARD);

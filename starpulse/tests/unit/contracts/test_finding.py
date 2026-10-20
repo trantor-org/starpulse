@@ -16,7 +16,7 @@ FINDING = {
     "severity": "warn",
     "text": "Review takes four times as long as the norm.",
     "evidence": [
-        {"label": "time in review", "url": "https://hub.example/history?state=review"},
+        {"label": "time in review", "url": "https://example.test/history?state=review"},
         {"label": "review dwell by day", "query": "SELECT day, seconds FROM starpulse_day_rollups"},
     ],
     "created_at": 1_700_000_000.0,

@@ -14,7 +14,6 @@ import sqlite3
 import sys
 import tempfile
 import threading
-import time
 import uuid
 from collections.abc import Callable, Iterator
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -30,7 +29,6 @@ from starpulse._internal.board import upstream_backlog
 from starpulse._internal.eventlog import event_log
 from starpulse._internal.eventlog.history import HistoryStore
 from starpulse.tests.machines import MACHINES
-from starpulse.tests.mock_issuer import IMAGE, answers
 from starpulse.tests.shared_postgres import (
     publish_error,
     publish_url,
@@ -123,9 +121,9 @@ def _container_skip_reason() -> str | None:
     """Why no container can start here, or None."""
     if not any(shutil.which(runtime) for runtime in ("docker", "podman")):
         return "the integration cases that need a container need Docker or Podman"
-    # The hub dependency group; without it (the IC suite) these cases are skipped.
+    # The postgres dependency group; without it (the IC suite) these cases are skipped.
     if importlib.util.find_spec("testcontainers") is None or importlib.util.find_spec("psycopg") is None:
-        return "the integration cases that need a container need the hub dependency group"
+        return "the integration cases that need a container need the postgres dependency group"
     return None
 
 
@@ -169,19 +167,7 @@ def _start_postgres() -> Any:  # pragma: no mutate block — container lifecycle
     return _retried(start)
 
 
-def _start_issuer() -> tuple[Any, str]:  # pragma: no mutate block — container lifecycle
-    from testcontainers.core.container import DockerContainer  # noqa: PLC0415
-
-    container = _retried(lambda: join_slice(DockerContainer(IMAGE).with_exposed_ports(8080)).start())
-    address = f"http://127.0.0.1:{container.get_exposed_port(8080)}/default"
-    deadline = time.monotonic() + 60
-    while not answers(f"{address}/.well-known/openid-configuration"):
-        assert time.monotonic() < deadline, "the mock issuer never answered"
-        time.sleep(0.1)
-    return container, address
-
-
-_STARTS: dict[str, Callable[[], Any]] = {"postgres": _start_postgres, "issuer": _start_issuer}
+_STARTS: dict[str, Callable[[], Any]] = {"postgres": _start_postgres}
 
 
 def _warm(name: str, start: Callable[[], Any]) -> Future:
@@ -195,8 +181,6 @@ def _containers_wanted(item: pytest.Item) -> set[str]:  # pragma: no mutate bloc
     wanted = set()
     if "pg_engine" in item.fixturenames or "postgres" in params.values():
         wanted.add("postgres")
-    if "issuer" in item.fixturenames:
-        wanted.add("issuer")
     return wanted
 
 
@@ -230,17 +214,15 @@ def _distributes(config: pytest.Config) -> bool:
     return bool(config.pluginmanager.hasplugin("xdist") and config.getoption("numprocesses", None))
 
 
-def _publish_when_up(root: Path, future: Future, service: str) -> None:  # pragma: no mutate block — container lifecycle
+def _publish_when_up(root: Path, future: Future) -> None:  # pragma: no mutate block — container lifecycle
     if (error := future.exception()) is not None:
-        publish_error(root, repr(error), service)
-    elif service == "issuer":
-        publish_url(root, future.result()[1], service)
+        publish_error(root, repr(error))
     else:
-        publish_url(root, future.result().get_connection_url(), service)
+        publish_url(root, future.result().get_connection_url())
 
 
 def pytest_configure(config: pytest.Config) -> None:  # pragma: no mutate block — container lifecycle
-    """A worker learns where its controller's Postgres and issuer are; a controller starts each a worker asks for."""
+    """A worker learns where its controller's Postgres is; a controller starts it when a worker asks."""
     global _SHARED_POSTGRES, _SHARED_POSTGRES_ROOT, _SERVER  # noqa: PLW0603
     workerinput = getattr(config, "workerinput", None)
     if workerinput is not None:
@@ -249,9 +231,8 @@ def pytest_configure(config: pytest.Config) -> None:  # pragma: no mutate block 
         _SHARED_POSTGRES_ROOT = Path(tempfile.mkdtemp(prefix="starpulse-postgres-"))
         root = _SHARED_POSTGRES_ROOT
 
-        # One issuer for the run too: a JVM per worker was 8 of them, 140-207 MiB each, on a capped slice.
         def start(service: str) -> None:
-            _warm(service, _STARTS[service]).add_done_callback(lambda future: _publish_when_up(root, future, service))
+            _warm(service, _STARTS[service]).add_done_callback(lambda future: _publish_when_up(root, future))
 
         _SERVER = threading.Thread(target=serve_requests, args=(root, start, _SERVING_DONE), daemon=True)
         _SERVER.start()
@@ -283,9 +264,9 @@ def pytest_sessionfinish(session: pytest.Session) -> None:  # pragma: no mutate 
     _SERVING_DONE.set()
     if _SERVER is not None:
         _SERVER.join()
-    for name, future in _WARM.items():
+    for future in _WARM.values():
         if not future.cancel() and future.exception() is None:
-            (future.result() if name == "postgres" else future.result()[0]).stop()
+            future.result().stop()
     _WARM.clear()
     if _SHARED_POSTGRES_ROOT is not None:
         shutil.rmtree(_SHARED_POSTGRES_ROOT, ignore_errors=True)
@@ -345,7 +326,7 @@ def database_url(request: pytest.FixtureRequest, tmp_path: Path) -> str:
 @pytest.fixture
 def empty_database(pg_engine: Engine) -> Iterator[Engine]:
     """A newly created Postgres database with no table in it."""
-    name = f"hub_{uuid.uuid4().hex[:12]}"
+    name = f"empty_{uuid.uuid4().hex[:12]}"
     with pg_engine.connect().execution_options(isolation_level="AUTOCOMMIT") as db:
         db.execute(text(f'CREATE DATABASE "{name}"'))
     engine = create_engine(pg_engine.url.set(database=name))
@@ -355,16 +336,6 @@ def empty_database(pg_engine: Engine) -> Iterator[Engine]:
         engine.dispose()
         with pg_engine.connect().execution_options(isolation_level="AUTOCOMMIT") as db:
             db.execute(text(f'DROP DATABASE "{name}" WITH (FORCE)'))
-
-
-@pytest.fixture(scope="session")
-def issuer() -> str:  # pragma: no mutate block — container lifecycle
-    """The address of a mock OpenID Connect issuer container, for the hub's sign-in cases."""
-    if reason := _container_skip_reason():
-        pytest.skip(reason)
-    if _SHARED_POSTGRES is not None:
-        return wait_for_url(_SHARED_POSTGRES, timeout=120, service="issuer")
-    return _warm("issuer", _start_issuer).result()[1]
 
 
 @pytest.fixture(autouse=True)

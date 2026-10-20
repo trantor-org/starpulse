@@ -35,7 +35,7 @@ directory. The `Board` says:
   than the ones that folded them: `starpulse_summary_basis` keeps a fingerprint of the initial and final states, moves
   and Board lanes, so an edit to a label or a position rebuilds nothing, and a store that predates the table rebuilds
   once. `rebuild_summaries` replaces them in one transaction, folding the raw rows through the steps a write
-  takes. A hub gets the tables from its migrations (revisions `0005`, `0007` and `0012`). The summaries follow
+  takes. A Postgres database gets the tables from its migrations (revisions `0005`, `0007` and `0012`). The summaries follow
   the order events were recorded, and cover only the machines the page draws when the store opens.
   `/api/analytics/health` and `/api/level` (with `/api/level/trajectories`) read these summaries and never scan the two
   raw tables: health reads the stays that ended in its window or are still going and takes the tasks in each lane from

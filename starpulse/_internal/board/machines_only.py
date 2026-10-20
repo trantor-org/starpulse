@@ -1,8 +1,7 @@
 """The `machines` board: a project's declared machines, with no task source.
 
-For a hub, whose tasks arrive as the lane entries and machine events instances send. It draws every file under
-`.starpulse/machines/` as the native board draws them, the Board machine among them, and places no task: it reads no
-board directory and writes nothing.
+It draws every file under `.starpulse/machines/` as the native board draws them, the Board machine among them, and
+places no task: it reads no board directory and writes nothing.
 """
 
 from __future__ import annotations

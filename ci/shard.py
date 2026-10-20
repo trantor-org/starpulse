@@ -20,7 +20,6 @@ SECONDS = {
     "starpulse/tests/integration/level/test_level_http.py": 152,
     "starpulse/tests/integration/eventlog/test_history.py": 131,
     "starpulse/tests/integration/server/test_api_contract.py": 120,
-    "starpulse/tests/integration/hub/test_oidc_gate.py": 90,
     "starpulse/tests/integration/eventlog/test_event_log.py": 59,
     "starpulse/tests/unit/eventlog/test_history_summaries.py": 55,
     "starpulse/tests/unit/runs/test_dagu_runs.py": 34,

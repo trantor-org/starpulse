@@ -1,4 +1,4 @@
-// Draws the orbit card from the approved hub mockup (Mock C), quietened: at rest only the suns, each source a planet on its closed
+// Draws the orbit card from the approved mockup (Mock C), quietened: at rest only the suns, each source a planet on its closed
 // orbit with a short tail, their names, and comets replayed from real arrivals move or show; a hover adds the shares, the share ring
 // and the traces. Canvas only: no DOM, no state beyond what the caller hands it, so a frame is a pure function of the `Frame`.
 import { cometsAt, FLIGHT_S, paceS, quantum, replayDay, type Measure, type Pace } from "../../render/comets";

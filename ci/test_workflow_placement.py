@@ -225,11 +225,11 @@ def test_the_free_threaded_suite_runs_beside_the_shards_and_is_no_required_check
     assert "python-ft" not in APP_CHECKS
 
 
-def test_the_free_threaded_suite_runs_without_the_hub_extras_and_fails_when_the_gil_comes_back():
-    """psycopg-binary has no 3.14t wheel, so the hub group is out; a dependency that re-enables the GIL on import
+def test_the_free_threaded_suite_runs_without_the_postgres_driver_and_fails_when_the_gil_comes_back():
+    """psycopg-binary has no 3.14t wheel, so the postgres group is out; a dependency that re-enables the GIL on import
     would leave the job green on the build it does not test, so the job checks the interpreter after the imports."""
     runs = "\n".join(step["run"] for step in job("ci.yml", "python-ft")["steps"] if "run" in step)
-    assert "uv sync --locked --no-group hub --python 3.14t" in runs
+    assert "uv sync --locked --no-group postgres --python 3.14t" in runs
     assert "sys._is_gil_enabled()" in runs
     assert "PYTEST_TARGETS" in runs  # the same selected tests as the shards
 
@@ -254,7 +254,7 @@ def test_the_four_short_jobs_are_gone_and_static_checks_runs_every_check_they_ra
     runs = "\n".join(step["run"] for step in job("ci.yml", "static-checks")["steps"] if "run" in step)
     assert "ci/static_checks.sh" in runs
     for command in (
-        "uv sync --locked --no-group hub",  # ic: an environment without the hub extras
+        "uv sync --locked --no-group postgres",  # ic: an environment without the Postgres driver
         "ci/ic_imports.py",
         "ci/public_names.py",
         "python -m starpulse.contracts.api",  # api-types: regenerate both outputs, fail on a diff

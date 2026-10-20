@@ -124,7 +124,7 @@ def main(argv: list[str] | None, parser: argparse.ArgumentParser) -> None:
     log = EventLog(database_url(config.database_url, base))
     stop = threading.Event()
     try:
-        board, feed = worker_board(config, base, log, "starpulse-autopilot", stop, local=args.local_board)
+        board, feed = worker_board(config, base, log, "starpulse-autopilot", stop)
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")
     tasks = MachineTasks(feed, board.keys)

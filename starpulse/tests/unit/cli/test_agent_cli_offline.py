@@ -150,10 +150,6 @@ class TestConfigCheck:
             "database_url": None,
             "session_start_url": None,
             "level": None,
-            "hub_retention_days": 14,
-            "oidc": None,
-            "sources": [],
-            "aggregates_only": False,
             "producers": [],
             "refresh_token_env": None,
             "pull_requests": True,
@@ -273,13 +269,13 @@ class TestConfigCheck:
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         file = tmp_path / "starpulse.toml"
-        file.write_text('mode = "hub"\n')
+        file.write_text('mode = "team"\n')
 
         code, document = _run(capsys, ["config", "check", "--config", str(file)])
 
         assert code == 1
         assert document["unknown_keys"] == []
-        assert "hub" in document["errors"][0]
+        assert "team" in document["errors"][0]
 
 
 DIAGRAM = "stateDiagram-v2\n    [*] --> open\n    open --> closed : Close it\n    closed --> [*]\n"

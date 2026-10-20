@@ -56,7 +56,7 @@ ROOT = Path(__file__).resolve().parents[1]
         (["ci/select_tests.py", "ci/test_ui_preview.py", "ci/seeded_server.py"], []),
         ([".github/workflows/ui-preview.yml"], [STARPULSE]),
         (["starpulse/_internal/cli/demo.py"], [STARPULSE]),
-        (["design/hub/index.html"], [MOCKUP]),
+        (["design/admin/index.html"], [MOCKUP]),
         (["design/elements/index.html"], [MOCKUP, ELEMENTS]),
         (["starpulse/web/src/style.css"], [STARPULSE, ELEMENTS]),
         (["design/data.js", "starpulse/web/src/features/kanban/Kanban.tsx"], [STARPULSE, MOCKUP]),
@@ -144,7 +144,7 @@ def test_a_push_that_changed_no_ui_path_since_the_last_render_needs_no_render() 
 
 def test_a_push_that_changed_a_ui_path_since_the_last_render_renders() -> None:
     assert push_touches_ui(compare("README.md", KANBAN))
-    assert push_touches_ui(compare("design/hub/index.html"))
+    assert push_touches_ui(compare("design/admin/index.html"))
 
 
 def test_a_file_renamed_out_of_a_ui_path_renders() -> None:
@@ -179,7 +179,7 @@ def test_the_shipped_mockup_builds_a_demo_that_leaks_nothing() -> None:
     ("changed", "expected"),
     [
         (["design/task-modal/task-modal.js"], ["task-modal"]),
-        (["design/hub/index.html", "design/edit/edit.js", "design/hub/hub.js", "starpulse/_internal/server/server.py"], ["edit", "hub"]),
+        (["design/admin/index.html", "design/edit/edit.js", "design/admin/admin.js", "starpulse/_internal/server/server.py"], ["admin", "edit"]),
         (["design/index.html", "design/data.js"], []),
         (["design/elements/index.html", "design/elements/elements.js"], []),
         (["starpulse/web/src/features/kanban/Kanban.tsx"], []),

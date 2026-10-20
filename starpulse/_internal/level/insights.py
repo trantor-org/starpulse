@@ -1,9 +1,7 @@
 """The insights API: `POST /api/insights` and `DELETE /api/insights/<id>`, the fourth contract.
 
 An external engine (a separate package; this one holds no engine code) posts one `Finding` as JSON, with
-`Authorization: Bearer <engine token>`; a hub names that token's variable as `engine_token_env` in its `[oidc]` table, and
-a server without one has no insights routes (404). The engine token is checked before a request reaches this module
-(`oidc.Gate`) and is no source token and no viewer's sign-in.
+`Authorization: Bearer <engine token>`. No server checks that token now, so a server has no insights routes (404).
 
 The answers: 201 `{id, replaced: false}` for a new finding, 200 `{id, replaced: true}` when the id was held and not
 retracted, so a re-post replaces it; 400 naming the field to fix for a body the contract refuses, including a scope that
@@ -14,7 +12,7 @@ and sends nothing.
 Each state reaches the history store (`starpulse_insights`, kept after a retraction) and the stream: `/api/events` sends
 an `insight` event `{id, finding}` for a post or re-post and `{id, finding: null}` for a retraction, and its snapshot
 lists the `insights` that are live, so a client that connects later reads them. A finding past its `expires_at` is not
-listed, and a hub that restarts lists the live ones again from the store (`restore`). The page draws none of them.
+listed, and a server that restarts lists the live ones again from the store (`restore`). The page draws none of them.
 """
 
 from __future__ import annotations
@@ -156,6 +154,6 @@ class Insights:
 
 
 def restore(store: InsightStore, feed: BoardFeed, now: float | None = None) -> None:
-    """Draw every finding still live at `now` (the clock by default), as a hub does when it starts."""
+    """Draw every finding still live at `now` (the clock by default), as a server does when it starts."""
     for finding in store.live(time.time() if now is None else now):
         feed.put_insight(finding.model_dump(mode="json"))

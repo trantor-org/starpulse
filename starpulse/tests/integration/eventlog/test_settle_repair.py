@@ -27,7 +27,7 @@ ROWS = [
 
 
 def test_a_settle_recorded_behind_later_moves_is_dropped_when_the_store_starts(tmp_path: Path) -> None:
-    url = f"sqlite:///{tmp_path / 'hub.sqlite'}"
+    url = f"sqlite:///{tmp_path / 'history.sqlite'}"
     held = HistoryStore(url, MACHINES)
     with held.engine.begin() as db:
         for event_id, task, old, new, at in ROWS:

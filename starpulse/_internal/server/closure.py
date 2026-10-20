@@ -40,13 +40,9 @@ _CHILDREN = tuple(name for name in ENTRIES if name != SELF)
 _BOARD_READERS = ("pulls", "autopilot", "runs", "flow-metrics", "board")
 
 
-#: The keys `serve` alone reads: whether each child runs, its memory limit, and the hub's own settings.
+#: The keys `serve` alone reads: whether each child runs, its memory limit, and its refresh token.
 _SERVE_KEYS = (
     "mode",
-    "oidc",
-    "sources",
-    "aggregates_only",
-    "hub_retention_days",
     "refresh_token_env",
     "slow_read_seconds",
     "worker_memory",

@@ -65,7 +65,7 @@ The exit code is 0 for success (for `doctor`, every check passing), 1 for a refu
 move or a failed `doctor` check, 2 for a usage error, 3 when the server (or what the
 verb needs of it) is unavailable and 4 for something not found. The server is `--server`, else `STARPULSE_URL`, else
 `http://localhost:8766`; a verb reads it per call and keeps nothing. `STARPULSE_TOKEN`, when set, is sent as a bearer
-token on every request: a hub's reader token (`reader_token_env`), so an agent reads a hub without a browser sign-in.
+token on every request.
 `starpulse help --agent` prints the manifest of
 verbs, generated from the parser below, so a verb added here is listed with its arguments, output keys and exit codes.
 `watch` is the one verb that writes more than one document: it holds the server's event stream open and writes one JSON

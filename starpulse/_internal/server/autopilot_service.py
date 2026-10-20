@@ -47,7 +47,7 @@ def start_autopilot(
     The loop admits from the lane `[autopilot] lane` names (else the board's initial lane), starts a session through
     `session_start_url` (else the built-in tmux starter in `base`), and settles a stuck one by moving it to Needs
     attention through the board's editor. Its chain and per-task P(goal) are the trajectory analytics' when this
-    server has a `[level]` table, including on an IC instance that is not serving `--hub`.
+    server has a `[level]` table.
     """
 
     def settle(task: str, reason: str) -> Written:

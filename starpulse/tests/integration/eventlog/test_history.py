@@ -183,10 +183,10 @@ def test_a_store_holds_a_cursor_per_stream_which_a_store_opened_again_reads(stor
 
 
 def test_a_reader_saves_its_own_cursor_and_a_later_save_replaces_it(store: HistoryStore) -> None:
-    store.checkpoints.save("forward:https://hub.test", 12)
-    store.checkpoints.save("forward:https://hub.test", 40)
+    store.checkpoints.save("forward:https://remote.test", 12)
+    store.checkpoints.save("forward:https://remote.test", 40)
 
-    assert store.checkpoints.load("forward:https://hub.test")[0] == 40
+    assert store.checkpoints.load("forward:https://remote.test")[0] == 40
     assert store.checkpoints.load(events.STREAM)[0] is None
 
 

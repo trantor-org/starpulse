@@ -124,8 +124,8 @@ jobs:
           uv run --no-sync pytest --collect-only -q | grep '::' > collected.txt
           uv run --no-sync python ci/coverage_map.py build .coverage --sha "$GITHUB_SHA" --collected collected.txt
 
-  # The same selected tests on the free-threaded build (3.14t), without the hub group: psycopg-binary has no 3.14t wheel, so
-  # hub mode stays on 3.14 and an IC instance is what runs here. trantor's live server runs on 3.14t, so a change that
+  # The same selected tests on the free-threaded build (3.14t), without the postgres group: psycopg-binary has no 3.14t wheel, so
+  # an IC instance is what runs here. trantor's live server runs on 3.14t, so a change that
   # breaks that build shows in the nightly suite. One job, not a shard matrix. It is not a required check and `python`
   # does not wait for it.
   python-ft:
@@ -150,7 +150,7 @@ jobs:
       - run: |
           echo "UV_PROJECT_ENVIRONMENT=$RUNNER_TEMP/ft-venv" >> "$GITHUB_ENV"
           echo "UV_PYTHON_INSTALL_DIR=$RUNNER_TEMP/uv-python" >> "$GITHUB_ENV"
-      - run: uv sync --locked --no-group hub --python 3.14t
+      - run: uv sync --locked --no-group postgres --python 3.14t
       # A dependency that re-enables the GIL on import leaves every test green on the build this job exists to test.
       - run: uv run --no-sync python -c "import sys, starpulse._internal.server.server; sys.exit(sys._is_gil_enabled())"
       - run: echo "PYTEST_ADDOPTS=-n $(uv run --no-sync python ci/xdist_workers.py) --dist worksteal" >> "$GITHUB_ENV"

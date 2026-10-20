@@ -10,10 +10,8 @@ from starpulse._internal.config.config import (
     Config,
     ConfigError,
     MemoryLimit,
-    OidcSettings,
     Producer,
     Repo,
-    Source,
     load,
     runs_adapter,
 )
@@ -207,16 +205,14 @@ def test_a_dotted_type_that_fails_to_import_is_refused_with_the_failure(
     assert "acme_missing_dependency" in _refusal(tmp_path, text)
 
 
-def test_hub_mode_is_a_serve_flag_not_a_config_setting(tmp_path: Path) -> None:
-    assert _refusal(tmp_path, 'mode = "hub"\n') == (
-        "mode 'hub' is not a config setting; use mode = \"ic\", and start a hub with `serve --hub`"
-    )
+def test_a_mode_other_than_ic_is_not_a_config_setting(tmp_path: Path) -> None:
+    assert _refusal(tmp_path, 'mode = "team"\n') == "mode 'team' is not a config setting; use mode = \"ic\""
 
 
 def test_unknown_keys_are_refused_by_name_beside_the_known_ones(tmp_path: Path) -> None:
     assert _refusal(tmp_path, 'zeta = 1\ntrakcer_url = "http://x.test"\n') == (
-        "unknown config key(s) trakcer_url, zeta; known: aggregates_only, analytics, api_worker, autopilot, board, board_worker, ci, cursor_context, database_url, event_log_archive_dir, event_log_retention_days, "
-        "flow_metrics_worker, harnesses_file, hub_retention_days, level, mode, oidc, producers, pull_requests, refresh_token_env, release, repos, runs, runs_worker, search, search_worker, session_start_url, slow_read_seconds, sources, tracker_url, worker_memory"
+        "unknown config key(s) trakcer_url, zeta; known: analytics, api_worker, autopilot, board, board_worker, ci, cursor_context, database_url, event_log_archive_dir, event_log_retention_days, "
+        "flow_metrics_worker, harnesses_file, level, mode, producers, pull_requests, refresh_token_env, release, repos, runs, runs_worker, search, search_worker, session_start_url, slow_read_seconds, tracker_url, worker_memory"
     )
 
 
@@ -307,154 +303,6 @@ def test_a_session_start_address_that_is_not_text_is_refused(tmp_path: Path) -> 
 )
 def test_a_board_or_database_setting_of_the_wrong_shape_is_refused(tmp_path: Path, text: str, refusal: str) -> None:
     assert _refusal(tmp_path, text) == refusal
-
-
-def test_a_hub_keeps_two_weeks_of_raw_events_unless_the_config_says_otherwise(tmp_path: Path) -> None:
-    assert load(None).hub_retention_days == 14
-    assert load(_write(tmp_path, "hub_retention_days = 30\n")).hub_retention_days == 30
-
-
-@pytest.mark.parametrize("value", ["0", "-3", "1.5", '"14"', "true"])
-def test_a_hub_retention_that_is_not_a_positive_whole_number_of_days_is_refused(tmp_path: Path, value: str) -> None:
-    assert (
-        _refusal(tmp_path, f"hub_retention_days = {value}\n")
-        == "hub_retention_days must be a whole number of days, 1 or more"
-    )
-
-
-_OIDC = """
-[oidc]
-issuer = "https://id.example.test/realm"
-client_id = "starpulse-hub"
-client_secret_env = "HUB_OIDC_SECRET"
-redirect_uri = "https://hub.example.test/auth/callback"
-allowed_groups = ["starpulse-viewers", "ops"]
-"""
-
-
-def test_an_oidc_table_names_the_issuer_the_client_and_the_allowed_groups(tmp_path: Path) -> None:
-    config = load(_write(tmp_path, _OIDC))
-
-    assert config.oidc == OidcSettings(
-        issuer="https://id.example.test/realm",
-        client_id="starpulse-hub",
-        client_secret_env="HUB_OIDC_SECRET",
-        redirect_uri="https://hub.example.test/auth/callback",
-        allowed_groups=("starpulse-viewers", "ops"),
-    )
-    assert (config.oidc.groups_claim, config.oidc.scopes, config.oidc.engine_token_env) == (
-        "groups",
-        ("openid", "profile", "email"),
-        None,
-    )
-
-
-def test_an_oidc_table_may_set_the_groups_claim_the_scopes_and_the_engine_token_variable(tmp_path: Path) -> None:
-    extra = 'groups_claim = "roles"\nscopes = ["openid", "roles"]\nengine_token_env = "HUB_ENGINE_TOKEN"\n'
-    oidc = load(_write(tmp_path, _OIDC + extra)).oidc
-
-    assert oidc is not None
-    assert (oidc.groups_claim, oidc.scopes, oidc.engine_token_env) == ("roles", ("openid", "roles"), "HUB_ENGINE_TOKEN")
-
-
-def test_an_oidc_table_may_name_the_reader_token_variable(tmp_path: Path) -> None:
-    oidc = load(_write(tmp_path, _OIDC + 'reader_token_env = "STARPULSE_TOKEN"\n')).oidc
-
-    assert oidc is not None
-    assert oidc.reader_token_env == "STARPULSE_TOKEN"
-    assert load(_write(tmp_path, _OIDC)).oidc.reader_token_env is None  # type: ignore[union-attr]
-
-
-def test_a_reader_token_variable_that_is_no_variable_name_is_refused(tmp_path: Path) -> None:
-    refused = _refusal(tmp_path, _OIDC + 'reader_token_env = "has space"\n')
-
-    assert refused == "oidc: reader_token_env must be the name of an environment variable"
-
-
-def test_a_config_without_an_oidc_table_has_none() -> None:
-    assert load(None).oidc is None
-
-
-@pytest.mark.parametrize(
-    ("edit", "message"),
-    [
-        ('issuer = "https://id.example.test/realm"\n', "oidc: issuer is required"),
-        ('client_id = "starpulse-hub"\n', "oidc: client_id is required"),
-        ('client_secret_env = "HUB_OIDC_SECRET"\n', "oidc: client_secret_env is required"),
-        ('redirect_uri = "https://hub.example.test/auth/callback"\n', "oidc: redirect_uri is required"),
-        ('allowed_groups = ["starpulse-viewers", "ops"]\n', "oidc: allowed_groups must name at least one group"),
-    ],
-)
-def test_an_oidc_table_missing_a_required_key_is_refused(tmp_path: Path, edit: str, message: str) -> None:
-    assert _refusal(tmp_path, _OIDC.replace(edit, "")) == message
-
-
-@pytest.mark.parametrize(
-    ("old", "new", "message"),
-    [
-        (
-            'allowed_groups = ["starpulse-viewers", "ops"]',
-            "allowed_groups = []",
-            "oidc: allowed_groups must name at least one group",
-        ),
-        (
-            'allowed_groups = ["starpulse-viewers", "ops"]',
-            'allowed_groups = "ops"',
-            "oidc: allowed_groups must name at least one group",
-        ),
-        (
-            'allowed_groups = ["starpulse-viewers", "ops"]',
-            'allowed_groups = [""]',
-            "oidc: allowed_groups must name at least one group",
-        ),
-        ('"HUB_OIDC_SECRET"', '"has space"', "oidc: client_secret_env must be the name of an environment variable"),
-        ('"https://id.example.test/realm"', '"id.example.test"', "oidc: issuer must be an http(s) URL"),
-        ('"https://hub.example.test/auth/callback"', '"/auth/callback"', "oidc: redirect_uri must be an http(s) URL"),
-        ('client_id = "starpulse-hub"', "client_id = 3", "oidc: client_id must be text"),
-    ],
-)
-def test_an_oidc_table_with_a_bad_value_is_refused(tmp_path: Path, old: str, new: str, message: str) -> None:
-    assert _refusal(tmp_path, _OIDC.replace(old, new)) == message
-
-
-def test_an_oidc_table_with_an_unknown_key_is_refused(tmp_path: Path) -> None:
-    assert _refusal(tmp_path, _OIDC + "color = 1\n") == "oidc: unknown key(s) color"
-
-
-def test_oidc_is_a_table(tmp_path: Path) -> None:
-    assert _refusal(tmp_path, "oidc = 3\n") == "oidc must be an [oidc] table"
-
-
-def test_sources_are_the_instances_a_hub_accepts_events_from_each_with_its_own_token_variable(tmp_path: Path) -> None:
-    text = (
-        '[[sources]]\nname = "ana"\ntoken_env = "ANA_TOKEN"\n\n[[sources]]\nname = "bo"\ntoken_env = "BO_TOKEN"\n'
-    )
-
-    config = load(_write(tmp_path, text))
-
-    assert config.sources == (Source("ana", "ANA_TOKEN"), Source("bo", "BO_TOKEN"))
-
-
-@pytest.mark.parametrize(
-    ("text", "reason"),
-    [
-        ('[[sources]]\ntoken_env = "T"\n', "a source needs name"),
-        ('[[sources]]\nname = "ana"\n', "a source needs token_env"),
-        ('[[sources]]\nname = "a/b"\ntoken_env = "T"\n', "source names must be non-empty text without a /"),
-        ('[[sources]]\nname = "ana"\ntoken_env = "T 1"\n', "source ana: token_env must be the name of an environment variable"),
-        ('[[sources]]\nname = "ana"\ntoken_env = "T"\nurl = "x"\n', "source ana: unknown key(s) url; known: name, token_env"),
-        (
-            '[[sources]]\nname = "ana"\ntoken_env = "A"\n[[sources]]\nname = "ana"\ntoken_env = "B"\n',
-            "source ana is configured twice",
-        ),
-        (
-            '[[sources]]\nname = "ana"\ntoken_env = "A"\n[[sources]]\nname = "bo"\ntoken_env = "A"\n',
-            "sources ana and bo share token_env A; each needs its own token",
-        ),
-    ],
-)
-def test_a_sources_table_that_cannot_run_is_refused_with_its_reason(tmp_path: Path, text: str, reason: str) -> None:
-    assert _refusal(tmp_path, text) == reason
 
 
 def test_producers_are_the_systems_that_post_machine_events_each_with_its_token_variable_machines_and_actors(
@@ -583,12 +431,6 @@ def test_search_worker_defaults_off_and_is_a_flag(tmp_path: Path) -> None:
     assert load(None).search_worker is False
     assert load(_write(tmp_path, "search_worker = true\n")).search_worker is True
     assert _refusal(tmp_path, 'search_worker = "yes"\n') == "search_worker must be true or false"
-
-
-def test_a_hub_takes_names_unless_it_is_configured_for_aggregates_only(tmp_path: Path) -> None:
-    assert load(None).aggregates_only is False
-    assert load(_write(tmp_path, "aggregates_only = true\n")).aggregates_only is True
-    assert _refusal(tmp_path, 'aggregates_only = "yes"\n') == "aggregates_only must be true or false"
 
 
 def test_a_pulls_read_is_slow_at_one_second_unless_the_config_says_otherwise(tmp_path: Path) -> None:

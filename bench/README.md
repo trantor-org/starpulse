@@ -1,14 +1,12 @@
 # Benchmarks
 
-Three scripts measure the event log at the two ends of a deployment and the reads of the store beside it, a fourth
-times a running page against its latency budget, a fifth holds that page open idle to see it degrade, a sixth loads
-it with many viewers at once, and `free_threading/` runs that crowd against one copy of a state on CPython 3.14 and
+Two scripts measure the event log and the reads of the store beside it, a third times a running page against its
+latency budget, a fourth holds that page open idle to see it degrade, a fifth loads it with many viewers at once, and `free_threading/` runs that crowd against one copy of a state on CPython 3.14 and
 its free-threaded build. They are not part of the installed package and the test suite does not run them;
 `ci/test_page_latency.py`, `ci/test_soak.py` and `ci/test_load.py` hold the page harnesses' rules.
 
 | Script | Measures | Needs |
 | --- | --- | --- |
-| `hub_ingest.py` | N forwarder processes writing event batches into one Postgres event log; the insert is idempotent on `event_id`, as a hub's ingest is | a throwaway Postgres 17 |
 | `ic_event_log.py` | concurrent fail-open appends to an instance's SQLite WAL log while a reader polls by cursor, at 10 thousand and 1 million rows | a scratch file path |
 | `flow_reads.py` | the p95 of flow health, the level and its trajectories over a SQLite store of 10 thousand, 1 million and 10 million lane changes, read from the summaries the store keeps on write | a scratch directory with room for about 6 GB |
 | `page_latency.py` | the p50 and p95 of every read route, the event stream's first snapshot, and in Chrome the first paint (navigation to the frame that draws the board), each view switch, a task modal, the Star Map's fly-to, each stream event to paint and the page's frames, against 50 ms (16.7 ms a frame) | a running StarPulse and Google Chrome |
@@ -17,18 +15,6 @@ its free-threaded build. They are not part of the installed package and the test
 | `free_threading/` | `load.py`'s crowd against the same state served on CPython 3.14 and on 3.14t (free-threaded), interleaved: per-route p50, p95, max and requests a second for each run | Docker and a state directory |
 
 Run them from the repository root after `uv sync`; `page_latency.py`, `soak.py` and `load.py` also need `uv sync --group bench`.
-
-## Hub ingest
-
-```sh
-docker run --rm -p 127.0.0.1:55432:5432 -e POSTGRES_PASSWORD=bench postgres:17
-uv run python bench/hub_ingest.py                 # the DSN above
-uv run python bench/hub_ingest.py <sqlalchemy-dsn>
-```
-
-The script drops and recreates `starpulse_events` in the database it connects to, so point it only at a
-throwaway server. It prints one line per run: events per second and the p50, p99 and max batch latency, then
-the row count, bytes per row and the cost of a tail poll.
 
 ## Instance event log
 
@@ -251,7 +237,7 @@ USERS=200 bench/free_threading/run.sh .tmp/ft-state .tmp/ft-ab200 2 3m
 ```
 
 The image holds two virtualenvs from the one lockfile, `/opt/gil` on CPython 3.14 and `/opt/ft` on 3.14t, with the
-runtime dependencies only (the hub group's `psycopg-binary` has no 3.14t wheel, so this is an instance, not a hub);
+runtime dependencies only (the `postgres` group is left out: `psycopg-binary` has no 3.14t wheel);
 `/opt/gil` also holds the bench group, whose Locust drives both. serve refuses to start without a built page, and
 Locust reads only `/api`, so each virtualenv gets a placeholder `index.html`.
 

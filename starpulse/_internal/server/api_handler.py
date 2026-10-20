@@ -136,7 +136,7 @@ class _ApiHandler(SimpleHTTPRequestHandler):
             self._send(encode("error", {"error": "the server built a body its contract refuses"}), 500)
 
     def parse_request(self) -> bool:
-        """Parse the request, then let the gate (a hub's sign-in) answer or admit it before any route sees it."""
+        """Parse the request, then let the gate (the test host's write watch) answer or admit it before any route sees it."""
         return super().parse_request() and (self.gate is None or self.gate(self))
 
     def _send(

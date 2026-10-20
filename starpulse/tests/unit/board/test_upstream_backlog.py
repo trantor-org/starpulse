@@ -790,7 +790,7 @@ def test_a_reader_restarted_across_a_projection_change_serves_its_last_board_wit
     reader, stop = BoardFeed(), threading.Event()
 
     reader.await_stream()
-    replica.read(board({"interval": "3600"}, tmp_path), reader, "test", log, load(None), stop, local=False)
+    replica.read(board({"interval": "3600"}, tmp_path), reader, "test", log, load(None), stop)
     try:
         assert reader.ready.wait(timeout=5)
         assert _lanes(reader) == {"task-1": "to_do"}

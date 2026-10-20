@@ -58,8 +58,7 @@ starpulse demo --out demo.html                          # the self-contained dem
 ```
 
 These verbs read the running server (`starpulse serve`) over HTTP: `--server URL`, else `STARPULSE_URL`, else
-`http://localhost:8766`. `STARPULSE_TOKEN`, when set, is sent as a bearer token on every request, so a verb reads a
-hub with its reader token (`reader_token_env`) instead of a browser sign-in.
+`http://localhost:8766`. `STARPULSE_TOKEN`, when set, is sent as a bearer token on every request.
 Each writes one JSON document to stdout and nothing to stderr, except `watch`, which writes
 one JSON line per change; an error is `{"error": "...", "code": "..."}`. The exit code is 0 for success, 1 for a refused or invalid request, a refused move or a failed `doctor` check, 2 for a usage
 error, 3 when the server is unreachable (the error names the address tried) or has no board writer and 4 for something not found. A verb
@@ -70,7 +69,7 @@ lists exactly the verbs there are.
 |---|---|---|
 | `snapshot` | | the server's full snapshot (`/api/snapshot?view=full`, [Cold done tasks](serving.md#cold-done-tasks)): `graphs`, `flows`, `dags`, `pools`, `pulls`, `claims`, `insights`, `settled`, ...; each `flows` entry but the Board's also carries `ties` (`{kind, machine, state, count, dag, when}`: `declared`, `observed` or `dag`), `parent`, `depth`, `chain`, `nested`, `last` and `stuck` (`{machine, state, since}`, a task idle over 2 h), rolled up from the machines nested below it; `machinePage` and `machineStrip` page and count the machines entered from the In Progress one ([Machine rows](serving.md#machine-rows)) |
 | `board` | `--state`, `--milestone`, `--label`, `--profile`, `--assignee`, `--type` | `columns`: each `{state, name, tasks}`; a task is `{id, title, lane, profile, assignee, milestone, type, labels, dependencies, waiting_on, criteria, pause_reason, prs, moves}`, `profile` the agent profile it is routed to and `assignee` the session that last claimed it (empty when none has), `criteria` each acceptance criterion as `{text, checked}`, `pause_reason` why a `needs_attention` task waits for a person (empty otherwise), `--profile` keeping only tasks routed to that profile, `--assignee` only that session's tasks (`--holder` and a `--assignee` value starting with `@` are the one-release aliases of the old keys) and `--type` only tasks of that type; `--milestone` also lists the milestone's done tasks past their hot day (`/api/done` cards: no `dependencies`, `criteria`, `prs` or `moves`) |
-| `search` | `QUERY...`, `--limit`, `--label`, `--finished-within-days` | `query` and `hits`: each task holding every word of the query as `{task, title, lane, score, snippet}`, best match first, at most `--limit` (1 to 100, default 10); each `--label` keeps only the tasks carrying it, and `--finished-within-days N` drops a task that finished more than `N` days ago; a blank query, a limit out of range or a window that is not a positive integer exits 1, and a server that keeps no index (a hub) exits 3 |
+| `search` | `QUERY...`, `--limit`, `--label`, `--finished-within-days` | `query` and `hits`: each task holding every word of the query as `{task, title, lane, score, snippet}`, best match first, at most `--limit` (1 to 100, default 10); each `--label` keeps only the tasks carrying it, and `--finished-within-days N` drops a task that finished more than `N` days ago; a blank query, a limit out of range or a window that is not a positive integer exits 1, and a server that keeps no index exits 3 |
 | `task show` | `TASK` | a task as above, with its `description`, in which each bare `TASK-N` is a link to the task's card on the Board and each `#N` (three digits or more) a link to the task's pull request of that number, while code spans, existing links and bare URLs stay as written; a task done over 24 h ago is read whole from its board record; a completed or archived task has only its `id` and where it settled as `lane` |
 | `task moves` | `TASK` | `task`, `lane` and `moves`: each column the task may move to as `{allowed, reason, skill}`, as the agent meets it |
 | `task move` | `TASK`, `TO`, `--session` | `ok`, `task`, `to`, `reason`, `skill` and `advice`: the move made, or the refusal and the skill that satisfies it (exit 1); exit 3 when the board has no writer |
@@ -135,8 +134,7 @@ stem (`rotation` finds `rotate`). `score` is higher for a better match, `lane` i
 `completed` or `archived` once it settled) and `snippet` is the text around the match. The index is a SQLite FTS5
 table in the instance's own database, filled from the board adapter on the first read, so every adapter (native,
 Backlog.md, Jira) is searched the same way, and kept current as each task is placed, edited, moved or retracted; a
-task placed again unchanged, as every task is on a restart, writes nothing. A hub keeps none, since individual task
-text stays on the instance, and a SQLite built without FTS5 serves none: the route answers 404 and the verb exits 3.
+task placed again unchanged, as every task is on a restart, writes nothing. A SQLite built without FTS5 serves none: the route answers 404 and the verb exits 3.
 
 Without filters a search reaches every task, open or settled, of any age. Each `label` (repeatable) keeps only the
 tasks carrying that label, matched whole (`disk` does not match `disk-usage`). `finished_within_days=N` keeps every
@@ -171,9 +169,9 @@ counted. The endpoint is 400 for an `hours` or `stuck_hours` that is no positive
 does not list every task's lane changes through `lane_rows(since=None)` and `gaps()`; `since`
 is an epoch the Ledger passes so it reads only its last 24 hours, and None asks for every change.
 
-`analytics level` reads `GET /api/level[?hours=N]` (a window of 168 hours by default), served by a hub (`serve --hub`)
+`analytics level` reads `GET /api/level[?hours=N]` (a window of 168 hours by default), served by a server
 whose config has a `[level]` table. It counts the level's machine on the Backlog flow metric definitions, merged across
-the sources that forward to the hub, a source being the prefix of an event id (`<source>/<id>`; `unattributed` when
+the sources, a source being the prefix of an event id (`<source>/<id>`; `unattributed` when
 none). `wip` is the runs now in a working state (`orbit.working`, else every state that is neither initial nor a
 terminal), `throughput` the entries into the goal in the window (a run that settled from the goal, into a final state
 no terminal names, is still in it, so seeing it in the goal again is no second entry), `time_in_state` each non-final
@@ -186,7 +184,7 @@ for a source with nothing ended or worked. `level` echoes the config the page dr
 `gates`, `terminals` with their roles, `orbit.suns` and `orbit.working`, `facets`, `activity.measure` and
 `activity.pace`), each source's `shared` is whether it has a Board of its own (false for `unattributed`), and
 `arrivals` lists each run's entry into a terminal inside the window as `{source, state, at}` (epoch seconds, oldest
-first), the comets the page replays. History begins at the first event the hub holds: a window longer than it is
+first), the comets the page replays. History begins at the first event the server holds: a window longer than it is
 refused (exit 1, the error naming the history's hours, `history_s` in the HTTP body), never padded with zero days. A
 server with no level is 404 (exit 3).
 
@@ -450,7 +448,7 @@ violations](serving.md#conformance-violations) counts the same judgment live.
 `starpulse reload [--config starpulse.toml]` makes the `serve` started from that config pick up changed code and config
 without a restart of the whole server. It is not an agent verb: it reads no server and `help --agent` leaves it out.
 `serve` publishes a loopback endpoint and a random token in `<config stem>.control` (`starpulse.control` for
-`starpulse.toml`, `starpulse-hub.control` for `starpulse-hub.toml`), mode `0600`, beside the config (else `starpulse.control`
+`starpulse.toml`, `starpulse-other.control` for `starpulse-other.toml`), mode `0600`, beside the config (else `starpulse.control`
 in the working directory) and removes the file when it stops; `reload` reads that file, so pass the same `--config`.
 
 `serve` reads each process's import closure from the installed code in a fresh interpreter, as a child started now would

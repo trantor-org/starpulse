@@ -241,7 +241,7 @@ def movable(tmp_path: Path, writer: _Writer) -> Iterator[str]:
 
 @pytest.fixture
 def leveled(tmp_path: Path) -> Iterator[str]:
-    """A hub's address: a level on the Board and 90 hours of history from two sources, the clock at `NOW`."""
+    """A server's address: a level on the Board and 90 hours of history from two sources, the clock at `NOW`."""
     level = Level(
         "board",
         "done",
@@ -1574,7 +1574,7 @@ def test_analytics_level_of_a_server_with_no_level_is_unavailable(
 ) -> None:
     code, doc = _run(capsys, ["analytics", "level", "--server", base])
 
-    assert (code, doc["code"], "[level]" in doc["error"]) == (3, "unavailable", True)
+    assert (code, doc["code"], "no level" in doc["error"]) == (3, "unavailable", True)
 
 
 def test_analytics_trajectories_serves_variants_the_norm_outliers_the_chain_and_betweenness(
@@ -1694,7 +1694,7 @@ def test_the_trajectory_verbs_of_a_server_with_no_level_are_unavailable(
 ) -> None:
     code, doc = _run(capsys, ["analytics", verb, "--server", base])
 
-    assert (code, doc["code"], "[level]" in doc["error"]) == (3, "unavailable", True)
+    assert (code, doc["code"], "no level" in doc["error"]) == (3, "unavailable", True)
 
 
 def test_runs_list_names_each_workflow_by_instance_with_its_status_and_the_runs_error(

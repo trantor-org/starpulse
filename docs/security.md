@@ -16,5 +16,3 @@ token counts, a model, effort, tool, skill or decision name, the branch, and the
 or `ssh root@nas-host`, never its arguments) and the file path a file tool read or wrote; it never reads a prompt, a
 reply, a tool's output or an account field. These stay in the instance's own event log, and only a path under a
 configured `[analytics]` root, cut to its first two components, is ever served.
-A hub refuses to start without an `[oidc]` table. See [Run a hub](hub.md)
-before exposing one.
