@@ -68,8 +68,8 @@ under `memray.Tracker` and takes the smaller one's leaked allocations after `gc.
 SQLite allocation per process) lands in one window and never fails the gate, while a leak shows in both. To change a
 budget, edit the context's `Budget(iterations, retained_bytes)` in `BUDGETS` there: measure the new baseline with the gate
 (the failure message prints the retained bytes) and set the budget about twice the baseline, never to the leak's size.
-Baselines on CPython 3.14.6 and memray 1.20.0, 200 iterations: pull-events 12 880 B, autopilot 42 760 B; budgets 32 KiB and
-96 KiB. The gate skips on 3.14t, where memray reports no allocation, and under `pytest --memray`, which cannot nest a
+Baselines on CPython 3.14.6 and memray 1.20.0: pull-events 12 880 B over 200 iterations, autopilot 11 680 B over 100 (the
+autopilot tick rereads its growing ledger, so its cost grows with the square of the iterations); budgets 32 KiB each. The gate skips on 3.14t, where memray reports no allocation, and under `pytest --memray`, which cannot nest a
 tracker. A context joins by adding a driver to `test_context_budgets.py` and an entry to `BUDGETS`.
 `starpulse/tests/conftest.py` keeps the suite's fixed costs low: every SQLite connection runs `PRAGMA synchronous=OFF`, and one
 background thread starts the session's Postgres and mock-issuer containers when the first test that needs one is collected
