@@ -169,3 +169,22 @@ def test_the_seam_declares_no_one_method_protocols() -> None:
     ]
 
     assert protocols == []
+
+
+def test_written_carries_the_lane_and_the_moment_it_was_written() -> None:
+    """A write that moves a task records the lane it moved to and the moment it was written, so the server can
+    record the change with the request's actor at write time."""
+    from starpulse._internal.board.seam import Written
+
+    written = Written(ok=True, lane="in_progress", at=100.0)
+
+    assert (written.lane, written.at) == ("in_progress", 100.0)
+
+
+def test_a_write_that_moves_no_lane_leaves_the_lane_unset() -> None:
+    """A write that changes no lane (a note, a refusal) records no lane, so the server records nothing for it."""
+    from starpulse._internal.board.seam import Written
+
+    written = Written(ok=True)
+
+    assert written.lane is None

@@ -136,21 +136,6 @@ def test_the_actors_metrics_are_kept_in_the_log_for_serve(run) -> None:
     assert delivery.metrics_of(log)() == "starpulse_task_actor_refusals_total 0\n"
 
 
-def test_the_actors_notes_reach_serve_through_the_log(run) -> None:
-    log = run()
-    seen: list[str] = []
-
-    class Serving:
-        def note_actor(self, task: str, actor: str | None, session: str = "", harness: str = "") -> None:
-            seen.append(task)
-
-    delivery.follow_notes(log, Serving(), threading.Event())
-    Actor.made[0].feed.note_actor("TASK-1", "task-actor")
-
-    assert _eventually(lambda: seen)
-    assert seen == ["TASK-1"]
-
-
 def test_a_board_that_cannot_edit_refuses_the_actor(run) -> None:
     with pytest.raises(SystemExit):
         run(CONFIG.replace("writes = true\n", ""))

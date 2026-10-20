@@ -407,16 +407,17 @@ class TaskActor:
             return
 
     def _write(self, name: str, target: str, comment: str, observed: float) -> None:
-        self._feed.note_actor(name, ACTOR)
-        try:
-            written = self._edit(name, {"status": target}, comment, actor=ACTOR)
-        except Exception as error:  # a board that raises refuses like one that answers no
-            written = Written(False, str(error))
+        with self._feed.recording:  # the board's poll finds the lane recorded under the actor, not as external
+            try:
+                written = self._edit(name, {"status": target}, comment, actor=ACTOR)
+            except Exception as error:  # a board that raises refuses like one that answers no
+                written = Written(False, str(error))
+            if written.ok and written.lane:
+                self._feed.record_written(name, written.lane, written.at or time.time(), (ACTOR, "", ""))
         if written.ok:
             self._landed(self._clock() - observed)
             return
         logger.warning("task actor: %s was not moved to %s: %s", name, target, written.output)
-        self._feed.note_actor(name, None)
         with self._metrics:
             self._refusals += 1
 

@@ -137,7 +137,6 @@ from starpulse._internal.feed.history_window import HistoryWindow
 if TYPE_CHECKING:  # annotation only: a runtime import would put the autopilot in the Delivery worker's import closure
     from starpulse._internal.autopilot.remote import Remote
     from starpulse._internal.autopilot.runtime import Runtime
-    from starpulse._internal.eventlog.history import HistoryStore
 
 logger = logging.getLogger(__name__)
 
@@ -332,16 +331,22 @@ def _named_who(request: Any) -> _Who | None:
     return _Who(named.get("actor", AGENT if session else ANONYMOUS).strip(), session, named.get("harness", "").strip())
 
 
-def _written_by(feed: BoardFeed, task: str, who: _Who, write: Callable[[], Written]) -> Written:
-    """Run `write` of `task` with `who` noted on the feed, so the lane entry of the change it makes names its writer.
+def _record_written(feed: BoardFeed | None, task: str | None, who: _Who, write: Callable[[], Written]) -> Written:
+    """Run `write` of `task` (None: the task the write makes, named by its output) and, when it put the task in a lane,
+    record that lane change with `who` as its actor, session and harness.
 
-    The note comes before the write because the board's poll can place the change the moment the file lands; a refused
-    write forgets it.
+    The feed's placing is held from the write to the record, so the board's poll that places the change the moment the
+    file lands finds it recorded and records nothing more: a write refused, or one that moves no lane, records nothing.
     """
-    feed.note_actor(task, who.actor, who.session, who.harness)
-    written = write()
-    if not written.ok:
-        feed.note_actor(task, None)
+    with feed.recording if feed is not None else contextlib.nullcontext():
+        written = write()
+        if feed is not None and written.ok and written.lane:
+            feed.record_written(
+                task or written.output,
+                written.lane,
+                written.at or time.time(),
+                (who.actor, who.session, who.harness),
+            )
     return written
 
 
@@ -390,7 +395,7 @@ def _move(
     if (refused := _move_refusal(agent, task, column, who)) is not None:
         return refused
     status = _status(column)
-    written = _written_by(
+    written = _record_written(
         feed,
         task,
         who,
@@ -473,7 +478,7 @@ def _lifecycle_edit(
             changes = {"status": _status(column), **plan(current)}
         except _Refusal as refusal:
             return refusal.answer
-        written = _written_by(feed, task, who, lambda: edit(task, changes, comment, actor=who.actor))
+        written = _record_written(feed, task, who, lambda: edit(task, changes, comment, actor=who.actor))
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
     return 200, {"task": task, "to": column}
@@ -707,7 +712,7 @@ def edit_task(
             todo[_APPEND_NOTES] = changes[_APPEND_NOTES]
         if not todo and not comment.strip():
             return 200, {"task": task, "changed": []}
-        written = _written_by(feed, task, who, lambda: edit(task, todo, comment, actor=who.actor))
+        written = _record_written(feed, task, who, lambda: edit(task, todo, comment, actor=who.actor))
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
     changed = ("notes" if field == _APPEND_NOTES else field for field in todo)
@@ -737,7 +742,7 @@ def archive_task(source: str, raw: bytes, feed: BoardFeed, archive: TaskArchiver
         return 404, {"error": "this board does not archive tasks"}
     if _held(feed, task) is None:
         return _not_held(feed, task)
-    written = _written_by(feed, task, who, lambda: archive(task, reason, actor=who.actor))
+    written = _record_written(feed, task, who, lambda: archive(task, reason, actor=who.actor))
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
     return 200, {"task": task}
@@ -805,7 +810,7 @@ def record_verdict(
         if refusal := _unjudged(task, current, check):
             return 409, {"error": refusal}
         comment = post_merge_checks.verdict_comment(check, _VERDICTS[verdict], evidence, fix)
-        written = _written_by(feed, task, who, lambda: edit(task, {}, comment, actor=who.actor))
+        written = _record_written(feed, task, who, lambda: edit(task, {}, comment, actor=who.actor))
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
     return 200, {"task": task, "check": check, "verdict": _VERDICTS[verdict], **({"fix": fix} if fix else {})}
@@ -854,7 +859,7 @@ def record_miss(
         if status != 201:
             return status, body
         comment = post_merge_checks.verdict_comment(check, "MISS", evidence, body["task"])
-        written = _written_by(feed, task, who, lambda: edit(task, {}, comment, actor=who.actor))
+        written = _record_written(feed, task, who, lambda: edit(task, {}, comment, actor=who.actor))
         if not written.ok:
             archive(body["task"], f"the MISS verdict on {task} {check} was refused: {written.output}", actor=who.actor)
     if not written.ok:
@@ -908,7 +913,7 @@ def restore_task(source: str, raw: bytes, feed: BoardFeed, restore: TaskRestorer
         return 400, _BAD_WHO
     if restore is None:
         return 404, {"error": "this board does not restore tasks"}
-    written = _written_by(feed, task, who, lambda: restore(task))
+    written = _record_written(feed, task, who, lambda: restore(task))
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
     return 200, {"task": task}
@@ -1017,11 +1022,10 @@ def create_task(
         return 400, {"error": wrong}
     if create is None:
         return 404, {"error": "this board does not create tasks"}
-    # the id is the writer's to choose, so the writer is noted once the task is made, with the feed's placing held
-    with feed.recording if feed is not None else contextlib.nullcontext():
-        written = create(title.strip(), {**details, "created_by": who.created_by}, actor=who.actor)
-        if written.ok and feed is not None:
-            feed.note_actor(written.output, who.actor, who.session, who.harness)
+    # the id is the writer's to choose, so the lane is recorded under the id the write returns
+    written = _record_written(
+        feed, None, who, lambda: create(title.strip(), {**details, "created_by": who.created_by}, actor=who.actor)
+    )
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
     return 201, {"task": written.output}
@@ -1288,16 +1292,6 @@ def history_window(source: str, method: str, raw: bytes, window: HistoryWindow) 
     elif method == "DELETE":
         window.reset()
     return 200, window.state()
-
-
-def reconcile_lanes(feed: BoardFeed, store: HistoryStore) -> None:
-    """Once `feed` has read what the stream retained, record the lanes its tasks are in that the history lacks."""
-    feed.ready.wait()
-    try:
-        if recorded := feed.reconcile_lanes(store.current_lanes()):
-            logger.warning("StarPulse: reconciled the lane of %d tasks the history had missed", recorded)
-    except Exception:  # the history is down; the next start goes again
-        logger.exception("StarPulse: cannot reconcile the lanes")
 
 
 def autopilot(source: str, method: str, raw: bytes, runtime: Runtime | Remote | None) -> tuple[int, dict[str, Any]]:

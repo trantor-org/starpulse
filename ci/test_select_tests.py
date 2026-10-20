@@ -460,3 +460,31 @@ def test_main_compares_pyproject_with_the_base_it_is_given(monkeypatch, capsys, 
     monkeypatch.setattr("sys.stdin", io.StringIO("pyproject.toml\n"))
     main(["--base", base])
     assert "PYTEST_TARGETS=ci/test_avoid_list.py\n" in capsys.readouterr().out
+
+
+def test_a_change_to_the_board_seam_selects_the_lane_written_test(repo, tmp_path):
+    """A change to the board seam's Written (gaining lane and at) selects the test that proves a native write then its
+    watch placement yields one history row and one board:lanes entry carrying the request's actor."""
+    from select_tests import select
+
+    (repo / "starpulse/_internal/board/seam.py").write_text(
+        "from dataclasses import dataclass\n\n"
+        "@dataclass\n"
+        "class Written:\n"
+        "    ok: bool\n"
+        "    lane: str | None = None\n"
+        "    at: float | None = None\n"
+    )
+    written_test = repo / "starpulse/tests/unit/server/test_lane_written.py"
+    written_test.parent.mkdir(parents=True)
+    written_test.write_text("from starpulse._internal.board.seam import Written\n")
+    coverage = {
+        "tests": {
+            "starpulse/tests/unit/server/test_lane_written.py::test_a_write_then_its_placement": [
+                "starpulse/_internal/board/seam.py"
+            ]
+        }
+    }
+    selection = select(repo, ["starpulse/_internal/board/seam.py"], coverage)
+
+    assert "starpulse/tests/unit/server/test_lane_written.py" in selection.tests

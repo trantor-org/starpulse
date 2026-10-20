@@ -248,7 +248,6 @@ from starpulse._internal.runs.cloudevents import CloudEventsIngest
 from starpulse._internal.runs.ingest import tokens as ingest_tokens
 from starpulse._internal.pulls.delivery import (
     Projected,
-    follow_notes,
     follow_saves,
     keep_beating,
     metrics_of,
@@ -268,9 +267,6 @@ from starpulse._internal.server.control import control_file
 from starpulse._internal.server.hold import LISTEN_FD_ENV, STATIC_ENV
 from starpulse._internal.server.supervisor import Supervisor, worker_commands
 from starpulse._internal.server.zygote import Forker
-from starpulse._internal.server.writes import (
-    reconcile_lanes,
-)
 from starpulse._internal.server.api_handler import _CONTRACT_TTL_S, Arrival, _cached, request_handler
 from starpulse._internal.server.services import Services
 from starpulse._internal.server.responses import _HEALTH_HOURS, _error, _hours
@@ -720,14 +716,13 @@ def start_delivery(
     pins: GitHub,
     stop: threading.Event,
     *,
-    actor_feed: BoardFeed | None = None,
     after_project: Callable[[], None] | None = None,
 ) -> tuple[TaskActor | None, PullSync | None]:
     """Start the Delivery context: the task actor, the pull store's sync with the projection it feeds, and the
     unblock of dependents, as `config` asks. Returns the actor and the sync, each None when not started.
 
-    `actor_feed` is the feed the actor notes its writes on (the worker's relays them to `serve`); `after_project`
-    runs after each projection. Raises `ValueError` naming a table the board cannot serve.
+    The actor records the lane of each write it makes on `feed` (`BoardFeed.record_written`); `after_project` runs
+    after each projection. Raises `ValueError` naming a table the board cannot serve.
     """
     from starpulse._internal.ci.ci_trail import CiTrail  # noqa: PLC0415 - the database stack loads when a store does
     from starpulse._internal.feed.board_feed import WAITING  # noqa: PLC0415 - the database stack loads when a store does
@@ -740,7 +735,7 @@ def start_delivery(
         if board.edit is None:
             raise ValueError("[board.actor] needs a board that edits tasks")
         actor = TaskActor(
-            actor_feed or feed,
+            feed,
             pulls,
             board.edit,
             board.waits,
@@ -922,8 +917,8 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     store = history_store(config, base, feed.machines)
     feed.date_lanes(store.lane_path)
     feed.record_lanes(store)
-    # `starpulse worker board` dates when each task's Start Criteria were met and reconciles the lanes the history
-    # missed; this process rereads the dates it keeps. A hub has no such worker and runs both in-process.
+    # `starpulse worker board` dates when each task's Start Criteria were met; this process rereads the dates it keeps.
+    # A hub has no such worker and runs it in-process.
     if args.hub:
         feed.track_criteria(board.evaluate, store)
         threading.Thread(
@@ -952,16 +947,10 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     if search is not None:
         feed.index_tasks(search)  # `starpulse worker search` catches the vectors up off the feed's path
     stop = threading.Event()
-    # the actor notes are followed before the Board is read: a note logged while the replay places its move is missed
-    # for good by a follower that starts after it, and that move enters its lane naming no one
-    follow_notes(log, feed, stop)
     if args.hub:  # a hub has no Board child: it reads its Board itself
         board.start(feed, f"starpulse-{port}", log)
     else:
         replica.read(board, feed, f"starpulse-{port}", log, config, stop, local=False)
-    # a move the feed applied but never recorded (a restart between the two) is put in the history once the replay is read
-    if args.hub:
-        threading.Thread(target=reconcile_lanes, args=(feed, store), name="lane-reconcile", daemon=True).start()
     tasks = MachineTasks(feed, board.keys)
     follow(tasks, log, machine_events.STREAM, tasks.handle_entry)
     refusals = ClaimRefusals(feed)

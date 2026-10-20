@@ -7,7 +7,7 @@ import pytest
 
 from starpulse._internal.board import rules
 from starpulse._internal.board.native import board
-from starpulse._internal.board.seam import Board
+from starpulse._internal.board.seam import Board, Written
 from starpulse._internal.config.config import load
 from starpulse._internal.machines.transitions import DEFAULT_STATUSES
 from starpulse.tests.unit.board.test_native import native_root, write_task
@@ -100,7 +100,7 @@ def test_a_write_rule_judges_every_write_whatever_the_state_and_names_no_state_o
     assert built.assign is not None
     before = path.read_text()
 
-    assert built.edit("task-1", {"title": "lower"}, "") == (False, "A title starts with a capital", "", False, "")
+    assert built.edit("task-1", {"title": "lower"}, "") == Written(ok=False, output="A title starts with a capital")
     assert path.read_text() == before
     assert built.edit("task-1", {"title": "Upper"}, "").ok
     assert not built.create("lower", {}).ok
@@ -475,7 +475,9 @@ unless_actor = ["dagu/reconciler"]
     built = board(config.board, tmp_path)
     assert built.writer is not None
 
-    assert built.writer("task-1", "Done", "agent") == (False, DONE_NEEDS_PR["reason"], "completing-tasks", False, "")
+    assert built.writer("task-1", "Done", "agent") == Written(
+        ok=False, output=DONE_NEEDS_PR["reason"], skill="completing-tasks"
+    )
     assert built.writer("task-1", "Done", "dagu/reconciler").ok
     assert "status: Done\n" in path.read_text()
 

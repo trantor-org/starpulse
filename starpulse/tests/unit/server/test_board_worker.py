@@ -65,10 +65,6 @@ def _met(task: str, description: str) -> list[dict]:
     return [{"id": "soak", "status": "met"}]
 
 
-def _lanes(store: HistoryStore) -> list[str]:
-    return [step["to"] for step in store.lane_path("T-1")]
-
-
 def test_the_writers_date_the_start_criteria_a_task_meets_and_keep_the_date(
     tmp_path: Path, stop: threading.Event
 ) -> None:
@@ -77,19 +73,6 @@ def test_the_writers_date_the_start_criteria_a_task_meets_and_keep_the_date(
     board_worker.start_writers(_feed(_task("waiting", description=BLOCK), clock=100.0), store, _met, stop)
 
     assert _eventually(lambda: store.criteria_met() == {"T-1": 100.0})
-
-
-def test_a_restarted_writer_repeats_no_lane_record(tmp_path: Path, stop: threading.Event) -> None:
-    store = _store(tmp_path)
-    store.record_lane("T-1@waiting@10.0", "T-1", "waiting", 10.0)  # the history has the task in waiting
-
-    for restart in range(2):  # the Board has it in ready: the move the last process missed
-        feed = _feed(_task("ready", observed_at=20.0), clock=900.0 + restart)
-        _, reconcile = board_worker.start_writers(feed, store, _met, stop)
-        reconcile.join(WAIT_S)
-        assert not reconcile.is_alive()
-
-    assert _lanes(store) == ["waiting", "ready"]  # recorded once, by the first
 
 
 def test_a_restarted_writer_keeps_the_date_the_last_one_gave(tmp_path: Path, stop: threading.Event) -> None:
@@ -141,5 +124,5 @@ def test_the_board_worker_builds_the_board_starts_the_writers_and_holds(
 
     assert len(held) == 1  # it reached the hold rather than exiting
     assert len(fake_board.BUILT) == 1
-    assert {"board-criteria", "lane-reconcile"} <= {t.name for t in set(threading.enumerate()) - before}
+    assert "board-criteria" in {t.name for t in set(threading.enumerate()) - before}
     held[0].set()

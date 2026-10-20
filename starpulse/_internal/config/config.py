@@ -573,7 +573,7 @@ class Config:
     search_worker: bool = False
     """The Search context's embedding catch-up (the thread that fills vectors for indexed task text) runs in `starpulse worker search`, not in `serve`: `serve` starts no thread; false: `serve` supervises that worker as a child when `[search]` names an `embeddings_url`. A hub keeps no search index whatever this says."""
     board_worker: bool = False
-    """The Board context's writers (the Start Criteria evaluation and the reconcile of lane records the history missed) run in `starpulse worker board`, not in `serve`: `serve` starts neither thread and reads the criteria results from the history store; false: `serve` supervises that worker as a child. A hub keeps both in-process whatever this says."""
+    """The Board context's writer (the Start Criteria evaluation) runs in `starpulse worker board`, not in `serve`: `serve` starts no thread for it and reads the criteria results from the history store; false: `serve` supervises that worker as a child. A hub keeps it in-process whatever this says."""
     api_worker: bool = False
     """The Page API (the HTTP server for the page, its JSON and its event stream) runs in `starpulse worker api`, not in a child of `serve`: `serve` binds no socket and starts no API child; false: `serve` binds the listening socket, hands it to a `starpulse worker api` child it supervises and replaces that child behind the socket on a reload. A hub serves its page in-process whatever this says."""
     analytics: Analytics = field(default_factory=Analytics)

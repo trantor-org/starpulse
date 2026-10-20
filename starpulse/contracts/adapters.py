@@ -394,7 +394,10 @@ class LaneEvent(_Contract):
     task: str = Field(min_length=1, description="The task key that changed lane.")
     lane: str = Field(min_length=1, description="The id of the Board machine state the task entered.")
     time: float = Field(ge=0, allow_inf_nan=False, description="When the task entered the lane, in epoch seconds.")
-    team: str = Field(default="", description="The task's team key; empty on an entry replayed from the history.")
+    team: str = Field(
+        default="",
+        description="The task's team key; empty on an entry replayed from the history or recorded when a write moved the task.",
+    )
     milestone: str = Field(default="", description="The task's milestone; empty when it has none.")
     labels: tuple[str, ...] = Field(default=(), description="The task's labels; empty when it has none.")
     profile: str = Field(
@@ -405,8 +408,9 @@ class LaneEvent(_Contract):
     )
     actor: str = Field(
         default="",
-        description="Who made the move: `operator`, `agent`, `anonymous` or `<instance>/<workflow>`; empty when no write "
-        "of the board's server made it.",
+        description="Who made the move: the actor of the write the board's server recorded it from (`operator`, `agent`, "
+        "`anonymous`, `<instance>/<workflow>` or `starpulse/task-actor`), or `external` for a change no such write made "
+        "(a hand edit of the board, a board adapter that records at placement); empty on an entry that predates actors.",
     )
     session: str = Field(
         default="", description="The harness session that made the move, as its write named it; empty when it named none."

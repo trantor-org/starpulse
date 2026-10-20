@@ -4,12 +4,11 @@
 dependents); `autopilot` is the Autopilot context, run by `starpulse._internal.server.autopilot_worker`; `runs` is the
 Runs context, run by `starpulse._internal.server.runs_worker`; `flow-metrics` is the Flow Metrics context, run by
 `starpulse._internal.server.flow_metrics_worker`; `search` is the Search context's embedding catch-up, run by
-`starpulse._internal.server.search_worker`; `board` is the Board context's writers (the Start Criteria dating and the
-lane reconcile), run by `starpulse._internal.server.board_worker`.
+`starpulse._internal.server.search_worker`; `board` is the Board context's writer (the Start Criteria dating), run by `starpulse._internal.server.board_worker`.
 
 The `pulls` worker reads the config and the history database `serve` does and meets `serve` only in the event log
 (`starpulse._internal.pulls.delivery`): it keeps the pull request projection there, takes the refreshes a page asked and
-relays the actor's notes and metrics. `SIGTERM` stops it; `SIGHUP` re-reads the config and, when a Delivery setting
+relays the actor's metrics. `SIGTERM` stops it; `SIGHUP` re-reads the config and, when a Delivery setting
 changed, rebuilds the loops in the same process.
 """
 
@@ -27,7 +26,6 @@ from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import database_url
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.pulls.delivery import (
-    NotingFeed,
     Projected,
     Publisher,
     announce_saves,
@@ -37,7 +35,7 @@ from starpulse._internal.pulls.delivery import (
 )
 from starpulse._internal.pulls.pull_events import JOBS_STREAM, MACHINE_STREAM, RecordProjection
 from starpulse._internal.pulls.pulls import PullStore
-from starpulse._internal.server.assembly import worker_board
+from starpulse._internal.server.assembly import history_store, worker_board
 from starpulse._internal.server.hold import hold
 from starpulse._internal.server.server import listen_options, start_delivery
 
@@ -80,7 +78,6 @@ class Delivery:
                 pulls,
                 pins,
                 stop,
-                actor_feed=NotingFeed(feed, log),
                 after_project=Publisher(log, feed).publish,
             )
         except ValueError:
@@ -189,6 +186,8 @@ def main(argv: list[str] | None = None) -> None:
         board, feed = worker_board(config, base, log, "starpulse-pulls", stop, local=args.local_board)
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")
+    # the task actor records the lane of each write it makes under its own name; the placements of the Board are `serve`'s
+    feed.record_lanes(history_store(config, base, feed.machines), log, live=False)
     Projected(log, feed).apply()  # the pull request answers the pins read: the Board's checkpoint no longer holds them
     pins = GitHub(lambda: feed.pull_answers().get("pins", {}))
     store = PullStore(log.engine)

@@ -22,7 +22,7 @@
     },
     "team": {
       "default": "",
-      "description": "The task's team key; empty on an entry replayed from the history.",
+      "description": "The task's team key; empty on an entry replayed from the history or recorded when a write moved the task.",
       "title": "Team",
       "type": "string"
     },
@@ -55,7 +55,7 @@
     },
     "actor": {
       "default": "",
-      "description": "Who made the move: `operator`, `agent`, `anonymous` or `<instance>/<workflow>`; empty when no write of the board's server made it.",
+      "description": "Who made the move: the actor of the write the board's server recorded it from (`operator`, `agent`, `anonymous`, `<instance>/<workflow>` or `starpulse/task-actor`), or `external` for a change no such write made (a hand edit of the board, a board adapter that records at placement); empty on an entry that predates actors.",
       "title": "Actor",
       "type": "string"
     },

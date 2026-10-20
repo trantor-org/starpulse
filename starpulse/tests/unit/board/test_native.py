@@ -394,3 +394,23 @@ def test_a_machine_may_name_the_task_actor_as_a_writer_when_the_board_runs_it(tm
 def test_a_machine_naming_the_task_actor_is_refused_when_the_board_runs_none(tmp_path: Path) -> None:
     with pytest.raises(Exception, match=r"no configured adapter lists: \['starpulse/task-actor'\]"):
         _served_naming_the_task_actor(tmp_path, "")
+
+
+def test_a_native_write_records_the_lane_and_the_moment_it_was_written(tmp_path: Path) -> None:
+    """A native write that moves a task sets Written.lane and Written.at, so the server records the change with the
+    request's actor at write time."""
+    from starpulse._internal.board.native import board as native_board
+    from starpulse._internal.board.seam import Written
+
+    native_board({}, tmp_path)
+    write_task(tmp_path, "task-1", "To Do")
+    adapter = native_board({}, tmp_path)
+
+    moved = adapter.writer("task-1", "In Progress", "agent")
+    edited = adapter.edit("task-1", {"status": "Done"}, "a note", "agent")
+
+    assert isinstance(moved, Written)
+    assert (moved.ok, moved.lane) == (True, "In Progress")
+    assert moved.at is not None
+    assert (edited.ok, edited.lane) == (True, "Done")
+    assert edited.at is not None

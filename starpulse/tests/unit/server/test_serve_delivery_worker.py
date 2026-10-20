@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.board import replica
 from starpulse._internal.server import server
 from starpulse._internal.server import worker as api_child
 from starpulse.tests import fake_board
@@ -71,7 +70,7 @@ class Refresh(Built):
 
 
 class Follower:
-    """Records the stop events `Projected.follow` and `follow_notes` were started with."""
+    """Records the stop events `Projected.follow` was started with."""
 
     started: list[object] = []
 
@@ -126,15 +125,3 @@ def test_a_refresh_is_queued_for_the_worker_when_serve_has_no_gh(
     _serve(tmp_path, monkeypatch, CONTEXT, gh=False)
 
     assert [refresh.args[0] for refresh in Refresh.made] == ["secret"]
-
-
-def test_serve_follows_the_actor_notes_before_it_reads_the_board(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """TASK-6328 entered Done at 08:33:04 on 2026-10-18 in a bare entry: serve restarted at 08:33:02 and the task
-    actor's note at 08:33:03 came after the Board read began but before the follower's tail started."""
-    order: list[str] = []
-    monkeypatch.setattr(server, "follow_notes", lambda *args: order.append("notes"))
-    monkeypatch.setattr(replica, "read", lambda *args, **kwargs: order.append("board"))
-
-    _serve(tmp_path, monkeypatch, CONTEXT)
-
-    assert order == ["notes", "board"]
