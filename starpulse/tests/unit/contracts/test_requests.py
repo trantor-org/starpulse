@@ -7,7 +7,7 @@ from pathlib import Path
 
 from starpulse.contracts.api.dto.requests import CreateRequest, MissRequest, StartRequest
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 SCHEMA = ROOT / "api.schema.json"
 
 
