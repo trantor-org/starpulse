@@ -40,3 +40,15 @@ def test_metrics_has_no_build_series_while_static_holds_no_build(tmp_path: Path)
         lines = _metrics(server)
 
     assert not [line for line in lines if "starpulse_page_build_info" in line]
+
+
+def test_metrics_times_the_snapshot_builds(tmp_path: Path) -> None:
+    with serve(tmp_path, BoardFeed(machines=MACHINES)) as server:
+        _build_event_id(server)  # a connect makes the cache build its first snapshot
+        lines = _metrics(server)
+
+    assert "# TYPE starpulse_snapshot_build_seconds summary" in lines
+    count = next(line for line in lines if line.startswith("starpulse_snapshot_build_seconds_count "))
+    total = next(line for line in lines if line.startswith("starpulse_snapshot_build_seconds_sum "))
+    assert int(count.split()[1]) >= 1
+    assert float(total.split()[1]) > 0

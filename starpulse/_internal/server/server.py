@@ -65,7 +65,8 @@ GET /api/pulls[?repo=OWNER/NAME][&number=N][&state=open|merged|closed][&body_con
                    merge stored before they were kept), and fetchedAt (epoch seconds of the last event or read that changed this record)}. A `number` that is not an integer, or a `state`
                    that is none of those, is 400
 GET /metrics       Prometheus text: `starpulse_page_build_info{build}`, 1 for the page build id the `build` event
-                   names (none without a build); `starpulse_board_lane_unattributed_total`, the board:lanes entries
+                   names (none without a build); `starpulse_snapshot_build_seconds_count` and `_sum`, the snapshots built and the
+                   seconds they took; `starpulse_board_lane_unattributed_total`, the board:lanes entries
                    any process appended since this one started that name no actor (none on a hub); `starpulse_machine_conformance_violations_total{machine}` and
                    `starpulse_machine_conformance_events_total{machine}`, the recorded moves of each machine that no
                    transition declares and all it judged (none on a hub). Also this process's `process_resident_memory_bytes`,

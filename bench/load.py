@@ -4,7 +4,8 @@
 page does: it holds the event stream open (`/api/events?snapshot=ref`), reads the snapshot body the first event names,
 and then reads the page's `/api` routes at a viewer's pace. Locust reports each route's p50, p95 and p99, and the
 stream's connect-to-first-snapshot as `/api/events first snapshot`; a route whose p95 is over 50 ms, or that failed
-once, exits the run 1.
+once, exits the run 1. A connect whose snapshot differs from the last viewer's overlapped a feed change and may have
+waited out the server's one rebuild for it; it is reported as `/api/events first snapshot after change` and not judged.
 
     uv run --group bench locust -f bench/load.py --host http://127.0.0.1:8766 --headless -u 50 -r 5 -t 2m
 
@@ -27,6 +28,9 @@ from page_latency import BUDGET_MS, READS, WHAT_IF, fill, ids_of, ref_key
 
 #: The stream's first snapshot, as Locust names it among the routes.
 FIRST_SNAPSHOT = "/api/events first snapshot"
+#: The same, for a connect whose snapshot differs from the last viewer's: it overlapped a feed change, so it may have
+#: waited out the one rebuild the server makes per change. Locust reports it; the verdict does not judge it.
+FIRST_SNAPSHOT_AFTER_CHANGE = "/api/events first snapshot after change"
 #: A read the stream's own snapshot reference makes, not one a viewer picks.
 BODY = "/api/events/body/<id>"
 #: The reads each viewer makes once to find this server's records and routes; they are setup, not a viewer's load.
@@ -57,9 +61,21 @@ def over_budget(p95s: Mapping[str, float], failures: Mapping[str, int], budget: 
             continue
         if failures.get(name):
             reasons.append(f"{name} {failures[name]} failed")
-        elif p95 > budget:
+        elif p95 > budget and name != FIRST_SNAPSHOT_AFTER_CHANGE:
             reasons.append(f"{name} p95 {p95:.0f} ms > {budget:.0f} ms")
     return reasons
+
+
+class Changes:
+    """Whether a snapshot's key differs from the last one seen: the feed changed between two viewers' connects."""
+
+    def __init__(self) -> None:
+        self._last: str | None = None
+
+    def seen(self, key: str | None) -> bool:
+        changed = self._last is not None and key is not None and key != self._last
+        self._last = key or self._last
+        return changed
 
 
 class Once[T]:
@@ -123,6 +139,7 @@ else:
         wait_time = between(0.5, 2)
         paths: Once[dict[str, str]] = Once(gevent.lock.BoundedSemaphore())
         stream: gevent.Greenlet | None = None
+        changes = Changes()
 
         def on_start(self) -> None:
             self.routes = Viewer.paths.get(self._paths)
@@ -164,8 +181,10 @@ else:
                 for event, data in events(iter(response.fp.readline, b"")):
                     if first and event == "snapshot":
                         first = False
-                        self._fire(FIRST_SNAPSHOT, start, None)
-                        if key := ref_key(data):
+                        key = ref_key(data)
+                        after_change = Viewer.changes.seen(key)
+                        self._fire(FIRST_SNAPSHOT_AFTER_CHANGE if after_change else FIRST_SNAPSHOT, start, None)
+                        if key:
                             self._fetch(BODY, f"/api/events/body/{key}")
             except (http.client.HTTPException, OSError) as error:
                 if first:
@@ -186,7 +205,7 @@ else:
 
         def _fire(self, name: str, start: float, error: BaseException | None) -> None:
             self.environment.events.request.fire(
-                request_type="SSE" if name == FIRST_SNAPSHOT else "GET",
+                request_type="SSE" if name.startswith(FIRST_SNAPSHOT) else "GET",
                 name=name,
                 response_time=(time.perf_counter() - start) * 1000,
                 response_length=0,

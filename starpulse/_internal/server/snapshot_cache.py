@@ -70,6 +70,9 @@ class SnapshotCache:
         self._kept: OrderedDict[str, Encoded] = OrderedDict()
         #: Each board task's JSON, kept between builds so one that changed is the only one encoded afresh.
         self._tasks: dict[int, tuple[Any, bytes]] = {}
+        #: How many snapshots were built and the seconds they took, for `metrics`.
+        self._builds = 0
+        self._build_s = 0.0
 
     def _current(self, held: Served | None, max_age_s: float | None = None) -> bool:
         age_limit = self._ttl_s if max_age_s is None else max_age_s
@@ -113,8 +116,11 @@ class SnapshotCache:
         with self._building:
             if self._current(held := self._held, max_age_s):
                 return held  # type: ignore[return-value]
+            started = time.perf_counter()
             rev, sent, snapshot = self._feed.snapshot_at()
             encoded = Encoded.of(encode_snapshot(snapshot, self._tasks))
+            self._build_s += time.perf_counter() - started
+            self._builds += 1
             self._held = held = Served(
                 rev, sent, self._clock(), encoded, hashlib.sha1(encoded.body).hexdigest(), snapshot
             )
@@ -124,6 +130,14 @@ class SnapshotCache:
         with self._built:
             self._built.notify_all()
         return held
+
+    def metrics(self) -> str:
+        """`starpulse_snapshot_build_seconds`, the count and total time of the builds so far, as Prometheus text."""
+        name = "starpulse_snapshot_build_seconds"
+        return (
+            f"# HELP {name} Seconds spent taking and encoding the snapshot.\n# TYPE {name} summary\n"
+            f"{name}_count {self._builds}\n{name}_sum {self._build_s}\n"
+        )
 
     def body(self, key: str) -> Encoded | None:
         """The snapshot `key` names, while it is one of the last few built."""
