@@ -431,15 +431,16 @@ def announce(port: int, hint: str | None) -> None:
         print(hint, flush=True)
 
 
-def autopilot_remote(config: Config, base: Path, feed: BoardFeed, log: EventLog) -> Remote:
+def autopilot_remote(config: Config, base: Path, feed: BoardFeed, log: EventLog, stop: threading.Event) -> Remote:
     """The autopilot `serve` answers `/api/autopilot` from: the `Remote` that reads the status the autopilot worker
-    publishes and writes the settings the worker reads. The loop itself runs in that worker, never in `serve`.
+    publishes and writes the settings the worker reads. The loop itself runs in that worker, never in `serve`. The status
+    follower runs until `stop` is set.
 
     The autopilot modules are imported here, not at the top, so `starpulse worker pulls` does not load them.
     """
     from starpulse._internal.autopilot.remote import Remote, follow_status
 
-    follow_status(log, feed, threading.Event())
+    follow_status(log, feed, stop)
     return Remote(log, base / (config.autopilot.state_dir or ""))
 
 
@@ -1002,7 +1003,8 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
 
         wire_level(feed, _level_body)
     announce(port, feed.snapshot()["hint"])
-    autopilot_runtime = autopilot_remote(config, base, feed, log)
+    autopilot_stop = threading.Event()
+    autopilot_runtime = autopilot_remote(config, base, feed, log, autopilot_stop)
     from starpulse._internal.pulls.github import GITHUB_MACHINES  # noqa: PLC0415 - the database stack loads after the config is accepted
 
     cloudevents = (
@@ -1054,6 +1056,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     try:
         serve_until_stopped(StarPulseServer((args.host, args.port), handler, listening), feed)
     finally:
+        autopilot_stop.set()
         if supervisor:
             supervisor.stop()
         log.close()

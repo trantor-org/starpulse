@@ -55,11 +55,27 @@ def _start_service() -> Iterator[tuple[str, list[str]]]:
         server.server_close()
 
 
-def _until(condition: Callable[[], object], what: str, deadline_s: float = DEADLINE_S) -> None:
+def _loop_state(feed: BoardFeed, runtime: Runtime) -> str:
+    """What a start miss needs to name its cause: the switch, the tasks the loop can see, whether it runs, its status."""
+    loop = runtime.loop
+    alive = loop is not None and any(t.name == "autopilot-loop" and t.is_alive() for t in threading.enumerate())
+    return (
+        f"toggle={runtime.toggle.get()} open_tasks={[t.get('id') for t in feed.open_tasks()]} "
+        f"loop_thread_alive={alive} status={runtime.status()}"
+    )
+
+
+def _until(
+    condition: Callable[[], object],
+    what: str,
+    deadline_s: float = DEADLINE_S,
+    state: Callable[[], str] | None = None,
+) -> None:
     end = time.monotonic() + deadline_s
     while not condition():
         if time.monotonic() > end:
-            pytest.fail(f"{what} did not happen within {deadline_s:g}s")
+            detail = f"; {state()}" if state is not None else ""
+            pytest.fail(f"{what} did not happen within {deadline_s:g}s{detail}")
         time.sleep(0.02)
 
 
@@ -88,7 +104,9 @@ def _served(base: Path, config_text: str = "") -> Iterator[tuple[BoardFeed, Runt
     log = EventLog(f"sqlite:///{base / 'events.sqlite'}")
     board.start(feed, "test", log)
     stop = threading.Event()
+    before = set(threading.enumerate())
     runtime = start_autopilot(config, base, feed, board, history, log, None, stop, probe=lambda: IDLE_HOST)
+    started = [t for t in threading.enumerate() if t not in before and t.name.startswith("autopilot-")]
     try:
         runtime.set_enabled(True)
         yield feed, runtime
@@ -96,24 +114,33 @@ def _served(base: Path, config_text: str = "") -> Iterator[tuple[BoardFeed, Runt
         stop.set()
         if runtime.loop is not None:
             runtime.loop.wake()  # the loop looks at `stop` between events
-        for thread in threading.enumerate():
-            if thread.name.startswith("autopilot-"):
-                thread.join(DEADLINE_S)
+        for thread in started:  # only its own: other tests' threads in this worker are not its to wait for
+            thread.join(DEADLINE_S)
 
 
 def test_a_task_moved_into_the_eligible_lane_is_started_within_one_sampler_period(tmp_path: Path) -> None:
     with _start_service() as (url, asked):
         _task(tmp_path, "Done")
-        with _served(tmp_path, f'session_start_url = "{url}"\n') as (feed, _):
+        with _served(tmp_path, f'session_start_url = "{url}"\n') as (feed, runtime):
             _until(lambda: feed.task("task-1"), "the board's read of task-1")
             assert asked == []  # a Done task is not eligible
 
             moved = time.monotonic()
             _task(tmp_path, "To Do")  # the eligible lane is the board's initial lane
 
-            _until(lambda: asked, "the start")
+            _until(lambda: asked, "the start", state=lambda: _loop_state(feed, runtime))
             assert time.monotonic() - moved < PERIOD  # by the move's event: the loop's timer is the sampler period
             assert asked == ["/start/task-1?harness=claude&mode=interactive&by=autopilot"]
+
+
+def test_a_start_miss_fails_with_the_loops_state(tmp_path: Path) -> None:
+    _task(tmp_path, "Done")
+    with _served(tmp_path) as (feed, runtime):
+        _until(lambda: feed.task("task-1"), "the board's read of task-1")
+        with pytest.raises(pytest.fail.Exception) as miss:
+            _until(lambda: False, "the start", deadline_s=0.05, state=lambda: _loop_state(feed, runtime))
+
+    assert re.search(r"toggle=True open_tasks=\[.*\] loop_thread_alive=True status=\{", str(miss.value))
 
 
 def test_a_board_with_no_autopilot_block_and_no_start_service_starts_the_task_in_tmux(
