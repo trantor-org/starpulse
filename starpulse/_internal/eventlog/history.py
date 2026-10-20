@@ -46,19 +46,18 @@ from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
 
-from starpulse._internal.config.level import Level
-from starpulse._internal.eventlog.level_metrics import AGING_WINDOW_S, Run, RunWindow, state_roles
-from starpulse._internal.machines.stays import Dwell, LaneStays, Stay
-from starpulse._internal.machines.transitions import Table as Transitions
-from starpulse._internal.machines.transitions import lane_id
 from starpulse._internal.config.config import discover, load
+from starpulse._internal.config.level import Level
 from starpulse._internal.eventlog import events as machine_events
 from starpulse._internal.eventlog import lane_events, lane_repair
 from starpulse._internal.eventlog.checkpoints import Checkpoints
 from starpulse._internal.eventlog.event_log import DEFAULT_POLL_INTERVAL, EventLog, create_tables, insert_event
+from starpulse._internal.eventlog.lane_import import Change
+from starpulse._internal.eventlog.level_metrics import AGING_WINDOW_S, Run, RunWindow, state_roles
 from starpulse._internal.eventlog.summaries import (
     BOARD,
     SUMMARY_TABLES,
+    Fold,
     Summariser,
     cases,
     count_lanes,
@@ -70,9 +69,11 @@ from starpulse._internal.eventlog.summaries import (
     write_lane,
     write_step,
 )
-from starpulse._internal.eventlog.lane_import import Change
 from starpulse._internal.eventlog.tables import gaps as _gaps
 from starpulse._internal.eventlog.tables import metadata
+from starpulse._internal.machines.stays import Dwell, LaneStays, Stay
+from starpulse._internal.machines.transitions import Table as Transitions
+from starpulse._internal.machines.transitions import lane_id
 
 __all__ = ["History", "machine_steps"]
 
@@ -226,9 +227,9 @@ class SummarisedLevel(History, Protocol):
         ...
 
 
-def _in_id_order(db: Connection, query: Select, id_column: Column) -> Iterator[Mapping[str, Any]]:
-    """The rows of `query`, which selects `id`, in id order, read a chunk at a time so a write may run between them."""
-    after = 0
+def _in_id_order(db: Connection, query: Select, id_column: Column, after: int = 0) -> Iterator[Mapping[str, Any]]:
+    """The rows of `query`, which selects `id`, past id `after` in id order, read a chunk at a time so a write may run
+    between them."""
     while rows := db.execute(query.where(id_column > after).limit(_CHUNK)).mappings().all():
         yield from rows
         after = rows[-1]["id"]
@@ -493,24 +494,38 @@ class HistoryStore:
             self.rebuild_summaries()
 
     def rebuild_summaries(self) -> None:
-        """Replace the summaries with ones folded from the raw rows under the machines this store holds, in one
-        transaction: the machine events, then the lane changes, each in the order it was recorded, through the fold a
-        write takes.
+        """Replace the summaries with ones folded from the raw rows under the machines this store holds: the machine
+        events, then the lane changes, each in the order it was recorded, through the fold a write takes.
 
-        Nothing may record while it runs: a row written meanwhile is missing from them.
+        The rows are folded in memory while writers carry on, so a large history holds no lock for its length. The write
+        lock is then taken only to swap the summaries in, after folding the rows recorded since the fold read them, so
+        the swap lasts as long as writing the summaries, and no row recorded meanwhile is missing from them.
         """
+        fold = Fold(self._summariser)
+        with self.engine.connect() as db:
+            seen = self._fold_rows(db, fold, (0, 0))
+        with self.engine.begin() as db:
+            for table in (*SUMMARY_TABLES, summary_basis):
+                db.execute(delete(table))  # the first write takes the lock, so the rows read next are the last
+            self._fold_rows(db, fold, seen)
+            fold.write(db)
+            db.execute(insert(summary_basis).values(fingerprint=self._summariser.fingerprint()))
+        self._summaries_changed()
+
+    @staticmethod
+    def _fold_rows(db: Connection, fold: Fold, after: tuple[int, int]) -> tuple[int, int]:
+        """Fold the machine events and lane changes recorded past the ids `after`; the ids of the last it folded."""
         e, c = _machine_events.c, _lane_changes.c
         events = select(e.id, e.event_id, e.task, e.run, e.machine, e.event, e.occurred_at).order_by(e.id)
         changes = select(c.id, c.event_id, c.task, c.new_status, c.observed_at).order_by(c.id)
-        with self.engine.begin() as db:
-            for table in (*SUMMARY_TABLES, summary_basis):
-                db.execute(delete(table))
-            for row in _in_id_order(db, events, e.id):
-                self._summarise_event(db, row)
-            for row in _in_id_order(db, changes, c.id):
-                self._summarise_lane(db, row["event_id"], row["task"], row["new_status"], row["observed_at"])
-            db.execute(insert(summary_basis).values(fingerprint=self._summariser.fingerprint()))
-        self._summaries_changed()
+        last_event, last_change = after
+        for row in _in_id_order(db, events, e.id, last_event):
+            fold.event(row)
+            last_event = row["id"]
+        for row in _in_id_order(db, changes, c.id, last_change):
+            fold.lane(row["event_id"], row["task"], row["new_status"], row["observed_at"])
+            last_change = row["id"]
+        return last_event, last_change
 
     def criteria_met(self) -> dict[str, float]:
         """When each task's Start Criteria were first seen all met, by task."""
