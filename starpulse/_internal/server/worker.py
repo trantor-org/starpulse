@@ -187,8 +187,7 @@ def main(argv: list[str] | None = None) -> None:
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")
     # the task actor records the lane of each write it makes under its own name; the placements of the Board are `serve`'s
-    lane_log = log if config.forward is not None else None
-    feed.record_lanes(history_store(config, base, feed.machines), lane_log, live=False)
+    feed.record_lanes(history_store(config, base, feed.machines), log, live=False)
     Projected(log, feed).apply()  # the pull request answers the pins read: the Board's checkpoint no longer holds them
     pins = GitHub(lambda: feed.pull_answers().get("pins", {}))
     store = PullStore(log.engine)
