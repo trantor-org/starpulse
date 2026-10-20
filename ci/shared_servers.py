@@ -5,9 +5,9 @@ named. At collection, before pytest reads the module's fixtures, this plugin swa
 `SERVERS`) and its `writer` for a module-scoped one that runs the same builder once in a directory of its own.
 
 A case must still meet the server it would have built for itself. The shared server watches its requests: after a case
-sent anything but a GET through it that the server did not refuse, the plugin stops it, empties its directory and
+sent anything but a GET through it, the plugin stops it, empties its directory and
 builds it again on the same port, so its URL holds. Under `-n` all the module's cases run on one worker (a worker that
-took some would build every server again), and its `ThreadingHTTPServer` polls every 10 ms, not 0.5 s. A case that names a shared server also gets that server's directory as `tmp_path`, where the files it
+took some would build every server again). A case that names a shared server also gets that server's directory as `tmp_path`, where the files it
 inspects are. The `writer` is emptied after every case.
 """
 
@@ -18,11 +18,11 @@ import shutil
 from collections.abc import Callable, Iterator
 from contextlib import ExitStack, contextmanager
 from contextvars import ContextVar
-from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from typing import Any
 
 import pytest
+from starpulse._internal.hub.gate_request import GateRequest
 
 MODULES = ("test_agent_cli.py",)
 _HOSTING: ContextVar[Any] = ContextVar("hosting", default=None)  # the `_Hosted` being built, for the kit's `serve`
@@ -45,20 +45,10 @@ class _Hosted:
     def rooted(self) -> bool:
         return "tmp_path" in self.params
 
-    def gate(self, handler: BaseHTTPRequestHandler) -> bool:
-        """Admit every request; note one that is not a read unless the server answers it with an error, a refusal."""
-        if handler.command == "GET":
-            return True
-        before = self.wrote
-        self.wrote = True
-        send = handler.send_response
-
-        def answer(code: int, message: str | None = None) -> None:
-            if code >= 400:
-                self.wrote = before
-            send(code, message)
-
-        handler.send_response = answer
+    def gate(self, request: GateRequest) -> bool:
+        """Admit every request; note one that is not a read, whatever the server answers."""
+        if request.command != "GET":
+            self.wrote = True
         return True
 
     def start(self) -> None:

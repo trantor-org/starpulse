@@ -133,7 +133,7 @@ def test_a_board_type_whose_module_builds_no_board_is_refused_by_name(tmp_path: 
 SEAM_FILES = (
     "board/seam.py",
     "kit/adapter_kit.py",
-    "server/api_handler.py",
+    "server/asgi_app.py",
     "server/reads.py",
     "server/write_routes.py",
     "server/services.py",
