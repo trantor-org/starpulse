@@ -82,7 +82,7 @@ class Stack:
             return exc.code, json.loads(body) if exc.headers.get_content_type() == "application/json" else {}
 
     def entries(self) -> list[dict]:
-        return [entry.fields for entry in Tail(self.log, "machine:events").poll()]
+        return [entry.fields for entry in Tail.replay(self.log, "machine:events").poll()]
 
 
 def _feed(tmp_path: Path) -> BoardFeed:
@@ -266,4 +266,4 @@ def test_a_server_with_no_producers_has_no_route(tmp_path: Path) -> None:
         status, _ = Stack(server, log).post(cloudevent())
 
     assert status == 404
-    assert Tail(log, "machine:events").poll() == []
+    assert Tail.replay(log, "machine:events").poll() == []

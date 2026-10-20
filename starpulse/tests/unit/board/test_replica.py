@@ -68,7 +68,7 @@ def _states(feed: BoardFeed) -> dict[str, str]:
 
 def _published(log: EventLog) -> list[dict]:
     """Every entry of the replica stream, oldest first."""
-    tail = Tail(log, replica.REPLICA_STREAM)
+    tail = Tail.replay(log, replica.REPLICA_STREAM)
     return [{**entry.fields, "entry": entry.id} for entry in tail.poll()]
 
 

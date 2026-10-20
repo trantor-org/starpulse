@@ -142,7 +142,7 @@ def test_a_cloudevent_posted_over_http3_reaches_the_event_log(tmp_path: Path, ce
     stop.set()
 
     assert (answer.status, json.loads(answer.body)) == (201, {"accepted": True})
-    assert [entry.fields["event_id"] for entry in Tail(log, "machine:events").poll()] == ["builder/e1"]
+    assert [entry.fields["event_id"] for entry in Tail.replay(log, "machine:events").poll()] == ["builder/e1"]
 
 
 @pytest.fixture

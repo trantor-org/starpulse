@@ -23,10 +23,10 @@ from urllib.parse import quote
 
 import yaml
 
+from starpulse._internal.eventlog.event_log import DEFAULT_POLL_INTERVAL, EventLog, Tail
 from starpulse._internal.github_api import GitHubError, Transport, connect, get, repo_of
 from starpulse._internal.runs import run_events
 from starpulse.contracts.adapters import RunsSink, RunStatus, StartFailedError
-from starpulse._internal.eventlog.event_log import DEFAULT_POLL_INTERVAL, EventLog, Tail
 
 #: Each status a run, job or step reports before it completes, and the status it becomes.
 #: A run held for a runner, an approval or a protection rule is `queued`; the label itself stays in `raw`.
@@ -396,7 +396,7 @@ def follow(url: str, runs: RunsSink, log: EventLog, *, interval: float = DEFAULT
     reader = GitHubRuns(runs, Repository(transport, repo))
 
     def read() -> None:
-        tail = Tail.at_head(log, run_events.STREAM, interval=interval)  # before the listing: what it holds is not replayed
+        tail = Tail.live(log, run_events.STREAM, interval=interval)  # before the listing: what it holds is not replayed
         reader.reconcile()
         tail.run(lambda entry: reader.handle_entry(str(entry.id), entry.fields), threading.Event())
 

@@ -4,13 +4,13 @@ import json
 import re
 from pathlib import Path
 
+from starpulse._internal.eventlog.event_log import EventLog, Tail
 from starpulse._internal.harnesses.claude_code import ClaudeCodeAdapter, publisher
 from starpulse._internal.harnesses.harness import HARNESS_MACHINES
 from starpulse._internal.harnesses.otlp import BRANCH, LogEvent, parse
 from starpulse._internal.kit.adapter_kit import MachineEventsAdapterKit
-from starpulse.contracts.adapters import TaskKeys
 from starpulse._internal.machines.transitions import Table
-from starpulse._internal.eventlog.event_log import EventLog, Tail
+from starpulse.contracts.adapters import TaskKeys
 from starpulse.tests.machines import MACHINES
 
 #: A two-turn session exported with `OTEL_LOG_TOOL_DETAILS=1`, scrubbed of account ids, prompt and reply text.
@@ -100,7 +100,7 @@ def test_the_publisher_appends_each_mapped_event_to_the_log_under_the_machine_ev
     for event in replay("feature/PROJ-7-x")[:2]:
         assert publish(event) is not None
 
-    assert [(e.fields["event"], e.fields["task"], e.fields["actor"]) for e in Tail(log, "machine:events").poll()] == [
+    assert [(e.fields["event"], e.fields["task"], e.fields["actor"]) for e in Tail.replay(log, "machine:events").poll()] == [
         ("SESSION_STARTED", "PROJ-7", "claude-code"),
         ("SKILL_USED", "PROJ-7", "claude-code"),
     ]

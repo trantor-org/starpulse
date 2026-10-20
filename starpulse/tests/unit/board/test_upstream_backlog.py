@@ -730,7 +730,7 @@ def _child_restarted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> replica
 
 
 def _published_tasks(tmp_path: Path) -> list[str]:
-    tail = Tail(EventLog(f"sqlite:///{tmp_path / 'log.sqlite'}"), replica.REPLICA_STREAM)
+    tail = Tail.replay(EventLog(f"sqlite:///{tmp_path / 'log.sqlite'}"), replica.REPLICA_STREAM)
     return [entry.fields["id"] for entry in tail.poll() if entry.fields.get("task")]
 
 

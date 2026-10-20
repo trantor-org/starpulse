@@ -73,6 +73,7 @@ Call `drain` from a timer, a cron job or a loop; a call with nothing new costs o
 
 - **Open the log with the database URL.** `EventLog("sqlite:///starpulse-history.sqlite")`, or the URL the config's
   `database_url` names. Many processes append and read the same file: the log runs in WAL mode.
+- **Where a new reader starts.** `Tail(log, reader, after=...)` takes its start explicitly. `Tail.replay(log, stream)` starts at the oldest retained row; `Tail.live(log, stream)` starts after the newest row now, for a reader that rebuilds its state from elsewhere.
 - **At least once.** A crash after the log handed over a row but before the commit reads it again, so key the sink on
   `event_id`, as `INSERT OR IGNORE` does above.
 - **Retention.** `serve` (through its Flow Metrics child, `starpulse worker flow-metrics`) prunes rows older than `event_log_retention_days` and archives them first (see the event log

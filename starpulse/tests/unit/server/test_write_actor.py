@@ -130,6 +130,6 @@ def test_a_create_the_watch_places_before_the_create_answers_still_names_its_wri
     for placed in watch:
         placed.join()
 
-    entries = Tail(log, lane_events.STREAM).poll()
+    entries = Tail.replay(log, lane_events.STREAM).poll()
 
     assert (status, [(e.fields.get("actor"), e.fields.get("session")) for e in entries]) == (201, [("agent", "s1")])

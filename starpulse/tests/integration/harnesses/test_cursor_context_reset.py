@@ -50,7 +50,7 @@ def test_a_session_over_the_limit_is_asked_once_to_wrap_up_and_each_reading_is_r
 
     assert panes.sent == [("task-12", WRAPUP)]
     assert (panes.killed, started) == ([], [])
-    rows = {e.fields["task"]: e.fields["tokens"] for e in Tail(log, CONTEXT_STREAM).poll()}
+    rows = {e.fields["task"]: e.fields["tokens"] for e in Tail.replay(log, CONTEXT_STREAM).poll()}
     assert rows == {"TASK-12": 160_000, "TASK-13": 40_000}
 
 

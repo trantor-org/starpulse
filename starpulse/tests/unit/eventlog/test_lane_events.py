@@ -39,7 +39,7 @@ def test_a_lane_entry_is_appended_only_when_the_history_wrote_a_row(tmp_path: Pa
     feed.put(BoardTask(id="T-1", team="demo", title="t", lane="in_progress"))
     feed.put(BoardTask(id="T-2", team="demo", title="t", lane="review", labels=("kind-execute",), milestone="m-1"))
 
-    [entry] = Tail(log, lane_events.STREAM).poll()
+    [entry] = Tail.replay(log, lane_events.STREAM).poll()
     assert entry.event_id.startswith("T-2@review@")
     assert entry.fields["labels"] == ["kind-execute"] and entry.fields["milestone"] == "m-1"
     assert "title" not in entry.fields

@@ -305,8 +305,9 @@ class EventLog:
 class Tail:
     """One reader's cursor over one stream of the log.
 
-    `after` is the `id` of the last row the reader already handled (the history recorder's persisted cursor); None
-    replays everything the log still retains, which is not a gap however much was pruned before. Rows of other
+    The start is named: `Tail(...)` resumes after `after`, the `id` of the last row the reader already handled (the
+    history recorder's persisted cursor); `Tail.replay` reads everything the log still retains, which is not a gap
+    however much was pruned before; `Tail.live` reads only what is appended after it was taken. Rows of other
     streams share the ids, so the cursor advances past them and a gap's `lost` counts every pruned id in its span,
     an upper bound for this stream. A reader of several streams (`streams`, which default to `stream` alone) reads
     them in log order under one cursor, and `stream` then names the reader.
@@ -317,7 +318,7 @@ class Tail:
         log: EventLog,
         stream: str,
         *,
-        after: int | None = None,
+        after: int | None,
         interval: float = DEFAULT_POLL_INTERVAL,
         batch: int = 500,
         streams: Sequence[str] | None = None,
@@ -330,7 +331,12 @@ class Tail:
         self.batch = batch
 
     @classmethod
-    def at_head(cls, log: EventLog, stream: str, **kwargs: Any) -> Tail:
+    def replay(cls, log: EventLog, stream: str, **kwargs: Any) -> Tail:
+        """A Tail that reads everything the log still retains."""
+        return cls(log, stream, after=None, **kwargs)
+
+    @classmethod
+    def live(cls, log: EventLog, stream: str, **kwargs: Any) -> Tail:
         """A Tail that reads only the rows appended after `stream`'s newest one now, for a reader that rebuilds its
         state from elsewhere and would discard the replay. Take it before that rebuild, so a row appended meanwhile is
         read. When the log cannot be reached it replays the retention, which is the safe start."""
