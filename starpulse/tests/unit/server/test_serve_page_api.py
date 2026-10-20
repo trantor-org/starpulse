@@ -119,7 +119,7 @@ def test_the_api_child_reads_the_board_from_the_replica_and_starts_no_adapter_wa
 
     worker.main(["api", "--config", str(config), "--port", "0"])
 
-    assert read == [{"local": False}]
+    assert read == [{}]
     feed = handled["args"][0]
     assert "FAKE-1" not in str(feed.snapshot())  # the adapter's `start` put its tasks on the feed; nothing did
     assert supervisors == []  # the child supervises nothing

@@ -119,7 +119,6 @@ from starpulse._internal.board.seam import (
     ANONYMOUS,
     AssigneeWriter,
     Board,
-    OPERATOR,
     MoveWriter,
     TaskArchiver,
     TaskCompleter,

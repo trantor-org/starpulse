@@ -48,21 +48,13 @@ WORKER_FLAGS = {
     "board": "board_worker",
 }
 
-#: The contexts that read the Board: a hub has no Board child for them to read it from.
-READERS = ("pulls", "runs", "autopilot")
-
 _MB = 1024 * 1024
 
 
-def worker_commands(config: Config, config_path: Path | None, *, hub: bool = False) -> dict[str, list[str]]:
+def worker_commands(config: Config, config_path: Path | None) -> dict[str, list[str]]:
     """The command of each context `serve` supervises: pulls, autopilot, and the others whose `*_worker` setting is false.
 
-    A hub serves its page in-process, so it gets no Page API child.
-
-    A hub keeps its history threads in-process, so it gets no Flow Metrics child. Search has work only with an `embeddings_url`, and a hub keeps
-    no search index, so a config without one, or a hub, gets no search child. A hub keeps its board writers in-process, so it
-    gets no board child, and its pulls, runs and autopilot workers start the board adapter themselves
-    (`--local-board`) where the others read the replica the Board child publishes.
+    Search has work only with an `embeddings_url`, so a config without one gets no search child.
     """
     tail = ["--config", str(config_path)] if config_path else []
     return {
@@ -73,14 +65,10 @@ def worker_commands(config: Config, config_path: Path | None, *, hub: bool = Fal
             "worker",
             context,
             *tail,
-            *(["--local-board"] if hub and context in READERS else []),
         ]
         for context, flag in WORKER_FLAGS.items()
         if not (flag and getattr(config, flag))
-        and (context != "flow-metrics" or not hub)
-        and (context != "search" or (config.search.embeddings_url and not hub))
-        and (context != "board" or not hub)
-        and (context != "api" or not hub)
+        and (context != "search" or config.search.embeddings_url)
     }
 
 

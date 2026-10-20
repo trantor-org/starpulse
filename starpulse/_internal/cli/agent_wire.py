@@ -37,7 +37,7 @@ class Server(str):
 
 def server_url(flag: str | None, environ: Mapping[str, str]) -> Server:
     """The server to read: the `--server` flag, else `STARPULSE_URL`, else the default, without a trailing slash, with
-    `STARPULSE_TOKEN` as its bearer token: a hub's reader token, which reads what a signed-in viewer reads."""
+    `STARPULSE_TOKEN` as its bearer token."""
     address = (flag or environ.get("STARPULSE_URL") or DEFAULT_SERVER).rstrip("/")
     return Server(address, environ.get("STARPULSE_TOKEN", ""))
 

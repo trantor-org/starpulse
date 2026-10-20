@@ -143,37 +143,6 @@ class EventLog:
         """The table of how far each reader of this database got."""
         return Checkpoints(self.engine)
 
-    def bind_source(self, source: str, instance: str) -> str | None:
-        """The instance `source` is bound to once this call is done: `instance` when the source held no binding (this
-        call took it) or already held this one, else the instance that holds it. None when the database refused;
-        never raises.
-
-        Taking the binding is one insert that ignores a row already there, so two first batches racing bind the one
-        that committed first.
-        """
-        try:
-            engine = self.engine
-            take = (
-                _dialect(engine)
-                .insert(source_instances)
-                .values(source=source, instance=instance, bound_at=time.time())
-                .on_conflict_do_nothing()
-            )
-            with engine.begin() as db:
-                db.execute(take)
-                return db.execute(
-                    select(source_instances.c.instance).where(source_instances.c.source == source)
-                ).scalar()
-        except Exception as exc:  # fail open, see module docstring
-            logger.warning("EventLog: binding source %s failed: %s", source, exc)
-            return None
-
-    def unbind_source(self, source: str) -> bool:
-        """Drop `source`'s binding so the next instance to send binds it: True when it held one. Raises on a database
-        error, since an operator asked for it."""
-        with self.engine.begin() as db:
-            return db.execute(delete(source_instances).where(source_instances.c.source == source)).rowcount > 0
-
     def setting(self, key: str) -> Any | None:
         """The value kept under `key`, or None when no row holds one. Raises on a database error, so a caller that
         must fail closed decides what an unreadable setting means."""
@@ -521,7 +490,7 @@ def insert_event(db: Connection, stream: str, fields: Mapping[str, Any], key: st
         _dialect(db.engine)
         .insert(events)
         .values(stream=stream, event_id=key, fields=dict(fields), at=time.time())
-        .on_conflict_do_nothing()  # any unique key: the hub keys a row on (event_id, at), the IC log on event_id
+        .on_conflict_do_nothing()  # any unique key: the Postgres log keys a row on (event_id, at), the IC log on event_id
         .returning(events.c.id)
     )
     # Look first: an ignored insert still spends an id, and a hole in the ids would read as a pruned span.
@@ -540,10 +509,10 @@ def _create_engine(url: str) -> Engine:
 
 
 def create_tables(engine: Engine, tables: Sequence[Table] | None = None) -> None:
-    """Bring `engine`'s database to the schema the migration chain declares, the hub's rollups apart.
+    """Bring `engine`'s database to the schema the migration chain declares, the rollups apart.
 
     A SQLite store is built and versioned by the chain, whole whichever `tables` the caller needs. Another database is
-    not: the hub's Postgres arrives through its own migrations, and an instance on it creates `tables`, or every
+    not: Postgres arrives through its own migrations, and an instance on it creates `tables`, or every
     StarPulse table but the rollups for None, where they are missing.
 
     A caller that lost a race to create them looks again and finds them: each lost race means another process or

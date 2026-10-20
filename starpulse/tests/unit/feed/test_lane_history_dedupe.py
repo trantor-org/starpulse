@@ -20,7 +20,7 @@ FED = ("trantor/T-1@waiting@100.0", "waiting")  # the lane stream: the lane id, 
 
 @pytest.fixture
 def store(tmp_path: Path) -> HistoryStore:
-    return HistoryStore(f"sqlite:///{tmp_path / 'hub.sqlite'}", MACHINES)
+    return HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", MACHINES)
 
 
 @pytest.mark.parametrize("writers", [(REPLAYED, FED), (FED, REPLAYED)], ids=["replay-first", "feed-first"])
@@ -48,7 +48,7 @@ def test_a_lane_move_read_live_is_dated_by_the_boards_time_not_the_feeds_clock(s
     assert store.lane_path("T-1") == [{"at": 100.0, "from": None, "to": "in_progress"}]
 
 
-#: One task's hub rows as two writers left them, in the order they landed: the replayed board events (a UUID, a status
+#: One task's rows as two writers left them, in the order they landed: the replayed board events (a UUID, a status
 #: as spelled, the board's time) and the lane stream (a lane id, the feed's later clock), each chaining off whichever
 #: row came before it.
 LEGACY = [
@@ -64,7 +64,7 @@ LEGACY = [
 
 
 def test_a_store_holding_both_writers_rows_ends_with_one_chain_in_the_lane_id(tmp_path: Path) -> None:
-    url = f"sqlite:///{tmp_path / 'hub.sqlite'}"
+    url = f"sqlite:///{tmp_path / 'history.sqlite'}"
     held = HistoryStore(url, MACHINES)
     with held.engine.begin() as db:
         for event_id, task, old, new, at in LEGACY:

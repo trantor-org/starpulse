@@ -5,7 +5,6 @@ from starpulse._internal.config.config import (
     Config,
     ConfigError,
     RunsInstance,
-    Source,
     load,
     runs_adapter,
 )
@@ -17,7 +16,6 @@ __all__ = [
     "Config",
     "ConfigError",
     "RunsInstance",
-    "Source",
     "load",
     "restarts_serve",
     "runs_adapter",

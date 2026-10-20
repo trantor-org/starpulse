@@ -1,4 +1,4 @@
-// The geometry of the level above the Board: the orbit card of the approved hub mockup (design/hub, Mock C), pure.
+// The geometry of the level above the Board: the orbit card of the approved mockup (Mock C), pure.
 // Every source follows one closed rose curve with a petal round each sun: one sun is a circle, two a lemniscate, three a
 // trefoil, four a clover. A petal is walked by arc length, so a source keeps one speed along it, and the share of a
 // period spent in a petal is half its share of the source's runs and half its length, so dwell grows with the share

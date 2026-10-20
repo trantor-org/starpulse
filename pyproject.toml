@@ -19,11 +19,6 @@ dependencies = [
 [project.optional-dependencies]
 # History on a Postgres server (`database_url = "postgresql+psycopg://..."`); SQLite needs nothing extra.
 postgres = ["psycopg[binary]>=3.2"]
-# `starpulse serve --hub`: the Postgres driver and sign-in.
-hub = [
-    "psycopg[binary]>=3.2",
-    "pyjwt[crypto]>=2.9",
-]
 
 [project.scripts]
 starpulse = "starpulse.__main__:main"
@@ -43,15 +38,14 @@ dev = [
     "pytest-timeout>=2.4.0",
     "pytest-xdist>=3.8.0",
 ]
-hub = [
+postgres = [
     "psycopg[binary]>=3.2",
-    "pyjwt[crypto]>=2.9",
     "testcontainers[postgres]>=4.15.0",
 ]
 
-# A plain `uv sync` installs both groups; CI's IC job passes `--no-group hub` to run without the hub extras.
+# A plain `uv sync` installs both groups; CI's IC job passes `--no-group postgres` to run without the Postgres driver.
 [tool.uv]
-default-groups = ["dev", "hub"]
+default-groups = ["dev", "postgres"]
 
 # deptry reads `starpulse` imports as the project's own.
 [tool.deptry]
@@ -85,14 +79,14 @@ name = "entrypoints, producers, derived features and the core are layered, and s
 type = "layers"
 # Four tiers, each importing only the tiers below it and `contracts`. Features on one `|` line are independent; a line
 # of its own marks a named edge (the ADR "StarPulse Is Layered Around Its Event Log"): `kit` drives a `server`,
-# `server` serves the hub gate and the doctor's checks from `cli`, `pulls` reads GitHub Actions runs from `runs`,
+# `server` serves the doctor's checks from `cli`, `pulls` reads GitHub Actions runs from `runs`,
 # `autopilot` samples the board feed and the harness machine, `level` restores insights from the board feed, and the
 # history store in `eventlog` reads `config` and `machines`.
 layers = [
     # entrypoints
     "starpulse._internal.kit",
     "starpulse._internal.server",
-    "starpulse._internal.cli | starpulse._internal.hub",
+    "starpulse._internal.cli",
     # producers
     "starpulse._internal.pulls | starpulse._internal.autopilot",
     "starpulse._internal.board | starpulse._internal.runs | starpulse._internal.harnesses",
@@ -112,7 +106,7 @@ type = "forbidden"
 # The wire DTOs in `contracts.api` are the inbound adapter's published language: the server maps features onto them and
 # encodes them, and the kit drives a server. Every other tier reads `contracts.adapters` and the rest of `contracts`.
 source_modules = [
-    "starpulse._internal.cli", "starpulse._internal.hub",
+    "starpulse._internal.cli",
     "starpulse._internal.pulls", "starpulse._internal.autopilot",
     "starpulse._internal.board", "starpulse._internal.runs", "starpulse._internal.harnesses",
     "starpulse._internal.level",

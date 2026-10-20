@@ -58,7 +58,7 @@ short request needs. A stream past the limit gets `503` with `Retry-After: 5` an
 ran a minute restarts at once) when it exits, and stops it when `serve` stops on `SIGTERM` or Ctrl-C. The children read the same config and `database_url` and meet `serve` only in
 the event log. A true setting means something outside `serve` runs that worker, so `serve` starts no child for it. No unit file is needed to run StarPulse.
 
-The `api` child serves the page and the HTTP API. `serve` binds `--host` and `--port` once (or adopts the socket the service manager passes in), keeps that listening socket for the life of the process and starts `starpulse worker api` with it on the descriptor named by `STARPULSE_LISTEN_FD`. `serve` first builds the page's machines and board from the config and exits 1 with the reason when it cannot, so a bad `starpulse.toml` or `board.yaml` stops `serve` rather than a child that exits at every start; it also tells the child, in `STARPULSE_STATIC`, which page build it checked. The child reads the Board from the replica the `board` child publishes and starts no adapter watcher. A reload or restart of the child starts the new one on the same socket, then stops the old: the old one stops accepting, finishes its in-flight requests (up to 8 s) and exits, so a connection made meanwhile queues in the backlog and none is refused. A `serve --hub` serves its page in-process and gets no `api` child.
+The `api` child serves the page and the HTTP API. `serve` binds `--host` and `--port` once (or adopts the socket the service manager passes in), keeps that listening socket for the life of the process and starts `starpulse worker api` with it on the descriptor named by `STARPULSE_LISTEN_FD`. `serve` first builds the page's machines and board from the config and exits 1 with the reason when it cannot, so a bad `starpulse.toml` or `board.yaml` stops `serve` rather than a child that exits at every start; it also tells the child, in `STARPULSE_STATIC`, which page build it checked. The child reads the Board from the replica the `board` child publishes and starts no adapter watcher. A reload or restart of the child starts the new one on the same socket, then stops the old: the old one stops accepting, finishes its in-flight requests (up to 8 s) and exits, so a connection made meanwhile queues in the backlog and none is refused.
 
 Every context is its own child, the light ones (`history`, `search`) included, so a restart, a reload and a memory limit each reach one context alone. Merging the light ones into one child would save their duplicated import floor; sharing that floor between separate children saves it without giving up the isolation.
 
@@ -155,7 +155,7 @@ database_url = "postgresql+psycopg://db.example.com/starpulse"
 event_log_retention_days = 7   # the default
 
 # Where `serve`'s History child writes each row it prunes, before it deletes the row (see Event log archive): a directory, relative to
-# this file unless absolute. A `serve --hub` prunes no rows and writes no archive.
+# this file unless absolute.
 event_log_archive_dir = "starpulse-archive"   # the default
 
 # The seconds a `GET /api/pulls` read may take, from accept to the last byte written, before `serve` logs a `slow_read`
@@ -212,7 +212,7 @@ type = "native"
 # machine = "board.yaml" # as above
 # interval = 2           # seconds between the scans that find a changed task file
 
-# To draw only a project's machines, for a hub whose tasks arrive as lane entries and machine events:
+# To draw only a project's machines, with no task source:
 # [board]
 # type = "machines"      # takes no other setting: it draws every file in `.starpulse/machines/` beside this file, the Board machine (`board.yaml`) among them, and follows no task source, reads no board directory and offers no write
 
@@ -257,16 +257,14 @@ type = "native"
 # prune of the event log). False, the default: `serve` supervises them as one child process, `starpulse worker
 # flow-metrics`. True: you run `starpulse worker flow-metrics --config <this file>` yourself and `serve` starts neither thread.
 # They run together because both write the history database. The recorder's cursor is saved with the rows it covers, so
-# a restarted worker neither drops nor repeats a history row. A hub (`serve --hub`) keeps both threads in-process and
-# ignores this setting. With the flag set and no worker running, no machine event is recorded and the log is not pruned.
+# a restarted worker neither drops nor repeats a history row. With the flag set and no worker running, no machine event is recorded and the log is not pruned.
 # flow_metrics_worker = false
 
 # Whether something outside `serve` runs the Search context's embedding catch-up (the thread that fills vectors for the
 # indexed task text). False, the default: with `[search] embeddings_url` set, `serve` supervises it as a child process,
 # `starpulse worker search`. True: you run `starpulse worker search --config <this file>` yourself and `serve` starts
 # no thread and no child. Vectors are stored per batch in one transaction, keyed by the text's digest, so a restarted
-# worker neither drops nor repeats an embedding; `serve` rereads the vectors it ranks by every 30 s. A hub
-# (`serve --hub`) keeps no search index and ignores this setting. With the flag set and no worker running, no vector is
+# worker neither drops nor repeats an embedding; `serve` rereads the vectors it ranks by every 30 s. With the flag set and no worker running, no vector is
 # written and search ranks by the vectors already stored, else lexically.
 # search_worker = false
 
@@ -274,13 +272,12 @@ type = "native"
 # Start Criteria were met). False, the default: `serve` supervises it as a child process, `starpulse worker board`.
 # True: you run `starpulse worker board --config <this file>` yourself and `serve` starts no thread and no child. The
 # dates are saved in the history and read back at start, so a restarted worker does not re-date a task; `serve`
-# rereads the dates every 30 s. A hub (`serve --hub`) keeps the writer in-process and ignores this setting. With the flag set and no worker running, no Start Criteria are
+# rereads the dates every 30 s. With the flag set and no worker running, no Start Criteria are
 # evaluated, so a Waiting task with them never becomes workable. The release of dependents belongs to the `pulls` worker.
 # The Board worker is also the only process that runs the board adapter's watchers: it publishes each changed task to
 # the `board:replica` stream of the event log and checkpoints the Board every minute, and `serve` and the other
 # workers read that replica (restoring the checkpoint, then tailing the stream) instead of running the adapter, so a
-# task it places reaches them within half a second. A worker a hub manages, which has no Board child, is started with
-# `--local-board` (`starpulse worker pulls|runs|autopilot --local-board`) and runs the adapter in its own process. With
+# task it places reaches them within half a second. With
 # no Board worker running, `serve` and those workers stay not ready, with no Board once nothing is checkpointed.
 # board_worker = false
 
@@ -494,8 +491,7 @@ forecast P(goal), and the run ledger.
   tasks waiting on it. In shadow, the default, a second order is only logged: `value / dominant share`, where value is depth
   times P(goal) and dominant share is the largest `demand / limit` over the dimensions. P(goal) is the task's forecast
   chance of the goal in the eligible lane (`trajectory_analytics(...)["forecast"]`), else the chain's `p_goal` for that
-  lane, and 1 when the lane has no history. The loop reads those ranks whenever `[level]` is set, including on an IC
-  server that is not serving `--hub`. An optional predictor, a
+  lane, and 1 when the lane has no history. The loop reads those ranks whenever `[level]` is set. An optional predictor, a
   function from a task's title and description to a score, replaces P(goal) in that shadow value and is logged; a
   predictor that raises leaves the score empty.
 - **Log.** Each decision logs one line:
@@ -661,8 +657,7 @@ The `board` machine is judged on `board:lanes`, every other machine on `machine:
 the log still retains before the first scrape and follows new ones after, so a restart recounts the retained entries
 rather than starting at 0, and an entry pruned from the log leaves the count. Every machine has both series from the
 first scrape, at 0 until a move arrives. The first lane seen for a task is placed unjudged, because the log keeps no
-earlier history; the stored-history replay judges it from the initial state. Guards are not judged. A hub (`--hub`)
-judges nothing and exports neither.
+earlier history; the stored-history replay judges it from the initial state. Guards are not judged.
 
 ## Event log archive
 

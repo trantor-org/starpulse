@@ -22,7 +22,7 @@ When a consumer needs a field the contract lacks, the field is added to the cont
 A package test fails when a producer declares a stream that `EVENT_STREAMS` lacks, and when an entry a producer writes
 does not validate against its stream's schema. An `Entry`'s `fields` are the record: `Entry.event_id` is the entry's
 idempotency key, `Entry.at` is when the log took it, and `Entry.id` is the cursor to resume after. The records here are
-those of an instance's log; a hub's log adds `source` (and, for a run, `instance`) to what it receives.
+those of an instance's log.
 
 ## The pattern
 

@@ -1178,12 +1178,12 @@ describe("the In Progress state level", () => {
   });
 
   it("joins the primary and a skill machine by one path each way, rim to rim", () => {
-    const [hub, skill] = scene.planets, dist = (a: Pt, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y);
+    const [pivot, skill] = scene.planets, dist = (a: Pt, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y);
     const [out, back] = scene.hops;
 
-    expect([hub.name, skill.name]).toEqual(["in-progress", "triaging-cr-reviews"]);
+    expect([pivot.name, skill.name]).toEqual(["in-progress", "triaging-cr-reviews"]);
     expect([out.from, out.to, out.back, back.from, back.to, back.back]).toEqual(["in-progress", "triaging-cr-reviews", false, "triaging-cr-reviews", "in-progress", true]);
-    expect(dist(out.p0, hub)).toBeCloseTo(hub.rim!);
+    expect(dist(out.p0, pivot)).toBeCloseTo(pivot.rim!);
     expect(dist(out.p1, skill)).toBeCloseTo(skill.rim!);
     expect([back.p0, back.p1]).toEqual([out.p1, out.p0]);
   });
@@ -1406,12 +1406,12 @@ describe("the state level's lifecycle moons", () => {
   const level = (skills: number) => build(moonSky(skills), { kind: "state", id: "in_progress" });
   const moonsOf = (scene: Scene) => scene.planets.filter((p) => p.moon && !p.pager);
   /** The quarter of the ring a moon sits in, from the primary: right or left, upper or lower. */
-  const quarter = (scene: Scene, m: Pt) => [Math.sign(m.x - scene.hub!.x), Math.sign(m.y - scene.hub!.y)];
+  const quarter = (scene: Scene, m: Pt) => [Math.sign(m.x - scene.pivot!.x), Math.sign(m.y - scene.pivot!.y)];
 
   it("sets the skill machines round the primary, alternating right and left, then upper and lower", () => {
     const scene = level(6);
 
-    expect(scene.planets[0]).toBe(scene.hub);
+    expect(scene.planets[0]).toBe(scene.pivot);
     expect(moonsOf(scene).map((m) => [m.name, ...quarter(scene, m)])).toEqual([
       ["skill-00", 1, -1], ["skill-01", -1, -1], ["skill-02", 1, 1], ["skill-03", -1, 1], ["skill-04", 1, -1], ["skill-05", -1, -1],
     ]);
@@ -1419,22 +1419,22 @@ describe("the state level's lifecycle moons", () => {
 
   it("stacks each quarter's rows from the band beside the primary out to four-fifths of one ring, however many machines there are", () => {
     for (const n of [2, 20]) {
-      const scene = level(n), hub = scene.hub!, moons = moonsOf(scene), ring = Math.hypot(moons[0].x - hub.x, moons[0].y - hub.y);
+      const scene = level(n), pivot = scene.pivot!, moons = moonsOf(scene), ring = Math.hypot(moons[0].x - pivot.x, moons[0].y - pivot.y);
 
       for (const m of moons) {
-        expect(Math.hypot(m.x - hub.x, m.y - hub.y)).toBeCloseTo(ring);
-        expect(Math.abs(m.y - hub.y)).toBeGreaterThan(hub.rim! + 70);
-        expect(Math.abs(m.y - hub.y)).toBeLessThanOrEqual(0.8 * ring + 1);
+        expect(Math.hypot(m.x - pivot.x, m.y - pivot.y)).toBeCloseTo(ring);
+        expect(Math.abs(m.y - pivot.y)).toBeGreaterThan(pivot.rim! + 70);
+        expect(Math.abs(m.y - pivot.y)).toBeLessThanOrEqual(0.8 * ring + 1);
       }
       for (const q of [[1, -1], [-1, -1], [1, 1], [-1, 1]]) {
-        const rows = moons.filter((m) => quarter(scene, m).join() === q.join()).sort((a, b) => Math.abs(a.y - hub.y) - Math.abs(b.y - hub.y));
+        const rows = moons.filter((m) => quarter(scene, m).join() === q.join()).sort((a, b) => Math.abs(a.y - pivot.y) - Math.abs(b.y - pivot.y));
         rows.forEach((m, i) => { if (i) expect(Math.abs(m.y - rows[i - 1].y)).toBeGreaterThanOrEqual(m.rim! + rows[i - 1].rim!); });
       }
     }
   });
 
   it("grows the ring until every quarter's rows fit", () => {
-    const ring = (n: number) => { const s = level(n), m = moonsOf(s)[0]; return Math.hypot(m.x - s.hub!.x, m.y - s.hub!.y); };
+    const ring = (n: number) => { const s = level(n), m = moonsOf(s)[0]; return Math.hypot(m.x - s.pivot!.x, m.y - s.pivot!.y); };
 
     expect(ring(20)).toBeGreaterThan(ring(2));
   });
@@ -1445,7 +1445,7 @@ describe("the state level's lifecycle moons", () => {
     const page = (at: number) => build({ ...fixture, pages: { in_progress: at } }, { kind: "state", id: "in_progress" });
     const first = page(0), second = page(1), at = (scene: Scene) => ({
       box: scene.box,
-      hub: [scene.hub!.x, scene.hub!.y],
+      pivot: [scene.pivot!.x, scene.pivot!.y],
       dags: Object.fromEntries(Object.entries(scene.stars).map(([id, s]) => [id, [s.x, s.y]])),
     });
 
@@ -1457,33 +1457,33 @@ describe("the state level's lifecycle moons", () => {
 
   it("frames the level to what it draws, the pager nodes included, with no margin of its own", () => {
     for (const n of [2, 20]) {
-      const scene = level(n), hub = scene.hub!, ring = Math.hypot(moonsOf(scene)[0].x - hub.x, moonsOf(scene)[0].y - hub.y);
+      const scene = level(n), pivot = scene.pivot!, ring = Math.hypot(moonsOf(scene)[0].x - pivot.x, moonsOf(scene)[0].y - pivot.y);
 
-      expect(scene.box![2] - hub.x).toBeLessThan(ring + 260);
+      expect(scene.box![2] - pivot.x).toBeLessThan(ring + 260);
       for (const p of scene.planets.filter((p) => p.pager)) expect(scene.box![3]).toBeGreaterThanOrEqual(p.y + p.rim!);
     }
   });
 
   it("pages with two machine nodes on the bottom of the ring, back on the left and forward on the right", () => {
-    const scene = level(20), hub = scene.hub!, ring = Math.hypot(moonsOf(scene)[0].x - hub.x, moonsOf(scene)[0].y - hub.y), [back, forward] = scene.planets.filter((p) => p.pager);
+    const scene = level(20), pivot = scene.pivot!, ring = Math.hypot(moonsOf(scene)[0].x - pivot.x, moonsOf(scene)[0].y - pivot.y), [back, forward] = scene.planets.filter((p) => p.pager);
 
     expect([back.pager!.d, forward.pager!.d, back.R, forward.R]).toEqual([-1, 1, 9, 9]);
     for (const p of [back, forward]) {
-      expect(Math.hypot(p.x - hub.x, p.y - hub.y)).toBeCloseTo(ring);
+      expect(Math.hypot(p.x - pivot.x, p.y - pivot.y)).toBeCloseTo(ring);
       expect(p.y).toBeGreaterThan(Math.max(...moonsOf(scene).map((o) => o.y)));
     }
-    expect([back.x - hub.x, back.y]).toEqual([hub.x - forward.x, forward.y]);
+    expect([back.x - pivot.x, back.y]).toEqual([pivot.x - forward.x, forward.y]);
     expect(forward.x - back.x).toBeGreaterThanOrEqual(back.rim! + forward.rim!);
   });
 });
 
 describe("the state level's sub-state chains", () => {
-  const scene = build(moonSky(4), { kind: "state", id: "in_progress" }), hub = scene.hub!;
+  const scene = build(moonSky(4), { kind: "state", id: "in_progress" }), pivot = scene.pivot!;
   const moon = (name: string) => scene.planets.find((p) => p.name === name)!;
   const chainOf = (name: string) => scene.planets.filter((p) => p.subState && p.machine === name);
 
   it("chains a skill machine's sub-states outward from its moon along its row, and names the chain past it", () => {
-    const m = moon("skill-00"), [b] = chainOf("skill-00"), out = Math.sign(m.x - hub.x);
+    const m = moon("skill-00"), [b] = chainOf("skill-00"), out = Math.sign(m.x - pivot.x);
 
     expect([b.state, b.flow, b.y, (b.x - m.x) * out > 0]).toEqual(["reading", "running-skill-evals", m.y, true]);
     expect(Math.abs(b.x - m.x)).toBeGreaterThanOrEqual(m.rim! + b.rim!);
@@ -1496,7 +1496,7 @@ describe("the state level's sub-state chains", () => {
   });
 
   it("boxes the level past the end of the longest chain label, so no label reaches the Board paths drawn at the screen edge", () => {
-    const m = moon("skill-00"), [b] = chainOf("skill-00"), [x0, , x1] = scene.box!, out = Math.sign(m.x - hub.x);
+    const m = moon("skill-00"), [b] = chainOf("skill-00"), [x0, , x1] = scene.box!, out = Math.sign(m.x - pivot.x);
     const labelEnd = b.x + out * (b.rim! + (textW(m.label!, 11.5) * scene.moonLH!) / 17);
 
     expect(out > 0 ? x1 : -x0).toBeGreaterThanOrEqual(out * labelEnd);
@@ -1790,9 +1790,9 @@ describe("a sun's size", () => {
   };
 
   it("grows the primary on a state level with machines so every task circles it in one ring", () => {
-    const hub = build(withTasks({ in_progress: 200 }), { kind: "state", id: "in_progress" }).hub!;
+    const pivot = build(withTasks({ in_progress: 200 }), { kind: "state", id: "in_progress" }).pivot!;
 
-    expect([hub.R > 104, hub.rings?.length]).toEqual([true, 1]);
+    expect([pivot.R > 104, pivot.rings?.length]).toEqual([true, 1]);
   });
 });
 

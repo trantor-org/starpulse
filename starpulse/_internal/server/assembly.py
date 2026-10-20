@@ -59,13 +59,12 @@ def assemble(config: Config, base: Path, window_s: float | None, run_safe: Colle
 
 
 def worker_board(
-    config: Config, base: Path, log: EventLog, group: str, stop: threading.Event, *, local: bool
+    config: Config, base: Path, log: EventLog, group: str, stop: threading.Event
 ) -> tuple[Board, BoardFeed]:
-    """The board and feed of a worker beside `serve`: the feed reads the replica the Board child publishes, or with
-    `local` (a worker a hub manages) the adapter started in this process (`replica.read`). Raises ValueError as
-    `assemble` does."""
+    """The board and feed of a worker beside `serve`: the feed reads the replica the Board child publishes
+    (`replica.read`). Raises ValueError as `assemble` does."""
     board, feed = assemble(config, base, None, [])
-    replica.read(board, feed, group, log, config, stop, local=local)
+    replica.read(board, feed, group, log, config, stop)
     return board, feed
 
 
@@ -91,16 +90,8 @@ def history_store(config: Config, base: Path, machines: Mapping[str, dict]) -> H
     return HistoryStore(database_url(config.database_url, base), machines)
 
 
-def keep_event_log(
-    log: EventLog, config: Config, base: Path, *, hub: bool, stop: threading.Event
-) -> threading.Thread | None:
-    """Start the hourly prune of the event log, which archives each row it deletes under `event_log_archive_dir`.
-
-    A hub starts none: it drops a whole day's partition once it has rolled the day up, so its rows are never deleted
-    one by one.
-    """
-    if hub:
-        return None
+def keep_event_log(log: EventLog, config: Config, base: Path, *, stop: threading.Event) -> threading.Thread:
+    """Start the hourly prune of the event log, which archives each row it deletes under `event_log_archive_dir`."""
     thread = threading.Thread(
         target=prune_forever,
         args=(log,),

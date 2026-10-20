@@ -12,7 +12,7 @@ Each `[[runs]]` table is one instance of a runs adapter: its `name`, the adapter
 group its workflows on the page. A workflow is shown as `<instance>/<workflow>`, so two instances can
 carry the same workflow name.
 
-The optional `[level]` table configures the flow graph a hub draws above the Board (`starpulse._internal.config.level`).
+The optional `[level]` table configures the flow graph drawn above the Board (`starpulse._internal.config.level`).
 """
 
 from __future__ import annotations
@@ -25,7 +25,6 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from types import ModuleType
-from urllib.parse import urlsplit
 
 from starpulse._internal.config.adapter_types import module_name
 from starpulse._internal.config.analytics import Analytics, AnalyticsError, parse_analytics
@@ -53,13 +52,9 @@ _KEYS = {
     "session_start_url",
     "level",
     "ci",
-    "hub_retention_days",
     "event_log_retention_days",
     "event_log_archive_dir",
-    "oidc",
-    "sources",
     "producers",
-    "aggregates_only",
     "autopilot",
     "release",
     "analytics",
@@ -75,21 +70,9 @@ _KEYS = {
     "slow_read_seconds",
     "worker_memory",
 }
-_OIDC_KEYS = {
-    "issuer",
-    "client_id",
-    "client_secret_env",
-    "redirect_uri",
-    "allowed_groups",
-    "groups_claim",
-    "scopes",
-    "engine_token_env",
-    "reader_token_env",
-}
 _INSTANCE_KEYS = {"name", "type", "url", "run_safe", "domains", "commit"}
 _COMMIT_KEYS = {"after", "before", "force", "task"}
 _REPO_KEYS = {"name", "path", "applied_by"}
-_SOURCE_KEYS = {"name", "token_env"}
 _PRODUCER_KEYS = {"name", "token_env", "machines", "actors"}
 
 _MEMORY_KEYS = {"soft_mb", "hard_mb"}
@@ -102,7 +85,6 @@ __all__ = [
     "ConfigError",
     "MemoryLimit",
     "RunsInstance",
-    "Source",
     "load",
     "runs_adapter",
 ]
@@ -178,74 +160,8 @@ class Release:
     """The name of the repository the running build comes from, for `settle = "release"`."""
 
 
-@dataclass(frozen=True)
-class OidcSettings:
-    """The hub's sign-in: its OpenID Connect issuer, this hub's client at it, and who may sign in."""
-
-    issuer: str
-    client_id: str
-    client_secret_env: str
-    redirect_uri: str
-    allowed_groups: tuple[str, ...]
-    groups_claim: str = "groups"
-    scopes: tuple[str, ...] = ("openid", "profile", "email")
-    engine_token_env: str | None = None
-    reader_token_env: str | None = None
-
-
-def _oidc(raw: object) -> OidcSettings:
-    """The `[oidc]` table as settings; each refusal names the key to fix."""
-    if not isinstance(raw, dict):
-        raise ConfigError("oidc must be an [oidc] table")
-    if unknown := sorted(raw.keys() - _OIDC_KEYS):
-        raise ConfigError(f"oidc: unknown key(s) {', '.join(unknown)}")
-    text: dict[str, str] = {}
-    for key in ("issuer", "client_id", "client_secret_env", "redirect_uri"):
-        if key not in raw:
-            raise ConfigError(f"oidc: {key} is required")
-        if not isinstance(raw[key], str) or not raw[key]:
-            raise ConfigError(f"oidc: {key} must be text")
-        text[key] = raw[key]
-    for key in ("issuer", "redirect_uri"):
-        if urlsplit(text[key]).scheme not in {"http", "https"} or not urlsplit(text[key]).netloc:
-            raise ConfigError(f"oidc: {key} must be an http(s) URL")
-    groups = raw.get("allowed_groups")
-    if not (_names(groups) and groups and all(groups)):
-        raise ConfigError("oidc: allowed_groups must name at least one group")
-    claim = raw.get("groups_claim", "groups")
-    scopes = raw.get("scopes", ["openid", "profile", "email"])
-    if not isinstance(claim, str) or not claim:
-        raise ConfigError("oidc: groups_claim must be text")
-    if not (_names(scopes) and scopes and "openid" in scopes):
-        raise ConfigError("oidc: scopes must be a list of text that includes openid")
-    engine, reader = raw.get("engine_token_env"), raw.get("reader_token_env")
-    names = {"client_secret_env": text["client_secret_env"], "engine_token_env": engine, "reader_token_env": reader}
-    for key, name in names.items():
-        if name is not None and not (isinstance(name, str) and _ENV_NAME.fullmatch(name)):
-            raise ConfigError(f"oidc: {key} must be the name of an environment variable")
-    return OidcSettings(
-        text["issuer"],
-        text["client_id"],
-        text["client_secret_env"],
-        text["redirect_uri"],
-        tuple(groups),
-        claim,
-        tuple(scopes),
-        engine,
-        reader,
-    )
-
-
 #: The most events one CloudEvents batch may hold.
 MAX_BATCH = 200
-
-
-@dataclass(frozen=True)
-class Source:
-    """An instance a hub accepts events from; `token_env` names the variable holding its token."""
-
-    name: str
-    token_env: str
 
 
 @dataclass(frozen=True)
@@ -403,19 +319,6 @@ def _unknown(raw: dict, known: set[str], who: str) -> None:
         raise ConfigError(f"{who}: unknown key(s) {', '.join(unknown)}; known: {', '.join(sorted(known))}")
 
 
-def _source(raw: object) -> Source:
-    if not isinstance(raw, dict):
-        raise ConfigError("sources must be a list of [[sources]] tables")
-    for key in ("name", "token_env"):
-        if key not in raw:
-            raise ConfigError(f"a source needs {key}")
-    name = raw["name"]
-    if not isinstance(name, str) or not name or "/" in name:
-        raise ConfigError("source names must be non-empty text without a /")
-    _unknown(raw, _SOURCE_KEYS, f"source {name}")
-    return Source(name, _token_env(raw["token_env"], f"source {name}:"))
-
-
 def _name_list(raw: dict, key: str, who: str) -> tuple[str, ...]:
     names = raw[key]
     if not (isinstance(names, list) and names and all(isinstance(name, str) and name for name in names)):
@@ -505,26 +408,12 @@ def _flag(raw: dict, key: str, default: bool) -> bool:
     return value
 
 
-def _sources(raw: object) -> tuple[Source, ...]:
-    if not isinstance(raw, list):
-        raise ConfigError("sources must be a list of [[sources]] tables")
-    sources = tuple(_source(table) for table in raw)
-    for at, source in enumerate(sources):
-        if any(source.name == earlier.name for earlier in sources[:at]):
-            raise ConfigError(f"source {source.name} is configured twice")
-        if shared := next((e for e in sources[:at] if e.token_env == source.token_env), None):
-            raise ConfigError(
-                f"sources {shared.name} and {source.name} share token_env {source.token_env}; each needs its own token"
-            )
-    return sources
-
-
 @dataclass(frozen=True)
 class Config:
     tracker_url: str | None
     """The tracker's web address; a task links to `<tracker_url>/tasks/<id>`, or with none to the page's own Kanban."""
     mode: str
-    """`ic` for one person on one machine. A hub is started with `starpulse serve --hub`, not by this key."""
+    """`ic`, the one value: one person on one machine."""
     runs: tuple[RunsInstance, ...] = ()
     harnesses: Harnesses | None = None
     """The tiers and per-harness models `harnesses_file` declares; none when the config names no file."""
@@ -538,14 +427,6 @@ class Config:
     """The session-start service a started task is sent to (`POST <url>/start/TASK-N?harness=&mode=`); none: nothing can be started."""
     level: Level | None = None
     """The `[level]` flow graph above the Board; none when the config has no such table."""
-    hub_retention_days: int = 14
-    """A hub keeps raw events for this many days before today, then drops each older day's partition after rolling it up."""
-    oidc: OidcSettings | None = None
-    """The hub's sign-in (`[oidc]`); a hub refuses to start without it, and an IC instance without `--hub` refuses it."""
-    sources: tuple[Source, ...] = ()
-    """The instances this hub takes events from, by their tokens."""
-    aggregates_only: bool = False
-    """A hub that takes aggregates only refuses an instance's opt-in to be named."""
     producers: tuple[Producer, ...] = ()
     """The systems that post machine events as CloudEvents, each with its token variable, machines and actors."""
     event_log_retention_days: int = 7
@@ -569,13 +450,13 @@ class Config:
     slow_read_seconds: float = SLOW_READ_S
     """`serve` logs a `slow_read` line for each `GET /api/pulls` that took this many seconds or more, from accept to the last byte written, with the seconds it waited for a handler thread, computed its answer and wrote it."""
     flow_metrics_worker: bool = False
-    """The Flow Metrics context (the recorder that copies the event log's machine events into the history store, and the hourly prune of the log) runs in `starpulse worker flow-metrics`, not in `serve`: `serve` starts neither thread; false: `serve` supervises that worker as a child. A hub keeps both in-process whatever this says."""
+    """The Flow Metrics context (the recorder that copies the event log's machine events into the history store, and the hourly prune of the log) runs in `starpulse worker flow-metrics`, not in `serve`: `serve` starts neither thread; false: `serve` supervises that worker as a child."""
     search_worker: bool = False
-    """The Search context's embedding catch-up (the thread that fills vectors for indexed task text) runs in `starpulse worker search`, not in `serve`: `serve` starts no thread; false: `serve` supervises that worker as a child when `[search]` names an `embeddings_url`. A hub keeps no search index whatever this says."""
+    """The Search context's embedding catch-up (the thread that fills vectors for indexed task text) runs in `starpulse worker search`, not in `serve`: `serve` starts no thread; false: `serve` supervises that worker as a child when `[search]` names an `embeddings_url`."""
     board_worker: bool = False
-    """The Board context's writer (the Start Criteria evaluation) runs in `starpulse worker board`, not in `serve`: `serve` starts no thread for it and reads the criteria results from the history store; false: `serve` supervises that worker as a child. A hub keeps it in-process whatever this says."""
+    """The Board context's writer (the Start Criteria evaluation) runs in `starpulse worker board`, not in `serve`: `serve` starts no thread for it and reads the criteria results from the history store; false: `serve` supervises that worker as a child."""
     api_worker: bool = False
-    """The Page API (the HTTP server for the page, its JSON and its event stream) runs in `starpulse worker api`, not in a child of `serve`: `serve` binds no socket and starts no API child; false: `serve` binds the listening socket, hands it to a `starpulse worker api` child it supervises and replaces that child behind the socket on a reload. A hub serves its page in-process whatever this says."""
+    """The Page API (the HTTP server for the page, its JSON and its event stream) runs in `starpulse worker api`, not in a child of `serve`: `serve` binds no socket and starts no API child; false: `serve` binds the listening socket, hands it to a `starpulse worker api` child it supervises and replaces that child behind the socket on a reload."""
     analytics: Analytics = field(default_factory=Analytics)
     """What the instance's agents' telemetry is read against (`[analytics]`); no table: no roots or stops."""
     release: Release | None = None
@@ -723,7 +604,7 @@ def load(path: Path | None) -> Config:
     if unknown := sorted(raw.keys() - _KEYS):
         raise ConfigError(f"unknown config key(s) {', '.join(unknown)}; known: {', '.join(sorted(_KEYS))}", unknown)
     if (mode := raw.get("mode", "ic")) != "ic":
-        raise ConfigError(f'mode {mode!r} is not a config setting; use mode = "ic", and start a hub with `serve --hub`')
+        raise ConfigError(f'mode {mode!r} is not a config setting; use mode = "ic"')
     runs_raw = raw.get("runs", [])
     if not isinstance(runs_raw, list):
         raise ConfigError("runs must be a list of [[runs]] tables")
@@ -733,7 +614,6 @@ def load(path: Path | None) -> Config:
             raise ConfigError(f"runs instance {instance.name} is configured twice")
     if not isinstance(session_start_url := raw.get("session_start_url"), str | None):
         raise ConfigError("session_start_url must be text")
-    retention = _retention(raw.get("hub_retention_days", 14), "hub_retention_days")
     log_retention = _retention(raw.get("event_log_retention_days", 7), "event_log_retention_days")
     harnesses = None
     if path and (name := raw.get("harnesses_file")):
@@ -762,7 +642,6 @@ def load(path: Path | None) -> Config:
     url = raw.get("database_url")
     if url is not None and not isinstance(url, str):
         raise ConfigError("database_url must be text")
-    oidc = _oidc(raw["oidc"]) if "oidc" in raw else None
     repos = _repos(raw.get("repos", []))
     return Config(
         raw.get("tracker_url"),
@@ -774,10 +653,6 @@ def load(path: Path | None) -> Config:
         url,
         session_start_url,
         _level(raw),
-        retention,
-        oidc,
-        _sources(raw.get("sources", [])),
-        _flag(raw, "aggregates_only", False),
         producers=_producers(raw.get("producers", [])),
         event_log_retention_days=log_retention,
         event_log_archive_dir=_archive_dir(raw.get("event_log_archive_dir", "starpulse-archive")),

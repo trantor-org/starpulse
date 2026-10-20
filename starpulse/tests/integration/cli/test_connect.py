@@ -9,7 +9,7 @@ from starpulse._internal.cli import agent_cli, connect
 from starpulse._internal.config.config import load
 from starpulse.tests.integration.board.test_jira import WORKFLOW, recorded_site, serve
 
-OTHER_TABLES = '# the hub this instance reports to\ntracker_url = "https://tracker.example"\n\n[[runs]]\nname = "prod"\ntype = "dagu"\nurl = "http://dagu:8080"\n'
+OTHER_TABLES = '# the server this instance reports to\ntracker_url = "https://tracker.example"\n\n[[runs]]\nname = "prod"\ntype = "dagu"\nurl = "http://dagu:8080"\n'
 
 
 def backlog_project(
@@ -118,7 +118,7 @@ def test_connect_replaces_the_board_table_and_keeps_every_other_table_and_commen
     assert connect.main(["backlog", "--path", "backlog"]) == 0
 
     text = config.read_text()
-    assert text.startswith("# the hub this instance reports to\n")
+    assert text.startswith("# the server this instance reports to\n")
     parsed = tomllib.loads(text)
     assert parsed["board"] == {"type": "upstream_backlog", "path": "backlog"}
     assert parsed["tracker_url"] == "https://tracker.example"

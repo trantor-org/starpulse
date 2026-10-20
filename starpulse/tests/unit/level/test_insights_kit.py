@@ -13,7 +13,7 @@ FINDING = {
     "scope": {"team": "platform", "state": "review"},
     "severity": "warn",
     "text": "Review takes four times as long as the norm.",
-    "evidence": [{"label": "time in review", "url": "https://hub.example/history?state=review"}],
+    "evidence": [{"label": "time in review", "url": "https://example.test/history?state=review"}],
     "created_at": 1_700_000_000.0,
 }
 OTHER = {**FINDING, "id": "stuck-task", "scope": {"task": "PROJ-45"}, "severity": "act", "expires_at": 1_700_086_400.0}

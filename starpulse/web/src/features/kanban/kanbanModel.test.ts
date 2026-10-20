@@ -364,9 +364,9 @@ describe("what holds the Waiting lane", () => {
     const open = dependencies.filter((d) => !d.startsWith("DONE")).length;
     return { ...task(id, lane), dependencies, openDeps: open };
   };
-  // A gate in Review holds a Waiting hub, which holds two Waiting slices; one slice also waits on a Ready task
+  // A gate in Review holds a Waiting pivot, which holds two Waiting slices; one slice also waits on a Ready task
   const board = [
-    dep("GATE", "review"), dep("HUB", "waiting", "GATE"), dep("S1", "waiting", "HUB"), dep("S2", "waiting", "HUB", "SIDE"),
+    dep("GATE", "review"), dep("PIVOT", "waiting", "GATE"), dep("S1", "waiting", "PIVOT"), dep("S2", "waiting", "PIVOT", "SIDE"),
     dep("SIDE", "ready"), dep("TIMED", "waiting"), dep("FREE", "waiting", "DONE-1"), dep("LATE", "in_progress", "GATE"), task("DONE-1", "done"),
   ];
 
@@ -374,7 +374,7 @@ describe("what holds the Waiting lane", () => {
     const counts = holdCounts(board);
 
     expect(counts.get("GATE")).toBe(3);
-    expect(counts.get("HUB")).toBe(2);
+    expect(counts.get("PIVOT")).toBe(2);
     expect(counts.get("SIDE")).toBe(1);
     expect(counts.get("S1") ?? 0).toBe(0);
   });
@@ -397,8 +397,8 @@ describe("what holds the Waiting lane", () => {
   });
 
   it("trace a task's chain: the Waiting tasks it holds and the open tasks it waits on, both transitively", () => {
-    expect(chainOf(board, "HUB")).toEqual({ holds: new Set(["S1", "S2"]), waitsOn: new Set(["GATE"]) });
-    expect(chainOf(board, "S2")).toEqual({ holds: new Set(), waitsOn: new Set(["HUB", "SIDE", "GATE"]) });
+    expect(chainOf(board, "PIVOT")).toEqual({ holds: new Set(["S1", "S2"]), waitsOn: new Set(["GATE"]) });
+    expect(chainOf(board, "S2")).toEqual({ holds: new Set(), waitsOn: new Set(["PIVOT", "SIDE", "GATE"]) });
     expect(chainOf(board, "TIMED")).toEqual({ holds: new Set(), waitsOn: new Set() });
   });
 

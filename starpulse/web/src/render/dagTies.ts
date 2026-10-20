@@ -1,6 +1,6 @@
 // The DAGs tied to a Board state, drawn on the Star Map as a hangar per state: its DAGs orbit the state just outside its ring, each turned
 // toward the transition it acts on, with the hangar's name beside them. Which DAGs are tied, the state each belongs to, and where each orbiter
-// and name sits; the renderer draws them (drawHub). A DAG that only launches work, or has no tie, stays off the map (the DAGs view lists it).
+// and name sits; the renderer draws them (drawPivot). A DAG that only launches work, or has no tie, stays off the map (the DAGs view lists it).
 //   write — the DAG writes a Board transition (the board machine's `writers`)
 //   cue   — a Board event cues the DAG (the snapshot's `cues`)
 import { pathLedger, type Fold } from "./levels";
@@ -28,7 +28,7 @@ export interface Orbiter extends Pt {
   /** Its angle round the state. */
   a: number;
 }
-export interface Hub {
+export interface Pivot {
   /** The state it orbits. */
   state: string;
   /** The state's centre, and the radius of the ring its orbiters sit on, in world units. */
@@ -43,7 +43,7 @@ export interface Hub {
   arcs: [number, number][];
 }
 export interface Ties {
-  hubs: Hub[];
+  pivots: Pivot[];
   /** World units a screen pixel at the Board's fit, and the page's text size as a factor. */
   u: number;
   ts: number;
@@ -61,11 +61,11 @@ export interface Touch {
  * The Board moves playing at `now` that a tied DAG caused, one per DAG and anchor. A move carries no actor, so a writer is credited only when
  * `ran` says it ran at the move; a cue needs nothing but the event. A tied transition's line shows nothing at rest, so no move playing is no touch.
  */
-export function touches({ hubs }: Ties, moves: readonly Move[], ran: (dag: string, at: number) => boolean, now: number): Touch[] {
+export function touches({ pivots }: Ties, moves: readonly Move[], ran: (dag: string, at: number) => boolean, now: number): Touch[] {
   const out: Touch[] = [];
   for (const m of moves) {
     if (m.flow !== "board" || m.at > now || now - m.at >= TRAVEL + PULSE) continue;
-    for (const h of hubs)
+    for (const h of pivots)
       for (const orbiter of h.orbs)
         for (const anchor of orbiter.anchors)
           if (anchor.event === m.event && (anchor.kind === "cue" || ran(orbiter.dag, m.at))) out.push({ orbiter, anchor, at: m.at, u: Math.min(1, (now - m.at) / TRAVEL) });
@@ -125,11 +125,11 @@ export function boardTies(sc: Scene, sky: Sky, u: number, ts = 1): Ties {
   }
   const byState = new Map<string, Orbiter[]>();
   for (const t of all.filter((t) => t.primary)) byState.set(t.primary!.state, [...(byState.get(t.primary!.state) ?? []), t]);
-  const hubs: Hub[] = [];
+  const pivots: Pivot[] = [];
   // the Board's paths as points 4 px apart, which a hangar's name keeps off
   const paths = sc.bEdges.flatMap((e) => (e.p0 && e.c && e.p1 ? sample(e as Curve, Math.ceil((Math.hypot(e.c.x - e.p0.x, e.c.y - e.p0.y) + Math.hypot(e.p1.x - e.c.x, e.p1.y - e.c.y)) / (4 * u))) : []));
-  for (const [state, os] of byState) hubs.push(place(sc, state, os, hubs, u, ts, paths));
-  return { hubs, u, ts };
+  for (const [state, os] of byState) pivots.push(place(sc, state, os, pivots, u, ts, paths));
+  return { pivots, u, ts };
 }
 
 /** The Ledger a hangar opens: that of the first transition its DAGs dock by that has one, else the fold of its DAGs. */
@@ -163,7 +163,7 @@ export const over = (a: Box, b: Box) => Math.max(0, Math.min(a[2], b[2]) - Math.
 
 /** What a hangar's name and orbiters keep clear of, each padded: every state's disc (but `state`'s own) and its name and count, every moon and
  *  its full name (a zoomed-in map cuts none), and the hangars already placed with their orbiters. */
-export function obstacles(sc: Scene, placed: Hub[], u: number, ts: number, state?: string): Box[] {
+export function obstacles(sc: Scene, placed: Pivot[], u: number, ts: number, state?: string): Box[] {
   const pad = 8 * u, out: Box[] = [];
   for (const s of Object.values(sc.galaxies)) {
     const R = Math.max(s.R, s.visR);
@@ -185,7 +185,7 @@ export function obstacles(sc: Scene, placed: Hub[], u: number, ts: number, state
 /** A state's DAGs orbit it just outside its ring, each turned toward the transition it docks by and spread so no two touch, clear of every name
  *  the ring crosses; then the hangar's name goes beside them, off the Board's `paths`, and the group turns round the ring (up to 90°) until the
  *  name fits, or up to 180° to the nearest spot off every path when a path crosses each nearer one. */
-function place(sc: Scene, state: string, orbs: Orbiter[], placed: Hub[], u: number, ts: number, paths: Pt[]): Hub {
+function place(sc: Scene, state: string, orbs: Orbiter[], placed: Pivot[], u: number, ts: number, paths: Pt[]): Pivot {
   const g = sc.galaxies[state], gs = Object.values(sc.galaxies), R0 = Math.max(g.R, g.visR), name = widest(orbs), tall = (nameLines(orbs).length - 1) * 13 * u * ts;
   const c: Pt = { x: g.x, y: g.y }, orbit = Math.max(R0, g.moonR) + 16 * u;
   const bare = obstacles(sc, placed, u, ts);
@@ -226,7 +226,7 @@ function place(sc: Scene, state: string, orbs: Orbiter[], placed: Hub[], u: numb
   // the group turns a little round the ring (6° at a time, up to 90°) until one does, so the name never drifts off its DAGs; a name still
   // under a path there turns on (up to 180°) to the first better spot that is off every path
   const base = orbs.map((t) => t.a), g8 = 9 * u, g3 = 3 * u;
-  let pick: { s: number; lines: number; as: number[]; lab: Pt; align: CanvasTextAlign; box: Hub["box"] } | null = null;
+  let pick: { s: number; lines: number; as: number[]; lab: Pt; align: CanvasTextAlign; box: Pivot["box"] } | null = null;
   for (let k = 0; k <= 30 && pick?.s !== 0 && (k <= 15 || pick!.lines > 0); k++)
     for (const sg of k ? [-1, 1] : [1]) {
       const as = base.map((a) => a + (sg * k * 6 * Math.PI) / 180);
@@ -279,7 +279,7 @@ export const nameLines = (orbs: Pick<Orbiter, "label">[]): string[] => {
 /** The widest line a hangar's name shows: its longer line, when it breaks. */
 const widest = (orbs: Pick<Orbiter, "label">[]) => nameLines(orbs).reduce((a, b) => (b.length > a.length ? b : a));
 /** The room a hangar's name takes, anchored at `lab` and aligned `align`: one line or two when it breaks. */
-const boxOf = (lab: Pt, align: CanvasTextAlign, name: string, u: number, ts: number, tall: number): Hub["box"] => {
+const boxOf = (lab: Pt, align: CanvasTextAlign, name: string, u: number, ts: number, tall: number): Pivot["box"] => {
   const tw = (name.length * 3.4 + 4) * u * ts, lines = (6 + 16 * ts) * u + tall;
   const x = align === "left" ? [lab.x, lab.x + 2 * tw] : align === "right" ? [lab.x - 2 * tw, lab.x] : [lab.x - tw, lab.x + tw];
   return [x[0], lab.y - 9 * u * ts, x[1], lab.y + lines];

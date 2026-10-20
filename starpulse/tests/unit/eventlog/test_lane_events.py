@@ -16,7 +16,7 @@ GOOD = {"task": "T-1", "lane": "in_progress", "time": 5.0}
 
 
 def test_two_sources_that_key_a_task_alike_each_keep_their_own_lane_history(tmp_path: Path) -> None:
-    store = HistoryStore(f"sqlite:///{tmp_path / 'hub.sqlite'}", MACHINES)
+    store = HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", MACHINES)
 
     assert store.record_lane_entry("ana/T-1@in_progress@5.0", GOOD) is True
     assert store.record_lane_entry("bob/T-1@in_progress@6.0", {**GOOD, "time": 6.0}) is True  # not ana's repeat

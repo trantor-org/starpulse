@@ -257,14 +257,8 @@ def read(
     log: EventLog,
     config: Config,
     stop: threading.Event,
-    *,
-    local: bool,
 ) -> None:
-    """Give a context its Board: the replica the Board child publishes, or with `local` (a worker a hub manages,
-    which has no Board child) the adapter started in this process."""
-    if local:
-        board.start(feed, group, log)
-        return
+    """Give a context its Board: the replica the Board child publishes."""
     if board.attach is not None:
         board.attach(log)
     follow(feed, log, key(board, config), stop)

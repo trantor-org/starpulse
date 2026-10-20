@@ -346,7 +346,7 @@ def test_a_reading_context_attaches_to_the_log_and_follows_the_replica_instead_o
     board = _board(starts, attached)
     feed = BoardFeed()
 
-    replica.read(board, feed, "starpulse-runs", log, CONFIG, stop, local=False)
+    replica.read(board, feed, "starpulse-runs", log, CONFIG, stop)
     child = replica.Publisher(BoardFeed(), log, replica.key(board, CONFIG))
     child.begin()
     child.put(_task("T-1", "to_do"))
@@ -356,16 +356,6 @@ def test_a_reading_context_attaches_to_the_log_and_follows_the_replica_instead_o
     assert _states(feed) == {"T-1": "to_do"}
     assert starts == []
     assert attached == [log]
-
-
-def test_a_context_with_a_local_board_starts_the_adapter_on_its_own_feed(log: EventLog, stop: threading.Event) -> None:
-    starts: list = []
-    feed = BoardFeed()
-
-    replica.read(_board(starts, []), feed, "starpulse-runs", log, CONFIG, stop, local=True)
-
-    assert starts == [(feed, "starpulse-runs", log)]
-    assert not feed.ready.is_set()  # nothing follows the replica
 
 
 def test_the_board_child_starts_the_adapter_on_a_publisher_that_has_resumed(

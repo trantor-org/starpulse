@@ -81,25 +81,22 @@ def test_a_context_whose_worker_setting_is_false_gets_a_child_command_and_a_true
     }
 
 
-def test_the_flow_metrics_child_runs_for_a_false_setting_and_never_beside_a_hub() -> None:
+def test_the_flow_metrics_child_runs_for_a_false_setting() -> None:
     assert "flow-metrics" in worker_commands(load(None), None)
     assert "flow-metrics" not in worker_commands(replace(load(None), flow_metrics_worker=True), None)
-    assert "flow-metrics" not in worker_commands(load(None), None, hub=True)  # a hub keeps its history threads in-process
 
 
-def test_the_board_child_runs_for_a_false_setting_and_no_hub() -> None:
+def test_the_board_child_runs_for_a_false_setting() -> None:
     assert "board" in worker_commands(load(None), None)
     assert "board" not in worker_commands(replace(load(None), board_worker=True), None)
-    assert "board" not in worker_commands(load(None), None, hub=True)  # a hub keeps its board writers in-process
 
 
-def test_the_search_child_runs_only_for_an_embeddings_url_a_false_setting_and_no_hub() -> None:
+def test_the_search_child_runs_only_for_an_embeddings_url_and_a_false_setting() -> None:
     embedding = replace(load(None), search=Search("http://embeddings.test/v1/embeddings", "m"))
 
     assert "search" in worker_commands(embedding, None)
     assert "search" not in worker_commands(load(None), None)  # no endpoint, nothing to embed
     assert "search" not in worker_commands(replace(embedding, search_worker=True), None)
-    assert "search" not in worker_commands(embedding, None, hub=True)  # a hub keeps no search index
 
 
 def test_a_child_that_exits_repeatedly_is_restarted_after_a_growing_delay() -> None:
@@ -283,33 +280,13 @@ def test_this_platform_reads_a_live_processs_resident_size() -> None:
     assert reader(os.getpid()) > MB
 
 
-def test_a_hub_s_workers_start_the_board_themselves_and_every_other_worker_reads_the_replica() -> (
-    None
-):
-    hub = worker_commands(load(None), None, hub=True)
-    served = worker_commands(load(None), None)
-
-    for context in ("pulls", "autopilot", "runs"):
-        assert hub[context][-1] == "--local-board"
-        assert "--local-board" not in served[context]
-    assert "--local-board" not in served["board"]
-
-
-def test_the_worker_parser_takes_the_local_board_flag() -> None:
-    from starpulse._internal.server.worker import worker_parser
-
-    assert worker_parser().parse_args(["runs", "--local-board"]).local_board is True
-    assert worker_parser().parse_args(["runs"]).local_board is False
-
-
-def test_the_api_child_runs_for_a_false_setting_and_never_beside_a_hub() -> None:
+def test_the_api_child_runs_for_a_false_setting() -> None:
     config = Path("/etc/starpulse.toml")
 
     assert worker_commands(load(None), config)["api"] == [
         sys.executable, "-m", "starpulse", "worker", "api", "--config", str(config)
     ]
     assert "api" not in worker_commands(replace(load(None), api_worker=True), None)
-    assert "api" not in worker_commands(load(None), None, hub=True)  # a hub serves its page in-process
 
 
 def test_a_child_started_without_a_socket_is_told_of_none(tmp_path: Path) -> None:

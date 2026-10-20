@@ -333,7 +333,7 @@ export interface Scene {
   groups: StarGroup[];
   sun: Sun | null;
   flow: string | null;
-  hub: Host | null;
+  pivot: Host | null;
   hops: Hop[];
   entries: BEdge[];
   exits: BEdge[];
@@ -779,7 +779,7 @@ export function build(ctx: Ctx, l: Level): Scene {
 function layoutLevel(ctx: Ctx, l: Level): Scene {
   const { S, moves, W, H, T } = ctx, ease = ctx.ease ?? ((_key: string, v: number) => v), routes = ctx.routes ?? new Map<string, Pt>(), EVENTS = moves.events, board = S.board, SUBS = S.subs, dagBy = S.dagBy;
   const stateName = (id: string) => board.machine.states.find((s) => s.id === id)?.name || id;
-  const scene: Scene = { w: 2460, h: 1340, galaxies: {}, bEdges: [], names: [], tasks: [], machineTasks: [], mStates: {}, mEdges: [], planets: [], moons: [], subStates: [], stars: {}, groups: [], sun: null, flow: null, hub: null, hops: [], entries: [], exits: [] };
+  const scene: Scene = { w: 2460, h: 1340, galaxies: {}, bEdges: [], names: [], tasks: [], machineTasks: [], mStates: {}, mEdges: [], planets: [], moons: [], subStates: [], stars: {}, groups: [], sun: null, flow: null, pivot: null, hops: [], entries: [], exits: [] };
   // a DAG's instance prefix is drawn only where another instance runs a DAG by the same bare name
   const bare = (name: string) => name.slice(name.indexOf("/") + 1), bareCount = new Map<string, number>();
   for (const n of Object.keys(dagBy)) bareCount.set(bare(n), (bareCount.get(bare(n)) ?? 0) + 1);
@@ -1152,16 +1152,16 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
       const n = stateCount(S, sid);
       const sun: Sun = { id: sid, name: stateName(sid), final: !!st?.final, today: st && daily(st) ? today.length : undefined, x: cx0, y: cy0, r: SUN_R, R: 0, n, color: BOARD_COLOR[sid] ?? "#94a3b8" };
       scene.sun = sun;
-      scene.hub = sun;
+      scene.pivot = sun;
       sun.R = attach(list, sun, sun.r + 30, 16, 16, true);
       sun.rim = sun.R + 8;
       scene.box = [sun.x - sun.R - 120, sun.y - sun.R - 120, sun.x + sun.R + 120, sun.y + sun.R + 120];
     } else {
       // the skill machines are moons: small named bodies the primary's machine opens, held still in rows once their orbits are known
-      const allSkills = subs.slice(1), pg = paged(sid, allSkills, ctx.pages?.[sid] ?? 0), skills = pg.shown, hub = planet(subs[0], cx0, cy0, 104, true, sid);
+      const allSkills = subs.slice(1), pg = paged(sid, allSkills, ctx.pages?.[sid] ?? 0), skills = pg.shown, pivot = planet(subs[0], cx0, cy0, 104, true, sid);
       const moons = skills.map((name) => Object.assign(planet(name, 0, 0, 9, false, sid), { moon: true }));
       for (const pager of pg.pagers) moons.push({ name: pager.title, label: pager.title, pager, moon: true, primary: false, R: 9, x: 0, y: 0, states: {}, edges: [], chain: [], n: 0 });
-      scene.hub = hub;
+      scene.pivot = pivot;
       // a skill machine's sub-states (its states that open a child machine) are small bodies in a chain beside its moon, each opening that machine
       const chains = moons.filter((p) => !p.pager).flatMap((p) => {
         const qs = S.flows[p.name].machine.states.filter((q) => S.child[p.name]?.[q.id]);
@@ -1170,7 +1170,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
         if (p.chain.length) p.label = `${p.name} › ${p.chain.map((b) => b.title).join(" · ")}`;
         return p.chain;
       });
-      scene.planets.push(hub, ...moons, ...chains);
+      scene.planets.push(pivot, ...moons, ...chains);
       // a task orbits the deepest body drawn that it is in: the sub-state its latest event left it in, else the moon of the skill machine it works,
       // else the primary. It gets a place on each body it visits in the hour and hops between them as its session moves
       const rawHostAt = (id: string, t: number) => {
@@ -1183,7 +1183,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
       // on the primary, the trail names the primary's state (`in-progress#pr_opened`), so its moves inside the primary are hops too
       scene.hostTrail = (id: string) =>
         EVENTS.filter((e) => e.task === id && subs.includes(e.flow))
-          .map((e) => ({ at: e.at, host: e.flow === subs[0] && hub.states[e.to] ? `${subs[0]}#${e.to}` : scene.hostAt!(id, e.at) }))
+          .map((e) => ({ at: e.at, host: e.flow === subs[0] && pivot.states[e.to] ? `${subs[0]}#${e.to}` : scene.hostAt!(id, e.at) }))
           .filter((r, i, all) => r.host !== all[i - 1]?.host);
       const rawVisits = list.map((a) => {
         const seen = new Set([rawHostAt(a.id, T - HOUR), rawHostAt(a.id, T)]);
@@ -1196,10 +1196,10 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
         for (const name of seen) byPlanet.get(scene.planets.find((p) => p.name === name)!)!.push(a);
       });
       // the primary grows, its states with it, until its tasks circle it in one ring
-      const grown = oneRing(byPlanet.get(hub)!.length, 17, 36, hub.R);
-      for (const q of Object.values(hub.states)) [q.dx, q.dy] = [(q.dx! * grown) / hub.R, (q.dy! * grown) / hub.R];
-      hub.R = grown;
-      place(hub, cx0, cy0);
+      const grown = oneRing(byPlanet.get(pivot)!.length, 17, 36, pivot.R);
+      for (const q of Object.values(pivot.states)) [q.dx, q.dy] = [(q.dx! * grown) / pivot.R, (q.dy! * grown) / pivot.R];
+      pivot.R = grown;
+      place(pivot, cx0, cy0);
       for (const [p, ts] of byPlanet) {
         const small = p.moon || p.subState, [r0, gap, ringGap, pad] = small ? [p.R + 10, 9, 8, 4] : [p.R + 36, 17, 15, 14];
         p.outer = ts.length ? attach(ts, p, r0, gap, ringGap, true, 4) : p.R + pad;
@@ -1209,7 +1209,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
       // four-fifths of the ring, so the Board paths keep the band and the DAGs keep the space above and below. A row is a line of type or the
       // moon's orbit, whichever is taller (type holds its screen size, so its height is estimated at the fit zoom); the ring grows until every
       // quarter's rows fit
-      const shownMoons = moons.filter((p) => !p.pager), band = hub.rim! + 70, quads = [0, 1].flatMap((sd) => {
+      const shownMoons = moons.filter((p) => !p.pager), band = pivot.rim! + 70, quads = [0, 1].flatMap((sd) => {
         const l = shownMoons.filter((_, i) => i % 2 === sd);
         return [l.filter((_, i) => i % 2 === 0), l.filter((_, i) => i % 2)];
       });
@@ -1263,15 +1263,15 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
       }
       // one path each way between the primary and each skill machine, rim to rim, bowed to opposite sides as the Board's paired transitions are
       for (const q of scene.planets.slice(1).filter((q) => !q.subState && !q.pager))
-        for (const [a, b] of [[hub, q], [q, hub]]) {
+        for (const [a, b] of [[pivot, q], [q, pivot]]) {
           const dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy), ux = dx / L, uy = dy / L, p0 = { x: a.x + ux * a.rim!, y: a.y + uy * a.rim! }, p1 = { x: b.x - ux * b.rim!, y: b.y - uy * b.rim! };
           const m = Math.hypot(p1.x - p0.x, p1.y - p0.y) * 0.14;
-          scene.hops.push({ from: a.name, to: b.name, back: b === hub, p0, p1, c: { x: (p0.x + p1.x) / 2 - uy * m, y: (p0.y + p1.y) / 2 + ux * m } });
+          scene.hops.push({ from: a.name, to: b.name, back: b === pivot, p0, p1, c: { x: (p0.x + p1.x) / 2 - uy * m, y: (p0.y + p1.y) / 2 + ux * m } });
         }
       scene.box = boxOf([
         // every moon is named beside it; a pager node's orbit reaches below the ring
         ...moons.flatMap((p) => [[p.x + (p.x < cx0 ? -1 : 1) * (p.rim! + (p.ext ?? 0) + 30 + (textW(p.label || p.name, 11.5) * lh) / 17), p.y], [p.x, p.y + p.rim!]]),
-        [hub.x - hub.outer! - 110, hub.y - hub.outer! - 50], [hub.x + hub.outer! + 110, hub.y + hub.outer! + 90],
+        [pivot.x - pivot.outer! - 110, pivot.y - pivot.outer! - 50], [pivot.x + pivot.outer! + 110, pivot.y + pivot.outer! + 90],
       ] as [number, number][]);
     }
     // the Board transitions into this state and out of it; edgePaths lays them out to the screen edges once the fit is known
@@ -1419,16 +1419,16 @@ function place(p: Planet, x: number, y: number) {
 }
 
 /**
- * Lay the Board paths of a state level from the hub's rim to just past the left
+ * Lay the Board paths of a state level from the pivot's rim to just past the left
  * and right screen edges at the fit view: entries fan in on the left, exits fan
  * out on the right, ranked the same at both ends so no two cross.
  */
 export function edgePaths(scene: Scene, fit: { k: number; x: number }, W: number, stateName: (id: string) => string) {
-  const hub = scene.hub!, left = -fit.x / fit.k - 60, right = (W - fit.x) / fit.k + 60, gap = 120, F = 1 / fit.k;
+  const pivot = scene.pivot!, left = -fit.x / fit.k - 60, right = (W - fit.x) / fit.k + 60, gap = 120, F = 1 / fit.k;
   for (const [list, side] of [[scene.entries, -1], [scene.exits, 1]] as const)
     list.forEach((l, i) => {
-      const n = list.length, off = i - (n - 1) / 2, a = (side < 0 ? Math.PI : 0) + side * off * 0.2, rim = { x: hub.x + Math.cos(a) * hub.rim!, y: hub.y + Math.sin(a) * hub.rim! };
-      const far = { x: side < 0 ? left : right, y: hub.y + off * gap }, c = { x: rim.x + side * 420, y: far.y };
+      const n = list.length, off = i - (n - 1) / 2, a = (side < 0 ? Math.PI : 0) + side * off * 0.2, rim = { x: pivot.x + Math.cos(a) * pivot.rim!, y: pivot.y + Math.sin(a) * pivot.rim! };
+      const far = { x: side < 0 ? left : right, y: pivot.y + off * gap }, c = { x: rim.x + side * 420, y: far.y };
       Object.assign(l, side < 0 ? { p0: far, c, p1: rim } : { p0: rim, c, p1: far });
       // the quiet name ("from Ready", "to Review") sits on the path just inside the screen edge
       const name = side < 0 ? `from ${stateName(l.source)}` : `to ${stateName(l.target)}`, inX = (textW(name, 10.5) / 2 + 24) * F;

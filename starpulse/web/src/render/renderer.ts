@@ -40,7 +40,7 @@ import { createHistory } from "../api/history";
 import { sizes } from "./grow";
 import { hostRun, laneRun, machineRun, subjectOf, traceCard, traceTable, type Run, type Subject } from "../features/level/trace";
 import { boardTies, hangarLevel, tieLedger, type Ties } from "./dagTies";
-import { hubTip, tieTip } from "./dagTieTips";
+import { pivotTip, tieTip } from "./dagTieTips";
 import type { Dag, Delta, LedgerRow, Machine, RawTask, Snapshot, Writer } from "../api";
 import { fanTip, stepStatus } from "../features/fanout/fanoutModel";
 import { esc, fanList, queueCell, startRun, taskLink, taskPanel } from "./panels";
@@ -191,7 +191,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     }
     // the machine across a level's top is laid out in screen pixels: it is drawn at 1:1 from the fit box's left edge and never zooms or pans
     fit = scene.top ? { k: 1, x: 0, y: 0 } : fitScene();
-    if (scene.hub) edgePaths(scene, { k: fit.k, x: fit.x }, FW, stateName);
+    if (scene.pivot) edgePaths(scene, { k: fit.k, x: fit.x }, FW, stateName);
     if (scene.top) view = fit;
     else if (keepView) view = refitView(view, was, fit); // a view at the old fit follows the new one, so the sky zooms out smoothly as a state grows
     else {
@@ -646,12 +646,12 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     let bs: Move | null = null;
     for (const e of k.bev) if (e.at <= T) bs = e;
     const held = bs ? bs.to : k.bev.length ? k.bev[0].from : k.state, age = bs ? (T - bs.at) / TRAVEL : 9, back = (e: Move) => t - (T - e.at);
-    const hostThen = (at: number) => !sc.hostAt || sc.hostAt(k.id, at) === k.host.name, hub = sc.hub!, onHub = k.host === hub;
+    const hostThen = (at: number) => !sc.hostAt || sc.hostAt(k.id, at) === k.host.name, pivot = sc.pivot!, onPivot = k.host === pivot;
     if (held !== sc.sid) {
       if (bs && bs.from === sc.sid && age < 1 && hostThen(bs.at)) {
         const to = bs.to, l = sc.exits.find((x) => x.target === to), via = `to ${stateName(to)}`;
-        if (l && onHub) follow(k, l, age, via);
-        else ride(k, orbitAt(k, back(bs)), l?.p1 ?? { x: sc.w * 2, y: hub.y }, age, via);
+        if (l && onPivot) follow(k, l, age, via);
+        else ride(k, orbitAt(k, back(bs)), l?.p1 ?? { x: sc.w * 2, y: pivot.y }, age, via);
         return true;
       }
       k.gone = true;
@@ -668,8 +668,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     if (bs && bs.from !== sc.sid) {
       if (age < 1) {
         const from = bs.from, l = sc.entries.find((x) => x.source === from), via = `from ${stateName(from ?? "")}`;
-        if (l && onHub) follow(k, l, age, via);
-        else ride(k, l?.p0 ?? { x: -sc.w, y: hub.y }, { x: k.x, y: k.y }, age, via);
+        if (l && onPivot) follow(k, l, age, via);
+        else ride(k, l?.p0 ?? { x: -sc.w, y: pivot.y }, { x: k.x, y: k.y }, age, via);
         return true;
       }
       ring(bs.at);
@@ -721,8 +721,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     if (star) return { kind: "dag", o: star };
     // a tied DAG's orbiter, then its hangar's name block: the name is the hangar, which has no disc of its own
     const tz = ties();
-    for (const h of tz?.hubs ?? []) for (const o of h.orbs) if (near(o, px(9))) return { kind: "tie", o };
-    for (const h of tz?.hubs ?? []) if (x > h.box[0] && x < h.box[2] && y > h.box[1] && y < h.box[3]) return { kind: "hub", o: h };
+    for (const h of tz?.pivots ?? []) for (const o of h.orbs) if (near(o, px(9))) return { kind: "tie", o };
+    for (const h of tz?.pivots ?? []) if (x > h.box[0] && x < h.box[2] && y > h.box[1] && y < h.box[3]) return { kind: "pivot", o: h };
     for (const c of sc.fold?.ledger?.cols ?? []) if (x > c.x0 && x < c.x1 && y > c.y0 && y < c.y1) return { kind: "caption", o: c };
     for (const s of Object.values(sc.mStates)) if (near(s, Math.max(stateR(s), px(9)))) return { kind: "state", o: s };
     for (const p of sc.planets) if (near(p, p.subState ? Math.max(p.R, px(8)) : p.moon ? Math.max(p.R + 4, px(10)) : p.R + 16)) return { kind: "planet", o: p };
@@ -767,7 +767,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   /** A task's run, or why there is none yet. */
   function runFor(s: Subject): Run | "loading" | "unavailable" {
     if (s.kind === "task" && level().kind === "state") {
-      const flow = scene!.hub?.name, rows = flow ? hist.machine(s.id, flow) : "unavailable";
+      const flow = scene!.pivot?.name, rows = flow ? hist.machine(s.id, flow) : "unavailable";
       // the lane change that brought it here starts the run, so a task with no moves on this level still holds the body it orbits
       const lane = hist.lane(s.id), last = typeof lane === "string" ? undefined : lane.at(-1);
       const host = scene!.tasks.find((t) => t.id === s.id && !t.gone)?.host;
@@ -909,8 +909,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       }
       case "medge":
         return `<div class="k">${esc(h.o.flow)} transition · ${esc(h.o.source)} → ${esc(h.o.target)}</div><div class="n">${esc(h.o.event)}</div>`;
-      case "hub":
-        return hubTip(h.o, { sky, stateName });
+      case "pivot":
+        return pivotTip(h.o, { sky, stateName });
       case "tie":
         return tieTip(h.o, { sky, stateName, ev: tieLedger(boardSource(), h.o)?.ev ?? null, last: (d) => `last run ${hhmm(finished(d.finishedAt))} MST` });
       case "bedge":
@@ -1021,7 +1021,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     pinLedger(null);
     if (h.kind === "galaxy") return push({ kind: "state", id: h.o.id }, fx, fy);
     // a hangar drills into the Ledger of its DAGs, one level down like a state, so a right-click comes back; an orbiter opens the Ledger of its tie
-    if (h.kind === "hub") return push(hangarLevel(boardSource(), h.o.orbs), fx, fy);
+    if (h.kind === "pivot") return push(hangarLevel(boardSource(), h.o.orbs), fx, fy);
     if (h.kind === "tie") {
       const t = tieLedger(boardSource(), h.o);
       return t ? push(t.led, fx, fy) : undefined;

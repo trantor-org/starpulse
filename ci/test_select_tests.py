@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
-    """A package with a leaf module, a hub that imports it, an adapter loaded by name, and one test per module."""
+    """A package with a leaf module, an event log that imports it, an adapter loaded by name, and one test per module."""
     files = {
         "starpulse/__init__.py": "",
         "starpulse/leaf.py": "X = 1\n",
@@ -26,16 +26,16 @@ def repo(tmp_path: Path) -> Path:
         "starpulse/_internal/board/seam.py": "import importlib\nfrom starpulse._internal.config.adapter_types import module_name\n",
         "starpulse/_internal/runs/dagu.py": "def start(): ...\ndef follow(): ...\n",
         "starpulse/_internal/config/adapter_types.py": 'BUILT_IN = {"dagu": "starpulse._internal.runs.dagu", "jira": "x"}\n',
-        "starpulse/_internal/hub/__init__.py": "",
+        "starpulse/_internal/eventlog/__init__.py": "",
         "starpulse/_internal/server/server.py": "",
-        "starpulse/_internal/hub/hub.py": "from starpulse import leaf\n",
+        "starpulse/_internal/eventlog/event_log.py": "from starpulse import leaf\n",
         "starpulse/_internal/eventlog/migrations/versions/0001_initial.py": "",
         "starpulse/_internal/board/jira.py": "def board(settings, base):\n    return None\n",
         "starpulse/tests/__init__.py": "",
         "starpulse/tests/conftest.py": "",
         "starpulse/tests/helpers.py": "from starpulse import lone\n",
         "starpulse/tests/unit/feed/test_leaf.py": "from starpulse.leaf import X\n",
-        "starpulse/tests/unit/hub/test_hub.py": "from starpulse._internal.hub import hub\n",
+        "starpulse/tests/unit/eventlog/test_event_log.py": "from starpulse._internal.eventlog import event_log\n",
         "starpulse/tests/unit/feed/test_lone.py": "from starpulse.tests.helpers import lone\n",
         "starpulse/tests/unit/board/test_board.py": 'from starpulse._internal.board import seam\n\nKIND = "jira"\n',
         "starpulse/tests/unit/contracts/test_public_surface.py": "",
@@ -79,7 +79,7 @@ def repo(tmp_path: Path) -> Path:
 
 def test_a_changed_module_selects_the_tests_that_import_it_directly_or_through_another_module(repo):
     assert select(repo, ["starpulse/leaf.py"]) == Selection(
-        ["starpulse/tests/unit/feed/test_leaf.py", "starpulse/tests/unit/hub/test_hub.py"]
+        ["starpulse/tests/unit/eventlog/test_event_log.py", "starpulse/tests/unit/feed/test_leaf.py"]
     )
 
 
@@ -109,7 +109,7 @@ def test_a_package_init_selects_every_test_under_the_package(repo):
 
 def test_a_migration_selects_the_tests_of_the_module_that_runs_migrations(repo):
     assert select(repo, ["starpulse/_internal/eventlog/migrations/versions/0001_initial.py"]) == Selection(
-        ["starpulse/tests/unit/hub/test_hub.py"]
+        ["starpulse/tests/unit/eventlog/test_event_log.py"]
     )
 
 
@@ -181,7 +181,6 @@ def test_a_mapped_non_python_file_selects_the_tests_that_read_it(repo, path, tes
         "LICENSE",
         ".github/ISSUE_TEMPLATE/bug.yml",
         ".github/pull_request_template.md",
-        "bench/hub_ingest.py",
         "bench/free_threading/run.sh",
     ],
 )
@@ -378,16 +377,16 @@ def mapped(**tests: list[str]) -> dict:
 
 LEAF = "starpulse/leaf.py"
 TEST_LEAF = "starpulse/tests/unit/feed/test_leaf.py"
-TEST_HUB = "starpulse/tests/unit/hub/test_hub.py"
+TEST_LOG = "starpulse/tests/unit/eventlog/test_event_log.py"
 
 
 def test_a_changed_file_in_the_coverage_map_selects_only_the_tests_that_ran_it(repo):
-    coverage = mapped(**{TEST_LEAF: [LEAF], TEST_HUB: ["starpulse/_internal/hub/hub.py"]})
+    coverage = mapped(**{TEST_LEAF: [LEAF], TEST_LOG: ["starpulse/_internal/eventlog/event_log.py"]})
     assert select(repo, [LEAF], coverage) == Selection([TEST_LEAF])
 
 
 def test_a_file_missing_from_the_coverage_map_falls_back_to_the_import_graph(repo):
-    coverage = mapped(**{TEST_HUB: ["starpulse/_internal/hub/hub.py"]})
+    coverage = mapped(**{TEST_LOG: ["starpulse/_internal/eventlog/event_log.py"]})
     assert select(repo, [LEAF], coverage) == select(repo, [LEAF])
 
 

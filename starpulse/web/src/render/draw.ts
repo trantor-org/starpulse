@@ -3,7 +3,7 @@
 // ledger's drawing (machineLedgerDraw.ts) take the same set, so the two draw in one hand.
 import type { ContractReport, LedgerRow, RawTask } from "../api";
 import { labelPx } from "../features/admin/adminPrefs";
-import type { Hub, Orbiter } from "./dagTies";
+import type { Pivot, Orbiter } from "./dagTies";
 import {
   TAU, bez, terminal, textW,
   type BEdge, type Body, type Galaxy, type GNode, type Hop, type LedgerView, type MachineTask, type MEdge, type Moon, type MState, type Planet, type Pt, type RowView, type Star, type SubState, type Sun,
@@ -50,7 +50,7 @@ export type Hover =
   | { kind: "rstate"; o: RowView["nodes"][number] }
   | { kind: "bedge"; o: BEdge }
   | { kind: "tie"; o: Orbiter }
-  | { kind: "hub"; o: Hub }
+  | { kind: "pivot"; o: Pivot }
   | { kind: "link"; o: Hop }
   | { kind: "caption"; o: LedgerView["cols"][number] }
   | { kind: "lrow"; o: LedgerRow }

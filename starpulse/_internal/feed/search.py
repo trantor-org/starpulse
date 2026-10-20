@@ -1,7 +1,7 @@
 """Full-text search over the board's tasks, kept in the instance's own database.
 
 The index is an SQLite FTS5 table of each placed task's id, title, description, acceptance criteria and notes. It lives
-beside the event log on the instance and never on a hub (individual data stays on the instance). A row is keyed by a
+beside the event log on the instance. A row is keyed by a
 rowid derived from the task id, so replacing a task and reading its stored digest are point lookups, and a task placed
 again unchanged, as every task is on a restart, writes nothing.
 

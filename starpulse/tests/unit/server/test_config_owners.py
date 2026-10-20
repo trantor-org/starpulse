@@ -76,7 +76,7 @@ def test_a_change_to_a_context_owned_table_does_not_restart_serve(old: dict, new
     [
         ({"runs_worker": True}, {"runs_worker": False}),
         ({}, {"worker_memory": {"runs": {"soft_mb": 1, "hard_mb": 2}}}),
-        ({}, {"mode": "hub"}),
+        ({}, {"mode": "team"}),
         ({}, {"unheard_of": 1}),
         ({"search": {"embeddings_url": "http://a"}}, {"search": {}}),
     ],

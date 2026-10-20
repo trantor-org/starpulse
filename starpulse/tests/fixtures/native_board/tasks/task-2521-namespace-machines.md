@@ -22,7 +22,7 @@ references:
 documentation:
   - >-
     backlog/docs/specs/doc-82 -
-    Flow-View-hub-configured-flow-graph-and-orbit-card.md
+    Flow-View-core-configured-flow-graph-and-orbit-card.md
 modified_files:
   - starpulse/machine_namespace.py
   - starpulse/tests/unit/test_machine_namespace.py
@@ -36,7 +36,7 @@ ordinal: 2569000
 <!-- SECTION:DESCRIPTION:BEGIN -->
 Decision H6 of doc-82. Machines are `<repo>/<machine>`; two merge only when the compiled definition hashes equal; a differing one carries drift and stays out of the merged graph.
 
-ADR: The Flow View Hub Draws a Configured Flow Graph Above the Board. Spec: doc-82.
+ADR: The Flow View Core Draws a Configured Flow Graph Above the Board. Spec: doc-82.
 
 ## Duplicate Search
 
@@ -44,7 +44,7 @@ flow view machine namespace hash drift
 
 ## Duplicate Resolution
 
-Distinct scope: the only candidate is TASK-2433, the slicing task that created this slice. Also distinct: TASK-2420, TASK-2430 are the m-80 retro, sibling hub slices, or shipped trantor-only flow-view work (TASK-2356 is trantor's /api/history over its own Postgres machine events), none covering this slice's package scope.
+Distinct scope: the only candidate is TASK-2433, the slicing task that created this slice. Also distinct: TASK-2420, TASK-2430 are the m-80 retro, sibling core slices, or shipped trantor-only flow-view work (TASK-2356 is trantor's /api/history over its own Postgres machine events), none covering this slice's package scope.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -65,7 +65,7 @@ Distinct scope: the only candidate is TASK-2433, the slicing task that created t
 
 <!-- SECTION:PLAN:BEGIN -->
 1. Clone trantor-org/starpulse into the worktree's .tmp/ on claude/task-2521-namespace-machines; uv sync.
-2. RED/GREEN: starpulse/machine_namespace.py (hub-side, pure, not public surface). A compiled definition reduces to a sorted set of facts (states, flattened transitions with guards and actions, bindings, writers, one-level flows inlined); its sha256 is the hash, so key, state, event and from-list order never change it, and the facts' set difference is the diff.
+2. RED/GREEN: starpulse/machine_namespace.py (core-side, pure, not public surface). A compiled definition reduces to a sorted set of facts (states, flattened transitions with guards and actions, bindings, writers, one-level flows inlined); its sha256 is the hash, so key, state, event and from-list order never change it, and the facts' set difference is the diff.
 3. Machines are namespaced <repo>/<machine>; merge() groups sources by machine name, merges those whose hash equals the baseline (most repos, ties to the smallest hash), and returns a Drift record (namespaced id, both hashes, added/removed facts) for each other source, kept out of the merged graph.
 4. Tests: AC1 equal YAML merge; one-transition change splits and records drift with both hashes and diff. AC2 reordering keys/states/events/from-lists keeps the hash. Plus guard, flow-child, tie-break and duplicate-source cases.
 5. README/docs current-state edit if the surface needs it; lint gates; child PR in trantor-org/starpulse; trantor gitlink bump is Renovate's.
@@ -74,7 +74,7 @@ Distinct scope: the only candidate is TASK-2433, the slicing task that created t
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Package work ships as a PR in trantor-org/starpulse (child); the trantor gitlink bump is Renovate's, never committed here (completing-tasks, edited submodule). ADR decision: none needed; H6 of doc-82 and the Flow View Hub ADR (Drift is drawn, not merged) cover it. Not persisting drift: the ACs ask for records returned by the merge; the hub slices that register sources own storage.
+Package work ships as a PR in trantor-org/starpulse (child); the trantor gitlink bump is Renovate's, never committed here (completing-tasks, edited submodule). ADR decision: none needed; H6 of doc-82 and the Flow View Core ADR (Drift is drawn, not merged) cover it. Not persisting drift: the ACs ask for records returned by the merge; the core slices that register sources own storage.
 
 **Assignee:** 8844d581-ad5d-4caa-9ad4-d6b7c9e4fadf
 <!-- SECTION:NOTES:END -->
@@ -114,7 +114,7 @@ Verified AC #2: `uv run --project /home/adinb/trantor/.claude/worktrees/task-252
 
 created: 2026-10-06 22:27
 ---
-Child PR trantor-org/starpulse#64 (no trantor tracked change; gitlink bump is Renovate's). RED/GREEN in test_machine_namespace.py: hash order-invariance and merge/drift. Full starpulse suite 1429 passed; ruff check clean; PR CI python/ic/web/build green, mergeable CLEAN, 0 review threads. No docs or ADR owed: module is internal and unwired. Orphan walk: nothing removed; new module has no consumer yet (later hub slices).
+Child PR trantor-org/starpulse#64 (no trantor tracked change; gitlink bump is Renovate's). RED/GREEN in test_machine_namespace.py: hash order-invariance and merge/drift. Full starpulse suite 1429 passed; ruff check clean; PR CI python/ic/web/build green, mergeable CLEAN, 0 review threads. No docs or ADR owed: module is internal and unwired. Orphan walk: nothing removed; new module has no consumer yet (later core slices).
 ---
 
 created: 2026-10-06 22:28

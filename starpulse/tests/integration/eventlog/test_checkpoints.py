@@ -52,10 +52,10 @@ def test_a_snapshot_the_model_cannot_read_loads_its_position_and_no_snapshot(che
 
 
 def test_a_position_alone_is_saved_and_moved_forward_in_place(checkpoints: Checkpoints) -> None:
-    checkpoints.save("forward:hub", 12)
-    checkpoints.save("forward:hub", 40)
+    checkpoints.save("forward:remote", 12)
+    checkpoints.save("forward:remote", 40)
 
-    assert checkpoints.load("forward:hub") == (40, None)
+    assert checkpoints.load("forward:remote") == (40, None)
 
 
 def test_a_save_inside_a_transaction_is_kept_or_dropped_with_it(checkpoints: Checkpoints) -> None:

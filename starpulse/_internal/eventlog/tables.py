@@ -67,7 +67,7 @@ checkpoints = Table(
 )
 
 #: The one instance each source's token speaks for: the first instance id that source sent.
-#: A hub writes it, on the first batch a source sends and never again until an operator drops the row to rebind.
+#: No code writes it now; the table stays with the migration chain.
 source_instances = Table(
     "starpulse_source_instances",
     metadata,
@@ -118,9 +118,9 @@ retired_tasks = Table(
     Index("ix_starpulse_retired_tasks_retired_at", "retired_at"),  # the change poll's count and max read this alone
 )
 
-#: What a hub keeps of a day after its raw events are dropped (`hub.enforce_retention`): per team, machine and state,
+#: What Postgres kept of a day after its raw events were dropped: per team, machine and state,
 #: how many tasks or runs entered the state that UTC day (`entries`), how many of those had not left it when the day was
-#: rolled up (`open_entries`), and the seconds the others stayed. A hub writes it; an IC instance never does.
+#: rolled up (`open_entries`), and the seconds the others stayed. An IC instance never writes it.
 day_rollups = Table(
     "starpulse_day_rollups",
     metadata,

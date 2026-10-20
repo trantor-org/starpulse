@@ -6,12 +6,6 @@ Every write (POST /api/..., PUT /api/autopilot, PUT and DELETE /api/history-wind
 no `Origin` or this server's own (else 403), so a web page on another site cannot write through the operator's browser.
 It listens on --host, 127.0.0.1 by default.
 
-GET /auth/login, /auth/callback
-                   a hub's sign-in (`serve --hub`; an IC instance has no sign-in): login sends the browser to the OpenID
-                   Connect issuer, the callback finishes the sign-in with a session cookie and sends it to /, or
-                   answers 403 naming why an account outside `allowed_groups` was refused. Every other route of a hub,
-                   this one included, answers 401 until then; a bearer token is no session (see POST /api/machine-events),
-                   except that a GET or HEAD carrying the hub's reader token (`reader_token_env`) is served
 GET /              the page, built by `pnpm --filter @starpulse/web build` into static/: one view
                    that drills Board → Board state → machine, or Board → workflow. It holds one
                    /api/events connection and nothing else
@@ -67,9 +61,9 @@ GET /api/pulls[?repo=OWNER/NAME][&number=N][&state=open|merged|closed][&body_con
 GET /metrics       Prometheus text: `starpulse_page_build_info{build}`, 1 for the page build id the `build` event
                    names (none without a build); `starpulse_snapshot_build_seconds_count` and `_sum`, the snapshots built and the
                    seconds they took; `starpulse_board_lane_unattributed_total`, the board:lanes entries
-                   any process appended since this one started that name no actor (none on a hub); `starpulse_machine_conformance_violations_total{machine}` and
+                   any process appended since this one started that name no actor; `starpulse_machine_conformance_violations_total{machine}` and
                    `starpulse_machine_conformance_events_total{machine}`, the recorded moves of each machine that no
-                   transition declares and all it judged (none on a hub). Also this process's `process_resident_memory_bytes`,
+                   transition declares and all it judged. Also this process's `process_resident_memory_bytes`,
                    `process_threads`, `process_open_fds` and `process_start_time_seconds`, which moves on every
                    restart. With `[board.actor]`, also `starpulse_task_actor_refusals_total` and the
                    `starpulse_task_actor_latency_seconds`, `starpulse_task_actor_projection_seconds` and
@@ -168,7 +162,7 @@ GET /api/level[?hours=N]
                    (title, subject, runs, gates, terminals with roles, orbit, facets, activity) and `arrivals` lists
                    each entry into a terminal inside the window, `{source, state, at}` oldest first, for the comets.
                    A `hours` that is no positive number is 400, as is one longer than the history, with
-                   `history_s` its length; a server with no `[level]` table or not serving `--hub` is 404, and a
+                   `history_s` its length; a server serves no level, so it is 404, and a
                    history that does not keep runs is 501. The level, its trajectories and its what-if keep each
                    answer for the same `hours` (and, for what-if, `from`, `to` and `p`) for 5 seconds, until a lane or
                    machine event is recorded or the summaries are rebuilt, so `now` is the first request's of those
@@ -202,8 +196,7 @@ POST /api/machine-events
                    actor, 413 over the limit, 503 when the log refuses it, 404 when no producer is declared. A batch is
                    checked whole, and a refusal writes nothing. A GET answers 405
 POST /api/insights
-                   a hub's fourth contract (`serve --hub` with `engine_token_env` in `[oidc]`; any other server answers
-                   404): an external engine posts one `Finding` {id, engine {name, version}, scope {team, machine,
+                   the insights contract (this server answers 404): an external engine posts one `Finding` {id, engine {name, version}, scope {team, machine,
                    state, task}, severity (info, warn, act), text (at most 280 characters), evidence [{label, url or
                    query}], created_at[, expires_at]} with `Authorization: Bearer <engine token>`, which no viewer's
                    session or source's token replaces. 201 {id, replaced: false}; 200 {id, replaced: true} when a
@@ -222,7 +215,6 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import functools
-import json
 import logging
 import os
 import queue
@@ -261,7 +253,6 @@ from starpulse._internal.pulls.pull_requests import PullRequests
 from starpulse._internal.pulls.pull_refresh import PullRefresh
 from starpulse._internal.pulls.pull_store import PullSync
 from starpulse._internal.runs import projection as runs_projection
-from starpulse._internal.server.live_push import wire_level
 from starpulse._internal.server.closure import ENTRIES, Reader
 from starpulse._internal.server.control import control_file
 from starpulse._internal.server.hold import LISTEN_FD_ENV, STATIC_ENV
@@ -359,7 +350,7 @@ def _level_view(
     from starpulse._internal.eventlog.history import LevelHistory, SummarisedLevel  # noqa: PLC0415 - the database stack loads when a store does
 
     if level is None:
-        return _error("this server has no level: add a [level] table and serve with --hub"), 404
+        return _error("this server has no level"), 404
     window = _hours(query, "hours", _HEALTH_HOURS)
     if window is None:
         return _error("hours must be a positive number"), 400
@@ -665,11 +656,6 @@ def serve_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="starpulse serve", description=__doc__.splitlines()[0] if __doc__ else None)
     listen_options(parser)
     parser.add_argument("--config", type=Path, help="the TOML config file; default starpulse.toml when it exists")
-    parser.add_argument(
-        "--hub",
-        action="store_true",
-        help="serve as a hub: history in the Postgres database_url, its schema migrated to head (needs starpulse[hub])",
-    )
     return parser
 
 
@@ -794,7 +780,6 @@ class Prepared(NamedTuple):
     and the Page API is built from it."""
 
     refresh_token: str | None
-    gate: Any
     starts: dict[str, Callable[[str], str]]
     reruns: dict[str, Any]
     run_safe: list[str]
@@ -810,24 +795,6 @@ def prepare(parser: argparse.ArgumentParser, args: argparse.Namespace, config: C
     refresh_token = os.environ.get(config.refresh_token_env or "")
     if config.refresh_token_env and not refresh_token:
         parser.exit(1, f"refresh_token_env: {config.refresh_token_env} is not set\n")
-    gate = None
-    if args.hub:
-        try:
-            from starpulse._internal.hub import (
-                hub,  # noqa: PLC0415 - hub-only code; an IC instance never imports it
-                oidc,  # noqa: PLC0415 - hub-only code; an IC instance never imports it
-            )
-        except ImportError as exc:
-            parser.exit(1, f"hub mode needs the hub extras: pip install 'starpulse[hub]' ({exc})\n")
-        if config.oidc is None:
-            parser.exit(1, "hub mode needs an [oidc] table: viewers sign in before anything is drawn\n")
-        try:
-            gate = oidc.build(config.oidc, os.environ)
-            hub.prepare(config.database_url)
-        except (ValueError, hub.HubError) as exc:  # HubError is a ValueError, named for the reader
-            parser.exit(1, f"{exc}\n")
-    elif config.oidc is not None:
-        parser.exit(1, "[oidc] gates a hub: start one with `starpulse serve --hub`, or remove the table\n")
     if not (_STATIC / "index.html").is_file():
         parser.exit(1, f"{_STATIC} has no build; run `pnpm --filter @starpulse/web build` first\n")
     adapters = run_adapters(parser, config)
@@ -839,7 +806,7 @@ def prepare(parser: argparse.ArgumentParser, args: argparse.Namespace, config: C
         if (factory := getattr(adapter, "rerun", None)) and (rerun := factory(instance.url))
     }
     run_safe = [name for name in config.qualified_run_safe() if name.partition("/")[0] in starts]
-    return Prepared(refresh_token, gate, starts, reruns, run_safe, producer_tokens)
+    return Prepared(refresh_token, starts, reruns, run_safe, producer_tokens)
 
 
 def refuse_unassemblable(
@@ -881,27 +848,20 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     config: Config,
     ready: Prepared,
     listening: socket.socket,
-    supervisor: Supervisor | None = None,
 ) -> None:
-    """Build the Page API and serve it on `listening` until stopped: in the `starpulse worker api` child, or in a hub's
-    `serve`, which supervises its other children from the same process (`supervisor`)."""
-    from sqlalchemy.exc import SQLAlchemyError  # noqa: PLC0415 - the database stack loads after the config is accepted
+    """Build the Page API and serve it on `listening` until stopped: in the `starpulse worker api` child."""
 
     from starpulse._internal.board import replica  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse._internal.eventlog.event_log import EventLog  # noqa: PLC0415 - the database stack loads after the config is accepted
-    from starpulse._internal.eventlog.history import database_url, record_lane_events, record_machine_events  # noqa: PLC0415 - the database stack loads after the config is accepted
+    from starpulse._internal.eventlog.history import database_url  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse._internal.feed.board_feed import follow  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse._internal.feed.claim_refusals import ClaimRefusals  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse._internal.feed.machine_tasks import MachineTasks  # noqa: PLC0415 - the database stack loads after the config is accepted
-    from starpulse._internal.feed.machine_tasks import tables as machine_tables  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse._internal.feed.search import SearchIndex  # noqa: PLC0415 - the database stack loads after the config is accepted
-    from starpulse._internal.level.insights import Insights, InsightStore, restore  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse._internal.pulls.pulls import PullStore  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse._internal.server.assembly import assemble, history_store  # noqa: PLC0415 - the database stack loads after the config is accepted
 
-    refresh_token, gate, starts, reruns, run_safe, producer_tokens = ready
-    if args.hub:
-        from starpulse._internal.hub import hub  # noqa: PLC0415 - hub-only code; `prepare` found it importable
+    refresh_token, starts, reruns, run_safe, producer_tokens = ready
     base = args.config.parent if args.config else Path.cwd()
     port = listening.getsockname()[1]
     try:
@@ -918,39 +878,16 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     feed.date_lanes(store.lane_path)
     feed.record_lanes(store)
     # `starpulse worker board` dates when each task's Start Criteria were met; this process rereads the dates it keeps.
-    # A hub has no such worker and runs it in-process.
-    if args.hub:
-        feed.track_criteria(board.evaluate, store)
-        threading.Thread(
-            target=feed.keep_criteria, args=(threading.Event(),), name="board-criteria", daemon=True
-        ).start()
-    else:
-        threading.Thread(
-            target=feed.follow_criteria, args=(store, threading.Event()), name="criteria-follow", daemon=True
-        ).start()
+    threading.Thread(
+        target=feed.follow_criteria, args=(store, threading.Event()), name="criteria-follow", daemon=True
+    ).start()
     feed.read_lanes(store.lane_rows)
-    if args.hub:
-        # The first pass runs before serving, so the hub never takes an event without today's partition.
-        keeping = {"retention_days": config.hub_retention_days, "machines": machine_tables(feed.machines)}
-        try:
-            hub.maintain(log.engine, **keeping)
-        except SQLAlchemyError as exc:
-            parser.exit(1, f"hub maintenance failed at start: {exc}\n")
-        threading.Thread(
-            target=hub.keep,
-            kwargs={"engine": log.engine, "stop": threading.Event(), **keeping},
-            name="hub-maintenance",
-            daemon=True,
-        ).start()
-    # the instance indexes its board for search; a hub holds no individual's task text, so it keeps no index
-    search = None if args.hub else SearchIndex.open(log.engine, config.search)
+    # the instance indexes its board for search
+    search = SearchIndex.open(log.engine, config.search)
     if search is not None:
         feed.index_tasks(search)  # `starpulse worker search` catches the vectors up off the feed's path
     stop = threading.Event()
-    if args.hub:  # a hub has no Board child: it reads its Board itself
-        board.start(feed, f"starpulse-{port}", log)
-    else:
-        replica.read(board, feed, f"starpulse-{port}", log, config, stop, local=False)
+    replica.read(board, feed, f"starpulse-{port}", log, config, stop)
     tasks = MachineTasks(feed, board.keys)
     follow(tasks, log, machine_events.STREAM, tasks.handle_entry)
     refusals = ClaimRefusals(feed)
@@ -963,18 +900,12 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     # `starpulse worker pulls` runs the context, as a child of this process or beside it; this process reads its
     # projection and asks it
     Projected(log, feed).follow(stop)
-    # a lane move any writer leaves unnamed is counted; a hub's lane entries are its sources'
-    lane_metrics = None
-    if not args.hub:
-        unattributed = lane_events.Unattributed()
-        unattributed.follow(log, stop)
-        lane_metrics = unattributed.exposition
-    # a move no transition of its machine declares is counted per machine; a hub's lane and event entries are its sources'
-    conformance_metrics = None
-    if not args.hub:
-        conformance = Conformance(feed.machines)
-        conformance.follow(log, stop)
-        conformance_metrics = conformance.exposition
+    # a lane move any writer leaves unnamed is counted
+    unattributed = lane_events.Unattributed()
+    unattributed.follow(log, stop)
+    # a move no transition of its machine declares is counted per machine
+    conformance = Conformance(feed.machines)
+    conformance.follow(log, stop)
     # `starpulse worker runs` runs the run adapters and the pushed-runs follower; this process
     # draws the workflows that worker keeps in the log, and starts a run only when the page asks
     runs_projection.Projected(log, feed).follow(stop)
@@ -983,30 +914,6 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     probes = dataclasses.replace(doctor.LIVE, poller=poller_problem(log))
     if refresh_token:
         pull_refresh = PullRefresh(refresh_token, request_refresh(log, PullSync(pulls, feed, config.repos).tracked))
-    # `starpulse worker flow-metrics` runs the machine-history recorder and the event log's prune; a hub keeps its recorder
-    # in-process (and prunes by partition), and its sources' lane changes become its Board trajectories
-    if args.hub:
-        threading.Thread(
-            target=record_machine_events, args=(store, log, threading.Event()), name="machine-history", daemon=True
-        ).start()
-        threading.Thread(
-            target=record_lane_events, args=(store, log, threading.Event()), name="lane-history", daemon=True
-        ).start()
-    insights = None
-    if args.hub and config.oidc.engine_token_env:  # an engine writes findings only to a hub that names its token
-        store = InsightStore(url, engine=log.engine)
-        restore(store, feed)
-        insights = Insights(store, feed)
-    level_cfg = config.level if args.hub else None
-    if level_cfg is not None:
-
-        def _level_body() -> dict[str, Any] | None:
-            raw, status = level_response(store, {"hours": ["168"]}, level_cfg, feed.machines, time.time())
-            if status != 200:
-                return None
-            return json.loads(raw)
-
-        wire_level(feed, _level_body)
     announce(port, feed.snapshot()["hint"])
     autopilot_stop = threading.Event()
     autopilot_runtime = autopilot_remote(config, base, feed, log, autopilot_stop)
@@ -1025,8 +932,6 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         reruns=reruns,
         harnesses=config.harnesses,
         start_session=starter(config.session_start_url),
-        level=config.level if args.hub else None,
-        insights=insights,
         events=cloudevents,
         autopilot=autopilot_runtime,
         contract=_cached(lambda: doctor.contract(feed.snapshot(), config, probes), _CONTRACT_TTL_S),
@@ -1037,18 +942,14 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         pull_refresh=pull_refresh,
         slow_read_s=config.slow_read_seconds,
         actor_metrics=actor_metrics,
-        lane_metrics=lane_metrics,
-        conformance_metrics=conformance_metrics,
+        lane_metrics=unattributed.exposition,
+        conformance_metrics=conformance.exposition,
     )
-    handler = request_handler(feed, _STATIC, store, window, board, services, gate=gate)
-    if supervisor:
-        supervisor.start()
+    handler = request_handler(feed, _STATIC, store, window, board, services)
     try:
         serve_until_stopped(StarPulseServer((args.host, args.port), handler, listening), feed)
     finally:
         autopilot_stop.set()
-        if supervisor:
-            supervisor.stop()
         log.close()
         store.engine.dispose()
 
@@ -1063,7 +964,6 @@ DATABASE_STACK = (
     "starpulse._internal.feed.claim_refusals",
     "starpulse._internal.feed.machine_tasks",
     "starpulse._internal.feed.search",
-    "starpulse._internal.level.insights",
     "starpulse._internal.pulls.pulls",
     "starpulse._internal.server.assembly",
 )
@@ -1082,13 +982,11 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         LISTEN_FD_ENV, None
     )  # the workers started below are handed what they hold, not what this process was
     ready = prepare(parser, args, config)
-    commands = worker_commands(config, args.config, hub=args.hub)
+    commands = worker_commands(config, args.config)
     if "api" in commands:  # bound once the config is accepted and before the board, the history or a worker starts
         os.environ[STATIC_ENV] = str(_STATIC)
         listening = listening or listen(parser, args)
         commands["api"] += ["--hours", str(args.hours)]
-    elif args.hub:
-        listening = listening or listen(parser, args)
     # the preloaded process inherits the bound socket, so the Page API child forks from it like every other worker
     forker = Forker(
         [*DATABASE_STACK, *(ENTRIES[context] for context in commands)],
@@ -1107,11 +1005,6 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         control=control_file(args.config),
         limits=config.worker_memory,
     )
-    if args.hub:
-        try:
-            return serve_page(parser, args, config, ready, listening, supervisor)
-        finally:
-            forker.close()
     supervisor.start()
     try:
         if "api" in commands:  # beside the children, which load the same stack: the page waits on them, not on this

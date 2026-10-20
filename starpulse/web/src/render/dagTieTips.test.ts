@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hubTip, tieStatus, tieTip, type TipSky } from "./dagTieTips";
+import { pivotTip, tieStatus, tieTip, type TipSky } from "./dagTieTips";
 import type { Anchor, Orbiter } from "./dagTies";
 import type { Dag } from "../api";
 
@@ -22,7 +22,7 @@ describe("a tied DAG's status", () => {
 });
 
 describe("a hangar's tooltip", () => {
-  const html = hubTip({ state: "done", orbs: [orb("main-follow", anchor("write", "MERGED")), orb("apply-on-merge", anchor("cue", "MERGED"))] }, { sky, stateName });
+  const html = pivotTip({ state: "done", orbs: [orb("main-follow", anchor("write", "MERGED")), orb("apply-on-merge", anchor("cue", "MERGED"))] }, { sky, stateName });
 
   it("says what a click and a right-click do", () => {
     expect(plain(html)).toContain("click opens their Ledger · right-click comes back");

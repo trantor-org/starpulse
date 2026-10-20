@@ -475,17 +475,17 @@ def test_too_few_ended_runs_hold_none_out_and_score_nothing() -> None:
     assert calibration["calibrated"] is None
 
 
-HUB_STATES = ("waiting", "ready", "in_progress", "needs_attention", "review", "done", "archived")
-HUB = {"states": [{"id": s, "initial": s == "waiting", "final": s in {"done", "archived"}} for s in HUB_STATES]}
-HUB_LEVEL = Level("board", "done", (Terminal("done", "goal"), Terminal("archived", "abandoned")))
+FLOW_STATES = ("waiting", "ready", "in_progress", "needs_attention", "review", "done", "archived")
+FLOW = {"states": [{"id": s, "initial": s == "waiting", "final": s in {"done", "archived"}} for s in FLOW_STATES]}
+FLOW_LEVEL = Level("board", "done", (Terminal("done", "goal"), Terminal("archived", "abandoned")))
 
 
 def _hub(runs: list[Run]) -> dict:
-    return trajectory_analytics(HUB_LEVEL, HUB, runs, now=NOW, window_s=WINDOW)
+    return trajectory_analytics(FLOW_LEVEL, FLOW, runs, now=NOW, window_s=WINDOW)
 
 
 def test_regression_a_loop_target_the_search_met_first_is_not_a_trip_and_never_raises() -> None:
-    # TASK-1 on the live hub: the depth-first search reaches in_progress by ready, so done -> in_progress is a back-edge
+    # TASK-1 on the live board: the depth-first search reaches in_progress by ready, so done -> in_progress is a back-edge
     # of the whole path, yet that step is the first visit of in_progress and has no earlier one to loop back to
     task_1 = _run(
         "TASK-1",
@@ -526,7 +526,7 @@ def test_no_walk_over_the_board_machine_makes_the_analytics_raise() -> None:
     runs = []
     for i in range(400):
         length = rng.randint(1, 14)
-        states = [rng.choice(HUB_STATES) for _ in range(length)]
+        states = [rng.choice(FLOW_STATES) for _ in range(length)]
         if i % 4:  # three of four end in a terminal, the rest are still going
             states.append(rng.choice(("done", "archived")))
         runs.append(_run(f"w{i}", *((float(at), state) for at, state in enumerate(states))))
