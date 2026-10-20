@@ -111,7 +111,7 @@ def test_a_put_from_outside_the_private_network_is_refused_and_changes_nothing(t
     assert runtime.toggle.get() is False
 
 
-@pytest.mark.parametrize("body", [{}, {"enabled": "yes"}, {"enabled": 1}, {"opt_in": True}, [], "true"])
+@pytest.mark.parametrize("body", [{}, {"enabled": "yes"}, {"enabled": 1}])
 def test_a_put_that_is_not_a_boolean_is_a_400_and_changes_nothing(tmp_path: Path, body: object) -> None:
     runtime = _runtime(tmp_path)
 
@@ -265,7 +265,6 @@ def test_a_put_sets_the_quiet_hours_a_restart_keeps_them_and_null_clears_them(tm
         ({"start": "22:00", "end": "dawn", "timezone": "UTC"}, "end"),
         ({"start": "22:00", "end": "22:00", "timezone": "UTC"}, "differ"),
         ({"start": "22:00", "end": "07:00", "timezone": "Mars/Base"}, "timezone"),
-        ("22:00-07:00", "start"),
     ],
 )
 def test_a_quiet_hours_window_that_cannot_be_read_is_a_400_naming_it_and_changes_nothing(
@@ -276,6 +275,25 @@ def test_a_quiet_hours_window_that_cannot_be_read_is_a_400_naming_it_and_changes
     status, body = _put(runtime, {"quietHours": window})
 
     assert status == 400 and names in body["error"]
+    assert runtime.quiet_hours.get() is None
+
+
+@pytest.mark.parametrize(
+    ("body", "error"),
+    [
+        ({"opt_in": True}, "opt_in: Extra inputs are not permitted"),
+        ([], "Input should be an object"),
+        ("true", "Input should be an object"),
+        ({"quietHours": "22:00-07:00"}, "quietHours: Input should be an object"),
+    ],
+)
+def test_a_put_its_model_rejects_is_a_400_naming_the_field_and_changes_nothing(
+    tmp_path: Path, body: object, error: str
+) -> None:
+    runtime = _runtime(tmp_path)
+
+    assert _put(runtime, body) == (400, {"error": f"invalid request: {error}"})
+    assert runtime.toggle.get() is False
     assert runtime.quiet_hours.get() is None
 
 

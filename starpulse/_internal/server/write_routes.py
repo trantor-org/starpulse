@@ -20,14 +20,12 @@ from starpulse._internal.server.routes import (
     _DOC_ARCHIVE,
     _DOC_EDIT,
     _DOC_RESTORE,
-    _DOC_WRITES,
     _DOCS,
     _EDIT,
     _INSIGHTS,
     _MACHINE_EVENTS,
     _MILESTONE_ARCHIVE,
     _MILESTONE_EDIT,
-    _MILESTONE_WRITES,
     _MILESTONES,
     _MISS,
     _MOVE,
@@ -38,15 +36,12 @@ from starpulse._internal.server.routes import (
     _RESTORE,
     _RETIRE,
     _RETIRED_IMPORT,
-    _RETIRED_WRITES,
     _REVIEW,
     _RUN,
     _START,
-    _TASK_WRITES,
     _TASKS,
     _VERDICT,
     _WINDOW,
-    _WRITES,
     _is_rerun,
 )
 from starpulse._internal.server.writes import (
@@ -127,35 +122,38 @@ class WriteRoutes:
         self._run_safe = services.run_safe
         self._insights = services.insights
         self._autopilot = services.autopilot
-        self._task_writes: dict[str, TaskWrite] = {
-            _MOVE: lambda client, raw: move_task(client, raw, feed, writer),
-            _START: lambda client, raw: start_task(
-                client, raw, feed, assign, services.start_session, services.harnesses
+        # Every write route, by path: the handler over the seams it needs and the kind of body it answers
+        # (`contracts.api.registry.BODIES`). Each handler parses its body through the request model it is declared with.
+        self._writes: dict[str, tuple[TaskWrite, str]] = {
+            _MOVE: (lambda client, raw: move_task(client, raw, feed, writer), "move"),
+            _START: (
+                lambda client, raw: start_task(client, raw, feed, assign, services.start_session, services.harnesses),
+                "start",
             ),
-            _EDIT: lambda client, raw: edit_task(client, raw, feed, read, edit),
-            _ARCHIVE: lambda client, raw: archive_task(client, raw, feed, archive),
-            _VERDICT: lambda client, raw: record_verdict(client, raw, feed, read, edit),
-            _MISS: lambda client, raw: record_miss(client, raw, feed, read, edit, archive, create),
-            _RESTORE: lambda client, raw: restore_task(client, raw, feed, restore),
-            _RETIRE: lambda client, raw: retire_task(client, raw, milestones),
-            _RETIRED_IMPORT: lambda client, raw: import_retired(client, raw, milestones),
-            _CLAIM: lambda client, raw: claim_task(client, raw, feed, writer),
-            _PARK: lambda client, raw: park_task(client, raw, feed, read, edit),
-            _REVIEW: lambda client, raw: review_task(client, raw, feed, read, edit),
-            _COMPLETE: lambda client, raw: complete_task(client, raw, feed, complete),
-            _TASKS: lambda client, raw: create_task(client, raw, create, feed),
-            _MILESTONES: lambda client, raw: create_milestone(client, raw, milestones),
-            _MILESTONE_EDIT: lambda client, raw: edit_milestone(client, raw, milestones),
-            _MILESTONE_ARCHIVE: lambda client, raw: archive_milestone(client, raw, milestones),
-            _DOCS: lambda client, raw: create_doc(client, raw, milestones),
-            _DOC_EDIT: lambda client, raw: edit_doc(client, raw, milestones),
-            _DOC_ARCHIVE: lambda client, raw: archive_doc(client, raw, milestones),
-            _DOC_RESTORE: lambda client, raw: restore_doc(client, raw, milestones),
+            _EDIT: (lambda client, raw: edit_task(client, raw, feed, read, edit), "edit"),
+            _ARCHIVE: (lambda client, raw: archive_task(client, raw, feed, archive), "archive"),
+            _VERDICT: (lambda client, raw: record_verdict(client, raw, feed, read, edit), "verdict"),
+            _MISS: (lambda client, raw: record_miss(client, raw, feed, read, edit, archive, create), "verdict"),
+            _RESTORE: (lambda client, raw: restore_task(client, raw, feed, restore), "restore"),
+            _RETIRE: (lambda client, raw: retire_task(client, raw, milestones), "retire"),
+            _RETIRED_IMPORT: (lambda client, raw: import_retired(client, raw, milestones), "retired_import"),
+            _CLAIM: (lambda client, raw: claim_task(client, raw, feed, writer), "claim"),
+            _PARK: (lambda client, raw: park_task(client, raw, feed, read, edit), "park"),
+            _REVIEW: (lambda client, raw: review_task(client, raw, feed, read, edit), "review"),
+            _COMPLETE: (lambda client, raw: complete_task(client, raw, feed, complete), "complete"),
+            _TASKS: (lambda client, raw: create_task(client, raw, create, feed), "create"),
+            _MILESTONES: (lambda client, raw: create_milestone(client, raw, milestones), "milestone_create"),
+            _MILESTONE_EDIT: (lambda client, raw: edit_milestone(client, raw, milestones), "milestone_edit"),
+            _MILESTONE_ARCHIVE: (lambda client, raw: archive_milestone(client, raw, milestones), "milestone_archive"),
+            _DOCS: (lambda client, raw: create_doc(client, raw, milestones), "doc_create"),
+            _DOC_EDIT: (lambda client, raw: edit_doc(client, raw, milestones), "doc_edit"),
+            _DOC_ARCHIVE: (lambda client, raw: archive_doc(client, raw, milestones), "doc_archive"),
+            _DOC_RESTORE: (lambda client, raw: restore_doc(client, raw, milestones), "doc_restore"),
         }
         # The pushes a deployment may leave unconfigured: their route is then none, and a POST of it answers 404.
-        self._pushes: dict[str, tuple[Pushed | None, int]] = {
-            _INSIGHTS: (services.insights, MAX_BODY),
-            _PULL_REFRESH: (services.pull_refresh, MAX_REFRESH_BODY),
+        self._pushes: dict[str, tuple[Pushed | None, int, str]] = {
+            _INSIGHTS: (services.insights, MAX_BODY, "insight"),
+            _PULL_REFRESH: (services.pull_refresh, MAX_REFRESH_BODY, "ingest"),
         }
         self._events = services.events
 
@@ -164,16 +162,7 @@ class WriteRoutes:
         return (
             path.startswith(_RUN)
             or _is_rerun(path)
-            or path
-            in {
-                *_TASK_WRITES,
-                _MACHINE_EVENTS,
-                _INSIGHTS,
-                _PULL_REFRESH,
-                *_MILESTONE_WRITES,
-                *_DOC_WRITES,
-                *_RETIRED_WRITES,
-            }
+            or path in {*self._writes, _MACHINE_EVENTS, _INSIGHTS, _PULL_REFRESH}
         )
 
     def __call__(self, request: WriteRequest) -> Response | None:
@@ -187,20 +176,21 @@ class WriteRoutes:
 
     def _post(self, request: WriteRequest) -> Response | None:
         path = request.path
-        if (path in _TASK_WRITES or path.startswith(_RUN) or _is_rerun(path)) and (
+        if (path in self._writes or path.startswith(_RUN) or _is_rerun(path)) and (
             refusal := self._refused(request)
         ) is not None:
             return refusal
-        kind = _WRITES.get(path, "run")
-        push, limit = self._pushes.get(path, (None, 0))
-        if path in _TASK_WRITES:
-            status, body = self._task_writes[path](request.client, self._whole(request))
+        kind = "run"
+        push, limit, pushed_kind = self._pushes.get(path, (None, 0, ""))
+        if path in self._writes:
+            handler, kind = self._writes[path]
+            status, body = handler(request.client, self._whole(request))
         elif push is not None:
-            return self._pushed(request, kind, push, limit)
+            return self._pushed(request, pushed_kind, push, limit)
         elif path == _MACHINE_EVENTS and self._events is not None:
             content_type = request.headers.get("Content-Type")
             events = self._events
-            return self._pushed(request, kind, lambda auth, raw: events(auth, content_type, raw), MAX_BATCH_BODY)
+            return self._pushed(request, "ingest", lambda auth, raw: events(auth, content_type, raw), MAX_BATCH_BODY)
         elif _is_rerun(path):
             name = unquote(path.removeprefix(_RERUN).removesuffix(_RERUN_TAIL))
             status, body = rerun_dag(request.client, name, self._feed, self._reruns, self._run_safe)

@@ -256,19 +256,24 @@ def test_a_source_outside_loopback_and_rfc_1918_is_refused_before_the_writer_is_
 
 
 @pytest.mark.parametrize(
-    "raw",
-    [b"", b"not json", b"[]", b'{"task": "PROJ-3"}', b'{"to": "ready"}', b'{"task": 3, "to": "ready"}'],
+    ("raw", "error"),
+    [
+        (b"", "Invalid JSON: EOF while parsing a value at line 1 column 0"),
+        (b"not json", "Invalid JSON: expected ident at line 1 column 2"),
+        (b"[]", "Input should be an object"),
+        (b'{"task": "PROJ-3"}', "to: Field required"),
+        (b'{"to": "ready"}', "task: Field required"),
+        (b'{"task": 3, "to": "ready"}', "task: Input should be a valid string"),
+        (b'{"task": "PROJ-3", "to": "ready", "actor": " "}', "actor: Value error, must not be blank"),
+    ],
 )
-def test_a_body_that_does_not_name_a_task_and_a_column_is_a_bad_request(raw: bytes) -> None:
+def test_a_body_that_does_not_name_a_task_and_a_column_is_a_bad_request(raw: bytes, error: str) -> None:
     writer = _Writer()
 
     status, body = _move(raw, writer)
 
     assert (status, writer.sent) == (400, [])
-    assert body == {
-        "error": 'a move needs {"task": "TASK-N", "to": "<column>"} and may name an "actor", a "session" and a '
-        '"harness" (non-empty strings)'
-    }
+    assert body == {"error": f"invalid request: {error}"}
 
 
 def test_a_task_the_board_does_not_hold_is_not_found() -> None:
@@ -525,24 +530,32 @@ def test_without_a_session_start_service_nothing_is_started() -> None:
     assert assign.sent == []
 
 
+def test_a_start_naming_no_profile_is_a_bad_request() -> None:
+    sessions = _Sessions()
+
+    status, body = _start(b'{"task": "PROJ-3"}', sessions=sessions)
+
+    assert (status, sessions.started) == (400, [])
+    assert body == {"error": 'a start needs {"task": "TASK-N", "profile": "@agent-<tier>-<effort>"}'}
+
+
 @pytest.mark.parametrize(
-    "raw",
+    ("raw", "error"),
     [
-        b"",
-        b"not json",
-        b"[]",
-        b'{"task": "PROJ-3"}',
-        b'{"profile": "@a"}',
-        b'{"task": 3, "profile": "@a", "harness": "claude"}',
+        (b"", "Invalid JSON: EOF while parsing a value at line 1 column 0"),
+        (b"not json", "Invalid JSON: expected ident at line 1 column 2"),
+        (b"[]", "Input should be an object"),
+        (b'{"profile": "@a"}', "task: Field required"),
+        (b'{"task": 3, "profile": "@a", "harness": "claude"}', "task: Input should be a valid string"),
     ],
 )
-def test_a_body_that_does_not_name_a_task_and_a_profile_is_a_bad_request(raw: bytes) -> None:
+def test_a_start_body_its_model_rejects_is_a_bad_request(raw: bytes, error: str) -> None:
     sessions = _Sessions()
 
     status, body = _start(raw, sessions=sessions)
 
     assert (status, sessions.started) == (400, [])
-    assert body == {"error": 'a start needs {"task": "TASK-N", "profile": "@agent-<tier>-<effort>"}'}
+    assert body == {"error": f"invalid request: {error}"}
 
 
 def test_a_start_without_harness_defaults_to_claude() -> None:
@@ -560,7 +573,7 @@ def test_a_non_text_harness_is_a_bad_request() -> None:
     )
 
     assert (status, sessions.started) == (400, [])
-    assert body == {"error": "harness must be a non-empty name from agent-harnesses.toml"}
+    assert body == {"error": "invalid request: harness: Input should be a valid string"}
 
 
 def test_a_start_from_outside_the_lan_is_refused() -> None:
