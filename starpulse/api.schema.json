@@ -2522,6 +2522,20 @@
             }
           ],
           "default": null
+        },
+        "run_efforts": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
