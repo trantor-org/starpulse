@@ -54,7 +54,7 @@ class PullStore:
         self._lock = threading.Lock()
         self._listeners: list[Callable[[], None]] = []
         self._save_listeners: list[Callable[[list[tuple[str, int]]], None]] = []
-        create_tables(engine, [pull_requests])
+        create_tables(engine)
         self._held: dict[tuple[str, int], dict[str, Any]] = {}
         since = (datetime.now(UTC) - window).strftime("%Y-%m-%dT%H:%M:%SZ")
         self._hold(

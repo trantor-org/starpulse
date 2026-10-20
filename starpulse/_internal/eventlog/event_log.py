@@ -8,15 +8,14 @@ given a cursor resumes after it, and `EventLog.prune` drops rows older than a re
 `starpulse_gaps`.
 
 The database is the history store's: SQLite by default (in WAL mode, so processes on the host append while the
-server reads) or the Postgres a `database_url` names. Delivery is at-least-once within retention, so a handler
+server reads) or the file a `database_url` names. Delivery is at-least-once within retention, so a handler
 treats `event_id` as its idempotency key. Latency is the poll interval, so a reader polls often (one indexed
 `id > ?` query) and holds no connection, hence no read transaction, between polls: a held SQLite read transaction
 would stop WAL checkpoints and grow the `-wal` file without bound.
 
 A running tail does not sleep out the interval. An append in this process wakes every waiting tail at once, and on
 SQLite so does a commit by another process, seen as a change of `PRAGMA data_version` that one watcher thread per log
-checks (`EventLog.wait_for_append`). The interval is the fallback bound: it alone delivers a Postgres append from
-another process, and it recovers a wake-up that went missing.
+checks (`EventLog.wait_for_append`). The interval is the fallback bound: it recovers a wake-up that went missing.
 """
 
 from __future__ import annotations
@@ -34,25 +33,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, NamedTuple
 
-from sqlalchemy import Engine, Table, create_engine, delete, event, func, select
-from sqlalchemy.dialects import postgresql, sqlite
+from sqlalchemy import Engine, create_engine, delete, event, func, select
+from sqlalchemy.dialects import sqlite
 from sqlalchemy.engine import Connection, make_url
-from sqlalchemy.exc import SQLAlchemyError
 
 from starpulse._internal.eventlog import DEFAULT_POLL_INTERVAL
 from starpulse._internal.eventlog.checkpoints import Checkpoints
 from starpulse._internal.eventlog.migrate import migrate
-from starpulse._internal.eventlog.tables import (
-    autopilot_runs,
-    checkpoints,
-    day_rollups,
-    events,
-    gaps,
-    metadata,
-    retired_tasks,
-    settings,
-    source_instances,
-)
+from starpulse._internal.eventlog.tables import events, gaps, settings
 
 __all__ = ["Entry", "EventLog", "Tail"]
 
@@ -73,9 +61,6 @@ _PRAGMA_ATTEMPTS = 20
 
 #: How many rows a prune archives and deletes at a time, so a long backlog is never held in memory at once.
 _PRUNE_BATCH = 1000
-
-#: How many times a producer looks for the tables, creating those missing, before the failure counts.
-_CREATE_ATTEMPTS = 5
 
 
 class Entry(NamedTuple):
@@ -128,12 +113,8 @@ class EventLog:
             if not self._ready:
                 if self._engine is None:
                     self._engine = _create_engine(self.url)
-                if self._engine.dialect.name == "sqlite":
-                    event.listen(self._engine, "connect", _sqlite_pragmas)
-                create_tables(
-                    self._engine,
-                    [events, gaps, checkpoints, source_instances, settings, autopilot_runs, retired_tasks],
-                )
+                event.listen(self._engine, "connect", _sqlite_pragmas)
+                create_tables(self._engine)
                 self._ready = True
             assert self._engine is not None
             return self._engine
@@ -154,7 +135,7 @@ class EventLog:
         error."""
         engine = self.engine
         now = time.time() if updated_at is None else updated_at
-        upsert = _dialect(engine).insert(settings).values(key=key, value=value, updated_at=now)
+        upsert = sqlite.insert(settings).values(key=key, value=value, updated_at=now)
         with engine.begin() as db:
             db.execute(
                 upsert.on_conflict_do_update(index_elements=[settings.c.key], set_={"value": value, "updated_at": now})
@@ -218,15 +199,15 @@ class EventLog:
             self._appended.notify_all()
 
     def _watch(self) -> None:
-        """Start, once, the thread that wakes waiters on another process's SQLite commit; nothing on Postgres or an
-        in-memory database, which have no other process to see. Returns once the thread has read its baseline (or
+        """Start, once, the thread that wakes waiters on another process's SQLite commit; nothing on an in-memory
+        database, which has no other process to see. Returns once the thread has read its baseline (or
         failed to), so a commit after this call wakes waiters."""
         with self._lock:
             if self._watching:
                 return
             self._watching = True
         url = make_url(self.url)
-        if url.get_backend_name() == "sqlite" and url.database not in (None, "", ":memory:"):
+        if url.database not in (None, "", ":memory:"):
             baseline = threading.Event()
             threading.Thread(
                 target=self._watch_data_version,
@@ -309,10 +290,8 @@ class EventLog:
         """Note that up to `lost` rows between `after_id` and `before_id` were pruned before `stream`'s reader read
         them; the same `after_id` again updates that gap."""
         engine = self.engine
-        insert = (
-            _dialect(engine)
-            .insert(gaps)
-            .values(stream=stream, after_id=str(after_id), before_id=str(before_id), lost=lost, noted_at=time.time())
+        insert = sqlite.insert(gaps).values(
+            stream=stream, after_id=str(after_id), before_id=str(before_id), lost=lost, noted_at=time.time()
         )
         with engine.begin() as db:
             db.execute(
@@ -487,10 +466,9 @@ def insert_event(db: Connection, stream: str, fields: Mapping[str, Any], key: st
     lands with it or not at all."""
     known = select(events.c.id).where(events.c.event_id == key)
     statement = (
-        _dialect(db.engine)
-        .insert(events)
+        sqlite.insert(events)
         .values(stream=stream, event_id=key, fields=dict(fields), at=time.time())
-        .on_conflict_do_nothing()  # any unique key: the Postgres log keys a row on (event_id, at), the IC log on event_id
+        .on_conflict_do_nothing()
         .returning(events.c.id)
     )
     # Look first: an ignored insert still spends an id, and a hole in the ids would read as a pruned span.
@@ -503,33 +481,9 @@ def insert_event(db: Connection, stream: str, fields: Mapping[str, Any], key: st
 
 
 def _create_engine(url: str) -> Engine:
-    if make_url(url).get_backend_name() == "sqlite":
-        return create_engine(url, connect_args={"timeout": _SQLITE_BUSY_TIMEOUT})
-    return create_engine(url)
+    return create_engine(url, connect_args={"timeout": _SQLITE_BUSY_TIMEOUT})
 
 
-def create_tables(engine: Engine, tables: Sequence[Table] | None = None) -> None:
-    """Bring `engine`'s database to the schema the migration chain declares, the rollups apart.
-
-    A SQLite store is built and versioned by the chain, whole whichever `tables` the caller needs. Another database is
-    not: Postgres arrives through its own migrations, and an instance on it creates `tables`, or every
-    StarPulse table but the rollups for None, where they are missing.
-
-    A caller that lost a race to create them looks again and finds them: each lost race means another process or
-    thread created a table meanwhile, and the tables are created once, so a few looks suffice; the last failure is a
-    real one and raises.
-    """
-    if engine.dialect.name == "sqlite":
-        return migrate(engine)
-    if tables is None:
-        tables = [table for table in metadata.sorted_tables if table is not day_rollups]
-    for _ in range(_CREATE_ATTEMPTS - 1):
-        try:
-            return metadata.create_all(engine, tables=tables)
-        except SQLAlchemyError:
-            continue
-    return metadata.create_all(engine, tables=tables)
-
-
-def _dialect(engine: Engine):
-    return postgresql if engine.dialect.name == "postgresql" else sqlite
+def create_tables(engine: Engine) -> None:
+    """Bring `engine`'s database to the schema the migration chain declares."""
+    migrate(engine)

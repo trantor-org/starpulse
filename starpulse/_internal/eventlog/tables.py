@@ -118,9 +118,9 @@ retired_tasks = Table(
     Index("ix_starpulse_retired_tasks_retired_at", "retired_at"),  # the change poll's count and max read this alone
 )
 
-#: What Postgres kept of a day after its raw events were dropped: per team, machine and state,
+#: What the retired server history kept of a day after its raw events were dropped: per team, machine and state,
 #: how many tasks or runs entered the state that UTC day (`entries`), how many of those had not left it when the day was
-#: rolled up (`open_entries`), and the seconds the others stayed. An IC instance never writes it.
+#: rolled up (`open_entries`), and the seconds the others stayed. Nothing writes it now; revision 0003 still creates it.
 day_rollups = Table(
     "starpulse_day_rollups",
     metadata,

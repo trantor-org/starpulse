@@ -7,15 +7,6 @@ set -uo pipefail
 
 logs=$(mktemp -d)
 
-# An instance runs without the Postgres driver: import every module it can load on an environment that holds neither
-# the driver nor the container tooling. Its own environment keeps api-types' full one intact.
-ic() {
-  export UV_PROJECT_ENVIRONMENT="${RUNNER_TEMP:-$logs}/ic-venv"
-  uv sync --locked &&
-    uv run --no-sync python -c "import importlib.util as u, sys; sys.exit(any(u.find_spec(m) for m in ('psycopg', 'testcontainers')))" &&
-    uv run --no-sync python ci/ic_imports.py
-}
-
 # This repository is public: no tracked file outside the workflows and tests may name the operator's private hosts.
 public_names() {
   uv run --no-project --python 3.14 python ci/public_names.py
@@ -56,7 +47,7 @@ busy_modules() {
     uv run --no-project --python 3.14 --with pyyaml --with pydantic-settings python ci/busy_modules.py .trantor/lib
 }
 
-checks=(api_types ic public_names tier_policy avoid_list busy_modules)
+checks=(api_types public_names tier_policy avoid_list busy_modules)
 pids=()
 for check in "${checks[@]}"; do
   "$check" >"$logs/$check.log" 2>&1 &

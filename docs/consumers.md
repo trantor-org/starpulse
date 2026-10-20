@@ -71,8 +71,8 @@ def drain(log: EventLog, sink: sqlite3.Connection) -> int:
 
 Call `drain` from a timer, a cron job or a loop; a call with nothing new costs one indexed query.
 
-- **Open the log with the database URL.** `EventLog("sqlite:///starpulse-history.sqlite")`, or the Postgres URL the
-  config's `database_url` names. Many processes append and read the same file: the log runs in WAL mode.
+- **Open the log with the database URL.** `EventLog("sqlite:///starpulse-history.sqlite")`, or the URL the config's
+  `database_url` names. Many processes append and read the same file: the log runs in WAL mode.
 - **At least once.** A crash after the log handed over a row but before the commit reads it again, so key the sink on
   `event_id`, as `INSERT OR IGNORE` does above.
 - **Retention.** `serve` (through its Flow Metrics child, `starpulse worker flow-metrics`) prunes rows older than `event_log_retention_days` and archives them first (see the event log
