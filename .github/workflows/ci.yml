@@ -16,16 +16,17 @@ permissions:
 # The nightly suite runs on the organization's self-hosted ai-vm-1 fleet, free and independent of GitHub's hosted
 # pool. That runner group serves private repositories only: making this repository public strands these jobs.
 jobs:
-  # The whole suite under pytest-xdist, as the `ci-sp-python` check run runs it for a pull request (trantor's ci.md), plus the
-  # import layers (pyproject's [tool.importlinter]).
-  python:
+  # Chooses the tests once for the shards: the nightly schedule and a manual dispatch select the whole suite
+  # (ci/select_tests.py --full; the `ci-sp-*` DAGs select by changed files for a pull request). Its output sizes the
+  # shard matrix. It also runs the import layers (pyproject's [tool.importlinter]).
+  select:
     # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved.
     if: github.event_name != 'push'
     runs-on: [self-hosted, ai-vm-1]
-    timeout-minutes: 30
-    env:
-      # The slow/costly-test screen (ci/slow_tests.py) runs only in the nightly suite and a manual dispatch.
-      TEST_COST_REPORT: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '1' || '' }}
+    timeout-minutes: 10
+    outputs:
+      PYTEST_TARGETS: ${{ steps.select.outputs.PYTEST_TARGETS }}
+      PYTEST_SHARDS: ${{ steps.select.outputs.PYTEST_SHARDS }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -34,26 +35,106 @@ jobs:
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       - run: uv sync --locked
       - run: uv run --no-sync lint-imports
+      - id: select
+        run: uv run --no-sync python ci/select_tests.py --full >> "$GITHUB_OUTPUT"
+
+  # The suite is split by test file across the shards `select` launches (ci/shard.py), each on its own runner: one to six. The matrix is its PYTEST_SHARDS output, and SHARD_COUNT the matrix's size.
+  python-shard:
+    needs: select
+    # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved. An empty
+    # matrix is an error, so no shard is this job skipped, which the `python` job reads.
+    if: github.event_name != 'push' && needs.select.outputs.PYTEST_SHARDS != '[]'
+    runs-on: [self-hosted, ai-vm-1]
+    timeout-minutes: 30
+    strategy:
+      # A red shard does not cancel the others: one run reports every failure.
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.select.outputs.PYTEST_SHARDS) }}
+    env:
+      SHARD_COUNT: ${{ strategy.job-total }}
+      SHARD_INDEX: ${{ matrix.shard }}
+      # The tests `select` chose; empty is the whole suite.
+      PYTEST_TARGETS: ${{ needs.select.outputs.PYTEST_TARGETS }}
+      # The slow/costly-test screen (ci/slow_tests.py) runs only in the nightly suite and a manual dispatch.
+      TEST_COST_REPORT: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '1' || '' }}
+      # The shard's per-test coverage data, combined by `coverage-map`; read only when the run is instrumented below.
+      COVERAGE_FILE: coverage-${{ matrix.shard }}.data
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: /*
+          sparse-checkout-cone-mode: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - run: uv sync --locked
+      # pytest-xdist workers sized to the runner's memory: ci/xdist_workers.py.
       # The nightly and a manual dispatch (TEST_COST_REPORT set) add `-m "not e2e"`: the nightly-marked budget tests the gate
       # deselects (pyproject addopts).
-      - run: echo "PYTEST_ADDOPTS=-n auto --dist worksteal ${TEST_COST_REPORT:+-m 'not e2e'}" >> "$GITHUB_ENV"
-      # Postgres-backed integration cases use the runner's Docker; SQLite cases need no container runtime.
-      - run: uv run --no-sync pytest
+      - run: echo "PYTEST_ADDOPTS=-n $(uv run --no-sync python ci/xdist_workers.py) --dist worksteal ${TEST_COST_REPORT:+-m 'not e2e'}" >> "$GITHUB_ENV"
+      # The nightly suite records which source files each test runs (pyproject's [tool.coverage.run]); ci/coverage_map.py
+      # turns the shards' data into the map the select step reads.
+      - if: ${{ env.TEST_COST_REPORT == '1' }}
+        run: echo "PYTEST_ADDOPTS=$PYTEST_ADDOPTS --cov --cov-context=test --cov-report=" >> "$GITHUB_ENV"
+      # Postgres-backed integration cases use the runner's Docker; SQLite cases need no container runtime. A selected run
+      # can leave a shard no test file: pytest exits 5 for it, which is a pass only while targets were selected.
+      - run: |
+          status=0
+          uv run pytest $PYTEST_TARGETS || status=$?
+          [ "$status" -eq 0 ] || { [ "$status" -eq 5 ] && [ -n "$PYTEST_TARGETS" ]; }
+      # The tests the screen flagged (test-cost.json) rerun alone under memray, even after a red suite; one that leaves no
+      # stats is named in the run (ci/memray_flagged.py).
+      - if: ${{ !cancelled() && env.TEST_COST_REPORT == '1' }}
+        run: uv run --no-sync python ci/memray_flagged.py test-cost.json memray
       - if: ${{ !cancelled() && env.TEST_COST_REPORT == '1' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: test-cost
-          path: test-cost.json
+          name: test-cost-${{ matrix.shard }}
+          path: |
+            test-cost.json
+            memray/
+          if-no-files-found: error
+      - if: ${{ !cancelled() && env.TEST_COST_REPORT == '1' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-data-${{ matrix.shard }}
+          path: coverage-${{ matrix.shard }}.data
           if-no-files-found: error
 
-  # The same tests on the free-threaded build (3.14t), without the hub group: psycopg-binary has no 3.14t wheel, so
+  # Combines the shards' coverage data into the per-test coverage map (ci/coverage_map.py) and publishes it on ai-vm-1, where
+  # trantor's `ci-sp-python` select step reads `latest.json`. Only a fully green nightly publishes: a red shard's data
+  # would leave tests out of the map.
+  coverage-map:
+    needs: [select, python-shard]
+    if: github.event_name != 'push' && needs.python-shard.result == 'success'
+    runs-on: [self-hosted, ai-vm-1]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: /*
+          sparse-checkout-cone-mode: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - run: uv sync --locked
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: coverage-data-*
+          merge-multiple: true
+      - run: |
+          uv run --no-sync coverage combine coverage-*.data
+          uv run --no-sync pytest --collect-only -q | grep '::' > collected.txt
+          uv run --no-sync python ci/coverage_map.py build .coverage --sha "$GITHUB_SHA" --collected collected.txt
+
+  # The same selected tests on the free-threaded build (3.14t), without the hub group: psycopg-binary has no 3.14t wheel, so
   # hub mode stays on 3.14 and an IC instance is what runs here. trantor's live server runs on 3.14t, so a change that
-  # breaks that build shows in the nightly suite. It is not a required check and `python` does not wait for it.
+  # breaks that build shows in the nightly suite. One job, not a shard matrix. It is not a required check and `python`
+  # does not wait for it.
   python-ft:
-    if: github.event_name != 'push'
+    needs: select
+    if: github.event_name != 'push' && needs.select.outputs.PYTEST_SHARDS != '[]'
     runs-on: [self-hosted, ai-vm-1]
     timeout-minutes: 45
     env:
+      PYTEST_TARGETS: ${{ needs.select.outputs.PYTEST_TARGETS }}
       # The build is slower than the 5 s ceiling was set on: name slow tests here (ci/slow_tests.py), never fail them.
       TEST_COST_REPORT: "1"
     steps:
@@ -72,8 +153,30 @@ jobs:
       - run: uv sync --locked --no-group hub --python 3.14t
       # A dependency that re-enables the GIL on import leaves every test green on the build this job exists to test.
       - run: uv run --no-sync python -c "import sys, starpulse._internal.server.server; sys.exit(sys._is_gil_enabled())"
-      - run: echo "PYTEST_ADDOPTS=-n auto --dist worksteal" >> "$GITHUB_ENV"
-      - run: uv run --no-sync pytest
+      - run: echo "PYTEST_ADDOPTS=-n $(uv run --no-sync python ci/xdist_workers.py) --dist worksteal" >> "$GITHUB_ENV"
+      # The selected files may leave nothing for pytest to run (exit 5), which is a pass only while targets were selected.
+      - run: |
+          status=0
+          uv run --no-sync pytest $PYTEST_TARGETS || status=$?
+          [ "$status" -eq 0 ] || { [ "$status" -eq 5 ] && [ -n "$PYTEST_TARGETS" ]; }
+
+  # The nightly's counterpart of the required context `python` (the App's `ci-sp-python` check run): it passes when `select` did and every shard it launched did, or when it
+  # launched none because no test was selected, and fails when any shard failed, was cancelled or never ran. `always()`
+  # keeps it from being skipped behind a red job, which the merge queue would read as missing. A `select` that failed or
+  # was cancelled skips the shards and leaves its outputs empty, so the shards' skip alone proves nothing.
+  python:
+    needs: [select, python-shard]
+    if: always() && github.event_name != 'push'
+    runs-on: [self-hosted, ai-vm-1]
+    timeout-minutes: 5
+    steps:
+      - env:
+          SELECT: ${{ needs.select.result }}
+          SHARDS: ${{ needs.python-shard.result }}
+          LAUNCHED: ${{ needs.select.outputs.PYTEST_SHARDS }}
+        run: |
+          test "$SELECT" = success
+          test "$SHARDS" = success || { test "$SHARDS" = skipped && test "$LAUNCHED" = '[]'; }
 
   web:
     # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved.

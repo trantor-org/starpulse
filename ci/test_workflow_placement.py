@@ -18,7 +18,7 @@ HOSTED = "ubuntu-latest"
 #: The required checks the workspace App reports (trantor's `ci-sp-*` Dagu DAGs, submitted by trantor's webhook receiver): the
 #: contexts of trantor's infrastructure/github/starpulse.tf that ci.yml no longer runs on a pull request or a candidate.
 APP_CHECKS = ["python", "web", "static-checks", "trantor-contract"]
-CI_TEST_JOBS = ["python", "web", "static-checks", "trantor-contract"]
+CI_TEST_JOBS = ["select", "python-shard", "python", "web", "static-checks", "trantor-contract"]
 
 
 def job(workflow: str, name: str) -> dict:
@@ -185,6 +185,9 @@ def test_trantor_tests_of_this_package_gate_every_merge():
 
 #: Every ci.yml job but the macOS smoke: the jobs that test a tree.
 TEST_JOBS = [
+    "select",
+    "python-shard",
+    "coverage-map",
     "python-ft",
     "python",
     "web",
@@ -204,11 +207,20 @@ def test_every_ci_job_but_the_macos_smoke_is_a_test_job():
     assert sorted(jobs) == sorted([*TEST_JOBS, "macos-fresh-serve", "clean-machine-ingest"])
 
 
-def test_the_free_threaded_suite_runs_beside_the_suite_and_is_no_required_check():
+def test_the_coverage_map_is_published_only_by_a_green_nightly_and_is_no_required_check():
+    """A red shard's coverage data would leave tests out of the map the select step reads."""
+    assert "python-shard" in needs("ci.yml", "coverage-map")
+    assert "needs.python-shard.result == 'success'" in job("ci.yml", "coverage-map")["if"]
+    assert "coverage-map" not in needs("ci.yml", "python")
+    assert "coverage-map" not in APP_CHECKS
+
+
+def test_the_free_threaded_suite_runs_beside_the_shards_and_is_no_required_check():
     """trantor's live server runs on 3.14t, so a change that breaks that build must show in the nightly run. The job is
     not a required check: `python` neither waits for it nor counts it."""
     ft = job("ci.yml", "python-ft")
     assert ft["runs-on"] == AI_VM_1_LANE
+    assert "select" in needs("ci.yml", "python-ft")
     assert "python-ft" not in needs("ci.yml", "python")
     assert "python-ft" not in APP_CHECKS
 
@@ -219,7 +231,7 @@ def test_the_free_threaded_suite_runs_without_the_hub_extras_and_fails_when_the_
     runs = "\n".join(step["run"] for step in job("ci.yml", "python-ft")["steps"] if "run" in step)
     assert "uv sync --locked --no-group hub --python 3.14t" in runs
     assert "sys._is_gil_enabled()" in runs
-    assert "pytest" in runs  # the same whole suite as `python`
+    assert "PYTEST_TARGETS" in runs  # the same selected tests as the shards
 
 
 def test_the_free_threaded_environment_lives_outside_the_checkout_and_is_set_in_a_step():
@@ -333,13 +345,82 @@ def test_trantor_contract_re_locks_only_when_this_trees_dependencies_moved_off_t
     assert not [run for run in runs if run.lstrip().startswith("uv lock")]
 
 
-def test_the_python_job_runs_the_import_layers_and_the_whole_suite_on_work_stealing_workers():
-    steps = job("ci.yml", "python")["steps"]
-    runs = "\n".join(step["run"] for step in steps if "run" in step)
-    assert "uv run --no-sync lint-imports" in runs
-    assert "PYTEST_ADDOPTS=-n auto --dist worksteal" in runs
-    assert "uv run --no-sync pytest\n" in runs + "\n"
-    assert "python" in APP_CHECKS
+def run_step(step: dict, tmp_path, env: dict[str, str], *, uv_exit: int = 0) -> int:
+    """Run a workflow step's shell with the given environment and a stub `uv` that exits `uv_exit`; return its status."""
+    stub = tmp_path / "uv"
+    stub.write_text(f"#!/usr/bin/env bash\nexit {uv_exit}\n")
+    stub.chmod(0o755)
+    shell = subprocess.run(
+        ["bash", "-e", "-c", step["run"]],
+        env={"PATH": f"{tmp_path}:/usr/bin:/bin", **env},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return shell.returncode
+
+
+def test_the_shard_count_is_the_size_of_the_matrix_the_selection_made():
+    shard = job("ci.yml", "python-shard")
+    assert shard["env"]["SHARD_COUNT"] == "${{ strategy.job-total }}"
+    assert shard["env"]["SHARD_INDEX"] == "${{ matrix.shard }}"
+
+
+def test_the_python_check_waits_for_the_selection_and_the_shards_and_runs_behind_a_red_one():
+    aggregate = job("ci.yml", "python")
+    assert aggregate["needs"] == ["select", "python-shard"]
+    # A skipped aggregate reads as a missing required check; a push carries none, so it skips there with the shards.
+    assert aggregate["if"] == "always() && github.event_name != 'push'"
+    assert aggregate["steps"][0]["env"] == {
+        "SELECT": "${{ needs.select.result }}",
+        "SHARDS": "${{ needs.python-shard.result }}",
+        "LAUNCHED": "${{ needs.select.outputs.PYTEST_SHARDS }}",
+    }
+
+
+@pytest.mark.parametrize(
+    ("select_result", "shards", "launched", "status"),
+    [
+        ("success", "success", "[1, 2, 3]", 0),
+        ("success", "skipped", "[]", 0),  # no test selected: no shard launched, none failed
+        ("success", "failure", "[1, 2, 3]", 1),
+        ("success", "cancelled", "[1, 2, 3]", 1),
+        ("success", "skipped", "[1, 2, 3]", 1),  # shards were wanted and never ran
+        ("failure", "skipped", "", 1),  # a failed selection or lint skips the shards and leaves its outputs empty
+        ("cancelled", "skipped", "[]", 1),
+        ("failure", "success", "[1]", 1),
+    ],
+)
+def test_the_python_check_passes_when_every_launched_shard_passed_or_none_was_needed(
+    tmp_path, select_result, shards, launched, status
+):
+    """The ruleset requires `python`: a red, cancelled or never-run shard must not leave it green or missing."""
+    step = job("ci.yml", "python")["steps"][0]
+    env = {"SELECT": select_result, "SHARDS": shards, "LAUNCHED": launched}
+    assert run_step(step, tmp_path, env) == status
+
+
+def pytest_step() -> dict:
+    return next(
+        step for step in job("ci.yml", "python-shard")["steps"] if "pytest $PYTEST_TARGETS" in step.get("run", "")
+    )
+
+
+@pytest.mark.parametrize(
+    ("targets", "pytest_exit", "status"),
+    [
+        ("", 0, 0),
+        ("", 1, 1),
+        ("", 5, 1),  # a full run that collects nothing is broken
+        ("ci/test_a.py", 0, 0),
+        ("ci/test_a.py", 1, 1),
+        ("ci/test_a.py", 5, 0),  # this shard drew none of the selected files
+    ],
+)
+def test_a_shard_with_no_selected_files_passes_but_a_failing_or_empty_full_run_does_not(
+    tmp_path, targets, pytest_exit, status
+):
+    assert run_step(pytest_step(), tmp_path, {"PYTEST_TARGETS": targets}, uv_exit=pytest_exit) == status
 
 
 def test_release_runs_only_the_push_and_dispatch_events():

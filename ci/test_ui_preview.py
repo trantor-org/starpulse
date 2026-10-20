@@ -53,7 +53,7 @@ ROOT = Path(__file__).resolve().parents[1]
         (["ci/ui_preview.py"], [STARPULSE]),
         (["ci/demo_workspace.py"], [STARPULSE]),
         (["ci/workspace/board.yaml"], [STARPULSE]),
-        (["ci/slow_tests.py", "ci/test_ui_preview.py", "ci/seeded_server.py"], []),
+        (["ci/select_tests.py", "ci/test_ui_preview.py", "ci/seeded_server.py"], []),
         ([".github/workflows/ui-preview.yml"], [STARPULSE]),
         (["starpulse/_internal/cli/demo.py"], [STARPULSE]),
         (["design/hub/index.html"], [MOCKUP]),
@@ -71,7 +71,7 @@ def test_surfaces_follow_the_changed_paths(changed: list[str], expected: list[st
     ("changed", "code", "printed"),
     [
         (["README.md", "starpulse/web/src/style.css"], 0, f"{STARPULSE}\n{ui_preview.ELEMENTS}\n"),
-        (["README.md", "ci/slow_tests.py"], ui_preview.NO_UI, ""),
+        (["README.md", "ci/select_tests.py"], ui_preview.NO_UI, ""),
         ([], ui_preview.NO_UI, ""),
     ],
 )
@@ -138,7 +138,7 @@ def compare(*files: str, status: str = "ahead") -> dict:
 
 
 def test_a_push_that_changed_no_ui_path_since_the_last_render_needs_no_render() -> None:
-    assert not push_touches_ui(compare("README.md", "starpulse/_internal/server/server.py", "ci/slow_tests.py"))
+    assert not push_touches_ui(compare("README.md", "starpulse/_internal/server/server.py", "ci/select_tests.py"))
     assert not push_touches_ui(compare())
 
 

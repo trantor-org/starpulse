@@ -22,7 +22,7 @@ def test_a_source_change_runs_the_tests_importing_it_and_one_build() -> None:
 
 
 def test_a_config_or_lockfile_change_runs_every_test() -> None:
-    for file in ("package.json", "pnpm-lock.yaml", "vite.config.ts"):
+    for file in ("package.json", "pnpm-lock.yaml", "vite.config.ts", "scripts/in-tests-slice.sh"):
         assert _plan("--changed", "starpulse/web/src/a.ts", f"starpulse/web/{file}")[0] == "test: all"
 
 
