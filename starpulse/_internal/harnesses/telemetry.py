@@ -361,9 +361,8 @@ class TelemetryLog:
 
     def __init__(self, log: EventLog, keep: float = 7 * 86400.0) -> None:
         self._log = log
-        from starpulse._internal.eventlog.event_log import Tail  # noqa: PLC0415 - the database stack loads when a log opens
 
-        self._tail = Tail(log, self.STREAM, batch=5000)
+        self._tail = log.tail(self.STREAM, batch=5000)
         self._keep = keep
         self._held: list[Signal] = []
         self._lock = threading.Lock()

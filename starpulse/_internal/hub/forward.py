@@ -142,9 +142,8 @@ class Forwarder:
             self._refused = False
         sent_opt_in = opted and not self._refused
         after = self.store.checkpoints.load(self.name)[0]
-        from starpulse._internal.eventlog.event_log import Tail  # noqa: PLC0415 - the database stack loads when a log opens
 
-        tail = Tail(self.log, self.name, streams=tuple(FIELDS), after=after, batch=self.forward.batch)
+        tail = self.log.tail(self.name, streams=tuple(FIELDS), after=after, batch=self.forward.batch)
         entries = tail.poll()
         if not entries:
             if tail.cursor != after:
@@ -248,10 +247,8 @@ class Forwarder:
     def _build_status(self) -> dict[str, Any]:
         opted = self.opt_in.get()
         names = opted and not self._refused
-        from starpulse._internal.eventlog.event_log import Tail  # noqa: PLC0415 - the database stack loads when a log opens
 
-        tail = Tail(
-            self.log,
+        tail = self.log.tail(
             self.name,
             streams=tuple(FIELDS),
             after=self.store.checkpoints.load(self.name)[0],
