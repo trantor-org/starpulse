@@ -120,7 +120,7 @@ retired_tasks = Table(
 
 #: What the retired server history kept of a day after its raw events were dropped: per team, machine and state,
 #: how many tasks or runs entered the state that UTC day (`entries`), how many of those had not left it when the day was
-#: rolled up (`open_entries`), and the seconds the others stayed. Nothing writes it now; revision 0003 still creates it.
+#: rolled up (`open_entries`), and the seconds the others stayed. Nothing writes it now, and no revision creates it.
 day_rollups = Table(
     "starpulse_day_rollups",
     metadata,
