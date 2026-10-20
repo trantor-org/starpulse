@@ -105,8 +105,6 @@ export interface StreamHandlers {
   build?(id: string): void;
   /** Autopilot capacity and next pick: not part of the snapshot; the Kanban strip applies each body. */
   autopilot?(status: AutopilotStatus): void;
-  /** Orbit level aggregates; not part of the snapshot. */
-  level?(body: unknown): void;
 }
 
 /**
@@ -252,9 +250,6 @@ export function openStream(
     ));
     src.addEventListener("autopilot", later((e) => {
       handlers.autopilot?.(JSON.parse((e as MessageEvent<string>).data) as AutopilotStatus);
-    }));
-    src.addEventListener("level", later((e) => {
-      handlers.level?.(JSON.parse((e as MessageEvent<string>).data));
     }));
     src.addEventListener("restarting", () => {
       announced = true;

@@ -4,6 +4,7 @@ descriptor named by `LISTEN_FD_ENV`, and a stopping API child finishes the reque
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import signal
@@ -167,7 +168,8 @@ def test_a_server_adopts_a_listening_socket_as_passed_and_serves_on_it() -> None
 def test_a_stop_is_not_held_by_a_push_refused_with_its_body_unread(tmp_path: Path) -> None:
     with _serve(tmp_path) as server:
         pusher = HTTPConnection("127.0.0.1", server.server_port, timeout=10)
-        pusher.request("POST", "/api/nowhere", body=b"x" * 3_000_000, headers={"content-type": "application/json"})
+        with contextlib.suppress(BrokenPipeError, ConnectionResetError):  # the 404 may land before the body is sent
+            pusher.request("POST", "/api/nowhere", body=b"x" * 3_000_000, headers={"content-type": "application/json"})
         refused = pusher.getresponse().status
         stopping = time.monotonic()
     stopped_in = time.monotonic() - stopping

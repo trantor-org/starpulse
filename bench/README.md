@@ -8,7 +8,7 @@ its free-threaded build. They are not part of the installed package and the test
 | Script | Measures | Needs |
 | --- | --- | --- |
 | `ic_event_log.py` | concurrent fail-open appends to an instance's SQLite WAL log while a reader polls by cursor, at 10 thousand and 1 million rows | a scratch file path |
-| `flow_reads.py` | the p95 of flow health, the level and its trajectories over a SQLite store of 10 thousand, 1 million and 10 million lane changes, read from the summaries the store keeps on write | a scratch directory with room for about 6 GB |
+| `flow_reads.py` | the p95 of flow health and the level's trajectories over a SQLite store of 10 thousand, 1 million and 10 million lane changes, read from the summaries the store keeps on write | a scratch directory with room for about 6 GB |
 | `page_latency.py` | the p50 and p95 of every read route, the event stream's first snapshot, and in Chrome the first paint (navigation to the frame that draws the board), each view switch, a task modal, the Star Map's fly-to, each stream event to paint and the page's frames, against 50 ms (16.7 ms a frame) | a running StarPulse and Google Chrome |
 | `soak.py` | one tab held open for hours: every 10 minutes the budget probed and the task modal opened and closed, every few minutes the JS heap, DOM nodes, listeners, idle frames per second, and the server's RSS, threads and open files; against a running StarPulse, or a seeded one it starts and feeds events | Google Chrome, a built page for the seeded server, or a running StarPulse |
 | `load.py` | a Locust crowd of viewers, each holding the event stream open and reading the `/api` routes: per-route p50, p95 and p99 and the stream's first snapshot, against 50 ms | a running StarPulse |
@@ -37,7 +37,7 @@ uv run python bench/flow_reads.py .tmp/bench-flow --reuse          # read the st
 **When to run.** After any change to a summarised read, rerun `flow_reads.py` at 10 thousand and 1 million events.
 
 The script records synthetic Board lane changes at a fixed rate (about 125 a day) into a SQLite store, summarises
-them as the store does at start-up, and asks `/api/analytics/health`, `/api/level` and `/api/level/trajectories`
+them as the store does at start-up, and asks `/api/analytics/health` and the level's trajectories
 for the default week 60 times each. It prints the p95 in wall and CPU time with the statements each read sends, and
 exits 1 when the CPU p95 at any size is over 2x the first size's. `--scan N` also times the whole-table reads the
 summaries replaced, on the stores up to N events.
@@ -120,8 +120,7 @@ before reading one slow row as a regression.
 
 `--repeat N` times every surface N times and judges each row on the median run's p95 (the lower median for an even
 count), so one starved run on a loaded runner neither fails a row nor hides a slow one; the row's note lists every
-run's p95. `--what-if FROM TO` names the lanes for `/api/level/what-if` (default `Ready` `In Progress`), which a
-server's level must have seen a task leave.
+run's p95.
 `--ceiling "ROW=MS"` holds a row with a known overrun to MS instead of 50: the row still fails past it and its note
 says it is over the budget until its fix lands. The gate holds the first paint of the board at 120 ms (79 ms p95 on a
 quiet slot) until the page work in TASK-3334 to TASK-3337 cuts it; drop the flag then.
@@ -142,7 +141,7 @@ and fails on a row over budget, a non-2xx request row, or an untimed request. `c
 
 ```sh
 uv run python -m ci.seeded_server --port 8766 --dir .tmp/gate
-uv run --group bench python bench/page_latency.py http://127.0.0.1:8766 --repeat 3 --what-if in_progress review
+uv run --group bench python bench/page_latency.py http://127.0.0.1:8766 --repeat 3
 ```
 
 The seeded board is smaller than a live one: a cost that grows with the board is the nightly `soak.py`'s to find.
@@ -221,7 +220,7 @@ viewers that spawn meanwhile wait for its answer. Every judged read, the body ro
 machine, and inflating a crowd's bodies in Locust's one process timed that process, not the server (the 5 MB
 `/api/snapshot` takes about 28 ms of the one thread every viewer shares). `-u` is
 the crowd, `-r` how many join a second, `-t` the run; without `--headless` Locust serves its web UI on port 8089 and
-charts the crowd live. `--what-if FROM TO` is `page_latency.py`'s (`in_progress review` on `ci/seeded_server.py`).
+charts the crowd live.
 
 At the end Locust prints each route's p50 to p100 and `/api/events first snapshot`, connect to the end of the
 stream's first `snapshot` event. The run exits 1, printing an `OVER BUDGET` line per cause, when a route's p95 is over

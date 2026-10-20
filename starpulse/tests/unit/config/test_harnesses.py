@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from starpulse._internal.config.harnesses import HarnessError, load_harnesses
+from starpulse.contracts.api.dto.harnesses import Harnesses
 
 _CLAUDE = """
 tiers = ["fast", "standard", "deep"]
@@ -146,6 +147,12 @@ def test_a_tier_may_run_each_board_effort_at_another_session_effort(tmp_path: Pa
     assert claude.profiles()["@agent-deep-high"] == ("opus", "high")
     served = _load(tmp_path, _CLAUDE_RUN_EFFORTS).as_json()["harnesses"][0]["tiers"]["standard"]
     assert served["run_efforts"] == {"medium": "high", "high": "medium"}
+
+
+def test_the_served_run_efforts_validate_against_the_harnesses_contract(tmp_path: Path) -> None:
+    served = Harnesses.model_validate(_load(tmp_path, _CLAUDE_RUN_EFFORTS).as_json())
+
+    assert served.harnesses[0].tiers["standard"].run_efforts == {"medium": "high", "high": "medium"}
 
 
 def test_a_run_efforts_table_must_cover_exactly_the_tier_efforts(tmp_path: Path) -> None:

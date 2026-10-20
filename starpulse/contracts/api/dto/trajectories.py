@@ -1,4 +1,4 @@
-"""`/api/level/trajectories`: trajectories and forecasts."""
+"""Trajectories and forecasts, the autopilot's ranks read."""
 
 from __future__ import annotations
 
@@ -131,7 +131,7 @@ class Calibration(_Api):
 
 
 class Trajectories(_Api):
-    """`GET /api/level/trajectories`: the paths of the runs that ended in a terminal over a window."""
+    """The trajectory analytics: the paths of the runs that ended in a terminal over a window."""
 
     now: float
     window_s: float

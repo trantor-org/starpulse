@@ -1,8 +1,8 @@
-"""Flow reads benchmark: flow health and the level over a store of 10 thousand, 1 million and 10 million lane changes.
+"""Flow reads benchmark: flow health and the level's trajectories over a store of 10 thousand, 1 million and 10 million lane changes.
 
 The Board's lane changes are recorded at a fixed rate (about 125 a day, 22 tasks arriving a day), so a bigger store is
 a longer history, not a busier week. The store summarises them as `HistoryStore.rebuild_summaries` does at start-up,
-then `health_response`, `level_response` and `trajectories_response` are each asked for the default week 60 times and
+then `health_response` and `trajectories_response` are each asked for the default week 60 times and
 their p95 is printed in wall and in CPU time, with the statements and the rows one read pulls from the database. A read
 that scanned every lane change would grow with the store; one that reads the summaries costs what the week, the
 trailing 12 weeks and the tasks in flight cost, whatever the history. The run ends by checking that the CPU p95 at
@@ -25,7 +25,7 @@ from typing import NamedTuple
 
 from sqlalchemy import event
 
-from starpulse._internal.server.server import health_response, level_response, trajectories_response
+from starpulse._internal.server.server import health_response, trajectories_response
 from starpulse._internal.config.level import Level, Orbit, Terminal
 from starpulse._internal.machines.transitions import board_machine
 from starpulse._internal.eventlog.history import HistoryStore
@@ -136,7 +136,6 @@ def reads(history, now: float) -> dict[str, Callable[[], object]]:
 
     return {
         "health": ask(lambda h: health_response(h, {}, MACHINES, now)),
-        "level": ask(lambda h: level_response(h, {}, LEVEL, MACHINES, now)),
         "trajectories": ask(lambda h: trajectories_response(h, {}, LEVEL, MACHINES, now)),
     }
 

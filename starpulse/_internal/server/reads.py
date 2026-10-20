@@ -222,7 +222,6 @@ class ReadRoutes:
         self._search = search
         self._telemetry = services.telemetry
         self._analytics = services.analytics
-        self._level_config = services.level
         self._clock = clock
         self._contract = services.contract
         self._milestones = board
@@ -255,9 +254,6 @@ class ReadRoutes:
             "/api/analytics/diff": self._titled(diff_response),
             "/api/analytics/missed-loads": self._ranked(missed_loads_response),
             "/api/analytics/trace-clusters": self._ranked(trace_clusters_response),
-            "/api/level": self._level("level_response"),
-            "/api/level/trajectories": self._level("trajectories_response"),
-            "/api/level/what-if": self._level("what_if_response"),
             _MILESTONES: self._milestone_list,
             _DOCS: self._doc_list,
             _RETIRED: self._retired,
@@ -319,12 +315,6 @@ class ReadRoutes:
     def _prometheus(self, request: Request, query: Query) -> Response:
         text = "".join(metric() for metric in self._metrics) + process_gauges()
         return Response(text.encode(), content_type="text/plain; version=0.0.4; charset=utf-8")
-
-    def _level(self, name: str) -> Route:
-        """A level view, which `server` defines; looked up per call so a test may patch it."""
-        return lambda request, query: Response(
-            *getattr(self._views, name)(self._history, query, self._level_config, self._feed.machines, self._clock())
-        )
 
     def _sessions(self, respond: Callable[..., tuple[bytes, int]]) -> Route:
         return lambda request, query: Response(

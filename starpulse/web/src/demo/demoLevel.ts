@@ -1,5 +1,5 @@
 // The level a demo page answers /api/level with: the same shape the server sends, over a week of invented runs, so the
-// orbit card, its gate and its drift badge all render with no server behind the page.
+// orbit card and its drift badge all render with no server behind the page.
 import type { LevelResponse } from "../features/orbit/levelData";
 
 const DAY = 86400;
@@ -30,12 +30,10 @@ const share = (o: Record<string, number>) => {
   return n ? Object.fromEntries(Object.entries(o).map(([k, v]) => [k, v / n])) : {};
 };
 
-/** The server's answer for `hours`, with the refusals and the sun mode the page's address asks for (`?gate=expired|refused`, `?suns=working`, `?pace=`, `?measure=`). */
+/** The server's answer for `hours`, with the sun mode the page's address asks for (`?suns=working`, `?pace=`, `?measure=`). */
 export function demoLevel(now: number, hours: number, page: URLSearchParams): { status: number; body: LevelResponse & { error?: string; history_s: number } } {
   const window_s = hours * 3600;
   const empty = { history_s: HISTORY_S } as LevelResponse & { error?: string; history_s: number };
-  if (page.get("gate") === "expired") return { status: 401, body: { ...empty, error: "sign in" } };
-  if (page.get("gate") === "refused") return { status: 403, body: { ...empty, error: "Your account is not in the platform team." } };
   if (window_s > HISTORY_S) return { status: 400, body: { ...empty, error: `window longer than the ${HISTORY_S / DAY}-day history` } };
 
   const suns = page.get("suns") === "working" ? "working" : "terminal";

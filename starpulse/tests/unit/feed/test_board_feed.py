@@ -244,12 +244,10 @@ def test_a_page_connected_while_the_stream_is_replayed_gets_one_snapshot_once_it
 _REPLAY_DELTAS = (
     "task",
     "move",
-    "insight",
     "pulls",
     "claim",
     "dags",
     "ledgers",
-    "level",
     "autopilot",
 )
 
@@ -295,7 +293,6 @@ def test_the_board_snapshot_has_the_shape_the_page_reads() -> None:
         "flows",
         "graphs",
         "hint",
-        "insights",
         "machinePage",
         "machineStrip",
         "mergePins",

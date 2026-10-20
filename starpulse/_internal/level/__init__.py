@@ -1,1 +1,1 @@
-"""The level: trajectories, analytics and insights derived from the history."""
+"""The level: trajectories and analytics derived from the history."""

@@ -36,11 +36,6 @@
     starpulse runs start prod/nightly
     starpulse watch --machine in-progress --task PROJ-45
     starpulse analytics health --hours 72
-    starpulse analytics level --hours 48
-    starpulse analytics trajectories --hours 48
-    starpulse analytics gates --task PROJ-45
-    starpulse analytics forecast --task PROJ-45
-    starpulse analytics what-if --from review --to in_progress --p 0.1
     starpulse analytics transitions --hours 168
     starpulse analytics cells --hours 720
     starpulse analytics graph --hours 168
@@ -122,11 +117,8 @@ from starpulse._internal.cli.agent_keys import (
     CLAIM_KEYS,
     DIFF_KEYS,
     DOC_KEYS,
-    FORECAST_KEYS,
-    GATE_KEYS,
     GRAPH_KEYS,
     HEALTH_KEYS,
-    LEVEL_KEYS,
     LIFECYCLE_KEYS,
     MILESTONE_KEYS,
     MOVE_KEYS,
@@ -134,9 +126,7 @@ from starpulse._internal.cli.agent_keys import (
     STAGE_KEYS,
     STEP_KEYS,
     TASK_KEYS,
-    TRAJECTORY_KEYS,
     TRANSITION_KEYS,
-    WHAT_IF_KEYS,
 )
 from starpulse._internal.config.config import ConfigError, load
 
@@ -339,16 +329,16 @@ def _health(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, A
     return {key: document[key] for key in HEALTH_KEYS}
 
 
-def _level_read(
+def _window_read(
     args: argparse.Namespace,
     environ: Mapping[str, str],
     route: str,
     keys: Sequence[str],
     params: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """`keys` of what the level route `route` answers over `--hours`, with `params` added to the query.
+    """`keys` of what the analytics route `route` answers over `--hours`, with `params` added to the query.
 
-    A window the server refuses, including one longer than its history, is `refused`; a server with no level is
+    A window the server refuses, including one longer than its history, is `refused`; a server with no telemetry is
     `unavailable`.
     """
     base = agent_wire.server_url(args.server, environ)
@@ -362,92 +352,42 @@ def _level_read(
     return {key: document[key] for key in keys}
 
 
-def _level(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    """The level's flow numbers and orbit shares as `/api/level` answers them."""
-    return _level_read(args, environ, "/api/level", LEVEL_KEYS)
-
-
-def _trajectories(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    """The level's variants, norm, outliers, absorbing chain, betweenness and rework loops as
-    `/api/level/trajectories` answers; each run keeps its path and loop counts, its gates being `gates`'."""
-    document = _level_read(args, environ, "/api/level/trajectories", TRAJECTORY_KEYS)
-    document["runs"] = [
-        {key: run[key] for key in ("source", "task", "path", "back_edges", "sccs", "loops")} for run in document["runs"]
-    ]
-    return document
-
-
-def _gates(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    """Each gate's bypassability and witness for the level, and each run's own dominators and post-dominators.
-
-    `--task` keeps one run's trajectory; the level's summary stays the level's. A task with no run that ended in the
-    window is `not_found`.
-    """
-    document = _level_read(args, environ, "/api/level/trajectories", GATE_KEYS)
-    if args.task:
-        runs = [run for run in document["runs"] if run["task"] == args.task]
-        if not runs:
-            raise agent_wire.CliError("not_found", f"{args.task} has no run that ended inside the window")
-        document["runs"] = runs
-    return document
-
-
-def _forecast(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    """Each run still going with its chance of each terminal and its expected days, and the forecast's calibration.
-
-    `--task` keeps one task's forecast; a task with no run still going is `not_found`.
-    """
-    document = _level_read(args, environ, "/api/level/trajectories", FORECAST_KEYS)
-    if args.task:
-        forecast = [run for run in document["forecast"] if run["task"] == args.task]
-        if not forecast:
-            raise agent_wire.CliError("not_found", f"{args.task} has no run still going")
-        document["forecast"] = forecast
-    return document
-
-
 def _steps(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """One row per model request over `--hours`, as `/api/analytics/steps` answers: the skill in force, the activities
     and keys of the calls it made, and its tokens. A window longer than the telemetry history is `refused`; a server
     that receives no telemetry is `unavailable`."""
-    return _level_read(args, environ, "/api/analytics/steps", STEP_KEYS)
+    return _window_read(args, environ, "/api/analytics/steps", STEP_KEYS)
 
 
 def _transitions(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """The cost of each skill in force within each kind and size over `--hours`, as `/api/analytics/transitions`
     answers. A window longer than the telemetry history is `refused`; a server that receives no telemetry is
     `unavailable`."""
-    return _level_read(args, environ, "/api/analytics/transitions", TRANSITION_KEYS)
+    return _window_read(args, environ, "/api/analytics/transitions", TRANSITION_KEYS)
 
 
 def _cells(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """The median steps per clean completion of each kind and size over `--hours`, as `/api/analytics/cells`
     answers; refusals as `analytics transitions`."""
-    return _level_read(args, environ, "/api/analytics/cells", CELL_KEYS)
+    return _window_read(args, environ, "/api/analytics/cells", CELL_KEYS)
 
 
 def _graph(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """The branching directly-follows graph of each skill's transition within each kind and size over `--hours`, as
     `/api/analytics/graph` answers; refusals as `analytics transitions`."""
-    return _level_read(args, environ, "/api/analytics/graph", GRAPH_KEYS)
+    return _window_read(args, environ, "/api/analytics/graph", GRAPH_KEYS)
 
 
 def _stages(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """The sub-stages mined from the stretches no skill governs over `--hours` against the `--hours` before, as
     `/api/analytics/stages` answers; refusals as `analytics transitions`."""
-    return _level_read(args, environ, "/api/analytics/stages", STAGE_KEYS)
+    return _window_read(args, environ, "/api/analytics/stages", STAGE_KEYS)
 
 
 def _diff(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """Each transition's reference run against its slowest clean run over `--hours`, as `/api/analytics/diff`
     answers; refusals as `analytics transitions`."""
-    return _level_read(args, environ, "/api/analytics/diff", DIFF_KEYS)
-
-
-def _what_if(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    """The change in the chance of the goal and the expected days when one transition has probability `--p`."""
-    params = {"from": args.origin, "to": args.to, "p": args.p}
-    return _level_read(args, environ, "/api/level/what-if", WHAT_IF_KEYS, params)
+    return _window_read(args, environ, "/api/analytics/diff", DIFF_KEYS)
 
 
 def _doctor(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
@@ -1160,7 +1100,7 @@ def _parser() -> argparse.ArgumentParser:
     watch.add_argument("--machine", help="only changes on this machine (`board`, `in-progress`)")
     watch.add_argument("--task", help="only changes to this task (`PROJ-45`)")
     analytics = verbs.add_parser(
-        "analytics", description="flow health and level aggregates", help="flow health and level aggregates"
+        "analytics", description="flow health and session aggregates", help="flow health and session aggregates"
     )
     analytics_verbs = analytics.add_subparsers(dest="verb", required=True, metavar="verb")
     health = leaf(
@@ -1173,79 +1113,6 @@ def _parser() -> argparse.ArgumentParser:
     )
     health.add_argument("--hours", type=float, help="the window to count over, in hours (default: the server's, 168)")
     health.add_argument("--stuck-hours", type=float, help="how long in one state makes a task stuck (default 24)")
-    level = leaf(
-        analytics_verbs,
-        "level",
-        "the level's WIP, throughput, time in state and aging, with each source's terminal and working-state shares",
-        _level,
-        LEVEL_KEYS,
-        (0, 1, 2, 3),
-    )
-    level.add_argument(
-        "--hours", type=float, help="the window to count over, in hours; past the history it is refused (default 168)"
-    )
-    trajectories = leaf(
-        analytics_verbs,
-        "trajectories",
-        "the runs that ended in the window as paths: variants and the norm, ranked outliers, the absorbing chain's "
-        "expected days and chance of the goal, betweenness, the path-time bottleneck, and the rework loops each run took "
-        "with the days they cost",
-        _trajectories,
-        TRAJECTORY_KEYS,
-        (0, 1, 2, 3),
-    )
-    trajectories.add_argument(
-        "--hours",
-        type=float,
-        help="the window the runs ended in, in hours; past the history it is refused (default 168)",
-    )
-    gates = leaf(
-        analytics_verbs,
-        "gates",
-        "each configured gate's bypassable flag and bypass witness path, and each run's own dominators and "
-        "post-dominators of it",
-        _gates,
-        GATE_KEYS,
-        (0, 1, 2, 3, 4),
-    )
-    gates.add_argument(
-        "--hours",
-        type=float,
-        help="the window the runs ended in, in hours; past the history it is refused (default 168)",
-    )
-    gates.add_argument("--task", help="only this task's trajectory (`PROJ-45`); the level's gate summary is unchanged")
-    forecast = leaf(
-        analytics_verbs,
-        "forecast",
-        "each run still going with its chance of each terminal and its expected days to finish, from its state's row "
-        "conditioned on its loops so far with that row's sample size, and the forecast's per-decile calibration",
-        _forecast,
-        FORECAST_KEYS,
-        (0, 1, 2, 3, 4),
-    )
-    forecast.add_argument(
-        "--hours",
-        type=float,
-        help="the window of ended runs the chain is fitted on, in hours; past the history it is refused (default 168)",
-    )
-    forecast.add_argument("--task", help="only this task's forecast (`PROJ-45`); the calibration is unchanged")
-    what_if = leaf(
-        analytics_verbs,
-        "what-if",
-        "the change in the chance of the goal and the expected days from the usual first state when one transition of "
-        "the chain has another probability, its state's other exits keeping their shares of the rest",
-        _what_if,
-        WHAT_IF_KEYS,
-        (0, 1, 2, 3),
-    )
-    what_if.add_argument("--from", dest="origin", required=True, help="the state the transition leaves (`review`)")
-    what_if.add_argument("--to", required=True, help="the state the transition enters (`in_progress`)")
-    what_if.add_argument("--p", type=float, required=True, help="the transition's new probability, from 0 to 1")
-    what_if.add_argument(
-        "--hours",
-        type=float,
-        help="the window of ended runs the chain is fitted on, in hours; past the history it is refused (default 168)",
-    )
     steps = leaf(
         analytics_verbs,
         "steps",

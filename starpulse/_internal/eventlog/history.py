@@ -208,7 +208,7 @@ class SummarisedHealth(HealthHistory, Protocol):
 
 @runtime_checkable
 class LevelHistory(History, Protocol):
-    """A history that can also answer `/api/level`: each task's trajectory on a machine, by its reporting source."""
+    """A history that can also answer the trajectory analytics: each task's trajectory on a machine, by its reporting source."""
 
     def level_runs(self, flow: str) -> list[Run]: ...
 

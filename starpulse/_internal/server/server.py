@@ -19,8 +19,7 @@ GET /api/events    server-sent events: a `snapshot` on connect ({graphs, dags, p
                    a `task` delta ({id, agent, settled}) per Board task change, a `move` delta ({flow, id, agent}) per task a machine placed (the machine:events replay at start sends none: a `snapshot` follows it), a
                    `dags` delta ({dags, pools, error}) per runs change, a `pulls` delta ({pulls}) per
                    change to a task's pull requests and a `claim` delta ({task, reason, at}) per
-                   refused agent claim the board adapter reports, an `insight` delta ({id, finding}) per finding
-                   an engine posts or retracts (`finding` null), with a `: ping` comment every 15 s. A `build` event
+                   refused agent claim the board adapter reports, with a `: ping` comment every 15 s. A `build` event
                    ({id}: the first 12 hex digits of the SHA-256 of `static/index.html`) follows the `snapshot` on every
                    connect, so a page can tell it is not running the server's build; `restarting` ({at}) goes to every
                    open stream on `SIGTERM`, before the process exits.
@@ -153,38 +152,6 @@ GET /api/analytics/cost-to-go[?hours=N]
                    state, n, cost_to_go}` for a state of the machine or `[start]`, `n` the times the state was seen
                    left in the clean completed runs; every state is listed whatever its `n`. Refusals as
                    `/api/analytics/steps`
-GET /api/level[?hours=N]
-                   the level's flow numbers on the Backlog flow metric definitions (`level_metrics`), over the
-                   last `hours`, default 168: `wip`, `throughput`, `time_in_state`, `aging`, and the orbit's
-                   `terminals` and `working` totals, plus per source (the instance an event id names) its
-                   `ended` runs with `terminal_share` and its `dwell` with `time_share`, each set summing to 1, and
-                   whether it is `shared` (an instance named it). `level` echoes the config the orbit card draws
-                   (title, subject, runs, gates, terminals with roles, orbit, facets, activity) and `arrivals` lists
-                   each entry into a terminal inside the window, `{source, state, at}` oldest first, for the comets.
-                   A `hours` that is no positive number is 400, as is one longer than the history, with
-                   `history_s` its length; a server serves no level, so it is 404, and a
-                   history that does not keep runs is 501. The level, its trajectories and its what-if keep each
-                   answer for the same `hours` (and, for what-if, `from`, `to` and `p`) for 5 seconds, until a lane or
-                   machine event is recorded or the summaries are rebuilt, so `now` is the first request's of those
-                   seconds; at most 32 answers are kept
-GET /api/level/trajectories[?hours=N]
-                   the trajectory analytics (`trajectories.trajectory_analytics`) of the level's runs that ended in a
-                   terminal in the last `hours`, default 168: `variants` and the `norm`, `outliers` ranked by
-                   Levenshtein distance from it, the absorbing `chain` (expected days and `p_goal` per state),
-                   `betweenness` and the path-time `bottleneck`, the rework `loops` (each back-edge with its runs,
-                   trips and days), per configured gate whether it is `bypassable` with the bypassing run's
-                   `witness` path, and per run its `back_edges`, `sccs`, `loops` and own `gates` with their
-                   `dominators` and `post_dominators`, computed on that run's graph and never the union of all
-                   runs'; the `forecast` of each run still going (its chance of each terminal and of the goal and
-                   its expected days, from its state's row conditioned on its loops so far, with the row's sample
-                   size `n` and whether it is `pooled`), and the `calibration` of that forecast per decile on the
-                   latest fifth of the ended runs. The window and its refusals are `/api/level`'s
-GET /api/level/what-if?from=STATE&to=STATE&p=P[&hours=N]
-                   the chain of `/api/level/trajectories` with `from -> to` at probability `p`, `from`'s other exits
-                   keeping their shares of the rest (`trajectories.what_if`): `p_goal` and `expected_days` from the
-                   usual first state `start`, each `{before, after, change}`, and the changed `chain`. 400 for a
-                   missing or unparsed parameter, a state no ended run left, a `p` outside 0 to 1, no other exit,
-                   or a chain that never finishes; the window and its other refusals are `/api/level`'s
 GET /api/harnesses  {tiers, harnesses} from the config's `harnesses_file`; both empty with no file
 POST /api/machine-events
                    post machine events and runs as CloudEvents 1.0 JSON (`application/cloudevents+json`, or a JSON array
@@ -195,26 +162,12 @@ POST /api/machine-events
                    contract refuses, 401 for a missing or wrong token, 403 for another producer's source, machine or
                    actor, 413 over the limit, 503 when the log refuses it, 404 when no producer is declared. A batch is
                    checked whole, and a refusal writes nothing. A GET answers 405
-POST /api/insights
-                   the insights contract (this server answers 404): an external engine posts one `Finding` {id, engine {name, version}, scope {team, machine,
-                   state, task}, severity (info, warn, act), text (at most 280 characters), evidence [{label, url or
-                   query}], created_at[, expires_at]} with `Authorization: Bearer <engine token>`, which no viewer's
-                   session or source's token replaces. 201 {id, replaced: false}; 200 {id, replaced: true} when a
-                   re-post of the id replaced a finding that was not retracted; 400 naming the field to fix, and a
-                   `scope` that names a person is one, since the contract has no person field; 413 over 64 KiB; 503
-                   when the history store refuses it. A refusal writes and sends nothing. The finding is kept in the
-                   history's `starpulse_insights` table, and `/api/events` sends an `insight` event {id, finding}, whose
-                   snapshot lists the live `insights`. A GET answers 405
-DELETE /api/insights/<id>
-                   retract a finding with the engine token: 200 {id, retracted: true}, and an `insight` event {id,
-                   finding: null}; 404 for an id that is unknown or already retracted. The row stays in the history
 """
 
 from __future__ import annotations
 
 import argparse
 import dataclasses
-import functools
 import logging
 import os
 import shutil
@@ -239,12 +192,12 @@ from starpulse._internal.config.pins import GitHub, LiveBuild, running_commit
 from starpulse._internal.eventlog import events as machine_events
 from starpulse._internal.eventlog import lane_events
 from starpulse._internal.eventlog.conformance_monitor import Conformance
-from starpulse._internal.eventlog.level_metrics import RunWindow, WindowPastHistory, level_metrics
+from starpulse._internal.eventlog.level_metrics import RunWindow, WindowPastHistory
 from starpulse._internal.feed.claim_refusals import CLAIMS_STREAM
 from starpulse._internal.feed.history_window import SETTINGS_FILE, HistoryWindow
 from starpulse._internal.harnesses.session_start import starter
 from starpulse._internal.harnesses.telemetry import TelemetryLog
-from starpulse._internal.level.trajectories import WhatIfRefused, trajectory_analytics, what_if
+from starpulse._internal.level.trajectories import trajectory_analytics
 from starpulse._internal.pulls.delivery import (
     Projected,
     follow_saves,
@@ -266,7 +219,6 @@ from starpulse._internal.server.closure import ENTRIES, Reader
 from starpulse._internal.server.control import control_file
 from starpulse._internal.server.encoding import encode, event
 from starpulse._internal.server.hold import LISTEN_FD_ENV, STATIC_ENV
-from starpulse._internal.server.live_push import wire_level
 from starpulse._internal.server.page_server import BACKLOG, DRAIN_S, PageServer
 from starpulse._internal.server.responses import _HEALTH_HOURS, _error, _hours, health_response, history_response  # noqa: F401 - the read routes stay importable from here
 from starpulse._internal.server.services import Services
@@ -299,56 +251,13 @@ if TYPE_CHECKING:  # annotation only: a runtime import would put the autopilot i
     from starpulse._internal.pulls.pulls import PullStore
 
 
-def level_response(
-    history: History, query: dict[str, list[str]], level: Level | None, machines: Mapping[str, dict], now: float
-) -> tuple[bytes, int]:
-    """The body and status for `/api/level`: the level's flow numbers over the last `hours` as of `now`.
-
-    A window longer than the history is 400 with the history's length (`history_s`), never answered with its missing
-    days as zero; a server with no level is 404."""
-    return _level_view("level", history, query, level, machines, now, level_metrics)
-
-
 def trajectories_response(
-    history: History, query: dict[str, list[str]], level: Level | None, machines: Mapping[str, dict], now: float
+    history: History, query: dict[str, list[str]], level: Level, machines: Mapping[str, dict], now: float
 ) -> tuple[bytes, int]:
-    """The body and status for `/api/level/trajectories`: the trajectory analytics of the runs that ended in the last
-    `hours` as of `now`, refused as `level_response` refuses a window."""
-    return _level_view("trajectories", history, query, level, machines, now, trajectory_analytics)
-
-
-def what_if_response(
-    history: History, query: dict[str, list[str]], level: Level | None, machines: Mapping[str, dict], now: float
-) -> tuple[bytes, int]:
-    """The body and status for `/api/level/what-if`: the trajectories' chain with `from -> to` at probability `p`,
-    refused as `level_response` refuses a window and with 400 for a what-if the chain cannot answer."""
-    origin, to, p = (query.get(key, [""])[0] for key in ("from", "to", "p"))
-    try:
-        chance = float(p)
-    except ValueError:
-        chance = None
-    if not origin or not to or chance is None:
-        return _error("what-if needs ?from=STATE&to=STATE&p=P"), 400
-    view = functools.partial(what_if, origin=origin, to=to, p=chance)
-    try:
-        return _level_view("what_if", history, query, level, machines, now, view)
-    except WhatIfRefused as exc:
-        return _error(str(exc)), 400
-
-
-def _level_view(
-    kind: str,
-    history: History,
-    query: dict[str, list[str]],
-    level: Level | None,
-    machines: Mapping[str, dict],
-    now: float,
-    view: Callable[..., dict[str, Any]],
-) -> tuple[bytes, int]:
+    """The body and status of the trajectory analytics of the runs that ended in the last `hours` as of `now`, which
+    the autopilot ranks tasks by; refused when `hours` is no positive number."""
     from starpulse._internal.eventlog.history import LevelHistory, SummarisedLevel  # noqa: PLC0415 - the database stack loads when a store does
 
-    if level is None:
-        return _error("this server has no level"), 404
     window = _hours(query, "hours", _HEALTH_HOURS)
     if window is None:
         return _error("hours must be a positive number"), 400
@@ -363,8 +272,8 @@ def _level_view(
                 held = RunWindow(history.level_runs(level.machine))
             return (
                 encode(
-                    kind,
-                    view(
+                    "trajectories",
+                    trajectory_analytics(
                         level,
                         machines[level.machine],
                         held.runs,
@@ -377,13 +286,13 @@ def _level_view(
                 200,
             )
         except WindowPastHistory as exc:
-            return encode(kind, {"error": str(exc), "history_s": exc.history_s}), 400
+            return encode("trajectories", {"error": str(exc), "history_s": exc.history_s}), 400
 
     if not isinstance(history, SummarisedLevel):
         return answer()
     # the query's own params, so a junk param cannot fill the memo
     params = tuple(tuple(query.get(name, ())) for name in ("hours", "from", "to", "p"))
-    return history.level_answer(level, (kind, params), now=now, compute=answer)
+    return history.level_answer(level, ("trajectories", params), now=now, compute=answer)
 
 
 def _config(parser: argparse.ArgumentParser, path: Path | None) -> Config:

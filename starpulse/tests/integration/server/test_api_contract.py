@@ -12,7 +12,6 @@ from sqlalchemy import create_engine
 
 from starpulse._internal.autopilot.runtime import build
 from starpulse._internal.config.autopilot import Autopilot
-from starpulse._internal.config.level import Level, Orbit, Terminal
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import HistoryStore
 from starpulse._internal.feed.board_feed import BoardFeed
@@ -45,11 +44,6 @@ ROUTES = (
     "/api/doctor",
     "/api/task/T-1",
     "/api/search?q=T-1",
-    "/api/level?hours=48",
-    "/api/level/trajectories?hours=48",
-)
-LEVEL = Level(
-    "board", "done", (Terminal("done", "goal"),), gates=("review",), orbit=Orbit("working", ("in_progress", "review"))
 )
 
 
@@ -91,7 +85,6 @@ def server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[PageServer]:
         bare_board(read=lambda t: {"title": t}),
         history=store,
         clock=lambda: NOW,
-        level=LEVEL,
         autopilot=runtime,
         telemetry=telemetry,
         search=search,

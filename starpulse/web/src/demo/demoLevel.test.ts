@@ -57,9 +57,9 @@ describe("the demo's level", () => {
     expect(w.level.terminals.length).toBeGreaterThan(1);
   });
 
-  it("refuses as the sign-in gate does when the address asks it to", () => {
-    expect(ask("gate=expired")).toMatchObject({ status: 401 });
-    expect(ask("gate=refused")).toMatchObject({ status: 403, body: { error: expect.stringContaining("team") } });
+  it("has no sign-in gate to ask for: `?gate=` is ignored", () => {
+    expect(ask("gate=expired")).toMatchObject({ status: 200 });
+    expect(ask("gate=refused")).toMatchObject({ status: 200 });
   });
 
   it("refuses a window longer than its history with the history's length, as the server does", () => {

@@ -6,12 +6,10 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from starpulse.contracts.adapters import Finding
 from starpulse.contracts.api.dto.errors import ApiError, SkillRefusal, StaleEdit, WindowTooLong
 from starpulse.contracts.api.dto.autopilot import AutopilotStatus
 from starpulse.contracts.api.dto.harnesses import Harnesses, WindowState
 from starpulse.contracts.api.dto.health import Health, MachineHistory, Sessions, SessionSteps
-from starpulse.contracts.api.dto.level import Level
 from starpulse.contracts.api.dto.milestones import Docs, DocShown, Milestones, MilestoneShown, RetiredTasks, TaskRecord
 from starpulse.contracts.api.dto.missed import MissedLoads, TraceClusters
 from starpulse.contracts.api.dto.pages import DonePage, LaneHistory, LedgerChange, LedgerPage, Machines
@@ -53,8 +51,6 @@ from starpulse.contracts.api.dto.results import (
     DocEdited,
     DocRestored,
     Edited,
-    InsightPosted,
-    InsightRetracted,
     Judged,
     MilestoneArchived,
     MilestoneCreated,
@@ -73,7 +69,6 @@ from starpulse.contracts.api.dto.snapshot import (
     BuildEvent,
     ClaimDelta,
     DagsDelta,
-    InsightDelta,
     LedgersDelta,
     MoveDelta,
     PullsDelta,
@@ -83,7 +78,6 @@ from starpulse.contracts.api.dto.snapshot import (
 )
 from starpulse.contracts.api.dto.trajectories import Trajectories
 from starpulse.contracts.api.dto.transitions import Cells, CostToGo, FlowGraph, RunDiffs, SubStages, Transitions
-from starpulse.contracts.api.dto.what_if import WhatIf
 
 #: Each `/api/events` event name and the model of its `data`.
 EVENTS: dict[str, type[BaseModel]] = {
@@ -96,10 +90,8 @@ EVENTS: dict[str, type[BaseModel]] = {
     "pulls": PullsDelta,
     "claim": ClaimDelta,
     "ledgers": LedgersDelta,
-    "insight": InsightDelta,
 }
 EVENTS["autopilot"] = AutopilotStatus
-EVENTS["level"] = Level
 
 #: Each GET route's `200` body, by path; `/api/task/<id>` and `/api/ledger/<event>` by their prefix.
 RESPONSES: dict[str, Any] = {
@@ -117,9 +109,6 @@ RESPONSES: dict[str, Any] = {
     "/api/analytics/cost-to-go": CostToGo,
     "/api/analytics/missed-loads": MissedLoads,
     "/api/analytics/trace-clusters": TraceClusters,
-    "/api/level": Level,
-    "/api/level/trajectories": Trajectories,
-    "/api/level/what-if": WhatIf,
     "/api/harnesses": Harnesses,
     "/api/history-window": WindowState,
     "/api/doctor": ContractReport,
@@ -160,7 +149,6 @@ REQUESTS: dict[str, type[BaseModel]] = {
     "/api/docs/restore": DocRestoreRequest,
     "/api/history-window": WindowRequest,
     "/api/autopilot": AutopilotRequest,
-    "/api/insights": Finding,
 }
 
 #: Every body a route may send, by route: what `encode` validates a body against.
@@ -185,9 +173,7 @@ BODIES: dict[str, Any] = {
     "cost_to_go": CostToGo | ApiError | WindowTooLong,
     "missed_loads": MissedLoads | ApiError | WindowTooLong,
     "trace_clusters": TraceClusters | ApiError | WindowTooLong,
-    "level": Level | ApiError | WindowTooLong,
     "trajectories": Trajectories | ApiError | WindowTooLong,
-    "what_if": WhatIf | ApiError | WindowTooLong,
     "harnesses": Harnesses,
     "window": WindowState | ApiError,
     "autopilot": AutopilotStatus | ApiError,
@@ -220,5 +206,4 @@ BODIES: dict[str, Any] = {
     "doc_restore": DocRestored | SkillRefusal | ApiError,
     "run": RunStarted | ApiError,
     "ingest": Accepted | ApiError,
-    "insight": InsightPosted | InsightRetracted | ApiError,
 }

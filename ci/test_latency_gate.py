@@ -52,12 +52,6 @@ def test_the_seeded_server_holds_a_kanban_a_task_record_and_its_history(seeded: 
     assert len(_get(seeded, f"/api/history?task={task}")[1]["path"]) >= 1
 
 
-def test_the_seeded_server_answers_the_level_routes_a_hubless_preview_cannot(seeded: PageServer) -> None:
-    for route in ("/api/level", "/api/level/trajectories"):
-        assert _get(seeded, f"{route}?hours=168")[0] == 200, route
-    assert _get(seeded, "/api/level/what-if?hours=168&from=in_progress&to=review&p=0.5")[0] == 200
-
-
 def test_the_seeded_server_answers_the_autopilot_milestone_and_doc_routes_with_records(
     seeded: PageServer,
 ) -> None:

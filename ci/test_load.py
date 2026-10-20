@@ -42,8 +42,8 @@ def test_a_stream_cut_mid_event_yields_nothing_for_it():
 
 
 def test_a_route_over_the_budget_fails_the_run():
-    p95s = {"/api/snapshot": 12.0, "/api/level": 80.0, "Aggregated": 60.0}
-    assert load.over_budget(p95s, {}) == ["/api/level p95 80 ms > 50 ms"]
+    p95s = {"/api/snapshot": 12.0, "/api/analytics/health": 80.0, "Aggregated": 60.0}
+    assert load.over_budget(p95s, {}) == ["/api/analytics/health p95 80 ms > 50 ms"]
 
 
 def test_a_failed_request_fails_the_run_even_when_fast():

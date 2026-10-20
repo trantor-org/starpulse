@@ -31,11 +31,6 @@ starpulse runs list                              # each workflow as <instance>/<
 starpulse runs start prod/nightly                # start a run-safe workflow through Run now; its run id
 starpulse watch --task PROJ-45                   # one JSON line per change, until you stop it: wait without polling
 starpulse analytics health --hours 72            # dwell and WIP per state, throughput and stuck tasks, with gap warnings
-starpulse analytics level --hours 48             # the level's WIP, throughput, aging and per-source orbit shares
-starpulse analytics trajectories --hours 48      # variants, outliers, expected days and chance of the goal, betweenness
-starpulse analytics gates --task PROJ-45         # which gates a run can bypass, with the path that skips each
-starpulse analytics forecast --task PROJ-45      # where a run still going is likely to end, and in how many days
-starpulse analytics what-if --from review --to in_progress --p 0.1  # the change in the goal and days
 starpulse analytics steps --hours 24             # one row per model request: skill in force, activities, keys, tokens
 starpulse analytics transitions --hours 168      # per kind x size x skill: steps, wasted-step rate, agent seconds, peak context
 starpulse analytics cells --hours 720            # per kind x size: median steps per clean completion on a latest-fifth holdout
@@ -67,7 +62,7 @@ lists exactly the verbs there are.
 
 | Verb | Arguments | Document |
 |---|---|---|
-| `snapshot` | | the server's full snapshot (`/api/snapshot?view=full`, [Cold done tasks](serving.md#cold-done-tasks)): `graphs`, `flows`, `dags`, `pools`, `pulls`, `claims`, `insights`, `settled`, ...; each `flows` entry but the Board's also carries `ties` (`{kind, machine, state, count, dag, when}`: `declared`, `observed` or `dag`), `parent`, `depth`, `chain`, `nested`, `last` and `stuck` (`{machine, state, since}`, a task idle over 2 h), rolled up from the machines nested below it; `machinePage` and `machineStrip` page and count the machines entered from the In Progress one ([Machine rows](serving.md#machine-rows)) |
+| `snapshot` | | the server's full snapshot (`/api/snapshot?view=full`, [Cold done tasks](serving.md#cold-done-tasks)): `graphs`, `flows`, `dags`, `pools`, `pulls`, `claims`, `settled`, ...; each `flows` entry but the Board's also carries `ties` (`{kind, machine, state, count, dag, when}`: `declared`, `observed` or `dag`), `parent`, `depth`, `chain`, `nested`, `last` and `stuck` (`{machine, state, since}`, a task idle over 2 h), rolled up from the machines nested below it; `machinePage` and `machineStrip` page and count the machines entered from the In Progress one ([Machine rows](serving.md#machine-rows)) |
 | `board` | `--state`, `--milestone`, `--label`, `--profile`, `--assignee`, `--type` | `columns`: each `{state, name, tasks}`; a task is `{id, title, lane, profile, assignee, milestone, type, labels, dependencies, waiting_on, criteria, pause_reason, prs, moves}`, `profile` the agent profile it is routed to and `assignee` the session that last claimed it (empty when none has), `criteria` each acceptance criterion as `{text, checked}`, `pause_reason` why a `needs_attention` task waits for a person (empty otherwise), `--profile` keeping only tasks routed to that profile, `--assignee` only that session's tasks (`--holder` and a `--assignee` value starting with `@` are the one-release aliases of the old keys) and `--type` only tasks of that type; `--milestone` also lists the milestone's done tasks past their hot day (`/api/done` cards: no `dependencies`, `criteria`, `prs` or `moves`) |
 | `search` | `QUERY...`, `--limit`, `--label`, `--finished-within-days` | `query` and `hits`: each task holding every word of the query as `{task, title, lane, score, snippet}`, best match first, at most `--limit` (1 to 100, default 10); each `--label` keeps only the tasks carrying it, and `--finished-within-days N` drops a task that finished more than `N` days ago; a blank query, a limit out of range or a window that is not a positive integer exits 1, and a server that keeps no index exits 3 |
 | `task show` | `TASK` | a task as above, with its `description`, in which each bare `TASK-N` is a link to the task's card on the Board and each `#N` (three digits or more) a link to the task's pull request of that number, while code spans, existing links and bare URLs stay as written; a task done over 24 h ago is read whole from its board record; a completed or archived task has only its `id` and where it settled as `lane` |
@@ -108,11 +103,6 @@ lists exactly the verbs there are.
 | `runs start` | `WORKFLOW` | `workflow` and `run_id`: starts `<instance>/<workflow>` through the server's Run now path, so only a workflow in the instance's `run_safe` starts and only from the loopback or private network, as JSON with no foreign `Origin` (exit 1 when refused); an instance with no start exits 3, a workflow outside `run_safe` exits 4 |
 | `watch` | `--machine`, `--task` | one line per change after the connect snapshot, `{event, data}` with `event` `task`, `move`, `pulls`, `claim` or `dags` and `data` the server's delta; `--machine` keeps that machine's changes (`board` takes `task`, `pulls` and `claim`), `--task` that task's, and either drops `dags`; an unknown machine exits 4, the server ending the stream exits 3, and an interrupt exits 0 |
 | `analytics health` | `--hours`, `--stuck-hours` | `now`, `window_s`, `stuck_after_s`, `states`, `throughput`, `stuck` and `warnings`, below |
-| `analytics level` | `--hours` | `now`, `window_s`, `history_s`, `machine`, `goal`, `wip`, `throughput`, `time_in_state`, `aging`, `orbit` and `sources`, below; a window longer than the history exits 1 and a server with no level exits 3 |
-| `analytics trajectories` | `--hours` | `now`, `window_s`, `history_s`, `machine`, `goal`, `ended`, `variants`, `norm`, `outliers`, `chain`, `betweenness`, `bottleneck`, `loops` and `runs` (each `{source, task, path, back_edges, sccs, loops}`), below; refusals as `analytics level` |
-| `analytics gates` | `--hours`, `--task` | `now`, `window_s`, `history_s`, `machine`, `goal`, `ended`, `gates` and `runs`, below; `--task` keeps one run and exits 4 when it ended nowhere in the window; refusals as `analytics level` |
-| `analytics forecast` | `--hours`, `--task` | `now`, `window_s`, `history_s`, `machine`, `goal`, `ended`, `forecast` and `calibration`, below; `--task` keeps one run and exits 4 when it has no run still going; refusals as `analytics level` |
-| `analytics what-if` | `--from`, `--to`, `--p`, `--hours` | `now`, `window_s`, `history_s`, `machine`, `goal`, `ended`, `from`, `to`, `p`, `was`, `n`, `start`, `p_goal`, `expected_days` and `chain`, below; a what-if the chain cannot answer exits 1; refusals as `analytics level` |
 | `analytics steps` | `--hours` | `now`, `window_s` and `steps`, each `{harness, session, task, at, model, origin, skill, activities, keys, tokens, captured}`, below; a window that is no positive number or is longer than the telemetry history exits 1 and a server that receives no telemetry exits 3 |
 | `analytics transitions` | `--hours` | `now`, `window_s` and `transitions`, each `{kind, size, skill, tasks, steps, side_steps, wasted_steps, wasted_rate, agent_s, peak_context}`, below; refusals as `analytics steps` |
 | `analytics cells` | `--hours` | `now`, `window_s` and `cells`, each `{kind, size, n, completions, clean_rate, holdout, median_steps, median_operator_prompts, median_steps_before_edit}`, below; refusals as `analytics steps` |
@@ -169,70 +159,8 @@ counted. The endpoint is 400 for an `hours` or `stuck_hours` that is no positive
 does not list every task's lane changes through `lane_rows(since=None)` and `gaps()`; `since`
 is an epoch the Ledger passes so it reads only its last 24 hours, and None asks for every change.
 
-`analytics level` reads `GET /api/level[?hours=N]` (a window of 168 hours by default), served by a server
-whose config has a `[level]` table. It counts the level's machine on the Backlog flow metric definitions, merged across
-the sources, a source being the prefix of an event id (`<source>/<id>`; `unattributed` when
-none). `wip` is the runs now in a working state (`orbit.working`, else every state that is neither initial nor a
-terminal), `throughput` the entries into the goal in the window (a run that settled from the goal, into a final state
-no terminal names, is still in it, so seeing it in the goal again is no second entry), `time_in_state` each non-final
-state's stays clipped to the window, and `aging` each working run's age since its first working step, where its cycle
-time starts, against `threshold_s`, the
-85th-percentile cycle time of the trailing 12 weeks (null with no completion to measure). `orbit` totals the ended runs
-per terminal and the working time per working state, and each of `sources` carries its `ended` runs with
-`terminal_share`, its `dwell` per working state with `time_share`; a set of shares sums to 1, and is empty, not zero,
-for a source with nothing ended or worked. `level` echoes the config the page draws from (`title`, `subject`, `runs`,
-`gates`, `terminals` with their roles, `orbit.suns` and `orbit.working`, `facets`, `activity.measure` and
-`activity.pace`), each source's `shared` is whether it has a Board of its own (false for `unattributed`), and
-`arrivals` lists each run's entry into a terminal inside the window as `{source, state, at}` (epoch seconds, oldest
-first), the comets the page replays. History begins at the first event the server holds: a window longer than it is
-refused (exit 1, the error naming the history's hours, `history_s` in the HTTP body), never padded with zero days. A
-server with no level is 404 (exit 3).
-
-`analytics trajectories` and `analytics gates` read `GET /api/level/trajectories[?hours=N]`, with the window, history and
-refusals of `analytics level`. They cover the runs of the level's machine that ended in a terminal inside the window,
-each a whole path with its self-loops collapsed. `variants` counts each distinct path (`{path, count, share}`, most
-common first) and `norm` is the most common; `outliers` ranks the other runs by Levenshtein distance from the norm,
-furthest first. `chain` is an absorbing Markov chain over the observed transitions, terminals absorbing: per state
-`expected_days` to finish and `p_goal`, solved from the fundamental matrix N = (I - Q)^-1 with N times the mean stay
-and N times the chance of stepping into the goal. `betweenness` is Brandes centrality per state on the transition
-graph and `bottleneck` the state holding the most path time, `{state, path_days}`. `loops` is the rework: each back-edge
-(`from`, `to`) some run took, with the `runs` that took it and the `trips` and `days` summed over them, the longest first. A
-run's own `back_edges` and `sccs` count the back-edges of a depth-first search from its first state and the strongly
-connected components of two states or more in the graph of its own steps; its `loops` list each back-edge with its
-`trips` and the `days` they took, from the target's previous visit to each return; the step that first enters a state is no
-trip, so a back-edge no run went round again is not listed. They come from each run's own graph and
-never the union of every run's, so a cycle only two runs together close is not reported. `gates` has one entry per
-configured gate over the runs that reached the goal: how many `crossed` it, how many had to cross it (`mandatory`),
-`bypassed`, `bypassable`, and a `witness` `{task, path}`, the shortest path a bypassing run could have taken to the
-goal without the gate. Dominators are computed per run, on the graph of that run's own steps (`runs`: each
-`{source, task, path, reached_goal, gates}` with each gate's `crossed`, `mandatory`, `dominators` (the states every
-path from the run's first state to the gate crosses), `post_dominators` (every path from the gate to the goal) and
-`witness`), never on the union of every run's graph, which holds paths no run took. A gate a run visited only on a
-detour is bypassable. A trajectory joined with its agent sessions is not computed here: the history keeps task steps,
-not sessions.
-
-`analytics forecast` reads the same route's `forecast` and `calibration`. `forecast` is each run still going (its last
-state neither a terminal nor final), by task: `{source, task, state, loops, since, p, p_goal, expected_days, n,
-pooled}`. `loops` is the rework loops it has gone round so far, the trips of the back-edges of its steps up to now, and
-the chain the forecast reads is fitted on the ended runs with each state split by that count, two and more sharing a row,
-so a third review round is not read as the first. `p` is the chance of ending in each terminal and `expected_days` the
-days to finish, from the row's N = (I - Q)^-1; `n` is how many times the ended runs left that row. A row left fewer than
-5 times is `pooled`: the state's own row, whatever the loop count, answers; a state no ended run left has null chances
-and `n` 0. It is a probability with its sample size, never a status. `calibration` scores the forecast: the latest fifth
-of the ended runs by when they ended are held out (`held_out`, the rest being `fit`), each of their steps before the end
-is forecast from a chain fitted on the others, and `deciles` bins those `predictions` by forecast chance of the goal,
-each `{low, high, n, runs, predicted, observed}` with `predicted` the mean forecast and `observed` the share of the
-goal reached; `calibrated` is whether every decile holding a forecast is within 10 points, null with none.
-
-`analytics what-if` reads `GET /api/level/what-if?from=&to=&p=[&hours=N]`: the chain of the runs that ended in the
-window with `from -> to` at probability `p` (`was` the observed one over `n` exits), `from`'s other exits keeping their
-shares of the rest. `p_goal` and `expected_days` are `{before, after, change}` from `start`, the state most ended runs
-began in, and `chain` is the changed chain per state. A state no ended run left (a terminal `to` needs none), `to` the
-same as `from`, a `p` outside 0 to 1, a transition that is its state's only exit, or a chain that would never finish is
-400 (exit 1).
-
 `analytics steps` reads `GET /api/analytics/steps[?hours=N]` (168 hours by default, 400 with `history_s` for a window
-longer than the telemetry history, as `analytics level` is): one row per model request of the
+longer than the telemetry history): one row per model request of the
 window, oldest first, that [Connect sources](sources.md#read-each-step-of-a-session) defines. `skill` is the skill
 most recently loaded in the session, `none` before any load; `activities` and `keys` hold one entry per tool call
 the step made, a key being the command the server's redactor left, else the tool's name; `tokens` is

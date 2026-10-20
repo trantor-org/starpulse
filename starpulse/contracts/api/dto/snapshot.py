@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pydantic import Field
 
-from starpulse.contracts.adapters import Finding, Move, Pool
+from starpulse.contracts.adapters import Move, Pool
 from starpulse.contracts.api._base import _Api
 from starpulse.contracts.api.dto.cue import Cue, Pull
 from starpulse.contracts.api.dto.dag import DagBody, Domain
@@ -78,9 +78,6 @@ class Snapshot(_Api):
     mergePins: list[LedgerRow] | None = Field(
         default=None, description="The pinned merge rows of the last day that the newest page leaves out."
     )
-    insights: list[Finding] | None = Field(
-        default=None, description="The findings an engine posted that are still live."
-    )
     capabilities: Capabilities | None = Field(
         default=None,
         description="What the board writes: the task modal draws Edit and Archive only when its board does.",
@@ -148,13 +145,6 @@ class LedgersDelta(_Api):
 
     mergeStrip: MergeStrip | None
     mergePins: list[LedgerRow]
-
-
-class InsightDelta(_Api):
-    """A finding drawn, or retracted when `finding` is null."""
-
-    id: str
-    finding: Finding | None
 
 
 class BuildEvent(_Api):

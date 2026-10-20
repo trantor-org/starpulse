@@ -1,5 +1,4 @@
-// The level above the Board, drawn as the approved orbit card: its own canvas (`orbitDraw`), the sign-in gate when the level
-// refuses the session, and the drift badge over it.
+// The level above the Board, drawn as the approved orbit card: its own canvas (`orbitDraw`) and the drift badge over it.
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Drift } from "./orbit";
 import { layoutOrbit } from "./orbit";
@@ -11,17 +10,6 @@ import { fitLevel, toWorld, wheelFactor, zoomAbout, type View } from "../../rend
 import { isKeptRevealed, useViewActive } from "../../shared/Kept";
 
 const DAY = 86400;
-
-/** What the level answers an expired or refused session: the sign-in link and, for a refusal, why. */
-export function Gate({ why, reason }: { why: "expired" | "refused"; reason?: string }) {
-  return (
-    <div className="og-gate" role="alert">
-      <h2>{why === "expired" ? "Your session ended" : "This account can't read the level"}</h2>
-      <p>{why === "expired" ? "Sign in again to see how your runs flow." : reason || "The level is limited to the people its team names."}</p>
-      <a className="og-btn" href="/auth/login">{why === "expired" ? "Sign in" : "Sign in as someone else"}</a>
-    </div>
-  );
-}
 
 /** The sources whose runs report states the level's config does not list, or stopped reporting ones it does. */
 export function DriftBadge({ sources }: { sources: { name: string; drift?: Drift }[] }) {
@@ -39,10 +27,9 @@ export function DriftBadge({ sources }: { sources: { name: string; drift?: Drift
   );
 }
 
-/** The level above the Board, or what stands in its place: a note while it loads, the gate, or the failure. */
+/** The level above the Board, or what stands in its place: a note while it loads, or the failure. */
 export function OrbitCard({ state, retry, motion, names = {} }: { state: LevelState; retry: () => void; motion: boolean; names?: Record<string, string> }) {
-  if (state.kind === "gate") return <section id="og"><Gate why={state.why} reason={state.reason} /></section>;
-  if (state.kind === "error") return <section id="og"><div className="og-gate"><h2>The level isn't available</h2><p>{state.message}</p><button className="og-btn" onClick={retry}>Retry</button></div></section>;
+  if (state.kind === "error") return <section id="og"><div className="og-error"><h2>The level isn't available</h2><p>{state.message}</p><button className="og-btn" onClick={retry}>Retry</button></div></section>;
   if (state.kind !== "ok") return <section id="og"><p className="og-none centre">{state.kind === "loading" ? "Reading the level…" : "This server has no level."}</p></section>;
   return <section id="og"><Orbit level={state.level} motion={motion} names={names} /></section>;
 }

@@ -9,7 +9,7 @@ from urllib.parse import unquote
 
 from starpulse._internal.board.seam import OPERATOR, Written
 from starpulse._internal.pulls.pull_refresh import MAX_BODY as MAX_REFRESH_BODY
-from starpulse._internal.runs.ingest import MAX_BATCH_BODY, MAX_BODY
+from starpulse._internal.runs.ingest import MAX_BATCH_BODY
 from starpulse._internal.server.encoding import encode
 from starpulse._internal.server.reads import Response
 from starpulse._internal.server.routes import (
@@ -22,7 +22,6 @@ from starpulse._internal.server.routes import (
     _DOC_RESTORE,
     _DOCS,
     _EDIT,
-    _INSIGHTS,
     _MACHINE_EVENTS,
     _MILESTONE_ARCHIVE,
     _MILESTONE_EDIT,
@@ -120,7 +119,6 @@ class WriteRoutes:
         self._starts = services.starts
         self._reruns = services.reruns or {}
         self._run_safe = services.run_safe
-        self._insights = services.insights
         self._autopilot = services.autopilot
         # Every write route, by path: the handler over the seams it needs and the kind of body it answers
         # (`contracts.api.registry.BODIES`). Each handler parses its body through the request model it is declared with.
@@ -152,18 +150,13 @@ class WriteRoutes:
         }
         # The pushes a deployment may leave unconfigured: their route is then none, and a POST of it answers 404.
         self._pushes: dict[str, tuple[Pushed | None, int, str]] = {
-            _INSIGHTS: (services.insights, MAX_BODY, "insight"),
             _PULL_REFRESH: (services.pull_refresh, MAX_REFRESH_BODY, "ingest"),
         }
         self._events = services.events
 
     def post_only(self, path: str) -> bool:
         """Whether `path` is a route a GET is refused: a write (or run) that answers 405, though a read may share its prefix."""
-        return (
-            path.startswith(_RUN)
-            or _is_rerun(path)
-            or path in {*self._writes, _MACHINE_EVENTS, _INSIGHTS, _PULL_REFRESH}
-        )
+        return path.startswith(_RUN) or _is_rerun(path) or path in {*self._writes, _MACHINE_EVENTS, _PULL_REFRESH}
 
     def __call__(self, request: WriteRequest) -> Response | None:
         if request.method == "POST":
@@ -210,10 +203,6 @@ class WriteRoutes:
         return self._windowed(request)
 
     def _delete(self, request: WriteRequest) -> Response | None:
-        path = request.path
-        if path.startswith(f"{_INSIGHTS}/") and self._insights is not None:
-            status, body = self._insights.retract(unquote(path.removeprefix(f"{_INSIGHTS}/")))
-            return Response(encode("insight", body), status)
         return self._windowed(request)
 
     def _windowed(self, request: WriteRequest) -> Response | None:

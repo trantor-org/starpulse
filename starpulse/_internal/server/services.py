@@ -13,10 +13,8 @@ if TYPE_CHECKING:  # annotation only: a runtime import would put the autopilot i
     from starpulse._internal.autopilot.runtime import Runtime
     from starpulse._internal.config.analytics import Analytics
     from starpulse._internal.config.harnesses import Harnesses
-    from starpulse._internal.config.level import Level
     from starpulse._internal.feed.search import SearchIndex
     from starpulse._internal.harnesses.telemetry import TelemetryLog
-    from starpulse._internal.level.insights import Insights
     from starpulse._internal.pulls.pull_refresh import PullRefresh
     from starpulse._internal.pulls.pulls import PullStore
     from starpulse._internal.runs.cloudevents import CloudEventsIngest
@@ -35,8 +33,6 @@ class Services:
     harnesses: Harnesses | None = None
     start_session: Callable[..., str] | None = None
     """Starts a task's session in the harness the page picked."""
-    level: Level | None = None
-    insights: Insights | None = None
     events: CloudEventsIngest | None = None
     autopilot: Runtime | Remote | None = None
     contract: Callable[[], dict[str, Any]] | None = None

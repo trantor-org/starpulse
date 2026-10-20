@@ -13,7 +13,6 @@ from starpulse.contracts.api.dto.errors import ApiError, SkillRefusal, StaleEdit
 from starpulse.contracts.api.dto.autopilot import AutopilotStatus
 from starpulse.contracts.api.dto.harnesses import Harnesses, WindowState
 from starpulse.contracts.api.dto.health import Health, MachineHistory, Sessions, SessionSteps
-from starpulse.contracts.api.dto.level import Level
 from starpulse.contracts.api.dto.milestones import Docs, DocShown, Milestones, MilestoneShown, RetiredTasks, TaskRecord
 from starpulse.contracts.api.dto.missed import MissedLoads, TraceClusters
 from starpulse.contracts.api.dto.pages import LaneHistory, LedgerChange, LedgerPage, Machines
@@ -55,8 +54,6 @@ from starpulse.contracts.api.dto.results import (
     DocEdited,
     DocRestored,
     Edited,
-    InsightPosted,
-    InsightRetracted,
     Judged,
     MilestoneArchived,
     MilestoneCreated,
@@ -75,7 +72,6 @@ from starpulse.contracts.api.dto.snapshot import (
     BuildEvent,
     ClaimDelta,
     DagsDelta,
-    InsightDelta,
     LedgersDelta,
     MoveDelta,
     PullsDelta,
@@ -85,7 +81,6 @@ from starpulse.contracts.api.dto.snapshot import (
 )
 from starpulse.contracts.api.dto.trajectories import Trajectories
 from starpulse.contracts.api.dto.transitions import Cells, CostToGo, FlowGraph, RunDiffs, SubStages, Transitions
-from starpulse.contracts.api.dto.what_if import WhatIf
 
 
 class ApiContract(_Api):
@@ -93,7 +88,7 @@ class ApiContract(_Api):
 
     snapshot: Snapshot
     events: list[
-        TaskDelta | MoveDelta | DagsDelta | PullsDelta | ClaimDelta | LedgersDelta | InsightDelta | AutopilotStatus
+        TaskDelta | MoveDelta | DagsDelta | PullsDelta | ClaimDelta | LedgersDelta | AutopilotStatus
     ]
     build: BuildEvent
     restarting: RestartingEvent
@@ -115,9 +110,7 @@ class ApiContract(_Api):
     costToGo: CostToGo
     missedLoads: MissedLoads
     traceClusters: TraceClusters
-    level: Level
     trajectories: Trajectories
-    whatIf: WhatIf
     harnesses: Harnesses
     windowState: WindowState
     autopilotStatus: AutopilotStatus
@@ -176,8 +169,6 @@ class ApiContract(_Api):
         | Started
         | RunStarted
         | Accepted
-        | InsightPosted
-        | InsightRetracted
         | ApiError
         | SkillRefusal
         | StaleEdit
