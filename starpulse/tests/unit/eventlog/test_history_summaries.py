@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import text
 
+from starpulse._internal.eventlog.checkpoints import Checkpoints
 from starpulse._internal.eventlog.history import HistoryStore
 from starpulse.tests.machines import MACHINES
 
@@ -107,10 +108,10 @@ def test_an_event_of_an_undrawn_machine_or_without_a_case_is_not_summarised(stor
 def test_the_summary_is_written_in_the_transaction_of_the_event_and_its_cursor(
     store: HistoryStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def fail(*_args) -> None:
+    def fail(*_args, **_kwargs) -> None:
         raise RuntimeError("the cursor write failed")
 
-    monkeypatch.setattr(store, "_save_cursor", fail)
+    monkeypatch.setattr(Checkpoints, "save", fail)
     with pytest.raises(RuntimeError):
         store.record_machine("1-0", {"event_id": "e1", "event": "WORKTREE_READY", "time": "10"} | _TASK, cursor=1)
 

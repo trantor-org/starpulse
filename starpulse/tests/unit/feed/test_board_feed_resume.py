@@ -9,31 +9,39 @@ import threading
 from pathlib import Path
 
 import pytest
+from pydantic import BaseModel, ValidationError
 
 from starpulse._internal.server.server import serve_until_stopped
 from starpulse.contracts.adapters import BoardTask
 from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.feed.snapshot import BoardSnapshot
 from starpulse._internal.eventlog.event_log import EventLog
 
 STREAM = "board:tasks"
 
 
 class _Store:
-    """A store holding one saved Board per stream, counting its writes."""
+    """The checkpoint table's two calls over a dict, counting writes."""
 
-    def __init__(self, saved: dict[str, tuple[str, dict]] | None = None) -> None:
+    def __init__(self, saved: dict[str, tuple[int, dict]] | None = None) -> None:
         self.saved = saved or {}
         self.writes = 0
         self.down = False
 
-    def load_board_state(self, stream: str) -> tuple[str, dict] | None:
-        return self.saved.get(stream)
+    def load(self, name: str, model: type[BaseModel] | None = None) -> tuple[int | None, BaseModel | None]:
+        if name not in self.saved:
+            return None, None
+        position, state = self.saved[name]
+        try:
+            return position, model.model_validate(state)
+        except ValidationError:
+            return position, None
 
-    def save_board_state(self, stream: str, cursor: str, state: dict) -> None:
+    def save(self, name: str, position: int, model: BaseModel | None = None, *, conn: object = None) -> None:
         if self.down:
             raise OSError("database is locked")
         self.writes += 1
-        self.saved[stream] = (cursor, state)
+        self.saved[name] = (position, model.model_dump(mode="json"))
 
 
 def _feed_with_tasks() -> BoardFeed:
@@ -44,7 +52,7 @@ def _feed_with_tasks() -> BoardFeed:
     return feed
 
 
-def _resumed(store: _Store, retained: bool = True) -> tuple[BoardFeed, str | None]:
+def _resumed(store: _Store, retained: bool = True) -> tuple[BoardFeed, int | None]:
     feed = BoardFeed()
     return feed, feed.resume(store, STREAM, lambda cursor: retained)
 
@@ -58,7 +66,7 @@ def test_a_saved_board_restores_its_tasks_assignees_and_cursor_and_is_ready_at_t
     feed, cursor = _resumed(store)
     feed.expect("7-0")
 
-    assert cursor == "7-0"
+    assert cursor == 7
     assert feed.snapshot()["flows"][0]["agents"] == first.snapshot()["flows"][0]["agents"]
     assert feed.snapshot()["settled"] == first.snapshot()["settled"]
     assert feed.ready.is_set()
@@ -78,15 +86,15 @@ def test_a_start_with_saved_state_logs_the_cursor_it_resumes_after(caplog: pytes
     with caplog.at_level(logging.INFO, logger="starpulse.board_feed"):
         _resumed(store)
 
-    assert _start_lines(caplog) == ["StarPulse: resuming after 7-0"]
+    assert _start_lines(caplog) == ["StarPulse: resuming after 7"]
 
 
 @pytest.mark.parametrize(
     ("store", "retained", "reason"),
     [
         (_Store(), True, "no saved Board"),
-        (_Store({STREAM: ("7-0", {"open": {}, "settled": {}, "assignees": {}})}), False, "cursor 7-0 is no longer retained"),
-        (_Store({STREAM: ("7-0", {})}), True, "the saved Board cannot be read"),
+        (_Store({STREAM: (7, {"open": {}, "settled": {}, "assignees": {}})}), False, "cursor 7 is no longer retained"),
+        (_Store({STREAM: (7, {})}), True, "the saved Board cannot be read"),
     ],
 )
 def test_a_start_without_usable_state_logs_why_it_replays(
@@ -129,20 +137,18 @@ def test_a_restored_task_read_again_is_no_delta() -> None:
     "saved",
     [
         None,
-        ("7-0", {"open": {}}),
-        ("7-0", {"open": 5, "settled": {}, "assignees": {}}),
-        ("not-a-cursor", {"open": {}, "settled": {}, "assignees": {}}),
-        ("7-0", {"open": {}, "settled": {"TASK-2": "completed"}, "assignees": {}}),
+        (7, {"open": {}}),
+        (7, {"open": 5, "settled": {}, "assignees": {}}),
+        (7, {"open": {}, "settled": {"TASK-2": "completed"}, "assignees": {}}),
     ],
     ids=[
         "nothing saved",
         "a missing part",
         "a part of the wrong type",
-        "a cursor that is no entry id",
         "a settled task saved as its state alone",
     ],
 )
-def test_a_board_that_cannot_be_restored_replays_and_keeps_the_feed_empty(saved: tuple[str, dict] | None) -> None:
+def test_a_board_that_cannot_be_restored_replays_and_keeps_the_feed_empty(saved: tuple[int, dict] | None) -> None:
     feed, cursor = _resumed(_Store({STREAM: saved} if saved else {}))
 
     assert (cursor, feed.snapshot()["flows"][0]["agents"], feed.snapshot()["settled"]) == (None, [], {})
@@ -169,7 +175,7 @@ def test_the_board_is_saved_again_only_after_the_feed_read_a_newer_entry() -> No
     feed.seen("8-0")
     feed.save()
 
-    assert (store.writes, store.saved[STREAM][0]) == (2, "8-0")
+    assert (store.writes, store.saved[STREAM][0]) == (2, 8)
 
 
 def test_a_feed_that_has_read_nothing_saves_nothing() -> None:
@@ -212,34 +218,52 @@ def test_a_feed_kept_saved_writes_on_each_interval_and_once_more_when_stopped() 
     stop.set()
     saver.join(5)
 
-    assert store.saved[STREAM][0] == "9-0"
+    assert store.saved[STREAM][0] == 9
 
 
 def test_the_event_log_keeps_one_saved_board_per_stream_and_the_oldest_row_it_holds(tmp_path: Path) -> None:
     log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
-    assert (log.oldest(), log.load_board_state(STREAM)) == (None, None)
+    assert (log.oldest(), log.checkpoints.load(STREAM, BoardSnapshot)) == (None, (None, None))
 
     first = log.append(STREAM, {"n": "1"})
     log.append(STREAM, {"n": "2"})
-    log.save_board_state(STREAM, "1-0", {"open": {}})
-    log.save_board_state(STREAM, "2-0", {"open": {"TASK-1": {"id": "TASK-1"}}})
-    log.save_board_state("other", "5-0", {})
+    log.checkpoints.save(STREAM, 1, BoardSnapshot(open={}, settled={}, assignees={}))
+    log.checkpoints.save(STREAM, 2, BoardSnapshot(open={"TASK-1": {"id": "TASK-1"}}, settled={}, assignees={}))
+    log.checkpoints.save("other", 5, BoardSnapshot(open={}, settled={}, assignees={}))
 
     assert log.oldest() == first
-    assert log.load_board_state(STREAM) == ("2-0", {"open": {"TASK-1": {"id": "TASK-1"}}})
+    assert log.checkpoints.load(STREAM, BoardSnapshot)[0] == 2
 
 
-def test_saving_a_board_under_a_new_projection_hash_removes_the_row_under_the_old_one(tmp_path: Path) -> None:
-    log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
-    log.save_board_state("native:/a@hash1", "1-0", {"open": {}})
-    log.save_board_state("native:/a@hash2", "2-0", {"open": {}})
-    log.save_board_state("native:/ab@hash1", "3-0", {})
-    log.save_board_state("board:tasks", "4-0", {})
+def test_a_restarted_feed_resumes_from_the_checkpoint_tables_integer_position(tmp_path: Path) -> None:
+    checkpoints = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}").checkpoints
+    first = _feed_with_tasks()
+    first.resume(checkpoints, STREAM, lambda cursor: False)
+    first.save()
 
-    assert log.load_board_state("native:/a@hash1") is None
-    assert log.load_board_state("native:/a@hash2") == ("2-0", {"open": {}})
-    assert log.load_board_state("native:/ab@hash1") == ("3-0", {})
-    assert log.load_board_state("board:tasks") == ("4-0", {})
+    feed, cursor = _resumed(checkpoints)
+
+    assert (cursor, checkpoints.load(STREAM)[0], len(feed.snapshot()["flows"][0]["agents"])) == (7, 7, 1)
+
+
+def test_a_saved_board_of_another_schema_version_is_replayed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    checkpoints = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}").checkpoints
+    first = _feed_with_tasks()
+    first.resume(checkpoints, STREAM, lambda cursor: False)
+    first.save()
+    monkeypatch.setattr(BoardSnapshot, "SCHEMA_VERSION", BoardSnapshot.SCHEMA_VERSION + 1)
+    caplog.clear()
+
+    with caplog.at_level(logging.INFO, logger="starpulse.board_feed"):
+        feed, cursor = _resumed(checkpoints)
+
+    assert (cursor, feed.snapshot()["flows"][0]["agents"], _start_lines(caplog)) == (
+        None,
+        [],
+        ["StarPulse: replaying: the saved Board cannot be read"],
+    )
 
 
 class _Server:
@@ -279,7 +303,7 @@ def test_a_stopped_server_saves_the_board_before_it_exits() -> None:
     finally:
         signal.signal(signal.SIGTERM, before)
 
-    assert store.saved[STREAM][0] == "7-0"
+    assert store.saved[STREAM][0] == 7
 
 
 def test_ctrl_c_stops_cleanly_and_saves_the_board() -> None:
@@ -297,7 +321,7 @@ def test_ctrl_c_stops_cleanly_and_saves_the_board() -> None:
         signal.signal(signal.SIGTERM, before)
 
     assert interrupted is False
-    assert store.saved[STREAM][0] == "7-0"
+    assert store.saved[STREAM][0] == 7
 
 
 PULL = {"number": 7, "url": "https://github.com/acme/widgets/pull/7", "checks": "pass", "merged": False, "stale": False}
@@ -329,11 +353,11 @@ def test_new_pull_requests_are_saved_even_when_no_board_entry_was_read_since_the
 
 
 def test_a_board_saved_before_pull_requests_were_kept_still_resumes_with_none() -> None:
-    store = _Store({STREAM: ("7-0", {"open": {}, "settled": {}, "assignees": {}})})
+    store = _Store({STREAM: (7, {"open": {}, "settled": {}, "assignees": {}})})
 
     feed, cursor = _resumed(store)
 
-    assert cursor == "7-0"
+    assert cursor == 7
     assert feed.pull_answers() == {}
 
 
@@ -362,4 +386,7 @@ def test_a_restored_task_that_drops_a_dependency_is_placed_and_its_lane_change_r
     feed.put(BoardTask(id="TASK-2", team="demo", title="waits too", lane="done"))
 
     assert lanes.recorded == [("TASK-1", "review"), ("TASK-2", "done")]
-    assert {a["id"]: a["state"] for a in feed.snapshot()["flows"][0]["agents"]} == {"TASK-1": "review", "TASK-2": "done"}
+    assert {a["id"]: a["state"] for a in feed.snapshot()["flows"][0]["agents"]} == {
+        "TASK-1": "review",
+        "TASK-2": "done",
+    }

@@ -78,7 +78,9 @@ class Site:
 
     def fold(self) -> None:
         """The hub's lane reader, one pass."""
-        for entry in Tail(self.hub_log, lane_events.STREAM, after=self.hub_store.cursor(lane_events.STREAM)).poll():
+        for entry in Tail(
+            self.hub_log, lane_events.STREAM, after=self.hub_store.checkpoints.load(lane_events.STREAM)[0]
+        ).poll():
             self.hub_store.record_lane_entry(entry.event_id, entry.fields, cursor=entry.id)
 
     def at(self, log: EventLog) -> list[str]:
@@ -185,7 +187,9 @@ def test_a_replay_puts_the_stored_lane_changes_in_the_log_once_and_adds_no_row_a
         ("T-1", None, "to_do"),
         ("T-1", "to_do", "in_progress"),
     ]
-    site.hub_store.record_lane_entry("ana/T-1@in_progress@1000100.0", {"task": "T-1", "lane": "in_progress", "time": T0 + 100})
+    site.hub_store.record_lane_entry(
+        "ana/T-1@in_progress@1000100.0", {"task": "T-1", "lane": "in_progress", "time": T0 + 100}
+    )
     assert len(site.hub_store.lane_rows()) == 2
 
 
@@ -194,10 +198,10 @@ def test_lane_forwarding_continues_after_a_restart_when_a_restored_task_drops_a_
     before = BoardFeed(machines=MACHINES, clock=site.clock)
     before.put(BoardTask(id="T-1", team="demo", title="t", lane="in_progress", dependencies=("T-0",)))
     before.seen("7-0")
-    before.resume(site.ic_log, "board:tasks", lambda cursor: False)
+    before.resume(site.ic_log.checkpoints, "board:tasks", lambda cursor: False)
     before.save()
     site.feed = BoardFeed(machines=MACHINES, clock=site.clock)
-    assert site.feed.resume(site.ic_log, "board:tasks", lambda cursor: True) == "7-0"
+    assert site.feed.resume(site.ic_log.checkpoints, "board:tasks", lambda cursor: True) == 7
     site.feed.record_lanes(site.ic_store, site.ic_log)
 
     site.move("T-1", "review", at=H)  # the move that dropped T-0 from T-1's dependencies

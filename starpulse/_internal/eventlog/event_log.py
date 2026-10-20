@@ -40,10 +40,11 @@ from sqlalchemy.engine import Connection, make_url
 from sqlalchemy.exc import SQLAlchemyError
 
 from starpulse._internal.eventlog import DEFAULT_POLL_INTERVAL
+from starpulse._internal.eventlog.checkpoints import Checkpoints
 from starpulse._internal.eventlog.migrate import migrate
 from starpulse._internal.eventlog.tables import (
     autopilot_runs,
-    board_state,
+    checkpoints,
     day_rollups,
     events,
     gaps,
@@ -131,11 +132,16 @@ class EventLog:
                     event.listen(self._engine, "connect", _sqlite_pragmas)
                 create_tables(
                     self._engine,
-                    [events, gaps, board_state, source_instances, settings, autopilot_runs, retired_tasks],
+                    [events, gaps, checkpoints, source_instances, settings, autopilot_runs, retired_tasks],
                 )
                 self._ready = True
             assert self._engine is not None
             return self._engine
+
+    @property
+    def checkpoints(self) -> Checkpoints:
+        """The table of how far each reader of this database got."""
+        return Checkpoints(self.engine)
 
     def bind_source(self, source: str, instance: str) -> str | None:
         """The instance `source` is bound to once this call is done: `instance` when the source held no binding (this
@@ -182,9 +188,7 @@ class EventLog:
         upsert = _dialect(engine).insert(settings).values(key=key, value=value, updated_at=now)
         with engine.begin() as db:
             db.execute(
-                upsert.on_conflict_do_update(
-                    index_elements=[settings.c.key], set_={"value": value, "updated_at": now}
-                )
+                upsert.on_conflict_do_update(index_elements=[settings.c.key], set_={"value": value, "updated_at": now})
             )
 
     def setting_updated_at(self, key: str) -> float | None:
@@ -325,42 +329,6 @@ class EventLog:
         """The cursor of the oldest row the log retains, or None when it holds none; raises when the database does."""
         with self.engine.connect() as db:
             return db.execute(select(func.min(events.c.id))).scalar()
-
-    def save_board_state(self, stream: str, cursor: str, state: dict) -> None:
-        """Keep `state`, the Board a reader built from `stream` up to the entry `cursor`, in place of the last one.
-
-        A key ending `@<hash>` also removes the Boards saved under the same base with another hash: a projection
-        change saved under a new key, and the old row would otherwise stay forever.
-        """
-        engine = self.engine
-        base, at, _ = stream.rpartition("@")
-        superseded = board_state.c.stream.startswith(base + at, autoescape=True) & (board_state.c.stream != stream)
-        insert = (
-            _dialect(engine)
-            .insert(board_state)
-            .values(stream=stream, after_id=cursor, state=state, saved_at=time.time())
-        )
-        with engine.begin() as db:
-            db.execute(
-                insert.on_conflict_do_update(
-                    index_elements=["stream"],
-                    set_={
-                        "after_id": insert.excluded.after_id,
-                        "state": insert.excluded.state,
-                        "saved_at": insert.excluded.saved_at,
-                    },
-                )
-            )
-            if at:
-                db.execute(delete(board_state).where(superseded))
-
-    def load_board_state(self, stream: str) -> tuple[str, dict] | None:
-        """The cursor and state last saved for `stream`, or None when none was; raises when the database does."""
-        with self.engine.connect() as db:
-            row = db.execute(
-                select(board_state.c.after_id, board_state.c.state).where(board_state.c.stream == stream)
-            ).first()
-        return None if row is None else (row.after_id, row.state)
 
     def record_gap(self, stream: str, after_id: int, before_id: int, lost: int) -> None:
         """Note that up to `lost` rows between `after_id` and `before_id` were pruned before `stream`'s reader read

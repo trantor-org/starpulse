@@ -53,6 +53,7 @@ from starpulse._internal.machines.transitions import lane_id
 from starpulse._internal.config.config import discover, load
 from starpulse._internal.eventlog import events as machine_events
 from starpulse._internal.eventlog import lane_events, lane_repair
+from starpulse._internal.eventlog.checkpoints import Checkpoints
 from starpulse._internal.eventlog.event_log import DEFAULT_POLL_INTERVAL, EventLog, Tail, create_tables, insert_event
 from starpulse._internal.eventlog.summaries import (
     BOARD,
@@ -141,13 +142,6 @@ _learned_steps = Table(
     Column("depends", Text, nullable=False),
     Index("ux_starpulse_learned_steps", "workflow", "step", unique=True),
 )
-#: How far each reader of the log got, so a restart resumes after the last entry it recorded.
-_cursors = Table(
-    "starpulse_cursors",
-    metadata,
-    Column("stream", String, primary_key=True),
-    Column("after_id", Integer, nullable=False),
-)
 #: The id this store sends a hub under each forwarder's cursor name, minted on first use and kept, so a restarted
 #: forwarder is the instance the hub bound and a second store, with no row here, is a new one.
 _instances = Table(
@@ -159,6 +153,8 @@ _instances = Table(
 #: A path's order: by time, and the earlier insert first when two rows share one.
 _LANE_ORDER = (_lane_changes.c.observed_at, _lane_changes.c.id)
 _STEP_ORDER = (_machine_events.c.occurred_at, _machine_events.c.id)
+
+
 #: A task's last lane: its latest observation, the later insert on a tie.
 def _last_lane(db: Connection, task: str, source_name: str | None) -> str | None:
     """The status of the task's latest lane change; with a `source_name`, of the change that source forwarded."""
@@ -233,7 +229,9 @@ def _held_ids(db: Connection, event_ids: list[str]) -> set[str]:
     c = _lane_changes.c
     held: set[str] = set()
     for start in range(0, len(event_ids), _TASKS_PER_QUERY):
-        held.update(db.execute(select(c.event_id).where(c.event_id.in_(event_ids[start : start + _TASKS_PER_QUERY]))).scalars())
+        held.update(
+            db.execute(select(c.event_id).where(c.event_id.in_(event_ids[start : start + _TASKS_PER_QUERY]))).scalars()
+        )
     return held
 
 
@@ -331,10 +329,10 @@ class HistoryStore:
     def _insert(self, table: Table):
         return self._dialect.insert(table)
 
-    def cursor(self, stream: str) -> int | None:
-        """The log id of the last `stream` entry recorded, or None for a store that has recorded none."""
-        with self.engine.connect() as db:
-            return db.execute(select(_cursors.c.after_id).where(_cursors.c.stream == stream)).scalar()
+    @property
+    def checkpoints(self) -> Checkpoints:
+        """How far each reader of the log got, so a restart resumes after the last entry it recorded."""
+        return Checkpoints(self.engine)
 
     def instance(self, name: str) -> str:
         """The id this store sends under `name`, a forwarder's cursor name: minted when the store has none, then the
@@ -365,7 +363,7 @@ class HistoryStore:
             if written:
                 self._summarise_event(db, row)
             if cursor is not None:
-                self._save_cursor(db, machine_events.STREAM, cursor)
+                self.checkpoints.save(machine_events.STREAM, cursor, conn=db)
         if written:
             self._summaries_changed()
 
@@ -382,15 +380,6 @@ class HistoryStore:
         if (key := who.event_key(row["machine"], row["task"], row["run"], row["event_id"])) is not None:
             step = who.event_step(key, read_case(db, key), row["event"], row["occurred_at"], row["event_id"])
             write_step(db, self._insert, key, step)
-
-    def save_cursor(self, stream: str, after_id: int) -> None:
-        """Keep `after_id` as the log id `stream`'s reader has passed, in place of the last one."""
-        with self.engine.begin() as db:
-            self._save_cursor(db, stream, after_id)
-
-    def _save_cursor(self, db: Connection, stream: str, after_id: int) -> None:
-        save = self._insert(_cursors).values(stream=stream, after_id=after_id)
-        db.execute(save.on_conflict_do_update(index_elements=["stream"], set_={"after_id": save.excluded.after_id}))
 
     def record_lane(
         self,
@@ -415,14 +404,16 @@ class HistoryStore:
             if written and event is not None:
                 insert_event(db, lane_events.STREAM, event, event_id)
             if cursor is not None:
-                self._save_cursor(db, lane_events.STREAM, cursor)
+                self.checkpoints.save(lane_events.STREAM, cursor, conn=db)
         if written:
             self._summaries_changed()
         return written
 
     def record_lane_entry(self, entry_id: str, fields: dict, *, cursor: int | None = None) -> bool:
         """Fold one `lane_events` entry (`fields`) into the lane history as `record_lane` does, under its log id."""
-        return self.record_lane(fields.get("event_id") or entry_id, fields["task"], fields["lane"], float(fields["time"]), cursor=cursor)
+        return self.record_lane(
+            fields.get("event_id") or entry_id, fields["task"], fields["lane"], float(fields["time"]), cursor=cursor
+        )
 
     def _fold_lane(self, db: Connection, event_id: str, task: str, status: str, at: float) -> bool:
         status = lane_id(status)
@@ -756,12 +747,16 @@ class HistoryStore:
         i, c, n = lane_intervals.c, cases.c, lanes.c
         with self.engine.connect() as db:
             # no DISTINCT: it would send SQLite down the whole task index instead of the range of recent entries
-            moved = db.execute(
-                select(i.task).where(i.entered_at >= min(now - window_s, now - AGING_WINDOW_S))
-            ).scalars().all()
-            live = db.execute(
-                select(c.case_id).where(c.machine == BOARD, c.state.in_([*waiting, *working]))
-            ).scalars().all()
+            moved = (
+                db.execute(select(i.task).where(i.entered_at >= min(now - window_s, now - AGING_WINDOW_S)))
+                .scalars()
+                .all()
+            )
+            live = (
+                db.execute(select(c.case_id).where(c.machine == BOARD, c.state.in_([*waiting, *working])))
+                .scalars()
+                .all()
+            )
             tasks = sorted({*moved, *live})
             # by task, then time, then the order they were recorded in: the task index hands them over in that order
             query = select(i.entered_at, i.source, i.task, i.lane).order_by(i.task, i.entered_at, i.id)
@@ -820,7 +815,7 @@ def record_machine_events(
     stream = machine_events.STREAM
     while not stop.is_set():
         try:
-            after = store.cursor(stream)
+            after = store.checkpoints.load(stream)[0]
             break
         except OperationalError as exc:
             logger.warning("history: cannot read the %s cursor, retrying in %ss: %s", stream, interval, exc)
@@ -845,7 +840,7 @@ def record_lane_events(
     stream = lane_events.STREAM
     while not stop.is_set():
         try:
-            after = store.cursor(stream)
+            after = store.checkpoints.load(stream)[0]
             break
         except OperationalError as exc:
             logger.warning("history: cannot read the %s cursor, retrying in %ss: %s", stream, interval, exc)

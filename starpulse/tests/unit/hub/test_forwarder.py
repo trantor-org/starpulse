@@ -76,7 +76,7 @@ def test_a_step_posts_the_log_in_order_under_the_token_and_saves_the_cursor_afte
     [(url, token, body)] = rig.hub.posts
     assert (url, token) == (f"{URL}/api/forward", "secret")
     assert [e["fields"]["task"] for e in body["events"]] == ["T-1", "T-2"]
-    assert rig.store.cursor(f"forward:{URL}") == 2
+    assert rig.store.checkpoints.load(f"forward:{URL}")[0] == 2
 
 
 def test_a_step_with_nothing_new_posts_nothing(rig: Rig) -> None:
@@ -107,11 +107,11 @@ def test_a_batch_the_hub_did_not_acknowledge_is_sent_again_whole(rig: Rig, answe
     forwarder = rig.forwarder()
 
     assert forwarder.step() is None
-    assert rig.store.cursor(f"forward:{URL}") is None
+    assert rig.store.checkpoints.load(f"forward:{URL}")[0] is None
     assert forwarder.step() == 2
 
     assert rig.hub.event_ids()[0] == rig.hub.event_ids()[1]
-    assert rig.store.cursor(f"forward:{URL}") == 2
+    assert rig.store.checkpoints.load(f"forward:{URL}")[0] == 2
 
 
 def test_a_forwarder_started_again_resumes_after_the_cursor_the_last_one_saved(rig: Rig) -> None:
@@ -144,7 +144,7 @@ def test_only_the_machine_and_runs_streams_are_forwarded_and_the_cursor_passes_t
 
     [(_, _, body)] = rig.hub.posts
     assert [e["stream"] for e in body["events"]] == [events.STREAM, run_events.STREAM]
-    assert rig.store.cursor(f"forward:{URL}") == 4
+    assert rig.store.checkpoints.load(f"forward:{URL}")[0] == 4
 
 
 def test_a_log_holding_only_other_streams_moves_the_cursor_without_a_post(rig: Rig) -> None:
@@ -153,7 +153,7 @@ def test_a_log_holding_only_other_streams_moves_the_cursor_without_a_post(rig: R
     assert rig.forwarder().step() == 0
 
     assert rig.hub.posts == []
-    assert rig.store.cursor(f"forward:{URL}") == 1
+    assert rig.store.checkpoints.load(f"forward:{URL}")[0] == 1
 
 
 def test_a_named_event_leaves_without_its_name_until_the_instance_opts_in(rig: Rig) -> None:
@@ -221,7 +221,7 @@ def test_run_forwards_until_stopped(rig: Rig) -> None:
     forwarder.run(stop)
 
     assert rig.hub.event_ids() == [[rig.hub.posts[0][2]["events"][0]["event_id"]]]
-    assert rig.store.cursor(f"forward:{URL}") == 1
+    assert rig.store.checkpoints.load(f"forward:{URL}")[0] == 1
 
 
 def test_run_goes_on_after_a_step_that_raises(rig: Rig) -> None:
@@ -382,7 +382,7 @@ def test_a_forwarder_on_a_fresh_store_is_a_second_instance_the_hub_refuses(tmp_p
 
     assert second.step() is None
     assert second.problem is not None and second.problem.startswith("hub answered 409")
-    assert other.store.cursor(f"forward:{URL}") is None
+    assert other.store.checkpoints.load(f"forward:{URL}")[0] is None
     assert [e.event_id for e in Tail(hub.log, events.STREAM).poll()] == [
         f"ana/{e.event_id}" for e in Tail(ic.log, events.STREAM).poll()
     ]

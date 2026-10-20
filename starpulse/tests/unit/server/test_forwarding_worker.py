@@ -111,7 +111,7 @@ def test_a_restarted_worker_neither_drops_nor_repeats_a_forwarded_event(
     _move(log, "T-1")
     assert _eventually(lambda: hub.tasks == ["T-1"])
     store = HistoryStore(f"sqlite:///{(tmp_path / 'starpulse-history.sqlite').resolve()}", {})
-    first = store.cursor("forward:https://hub.example.test")
+    first = store.checkpoints.load("forward:https://hub.example.test")[0]
     for stop in held:
         stop.set()
     time.sleep(0.2)  # the forwarder thread sees the stop
@@ -122,7 +122,7 @@ def test_a_restarted_worker_neither_drops_nor_repeats_a_forwarded_event(
     assert _eventually(lambda: hub.tasks == ["T-1", "T-2"])
     time.sleep(0.2)
     assert hub.tasks == ["T-1", "T-2"]  # T-1 once, T-2 once
-    assert store.cursor("forward:https://hub.example.test") > first
+    assert store.checkpoints.load("forward:https://hub.example.test")[0] > first
 
 
 def test_a_worker_with_no_forward_table_refuses_to_start(run) -> None:

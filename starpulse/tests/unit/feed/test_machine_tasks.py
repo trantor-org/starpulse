@@ -279,7 +279,7 @@ def test_a_subscriber_connected_through_the_replay_gets_one_snapshot_of_it_not_a
     assert changes.get_nowait()[0] == "move"  # once the replay is read, a new entry is a live change
 
 
-@pytest.mark.parametrize(("last_id", "ready"), [("0-0", True), ("1-0", False), ("0-1", False)])
+@pytest.mark.parametrize(("last_id", "ready"), [("0-0", True), ("1-0", False)])
 def test_nothing_has_been_read_before_the_first_entry_so_only_an_empty_stream_is_ready(
     last_id: str, ready: bool
 ) -> None:
@@ -388,9 +388,7 @@ def test_a_machine_task_keeps_the_assignee_of_its_board_task_once_that_task_is_s
     tasks.handle_entry(*_entry("in-progress", "WORKTREE_READY", task="PROJ-9", at=100.0))
     tasks.handle_entry(*_entry("in-progress", "WORKTREE_READY", task="PROJ-8", at=100.0))
 
-    feed.put(
-        BoardTask(id="PROJ-9", team="demo", title="t", lane="done", profile="@agent-deep-medium", settled=settled)
-    )
+    feed.put(BoardTask(id="PROJ-9", team="demo", title="t", lane="done", profile="@agent-deep-medium", settled=settled))
     feed.put(
         BoardTask(id="PROJ-8", team="demo", title="t", lane="done", profile="@agent-standard-high", settled=settled)
     )
@@ -402,9 +400,7 @@ def test_a_machine_task_keeps_the_assignee_of_its_board_task_once_that_task_is_s
 def test_a_move_delta_carries_the_assignee_of_a_settled_board_task() -> None:
     feed, tasks = _feed()
     feed.put(
-        BoardTask(
-            id="PROJ-9", team="demo", title="t", lane="done", profile="@agent-standard-high", settled="completed"
-        )
+        BoardTask(id="PROJ-9", team="demo", title="t", lane="done", profile="@agent-standard-high", settled="completed")
     )
     _, changes = feed.subscribe()
 

@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from starpulse._internal.config.config import CommitKeys
 from starpulse._internal.eventlog import DEFAULT_POLL_INTERVAL, lane_events
 from starpulse._internal.feed import criteria
+from starpulse._internal.feed.snapshot import BoardSnapshot
 from starpulse._internal.feed.ledger import (
     MERGE_EVENT,
     NEXT,
@@ -40,6 +41,8 @@ from starpulse._internal.machines.transitions import DEFAULT_STATUSES, DONE, WAI
 from starpulse.contracts.adapters import BoardTask, TaskKeys
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
+    from pydantic import BaseModel
+
     from starpulse._internal.eventlog.event_log import EventLog
 
 __all__ = ["BoardFeed", "BoardStore", "FEED_EVENT_RESEND", "Followed", "Resumable"]
@@ -114,7 +117,9 @@ def current_keys(agent: dict) -> dict:
 
 def task_agent(task: BoardTask) -> dict:
     """One task as an agent on the Board machine, its lane as the state id."""
-    ticks = task.acceptance_checked + (False,) * len(task.acceptance_criteria)  # a criterion past the ticks is unchecked
+    ticks = task.acceptance_checked + (False,) * len(
+        task.acceptance_criteria
+    )  # a criterion past the ticks is unchecked
     return {
         "id": task.id,
         "title": task.title,
@@ -152,10 +157,9 @@ def settled_entry(task: BoardTask) -> dict | None:
     }
 
 
-def stream_id(entry_id: str) -> tuple[int, int]:
-    """A stream id as numbers: `10-0` follows `9-0`, which text order gets backwards."""
-    millis, _, sequence = entry_id.partition("-")
-    return int(millis), int(sequence or 0)
+def entry_position(entry_id: str) -> int:
+    """The log id of an entry id, `7` or the `7-0` a stream of the retired Redis form named it."""
+    return int(entry_id.partition("-")[0])
 
 
 class LaneRecorder(Protocol):
@@ -177,11 +181,11 @@ class TaskIndex(Protocol):
 
 
 class BoardStore(Protocol):
-    """Where a feed keeps the Board it saved: the event log, or any store that holds one state per stream."""
+    """Where a feed keeps the Board it saved: the event log's `Checkpoints`, or any store that holds one per name."""
 
-    def load_board_state(self, stream: str) -> tuple[str, dict] | None: ...
+    def load(self, name: str, model: type[BaseModel] | None = None) -> tuple[int | None, BaseModel | None]: ...
 
-    def save_board_state(self, stream: str, cursor: str, state: dict) -> None: ...
+    def save(self, name: str, position: int, model: BaseModel | None = None, *, conn: Any = None) -> None: ...
 
 
 class CriteriaStore(Protocol):
@@ -319,9 +323,9 @@ class BoardFeed:
         #: The pages with a Ledger open: the event each watches and the queue of that event's changed rows.
         self._watchers: list[tuple[str, queue.Queue]] = []
         self._awaiting = False  # pragma: no mutate — None is falsy too
-        self._expected: tuple[int, int] | None = None
-        self._seen = (0, 0)
-        self._saved = (0, 0)
+        self._expected: int | None = None
+        self._seen = 0
+        self._saved = 0
         self._store: tuple[BoardStore, str] | None = None
         #: What the board adapter keeps of its own beside the Board, saved and resumed with it (`keep_source`).
         self._kept: dict = {}
@@ -347,7 +351,9 @@ class BoardFeed:
     def tied(self, instance: str) -> frozenset[str]:
         """The workflows of `instance` a Board event cues or that write one: those whose runs the Ledger pairs."""
         prefix = f"{instance}/"
-        return frozenset(dag.removeprefix(prefix) for dags in self._ties.values() for dag in dags if dag.startswith(prefix))
+        return frozenset(
+            dag.removeprefix(prefix) for dags in self._ties.values() for dag in dags if dag.startswith(prefix)
+        )
 
     @property
     def machines(self) -> Mapping[str, dict]:
@@ -361,10 +367,10 @@ class BoardFeed:
             self._publish("snapshot", self.snapshot())
 
     def expect(self, last_id: str) -> None:
-        """Mark the feed ready once the entry `last_id` has been read; `0-0` is an empty stream."""
+        """Mark the feed ready once the entry `last_id` has been read; `0` is an empty stream."""
         with self._lock:
             self._awaiting = True
-            self._expected = stream_id(last_id)
+            self._expected = entry_position(last_id)
         self._check_ready()
 
     def _check_ready(self) -> None:
@@ -387,53 +393,57 @@ class BoardFeed:
     def seen(self, entry_id: str) -> None:
         """Note that a board adapter reading a stream has read up to the entry `entry_id`."""
         with self._lock:
-            self._seen = max(self._seen, stream_id(entry_id))
+            self._seen = max(self._seen, entry_position(entry_id))
         self._check_ready()
 
     def resume(
-        self, store: BoardStore, stream: str, retained: Callable[[str], bool], *, keep: bool = True
-    ) -> str | None:
-        """Restore the Board `store` saved for `stream` and return the cursor to read the stream after, else None.
+        self, store: BoardStore, stream: str, retained: Callable[[int], bool], *, keep: bool = True
+    ) -> int | None:
+        """Restore the Board `store` saved for `stream` and return the position to read the stream after, else None.
 
-        None means the reader replays what the stream retains: nothing was saved, `retained(cursor)` says the stream
-        no longer holds every entry after the saved cursor, or the saved state is not one this feed can read. The
-        feed saves to `store` under `stream` from now on (`save`, `keep_saved`) unless `keep` is false, which makes it
-        a reader of a Board another process saves. One line says which start it was:
-        `resuming after <cursor>` or `replaying: <reason>`, at WARNING because nothing configures a lower level.
+        None means the reader replays what the stream retains: nothing was saved, `retained(position)` says the stream
+        no longer holds every entry after the saved position, or the saved Board is not one this feed can read (another
+        `BoardSnapshot.SCHEMA_VERSION`). The feed saves to `store` under `stream` from now on (`save`, `keep_saved`)
+        unless `keep` is false, which makes it a reader of a Board another process saves. One line says which start it
+        was: `resuming after <position>` or `replaying: <reason>`, at WARNING because nothing configures a lower level.
         """
         if keep:
             self._store = (store, stream)
-        saved = store.load_board_state(stream)
-        if saved is None:
+        position, snapshot = store.load(stream, BoardSnapshot)
+        if position is None:
             logger.warning("StarPulse: replaying: no saved Board")
             return None
-        if not retained(saved[0]):
-            logger.warning("StarPulse: replaying: cursor %s is no longer retained", saved[0])
+        if not retained(position):
+            logger.warning("StarPulse: replaying: cursor %s is no longer retained", position)
             return None
-        cursor, state = saved
         try:
-            seen, open_, settled, assignees, pulls, answers, cited, source = (
-                stream_id(cursor),
-                dict(state["open"]),
-                dict(state["settled"]),
-                dict(state["assignees"]),
-                dict(state.get("pulls", {})),  # a Board saved before pull requests were kept has none
-                dict(state.get("pull_answers", {})),
-                dict(state.get("cited", {})),
-                dict(state.get("source", {})),
+            if snapshot is None:
+                raise ValueError("the saved Board is of another schema version or malformed")
+            open_, settled, assignees = dict(snapshot.open), dict(snapshot.settled), dict(snapshot.assignees)
+            pulls, answers, cited, source = (
+                dict(snapshot.pulls),
+                dict(snapshot.pull_answers),
+                dict(snapshot.cited),
+                dict(snapshot.source),
             )
-            movers = {  # a Board saved before notes were kept has none
+            movers = {
                 task: ((actor, session, harness), float(at))
-                for task, (actor, session, harness, at) in state.get("movers", {}).items()
+                for task, (actor, session, harness, at) in snapshot.movers.items()
             }
-            if not all(isinstance(entry, dict) for entry in settled.values()):
-                raise TypeError("a settled task saved before settled entries carried their time")
-        except KeyError, TypeError, ValueError:
+        except TypeError, ValueError:
             logger.warning("StarPulse: replaying: the saved Board cannot be read")
             return None
-        open_ = {task: cooled(current_keys(agent), self._clock) for task, agent in open_.items()}  # a task done while the feed was down is cold
+        open_ = {
+            task: cooled(current_keys(agent), self._clock) for task, agent in open_.items()
+        }  # a task done while the feed was down is cold
         with self._lock:
-            self._open, self._settled, self._assignees, self._seen, self._saved = open_, settled, assignees, seen, seen
+            self._open, self._settled, self._assignees, self._seen, self._saved = (
+                open_,
+                settled,
+                assignees,
+                position,
+                position,
+            )
             self._pulls, self._pull_answers = pulls, answers
             self._cited, self._kept, self._kept_saved = cited, source, source
             self._movers, self._movers_saved = dict(movers), movers  # a shared dict would always equal the saved one
@@ -443,11 +453,11 @@ class BoardFeed:
             self._dependents = {}  # the saved Board keeps no reverse links; `_link` needs them for the next change
             for task_id, agent in open_.items():
                 self._link(task_id, (), agent.get("dependencies", ()))
-        logger.warning("StarPulse: resuming after %s", cursor)
-        return cursor
+        logger.warning("StarPulse: resuming after %s", position)
+        return position
 
     def save(self) -> None:
-        """Write the Board and the cursor it reflects to the store `resume` was given, unless the feed has read
+        """Write the Board and the position it reflects to the store `resume` was given, unless the feed has read
         nothing since the last save. A store that cannot be written is logged; the next save tries again."""
         if self._store is None:
             return
@@ -461,18 +471,18 @@ class BoardFeed:
             ):
                 return
             seen, source, movers = self._seen, self._kept, dict(self._movers)
-            state = {
-                "open": dict(self._open),
-                "settled": dict(self._settled),
-                "assignees": dict(self._assignees),
-                "pulls": dict(self._pulls),
-                "pull_answers": dict(self._pull_answers),
-                "cited": dict(self._cited),
-                "source": source,
-                "movers": {task: [*who, at] for task, (who, at) in movers.items()},
-            }
+            snapshot = BoardSnapshot(
+                open=dict(self._open),
+                settled=dict(self._settled),
+                assignees=dict(self._assignees),
+                pulls=dict(self._pulls),
+                pull_answers=dict(self._pull_answers),
+                cited=dict(self._cited),
+                source=source,
+                movers={task: [*who, at] for task, (who, at) in movers.items()},
+            )
         try:
-            store.save_board_state(stream, "-".join(map(str, seen)), state)
+            store.save(stream, seen, snapshot)
         except Exception as exc:  # the store is down; the Board still draws and the next save retries
             logger.warning("StarPulse: cannot save the Board of %s: %s", stream, exc)
             return
@@ -848,7 +858,10 @@ class BoardFeed:
     def pull_requests(self) -> dict[str, list[str]]:
         """Each open task's pull request links, for the tasks that cite any."""
         with self._lock:
-            prs = {task: agent["prs"] if not is_cold(agent) else self._cited.get(task) for task, agent in self._open.items()}
+            prs = {
+                task: agent["prs"] if not is_cold(agent) else self._cited.get(task)
+                for task, agent in self._open.items()
+            }
             return {task: list(links) for task, links in prs.items() if links}
 
     def put_insight(self, finding: dict) -> None:
@@ -924,9 +937,15 @@ class BoardFeed:
         """Every Board task's `title` and `labels`, open or settled, by id; a settled task saved before its labels
         were kept has none."""
         with self._lock:
-            named = {task_id: {"title": s["title"], "labels": s.get("labels", [])} for task_id, s in self._settled.items()}
+            named = {
+                task_id: {"title": s["title"], "labels": s.get("labels", [])} for task_id, s in self._settled.items()
+            }
             named.update(
-                {task_id: {"title": a["title"], "labels": a["labels"]} for task_id, a in self._open.items() if not is_cold(a)}
+                {
+                    task_id: {"title": a["title"], "labels": a["labels"]}
+                    for task_id, a in self._open.items()
+                    if not is_cold(a)
+                }
             )
             return named
 
@@ -1007,7 +1026,9 @@ class BoardFeed:
             if not (moved or changed):
                 return
             tied = {dag for dags_ in self._ties.values() for dag in dags_}
-            runs_moved = moved and self._tied_runs(instance, dags, tied) != self._tied_runs(instance, self._dags.get(instance, []), tied)
+            runs_moved = moved and self._tied_runs(instance, dags, tied) != self._tied_runs(
+                instance, self._dags.get(instance, []), tied
+            )
             self._dags[instance] = dags
             self._pools[instance] = pools
             if reported is not None:
@@ -1047,7 +1068,9 @@ class BoardFeed:
     @staticmethod
     def _tied_runs(instance: str, dags: list, tied: set[str]) -> dict[str, list]:
         """The recent runs of the workflows of `instance` that an event ties: all the Ledger reads of its workflows."""
-        return {f"{instance}/{dag['name']}": dag.get("recent", []) for dag in dags if f"{instance}/{dag['name']}" in tied}
+        return {
+            f"{instance}/{dag['name']}": dag.get("recent", []) for dag in dags if f"{instance}/{dag['name']}" in tied
+        }
 
     def _runnable(self) -> list[str]:
         """The `run_safe` workflows Run now is declared on: those their instance's adapter can start."""
@@ -1083,7 +1106,9 @@ class BoardFeed:
         if MERGE_EVENT in self._ties:
             events[MERGE_EVENT] = [o for o in pull_occurrences(pulls) if o.at >= since]
         moves = {
-            event: {(t["source"], t["target"]) for t in self._drawn["board"].get("transitions", []) if t["event"] == event}
+            event: {
+                (t["source"], t["target"]) for t in self._drawn["board"].get("transitions", []) if t["event"] == event
+            }
             for event in self._ties.keys() - {MERGE_EVENT}
         }
         if moves and self._lane_rows is not None:
@@ -1101,9 +1126,7 @@ class BoardFeed:
 
     def _recent_runs(self) -> dict[str, list]:
         return {
-            f"{instance}/{dag['name']}": dag.get("recent", [])
-            for instance, dags in self._dags.items()
-            for dag in dags
+            f"{instance}/{dag['name']}": dag.get("recent", []) for instance, dags in self._dags.items() for dag in dags
         }
 
     @property
@@ -1412,17 +1435,16 @@ class Followed(Protocol):
 class Resumable(Protocol):
     """A feed that keeps its state across restarts (`BoardFeed`), so a reader of its stream resumes after a cursor."""
 
-    def resume(self, store: BoardStore, stream: str, retained: Callable[[str], bool]) -> str | None: ...
+    def resume(self, store: BoardStore, stream: str, retained: Callable[[int], bool]) -> int | None: ...
 
     def keep_saved(self, stop: threading.Event, interval: float = ...) -> None: ...
 
 
-def retained(log: EventLog, stream: str) -> Callable[[str], bool]:
-    """Whether the log still holds every `stream` row after a saved cursor: `Tail`'s gap rule, and a cursor the log
-    has not reached yet (the database was replaced) is no cursor of this log."""
+def retained(log: EventLog, stream: str) -> Callable[[int], bool]:
+    """Whether the log still holds every `stream` row after a saved position: `Tail`'s gap rule, and a position the
+    log has not reached yet (the database was replaced) is no position of this log."""
 
-    def retained(cursor: str) -> bool:
-        after = stream_id(cursor)[0]
+    def retained(after: int) -> bool:
         oldest = log.oldest()
         return oldest is not None and oldest - 1 <= after <= (log.last(stream) or 0)
 
@@ -1456,20 +1478,20 @@ def follow(
             try:
                 last = log.last(stream)
                 if isinstance(feed, Resumable):
-                    after = feed.resume(log, stream, retained(log, stream))
+                    after = feed.resume(log.checkpoints, stream, retained(log, stream))
                 break
             except Exception as exc:  # the database is unreachable; the next attempt retries
                 logger.warning("StarPulse: cannot reach the event log for %s, retrying: %s", stream, exc)
                 stop.wait(interval)
         else:
             return
-        feed.expect(str(last) if last else "0-0")
+        feed.expect(str(last or 0))
         if isinstance(feed, Resumable):
             threading.Thread(target=feed.keep_saved, args=(stop,), name="board-state", daemon=True).start()
         # no cursor replays the whole retention
         from starpulse._internal.eventlog.event_log import Tail  # noqa: PLC0415 - the database stack loads when a log opens
 
-        tail = Tail(log, stream, after=None if after is None else stream_id(after)[0], interval=interval)
+        tail = Tail(log, stream, after=after, interval=interval)
         tail.run(lambda entry: handle(str(entry.id), entry.fields), stop)
 
     thread = threading.Thread(target=run, name="board-feed", daemon=True)

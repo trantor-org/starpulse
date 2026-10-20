@@ -306,9 +306,7 @@ class UpstreamBacklog:
         if changed:
             self._kept(self.files())
 
-    def _place(
-        self, path: str, settled: Literal["completed", "archived"] | None, fingerprint: tuple[int, int]
-    ) -> bool:
+    def _place(self, path: str, settled: Literal["completed", "archived"] | None, fingerprint: tuple[int, int]) -> bool:
         """Publish the task `path` holds, listed with `fingerprint`; whether it was read."""
         file = Path(path)
         try:
@@ -549,7 +547,7 @@ def project_board(
         # A restart resumes the Board the last run saved and re-reads only the files changed since it.
         feed.await_stream()
         files, projection = None, _projection(root, board_file)
-        if feed.resume(log, _state_key(root), lambda _cursor: True) is not None:
+        if feed.resume(log.checkpoints, _state_key(root), lambda _cursor: True) is not None:
             kept = feed.source()
             files = kept.get("files")
             if files and kept.get("projection") != projection:

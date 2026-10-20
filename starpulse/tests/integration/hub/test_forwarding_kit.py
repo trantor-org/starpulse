@@ -82,7 +82,7 @@ class Kit:
         return Forwarder(self.ic_log, store, self.forward, token, self.opt_in, send=self.wire)
 
     def cursor(self) -> int | None:
-        return HistoryStore(self.ic_url, {}).cursor(f"forward:{self.forward.url}")
+        return HistoryStore(self.ic_url, {}).checkpoints.load(f"forward:{self.forward.url}")[0]
 
     def drain(self, forwarder: Forwarder) -> None:
         while forwarder.step():
