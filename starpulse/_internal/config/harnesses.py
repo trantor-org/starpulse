@@ -28,15 +28,23 @@ class Tier:
     """The efforts this tier takes; empty when the harness gives it none."""
     models: dict[str, str] = field(default_factory=dict)
     """Optional per-effort model ids; when set, every effort must be named. Empty means use `model` for each."""
+    run_efforts: dict[str, str] = field(default_factory=dict)
+    """Optional per-effort session effort; when set, every effort must be named. Empty means run at the board effort."""
 
     def model_for(self, effort: str | None) -> str:
         """The model this effort runs: `models[effort]` when present, else `model`."""
         return self.models[effort] if effort and effort in self.models else self.model
 
+    def run_effort(self, effort: str | None) -> str | None:
+        """The effort a session for this board effort runs at: `run_efforts[effort]` when present, else `effort`."""
+        return self.run_efforts.get(effort, effort) if effort else effort
+
     def as_json(self) -> dict[str, Any]:
         body: dict[str, Any] = {"model": self.model, "efforts": list(self.efforts)}
         if self.models:
             body["models"] = dict(self.models)
+        if self.run_efforts:
+            body["run_efforts"] = dict(self.run_efforts)
         return body
 
 
@@ -63,7 +71,7 @@ class Harness:
     def profiles(self) -> dict[str, tuple[str, str | None]]:
         """Each `@agent-<tier>[-<effort>]` profile and the `(model, effort)` it runs on this harness."""
         return {
-            f"@agent-{name}-{effort}" if effort else f"@agent-{name}": (tier.model_for(effort), effort)
+            f"@agent-{name}-{effort}" if effort else f"@agent-{name}": (tier.model_for(effort), tier.run_effort(effort))
             for name, tier in self.tiers.items()
             for effort in tier.efforts or (None,)
         }
@@ -125,24 +133,25 @@ def _harness(name: str, raw: dict[str, Any], tiers: tuple[str, ...]) -> Harness:
         efforts = _names(spec.get("efforts", []))
         if efforts is None:
             raise HarnessError(f"harness {name} tier {tier} efforts must be a list of names")
-        models = _models(name, tier, spec.get("models"), efforts)
-        parsed[tier] = Tier(spec["model"], efforts, models)
+        models = _per_effort(name, tier, "models", spec.get("models"), efforts)
+        run_efforts = _per_effort(name, tier, "run_efforts", spec.get("run_efforts"), efforts)
+        parsed[tier] = Tier(spec["model"], efforts, models, run_efforts)
     desktop = _desktop(name, raw["desktop"]) if "desktop" in raw else None
     return Harness(name, raw.get("label", name), bool(sessions), reason, parsed, desktop)
 
 
-def _models(
-    harness: str, tier: str, raw: object, efforts: tuple[str, ...]
+def _per_effort(
+    harness: str, tier: str, key: str, raw: object, efforts: tuple[str, ...]
 ) -> dict[str, str]:
-    """Per-effort model ids, or empty when the tier uses one `model` for every effort."""
+    """A per-effort table (`models` or `run_efforts`), or empty when the tier declares none."""
     if raw is None:
         return {}
     if not isinstance(raw, dict) or not all(isinstance(k, str) and isinstance(v, str) and k and v for k, v in raw.items()):
-        raise HarnessError(f"harness {harness} tier {tier} models must be a table of effort = model id")
+        raise HarnessError(f"harness {harness} tier {tier} {key} must be a table of effort = name")
     named = tuple(raw)
     if set(named) != set(efforts):
         raise HarnessError(
-            f"harness {harness} tier {tier} models must name each effort "
+            f"harness {harness} tier {tier} {key} must name each effort "
             f"{', '.join(efforts) or 'none'}, not {', '.join(named) or 'none'}"
         )
     return {effort: raw[effort] for effort in efforts}

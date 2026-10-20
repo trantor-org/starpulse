@@ -123,6 +123,39 @@ def test_a_models_table_must_cover_exactly_the_tier_efforts(tmp_path: Path) -> N
     )
 
 
+_CLAUDE_RUN_EFFORTS = (
+    _CLAUDE
+    + """
+[harnesses.claude.tiers.standard.models]
+medium = "haiku"
+high = "sonnet"
+
+[harnesses.claude.tiers.standard.run_efforts]
+medium = "high"
+high = "medium"
+"""
+)
+
+
+def test_a_tier_may_run_each_board_effort_at_another_session_effort(tmp_path: Path) -> None:
+    """A board effort prices the task; run_efforts names the effort its session runs at."""
+    claude = _load(tmp_path, _CLAUDE_RUN_EFFORTS).harnesses["claude"]
+
+    assert claude.profiles()["@agent-standard-medium"] == ("haiku", "high")
+    assert claude.profiles()["@agent-standard-high"] == ("sonnet", "medium")
+    assert claude.profiles()["@agent-deep-high"] == ("opus", "high")
+    served = _load(tmp_path, _CLAUDE_RUN_EFFORTS).as_json()["harnesses"][0]["tiers"]["standard"]
+    assert served["run_efforts"] == {"medium": "high", "high": "medium"}
+
+
+def test_a_run_efforts_table_must_cover_exactly_the_tier_efforts(tmp_path: Path) -> None:
+    text = _CLAUDE_RUN_EFFORTS.replace('medium = "high"\nhigh = "medium"\n', 'high = "medium"\n')
+
+    assert _refusal(tmp_path, text) == (
+        "harness claude tier standard run_efforts must name each effort medium, high, not high"
+    )
+
+
 def test_the_page_receives_the_tiers_and_each_harness_without_its_credentials_or_paths(tmp_path: Path) -> None:
     assert _load(tmp_path, _CLAUDE).as_json() == {
         "tiers": ["fast", "standard", "deep"],
