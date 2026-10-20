@@ -107,8 +107,6 @@ export interface StreamHandlers {
   autopilot?(status: AutopilotStatus): void;
   /** Orbit level aggregates; not part of the snapshot. */
   level?(body: unknown): void;
-  /** Forwarding status; not part of the snapshot. */
-  forwarding?(body: unknown): void;
 }
 
 /**
@@ -257,9 +255,6 @@ export function openStream(
     }));
     src.addEventListener("level", later((e) => {
       handlers.level?.(JSON.parse((e as MessageEvent<string>).data));
-    }));
-    src.addEventListener("forwarding", later((e) => {
-      handlers.forwarding?.(JSON.parse((e as MessageEvent<string>).data));
     }));
     src.addEventListener("restarting", () => {
       announced = true;

@@ -247,7 +247,7 @@ describe("the demo server", () => {
     expect(four.description).toContain("start_criteria:");
     expect((await read(ok, "DEMO-2")).start_criteria).toBeUndefined();
 
-    const failing = await read(new DemoServer(waiting, () => 1000, false, undefined, true), "DEMO-4");
+    const failing = await read(new DemoServer(waiting, () => 1000, false, true), "DEMO-4");
     expect(failing.start_criteria?.map((c) => c.status)).toEqual(["met", "error"]);
     expect(failing.start_criteria?.[1].error).toContain("prometheus");
   });
@@ -402,49 +402,6 @@ describe("the demo server", () => {
     expect((await reply.json()).error).toBe(ROUTES["/api/run"]);
   });
 
-  it("answers /api/forwarding with the board's moves as the forwarder would cut them, and flips the names with the opt-in", async () => {
-    const s = new DemoServer(fixture(), () => 100);
-    const put = (optIn: unknown) => body(s.fetch("/api/forwarding", { method: "PUT", body: JSON.stringify({ opt_in: optIn }) }));
-
-    const listed = await body(s.fetch("/api/forwarding"));
-
-    expect(listed).toMatchObject({ configured: true, optIn: false, names: false, refused: false, problem: null });
-    expect(listed.next.map((r: { fields: { task: string } }) => r.fields.task)).toEqual(["DEMO-1", "DEMO-2"]);
-    expect(listed.next.every((r: { fields: object }) => !("actor" in r.fields))).toBe(true);
-    expect(listed.contract["machine:events"].filter((f: { person: boolean }) => f.person).map((f: { field: string }) => f.field)).toEqual(["actor", "assignee"]);
-
-    const named = await put(true);
-    expect(named).toMatchObject({ optIn: true, names: true });
-    expect(named.next.every((r: { fields: { actor?: string } }) => typeof r.fields.actor === "string")).toBe(true);
-    expect((await put(false)).next.every((r: { fields: object }) => !("actor" in r.fields))).toBe(true);
-  });
-
-  it("names its stand-in hub without a URL, which the demo publisher refuses in a public page", async () => {
-    const listed = await new DemoServer(fixture(), () => 100).fetch("/api/forwarding").then((r) => r.json());
-
-    expect(JSON.stringify(listed)).not.toMatch(/https?:\/\//);
-  });
-
-  it("refuses an opt-in that is not a boolean, as the server does", async () => {
-    const s = new DemoServer(fixture());
-
-    const reply = await s.fetch("/api/forwarding", { method: "PUT", body: JSON.stringify({ opt_in: "yes" }) });
-
-    expect(reply.status).toBe(400);
-  });
-
-  it("can stand in for a hub that refuses names, a hub that is down, and an instance that forwards nothing", async () => {
-    const refused = new DemoServer(fixture(), () => 100, false, "refused");
-    const down = new DemoServer(fixture(), () => 100, false, "down");
-    const none = new DemoServer(fixture(), () => 100, false, "none");
-    const optIn = { method: "PUT", body: JSON.stringify({ opt_in: true }) };
-
-    expect(await body(refused.fetch("/api/forwarding", optIn))).toMatchObject({ optIn: true, names: false, refused: true });
-    expect(await body(down.fetch("/api/forwarding"))).toMatchObject({ lastSent: null, problem: expect.stringContaining("unreachable") });
-    expect(await body(none.fetch("/api/forwarding"))).toEqual({ configured: false });
-    expect((await none.fetch("/api/forwarding", optIn)).status).toBe(404);
-  });
-
   it("answers /api/autopilot with the board's sessions in flight and the pick the loop would admit next", async () => {
     const s = new DemoServer(fixture(), () => 1000);
 
@@ -471,7 +428,7 @@ describe("the demo server", () => {
   });
 
   it("can stand in for a paused autopilot, a host over its limit, an empty queue, a refused switch and a server with no autopilot", async () => {
-    const mode = (m: "off" | "over" | "empty" | "refused" | "down") => new DemoServer(fixture(), () => 1000, false, undefined, false, m);
+    const mode = (m: "off" | "over" | "empty" | "refused" | "down") => new DemoServer(fixture(), () => 1000, false, false, m);
     const turnOff = { method: "PUT", body: JSON.stringify({ enabled: false }) };
 
     expect(await body(mode("off").fetch("/api/autopilot"))).toMatchObject({ enabled: false });
@@ -495,12 +452,12 @@ describe("the demo server", () => {
     expect(await body(put(night))).toMatchObject({ enabled: true, quietHours: night });
     expect(await body(put(null))).toMatchObject({ quietHours: null });
     expect((await put({ start: "22:00", end: "22:00", timezone: "UTC" })).status).toBe(400);
-    const quiet = await body(new DemoServer(fixture(), () => 1000, false, undefined, false, "quiet").fetch("/api/autopilot"));
+    const quiet = await body(new DemoServer(fixture(), () => 1000, false, false, "quiet").fetch("/api/autopilot"));
     expect(quiet).toMatchObject({ quietHours: { start: "22:00", end: "07:00" }, next: { verdict: "waits", reason: "quiet hours" } });
   });
 
   it("in its credits state, opens on Cursor paused for a usage limit and holding the pick, which Claude Code starts", async () => {
-    const s = new DemoServer(fixture(), () => 1000, false, undefined, false, "credits");
+    const s = new DemoServer(fixture(), () => 1000, false, false, "credits");
     const pause = { harness: "cursor", until: 1000 + 2 * 3600, reason: "usage limit" };
 
     expect(await body(s.fetch("/api/autopilot"))).toMatchObject({ harness: "cursor", pauses: [pause], next: { verdict: "waits", reason: "cursor usage limit" } });
@@ -517,7 +474,7 @@ describe("the demo server", () => {
     const sessions = (s: { dimensions: { name: string; use: number }[]; inFlight: unknown[] }) => [s.dimensions.find((d) => d.name === "sessions")?.use, s.inFlight.length];
 
     const calm = await body(new DemoServer(crowded(), () => 1000).fetch("/api/autopilot"));
-    const over = await body(new DemoServer(crowded(), () => 1000, false, undefined, false, "over").fetch("/api/autopilot"));
+    const over = await body(new DemoServer(crowded(), () => 1000, false, false, "over").fetch("/api/autopilot"));
 
     expect(sessions(calm)).toEqual([2, 2]);
     expect(calm.next).toMatchObject({ task: "DEMO-10", verdict: "starting" });

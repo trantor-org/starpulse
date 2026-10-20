@@ -15,7 +15,6 @@ const LAZY_VIEWS = [
   "features/kanban/Kanban.tsx",
   "features/dags/Dags.tsx",
   "features/admin/Admin.tsx",
-  "features/forwarding/ForwardingCard.tsx",
   "features/orbit/OrbitCard.tsx",
 ];
 /** Demo modules a served page loads only for an embedded fixture or `?demo`; none belongs to the sync first-paint chunks. */

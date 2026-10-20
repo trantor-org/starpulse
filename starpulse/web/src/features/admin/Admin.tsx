@@ -107,10 +107,10 @@ function ServerCard({ store, clock }: { store: HistoryWindowStore; clock: "24" |
 }
 
 /**
- * `autopilot`, `tracker` and `forwarding` draw the Autopilot, Tracker and Forwarding cards in the settings column: each card is its own
- * feature, so App hands them in, `autopilot` and `forwarding` with the clock they are to show.
+ * `autopilot` and `tracker` draw the Autopilot and Tracker cards in the settings column: each card is its own
+ * feature, so App hands them in, `autopilot` with the clock it is to show.
  */
-export function Admin({ store, window: historyWindow, autopilot, forwarding, tracker }: { store: AdminStore; window: HistoryWindowStore; autopilot: (clock: ClockMode) => ReactNode; forwarding: (clock: ClockMode) => ReactNode; tracker?: ReactNode }) {
+export function Admin({ store, window: historyWindow, autopilot, tracker }: { store: AdminStore; window: HistoryWindowStore; autopilot: (clock: ClockMode) => ReactNode; tracker?: ReactNode }) {
   const { scale, motion, view, density, clock } = useSyncExternalStore(store.subscribe, store.get);
   return (
     <div id="admin">
@@ -153,7 +153,6 @@ export function Admin({ store, window: historyWindow, autopilot, forwarding, tra
           <ServerCard store={historyWindow} clock={clock} />
           {autopilot(clock)}
           {tracker}
-          {forwarding(clock)}
         </div>
         <Preview scale={scale} compact={density === "compact"} />
       </div>

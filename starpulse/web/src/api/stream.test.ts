@@ -736,10 +736,10 @@ describe("the page's sources", () => {
     expect(polling.map(([file]) => file)).toEqual([]);
   });
 
-  it("keeps no timed GET refresh for level or forwarding", () => {
+  it("keeps no timed GET refresh for level", () => {
     // clock-only setInterval (ago stamps) may share a file with apiFetch; ban the live-data refresh patterns
     const text = Object.entries(sources)
-      .filter(([file]) => /orbit\/levelData|forwarding\/ForwardingCard|forwarding\/forwarding/.test(file))
+      .filter(([file]) => /orbit\/levelData/.test(file))
       .map(([, body]) => body)
       .join("\n");
     expect(text).not.toMatch(/setInterval/);

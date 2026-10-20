@@ -481,8 +481,8 @@ dimension's use, or the length of `inFlight` without it), and the quiet hours ro
 `PUT` with no dialog, and a refusal shows its reason under the switch. The card reads `next` from the same body when it
 carries it, and shows no pick without it. It reads once when Admin opens and follows the `/api/events` `autopilot`
 event after. A server with no autopilot (404) shows the card with its reason and no controls. The Kanban draws no
-autopilot control. The Orbit view and Admin Forwarding card follow the same pattern for `/api/events` `level` and
-`forwarding` (one GET when shown, then stream events; no timed refresh).
+autopilot control. The Orbit view follows the same pattern for the `/api/events` `level` event (one GET when shown,
+then stream events; no timed refresh).
 
 ### Quiet hours
 
