@@ -4,7 +4,7 @@ trantor pins starpulse and its `check-config` fails a pin whose tree breaks the 
 an HTTP server. Running it here keeps such a commit from going green, so trantor's bump never pins one. The module is
 loaded by path, not imported through its package, so only `pyyaml` and trantor's `lib/` are needed.
 
-Usage: PYTHONPATH=<trantor>/lib python ci/trantor_tier_policy.py <trantor>/lib/linting/check_config_checks/tier_policy.py
+Usage: `tier_policy` in ci/static_checks.sh, which finds the policy under either trantor `lib/` layout.
 """
 
 from __future__ import annotations

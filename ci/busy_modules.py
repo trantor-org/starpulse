@@ -19,6 +19,9 @@ from pathlib import Path
 def violations(lib: Path, root: Path, today: str) -> list[str]:
     """One message per production module tracked under *root* that is over the limit with no entry lasting to *today*."""
     sys.path.insert(0, str(lib))
+    # trantor's packages sit under lib/ or, in its member layout, one level down in lib/<member>/: a package
+    # directory found through a member wins over the namespace portion lib/ then holds.
+    sys.path += [str(member.parent) for member in sorted(lib.glob("*/pyproject.toml"))]
     from linting.check_config_checks import busy_modules as busy
 
     subdir, pathspecs, package_of = next(entry for entry in busy.REPOS if entry[0] == "starpulse")

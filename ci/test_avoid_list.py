@@ -15,7 +15,7 @@ import avoid_list
 ROOT = Path(__file__).resolve().parents[1]
 CANDIDATES = [Path(os.environ.get("TRANTOR_LIB", "/nonexistent")), ROOT / ".trantor/lib"]
 CANDIDATES += [parent / "lib" for parent in ROOT.parents]
-TRANTOR_LIB = next((lib for lib in CANDIDATES if (lib / "linting/avoid_list.py").is_file()), None)
+TRANTOR_LIB = next((lib for lib in CANDIDATES if any((lib / layout / "avoid_list.py").is_file() for layout in ("linting", "linting/linting"))), None)
 
 pytestmark = pytest.mark.skipif(TRANTOR_LIB is None, reason="trantor's lib/ is not checked out")
 

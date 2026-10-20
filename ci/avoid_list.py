@@ -29,6 +29,9 @@ def _owners(path: str, contexts: dict[str, list[str]]) -> list[str]:
 def findings(lib: Path, root: Path, glossaries: Path, base: str) -> list[str]:
     """`path:line:` messages for the avoided terms *root*'s change since *base* adds to its contexts' new names."""
     sys.path.insert(0, str(lib))
+    # trantor's packages sit under lib/ or, in its member layout, one level down in lib/<member>/: a package
+    # directory found through a member wins over the namespace portion lib/ then holds.
+    sys.path += [str(member.parent) for member in sorted(lib.glob("*/pyproject.toml"))]
     from linting import avoid_list
 
     contexts = avoid_list.context_packages(root)

@@ -33,9 +33,12 @@ api_types() {
 # trantor's check-config test-tier policy over this tree, with trantor's lib checked out at .trantor. GIT_CLI_LIST_TIMEOUT
 # is read by git_cli.list_timeout: unset is the fail-sentinel 0 and times out ls-files immediately. Every check that loads
 # trantor's lib runs `--with pydantic-settings`: its git_cli reads trantor_settings, which needs it.
+# trantor's packages sit under lib/ or, in its member layout, one level down in lib/<member>/.
 tier_policy() {
-  PYTHONPATH=.trantor/lib GIT_CLI_LIST_TIMEOUT=60 uv run --no-project --python 3.14 --with pyyaml --with pydantic-settings \
-    python ci/trantor_tier_policy.py .trantor/lib/linting/check_config_checks/tier_policy.py
+  local lib=.trantor/lib policy=.trantor/lib/linting/linting/check_config_checks/tier_policy.py
+  [ -f "$policy" ] || policy=$lib/linting/check_config_checks/tier_policy.py
+  PYTHONPATH=$lib:$lib/linting:$lib/trantor_lib:$lib/trantor_settings GIT_CLI_LIST_TIMEOUT=60 \
+    uv run --no-project --python 3.14 --with pyyaml --with pydantic-settings python ci/trantor_tier_policy.py "$policy"
 }
 
 # trantor's glossary avoid-list gate over the names this change adds to a context package (the `context-*` import

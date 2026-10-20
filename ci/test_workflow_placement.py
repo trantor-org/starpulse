@@ -260,7 +260,7 @@ def test_the_four_short_jobs_are_gone_and_static_checks_runs_every_check_they_ra
         "python -m starpulse.contracts.api",  # api-types: regenerate both outputs, fail on a diff
         "pnpm --dir starpulse/web run gen:types",
         "git diff --exit-code -- starpulse/api.schema.json starpulse/web/src/api/types.gen.ts",
-        "ci/trantor_tier_policy.py .trantor/lib/linting/check_config_checks/tier_policy.py",  # tier-policy
+        'ci/trantor_tier_policy.py "$policy"',  # tier-policy
     ):
         assert command in script, command
 
