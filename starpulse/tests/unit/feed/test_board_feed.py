@@ -250,7 +250,6 @@ _REPLAY_DELTAS = (
     "dags",
     "ledgers",
     "level",
-    "forwarding",
     "autopilot",
 )
 

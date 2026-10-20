@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, NamedTuple, Protocol
 from urllib.parse import unquote
 
 from starpulse._internal.pulls.pull_refresh import MAX_BODY as MAX_REFRESH_BODY
-from starpulse._internal.runs.ingest import MAX_BODY, MAX_FORWARD_BODY
+from starpulse._internal.runs.ingest import MAX_BATCH_BODY, MAX_BODY
 from starpulse._internal.server.encoding import encode
 from starpulse._internal.server.reads import Response
 from starpulse._internal.server.routes import (
@@ -22,8 +22,6 @@ from starpulse._internal.server.routes import (
     _DOC_WRITES,
     _DOCS,
     _EDIT,
-    _FORWARD,
-    _FORWARDING,
     _INSIGHTS,
     _MACHINE_EVENTS,
     _MILESTONE_ARCHIVE,
@@ -63,7 +61,6 @@ from starpulse._internal.server.writes import (
     edit_doc,
     edit_milestone,
     edit_task,
-    forwarding,
     history_window,
     import_retired,
     move_task,
@@ -97,11 +94,9 @@ if TYPE_CHECKING:  # annotation only: a runtime import would put the autopilot i
     from starpulse._internal.config.harnesses import Harnesses
     from starpulse._internal.feed.board_feed import BoardFeed
     from starpulse._internal.feed.history_window import HistoryWindow
-    from starpulse._internal.hub.forward import Forwarder
     from starpulse._internal.level.insights import Insights
     from starpulse._internal.pulls.pull_refresh import PullRefresh
     from starpulse._internal.runs.cloudevents import CloudEventsIngest
-    from starpulse._internal.runs.ingest import ForwardIngest
 
 
 class Headers(Protocol):
@@ -148,10 +143,8 @@ class WriteRoutes:
         complete: TaskCompleter | None = None,
         create: TaskCreator | None = None,
         events: CloudEventsIngest | None = None,
-        forward: ForwardIngest | None = None,
         insights: Insights | None = None,
         pull_refresh: PullRefresh | None = None,
-        forwarder: Forwarder | None = None,
         autopilot_switch: Runtime | Remote | None = None,
         milestones: Board | None = None,
     ) -> None:
@@ -161,7 +154,6 @@ class WriteRoutes:
         self._reruns = reruns or {}
         self._run_safe = run_safe
         self._insights = insights
-        self._forwarder = forwarder
         self._autopilot = autopilot_switch
         self._task_writes: dict[str, TaskWrite] = {
             _MOVE: lambda client, raw: move_task(client, raw, feed, writer),
@@ -188,7 +180,6 @@ class WriteRoutes:
         }
         # The pushes a deployment may leave unconfigured: their route is then none, and a POST of it answers 404.
         self._pushes: dict[str, tuple[Pushed | None, int]] = {
-            _FORWARD: (forward, MAX_FORWARD_BODY),
             _INSIGHTS: (insights, MAX_BODY),
             _PULL_REFRESH: (pull_refresh, MAX_REFRESH_BODY),
         }
@@ -203,7 +194,6 @@ class WriteRoutes:
             in {
                 *_TASK_WRITES,
                 _MACHINE_EVENTS,
-                _FORWARD,
                 _INSIGHTS,
                 _PULL_REFRESH,
                 *_MILESTONE_WRITES,
@@ -236,7 +226,7 @@ class WriteRoutes:
         elif path == _MACHINE_EVENTS and self._events is not None:
             content_type = request.headers.get("Content-Type")
             events = self._events
-            return self._pushed(request, kind, lambda auth, raw: events(auth, content_type, raw), MAX_FORWARD_BODY)
+            return self._pushed(request, kind, lambda auth, raw: events(auth, content_type, raw), MAX_BATCH_BODY)
         elif _is_rerun(path):
             name = unquote(path.removeprefix(_RERUN).removesuffix(_RERUN_TAIL))
             status, body = rerun_dag(request.client, name, self._feed, self._reruns, self._run_safe)
@@ -247,15 +237,11 @@ class WriteRoutes:
         return Response(encode(kind, body), status)
 
     def _put(self, request: WriteRequest) -> Response | None:
-        """The switches a page puts: the autopilot's, the forwarding opt-in and the history window."""
+        """The switches a page puts: the autopilot's and the history window."""
         path = request.path
         if path == _AUTOPILOT:
             return self._guarded(
                 request, "autopilot", lambda raw: autopilot(request.client, "PUT", raw, self._autopilot)
-            )
-        if path == _FORWARDING:
-            return self._guarded(
-                request, "forwarding", lambda raw: forwarding(request.client, "PUT", raw, self._forwarder)
             )
         return self._windowed(request)
 

@@ -73,7 +73,7 @@ def check(port: int, parent: int, expected: set[str], log: Path) -> str | None:
 
 
 def worker_contexts(python: str, cwd: str) -> set[str]:
-    """The contexts `serve` supervises under the default config, which has no `[forward]` table and no embeddings URL."""
+    """The contexts `serve` supervises under the default config, which has no embeddings URL."""
     code = (
         "import json; from starpulse._internal.config.config import discover, load;"
         " from starpulse._internal.server.supervisor import worker_commands;"

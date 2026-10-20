@@ -401,7 +401,7 @@ class LaneEvent(_Contract):
         default="", description="Which agent profile or model the task was routed to; empty when unrouted, and a person's name."
     )
     assignee: str = Field(
-        default="", description="The legacy name of `profile`, read on an entry an older instance wrote or forwarded."
+        default="", description="The legacy name of `profile`, read on an entry an older instance wrote."
     )
     actor: str = Field(
         default="",

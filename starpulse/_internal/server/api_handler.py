@@ -36,10 +36,8 @@ from starpulse._internal.config.harnesses import Harnesses
 from starpulse._internal.config.level import Level
 from starpulse._internal.feed.history_window import HistoryWindow
 from starpulse._internal.harnesses.telemetry import TelemetryLog
-from starpulse._internal.hub.forward import Forwarder
 from starpulse._internal.pulls.pull_refresh import PullRefresh
 from starpulse._internal.runs.cloudevents import CloudEventsIngest
-from starpulse._internal.runs.ingest import ForwardIngest
 from starpulse._internal.server.compression import LEVEL, Encoded, accepts_gzip, compressed, gzip_stream
 from starpulse._internal.server.encoding import encode, event
 from starpulse._internal.server.reads import Arrival, ReadRoutes, Request, Response
@@ -317,11 +315,9 @@ def request_handler(
     create: TaskCreator | None = None,
     clock: Callable[[], float] = time.time,
     gate: Callable[[BaseHTTPRequestHandler], bool] | None = None,
-    forward: ForwardIngest | None = None,
     level: Level | None = None,
     insights: Insights | None = None,
     events: CloudEventsIngest | None = None,
-    forwarding: Forwarder | None = None,
     autopilot: Runtime | Remote | None = None,
     reruns: Mapping[str, Callable[[str, Mapping[str, str]], str]] | None = None,
     contract: Callable[[], dict[str, Any]] | None = None,
@@ -355,7 +351,6 @@ def request_handler(
         contract=contract,
         milestones=milestones,
         pulls=pulls,
-        forwarder=forwarding,
         autopilot=autopilot,
         harnesses=configured,
         slow_read_s=slow_read_s,
@@ -381,10 +376,8 @@ def request_handler(
         complete=complete,
         create=create,
         events=events,
-        forward=forward,
         insights=insights,
         pull_refresh=pull_refresh,
-        forwarder=forwarding,
         autopilot_switch=autopilot,
         milestones=milestones,
     )

@@ -23,7 +23,7 @@ Pass the variables through `--settings`, not the shell: an `env` block in your u
 moves the task its branch names (`TASK-<n>` in the branch), so start Claude Code on that branch.
 
 The receiver decodes each export but publishes only which session moved, on which event and when; prompt,
-reply and tool text is neither stored nor forwarded.
+reply and tool text is never stored.
 
 ## Measure session and slice health
 

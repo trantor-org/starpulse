@@ -1,29 +1,12 @@
-"""`/api/forwarding` and `/api/autopilot`."""
+"""`/api/autopilot`."""
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import Field
 
 from starpulse.contracts.api._base import _Api
-
-
-class ForwardedEntry(_Api):
-    stream: str
-    fields: dict[str, Any]
-    kept: list[str] = Field(description="The fields of an entry that stay on the instance.")
-
-
-class ForwardedField(_Api):
-    field: str
-    person: bool
-
-
-class ForwardingUnconfigured(_Api):
-    """An instance with no `[forward]` block."""
-
-    configured: Literal[False]
 
 
 class AutopilotDimension(_Api):
@@ -104,18 +87,3 @@ class AutopilotStatus(_Api):
         default_factory=dict,
         description="Each harness's in-flight count against its session cap; the Sessions meter follows `harness`.",
     )
-
-
-class ForwardingStatus(_Api):
-    """What the forwarder would send next, and why."""
-
-    configured: Literal[True]
-    url: str
-    optIn: bool
-    names: bool
-    refused: bool
-    lastSent: float | None
-    problem: str | None
-    next: list[ForwardedEntry]
-    more: bool
-    contract: dict[str, list[ForwardedField]]

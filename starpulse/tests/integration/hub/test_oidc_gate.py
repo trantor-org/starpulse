@@ -22,7 +22,6 @@ pytest.importorskip("jwt", reason="the hub extras are not installed")
 
 from starpulse._internal.config.config import Producer
 from starpulse._internal.runs.cloudevents import CloudEventsIngest
-from starpulse._internal.runs.ingest import ForwardIngest
 from starpulse._internal.server import server
 from starpulse._internal.server import writes
 from starpulse._internal.kit.adapter_kit import serve, url
@@ -43,7 +42,6 @@ pytestmark = pytest.mark.usefixtures("sqlite_stores_from_template")
 
 ALLOWED = ("ops", "admins")
 INSTANCE_TOKEN = "cron-secret"
-FORWARD_TOKEN = "laptop-secret"
 ENGINE_TOKEN = "engine-secret"
 READER_TOKEN = "reader-secret"
 LEVEL = Level(
@@ -120,7 +118,6 @@ def running_hub(issuer: str, tmp_path: Path, store: HistoryStore) -> Iterator[Hu
         level=LEVEL,
         gate=lambda handler: gates[0](handler),
         events=events,
-        forward=ForwardIngest({"laptop": FORWARD_TOKEN}, log),
         insights=insights,
     ) as running:
         redirect_uri = f"http://127.0.0.1:{running.server_port}/auth/callback"
@@ -230,15 +227,6 @@ def test_a_viewer_session_does_not_pass_on_the_instance_token_route(hub: Hub) ->
     assert hub.call("/api/machine-events", "POST", {**post, "Authorization": f"Bearer {INSTANCE_TOKEN}"}, event)[0] == 201
 
 
-def test_a_viewer_session_does_not_pass_on_the_forward_route_but_a_source_token_does(hub: Hub) -> None:
-    cookie = session_of(sign_in(hub, "alice", ["ops"]))
-    batch = json.dumps({"opt_in": False, "instance": "i-1", "events": []}).encode()
-    post = {"Content-Type": "application/json", "Cookie": cookie}
-
-    assert hub.call("/api/forward", "POST", post, batch)[0] == 401
-    assert hub.call("/api/forward", "POST", {**post, "Authorization": f"Bearer {FORWARD_TOKEN}"}, batch)[0] == 200
-
-
 def test_an_instance_token_does_not_pass_as_a_viewer(hub: Hub) -> None:
     assert hub.call("/api/snapshot", headers={"Authorization": f"Bearer {INSTANCE_TOKEN}"})[0] == 401
     assert hub.call("/", headers={"Authorization": f"Bearer {INSTANCE_TOKEN}"})[0] == 401
@@ -296,7 +284,6 @@ def test_the_built_in_routes_open_to_the_gate_are_the_sign_in_the_instance_token
 ):
     assert {path for path, access in ROUTES.items() if access == PUBLIC} == SIGN_IN
     assert {path for path, access in ROUTES.items() if access == INSTANCE} == {
-        "/api/forward",
         "/api/machine-events",
     }
     assert {path for path, access in ROUTES.items() if access == ENGINE} == {"/api/insights"}
@@ -349,7 +336,6 @@ def test_the_reader_token_writes_nothing(hub: Hub) -> None:
         ("PUT", "/api/history-window"),
         ("DELETE", "/api/history-window"),
         ("POST", "/api/machine-events"),
-        ("POST", "/api/forward"),
         ("POST", "/api/insights"),
         ("DELETE", "/api/insights/slow-review"),
     ]
@@ -360,7 +346,7 @@ def test_the_reader_token_writes_nothing(hub: Hub) -> None:
 
 
 def test_no_other_token_reads_as_the_reader(hub: Hub) -> None:
-    for token in (INSTANCE_TOKEN, FORWARD_TOKEN, ENGINE_TOKEN):
+    for token in (INSTANCE_TOKEN, ENGINE_TOKEN):
         assert hub.call("/api/level", headers={"Authorization": f"Bearer {token}"})[0] == 401, token
 
 

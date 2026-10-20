@@ -15,7 +15,6 @@ CI = ROOT / ".github/workflows/ci.yml"
 def test_ic_modules_leave_out_the_hub_only_modules_and_the_tests():
     modules = ic_modules(ROOT)
     assert "starpulse._internal.server.server" in modules
-    assert "starpulse._internal.hub.forward" in modules  # `starpulse forward` runs in IC mode
     assert not [m for m in modules if m.startswith(HUB_ONLY) or ".tests" in m]
 
 

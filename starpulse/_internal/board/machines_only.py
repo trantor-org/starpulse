@@ -1,6 +1,6 @@
 """The `machines` board: a project's declared machines, with no task source.
 
-For a hub, whose tasks arrive as the lane entries and machine events instances forward. It draws every file under
+For a hub, whose tasks arrive as the lane entries and machine events instances send. It draws every file under
 `.starpulse/machines/` as the native board draws them, the Board machine among them, and places no task: it reads no
 board directory and writes nothing.
 """
@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
 
 def _start(feed: BoardFeed, group: str, log: EventLog) -> None:
-    """Nothing to follow: the tasks arrive as forwarded lane entries."""
+    """Nothing to follow: the tasks arrive as lane entries."""
 
 
 def board(settings: Mapping[str, Any], base: Path) -> Board:

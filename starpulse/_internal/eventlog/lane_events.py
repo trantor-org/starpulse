@@ -5,8 +5,7 @@ transaction), under the same `<task>@<lane>@<entered>` event id, so the log, the
 An entry carries `task`, `lane` (the Board machine state id) and `time` (epoch seconds when the task entered the lane),
 the task's facets `team`, `milestone` and `labels` (absent when empty), `profile` when the task has one and `actor`
 (`operator`, `agent`, `anonymous` or `<instance>/<workflow>`) when the move was a write the board's server judged,
-with the `session` and `harness` that write named. It never carries a title, a description or a holder. `profile` names a person, so it leaves the instance
-only while it is opted in to naming (`adapters.runs.forwarded.PERSON`).
+with the `session` and `harness` that write named. It never carries a title, a description or a holder.
 """
 
 from __future__ import annotations
@@ -17,14 +16,8 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from starpulse.contracts import BoardTask
     from starpulse._internal.eventlog.event_log import Entry, EventLog
-    from starpulse._internal.eventlog.history import HistoryStore
 
 STREAM = "board:lanes"
-#: The checkpoint name under which a store records that its lane history has been put in the log.
-REPLAYED = "board:lanes:replayed"
-#: The fields a forwarded lane entry may carry.
-#: `assignee` is the legacy name of `profile`, still forwarded by an instance that has not flipped it.
-FIELDS = ("task", "lane", "time", "team", "milestone", "labels", "profile", "assignee", "actor")
 #: The actor of a move the replay of the Board placed with no note naming its writer: written while `serve` was down.
 REPLAY_ACTOR = "starpulse/replay"
 #: The actor of a lane the reconcile recorded, which no write's note names.
@@ -88,19 +81,3 @@ class Unattributed:
         thread.start()
         return thread
 
-
-def replay(store: HistoryStore, log: EventLog) -> int:
-    """Append every lane change `store` holds to `log`, once: how many it appended, 0 when an earlier call finished.
-
-    The entries carry the changes' own event ids, so one the log already holds is not appended twice, and they hold
-    only the task, the lane and the time: the history keeps no facets. A log that refuses an entry leaves the replay
-    unfinished, and the next call goes again.
-    """
-    if store.checkpoints.load(REPLAYED)[0] is not None:
-        return 0
-    changes = store.lane_changes()
-    for event_id, task, lane, at in changes:
-        if append(log, event_id, task, lane, at) is None:
-            return 0
-    store.checkpoints.save(REPLAYED, 1)
-    return len(changes)

@@ -49,7 +49,7 @@
     },
     "assignee": {
       "default": "",
-      "description": "The legacy name of `profile`, read on an entry an older instance wrote or forwarded.",
+      "description": "The legacy name of `profile`, read on an entry an older instance wrote.",
       "title": "Assignee",
       "type": "string"
     },

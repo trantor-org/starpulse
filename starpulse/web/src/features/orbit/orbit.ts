@@ -16,7 +16,7 @@ export interface Drift {
 export interface OrbitSourceIn {
   id: string;
   name: string;
-  /** A forwarder named it: it draws its own Board; an unnamed one only counts in the aggregate. */
+  /** A source named it: it draws its own Board; an unnamed one only counts in the aggregate. */
   shared: boolean;
   wip: number;
   /** Runs it ends a day over the window, which sets how fast it circles. */

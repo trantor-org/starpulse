@@ -9,7 +9,6 @@ from starpulse._internal.config.config import (
     CommitKeys,
     Config,
     ConfigError,
-    Forward,
     MemoryLimit,
     OidcSettings,
     Producer,
@@ -217,7 +216,7 @@ def test_hub_mode_is_a_serve_flag_not_a_config_setting(tmp_path: Path) -> None:
 def test_unknown_keys_are_refused_by_name_beside_the_known_ones(tmp_path: Path) -> None:
     assert _refusal(tmp_path, 'zeta = 1\ntrakcer_url = "http://x.test"\n') == (
         "unknown config key(s) trakcer_url, zeta; known: aggregates_only, analytics, api_worker, autopilot, board, board_worker, ci, cursor_context, database_url, event_log_archive_dir, event_log_retention_days, "
-        "flow_metrics_worker, forward, forwarding_worker, harnesses_file, hub_retention_days, level, mode, oidc, producers, pull_requests, refresh_token_env, release, repos, runs, runs_worker, search, search_worker, session_start_url, slow_read_seconds, sources, tracker_url, worker_memory"
+        "flow_metrics_worker, harnesses_file, hub_retention_days, level, mode, oidc, producers, pull_requests, refresh_token_env, release, repos, runs, runs_worker, search, search_worker, session_start_url, slow_read_seconds, sources, tracker_url, worker_memory"
     )
 
 
@@ -426,36 +425,6 @@ def test_oidc_is_a_table(tmp_path: Path) -> None:
     assert _refusal(tmp_path, "oidc = 3\n") == "oidc must be an [oidc] table"
 
 
-def test_a_forward_table_names_the_hub_its_token_variable_and_a_default_batch(tmp_path: Path) -> None:
-    text = '[forward]\nurl = "https://hub.example.test"\ntoken_env = "HUB_TOKEN"\n'
-
-    forward = load(_write(tmp_path, text)).forward
-
-    assert forward == Forward(url="https://hub.example.test", token_env="HUB_TOKEN", batch=50)
-
-
-def test_no_forward_table_means_nothing_is_forwarded(tmp_path: Path) -> None:
-    assert load(None).forward is None
-    assert load(_write(tmp_path, 'tracker_url = "http://t.test"\n')).forward is None
-
-
-@pytest.mark.parametrize(
-    ("table", "reason"),
-    [
-        ('token_env = "T"', "forward needs url"),
-        ('url = "https://hub.test"', "forward needs token_env"),
-        ('url = "hub.test"\ntoken_env = "T"', "forward url must be an http:// or https:// address"),
-        ('url = "https://hub.test"\ntoken_env = "not a name"', "forward token_env must be the name of an environment variable"),
-        ('url = "https://hub.test"\ntoken_env = "T"\nbatch = 0', "forward batch must be a whole number from 1 to 200"),
-        ('url = "https://hub.test"\ntoken_env = "T"\nbatch = 201', "forward batch must be a whole number from 1 to 200"),
-        ('url = "https://hub.test"\ntoken_env = "T"\nbatch = true', "forward batch must be a whole number from 1 to 200"),
-        ('url = "https://hub.test"\ntoken_env = "T"\nopt_in = true', "forward: unknown key(s) opt_in; known: batch, token_env, url"),
-    ],
-)
-def test_a_forward_table_that_cannot_run_is_refused_with_its_reason(tmp_path: Path, table: str, reason: str) -> None:
-    assert _refusal(tmp_path, f"[forward]\n{table}\n") == reason
-
-
 def test_sources_are_the_instances_a_hub_accepts_events_from_each_with_its_own_token_variable(tmp_path: Path) -> None:
     text = (
         '[[sources]]\nname = "ana"\ntoken_env = "ANA_TOKEN"\n\n[[sources]]\nname = "bo"\ntoken_env = "BO_TOKEN"\n'
@@ -616,12 +585,6 @@ def test_search_worker_defaults_off_and_is_a_flag(tmp_path: Path) -> None:
     assert _refusal(tmp_path, 'search_worker = "yes"\n') == "search_worker must be true or false"
 
 
-def test_forwarding_worker_defaults_off_and_is_a_flag(tmp_path: Path) -> None:
-    assert load(None).forwarding_worker is False
-    assert load(_write(tmp_path, "forwarding_worker = true\n")).forwarding_worker is True
-    assert _refusal(tmp_path, 'forwarding_worker = "yes"\n') == "forwarding_worker must be true or false"
-
-
 def test_a_hub_takes_names_unless_it_is_configured_for_aggregates_only(tmp_path: Path) -> None:
     assert load(None).aggregates_only is False
     assert load(_write(tmp_path, "aggregates_only = true\n")).aggregates_only is True
@@ -772,7 +735,7 @@ def test_each_worker_context_has_a_packaged_memory_limit_that_the_config_overrid
     text = "[worker_memory.pulls]\nsoft_mb = 100\n[worker_memory.autopilot]\nsoft_mb = 10\nhard_mb = 20\n"
     tuned = load(_write(tmp_path, text)).worker_memory
 
-    assert set(packaged) == {"pulls", "autopilot", "runs", "forwarding", "flow-metrics", "search", "board"}
+    assert set(packaged) == {"pulls", "autopilot", "runs", "flow-metrics", "search", "board"}
     assert all(0 < limit.soft_mb < limit.hard_mb for limit in packaged.values())
     assert tuned["pulls"] == MemoryLimit(100, packaged["pulls"].hard_mb)
     assert tuned["autopilot"] == MemoryLimit(10, 20)
@@ -781,7 +744,7 @@ def test_each_worker_context_has_a_packaged_memory_limit_that_the_config_overrid
 @pytest.mark.parametrize(
     ("text", "message"),
     [
-        ("[worker_memory.pulss]\nsoft_mb = 1\n", "worker_memory: unknown context(s) pulss; known: autopilot, board, flow-metrics, forwarding, pulls, runs, search"),
+        ("[worker_memory.pulss]\nsoft_mb = 1\n", "worker_memory: unknown context(s) pulss; known: autopilot, board, flow-metrics, pulls, runs, search"),
         ("[worker_memory.pulls]\nsoft_mb = 900\nhard_mb = 900\n", "worker_memory.pulls: soft_mb must be below hard_mb"),
         ("[worker_memory.pulls]\nsoft_mb = 5000\n", "worker_memory.pulls: soft_mb must be below hard_mb"),
         (

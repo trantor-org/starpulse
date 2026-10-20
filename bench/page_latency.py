@@ -92,7 +92,6 @@ READS: dict[str, str] = {
     "/api/milestones/<id>": "/api/milestones/{milestone}",
     "/api/docs": "/api/docs",
     "/api/docs/<id>": "/api/docs/{doc}",
-    "/api/forwarding": "/api/forwarding",
     "/api/autopilot": "/api/autopilot",
     "/api/history-window": "/api/history-window",
     "/api/events/body/<id>": "/api/events/body/{snapshot}",

@@ -235,7 +235,7 @@ def test_the_answer_carries_the_levels_config_for_the_page_to_draw() -> None:
     }
 
 
-def test_a_source_is_shared_unless_no_forwarder_named_it() -> None:
+def test_a_source_is_shared_unless_no_source_named_it() -> None:
     metrics = _metrics()
 
     assert [(s["id"], s["shared"]) for s in metrics["sources"]] == [("a", True), ("b", True), (UNATTRIBUTED, False)]

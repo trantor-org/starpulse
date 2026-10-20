@@ -91,14 +91,6 @@ POST /api/docs, /api/docs/edit, /api/docs/archive, /api/docs/restore
                    409 for the writer's refusal. A GET answers 405. These routes read the same Board as the milestone routes
 POST /api/start    {task, profile, harness[, mode, actor]}: start a task's session at `session_start_url` on
                    `harness` (`mode` defaults to `interactive`; see Start in the README)
-GET /api/forwarding
-                   what this instance's forwarder would send the hub next, as the Admin view lists it: {configured,
-                   url, optIn, names, refused, lastSent, problem, next, more, contract}. `next` holds the first entries
-                   past the forwarder's cursor, each cut as the batch is cut; `{"configured": false}` without a
-                   `[forward]` block. 403 outside loopback and RFC 1918
-PUT /api/forwarding {opt_in: bool}: let a person's name leave this instance, or stop it, by writing the opt-in file the
-                   forwarder reads before every batch, and answer the status as a GET does; 400 for anything but a
-                   boolean, 404 without a `[forward]` block, 403 outside loopback and RFC 1918
 GET /api/autopilot {enabled, sampledAt, dimensions}: whether the autopilot admits tasks, when capacity was last sampled
                    and, for `cpu`, `memory`, `sessions` and `review`, each dimension's {name, use, limit}; no
                    dimensions before the first sample
@@ -138,7 +130,6 @@ from starpulse._internal.board.seam import (
     Written,
 )
 from starpulse._internal.config.harnesses import Harnesses
-from starpulse._internal.hub.forward import Forwarder
 from starpulse.contracts.adapters import Move, StartFailedError
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.feed.history_window import HistoryWindow
@@ -1307,32 +1298,6 @@ def reconcile_lanes(feed: BoardFeed, store: HistoryStore) -> None:
             logger.warning("StarPulse: reconciled the lane of %d tasks the history had missed", recorded)
     except Exception:  # the history is down; the next start goes again
         logger.exception("StarPulse: cannot reconcile the lanes")
-
-
-def forwarding(source: str, method: str, raw: bytes, forwarder: Forwarder | None) -> tuple[int, dict[str, Any]]:
-    """Read (`GET`) what `forwarder` would send next, or set (`PUT {"opt_in": bool}`) whether a person's name may leave,
-    for a browser at `source`: the HTTP status and JSON body, the forwarder's status or the refusal.
-
-    An instance with no `[forward]` block has no forwarder: a read answers `{"configured": false}` so the page can say
-    so, and a write is a 404. The opt-in is the file the forwarder reads before every batch, so a PUT takes effect at
-    the next send.
-    """
-    if not _on_lan(source):
-        return 403, {"error": "Forwarding answers only loopback and private network (RFC 1918) browsers"}
-    if forwarder is None:
-        if method == "PUT":
-            return 404, {"error": "this instance forwards nothing: it has no [forward] block"}
-        return 200, {"configured": False}
-    if method == "PUT":
-        try:
-            opt_in = json.loads(raw)["opt_in"]
-        except ValueError, TypeError, KeyError:
-            opt_in = None
-        if not isinstance(opt_in, bool):
-            return 400, {"error": 'forwarding takes {"opt_in": true} or {"opt_in": false}'}
-        forwarder.opt_in.set(opt_in)
-        forwarder.forget_status()
-    return 200, {"configured": True, **forwarder.status()}
 
 
 def autopilot(source: str, method: str, raw: bytes, runtime: Runtime | Remote | None) -> tuple[int, dict[str, Any]]:

@@ -23,7 +23,7 @@ from starpulse._internal.kit.adapter_kit import serve, url
 from starpulse._internal.server.writes import autopilot
 from starpulse._internal.feed.machine_tasks import MachineTasks
 from starpulse.contracts.adapters import BoardTask, MachineEvent
-from starpulse.contracts.api.dto.forwarding import AutopilotStatus
+from starpulse.contracts.api.dto.autopilot import AutopilotStatus
 from starpulse.tests.machines import MACHINES
 
 HOST = {"cpu": 35.0, "memory": 60.0}

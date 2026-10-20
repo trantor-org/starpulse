@@ -1,7 +1,7 @@
-"""`starpulse serve|forward|<verb> ...` (or `python -m starpulse`): the package's command line.
+"""`starpulse serve|<verb> ...` (or `python -m starpulse`): the package's command line.
 
-`serve` runs the view (`starpulse._internal.server.server`) and
-`forward` sets the opt-in that lets a person's name leave for a hub (`starpulse._internal.hub.forward`), `connect` writes the
+`serve` runs the view (`starpulse._internal.server.server`),
+`connect` writes the
 config's `[board]` for a tracker after checking it answers (`starpulse._internal.cli.connect`) and `import-history` adds a
 board's earlier lane changes to the store (`starpulse._internal.server.history_import`) and `conform` replays the recorded
 history against the machines the project declares (`starpulse._internal.server.conform`); each reads the rest of the
@@ -14,7 +14,6 @@ import sys
 from collections.abc import Callable
 
 from starpulse._internal.cli import agent_cli
-from starpulse._internal.server.hold import watch_supervisor
 
 
 def _lazy(module: str) -> Callable[[list[str]], int | None]:
@@ -28,7 +27,6 @@ def _lazy(module: str) -> Callable[[list[str]], int | None]:
 
 COMMANDS: dict[str, Callable[[list[str]], int | None]] = {
     "serve": _lazy("starpulse._internal.server.server"),
-    "forward": _lazy("starpulse._internal.hub.forward"),
     "connect": _lazy("starpulse._internal.cli.connect"),
     "worker": _lazy("starpulse._internal.server.worker"),
     "import-history": _lazy("starpulse._internal.server.history_import"),
@@ -41,6 +39,8 @@ def main(argv: list[str] | None = None) -> int | None:
     argv = sys.argv[1:] if argv is None else argv
     if argv and argv[0] in COMMANDS:
         if argv[0] == "worker":
+            from starpulse._internal.server.hold import watch_supervisor
+
             watch_supervisor()
         return COMMANDS[argv[0]](argv[1:])
     return agent_cli.main(argv)

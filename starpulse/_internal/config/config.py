@@ -57,7 +57,6 @@ _KEYS = {
     "event_log_retention_days",
     "event_log_archive_dir",
     "oidc",
-    "forward",
     "sources",
     "producers",
     "aggregates_only",
@@ -69,7 +68,6 @@ _KEYS = {
     "refresh_token_env",
     "pull_requests",
     "runs_worker",
-    "forwarding_worker",
     "flow_metrics_worker",
     "search_worker",
     "board_worker",
@@ -91,7 +89,6 @@ _OIDC_KEYS = {
 _INSTANCE_KEYS = {"name", "type", "url", "run_safe", "domains", "commit"}
 _COMMIT_KEYS = {"after", "before", "force", "task"}
 _REPO_KEYS = {"name", "path", "applied_by"}
-_FORWARD_KEYS = {"url", "token_env", "batch"}
 _SOURCE_KEYS = {"name", "token_env"}
 _PRODUCER_KEYS = {"name", "token_env", "machines", "actors"}
 
@@ -103,7 +100,6 @@ __all__ = [
     "CommitKeys",
     "Config",
     "ConfigError",
-    "Forward",
     "MemoryLimit",
     "RunsInstance",
     "Source",
@@ -240,23 +236,13 @@ def _oidc(raw: object) -> OidcSettings:
     )
 
 
-#: The most events one forwarded batch may hold; a hub refuses a longer one.
+#: The most events one CloudEvents batch may hold.
 MAX_BATCH = 200
 
 
 @dataclass(frozen=True)
-class Forward:
-    """Where an IC forwards its events: the hub's address, the variable holding this instance's token there, and
-    how many events one POST carries."""
-
-    url: str
-    token_env: str
-    batch: int = 50
-
-
-@dataclass(frozen=True)
 class Source:
-    """An instance a hub accepts forwarded events from; `token_env` names the variable holding its token."""
+    """An instance a hub accepts events from; `token_env` names the variable holding its token."""
 
     name: str
     token_env: str
@@ -417,24 +403,6 @@ def _unknown(raw: dict, known: set[str], who: str) -> None:
         raise ConfigError(f"{who}: unknown key(s) {', '.join(unknown)}; known: {', '.join(sorted(known))}")
 
 
-def _forward(raw: object) -> Forward | None:
-    if raw is None:
-        return None
-    if not isinstance(raw, dict):
-        raise ConfigError("forward must be a [forward] table")
-    _unknown(raw, _FORWARD_KEYS, "forward")
-    for key in ("url", "token_env"):
-        if key not in raw:
-            raise ConfigError(f"forward needs {key}")
-    url, batch = raw["url"], raw.get("batch", 50)
-    if not (isinstance(url, str) and url.startswith(("http://", "https://"))):
-        raise ConfigError("forward url must be an http:// or https:// address")
-    token_env = _token_env(raw["token_env"], "forward")
-    if not (isinstance(batch, int) and not isinstance(batch, bool) and 1 <= batch <= MAX_BATCH):
-        raise ConfigError(f"forward batch must be a whole number from 1 to {MAX_BATCH}")
-    return Forward(url, token_env, batch)
-
-
 def _source(raw: object) -> Source:
     if not isinstance(raw, dict):
         raise ConfigError("sources must be a list of [[sources]] tables")
@@ -498,7 +466,6 @@ WORKER_MEMORY = {
     "pulls": MemoryLimit(768, 1536),
     "autopilot": MemoryLimit(384, 768),
     "runs": MemoryLimit(512, 1024),
-    "forwarding": MemoryLimit(256, 512),
     "flow-metrics": MemoryLimit(384, 768),
     "search": MemoryLimit(384, 768),
     "board": MemoryLimit(768, 1536),
@@ -575,10 +542,8 @@ class Config:
     """A hub keeps raw events for this many days before today, then drops each older day's partition after rolling it up."""
     oidc: OidcSettings | None = None
     """The hub's sign-in (`[oidc]`); a hub refuses to start without it, and an IC instance without `--hub` refuses it."""
-    forward: Forward | None = None
-    """The hub this instance forwards its events to; none: nothing leaves the machine."""
     sources: tuple[Source, ...] = ()
-    """The instances this hub takes forwarded events from, by their tokens."""
+    """The instances this hub takes events from, by their tokens."""
     aggregates_only: bool = False
     """A hub that takes aggregates only refuses an instance's opt-in to be named."""
     producers: tuple[Producer, ...] = ()
@@ -600,11 +565,9 @@ class Config:
     runs_worker: bool = False
     """The Runs context (the run adapters and the pushed-runs follower) runs in `starpulse worker runs`, not in `serve`: `serve` starts none of them and draws the workflows the worker keeps in the event log; false: `serve` supervises that worker as a child."""
     worker_memory: Mapping[str, MemoryLimit] = field(default_factory=lambda: dict(WORKER_MEMORY))
-    """The memory limits `serve` holds each worker child to: past `soft_mb` it replaces the child (starts a new one, then stops the old), past `hard_mb` it kills and restarts it. Keyed by context, `pulls`, `autopilot`, `runs`, `forwarding`, `history` and `search`."""
+    """The memory limits `serve` holds each worker child to: past `soft_mb` it replaces the child (starts a new one, then stops the old), past `hard_mb` it kills and restarts it. Keyed by context, `pulls`, `autopilot`, `runs`, `history` and `search`."""
     slow_read_seconds: float = SLOW_READ_S
     """`serve` logs a `slow_read` line for each `GET /api/pulls` that took this many seconds or more, from accept to the last byte written, with the seconds it waited for a handler thread, computed its answer and wrote it."""
-    forwarding_worker: bool = False
-    """The Forwarding context (the forwarder that sends the event log to the hub) runs in `starpulse worker forwarding`, not in `serve`: `serve` starts no forwarder and shows its status from the event log; false: `serve` supervises that worker as a child when `[forward]` is set."""
     flow_metrics_worker: bool = False
     """The Flow Metrics context (the recorder that copies the event log's machine events into the history store, and the hourly prune of the log) runs in `starpulse worker flow-metrics`, not in `serve`: `serve` starts neither thread; false: `serve` supervises that worker as a child. A hub keeps both in-process whatever this says."""
     search_worker: bool = False
@@ -813,7 +776,6 @@ def load(path: Path | None) -> Config:
         _level(raw),
         retention,
         oidc,
-        _forward(raw.get("forward")),
         _sources(raw.get("sources", [])),
         _flag(raw, "aggregates_only", False),
         producers=_producers(raw.get("producers", [])),
@@ -831,7 +793,6 @@ def load(path: Path | None) -> Config:
         pull_requests=_flag(raw, "pull_requests", True),
         runs_worker=_flag(raw, "runs_worker", False),
         worker_memory=_worker_memory(raw.get("worker_memory", {})),
-        forwarding_worker=_flag(raw, "forwarding_worker", False),
         flow_metrics_worker=_flag(raw, "flow_metrics_worker", False),
         search_worker=_flag(raw, "search_worker", False),
         board_worker=_flag(raw, "board_worker", False),

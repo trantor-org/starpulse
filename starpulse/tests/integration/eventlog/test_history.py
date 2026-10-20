@@ -390,7 +390,7 @@ def test_board_level_runs_are_each_sources_tasks_lane_by_lane_with_the_lane_read
     store.record_lane("a/3", "T-1", "Elsewhere", 6.0)  # no state of the Board machine
     store.record_lane("a/4", "T-1", "Done", 9.0)
     store.record_lane("b/1", "T-2", "ready", 2.0)  # a lane named by its state's id
-    store.record_lane("local-1", "T-3", "To Do", 3.0)  # no source prefix: no forwarder named it
+    store.record_lane("local-1", "T-3", "To Do", 3.0)  # no source prefix: no source named it
 
     assert sorted(store.level_runs("board"), key=lambda run: run.task) == [
         Run("a", "T-1", ((1.0, "to_do"), (5.0, "in_progress"), (9.0, "done"))),

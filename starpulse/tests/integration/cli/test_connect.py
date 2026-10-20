@@ -111,7 +111,7 @@ def test_connect_native_refuses_a_machine_whose_states_are_not_the_boards_lanes(
 def test_connect_replaces_the_board_table_and_keeps_every_other_table_and_comment(workdir: Path) -> None:
     config = workdir / "starpulse.toml"
     config.write_text(
-        f'{OTHER_TABLES}\n[board]\ntype = "native"\npath = "old"\n\n# where events go\n[forward]\nurl = "https://hub.example"\ntoken_env = "HUB_TOKEN"\n'
+        f'{OTHER_TABLES}\n[board]\ntype = "native"\npath = "old"\n\n# where search goes\n[search]\nembeddings_url = "http://embed.example"\nmodel = "small"\n'
     )
     backlog_project(workdir / "backlog", 1)
 
@@ -123,8 +123,8 @@ def test_connect_replaces_the_board_table_and_keeps_every_other_table_and_commen
     assert parsed["board"] == {"type": "upstream_backlog", "path": "backlog"}
     assert parsed["tracker_url"] == "https://tracker.example"
     assert parsed["runs"] == [{"name": "prod", "type": "dagu", "url": "http://dagu:8080"}]
-    assert parsed["forward"] == {"url": "https://hub.example", "token_env": "HUB_TOKEN"}
-    assert "# where events go\n[forward]" in text
+    assert parsed["search"] == {"embeddings_url": "http://embed.example", "model": "small"}
+    assert "# where search goes\n[search]" in text
     assert text.count("[board]") == 1
 
 

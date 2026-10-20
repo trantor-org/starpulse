@@ -66,7 +66,7 @@ checkpoints = Table(
     Column("saved_at", Float, nullable=False),
 )
 
-#: The one instance each forwarding source's token speaks for: the first instance id that source's forwarder sent.
+#: The one instance each source's token speaks for: the first instance id that source sent.
 #: A hub writes it, on the first batch a source sends and never again until an operator drops the row to rebind.
 source_instances = Table(
     "starpulse_source_instances",
@@ -76,7 +76,7 @@ source_instances = Table(
     Column("bound_at", Float, nullable=False),
 )
 
-#: An operator setting the instance keeps across restarts: the autopilot switch, the forwarder opt-in and the Admin
+#: An operator setting the instance keeps across restarts: the autopilot switch and the Admin
 #: history-window override. One row per key, with the epoch second it was last written; a missing row means the
 #: setting's default.
 settings = Table(

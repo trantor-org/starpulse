@@ -30,9 +30,6 @@ _START = "/api/start"
 _WINDOW = "/api/history-window"
 
 
-_FORWARDING = "/api/forwarding"
-
-
 _AUTOPILOT = "/api/autopilot"
 
 
@@ -110,9 +107,6 @@ _DOC_RESTORE = "/api/docs/restore"
 _MACHINE_EVENTS = "/api/machine-events"
 
 
-_FORWARD = "/api/forward"
-
-
 _INSIGHTS = "/api/insights"
 
 
@@ -177,7 +171,6 @@ _WRITES = {
     _DOC_ARCHIVE: "doc_archive",
     _DOC_RESTORE: "doc_restore",
     _MACHINE_EVENTS: "ingest",
-    _FORWARD: "forward",
     _INSIGHTS: "insight",
     _PULL_REFRESH: "ingest",
 }

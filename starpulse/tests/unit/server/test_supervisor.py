@@ -12,7 +12,7 @@ from pathlib import Path
 
 import starpulse._internal.server.memory as memory_module
 import starpulse._internal.server.supervisor as supervisor_module
-from starpulse._internal.config.config import Forward, MemoryLimit, load
+from starpulse._internal.config.config import MemoryLimit, load
 from starpulse._internal.config.search import Search
 from starpulse._internal.server.hold import LISTEN_FD_ENV
 from starpulse._internal.server.supervisor import Supervisor, spawn_child, worker_commands
@@ -64,7 +64,6 @@ def test_a_context_whose_worker_setting_is_false_gets_a_child_command_and_a_true
         replace(
             load(None),
             runs_worker=True,
-            forwarding_worker=True,
             flow_metrics_worker=True,
             board_worker=True,
             api_worker=True,
@@ -75,7 +74,7 @@ def test_a_context_whose_worker_setting_is_false_gets_a_child_command_and_a_true
     assert every["pulls"] == [sys.executable, "-m", "starpulse", "worker", "pulls"]
     assert every["runs"] == [sys.executable, "-m", "starpulse", "worker", "runs"]
     assert every["flow-metrics"] == [sys.executable, "-m", "starpulse", "worker", "flow-metrics"]
-    assert set(every) == {"api", "pulls", "autopilot", "runs", "flow-metrics", "board"}  # forwarding has no child without a [forward] table
+    assert set(every) == {"api", "pulls", "autopilot", "runs", "flow-metrics", "board"}
     assert only_delivery_and_autopilot == {
         context: [sys.executable, "-m", "starpulse", "worker", context, "--config", "/etc/starpulse.toml"]
         for context in ("pulls", "autopilot")
@@ -101,20 +100,6 @@ def test_the_search_child_runs_only_for_an_embeddings_url_a_false_setting_and_no
     assert "search" not in worker_commands(load(None), None)  # no endpoint, nothing to embed
     assert "search" not in worker_commands(replace(embedding, search_worker=True), None)
     assert "search" not in worker_commands(embedding, None, hub=True)  # a hub keeps no search index
-
-
-def test_the_forwarding_child_runs_only_for_a_config_with_a_forward_table_and_a_false_setting() -> None:
-    forwarding = replace(load(None), forward=Forward("https://hub.example.test", "HUB_TOKEN"))
-
-    assert worker_commands(forwarding, None)["forwarding"] == [
-        sys.executable,
-        "-m",
-        "starpulse",
-        "worker",
-        "forwarding",
-    ]
-    assert "forwarding" not in worker_commands(replace(forwarding, forwarding_worker=True), None)
-    assert "forwarding" not in worker_commands(load(None), None)
 
 
 def test_a_child_that_exits_repeatedly_is_restarted_after_a_growing_delay() -> None:

@@ -53,14 +53,14 @@ short request needs. A stream past the limit gets `503` with `Retry-After: 5` an
 
 ### Worker processes
 
-`serve` is a supervisor over the contexts that run as their own `starpulse worker <context>` process: `api` (the Page API), `pulls` (Delivery), `autopilot`, `runs`, `forwarding`, `history`, `search` (with an `[search] embeddings_url`) and `board` (the Start Criteria dating and the lane reconcile). `serve` always starts `pulls` and `autopilot` as children; for each other one whose `api_worker`,
-`runs_worker`, `forwarding_worker`, `search_worker` or `board_worker` setting is false, the default, it starts the worker as a child, restarts it with a growing delay (1 s, doubling to 60 s; a child that
+`serve` is a supervisor over the contexts that run as their own `starpulse worker <context>` process: `api` (the Page API), `pulls` (Delivery), `autopilot`, `runs`, `history`, `search` (with an `[search] embeddings_url`) and `board` (the Start Criteria dating and the lane reconcile). `serve` always starts `pulls` and `autopilot` as children; for each other one whose `api_worker`,
+`runs_worker`, `search_worker` or `board_worker` setting is false, the default, it starts the worker as a child, restarts it with a growing delay (1 s, doubling to 60 s; a child that
 ran a minute restarts at once) when it exits, and stops it when `serve` stops on `SIGTERM` or Ctrl-C. The children read the same config and `database_url` and meet `serve` only in
 the event log. A true setting means something outside `serve` runs that worker, so `serve` starts no child for it. No unit file is needed to run StarPulse.
 
 The `api` child serves the page and the HTTP API. `serve` binds `--host` and `--port` once (or adopts the socket the service manager passes in), keeps that listening socket for the life of the process and starts `starpulse worker api` with it on the descriptor named by `STARPULSE_LISTEN_FD`. `serve` first builds the page's machines and board from the config and exits 1 with the reason when it cannot, so a bad `starpulse.toml` or `board.yaml` stops `serve` rather than a child that exits at every start; it also tells the child, in `STARPULSE_STATIC`, which page build it checked. The child reads the Board from the replica the `board` child publishes and starts no adapter watcher. A reload or restart of the child starts the new one on the same socket, then stops the old: the old one stops accepting, finishes its in-flight requests (up to 8 s) and exits, so a connection made meanwhile queues in the backlog and none is refused. A `serve --hub` serves its page in-process and gets no `api` child.
 
-Every context is its own child, the light ones (`forwarding`, `history`, `search`) included, so a restart, a reload and a memory limit each reach one context alone. Merging the light ones into one child would save their duplicated import floor; sharing that floor between separate children saves it without giving up the isolation.
+Every context is its own child, the light ones (`history`, `search`) included, so a restart, a reload and a memory limit each reach one context alone. Merging the light ones into one child would save their duplicated import floor; sharing that floor between separate children saves it without giving up the isolation.
 
 On Linux `serve` starts one preloaded process before any thread, `python -m starpulse._internal.server.zygote`, that imports every supervised context's entry module (the Page API's excepted), freezes what it imported out of the garbage collector's way and waits on a socket from `serve`. Each child is a fork of it that runs the same `starpulse worker <context>` main, so the children share the pages of the interpreter and imports until they write to them, and a context still has its own process to restart, reload and limit. A child still dies with `serve`: it inherits the preloaded process's stdin pipe from `serve`. The Page API child is always a `subprocess` child, since it inherits `serve`'s listening socket. Where `fork` is not safe (macOS and Windows), or when the preloaded process fails to start or answer (`serve` logs one warning naming the preloaded process and starts every later child with `subprocess` instead), a child is a `subprocess` child with its own imports.
 
@@ -73,16 +73,10 @@ On Linux `serve` starts one preloaded process before any thread, `python -m star
 | `pulls` | 768 | 1536 |
 | `autopilot` | 384 | 768 |
 | `runs` | 512 | 1024 |
-| `forwarding` | 256 | 512 |
 | `history` | 384 | 768 |
 | `search` | 384 | 768 |
 
 `[worker_memory.<context>]` overrides either key for a context (whole megabytes, 1 or more; `soft_mb` below `hard_mb`). An unknown context, an unknown key or a soft limit not below the hard one is refused at load by name.
-
-The `forwarding` worker (`starpulse worker forwarding`) sends the event log to the `[forward]` hub, and only exists for a config with that table. `serve` runs no forwarder thread: it builds a
-forwarder only to answer `GET /api/forwarding` and `PUT /api/forwarding`, which writes the opt-in through the event log for the worker, so `serve` still needs the `token_env` variable set. The forward cursor
-lives in the history database, so a restarted worker neither drops nor repeats a forwarded event. The worker's last send, problem and refusal reach `serve` through the event log; `refused` can lag an opt-in
-change by up to one forward interval (5 s). The worker logs `Forwarder:` lines, which a supervised child writes to `serve`'s output.
 
 ### What the page shows when the server restarts
 
@@ -106,7 +100,7 @@ Each connect replaces the page's Board with a fresh snapshot.
 While the Board is replaying after a start, `/api/events` resends only `snapshot`, once the replay has ended, because a
 reconnecting page needs the Board the replay built. Every other kind is a delta of that Board; resending it would make
 consumers such as the autopilot act twice. `FEED_EVENT_RESEND` in the feed module is the table: `snapshot` is resent,
-and `task`, `move`, `insight`, `pulls`, `claim`, `dags`, `ledgers`, `level`, `forwarding` and `autopilot` are not.
+and `task`, `move`, `insight`, `pulls`, `claim`, `dags`, `ledgers`, `level` and `autopilot` are not.
 `build` and `restarting` are process announcements on an open stream, not replayed deltas.
 
 Two events on `/api/events` carry what the page needs:
@@ -218,7 +212,7 @@ type = "native"
 # machine = "board.yaml" # as above
 # interval = 2           # seconds between the scans that find a changed task file
 
-# To draw only a project's machines, for a hub whose tasks arrive as lane entries and machine events instances forward:
+# To draw only a project's machines, for a hub whose tasks arrive as lane entries and machine events:
 # [board]
 # type = "machines"      # takes no other setting: it draws every file in `.starpulse/machines/` beside this file, the Board machine (`board.yaml`) among them, and follows no task source, reads no board directory and offers no write
 
@@ -258,14 +252,6 @@ type = "native"
 # event log, so a restarted worker neither drops nor repeats a run entry. With the flag set and no worker running, no
 # run is followed.
 # runs_worker = false
-
-# Whether something outside `serve` runs the Forwarding context (the forwarder that sends the event log to the `[forward]`
-# hub). False, the default: `serve` supervises it as a child process, `starpulse worker forwarding`, when `[forward]` is
-# set. True: you run `starpulse worker forwarding --config <this file>` yourself and `serve` starts no child for it.
-# Either way `serve` runs no forwarder thread and still answers `GET` and `PUT /api/forwarding` from the event log and
-# the history database. The forward cursor stays in the history database, so a restarted worker neither drops nor repeats
-# a forwarded event. With the flag set and no worker running, nothing is forwarded.
-# forwarding_worker = false
 
 # Whether something outside `serve` runs the History context's writers (the machine-history recorder and the hourly
 # prune of the event log). False, the default: `serve` supervises them as one child process, `starpulse worker

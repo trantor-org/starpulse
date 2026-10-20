@@ -177,7 +177,7 @@ def test_a_level_naming_a_machine_the_board_does_not_draw_is_refused() -> None:
 _RUNS = [
     {"id": "a1", "source": "ana", "facets": {"type": "bug", "repo": "api"}},
     {"id": "a2", "source": "ana", "facets": {"type": "feature", "repo": "api"}},
-    {"id": "b1", "source": "bo", "facets": {"type": "bug"}},  # bo's forwarder sends no repo
+    {"id": "b1", "source": "bo", "facets": {"type": "bug"}},  # bo's source sends no repo
     {"id": "b2", "source": "bo", "facets": {"type": "feature"}},
 ]
 

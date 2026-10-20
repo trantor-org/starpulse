@@ -1,4 +1,4 @@
-"""The instance each forwarding source is bound to, and the id an instance's forwarder sends a hub.
+"""The instance each source is bound to, and the id an instance sends a hub.
 
 Revision ID: 0014
 Revises: 0013

@@ -24,7 +24,7 @@ from starpulse._internal.machines.machine_definition import load_machine
 from starpulse._internal.machines.snapshot import describe
 from starpulse._internal.machines.transitions import board_machine
 from starpulse._internal.runs.cloudevents import BATCH, MAX_DATA, SINGLE, CloudEventsIngest
-from starpulse._internal.runs.ingest import MAX_FORWARD_BODY
+from starpulse._internal.runs.ingest import MAX_BATCH_BODY
 from starpulse._internal.runs.ingest import tokens as ingest_tokens
 
 DELIVERY = """\
@@ -227,7 +227,7 @@ def test_data_over_the_cap_answers_413_and_a_body_over_the_limit_is_refused_unre
     try:
         connection.putrequest("POST", "/api/machine-events")
         connection.putheader("Authorization", "Bearer builder-secret")
-        connection.putheader("Content-Length", str(MAX_FORWARD_BODY + 1))
+        connection.putheader("Content-Length", str(MAX_BATCH_BODY + 1))
         connection.endheaders()
         oversized = connection.getresponse().status
     finally:

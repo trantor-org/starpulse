@@ -43,7 +43,6 @@ from starpulse._internal.server.routes import (
     _AUTOPILOT,
     _DOC_WRITES,
     _DOCS,
-    _FORWARDING,
     _LEDGER,
     _MILESTONE_WRITES,
     _MILESTONES,
@@ -56,7 +55,6 @@ from starpulse._internal.server.writes import (
     autopilot,
     doc_record,
     docs_list,
-    forwarding,
     history_window,
     milestone_record,
     milestones_list,
@@ -74,7 +72,6 @@ if TYPE_CHECKING:  # annotation only: a runtime import would put the autopilot i
     from starpulse._internal.feed.history_window import HistoryWindow
     from starpulse._internal.feed.search import SearchIndex
     from starpulse._internal.harnesses.telemetry import TelemetryLog
-    from starpulse._internal.hub.forward import Forwarder
     from starpulse._internal.pulls.pulls import PullStore
     from starpulse._internal.server.snapshot_cache import SnapshotCache
 
@@ -220,7 +217,6 @@ class ReadRoutes:
         contract: Callable[[], dict[str, Any]] | None = None,
         milestones: Board | None = None,
         pulls: PullStore | None = None,
-        forwarder: Forwarder | None = None,
         autopilot: Runtime | Remote | None = None,
         harnesses: Harnesses | None = None,
         slow_read_s: float = SLOW_READ_S,
@@ -246,7 +242,6 @@ class ReadRoutes:
         self._clock = clock
         self._contract = contract
         self._milestones = milestones
-        self._forwarder = forwarder
         self._autopilot = autopilot
         self._metrics = tuple(m for m in (actor_metrics, lane_metrics, conformance_metrics, page_gauge) if m)
         self._harnesses = encode("harnesses", (harnesses or Harnesses((), {})).as_json())
@@ -283,7 +278,6 @@ class ReadRoutes:
             _RETIRED: self._retired,
             "/api/harnesses": lambda request, query: Response(self._harnesses),
             _WINDOW: self._history_window,
-            _FORWARDING: self._forwarding,
             _AUTOPILOT: self._autopilot_status,
         }
 
@@ -384,10 +378,6 @@ class ReadRoutes:
     def _history_window(self, request: Request, query: Query) -> Response:
         status, body = history_window(request.client, "GET", b"", self._window)
         return Response(encode("window", body), status)
-
-    def _forwarding(self, request: Request, query: Query) -> Response:
-        status, body = forwarding(request.client, "GET", b"", self._forwarder)
-        return Response(encode("forwarding", body), status)
 
     def _autopilot_status(self, request: Request, query: Query) -> Response:
         status, body = autopilot(request.client, "GET", b"", self._autopilot)

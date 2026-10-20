@@ -3,7 +3,7 @@
 An external engine (a separate package; this one holds no engine code) posts one `Finding` as JSON, with
 `Authorization: Bearer <engine token>`; a hub names that token's variable as `engine_token_env` in its `[oidc]` table, and
 a server without one has no insights routes (404). The engine token is checked before a request reaches this module
-(`oidc.Gate`) and is no forwarder token and no viewer's sign-in.
+(`oidc.Gate`) and is no source token and no viewer's sign-in.
 
 The answers: 201 `{id, replaced: false}` for a new finding, 200 `{id, replaced: true}` when the id was held and not
 retracted, so a re-post replaces it; 400 naming the field to fix for a body the contract refuses, including a scope that
@@ -123,7 +123,7 @@ class Insights:
         self._store, self._feed, self._clock = store, feed, clock
 
     def __call__(self, _authorization: str | None, raw: bytes) -> tuple[int, dict[str, Any]]:
-        """Answer a pushed body as `ForwardIngest` does; the gate has already checked the engine token, so the header is unread."""
+        """Answer a pushed body as `CloudEventsIngest` does; the gate has already checked the engine token, so the header is unread."""
         return self.post(raw)
 
     def post(self, raw: bytes) -> tuple[int, dict[str, Any]]:
