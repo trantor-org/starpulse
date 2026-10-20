@@ -49,25 +49,36 @@ class Table:
         for t in machine["transitions"]:
             self.moves[t["event"]][t["source"]].add(t["target"])
 
-    def target(self, current: str | None, event: str) -> str | None:
-        """Where `event` leaves a task now at `current` (None: not yet placed), or None when it leaves it nowhere definite.
+    def place(self, current: frozenset[str], event: str, *, lenient: bool) -> frozenset[str]:
+        """The states `event` leaves a task in when it may be in `current` (none: not yet placed); empty when nowhere definite.
 
-        An event the state allows leads where the machine says, and a task in a final state begins
-        again from the initial one. An event the state does not allow, because the entries before it
-        fell out of the stream's retention or a writer skipped a step, places the task where the event
-        leads from every other state; an event that only loops leaves it where it is.
+        Either way an event a state declares leads where the machine says, and a task in a final state may
+        begin again from the initial one. Strict (the replay judge) places nothing for an event no state it
+        may be in declares. Lenient (the machine level) assumes the entries before it fell out of the
+        stream's retention or a writer skipped a step, and places the task where the event leads from every
+        other state; an event that only loops leaves it where it is. It follows one state, and none when
+        several transitions leave it differently.
         """
         moves = self.moves.get(event)
         if not moves:
-            return None
-        current = current or self.initial
-        for source in (current, self.initial if current in self.finals else None):
+            return frozenset()
+        here = current or frozenset({self.initial})
+        sources = here | ({self.initial} if here & self.finals else set())
+        if not lenient:
+            return frozenset(target for source in sources for target in moves.get(source, ()))
+        (state,) = here
+        for source in (state, self.initial if state in self.finals else None):
             if source in moves:
-                return next(iter(moves[source])) if len(moves[source]) == 1 else None
+                return frozenset(moves[source]) if len(moves[source]) == 1 else frozenset()
         leads = {target for source, targets in moves.items() for target in targets if target != source}
         if leads:
-            return next(iter(leads)) if len(leads) == 1 else None
-        return current
+            return frozenset(leads) if len(leads) == 1 else frozenset()
+        return here
+
+    def target(self, current: str | None, event: str) -> str | None:
+        """Where `event` leaves a task now at `current` by the lenient rule, or None when it leaves it nowhere definite."""
+        placed = self.place(frozenset({current} if current else ()), event, lenient=True)
+        return next(iter(placed), None)
 
 
 def tables(machines: Mapping[str, dict]) -> dict[str, Table]:

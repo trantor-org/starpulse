@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 
 from starpulse._internal.eventlog import events, lane_events
 from starpulse._internal.machines.replay import EventJudge, lane_moves
+from starpulse._internal.machines.transitions import tables
 
 if TYPE_CHECKING:
     from starpulse._internal.eventlog.event_log import Entry, EventLog
@@ -33,7 +34,7 @@ class Conformance:
     def __init__(self, machines: Mapping[str, dict]) -> None:
         self._names = list(machines)
         self._lane_moves = lane_moves(machines[BOARD]) if BOARD in machines else set()
-        self._judges = {name: EventJudge(machine) for name, machine in machines.items() if name != BOARD}
+        self._judges = {name: EventJudge(table) for name, table in tables(machines).items()}
         self._lanes: dict[str, str] = {}
         self._violations: dict[str, int] = defaultdict(int)
         self._judged: dict[str, int] = defaultdict(int)
