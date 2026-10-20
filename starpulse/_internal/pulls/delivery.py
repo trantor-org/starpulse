@@ -11,7 +11,9 @@ keeps the store read-only. What the worker projects, and what `serve` must say b
 - the task actor's lane attributions land on `NOTES_STREAM` so the serving feed names the actor on the lane move the
   board file's change produces (`NotingFeed`, `follow_notes`); the note is logged before the write, so a move placed
   before the follower read its note reads the stream itself first (`Notes.catch_up`);
-- the actor's `/metrics` text is kept in the `METRICS` setting for `serve` to relay.
+- the actor's `/metrics` text is kept in the `METRICS` setting for `serve` to relay;
+- the poller writes the time to the `POLLER` setting while it runs (`keep_beating`), and `starpulse doctor` reports it
+  down once that is older than `DOWN_S` (`poller_problem`).
 """
 
 from __future__ import annotations
@@ -19,6 +21,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
+import time
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
@@ -34,8 +37,12 @@ PROJECTED_STREAM = "pulls:projected"
 SAVED_STREAM = "pulls:saved"
 REFRESH_STREAM = "pulls:refresh"
 NOTES_STREAM = "pulls:notes"
+POLLER = "pulls.poller"
 #: Seconds between the worker's writes of its metrics.
 METRICS_S = 15.0
+#: Seconds between the poller's beats, and how old its last beat may be before `serve` calls it down.
+BEAT_S = 15.0
+DOWN_S = 60.0
 #: Seconds an idle tail waits for an append from another process.
 POLL_S = 1.0
 
@@ -233,6 +240,42 @@ def keep_metrics(log: EventLog, exposition: Callable[[], str], stop: threading.E
     thread = threading.Thread(target=run, name="pull-metrics", daemon=True)
     thread.start()
     return thread
+
+
+def keep_beating(
+    log: EventLog, running: threading.Event, stop: threading.Event, clock: Callable[[], float] = time.time
+) -> threading.Thread:
+    """Write the time to the log every `BEAT_S` while `running` is set, on a thread until `stop`: the poller's beat."""
+
+    def run() -> None:
+        while not stop.is_set():
+            if running.is_set():
+                try:
+                    log.set_setting(POLLER, {"at": clock()})
+                except Exception:
+                    logger.warning("pulls: the poller's beat was not kept", exc_info=True)
+            stop.wait(BEAT_S)
+
+    thread = threading.Thread(target=run, name="pull-beat", daemon=True)
+    thread.start()
+    return thread
+
+
+def poller_problem(log: EventLog, clock: Callable[[], float] = time.time) -> Callable[[], str | None]:
+    """Why the pull poller counts as down, or None while its beat is under `DOWN_S` old."""
+
+    def read() -> str | None:
+        try:
+            beat = log.setting(POLLER)
+        except Exception as exc:
+            return f"the event log cannot be read: {exc}"
+        at = beat.get("at") if isinstance(beat, dict) else None
+        if not isinstance(at, int | float):
+            return "the pull poller has not reported"
+        age = clock() - at
+        return None if age <= DOWN_S else f"the pull poller last reported {age:.0f}s ago"
+
+    return read
 
 
 def metrics_of(log: EventLog) -> Callable[[], str]:

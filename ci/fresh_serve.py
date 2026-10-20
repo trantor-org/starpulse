@@ -68,7 +68,7 @@ def check(port: int, parent: int, expected: set[str], log: Path) -> str | None:
     if status != 200:
         return f"page answered HTTP {status}"
     if missing := sorted(expected - live_children(parent, log).keys()):
-        return f"no live child for {', '.join(missing)}"
+        return f"{', '.join(missing)} down: no live child"
     return None
 
 

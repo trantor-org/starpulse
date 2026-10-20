@@ -219,6 +219,7 @@ DELETE /api/insights/<id>
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import functools
 import json
 import logging
@@ -244,7 +245,15 @@ from starpulse._internal.board.seam import (
 from starpulse._internal.harnesses.session_start import starter
 from starpulse._internal.runs.cloudevents import CloudEventsIngest
 from starpulse._internal.runs.ingest import tokens as ingest_tokens
-from starpulse._internal.pulls.delivery import Projected, follow_notes, follow_saves, metrics_of, request_refresh
+from starpulse._internal.pulls.delivery import (
+    Projected,
+    follow_notes,
+    follow_saves,
+    keep_beating,
+    metrics_of,
+    poller_problem,
+    request_refresh,
+)
 from starpulse._internal.pulls.task_actor import TaskActor, moves_of
 from starpulse._internal.pulls.unblock import READY, UNBLOCK_S, Unblocker
 from starpulse._internal.config.pins import GitHub, LiveBuild, running_commit
@@ -676,6 +685,30 @@ def _then(first: Callable[[], None], second: Callable[[], None]) -> Callable[[],
     return both
 
 
+POLL_RESTART_S = (1.0, 60.0)  # the pull poller's first restart delay after a crash and the longest it backs off to
+
+
+def keep_polling(
+    sync: PullSync, stop: threading.Event, running: threading.Event, delay_s: tuple[float, float] = POLL_RESTART_S
+) -> None:
+    """Run the pull poller until `stop`, with `running` set while it runs, starting it again after a crash with a delay
+    that doubles from `delay_s[0]` to `delay_s[1]`, and logging each crash. A run that lasts the longest delay starts
+    the backoff over."""
+    delay, longest = delay_s
+    while not stop.is_set():
+        started = time.monotonic()
+        running.set()
+        try:
+            sync.run_forever()
+            return
+        except Exception:
+            logger.exception("pull requests: the poller crashed; restarting in %.0fs", delay)
+        finally:
+            running.clear()
+        stop.wait(delay)
+        delay = delay_s[0] if time.monotonic() - started >= longest else min(delay * 2, longest)
+
+
 def start_delivery(
     config: Config,
     board: Board,
@@ -730,7 +763,9 @@ def start_delivery(
         if after_project:
             project = _then(project, after_project)
         sync = PullSync(pulls, feed, config.repos, project=project, stop=stop)
-        threading.Thread(target=sync.run_forever, name="pull-store", daemon=True).start()
+        running = threading.Event()
+        keep_beating(log, running, stop)
+        threading.Thread(target=keep_polling, args=(sync, stop, running), name="pull-store", daemon=True).start()
     if config.release is not None:
         lanes = {state["id"] for state in feed.machines["board"]["states"]}
         if board.edit is None or not {WAITING, READY} <= lanes:
@@ -954,6 +989,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     runs_projection.Projected(log, feed).follow(stop)
     if config.task_actor:
         actor_metrics = metrics_of(log)
+    probes = dataclasses.replace(doctor.LIVE, poller=poller_problem(log))
     if refresh_token:
         pull_refresh = PullRefresh(refresh_token, request_refresh(log, PullSync(pulls, feed, config.repos).tracked))
     # `starpulse worker flow-metrics` runs the machine-history recorder and the event log's prune; a hub keeps its recorder
@@ -1014,7 +1050,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         insights=insights,
         events=cloudevents,
         reruns=reruns,
-        contract=_cached(lambda: doctor.contract(feed.snapshot(), config, doctor.LIVE), _CONTRACT_TTL_S),
+        contract=_cached(lambda: doctor.contract(feed.snapshot(), config, probes), _CONTRACT_TTL_S),
         milestones=board,
         pulls=pulls,
         actor_metrics=actor_metrics,

@@ -36,6 +36,8 @@ class Probes:
     dag_params: Callable[[RunsInstance, str], list[str] | None] = _declared_params
     """The parameter names a workflow of a runs instance declares, none when its adapter cannot say; raises `OSError`
     when the scheduler cannot be read."""
+    poller: Callable[[], str | None] | None = None
+    """Why the pull poller is down, none while it beats; none here when this process cannot read its beat."""
 
 
 LIVE = Probes(
@@ -129,8 +131,16 @@ def _repo(path: str, name: str, probes: Probes) -> dict[str, str]:
     return _result(f"repo:{name}", True, f"{path} is a submodule")
 
 
+def _poller(config: Config, probes: Probes) -> list[dict[str, str]]:
+    """The pull poller's liveness, when this process reads its beat and the config polls pull requests with `gh`."""
+    if probes.poller is None or not config.pull_requests or not probes.which("gh"):
+        return []
+    problem = probes.poller()
+    return [_result("poller:pulls", problem is None, problem or "the pull request poller is beating")]
+
+
 def _contract(snapshot: dict[str, Any] | str, config: Config | str, probes: Probes) -> list[dict[str, str]]:
-    """The cue and repository checks; none while the snapshot or the config could not be read."""
+    """The cue, repository and poller checks; none while the snapshot or the config could not be read."""
     if isinstance(snapshot, str) or isinstance(config, str):
         return []
     listed = {dag["name"] for dag in snapshot["dags"]}
@@ -139,6 +149,7 @@ def _contract(snapshot: dict[str, Any] | str, config: Config | str, probes: Prob
     return [
         *(_cue(cue, listed, instances, probes) for cue in cues.values()),
         *(_repo(repo.path, repo.name, probes) for repo in config.repos),
+        *_poller(config, probes),
     ]
 
 
@@ -151,11 +162,19 @@ def contract(snapshot: dict[str, Any], config: Config, probes: Probes) -> dict[s
     return _report(_contract(snapshot, config, probes))
 
 
-def run_checks(snapshot: dict[str, Any] | str, config: Config | str, probes: Probes, server: str) -> dict[str, Any]:
+def run_checks(
+    snapshot: dict[str, Any] | str,
+    config: Config | str,
+    probes: Probes,
+    server: str,
+    served: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Every check as `{ok, checks: [{check, status, reason}]}`.
 
     `snapshot` is the server's snapshot, or the reason it could not be read; `config` is the loaded config, or the
-    reason it could not be loaded; `server` is the address the snapshot was read from."""
+    reason it could not be loaded; `server` is the address the snapshot was read from; `served` is the server's own
+    `/api/doctor` report, whose `poller:` checks join these because only the server reads the poller's beat."""
+    beat = [check for check in (served or {}).get("checks", []) if check["check"].startswith("poller:")]
     checks = [
         _result(
             "config", *((False, config) if isinstance(config, str) else (True, f"{len(config.runs)} runs instances"))
@@ -164,6 +183,7 @@ def run_checks(snapshot: dict[str, Any] | str, config: Config | str, probes: Pro
         *_adapters(snapshot, config),
         _gh(probes),
         *_contract(snapshot, config, probes),
+        *beat,
     ]
     return _report(checks)
 
