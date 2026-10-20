@@ -64,6 +64,8 @@ def _owned_by(*contexts: str) -> tuple[str, ...]:
 CONFIG_OWNERS: dict[str, tuple[str, ...]] = {
     "tracker_url": _owned_by(),
     "harnesses_file": _owned_by(),
+    "tls_cert": _owned_by(),
+    "tls_key": _owned_by(),
     "analytics": _owned_by(),
     "cursor_context": _owned_by(),
     "producers": _owned_by(),

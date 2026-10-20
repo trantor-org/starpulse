@@ -212,7 +212,7 @@ def test_a_mode_other_than_ic_is_not_a_config_setting(tmp_path: Path) -> None:
 def test_unknown_keys_are_refused_by_name_beside_the_known_ones(tmp_path: Path) -> None:
     assert _refusal(tmp_path, 'zeta = 1\ntrakcer_url = "http://x.test"\n') == (
         "unknown config key(s) trakcer_url, zeta; known: analytics, api_worker, autopilot, board, board_worker, ci, cursor_context, database_url, event_log_archive_dir, event_log_retention_days, "
-        "flow_metrics_worker, harnesses_file, level, mode, producers, pull_requests, refresh_token_env, release, repos, runs, runs_worker, search, search_worker, session_start_url, slow_read_seconds, tracker_url, worker_memory"
+        "flow_metrics_worker, harnesses_file, level, mode, producers, pull_requests, refresh_token_env, release, repos, runs, runs_worker, search, search_worker, session_start_url, slow_read_seconds, tls_cert, tls_key, tracker_url, worker_memory"
     )
 
 
@@ -601,3 +601,31 @@ def test_a_worker_memory_table_naming_no_context_or_with_soft_at_or_above_hard_i
     tmp_path: Path, text: str, message: str
 ) -> None:
     assert _refusal(tmp_path, text) == message
+
+
+def test_a_certificate_and_key_are_read_from_beside_the_config(tmp_path: Path) -> None:
+    (tmp_path / "cert.pem").write_text("cert")
+    (tmp_path / "key.pem").write_text("key")
+
+    config = load(_write(tmp_path, 'tls_cert = "cert.pem"\ntls_key = "key.pem"\n'))
+
+    assert config.tls == (tmp_path / "cert.pem", tmp_path / "key.pem")
+
+
+def test_without_a_certificate_the_server_is_cleartext(tmp_path: Path) -> None:
+    assert load(_write(tmp_path, "")).tls is None
+
+
+def test_a_certificate_without_its_key_or_a_key_without_its_certificate_is_refused(tmp_path: Path) -> None:
+    refusal = "tls_cert and tls_key are set together"
+
+    assert _refusal(tmp_path, 'tls_cert = "cert.pem"\n') == refusal
+    assert _refusal(tmp_path, 'tls_key = "key.pem"\n') == refusal
+
+
+def test_a_certificate_or_key_that_is_not_there_is_refused_naming_it(tmp_path: Path) -> None:
+    (tmp_path / "cert.pem").write_text("cert")
+
+    assert _refusal(tmp_path, 'tls_cert = "cert.pem"\ntls_key = "key.pem"\n') == (
+        f"tls_key {tmp_path / 'key.pem'} does not exist"
+    )
