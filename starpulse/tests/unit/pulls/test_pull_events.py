@@ -40,6 +40,11 @@ OPEN = ("github-pull-request", "PR_OPENED")
     [
         ([OPEN], {"state": "OPEN", "isDraft": True, "checks": "none", "threads": 0}),
         ([OPEN, ("in-progress", "PR_READY")], {"isDraft": False}),
+        ([OPEN, ("deliver", "PR_READY")], {"isDraft": False}),
+        (
+            [OPEN, ("github-pull-request", "CHECKS_PASSED"), ("deliver", "PUSHED")],
+            {"checks": "pending", "requiredChecks": [], "mergeable": "UNKNOWN"},
+        ),
         ([OPEN, ("github-pull-request", "CHECKS_PASSED")], {"checks": "pass"}),
         ([OPEN, ("github-pull-request", "CHECKS_FAILED")], {"checks": "failing"}),
         ([OPEN, ("github-pull-request", "CHECKS_PASSED"), ("in-progress", "PUSHED")], {"checks": "pending"}),
