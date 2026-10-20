@@ -105,3 +105,11 @@ def test_a_failed_smoke_carries_what_serve_logged(tmp_path, monkeypatch):
     assert problem is not None
     assert "serve exited 3" in problem
     assert "cannot hand the socket" in problem
+
+
+def test_check_reports_a_dead_pulls_worker_as_down(table, log, page):
+    del table[201]
+    problem = check(page, 100, {"pulls", "board", "api"}, log)
+    assert problem is not None
+    assert "pulls" in problem
+    assert "down" in problem.lower()

@@ -2,6 +2,7 @@
 
 import json
 import threading
+import time
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -185,6 +186,31 @@ def test_the_workers_metrics_are_served_from_the_log(log: EventLog) -> None:
 
 def test_no_metrics_before_the_worker_has_published_any(log: EventLog) -> None:
     assert delivery.metrics_of(log)() == ""
+
+
+def test_a_running_poller_beats_into_the_log_and_the_beat_reads_as_up(log: EventLog, stop: threading.Event) -> None:
+    running = threading.Event()
+    running.set()
+    thread = delivery.keep_beating(log, running, stop, lambda: 100.0)
+    deadline = time.monotonic() + WAIT_S
+    while log.setting(delivery.POLLER) is None and time.monotonic() < deadline:
+        time.sleep(0.01)
+    stop.set()
+    thread.join(WAIT_S)
+
+    assert delivery.poller_problem(log, lambda: 100.0 + delivery.DOWN_S)() is None
+
+
+def test_a_poller_that_never_beat_reads_as_not_reported(log: EventLog) -> None:
+    assert delivery.poller_problem(log)() == "the pull poller has not reported"
+
+
+def test_a_beat_older_than_the_limit_reads_as_down_with_its_age(log: EventLog) -> None:
+    log.set_setting(delivery.POLLER, {"at": 100.0})
+
+    problem = delivery.poller_problem(log, lambda: 100.0 + delivery.DOWN_S + 1)()
+
+    assert problem == f"the pull poller last reported {delivery.DOWN_S + 1:.0f}s ago"
 
 
 def _pull(state: str, checks: str, fetched: float) -> dict:

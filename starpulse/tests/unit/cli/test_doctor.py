@@ -1,5 +1,6 @@
 """`starpulse doctor`: each install check reports pass or fail, and any failure fails the run."""
 
+import dataclasses
 import json
 from collections.abc import Callable
 from pathlib import Path
@@ -190,6 +191,42 @@ def test_an_unreadable_config_or_server_runs_no_contract_checks() -> None:
     bad = doctor.run_checks(cued(CUE), "starpulse.toml: bad key", FakeHost().probes(), "s")
 
     assert not [c for c in down["checks"] + bad["checks"] if c["check"].startswith(("cue:", "repo:"))]
+
+
+def polled(problem: str | None, **host: Any) -> doctor.Probes:
+    return dataclasses.replace(FakeHost(**host).probes(), poller=lambda: problem)
+
+
+def test_a_poller_that_beats_passes_and_one_that_stopped_fails_the_run_with_why() -> None:
+    up = doctor.contract(snapshot(), CONFIG, polled(None))
+    down = doctor.contract(snapshot(), CONFIG, polled("the pull poller last reported 90s ago"))
+
+    assert check(up, "poller:pulls")["status"] == "pass"
+    assert up["ok"] is True
+    assert check(down, "poller:pulls") == {
+        "check": "poller:pulls",
+        "status": "fail",
+        "reason": "the pull poller last reported 90s ago",
+    }
+    assert down["ok"] is False
+
+
+def test_no_poller_check_without_a_beat_to_read_or_a_poller_to_run() -> None:
+    unread = doctor.contract(snapshot(), CONFIG, FakeHost().probes())
+    off = doctor.contract(snapshot(), dataclasses.replace(CONFIG, pull_requests=False), polled("down"))
+    no_gh = doctor.contract(snapshot(), CONFIG, polled("down", installed=()))
+
+    assert not [c for report in (unread, off, no_gh) for c in report["checks"] if c["check"] == "poller:pulls"]
+
+
+def test_the_servers_poller_check_joins_the_cli_report_and_its_other_checks_do_not() -> None:
+    served = doctor.contract(snapshot(), CONFIG, polled("the pull poller has not reported"))
+    served["checks"].append({"check": "repo:other", "status": "fail", "reason": "x"})
+
+    report = doctor.run_checks(snapshot(), CONFIG, FakeHost().probes(), "s", served)
+
+    assert [c["check"] for c in report["checks"]] == [*CHECKS, "poller:pulls"]
+    assert report["ok"] is False
 
 
 def test_the_default_read_goes_through_the_runs_adapter_to_a_real_dagu() -> None:

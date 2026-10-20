@@ -248,10 +248,11 @@ class PullSync:
         """Once the Board replay is done, so the first projection sees every task, project what the store already
         holds and read each pull request it holds OPEN (`reconcile_open`), then serve each refresh asked for until `stop`. Projection runs on its own thread: a cold pin memo
         makes it walk hundreds of `gh` reads, and a refresh must not wait behind that."""
-        threading.Thread(target=self._wake_on_stop, name="pull-stop", daemon=True).start()
         self._feed.wait_replayed()
-        self._projecting = True
-        threading.Thread(target=self._project_forever, name="pull-project", daemon=True).start()
+        if not self._projecting:  # a run restarted after a crash keeps the helper threads the first one started
+            self._projecting = True
+            threading.Thread(target=self._wake_on_stop, name="pull-stop", daemon=True).start()
+            threading.Thread(target=self._project_forever, name="pull-project", daemon=True).start()
         self.project()
         self.reconcile_open()
         while not self._stop.is_set():

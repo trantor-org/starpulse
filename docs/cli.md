@@ -295,9 +295,15 @@ the run, when the instance has no `after` key, so its runs pair with a merge onl
 `repo:<name>` runs once per `[[repos]]` entry and fails when its `path` is not a submodule of the repository `doctor`
 runs in. Neither runs while the config or the server cannot be read.
 
-`GET /api/doctor` serves those two kinds of check as `{ok, checks: [{check, status, reason}]}`, read from the server's
-own snapshot and config and held for a minute; the page draws it as the Ledger's doctor banner. A server with no
-contract to read answers `{ok: true, checks: []}`.
+`poller:pulls` is the pull request poller's liveness. `serve` runs the poller on a thread of the pulls worker and starts
+it again after a crash, with a delay that doubles from 1 s to 60 s; while it runs it writes the time to the event log
+every 15 s. The check fails when that beat is over 60 s old or was never written, and runs only when the config polls
+pull requests (`pull_requests`) and `gh` is installed. Only the server reads the beat, so `starpulse doctor` takes this
+check from `GET /api/doctor`.
+
+`GET /api/doctor` serves the contract checks and `poller:pulls` as `{ok, checks: [{check, status, reason}]}`, read from
+the server's own snapshot, config and log and held for a minute; the page draws it as the Ledger's doctor banner. A
+server with no contract to read answers `{ok: true, checks: []}`.
 
 `skills` reads no server. The package bundles four skills: `operating-starpulse-board` (what to work next, why a task
 cannot move, moving it), `authoring-starpulse-machines` (machine YAML, writers, guards, subflows, `machine validate`
