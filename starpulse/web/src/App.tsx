@@ -7,7 +7,6 @@ import { NO_STARMAP_FILTERS, STARMAP_PREFS_KEY, useFilters } from "./shared/view
 import { AdminStore } from "./features/admin/adminPrefs";
 import { HistoryWindowStore } from "./features/admin/historyWindow";
 import { HudStore, type FeedLine, type HudState } from "./render/hud";
-import { LevelStore } from "./features/orbit/levelData";
 import { BOARD, pathKey, type Path } from "./render/levels";
 import { Crumb } from "./features/level/Crumb";
 import { DagLegend } from "./features/dags/DagLegend";
@@ -19,7 +18,7 @@ import { useBoardDrawn } from "./shared/boardDrawn";
 import { Leaderboard } from "./features/kanban/Leaderboard";
 import { recent } from "./features/kanban/kanbanModel";
 import { MoveStore, postMove } from "./features/kanban/move";
-import { AdminPage, Dags, Kanban, OrbitCard, prefetchViews } from "./lazyViews";
+import { AdminPage, Dags, Kanban, prefetchViews } from "./lazyViews";
 import { retired, viewOf, viewSearch, type ViewName } from "./shared/nav";
 import { renderer as makeRenderer } from "./render/renderer";
 import type { Renderer } from "./render/rendererTypes";
@@ -48,13 +47,6 @@ export function App() {
   // once it is, the views not yet opened also mount hidden in the background, so a first switch to one only unhides it
   const [admin] = useState(() => held?.admin ?? new AdminStore());
   const [historyWindow] = useState(() => new HistoryWindowStore());
-  // the level above the Board: asked for once, its navigator entry shown only when the server has one, then again only while its view is shown
-  const [levels] = useState(() => new LevelStore());
-  useEffect(() => {
-    void levels.refresh();
-    return () => levels.dispose();
-  }, [levels]);
-  const level = useSyncExternalStore(levels.subscribe, levels.get);
   // a move outlives the view that made it: the card stays where it landed while the writer answers
   const [moves] = useState(() => new MoveStore(postMove));
   // so does a started session: the card waits in In progress for its agent's claim whichever view is showing
@@ -72,8 +64,6 @@ export function App() {
   const prefs = useSyncExternalStore(admin.subscribe, admin.get);
   // a bare address opens the view the Admin chose; one that names a view opens that
   const [view, setView] = useState<ViewName>(() => viewOf(location.search, retired(location.pathname, location.hash) ? "constellation" : admin.get().view));
-  // the level is asked for again only while its view is shown
-  useEffect(() => levels.setActive(view === "graph"), [levels, view]);
   const activeView = useRef(view);
   const pendingView = useRef(0);
   const commitView = useCallback((next: ViewName, url: string) => {
@@ -145,7 +135,7 @@ export function App() {
   return (
     <>
       {!held && <canvas ref={canvas} id="c" />}
-      <Navigator shell={shell} hud={hud} view={view} activeView={activeView} slot={setSearchSlot} outlineSlot={setOutlineSlot} choose={choose} hasLevel={view === "graph" || (level.kind !== "none" && level.kind !== "loading")} open={open}
+      <Navigator shell={shell} hud={hud} view={view} activeView={activeView} slot={setSearchSlot} outlineSlot={setOutlineSlot} choose={choose} open={open}
         spot={(t) => renderer.current?.spot(t)} selectTask={(id) => renderer.current?.selectTask(id)} />
       <Crumb path={hud.path} states={hud.states} sources={hud.tree?.sources} open={open} off={view !== "constellation"} />
       {view === "constellation" && hud.tree !== null && hud.cards.length === 0 && hud.capabilities?.create && (
@@ -164,9 +154,6 @@ export function App() {
       </Kept>
       <Kept name="dags" on={view === "dags"} warm={drawn}><Suspense fallback={null}><Dags data={hud.dagData} openPath={open} spot={spottedDag} opening={openingDag} /></Suspense></Kept>
       <Kept name="admin" on={view === "admin"} warm={drawn}><Suspense fallback={null}><AdminPage store={admin} window={historyWindow} hint={hud.hint} /></Suspense></Kept>
-      <Kept name="graph" on={view === "graph"} warm={drawn}>
-        <Suspense fallback={null}><OrbitCard state={level} retry={() => void levels.refresh()} motion={prefs.motion} names={hud.names} /></Suspense>
-      </Kept>
       <Rail shown={shell} hud={hud} view={view} note={view === "kanban" && line && why ? { key: line, text: why } : null}
         can={(l) => (view === "kanban" ? !!l.task : view === "dags" ? !!l.dag : view === "constellation" && !!l.task)}
         spot={(l) => {
@@ -216,7 +203,7 @@ function Navigator({ shell, ...props }: { shell: boolean } & Parameters<typeof N
     watch.observe(el);
     return () => watch.disconnect();
   }, []);
-  const { view, activeView, choose, open, hasLevel } = props;
+  const { view, activeView, choose, open } = props;
   const tab = (v: ViewName, label: string, glyph: ReactNode) => (
     <button className={view === v ? "on" : undefined} aria-current={view === v ? "page" : undefined} title={label}
       onClick={() => (v === "constellation" && activeView.current === v ? open(BOARD) : choose(v))}>{glyph}<span>{label}</span></button>
@@ -233,7 +220,6 @@ function Navigator({ shell, ...props }: { shell: boolean } & Parameters<typeof N
         {tab("constellation", "Star Map", <svg className="g" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="12" cy="12" r="5" fill="currentColor" stroke="none" /><ellipse cx="12" cy="12" rx="10.6" ry="3.9" transform="rotate(-28 12 12)" strokeWidth="1.5" /><circle cx="20.6" cy="3.6" r="1.1" fill="currentColor" stroke="none" /></svg>)}
         {tab("kanban", "Kanban", <svg className="g kb" width="14" height="14" viewBox="0 0 12 12" aria-hidden="true"><rect x="1" y="1" width="2.5" height="10" rx=".6" /><rect x="4.75" y="1" width="2.5" height="7" rx=".6" /><rect x="8.5" y="1" width="2.5" height="4.5" rx=".6" /></svg>)}
         {tab("dags", "DAGs", <svg className="g dg" width="14" height="14" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 9.5 5 3.2 8.6 5.4 10.4 2" /><circle cx="2" cy="9.5" r="1.3" /><circle cx="5" cy="3.2" r="1.3" /><circle cx="8.6" cy="5.4" r="1.1" /><circle cx="10.4" cy="2" r=".9" /></svg>)}
-        {hasLevel && tab("graph", "Flow", <svg className="g" width="14" height="14" viewBox="0 0 12 12" aria-hidden="true"><ellipse cx="6" cy="6" rx="5" ry="2.4" /><circle cx="6" cy="6" r="1.2" /></svg>)}
         {tab("admin", "Admin", <svg className="g" width="14" height="14" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="1.8" /><path d="M6 .9v1.6M6 9.5v1.6M.9 6h1.6M9.5 6h1.6M2.4 2.4l1.1 1.1M8.5 8.5l1.1 1.1M2.4 9.6l1.1-1.1M8.5 3.5l1.1-1.1" /></svg>)}
         <button className="more" aria-label="More: search, status and the rest of the navigator" aria-expanded={sheet} onClick={() => setSheet(true)}><svg className="g" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11" /></svg><span>More</span><i className={`dot ${props.hud.live}`} /></button>
       </nav>
@@ -241,8 +227,8 @@ function Navigator({ shell, ...props }: { shell: boolean } & Parameters<typeof N
   );
 }
 
-function NavigatorBody({ hud, view, activeView, slot, outlineSlot, choose, hasLevel, open, spot, selectTask }: {
-  hud: HudState; view: ViewName; activeView: { current: ViewName }; slot: (el: HTMLElement | null) => void; outlineSlot: (el: HTMLElement | null) => void; choose: (v: ViewName) => void; hasLevel: boolean; open: (p: Path) => void;
+function NavigatorBody({ hud, view, activeView, slot, outlineSlot, choose, open, spot, selectTask }: {
+  hud: HudState; view: ViewName; activeView: { current: ViewName }; slot: (el: HTMLElement | null) => void; outlineSlot: (el: HTMLElement | null) => void; choose: (v: ViewName) => void; open: (p: Path) => void;
   spot: (target: Target | null) => void; selectTask: (id: string) => void;
 }) {
   const [{ query }, keep] = useFilters(STARMAP_PREFS_KEY, NO_STARMAP_FILTERS), setQuery = (v: string) => keep({ query: v });
@@ -313,15 +299,8 @@ function NavigatorBody({ hud, view, activeView, slot, outlineSlot, choose, hasLe
           <span className="t">DAGs</span>
           <span className="n">{hud.dags.length || ""}</span>
         </button>
-        {hasLevel && (
-          <button className={`node${view === "graph" ? " on here" : ""}`} title="Flow graph: the level above the Board" onClick={() => choose("graph")}>
-            <svg className="g og-glyph" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><ellipse cx="6" cy="6" rx="5" ry="2.4" /><circle cx="6" cy="6" r="1.2" /></svg>
-            <span className="t">Flow graph</span>
-            <span className="n" />
-          </button>
-        )}
       </section>
-      {view !== "admin" && view !== "graph" && view !== "dags" && (
+      {view !== "admin" && view !== "dags" && (
         <section className="away has-x search">
           {view === "kanban" ? <div ref={slot} /> : <>
             <input id="q" ref={searchBox} type="search" placeholder="search…" title="Search tasks, States and lifecycle machines" aria-label="Search tasks, States and lifecycle machines" autoComplete="off" value={query}
@@ -336,7 +315,6 @@ function NavigatorBody({ hud, view, activeView, slot, outlineSlot, choose, hasLe
         </section>
       )}
       {view === "kanban" && <section className="away outline" ref={outlineSlot} />}
-      {view === "graph" && <section className="away note">Layers belong to the Star Map view; they return when it is open.</section>}
       {view === "dags" && <><section className="away note">Layers belong to the Star Map view; they return when it is open.</section><Queues pools={hud.pools} /></>}
       {view === "constellation" && (body ? <section className="away matches">{body}</section> : <Leaderboard tasks={hud.cards} now={now} open={selectTask} />)}
       <section className="views admin-sec">
@@ -380,14 +358,7 @@ function RailBody({ hud, view, ...feed }: { hud: HudState; view: ViewName } & Om
       </section>
       <section id="legend">
         <h3>Legend</h3>
-        {view === "dags" ? <DagLegend /> : view === "graph" ? (
-          <>
-            <span><i style={{ background: "#a78bfa" }} />source: a planet on its own orbit</span><br />
-            <span><i style={{ border: "1px dashed #94a3b8", background: "none", boxSizing: "border-box" }} />unattributed: no Board of its own</span><br />
-            <span><i style={{ background: "#fb7185", boxShadow: "0 0 6px #fb7185" }} />comet: a replayed arrival</span><br />
-            <span><i style={{ background: "#34d399" }} />hover a body for its numbers, click or Tab for its details</span>
-          </>
-        ) : view === "kanban" ? (
+        {view === "dags" ? <DagLegend /> : view === "kanban" ? (
           <>
             <span><i style={{ background: "#34d399" }} />checks pass</span><span><i style={{ background: "#fb7185" }} />failing</span><span><i style={{ background: "#fbbf24" }} />pending</span><br />
             <span><i style={{ background: "#a78bfa" }} />merged</span><span><span style={{ color: "#fbbf24" }}>⌁ n</span> review threads</span><br />

@@ -41,7 +41,7 @@ Health = ["healthcheck", "disk-report", "metrics-snapshot"]
 Backup = ["db-backup", "db-restore-verify"]
 Housekeeping = ["image-prune", "log-rotate", "cert-renew"]
 
-# The flow graph the gate's seeded server draws (ci/seeded_server.py). An IC instance parses it and draws no level, so the
+# The level the gate's seeded server parses (ci/seeded_server.py). An IC instance parses it and draws no level, so the
 # UI preview is unchanged.
 [level]
 machine = "board"

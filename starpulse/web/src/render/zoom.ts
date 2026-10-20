@@ -25,7 +25,6 @@ const LINE_PX = 33;
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
 export const toScreen = (v: View, p: Point): Point => ({ x: p.x * v.k + v.x, y: p.y * v.k + v.y });
-export const toWorld = (v: View, p: Point): Point => ({ x: (p.x - v.x) / v.k, y: (p.y - v.y) / v.k });
 
 /** The view that centres `b` in a w x h canvas at the largest scale that fits it with a margin, up to `maxK`. */
 export function fitBox(b: Box, w: number, h: number, maxK = Infinity, pad = 0.94): View {

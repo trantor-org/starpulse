@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { fitBox, fitLevel, refitView, toScreen, toWorld, wheelFactor, zoomAbout, type View } from "./zoom";
+import { fitBox, fitLevel, refitView, toScreen, wheelFactor, zoomAbout, type View } from "./zoom";
+
+const toWorld = (v: View, p: { x: number; y: number }) => ({ x: (p.x - v.x) / v.k, y: (p.y - v.y) / v.k });
 
 describe("fitBox", () => {
   it("centres the content box in the canvas at the largest scale that fits it", () => {

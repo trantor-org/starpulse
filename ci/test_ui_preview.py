@@ -88,7 +88,6 @@ def test_touches_tells_a_runner_whether_a_change_reaches_a_ui_path(
 
 KANBAN = "starpulse/web/src/features/kanban/Kanban.tsx"
 DAGS = "starpulse/web/src/features/dags/Dags.tsx"
-ORBIT = "starpulse/web/src/features/orbit/orbitDraw.ts"
 
 
 @pytest.mark.parametrize(
@@ -96,9 +95,8 @@ ORBIT = "starpulse/web/src/features/orbit/orbitDraw.ts"
     [
         ([KANBAN], ["starpulse-kanban"]),
         ([DAGS], ["starpulse-dags"]),
-        ([ORBIT], ["starpulse-orbit"]),
         ([DAGS, KANBAN, "README.md", "design/data.js"], ["starpulse-kanban", "starpulse-dags"]),
-        # anything the three view folders do not own may draw on every view
+        # anything the view folders do not own may draw on every view
         ([KANBAN, "starpulse/web/src/App.tsx"], list(PAGES[STARPULSE])),
         ([KANBAN, "starpulse/web/src/features/level/ledger.ts"], list(PAGES[STARPULSE])),
         (["starpulse/web/src/features/kanban"], list(PAGES[STARPULSE])),

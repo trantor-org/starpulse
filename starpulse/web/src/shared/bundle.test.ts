@@ -15,12 +15,10 @@ const LAZY_VIEWS = [
   "features/kanban/Kanban.tsx",
   "features/dags/Dags.tsx",
   "features/admin/Admin.tsx",
-  "features/orbit/OrbitCard.tsx",
 ];
 /** Demo modules a served page loads only for an embedded fixture or `?demo`; none belongs to the sync first-paint chunks. */
 const LAZY_DEMO = [
   "demo/demo.ts",
-  "demo/demoLevel.ts",
   "demo/demoLedger.ts",
   "demo/demoMachines.ts",
   "demo/demoCriteria.ts",

@@ -3,7 +3,7 @@ import { act, lazy, Suspense, useEffect, useState, type ReactNode } from "react"
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { isKeptRevealed, Kept, revealKept, useViewActive } from "./Kept";
+import { Kept, revealKept, useViewActive } from "./Kept";
 
 let host: HTMLDivElement, root: Root;
 beforeEach(() => {
@@ -59,8 +59,6 @@ describe("Kept", () => {
     expect(hidden.hasAttribute("inert")).toBe(false);
     expect(visible.style.opacity).toBe("1");
     expect(visible.hasAttribute("inert")).toBe(false);
-    expect(isKeptRevealed("a")).toBe(false);
-    expect(isKeptRevealed("b")).toBe(true);
     expect(wrapper("a").hasAttribute("inert")).toBe(false);
     expect(wrapper("b").hasAttribute("inert")).toBe(true);
     expect(revealKept("missing")).toBe(false);

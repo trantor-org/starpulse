@@ -470,8 +470,8 @@ _INTERVALS = """async ([sel, ms]) => {
   return out;
 }"""
 
-#: Each nav button by the view it opens; `title^=` matches the Flow graph's longer title.
-VIEWS = {"Kanban": "Kanban", "DAGs": "DAGs", "Admin": "Admin", "Flow graph": "Flow graph", "Star Map": "Star Map"}
+#: Each nav button by the view it opens.
+VIEWS = {"Kanban": "Kanban", "DAGs": "DAGs", "Admin": "Admin", "Star Map": "Star Map"}
 
 
 def _nav(title: str) -> str:

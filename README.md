@@ -65,9 +65,9 @@ The same verbs work typed by hand, and **New task** on the Kanban adds a task fr
 
 ## Views
 
-| Kanban | Orbit | Workflow runs |
+| Kanban | Star Map | Workflow runs |
 |---|---|---|
-| <img src="https://trantor-org.github.io/starpulse/main/starpulse-kanban.png" alt="Kanban view"> | <img src="https://trantor-org.github.io/starpulse/main/starpulse-orbit.png" alt="Orbit view"> | <img src="https://trantor-org.github.io/starpulse/main/starpulse-dags.png" alt="Workflow runs view"> |
+| <img src="https://trantor-org.github.io/starpulse/main/starpulse-kanban.png" alt="Kanban view"> | <img src="https://trantor-org.github.io/starpulse/main/starpulse-star-map.png" alt="Star Map view"> | <img src="https://trantor-org.github.io/starpulse/main/starpulse-dags.png" alt="Workflow runs view"> |
 
 Reads tasks from its own Markdown board, Backlog.md or Jira; runs from Dagu, GitHub Actions or systemd; agents from Claude Code and Copilot.
 
