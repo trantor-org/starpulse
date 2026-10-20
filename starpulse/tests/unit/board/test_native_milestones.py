@@ -190,7 +190,7 @@ def test_native_milestone_routes_list_show_add_edit_and_archive_over_http(
     served: tuple[Board, Path], tmp_path: Path
 ) -> None:
     built, milestones = served
-    with serve(tmp_path, BoardFeed(), milestones=built) as server:
+    with serve(tmp_path, BoardFeed(), built) as server:
         listed = _call(server, "/api/milestones")
         shown = _call(server, "/api/milestones/m-106")
         missing = _call(server, "/api/milestones/m-9")
@@ -258,7 +258,7 @@ def test_native_milestone_cli_list_json_lists_the_real_file_with_title_outcome_s
     served: tuple[Board, Path], tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     built, _ = served
-    with serve(tmp_path, BoardFeed(), milestones=built) as server:
+    with serve(tmp_path, BoardFeed(), built) as server:
         code, doc = _verb(capsys, server, "milestone", "list", "--json")
 
     assert code == 0
@@ -276,7 +276,7 @@ def test_native_milestone_cli_adds_shows_edits_and_archives(
     served: tuple[Board, Path], tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     built, milestones = served
-    with serve(tmp_path, BoardFeed(), milestones=built) as server:
+    with serve(tmp_path, BoardFeed(), built) as server:
         added = _verb(
             capsys,
             server,
@@ -312,7 +312,7 @@ def test_native_milestone_cli_edit_with_nothing_to_change_is_a_usage_error(
     served: tuple[Board, Path], tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     built, _ = served
-    with serve(tmp_path, BoardFeed(), milestones=built) as server:
+    with serve(tmp_path, BoardFeed(), built) as server:
         code, doc = _verb(capsys, server, "milestone", "edit", "m-106")
 
     assert (code, doc["code"]) == (2, "usage")

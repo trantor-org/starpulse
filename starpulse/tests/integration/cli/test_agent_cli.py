@@ -24,7 +24,7 @@ from starpulse._internal.board.upstream_backlog import UpstreamBacklog
 from starpulse._internal.kit.adapter_kit import serve as _real_serve
 from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.kit.adapter_kit import url as _url
-from starpulse._internal.server.server import _no_writer
+from starpulse._internal.server.write_routes import _no_writer
 from starpulse._internal.board.view import task_view
 from starpulse._internal.cli import agent_cli as cli
 from starpulse._internal.cli import agent_wire, skill_install
@@ -38,6 +38,7 @@ from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import HistoryStore
 from starpulse._internal.harnesses.telemetry import TelemetryLog, signals
 from starpulse.contracts.adapters import TaskKeys
+from starpulse.tests.fake_board import bare_board
 from starpulse.tests.hosts import FakeHost
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.unit.harnesses.test_telemetry import FIXTURES
@@ -227,14 +228,14 @@ def cooled(tmp_path: Path) -> Iterator[str]:
     for n in (1, 2, 3):
         feed.put(task(f"PROJ-{n}", "Done", observed_at=now - 2 * HOT_S - n))
     feed.put(task("PROJ-4", "Done", observed_at=now - 60, milestone="m-1"))
-    with _serve(tmp_path, feed, read=COLD_RECORDS.get) as server:
+    with _serve(tmp_path, feed, bare_board(read=COLD_RECORDS.get)) as server:
         yield _url(server, "")
 
 
 @pytest.fixture
 def movable(tmp_path: Path, writer: _Writer) -> Iterator[str]:
     """A server whose board writer answers, holding `_moving_board`."""
-    with _serve(tmp_path, _moving_board(), writer=writer) as server:
+    with _serve(tmp_path, _moving_board(), bare_board(writer=writer)) as server:
         yield _url(server, "")
 
 
@@ -279,7 +280,7 @@ def stepped(tmp_path: Path) -> Iterator[str]:
 @pytest.fixture
 def bare(tmp_path: Path) -> Iterator[str]:
     """A server with `_moving_board` and no board writer, as one with no `[board]` adapter that writes."""
-    with _serve(tmp_path, _moving_board(), writer=_no_writer) as server:
+    with _serve(tmp_path, _moving_board(), bare_board(writer=_no_writer)) as server:
         yield _url(server, "")
 
 
@@ -291,7 +292,7 @@ def milestoned(tmp_path: Path) -> Iterator[str]:
     source = Path(__file__).parent.parent.parent / "fixtures" / "native_board"
     for records in ("milestones", "docs"):
         shutil.copytree(source / records, tmp_path / ".starpulse" / "board" / records)
-    with _serve(tmp_path, BoardFeed(machines=MACHINES), milestones=board) as server:
+    with _serve(tmp_path, BoardFeed(machines=MACHINES), board) as server:
         yield _url(server, "")
 
 
@@ -348,18 +349,7 @@ def _native_server(tmp_path: Path, *files: tuple[str, str]) -> Iterator[str]:
         (root / "tasks" / name).write_text(text)
     feed = BoardFeed(machines=MACHINES)
     UpstreamBacklog(root, feed.put).scan()
-    with _serve(
-        tmp_path,
-        feed,
-        writer=board.writer,
-        assign=board.assign,
-        read=board.read,
-        edit=board.edit,
-        archive=board.archive,
-        restore=board.restore,
-        complete=board.complete,
-        create=board.create,
-    ) as server:
+    with _serve(tmp_path, feed, board) as server:
         yield _url(server, "")
 
 
@@ -377,7 +367,7 @@ def lifecycled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[str]
     Ready, `task-2` In Progress and `task-3` Done."""
     tasks = {"task-1": ("Ready", {}), "task-2": ("In Progress", {}), "task-3": ("Done", {})}
     feed, built = _lifecycle(tmp_path, monkeypatch, tasks, [REVIEW_NEEDS_PR])
-    with _serve(tmp_path, feed, writer=built.writer, read=built.read, edit=built.edit) as server:
+    with _serve(tmp_path, feed, bare_board(writer=built.writer, read=built.read, edit=built.edit)) as server:
         yield _url(server, "")
 
 
@@ -409,7 +399,7 @@ def shelved(tmp_path: Path) -> Iterator[str]:
     (root / "archive" / "docs").mkdir(parents=True)
     file = next((root / "docs").rglob("doc-84 - *.md"))
     file.replace(root / "archive" / "docs" / file.name)
-    with _serve(tmp_path, BoardFeed(machines=MACHINES), milestones=board) as server:
+    with _serve(tmp_path, BoardFeed(machines=MACHINES), board) as server:
         yield _url(server, "")
 
 
@@ -431,7 +421,7 @@ def retiring(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
         (root / "tasks" / name).write_text(text)
     feed = BoardFeed(machines=MACHINES)
     board.start(feed, "test", EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}"))
-    with _serve(tmp_path, feed, restore=board.restore, milestones=board) as server:
+    with _serve(tmp_path, feed, board) as server:
         yield _url(server, "")
 
 
@@ -2512,7 +2502,7 @@ def test_task_show_reads_a_cold_done_task_whole_from_the_board_and_a_dependent_n
     feed.put(task("PROJ-9", "Done", observed_at=now - 2 * HOT_S))
     feed.put(task("PROJ-1", "Ready", dependencies=("PROJ-9",)))
 
-    with _serve(tmp_path, feed, read={"PROJ-9": record}.get) as server:
+    with _serve(tmp_path, feed, bare_board(read={"PROJ-9": record}.get)) as server:
         _, cold = _run(capsys, ["task", "show", "proj-9", "--server", _url(server, "")])
         _, dependent = _run(capsys, ["task", "show", "PROJ-1", "--server", _url(server, "")])
 

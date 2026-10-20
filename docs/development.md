@@ -15,19 +15,14 @@ instance runs, and the suite then skips the Postgres and hub cases.
 `starpulse/tests/e2e/` holds the tests that run an operator's entry point end to end, such as `starpulse serve --hub`
 as a process on Postgres; `addopts` deselects them, so no default, pull-request or nightly run pays their seconds, and
 `uv run pytest -m e2e` runs them. Each piece such a test composes keeps a fast integration test of its own.
-`uv sync --no-group hub --python 3.14t` is the free-threaded build, which CI runs the same selected tests on (`python-ft`, on a pull request and the nightly run, not a required check): `psycopg-binary`
-has no 3.14t wheel, so hub mode stays on 3.14. `test_memray_flagged.py` skips there, since memray reports no allocation for a small test's list on that build.
-`uv run pytest -n 4 --dist worksteal` spreads it over four pytest-xdist workers (CI starts two per runner); `worksteal`
+`uv sync --no-group hub --python 3.14t` is the free-threaded build, which CI runs the suite on (`python-ft`, in the nightly run, not a required check): `psycopg-binary`
+has no 3.14t wheel, so hub mode stays on 3.14.
+`uv run pytest -n auto --dist worksteal` spreads it over one pytest-xdist worker per CPU, as CI does; `worksteal`
 lets an idle worker take tests queued behind a busy one, so one slow file spreads across workers. Tests are safe to run
 on any worker: a controller-owned Postgres container serves the run, each worker with its own database, and one
 controller-owned mock issuer serves every worker (`starpulse/tests/shared_postgres.py`), and tests that stub the checkout's `static` directory share it through
-`starpulse/tests/page_stub.py`. CI sizes `-n` to its runner's memory with `ci/xdist_workers.py`.
-CI splits the suite by test file across the `python-shard` matrix (`ci/shard.py`: `SHARD_INDEX` of `SHARD_COUNT`, both unset
-locally). A `select` job runs `ci/select_tests.py` once and sizes the matrix from the selection: no shard when it selects no
-test, one shard per minute of the selected files' test time (never more than the files), and all six for the nightly and a
-manual dispatch. `select` also runs `lint-imports` on every pull request. The `python` job, the ruleset's required check,
-passes when `select` did and every shard it launched did, including when it launched none; a failed, cancelled or never-run
-shard fails it.
+`starpulse/tests/page_stub.py`. Every pull request and the nightly run execute the whole suite under `pytest -n auto
+--dist worksteal`, with no test selection, shard or coverage map; the nightly `ci.yml` `python` job also runs `lint-imports`.
 A test that runs past 120 s (`timeout` in `[tool.pytest.ini_options]`, from pytest-timeout) fails with a timeout error;
 a test that needs longer carries `@pytest.mark.timeout(<seconds>)` with the reason beside it.
 A test's ceiling is 5 s for setup, call and teardown together (`SLOW_TEST_SECONDS` overrides it). In every run but the
@@ -38,7 +33,7 @@ comment directly above it naming what the test must pay for (a server process, a
 `OVER_CEILING` there lists the tests at or over 4 s when the bound landed, each with the slice that brings it under; that
 slice removes its entry. A budget test (leak, latency, soak) carries
 `@pytest.mark.nightly`: `addopts` deselects it, and only the nightly suite and a manual dispatch run it (`-m "not e2e"`
-in `ci.yml`'s `python-shard`).
+in `ci.yml`'s `python`).
 The screen below runs only in the nightly full suite and a manual `workflow_dispatch`, where `ci.yml` sets `TEST_COST_REPORT=1`
 (and on `python-ft`, which reports and never fails the ceiling); any other run prints no section, annotation or summary row
 and writes no report. A test over 5 s is named at the end of the run, slowest first; in CI each is also a warning annotation
@@ -47,17 +42,7 @@ is named beside them with its CPU seconds and the growth of its worker's peak RS
 CPU s and Peak MB columns. Containers a test starts (Postgres, mock-oauth2) run outside the process tree, so their CPU
 and memory are not counted. None of the screen fails the run.
 With `TEST_COST_REPORT=1` the flagged tests' node id, wall s, CPU s and peak MB also go to `test-cost.json`
-(`TEST_COST_REPORT_PATH` moves it), and each shard reruns exactly those tests one by one under `pytest --memray`
-(`ci/memray_flagged.py`), then uploads the report and `memray/` (one allocation report per test plus `stats.json`) as the
-`test-cost-<shard>` artifact; a test whose rerun left no report is named in `stats.json` and a `::warning`.
-The same nightly and dispatch runs record which source files each test executes: every shard runs
-`--cov --cov-context=test` (line coverage of `starpulse` and `ci`, `[tool.coverage.run]`) and uploads its data as
-`coverage-data-<shard>`. The `coverage-map` job, after all shards pass and no required check, combines them
-and `ci/coverage_map.py build` writes `<sha>.json` and `latest.json` (`{sha, collected, tests: {node id: [files]}}`) to
-`$STARPULSE_COVERAGE_MAP_DIR`, default `~/.cache/starpulse-ci/coverage-map` of the CI runner user, which the
-`ci-sp-python` select step also runs as. A parametrized case with no context of its own takes its function's files; a
-collected test with no files is left out. `uv run python ci/coverage_map.py latest` prints the newest map's sha and how
-many collected tests it names; it exits 1 before the first nightly published one.
+(`TEST_COST_REPORT_PATH` moves it), which the `python` job uploads as the `test-cost` artifact.
 Each background context has a leak gate, `starpulse/tests/unit/leaks/test_context_budgets.py`: it drives the context's loop
 for a fixed number of iterations against a fixture board and a throwaway SQLite store, and fails when the memory still held
 afterwards exceeds the context's budget (`pull-events: retained 41000 B over 200 iterations, budget 32768 B exceeded`).
@@ -75,16 +60,11 @@ tracker. A context joins by adding a driver to `test_context_budgets.py` and an 
 background thread starts the session's Postgres and mock-issuer containers when the first test that needs one is collected
 (when collection finishes on a `-k` or `-m` run, which deselects after collecting), so the start overlaps collection and a
 test waits on a warm container instead of paying its start.
-The required checks run only the tests a pull request or a merge-queue candidate can reach (`ci/select_tests.py`), as the
+The required checks run the whole suite on a pull request or a merge-queue candidate, as the
 workspace App's check runs from trantor's `ci-sp-*` Dagu DAGs; a push to main runs none, because the merge queue tested
-that very commit, and the full suite runs nightly and on a manual dispatch as this repository's `ci.yml`. Trantor's nightly `starpulse-fresh-serve` Dagu DAG (02:15 MST, on a dedicated worker so it competes with no other CI) builds main's wheel, installs it into an empty virtualenv, starts `starpulse serve` from an empty directory with no config and a bare environment, and runs `ci/fresh_serve.py`, which fails unless `/` answers HTTP 200 and every worker the supervisor names (read from the pid `serve` logs for its context, since a zygote-forked child shows the zygote's argv in `ps`) is alive below `serve` on two checks five seconds apart with the same processes. It proves the out-of-the-box install is the production install. The `macos-fresh-serve` job in `ci.yml` runs the same script on a GitHub-hosted macOS runner in the nightly run and on a manual dispatch (the fleet is Linux), so the supervisor, the resident-size reader and the Page API's handed socket are proven there too; prove a pull request by dispatching `ci.yml` on its branch. CI's `static-checks` job imports every module an IC instance can load without the hub extras
+that very commit, and the nightly run and a manual dispatch run it as this repository's `ci.yml`. Trantor's nightly `starpulse-fresh-serve` Dagu DAG (02:15 MST, on a dedicated worker so it competes with no other CI) builds main's wheel, installs it into an empty virtualenv, starts `starpulse serve` from an empty directory with no config and a bare environment, and runs `ci/fresh_serve.py`, which fails unless `/` answers HTTP 200 and every worker the supervisor names (read from the pid `serve` logs for its context, since a zygote-forked child shows the zygote's argv in `ps`) is alive below `serve` on two checks five seconds apart with the same processes. It proves the out-of-the-box install is the production install. The `macos-fresh-serve` job in `ci.yml` runs the same script on a GitHub-hosted macOS runner in the nightly run and on a manual dispatch (the fleet is Linux), so the supervisor, the resident-size reader and the Page API's handed socket are proven there too; prove a pull request by dispatching `ci.yml` on its branch. CI's `static-checks` job imports every module an IC instance can load without the hub extras
 (`ci/ic_imports.py`) rather than running the suite a second time. This repository is public, so its `ci/public_names.py` check fails
 when a tracked file other than a workflow, the runner-label list or a test names the operator's private hosts; docs, comments and fixtures use neutral names.
-A pull request's CI runs only the test files its changes can reach, chosen by `ci/select_tests.py` from the per-test
-coverage map the nightly full suite records (`ci/coverage_map.py`): a changed file selects the tests that executed it. A
-file the map lacks, such as a new module, falls back to the import graph, and a changed test file selects itself. A
-machine, skill or `pyproject.toml` lint-table edit selects the tests of the code that reads it; only a dependency,
-`conftest.py` or fixture change, or any other `pyproject.toml` edit, runs the whole suite.
 `uv run lint-imports` checks the tiers under `starpulse/_internal`, top to bottom: `api` over `cli` (the server's routes and
 the hub, then the command line), `adapters`, `level`, `feed` and `ci`, `eventlog`, then `config`, `machines` and
 `contracts`. A package imports its own tier or one below; none import upward, and `feed` and `ci` never import each other.

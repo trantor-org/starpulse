@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 from urllib.parse import parse_qs, unquote
 
 from starpulse._internal.config.analytics import Analytics
-from starpulse._internal.config.config import SLOW_READ_S
 from starpulse._internal.config.harnesses import Harnesses
 from starpulse._internal.server.compression import Encoded
 from starpulse._internal.server.encoding import encode, full_snapshot
@@ -63,16 +62,12 @@ from starpulse._internal.server.writes import (
 )
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the autopilot in the Delivery worker's import closure
-    from starpulse._internal.autopilot.remote import Remote
-    from starpulse._internal.autopilot.runtime import Runtime
-    from starpulse._internal.board.seam import Board, TaskReader
-    from starpulse._internal.config.level import Level
+    from starpulse._internal.board.seam import Board
     from starpulse._internal.eventlog.history import History
     from starpulse._internal.feed.board_feed import BoardFeed
     from starpulse._internal.feed.history_window import HistoryWindow
-    from starpulse._internal.feed.search import SearchIndex
-    from starpulse._internal.harnesses.telemetry import TelemetryLog
     from starpulse._internal.pulls.pulls import PullStore
+    from starpulse._internal.server.services import Services
     from starpulse._internal.server.snapshot_cache import SnapshotCache
 
 logger = logging.getLogger(__name__)
@@ -208,27 +203,16 @@ class ReadRoutes:
         history: History,
         snapshots: SnapshotCache,
         window: HistoryWindow,
-        read: TaskReader | None = None,
-        search: SearchIndex | None = None,
-        telemetry: TelemetryLog | None = None,
-        analytics: Analytics | None = None,
-        level: Level | None = None,
+        board: Board,
+        services: Services,
         clock: Callable[[], float] = time.time,
-        contract: Callable[[], dict[str, Any]] | None = None,
-        milestones: Board | None = None,
-        pulls: PullStore | None = None,
-        autopilot: Runtime | Remote | None = None,
-        harnesses: Harnesses | None = None,
-        slow_read_s: float = SLOW_READ_S,
-        actor_metrics: Callable[[], str] | None = None,
-        lane_metrics: Callable[[], str] | None = None,
-        conformance_metrics: Callable[[], str] | None = None,
         page_gauge: Callable[[], str] | None = None,
     ) -> None:
         from starpulse._internal.server import (
             server as views,
         )  # late: `server` imports the handler that imports this module, and keeps the views its tests patch
 
+        read, search = board.read, services.search
         self._views = views
         self._feed = feed
         self._history = history
@@ -236,17 +220,18 @@ class ReadRoutes:
         self._window = window
         self._read = read
         self._search = search
-        self._telemetry = telemetry
-        self._analytics = analytics
-        self._level_config = level
+        self._telemetry = services.telemetry
+        self._analytics = services.analytics
+        self._level_config = services.level
         self._clock = clock
-        self._contract = contract
-        self._milestones = milestones
-        self._autopilot = autopilot
-        self._metrics = tuple(m for m in (actor_metrics, lane_metrics, conformance_metrics, page_gauge) if m)
-        self._harnesses = encode("harnesses", (harnesses or Harnesses((), {})).as_json())
-        self._pull_reads = _PullReads(pulls)
-        self._slow_reads = _SlowReads(slow_read_s)
+        self._contract = services.contract
+        self._milestones = board
+        self._autopilot = services.autopilot
+        metrics = (services.actor_metrics, services.lane_metrics, services.conformance_metrics, page_gauge)
+        self._metrics = tuple(m for m in metrics if m)
+        self._harnesses = encode("harnesses", (services.harnesses or Harnesses((), {})).as_json())
+        self._pull_reads = _PullReads(services.pulls)
+        self._slow_reads = _SlowReads(services.slow_read_s)
         flows = feed.machines.keys()
         self._exact: dict[str, Route] = {
             "/api/snapshot": self._snapshot,

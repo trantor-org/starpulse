@@ -20,6 +20,7 @@ from starpulse._internal.kit.adapter_kit import serve as _serve
 from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.kit.adapter_kit import url as _url
 from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse.tests.fake_board import bare_board
 from starpulse.tests.machines import MACHINES
 
 
@@ -264,7 +265,7 @@ def test_a_snapshot_read_straight_after_a_write_holds_the_write(tmp_path: Path) 
         feed.put(task(name, status, title="written"))
         return Written(True, "ok")
 
-    with _serve(tmp_path, feed, writer=writer) as server:
+    with _serve(tmp_path, feed, bare_board(writer=writer)) as server:
         before = _get(server)
         move = urllib.request.Request(
             _url(server, "/api/move"),

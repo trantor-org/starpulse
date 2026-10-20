@@ -38,7 +38,6 @@ dev = [
     "commitizen>=4.19.2",
     "import-linter>=2.15",
     "pytest>=9",
-    "pytest-cov>=7.1.0",
     "pytest-memray>=1.11.0",
     "pytest-timeout>=2.4.0",
     "pytest-xdist>=3.8.0",
@@ -220,14 +219,6 @@ timeout = 120
 testpaths = ["starpulse/tests", "ci"]
 # The UI preview script under `ci/` is imported by its module name.
 pythonpath = ["ci"]
-
-# The nightly's per-test coverage map (ci/coverage_map.py) records which source files each test runs: line coverage only,
-# test files included so a test that runs no package code still leaves its own file under its context, and relative
-# paths so shard data combines across runners. The default core stays: `core = "sysmon"` is cheaper but records no
-# per-test contexts.
-[tool.coverage.run]
-source = ["starpulse", "ci"]
-relative_files = true
 
 # `cz bump` names the beta that release.yml publishes for a merge to main (see its build job); a stable release is still
 # a version bump merged by hand and a matching tag.

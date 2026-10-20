@@ -7,6 +7,7 @@ from pathlib import Path
 
 from starpulse._internal.feed.board_feed import HOT_S, BoardFeed
 from starpulse._internal.kit.adapter_kit import serve, task, url
+from starpulse.tests.fake_board import bare_board
 
 NOW = 10_000_000.0
 RECORDS = {
@@ -33,7 +34,7 @@ def _feed() -> BoardFeed:
 
 
 def test_done_page_lists_the_cold_done_tasks_newest_first_a_page_at_a_time(tmp_path: Path) -> None:
-    with serve(tmp_path, _feed(), read=RECORDS.get) as server:
+    with serve(tmp_path, _feed(), bare_board(read=RECORDS.get)) as server:
         status, first = _get(server, "?limit=2")
         _, second = _get(server, f"?limit=2&before={first['tasks'][-1]['entered']}")
 
@@ -55,7 +56,7 @@ def test_done_page_lists_the_cold_done_tasks_newest_first_a_page_at_a_time(tmp_p
 def test_done_page_is_404_for_a_board_that_cannot_read_a_task_and_400_for_a_bad_query(tmp_path: Path) -> None:
     with serve(tmp_path, _feed()) as server:
         unreadable = _get(server, "")[0]
-    with serve(tmp_path, _feed(), read=RECORDS.get) as server:
+    with serve(tmp_path, _feed(), bare_board(read=RECORDS.get)) as server:
         malformed = _get(server, "?limit=0")[0]
 
     assert (unreadable, malformed) == (404, 400)

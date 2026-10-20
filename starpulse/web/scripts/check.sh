@@ -27,8 +27,8 @@ if [ "$mode" = changed ]; then
 fi
 
 case $tests in
-  all) test_cmd="scripts/in-tests-slice.sh pnpm exec vitest run" ;;
-  related) test_cmd="scripts/in-tests-slice.sh pnpm exec vitest related --run$related" ;;
+  all) test_cmd="pnpm exec vitest run" ;;
+  related) test_cmd="pnpm exec vitest related --run$related" ;;
   none) test_cmd=true ;;
 esac
 

@@ -35,7 +35,7 @@ def _served(tmp_path: Path, rules: list[dict[str, Any]]) -> Iterator[str]:
     built = native.board({"rules": rules}, tmp_path)
     feed = BoardFeed(machines=MACHINES)
     feed.put(task("task-1", "In Progress", moves={"done": Move(allowed=True)}))
-    with serve(tmp_path, feed, writer=built.writer) as server:
+    with serve(tmp_path, feed, built) as server:
         yield url(server, "")
 
 

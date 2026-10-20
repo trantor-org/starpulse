@@ -23,7 +23,7 @@ def _serve(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[list[object
     started: list[object] = []
     monkeypatch.setattr(service, "start_autopilot", lambda *args, **kwargs: started.append(args) or None)
     handled: dict[str, object] = {}
-    monkeypatch.setattr(server, "request_handler", lambda *args, **kwargs: handled.update(kwargs))
+    monkeypatch.setattr(server, "request_handler", lambda *args, **kwargs: handled.update(kwargs, services=args[5]))
     config = tmp_path / "starpulse.toml"
     config.write_text(BOARD)
 
@@ -36,4 +36,4 @@ def test_serve_starts_neither_the_sampler_nor_the_loop(tmp_path: Path, monkeypat
     started, handled = _serve(tmp_path, monkeypatch)
 
     assert started == []
-    assert isinstance(handled["autopilot"], Remote)
+    assert isinstance(handled["services"].autopilot, Remote)

@@ -10,7 +10,8 @@ import logging
 import os
 import threading
 import time
-from collections.abc import Callable, Collection, Mapping
+from collections.abc import Callable, Collection
+from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, SimpleHTTPRequestHandler
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -18,43 +19,21 @@ from urllib.parse import urlsplit
 
 from pydantic import ValidationError
 
-from starpulse._internal.board.seam import (
-    AssigneeWriter,
-    Board,
-    MoveWriter,
-    TaskArchiver,
-    TaskCompleter,
-    TaskCreator,
-    TaskEditor,
-    TaskReader,
-    TaskRestorer,
-    Written,
-)
-from starpulse._internal.config.analytics import Analytics
-from starpulse._internal.config.config import SLOW_READ_S
+from starpulse._internal.board.seam import Board
 from starpulse._internal.config.harnesses import Harnesses
-from starpulse._internal.config.level import Level
 from starpulse._internal.feed.history_window import HistoryWindow
-from starpulse._internal.harnesses.telemetry import TelemetryLog
-from starpulse._internal.pulls.pull_refresh import PullRefresh
-from starpulse._internal.runs.cloudevents import CloudEventsIngest
 from starpulse._internal.server.compression import LEVEL, Encoded, accepts_gzip, compressed, gzip_stream
 from starpulse._internal.server.encoding import encode, event
 from starpulse._internal.server.reads import Arrival, ReadRoutes, Request, Response
 from starpulse._internal.server.routes import _PAGES
+from starpulse._internal.server.services import Services
 from starpulse._internal.server.snapshot_cache import SnapshotCache
 from starpulse._internal.server.streams import Stream, Streams
 from starpulse._internal.server.write_routes import WriteRequest, WriteRoutes
-from starpulse._internal.server.writes import OPERATOR
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the autopilot in the Delivery worker's import closure
-    from starpulse._internal.autopilot.remote import Remote
-    from starpulse._internal.autopilot.runtime import Runtime
     from starpulse._internal.eventlog.history import History
     from starpulse._internal.feed.board_feed import BoardFeed
-    from starpulse._internal.feed.search import SearchIndex
-    from starpulse._internal.level.insights import Insights
-    from starpulse._internal.pulls.pulls import PullStore
 
 
 logger = logging.getLogger(__name__)
@@ -273,10 +252,6 @@ class _ApiHandler(SimpleHTTPRequestHandler):
         pass
 
 
-def _no_writer(task: str, status: str, actor: str = OPERATOR) -> Written:
-    return Written(False, "no board writer is configured", unavailable=True)
-
-
 #: How long `/api/doctor` holds its report: the checks read the scheduler and run `git`.
 _CONTRACT_TTL_S = 60
 
@@ -301,86 +276,20 @@ def _cached(
 def request_handler(
     feed: BoardFeed,
     static: Path,
-    starts: Mapping[str, Callable[[str], str]],
-    run_safe: Collection[str],
     history: History,
     window: HistoryWindow,
-    writer: MoveWriter = _no_writer,
-    harnesses: Harnesses | None = None,
-    assign: AssigneeWriter = _no_writer,
-    start_session: Callable[..., str] | None = None,
-    read: TaskReader | None = None,
-    edit: TaskEditor | None = None,
-    archive: TaskArchiver | None = None,
-    create: TaskCreator | None = None,
+    board: Board,
+    services: Services = Services(),
     clock: Callable[[], float] = time.time,
     gate: Callable[[BaseHTTPRequestHandler], bool] | None = None,
-    level: Level | None = None,
-    insights: Insights | None = None,
-    events: CloudEventsIngest | None = None,
-    autopilot: Runtime | Remote | None = None,
-    reruns: Mapping[str, Callable[[str, Mapping[str, str]], str]] | None = None,
-    contract: Callable[[], dict[str, Any]] | None = None,
-    milestones: Board | None = None,
-    pulls: PullStore | None = None,
-    telemetry: TelemetryLog | None = None,
-    complete: TaskCompleter | None = None,
-    restore: TaskRestorer | None = None,
-    search: SearchIndex | None = None,
-    analytics: Analytics | None = None,
-    pull_refresh: PullRefresh | None = None,
-    slow_read_s: float = SLOW_READ_S,
-    actor_metrics: Callable[[], str] | None = None,
-    lane_metrics: Callable[[], str] | None = None,
-    conformance_metrics: Callable[[], str] | None = None,
 ) -> type[SimpleHTTPRequestHandler]:
 
-    configured = harnesses or Harnesses((), {})
+    services = replace(services, harnesses=services.harnesses or Harnesses((), {}))
     snapshots = SnapshotCache(feed)
     routes = ReadRoutes(
-        feed,
-        history,
-        snapshots,
-        window,
-        read=read,
-        search=search,
-        telemetry=telemetry,
-        analytics=analytics,
-        level=level,
-        clock=clock,
-        contract=contract,
-        milestones=milestones,
-        pulls=pulls,
-        autopilot=autopilot,
-        harnesses=configured,
-        slow_read_s=slow_read_s,
-        actor_metrics=actor_metrics,
-        lane_metrics=lane_metrics,
-        conformance_metrics=conformance_metrics,
-        page_gauge=lambda: build_gauge(static),
+        feed, history, snapshots, window, board, services, clock=clock, page_gauge=lambda: build_gauge(static)
     )
-    writes = WriteRoutes(
-        feed,
-        window,
-        writer,
-        assign,
-        starts,
-        run_safe,
-        reruns=reruns,
-        harnesses=configured,
-        start_session=start_session,
-        read=read,
-        edit=edit,
-        archive=archive,
-        restore=restore,
-        complete=complete,
-        create=create,
-        events=events,
-        insights=insights,
-        pull_refresh=pull_refresh,
-        autopilot_switch=autopilot,
-        milestones=milestones,
-    )
+    writes = WriteRoutes(feed, window, board, services)
 
     def build_frame() -> str | None:
         build = page_build(static)

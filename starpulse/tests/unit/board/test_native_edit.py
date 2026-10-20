@@ -336,7 +336,7 @@ def test_task_edit_flags_add_reword_remove_check_and_uncheck_items_of_both_check
 ) -> None:
     built, feed, base = served
 
-    with serve(tmp_path, feed, read=built.read, edit=built.edit) as server:
+    with serve(tmp_path, feed, built) as server:
         code, doc = _edit_verb(
             capsys,
             server,
@@ -361,7 +361,7 @@ def test_task_edit_append_notes_adds_lines_after_the_notes_and_rewrites_nothing_
 ) -> None:
     built, feed, base = served
 
-    with serve(tmp_path, feed, read=built.read, edit=built.edit) as server:
+    with serve(tmp_path, feed, built) as server:
         code, doc = _edit_verb(capsys, server, "--append-notes", "Second note.", "--append-notes", "Third note.")
 
     assert (code, doc) == (0, {"task": "task-5", "changed": ["notes"]})
@@ -376,7 +376,7 @@ def test_task_edit_naming_an_item_the_task_lacks_is_refused_and_writes_nothing(
 ) -> None:
     built, feed, base = served
 
-    with serve(tmp_path, feed, read=built.read, edit=built.edit) as server:
+    with serve(tmp_path, feed, built) as server:
         code, doc = _edit_verb(capsys, server, "--title", "Mine", "--check-dod", "9")
 
     assert (code, doc["code"]) == (1, "refused")
@@ -389,7 +389,7 @@ def test_task_edit_reword_without_a_number_and_colon_is_a_usage_error(
 ) -> None:
     built, feed, _ = served
 
-    with serve(tmp_path, feed, read=built.read, edit=built.edit) as server:
+    with serve(tmp_path, feed, built) as server:
         code, doc = _edit_verb(capsys, server, "--reword-ac", "It zooms")
 
     assert (code, doc["code"]) == (2, "usage")
@@ -430,7 +430,7 @@ def test_doc_create_task_files_the_doc_and_links_it_on_the_task_in_its_documenta
 ) -> None:
     built, feed, base = served
 
-    with serve(tmp_path, feed, read=built.read, edit=built.edit, milestones=built) as server:
+    with serve(tmp_path, feed, built) as server:
         argv = ["doc", "create", "TASK-5 working notes", "--body", "Current state", "--task", "task-5"]
         code = cli.main([*argv, "--server", f"http://127.0.0.1:{server.server_port}"], {})
     out = capsys.readouterr()

@@ -1,4 +1,4 @@
-"""The page build the server refuses to start without, stubbed for as long as any test, worker or shard needs it.
+"""The page build the server refuses to start without, stubbed for as long as any test or worker needs it.
 
 Tests in one checkout share its `static` directory. A stub one holder removes while another's server still reads it
 breaks that server, so a holder registers a marker named for its process, and the last one out removes the stub.

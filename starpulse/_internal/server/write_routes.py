@@ -3,10 +3,11 @@ app call the same ones."""
 
 from __future__ import annotations
 
-from collections.abc import Callable, Collection, Mapping
+from collections.abc import Callable
 from typing import TYPE_CHECKING, NamedTuple, Protocol
 from urllib.parse import unquote
 
+from starpulse._internal.board.seam import OPERATOR, Written
 from starpulse._internal.pulls.pull_refresh import MAX_BODY as MAX_REFRESH_BODY
 from starpulse._internal.runs.ingest import MAX_BATCH_BODY, MAX_BODY
 from starpulse._internal.server.encoding import encode
@@ -78,25 +79,10 @@ from starpulse._internal.server.writes import (
 )
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the autopilot in the Delivery worker's import closure
-    from starpulse._internal.autopilot.remote import Remote
-    from starpulse._internal.autopilot.runtime import Runtime
-    from starpulse._internal.board.seam import (
-        AssigneeWriter,
-        Board,
-        MoveWriter,
-        TaskArchiver,
-        TaskCompleter,
-        TaskCreator,
-        TaskEditor,
-        TaskReader,
-        TaskRestorer,
-    )
-    from starpulse._internal.config.harnesses import Harnesses
+    from starpulse._internal.board.seam import Board
     from starpulse._internal.feed.board_feed import BoardFeed
     from starpulse._internal.feed.history_window import HistoryWindow
-    from starpulse._internal.level.insights import Insights
-    from starpulse._internal.pulls.pull_refresh import PullRefresh
-    from starpulse._internal.runs.cloudevents import CloudEventsIngest
+    from starpulse._internal.server.services import Services
 
 
 class Headers(Protocol):
@@ -116,6 +102,10 @@ class WriteRequest(NamedTuple):
     body: Callable[[int], bytes]
 
 
+def _no_writer(task: str, status: str, actor: str = OPERATOR) -> Written:
+    return Written(False, "no board writer is configured", unavailable=True)
+
+
 TaskWrite = Callable[[str, bytes], tuple[int, dict]]
 Pushed = Callable[[str | None, bytes], tuple[int, dict]]
 
@@ -125,39 +115,23 @@ class WriteRoutes:
     settings a page puts. A call answers a `WriteRequest` with its `Response`, or None where the method and path are
     no write route."""
 
-    def __init__(
-        self,
-        feed: BoardFeed,
-        window: HistoryWindow,
-        writer: MoveWriter,
-        assign: AssigneeWriter,
-        starts: Mapping[str, Callable[[str], str]],
-        run_safe: Collection[str],
-        reruns: Mapping[str, Callable[[str, Mapping[str, str]], str]] | None = None,
-        harnesses: Harnesses | None = None,
-        start_session: Callable[..., str] | None = None,
-        read: TaskReader | None = None,
-        edit: TaskEditor | None = None,
-        archive: TaskArchiver | None = None,
-        restore: TaskRestorer | None = None,
-        complete: TaskCompleter | None = None,
-        create: TaskCreator | None = None,
-        events: CloudEventsIngest | None = None,
-        insights: Insights | None = None,
-        pull_refresh: PullRefresh | None = None,
-        autopilot_switch: Runtime | Remote | None = None,
-        milestones: Board | None = None,
-    ) -> None:
+    def __init__(self, feed: BoardFeed, window: HistoryWindow, board: Board, services: Services) -> None:
+        writer = board.writer or _no_writer
+        assign = board.assign or _no_writer
+        read, edit, archive, create = board.read, board.edit, board.archive, board.create
+        restore, complete, milestones = board.restore, board.complete, board
         self._feed = feed
         self._window = window
-        self._starts = starts
-        self._reruns = reruns or {}
-        self._run_safe = run_safe
-        self._insights = insights
-        self._autopilot = autopilot_switch
+        self._starts = services.starts
+        self._reruns = services.reruns or {}
+        self._run_safe = services.run_safe
+        self._insights = services.insights
+        self._autopilot = services.autopilot
         self._task_writes: dict[str, TaskWrite] = {
             _MOVE: lambda client, raw: move_task(client, raw, feed, writer),
-            _START: lambda client, raw: start_task(client, raw, feed, assign, start_session, harnesses),
+            _START: lambda client, raw: start_task(
+                client, raw, feed, assign, services.start_session, services.harnesses
+            ),
             _EDIT: lambda client, raw: edit_task(client, raw, feed, read, edit),
             _ARCHIVE: lambda client, raw: archive_task(client, raw, feed, archive),
             _VERDICT: lambda client, raw: record_verdict(client, raw, feed, read, edit),
@@ -180,10 +154,10 @@ class WriteRoutes:
         }
         # The pushes a deployment may leave unconfigured: their route is then none, and a POST of it answers 404.
         self._pushes: dict[str, tuple[Pushed | None, int]] = {
-            _INSIGHTS: (insights, MAX_BODY),
-            _PULL_REFRESH: (pull_refresh, MAX_REFRESH_BODY),
+            _INSIGHTS: (services.insights, MAX_BODY),
+            _PULL_REFRESH: (services.pull_refresh, MAX_REFRESH_BODY),
         }
-        self._events = events
+        self._events = services.events
 
     def post_only(self, path: str) -> bool:
         """Whether `path` is a route a GET is refused: a write (or run) that answers 405, though a read may share its prefix."""

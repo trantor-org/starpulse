@@ -24,7 +24,6 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, create_engine, event, text
 from sqlalchemy.engine import make_url
-from tests_slice import join_slice
 
 from starpulse._internal.board import upstream_backlog
 from starpulse._internal.eventlog import event_log
@@ -149,7 +148,7 @@ def _start_postgres() -> Any:  # pragma: no mutate block — container lifecycle
     def start() -> Any:
         # The data directory in memory and no sync: a throwaway server need not survive a crash, and initdb's syncs
         # took seconds on a disk the runners share.
-        return join_slice(
+        return (
             PostgresContainer("postgres:17-alpine", driver="psycopg")
             .with_env("POSTGRES_INITDB_ARGS", "--no-sync")
             .with_tmpfs_mount("/var/lib/postgresql/data")
@@ -157,7 +156,8 @@ def _start_postgres() -> Any:  # pragma: no mutate block — container lifecycle
                 # Every worker of a run connects to this one server.
                 "postgres -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=500"
             )
-        ).start()
+            .start()
+        )
 
     return _retried(start)
 
@@ -165,7 +165,7 @@ def _start_postgres() -> Any:  # pragma: no mutate block — container lifecycle
 def _start_issuer() -> tuple[Any, str]:  # pragma: no mutate block — container lifecycle
     from testcontainers.core.container import DockerContainer  # noqa: PLC0415
 
-    container = _retried(lambda: join_slice(DockerContainer(IMAGE).with_exposed_ports(8080)).start())
+    container = _retried(lambda: DockerContainer(IMAGE).with_exposed_ports(8080).start())
     address = f"http://127.0.0.1:{container.get_exposed_port(8080)}/default"
     deadline = time.monotonic() + 60
     while not answers(f"{address}/.well-known/openid-configuration"):

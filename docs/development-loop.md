@@ -11,7 +11,7 @@ not a setup guide for GitHub, Dagu or any other tool StarPulse does not ship.
 |---|---|---|
 | [Trunk-based delivery on short task branches](#1-trunk-based-delivery-on-short-task-branches) | Draws each task's pull-request trail ([`[ci]`](serving.md#config-file)) | Branch naming, a worktree per task, the repository rules |
 | [A human makes every merge](#2-a-human-makes-every-merge) | [The Ledger](serving.md#the-ledger) lists each merge and what applied it | The rule, an approval prompt on the merge command, and the short list of bot merges |
-| [CI runs only what a change reaches](#3-ci-runs-only-what-a-change-reaches-and-the-full-suite-runs-nightly) | Nothing; its own repository's selector, `ci/select_tests.py`, is an example | The selector, the nightly full run, commit-time lint |
+| [CI runs the whole suite on every pull request](#3-ci-runs-the-whole-suite-on-every-pull-request) | Nothing | The suite, the nightly run, commit-time lint |
 | [CD applies merged changes unattended](#4-cd-applies-merged-changes-unattended) | The Ledger pairs a merge with its apply run and can re-run a failed one | The apply workflow, its allowlist and its verification |
 | [Scheduled workflows take fixed sequences off agents](#5-scheduled-workflows-take-fixed-sequences-off-agents) | Draws runs from Dagu, GitHub Actions or systemd; [CloudEvents ingest](sources.md#post-machine-events-as-cloudevents) | The workflows and their schedules |
 | [Documentation is code and is linted](#6-documentation-is-code-and-is-linted) | Nothing | The repository, the lint, the scheduled commit |
@@ -59,18 +59,16 @@ agents' instructions say never to merge, and the agent harness's permission rule
 approval prompt, so a merge an agent attempts stops and asks me. The merge split above shows how much the exception
 covers.
 
-## 3. CI runs only what a change reaches, and the full suite runs nightly
+## 3. CI runs the whole suite on every pull request
 
-**What.** A pull request, and a push to `main`, run the tests that the changed files can reach, chosen from a
-per-test coverage map the nightly run records, with the import graph for a file the map lacks. A path the selector does
-not know runs the full suite, so a miss costs time and never coverage. The whole suite runs on a nightly schedule. Lint runs in a git hook on a commit's staged paths, not in the pull-request
-run. One required check always runs and carries its conditions on steps inside it, because GitHub treats a required
-check that never reports as pending forever, not as passing.
+**What.** A pull request runs the whole test suite under `pytest -n auto --dist worksteal`, with no test selection. A
+nightly schedule runs it again, with the budget tests a pull request skips. Lint runs in a git hook on a commit's staged
+paths, not in the pull-request run. One required check always runs and carries its conditions on steps inside it,
+because GitHub treats a required check that never reports as pending forever, not as passing.
 
-**Why.** Running every test per change makes each change pay for every other change's tests, and with many sessions
-pushing at once it saturates the runners. The cost of this choice is stated: a defect the selector cannot see is
-caught by the nightly run, not before merge. StarPulse's own repository does the same; read
-[`ci/select_tests.py`](../ci/select_tests.py) and [Development](development.md).
+**Why.** A selector that picks tests from a per-test coverage map adds a nightly job, a cache and a fallback chain, and
+a defect it cannot see reaches `main`. A suite that finishes in under a minute on work-stealing workers is cheaper than
+that machinery. StarPulse's own repository ran a selector and dropped it; read [Development](development.md).
 
 ## 4. CD applies merged changes unattended
 

@@ -33,7 +33,7 @@ def _served(tmp_path: Path) -> Iterator[tuple[str, BoardFeed, EventLog]]:
     feed.record_lanes(HistoryStore(f"sqlite:///{tmp_path / 'events.sqlite'}", MACHINES), log)
     for key in ("task-1", "task-2"):
         feed.put(task(key, "In Progress", moves={"done": Move(allowed=True)}))
-    with serve(tmp_path, feed, writer=built.writer) as server:
+    with serve(tmp_path, feed, built) as server:
         yield url(server, ""), feed, log
 
 
