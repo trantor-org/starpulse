@@ -50,7 +50,6 @@ def repo(tmp_path: Path) -> Path:
         "starpulse/contracts/adapters.py": "",
         "starpulse/_internal/machines/machine_definition.py": "",
         "starpulse/tests/unit/contracts/test_contracts.py": "from starpulse.contracts import adapters\nfrom starpulse.contracts.api import schema\n",
-        "starpulse/tests/unit/contracts/test_finding.py": "from starpulse.contracts import adapters\n",
         "starpulse/tests/unit/machines/test_machine_definition.py": "from starpulse._internal.machines import machine_definition\n",
         "starpulse/_internal/ci/ci.py": "",
         "starpulse/_internal/harnesses/harness.py": "",
@@ -236,7 +235,7 @@ def test_a_diff_touching_a_python_source_file_selects_a_target_and_so_launches_a
         (
             [
                 "starpulse/tests/integration/cli/test_agent_cli.py",
-                "starpulse/tests/integration/level/test_level_http.py",
+                "starpulse/tests/integration/eventlog/test_history.py",
             ],
             [1, 2],
         ),

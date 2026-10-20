@@ -53,12 +53,10 @@ FEED_EVENT_RESEND = {
     "snapshot": True,
     "task": False,
     "move": False,
-    "insight": False,
     "pulls": False,
     "claim": False,
     "dags": False,
     "ledgers": False,
-    "level": False,
     "autopilot": False,
 }
 
@@ -284,8 +282,6 @@ class BoardFeed:
         self._pulls_unsaved = False
         #: Each task's latest refused claim (a board adapter's `refuse_claim` call): its reason and when the writer refused it.
         self._claims: dict[str, dict] = {}
-        #: The findings an engine posted that are live, by id, as the contract's JSON (`put_insight`).
-        self._insights: dict[str, dict] = {}
         #: The Waiting tasks whose description declares Start Criteria, and for each task the open tasks that list it as a dependency.
         self._gated: set[str] = set()
         self._dependents: dict[str, set[str]] = {}
@@ -764,26 +760,6 @@ class BoardFeed:
         with self._lock:
             prs = {task: agent["prs"] if not is_cold(agent) else self._cited.get(task) for task, agent in self._open.items()}
             return {task: list(links) for task, links in prs.items() if links}
-
-    def put_insight(self, finding: dict) -> None:
-        """Draw a finding an engine posted, replacing the one of its id, and send it as an `insight` event.
-
-        A finding already past its `expires_at` is not drawn: it retracts the one it replaces, if any.
-        """
-        with self._lock:
-            expires = finding.get("expires_at")
-            if expires is not None and expires <= self._clock():
-                self.retract_insight(finding["id"])
-                return
-            self._insights[finding["id"]] = finding
-            self._publish("insight", {"id": finding["id"], "finding": finding})
-
-    def retract_insight(self, finding_id: str) -> None:
-        """Stop drawing a finding and send its retraction, an `insight` event whose `finding` is null; a finding that
-        is not drawn sends nothing."""
-        with self._lock:
-            if self._insights.pop(finding_id, None) is not None:
-                self._publish("insight", {"id": finding_id, "finding": None})
 
     def set_pulls(self, pulls: dict[str, list[dict]], answers: dict | None = None) -> None:
         """Take each task's pull request state and publish it when it differs from before; `answers` is what the
@@ -1279,11 +1255,6 @@ class BoardFeed:
                 "pulls": self._pulls,
                 **self._ledger_marks(self._ledger_full),
                 "claims": dict(self._claims),
-                "insights": [
-                    finding
-                    for finding in self._insights.values()
-                    if finding.get("expires_at") is None or finding["expires_at"] > self._clock()
-                ],
                 "capabilities": dict(self._capabilities),
                 "settled": dict(self._settled),
                 "cold_done": sorted(task for task, agent in self._open.items() if is_cold(agent)),

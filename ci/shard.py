@@ -17,7 +17,6 @@ from pathlib import Path
 #: the rest ran 75-95 s, so it gets a shard to itself.
 SECONDS = {
     "starpulse/tests/integration/cli/test_agent_cli.py": 600,
-    "starpulse/tests/integration/level/test_level_http.py": 152,
     "starpulse/tests/integration/eventlog/test_history.py": 131,
     "starpulse/tests/integration/server/test_api_contract.py": 120,
     "starpulse/tests/integration/eventlog/test_event_log.py": 59,
@@ -25,14 +24,12 @@ SECONDS = {
     "starpulse/tests/unit/runs/test_dagu_runs.py": 34,
     "starpulse/tests/integration/server/test_standalone.py": 33,
     "ci/test_soak.py": 25,
-    "starpulse/tests/integration/level/test_insights_http.py": 24,
     "starpulse/tests/integration/server/test_write_guard.py": 23,
     "starpulse/tests/integration/feed/test_board_resume.py": 21,
     "starpulse/tests/integration/eventlog/test_history_http.py": 20,
     "starpulse/tests/unit/server/test_flow_reads.py": 16,
     "starpulse/tests/integration/server/test_http.py": 13,
     "ci/test_latency_gate.py": 13,
-    "starpulse/tests/unit/level/test_insights_kit.py": 11,
     "starpulse/tests/integration/autopilot/test_autopilot_served.py": 11,
     "starpulse/tests/unit/feed/test_lane_history_dedupe.py": 11,
 }

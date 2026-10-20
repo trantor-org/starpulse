@@ -13,7 +13,6 @@ SNAPSHOT_KEYS = (
     "machinePage",
     "machineStrip",
     "claims",
-    "insights",
     "settled",
     "cold_done",
     "error",
@@ -24,64 +23,6 @@ SNAPSHOT_KEYS = (
     "capabilities",
     "reading",
     "now",
-)
-
-
-LEVEL_KEYS = (
-    "now",
-    "window_s",
-    "history_s",
-    "machine",
-    "goal",
-    "wip",
-    "throughput",
-    "time_in_state",
-    "aging",
-    "orbit",
-    "sources",
-)
-
-
-TRAJECTORY_KEYS = (
-    "now",
-    "window_s",
-    "history_s",
-    "machine",
-    "goal",
-    "ended",
-    "variants",
-    "norm",
-    "outliers",
-    "chain",
-    "betweenness",
-    "bottleneck",
-    "loops",
-    "runs",
-)
-
-
-GATE_KEYS = ("now", "window_s", "history_s", "machine", "goal", "ended", "gates", "runs")
-
-
-FORECAST_KEYS = ("now", "window_s", "history_s", "machine", "goal", "ended", "forecast", "calibration")
-
-
-WHAT_IF_KEYS = (
-    "now",
-    "window_s",
-    "history_s",
-    "machine",
-    "goal",
-    "ended",
-    "from",
-    "to",
-    "p",
-    "was",
-    "n",
-    "start",
-    "p_goal",
-    "expected_days",
-    "chain",
 )
 
 

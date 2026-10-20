@@ -1,21 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { DetailsPanel, DriftBadge, Gate, OrbitCard } from "./OrbitCard";
+import { DetailsPanel, DriftBadge, OrbitCard } from "./OrbitCard";
 import sheet from "../../style.css?raw";
-
-describe("the sign-in gate", () => {
-  it("asks an expired session to sign in again, with the sign-in link", () => {
-    const html = renderToStaticMarkup(<Gate why="expired" />);
-    expect(html).toContain("session");
-    expect(html).toContain('href="/auth/login"');
-  });
-
-  it("tells a signed-in refusal why, and still offers another account", () => {
-    const html = renderToStaticMarkup(<Gate why="refused" reason="Your account is not in the platform team." />);
-    expect(html).toContain("not in the platform team");
-    expect(html).toContain('href="/auth/login"');
-  });
-});
 
 describe("the drift badge", () => {
   it("names each drifted source with the states it gained and lost, and is nothing when none drifted", () => {
@@ -37,8 +23,7 @@ describe("the drift badge", () => {
 describe("the orbit card's states", () => {
   const card = (state: Parameters<typeof OrbitCard>[0]["state"]) => renderToStaticMarkup(<OrbitCard state={state} retry={() => {}} motion={false} />);
 
-  it("shows the gate for a gate, the message and a retry for an error, and a reading note while it loads", () => {
-    expect(card({ kind: "gate", why: "expired" })).toContain("/auth/login");
+  it("shows the message and a retry for an error, and a reading note while it loads", () => {
     const err = card({ kind: "error", message: "no runs kept" });
     expect(err).toContain("no runs kept");
     expect(err).toContain("Retry");

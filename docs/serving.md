@@ -117,7 +117,7 @@ Each connect replaces the page's Board with a fresh snapshot.
 While the Board is replaying after a start, `/api/events` resends only `snapshot`, once the replay has ended, because a
 reconnecting page needs the Board the replay built. Every other kind is a delta of that Board; resending it would make
 consumers such as the autopilot act twice. `FEED_EVENT_RESEND` in the feed module is the table: `snapshot` is resent,
-and `task`, `move`, `insight`, `pulls`, `claim`, `dags`, `ledgers`, `level` and `autopilot` are not.
+and `task`, `move`, `pulls`, `claim`, `dags`, `ledgers` and `autopilot` are not.
 `build` and `restarting` are process announcements on an open stream, not replayed deltas.
 
 Two events on `/api/events` carry what the page needs:
@@ -479,8 +479,7 @@ dimension's use, or the length of `inFlight` without it), and the quiet hours ro
 `PUT` with no dialog, and a refusal shows its reason under the switch. The card reads `next` from the same body when it
 carries it, and shows no pick without it. It reads once when Admin opens and follows the `/api/events` `autopilot`
 event after. A server with no autopilot (404) shows the card with its reason and no controls. The Kanban draws no
-autopilot control. The Orbit view follows the same pattern for the `/api/events` `level` event (one GET when shown,
-then stream events; no timed refresh).
+autopilot control.
 
 ### Quiet hours
 

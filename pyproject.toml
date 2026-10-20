@@ -73,7 +73,7 @@ type = "layers"
 # Four tiers, each importing only the tiers below it and `contracts`. Features on one `|` line are independent; a line
 # of its own marks a named edge (the ADR "StarPulse Is Layered Around Its Event Log"): `kit` drives a `server`,
 # `server` serves the doctor's checks from `cli`, `pulls` reads GitHub Actions runs from `runs`,
-# `autopilot` samples the board feed and the harness machine, `level` restores insights from the board feed, and the
+# `autopilot` samples the board feed and the harness machine, and the
 # history store in `eventlog` reads `config` and `machines`.
 layers = [
     # entrypoints

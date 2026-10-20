@@ -9,19 +9,22 @@ import pytest
 from sqlalchemy import create_engine, event, text
 
 from starpulse._internal.server import server
-from starpulse._internal.server.server import (
-    health_response,
-    level_response,
-    trajectories_response,
-    what_if_response,
-)
+from starpulse._internal.server.server import health_response, trajectories_response
+from starpulse._internal.config.level import Level, Orbit, Terminal
 from starpulse._internal.eventlog import history
 from starpulse._internal.eventlog.history import HistoryStore
-from starpulse.tests.integration.level.test_level_http import LEVEL
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.rows import rows_fetched
 from starpulse.tests.summaries import assert_matches_rebuild
 from starpulse.tests.unit.level.test_analytics import NOW, ROWS, H
+
+LEVEL = Level(
+    "board",
+    "done",
+    (Terminal("done", "goal"),),
+    gates=("review",),
+    orbit=Orbit("working", ("in_progress", "review")),
+)
 
 #: The two raw tables a read must never touch: they hold every event and lane change ever kept.
 RAW = ("starpulse_machine_events", "starpulse_lane_changes")
@@ -186,20 +189,20 @@ def _add_long_history(store: HistoryStore) -> None:
 _WINDOWS = [{}, {"hours": ["48"]}, {"hours": ["0.5"]}, {"hours": ["3050"]}, {"hours": ["2500"]}]
 
 
-@pytest.mark.parametrize("answer", [level_response, trajectories_response])
 @pytest.mark.parametrize("query", _WINDOWS)
-def test_the_level_from_the_summaries_is_the_bytes_the_row_scan_gives(store: HistoryStore, answer, query: dict) -> None:
+def test_the_level_from_the_summaries_is_the_bytes_the_row_scan_gives(store: HistoryStore, query: dict) -> None:
     _add_long_history(store)
 
-    assert answer(store, query, LEVEL, MACHINES, NOW) == answer(RowScan(store), query, LEVEL, MACHINES, NOW)
+    assert trajectories_response(store, query, LEVEL, MACHINES, NOW) == trajectories_response(
+        RowScan(store), query, LEVEL, MACHINES, NOW
+    )
 
 
-@pytest.mark.parametrize("answer", [level_response, trajectories_response])
-def test_the_level_reads_neither_raw_table(store: HistoryStore, statements: list[str], answer) -> None:
+def test_the_level_reads_neither_raw_table(store: HistoryStore, statements: list[str]) -> None:
     _add_long_history(store)
     statements.clear()
 
-    body, status = answer(store, {"hours": ["48"]}, LEVEL, MACHINES, NOW)
+    body, status = trajectories_response(store, {"hours": ["48"]}, LEVEL, MACHINES, NOW)
 
     assert (status, _raw(statements)) == (200, [])
     assert statements, "the read went through the captured engine"
@@ -208,7 +211,7 @@ def test_the_level_reads_neither_raw_table(store: HistoryStore, statements: list
 def test_a_history_with_only_the_row_scan_still_answers_and_that_scan_reads_the_raw_table(
     store: HistoryStore, statements: list[str]
 ) -> None:
-    body, status = level_response(RowScan(store), {"hours": ["48"]}, LEVEL, MACHINES, NOW)
+    body, status = trajectories_response(RowScan(store), {"hours": ["48"]}, LEVEL, MACHINES, NOW)
 
     assert status == 200
     assert _raw(statements), "the control: the capture sees the whole-table read the summaries avoid"
@@ -317,12 +320,12 @@ def test_a_summary_write_between_two_level_windows_forces_a_fresh_read(
 
 
 def test_the_level_a_cached_window_answers_is_the_bytes_a_fresh_store_gives(store: HistoryStore) -> None:
-    level_response(store, {"hours": ["48"]}, LEVEL, MACHINES, NOW)
+    trajectories_response(store, {"hours": ["48"]}, LEVEL, MACHINES, NOW)
 
-    cached = level_response(store, {"hours": ["48"]}, LEVEL, MACHINES, NOW + 30)
+    cached = trajectories_response(store, {"hours": ["48"]}, LEVEL, MACHINES, NOW + 30)
 
     fresh = HistoryStore(str(store.engine.url), MACHINES)
-    assert cached == level_response(fresh, {"hours": ["48"]}, LEVEL, MACHINES, NOW + 30)
+    assert cached == trajectories_response(fresh, {"hours": ["48"]}, LEVEL, MACHINES, NOW + 30)
 
 
 def test_a_reader_never_sees_a_window_older_than_the_last_write_that_completed(store: HistoryStore) -> None:
@@ -355,7 +358,7 @@ def test_a_reader_never_sees_a_window_older_than_the_last_write_that_completed(s
 def computed(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     """The views the level routes computed rather than answered from the memo, in order."""
     seen: list[str] = []
-    for name in ("level_metrics", "trajectory_analytics", "what_if"):
+    for name in ("trajectory_analytics",):
         monkeypatch.setattr(server, name, _counting(seen, name, getattr(server, name)))
     return seen
 
@@ -368,53 +371,48 @@ def _counting(seen: list[str], name: str, view):
     return counted
 
 
-@pytest.mark.parametrize(
-    ("route", "view"),
-    [(level_response, "level_metrics"), (trajectories_response, "trajectory_analytics")],
-    ids=["level", "trajectories"],
-)
 def test_a_repeat_request_with_no_summary_write_between_is_answered_from_the_memo(
-    store: HistoryStore, computed: list[str], route, view: str
+    store: HistoryStore, computed: list[str]
 ) -> None:
-    first = route(store, {"hours": ["48"]}, LEVEL, MACHINES, NOW)
+    first = trajectories_response(store, {"hours": ["48"]}, LEVEL, MACHINES, NOW)
 
-    again = route(store, {"hours": ["48"]}, LEVEL, MACHINES, NOW + 1)
+    again = trajectories_response(store, {"hours": ["48"]}, LEVEL, MACHINES, NOW + 1)
 
-    assert (again, computed) == (first, [view])
+    assert (again, computed) == (first, ["trajectory_analytics"])
 
 
 def test_a_summary_write_forgets_the_memo(store: HistoryStore, computed: list[str]) -> None:
-    level_response(store, {"hours": ["48"]}, LEVEL, MACHINES, NOW)
+    trajectories_response(store, {"hours": ["48"]}, LEVEL, MACHINES, NOW)
     store.record_lane("a/new", "N", "In Progress", NOW - H)
 
-    level_response(store, {"hours": ["48"]}, LEVEL, MACHINES, NOW)
+    trajectories_response(store, {"hours": ["48"]}, LEVEL, MACHINES, NOW)
 
-    assert computed == ["level_metrics", "level_metrics"]
+    assert computed == ["trajectory_analytics", "trajectory_analytics"]
 
 
 def test_a_request_in_a_later_second_bucket_computes_again(store: HistoryStore, computed: list[str]) -> None:
-    level_response(store, {"hours": ["48"]}, LEVEL, MACHINES, NOW)
+    trajectories_response(store, {"hours": ["48"]}, LEVEL, MACHINES, NOW)
 
-    level_response(store, {"hours": ["48"]}, LEVEL, MACHINES, NOW + history._ANSWER_BUCKET_S)
+    trajectories_response(store, {"hours": ["48"]}, LEVEL, MACHINES, NOW + history._ANSWER_BUCKET_S)
 
-    assert computed == ["level_metrics", "level_metrics"]
+    assert computed == ["trajectory_analytics", "trajectory_analytics"]
 
 
 def test_distinct_query_params_get_distinct_entries(store: HistoryStore, computed: list[str]) -> None:
-    day = level_response(store, {"hours": ["24"]}, LEVEL, MACHINES, NOW)
-    two_days = level_response(store, {"hours": ["48"]}, LEVEL, MACHINES, NOW)
+    day = trajectories_response(store, {"hours": ["24"]}, LEVEL, MACHINES, NOW)
+    two_days = trajectories_response(store, {"hours": ["48"]}, LEVEL, MACHINES, NOW)
 
     assert day != two_days
-    assert level_response(store, {"hours": ["24"]}, LEVEL, MACHINES, NOW) == day
-    assert computed == ["level_metrics", "level_metrics"]
+    assert trajectories_response(store, {"hours": ["24"]}, LEVEL, MACHINES, NOW) == day
+    assert computed == ["trajectory_analytics", "trajectory_analytics"]
 
 
 def test_params_a_route_does_not_read_share_its_entry(store: HistoryStore, computed: list[str]) -> None:
-    level_response(store, {"hours": ["48"]}, LEVEL, MACHINES, NOW)
+    trajectories_response(store, {"hours": ["48"]}, LEVEL, MACHINES, NOW)
 
-    level_response(store, {"hours": ["48"], "cachebuster": ["1"]}, LEVEL, MACHINES, NOW)
+    trajectories_response(store, {"hours": ["48"], "cachebuster": ["1"]}, LEVEL, MACHINES, NOW)
 
-    assert computed == ["level_metrics"]
+    assert computed == ["trajectory_analytics"]
 
 
 def test_the_memo_holds_at_most_its_bound_and_forgets_the_least_recently_used(
@@ -422,32 +420,11 @@ def test_the_memo_holds_at_most_its_bound_and_forgets_the_least_recently_used(
 ) -> None:
     kept = history._ANSWERS_KEPT
     for hours in range(1, kept + 2):
-        level_response(store, {"hours": [str(hours)]}, LEVEL, MACHINES, NOW)
+        trajectories_response(store, {"hours": [str(hours)]}, LEVEL, MACHINES, NOW)
     computed.clear()
 
-    level_response(store, {"hours": [str(kept + 1)]}, LEVEL, MACHINES, NOW)
+    trajectories_response(store, {"hours": [str(kept + 1)]}, LEVEL, MACHINES, NOW)
     assert computed == []
-    level_response(store, {"hours": ["1"]}, LEVEL, MACHINES, NOW)
+    trajectories_response(store, {"hours": ["1"]}, LEVEL, MACHINES, NOW)
 
-    assert computed == ["level_metrics"]
-
-
-def test_what_if_responses_differ_when_their_transition_parameters_differ(
-    store: HistoryStore, computed: list[str]
-) -> None:
-    def ask(p: str) -> tuple[bytes, int]:
-        query = {"hours": ["48"], "from": ["review"], "to": ["in_progress"], "p": [p]}
-        return what_if_response(store, query, LEVEL, MACHINES, NOW)
-
-    never, always = ask("0"), ask("1")
-
-    assert never != always
-    assert (ask("0"), ask("1")) == (never, always)
-    assert computed == ["what_if", "what_if"]
-
-
-def test_a_refused_what_if_is_not_kept(store: HistoryStore, computed: list[str]) -> None:
-    query = {"hours": ["48"], "from": ["nowhere"], "to": ["in_progress"], "p": ["0"]}
-
-    assert what_if_response(store, query, LEVEL, MACHINES, NOW) == what_if_response(store, query, LEVEL, MACHINES, NOW)
-    assert computed == ["what_if", "what_if"]
+    assert computed == ["trajectory_analytics"]

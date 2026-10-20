@@ -73,7 +73,6 @@ READERS = {
         "starpulse/contracts/adapters.py",
         "starpulse/contracts/__main__.py",
         "starpulse/tests/unit/contracts/test_contracts.py",
-        "starpulse/tests/unit/contracts/test_finding.py",
     ),
     "starpulse/machine.schema.json": (
         "starpulse/_internal/machines/machine_definition.py",

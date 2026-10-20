@@ -37,7 +37,7 @@ directory. The `Board` says:
   once. `rebuild_summaries` replaces them in one transaction, folding the raw rows through the steps a write
   takes. A Postgres database gets the tables from its migrations (revisions `0005`, `0007` and `0012`). The summaries follow
   the order events were recorded, and cover only the machines the page draws when the store opens.
-  `/api/analytics/health` and `/api/level` (with `/api/level/trajectories`) read these summaries and never scan the two
+  `/api/analytics/health` reads these summaries and never scan the two
   raw tables: health reads the stays that ended in its window or are still going and takes the tasks in each lane from
   the lane counts; the Board's level reads the trajectories of the tasks that changed lane in its window or the trailing
   12 weeks (which set the aging threshold) and of the tasks still waiting or working, and takes where the history begins
@@ -141,6 +141,6 @@ the blocker, and a status in Jira's done category settles it as `completed`. Its
 **Migrating from `Board.history`.** `Board.history` is removed: StarPulse's store is the only history, so a `Board`
 that passes `history=` fails with `TypeError: Board.__init__() got an unexpected keyword argument 'history'`. Delete
 the argument, and have the adapter report what happens to a task through `start` (the feed records each lane change it
-places) or the event log; the page, `/api/history`, `/api/analytics/health` and `/api/level` read the store. To keep an
+places) or the event log; the page, `/api/history` and `/api/analytics/health` read the store. To keep an
 existing history, copy its lane changes and machine events into the store's `starpulse_lane_changes` and
 `starpulse_machine_events` tables once; `HistoryStore.rebuild_summaries` then rebuilds the summaries over them.

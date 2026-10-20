@@ -72,9 +72,7 @@ STARVED_SHARE = 0.0025
 STARVED = 2
 
 #: The read routes and how to build each one's path from what the snapshot holds; `{task}`, `{milestone}` and `{doc}`
-#: are filled from the server's own records, `{from}` and `{to}` from `--what-if`.
-#: The states the what-if reads on the live Backlog board; the gate's seeded board spells its states as lane ids.
-WHAT_IF = ("Ready", "In Progress")
+#: are filled from the server's own records.
 READS: dict[str, str] = {
     "/api/snapshot": "/api/snapshot",
     "/api/ledger/": "/api/ledger/MERGED?limit=20",
@@ -83,9 +81,6 @@ READS: dict[str, str] = {
     "/api/machines": "/api/machines?limit=20",
     "/api/history": "/api/history?task={task}",
     "/api/analytics/health": "/api/analytics/health",
-    "/api/level": "/api/level?hours=168",
-    "/api/level/trajectories": "/api/level/trajectories?hours=168",
-    "/api/level/what-if": "/api/level/what-if?hours=168&from={from}&to={to}&p=0.5",
     "/api/harnesses": "/api/harnesses",
     "/api/task/<id>": "/api/task/{task}",
     "/api/milestones": "/api/milestones",
@@ -98,7 +93,7 @@ READS: dict[str, str] = {
 }
 
 #: Where a path segment is a record's id, so `/api/task/TASK-9` and `/api/task/TASK-10` are one surface.
-_ID_ROUTES = ("/api/task/", "/api/milestones/", "/api/docs/", "/api/insights/", "/api/events/body/")
+_ID_ROUTES = ("/api/task/", "/api/milestones/", "/api/docs/", "/api/events/body/")
 
 
 #: What a row times, for `--judge`: a read route (`request`), the event stream's connect to its first snapshot
@@ -313,12 +308,11 @@ class Client:
         return json.loads(body) if status == 200 else {}
 
 
-def time_reads(client: Client, samples: int, what_if: Sequence[str] = WHAT_IF) -> list[Row]:
+def time_reads(client: Client, samples: int) -> list[Row]:
     snapshot = client.json("/api/snapshot")
     ids = ids_of(
         snapshot if isinstance(snapshot, dict) else {}, client.json("/api/milestones"), client.json("/api/docs")
     )
-    ids |= dict(zip(("from", "to"), what_if, strict=True))
     if key := ref_key(first_snapshot(f"http://{client.host}:{client.port}", "/api/events?snapshot=ref") or ""):
         ids["snapshot"] = key
     rows = []
@@ -652,13 +646,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--channel", default="chrome", help="the Playwright browser channel to drive")
     parser.add_argument("--no-page", action="store_true", help="time the requests only")
     parser.add_argument(
-        "--what-if",
-        nargs=2,
-        metavar=("FROM", "TO"),
-        default=WHAT_IF,
-        help="the two states /api/level/what-if is asked about, as the server spells them (default: the live board's)",
-    )
-    parser.add_argument(
         "--repeat",
         type=int,
         default=1,
@@ -710,7 +697,7 @@ def main(argv: list[str] | None = None) -> int:
     requested: list[str] = []
     runs = []
     for _ in range(max(1, args.repeat)):
-        run = time_reads(Client(base), args.samples, args.what_if)
+        run = time_reads(Client(base), args.samples)
         run.append(time_stream(base, max(1, args.samples // 4)))
         if not args.no_page:
             run.extend(time_page(base, args.samples, args.channel, requested, args.assets, args.cpu_throttle))

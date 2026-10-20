@@ -1072,7 +1072,6 @@ PASSED_THROUGH = {
     "machinePage",
     "machineStrip",
     "mergeStrip",
-    "insights",
     "capabilities",
     "reading",
     "now",

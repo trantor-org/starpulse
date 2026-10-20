@@ -65,8 +65,6 @@ LIVE_EVENTS_PER_DAY = 14_500
 REPLAY_MULTIPLE = 6.0
 #: Seconds the seeded server has to seed its board and name its port.
 STARTUP_S = 120
-#: The lanes the seeded board's what-if reads, spelled as its lane ids.
-SEEDED_WHAT_IF = ("in_progress", "review")
 REPO = Path(__file__).resolve().parents[1]
 
 #: Per sampled metric: the rise of its floor, as a share of its first floor or in its own unit if that is more, that is
@@ -368,12 +366,11 @@ class Page:
         base: str,
         channel: str,
         pinned_pid: int | None,
-        what_if: Sequence[str] = pl.WHAT_IF,
         ceilings: Sequence[str] = (),
     ) -> None:
         from playwright.sync_api import sync_playwright  # noqa: PLC0415 - the bench group only
 
-        self.base, self.pinned_pid, self.what_if, self.ceilings = base, pinned_pid, what_if, ceilings
+        self.base, self.pinned_pid, self.ceilings = base, pinned_pid, ceilings
         self.port = urllib.parse.urlsplit(base).port or 80
         self.client = pl.Client(base)
         self._pw = sync_playwright().start()
@@ -419,7 +416,7 @@ class Page:
 
     def probe(self) -> list[Row]:
         self.page.keyboard.press("Escape")  # a modal an earlier probe failed to close
-        rows = [r for r in pl.time_reads(self.client, PROBE_SAMPLES, self.what_if) if r.samples]
+        rows = [r for r in pl.time_reads(self.client, PROBE_SAMPLES) if r.samples]
         rows.append(pl.time_stream(self.base, PROBE_SAMPLES))
         modal = Row("open a task's modal", "interaction", pl.BUDGET_MS, note="click to the frame after its record")
         self.page.evaluate(pl._CLICK, pl._nav("Kanban"))  # noqa: SLF001
@@ -447,9 +444,9 @@ class Page:
         self._pw.stop()
 
 
-def hold(base: str, args: argparse.Namespace, pid: int | None, what_if: Sequence[str]) -> dict:
+def hold(base: str, args: argparse.Namespace, pid: int | None) -> dict:
     """Open the page at `base` in a tab and hold it for the run's duration."""
-    page = Page(base, args.channel, pid, what_if, args.ceiling)
+    page = Page(base, args.channel, pid, args.ceiling)
     try:
         return run(
             page, parse_duration(args.duration), parse_duration(args.interval), parse_duration(args.sample_every)
@@ -493,12 +490,12 @@ def main(argv: list[str] | None = None) -> int:
     started = datetime.now(UTC).isoformat(timespec="seconds")
     if args.url:
         base = args.url.rstrip("/")
-        report = hold(base, args, args.pid, pl.WHAT_IF)
+        report = hold(base, args, args.pid)
         return finish({"url": base, "started": started, "ceilings": args.ceiling, **report}, args.report)
     multiple = REPLAY_MULTIPLE if args.replay_multiple is None else args.replay_multiple
     require_built_page()
     with seeded(multiple) as server:
-        report = hold(server.base, args, server.pid, SEEDED_WHAT_IF)
+        report = hold(server.base, args, server.pid)
         if gone := server.failure():
             report["failures"].append(gone)
     replay = {"multiple": multiple, "events_per_s": replay_rate(multiple), "events": server.replayed}

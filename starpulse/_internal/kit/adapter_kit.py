@@ -22,10 +22,7 @@ feeds to see that each is placed.
 from __future__ import annotations
 
 import json
-import tempfile
 import time
-import urllib.error
-import urllib.request
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import replace
@@ -48,18 +45,15 @@ from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.feed.history_window import HistoryWindow
 from starpulse._internal.feed.machine_tasks import MachineTasks
 from starpulse._internal.server.gate_request import GateRequest
-from starpulse._internal.level.insights import Insights, InsightStore
 from starpulse._internal.server.asgi_app import page_app
 from starpulse._internal.server.assembly import assemble as _assemble
 from starpulse._internal.server.page_server import PageServer
 from starpulse._internal.server.services import Services
 from starpulse._internal.server.writes import move_task
 from starpulse.contracts.adapters import (
-    FINDING_TEXT_MAX,
     SCHEMAS,
     BoardTask,
     Dag,
-    Finding,
     MachineEvent,
     Pool,
     TaskKeys,
@@ -67,7 +61,6 @@ from starpulse.contracts.adapters import (
 
 __all__ = [
     "BoardAdapterKit",
-    "InsightsEngineKit",
     "MachineEventsAdapterKit",
     "RunsAdapterKit",
     "assembled",
@@ -257,81 +250,7 @@ class RunsAdapterKit(_AdapterKit):
         assert snapshot["pools"] == [{**pool, "name": f"kit/{pool['name']}"} for pool in pools]
 
 
-class InsightsEngineKit:
-    """For an engine posting `Finding` records through the insights API."""
-
-    def produce(self) -> list[dict]:
-        """The findings the engine posts; the engine's test overrides this."""
-        raise NotImplementedError("override produce() to return the engine's findings")
-
-    def records(self) -> list[Finding]:
-        """What `produce` returned, parsed as the contract."""
-        return [Finding.model_validate(finding) for finding in self.produce()]
-
-    def test_the_engine_produces_findings(self) -> None:
-        assert self.produce(), "the engine produced no findings, so nothing is checked"
-
-    def test_every_finding_follows_its_contract_and_json_schema(self) -> None:
-        ids = [finding.id for finding in self.records()]
-        assert len(ids) == len(set(ids)), "two findings share an id, so the second replaces the first"
-        for finding in self.records():
-            jsonschema.validate(finding.model_dump(mode="json"), SCHEMAS["insights"])
-
-    def test_the_hub_stores_replaces_and_retracts_each_finding_and_the_stream_sends_each_state(self) -> None:
-        findings = self.records()
-        with _insights_stack(min(f.created_at for f in findings)) as (server, feed, store):
-            with urllib.request.urlopen(url(server, "/api/events"), timeout=5) as stream:
-                assert next_event(stream)[0] == "snapshot"
-                for finding in findings:
-                    raw = finding.model_dump(mode="json")
-                    revised = {**raw, "text": f"Revised: {finding.text}"[:FINDING_TEXT_MAX]}
-                    assert _insight(server, "POST", _INSIGHTS, raw) == (201, {"id": finding.id, "replaced": False})
-                    assert next_event(stream) == ("insight", {"id": finding.id, "finding": raw})
-                    assert _insight(server, "POST", _INSIGHTS, revised) == (200, {"id": finding.id, "replaced": True})
-                    assert next_event(stream) == ("insight", {"id": finding.id, "finding": revised})
-                    assert [f["text"] for f in feed.snapshot()["insights"] if f["id"] == finding.id] == [
-                        revised["text"]
-                    ]
-                    retraction = _insight(server, "DELETE", f"{_INSIGHTS}/{finding.id}")
-                    assert retraction == (200, {"id": finding.id, "retracted": True})
-                    assert next_event(stream) == ("insight", {"id": finding.id, "finding": None})
-            assert feed.snapshot()["insights"] == [] and store.live(float("inf")) == []
-
-    def test_a_finding_scoped_to_a_person_is_refused_and_leaves_nothing_behind(self) -> None:
-        raw = self.records()[0].model_dump(mode="json")
-        with _insights_stack(raw["created_at"]) as (server, feed, store):
-            for person in ("person", "user", "assignee"):
-                status, answer = _insight(
-                    server, "POST", _INSIGHTS, {**raw, "scope": {**raw["scope"], person: "alice"}}
-                )
-                assert status == 400 and person in answer["error"], answer
-            assert feed.snapshot()["insights"] == [] and store.live(float("inf")) == []
-
-
 # The helpers below drive an adapter through StarPulse's own server and feed.
-
-_INSIGHTS = "/api/insights"
-
-
-@contextmanager
-def _insights_stack(now: float) -> Iterator[tuple[PageServer, BoardFeed, InsightStore]]:
-    """A server with the insights API over a history store in a temporary SQLite file, its clock at `now`."""
-    feed = BoardFeed(clock=lambda: now)
-    with tempfile.TemporaryDirectory() as tmp:
-        store = InsightStore(f"sqlite:///{tmp}/history.sqlite")
-        with serve(Path(tmp), feed, insights=Insights(store, feed, lambda: now)) as server:
-            yield server, feed, store
-
-
-def _insight(server: PageServer, method: str, path: str, body: dict | None = None) -> tuple[int, dict]:
-    request = urllib.request.Request(
-        url(server, path), data=None if body is None else json.dumps(body).encode(), method=method
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=5) as resp:
-            return resp.status, json.load(resp)
-    except urllib.error.HTTPError as exc:
-        return exc.code, json.load(exc)
 
 
 def _no_writer(task: str, status: str, actor: str = "") -> Written:

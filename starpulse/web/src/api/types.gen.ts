@@ -27,8 +27,6 @@ export interface ApiContract {
     | Started
     | RunStarted
     | Accepted
-    | InsightPosted
-    | InsightRetracted
     | ApiError
     | SkillRefusal
     | StaleEdit
@@ -42,16 +40,13 @@ export interface ApiContract {
   diff: RunDiffs;
   docShown: DocShown;
   docs: Docs;
-  events: (
-    TaskDelta | MoveDelta | DagsDelta | PullsDelta | ClaimDelta | LedgersDelta | InsightDelta | AutopilotStatus
-  )[];
+  events: (TaskDelta | MoveDelta | DagsDelta | PullsDelta | ClaimDelta | LedgersDelta | AutopilotStatus)[];
   graph: FlowGraph;
   harnesses: Harnesses;
   health: Health;
   laneHistory: LaneHistory;
   ledger: LedgerPage;
   ledgerChange: LedgerChange;
-  level: Level;
   machineHistory: MachineHistory;
   machines: Machines;
   milestoneShown: MilestoneShown;
@@ -94,7 +89,6 @@ export interface ApiContract {
   traceClusters: TraceClusters;
   trajectories: Trajectories;
   transitions: Transitions;
-  whatIf: WhatIf;
   windowState: WindowState;
 }
 export interface Moved {
@@ -177,14 +171,6 @@ export interface RunStarted {
 export interface Accepted {
   accepted: boolean;
   deprecated?: string | null;
-}
-export interface InsightPosted {
-  id: string;
-  replaced: boolean;
-}
-export interface InsightRetracted {
-  id: string;
-  retracted: boolean;
 }
 /**
  * Every refusal: what went wrong.
@@ -911,95 +897,6 @@ export interface StripBucket {
   reruns: number;
 }
 /**
- * A finding drawn, or retracted when `finding` is null.
- */
-export interface InsightDelta {
-  finding: Finding | null;
-  id: string;
-}
-/**
- * One thing an external engine says about the flow, posted to `POST /api/insights`; a re-post of an `id` replaces it.
- */
-export interface Finding {
-  /**
-   * When the engine wrote it, in epoch seconds.
-   */
-  created_at: number;
-  engine: FindingEngine;
-  /**
-   * Where a reader can check it.
-   */
-  evidence?: Evidence[];
-  /**
-   * When the page should stop showing it, in epoch seconds, after `created_at`; None keeps it until it is retracted.
-   */
-  expires_at?: number | null;
-  /**
-   * The engine's stable key for the finding; posting it again replaces it.
-   */
-  id: string;
-  scope?: FindingScope;
-  /**
-   * How much attention it asks for.
-   */
-  severity: "info" | "warn" | "act";
-  /**
-   * What the engine found, in plain text of at most 280 characters.
-   */
-  text: string;
-}
-/**
- * The engine that wrote it, by name and version.
- */
-export interface FindingEngine {
-  /**
-   * The engine's name, stable across its releases.
-   */
-  name: string;
-  /**
-   * The engine release that wrote the finding.
-   */
-  version: string;
-}
-/**
- * One thing a reader can open to check a finding: a labelled link, or a labelled query over the history store.
- */
-export interface Evidence {
-  /**
-   * What the link or query shows, in a few words.
-   */
-  label: string;
-  /**
-   * A read-only query over the history store's tables that returns the evidence; exactly one of `url` and `query` is set.
-   */
-  query?: string | null;
-  /**
-   * A link to the evidence; exactly one of `url` and `query` is set.
-   */
-  url?: string | null;
-}
-/**
- * What it is about: a team, machine, state or task, each optional.
- */
-export interface FindingScope {
-  /**
-   * The machine the finding is about, as `<repo>/<machine>`.
-   */
-  machine?: string | null;
-  /**
-   * The state of that machine the finding is about.
-   */
-  state?: string | null;
-  /**
-   * The task key the finding is about.
-   */
-  task?: string | null;
-  /**
-   * The team key the finding is about, as a board task's `team`.
-   */
-  team?: string | null;
-}
-/**
  * `GET /api/analytics/graph`: the branching directly-follows graph of each transition, Codex left out.
  */
 export interface FlowGraph {
@@ -1153,118 +1050,6 @@ export interface LedgerPage {
  */
 export interface LedgerChange {
   rows: LedgerRow[];
-}
-/**
- * `GET /api/level`: the level's flow numbers over a window.
- */
-export interface Level {
-  aging: LevelAging;
-  arrivals: Arrival[];
-  goal: string;
-  history_s: number;
-  level: LevelConfig;
-  machine: string;
-  now: number;
-  orbit: LevelOrbit;
-  sources: LevelSource[];
-  throughput: HealthThroughput;
-  time_in_state: LevelStay[];
-  window_s: number;
-  wip: LevelWip;
-}
-export interface LevelAging {
-  runs: AgingRun[];
-  threshold_s: number | null;
-}
-export interface AgingRun {
-  age_s: number;
-  over: boolean;
-  source: string;
-  state: string;
-  task: string;
-}
-export interface Arrival {
-  at: number;
-  source: string;
-  state: string;
-}
-/**
- * What the page needs of the level's config to draw it.
- */
-export interface LevelConfig {
-  activity: LevelActivity;
-  facets: LevelFacet[];
-  gates: string[];
-  orbit: LevelOrbitConfig;
-  runs: string;
-  subject: string;
-  terminals: LevelTerminal[];
-  title: string;
-}
-export interface LevelActivity {
-  measure: string;
-  pace: string;
-}
-export interface LevelFacet {
-  id: string;
-  label: string;
-}
-export interface LevelOrbitConfig {
-  suns: string;
-  working: string[];
-}
-export interface LevelTerminal {
-  id: string;
-  role: string;
-}
-export interface LevelOrbit {
-  suns: string;
-  terminals: {
-    [k: string]: OrbitTerminal;
-  };
-  working: {
-    [k: string]: OrbitWorking;
-  };
-}
-export interface OrbitTerminal {
-  ended: number;
-}
-export interface OrbitWorking {
-  task_s: number;
-}
-export interface LevelSource {
-  dwell: {
-    [k: string]: SourceDwell;
-  };
-  ended: {
-    [k: string]: number;
-  };
-  id: string;
-  shared: boolean;
-  terminal_share: {
-    [k: string]: number;
-  };
-  time_share: {
-    [k: string]: number;
-  };
-  wip: number;
-}
-export interface SourceDwell {
-  mean_s: number | null;
-  task_s: number;
-  visits: number;
-}
-export interface LevelStay {
-  id: string;
-  mean_s: number | null;
-  task_s: number;
-  visits: number;
-}
-export interface LevelWip {
-  count: number;
-  states: {
-    [k: string]: number;
-  };
 }
 /**
  * `GET /api/history?task=&flow=`: a task's path on one machine, and how many steps it has taken.
@@ -1965,10 +1750,6 @@ export interface Snapshot {
    * A Backlog.md project found beside the config while the default board is shown, and how to switch to it.
    */
   hint?: string | null;
-  /**
-   * The findings an engine posted that are still live.
-   */
-  insights?: Finding[] | null;
   machinePage?: MachinePage | null;
   machineStrip?: MachineStrip | null;
   /**
@@ -2219,7 +2000,7 @@ export interface ClusterSkill {
   skill: string;
 }
 /**
- * `GET /api/level/trajectories`: the paths of the runs that ended in a terminal over a window.
+ * The trajectory analytics: the paths of the runs that ended in a terminal over a window.
  */
 export interface Trajectories {
   betweenness: {
@@ -2404,33 +2185,6 @@ export interface TransitionCost {
    * Steps with a call that failed, was refused by a guard or hook, or repeats the command before it.
    */
   wasted_steps: number;
-}
-/**
- * `GET /api/level/what-if`: the chain with one transition's probability changed, from the usual first state.
- */
-export interface WhatIf {
-  chain: {
-    [k: string]: ChainState;
-  };
-  ended: number;
-  expected_days: Change;
-  from: string;
-  goal: string;
-  history_s: number;
-  machine: string;
-  n: number;
-  now: number;
-  p: number;
-  p_goal: Change;
-  start: string;
-  to: string;
-  was: number;
-  window_s: number;
-}
-export interface Change {
-  after: number;
-  before: number;
-  change: number;
 }
 /**
  * `/api/history-window`: the effective window, the declared default, and whether Admin's override is in effect.

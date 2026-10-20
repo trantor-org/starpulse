@@ -1,6 +1,6 @@
 """Trajectory analytics on fixture machines with hand-worked answers: variants and the norm, outliers ranked by
 Levenshtein distance, the absorbing chain against the closed form (I-Q)^-1, Brandes betweenness against a brute-force
-reference, dominator gates computed per trajectory, never on the union graph, and the in-flight forecast, what-if and
+reference, dominator gates computed per trajectory, never on the union graph, and the in-flight forecast and
 calibration over the loop-conditioned chain."""
 
 from collections import defaultdict, deque
@@ -12,12 +12,10 @@ import pytest
 from starpulse._internal.config.level import Level, Terminal
 from starpulse._internal.eventlog.level_metrics import Run, WindowPastHistory
 from starpulse._internal.level.trajectories import (
-    WhatIfRefused,
     _loops_so_far,
     _rework,
     betweenness,
     trajectory_analytics,
-    what_if,
 )
 
 H = 3600.0
@@ -386,65 +384,6 @@ def test_a_loop_count_seen_too_rarely_pools_to_the_states_unconditioned_row() ->
         "n": 0,
         "pooled": True,
     }
-
-
-# work -> review 100 of 110, -> dropped 10 of 110; review -> work 22 of 100 (22%), -> done 68, -> dropped 10.
-# Every work stay is 10h and every review stay 5h.
-WHAT_IF_RUNS = [
-    *(_run(f"loop{i}", (0, "work"), (10, "review"), (15, "work"), (25, "review"), (30, "done")) for i in range(22)),
-    *(_run(f"clean{i}", (0, "work"), (10, "review"), (15, "done")) for i in range(46)),
-    *(_run(f"lost{i}", (0, "work"), (10, "review"), (15, "dropped")) for i in range(10)),
-    *(_run(f"quit{i}", (0, "work"), (10, "dropped")) for i in range(10)),
-]
-
-
-def _what_if(runs: list[Run], origin: str, to: str, p: float) -> dict:
-    return what_if(LEVEL, MACHINE, runs, now=NOW, window_s=WINDOW, origin=origin, to=to, p=p)
-
-
-def test_a_what_if_cutting_one_transition_returns_the_hand_worked_change_in_the_goal_and_the_days() -> None:
-    result = _what_if(WHAT_IF_RUNS, "review", "work", 0.10)
-
-    # With a = 10/11 (work -> review), q review -> work, d review -> done and h = (10h, 5h):
-    # P(goal | work) = a d / (1 - a q) and E(days | work) = (10 + 5a) / (1 - a q).
-    # Before, q = .22 and d = .68: P = 17/22, E = 200/11 h. After, q = .10 and the other exits keep their shares of
-    # what is left, so d = .68 * .90 / .78 = 51/65: P = 51/65, E = 16 h.
-    assert (result["from"], result["to"], result["start"], result["n"]) == ("review", "work", "work", 100)
-    assert (result["was"], result["p"]) == (pytest.approx(0.22), 0.10)
-    assert result["p_goal"] == {
-        "before": pytest.approx(17 / 22, abs=1e-9),
-        "after": pytest.approx(51 / 65, abs=1e-9),
-        "change": pytest.approx(17 / 1430, abs=1e-9),
-    }
-    assert result["expected_days"] == {
-        "before": pytest.approx(200 / 11 / 24, abs=1e-9),
-        "after": pytest.approx(16 / 24, abs=1e-9),
-        "change": pytest.approx(-24 / 11 / 24, abs=1e-9),
-    }
-    assert result["chain"]["review"]["p_goal"] == pytest.approx((51 / 65) / (1 - 0.10 * 10 / 11), abs=1e-9)
-
-
-@pytest.mark.parametrize(
-    ("origin", "to", "p"),
-    [
-        ("todo", "work", 0.5),  # no ended run left todo
-        ("review", "review", 0.5),  # a stay is no transition
-        ("review", "nowhere", 0.5),  # not a state of the machine
-        ("review", "work", 1.5),  # not a probability
-    ],
-)
-def test_a_what_if_on_no_observed_row_or_no_probability_is_refused(origin: str, to: str, p: float) -> None:
-    with pytest.raises(WhatIfRefused):
-        _what_if(WHAT_IF_RUNS, origin, to, p)
-
-
-def test_a_what_if_that_leaves_no_other_exit_or_no_way_out_is_refused() -> None:
-    straight = [_run("s", (0, "work"), (10, "review"), (20, "done"))]
-
-    with pytest.raises(WhatIfRefused, match="no other exit"):
-        _what_if(straight, "work", "review", 0.5)  # work's only exit is review: nothing takes the other half
-    with pytest.raises(WhatIfRefused, match="never finishes"):
-        _what_if(straight, "review", "work", 1.0)  # work and review would hand a run back and forth forever
 
 
 def test_the_calibration_scores_held_out_runs_per_decile_against_a_chain_fitted_without_them() -> None:

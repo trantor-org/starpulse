@@ -907,9 +907,9 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
 #og .og-panel .row.warn span:last-child { color: var(--run); }
 #og .og-panel .row i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; }
 #og .og-panel .more { color: var(--muted); }
-#og .og-gate { position: absolute; inset: 0; margin: auto; width: 360px; height: fit-content; padding: 26px 28px; border: 1px solid color-mix(in srgb, var(--slate) 22%, transparent); border-radius: 12px; background: color-mix(in srgb, var(--glass) 86%, transparent); text-align: center; }
-#og .og-gate h2 { margin: 0 0 8px; font-size: calc(16px * var(--fs)); font-weight: 500; }
-#og .og-gate p { margin: 0 0 18px; color: var(--muted); line-height: 1.6; }
+#og .og-error { position: absolute; inset: 0; margin: auto; width: 360px; height: fit-content; padding: 26px 28px; border: 1px solid color-mix(in srgb, var(--slate) 22%, transparent); border-radius: 12px; background: color-mix(in srgb, var(--glass) 86%, transparent); text-align: center; }
+#og .og-error h2 { margin: 0 0 8px; font-size: calc(16px * var(--fs)); font-weight: 500; }
+#og .og-error p { margin: 0 0 18px; color: var(--muted); line-height: 1.6; }
 #og .og-btn { all: unset; display: inline-block; padding: 7px 16px; border: 1px solid var(--agent); border-radius: 8px; color: var(--agent-soft); font-size: calc(12px * var(--fs)); }
 #og .og-btn:hover, #og .og-btn:focus-visible { background: color-mix(in srgb, var(--agent) 16%, transparent); }
 #og .og-none { color: var(--muted); }

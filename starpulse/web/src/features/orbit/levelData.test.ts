@@ -51,7 +51,8 @@ describe("fetchLevel", () => {
     const ok = await fetchLevel(async () => new Response(JSON.stringify(level()), { status: 200 }));
     expect(ok).toEqual({ kind: "ok", level: level() });
     expect(await fetchLevel(async () => new Response("{}", { status: 404 }))).toEqual({ kind: "none" });
-    expect(await fetchLevel(async () => new Response("{}", { status: 401 }))).toEqual({ kind: "gate", why: "expired" });
+    expect(await fetchLevel(async () => new Response("{}", { status: 401 }))).toEqual({ kind: "error", message: "/api/level answered 401" });
+    expect(await fetchLevel(async () => new Response('{"error":"no"}', { status: 403 }))).toEqual({ kind: "error", message: "no" });
   });
 });
 

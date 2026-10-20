@@ -16,7 +16,7 @@ functions of those runs: a fixture gives answers that can be worked out by hand.
   runs each back-edge's trips and total days, summed from the runs' own figures and never found in the union graph.
 - Forecast: each run still going gets its chance of each terminal and its expected days to finish from the row of the
   state it is in, conditioned on the loops it has gone round so far (a third review round is not the first), with the
-  sample size behind that row. The same chain answers a what-if that changes one transition's probability, and a
+  sample size behind that row. A
   calibration report scores it on the latest fifth of the ended runs against a chain fitted without them.
 """
 
@@ -29,7 +29,7 @@ from typing import Any
 from starpulse._internal.config.level import Level
 from starpulse._internal.eventlog.level_metrics import Run, WindowPastHistory, held_steps
 
-__all__ = ["WhatIfRefused", "absorb", "betweenness", "trajectory_analytics", "what_if"]
+__all__ = ["absorb", "betweenness", "trajectory_analytics"]
 
 _DAY_S = 86400.0
 
@@ -40,10 +40,6 @@ LOOP_CAP = 2
 POOL_BELOW = 5
 #: One ended run in this many, the latest, is held out of the chain the calibration scores.
 HELD_OUT_EVERY = 5
-
-
-class WhatIfRefused(ValueError):
-    """A what-if the observed chain cannot answer: no observed row to change, no probability, or no way out."""
 
 
 def trajectory_analytics(
@@ -94,72 +90,6 @@ def trajectory_analytics(
         "runs": [trajectory for _, trajectory in trajectories],
         "forecast": _forecast(level, machine, model, held),
         "calibration": _calibration(level, ended),
-    }
-
-
-def what_if(
-    level: Level,
-    machine: Mapping[str, Any],
-    runs: Iterable[Run],
-    *,
-    now: float,
-    window_s: float,
-    history_start: float | None = None,
-    sources: Collection[str] = (),
-    origin: str,
-    to: str,
-    p: float,
-) -> dict[str, Any]:
-    """The change in the chance of the goal and the expected days from the usual first state when the chain's
-    `origin -> to` transition has probability `p`, over the runs that ended in the window as `trajectory_analytics`
-    reads them.
-
-    `origin`'s other exits keep their shares of what is left. Refused (`WhatIfRefused`) when no ended run left
-    `origin` or `to` (a terminal needs none), `to` is `origin`, `p` is no probability, `origin` has no other exit to
-    give the rest to, or the changed chain never finishes.
-    """
-    _, first, ended = _window(level, machine, runs, now=now, window_s=window_s, history_start=history_start)
-    model = _Model(level, ended)
-    counts, terminals = model.counts, {terminal.id for terminal in level.terminals}
-    if not 0 <= p <= 1:
-        raise WhatIfRefused(f"p must be a probability from 0 to 1, not {p}")
-    for state in (origin, to):
-        if state not in counts and (state == origin or state not in terminals):
-            raise WhatIfRefused(f"no run that ended in the window left {state}")
-    if to == origin:
-        raise WhatIfRefused("a stay in one state is no transition")
-    out = sum(counts[origin].values())
-    was = counts[origin][to] / out
-    if was == 1 and p < 1:
-        raise WhatIfRefused(f"{origin} -> {to} is {origin}'s only exit: no other exit takes the rest")
-    scale = (1 - p) / (1 - was) if was < 1 else 0.0
-    changed = dict(counts)
-    changed[origin] = Counter({after: n / out * scale for after, n in counts[origin].items() if after != to} | {to: p})
-    try:
-        after = absorb(changed, model.stays, level)
-    except ZeroDivisionError:
-        raise WhatIfRefused(f"with {origin} -> {to} at {p} a run never finishes") from None
-    firsts = Counter(steps[0][1] for _, steps in ended if steps[0][1] in counts)
-    start = min(firsts, key=lambda state: (-firsts[state], state))
-    before = model.plain[start]
-    return {
-        "now": now,
-        "window_s": window_s,
-        "history_s": now - first,
-        "machine": level.machine,
-        "goal": level.goal,
-        "ended": len(ended),
-        "from": origin,
-        "to": to,
-        "p": p,
-        "was": was,
-        "n": out,
-        "start": start,
-        **{
-            key: {"before": before[key], "after": after[start][key], "change": after[start][key] - before[key]}
-            for key in ("p_goal", "expected_days")
-        },
-        "chain": _chain(after),
     }
 
 

@@ -107,9 +107,6 @@ _DOC_RESTORE = "/api/docs/restore"
 _MACHINE_EVENTS = "/api/machine-events"
 
 
-_INSIGHTS = "/api/insights"
-
-
 _PULL_REFRESH = "/api/pulls/refresh"
 
 

@@ -1,1 +1,1 @@
-"""The test kit an adapter or insights engine author runs against their work."""
+"""The test kit an adapter author runs against their work."""

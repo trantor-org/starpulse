@@ -30,7 +30,6 @@ from starpulse._internal.cli import agent_cli as cli
 from starpulse._internal.cli import agent_wire, skill_install
 from starpulse.contracts.adapters import Move
 from starpulse.tests.unit.board.test_native_lifecycle import PULL, REVIEW_NEEDS_PR, _lifecycle
-from starpulse._internal.config.level import Level, Orbit, Terminal
 from starpulse._internal.cli import doctor
 from starpulse._internal.feed.board_feed import HOT_S, BoardFeed
 from starpulse._internal.feed.search import SearchIndex
@@ -42,7 +41,6 @@ from starpulse.tests.fake_board import bare_board
 from starpulse.tests.hosts import FakeHost
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.unit.harnesses.test_telemetry import FIXTURES
-from starpulse.tests.unit.level.test_analytics import NOW, ROWS, H
 
 VALID_MACHINE = Path(__file__).parent.parent.parent.parent / "machines" / "harness.yaml"
 STARTED = [0]  # server lifecycles begun in this process, so a test can prove which fixtures a case builds
@@ -236,23 +234,6 @@ def cooled(tmp_path: Path) -> Iterator[str]:
 def movable(tmp_path: Path, writer: _Writer) -> Iterator[str]:
     """A server whose board writer answers, holding `_moving_board`."""
     with _serve(tmp_path, _moving_board(), bare_board(writer=writer)) as server:
-        yield _url(server, "")
-
-
-@pytest.fixture
-def leveled(tmp_path: Path) -> Iterator[str]:
-    """A server's address: a level on the Board and 90 hours of history from two sources, the clock at `NOW`."""
-    level = Level(
-        "board",
-        "done",
-        (Terminal("done", "goal"),),
-        gates=("review",),
-        orbit=Orbit("working", ("in_progress", "review")),
-    )
-    store = HistoryStore(f"sqlite:///{tmp_path / 'level.sqlite'}", MACHINES)
-    for i, (task_id, at, _old, new) in enumerate(ROWS):
-        store.record_lane(f"{'a' if task_id in 'AB' else 'b'}/{i}", task_id, new, at)
-    with _serve(tmp_path, BoardFeed(machines=MACHINES), history=store, clock=lambda: NOW, level=level) as server:
         yield _url(server, "")
 
 
@@ -1353,11 +1334,6 @@ def test_the_manifest_describes_every_verb_and_each_of_its_arguments(capsys: pyt
         "runs start",
         "watch",
         "analytics health",
-        "analytics level",
-        "analytics trajectories",
-        "analytics gates",
-        "analytics forecast",
-        "analytics what-if",
         "analytics steps",
         "analytics transitions",
         "analytics cells",
@@ -1543,158 +1519,6 @@ def test_analytics_steps_of_a_server_that_receives_no_telemetry_is_unavailable(
     code, doc = _run(capsys, ["analytics", "steps", "--server", base])
 
     assert (code, doc["code"], "telemetry" in doc["error"]) == (3, "unavailable", True)
-
-
-def test_analytics_level_serves_the_levels_flow_numbers_and_orbit_shares_as_the_server_computes_them(
-    leveled: str, capsys: pytest.CaptureFixture[str]
-) -> None:
-    code, doc = _run(capsys, ["analytics", "level", "--hours", "48", "--server", leveled])
-
-    assert code == 0
-    assert (doc["machine"], doc["goal"], doc["window_s"], doc["history_s"]) == ("board", "done", 48 * H, 90 * H)
-    assert doc["wip"] == {"count": 1, "states": {"in_progress": 1}}
-    assert doc["throughput"] == {"count": 2, "per_day": 1.0}
-    assert doc["aging"]["threshold_s"] == 25 * H
-    assert [source["id"] for source in doc["sources"]] == ["a", "b"]
-    assert doc["orbit"]["terminals"] == {"done": {"ended": 2}}
-    for source in doc["sources"]:
-        assert sum(source["time_share"].values()) == pytest.approx(1.0)
-
-
-def test_analytics_level_refuses_a_window_longer_than_the_history_naming_the_history(
-    leveled: str, capsys: pytest.CaptureFixture[str]
-) -> None:
-    code, doc = _run(capsys, ["analytics", "level", "--hours", "91", "--server", leveled])
-
-    assert (code, doc["code"], "90 hours" in doc["error"]) == (1, "refused", True)
-
-
-def test_analytics_level_of_a_server_with_no_level_is_unavailable(
-    base: str, capsys: pytest.CaptureFixture[str]
-) -> None:
-    code, doc = _run(capsys, ["analytics", "level", "--server", base])
-
-    assert (code, doc["code"], "no level" in doc["error"]) == (3, "unavailable", True)
-
-
-def test_analytics_trajectories_serves_variants_the_norm_outliers_the_chain_and_betweenness(
-    leveled: str, capsys: pytest.CaptureFixture[str]
-) -> None:
-    code, doc = _run(capsys, ["analytics", "trajectories", "--hours", "48", "--server", leveled])
-
-    assert code == 0
-    assert (doc["machine"], doc["goal"], doc["ended"], doc["history_s"]) == ("board", "done", 2, 90 * H)
-    assert [variant["count"] for variant in doc["variants"]] == [1, 1]
-    assert doc["norm"]["path"] == ["ready", "in_progress", "review", "in_progress", "done"]
-    assert [(o["task"], o["distance"]) for o in doc["outliers"]] == [("A", 2)]
-    assert doc["chain"]["review"]["p_goal"] == pytest.approx(1.0)
-    assert set(doc["betweenness"]) == {"to_do", "ready", "in_progress", "review", "done"}
-    assert doc["bottleneck"]["state"] == "in_progress"
-    assert doc["loops"] == [{"from": "review", "to": "in_progress", "runs": 1, "trips": 1, "days": 16 * H / 86400}]
-    assert [(run["task"], run["back_edges"], run["sccs"]) for run in doc["runs"]] == [("A", 0, 0), ("B", 1, 1)]
-    assert "gates" not in doc
-    assert "dominators" not in json.dumps(doc["runs"])
-
-
-def test_analytics_gates_marks_a_bypassed_gate_bypassable_and_returns_the_bypassing_runs_path(
-    leveled: str, capsys: pytest.CaptureFixture[str]
-) -> None:
-    code, doc = _run(capsys, ["analytics", "gates", "--hours", "48", "--server", leveled])
-
-    assert code == 0
-    assert doc["gates"] == [
-        {
-            "gate": "review",
-            "runs": 2,
-            "crossed": 2,
-            "mandatory": 1,
-            "bypassed": 1,
-            "bypassable": True,
-            "witness": {"task": "B", "path": ["ready", "in_progress", "done"]},
-        }
-    ]
-    by_task = {run["task"]: run["gates"][0] for run in doc["runs"]}
-    assert (by_task["A"]["mandatory"], by_task["A"]["dominators"], by_task["A"]["post_dominators"]) == (
-        True,
-        ["to_do", "ready", "in_progress"],
-        ["done"],
-    )
-    assert (by_task["B"]["mandatory"], by_task["B"]["witness"]) == (False, ["ready", "in_progress", "done"])
-
-
-def test_analytics_gates_for_one_task_lists_only_its_trajectory(
-    leveled: str, capsys: pytest.CaptureFixture[str]
-) -> None:
-    code, doc = _run(capsys, ["analytics", "gates", "--task", "B", "--hours", "48", "--server", leveled])
-
-    assert code == 0
-    assert [run["task"] for run in doc["runs"]] == ["B"]
-    assert doc["gates"][0]["bypassable"] is True  # the level's summary is the level's, not the task's
-
-
-def test_analytics_gates_of_a_task_that_ended_nowhere_in_the_window_is_not_found(
-    leveled: str, capsys: pytest.CaptureFixture[str]
-) -> None:
-    code, doc = _run(capsys, ["analytics", "gates", "--task", "F", "--hours", "48", "--server", leveled])
-
-    assert (code, doc["code"], "F" in doc["error"]) == (4, "not_found", True)
-
-
-def test_analytics_forecast_for_one_task_gives_its_chances_with_the_rows_sample_size(
-    leveled: str, capsys: pytest.CaptureFixture[str]
-) -> None:
-    code, doc = _run(capsys, ["analytics", "forecast", "--task", "C", "--hours", "48", "--server", leveled])
-
-    assert code == 0
-    [forecast] = doc["forecast"]
-    assert (forecast["task"], forecast["state"], forecast["n"], forecast["pooled"]) == ("C", "in_progress", 3, True)
-    assert forecast["p_goal"] == pytest.approx(1.0)
-    assert doc["calibration"]["held_out"] == 0
-    assert "runs" not in doc
-
-
-def test_analytics_forecast_of_a_task_with_no_run_still_going_is_not_found(
-    leveled: str, capsys: pytest.CaptureFixture[str]
-) -> None:
-    code, doc = _run(capsys, ["analytics", "forecast", "--task", "A", "--hours", "48", "--server", leveled])
-
-    assert (code, doc["code"], "A" in doc["error"]) == (4, "not_found", True)
-
-
-def test_analytics_what_if_returns_the_change_in_the_goal_and_the_days(
-    leveled: str, capsys: pytest.CaptureFixture[str]
-) -> None:
-    argv = ["analytics", "what-if", "--from", "review", "--to", "in_progress", "--p", "0", "--hours", "48"]
-    code, doc = _run(capsys, [*argv, "--server", leveled])
-
-    assert code == 0
-    assert (doc["from"], doc["to"], doc["was"], doc["p"]) == ("review", "in_progress", 0.5, 0.0)
-    assert doc["expected_days"]["change"] < 0
-
-
-def test_analytics_what_if_on_a_state_no_run_left_is_refused(leveled: str, capsys: pytest.CaptureFixture[str]) -> None:
-    argv = ["analytics", "what-if", "--from", "blocked", "--to", "done", "--p", "0.5", "--hours", "48"]
-    code, doc = _run(capsys, [*argv, "--server", leveled])
-
-    assert (code, doc["code"], "blocked" in doc["error"]) == (1, "refused", True)
-
-
-@pytest.mark.parametrize("verb", ["trajectories", "gates", "forecast"])
-def test_the_trajectory_verbs_refuse_a_window_longer_than_the_history_naming_the_history(
-    verb: str, leveled: str, capsys: pytest.CaptureFixture[str]
-) -> None:
-    code, doc = _run(capsys, ["analytics", verb, "--hours", "91", "--server", leveled])
-
-    assert (code, doc["code"], "90 hours" in doc["error"]) == (1, "refused", True)
-
-
-@pytest.mark.parametrize("verb", ["trajectories", "gates", "forecast"])
-def test_the_trajectory_verbs_of_a_server_with_no_level_are_unavailable(
-    verb: str, base: str, capsys: pytest.CaptureFixture[str]
-) -> None:
-    code, doc = _run(capsys, ["analytics", verb, "--server", base])
-
-    assert (code, doc["code"], "no level" in doc["error"]) == (3, "unavailable", True)
 
 
 def test_runs_list_names_each_workflow_by_instance_with_its_status_and_the_runs_error(
@@ -1996,36 +1820,6 @@ CASES = {
     ("analytics diff", 1): ["analytics", "diff", "--hours", "0", "--server", "{stepped}"],
     ("analytics diff", 2): ["analytics", "diff", "--hours", "soon"],
     ("analytics diff", 3): ["analytics", "diff", "--server", "{down}"],
-    ("analytics level", 0): ["analytics", "level", "--hours", "48", "--server", "{leveled}"],
-    ("analytics level", 1): ["analytics", "level", "--hours", "91", "--server", "{leveled}"],
-    ("analytics level", 2): ["analytics", "level", "--hours", "soon"],
-    ("analytics level", 3): ["analytics", "level", "--server", "{server}"],
-    ("analytics trajectories", 0): ["analytics", "trajectories", "--hours", "48", "--server", "{leveled}"],
-    ("analytics trajectories", 1): ["analytics", "trajectories", "--hours", "91", "--server", "{leveled}"],
-    ("analytics trajectories", 2): ["analytics", "trajectories", "--hours", "soon"],
-    ("analytics trajectories", 3): ["analytics", "trajectories", "--server", "{server}"],
-    ("analytics gates", 0): ["analytics", "gates", "--hours", "48", "--server", "{leveled}"],
-    ("analytics gates", 1): ["analytics", "gates", "--hours", "91", "--server", "{leveled}"],
-    ("analytics gates", 2): ["analytics", "gates", "--hours", "soon"],
-    ("analytics gates", 3): ["analytics", "gates", "--server", "{server}"],
-    ("analytics gates", 4): ["analytics", "gates", "--task", "Z", "--hours", "48", "--server", "{leveled}"],
-    ("analytics forecast", 0): ["analytics", "forecast", "--hours", "48", "--server", "{leveled}"],
-    ("analytics forecast", 1): ["analytics", "forecast", "--hours", "91", "--server", "{leveled}"],
-    ("analytics forecast", 2): ["analytics", "forecast", "--hours", "soon"],
-    ("analytics forecast", 3): ["analytics", "forecast", "--server", "{server}"],
-    ("analytics forecast", 4): ["analytics", "forecast", "--task", "Z", "--hours", "48", "--server", "{leveled}"],
-    ("analytics what-if", 0): [
-        *("analytics", "what-if", "--from", "review", "--to", "in_progress", "--p", "0"),
-        *("--hours", "48", "--server", "{leveled}"),
-    ],
-    ("analytics what-if", 1): [
-        *("analytics", "what-if", "--from", "blocked", "--to", "done", "--p", "0.5"),
-        *("--hours", "48", "--server", "{leveled}"),
-    ],
-    ("analytics what-if", 2): ["analytics", "what-if", "--from", "review", "--to", "done", "--p", "half"],
-    ("analytics what-if", 3): [
-        *("analytics", "what-if", "--from", "review", "--to", "done", "--p", "0.5", "--server", "{server}"),
-    ],
     ("task show", 0): ["task", "show", "PROJ-1", "--server", "{server}"],
     ("task show", 2): ["task", "show"],
     ("task show", 3): ["task", "show", "PROJ-1", "--server", "{down}"],
@@ -2258,7 +2052,6 @@ def _case_files(root: Path) -> Path:
 
 SERVERS = {
     "server": "base",
-    "leveled": "leveled",
     "stepped": "stepped",
     "movable": "movable",
     "lifecycled": "lifecycled",

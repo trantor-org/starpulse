@@ -1,4 +1,4 @@
-// The orbit card's data: /api/level once on show, then `level` events from /api/events.
+// The orbit card's data: /api/level once on show.
 import { apiFetch } from "../../api/apiFetch";
 import type { Drift, OrbitInput, SunMode } from "./orbit";
 import type { Measure, Pace } from "../../render/comets";
@@ -45,11 +45,10 @@ export interface LevelResponse {
   sources: LevelSource[];
 }
 
-/** What the page knows of the level: no level at all, a session to renew or refused, a failure, or the answer. */
+/** What the page knows of the level: no level at all, a failure, or the answer. */
 export type LevelState =
   | { kind: "loading" }
   | { kind: "none" }
-  | { kind: "gate"; why: "expired" | "refused"; reason?: string }
   | { kind: "error"; message: string }
   | { kind: "ok"; level: LevelResponse };
 
@@ -62,8 +61,6 @@ export async function fetchLevel(f: (url: string) => Promise<Response> = apiFetc
     const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
     const why = typeof body.error === "string" ? body.error : `/api/level answered ${res.status}`;
     if (res.status === 404) return { kind: "none" };
-    if (res.status === 401) return { kind: "gate", why: "expired" };
-    if (res.status === 403) return { kind: "gate", why: "refused", reason: why };
     if (res.status === 400 && retry && typeof body.history_s === "number" && body.history_s >= 3600)
       return fetchLevel(f, Math.floor(body.history_s / 3600), false);
     if (!res.ok) return { kind: "error", message: why };

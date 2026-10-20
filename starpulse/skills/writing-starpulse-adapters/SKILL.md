@@ -1,6 +1,6 @@
 ---
 name: writing-starpulse-adapters
-description: Connects a tracker, a harness, a scheduler or an analysis engine to StarPulse by writing an adapter against its board, machine-events, runs or insights contract, testing it with the adapter kit, and posting machine events and runs to the CloudEvents ingest. Use when asked to show Jira, Linear, GitHub or another tracker's tasks on StarPulse, to push lifecycle events or workflow runs into it, or to test an adapter.
+description: Connects a tracker, a harness or a scheduler to StarPulse by writing an adapter against its board, machine-events or runs contract, testing it with the adapter kit, and posting machine events and runs to the CloudEvents ingest. Use when asked to show Jira, Linear, GitHub or another tracker's tasks on StarPulse, to push lifecycle events or workflow runs into it, or to test an adapter.
 ---
 
 # Writing StarPulse Adapters
@@ -13,9 +13,8 @@ Schema under `starpulse/schemas/`. Unknown fields are an error, so a misspelt on
 | `board` | `BoardTask`: `id`, `title`, `team`, `lane`, `dependencies`, `references`, `settled`, `created_at`, `settled_at`, `observed_at`, `profile`, `assignee`, `labels`, `milestone`, `description`, `acceptance_criteria`, `acceptance_checked`, `pause_reason`, `notes`, `moves` | a board adapter's `Board` |
 | `machine-events` | `MachineEvent`: `machine`, `event`, exactly one of `task` or `run`, `actor`, `time` (epoch seconds), optionally `source` and `data` (set by a producer posting through `POST /api/machine-events`, see docs/sources.md) | the CloudEvents ingest, `POST /api/machine-events`; an adapter in the server process appends to `machine:events` |
 | `runs` | `Dag`: `name`, `status`, `runId`, `startedAt`, `finishedAt`, `steps` | a runs adapter's `RunsSink`, or a Step CloudEvent posted to the ingest |
-| `insights` | `Finding`: `id`, `engine` (`name`, `version`), `scope` (any of `team`, `machine`, `state`, `task`), `severity` (`info`, `warn`, `act`), `text` (at most 280 characters), `evidence` (each a labelled `url` or `query`), `created_at`, `expires_at` | the server's `POST /api/insights` under the engine token; `DELETE /api/insights/<id>` retracts |
 
-Pick the contract first: a tracker is a board, a hook that says a task moved is machine events, a scheduler is runs, an engine that reads the history and reports what it found is insights. A finding is about a team, machine, state or task, never a person: the contract has no field for one, and a scope that names a person is refused.
+Pick the contract first: a tracker is a board, a hook that says a task moved is machine events, a scheduler is runs.
 
 ## Write a board adapter
 
@@ -36,10 +35,9 @@ Done when `starpulse doctor` reports `adapter:board` as ok.
 
 ## Test an adapter with the kit
 
-1. Subclass the kit for the contract: `BoardAdapterKit`, `MachineEventsAdapterKit`, `RunsAdapterKit` or
-   `InsightsEngineKit`, from `starpulse.adapter_kit`. An insights engine declares only `produce()`, its findings as plain
-   dicts; the kit posts, re-posts and retracts each through a served instance and checks the stream sends every state.
-2. Unless it is an insights engine, declare `keys = TaskKeys(...)` and `branches = {"feature/PROJ-1-add-x": "PROJ-1", "main": None}`, with a branch that
+1. Subclass the kit for the contract: `BoardAdapterKit`, `MachineEventsAdapterKit` or
+   `RunsAdapterKit`, from `starpulse.adapter_kit`.
+2. Declare `keys = TaskKeys(...)` and `branches = {"feature/PROJ-1-add-x": "PROJ-1", "main": None}`, with a branch that
    names a task and one that names none. A board or machine-events kit also declares `machines`; a board kit declares
    `teams = {"PROJ-1": "PROJ"}`, the team key your adapter derives for each task it produces, and one with a writer
    sets `writer`.

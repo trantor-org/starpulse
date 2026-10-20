@@ -10,8 +10,7 @@ waited out the server's one rebuild for it; it is reported as `/api/events first
     uv run --group bench locust -f bench/load.py --host http://127.0.0.1:8766 --headless -u 50 -r 5 -t 2m
 
 Drop `--headless` for Locust's web UI on port 8089, which charts the same numbers live while the crowd ramps.
-`--what-if FROM TO` names the two states `/api/level/what-if` asks about, as for `page_latency.py`; the seeded gate
-server (`ci/seeded_server.py`) spells them `in_progress review`. The stream holds a server thread per viewer for the
+The stream holds a server thread per viewer for the
 whole run, so the user count is also the number of concurrent streams.
 """
 
@@ -24,7 +23,7 @@ import urllib.parse
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import AbstractContextManager
 
-from page_latency import BUDGET_MS, READS, WHAT_IF, fill, ids_of, ref_key
+from page_latency import BUDGET_MS, READS, fill, ids_of, ref_key
 
 #: The stream's first snapshot, as Locust names it among the routes.
 FIRST_SNAPSHOT = "/api/events first snapshot"
@@ -117,10 +116,6 @@ except ImportError:
     pass
 else:
 
-    @locust_events.init_command_line_parser.add_listener
-    def _options(parser) -> None:
-        parser.add_argument("--what-if", nargs=2, default=list(WHAT_IF), help="the states the what-if reads")
-
     @locust_events.quitting.add_listener
     def _verdict(environment, **_) -> None:
         entries = environment.stats.entries.values()
@@ -159,7 +154,6 @@ else:
 
             snapshot = json("/api/snapshot")
             ids = ids_of(snapshot if isinstance(snapshot, dict) else {}, json("/api/milestones"), json("/api/docs"))
-            ids |= dict(zip(("from", "to"), self.environment.parsed_options.what_if, strict=True))
             filled = {name: fill(template, ids) for name, template in READS.items() if name != BODY}
             return {name: path for name, path in filled.items() if path and self._probe(path) is not None}
 

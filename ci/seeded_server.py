@@ -69,7 +69,7 @@ ROUTES = {
     "done": ["new", "ready", "in_progress", "review", "done"],
 }
 #: The detours a third of the Done tasks each take: deferred and returned, or sent back from Review. The level's
-#: what-if needs a state with more than one observed exit, and a send-back is what a working team's runs show.
+#: trajectories need a state with more than one observed exit, and a send-back is what a working team's runs show.
 DETOURS = {
     1: ["new", "ready", "in_progress", "needs_attention", "ready", "in_progress", "review", "done"],
     2: ["new", "ready", "in_progress", "review", "in_progress", "review", "done"],
@@ -219,7 +219,7 @@ def build(port: int, directory: Path, *, now: float | None = None) -> tuple[Page
         create=None,
         read=lambda task: records.get(task),
     )
-    services = Services(level=config.level, autopilot=autopilot(directory, log, feed, config.autopilot))
+    services = Services(autopilot=autopilot(directory, log, feed, config.autopilot))
     app = page_app(feed, STATIC, store, window, board, services)
     return PageServer(app, ("127.0.0.1", port)), feed, tasks
 

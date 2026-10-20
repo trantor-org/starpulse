@@ -28,7 +28,7 @@ def test_the_percentile_is_the_nearest_rank():
 @pytest.mark.parametrize(
     ("url", "route"),
     [
-        ("http://h:8766/api/level?hours=168", "/api/level"),
+        ("http://h:8766/api/analytics/health", "/api/analytics/health"),
         ("http://h:8766/api/task/TASK-12", "/api/task/<id>"),
         ("http://h:8766/api/task/TASK%2012", "/api/task/<id>"),
         ("http://h:8766/api/milestones/m-3", "/api/milestones/<id>"),
@@ -46,13 +46,13 @@ def test_a_request_is_a_sample_of_its_route(url, route):
 
 def test_a_page_request_no_row_times_is_untimed():
     requested = [
-        "http://h/api/level?hours=1",
+        "http://h/api/analytics/health",
         "http://h/api/task/TASK-1",
         "http://h/api/new-thing?x=1",
         "http://h/a.js",
     ]
-    assert pl.untimed(requested, ["/api/level", "/api/task/<id>"]) == ["/api/new-thing"]
-    assert pl.untimed(requested[:2], ["/api/level", "/api/task/<id>"]) == []
+    assert pl.untimed(requested, ["/api/analytics/health", "/api/task/<id>"]) == ["/api/new-thing"]
+    assert pl.untimed(requested[:2], ["/api/analytics/health", "/api/task/<id>"]) == []
 
 
 def test_a_row_is_over_when_its_p95_passes_its_budget():
@@ -87,12 +87,6 @@ def test_the_snapshot_body_route_is_filled_from_the_reference_the_stream_sent():
     assert pl.ref_key("ref /api/events/body/0123abcd") == "0123abcd"
     assert pl.ref_key('{"flows": []}') is None
     assert pl.fill(pl.READS["/api/events/body/<id>"], {"snapshot": "0123abcd"}) == "/api/events/body/0123abcd"
-
-
-def test_the_what_if_route_takes_the_lanes_it_is_asked_for():
-    ids = dict(zip(("from", "to"), ("In Progress", "review"), strict=True))
-    path = pl.fill(pl.READS["/api/level/what-if"], ids)
-    assert path == "/api/level/what-if?hours=168&from=In%20Progress&to=review&p=0.5"
 
 
 def test_every_read_route_the_server_answers_is_timed():
@@ -225,7 +219,7 @@ def test_a_ceiling_naming_no_row_is_refused():
 def test_the_cpu_throttle_reaches_the_page_timing(monkeypatch):
     seen: list[float] = []
     monkeypatch.setattr(pl, "Client", lambda base: None)
-    monkeypatch.setattr(pl, "time_reads", lambda client, samples, what_if=None: [])
+    monkeypatch.setattr(pl, "time_reads", lambda client, samples: [])
     monkeypatch.setattr(pl, "time_stream", lambda base, samples: pl.Row("/api/events", "connect", 50.0))
     monkeypatch.setattr(pl, "time_page", lambda *args: seen.append(args[-1]) or [])
     pl.main(["http://h"])
@@ -237,7 +231,7 @@ def _stub_run(monkeypatch, rows):
     """`main` against canned rows: the request rows from `time_reads`, the page rows from `time_page`."""
     monkeypatch.setattr(pl, "Client", lambda base: None)
     monkeypatch.setattr(
-        pl, "time_reads", lambda client, samples, what_if=None: [r for r in rows if r.kind == "request"]
+        pl, "time_reads", lambda client, samples: [r for r in rows if r.kind == "request"]
     )
     monkeypatch.setattr(pl, "time_stream", lambda base, samples: pl.Row("/api/events", "connect", 50.0, [1.0]))
     monkeypatch.setattr(pl, "time_page", lambda *args: [r for r in rows if r.kind != "request"])

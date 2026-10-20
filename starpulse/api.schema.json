@@ -114,35 +114,6 @@
       "title": "ActivityCount",
       "type": "object"
     },
-    "AgingRun": {
-      "additionalProperties": false,
-      "properties": {
-        "age_s": {
-          "type": "number"
-        },
-        "over": {
-          "type": "boolean"
-        },
-        "source": {
-          "type": "string"
-        },
-        "state": {
-          "type": "string"
-        },
-        "task": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "source",
-        "task",
-        "state",
-        "age_s",
-        "over"
-      ],
-      "title": "AgingRun",
-      "type": "object"
-    },
     "ApiError": {
       "additionalProperties": false,
       "description": "Every refusal: what went wrong.",
@@ -226,27 +197,6 @@
         "task"
       ],
       "title": "Archived",
-      "type": "object"
-    },
-    "Arrival": {
-      "additionalProperties": false,
-      "properties": {
-        "at": {
-          "type": "number"
-        },
-        "source": {
-          "type": "string"
-        },
-        "state": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "source",
-        "state",
-        "at"
-      ],
-      "title": "Arrival",
       "type": "object"
     },
     "AutopilotDimension": {
@@ -741,27 +691,6 @@
         "p_goal"
       ],
       "title": "ChainState",
-      "type": "object"
-    },
-    "Change": {
-      "additionalProperties": false,
-      "properties": {
-        "after": {
-          "type": "number"
-        },
-        "before": {
-          "type": "number"
-        },
-        "change": {
-          "type": "number"
-        }
-      },
-      "required": [
-        "before",
-        "after",
-        "change"
-      ],
-      "title": "Change",
       "type": "object"
     },
     "Cite": {
@@ -1883,191 +1812,6 @@
       "title": "Edited",
       "type": "object"
     },
-    "Evidence": {
-      "additionalProperties": false,
-      "description": "One thing a reader can open to check a finding: a labelled link, or a labelled query over the history store.",
-      "properties": {
-        "label": {
-          "description": "What the link or query shows, in a few words.",
-          "minLength": 1,
-          "type": "string"
-        },
-        "query": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "A read-only query over the history store's tables that returns the evidence; exactly one of `url` and `query` is set."
-        },
-        "url": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "A link to the evidence; exactly one of `url` and `query` is set."
-        }
-      },
-      "required": [
-        "label"
-      ],
-      "title": "Evidence",
-      "type": "object"
-    },
-    "Finding": {
-      "additionalProperties": false,
-      "description": "One thing an external engine says about the flow, posted to `POST /api/insights`; a re-post of an `id` replaces it.",
-      "properties": {
-        "created_at": {
-          "description": "When the engine wrote it, in epoch seconds.",
-          "type": "number"
-        },
-        "engine": {
-          "$ref": "#/$defs/FindingEngine",
-          "description": "The engine that wrote it, by name and version."
-        },
-        "evidence": {
-          "default": [],
-          "description": "Where a reader can check it.",
-          "items": {
-            "$ref": "#/$defs/Evidence"
-          },
-          "type": "array"
-        },
-        "expires_at": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "When the page should stop showing it, in epoch seconds, after `created_at`; None keeps it until it is retracted."
-        },
-        "id": {
-          "description": "The engine's stable key for the finding; posting it again replaces it.",
-          "minLength": 1,
-          "type": "string"
-        },
-        "scope": {
-          "$ref": "#/$defs/FindingScope",
-          "description": "What it is about: a team, machine, state or task, each optional."
-        },
-        "severity": {
-          "description": "How much attention it asks for.",
-          "enum": [
-            "info",
-            "warn",
-            "act"
-          ],
-          "type": "string"
-        },
-        "text": {
-          "description": "What the engine found, in plain text of at most 280 characters.",
-          "maxLength": 280,
-          "minLength": 1,
-          "type": "string"
-        }
-      },
-      "required": [
-        "id",
-        "engine",
-        "severity",
-        "text",
-        "created_at"
-      ],
-      "title": "Finding",
-      "type": "object"
-    },
-    "FindingEngine": {
-      "additionalProperties": false,
-      "description": "The engine that wrote a finding.",
-      "properties": {
-        "name": {
-          "description": "The engine's name, stable across its releases.",
-          "minLength": 1,
-          "type": "string"
-        },
-        "version": {
-          "description": "The engine release that wrote the finding.",
-          "minLength": 1,
-          "type": "string"
-        }
-      },
-      "required": [
-        "name",
-        "version"
-      ],
-      "title": "FindingEngine",
-      "type": "object"
-    },
-    "FindingScope": {
-      "additionalProperties": false,
-      "description": "What a finding is about. Every field is optional and a finding may name none; there is no field for a person,\nso a finding about one cannot be written, and one that tries is refused as an unknown field.",
-      "properties": {
-        "machine": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "The machine the finding is about, as `<repo>/<machine>`."
-        },
-        "state": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "The state of that machine the finding is about."
-        },
-        "task": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "The task key the finding is about."
-        },
-        "team": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "The team key the finding is about, as a board task's `team`."
-        }
-      },
-      "title": "FindingScope",
-      "type": "object"
-    },
     "FlowEdge": {
       "additionalProperties": false,
       "description": "One directly-follows edge of a transition's graph.",
@@ -2745,65 +2489,6 @@
       "title": "HealthThroughput",
       "type": "object"
     },
-    "InsightDelta": {
-      "additionalProperties": false,
-      "description": "A finding drawn, or retracted when `finding` is null.",
-      "properties": {
-        "finding": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Finding"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "id": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "id",
-        "finding"
-      ],
-      "title": "InsightDelta",
-      "type": "object"
-    },
-    "InsightPosted": {
-      "additionalProperties": false,
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "replaced": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "id",
-        "replaced"
-      ],
-      "title": "InsightPosted",
-      "type": "object"
-    },
-    "InsightRetracted": {
-      "additionalProperties": false,
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "retracted": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "id",
-        "retracted"
-      ],
-      "title": "InsightRetracted",
-      "type": "object"
-    },
     "Judged": {
       "additionalProperties": false,
       "properties": {
@@ -3233,189 +2918,6 @@
       "title": "LedgersDelta",
       "type": "object"
     },
-    "Level": {
-      "additionalProperties": false,
-      "description": "`GET /api/level`: the level's flow numbers over a window.",
-      "properties": {
-        "aging": {
-          "$ref": "#/$defs/LevelAging"
-        },
-        "arrivals": {
-          "items": {
-            "$ref": "#/$defs/Arrival"
-          },
-          "type": "array"
-        },
-        "goal": {
-          "type": "string"
-        },
-        "history_s": {
-          "type": "number"
-        },
-        "level": {
-          "$ref": "#/$defs/LevelConfig"
-        },
-        "machine": {
-          "type": "string"
-        },
-        "now": {
-          "type": "number"
-        },
-        "orbit": {
-          "$ref": "#/$defs/LevelOrbit"
-        },
-        "sources": {
-          "items": {
-            "$ref": "#/$defs/LevelSource"
-          },
-          "type": "array"
-        },
-        "throughput": {
-          "$ref": "#/$defs/HealthThroughput"
-        },
-        "time_in_state": {
-          "items": {
-            "$ref": "#/$defs/LevelStay"
-          },
-          "type": "array"
-        },
-        "window_s": {
-          "type": "number"
-        },
-        "wip": {
-          "$ref": "#/$defs/LevelWip"
-        }
-      },
-      "required": [
-        "now",
-        "window_s",
-        "history_s",
-        "machine",
-        "goal",
-        "level",
-        "wip",
-        "throughput",
-        "time_in_state",
-        "aging",
-        "orbit",
-        "arrivals",
-        "sources"
-      ],
-      "title": "Level",
-      "type": "object"
-    },
-    "LevelActivity": {
-      "additionalProperties": false,
-      "properties": {
-        "measure": {
-          "type": "string"
-        },
-        "pace": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "measure",
-        "pace"
-      ],
-      "title": "LevelActivity",
-      "type": "object"
-    },
-    "LevelAging": {
-      "additionalProperties": false,
-      "properties": {
-        "runs": {
-          "items": {
-            "$ref": "#/$defs/AgingRun"
-          },
-          "type": "array"
-        },
-        "threshold_s": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      },
-      "required": [
-        "threshold_s",
-        "runs"
-      ],
-      "title": "LevelAging",
-      "type": "object"
-    },
-    "LevelConfig": {
-      "additionalProperties": false,
-      "description": "What the page needs of the level's config to draw it.",
-      "properties": {
-        "activity": {
-          "$ref": "#/$defs/LevelActivity"
-        },
-        "facets": {
-          "items": {
-            "$ref": "#/$defs/LevelFacet"
-          },
-          "type": "array"
-        },
-        "gates": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "orbit": {
-          "$ref": "#/$defs/LevelOrbitConfig"
-        },
-        "runs": {
-          "type": "string"
-        },
-        "subject": {
-          "type": "string"
-        },
-        "terminals": {
-          "items": {
-            "$ref": "#/$defs/LevelTerminal"
-          },
-          "type": "array"
-        },
-        "title": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "title",
-        "subject",
-        "runs",
-        "gates",
-        "terminals",
-        "orbit",
-        "facets",
-        "activity"
-      ],
-      "title": "LevelConfig",
-      "type": "object"
-    },
-    "LevelFacet": {
-      "additionalProperties": false,
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "label": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "id",
-        "label"
-      ],
-      "title": "LevelFacet",
-      "type": "object"
-    },
     "LevelLoop": {
       "additionalProperties": false,
       "description": "One back-edge across the runs that took it, summed from the runs' own figures.",
@@ -3444,171 +2946,6 @@
         "days"
       ],
       "title": "LevelLoop",
-      "type": "object"
-    },
-    "LevelOrbit": {
-      "additionalProperties": false,
-      "properties": {
-        "suns": {
-          "type": "string"
-        },
-        "terminals": {
-          "additionalProperties": {
-            "$ref": "#/$defs/OrbitTerminal"
-          },
-          "type": "object"
-        },
-        "working": {
-          "additionalProperties": {
-            "$ref": "#/$defs/OrbitWorking"
-          },
-          "type": "object"
-        }
-      },
-      "required": [
-        "suns",
-        "terminals",
-        "working"
-      ],
-      "title": "LevelOrbit",
-      "type": "object"
-    },
-    "LevelOrbitConfig": {
-      "additionalProperties": false,
-      "properties": {
-        "suns": {
-          "type": "string"
-        },
-        "working": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "suns",
-        "working"
-      ],
-      "title": "LevelOrbitConfig",
-      "type": "object"
-    },
-    "LevelSource": {
-      "additionalProperties": false,
-      "properties": {
-        "dwell": {
-          "additionalProperties": {
-            "$ref": "#/$defs/SourceDwell"
-          },
-          "type": "object"
-        },
-        "ended": {
-          "additionalProperties": {
-            "type": "integer"
-          },
-          "type": "object"
-        },
-        "id": {
-          "type": "string"
-        },
-        "shared": {
-          "type": "boolean"
-        },
-        "terminal_share": {
-          "additionalProperties": {
-            "type": "number"
-          },
-          "type": "object"
-        },
-        "time_share": {
-          "additionalProperties": {
-            "type": "number"
-          },
-          "type": "object"
-        },
-        "wip": {
-          "type": "integer"
-        }
-      },
-      "required": [
-        "id",
-        "shared",
-        "wip",
-        "ended",
-        "terminal_share",
-        "dwell",
-        "time_share"
-      ],
-      "title": "LevelSource",
-      "type": "object"
-    },
-    "LevelStay": {
-      "additionalProperties": false,
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "mean_s": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "task_s": {
-          "type": "number"
-        },
-        "visits": {
-          "type": "integer"
-        }
-      },
-      "required": [
-        "id",
-        "visits",
-        "task_s",
-        "mean_s"
-      ],
-      "title": "LevelStay",
-      "type": "object"
-    },
-    "LevelTerminal": {
-      "additionalProperties": false,
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "role": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "id",
-        "role"
-      ],
-      "title": "LevelTerminal",
-      "type": "object"
-    },
-    "LevelWip": {
-      "additionalProperties": false,
-      "properties": {
-        "count": {
-          "type": "integer"
-        },
-        "states": {
-          "additionalProperties": {
-            "type": "integer"
-          },
-          "type": "object"
-        }
-      },
-      "required": [
-        "count",
-        "states"
-      ],
-      "title": "LevelWip",
       "type": "object"
     },
     "Machine": {
@@ -4557,32 +3894,6 @@
         "count"
       ],
       "title": "Norm",
-      "type": "object"
-    },
-    "OrbitTerminal": {
-      "additionalProperties": false,
-      "properties": {
-        "ended": {
-          "type": "integer"
-        }
-      },
-      "required": [
-        "ended"
-      ],
-      "title": "OrbitTerminal",
-      "type": "object"
-    },
-    "OrbitWorking": {
-      "additionalProperties": false,
-      "properties": {
-        "task_s": {
-          "type": "number"
-        }
-      },
-      "required": [
-        "task_s"
-      ],
-      "title": "OrbitWorking",
       "type": "object"
     },
     "Outlier": {
@@ -6583,21 +5894,6 @@
           "default": null,
           "description": "A Backlog.md project found beside the config while the default board is shown, and how to switch to it."
         },
-        "insights": {
-          "anyOf": [
-            {
-              "items": {
-                "$ref": "#/$defs/Finding"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "The findings an engine posted that are still live."
-        },
         "machinePage": {
           "anyOf": [
             {
@@ -6743,34 +6039,6 @@
         "now"
       ],
       "title": "Snapshot",
-      "type": "object"
-    },
-    "SourceDwell": {
-      "additionalProperties": false,
-      "properties": {
-        "mean_s": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "task_s": {
-          "type": "number"
-        },
-        "visits": {
-          "type": "integer"
-        }
-      },
-      "required": [
-        "visits",
-        "task_s",
-        "mean_s"
-      ],
-      "title": "SourceDwell",
       "type": "object"
     },
     "StaleEdit": {
@@ -7518,7 +6786,7 @@
     },
     "Trajectories": {
       "additionalProperties": false,
-      "description": "`GET /api/level/trajectories`: the paths of the runs that ended in a terminal over a window.",
+      "description": "The trajectory analytics: the paths of the runs that ended in a terminal over a window.",
       "properties": {
         "betweenness": {
           "additionalProperties": {
@@ -7922,79 +7190,6 @@
       "title": "VerdictRequest",
       "type": "object"
     },
-    "WhatIf": {
-      "additionalProperties": false,
-      "description": "`GET /api/level/what-if`: the chain with one transition's probability changed, from the usual first state.",
-      "properties": {
-        "chain": {
-          "additionalProperties": {
-            "$ref": "#/$defs/ChainState"
-          },
-          "type": "object"
-        },
-        "ended": {
-          "type": "integer"
-        },
-        "expected_days": {
-          "$ref": "#/$defs/Change"
-        },
-        "from": {
-          "type": "string"
-        },
-        "goal": {
-          "type": "string"
-        },
-        "history_s": {
-          "type": "number"
-        },
-        "machine": {
-          "type": "string"
-        },
-        "n": {
-          "type": "integer"
-        },
-        "now": {
-          "type": "number"
-        },
-        "p": {
-          "type": "number"
-        },
-        "p_goal": {
-          "$ref": "#/$defs/Change"
-        },
-        "start": {
-          "type": "string"
-        },
-        "to": {
-          "type": "string"
-        },
-        "was": {
-          "type": "number"
-        },
-        "window_s": {
-          "type": "number"
-        }
-      },
-      "required": [
-        "now",
-        "window_s",
-        "history_s",
-        "machine",
-        "goal",
-        "ended",
-        "from",
-        "to",
-        "p",
-        "was",
-        "n",
-        "start",
-        "p_goal",
-        "expected_days",
-        "chain"
-      ],
-      "title": "WhatIf",
-      "type": "object"
-    },
     "WindowRequest": {
       "additionalProperties": false,
       "description": "`PUT /api/history-window`: set the shared history window.",
@@ -8141,12 +7336,6 @@
             "$ref": "#/$defs/Accepted"
           },
           {
-            "$ref": "#/$defs/InsightPosted"
-          },
-          {
-            "$ref": "#/$defs/InsightRetracted"
-          },
-          {
             "$ref": "#/$defs/ApiError"
           },
           {
@@ -8208,9 +7397,6 @@
             "$ref": "#/$defs/LedgersDelta"
           },
           {
-            "$ref": "#/$defs/InsightDelta"
-          },
-          {
             "$ref": "#/$defs/AutopilotStatus"
           }
         ]
@@ -8234,9 +7420,6 @@
     },
     "ledgerChange": {
       "$ref": "#/$defs/LedgerChange"
-    },
-    "level": {
-      "$ref": "#/$defs/Level"
     },
     "machineHistory": {
       "$ref": "#/$defs/MachineHistory"
@@ -8365,9 +7548,6 @@
     "transitions": {
       "$ref": "#/$defs/Transitions"
     },
-    "whatIf": {
-      "$ref": "#/$defs/WhatIf"
-    },
     "windowState": {
       "$ref": "#/$defs/WindowState"
     }
@@ -8395,9 +7575,7 @@
     "costToGo",
     "missedLoads",
     "traceClusters",
-    "level",
     "trajectories",
-    "whatIf",
     "harnesses",
     "windowState",
     "autopilotStatus",

@@ -134,10 +134,8 @@ day_rollups = Table(
     PrimaryKeyConstraint("day", "team", "machine", "state"),
 )
 
-#: The findings an engine posted through the insights API: one row per `id`, replaced by a re-post, and kept after a
-#: retraction (`retracted_at`) so the history shows what the engine said. An engine reads this table directly, so its
-#: columns are versioned with the package. A finding is live while `retracted_at` is null and `expires_at` is null or
-#: later than now.
+#: The findings an engine posted through the removed insights API, kept so an existing history keeps its rows; nothing
+#: reads or writes it now.
 insights = Table(
     "starpulse_insights",
     metadata,
