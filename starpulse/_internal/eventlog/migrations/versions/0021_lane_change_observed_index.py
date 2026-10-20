@@ -1,7 +1,6 @@
-"""SQLite's lane changes by when they were seen, which the insights read seeks; the hub reads them on Postgres.
+"""Lane changes by when they were seen, which the insights read seeks.
 
-The index is SQLite's alone: the hub's Postgres store answers the same read from `ix_starpulse_lane_changes_task` and
-its partitioned events, and the shared metadata does not declare it.
+The shared metadata does not declare the index; the chain alone makes it.
 
 Revision ID: 0021
 Revises: 0020
@@ -14,10 +13,8 @@ down_revision = "0020"
 
 
 def upgrade() -> None:
-    if op.get_bind().dialect.name == "sqlite":
-        op.create_index("ix_starpulse_lane_changes_observed", "starpulse_lane_changes", ["observed_at", "id"])
+    op.create_index("ix_starpulse_lane_changes_observed", "starpulse_lane_changes", ["observed_at", "id"])
 
 
 def downgrade() -> None:
-    if op.get_bind().dialect.name == "sqlite":
-        op.drop_index("ix_starpulse_lane_changes_observed", "starpulse_lane_changes")
+    op.drop_index("ix_starpulse_lane_changes_observed", "starpulse_lane_changes")

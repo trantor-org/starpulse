@@ -1,4 +1,4 @@
-"""Versions a store's schema by the Alembic chain in `migrations/`, on SQLite as on Postgres.
+"""Versions a store's schema by the Alembic chain in `migrations/`.
 
 A SQLite store is opened by many owners (the log, the history, the pulls and insights readers, each in its own thread
 or process), so the chain runs under SQLite's write lock: the first opener builds the schema and the rest find it done.

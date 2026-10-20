@@ -1,5 +1,5 @@
-"""A SQLite store is versioned by the same Alembic chain as the Postgres database: a fresh file is built by it, a
-store from before the chain is stamped and upgraded, and nothing but the chain changes its schema."""
+"""A SQLite store is versioned by the Alembic chain: a fresh file is built by it, a store from before the chain is
+stamped and upgraded, and nothing but the chain changes its schema."""
 
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -18,7 +18,8 @@ from starpulse._internal.eventlog.tables import VERSION_TABLE, checkpoints, day_
 from starpulse.tests.machines import MACHINES
 
 _MIGRATIONS = Path(history.__file__).parent / "migrations"
-#: Objects only one dialect carries: Postgres's rollups, SQLite's lane-change index.
+#: Objects the metadata and the chain disagree on: the shelved hub's rollups table, which no revision creates, and the
+#: lane-change index only the chain makes.
 _SQLITE_ONLY_INDEX = "ix_starpulse_lane_changes_observed"
 #: The index revision 0020 added to the declared schema, so the release before the chain had none.
 _RETIRED_AT_INDEX = "ix_starpulse_retired_tasks_retired_at"
