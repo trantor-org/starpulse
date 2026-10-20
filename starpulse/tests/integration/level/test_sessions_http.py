@@ -6,7 +6,6 @@ import urllib.error
 import urllib.request
 from collections.abc import Iterator
 from datetime import datetime
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -16,6 +15,7 @@ from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.harnesses.telemetry import Signal, TelemetryLog, signals
 from starpulse._internal.kit.adapter_kit import serve, url
+from starpulse._internal.server.page_server import PageServer
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.unit.harnesses.test_telemetry import FIXTURES
@@ -29,7 +29,7 @@ KEYS = TaskKeys(
 NOW = datetime.fromisoformat("2026-10-09T22:30:00+00:00").timestamp()
 
 
-def _get(server: ThreadingHTTPServer, query: str = "") -> tuple[int, dict]:
+def _get(server: PageServer, query: str = "") -> tuple[int, dict]:
     try:
         with urllib.request.urlopen(url(server, f"/api/analytics/sessions{query}"), timeout=5) as resp:
             return resp.status, json.loads(resp.read())
@@ -49,13 +49,13 @@ def telemetry(tmp_path: Path) -> TelemetryLog:
 
 
 @pytest.fixture
-def server(tmp_path: Path, telemetry: TelemetryLog) -> Iterator[ThreadingHTTPServer]:
+def server(tmp_path: Path, telemetry: TelemetryLog) -> Iterator[PageServer]:
     publish_recorded(telemetry)
     with serve(tmp_path, BoardFeed(machines=MACHINES, keys=KEYS), telemetry=telemetry, clock=lambda: NOW) as server:
         yield server
 
 
-def test_both_harnesses_sessions_are_served_with_the_slice_their_branch_names(server: ThreadingHTTPServer) -> None:
+def test_both_harnesses_sessions_are_served_with_the_slice_their_branch_names(server: PageServer) -> None:
     status, body = _get(server, "?hours=1.06")
 
     assert status == 200
@@ -69,7 +69,7 @@ def test_both_harnesses_sessions_are_served_with_the_slice_their_branch_names(se
 
 
 def test_the_window_defaults_to_a_week_which_a_short_history_refuses_and_leaves_out_what_happened_before_it(
-    server: ThreadingHTTPServer,
+    server: PageServer,
 ) -> None:
     week_status, week = _get(server)
     _, minutes = _get(server, "?hours=0.01")
@@ -79,7 +79,7 @@ def test_the_window_defaults_to_a_week_which_a_short_history_refuses_and_leaves_
 
 
 def test_a_signal_published_after_the_view_was_first_read_shows_in_the_next_read(
-    server: ThreadingHTTPServer, telemetry: TelemetryLog
+    server: PageServer, telemetry: TelemetryLog
 ) -> None:
     before = len(_get(server, "?hours=1.06")[1]["sessions"])
     payload = {
@@ -109,7 +109,7 @@ def test_a_signal_published_after_the_view_was_first_read_shows_in_the_next_read
     assert len(_get(server, "?hours=1.06")[1]["sessions"]) == before + 1
 
 
-def test_republishing_an_export_does_not_count_it_twice(server: ThreadingHTTPServer, telemetry: TelemetryLog) -> None:
+def test_republishing_an_export_does_not_count_it_twice(server: PageServer, telemetry: TelemetryLog) -> None:
     before = _get(server, "?hours=1.06")[1]
     publish_recorded(telemetry)
 
@@ -117,7 +117,7 @@ def test_republishing_an_export_does_not_count_it_twice(server: ThreadingHTTPSer
 
 
 @pytest.mark.parametrize("query", ["?hours=0", "?hours=-1", "?hours=soon", "?hours=nan", "?hours=inf"])
-def test_a_window_that_is_not_a_positive_number_is_refused(server: ThreadingHTTPServer, query: str) -> None:
+def test_a_window_that_is_not_a_positive_number_is_refused(server: PageServer, query: str) -> None:
     status, body = _get(server, query)
 
     assert (status, "positive number" in body["error"]) == (400, True)
@@ -148,7 +148,9 @@ def test_a_session_that_loaded_the_completion_skill_then_delivered_is_complete_b
     )
     declared = Analytics(completion_skill="completing-tasks")
 
-    with serve(tmp_path, BoardFeed(machines=MACHINES, keys=KEYS), telemetry=telemetry, analytics=declared, clock=lambda: NOW) as live:
+    with serve(
+        tmp_path, BoardFeed(machines=MACHINES, keys=KEYS), telemetry=telemetry, analytics=declared, clock=lambda: NOW
+    ) as live:
         _, body = _get(live, "?hours=1")
     with serve(tmp_path, BoardFeed(machines=MACHINES, keys=KEYS), telemetry=telemetry, clock=lambda: NOW) as bare:
         _, undeclared = _get(bare, "?hours=1")
@@ -160,10 +162,14 @@ def test_a_session_that_loaded_the_completion_skill_then_delivered_is_complete_b
 
 
 def test_a_window_longer_than_the_telemetry_history_is_refused_with_the_history_s_and_a_shorter_one_is_answered(
-    server: ThreadingHTTPServer,
+    server: PageServer,
 ) -> None:
     status, refused = _get(server, "?hours=24")
     shorter_status, history = _get(server, "?hours=0.5")
 
-    assert (status, 3000 < refused["history_s"] < 4 * 3600, "longer than the history" in refused["error"]) == (400, True, True)
+    assert (status, 3000 < refused["history_s"] < 4 * 3600, "longer than the history" in refused["error"]) == (
+        400,
+        True,
+        True,
+    )
     assert (shorter_status, history["window_s"]) == (200, 1800)

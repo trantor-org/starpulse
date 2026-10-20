@@ -35,7 +35,7 @@ def _serve(
     monkeypatch.setattr(service, "start_autopilot", lambda *args, **kwargs: threads.append("autopilot"))
     monkeypatch.setattr(server, "start_delivery", lambda *args, **kwargs: threads.append("delivery") or (None, None))
     handled: dict[str, object] = {}
-    monkeypatch.setattr(server, "request_handler", lambda *args, **kwargs: handled.update(kwargs, services=args[5]))
+    monkeypatch.setattr(server, "page_app", lambda *args, **kwargs: handled.update(kwargs, services=args[5]))
     config = tmp_path / "starpulse.toml"
     config.write_text(settings + BOARD)
 

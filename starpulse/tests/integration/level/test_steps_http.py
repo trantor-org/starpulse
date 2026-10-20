@@ -6,7 +6,6 @@ import urllib.error
 import urllib.request
 from collections.abc import Iterator
 from datetime import datetime
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -15,6 +14,7 @@ from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.harnesses.telemetry import TelemetryLog, signals
 from starpulse._internal.kit.adapter_kit import serve, url
+from starpulse._internal.server.page_server import PageServer
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.unit.harnesses.test_telemetry import FIXTURES
@@ -28,7 +28,7 @@ KEYS = TaskKeys(
 NOW = datetime.fromisoformat("2026-10-09T22:30:00+00:00").timestamp()
 
 
-def _get(server: ThreadingHTTPServer, query: str = "") -> tuple[int, dict]:
+def _get(server: PageServer, query: str = "") -> tuple[int, dict]:
     try:
         with urllib.request.urlopen(url(server, f"/api/analytics/steps{query}"), timeout=5) as resp:
             return resp.status, json.loads(resp.read())
@@ -37,7 +37,7 @@ def _get(server: ThreadingHTTPServer, query: str = "") -> tuple[int, dict]:
 
 
 @pytest.fixture
-def server(tmp_path: Path) -> Iterator[ThreadingHTTPServer]:
+def server(tmp_path: Path) -> Iterator[PageServer]:
     telemetry = TelemetryLog(EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}"))
     for name in ("claude_code/otlp.ndjson", "codex/otlp.ndjson"):
         for line in (FIXTURES / name).read_text().splitlines():
@@ -46,7 +46,7 @@ def server(tmp_path: Path) -> Iterator[ThreadingHTTPServer]:
         yield server
 
 
-def test_every_model_request_of_both_harnesses_is_a_step_oldest_first(server: ThreadingHTTPServer) -> None:
+def test_every_model_request_of_both_harnesses_is_a_step_oldest_first(server: PageServer) -> None:
     status, body = _get(server, "?hours=1.06")
 
     assert status == 200
@@ -70,7 +70,7 @@ def test_every_model_request_of_both_harnesses_is_a_step_oldest_first(server: Th
 
 
 def test_the_window_defaults_to_a_week_which_a_short_history_refuses_and_leaves_out_what_happened_before_it(
-    server: ThreadingHTTPServer,
+    server: PageServer,
 ) -> None:
     week_status, week = _get(server)
     _, minutes = _get(server, "?hours=0.01")
@@ -81,7 +81,7 @@ def test_the_window_defaults_to_a_week_which_a_short_history_refuses_and_leaves_
 
 
 @pytest.mark.parametrize("query", ["?hours=0", "?hours=-1", "?hours=soon", "?hours=nan", "?hours=inf"])
-def test_a_window_that_is_not_a_positive_number_is_refused(server: ThreadingHTTPServer, query: str) -> None:
+def test_a_window_that_is_not_a_positive_number_is_refused(server: PageServer, query: str) -> None:
     status, body = _get(server, query)
 
     assert (status, "positive number" in body["error"]) == (400, True)
@@ -95,10 +95,14 @@ def test_an_instance_that_receives_no_telemetry_cannot_report_steps(tmp_path: Pa
 
 
 def test_a_window_longer_than_the_telemetry_history_is_refused_with_the_history_s_and_a_shorter_one_is_answered(
-    server: ThreadingHTTPServer,
+    server: PageServer,
 ) -> None:
     status, refused = _get(server, "?hours=24")
     _, history = _get(server, "?hours=0.5")
 
-    assert (status, 3000 < refused["history_s"] < 4 * 3600, "longer than the history" in refused["error"]) == (400, True, True)
+    assert (status, 3000 < refused["history_s"] < 4 * 3600, "longer than the history" in refused["error"]) == (
+        400,
+        True,
+        True,
+    )
     assert history["window_s"] == 1800

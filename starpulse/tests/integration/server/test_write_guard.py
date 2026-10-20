@@ -5,21 +5,21 @@ import urllib.error
 import urllib.request
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from starpulse._internal.board.seam import Board, Written
-from starpulse._internal.server import server as server_module
+from starpulse._internal.eventlog.event_log import EventLog
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.feed.history_window import HistoryWindow
 from starpulse._internal.kit.adapter_kit import serve as _serve
 from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.kit.adapter_kit import url as _url
+from starpulse._internal.server import server as server_module
+from starpulse._internal.server.page_server import PageServer
 from starpulse.contracts.adapters import Move
-from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.feed.history_window import HistoryWindow
-from starpulse._internal.eventlog.event_log import EventLog
 
 _FOREIGN = "https://evil.example"
 #: Every route that writes, as (method, path, body): a refused request must reach none of their writers.
@@ -43,7 +43,7 @@ _WRITES = [
 
 
 def _send(
-    server: ThreadingHTTPServer, method: str, path: str, body: dict, headers: dict[str, str]
+    server: PageServer, method: str, path: str, body: dict, headers: dict[str, str]
 ) -> tuple[int, dict[str, Any]]:
     request = urllib.request.Request(_url(server, path), data=json.dumps(body).encode(), method=method)
     for name, value in headers.items():
@@ -56,7 +56,7 @@ def _send(
 
 
 @contextmanager
-def _recording(tmp_path: Path) -> Iterator[tuple[ThreadingHTTPServer, list[str], HistoryWindow]]:
+def _recording(tmp_path: Path) -> Iterator[tuple[PageServer, list[str], HistoryWindow]]:
     """A server whose every writer notes its name in the list, over one task a move may touch."""
     calls: list[str] = []
 

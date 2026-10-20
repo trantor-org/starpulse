@@ -6,7 +6,6 @@ import urllib.error
 import urllib.request
 from collections.abc import Iterator
 from datetime import datetime
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -16,6 +15,7 @@ from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.harnesses.telemetry import TelemetryLog, signals
 from starpulse._internal.kit.adapter_kit import serve, url
+from starpulse._internal.server.page_server import PageServer
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.unit.harnesses.test_telemetry import FIXTURES
@@ -30,7 +30,7 @@ NOW = datetime.fromisoformat("2026-10-09T22:30:00+00:00").timestamp()
 ROUTES = pytest.mark.parametrize("route", ["transitions", "cells", "graph", "diff", "stages"])
 
 
-def _get(server: ThreadingHTTPServer, route: str, query: str = "") -> tuple[int, dict]:
+def _get(server: PageServer, route: str, query: str = "") -> tuple[int, dict]:
     try:
         with urllib.request.urlopen(url(server, f"/api/analytics/{route}{query}"), timeout=5) as resp:
             return resp.status, json.loads(resp.read())
@@ -39,7 +39,7 @@ def _get(server: ThreadingHTTPServer, route: str, query: str = "") -> tuple[int,
 
 
 @pytest.fixture
-def server(tmp_path: Path) -> Iterator[ThreadingHTTPServer]:
+def server(tmp_path: Path) -> Iterator[PageServer]:
     telemetry = TelemetryLog(EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}"))
     for name in ("claude_code/otlp.ndjson", "codex/otlp.ndjson"):
         for line in (FIXTURES / name).read_text().splitlines():
@@ -49,23 +49,21 @@ def server(tmp_path: Path) -> Iterator[ThreadingHTTPServer]:
 
 
 @ROUTES
-def test_a_report_with_no_labelled_task_is_empty_inside_the_history(server: ThreadingHTTPServer, route: str) -> None:
+def test_a_report_with_no_labelled_task_is_empty_inside_the_history(server: PageServer, route: str) -> None:
     hours = 0.5 if route == "stages" else 1.06  # stages also reads the window before
     status, body = _get(server, route, f"?hours={hours}")
 
     assert (status, body) == (200, {"now": NOW, "window_s": hours * 3600, route: []})
 
 
-def test_the_stages_report_needs_the_history_to_hold_the_window_before_too(server: ThreadingHTTPServer) -> None:
+def test_the_stages_report_needs_the_history_to_hold_the_window_before_too(server: PageServer) -> None:
     status, body = _get(server, "stages", "?hours=1.06")
 
     assert (status, "longer than the history" in body["error"]) == (400, True)
 
 
 @ROUTES
-def test_a_window_past_the_history_or_that_is_no_positive_number_is_refused(
-    server: ThreadingHTTPServer, route: str
-) -> None:
+def test_a_window_past_the_history_or_that_is_no_positive_number_is_refused(server: PageServer, route: str) -> None:
     past, longer = _get(server, route, "?hours=24")
     bad, _ = _get(server, route, "?hours=0")
 
@@ -102,7 +100,7 @@ def test_cost_to_go_is_served_per_state_with_the_times_the_state_was_left(tmp_pa
     ]
 
 
-def test_cost_to_go_is_empty_inside_the_history_and_refused_past_it(server: ThreadingHTTPServer) -> None:
+def test_cost_to_go_is_empty_inside_the_history_and_refused_past_it(server: PageServer) -> None:
     inside = _get(server, "cost-to-go", "?hours=1.06")
     past = _get(server, "cost-to-go", "?hours=24")
 

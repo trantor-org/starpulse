@@ -3,20 +3,20 @@
 import json
 import re
 import urllib.request
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import serve, url
+from starpulse._internal.server.page_server import PageServer
 from starpulse.tests.machines import MACHINES
 
 
-def _metrics(server: ThreadingHTTPServer) -> list[str]:
+def _metrics(server: PageServer) -> list[str]:
     with urllib.request.urlopen(url(server, "/metrics"), timeout=5) as resp:
         return resp.read().decode().splitlines()
 
 
-def _build_event_id(server: ThreadingHTTPServer) -> str:
+def _build_event_id(server: PageServer) -> str:
     with urllib.request.urlopen(url(server, "/api/events"), timeout=5) as resp:
         frames = ""
         while "event: build" not in frames or frames.count("\n\n") < 2:

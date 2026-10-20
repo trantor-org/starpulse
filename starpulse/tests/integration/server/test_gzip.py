@@ -5,13 +5,13 @@ import json
 import urllib.request
 import zlib
 from http.client import HTTPResponse
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 
+from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import serve as _serve
 from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.kit.adapter_kit import url as _url
-from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.server.page_server import PageServer
 from starpulse.tests.machines import MACHINES
 
 GZIP = {"Accept-Encoding": "gzip"}
@@ -25,7 +25,7 @@ def _large_feed() -> BoardFeed:
     return feed
 
 
-def _get(server: ThreadingHTTPServer, path: str, headers: dict[str, str]) -> tuple[str | None, bytes]:
+def _get(server: PageServer, path: str, headers: dict[str, str]) -> tuple[str | None, bytes]:
     with urllib.request.urlopen(urllib.request.Request(_url(server, path), headers=headers), timeout=5) as resp:
         return resp.headers["Content-Encoding"], resp.read()
 
@@ -108,7 +108,7 @@ def test_the_stream_is_plain_for_a_page_that_does_not_accept_gzip(tmp_path: Path
     assert first == b"event: snapshot\n"
 
 
-def _snapshot_ref(server: ThreadingHTTPServer) -> str:
+def _snapshot_ref(server: PageServer) -> str:
     """The body route a page that asks for the snapshot by reference reads it from."""
     with urllib.request.urlopen(_url(server, "/api/events?snapshot=ref"), timeout=5) as resp:
         frame = resp.readline() + resp.readline()

@@ -4,7 +4,6 @@ import json
 import shutil
 import urllib.error
 import urllib.request
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
@@ -13,11 +12,12 @@ from pydantic import TypeAdapter
 
 from starpulse._internal.board import native
 from starpulse._internal.board.seam import Board
-from starpulse._internal.kit.adapter_kit import serve, url
-from starpulse._internal.server.writes import create_milestone
 from starpulse._internal.cli import agent_cli as cli
-from starpulse.contracts.api.registry import RESPONSES
 from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.kit.adapter_kit import serve, url
+from starpulse._internal.server.page_server import PageServer
+from starpulse._internal.server.writes import create_milestone
+from starpulse.contracts.api.registry import RESPONSES
 
 FIXTURE = Path(__file__).resolve().parent.parent.parent / "fixtures" / "native_board" / "milestones"
 REAL = "m-106 - starpulse-gitlink-promotes-one-green-sha.md"
@@ -172,7 +172,7 @@ def test_native_milestone_archive_moves_the_file_under_archive_and_off_the_list(
     assert not built.archive_milestone("m-106").ok
 
 
-def _call(server: ThreadingHTTPServer, route: str, body: dict | None = None) -> tuple[int, Any]:
+def _call(server: PageServer, route: str, body: dict | None = None) -> tuple[int, Any]:
     request = urllib.request.Request(
         url(server, route),
         data=None if body is None else json.dumps(body).encode(),
@@ -247,7 +247,7 @@ def test_native_milestone_add_from_outside_the_lan_is_refused_and_writes_nothing
     assert [path.name for path in milestones.iterdir()] == [REAL]
 
 
-def _verb(capsys: pytest.CaptureFixture[str], server: ThreadingHTTPServer, *argv: str) -> tuple[int, Any]:
+def _verb(capsys: pytest.CaptureFixture[str], server: PageServer, *argv: str) -> tuple[int, Any]:
     code = cli.main([*argv, "--server", f"http://127.0.0.1:{server.server_port}"], {})
     out = capsys.readouterr()
     assert out.err == ""

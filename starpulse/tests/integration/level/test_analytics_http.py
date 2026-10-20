@@ -6,7 +6,6 @@ import urllib.error
 import urllib.request
 from collections.abc import Iterator
 from datetime import UTC, datetime
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +16,7 @@ from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.harnesses.telemetry import TelemetryLog, signals
 from starpulse._internal.kit.adapter_kit import serve, url
+from starpulse._internal.server.page_server import PageServer
 from starpulse.contracts.adapters import BoardTask, TaskKeys
 from starpulse.tests.machines import MACHINES
 
@@ -47,7 +47,9 @@ def export(n: int, work: list[tuple[str, dict[str, Any]]], skills: tuple[str, ..
     """One headless Claude Code session that worked TASK-`n`: a prompt, the delivery every task does, then `work`."""
     records, at = [], NOW - 3600 + n
     events = [("user_prompt", {})]
-    events += [("tool_result", {"tool_name": t, "tool_input": json.dumps(i), "success": "true"}) for t, i in DELIVERY + work]
+    events += [
+        ("tool_result", {"tool_name": t, "tool_input": json.dumps(i), "success": "true"}) for t, i in DELIVERY + work
+    ]
     events += [("skill_activated", {"skill.name": s}) for s in skills]
     for sequence, (name, attributes) in enumerate(events):
         stamp = datetime.fromtimestamp(at + sequence, UTC).isoformat().replace("+00:00", "Z")
@@ -66,8 +68,11 @@ def export(n: int, work: list[tuple[str, dict[str, Any]]], skills: tuple[str, ..
 def corpus() -> list[dict]:
     """Sixty sessions: six that queried and one that loaded a skill, six that reached unraid, and the rest delivery."""
     obs = [
-        export(n, [("Bash", {"command": "bin/obs.py query up | head"}), ("Bash", {"command": "psql -c 'select 1'"})],
-               ("querying-observability",) if n == 0 else ())
+        export(
+            n,
+            [("Bash", {"command": "bin/obs.py query up | head"}), ("Bash", {"command": "psql -c 'select 1'"})],
+            ("querying-observability",) if n == 0 else (),
+        )
         for n in range(6)
     ]
     unraid = [
@@ -77,7 +82,7 @@ def corpus() -> list[dict]:
     return [*obs, *unraid, *(export(n, [], ("starting-tasks",)) for n in range(12, 60))]
 
 
-def _get(server: ThreadingHTTPServer, path: str) -> tuple[int, dict]:
+def _get(server: PageServer, path: str) -> tuple[int, dict]:
     try:
         with urllib.request.urlopen(url(server, path), timeout=5) as resp:
             return resp.status, json.loads(resp.read())
@@ -86,20 +91,26 @@ def _get(server: ThreadingHTTPServer, path: str) -> tuple[int, dict]:
 
 
 @pytest.fixture(scope="module")
-def server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[ThreadingHTTPServer]:
+def server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[PageServer]:
     """One server for the module: every case only reads it."""
     tmp_path = tmp_path_factory.mktemp("server")
     telemetry = TelemetryLog(EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}"))
     for payload in corpus():
         telemetry.publish(signals(payload))
     feed = BoardFeed(machines=MACHINES, keys=KEYS)
-    feed.put(BoardTask(id="TASK-20", team="demo", title="Verify the thing", lane="done", labels=[], settled="completed"))
-    feed.put(BoardTask(id="TASK-21", team="demo", title="Check nothing", lane="done", labels=["validation"], settled="completed"))
+    feed.put(
+        BoardTask(id="TASK-20", team="demo", title="Verify the thing", lane="done", labels=[], settled="completed")
+    )
+    feed.put(
+        BoardTask(
+            id="TASK-21", team="demo", title="Check nothing", lane="done", labels=["validation"], settled="completed"
+        )
+    )
     with serve(tmp_path, feed, telemetry=telemetry, clock=lambda: NOW, analytics=ANALYTICS) as server:
         yield server
 
 
-def test_a_skills_trigger_run_without_loading_it_is_a_missed_load(server: ThreadingHTTPServer) -> None:
+def test_a_skills_trigger_run_without_loading_it_is_a_missed_load(server: PageServer) -> None:
     status, body = _get(server, "/api/analytics/missed-loads?hours=1")
 
     assert status == 200
@@ -111,14 +122,14 @@ def test_a_skills_trigger_run_without_loading_it_is_a_missed_load(server: Thread
     assert (body["now"], body["window_s"]) == (NOW, 3600)
 
 
-def test_missed_loads_can_be_narrowed_to_a_skill_and_a_list_length(server: ThreadingHTTPServer) -> None:
+def test_missed_loads_can_be_narrowed_to_a_skill_and_a_list_length(server: PageServer) -> None:
     _, body = _get(server, "/api/analytics/missed-loads?skill=operating-unraid&list=2&hours=1")
 
     (found,) = body["skills"]
     assert (found["skill"], found["missed"], len(found["listed"])) == ("operating-unraid", 5, 2)
 
 
-def test_recurring_work_is_a_trace_cluster_with_its_skills_and_what_it_missed(server: ThreadingHTTPServer) -> None:
+def test_recurring_work_is_a_trace_cluster_with_its_skills_and_what_it_missed(server: PageServer) -> None:
     status, body = _get(server, "/api/analytics/trace-clusters?hours=1&min_sessions=5")
 
     assert status == 200
@@ -132,7 +143,7 @@ def test_recurring_work_is_a_trace_cluster_with_its_skills_and_what_it_missed(se
     assert obs["medoid"] is None and unraid["outliers"] == []
 
 
-def test_outliers_name_the_medoid_and_each_cases_edits_from_it(server: ThreadingHTTPServer) -> None:
+def test_outliers_name_the_medoid_and_each_cases_edits_from_it(server: PageServer) -> None:
     _, body = _get(server, "/api/analytics/trace-clusters?outliers=2&hours=1")
 
     unraid = body["clusters"][1]
@@ -140,7 +151,7 @@ def test_outliers_name_the_medoid_and_each_cases_edits_from_it(server: Threading
     assert [o["distance"] for o in unraid["outliers"]] == [0.0, 0.0]
 
 
-def test_min_sessions_leaves_out_the_smaller_clusters(server: ThreadingHTTPServer) -> None:
+def test_min_sessions_leaves_out_the_smaller_clusters(server: PageServer) -> None:
     _, body = _get(server, "/api/analytics/trace-clusters?min_sessions=7&hours=1")
 
     assert body["clusters"] == []
@@ -148,9 +159,18 @@ def test_min_sessions_leaves_out_the_smaller_clusters(server: ThreadingHTTPServe
 
 @pytest.mark.parametrize(
     "query",
-    ["hours=0", "hours=soon", "threshold=0", "threshold=2.5", "min_sessions=0", "outliers=-1", "outliers=x", "new_hours=0"],
+    [
+        "hours=0",
+        "hours=soon",
+        "threshold=0",
+        "threshold=2.5",
+        "min_sessions=0",
+        "outliers=-1",
+        "outliers=x",
+        "new_hours=0",
+    ],
 )
-def test_a_number_out_of_range_is_refused(server: ThreadingHTTPServer, query: str) -> None:
+def test_a_number_out_of_range_is_refused(server: PageServer, query: str) -> None:
     status, body = _get(server, f"/api/analytics/trace-clusters?{query}")
 
     assert (status, "error" in body) == (400, True)
@@ -166,10 +186,14 @@ def test_an_instance_that_receives_no_telemetry_cannot_report_them(tmp_path: Pat
 
 @pytest.mark.parametrize("path", ["/api/analytics/missed-loads", "/api/analytics/trace-clusters"])
 def test_a_window_longer_than_the_telemetry_history_is_refused_with_the_history_s_and_a_shorter_one_is_answered(
-    server: ThreadingHTTPServer, path: str
+    server: PageServer, path: str
 ) -> None:
     status, refused = _get(server, f"{path}?hours=24")
     shorter_status, history = _get(server, f"{path}?hours=0.5")
 
-    assert (status, 3000 < refused["history_s"] < 4 * 3600, "longer than the history" in refused["error"]) == (400, True, True)
+    assert (status, 3000 < refused["history_s"] < 4 * 3600, "longer than the history" in refused["error"]) == (
+        400,
+        True,
+        True,
+    )
     assert (shorter_status, history["window_s"]) == (200, 1800)

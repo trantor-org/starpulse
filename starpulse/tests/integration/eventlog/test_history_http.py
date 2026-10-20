@@ -4,18 +4,18 @@ import json
 import urllib.error
 import urllib.request
 from collections.abc import Iterator
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
 
-from starpulse._internal.kit.adapter_kit import serve, url
-from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.eventlog.history import HistoryStore
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.kit.adapter_kit import serve, url
+from starpulse._internal.server.page_server import PageServer
 from starpulse.tests.machines import MACHINES
 
 
-def _get(server: ThreadingHTTPServer, query: str) -> tuple[int, dict]:
+def _get(server: PageServer, query: str) -> tuple[int, dict]:
     try:
         with urllib.request.urlopen(url(server, f"/api/history{query}"), timeout=5) as resp:
             return resp.status, json.loads(resp.read())
@@ -24,7 +24,7 @@ def _get(server: ThreadingHTTPServer, query: str) -> tuple[int, dict]:
 
 
 @pytest.fixture
-def server(tmp_path: Path) -> Iterator[ThreadingHTTPServer]:
+def server(tmp_path: Path) -> Iterator[PageServer]:
     """A server whose history is a SQLite file beside its config."""
     store = HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", MACHINES)
     for i, event in enumerate(["WORKTREE_READY", "RED_PROVEN"]):
@@ -41,7 +41,7 @@ def server(tmp_path: Path) -> Iterator[ThreadingHTTPServer]:
         yield server
 
 
-def test_a_task_answers_its_lane_changes(server: ThreadingHTTPServer) -> None:
+def test_a_task_answers_its_lane_changes(server: PageServer) -> None:
     assert _get(server, "?task=PROJ-7") == (
         200,
         {
@@ -51,7 +51,7 @@ def test_a_task_answers_its_lane_changes(server: ThreadingHTTPServer) -> None:
     )
 
 
-def test_a_task_and_flow_answer_that_machines_path_with_its_step_total(server: ThreadingHTTPServer) -> None:
+def test_a_task_and_flow_answer_that_machines_path_with_its_step_total(server: PageServer) -> None:
     assert _get(server, "?task=PROJ-7&flow=in-progress") == (
         200,
         {
@@ -66,7 +66,7 @@ def test_a_task_and_flow_answer_that_machines_path_with_its_step_total(server: T
     )
 
 
-def test_an_unknown_task_answers_an_empty_path(server: ThreadingHTTPServer) -> None:
+def test_an_unknown_task_answers_an_empty_path(server: PageServer) -> None:
     assert _get(server, "?task=PROJ-404") == (200, {"task": "PROJ-404", "path": []})
     assert _get(server, "?task=PROJ-404&flow=in-progress") == (
         200,
@@ -74,11 +74,11 @@ def test_an_unknown_task_answers_an_empty_path(server: ThreadingHTTPServer) -> N
     )
 
 
-def test_a_request_without_a_task_is_refused(server: ThreadingHTTPServer) -> None:
+def test_a_request_without_a_task_is_refused(server: PageServer) -> None:
     refused = (400, {"error": "history needs ?task=TASK-N"})
 
     assert [_get(server, query) for query in ("", "?flow=in-progress", "?task=")] == [refused] * 3
 
 
-def test_an_unknown_flow_is_not_found(server: ThreadingHTTPServer) -> None:
+def test_an_unknown_flow_is_not_found(server: PageServer) -> None:
     assert _get(server, "?task=PROJ-7&flow=nope") == (404, {"error": "unknown flow nope"})

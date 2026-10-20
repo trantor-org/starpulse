@@ -8,7 +8,6 @@ import urllib.error
 import urllib.request
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -17,6 +16,7 @@ from sqlalchemy import create_engine
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import serve, url
 from starpulse._internal.pulls.pulls import PullStore
+from starpulse._internal.server.page_server import PageServer
 from starpulse.tests.machines import MACHINES
 
 
@@ -42,7 +42,7 @@ def _pull(repo: str, number: int, state: str, body: str, fetched: float) -> dict
     }
 
 
-def _get(server: ThreadingHTTPServer, query: str) -> tuple[int, dict]:
+def _get(server: PageServer, query: str) -> tuple[int, dict]:
     try:
         with urllib.request.urlopen(url(server, f"/api/pulls{query}"), timeout=5) as resp:
             return resp.status, json.loads(resp.read())
@@ -50,14 +50,14 @@ def _get(server: ThreadingHTTPServer, query: str) -> tuple[int, dict]:
         return exc.code, json.loads(exc.read())
 
 
-def _numbers(server: ThreadingHTTPServer, query: str) -> list[tuple[str, int]]:
+def _numbers(server: PageServer, query: str) -> list[tuple[str, int]]:
     status, body = _get(server, query)
     assert status == 200
     return [(pull["repo"], pull["number"]) for pull in body["pulls"]]
 
 
 @pytest.fixture
-def server(tmp_path: Path) -> Iterator[ThreadingHTTPServer]:
+def server(tmp_path: Path) -> Iterator[PageServer]:
     store = PullStore(create_engine(f"sqlite:///{tmp_path / 'pulls.sqlite'}"))
     store.save(
         [
@@ -70,7 +70,7 @@ def server(tmp_path: Path) -> Iterator[ThreadingHTTPServer]:
         yield server
 
 
-def test_no_filter_answers_every_record_with_its_fetched_at(server: ThreadingHTTPServer) -> None:
+def test_no_filter_answers_every_record_with_its_fetched_at(server: PageServer) -> None:
     status, body = _get(server, "")
 
     assert status == 200
@@ -96,13 +96,13 @@ def test_no_filter_answers_every_record_with_its_fetched_at(server: ThreadingHTT
     ],
 )
 def test_each_filter_narrows_the_records_and_they_combine(
-    server: ThreadingHTTPServer, query: str, expected: list[tuple[str, int]]
+    server: PageServer, query: str, expected: list[tuple[str, int]]
 ) -> None:
     assert _numbers(server, query) == expected
 
 
 @pytest.mark.parametrize("query", ["?number=one", "?state=DRAFT"])
-def test_a_filter_that_cannot_match_is_refused(server: ThreadingHTTPServer, query: str) -> None:
+def test_a_filter_that_cannot_match_is_refused(server: PageServer, query: str) -> None:
     status, body = _get(server, query)
 
     assert status == 400

@@ -1,5 +1,5 @@
-"""The write routes as request-in, response-out handlers: no socket, no `http.server`, so the threaded server and an ASGI
-app call the same ones."""
+"""The write routes as request-in, response-out handlers: no socket and no web framework, so the ASGI app (and any
+other front) calls the same ones."""
 
 from __future__ import annotations
 

@@ -5,17 +5,16 @@ from __future__ import annotations
 
 import itertools
 import json
-import threading
 import urllib.error
 import urllib.request
 from collections.abc import Iterator
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import demo_workspace
 import pytest
 import seeded_server
 from starpulse._internal.eventlog.history import HistoryStore
+from starpulse._internal.server.page_server import PageServer
 from starpulse.tests.summaries import assert_matches_rebuild
 
 # Each test starts the seeded server, a budget-sized start; they run in the nightly only.
@@ -25,17 +24,17 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture(scope="module")
-def seeded(tmp_path_factory: pytest.TempPathFactory) -> Iterator[ThreadingHTTPServer]:
+def seeded(tmp_path_factory: pytest.TempPathFactory) -> Iterator[PageServer]:
     # `ci/preview.toml` names its board `ci.demo_workspace`, which needs the repository root on the import path
     with pytest.MonkeyPatch.context() as patch:
         patch.syspath_prepend(str(ROOT))
         server = seeded_server.serve(0, tmp_path_factory.mktemp("gate"))
-    threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
+    server.start()
     yield server
-    server.shutdown()
+    server.close()
 
 
-def _get(server: ThreadingHTTPServer, path: str) -> tuple[int, dict]:
+def _get(server: PageServer, path: str) -> tuple[int, dict]:
     try:
         with urllib.request.urlopen(f"http://127.0.0.1:{server.server_port}{path}", timeout=30) as resp:
             return resp.status, json.loads(resp.read())
@@ -43,7 +42,7 @@ def _get(server: ThreadingHTTPServer, path: str) -> tuple[int, dict]:
         return exc.code, json.loads(exc.read())
 
 
-def test_the_seeded_server_holds_a_kanban_a_task_record_and_its_history(seeded: ThreadingHTTPServer) -> None:
+def test_the_seeded_server_holds_a_kanban_a_task_record_and_its_history(seeded: PageServer) -> None:
     status, snapshot = _get(seeded, "/api/snapshot")
     board = next(flow for flow in snapshot["flows"] if flow["name"] == "board" or flow.get("id") == "board")
     task = board["agents"][0]["id"]
@@ -53,14 +52,14 @@ def test_the_seeded_server_holds_a_kanban_a_task_record_and_its_history(seeded: 
     assert len(_get(seeded, f"/api/history?task={task}")[1]["path"]) >= 1
 
 
-def test_the_seeded_server_answers_the_level_routes_a_hubless_preview_cannot(seeded: ThreadingHTTPServer) -> None:
+def test_the_seeded_server_answers_the_level_routes_a_hubless_preview_cannot(seeded: PageServer) -> None:
     for route in ("/api/level", "/api/level/trajectories"):
         assert _get(seeded, f"{route}?hours=168")[0] == 200, route
     assert _get(seeded, "/api/level/what-if?hours=168&from=in_progress&to=review&p=0.5")[0] == 200
 
 
 def test_the_seeded_server_answers_the_autopilot_milestone_and_doc_routes_with_records(
-    seeded: ThreadingHTTPServer,
+    seeded: PageServer,
 ) -> None:
     status, autopilot = _get(seeded, "/api/autopilot")
     assert status == 200 and autopilot["dimensions"], autopilot
@@ -86,7 +85,7 @@ def test_the_seeded_history_holds_every_lane_each_task_passed_through_with_summa
     now = 1_800_000_000.0
     monkeypatch.syspath_prepend(str(ROOT))
     server, feed, tasks = seeded_server.build(0, tmp_path, now=now)
-    server.server_close()
+    server.socket.close()
     store = HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", feed.machines)
 
     assert_matches_rebuild(store)

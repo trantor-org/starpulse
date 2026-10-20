@@ -41,15 +41,26 @@ The adopted socket's backlog and options stay as the manager set them, `--host` 
 startup line and the board's instance name (`starpulse-<port>`) name the socket's port. A `.socket` unit's
 `ListenStream=` sets that address; `Accept=no` (the default) hands the server the listening socket itself.
 
-Each accepted request runs on a pooled worker thread (up to the listen backlog of 128) with a 256 KiB C stack
-(`REQUEST_STACK` in the server). The stdlib default of 8 MiB, and a new thread per request, is not returned on the
-free-threaded CPython build after the thread exits, so a crowd of pages would leave that RSS behind; 256 KiB still
-encodes a 1 MB snapshot, and later requests reuse the same workers. A 50-viewer Locust crowd therefore occupies 50 of
-those workers, not one abandoned heap per request.
+The page is a Starlette ASGI app (`PageApp`) served by Hypercorn on one socket, on its own thread. The plain port
+answers HTTP/1.1, and HTTP/2 to a client that opens with the HTTP/2 preface (prior knowledge, `curl
+--http2-prior-knowledge`); a TLS port negotiates `h2` or `http/1.1` through ALPN. HTTP/3 is not served.
+
+The handlers are blocking, so each request runs on a pooled worker thread (`REQUEST_THREADS`, 128, the listen backlog)
+and a crowd of pages queues for a worker rather than starting a thread each. The pooled workers keep the default thread
+stack size, where the previous server gave them 256 KiB: the free-threaded build's RSS check (`test_crowd_rss.py`) runs
+only on 3.14t.
 
 An event stream (`/api/events`, `/api/lanes`, `/api/held`) leaves that pool for as long as it stays open and is counted
-against `stream_limit` (256 on `StarPulseServer`) instead, so a crowd of long-lived streams never takes the worker a
-short request needs. A stream past the limit gets `503` with `Retry-After: 5` and the client reconnects.
+against `STREAM_LIMIT` (256) instead, so a crowd of long-lived streams never takes the worker a short request needs. A
+stream past the limit gets `503` with `Retry-After: 5` and the client reconnects.
+
+A request answered without reading its body, such as a push refused for its size or sent to a route that does not exist,
+has the rest of the body read and discarded as the response starts, so a stop is never held by a client still sending.
+Every method reaches the sign-in gate first; one the server does not serve (`PATCH`, `OPTIONS`, `TRACE`) is then
+answered `501`.
+
+A stopping server first tells the feed it is restarting, ends every open stream, waits up to 8 s (`DRAIN_S`) for the
+requests it took and closes.
 
 ### Worker processes
 

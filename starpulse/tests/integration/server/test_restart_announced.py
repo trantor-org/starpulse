@@ -1,15 +1,12 @@
 """What /api/events tells a page about the server's page build and its restart, so the page can say what its connection is doing."""
 
-import os
-import signal
-import threading
+import time
 import urllib.request
 from http.client import HTTPResponse
 from pathlib import Path
 
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import next_event, serve, task, url
-from starpulse._internal.server.server import serve_until_stopped
 from starpulse.tests.machines import MACHINES
 
 
@@ -37,27 +34,12 @@ def test_each_stream_names_the_page_build_right_after_its_snapshot(tmp_path: Pat
 def test_a_rebuilt_page_is_named_by_a_different_build(tmp_path: Path) -> None:
     with serve(tmp_path, BoardFeed(machines=MACHINES)) as server:
         before = _build_of(server)
-        (tmp_path / "static" / "index.html").write_text('<!doctype html><script src="/assets/index-def456.js"></script>')
+        (tmp_path / "static" / "index.html").write_text(
+            '<!doctype html><script src="/assets/index-def456.js"></script>'
+        )
         after = _build_of(server)
 
     assert before != after
-
-
-class _SignalledServer:
-    """A server that runs until its own SIGTERM ends it."""
-
-    def __init__(self) -> None:
-        self._stopped = threading.Event()
-
-    def serve_forever(self, poll_interval: float = 0.5) -> None:
-        os.kill(os.getpid(), signal.SIGTERM)
-        assert self._stopped.wait(5), "SIGTERM did not stop the server"
-
-    def shutdown(self) -> None:
-        self._stopped.set()
-
-    def drain(self, timeout: float) -> bool:
-        return True
 
 
 def test_sigterm_tells_every_open_stream_the_server_is_restarting_before_the_process_exits(tmp_path: Path) -> None:
@@ -67,11 +49,9 @@ def test_sigterm_tells_every_open_stream_the_server_is_restarting_before_the_pro
         for resp in (one, two):
             assert next_event(resp, connection=True)[0] == "snapshot"
             assert next_event(resp, connection=True)[0] == "build"
-        before = signal.getsignal(signal.SIGTERM)
-        try:
-            serve_until_stopped(_SignalledServer(), feed)  # type: ignore[arg-type]
-        finally:
-            signal.signal(signal.SIGTERM, before)
+        server.stopping = lambda: feed.announce("restarting", {"at": time.time()})
+        server.stop()
+        server.join()
 
         # the frame is already in each socket: the server waited for every stream to write it before it let go
         assert [next_event(resp, connection=True)[0] for resp in (one, two)] == ["restarting", "restarting"]

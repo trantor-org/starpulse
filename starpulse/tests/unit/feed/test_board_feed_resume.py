@@ -3,19 +3,17 @@
 from __future__ import annotations
 
 import logging
-import os
-import signal
 import threading
 from pathlib import Path
 
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from starpulse._internal.server.server import serve_until_stopped
-from starpulse.contracts.adapters import BoardTask
+from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.feed.snapshot import BoardSnapshot
-from starpulse._internal.eventlog.event_log import EventLog
+from starpulse._internal.server.server import serve_until_stopped
+from starpulse.contracts.adapters import BoardTask
 
 STREAM = "board:tasks"
 
@@ -267,60 +265,18 @@ def test_a_saved_board_of_another_schema_version_is_replayed(
 
 
 class _Server:
-    """A server that runs until a signal ends it."""
+    """A server that has served until it was stopped."""
 
-    def __init__(self) -> None:
-        self._stopped = threading.Event()
-
-    def serve_forever(self, poll_interval: float = 0.5) -> None:
-        os.kill(os.getpid(), signal.SIGTERM)
-        assert self._stopped.wait(5), "SIGTERM did not stop the server"
-
-    def shutdown(self) -> None:
-        self._stopped.set()
-
-    def drain(self, timeout: float) -> bool:
-        return True
-
-
-class _InterruptedServer:
-    """A server stopped from its controlling terminal."""
-
-    def serve_forever(self, poll_interval: float = 0.5) -> None:
-        raise KeyboardInterrupt
-
-    def drain(self, timeout: float) -> bool:
-        return True
+    def run(self) -> None:
+        pass
 
 
 def test_a_stopped_server_saves_the_board_before_it_exits() -> None:
     store = _Store()
     feed = _feed_with_tasks()
     feed.resume(store, STREAM, lambda cursor: False)
-    before = signal.getsignal(signal.SIGTERM)
-    try:
-        serve_until_stopped(_Server(), feed)  # type: ignore[arg-type]
-    finally:
-        signal.signal(signal.SIGTERM, before)
+    serve_until_stopped(_Server(), feed)  # type: ignore[arg-type]
 
-    assert store.saved[STREAM][0] == 7
-
-
-def test_ctrl_c_stops_cleanly_and_saves_the_board() -> None:
-    store = _Store()
-    feed = _feed_with_tasks()
-    feed.resume(store, STREAM, lambda cursor: False)
-    before = signal.getsignal(signal.SIGTERM)
-    interrupted = False
-    try:
-        try:
-            serve_until_stopped(_InterruptedServer(), feed)  # type: ignore[arg-type]
-        except KeyboardInterrupt:
-            interrupted = True
-    finally:
-        signal.signal(signal.SIGTERM, before)
-
-    assert interrupted is False
     assert store.saved[STREAM][0] == 7
 
 

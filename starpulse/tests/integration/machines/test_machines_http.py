@@ -4,13 +4,13 @@ import json
 import urllib.error
 import urllib.request
 from collections.abc import Iterator
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
 
-from starpulse._internal.kit.adapter_kit import serve, url
 from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.kit.adapter_kit import serve, url
+from starpulse._internal.server.page_server import PageServer
 
 NOW = 1_000_000.0
 IP = "delivery"
@@ -40,7 +40,7 @@ def _session(task: str, state: str, ago: float, sid: str | None = None) -> dict:
     }
 
 
-def _get(server: ThreadingHTTPServer, query: str) -> tuple[int, dict]:
+def _get(server: PageServer, query: str) -> tuple[int, dict]:
     try:
         with urllib.request.urlopen(url(server, f"/api/machines{query}"), timeout=5) as resp:
             return resp.status, json.loads(resp.read())
@@ -49,7 +49,7 @@ def _get(server: ThreadingHTTPServer, query: str) -> tuple[int, dict]:
 
 
 @pytest.fixture
-def server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[ThreadingHTTPServer]:
+def server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[PageServer]:
     """Five machines entered from `delivery`, `m1` the newest and `m4` and `m5` tied, and `inner` entered from `m1`."""
     monkeypatch.setattr("starpulse._internal.feed.board_feed.time.time", lambda: NOW)
     link = {"state": "s", "flow": IP, "exits": {}, "parent": "board", "when": ""}
@@ -69,7 +69,7 @@ def server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Threadin
         yield server
 
 
-def _walk(server: ThreadingHTTPServer, limit: int, open_: str = IP) -> list[list[str]]:
+def _walk(server: PageServer, limit: int, open_: str = IP) -> list[list[str]]:
     pages: list[list[str]] = []
     query = f"?open={open_}&limit={limit}"
     while True:
@@ -81,17 +81,17 @@ def _walk(server: ThreadingHTTPServer, limit: int, open_: str = IP) -> list[list
         query = f"?open={open_}&limit={limit}&before={body['machines'][-1]['last']}"
 
 
-def test_pages_cover_the_rows_newest_activity_first_with_no_overlap_or_gap(server: ThreadingHTTPServer) -> None:
+def test_pages_cover_the_rows_newest_activity_first_with_no_overlap_or_gap(server: PageServer) -> None:
     assert _walk(server, 1) == [["m1"], ["m2"], ["m3"], ["m4", "m5"]]
 
 
 def test_machines_sharing_the_boundary_activity_come_in_one_page_so_a_cursor_neither_repeats_nor_skips(
-    server: ThreadingHTTPServer,
+    server: PageServer,
 ) -> None:
     assert _walk(server, 2) == [["m1", "m2"], ["m3", "m4", "m5"]]
 
 
-def test_the_open_machine_chooses_the_level_and_a_page_holds_each_machine_whole(server: ThreadingHTTPServer) -> None:
+def test_the_open_machine_chooses_the_level_and_a_page_holds_each_machine_whole(server: PageServer) -> None:
     status, body = _get(server, "?open=m1")
 
     assert status == 200
@@ -101,13 +101,13 @@ def test_the_open_machine_chooses_the_level_and_a_page_holds_each_machine_whole(
     assert body["more"] is False
 
 
-def test_open_left_out_is_the_in_progress_machine(server: ThreadingHTTPServer) -> None:
+def test_open_left_out_is_the_in_progress_machine(server: PageServer) -> None:
     status, body = _get(server, "")
 
     assert (status, body["open"]) == (200, IP)
 
 
-def test_an_unknown_open_machine_is_404(server: ThreadingHTTPServer) -> None:
+def test_an_unknown_open_machine_is_404(server: PageServer) -> None:
     status, body = _get(server, "?open=nope")
 
     assert status == 404
@@ -115,5 +115,5 @@ def test_an_unknown_open_machine_is_404(server: ThreadingHTTPServer) -> None:
 
 
 @pytest.mark.parametrize("query", ["?before=soon", "?limit=two", "?limit=0", "?limit=101", "?before=nan"])
-def test_a_malformed_cursor_or_limit_is_400(server: ThreadingHTTPServer, query: str) -> None:
+def test_a_malformed_cursor_or_limit_is_400(server: PageServer, query: str) -> None:
     assert _get(server, query)[0] == 400

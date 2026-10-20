@@ -9,7 +9,6 @@ import urllib.error
 import urllib.request
 from collections.abc import Iterator
 from datetime import UTC, datetime
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +25,7 @@ from starpulse._internal.machines.transitions import board_machine
 from starpulse._internal.runs.cloudevents import BATCH, MAX_DATA, SINGLE, CloudEventsIngest
 from starpulse._internal.runs.ingest import MAX_BATCH_BODY
 from starpulse._internal.runs.ingest import tokens as ingest_tokens
+from starpulse._internal.server.page_server import PageServer
 
 DELIVERY = """\
 name: delivery
@@ -65,7 +65,7 @@ def cloudevent(id: str = "e1", **attributes: Any) -> dict[str, Any]:
 
 
 class Stack:
-    def __init__(self, server: ThreadingHTTPServer, log: EventLog) -> None:
+    def __init__(self, server: PageServer, log: EventLog) -> None:
         self.server, self.log = server, log
 
     def post(self, body: Any, token: str | None = "builder-secret", content_type: str = SINGLE) -> tuple[int, dict]:

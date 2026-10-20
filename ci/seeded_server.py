@@ -18,13 +18,11 @@ A server on this data is smaller than the live board: a cost that grows with the
 from __future__ import annotations
 
 import argparse
-import signal
 import sqlite3
 import threading
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import replace
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 from sqlalchemy import Engine, event
@@ -39,8 +37,9 @@ from starpulse._internal.eventlog.history import HistoryStore
 from starpulse._internal.eventlog.lane_import import Change
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.feed.history_window import HistoryWindow
+from starpulse._internal.server.asgi_app import page_app
 from starpulse._internal.server.assembly import assemble
-from starpulse._internal.server.server import StarPulseServer, request_handler
+from starpulse._internal.server.page_server import PageServer
 from starpulse._internal.server.services import Services
 from starpulse.contracts.adapters import BoardTask
 
@@ -197,9 +196,7 @@ def _without_sync(connection: object, _record: object) -> None:
         connection.execute("PRAGMA synchronous=OFF")
 
 
-def build(
-    port: int, directory: Path, *, now: float | None = None
-) -> tuple[ThreadingHTTPServer, BoardFeed, list[BoardTask]]:
+def build(port: int, directory: Path, *, now: float | None = None) -> tuple[PageServer, BoardFeed, list[BoardTask]]:
     """The seeded server bound to `port` (0: any free one), the feed it draws and the tasks seeded on it."""
     directory.mkdir(parents=True, exist_ok=True)
     if not event.contains(Engine, "connect", _without_sync):
@@ -223,12 +220,12 @@ def build(
         read=lambda task: records.get(task),
     )
     services = Services(level=config.level, autopilot=autopilot(directory, log, feed, config.autopilot))
-    handler = request_handler(feed, STATIC, store, window, board, services)
-    return StarPulseServer(("127.0.0.1", port), handler), feed, tasks
+    app = page_app(feed, STATIC, store, window, board, services)
+    return PageServer(app, ("127.0.0.1", port)), feed, tasks
 
 
-def serve(port: int, directory: Path, *, now: float | None = None) -> ThreadingHTTPServer:
-    """The seeded server, bound to `port` on this machine; the caller runs `serve_forever`."""
+def serve(port: int, directory: Path, *, now: float | None = None) -> PageServer:
+    """The seeded server, bound to `port` on this machine; the caller starts it."""
     return build(port, directory, now=now)[0]
 
 
@@ -270,14 +267,12 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no cover — process
     args = parser.parse_args(argv)
     server, feed, tasks = build(args.port, args.dir)
     print(f"seeded StarPulse on :{server.server_port}", flush=True)
-    # `shutdown` waits for `serve_forever`, which is this thread: a signal handler must not call it here
-    signal.signal(signal.SIGTERM, lambda *_: threading.Thread(target=server.shutdown, daemon=True).start())
     stop, sent = threading.Event(), []
     feeder = threading.Thread(target=lambda: sent.append(replay(feed, tasks, args.replay_rate, stop.wait)), daemon=True)
     if args.replay_rate:
         feeder.start()
     try:
-        server.serve_forever(poll_interval=0.05)  # the default 0.5 s is how long a stopped run waits to be noticed
+        server.run()  # SIGTERM and Ctrl-C stop it
     finally:
         stop.set()
         if args.replay_rate:

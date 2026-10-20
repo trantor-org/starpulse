@@ -217,7 +217,6 @@ import dataclasses
 import functools
 import logging
 import os
-import queue
 import shutil
 import signal
 import socket
@@ -226,18 +225,26 @@ import sys
 import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING, Any, NamedTuple
 
-
 from starpulse._internal.board.seam import (
     Board,
 )
+from starpulse._internal.cli import doctor
+from starpulse._internal.config.config import Config, ConfigError, RunsInstance, discover, load, runs_adapter
+from starpulse._internal.config.level import Level
+from starpulse._internal.config.pins import GitHub, LiveBuild, running_commit
+from starpulse._internal.eventlog import events as machine_events
+from starpulse._internal.eventlog import lane_events
+from starpulse._internal.eventlog.conformance_monitor import Conformance
+from starpulse._internal.eventlog.level_metrics import RunWindow, WindowPastHistory, level_metrics
+from starpulse._internal.feed.claim_refusals import CLAIMS_STREAM
+from starpulse._internal.feed.history_window import SETTINGS_FILE, HistoryWindow
 from starpulse._internal.harnesses.session_start import starter
-from starpulse._internal.runs.cloudevents import CloudEventsIngest
-from starpulse._internal.runs.ingest import tokens as ingest_tokens
+from starpulse._internal.harnesses.telemetry import TelemetryLog
+from starpulse._internal.level.trajectories import WhatIfRefused, trajectory_analytics, what_if
 from starpulse._internal.pulls.delivery import (
     Projected,
     follow_saves,
@@ -246,34 +253,25 @@ from starpulse._internal.pulls.delivery import (
     poller_problem,
     request_refresh,
 )
+from starpulse._internal.pulls.pull_refresh import PullRefresh
+from starpulse._internal.pulls.pull_requests import PullRequests
+from starpulse._internal.pulls.pull_store import PullSync
 from starpulse._internal.pulls.task_actor import TaskActor, moves_of
 from starpulse._internal.pulls.unblock import READY, UNBLOCK_S, Unblocker
-from starpulse._internal.config.pins import GitHub, LiveBuild, running_commit
-from starpulse._internal.pulls.pull_requests import PullRequests
-from starpulse._internal.pulls.pull_refresh import PullRefresh
-from starpulse._internal.pulls.pull_store import PullSync
 from starpulse._internal.runs import projection as runs_projection
+from starpulse._internal.runs.cloudevents import CloudEventsIngest
+from starpulse._internal.runs.ingest import tokens as ingest_tokens
+from starpulse._internal.server.asgi_app import _CONTRACT_TTL_S, _cached, page_app
 from starpulse._internal.server.closure import ENTRIES, Reader
 from starpulse._internal.server.control import control_file
+from starpulse._internal.server.encoding import encode, event
 from starpulse._internal.server.hold import LISTEN_FD_ENV, STATIC_ENV
+from starpulse._internal.server.live_push import wire_level
+from starpulse._internal.server.page_server import BACKLOG, DRAIN_S, PageServer
+from starpulse._internal.server.responses import _HEALTH_HOURS, _error, _hours, health_response, history_response  # noqa: F401 - the read routes stay importable from here
+from starpulse._internal.server.services import Services
 from starpulse._internal.server.supervisor import Supervisor, worker_commands
 from starpulse._internal.server.zygote import Forker
-from starpulse._internal.server.api_handler import _CONTRACT_TTL_S, Arrival, _cached, request_handler
-from starpulse._internal.server.services import Services
-from starpulse._internal.server.responses import _HEALTH_HOURS, _error, _hours
-from starpulse._internal.server.responses import health_response, history_response  # noqa: F401 - the read routes stay importable from here
-from starpulse._internal.server.encoding import encode, event
-from starpulse._internal.config.level import Level
-from starpulse._internal.eventlog.conformance_monitor import Conformance
-from starpulse._internal.eventlog.level_metrics import RunWindow, WindowPastHistory, level_metrics
-from starpulse._internal.level.trajectories import WhatIfRefused, trajectory_analytics, what_if
-from starpulse._internal.cli import doctor
-from starpulse._internal.feed.claim_refusals import CLAIMS_STREAM
-from starpulse._internal.config.config import Config, ConfigError, RunsInstance, discover, load, runs_adapter
-from starpulse._internal.feed.history_window import SETTINGS_FILE, HistoryWindow
-from starpulse._internal.eventlog import events as machine_events
-from starpulse._internal.eventlog import lane_events
-from starpulse._internal.harnesses.telemetry import TelemetryLog
 
 logger = logging.getLogger(__name__)
 
@@ -470,122 +468,6 @@ def inherited_socket(environ: Mapping[str, str]) -> socket.socket | None:
     return socket.socket(fileno=_LISTEN_FDS_START)
 
 
-#: Bytes of C stack each pooled request thread is given. The stock 8 MiB, times a 50-viewer crowd of one-shot threads,
-#: is hundreds of megabytes of RSS the free-threaded allocator does not return when those threads exit (live: threads
-#: and FDs back after starpulse-load, RSS not). 256 KiB encodes a 1 MB snapshot.
-REQUEST_STACK = 256 * 1024
-
-
-class StarPulseServer(ThreadingHTTPServer):
-    """The view's HTTP server, with a listen backlog a crowd of pages connecting at once fits in: the stock 5 drops the
-    rest's SYNs, and each waits out a 1 s retransmit before its first byte.
-
-    Given `listening`, it serves on that socket as passed, its backlog and options untouched, and binds nothing.
-    Request threads are pooled at `REQUEST_STACK` bytes: a request starts a worker only when none is idle (up to the
-    backlog), and a worker idle for `idle_timeout` seconds exits. On free-threaded 3.14t each live thread keeps its
-    allocator heap's high-water pages, so workers kept past a burst are resident memory the process never returns.
-
-    A stream (`open_stream`) leaves the request pool for the length of its connection and is counted against
-    `stream_limit` instead, so streams never take a short request's worker; a stream past the limit is refused.
-
-    `drain` waits for the requests taken and not yet answered, a stream not among them, so a process that stops serving
-    finishes them before it exits.
-    """
-
-    request_queue_size = 128
-    stream_limit = 256
-    idle_timeout = 30.0
-
-    def __init__(
-        self, address: tuple[str, int], handler: type[BaseHTTPRequestHandler], listening: socket.socket | None = None
-    ) -> None:
-        self.accepted: dict[socket.socket, Arrival] = {}  # each request as accepted, until its thread takes it up
-        self._work: queue.SimpleQueue[tuple[Any, Any] | None] = queue.SimpleQueue()
-        self._workers = 0  # request workers, not the threads serving streams
-        self.streams = 0  # streams open, each on a thread that has left the request pool
-        self._streaming = threading.local()  # set on a worker thread that has left the request pool for a stream
-        self._idle = 0  # workers waiting for work, less the requests queued for them; negative is a backlog
-        self._workers_lock = threading.Lock()
-        self._taken = 0  # requests taken and not yet answered, a stream not among them
-        self._answered = threading.Condition(self._workers_lock)
-        super().__init__(address, handler, bind_and_activate=listening is None)
-        if listening is not None:
-            self.socket.close()  # the one the base class made for a bind that will not happen
-            self.socket = listening
-            self.server_address = listening.getsockname()
-            self.server_name, self.server_port = self.server_address[:2]
-
-    def process_request(self, request: Any, client_address: Any) -> None:
-        with self._workers_lock:
-            if self._idle <= 0 and self._workers < self.request_queue_size:
-                self._workers += 1
-                previous = threading.stack_size(REQUEST_STACK)
-                try:
-                    threading.Thread(target=self._run_requests, name="http", daemon=True).start()
-                finally:
-                    threading.stack_size(previous)
-            else:
-                self._idle -= 1
-            self._taken += 1
-            busy = self._workers - max(self._idle, 0)
-            self.accepted[request] = Arrival(time.monotonic(), busy, self.streams)
-            self._work.put((request, client_address))
-
-    def open_stream(self) -> bool:
-        """Move the calling request worker into the stream pool for the rest of its connection; `False`, with the worker
-        left in the request pool, when `stream_limit` streams are open."""
-        with self._workers_lock:
-            if self.streams >= self.stream_limit:
-                return False
-            self.streams += 1
-            self._workers -= 1  # a request may start its replacement
-            self._answer()
-        self._streaming.open = True
-        return True
-
-    def _answer(self) -> None:
-        """Note one taken request answered, or turned into a stream; the caller holds the lock."""
-        self._taken -= 1
-        self._answered.notify_all()
-
-    def drain(self, timeout: float) -> bool:
-        """Wait up to `timeout` seconds for every request taken to be answered; whether they all were."""
-        with self._answered:
-            return self._answered.wait_for(lambda: self._taken == 0, timeout)
-
-    def server_close(self) -> None:
-        """Close the listening socket and wake every request worker to exit once it has finished its request."""
-        super().server_close()
-        with self._workers_lock:
-            for _ in range(self._workers):
-                self._work.put(None)
-
-    def _run_requests(self) -> None:
-        while True:
-            try:
-                work = self._work.get(timeout=self.idle_timeout)
-            except queue.Empty:
-                with self._workers_lock:
-                    if self._work.empty():  # a request queued under the lock is still taken before exiting
-                        self._idle -= 1
-                        self._workers -= 1
-                        return
-                continue
-            if work is None:  # `server_close` retiring this worker
-                with self._workers_lock:
-                    self._idle -= 1
-                    self._workers -= 1
-                return
-            self.process_request_thread(*work)
-            with self._workers_lock:
-                if not getattr(self._streaming, "open", False):  # a stream was answered when it opened
-                    self._answer()
-                if getattr(self._streaming, "open", False):  # served a stream: its slot is closed, its thread done
-                    self.streams -= 1
-                    return
-                self._idle += 1
-
-
 class EventText:
     """The JSON text of the events last sent, by the data each was made from.
 
@@ -611,27 +493,12 @@ class EventText:
             return text
 
 
-#: Seconds a stopping server waits for the requests it took, under the 10 s a supervisor allows before it kills a child.
-DRAIN_S = 8.0
-
-
-def serve_until_stopped(server: StarPulseServer, feed: BoardFeed) -> None:
+def serve_until_stopped(server: PageServer, feed: BoardFeed) -> None:
     """Serve until Ctrl-C or `SIGTERM`, then tell every open stream the server is restarting, finish the requests taken
     and save the Board the feed keeps, so the next start resumes from it."""
-    # a stopped unit leaves through the save below. The loop is asked to end rather than interrupted: an exception
-    # raised in it between `accept` and `process_request` counting the connection would drop that connection unanswered
-    signal.signal(signal.SIGTERM, lambda *_: threading.Thread(target=server.shutdown, daemon=True).start())
     try:
-        try:
-            server.serve_forever(poll_interval=0.05)  # `shutdown` waits out one poll: a swap and a stop each pay it
-        except KeyboardInterrupt:
-            pass
+        server.run()
     finally:
-        feed.announce(
-            "restarting", {"at": time.time()}
-        )  # each page says "restarting" rather than shows a failure while the process is away
-        if not server.drain(DRAIN_S):
-            logger.warning("stopping with requests still running after %.0f s", DRAIN_S)
         feed.save()
 
 
@@ -826,7 +693,7 @@ def refuse_unassemblable(
 def listen(parser: argparse.ArgumentParser, args: argparse.Namespace) -> socket.socket:
     """Bind `--host` and `--port`, exiting with the reason when something holds them."""
     try:
-        return socket.create_server((args.host, args.port), backlog=StarPulseServer.request_queue_size)
+        return socket.create_server((args.host, args.port), backlog=BACKLOG)
     except OSError as exc:
         # the errno's own text: `create_server` appends the address the line already names
         reason = os.strerror(exc.errno) if exc.errno and exc.errno > 0 else exc.strerror
@@ -945,9 +812,16 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         lane_metrics=unattributed.exposition,
         conformance_metrics=conformance.exposition,
     )
-    handler = request_handler(feed, _STATIC, store, window, board, services)
+    app = page_app(feed, _STATIC, store, window, board, services)
     try:
-        serve_until_stopped(StarPulseServer((args.host, args.port), handler, listening), feed)
+        server = PageServer(
+            app,
+            (args.host, args.port),
+            listening,
+            stopping=lambda: feed.announce("restarting", {"at": time.time()}),
+            drain_s=DRAIN_S,
+        )
+        serve_until_stopped(server, feed)
     finally:
         autopilot_stop.set()
         log.close()

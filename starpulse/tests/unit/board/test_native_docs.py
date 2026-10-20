@@ -5,7 +5,6 @@ import json
 import shutil
 import urllib.error
 import urllib.request
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +18,7 @@ from starpulse._internal.board.upstream_backlog import _split
 from starpulse._internal.cli import agent_cli as cli
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import serve, url
+from starpulse._internal.server.page_server import PageServer
 from starpulse._internal.server.writes import create_doc
 from starpulse.contracts.api.registry import RESPONSES
 
@@ -315,7 +315,9 @@ def test_native_doc_restore_returns_the_archived_file_unchanged_under_the_folder
     ],
     ids=["destination-exists", "id-open-elsewhere", "leaves-docs", "absolute", "empty-segment"],
 )
-def test_native_doc_restore_is_refused_and_writes_nothing(served: tuple[Board, Path], put: str | None, folder: str) -> None:
+def test_native_doc_restore_is_refused_and_writes_nothing(
+    served: tuple[Board, Path], put: str | None, folder: str
+) -> None:
     built, docs = served
     assert built.archive_doc is not None
     assert built.restore_doc is not None
@@ -342,7 +344,7 @@ def test_native_doc_restore_of_a_doc_that_is_not_archived_is_refused(served: tup
     assert _names(docs) == [REAL]
 
 
-def _call(server: ThreadingHTTPServer, route: str, body: dict | None = None) -> tuple[int, Any]:
+def _call(server: PageServer, route: str, body: dict | None = None) -> tuple[int, Any]:
     request = urllib.request.Request(
         url(server, route),
         data=None if body is None else json.dumps(body).encode(),
@@ -441,7 +443,7 @@ def test_native_doc_create_from_outside_the_lan_is_refused_and_writes_nothing(se
     assert _names(docs) == [REAL]
 
 
-def _verb(capsys: pytest.CaptureFixture[str], server: ThreadingHTTPServer, *argv: str) -> tuple[int, Any]:
+def _verb(capsys: pytest.CaptureFixture[str], server: PageServer, *argv: str) -> tuple[int, Any]:
     code = cli.main([*argv, "--server", f"http://127.0.0.1:{server.server_port}"], {})
     out = capsys.readouterr()
     assert out.err == ""

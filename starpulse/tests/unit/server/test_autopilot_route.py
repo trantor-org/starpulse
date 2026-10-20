@@ -7,7 +7,6 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Iterator
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -18,10 +17,11 @@ from starpulse._internal.board.seam import Written
 from starpulse._internal.config.autopilot import Autopilot
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.feed.machine_tasks import MachineTasks
 from starpulse._internal.harnesses.harness import HARNESS_MACHINES
 from starpulse._internal.kit.adapter_kit import serve, url
+from starpulse._internal.server.page_server import PageServer
 from starpulse._internal.server.writes import autopilot
-from starpulse._internal.feed.machine_tasks import MachineTasks
 from starpulse.contracts.adapters import BoardTask, MachineEvent
 from starpulse.contracts.api.dto.autopilot import AutopilotStatus
 from starpulse.tests.machines import MACHINES
@@ -306,7 +306,7 @@ def test_inside_quiet_hours_the_loop_admits_nothing_and_the_next_pick_waits_for_
 
 
 @pytest.fixture
-def server(tmp_path: Path) -> Iterator[ThreadingHTTPServer]:
+def server(tmp_path: Path) -> Iterator[PageServer]:
     feed = _feed()
     runtime = _runtime(tmp_path, feed)
     runtime.sampler.sample()
@@ -314,7 +314,7 @@ def server(tmp_path: Path) -> Iterator[ThreadingHTTPServer]:
         yield served
 
 
-def _send(server: ThreadingHTTPServer, method: str, body: bytes | None, **headers: str) -> tuple[int, dict]:
+def _send(server: PageServer, method: str, body: bytes | None, **headers: str) -> tuple[int, dict]:
     request = urllib.request.Request(url(server, "/api/autopilot"), data=body, method=method, headers=headers)
     try:
         with urllib.request.urlopen(request, timeout=5) as answer:
@@ -323,7 +323,7 @@ def _send(server: ThreadingHTTPServer, method: str, body: bytes | None, **header
         return refused.code, json.loads(refused.read())
 
 
-def test_the_server_serves_and_flips_the_switch(server: ThreadingHTTPServer) -> None:
+def test_the_server_serves_and_flips_the_switch(server: PageServer) -> None:
     status, body = _send(server, "GET", None)
     assert status == 200 and body["enabled"] is False and len(body["dimensions"]) == 4
 
@@ -332,7 +332,7 @@ def test_the_server_serves_and_flips_the_switch(server: ThreadingHTTPServer) -> 
     assert _send(server, "GET", None)[1]["enabled"] is True
 
 
-def test_the_server_refuses_a_put_that_is_not_json_or_comes_from_another_site(server: ThreadingHTTPServer) -> None:
+def test_the_server_refuses_a_put_that_is_not_json_or_comes_from_another_site(server: PageServer) -> None:
     assert _send(server, "PUT", b'{"enabled": true}', **{"Content-Type": "text/plain"})[0] == 415
     foreign = {"Content-Type": "application/json", "Origin": "https://evil.example"}
     assert _send(server, "PUT", b'{"enabled": true}', **foreign)[0] == 403
