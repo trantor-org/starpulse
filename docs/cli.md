@@ -120,7 +120,7 @@ lists exactly the verbs there are.
 | `analytics graph` | `--hours` | `now`, `window_s` and `graph`, each edge `{kind, size, skill, source, target, runs, count, share, cut}`, below; refusals as `analytics steps` |
 | `analytics stages` | `--hours` | `now`, `window_s` and `stages`, each `{kind, size, stage, runs, median_activities, previous_runs, previous_median_activities, stability}`, below; the history must hold twice the window, else refusals as `analytics steps` |
 | `analytics diff` | `--hours` | `now`, `window_s` and `diff`, each `{kind, size, skill, runs, conformant, reference, slow, slow_only, reference_only}`, below; refusals as `analytics steps` |
-| `config check` | `--config` | `ok`, `file`, `unknown_keys`, `errors` and `config`, the effective config with every default filled in (null when it does not load); exit 1 when it does not load |
+| `config check` | `--config` | `ok`, `file`, `unknown_keys`, `errors` and `config`, the effective config with every default filled in (null when it does not load); exit 1 when it does not load, or when a built-in board's machine names a writer workflow no `[[runs]]` domain lists, which `serve` refuses to start on |
 | `demo` | `--out`, `--mockup`, `--server` | `written`: the HTML file; it reads the server's snapshot, or a design mockup directory with `--mockup` |
 | `doctor` | `--config` | `ok` and `checks`: each `{check, status, reason}`, `status` `pass`, `warn` or `fail`; exit 1 when any fails, never for a warning |
 | `skills list` | `--user` | `scope` and `skills`: each `{name, description, claude, codex}`, each harness `absent`, `installed`, `outdated` or `modified` |

@@ -138,7 +138,7 @@ from starpulse._internal.cli.agent_keys import (
     TRANSITION_KEYS,
     WHAT_IF_KEYS,
 )
-from starpulse._internal.config.config import ConfigError, load
+from starpulse._internal.config.config import Config, ConfigError, load
 
 #: What each exit code means, as the manifest says it.
 EXIT_CODES = {0: "ok", 1: "refused or invalid", 2: "usage", 3: "unavailable", 4: "not found"}
@@ -550,7 +550,40 @@ def _config_check(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[
     except (OSError, ValueError) as exc:  # a file that is missing or not TOML
         return {**checked, "ok": False, "errors": [f"{path}: {exc}"]}
     effective = json.loads(json.dumps(dataclasses.asdict(config), default=_plain))
+    if refused := _unlisted_writers(config, path.parent if path else Path()):
+        return {**checked, "ok": False, "errors": refused, "config": effective}
     return {**checked, "ok": True, "config": effective}
+
+
+def _unlisted_writers(config: Config, base: Path) -> list[str]:
+    """What `serve` refuses as it draws the project's machines: a writer naming a workflow no configured adapter lists.
+
+    Only the built-in boards draw `.starpulse/machines/`; Jira draws its own workflow and a dotted type is unknown here.
+    """
+    from starpulse._internal.board import project_machines  # noqa: PLC0415 - import cost, paid on first use
+    from starpulse._internal.machines.machine_definition import (  # noqa: PLC0415 - import cost, paid on first use
+        MachineDefinitionError,
+        load_machine,
+        refuse_unlisted,
+    )
+    from starpulse._internal.pulls.task_actor import ACTOR  # noqa: PLC0415 - import cost, paid on first use
+
+    listed = [name for names in config.qualified_domains().values() for name in names]
+    if not listed or config.board_type not in {"native", "upstream_backlog", "machines"}:
+        return []
+    board_file = base / str(config.board["machine"]) if "machine" in config.board else None
+    try:
+        board = {"board": load_machine(board_file)} if board_file else {}
+        flows = {**board, **project_machines.load(base, board_file)}
+    except (MachineDefinitionError, OSError) as exc:  # `machine validate` names the line; serve refuses it too
+        return [str(exc)]
+    refused = []
+    for name, compiled in flows.items():
+        try:
+            refuse_unlisted(name, compiled.writers, [*listed, ACTOR] if config.task_actor else listed)
+        except MachineDefinitionError as exc:
+            refused.append(str(exc))
+    return refused
 
 
 def _demo(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
@@ -1309,7 +1342,7 @@ def _parser() -> argparse.ArgumentParser:
     config_check = leaf(
         config_verbs,
         "check",
-        "load the config: unknown keys by name and the effective config with its defaults",
+        "load the config: unknown keys by name, machine writers no adapter lists, and the effective config with its defaults",
         _config_check,
         ("ok", "file", "unknown_keys", "errors", "config"),
         (0, 1, 2),

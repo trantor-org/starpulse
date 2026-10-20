@@ -130,6 +130,28 @@ class TestConfigCheck:
 
         assert (code, document["ok"], "token_env" in document["errors"][0]) == (1, False, True)
 
+    @pytest.mark.parametrize(("actor", "errors"), [("prod/ghost", ["prod/ghost"]), ("prod/nightly", [])])
+    def test_a_machine_writer_no_adapter_lists_is_refused_as_serve_refuses_it(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str], actor: str, errors: list[str]
+    ) -> None:
+        file = tmp_path / "starpulse.toml"
+        file.write_text(
+            '[board]\ntype = "machines"\n\n[[runs]]\nname = "prod"\ntype = "dagu"\nurl = "http://prod.example.test:8085"\n'
+            '[runs.domains]\nOps = ["nightly"]\n'
+        )
+        machines = tmp_path / ".starpulse" / "machines"
+        machines.mkdir(parents=True)
+        (machines / "flow.yaml").write_text(
+            "name: flow\nstates:\n  idle: {initial: true}\n  done: {final: true}\n"
+            f"events:\n  GO:\n    - {{from: idle, to: done}}\nwriters:\n  GO: [{{actor: {actor}, trigger: emit}}]\n"
+        )
+
+        code, document = _run(capsys, ["config", "check", "--config", str(file)])
+
+        assert (code, document["ok"]) == (1 if errors else 0, not errors)
+        assert [name for name in errors if name in " ".join(document["errors"])] == errors
+        assert len(document["errors"]) == len(errors)
+
     def test_the_effective_config_shows_every_default(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
         file = tmp_path / "starpulse.toml"
         file.write_text('tracker_url = "http://tracker.example"\n')
