@@ -143,7 +143,9 @@ def test_machine_event_rows_are_every_keys_events_per_machine_in_time_order(stor
     assert store.machine_event_rows()[0] == ("in-progress", "run-1", 1.0, "START")
 
 
-def test_current_lanes_are_each_tasks_latest_lane_change_in_the_order_those_changes_happened(store: HistoryStore) -> None:
+def test_current_lanes_are_each_tasks_latest_lane_change_in_the_order_those_changes_happened(
+    store: HistoryStore,
+) -> None:
     store.record_lane("a", "PROJ-7", "Ready", 1.0)
     store.record_lane("b", "PROJ-8", "To Do", 2.0)
     store.record_lane("c", "PROJ-7", "Done", 9.0)
@@ -169,22 +171,22 @@ def test_the_same_gap_reported_again_is_one_gap_with_its_latest_bounds(store: Hi
 
 
 def test_a_store_holds_a_cursor_per_stream_which_a_store_opened_again_reads(store: HistoryStore) -> None:
-    assert store.cursor("machine:events") is None
+    assert store.checkpoints.load("machine:events")[0] is None
 
     store.record_machine("1-0", _CLAIM, cursor=7)
     store.record_machine("2-0", _CLAIM | {"event_id": "e-2"}, cursor=9)
     url = store.engine.url.render_as_string(hide_password=False)
 
-    assert HistoryStore(url, MACHINES, engine=store.engine).cursor(events.STREAM) == 9
-    assert store.cursor("board:events") is None
+    assert HistoryStore(url, MACHINES, engine=store.engine).checkpoints.load(events.STREAM)[0] == 9
+    assert store.checkpoints.load("board:events")[0] is None
 
 
 def test_a_reader_saves_its_own_cursor_and_a_later_save_replaces_it(store: HistoryStore) -> None:
-    store.save_cursor("forward:https://hub.test", 12)
-    store.save_cursor("forward:https://hub.test", 40)
+    store.checkpoints.save("forward:https://hub.test", 12)
+    store.checkpoints.save("forward:https://hub.test", 40)
 
-    assert store.cursor("forward:https://hub.test") == 40
-    assert store.cursor(events.STREAM) is None
+    assert store.checkpoints.load("forward:https://hub.test")[0] == 40
+    assert store.checkpoints.load(events.STREAM)[0] is None
 
 
 def test_an_entry_that_cannot_be_written_moves_no_cursor(store: HistoryStore) -> None:
@@ -193,7 +195,7 @@ def test_an_entry_that_cannot_be_written_moves_no_cursor(store: HistoryStore) ->
     with pytest.raises(KeyError):
         store.record_machine("2-0", {"event_id": "e-2"}, cursor=4)  # lacks the machine and event
 
-    assert store.cursor(events.STREAM) == 3
+    assert store.checkpoints.load(events.STREAM)[0] == 3
 
 
 def test_a_thread_other_than_the_one_that_opened_the_store_can_use_it(store: HistoryStore) -> None:
@@ -290,7 +292,7 @@ def test_the_recorder_copies_the_logs_machine_events_into_the_store_and_keeps_it
     log.append("board:events", {"machine": "in-progress", "event": "OTHER", "task": "PROJ-7", "time": 1})
     thread = _record(store, log, stop)
     newest = _emit(log, "RED_PROVEN", 101.0)  # appended while it runs
-    _until(lambda: store.cursor(events.STREAM) == newest)
+    _until(lambda: store.checkpoints.load(events.STREAM)[0] == newest)
     _stop(stop, thread)
 
     assert [step["event"] for step in store.machine_path("PROJ-7", "in-progress")[0]] == [
@@ -307,13 +309,13 @@ def test_a_recorder_started_again_resumes_after_its_cursor_and_adds_nothing_twic
     _emit(log, "WORKTREE_READY", 100.0)
     read = _emit(log, "RED_PROVEN", 101.0)
     first = _record(store, log, stop)
-    _until(lambda: store.cursor(events.STREAM) == read)
+    _until(lambda: store.checkpoints.load(events.STREAM)[0] == read)
     _stop(stop, first)
 
     again = threading.Event()
     last = _emit(log, "GREEN", 102.0)
     second = _record(store, log, again)
-    _until(lambda: store.cursor(events.STREAM) == last)
+    _until(lambda: store.checkpoints.load(events.STREAM)[0] == last)
     _stop(again, second)
 
     assert len(_event_ids(store)) == 3
@@ -326,7 +328,7 @@ def test_a_prune_past_an_unrecorded_entry_is_a_gap_with_its_id_range(
     _emit(log, "WORKTREE_READY", 100.0)
     read = _emit(log, "RED_PROVEN", 101.0)
     first = _record(store, log, stop)
-    _until(lambda: store.cursor(events.STREAM) == read)
+    _until(lambda: store.checkpoints.load(events.STREAM)[0] == read)
     _stop(stop, first)
 
     _emit(log, "GREEN", 102.0)
@@ -336,7 +338,7 @@ def test_a_prune_past_an_unrecorded_entry_is_a_gap_with_its_id_range(
 
     again = threading.Event()
     second = _record(store, log, again)
-    _until(lambda: store.cursor(events.STREAM) == kept)
+    _until(lambda: store.checkpoints.load(events.STREAM)[0] == kept)
     _stop(again, second)
 
     assert store.gaps() == [{"stream": events.STREAM, "after_id": str(read), "before_id": str(kept), "lost": 2}]
@@ -352,7 +354,7 @@ def test_a_store_with_no_cursor_replays_the_retained_log_and_reports_no_gap_for_
     _prune_below(log, kept)
 
     thread = _record(store, log, stop)
-    _until(lambda: store.cursor(events.STREAM) == kept)
+    _until(lambda: store.checkpoints.load(events.STREAM)[0] == kept)
     _stop(stop, thread)
 
     assert (store.gaps(), len(_event_ids(store))) == ([], 1)
@@ -373,7 +375,7 @@ def test_a_database_that_cannot_be_reached_leaves_the_entry_to_be_recorded_on_th
     only = _emit(log, "WORKTREE_READY", 100.0)
 
     thread = _record(store, log, stop)
-    _until(lambda: store.cursor(events.STREAM) == only)
+    _until(lambda: store.checkpoints.load(events.STREAM)[0] == only)
     _stop(stop, thread)
 
     assert (len(failures), len(_event_ids(store))) == (1, 1)

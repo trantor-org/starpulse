@@ -88,7 +88,7 @@ def test_a_restarted_worker_neither_drops_nor_repeats_a_history_row(
     log, store = run()
     _move(log, "T-1")
     assert _eventually(lambda: _recorded(store) == ["T-1"])
-    first = store.cursor("machine:events")
+    first = store.checkpoints.load("machine:events")[0]
     for stop in held:
         stop.set()
     time.sleep(0.2)  # the recorder thread sees the stop
@@ -99,7 +99,7 @@ def test_a_restarted_worker_neither_drops_nor_repeats_a_history_row(
     assert _eventually(lambda: _recorded(store) == ["T-1", "T-2"])
     time.sleep(0.2)
     assert _recorded(store) == ["T-1", "T-2"]  # T-1 once, T-2 once
-    assert store.cursor("machine:events") > first
+    assert store.checkpoints.load("machine:events")[0] > first
 
 
 def test_the_retired_history_context_name_is_refused() -> None:

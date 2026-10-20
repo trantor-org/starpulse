@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 
 from starpulse._internal.runs import run_events
-from starpulse._internal.runs.push_runs import PUSHED_INSTANCE, PushRuns
+from starpulse._internal.runs.push_runs import PUSHED_INSTANCE, PushedRunsSnapshot, PushRuns
 from starpulse.contracts.adapters import Dag
 from starpulse._internal.feed.board_feed import BoardFeed, follow
 from starpulse._internal.eventlog.event_log import EventLog
@@ -334,7 +334,7 @@ def test_a_restarted_reader_resumes_from_its_saved_state_and_reads_only_the_entr
     follow(runs, log, run_events.STREAM, runs.handle_entry, stop=stop, interval=0.01)
     _wait_until(lambda: first.snapshot()["dags"] and drawn(first)["status"] == "succeeded")
     stop.set()
-    _wait_until(lambda: (log.load_board_state(run_events.STREAM) or ("",))[0] == "3-0")
+    _wait_until(lambda: log.checkpoints.load(run_events.STREAM)[0] == 3)
     log.append(run_events.STREAM, fields("StepStarted", "running", run="r2", at=START + 60))
 
     handled: list[str] = []
@@ -352,7 +352,7 @@ def test_a_restart_with_nothing_new_draws_the_saved_workflows_without_reading_an
     log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
     log.append(run_events.STREAM, fields("StepStarted", "running"))
     first = PushRuns(BoardFeed().runs(PUSHED_INSTANCE), None)
-    first.resume(log, run_events.STREAM, lambda cursor: True)
+    first.resume(log.checkpoints, run_events.STREAM, lambda cursor: True)
     first.handle_entry("1-0", fields("StepStarted", "running"))
     first.save()
 
@@ -367,13 +367,13 @@ def test_a_restart_with_nothing_new_draws_the_saved_workflows_without_reading_an
     assert handled == []
 
 
-@pytest.mark.parametrize("saved", [None, ("1-0", {"dags": "not a mapping"}), ("1-0", {})])
-def test_a_reader_with_no_usable_saved_state_replays_the_retention(saved: tuple[str, dict] | None) -> None:
+@pytest.mark.parametrize("saved", [(None, None), (1, None)])
+def test_a_reader_with_no_usable_saved_state_replays_the_retention(saved: tuple[int | None, None]) -> None:
     class Store:
-        def load_board_state(self, stream: str) -> tuple[str, dict] | None:
+        def load(self, stream: str, model: type[PushedRunsSnapshot]) -> tuple[int | None, None]:
             return saved
 
-        def save_board_state(self, stream: str, cursor: str, state: dict) -> None: ...
+        def save(self, stream: str, position: int, model: PushedRunsSnapshot, *, conn: object = None) -> None: ...
 
     runs = PushRuns(BoardFeed().runs(PUSHED_INSTANCE), None)
 
@@ -382,8 +382,8 @@ def test_a_reader_with_no_usable_saved_state_replays_the_retention(saved: tuple[
 
 def test_a_reader_whose_saved_cursor_the_log_no_longer_retains_replays_the_retention() -> None:
     class Store:
-        def load_board_state(self, stream: str) -> tuple[str, dict]:
-            return "1-0", {"dags": {}}
+        def load(self, stream: str, model: type[PushedRunsSnapshot]) -> tuple[int, PushedRunsSnapshot]:
+            return 1, PushedRunsSnapshot(dags={})
 
     runs = PushRuns(BoardFeed().runs(PUSHED_INSTANCE), None)
 

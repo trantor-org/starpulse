@@ -16,11 +16,13 @@ import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Protocol, get_args
+from typing import Any, ClassVar, Protocol, get_args
+
+from pydantic import BaseModel
 
 from starpulse._internal.runs import run_events
 from starpulse.contracts.adapters import RunStatus
-from starpulse._internal.feed.board_feed import PUSHED_INSTANCE, SAVE_INTERVAL, BoardStore, InstanceRuns, stream_id
+from starpulse._internal.feed.board_feed import PUSHED_INSTANCE, SAVE_INTERVAL, BoardStore, InstanceRuns, entry_position
 
 __all__ = ["PUSHED_INSTANCE", "PushRuns"]
 
@@ -33,6 +35,13 @@ class GraphStore(Protocol):
     def record_step(self, workflow: str, step: str, depends: list[str] | None) -> None: ...
 
     def learned_graphs(self) -> dict[str, dict[str, list[str]]]: ...
+
+
+class PushedRunsSnapshot(BaseModel):
+    """The workflows `PushRuns` saves beside the position they reflect."""
+
+    SCHEMA_VERSION: ClassVar[int] = 1
+    dags: dict[str, dict[str, Any]]
 
 
 @dataclass(frozen=True)
@@ -102,10 +111,10 @@ class PushRuns:
         self._runs = runs
         self._store = store
         self._dags = {name: _dag(name, steps) for name, steps in (store.learned_graphs() if store else {}).items()}
-        self._replay_end: tuple[int, int] | None = None
+        self._replay_end: int | None = None
         self._lock = threading.Lock()
         #: The id of the last entry read, which `_dags` reflects, and the one last saved.
-        self._seen = self._saved = (0, 0)
+        self._seen = self._saved = 0
         self._store_at: tuple[BoardStore, str] | None = None
         self._publish()
 
@@ -120,45 +129,42 @@ class PushRuns:
         """
         with self._lock:
             moved = self._move(fields)
-            self._seen = stream_id(entry_id)
+            self._seen = entry_position(entry_id)
         if self._replay_end is None:
             if moved:
                 self._publish()
-        elif stream_id(entry_id) >= self._replay_end:
+        elif entry_position(entry_id) >= self._replay_end:
             self._replay_end = None
             self._publish()
 
-    def resume(self, store: BoardStore, stream: str, retained: Callable[[str], bool]) -> str | None:
-        """Restore the workflows `store` saved for `stream` and return the cursor to read the stream after, else None.
+    def resume(self, store: BoardStore, stream: str, retained: Callable[[int], bool]) -> int | None:
+        """Restore the workflows `store` saved for `stream` and return the position to read the stream after, else None.
 
-        None means the reader replays what the stream retains: nothing was saved, `retained(cursor)` says the stream
-        no longer holds every entry after the saved cursor, or the saved state is not one this reader can read. The
-        workflows are saved to `store` under `stream` from now on (`save`, `keep_saved`).
+        None means the reader replays what the stream retains: nothing was saved, `retained(position)` says the stream
+        no longer holds every entry after the saved position, or the saved state is not one this reader can read
+        (another `PushedRunsSnapshot.SCHEMA_VERSION`). The workflows are saved to `store` under `stream` from now on
+        (`save`, `keep_saved`).
         """
         self._store_at = (store, stream)
-        saved = store.load_board_state(stream)
-        if saved is None:
+        position, snapshot = store.load(stream, PushedRunsSnapshot)
+        if position is None:
             logger.warning("StarPulse: replaying %s: no saved pushed runs", stream)
             return None
-        cursor, state = saved
-        if not retained(cursor):
-            logger.warning("StarPulse: replaying %s: cursor %s is no longer retained", stream, cursor)
+        if not retained(position):
+            logger.warning("StarPulse: replaying %s: cursor %s is no longer retained", stream, position)
             return None
-        try:
-            dags = {name: dict(dag) for name, dag in state["dags"].items()}
-            seen = stream_id(cursor)
-        except (KeyError, AttributeError, TypeError, ValueError):
+        if snapshot is None:
             logger.warning("StarPulse: replaying %s: the saved pushed runs cannot be read", stream)
             return None
         with self._lock:
-            self._dags |= dags
-            self._seen = self._saved = seen
+            self._dags |= {name: dict(dag) for name, dag in snapshot.dags.items()}
+            self._seen = self._saved = position
         self._publish()
-        logger.warning("StarPulse: resuming %s after %s", stream, cursor)
-        return cursor
+        logger.warning("StarPulse: resuming %s after %s", stream, position)
+        return position
 
     def save(self) -> None:
-        """Write the workflows and the cursor they reflect to the store `resume` was given, unless nothing was read
+        """Write the workflows and the position they reflect to the store `resume` was given, unless nothing was read
         since the last save. A store that cannot be written is logged; the next save tries again."""
         if self._store_at is None:
             return
@@ -168,7 +174,7 @@ class PushRuns:
         if seen == self._saved:
             return
         try:
-            store.save_board_state(stream, "-".join(map(str, seen)), {"dags": dags})
+            store.save(stream, seen, PushedRunsSnapshot(dags=dags))
         except Exception as exc:  # the store is down; the workflows still draw and the next save retries
             logger.warning("StarPulse: cannot save the pushed runs of %s: %s", stream, exc)
             return
@@ -225,5 +231,5 @@ class PushRuns:
 
     def expect(self, last_id: str) -> None:
         """Hold publishing until the replay reaches `last_id`, the stream's last entry at start (`follow` calls this)."""
-        if stream_id(last_id) > self._seen:
-            self._replay_end = stream_id(last_id)
+        if entry_position(last_id) > self._seen:
+            self._replay_end = entry_position(last_id)

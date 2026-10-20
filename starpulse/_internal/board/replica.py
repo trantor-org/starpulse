@@ -22,7 +22,7 @@ import time
 from typing import TYPE_CHECKING, Any
 
 from starpulse._internal.eventlog.event_log import EventLog, Tail
-from starpulse._internal.feed.board_feed import BoardFeed, retained, stream_id
+from starpulse._internal.feed.board_feed import BoardFeed, retained
 from starpulse.contracts import BoardTask
 
 if TYPE_CHECKING:
@@ -83,7 +83,7 @@ class Publisher:
         self._pending: set[str] = set()
         self._marked = False
         self._dirty = False
-        self._cursor: str | None = None
+        self._cursor: int | None = None
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._feed, name)
@@ -92,13 +92,13 @@ class Publisher:
         """Restore the checkpoint and the entries published after it, before the adapter starts."""
         feed = self._feed
         feed.await_stream()
-        self._cursor = feed.resume(self._log, self._key, lambda _cursor: True)
+        self._cursor = feed.resume(self._log.checkpoints, self._key, lambda _cursor: True)
         kept = feed.source()
         self._digests = dict(kept.get("published", {}))
         self._adapter = {name: value for name, value in kept.items() if name != "published"}
         if self._cursor is None or not retained(self._log, REPLICA_STREAM)(self._cursor):
             return  # nothing published is known: the first scan publishes every task
-        tail = Tail(self._log, REPLICA_STREAM, after=stream_id(self._cursor)[0])
+        tail = Tail(self._log, REPLICA_STREAM, after=self._cursor)
         while entries := tail.poll():
             for entry in entries:
                 self._catch_up(entry.id, entry.fields)
@@ -110,9 +110,9 @@ class Publisher:
         elif "id" in fields:
             self._feed.retract(fields["id"])
             self._digests.pop(fields["id"], None)
-        self._feed.seen(f"{entry_id}-0")
+        self._feed.seen(str(entry_id))
 
-    def resume(self, *_: Any) -> str | None:
+    def resume(self, *_: Any) -> int | None:
         """The cursor `begin` restored: the adapter's own start resumes nothing more."""
         return self._cursor
 
@@ -138,7 +138,7 @@ class Publisher:
                 }
                 if (entry := self._log.append(REPLICA_STREAM, fields)) is not None:
                     self._digests[task.id], self._dirty = digest, True
-                    self._feed.seen(f"{entry}-0")
+                    self._feed.seen(str(entry))
             self._flush()
 
     def retract(self, task_id: str) -> None:
@@ -161,12 +161,12 @@ class Publisher:
                 self._pending.discard(task_id)
                 self._digests.pop(task_id, None)
                 self._dirty = True
-                self._feed.seen(f"{entry}-0")
+                self._feed.seen(str(entry))
         if not self._marked and self._feed.ready.is_set():
             entry = self._log.append(REPLICA_STREAM, {"ready": "1"})
             if entry is not None:
                 self._marked = True
-                self._feed.seen(f"{entry}-0")
+                self._feed.seen(str(entry))
 
     def save(self) -> None:
         """Save the Board once the child has read its source: a checkpoint is a Board a restart may resume."""
@@ -205,7 +205,7 @@ def follow(
     def run() -> None:
         while not stop.is_set():
             try:
-                cursor = feed.resume(log, key, lambda _cursor: True, keep=False)
+                cursor = feed.resume(log.checkpoints, key, lambda _cursor: True, keep=False)
                 last = log.last(REPLICA_STREAM)
                 break
             except Exception as exc:  # the database is unreachable; the next attempt retries
@@ -218,8 +218,8 @@ def follow(
         else:
             return
         if cursor:
-            feed.expect(str(last) if last else cursor)
-        after = stream_id(cursor)[0] if cursor and retained(log, REPLICA_STREAM)(cursor) else None
+            feed.expect(str(last or cursor))
+        after = cursor if cursor and retained(log, REPLICA_STREAM)(cursor) else None
 
         def apply(entry) -> None:
             try:
@@ -231,7 +231,7 @@ def follow(
                 else:
                     feed.retract(entry.fields["id"])
             finally:
-                feed.seen(f"{entry.id}-0")
+                feed.seen(str(entry.id))
 
         Tail(log, REPLICA_STREAM, after=after, interval=interval).run(apply, stop)
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import threading
 
-from starpulse._internal.feed.board_feed import BoardFeed, stream_id
+from starpulse._internal.feed.board_feed import BoardFeed, entry_position
 
 CLAIMS_STREAM = "board:claims"  # read, not produced here: the contract scan counts only `STREAM` producers
 
@@ -18,8 +18,8 @@ class ClaimRefusals:
 
     def __init__(self, feed: BoardFeed) -> None:
         self._feed = feed
-        self._expected: tuple[int, int] | None = None
-        self._seen = (0, 0)
+        self._expected: int | None = None
+        self._seen = 0
         #: Set once the stream has been read up to the last entry it held when the server started.
         self.ready = threading.Event()
 
@@ -27,8 +27,8 @@ class ClaimRefusals:
         """Nothing to say before the stream is reached: no refusals is a correct claims view."""
 
     def expect(self, last_id: str) -> None:
-        """Mark the replay read once the entry `last_id` has been; `0-0` is an empty stream. The feed's readiness stays `machine:events`'s."""
-        self._expected = stream_id(last_id)
+        """Mark the replay read once the entry `last_id` has been; `0` is an empty stream. The feed's readiness stays `machine:events`'s."""
+        self._expected = entry_position(last_id)
         self._check_ready()
 
     def _check_ready(self) -> None:
@@ -39,7 +39,7 @@ class ClaimRefusals:
 
     def handle_entry(self, entry_id: str, fields: dict) -> None:
         """Take one stream entry; one without a task and a reason, or with no readable time, is dropped."""
-        self._seen = max(self._seen, stream_id(entry_id))
+        self._seen = max(self._seen, entry_position(entry_id))
         task, reason = fields.get("task"), fields.get("reason")
         try:
             at = float(fields["time"])

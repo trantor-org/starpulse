@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import threading
 from pathlib import Path
 
@@ -13,6 +12,7 @@ from starpulse._internal.eventlog import lane_events
 from starpulse._internal.eventlog.event_log import EventLog, Tail
 from starpulse._internal.eventlog.history import HistoryStore
 from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.feed.snapshot import BoardSnapshot
 from starpulse._internal.pulls import delivery
 from starpulse.contracts import BoardTask
 from starpulse.tests.machines import MACHINES
@@ -79,13 +79,14 @@ class _BoardStore:
     """A store holding one saved Board per stream."""
 
     def __init__(self) -> None:
-        self.saved: dict[str, tuple[str, dict]] = {}
+        self.saved: dict[str, tuple[int, dict]] = {}
 
-    def load_board_state(self, stream: str) -> tuple[str, dict] | None:
-        return self.saved.get(stream)
+    def load(self, stream: str, model: type[BoardSnapshot]) -> tuple[int | None, BoardSnapshot | None]:
+        position, state = self.saved.get(stream, (None, None))
+        return position, None if state is None else model.model_validate(state)
 
-    def save_board_state(self, stream: str, cursor: str, state: dict) -> None:
-        self.saved[stream] = (cursor, json.loads(json.dumps(state)))  # a store keeps JSON
+    def save(self, stream: str, position: int, model: BoardSnapshot, *, conn: object = None) -> None:
+        self.saved[stream] = (position, model.model_dump(mode="json"))  # a store keeps JSON
 
 
 def test_a_note_set_before_a_restart_names_its_writer_on_the_first_place_after_it(tmp_path: Path) -> None:

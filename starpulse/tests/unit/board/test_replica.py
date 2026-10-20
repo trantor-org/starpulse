@@ -17,6 +17,7 @@ from starpulse._internal.config.config import load
 from starpulse._internal.eventlog.event_log import EventLog, Tail
 from starpulse._internal.eventlog.tables import events
 from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.feed.snapshot import BoardSnapshot
 from starpulse.contracts import BoardTask
 
 WAIT_S = 5.0
@@ -250,7 +251,7 @@ def test_a_reader_never_writes_the_saved_board(log: EventLog, stop: threading.Ev
     child.put(_task("T-1", "to_do"))
     child.expect("0-0")
     child.save()
-    saved = log.load_board_state(KEY)
+    saved = log.checkpoints.load(KEY, BoardSnapshot)
     reader = _reader(log, stop)
     assert reader.ready.wait(WAIT_S)
     child.put(_task("T-2", "to_do"))
@@ -258,7 +259,7 @@ def test_a_reader_never_writes_the_saved_board(log: EventLog, stop: threading.Ev
 
     reader.save()
 
-    assert log.load_board_state(KEY) == saved
+    assert log.checkpoints.load(KEY, BoardSnapshot) == saved
 
 
 def test_the_child_saves_nothing_before_it_has_read_its_board(log: EventLog) -> None:
@@ -267,7 +268,7 @@ def test_the_child_saves_nothing_before_it_has_read_its_board(log: EventLog) -> 
 
     child.save()
 
-    assert log.load_board_state(KEY) is None
+    assert log.checkpoints.load(KEY, BoardSnapshot) == (None, None)
 
 
 def test_the_child_hands_the_adapter_the_source_it_kept_and_not_its_own_bookkeeping(

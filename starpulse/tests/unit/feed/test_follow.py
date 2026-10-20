@@ -77,7 +77,7 @@ def test_follow_says_the_stream_is_not_reached_then_expects_the_last_entry_of_it
     assert feed.calls == [("await", ""), ("expect", str(last))]
 
 
-def test_follow_expects_the_empty_stream_id_when_the_log_holds_no_entry_of_it(
+def test_follow_expects_the_empty_position_when_the_log_holds_no_entry_of_it(
     log: EventLog, stop: threading.Event
 ) -> None:
     feed = _Feed()
@@ -85,7 +85,7 @@ def test_follow_expects_the_empty_stream_id_when_the_log_holds_no_entry_of_it(
     follow(feed, log, STREAM, lambda *_: None, stop=stop, interval=0.01)
     _until(lambda: len(feed.calls) == 2)
 
-    assert feed.calls[1] == ("expect", "0-0")
+    assert feed.calls[1] == ("expect", "0")
 
 
 def test_follow_keeps_trying_until_the_database_is_reachable(

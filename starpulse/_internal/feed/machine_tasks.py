@@ -17,7 +17,7 @@ from pydantic import ValidationError
 
 from starpulse.contracts.adapters import MachineEvent, TaskKeys
 from starpulse._internal.machines.transitions import tables
-from starpulse._internal.feed.board_feed import BoardFeed, stream_id
+from starpulse._internal.feed.board_feed import BoardFeed, entry_position
 
 #: How many of a task's latest steps travel with it, so a page that connected after several steps can still walk each one.
 TRAIL = 12
@@ -45,14 +45,14 @@ class MachineTasks:
         self._trail = {name: TRAIL_SOURCED if machine.get("source") else TRAIL for name, machine in drawn.items()}
         #: Each placed run by its last move, oldest first, so the runs past the window go from the front.
         self._runs: dict[tuple[str, str], float] = {}
-        self._expected: tuple[int, int] | None = None
-        self._seen = (0, 0)
+        self._expected: int | None = None
+        self._seen = 0
         #: Set once the stream has been read up to the last entry it held when the server started.
         self.ready = threading.Event()
 
     def expect(self, last_id: str) -> None:
-        """Mark the tasks ready once the entry `last_id` has been read; `0-0` is an empty stream."""
-        self._expected = stream_id(last_id)
+        """Mark the tasks ready once the entry `last_id` has been read; `0` is an empty stream."""
+        self._expected = entry_position(last_id)
         self._check_ready()
 
     def await_stream(self) -> None:
@@ -116,7 +116,7 @@ class MachineTasks:
 
     def handle_entry(self, entry_id: str, fields: dict) -> None:
         """Take one stream entry; one that is not a machine event of the contract is dropped."""
-        self._seen = max(self._seen, stream_id(entry_id))
+        self._seen = max(self._seen, entry_position(entry_id))
         try:
             event = MachineEvent.model_validate(fields)
         except ValidationError:

@@ -54,13 +54,15 @@ gaps = Table(
     Index("ux_starpulse_gaps", "stream", "after_id", unique=True),
 )
 
-#: The Board a reader saved, with the cursor of the last entry it reflects, so a restart resumes after it.
-board_state = Table(
-    "starpulse_board_state",
+#: How far each reader of the log got: an integer position and, for a reader that rebuilds state, the snapshot it
+#: rebuilds from. A snapshot of another `schema_version` is not read; the reader replays from the log.
+checkpoints = Table(
+    "starpulse_checkpoints",
     metadata,
-    Column("stream", String, primary_key=True),
-    Column("after_id", String, nullable=False),
-    Column("state", JSON, nullable=False),
+    Column("name", String, primary_key=True),
+    Column("position", Integer, nullable=False),
+    Column("schema_version", Integer, nullable=False),
+    Column("state", JSON(none_as_null=True), nullable=True),
     Column("saved_at", Float, nullable=False),
 )
 

@@ -184,7 +184,7 @@ def test_a_feed_builds_when_no_finished_task_files_exist(tmp_path, monkeypatch: 
     assert body["error"] is None
 
 
-def test_stream_ids_compare_by_number_not_by_text() -> None:
+def test_entry_positions_compare_by_number_not_by_text() -> None:
     feed = BoardFeed()
     feed.expect("10-0")
 
@@ -269,30 +269,11 @@ def test_a_replay_resends_only_the_snapshot_not_delta_kinds() -> None:
     assert changes.empty()
 
 
-def test_the_sequence_half_of_a_stream_id_orders_entries_that_share_a_millisecond() -> None:
-    feed = BoardFeed()
-    feed.expect("5-1")
-
-    feed.seen("5-0")
-    assert not feed.ready.is_set()
-    feed.seen("5-1")
-    assert feed.ready.is_set()
-
-
-@pytest.mark.parametrize("last_id", ["1-0", "0-1"])
+@pytest.mark.parametrize("last_id", ["1-0", "1"])
 def test_a_feed_that_has_read_nothing_is_not_ready_for_the_first_entry_of_a_stream(last_id: str) -> None:
     feed = BoardFeed()
 
     feed.expect(last_id)
-
-    assert not feed.ready.is_set()
-
-
-def test_a_stream_id_with_no_sequence_counts_as_sequence_zero() -> None:
-    feed = BoardFeed()
-    feed.expect("5-1")
-
-    feed.seen("5")
 
     assert not feed.ready.is_set()
 
@@ -728,7 +709,12 @@ def test_the_ledger_is_rebuilt_only_when_a_run_of_a_tied_workflow_changes() -> N
 def test_a_task_entering_the_lane_a_workflows_event_reaches_pairs_with_its_run_by_the_task_parameter() -> None:
     feed = ledger_feed()
     entered = datetime(2026, 10, 7, 0, 5, tzinfo=ZoneInfo("UTC")).timestamp()
-    feed.read_lanes(lambda since=None: [("TASK-1", entered, "To Do", "In Progress"), ("TASK-2", entered + 1, "To Do", "In Progress")])
+    feed.read_lanes(
+        lambda since=None: [
+            ("TASK-1", entered, "To Do", "In Progress"),
+            ("TASK-2", entered + 1, "To Do", "In Progress"),
+        ]
+    )
     started = {**APPLIED, "runId": "s1", "startedAt": "2026-10-07T00:06:00Z", "params": {"TASK": "TASK-1"}}
 
     feed.set_dags("ci", [_dag("start", started)], None)
@@ -901,6 +887,7 @@ def test_reopen_ledger_adds_no_row_for_a_flap_that_ends_done() -> None:
 def test_reopen_ledger_adds_one_row_for_a_move_out_of_done() -> None:
     assert _reopen_rows(("In Progress", "Done"), ("Done", "Ready")) == [["TASK-1"]]
 
+
 BEFORE = "0" * 40
 FAILED = {
     **APPLIED,
@@ -984,7 +971,14 @@ def test_the_open_failure_is_the_newest_when_several_merges_are_pinned() -> None
     feed.set_pulls(
         {
             "TASK-1": [MERGED_PR],
-            "TASK-0": [{**MERGED_PR, "url": "https://github.com/o/trantor/pull/6", "merge_sha": "b" * 40, "merged_at": "2026-10-06T23:00:00Z"}],
+            "TASK-0": [
+                {
+                    **MERGED_PR,
+                    "url": "https://github.com/o/trantor/pull/6",
+                    "merge_sha": "b" * 40,
+                    "merged_at": "2026-10-06T23:00:00Z",
+                }
+            ],
         }
     )
 
@@ -1036,7 +1030,10 @@ def _paged_feed() -> BoardFeed:
     feed = ledger_feed()
     feed.set_pulls(dict([_merged(n, n) for n in range(25)] + [_merged(99, 0, day=5)]))
     run = lambda rid, sha, start, **extra: {  # noqa: E731
-        **APPLIED, "runId": rid, "startedAt": f"2026-10-07T00:{start}:00Z", "params": {"AFTER": f"{sha:040x}", **extra},
+        **APPLIED,
+        "runId": rid,
+        "startedAt": f"2026-10-07T00:{start}:00Z",
+        "params": {"AFTER": f"{sha:040x}", **extra},
     }
     failed = {**run("bad", 5, 30), "status": "failed"}
     feed.set_dags("ci", [_dag("apply", failed, run("again", 3, 40, FORCE="true"))], None)
@@ -1088,7 +1085,11 @@ def test_a_pinned_merge_older_than_the_loaded_page_still_rides_the_snapshot_and_
     feed = ledger_feed()
     feed.set_pulls(dict(_merged(n, n) for n in range(25)))
     failed = {
-        **APPLIED, "runId": "bad", "status": "failed", "startedAt": "2026-10-07T00:30:00Z", "params": {"AFTER": f"{2:040x}"},
+        **APPLIED,
+        "runId": "bad",
+        "status": "failed",
+        "startedAt": "2026-10-07T00:30:00Z",
+        "params": {"AFTER": f"{2:040x}"},
     }
     _, deltas = feed.subscribe()
     feed.set_dags("ci", [_dag("apply", failed)], None)
@@ -1242,7 +1243,13 @@ def _head(feed: BoardFeed, event: str) -> list[dict]:
 
 
 def test_a_task_card_carries_the_dagu_runs_its_dag_run_ids_name() -> None:
-    run = {"runId": "dag-run-task-7-1", "task": "TASK-7", "url": "http://dagu/dag-runs/w/dag-run-task-7-1", "status": "failed", "startedAt": "t"}
+    run = {
+        "runId": "dag-run-task-7-1",
+        "task": "TASK-7",
+        "url": "http://dagu/dag-runs/w/dag-run-task-7-1",
+        "status": "failed",
+        "startedAt": "t",
+    }
     other = {"runId": "r1", "task": None, "url": "http://dagu/dag-runs/w/r1", "status": "succeeded", "startedAt": "t"}
     feed = BoardFeed()
     feed.put(BoardTask(id="TASK-7", team="demo", title="t", lane="in_progress"))

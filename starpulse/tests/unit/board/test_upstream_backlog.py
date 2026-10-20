@@ -697,7 +697,7 @@ def test_a_saved_board_that_cannot_be_read_is_replaced_by_a_full_scan(
     first, _ = _restarted(tmp_path, monkeypatch)
     first.save()
     with sqlite3.connect(tmp_path / "log.sqlite") as db:
-        assert db.execute("UPDATE starpulse_board_state SET state = '{\"open\": 1}'").rowcount == 1
+        assert db.execute("UPDATE starpulse_checkpoints SET state = '{\"open\": 1}'").rowcount == 1
 
     resumed, read = _restarted(tmp_path, monkeypatch)
 

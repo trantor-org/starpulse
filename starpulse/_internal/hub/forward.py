@@ -141,14 +141,14 @@ class Forwarder:
         if not opted:
             self._refused = False
         sent_opt_in = opted and not self._refused
-        after = self.store.cursor(self.name)
+        after = self.store.checkpoints.load(self.name)[0]
         from starpulse._internal.eventlog.event_log import Tail  # noqa: PLC0415 - the database stack loads when a log opens
 
         tail = Tail(self.log, self.name, streams=tuple(FIELDS), after=after, batch=self.forward.batch)
         entries = tail.poll()
         if not entries:
             if tail.cursor != after:
-                self.store.save_cursor(self.name, tail.cursor)
+                self.store.checkpoints.save(self.name, tail.cursor)
             if self._snapshot_due() and not self._snapshot(sent_opt_in):
                 return None
             return 0
@@ -158,7 +158,7 @@ class Forwarder:
         ]
         if not self._deliver(batch, sent_opt_in):
             return None
-        self.store.save_cursor(self.name, tail.cursor)
+        self.store.checkpoints.save(self.name, tail.cursor)
         return len(entries)
 
     def _snapshot_due(self) -> bool:
@@ -250,7 +250,13 @@ class Forwarder:
         names = opted and not self._refused
         from starpulse._internal.eventlog.event_log import Tail  # noqa: PLC0415 - the database stack loads when a log opens
 
-        tail = Tail(self.log, self.name, streams=tuple(FIELDS), after=self.store.cursor(self.name), batch=PREVIEW + 1)
+        tail = Tail(
+            self.log,
+            self.name,
+            streams=tuple(FIELDS),
+            after=self.store.checkpoints.load(self.name)[0],
+            batch=PREVIEW + 1,
+        )
         entries = tail.poll()
         return {
             "url": self.url,
@@ -308,7 +314,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("action", choices=("opt-in", "opt-out", "status", "rebind"))
     parser.add_argument("source", nargs="?", help="rebind: the `[[sources]]` name whose binding to drop")
     parser.add_argument(
-        "--config", type=Path, help="the TOML config the server runs with; the flag is stored in the history store it names"
+        "--config",
+        type=Path,
+        help="the TOML config the server runs with; the flag is stored in the history store it names",
     )
     args = parser.parse_args(argv)
     if args.action == "rebind":
@@ -352,7 +360,9 @@ def build(
     return Forwarder(log, store, config.forward, token, OptIn(log), status_ttl=STATUS_TTL)
 
 
-def start(forwarder: Forwarder, stop: threading.Event, after_step: Callable[[], None] | None = None) -> threading.Thread:
+def start(
+    forwarder: Forwarder, stop: threading.Event, after_step: Callable[[], None] | None = None
+) -> threading.Thread:
     """Run `forwarder` as a daemon thread that ends when `stop` is set."""
     thread = threading.Thread(target=forwarder.run, args=(stop, after_step), name="forwarder", daemon=True)
     thread.start()

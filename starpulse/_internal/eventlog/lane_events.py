@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from starpulse._internal.eventlog.history import HistoryStore
 
 STREAM = "board:lanes"
-#: The cursor name under which a store records that its lane history has been put in the log.
+#: The checkpoint name under which a store records that its lane history has been put in the log.
 REPLAYED = "board:lanes:replayed"
 #: The fields a forwarded lane entry may carry.
 #: `assignee` is the legacy name of `profile`, still forwarded by an instance that has not flipped it.
@@ -98,11 +98,11 @@ def replay(store: HistoryStore, log: EventLog) -> int:
     only the task, the lane and the time: the history keeps no facets. A log that refuses an entry leaves the replay
     unfinished, and the next call goes again.
     """
-    if store.cursor(REPLAYED) is not None:
+    if store.checkpoints.load(REPLAYED)[0] is not None:
         return 0
     changes = store.lane_changes()
     for event_id, task, lane, at in changes:
         if append(log, event_id, task, lane, at) is None:
             return 0
-    store.save_cursor(REPLAYED, 1)
+    store.checkpoints.save(REPLAYED, 1)
     return len(changes)
