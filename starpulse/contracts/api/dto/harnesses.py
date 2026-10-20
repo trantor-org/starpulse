@@ -10,6 +10,8 @@ class HarnessTier(_Api):
     efforts: list[str]
     models: dict[str, str] | None = None
     """Per-effort model ids when a harness embeds effort in the model id; omitted when every effort shares `model`."""
+    run_efforts: dict[str, str] | None = None
+    """The effort a session for each board effort runs at; omitted when every session runs at its board effort."""
 
 
 class HarnessDesktop(_Api):

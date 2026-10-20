@@ -1072,6 +1072,9 @@ export interface HarnessTier {
   models?: {
     [k: string]: string;
   } | null;
+  run_efforts?: {
+    [k: string]: string;
+  } | null;
 }
 /**
  * `GET /api/analytics/health`: the Board's flow health over a window.
