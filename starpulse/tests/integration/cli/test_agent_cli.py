@@ -2329,3 +2329,13 @@ def test_a_server_a_manifest_case_names_outlives_the_case_that_built_it(request:
         scopes[fixture] = definition.scope
 
     assert {fixture: scope for fixture, scope in scopes.items() if scope == "function"} == {}
+
+
+def test_the_drop_migration_is_the_only_new_reference_to_starpulse_insights() -> None:
+    root = Path(__file__).resolve().parents[3]
+    hits = [
+        path
+        for path in root.rglob("*.py")
+        if "tests" not in path.parts and "starpulse_insights" in path.read_text(errors="ignore")
+    ]
+    assert {path.name for path in hits} == {"0004_insights.py", "0026_drop_insights.py"}
