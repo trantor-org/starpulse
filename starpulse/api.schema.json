@@ -1086,7 +1086,7 @@
     },
     "CreateRequest": {
       "additionalProperties": false,
-      "description": "`POST /api/tasks`: create a task in the board's starting lane, stamped `created_by: <harness>:<session>`.",
+      "description": "`POST /api/tasks`: create a task in the lane `status` names or else the board's starting lane, stamped\n`created_by: <harness>:<session>`.\n\nText is trimmed; list items are trimmed and blank ones dropped, or refused where the list must hold only text.\n`task`, `size` and `skill` are read and left unused by a create.",
       "properties": {
         "acceptanceCriteria": {
           "anyOf": [
@@ -1124,6 +1124,20 @@
           ],
           "default": null
         },
+        "definitionOfDone": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "dependencies": {
           "anyOf": [
             {
@@ -1142,6 +1156,20 @@
           "anyOf": [
             {
               "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "documentation": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             },
             {
               "type": "null"
@@ -1207,7 +1235,65 @@
           ],
           "default": null
         },
+        "references": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "session": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "size": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "skill": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "task": {
           "anyOf": [
             {
               "type": "string"
@@ -1220,6 +1306,17 @@
         },
         "title": {
           "type": "string"
+        },
+        "type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -4327,6 +4424,17 @@
           ],
           "default": null
         },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "session": {
           "anyOf": [
             {
@@ -6803,6 +6911,17 @@
       "additionalProperties": false,
       "description": "`POST /api/start`: start a session for `task` on `profile`; `harness` defaults to `claude`.\n\n`assignee` is the legacy name of `profile` and is read when `profile` is absent.",
       "properties": {
+        "actor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "assignee": {
           "anyOf": [
             {
@@ -6837,6 +6956,17 @@
           "default": null
         },
         "profile": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "session": {
           "anyOf": [
             {
               "type": "string"

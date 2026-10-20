@@ -116,7 +116,7 @@ from typing import TYPE_CHECKING, Any, Concatenate, NamedTuple
 from urllib.parse import urlsplit
 
 import yaml
-from pydantic import BaseModel, ValidationError, ValidationInfo, field_validator
+from pydantic import BaseModel, ValidationError
 
 from starpulse._internal.board import post_merge_checks
 from starpulse._internal.board.seam import (
@@ -141,6 +141,8 @@ from starpulse.contracts.api.dto.requests import (
     ArchiveRequest,
     AutopilotRequest,
     ClaimRequest,
+    CREATE_LISTS,
+    CREATE_TEXT,
     CompleteRequest,
     CreateRequest,
     DocArchiveRequest,
@@ -190,20 +192,6 @@ _LAN = (
 )
 #: The longest title a create accepts; a title is one line on a card, not a description.
 _TITLE_MAX = 300
-#: The details a create takes besides its title, as one text value or a list of them. A create takes every one in its
-#: single write: a second write to finish a task is refused as not on the board until the next scan places the card.
-_CREATE_TEXT = ("description", "priority", "milestone", "profile", "assignee", "status", "type")
-_CREATE_LISTS = (
-    "labels",
-    "dependencies",
-    "acceptanceCriteria",
-    "references",
-    "documentation",
-    "definitionOfDone",
-)
-#: The lists whose every item must be nonblank, rather than dropped when blank.
-_CREATE_NONBLANK = ("acceptanceCriteria", "definitionOfDone")
-_PRIORITIES = frozenset({"high", "medium", "low"})
 #: Saves hold this from reading a task's current record to writing, so two browsers saving one task cannot both pass the stale check.
 _EDIT_LOCK = threading.Lock()
 #: The verdicts a post-merge check takes, as a request spells them and as the comment records them.
@@ -368,51 +356,6 @@ class _ClaimBody(ClaimRequest):
     """A claim names its session, the opaque string that holds the task."""
 
     session: NonBlank
-
-
-class _StartBody(StartRequest):
-    """A start may name the actor that makes it, which `StartRequest` leaves out."""
-
-    actor: NonBlank | None = None
-
-
-class _CreateBody(CreateRequest):
-    """A create as the handler reads it: the details `CreateRequest` leaves out, text trimmed, list items trimmed and
-    blank ones dropped, or refused where the list must hold only text."""
-
-    status: str | None = None
-    type: str | None = None
-    references: list[str] | None = None
-    documentation: list[str] | None = None
-    definitionOfDone: list[str] | None = None
-
-    @field_validator(*_CREATE_TEXT)
-    @classmethod
-    def _trimmed(cls, value: str | None) -> str | None:
-        return None if value is None else value.strip()
-
-    @field_validator("priority")
-    @classmethod
-    def _known_priority(cls, value: str | None) -> str | None:
-        if value and value.lower() not in _PRIORITIES:
-            raise ValueError("must be high, medium or low")
-        return value and value.lower()
-
-    @field_validator(*_CREATE_LISTS)
-    @classmethod
-    def _kept(cls, value: list[str] | None, info: ValidationInfo) -> list[str] | None:
-        if value is None:
-            return None
-        kept = [item.strip() for item in value if item.strip()]
-        if info.field_name in _CREATE_NONBLANK and len(kept) != len(value):
-            raise ValueError("must be a list of nonblank text")
-        return kept
-
-
-class _MissBody(MissRequest):
-    """A miss files its `fix` as a create."""
-
-    fix: _CreateBody
 
 
 def _record_written(feed: BoardFeed | None, task: str | None, who: _Who, write: Callable[[], Written]) -> Written:
@@ -818,9 +761,9 @@ def record_verdict(
     return 200, {"task": task, "check": check, "verdict": _VERDICTS[verdict], **({"fix": fix} if fix else {})}
 
 
-@_write(_MissBody, "Recording a miss")
+@_write(MissRequest, "Recording a miss")
 def record_miss(
-    request: _MissBody,
+    request: MissRequest,
     feed: BoardFeed,
     read: TaskReader | None,
     edit: TaskEditor | None,
@@ -935,16 +878,16 @@ def import_retired(request: RetiredImportRequest, board: Board | None) -> tuple[
     return 200, {"task": written.output}
 
 
-def _create_details(request: _CreateBody) -> dict[str, Any]:
+def _create_details(request: CreateRequest) -> dict[str, Any]:
     """The filled details of a create, as the board's writer takes them."""
-    fields = {field: getattr(request, field) for field in (*_CREATE_TEXT, *_CREATE_LISTS)}
+    fields = {field: getattr(request, field) for field in (*CREATE_TEXT, *CREATE_LISTS)}
     details = {field: value for field, value in fields.items() if value}
     if "definitionOfDone" in details:
         details["definitionOfDone"] = [{"text": item, "checked": False} for item in details["definitionOfDone"]]
     return details
 
 
-def _create(request: _CreateBody, create: TaskCreator | None, feed: BoardFeed | None) -> tuple[int, dict[str, Any]]:
+def _create(request: CreateRequest, create: TaskCreator | None, feed: BoardFeed | None) -> tuple[int, dict[str, Any]]:
     """Create the task `request` names through `create`, in the lane its `status` names or else the board's starting
     lane."""
     title = request.title.strip()
@@ -962,9 +905,9 @@ def _create(request: _CreateBody, create: TaskCreator | None, feed: BoardFeed | 
     return 201, {"task": written.output}
 
 
-@_write(_CreateBody, "Creating a task")
+@_write(CreateRequest, "Creating a task")
 def create_task(
-    request: _CreateBody, create: TaskCreator | None, feed: BoardFeed | None = None
+    request: CreateRequest, create: TaskCreator | None, feed: BoardFeed | None = None
 ) -> tuple[int, dict[str, Any]]:
     """Create the task `request` names: the HTTP status and JSON body, which holds the new task's id.
 
@@ -1118,9 +1061,9 @@ def restore_doc(request: DocRestoreRequest, board: Board | None) -> tuple[int, d
     return 200, {"doc": doc}
 
 
-@_write(_StartBody, "Starting a session")
+@_write(StartRequest, "Starting a session")
 def start_task(
-    request: _StartBody,
+    request: StartRequest,
     feed: BoardFeed,
     assign: AssigneeWriter,
     start_session: Callable[..., str] | None,

@@ -4,10 +4,18 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from pydantic import AfterValidator
+from pydantic import AfterValidator, ValidationInfo, field_validator
 
 from starpulse.contracts.api._base import _Api
 from starpulse.contracts.api.dto.autopilot import QuietHours
+
+#: The details a create takes besides its title, as one text value or a list of them. A create takes every one in its
+#: single write: a second write to finish a task is refused as not on the board until the next scan places the card.
+CREATE_TEXT = ("description", "priority", "milestone", "profile", "assignee", "status", "type")
+CREATE_LISTS = ("labels", "dependencies", "acceptanceCriteria", "references", "documentation", "definitionOfDone")
+#: The lists whose every item must be nonblank, rather than dropped when blank.
+_CREATE_NONBLANK = ("acceptanceCriteria", "definitionOfDone")
+_PRIORITIES = frozenset({"high", "medium", "low"})
 
 
 def _nonblank(value: str) -> str:
@@ -47,6 +55,8 @@ class StartRequest(_Api):
     assignee: str | None = None
     harness: str | None = None
     mode: str | None = None
+    actor: NonBlank | None = None
+    session: NonBlank | None = None
 
 
 class EditRequest(_Writer):
@@ -119,7 +129,12 @@ class ReviewRequest(_Writer):
 
 
 class CreateRequest(_Writer):
-    """`POST /api/tasks`: create a task in the board's starting lane, stamped `created_by: <harness>:<session>`."""
+    """`POST /api/tasks`: create a task in the lane `status` names or else the board's starting lane, stamped
+    `created_by: <harness>:<session>`.
+
+    Text is trimmed; list items are trimmed and blank ones dropped, or refused where the list must hold only text.
+    `task`, `size` and `skill` are read and left unused by a create.
+    """
 
     title: str
     description: str | None = None
@@ -127,9 +142,39 @@ class CreateRequest(_Writer):
     milestone: str | None = None
     profile: str | None = None
     assignee: str | None = None
+    status: str | None = None
+    type: str | None = None
+    task: str | None = None
+    size: str | None = None
+    skill: str | None = None
     labels: list[str] | None = None
     dependencies: list[str] | None = None
     acceptanceCriteria: list[str] | None = None
+    references: list[str] | None = None
+    documentation: list[str] | None = None
+    definitionOfDone: list[str] | None = None
+
+    @field_validator(*CREATE_TEXT)
+    @classmethod
+    def _trimmed(cls, value: str | None) -> str | None:
+        return None if value is None else value.strip()
+
+    @field_validator("priority")
+    @classmethod
+    def _known_priority(cls, value: str | None) -> str | None:
+        if value and value.lower() not in _PRIORITIES:
+            raise ValueError("must be high, medium or low")
+        return value and value.lower()
+
+    @field_validator(*CREATE_LISTS)
+    @classmethod
+    def _kept(cls, value: list[str] | None, info: ValidationInfo) -> list[str] | None:
+        if value is None:
+            return None
+        kept = [item.strip() for item in value if item.strip()]
+        if info.field_name in _CREATE_NONBLANK and len(kept) != len(value):
+            raise ValueError("must be a list of nonblank text")
+        return kept
 
 
 class VerdictRequest(_Writer):
@@ -152,6 +197,7 @@ class MissRequest(_Writer):
     check: str
     fix: CreateRequest
     evidence: str | None = None
+    reason: str | None = None
 
 
 class MilestoneCreateRequest(_Api):
