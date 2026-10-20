@@ -10,6 +10,7 @@ line to stderr and runs the test where it was started too.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -25,6 +26,8 @@ MOVE_SECONDS = 2.0
 SCOPE_TASKS_MAX = 2048
 CGROUP_ROOT = Path("/sys/fs/cgroup")
 SELF_CGROUP = Path("/proc/self/cgroup")
+# `task-<N>` in the working directory (a task worktree is `task-<N>-*`); a word that merely ends in "task" is not one.
+TASK_DIRECTORY = re.compile(r"(?<![A-Za-z0-9])task-(\d+)(?!\d)", re.IGNORECASE)
 
 
 def slice_exists() -> bool:
@@ -35,12 +38,18 @@ def in_slice() -> bool:
     return f"/{SLICE}/" in SELF_CGROUP.read_text()
 
 
+def task_tag() -> str:
+    """`t<N>-` when the working directory names task N, else empty: it puts the task in the scope name for CPU attribution."""
+    found = TASK_DIRECTORY.search(str(Path.cwd()))
+    return f"t{found[1]}-" if found else ""
+
+
 def start_scope(pid: int) -> subprocess.CompletedProcess[str]:
-    """Ask the system manager for a task-capped `tests-pytest-<pid>.scope` under the slice holding `pid` (StartTransientUnit)."""
+    """Ask the system manager for a task-capped `tests-pytest-[t<N>-]<pid>.scope` under the slice holding `pid` (StartTransientUnit)."""
     properties = ["PIDs", "au", "1", str(pid), "Slice", "s", SLICE, "TasksMax", "t", str(SCOPE_TASKS_MAX)]
     command = ["busctl", "call", "org.freedesktop.systemd1", "/org/freedesktop/systemd1"]
     command += ["org.freedesktop.systemd1.Manager", "StartTransientUnit", "ssa(sv)a(sa(sv))"]
-    command += [f"tests-pytest-{pid}.scope", "fail", "3", *properties, "0"]
+    command += [f"tests-pytest-{task_tag()}{pid}.scope", "fail", "3", *properties, "0"]
     return subprocess.run(command, capture_output=True, text=True, check=False)
 
 

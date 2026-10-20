@@ -14,6 +14,14 @@ IN_SLICE = "0::/tests.slice/tests-pytest-1.scope\n"
 OUTSIDE = "0::/user.slice/user-1000.slice/session-2.scope\n"
 
 
+@pytest.fixture(autouse=True)
+def outside_a_task_worktree(tmp_path, monkeypatch):
+    """Run from a directory that names no task, as the suite does in a checkout that is not a task worktree."""
+    elsewhere = tmp_path / "checkout"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+
+
 @pytest.fixture
 def host(tmp_path, monkeypatch):
     """A host with `tests.slice`, a `busctl`, and a pytest process outside the slice; `host.calls` records each command run.
@@ -42,6 +50,17 @@ def host(tmp_path, monkeypatch):
     monkeypatch.setattr(tests_slice, "time", SimpleNamespace(sleep=sleep))
     host = SimpleNamespace(calls=calls, own=own, root=tmp_path, returncode=0, stderr="", naps=0, lag=2)
     return host
+
+
+def test_the_scope_name_carries_the_task_of_the_worktree_pytest_runs_in(host, tmp_path, monkeypatch):
+    worktree = tmp_path / "task-6916-attribute-tests"
+    worktree.mkdir()
+    monkeypatch.chdir(worktree)
+
+    tests_slice.pytest_configure(SimpleNamespace())
+
+    (command,) = host.calls
+    assert command[command.index("StartTransientUnit") + 2] == f"tests-pytest-t6916-{os.getpid()}.scope"
 
 
 def test_pytest_enters_the_slice_through_a_task_capped_scope_holding_its_own_pid(host):
