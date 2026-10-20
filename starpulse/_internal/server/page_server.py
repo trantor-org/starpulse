@@ -32,6 +32,9 @@ BACKLOG = 128
 #: Seconds a client may keep using the `h3` alternative the `alt-svc` header offers before it asks again.
 ALT_SVC_MAX_AGE_S = 3600
 
+#: Seconds between the datagrams a stopping server sends its QUIC socket so Hypercorn's QUIC loop sees the stop.
+NUDGE_S = 0.05
+
 #: Seconds a stopping server waits for the requests it took, under the 10 s a supervisor allows before it kills a child.
 DRAIN_S = 8.0
 
@@ -136,12 +139,28 @@ class PageServer:
         self._loop = asyncio.get_running_loop()
         if self._stopped.is_set():  # `stop` came before the loop did
             self._wake.set()
-        await worker_serve(
-            wrap_app(self.app, self._config.wsgi_max_body_size, "asgi"),
-            self._config,
-            sockets=self._sockets,
-            shutdown_trigger=self._wait_and_wind_down,
-        )
+        nudger = asyncio.create_task(self._nudge_quic())
+        try:
+            await worker_serve(
+                wrap_app(self.app, self._config.wsgi_max_body_size, "asgi"),
+                self._config,
+                sockets=self._sockets,
+                shutdown_trigger=self._wait_and_wind_down,
+            )
+        finally:
+            nudger.cancel()
+
+    async def _nudge_quic(self) -> None:
+        """Once stopping, send the QUIC socket a datagram Hypercorn drops: its QUIC loop checks for the stop only as a
+        datagram arrives, so an idle one would keep the server up for the whole drain."""
+        if self._quic is None:
+            return
+        assert self._wake is not None
+        await self._wake.wait()
+        with socket.socket(self._quic.family, socket.SOCK_DGRAM) as nudge:
+            while True:
+                nudge.sendto(b"", self.server_address)
+                await asyncio.sleep(NUDGE_S)
 
     async def _wait_and_wind_down(self) -> None:
         assert self._wake is not None

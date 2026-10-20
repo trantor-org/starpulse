@@ -8,6 +8,7 @@ import socket
 import ssl
 import subprocess
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -171,3 +172,10 @@ def test_http11_and_http2_answer_on_the_same_port_and_advertise_h3(
     assert h2_answer.status == 200
     assert h11_alt_svc == f'h3=":{port}"; ma=3600'
     assert h2_answer.headers["alt-svc"] == h11_alt_svc
+
+
+def test_an_idle_tls_server_stops_without_waiting_out_its_drain(tmp_path: Path, certificate: tuple[Path, Path]) -> None:
+    with serve(tmp_path, BoardFeed(machines=MACHINES), tls=certificate):
+        stopping = time.monotonic()
+
+    assert time.monotonic() - stopping < 4  # its drain is 8 s
