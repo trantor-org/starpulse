@@ -104,3 +104,26 @@ def test_the_snapshot_body_is_read_compressed_as_the_server_sent_it():
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_a_first_snapshot_after_a_feed_change_is_not_judged():
+    p95s = {load.FIRST_SNAPSHOT: 20.0, load.FIRST_SNAPSHOT_AFTER_CHANGE: 160.0}
+    assert load.over_budget(p95s, {}) == []
+    assert load.over_budget({load.FIRST_SNAPSHOT: 80.0, load.FIRST_SNAPSHOT_AFTER_CHANGE: 5.0}, {}) == [
+        "/api/events first snapshot p95 80 ms > 50 ms"
+    ]
+
+
+def test_a_failed_first_snapshot_after_a_feed_change_still_fails_the_run():
+    assert load.over_budget({load.FIRST_SNAPSHOT_AFTER_CHANGE: 5.0}, {load.FIRST_SNAPSHOT_AFTER_CHANGE: 1}) == [
+        f"{load.FIRST_SNAPSHOT_AFTER_CHANGE} 1 failed"
+    ]
+
+
+def test_a_snapshot_key_that_differs_from_the_last_is_a_change():
+    changes = load.Changes()
+    assert not changes.seen("a")  # the first key is no change: nothing came before it
+    assert not changes.seen("a")
+    assert changes.seen("b")
+    assert not changes.seen("b")
+    assert not changes.seen(None)  # an inline snapshot names no key
