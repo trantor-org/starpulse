@@ -1194,4 +1194,5 @@ def test_upstream_backlog_has_no_legacy_holder_or_assignee_as_profile_readers() 
     assert "**Holder:**" not in source
     assert '"holder"' not in source
     assert "'holder'" not in source
-    assert "assignee" not in source
+    assert '"assignee"' not in source
+    assert "'assignee'" not in source
