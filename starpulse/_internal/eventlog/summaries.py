@@ -22,7 +22,7 @@ Rows are folded in the order the store recorded them, not by their time, so a la
 length and leaves its case where the latest recorded event put it. An event the store cannot attribute is not
 summarised: one of a machine the page does not draw, one with neither a task nor a run, or a lane the Board machine
 lacks (its interval is kept all the same). `HistoryStore.rebuild_summaries` folds the raw rows again
-through the same steps a write takes.
+through the same steps a write takes, in memory (`Fold`) so it holds the write lock only to swap the result in.
 """
 
 from __future__ import annotations
@@ -50,8 +50,8 @@ from sqlalchemy import (
 )
 
 from starpulse._internal.eventlog.level_metrics import UNATTRIBUTED
-from starpulse._internal.machines.transitions import tables as transitions
 from starpulse._internal.eventlog.tables import metadata
+from starpulse._internal.machines.transitions import tables as transitions
 
 BOARD = "board"
 _CHUNK = 5000
@@ -271,6 +271,69 @@ def write_lane(db: Connection, upsert: Callable[[Table], Any], event_id: str, ta
             },
         )
     )
+
+
+class Fold:
+    """The summaries of the rows it is given, kept in memory: what `write_step` and `write_lane` leave in the tables for
+    the same rows in the same order, so a rebuild folds a whole history without holding the write lock and writes the
+    result in one short transaction."""
+
+    def __init__(self, summariser: Summariser) -> None:
+        self._summariser = summariser
+        self._steps: dict[tuple[date, str, str, str], list] = {}
+        self._cases: dict[Key, Case] = {}
+        self._stays: list[dict] = []
+        self._open: dict[str, list[dict]] = {}
+        self._lanes: dict[tuple[str, str], list] = {}
+
+    def event(self, row: Mapping[str, Any]) -> None:
+        """Fold a machine event row as `HistoryStore.record_machine` does."""
+        who = self._summariser
+        if (key := who.event_key(row["machine"], row["task"], row["run"], row["event_id"])) is not None:
+            self._step(
+                key, who.event_step(key, self._cases.get(key), row["event"], row["occurred_at"], row["event_id"])
+            )
+
+    def lane(self, event_id: str, task: str, lane: str, at: float) -> None:
+        """Fold a lane change as `HistoryStore.record_lane` does."""
+        who = self._summariser
+        key = who.lane_key(task, event_id)
+        if (step := who.lane_step(self._cases.get(key), lane, at, event_id)) is not None:
+            self._step(key, step)
+        for stay in self._open.pop(task, []):
+            stay["left_at"] = max(stay["entered_at"], at)
+            self._lanes[(source(stay["event_id"]), stay["lane"])][0] -= 1
+        stay = {"task": task, "lane": lane, "entered_at": at, "left_at": None, "event_id": event_id}
+        stay["source"] = source(event_id)
+        self._stays.append(stay)
+        self._open[task] = [stay]
+        count = self._lanes.setdefault((stay["source"], lane), [0, at])
+        count[0] += 1
+        count[1] = min(count[1], at)
+
+    def _step(self, key: Key, step: Step) -> None:
+        total = self._steps.setdefault((step.day, key[0], step.from_state, step.to_state), [0, 0.0])
+        total[0] += 1
+        total[1] += step.duration
+        self._cases[key] = step.case
+
+    def write(self, db: Connection) -> None:
+        """Insert the summaries into the empty tables."""
+        steps = [
+            {"day": day, "machine": machine, "from_state": src, "to_state": dst, "steps": n, "duration_s": seconds}
+            for (day, machine, src, dst), (n, seconds) in self._steps.items()
+        ]
+        placed = [
+            {"machine": m, "source": s, "kind": k, "case_id": i, **case._asdict()}
+            for (m, s, k, i), case in self._cases.items()
+        ]
+        counts = [
+            {"source": src, "lane": lane, "open_tasks": n, "first_at": first}
+            for (src, lane), (n, first) in self._lanes.items()
+        ]
+        for table, rows in ((step_summaries, steps), (cases, placed), (lane_intervals, self._stays), (lanes, counts)):
+            for start in range(0, len(rows), _CHUNK):
+                db.execute(insert(table), rows[start : start + _CHUNK])
 
 
 def count_lanes(db: Connection) -> None:

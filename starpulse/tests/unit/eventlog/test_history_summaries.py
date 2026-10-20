@@ -1,12 +1,16 @@
 """The history store keeps step, case and lane-interval summaries as it records, so a read need not fold every row."""
 
+import threading
+import time
 from pathlib import Path
 
 import pytest
 from sqlalchemy import text
 
+from starpulse._internal.eventlog import history
 from starpulse._internal.eventlog.checkpoints import Checkpoints
 from starpulse._internal.eventlog.history import HistoryStore
+from starpulse._internal.eventlog.summaries import Summariser
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.summaries import assert_matches_rebuild
 
@@ -338,3 +342,35 @@ def test_a_store_opening_while_another_worker_rebuilds_waits_out_the_rebuild(sto
         waits_ms = db.exec_driver_sql("PRAGMA busy_timeout").scalar()
 
     assert waits_ms >= 60_000
+
+
+def test_a_writer_commits_while_the_summaries_rebuild_and_its_row_is_summarised(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A rebuild on a large history outlasts the busy timeout, so it must not hold the write lock while it folds: the
+    timeout is shortened and the fold slowed until the rebuild is several times longer than a writer waits."""
+    monkeypatch.setattr(history, "_SQLITE_BUSY_TIMEOUT", 0.3)
+    store = HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", MACHINES)
+    for n in range(300):
+        _event(store, f"e{n}", "WORKTREE_READY", float(n), task=f"PROJ-{n}")
+    folding = threading.Event()
+    fold = Summariser.event_step
+
+    def slow_step(self, *args):
+        folding.set()
+        time.sleep(0.003)
+        return fold(self, *args)
+
+    monkeypatch.setattr(Summariser, "event_step", slow_step)
+    rebuild = threading.Thread(target=store.rebuild_summaries)
+    rebuild.start()
+    assert folding.wait(10)
+
+    _event(
+        store, "live-1", "WORKTREE_READY", 1000.0, task="LIVE-1"
+    )  # raises `database is locked` if the rebuild holds it
+
+    rebuild.join(30)
+    assert not rebuild.is_alive()
+    assert "LIVE-1" in [row[3] for row in _cases(store)]
+    assert_matches_rebuild(store)
