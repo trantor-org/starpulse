@@ -10,9 +10,11 @@ from pathlib import Path
 import pytest
 
 from starpulse._internal.autopilot.remote import Remote, follow_status, follow_wakes, publisher
+from starpulse._internal.config.config import load
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.harnesses.harness import HARNESS_MACHINES
+from starpulse._internal.server.server import autopilot_remote
 from starpulse.tests.machines import MACHINES
 
 DEADLINE_S = 5.0
@@ -94,3 +96,18 @@ def _next_autopilot(changes: queue.Queue) -> tuple[str, dict]:
         kind, data = changes.get(timeout=DEADLINE_S)
         if kind == "autopilot":
             return kind, data
+
+
+def test_a_served_autopilot_leaves_no_status_thread_once_its_stop_is_set(log: EventLog, tmp_path: Path) -> None:
+    feed = BoardFeed(machines={**MACHINES, **HARNESS_MACHINES})
+    stop = threading.Event()
+    (tmp_path / "starpulse.toml").write_text("")
+    autopilot_remote(load(tmp_path / "starpulse.toml"), tmp_path, feed, log, stop)
+    followers = [t for t in threading.enumerate() if t.name == "autopilot-status"]
+    assert followers
+
+    stop.set()
+    for thread in followers:
+        thread.join(DEADLINE_S)
+
+    assert not any(thread.is_alive() for thread in followers)
