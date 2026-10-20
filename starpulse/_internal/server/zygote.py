@@ -30,7 +30,7 @@ import traceback
 from collections.abc import Callable, Sequence
 from typing import IO, Any, NoReturn
 
-from starpulse._internal.server.hold import LISTEN_FD_ENV, SUPERVISED_ENV
+from starpulse._internal.server.hold import LISTEN_FD_ENV, SUPERVISED_ENV, watch_supervisor
 from starpulse._internal.server.supervisor import spawn_child
 
 logger = logging.getLogger(__name__)
@@ -70,6 +70,7 @@ def _child(
     control.close()
     os.environ.update(env)
     sys.argv = ["starpulse", *argv]
+    watch_supervisor()
     try:
         code = _exit_code(run(argv))
     except SystemExit as exit_:
