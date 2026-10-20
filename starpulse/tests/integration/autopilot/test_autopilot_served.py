@@ -6,8 +6,10 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 import threading
 import time
+import traceback
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -58,12 +60,18 @@ def _start_service() -> Iterator[tuple[str, list[str]]]:
 
 
 def _loop_state(feed: BoardFeed, runtime: Runtime) -> str:
-    """What a start miss needs to name its cause: the switch, the tasks the loop can see, whether it runs, its status."""
+    """What a start miss needs to name its cause: the switch, the tasks the loop can see, whether it runs, its status,
+    the feed's read of task-1 (still `done` is a move the board's poll never placed) and where that poll thread is."""
     loop = runtime.loop
     alive = loop is not None and any(t.name == "autopilot-loop" and t.is_alive() for t in threading.enumerate())
+    agent = feed.task("task-1") or {}
+    read = {key: agent.get(key) for key in ("state", "workable", "workable_since")}
+    frames = sys._current_frames()
+    polls = [t for t in threading.enumerate() if t.name == "upstream-backlog"]
+    at = [traceback.format_stack(frames[t.ident])[-3:] if t.ident in frames else "exited" for t in polls]
     return (
         f"toggle={runtime.toggle.get()} open_tasks={[t.get('id') for t in feed.open_tasks()]} "
-        f"loop_thread_alive={alive} status={runtime.status()}"
+        f"loop_thread_alive={alive} status={runtime.status()} task-1={read} poll_threads={at}"
     )
 
 
@@ -145,6 +153,7 @@ def test_a_start_miss_fails_with_the_loops_state(tmp_path: Path) -> None:
             _until(lambda: False, "the start", deadline_s=0.05, state=lambda: _loop_state(feed, runtime))
 
     assert re.search(r"toggle=True open_tasks=\[.*\] loop_thread_alive=True status=\{", str(miss.value))
+    assert re.search(r"task-1=\{'state': 'done', .*\} poll_threads=\[\[' +File ", str(miss.value))
 
 
 def test_a_board_with_no_autopilot_block_and_no_start_service_starts_the_task_in_tmux(
@@ -176,10 +185,10 @@ def test_the_switch_and_the_run_ledger_are_kept_in_the_store_not_in_files_beside
     with _start_service() as (url, asked):
         _task(tmp_path, "Done")
         config = f'session_start_url = "{url}"\n[autopilot]\nstate_dir = "starpulse-state"\n'
-        with _served(tmp_path, config) as (feed, _):
+        with _served(tmp_path, config) as (feed, runtime):
             _until(lambda: feed.task("task-1"), "the board's read of task-1")
             _task(tmp_path, "To Do")
-            _until(lambda: asked, "the start")
+            _until(lambda: asked, "the start", state=lambda: _loop_state(feed, runtime))
             # The start's claim comment rewrites the task file; a move written before it lands is overwritten.
             task_file = tmp_path / ".starpulse" / "board" / "tasks" / "task-1 - Title.md"
             _until(lambda: "Autopilot started task-1" in task_file.read_text(), "the start's claim comment")
