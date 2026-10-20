@@ -3,7 +3,7 @@
 ```sh
 git clone https://github.com/trantor-org/starpulse && cd starpulse
 uv sync
-pnpm --dir starpulse/web install && pnpm --dir starpulse/web build   # the page, built into starpulse/static; its Kanban, DAGs, Admin and Flow graph views load on demand
+pnpm --dir starpulse/web install && pnpm --dir starpulse/web build   # the page, built into starpulse/static; its Kanban, DAGs and Admin views load on demand
 uv run starpulse serve
 ```
 
@@ -112,7 +112,7 @@ synthetic tasks, sessions, runs and pools. Each changed sub-mockup, a `design/<d
 capture, is published beside the demos as `mockup-<dir>.html` with its scripts inlined. The preview is review context and never gates the pull request, so a failed render leaves the run green.
 A final workflow step then replaces the comment with one titled "failed" that names the head commit, links the run and carries no screenshots,
 and the next push renders again. A change confined to one view's
-feature folder (`features/kanban`, `features/dags` or `features/orbit`) screenshots that view alone; any other page path screenshots all four.
+feature folder (`features/kanban` or `features/dags`) screenshots that view alone; any other page path screenshots all three.
 A push that changed none of those paths since the commit the comment names leaves the comment and the demos untouched, and of `ci/` only
 the preview script, its config, the demo adapter and `ci/workspace/` start a run. A push to `main`
 that touches the same paths republishes both demos under `main/`, the [live demo](https://trantor-org.github.io/starpulse/main/starpulse.html), with a screenshot of each starpulse view that the README shows.

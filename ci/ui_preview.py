@@ -60,7 +60,6 @@ PAGES = {
     STARPULSE: {
         "starpulse-star-map": "",
         "starpulse-kanban": "?view=kanban",
-        "starpulse-orbit": "?view=graph",
         "starpulse-dags": "?view=dags",
     },
     MOCKUP: {"design-mockup": ""},
@@ -68,7 +67,7 @@ PAGES = {
 }
 _FEATURES = ("starpulse", "web", "src", "features")
 #: The feature folder that draws one starpulse page alone: a feature imports shared code and its own folder, never another's.
-VIEW_DIRS = {"kanban": "starpulse-kanban", "orbit": "starpulse-orbit", "dags": "starpulse-dags"}
+VIEW_DIRS = {"kanban": "starpulse-kanban", "dags": "starpulse-dags"}
 
 
 def _matches(path: str, glob: str) -> bool:

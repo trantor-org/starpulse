@@ -1,7 +1,6 @@
 // The demo: `?demo` walks random legal transitions in random flows so every section moves, and a self-contained
 // demo page (`starpulse._internal.cli.demo`) runs that walk inside a DemoServer that answers the page's /api requests itself.
 // A served page never loads this module on the first-paint path: `demo/host.ts` is what `apiFetch` and `openStream` read.
-import { demoLevel } from "./demoLevel";
 import { arriveMerge, demoContract, demoLedger, demoPins, demoStrip, scenarioOf } from "./demoLedger";
 import { PAGE } from "../features/level/ledgerScroll";
 import { MERGE_EVENT } from "../features/level/ledger";
@@ -144,10 +143,6 @@ const HANDLERS: Record<string, Handler> = {
     let end = limit;
     while (0 < end && end < live.length && last(live[end]) === last(live[end - 1])) end++;
     return json({ open, machines: live.slice(0, end).map((n) => flows.find((f) => f.name === n)), more: end < live.length });
-  },
-  "/api/level": (server, _path, query) => {
-    const { status, body } = demoLevel(server.snapshot.now, Number(query.get("hours") ?? 168), new URLSearchParams(globalThis.location?.search ?? ""));
-    return json(body, status);
   },
 };
 

@@ -7,13 +7,11 @@ const load = {
   kanban: () => import("./features/kanban/Kanban"),
   dags: () => import("./features/dags/Dags"),
   admin: () => import("./AdminPage"),
-  orbit: () => import("./features/orbit/OrbitCard"),
 };
 
 export const Kanban = lazy(async () => ({ default: (await load.kanban()).Kanban }));
 export const Dags = lazy(async () => ({ default: (await load.dags()).Dags }));
 export const AdminPage = lazy(async () => ({ default: (await load.admin()).AdminPage }));
-export const OrbitCard = lazy(async () => ({ default: (await load.orbit()).OrbitCard }));
 
 /** Starts loading every view not loaded yet, when the browser has nothing else to do. Returns the cancel. */
 export function prefetchViews(): () => void {

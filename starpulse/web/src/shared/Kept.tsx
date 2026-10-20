@@ -20,8 +20,6 @@ let warmed = Promise.resolve();
 
 /** Whether the view this is read in is the one showing: a hidden view stops its timers, fetches and animation loops. */
 export const useViewActive = () => useContext(ViewActive);
-/** Whether an imperatively revealed kept surface is visible, before React reconciles the view state. */
-export const isKeptRevealed = (name: string) => revealedView === name;
 
 const setSurfaceOpacity = (view: HTMLElement, opacity: number) => {
   const surface = view.firstElementChild;

@@ -34,9 +34,9 @@ const type = (input: HTMLInputElement, value: string) =>
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
 
-/** Mounts the page past its first frame, over a Board with a Ready state, against a server that has a level above the Board or not. */
-const mount = async (level: boolean) => {
-  vi.stubGlobal("fetch", vi.fn(async (url: string) => new Response("{}", { status: level || !String(url).includes("/api/level") ? 200 : 404 })));
+/** Mounts the page past its first frame, over a Board with a Ready state. */
+const mount = async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => new Response("{}")));
   const store = new HudStore();
   store.set({ tree: { states: ["ready"], subs: {}, children: {} }, states: [{ id: "ready", name: "Ready", count: 2 }] });
   boot.held = {
@@ -49,7 +49,7 @@ const mount = async (level: boolean) => {
   root = createRoot(host);
   performance.mark(BOARD_DRAWN); // a page past its first frame: the navigator is filled
   await act(async () => root.render(<App />));
-  for (let i = 0; i < 5; i++) await act(async () => {}); // the level's answer
+  for (let i = 0; i < 5; i++) await act(async () => {});
 };
 
 beforeEach(() => {
@@ -68,19 +68,13 @@ afterEach(() => {
 
 describe("the phone-width view bar", () => {
   it("draws a button per view and then More, in the navigator's order", async () => {
-    await mount(false);
+    await mount();
 
     expect(buttons().map((b) => b.textContent)).toEqual(["Star Map", "Kanban", "DAGs", "Admin", "More"]);
   });
 
-  it("adds the Flow graph, before Admin, only when the server has a level above the Board", async () => {
-    await mount(true);
-
-    expect(buttons().map((b) => b.textContent)).toEqual(["Star Map", "Kanban", "DAGs", "Flow", "Admin", "More"]);
-  });
-
   it("marks the view showing, and a tap on another button opens that view", async () => {
-    await mount(false);
+    await mount();
     expect(button("Star Map").getAttribute("aria-current")).toBe("page");
     expect(button("Kanban").getAttribute("aria-current")).toBeNull();
 
@@ -93,7 +87,7 @@ describe("the phone-width view bar", () => {
   });
 
   it("refits the Board on a tap on the Star Map while it shows, as the navigator's entry does", async () => {
-    await mount(false);
+    await mount();
 
     tap("Star Map");
 
@@ -103,7 +97,7 @@ describe("the phone-width view bar", () => {
 
 describe("the phone-width navigator sheet", () => {
   it("keeps the navigator shut until More opens it over a scrim", async () => {
-    await mount(false);
+    await mount();
     expect(shown()).toBe(false);
     expect(host.querySelector("#pn-scrim")).toBeNull();
     expect(button("More").getAttribute("aria-expanded")).toBe("false");
@@ -125,7 +119,7 @@ describe("the phone-width navigator sheet", () => {
       act(() => host.querySelector<HTMLElement>("#nav .hit")!.click());
     }],
   ])("closes on %s", async (_name, close) => {
-    await mount(false);
+    await mount();
     tap("More");
     expect(shown()).toBe(true);
 
@@ -147,7 +141,7 @@ describe("the canvas ending above the bar", () => {
 
   it("asks the renderer to fit again when the bar's height changes, and not while the bar is not drawn", async () => {
     const notify = watch();
-    await mount(false);
+    await mount();
     const resized = vi.fn();
     addEventListener("resize", resized);
     try {

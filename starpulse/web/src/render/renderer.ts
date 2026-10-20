@@ -33,7 +33,6 @@ import type { KanbanTask } from "../features/kanban/kanbanModel";
 import { foldRows, openStream, type Link } from "../api/stream";
 import { openLedger, type LedgerHead } from "../api/ledgerStream";
 import { pushAutopilotStatus } from "../features/autopilot/autopilot";
-import { pushLevelStatus } from "../features/orbit/levelData";
 import { UPDATING, linkHud } from "./connection";
 import { keep as reuse } from "../api/same";
 import { createHistory } from "../api/history";
@@ -438,7 +437,6 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     link: onLink,
     build: onBuild,
     autopilot: pushAutopilotStatus,
-    level: pushLevelStatus,
   };
   const demoTick = () => {
     if (stopped || !snap || !demoWalk) return;
