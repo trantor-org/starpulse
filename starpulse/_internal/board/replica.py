@@ -37,14 +37,9 @@ POLL_S = 0.5
 
 
 def _read(raw: str) -> BoardTask | None:
-    """A retained task entry as the task it recorded; None, with one warning, when no current key set reads it.
-
-    Before the rename an entry held the session as `holder` and the agent profile as `assignee`."""
+    """A retained task entry as the task it recorded; None, with one warning, when no current key set reads it."""
     try:
-        fields = json.loads(raw)
-        if "holder" in fields:
-            fields["profile"], fields["assignee"] = fields.pop("assignee", ""), fields.pop("holder")
-        return BoardTask.model_validate(fields)
+        return BoardTask.model_validate(json.loads(raw))
     except ValueError as exc:  # ValidationError and JSONDecodeError both subclass it
         logger.warning("StarPulse: skipping an unreadable retained task in %s: %s", REPLICA_STREAM, exc)
         return None

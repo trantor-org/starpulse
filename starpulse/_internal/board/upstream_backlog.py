@@ -62,7 +62,7 @@ _DONE_LANE = "done"
 _DESCRIPTION = re.compile(r"<!-- SECTION:DESCRIPTION:BEGIN -->(.*?)<!-- SECTION:DESCRIPTION:END -->", re.S)
 _HEADED_DESCRIPTION = re.compile(r"^## Description\s*\n(.*?)(?=^## |\Z)", re.S | re.M)
 _NOTES = re.compile(r"<!-- SECTION:NOTES:BEGIN -->(.*?)<!-- SECTION:NOTES:END -->", re.S)
-_ASSIGNEE = re.compile(r"^\*\*(?:Assignee|Holder):\*\* (\S+)[ \t]*$", re.M)
+_ASSIGNEE = re.compile(r"^\*\*Assignee:\*\* (\S+)[ \t]*$", re.M)
 _CRITERIA = re.compile(r"<!-- AC:BEGIN -->(.*?)<!-- AC:END -->", re.S)
 _ITEM = re.compile(r"^- \[([ xX])\] #(\d+) (.*?)[ \t]*$", re.M)
 _NEEDS_ATTENTION = re.compile(
@@ -176,15 +176,13 @@ def _description(body: str) -> str:
 
 
 def _profile(frontmatter: dict) -> str:
-    """The profile a task is routed to: its `profile` field, else the legacy `assignee` field, else empty."""
-    profiles = _strings(frontmatter.get("profile")) or _strings(frontmatter.get("assignee"))
+    """The profile a task is routed to: its `profile` field, else empty."""
+    profiles = _strings(frontmatter.get("profile"))
     return profiles[0] if profiles else ""
 
 
 def _assignee(body: str) -> str:
     """The session a claim recorded in the task's notes: the last `**Assignee:** <id>` line there, else empty.
-
-    `**Holder:** <id>` is the legacy marker, read until the task files migrate.
 
     The marker lives in the notes because the Backlog CLI rewrites a task file's frontmatter and drops a key it
     does not know, while the notes section survives every edit.
@@ -207,7 +205,7 @@ def _pause_reason(body: str, lane: str) -> str:
 
 
 def _notes(body: str) -> str:
-    """The task's notes without the assignee markers, trimmed; empty when it has none."""
+    """The task's notes without the claim markers, trimmed; empty when it has none."""
     found = _NOTES.search(body)
     return _ASSIGNEE.sub("", found.group(1)).strip() if found else ""
 

@@ -300,7 +300,7 @@ TASK_FILE = """---
 id: task-1
 title: Draw the board
 status: To Do
-assignee:
+profile:
   - '@agent-standard-high'
 labels:
   - ui
@@ -411,10 +411,10 @@ def shipped(tmp_path: Path) -> Iterator[str]:
 
 
 @pytest.fixture
-def retiring(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
+def retiring(tmp_path: Path) -> Iterator[str]:
     """A server whose native board, started on a history store, holds `task-1` and a Done `task-2`, retired, read back,
-    imported and restored through its own writers."""
-    monkeypatch.setattr(UpstreamBacklog, "start", lambda self, interval, scanned: (self.scan(), scanned()))
+    imported and restored through its own writers. The single scan replaces the poll only while the board starts: this
+    server is shared for the module, and a patch held that long reaches a test of another module on the same worker."""
     board = native.board({}, tmp_path)
     root = tmp_path / ".starpulse" / "board"
     for name, text in (("task-1 - Draw the board.md", TASK_FILE), ("task-2 - Ship the board.md", SHIPPED_FILE)):
@@ -591,8 +591,6 @@ def test_the_board_lists_each_column_with_its_tasks_dependencies_prs_and_moves(
         (["--milestone", "m-2", "--label", "api", "--profile", "@agent-a"], ["PROJ-4"]),
         (["--assignee", "session-1"], ["PROJ-4"]),
         (["--assignee", "session-2"], []),
-        (["--holder", "session-1"], ["PROJ-4"]),  # the legacy alias of `--assignee`
-        (["--holder", "session-2"], []),
         (["--profile", "@agent-a", "--assignee", "session-1"], ["PROJ-4"]),
         (["--milestone", "m-9"], []),
         (["--type", "spike"], ["PROJ-2"]),
@@ -1282,7 +1280,7 @@ def test_the_manifest_lists_each_verbs_arguments_outputs_and_exit_codes(capsys: 
     }
     board = next(v for v in doc["verbs"] if v["verb"] == "board")
     flags = {flag for arg in board["arguments"] for flag in arg["flags"]}
-    assert {"--state", "--milestone", "--label", "--profile", "--assignee", "--holder", "--server"} <= flags
+    assert {"--state", "--milestone", "--label", "--profile", "--assignee", "--server"} <= flags
     assert board["exit_codes"] == [0, 2, 3]
     assert "columns" in board["outputs"]
     show = next(v for v in doc["verbs"] if v["verb"] == "task show")

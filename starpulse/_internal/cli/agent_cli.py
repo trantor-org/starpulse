@@ -675,9 +675,7 @@ def _parser() -> argparse.ArgumentParser:
     board.add_argument("--type", help="only tasks of this type (`spike`)")
     board.add_argument("--label", help="only tasks with this label")
     board.add_argument("--profile", help="only tasks routed to this agent profile (`@agent-standard-high`)")
-    board.add_argument(
-        "--assignee", "--holder", dest="assignee", help="only tasks this session last claimed, as its harness names it"
-    )
+    board.add_argument("--assignee", help="only tasks this session last claimed, as its harness names it")
     search = leaf(
         verbs,
         "search",

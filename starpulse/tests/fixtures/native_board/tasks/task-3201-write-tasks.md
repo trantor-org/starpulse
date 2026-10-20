@@ -4,7 +4,7 @@ title: >-
   Write tasks through StarPulse's native board instead of the backlog binary in
   the board CLI
 status: Waiting
-assignee:
+profile:
   - '@agent-standard-high'
 created_date: '2026-10-07 21:53'
 labels:

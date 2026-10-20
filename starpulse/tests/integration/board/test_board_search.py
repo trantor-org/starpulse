@@ -77,7 +77,7 @@ def test_a_board_is_searchable_by_title_description_criteria_and_notes_after_its
     assert _found(index, "declared writers") == ["TASK-3201"]  # two description words
     assert _found(index, "skill-eval mock") == ["TASK-3201"]  # an acceptance criterion
     assert _found(index, "specview") == ["TASK-2529"]  # a note of a completed task
-    assert _found(index, "Holder") == []  # the claim marker is not text
+    assert _found(index, "Assignee") == []  # the claim marker is not text
 
 
 def test_an_edited_description_is_found_by_its_new_text_after_the_next_read(place: Place, tmp_path: Path) -> None:

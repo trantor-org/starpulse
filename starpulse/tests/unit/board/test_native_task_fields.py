@@ -57,7 +57,7 @@ EDITS: dict[str, Callable[[dict[str, Any]], Any]] = {
     "modifiedFiles": lambda record: [*record["modifiedFiles"], "starpulse/new.py"],
     "description": lambda record: f"{record['description']}\n\nAnd a second paragraph.",
     "plan": lambda record: "1. read\n2. write",
-    "notes": lambda record: "Rewritten notes.\n\n**Holder:** 123",
+    "notes": lambda record: "Rewritten notes.\n\n**Assignee:** 123",
     "appendNotes": lambda record: "Appended note.",
     "finalSummary": lambda record: "Shipped in PR 1.",
 }
