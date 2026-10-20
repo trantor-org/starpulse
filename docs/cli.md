@@ -374,7 +374,7 @@ stream; a stream that drops is retried with backoff while the pane stays open. T
 With `gh` available and the config's `pull_requests` not false, `starpulse worker pulls` (a child `serve` supervises) keeps a store of pull requests (table
 `starpulse_pull_requests`) as a projection of the lifecycle events, and polls GitHub for nothing. A task's `machine:events` entry (`PR_OPENED`, `PR_READY`, `PUSHED`, `CHECKS_PASSED`, `CHECKS_FAILED`,
 `CONFLICTED`, `MERGEABLE`, `THREADS_CHANGED`, `PR_MERGED`, `PR_CLOSED`) lands on the pull requests the Board says the task cites, and a completed `ci:jobs` entry sets the head commit and its job's result on the
-record of the pull request it names. An entry applied twice leaves the record as once did, so the log may be replayed from any point. A close applies only when the task cites a single open pull request.
+record of the pull request it names. An entry applied twice leaves the record as once did, so the log may be replayed from any point. A close names its pull request in the entry's `repository` and `pr` fields and applies to that one alone, none once the store holds it closed; a close that names none applies only when the task cites a single open pull request.
 `POST /api/pulls/refresh` reads one pull request alone from GitHub (one GraphQL query, its `rateLimit` cost logged as `pull requests: <repo> query cost N, remaining N, resets T`) and replaces its record:
 the way a pull request no task's events name enters the store, and the way a record gets its head branch, base, merge commit and changed files. The
 repositories a refresh may name are those of open tasks' pull request links, the `[[repos]]` entries under a linked owner, and those already stored.

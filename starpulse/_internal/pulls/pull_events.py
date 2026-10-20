@@ -12,8 +12,10 @@ validated and its check's result on a record the store already holds. The same j
 `ci:jobs` stream is dropped.
 
 A task's events cannot say which of two open pull requests they are about, so one that closes a pull request is
-applied only when the task cites a single open one. A record a manual refresh (`POST /api/pulls/refresh`) reads from
-GitHub carries what the events cannot: head branch, base, body, merge commit and changed files.
+applied only when the task cites a single open one, unless its `repository` and `pr` fields name the pull request it
+closed: it then applies to that one alone, and to none once the store holds it closed. A record a manual refresh
+(`POST /api/pulls/refresh`) reads from GitHub carries what the events cannot: head branch, base, body, merge commit and
+changed files.
 """
 
 from __future__ import annotations
@@ -148,7 +150,7 @@ class RecordProjection:
         except KeyError, TypeError, ValueError:
             return
         saved = []
-        for repo, number in self._targets(key, name in CLOSING):
+        for repo, number in self._targets(key, name in CLOSING, fields):
             found = self._store.find(repo=repo, number=number, detailed=True)
             record = found[0] if found else _opened(repo, number, self._body(key), at)
             if found and at < record["fetchedAt"]:
@@ -161,12 +163,19 @@ class RecordProjection:
             if self._changed:
                 self._changed()
 
-    def _targets(self, key: str, closing: bool) -> list[tuple[str, int]]:
-        """The task's pull requests an event applies to: those still open, and for a close only a lone one."""
+    def _targets(self, key: str, closing: bool, fields: Mapping[str, Any]) -> list[tuple[str, int]]:
+        """The task's pull requests an event applies to: those still open, and for a close the one it names, else only
+        a lone open one."""
         pulls = self._cited(key)
         stored = {pull: self._store.find(repo=pull[0], number=pull[1]) for pull in pulls}
         opened = [pull for pull in pulls if not stored[pull] or stored[pull][0]["state"] == "OPEN"]
-        return opened if not closing or len(opened) == 1 else []
+        if not closing:
+            return opened
+        number = str(fields.get("pr", ""))
+        named = (str(fields.get("repository")), int(number) if number.isdigit() else 0)
+        if named in pulls:
+            return [named] if named in opened else []
+        return opened if len(opened) == 1 else []
 
     def handle_job(self, entry: Entry) -> None:
         """Apply one `ci:jobs` entry to the record of the pull request it ran for; one for a pull request the store does

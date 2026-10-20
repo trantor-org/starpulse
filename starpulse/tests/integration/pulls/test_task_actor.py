@@ -11,8 +11,10 @@ import pytest
 from sqlalchemy import create_engine
 
 from starpulse._internal.config.config import load
+from starpulse._internal.eventlog.event_log import Entry
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import task
+from starpulse._internal.pulls.pull_events import RecordProjection
 from starpulse._internal.pulls.pulls import PullStore
 from starpulse._internal.pulls.task_actor import ACTOR, TaskActor
 from starpulse._internal.server import server
@@ -96,6 +98,23 @@ def test_a_waiting_task_moves_to_ready_when_its_last_dependency_enters_done(
 
     assert until(lambda: board.moved() == [("TASK-3", "ready")])
     assert board.writes[0][3] == ACTOR
+
+
+def test_a_review_task_stays_while_its_parent_pr_is_open_after_its_child_pr_closes(
+    store: PullStore, stop: threading.Event
+) -> None:
+    feed = BoardFeed()
+    board = Board(feed, task("TASK-1", "Review", references=(PR_ONE, PR_TWO)))
+    store.save([pull(1, state="OPEN"), pull(2, state="CLOSED")])  # a poll read the child closed before the event
+    actor = running(board, store, stop)
+    event = {"event_id": "e1", "machine": "github-pull-request", "event": "PR_CLOSED", "task": "TASK-1"}
+    event |= {"time": str(time.time() + 60), "repository": "acme/trantor", "pr": "2"}
+
+    RecordProjection(store, feed).handle(Entry(1, "machine:events", "e1", event, time.time()))
+    actor.pulls_changed()
+
+    assert [record["state"] for record in store.find(repo="acme/trantor", number=1)] == ["OPEN"]
+    assert board.moved() == []
 
 
 def test_a_ready_task_with_an_unresolved_dependency_moves_to_waiting(store: PullStore, stop: threading.Event) -> None:
