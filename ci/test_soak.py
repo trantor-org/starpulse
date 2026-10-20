@@ -203,7 +203,7 @@ def seeded(tmp_path):
     with pytest.MonkeyPatch.context() as patch:
         patch.syspath_prepend(str(ROOT))
         server, feed, tasks = seeded_server.build(0, tmp_path)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
     yield server, feed, tasks
     server.shutdown()
 

@@ -129,7 +129,7 @@ def test_a_prompts_text_is_in_no_stored_row_while_its_turn_carries_an_origin_and
                 lambda payload: telemetry.publish(signals(payload, None, analytics=analytics, keys=keys)),
             ),
         )
-        threading.Thread(target=server.serve_forever, daemon=True).start()
+        threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
         try:
             request = urllib.request.Request(
                 f"http://127.0.0.1:{server.server_port}/v1/logs",

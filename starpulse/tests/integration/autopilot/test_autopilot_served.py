@@ -37,7 +37,9 @@ def _start_service() -> Iterator[tuple[str, list[str]]]:
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self) -> None:
             asked.append(self.path)
-            body = json.dumps({"task": self.path.rsplit("/", 1)[-1], "url": "https://claude.ai/code/session_stub"}).encode()
+            body = json.dumps(
+                {"task": self.path.rsplit("/", 1)[-1], "url": "https://claude.ai/code/session_stub"}
+            ).encode()
             self.send_response(200)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
@@ -47,7 +49,7 @@ def _start_service() -> Iterator[tuple[str, list[str]]]:
             pass
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
     try:
         yield f"http://127.0.0.1:{server.server_address[1]}", asked
     finally:
@@ -84,7 +86,9 @@ def _task(base: Path, status: str) -> None:
     root = base / ".starpulse" / "board"
     path = root / "tasks" / "task-1 - Title.md"
     path.parent.mkdir(parents=True, exist_ok=True)
-    (root / "config.yml").write_text('project_name: demo\nstatuses: ["To Do", "In Progress", "Done"]\ntask_prefix: task\n')
+    (root / "config.yml").write_text(
+        'project_name: demo\nstatuses: ["To Do", "In Progress", "Done"]\ntask_prefix: task\n'
+    )
     scratch = path.with_suffix(".tmp")
     scratch.write_text(
         f"---\nid: task-1\ntitle: Title\nstatus: {status}\nlabels:\n  - size-3\n---\n\n"
@@ -148,7 +152,10 @@ def test_a_board_with_no_autopilot_block_and_no_start_service_starts_the_task_in
 ) -> None:
     bin_dir, record = tmp_path / "bin", tmp_path / "ran.txt"
     bin_dir.mkdir()
-    for name in ("tmux", "claude"):  # the two binaries the built-in starter needs; tmux records what it was asked to run
+    for name in (
+        "tmux",
+        "claude",
+    ):  # the two binaries the built-in starter needs; tmux records what it was asked to run
         script = bin_dir / name
         script.write_text(f'#!/bin/sh\necho "$@" >> {record}\n' if name == "tmux" else "#!/bin/sh\n")
         script.chmod(0o755)

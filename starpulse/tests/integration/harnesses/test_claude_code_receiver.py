@@ -16,7 +16,7 @@ from starpulse.tests.unit.harnesses.test_telemetry import FIXTURES
 def test_the_receiver_publishes_the_events_each_export_maps_to() -> None:
     published: list[dict] = []
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler(adapter(), published.append))
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
     try:
         for payload in exports():
             request = urllib.request.Request(
@@ -50,7 +50,7 @@ def test_the_receiver_records_the_signals_of_both_harnesses_exports_in_the_telem
     server = ThreadingHTTPServer(
         ("127.0.0.1", 0), handler(adapter(), lambda event: None, lambda payload: telemetry.publish(signals(payload)))
     )
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
     try:
         for name in ("claude_code", "codex"):
             for line in (FIXTURES / name / "otlp.ndjson").read_text().splitlines():
@@ -74,7 +74,7 @@ def test_a_telemetry_consumer_that_raises_does_not_stop_the_export_being_ingeste
         raise RuntimeError("telemetry down")
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler(adapter(), published.append, broken))
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
     try:
         statuses = [_post(server, payload) for payload in exports()]
     finally:

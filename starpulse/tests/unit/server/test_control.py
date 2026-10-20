@@ -161,3 +161,11 @@ def test_stopping_removes_the_control_file(config: Path, running: Control) -> No
     running.stop()
 
     assert not control.control_file(config).exists()
+
+
+def test_stopping_returns_well_inside_the_default_half_second_poll(config: Path, running: Control) -> None:
+    """`shutdown` waits out the serving loop's poll; every supervisor stop and every test that starts one pays it."""
+    started = time.monotonic()
+    running.stop()
+
+    assert time.monotonic() - started < 0.25

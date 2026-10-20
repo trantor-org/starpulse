@@ -7,9 +7,10 @@ the URL and creates a database of its own, so the tables one worker drops are no
 from __future__ import annotations
 
 import os
+import threading
 import time
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -60,3 +61,20 @@ def worker_database(server: URL, worker: str) -> Iterator[Engine]:
                 db.execute(text(f'DROP DATABASE "{name}" WITH (FORCE)'))
     finally:
         admin.dispose()
+
+
+def request_service(root: Path, service: str) -> None:
+    """Ask the controller to start `service`: a worker whose tests need it requests it as it collects them."""
+    _publish(root, f"{service}.wanted", "")
+
+
+def serve_requests(root: Path, start: Callable[[str], object], stop: threading.Event, poll: float = 0.05) -> None:
+    """Call `start` once for each service a worker requests in `root`, until `stop` is set.
+
+    The controller starts nothing up front: a run whose tests need neither container pays for neither.
+    """
+    started: set[str] = set()
+    while not stop.wait(poll):
+        for service in sorted({path.stem for path in root.glob("*.wanted")} - started):
+            started.add(service)
+            start(service)
