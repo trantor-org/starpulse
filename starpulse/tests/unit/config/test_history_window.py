@@ -84,15 +84,26 @@ def test_a_window_change_reaches_a_page_that_is_already_connected(tmp_path: Path
     assert snapshot["flows"][0]["name"] == "board"
 
 
-@pytest.mark.parametrize("hours", [0, 73, -1, 0.5, 72.5, "6", None, True, [24], float("nan"), float("inf")])
-def test_an_hours_outside_one_to_seventy_two_or_not_a_number_is_refused_and_the_window_stays(
+@pytest.mark.parametrize("hours", [0, 73, -1, 0.5, 72.5, float("nan"), float("inf")])
+def test_an_hours_outside_one_to_seventy_two_is_refused_and_the_window_stays(
     tmp_path: Path, hours: object
 ) -> None:
     _, window = _window(tmp_path, 6)
 
     status, body = _put(window, {"hours": hours})
 
-    assert (status, body) == (400, {"error": REFUSED.format(hours)})
+    assert (status, body) == (400, {"error": REFUSED.format(float(hours))})
+    assert history_window("127.0.0.1", "GET", b"", window)[1]["hours"] == 6
+    assert _log(tmp_path).setting("history.hours") is None
+
+
+@pytest.mark.parametrize("hours", ["6", None, True, [24]])
+def test_an_hours_that_is_not_a_number_is_a_400_and_the_window_stays(tmp_path: Path, hours: object) -> None:
+    _, window = _window(tmp_path, 6)
+
+    status, body = _put(window, {"hours": hours})
+
+    assert (status, body) == (400, {"error": "invalid request: hours: Input should be a valid number"})
     assert history_window("127.0.0.1", "GET", b"", window)[1]["hours"] == 6
     assert _log(tmp_path).setting("history.hours") is None
 
@@ -112,7 +123,7 @@ def test_a_body_that_does_not_name_the_hours_is_a_bad_request(tmp_path: Path, ra
 
     status, body = history_window("127.0.0.1", "PUT", raw, window)
 
-    assert (status, body) == (400, {"error": 'a history window needs {"hours": N}'})
+    assert status == 400 and body["error"].startswith("invalid request: ")
 
 
 def test_the_override_survives_a_restart_and_reset_returns_to_the_declared_hours(tmp_path: Path) -> None:
@@ -198,7 +209,7 @@ def test_the_server_answers_get_put_and_delete_on_the_history_window_route(tmp_p
     with serve(tmp_path, feed=feed, window=window) as server:
         assert call("GET") == (200, {"hours": 6, "default": 6, "overridden": False})
         assert call("PUT", b'{"hours": 24}') == (200, {"hours": 24, "default": 6, "overridden": True})
-        assert call("PUT", b'{"hours": 200}') == (400, {"error": REFUSED.format(200)})
+        assert call("PUT", b'{"hours": 200}') == (400, {"error": REFUSED.format(200.0)})
         assert call("GET")[1]["hours"] == 24
         assert call("DELETE") == (200, {"hours": 6, "default": 6, "overridden": False})
 

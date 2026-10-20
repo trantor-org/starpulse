@@ -199,7 +199,19 @@ def test_a_create_with_a_wrong_detail_is_a_400_naming_it_and_writes_nothing(
     assert list(_tasks(tmp_path).iterdir()) == []
 
 
-@pytest.mark.parametrize("raw", [b"not json", _raw(), _raw(title=3), _raw(title="  "), _raw(title="x" * 301)])
+def test_a_create_body_that_is_not_json_is_a_400_and_writes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    built, _ = _serving(tmp_path, monkeypatch)
+    assert built.create is not None
+
+    status, body = create_task("127.0.0.1", b"not json", built.create)
+
+    assert status == 400 and body["error"].startswith("invalid request: Invalid JSON")
+    assert list(_tasks(tmp_path).iterdir()) == []
+
+
+@pytest.mark.parametrize("raw", [_raw(), _raw(title=3), _raw(title="  "), _raw(title="x" * 301)])
 def test_a_create_without_a_usable_title_is_a_400_and_writes_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, raw: bytes
 ) -> None:

@@ -369,7 +369,7 @@ def test_a_move_posted_with_no_content_length_is_an_empty_body_not_a_wait_for_by
         connection.close()
 
     assert response.status == 400
-    assert "a move needs" in body["error"]
+    assert body["error"].startswith("invalid request: ")
 
 
 def test_a_move_posted_to_the_server_reaches_the_writer_and_answers_json(tmp_path: Path) -> None:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -13,6 +14,7 @@ from starpulse._internal.feed.history_window import HistoryWindow
 from starpulse._internal.server.reads import Response
 from starpulse._internal.server.services import Services
 from starpulse._internal.server.write_routes import WriteRequest, WriteRoutes
+from starpulse.contracts.api.registry import REQUESTS
 from starpulse.tests.fake_board import bare_board
 
 _JSON = {"Content-Type": "application/json"}
@@ -36,7 +38,7 @@ def _routes(feed: BoardFeed, tmp_path: Path, **pushes) -> WriteRoutes:
 
 @pytest.fixture
 def routes(feed: BoardFeed, tmp_path: Path) -> WriteRoutes:
-    return _routes(feed, tmp_path)
+    return _routes(feed, tmp_path, autopilot=SimpleNamespace())
 
 
 def _write(
@@ -77,6 +79,18 @@ def test_a_write_from_outside_the_lan_is_a_403(routes: WriteRoutes) -> None:
 
     assert response is not None
     assert response.status == 403
+
+
+_PUT_ROUTES = {"/api/autopilot", "/api/history-window"}
+
+
+@pytest.mark.parametrize("path", [path for path in REQUESTS if path != "/api/insights"])
+def test_a_body_its_request_model_rejects_is_a_400_naming_the_field(routes: WriteRoutes, path: str) -> None:
+    response = _write(routes, "PUT" if path in _PUT_ROUTES else "POST", path, body=b'{"unexpected": 1}')
+
+    assert response is not None
+    assert response.status == 400
+    assert _json(response) == {"error": "invalid request: unexpected: Extra inputs are not permitted"}
 
 
 def test_a_task_write_answers_its_status(routes: WriteRoutes) -> None:
@@ -140,9 +154,7 @@ def test_a_push_over_its_limit_is_refused_unread_and_closes_the_connection(feed:
 
 def test_an_unreadable_length_on_a_push_is_read_as_empty(feed: BoardFeed, tmp_path: Path) -> None:
     routes = _routes(feed, tmp_path, insights=_unauthorised)
-    request = WriteRequest(
-        "POST", "/api/insights", "127.0.0.1", {"Content-Length": "many"}, lambda size: b"x" * size
-    )
+    request = WriteRequest("POST", "/api/insights", "127.0.0.1", {"Content-Length": "many"}, lambda size: b"x" * size)
 
     response = routes(request)
 

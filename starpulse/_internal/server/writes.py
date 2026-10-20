@@ -4,7 +4,10 @@ and answers the HTTP status and JSON body.
 `starpulse._internal.server.server` routes a request here after its write guard (`write_refusal`: 415 for a body that is not JSON, 403 for
 another site's origin) and dispatches to these; the read responses, the stream and the assembly stay there. A write
 that names a task the feed has not placed waits up to `REPLAY_WAIT_S` for a replay in progress, then answers 503, which
-a client sends again, never 404 for a task the replay has yet to reach. The routes:
+a client sends again, never 404 for a task the replay has yet to reach. Every handler parses its body through the
+request model it is declared with (`_write`, `contracts.api.dto.requests`): a body that is not JSON, not an object, or
+holds an unnamed key, a field of the wrong type or a blank `actor`, `session` or `harness` answers 400
+`invalid request: <field>: <reason>` for its first fault, whatever the route's own "400 for" list names. The routes:
 
 POST /api/run/<instance>/<workflow>
                    start a run-safe workflow through its instance's optional `start`: {runId}, or {error}
@@ -95,23 +98,25 @@ GET /api/autopilot {enabled, sampledAt, dimensions}: whether the autopilot admit
                    and, for `cpu`, `memory`, `sessions` and `review`, each dimension's {name, use, limit}; no
                    dimensions before the first sample
 PUT /api/autopilot {enabled: bool}: switch admission on or off by writing the file the autopilot reads, and answer the
-                   status as a GET does; 400 for anything but a boolean, 403 outside loopback and RFC 1918
+                   status as a GET does; 400 for a body naming none of `enabled`, `harness` and `quietHours` or
+                   naming `enabled` as anything but a boolean, 403 outside loopback and RFC 1918
 """
 
 from __future__ import annotations
 
 import contextlib
+import functools
 import ipaddress
-import json
 import logging
 import re
 import threading
 import time
 from collections.abc import Callable, Collection, Mapping
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Any, Concatenate, NamedTuple
 from urllib.parse import urlsplit
 
 import yaml
+from pydantic import BaseModel, ValidationError, ValidationInfo, field_validator
 
 from starpulse._internal.board import post_merge_checks
 from starpulse._internal.board.seam import (
@@ -129,9 +134,36 @@ from starpulse._internal.board.seam import (
     Written,
 )
 from starpulse._internal.config.harnesses import Harnesses
-from starpulse.contracts.adapters import Move, StartFailedError
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.feed.history_window import HistoryWindow
+from starpulse.contracts.adapters import Move, StartFailedError
+from starpulse.contracts.api.dto.requests import (
+    ArchiveRequest,
+    AutopilotRequest,
+    ClaimRequest,
+    CompleteRequest,
+    CreateRequest,
+    DocArchiveRequest,
+    DocCreateRequest,
+    DocEditRequest,
+    DocRestoreRequest,
+    EditRequest,
+    MilestoneArchiveRequest,
+    MilestoneCreateRequest,
+    MilestoneEditRequest,
+    MissRequest,
+    MoveRequest,
+    NonBlank,
+    ParkRequest,
+    RestoreRequest,
+    RetiredImportRequest,
+    RetireRequest,
+    ReviewRequest,
+    StartRequest,
+    VerdictRequest,
+    WindowRequest,
+    _Writer,
+)
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the autopilot in the Delivery worker's import closure
     from starpulse._internal.autopilot.remote import Remote
@@ -172,15 +204,6 @@ _CREATE_LISTS = (
 #: The lists whose every item must be nonblank, rather than dropped when blank.
 _CREATE_NONBLANK = ("acceptanceCriteria", "definitionOfDone")
 _PRIORITIES = frozenset({"high", "medium", "low"})
-_CREATE_KINDS = {
-    "priority": "high, medium or low",
-    "labels": "a list of text",
-    "dependencies": "a list of text",
-    "acceptanceCriteria": "a list of nonblank text",
-    "references": "a list of text",
-    "documentation": "a list of text",
-    "definitionOfDone": "a list of nonblank text",
-}
 #: Saves hold this from reading a task's current record to writing, so two browsers saving one task cannot both pass the stale check.
 _EDIT_LOCK = threading.Lock()
 #: The verdicts a post-merge check takes, as a request spells them and as the comment records them.
@@ -213,6 +236,43 @@ def _not_held(feed: BoardFeed, task: str) -> tuple[int, dict[str, str]]:
 
 def _on_lan(source: str) -> bool:
     return any(ipaddress.ip_address(source) in net for net in _LAN)
+
+
+def _lan_refusal(what: str) -> tuple[int, dict[str, str]]:
+    """The 403 for `what` written from an address beyond the LAN."""
+    return 403, {"error": f"{what} answers only loopback and private network (RFC 1918) browsers"}
+
+
+def _invalid(error: ValidationError) -> tuple[int, dict[str, str]]:
+    """The 400 for a body its request model refuses: the first fault, with the field it is in."""
+    fault = error.errors()[0]
+    where = ".".join(str(part) for part in fault["loc"])
+    return 400, {"error": f"invalid request: {where + ': ' if where else ''}{fault['msg']}"}
+
+
+type _Answer = tuple[int, Any]
+
+
+def _write[R: BaseModel, **P](
+    model: type[R], what: str
+) -> Callable[[Callable[Concatenate[R, P], _Answer]], Callable[Concatenate[str, bytes, P], _Answer]]:
+    """Make a handler of a parsed `model` into a write route's: `what` is refused 403 from beyond the LAN, a body
+    `model` refuses is the one 400 `_invalid` words, and the handler takes the parsed request in the body's place."""
+
+    def decorate(handler: Callable[Concatenate[R, P], _Answer]) -> Callable[Concatenate[str, bytes, P], _Answer]:
+        @functools.wraps(handler)
+        def parsed(source: str, raw: bytes, *args: P.args, **kwargs: P.kwargs) -> _Answer:
+            if not _on_lan(source):
+                return _lan_refusal(what)
+            try:
+                request = model.model_validate_json(raw, strict=True)
+            except ValidationError as error:
+                return _invalid(error)
+            return handler(request, *args, **kwargs)
+
+        return parsed
+
+    return decorate
 
 
 def write_refusal(origin: str | None, host: str | None, content_type: str | None) -> tuple[int, dict[str, str]] | None:
@@ -281,27 +341,6 @@ def rerun_dag(
         return 502, {"error": str(exc)}
 
 
-_BAD_ACTOR = {
-    "error": 'a write may name its "actor", a non-empty text, as `operator`, `agent` or `<instance>/<workflow>`'
-}
-
-
-def _named_actor(request: Any) -> dict[str, str] | None:
-    """`{"actor": name}` for a request that names its actor, `{}` for one that names none and None for a name that is not
-    text. A writer is called with the keyword only when the request named one, so a writer that predates actors, or a
-    page that never names its own, is called as it always was."""
-    if not isinstance(request, dict) or "actor" not in request:
-        return {}
-    actor = request["actor"]
-    return {"actor": actor.strip()} if isinstance(actor, str) and actor.strip() else None
-
-
-_BAD_WHO = {
-    "error": 'a write may name its "actor", "session" and "harness", each a non-empty text; a write naming no actor is '
-    "made by `agent` when it names a session and by `anonymous` when it names none"
-}
-
-
 class _Who(NamedTuple):
     """Who makes a write: its actor, and the session and harness it names, each empty when it names none."""
 
@@ -315,19 +354,65 @@ class _Who(NamedTuple):
         return f"{self.harness}:{self.session}" if self.session and self.harness else self.session or ANONYMOUS
 
 
-def _named_who(request: Any) -> _Who | None:
-    """Who `request` names as its writer, or None when a name it gives is not a non-empty text.
+def _who(request: _Writer) -> _Who:
+    """Who `request` names as its writer.
 
     A write that names no actor is an agent's when it names a session and anonymous when it names none: never the
     operator, whom only the page names.
     """
-    named = {
-        key: request[key] for key in ("actor", "session", "harness") if isinstance(request, dict) and key in request
-    }
-    if not all(isinstance(value, str) and value.strip() for value in named.values()):
-        return None
-    session = named.get("session", "").strip()
-    return _Who(named.get("actor", AGENT if session else ANONYMOUS).strip(), session, named.get("harness", "").strip())
+    session = (request.session or "").strip()
+    return _Who((request.actor or (AGENT if session else ANONYMOUS)).strip(), session, (request.harness or "").strip())
+
+
+class _ClaimBody(ClaimRequest):
+    """A claim names its session, the opaque string that holds the task."""
+
+    session: NonBlank
+
+
+class _StartBody(StartRequest):
+    """A start may name the actor that makes it, which `StartRequest` leaves out."""
+
+    actor: NonBlank | None = None
+
+
+class _CreateBody(CreateRequest):
+    """A create as the handler reads it: the details `CreateRequest` leaves out, text trimmed, list items trimmed and
+    blank ones dropped, or refused where the list must hold only text."""
+
+    status: str | None = None
+    type: str | None = None
+    references: list[str] | None = None
+    documentation: list[str] | None = None
+    definitionOfDone: list[str] | None = None
+
+    @field_validator(*_CREATE_TEXT)
+    @classmethod
+    def _trimmed(cls, value: str | None) -> str | None:
+        return None if value is None else value.strip()
+
+    @field_validator("priority")
+    @classmethod
+    def _known_priority(cls, value: str | None) -> str | None:
+        if value and value.lower() not in _PRIORITIES:
+            raise ValueError("must be high, medium or low")
+        return value and value.lower()
+
+    @field_validator(*_CREATE_LISTS)
+    @classmethod
+    def _kept(cls, value: list[str] | None, info: ValidationInfo) -> list[str] | None:
+        if value is None:
+            return None
+        kept = [item.strip() for item in value if item.strip()]
+        if info.field_name in _CREATE_NONBLANK and len(kept) != len(value):
+            raise ValueError("must be a list of nonblank text")
+        return kept
+
+
+class _MissBody(MissRequest):
+    """A miss files its `fix` as a create."""
+
+    fix: _CreateBody
 
 
 def _record_written(feed: BoardFeed | None, task: str | None, who: _Who, write: Callable[[], Written]) -> Written:
@@ -349,25 +434,14 @@ def _record_written(feed: BoardFeed | None, task: str | None, who: _Who, write: 
     return written
 
 
-def move_task(source: str, raw: bytes, feed: BoardFeed, writer: MoveWriter) -> tuple[int, dict[str, str]]:
-    """Move a task to the column `raw` names, through `writer`, for a browser at `source`: the HTTP status and JSON body.
+@_write(MoveRequest, "Moving a task")
+def move_task(request: MoveRequest, feed: BoardFeed, writer: MoveWriter) -> tuple[int, dict[str, str]]:
+    """Move the task `request` names to the column it names, through `writer`: the HTTP status and JSON body.
 
     The board machine's exits from the task's state decide which columns are offered; the writer decides which
     it accepts, so a guard that changed since the snapshot still refuses.
     """
-    if not _on_lan(source):
-        return 403, {"error": "Moving a task answers only loopback and private network (RFC 1918) browsers"}
-    try:
-        request = json.loads(raw)
-        task, column = request["task"], request["to"]
-        who = _named_who(request)
-    except ValueError, TypeError, KeyError, AttributeError:
-        task = column = who = None
-    if not (isinstance(task, str) and isinstance(column, str) and who):
-        return 400, {
-            "error": 'a move needs {"task": "TASK-N", "to": "<column>"} and may name an "actor", a "session" and a '
-            '"harness" (non-empty strings)'
-        }
+    task, column, who = request.task, request.to, _who(request)
     if (agent := _held(feed, task)) is None:
         return _not_held(feed, task)
     return _move(feed, agent, task, column, who, writer)
@@ -408,28 +482,16 @@ def _move(
 
 
 _IN_PROGRESS = "in_progress"
-_BAD_CLAIM = {
-    "error": 'a claim needs {"task": "TASK-N", "session": "<assignee>"} and may name an "actor" and a "harness" '
-    "(non-empty strings)"
-}
 
 
-def claim_task(source: str, raw: bytes, feed: BoardFeed, writer: MoveWriter) -> tuple[int, dict[str, str]]:
-    """Move the task `raw` names to In Progress holding the session `raw` names, for a browser at `source`: the HTTP
-    status and JSON body.
+@_write(_ClaimBody, "Claiming a task")
+def claim_task(request: _ClaimBody, feed: BoardFeed, writer: MoveWriter) -> tuple[int, dict[str, str]]:
+    """Move the task `request` names to In Progress holding the session it names: the HTTP status and JSON body.
 
     The holder is an opaque string. A task already In Progress under that holder answers 200 without a write; under
     another, or when the holder already has another task In Progress, it is refused 409 naming the holder or the task.
     """
-    if not _on_lan(source):
-        return 403, {"error": "Claiming a task answers only loopback and private network (RFC 1918) browsers"}
-    try:
-        request = json.loads(raw)
-        task, who = request["task"], _named_who(request)
-    except ValueError, TypeError, KeyError:
-        task = who = None
-    if not (isinstance(task, str) and who is not None and who.session):
-        return 400, _BAD_CLAIM
+    task, who = request.task, _who(request)
     if (agent := _held(feed, task)) is None:
         return _not_held(feed, task)
     held = {"task": task, "to": _IN_PROGRESS, "assignee": who.session}
@@ -540,34 +602,26 @@ def _nonblank(value: Any) -> bool:
 
 
 _BAD_PARK = {
-    "error": 'a park needs {"task": "TASK-N"} and exactly one reason: "untilTask" (task ids that must reach Done), '
-    '"until" (criteria, each an object with an "id" and a "kind") or "operator" (text), and may name a "comment"'
+    "error": 'a park needs exactly one reason: "untilTask" (task ids that must reach Done), "until" (criteria, each an '
+    'object with an "id" and a "kind") or "operator" (text)'
 }
 _PARK_LANES = {"untilTask": "waiting", "until": "waiting", "operator": "needs_attention"}
 
 
+@_write(ParkRequest, "Parking a task")
 def park_task(
-    source: str, raw: bytes, feed: BoardFeed, read: TaskReader | None, edit: TaskEditor | None
+    request: ParkRequest, feed: BoardFeed, read: TaskReader | None, edit: TaskEditor | None
 ) -> tuple[int, dict[str, Any]]:
-    """Park the In Progress task `raw` names for the one reason it names, for a browser at `source`: the HTTP status and
-    JSON body.
+    """Park the In Progress task `request` names for the one reason it names: the HTTP status and JSON body.
 
     The reason picks the lane and writes its gate in the same edit: `untilTask` adds dependencies and `until` writes the
     Start Criteria block, both to Waiting, and `operator` writes the Needs attention section to Needs attention. The
     machine must offer the writer that lane, and the board's rules judge the record the edit makes.
     """
-    if not _on_lan(source):
-        return 403, {"error": "Parking a task answers only loopback and private network (RFC 1918) browsers"}
-    try:
-        request = json.loads(raw)
-        task, comment, who = request["task"], request.get("comment", ""), _named_who(request)
-        reasons = [key for key in _PARK_LANES if key in request]
-    except ValueError, TypeError, KeyError:
-        task = comment = who = reasons = None
-    if not (isinstance(task, str) and isinstance(comment, str) and reasons and len(reasons) == 1):
+    task, comment, who = request.task, request.comment or "", _who(request)
+    reasons = [key for key in _PARK_LANES if key in request.model_fields_set]
+    if len(reasons) != 1:
         return 400, _BAD_PARK
-    if who is None:
-        return 400, _BAD_WHO
     if read is None or edit is None:
         return 404, {"error": "this board does not edit tasks"}
     if (agent := _held(feed, task)) is None:
@@ -575,7 +629,7 @@ def park_task(
     if agent["state"] != _IN_PROGRESS:
         return 409, {"error": f"only an In Progress task can be parked: {task} is {agent['state']}"}
     reason = reasons[0]
-    column, value = _PARK_LANES[reason], request[reason]
+    column, value = _PARK_LANES[reason], getattr(request, reason)
     if (refused := _move_refusal(agent, task, column, who)) is not None:
         return refused
     plans = {
@@ -586,40 +640,23 @@ def park_task(
     return _lifecycle_edit(feed, task, column, who, comment, read, edit, plans[reason])
 
 
-_BAD_REVIEW = {
-    "error": 'a review needs {"task": "TASK-N"} and may name "references" (a list of pull request links), a "summary" '
-    'and a "comment" (text)'
-}
+_BAD_REVIEW = {"error": "references must each be a nonblank pull request link"}
 
 
+@_write(ReviewRequest, "Reviewing a task")
 def review_task(
-    source: str, raw: bytes, feed: BoardFeed, read: TaskReader | None, edit: TaskEditor | None
+    request: ReviewRequest, feed: BoardFeed, read: TaskReader | None, edit: TaskEditor | None
 ) -> tuple[int, dict[str, Any]]:
-    """Move the task `raw` names to Review with the evidence it names, for a browser at `source`: the HTTP status and
-    JSON body.
+    """Move the task `request` names to Review with the evidence it names: the HTTP status and JSON body.
 
     The `references` join those the task has and a non-blank `summary` becomes its final summary, in the one edit that
     makes the move. The board's rules judge the record that edit makes, so a task whose evidence they refuse stays where
     it is and the answer carries their reason and skill.
     """
-    if not _on_lan(source):
-        return 403, {"error": "Reviewing a task answers only loopback and private network (RFC 1918) browsers"}
-    try:
-        request = json.loads(raw)
-        task, links = request["task"], request.get("references", [])
-        summary, comment, who = request.get("summary", ""), request.get("comment", ""), _named_who(request)
-    except ValueError, TypeError, KeyError:
-        task = links = summary = comment = who = None
-    if not (
-        isinstance(task, str)
-        and isinstance(links, list)
-        and all(_nonblank(link) for link in links)
-        and isinstance(summary, str)
-        and isinstance(comment, str)
-    ):
+    task, links, summary = request.task, request.references or [], request.summary or ""
+    if not all(_nonblank(link) for link in links):
         return 400, _BAD_REVIEW
-    if who is None:
-        return 400, _BAD_WHO
+    comment, who = request.comment or "", _who(request)
     if read is None or edit is None:
         return 404, {"error": "this board does not edit tasks"}
     if (agent := _held(feed, task)) is None:
@@ -656,11 +693,11 @@ def task_record(feed: BoardFeed, read: TaskReader | None, task: str) -> tuple[in
 _APPEND_NOTES = "appendNotes"
 
 
+@_write(EditRequest, "Editing a task")
 def edit_task(
-    source: str, raw: bytes, feed: BoardFeed, read: TaskReader | None, edit: TaskEditor | None
+    request: EditRequest, feed: BoardFeed, read: TaskReader | None, edit: TaskEditor | None
 ) -> tuple[int, dict[str, Any]]:
-    """Apply the edit `raw` names to a task through `edit` in one write, for a browser at `source`: the HTTP status and
-    JSON body.
+    """Apply the edit `request` names to a task through `edit` in one write: the HTTP status and JSON body.
 
     `base` holds the value each changed field had when the page read the task. The edit is refused 409 when any
     changed field's current value differs, naming those fields with their current values, so another writer's
@@ -670,22 +707,12 @@ def edit_task(
     non-blank `comment` is written even when every change already holds, which reports no changed field: a client
     that can only name a field to comment on sends the one it leaves as it is.
     """
-    if not _on_lan(source):
-        return 403, {"error": "Editing a task answers only loopback and private network (RFC 1918) browsers"}
-    try:
-        request = json.loads(raw)
-        task, base, changes, comment = request["task"], request["base"], request["changes"], request.get("comment", "")
-        who = _named_who(request)
-    except ValueError, TypeError, KeyError:
-        task = base = changes = comment = who = None
-    if not (
-        isinstance(task, str) and isinstance(base, dict) and isinstance(changes, dict) and changes
-    ) or not isinstance(comment, str):
+    task, base, changes, comment = request.task, request.base, request.changes, request.comment or ""
+    if not changes:
         return 400, {
             "error": 'an edit needs {"task": "TASK-N", "base": {...}, "changes": {...}, "comment": "<optional>"}'
         }
-    if who is None:
-        return 400, _BAD_WHO
+    who = _who(request)
     if read is None or edit is None:
         return 404, {"error": "this board does not edit tasks"}
     if _held(feed, task) is None:
@@ -718,25 +745,14 @@ def edit_task(
     return 200, {"task": task, "changed": list(dict.fromkeys(changed))}
 
 
-def archive_task(source: str, raw: bytes, feed: BoardFeed, archive: TaskArchiver | None) -> tuple[int, dict[str, Any]]:
-    """Archive the task `raw` names, from whichever column it is in, through `archive`, for a browser at `source`: the
-    HTTP status and JSON body.
+@_write(ArchiveRequest, "Archiving a task")
+def archive_task(request: ArchiveRequest, feed: BoardFeed, archive: TaskArchiver | None) -> tuple[int, dict[str, Any]]:
+    """Archive the task `request` names, from whichever column it is in, through `archive`: the HTTP status and JSON body.
 
     A non-empty `reason` is the writer's to record on the task. The card leaves its column when the board adapter
     next reports the task archived, not on this answer.
     """
-    if not _on_lan(source):
-        return 403, {"error": "Archiving a task answers only loopback and private network (RFC 1918) browsers"}
-    try:
-        request = json.loads(raw)
-        task, reason = request["task"], request.get("reason", "")
-        who = _named_who(request)
-    except ValueError, TypeError, KeyError:
-        task = reason = who = None
-    if not isinstance(task, str) or not isinstance(reason, str):
-        return 400, {"error": 'an archive needs {"task": "TASK-N", "reason": "<optional text>"}'}
-    if who is None:
-        return 400, _BAD_WHO
+    task, reason, who = request.task, request.reason or "", _who(request)
     if archive is None:
         return 404, {"error": "this board does not archive tasks"}
     if _held(feed, task) is None:
@@ -762,41 +778,28 @@ def _unjudged(task: str, current: Mapping[str, Any], check: str) -> str | None:
     return None
 
 
-def _judgement(request: Any) -> tuple[str, str, str] | None:
-    """The task, check and evidence a verdict or miss request names, or None when any is not text (a blank task or
-    check included)."""
-    task, check, evidence = request["task"], request["check"], request.get("evidence", "")
-    texts = (task, check, evidence)
-    if not all(isinstance(text, str) for text in texts) or not task.strip() or not check.strip():
-        return None
-    return task, check, evidence
+def _unnamed(request: VerdictRequest | MissRequest) -> bool:
+    """Whether a verdict or miss request leaves its task or check blank."""
+    return not (request.task.strip() and request.check.strip())
 
 
+@_write(VerdictRequest, "Recording a verdict")
 def record_verdict(
-    source: str, raw: bytes, feed: BoardFeed, read: TaskReader | None, edit: TaskEditor | None
+    request: VerdictRequest, feed: BoardFeed, read: TaskReader | None, edit: TaskEditor | None
 ) -> tuple[int, dict[str, Any]]:
-    """Record the verdict `raw` names for a post-merge check of a task as a comment on it, through `edit`: the HTTP
+    """Record the verdict `request` names for a post-merge check of a task as a comment on it, through `edit`: the HTTP
     status and JSON body.
 
     The check must be declared in the task's `## Post-merge Checks` block and not yet judged: a verdict is final, so a
     second is refused 409 with the malformed block and the undeclared check. A `miss` names the `fix` task already
     filed for it (404 when the feed holds none); `/api/miss` files that fix and records the verdict in one call.
     """
-    if not _on_lan(source):
-        return 403, {"error": "Recording a verdict answers only loopback and private network (RFC 1918) browsers"}
-    try:
-        request = json.loads(raw)
-        judged, verdict, fix = _judgement(request), request["verdict"], request.get("fix")
-        who = _named_who(request)
-    except ValueError, TypeError, KeyError:
-        judged = verdict = fix = who = None
-    if judged is None or verdict not in _VERDICTS or (fix is not None and not isinstance(fix, str)):
+    task, check, verdict, fix = request.task, request.check, request.verdict, request.fix
+    if _unnamed(request) or verdict not in _VERDICTS:
         return 400, {"error": 'a verdict needs {"task", "check", "verdict": "pass"|"miss"[, "evidence", "fix"]}'}
     if verdict == "miss" and not fix:
         return 400, {"error": "a miss verdict names the task filed to fix it: add its id as fix"}
-    if who is None:
-        return 400, _BAD_WHO
-    task, check, evidence = judged
+    evidence, who = request.evidence or "", _who(request)
     if read is None or edit is None:
         return 404, {"error": "this board does not edit tasks"}
     if _held(feed, task) is None:
@@ -815,35 +818,25 @@ def record_verdict(
     return 200, {"task": task, "check": check, "verdict": _VERDICTS[verdict], **({"fix": fix} if fix else {})}
 
 
+@_write(_MissBody, "Recording a miss")
 def record_miss(
-    source: str,
-    raw: bytes,
+    request: _MissBody,
     feed: BoardFeed,
     read: TaskReader | None,
     edit: TaskEditor | None,
     archive: TaskArchiver | None,
     create: TaskCreator | None,
 ) -> tuple[int, dict[str, Any]]:
-    """File the fix task `raw` names for a missed post-merge check and record the MISS verdict naming it, in one call:
-    the HTTP status and JSON body, which holds the fix's id.
+    """File the fix task `request` names for a missed post-merge check and record the MISS verdict naming it, in one
+    call: the HTTP status and JSON body, which holds the fix's id.
 
     The request is `{task, check, fix: {title, ...as a create}[, evidence]}`. Both writes or neither: a fix whose
     verdict comment is refused is archived again, so a refused miss leaves no fix task and no verdict. A board that
     cannot archive is refused 404, since the fix could not be undone.
     """
-    if not _on_lan(source):
-        return 403, {"error": "Recording a miss answers only loopback and private network (RFC 1918) browsers"}
-    try:
-        request = json.loads(raw)
-        judged, fix = _judgement(request), request["fix"]
-        who = _named_who(request)
-    except ValueError, TypeError, KeyError:
-        judged = fix = who = None
-    if judged is None or not isinstance(fix, dict):
+    if _unnamed(request):
         return 400, {"error": 'a miss needs {"task", "check", "fix": {"title", ...}[, "evidence"]}'}
-    if who is None:
-        return 400, _BAD_WHO
-    task, check, evidence = judged
+    task, check, evidence, who = request.task, request.check, request.evidence or "", _who(request)
     if read is None or edit is None or archive is None or create is None:
         return 404, {"error": "this board does not edit, archive and create tasks"}
     if _held(feed, task) is None:
@@ -853,8 +846,10 @@ def record_miss(
             return 404, {"error": f"{task} has no record to read"}
         if refusal := _unjudged(task, current, check):
             return 409, {"error": refusal}
-        filed = {**fix, **{key: request[key] for key in ("actor", "session", "harness") if key in request}}
-        status, body = create_task(source, json.dumps(filed).encode(), create, feed)
+        named = {
+            key: getattr(request, key) for key in ("actor", "session", "harness") if key in request.model_fields_set
+        }
+        status, body = _create(request.fix.model_copy(update=named), create, feed)
         if status != 201:
             return status, body
         comment = post_merge_checks.verdict_comment(check, "MISS", evidence, body["task"])
@@ -866,21 +861,15 @@ def record_miss(
     return 200, {"task": task, "check": check, "verdict": "MISS", "fix": body["task"]}
 
 
+@_write(CompleteRequest, "Completing a task")
 def complete_task(
-    source: str, raw: bytes, feed: BoardFeed, complete: TaskCompleter | None
+    request: CompleteRequest, feed: BoardFeed, complete: TaskCompleter | None
 ) -> tuple[int, dict[str, Any]]:
-    """Complete the Done task `raw` names through `complete`, for a browser at `source`: the HTTP status and JSON body.
+    """Complete the Done task `request` names through `complete`: the HTTP status and JSON body.
 
     The board's writer refuses a task that is not Done, which answers 409 with the writer's reason and skill.
     """
-    if not _on_lan(source):
-        return 403, {"error": "Completing a task answers only loopback and private network (RFC 1918) browsers"}
-    try:
-        task = json.loads(raw)["task"]
-    except ValueError, TypeError, KeyError:
-        task = None
-    if not isinstance(task, str):
-        return 400, {"error": 'a complete needs {"task": "TASK-N"}'}
+    task = request.task
     if complete is None:
         return 404, {"error": "this board does not complete tasks"}
     if _held(feed, task) is None:
@@ -891,25 +880,14 @@ def complete_task(
     return 200, {"task": task}
 
 
-def restore_task(source: str, raw: bytes, feed: BoardFeed, restore: TaskRestorer | None) -> tuple[int, dict[str, Any]]:
-    """Return the archived task `raw` names to the board's tasks through `restore`, for a browser at `source`: the HTTP
-    status and JSON body.
+@_write(RestoreRequest, "Restoring a task")
+def restore_task(request: RestoreRequest, feed: BoardFeed, restore: TaskRestorer | None) -> tuple[int, dict[str, Any]]:
+    """Return the archived task `request` names to the board's tasks through `restore`: the HTTP status and JSON body.
 
     The restore places the task in a lane, so its writer is noted on the feed as any other move's is. The writer owns
     every other refusal (no archived file, the number already open, the name taken), which answers 409 with its reason.
     """
-    if not _on_lan(source):
-        return 403, {"error": "Restoring a task answers only loopback and private network (RFC 1918) browsers"}
-    try:
-        request = json.loads(raw)
-        task = request["task"]
-        who = _named_who(request)
-    except ValueError, TypeError, KeyError:
-        task = who = None
-    if not isinstance(task, str):
-        return 400, {"error": 'a restore needs {"task": "TASK-N"}'}
-    if who is None:
-        return 400, _BAD_WHO
+    task, who = request.task, _who(request)
     if restore is None:
         return 404, {"error": "this board does not restore tasks"}
     written = _record_written(feed, task, who, lambda: restore(task))
@@ -918,21 +896,15 @@ def restore_task(source: str, raw: bytes, feed: BoardFeed, restore: TaskRestorer
     return 200, {"task": task}
 
 
-def retire_task(source: str, raw: bytes, board: Board | None) -> tuple[int, dict[str, Any]]:
-    """Take the finished task `raw` names off the board into its history store through the board's `retire`, for a
-    browser at `source`: the HTTP status and JSON body.
+@_write(RetireRequest, "Retiring a task")
+def retire_task(request: RetireRequest, board: Board | None) -> tuple[int, dict[str, Any]]:
+    """Take the finished task `request` names off the board into its history store through the board's `retire`: the
+    HTTP status and JSON body.
 
     The writer owns every other refusal (an open or unknown task, the number kept with other text, a board not started),
     which answers 409 with its reason.
     """
-    if not _on_lan(source):
-        return 403, {"error": "Retiring a task answers only loopback and private network (RFC 1918) browsers"}
-    try:
-        task = json.loads(raw)["task"]
-    except ValueError, TypeError, KeyError:
-        task = None
-    if not isinstance(task, str):
-        return 400, {"error": 'a retire needs {"task": "TASK-N"}'}
+    task = request.task
     if board is None or board.retire is None:
         return 404, {"error": "this board does not retire tasks"}
     written = board.retire(task)
@@ -949,16 +921,12 @@ def retired_list(board: Board | None, task: str) -> tuple[int, dict[str, Any]]:
     return 200, {"tasks": board.retired(task)}
 
 
-def import_retired(source: str, raw: bytes, board: Board | None) -> tuple[int, dict[str, Any]]:
-    """Keep the retired task file `raw` holds, {name, text}, in the board's history store through its `import_retired`,
-    for a browser at `source`: the HTTP status and JSON body, which holds the task's id. The same file again is accepted;
-    the writer's refusal (no id, a task on the board, other text under the kept number) answers 409."""
-    body, refusal = _record_request(source, raw, "Importing", "retired task")
-    if body is None:
-        return refusal
-    name, text = body.get("name"), body.get("text")
-    if not isinstance(name, str) or not isinstance(text, str):
-        return 400, {"error": 'an import needs {"name": "<file name>", "text": "<file text>"}'}
+@_write(RetiredImportRequest, "Importing a retired task")
+def import_retired(request: RetiredImportRequest, board: Board | None) -> tuple[int, dict[str, Any]]:
+    """Keep the retired task file `request` holds, {name, text}, in the board's history store through its
+    `import_retired`: the HTTP status and JSON body, which holds the task's id. The same file again is accepted; the
+    writer's refusal (no id, a task on the board, other text under the kept number) answers 409."""
+    name, text = request.name, request.text
     if board is None or board.import_retired is None:
         return 404, {"error": "this board does not import retired tasks"}
     written = board.import_retired(name, text)
@@ -967,67 +935,42 @@ def import_retired(source: str, raw: bytes, board: Board | None) -> tuple[int, d
     return 200, {"task": written.output}
 
 
-def _create_details(body: Mapping[str, Any]) -> tuple[dict[str, Any], str]:
-    """The filled details of a create body, trimmed, and the first field that is unknown or of the wrong kind, or ""."""
-    details: dict[str, Any] = {}
-    for field, value in body.items():
-        if field in ("title", "actor", "session", "harness"):
-            continue
-        if field in _CREATE_TEXT:
-            ok = isinstance(value, str)
-            value = value.strip() if ok else value
-        elif field in _CREATE_LISTS:
-            ok = isinstance(value, list) and all(isinstance(item, str) for item in value)
-            value = [item.strip() for item in value if item.strip()] if ok else value
-            ok = ok and (field not in _CREATE_NONBLANK or len(value) == len(body[field]))
-        else:
-            return (
-                {},
-                f"{field} is not a task field; a create takes title, {', '.join((*_CREATE_TEXT, *_CREATE_LISTS))}",
-            )
-        if field == "priority" and ok and value:
-            ok, value = value.lower() in _PRIORITIES, value.lower()
-        if not ok:
-            return {}, f"{field} must be {_CREATE_KINDS.get(field, 'text')}"
-        if field == "definitionOfDone":
-            value = [{"text": item, "checked": False} for item in value]
-        if value:
-            details[field] = value
-    return details, ""
+def _create_details(request: _CreateBody) -> dict[str, Any]:
+    """The filled details of a create, as the board's writer takes them."""
+    fields = {field: getattr(request, field) for field in (*_CREATE_TEXT, *_CREATE_LISTS)}
+    details = {field: value for field, value in fields.items() if value}
+    if "definitionOfDone" in details:
+        details["definitionOfDone"] = [{"text": item, "checked": False} for item in details["definitionOfDone"]]
+    return details
 
 
-def create_task(
-    source: str, raw: bytes, create: TaskCreator | None, feed: BoardFeed | None = None
-) -> tuple[int, dict[str, Any]]:
-    """Create the task `raw` names, in the lane its `status` names or else the board's starting lane, through `create`,
-    for a browser at `source`: the HTTP status and JSON body, which holds the new task's id.
-
-    The card appears in its column when the board adapter next reports the task, not on this answer.
-    """
-    if not _on_lan(source):
-        return 403, {"error": "Creating a task answers only loopback and private network (RFC 1918) browsers"}
-    try:
-        body = json.loads(raw)
-        title = body["title"]
-        who = _named_who(body)
-    except ValueError, TypeError, KeyError:
-        body, title, who = {}, None, None
-    if not isinstance(title, str) or not title.strip() or len(title.strip()) > _TITLE_MAX:
+def _create(request: _CreateBody, create: TaskCreator | None, feed: BoardFeed | None) -> tuple[int, dict[str, Any]]:
+    """Create the task `request` names through `create`, in the lane its `status` names or else the board's starting
+    lane."""
+    title = request.title.strip()
+    if not title or len(title) > _TITLE_MAX:
         return 400, {"error": f'a create needs {{"title": "<1 to {_TITLE_MAX} characters>"}}'}
-    if who is None:
-        return 400, _BAD_WHO
-    details, wrong = _create_details(body)
-    if wrong:
-        return 400, {"error": wrong}
     if create is None:
         return 404, {"error": "this board does not create tasks"}
+    who, details = _who(request), _create_details(request)
     # the id is the writer's to choose, so the lane is recorded under the id the write returns
     written = _record_written(
-        feed, None, who, lambda: create(title.strip(), {**details, "created_by": who.created_by}, actor=who.actor)
+        feed, None, who, lambda: create(title, {**details, "created_by": who.created_by}, actor=who.actor)
     )
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
     return 201, {"task": written.output}
+
+
+@_write(_CreateBody, "Creating a task")
+def create_task(
+    request: _CreateBody, create: TaskCreator | None, feed: BoardFeed | None = None
+) -> tuple[int, dict[str, Any]]:
+    """Create the task `request` names: the HTTP status and JSON body, which holds the new task's id.
+
+    The card appears in its column when the board adapter next reports the task, not on this answer.
+    """
+    return _create(request, create, feed)
 
 
 def milestones_list(board: Board | None) -> tuple[int, dict[str, Any]]:
@@ -1046,50 +989,27 @@ def milestone_record(board: Board | None, milestone: str) -> tuple[int, dict[str
     return 200, {"milestone": record}
 
 
-def _record_request(
-    source: str, raw: bytes, action: str, noun: str
-) -> tuple[dict[str, Any] | None, tuple[int, dict[str, Any]]]:
-    """The JSON object `raw` holds for a milestone or doc write at `source`, or None with the refusal to answer."""
-    if not _on_lan(source):
-        return None, (
-            403,
-            {"error": f"{action} a {noun} answers only loopback and private network (RFC 1918) browsers"},
-        )
-    try:
-        body = json.loads(raw)
-    except ValueError:
-        body = None
-    if not isinstance(body, dict):
-        return None, (400, {"error": f"a {noun} write takes a JSON object"})
-    return body, (200, {})
-
-
-def create_milestone(source: str, raw: bytes, board: Board | None) -> tuple[int, dict[str, Any]]:
-    """Open the milestone `raw` names through the board's `create_milestone`, for a browser at `source`: the HTTP status
-    and JSON body, which holds the new milestone's id. Only the title is required."""
-    body, refusal = _record_request(source, raw, "Adding", "milestone")
-    if body is None:
-        return refusal
-    title = body.get("title")
-    if not isinstance(title, str) or not title.strip():
+@_write(MilestoneCreateRequest, "Adding a milestone")
+def create_milestone(request: MilestoneCreateRequest, board: Board | None) -> tuple[int, dict[str, Any]]:
+    """Open the milestone `request` names through the board's `create_milestone`: the HTTP status and JSON body, which
+    holds the new milestone's id. Only the title is required."""
+    title = request.title
+    if not title.strip():
         return 400, {"error": 'an add needs {"title": "<text>"}'}
     if board is None or board.create_milestone is None:
         return 404, {"error": "this board does not create milestones"}
-    written = board.create_milestone(title, {field: value for field, value in body.items() if field != "title"})
+    written = board.create_milestone(title, request.model_dump(exclude_unset=True, exclude={"title"}))
     if not written.ok:  # the writer refuses a detail it cannot store, or a title it cannot file
         return 400, {"error": written.output, "skill": written.skill}
     return 201, {"milestone": written.output}
 
 
-def edit_milestone(source: str, raw: bytes, board: Board | None) -> tuple[int, dict[str, Any]]:
-    """Apply the `changes` `raw` names to a milestone through the board's `edit_milestone`, for a browser at `source`: the
-    HTTP status and JSON body. `changed` names the fields whose value the edit changed; an edit that changes none writes
-    nothing."""
-    body, refusal = _record_request(source, raw, "Editing", "milestone")
-    if body is None:
-        return refusal
-    milestone, changes = body.get("milestone"), body.get("changes")
-    if not isinstance(milestone, str) or not isinstance(changes, dict) or not changes:
+@_write(MilestoneEditRequest, "Editing a milestone")
+def edit_milestone(request: MilestoneEditRequest, board: Board | None) -> tuple[int, dict[str, Any]]:
+    """Apply the `changes` `request` names to a milestone through the board's `edit_milestone`: the HTTP status and JSON
+    body. `changed` names the fields whose value the edit changed; an edit that changes none writes nothing."""
+    milestone, changes = request.milestone, request.changes
+    if not changes:
         return 400, {"error": 'an edit needs {"milestone": "m-N", "changes": {...}}'}
     if board is None or board.read_milestone is None or board.edit_milestone is None:
         return 404, {"error": "this board does not edit milestones"}
@@ -1103,14 +1023,10 @@ def edit_milestone(source: str, raw: bytes, board: Board | None) -> tuple[int, d
     return 200, {"milestone": milestone, "changed": list(todo)}
 
 
-def archive_milestone(source: str, raw: bytes, board: Board | None) -> tuple[int, dict[str, Any]]:
-    """Archive the milestone `raw` names through the board's `archive_milestone`, for a browser at `source`: the HTTP status
-    and JSON body."""
-    body, refusal = _record_request(source, raw, "Archiving", "milestone")
-    if body is None:
-        return refusal
-    if not isinstance(milestone := body.get("milestone"), str):
-        return 400, {"error": 'an archive needs {"milestone": "m-N"}'}
+@_write(MilestoneArchiveRequest, "Archiving a milestone")
+def archive_milestone(request: MilestoneArchiveRequest, board: Board | None) -> tuple[int, dict[str, Any]]:
+    """Archive the milestone `request` names through the board's `archive_milestone`: the HTTP status and JSON body."""
+    milestone = request.milestone
     if board is None or board.read_milestone is None or board.archive_milestone is None:
         return 404, {"error": "this board does not archive milestones"}
     if board.read_milestone(milestone) is None:
@@ -1137,32 +1053,28 @@ def doc_record(board: Board | None, doc: str) -> tuple[int, dict[str, Any]]:
     return 200, {"doc": record}
 
 
-def create_doc(source: str, raw: bytes, board: Board | None) -> tuple[int, dict[str, Any]]:
-    """File the doc `raw` names through the board's `create_doc`, for a browser at `source`: the HTTP status and JSON
-    body, which holds the new doc's id. Only the title is required."""
-    body, refusal = _record_request(source, raw, "Adding", "doc")
-    if body is None:
-        return refusal
-    title = body.get("title")
-    if not isinstance(title, str) or not title.strip():
-        return 400, {"error": 'a create needs {"title": "<text>"}'}
+@_write(DocCreateRequest, "Adding a doc")
+def create_doc(request: DocCreateRequest, board: Board | None) -> tuple[int, dict[str, Any]]:
+    """File the doc `request` names through the board's `create_doc`: the HTTP status and JSON body, which holds the new
+    doc's id. Only the title is required."""
+    title = request.title
+    if not title.strip():
+        return 400, {"error": 'an add needs {"title": "<text>"}'}
     if board is None or board.create_doc is None:
         return 404, {"error": "this board does not create docs"}
-    written = board.create_doc(title, {field: value for field, value in body.items() if field != "title"})
+    written = board.create_doc(title, request.model_dump(exclude_unset=True, exclude={"title"}))
     if not written.ok:  # the writer refuses a detail it cannot store, or a title it cannot file
         return 400, {"error": written.output, "skill": written.skill}
     return 201, {"doc": written.output}
 
 
-def edit_doc(source: str, raw: bytes, board: Board | None) -> tuple[int, dict[str, Any]]:
-    """Apply the `changes` `raw` names to a doc through the board's `edit_doc`, for a browser at `source`: the HTTP status
-    and JSON body. `changed` names the fields whose value the edit changed; an edit that changes none writes nothing."""
-    body, refusal = _record_request(source, raw, "Editing", "doc")
-    if body is None:
-        return refusal
-    doc, changes = body.get("doc"), body.get("changes")
-    if not isinstance(doc, str) or not isinstance(changes, dict) or not changes:
-        return 400, {"error": 'an update needs {"doc": "doc-N", "changes": {...}}'}
+@_write(DocEditRequest, "Editing a doc")
+def edit_doc(request: DocEditRequest, board: Board | None) -> tuple[int, dict[str, Any]]:
+    """Apply the `changes` `request` names to a doc through the board's `edit_doc`: the HTTP status and JSON body.
+    `changed` names the fields whose value the edit changed; an edit that changes none writes nothing."""
+    doc, changes = request.doc, request.changes
+    if not changes:
+        return 400, {"error": 'an edit needs {"doc": "doc-N", "changes": {...}}'}
     if board is None or board.read_doc is None or board.edit_doc is None:
         return 404, {"error": "this board does not edit docs"}
     if (current := board.read_doc(doc)) is None:
@@ -1175,14 +1087,10 @@ def edit_doc(source: str, raw: bytes, board: Board | None) -> tuple[int, dict[st
     return 200, {"doc": doc, "changed": list(todo)}
 
 
-def archive_doc(source: str, raw: bytes, board: Board | None) -> tuple[int, dict[str, Any]]:
-    """Archive the doc `raw` names through the board's `archive_doc`, for a browser at `source`: the HTTP status and
-    JSON body."""
-    body, refusal = _record_request(source, raw, "Archiving", "doc")
-    if body is None:
-        return refusal
-    if not isinstance(doc := body.get("doc"), str):
-        return 400, {"error": 'an archive needs {"doc": "doc-N"}'}
+@_write(DocArchiveRequest, "Archiving a doc")
+def archive_doc(request: DocArchiveRequest, board: Board | None) -> tuple[int, dict[str, Any]]:
+    """Archive the doc `request` names through the board's `archive_doc`: the HTTP status and JSON body."""
+    doc = request.doc
     if board is None or board.read_doc is None or board.archive_doc is None:
         return 404, {"error": "this board does not archive docs"}
     if board.read_doc(doc) is None:
@@ -1193,19 +1101,15 @@ def archive_doc(source: str, raw: bytes, board: Board | None) -> tuple[int, dict
     return 200, {"doc": doc}
 
 
-def restore_doc(source: str, raw: bytes, board: Board | None) -> tuple[int, dict[str, Any]]:
-    """Return the archived doc `raw` names to the folder it names under the board's docs through the board's
-    `restore_doc`, for a browser at `source`: the HTTP status and JSON body.
+@_write(DocRestoreRequest, "Restoring a doc")
+def restore_doc(request: DocRestoreRequest, board: Board | None) -> tuple[int, dict[str, Any]]:
+    """Return the archived doc `request` names to the folder it names under the board's docs through the board's
+    `restore_doc`: the HTTP status and JSON body.
 
     The writer owns every other refusal (no archived file, the id already open, the destination taken, a folder that is
     not a path of plain names), which answers 409 with its reason.
     """
-    body, refusal = _record_request(source, raw, "Restoring", "doc")
-    if body is None:
-        return refusal
-    folder = body.get("folder", "")
-    if not isinstance(doc := body.get("doc"), str) or not isinstance(folder, str):
-        return 400, {"error": 'a restore needs {"doc": "doc-N"} and, optionally, {"folder": "specs"}'}
+    doc, folder = request.doc, request.folder or ""
     if board is None or board.restore_doc is None:
         return 404, {"error": "this board does not restore docs"}
     written = board.restore_doc(doc, folder)
@@ -1214,40 +1118,33 @@ def restore_doc(source: str, raw: bytes, board: Board | None) -> tuple[int, dict
     return 200, {"doc": doc}
 
 
+@_write(_StartBody, "Starting a session")
 def start_task(
-    source: str,
-    raw: bytes,
+    request: _StartBody,
     feed: BoardFeed,
     assign: AssigneeWriter,
     start_session: Callable[..., str] | None,
     harnesses: Harnesses | None = None,
     clock: Callable[[], float] = time.time,
 ) -> tuple[int, dict[str, Any]]:
-    """Start a session for the task `raw` names, on the profile and harness it names, for a browser at `source`: the
-    HTTP status and JSON body.
+    """Start a session for the task `request` names, on the profile and harness it names: the HTTP status and JSON
+    body.
 
     A changed profile is saved through the guarded writer first, since the session-start service reads the
     profile from the task. `harness` selects which configured harness opens the session; `mode` defaults to
     `interactive`. `at` is when the start began, so the page applies only a refused claim made after it.
     """
-    if not _on_lan(source):
-        return 403, {"error": "Starting a session answers only loopback and private network (RFC 1918) browsers"}
-    try:
-        request = json.loads(raw)
-        task, profile = request["task"], request["profile"] if "profile" in request else request["assignee"]
-        harness = request.get("harness", "claude")
-        mode = request.get("mode", "interactive")
-        named = _named_actor(request)
-    except ValueError, TypeError, KeyError:
-        task = profile = harness = mode = named = None
-    if not isinstance(task, str) or not isinstance(profile, str):
+    task = request.task
+    profile = request.profile if request.profile is not None else request.assignee
+    harness = "claude" if request.harness is None else request.harness
+    mode = "interactive" if request.mode is None else request.mode
+    named = {} if request.actor is None else {"actor": request.actor.strip()}
+    if profile is None:
         return 400, {"error": 'a start needs {"task": "TASK-N", "profile": "@agent-<tier>-<effort>"}'}
-    if not isinstance(harness, str) or not harness:
+    if not harness:
         return 400, {"error": "harness must be a non-empty name from agent-harnesses.toml"}
-    if not isinstance(mode, str) or mode not in _START_MODES:
+    if mode not in _START_MODES:
         return 400, {"error": 'mode must be "interactive" or "headless"'}
-    if named is None:
-        return 400, _BAD_ACTOR
     if start_session is None:
         return 404, {"error": "no session-start service is configured (session_start_url)"}
     if harnesses is not None and harnesses.harnesses:
@@ -1274,23 +1171,49 @@ def start_task(
         return 502, {"error": str(exc)}
 
 
+@_write(WindowRequest, "The history window")
+def _set_window(request: WindowRequest, window: HistoryWindow) -> tuple[int, dict[str, Any]]:
+    try:
+        window.set(request.hours)
+    except ValueError as exc:
+        return 400, {"error": str(exc)}
+    return 200, window.state()
+
+
 def history_window(source: str, method: str, raw: bytes, window: HistoryWindow) -> tuple[int, dict[str, Any]]:
     """Read (`GET`), set (`PUT {"hours": N}`) or reset (`DELETE`) the shared history window for a browser at `source`:
     the HTTP status and JSON body, which is the window's state, or the refusal."""
-    if not _on_lan(source):
-        return 403, {"error": "The history window answers only loopback and private network (RFC 1918) browsers"}
     if method == "PUT":
-        try:
-            hours = json.loads(raw)["hours"]
-        except ValueError, TypeError, KeyError:
-            return 400, {"error": 'a history window needs {"hours": N}'}
-        try:
-            window.set(hours)
-        except ValueError as exc:
-            return 400, {"error": str(exc)}
-    elif method == "DELETE":
+        return _set_window(source, raw, window)
+    if not _on_lan(source):
+        return _lan_refusal("The history window")
+    if method == "DELETE":
         window.reset()
     return 200, window.state()
+
+
+_AUTOPILOT_USAGE = (
+    'the autopilot takes {"enabled": true|false}, {"harness": "<name>"} and/or '
+    '{"quietHours": {"start", "end", "timezone"}|null}'
+)
+
+
+@_write(AutopilotRequest, "The autopilot switch")
+def _put_autopilot(request: AutopilotRequest, runtime: Runtime | Remote) -> tuple[int, dict[str, Any]]:
+    named = request.model_fields_set
+    if not named or ("enabled" in named and request.enabled is None):
+        return 400, {"error": _AUTOPILOT_USAGE}
+    try:
+        if "quietHours" in named:
+            quiet = request.quietHours
+            runtime.set_quiet_hours(None if quiet is None else quiet.model_dump())
+        if "harness" in named:
+            runtime.set_harness(request.harness)
+    except ValueError as exc:
+        return 400, {"error": str(exc)}
+    if request.enabled is not None:
+        runtime.set_enabled(request.enabled)
+    return 200, runtime.served_status()
 
 
 def autopilot(source: str, method: str, raw: bytes, runtime: Runtime | Remote | None) -> tuple[int, dict[str, Any]]:
@@ -1305,30 +1228,5 @@ def autopilot(source: str, method: str, raw: bytes, runtime: Runtime | Remote | 
     if runtime is None:
         return 404, {"error": "this instance runs no autopilot"}
     if method == "PUT":
-        if not _on_lan(source):
-            return 403, {"error": "The autopilot switch answers only loopback and private network (RFC 1918) browsers"}
-        usage = (
-            'the autopilot takes {"enabled": true|false}, {"harness": "<name>"} and/or '
-            '{"quietHours": {"start", "end", "timezone"}|null}'
-        )
-        try:
-            body = json.loads(raw)
-        except ValueError:
-            body = None
-        if not isinstance(body, dict) or not body or body.keys() - {"enabled", "quietHours", "harness"}:
-            return 400, {"error": usage}
-        if "enabled" in body and not isinstance(body["enabled"], bool):
-            return 400, {"error": usage}
-        if "quietHours" in body:
-            try:
-                runtime.set_quiet_hours(body["quietHours"])
-            except ValueError as exc:
-                return 400, {"error": str(exc)}
-        if "harness" in body:
-            try:
-                runtime.set_harness(body["harness"])
-            except ValueError as exc:
-                return 400, {"error": str(exc)}
-        if "enabled" in body:
-            runtime.set_enabled(body["enabled"])
+        return _put_autopilot(source, raw, runtime)
     return 200, runtime.served_status()

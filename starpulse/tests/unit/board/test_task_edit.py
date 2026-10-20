@@ -171,23 +171,32 @@ def test_a_source_outside_loopback_and_rfc_1918_cannot_edit(file: _File, source:
     assert body == {"error": "Editing a task answers only loopback and private network (RFC 1918) browsers"}
 
 
-@pytest.mark.parametrize(
-    "raw",
-    [
-        b"",
-        b"[]",
-        b'{"task": "PROJ-3", "base": {}, "changes": {}}',
-        b'{"base": {"title": "x"}, "changes": {"title": "y"}}',
-        b'{"task": "PROJ-3", "base": [], "changes": {"title": "y"}}',
-        b'{"task": "PROJ-3", "base": {"title": "x"}, "changes": []}',
-        b'{"task": "PROJ-3", "base": {"title": "x"}, "changes": {"title": "y"}, "comment": 3}',
-    ],
-)
-def test_a_body_that_is_not_a_task_a_base_and_changes_is_a_bad_request(file: _File, raw: bytes) -> None:
-    status, body = _edit(file, raw)
+def test_an_edit_with_no_change_is_a_bad_request(file: _File) -> None:
+    status, body = _edit(file, b'{"task": "PROJ-3", "base": {}, "changes": {}}')
 
     assert (status, file.sent) == (400, [])
     assert body == {"error": 'an edit needs {"task": "TASK-N", "base": {...}, "changes": {...}, "comment": "<optional>"}'}
+
+
+@pytest.mark.parametrize(
+    ("raw", "error"),
+    [
+        (b"", "Invalid JSON: EOF while parsing a value at line 1 column 0"),
+        (b"[]", "Input should be an object"),
+        (b'{"base": {"title": "x"}, "changes": {"title": "y"}}', "task: Field required"),
+        (b'{"task": "PROJ-3", "base": [], "changes": {"title": "y"}}', "base: Input should be an object"),
+        (b'{"task": "PROJ-3", "base": {"title": "x"}, "changes": []}', "changes: Input should be an object"),
+        (
+            b'{"task": "PROJ-3", "base": {"title": "x"}, "changes": {"title": "y"}, "comment": 3}',
+            "comment: Input should be a valid string",
+        ),
+    ],
+)
+def test_an_edit_body_its_model_rejects_is_a_bad_request(file: _File, raw: bytes, error: str) -> None:
+    status, body = _edit(file, raw)
+
+    assert (status, file.sent) == (400, [])
+    assert body == {"error": f"invalid request: {error}"}
 
 
 def test_a_change_without_the_base_it_was_made_from_is_a_bad_request(file: _File) -> None:
@@ -305,14 +314,23 @@ def test_a_source_outside_loopback_and_rfc_1918_cannot_archive(source: str) -> N
     assert body == {"error": "Archiving a task answers only loopback and private network (RFC 1918) browsers"}
 
 
-@pytest.mark.parametrize("raw", [b"", b"[]", b"{}", b'{"task": 3}', b'{"task": "PROJ-3", "reason": 3}'])
-def test_a_body_that_is_not_a_task_and_a_reason_is_a_bad_request(raw: bytes) -> None:
+@pytest.mark.parametrize(
+    ("raw", "error"),
+    [
+        (b"", "Invalid JSON: EOF while parsing a value at line 1 column 0"),
+        (b"[]", "Input should be an object"),
+        (b"{}", "task: Field required"),
+        (b'{"task": 3}', "task: Input should be a valid string"),
+        (b'{"task": "PROJ-3", "reason": 3}', "reason: Input should be a valid string"),
+    ],
+)
+def test_an_archive_body_its_model_rejects_is_a_bad_request(raw: bytes, error: str) -> None:
     archive = _Archive()
 
     status, body = _archive(raw, archive)
 
     assert (status, archive.sent) == (400, [])
-    assert body == {"error": 'an archive needs {"task": "TASK-N", "reason": "<optional text>"}'}
+    assert body == {"error": f"invalid request: {error}"}
 
 
 def test_a_task_the_board_does_not_hold_is_not_archived() -> None:

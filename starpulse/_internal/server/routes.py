@@ -121,61 +121,6 @@ _MILESTONE_WRITES = frozenset({_MILESTONES, _MILESTONE_EDIT, _MILESTONE_ARCHIVE}
 _DOC_WRITES = frozenset({_DOCS, _DOC_EDIT, _DOC_ARCHIVE, _DOC_RESTORE})
 
 
-#: The write routes of retired tasks; `/api/retired` reads them.
-_RETIRED_WRITES = frozenset({_RETIRE, _RETIRED_IMPORT})
-
-
-#: The write routes whose JSON body a handler in `writes` reads whole.
-_TASK_WRITES = frozenset(
-    {
-        _MOVE,
-        _START,
-        _EDIT,
-        _ARCHIVE,
-        _VERDICT,
-        _MISS,
-        _RESTORE,
-        _COMPLETE,
-        _CLAIM,
-        _PARK,
-        _REVIEW,
-        _TASKS,
-        *_MILESTONE_WRITES,
-        *_DOC_WRITES,
-        *_RETIRED_WRITES,
-    }
-)
-
-
-#: The body each write route answers, by `contracts.api.registry.BODIES`; a run and a rerun answer `run`.
-_WRITES = {
-    _MOVE: "move",
-    _START: "start",
-    _EDIT: "edit",
-    _ARCHIVE: "archive",
-    _VERDICT: "verdict",
-    _MISS: "verdict",
-    _RESTORE: "restore",
-    _RETIRE: "retire",
-    _RETIRED_IMPORT: "retired_import",
-    _COMPLETE: "complete",
-    _CLAIM: "claim",
-    _PARK: "park",
-    _REVIEW: "review",
-    _TASKS: "create",
-    _MILESTONES: "milestone_create",
-    _MILESTONE_EDIT: "milestone_edit",
-    _MILESTONE_ARCHIVE: "milestone_archive",
-    _DOCS: "doc_create",
-    _DOC_EDIT: "doc_edit",
-    _DOC_ARCHIVE: "doc_archive",
-    _DOC_RESTORE: "doc_restore",
-    _MACHINE_EVENTS: "ingest",
-    _INSIGHTS: "insight",
-    _PULL_REFRESH: "ingest",
-}
-
-
 def _is_rerun(path: str) -> bool:
     """Whether `path` is `/api/runs/<instance>/<workflow>/rerun`."""
     return path.startswith(_RERUN) and path.endswith(_RERUN_TAIL) and path.count("/") == 5

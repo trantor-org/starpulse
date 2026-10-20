@@ -197,7 +197,7 @@ def test_parking_on_a_task_keeps_the_dependencies_it_has(tmp_path: Path, monkeyp
         (["task-3"], "already Done"),
         ([], "needs"),
         ([" "], "needs"),
-        ("task-2", "needs"),
+        ("task-2", "untilTask: Input should be a valid array"),
     ],
 )
 def test_parking_on_a_task_that_cannot_be_waited_for_is_refused_and_writes_nothing(
@@ -253,7 +253,7 @@ def test_parking_until_a_criterion_replaces_the_criteria_it_had(
 
 @pytest.mark.parametrize(
     "until",
-    [[], [{"kind": "prom"}], [{"id": "a"}], [{"id": "a", "kind": "prom"}, {"id": "a", "kind": "prom"}], ["soak"]],
+    [[], [{"kind": "prom"}], [{"id": "a"}], [{"id": "a", "kind": "prom"}, {"id": "a", "kind": "prom"}]],
 )
 def test_parking_until_malformed_criteria_is_refused_and_writes_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, until: list
@@ -264,6 +264,18 @@ def test_parking_until_malformed_criteria_is_refused_and_writes_nothing(
     status, body = _park(feed, built, task="task-1", until=until)
 
     assert status == 400 and "criteri" in body["error"]
+    assert _text(tmp_path, "task-1") == before
+
+
+def test_parking_until_a_criterion_that_is_not_an_object_is_a_400_and_writes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    feed, built = _in_progress(tmp_path, monkeypatch)
+    before = _text(tmp_path, "task-1")
+
+    status, body = _park(feed, built, task="task-1", until=["soak"])
+
+    assert (status, body) == (400, {"error": "invalid request: until.0: Input should be an object"})
     assert _text(tmp_path, "task-1") == before
 
 
@@ -309,12 +321,23 @@ def test_a_second_operator_park_replaces_the_reason_rather_than_stacking_it(
     assert description.count("## Needs attention") == 1 and "second" in description and "first" not in description
 
 
+def test_a_park_whose_reason_is_not_text_is_a_400_and_writes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    feed, built = _in_progress(tmp_path, monkeypatch)
+    before = _text(tmp_path, "task-1")
+
+    status, body = _park(feed, built, task="task-1", operator=3)
+
+    assert (status, body) == (400, {"error": "invalid request: operator: Input should be a valid string"})
+    assert _text(tmp_path, "task-1") == before
+
+
 @pytest.mark.parametrize(
     "body",
     [
         {},
         {"operator": " "},
-        {"operator": 3},
         {"operator": "x", "untilTask": ["task-2"]},
         {"untilTask": ["task-2"], "until": [{"id": "a", "kind": "prom"}]},
     ],

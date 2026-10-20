@@ -142,7 +142,7 @@ the value under that key:
 | `all_of`, `any_of`, `exactly_one`, `none_of` | a non-empty list of primitives | all, at least one, exactly one or none of them hold |
 
 A write names its actor, which `unless_actor` matches. `POST /api/move`, `/api/edit`, `/api/archive`, `/api/verdict`, `/api/miss` and `/api/tasks`
-take an optional `actor`, `session` and `harness`, each non-empty text (anything else is a 400). The page names
+take an optional `actor`, `session` and `harness`, each non-empty text (anything else is a 400). Every write parses its body through the request model of its route, so a body that is not a JSON object, names a key the route does not take or holds a field of the wrong type is a 400 `invalid request: <field>: <reason>` for its first fault. The page names
 `operator`; `starpulse` verbs name `agent`, their session and their harness. A write naming no actor is `agent` when it
 names a session and `anonymous` when it names none, never `operator`, so an unnamed write is not judged as the
 operator's. The write's `board:lanes` row carries all three, and a create stamps `created_by: <harness>:<session>` in

@@ -2,19 +2,31 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
+
+from pydantic import AfterValidator
 
 from starpulse.contracts.api._base import _Api
 from starpulse.contracts.api.dto.autopilot import QuietHours
+
+
+def _nonblank(value: str) -> str:
+    if not value.strip():
+        raise ValueError("must not be blank")
+    return value
+
+
+#: Text a write names that must hold something: a blank name is an error, not an absent one.
+NonBlank = Annotated[str, AfterValidator(_nonblank)]
 
 
 class _Writer(_Api):
     """The writer a board write names: `actor` is `operator` from the page and `agent` from a session; a write naming
     neither is `anonymous`. The `session` and `harness` it names land on the change's `board:lanes` row."""
 
-    actor: str | None = None
-    session: str | None = None
-    harness: str | None = None
+    actor: NonBlank | None = None
+    session: NonBlank | None = None
+    harness: NonBlank | None = None
 
 
 class MoveRequest(_Writer):
