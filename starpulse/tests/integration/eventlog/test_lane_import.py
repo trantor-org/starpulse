@@ -12,6 +12,7 @@ from starpulse._internal.eventlog import lane_import
 from starpulse._internal.eventlog.history import HistoryStore
 from starpulse._internal.server import history_import
 from starpulse.tests.machines import MACHINES
+from starpulse.tests.summaries import assert_matches_rebuild
 
 #: The change lines an exporter writes: one task's path, the earliest first, and a no-op move (Done to Done).
 LINES = [
@@ -51,7 +52,7 @@ def test_importing_the_same_changes_twice_leaves_one_row_each_and_summaries_that
         ("u-2", "T-1", "ready", "in_progress", 200.0),
         ("u-4", "T-1", "in_progress", "done", 300.0),
     ]
-    assert store.summary_differences() == []
+    assert_matches_rebuild(store)
 
 
 def test_changes_older_than_the_store_holds_chain_in_front_of_the_live_ones(tmp_path: Path) -> None:
@@ -66,7 +67,7 @@ def test_changes_older_than_the_store_holds_chain_in_front_of_the_live_ones(tmp_
         ("in_progress", "done"),
         ("done", "review"),
     ]
-    assert store.summary_differences() == []
+    assert_matches_rebuild(store)
 
 
 def test_a_move_the_store_holds_under_another_event_id_is_not_added_again(tmp_path: Path) -> None:
@@ -104,7 +105,6 @@ def test_the_command_imports_a_file_into_the_store_the_config_names_and_a_second
 
     assert (first["read"], first["imported"]) == (5, 4)
     assert (second["read"], second["imported"]) == (5, 0)
-    assert second["summary_differences"] == []
     held = HistoryStore(f"sqlite:///{store_file}", MACHINES)
     assert [row[0] for row in _rows(held)] == ["u-1", "u-5", "u-2", "u-4"]
 

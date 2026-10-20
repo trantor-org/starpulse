@@ -8,6 +8,7 @@ from sqlalchemy import text
 
 from starpulse._internal.eventlog.history import HistoryStore
 from starpulse.tests.machines import MACHINES
+from starpulse.tests.summaries import assert_matches_rebuild
 
 #: A swept task's rows as the board migration left them, in the order they landed: the settle was read after the
 #: moves, but dated by the file's age (200), so it sorts between Ready and In Progress. Its twin, dated by the floor,
@@ -44,4 +45,4 @@ def test_a_settle_recorded_behind_later_moves_is_dropped_when_the_store_starts(t
 
     assert [change["to"] for change in repaired.lane_path("T-1")] == ["ready", "in_progress", "done", "completed"]
     assert [change["to"] for change in repaired.lane_path("T-2")] == ["done", "completed", "done", "completed"]
-    assert repaired.summary_differences() == []
+    assert_matches_rebuild(repaired)
