@@ -1,6 +1,7 @@
 """The wait a worker process ends in: `SIGTERM` stops it, `SIGHUP` reloads its config.
 
 A worker `serve` supervises also stops when its stdin pipe from `serve` closes, which `serve` dying by any signal does.
+`watch_supervisor` starts that watch as the process starts, so a worker still starting when `serve` dies ends too.
 """
 
 from __future__ import annotations
@@ -20,14 +21,26 @@ LISTEN_FD_ENV = "STARPULSE_LISTEN_FD"
 #: The directory of the page build `serve` checked, handed to the Page API child so both serve the same one.
 STATIC_ENV = "STARPULSE_STATIC"
 
+_watching = False
+
+
+def watch_supervisor() -> None:  # pragma: no mutate block — process boundary
+    """End this process with `SIGTERM` when its stdin pipe from `serve` closes; a no-op outside a supervised child.
+
+    Called as the process starts: until `hold` installs its handler `SIGTERM` ends the process, and after it `stop` is set.
+    """
+    global _watching  # once per process: two readers of the pipe would split its bytes
+    if os.environ.get(SUPERVISED_ENV) and not _watching:
+        _watching = True
+        threading.Thread(target=_term_at_eof, daemon=True).start()
+
 
 def hold(stop: threading.Event, reload: Callable[[], None]) -> None:  # pragma: no mutate block — process boundary
     """Block until `SIGTERM`, running `reload` for each `SIGHUP`, one at a time."""
     reloads = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: (stop.set(), reloads.set()))
     signal.signal(signal.SIGHUP, lambda *_: reloads.set())
-    if os.environ.get(SUPERVISED_ENV):
-        threading.Thread(target=_stop_at_eof, args=(stop, reloads), daemon=True).start()
+    watch_supervisor()
     while True:
         reloads.wait()
         reloads.clear()
@@ -36,9 +49,8 @@ def hold(stop: threading.Event, reload: Callable[[], None]) -> None:  # pragma: 
         reload()
 
 
-def _stop_at_eof(stop: threading.Event, reloads: threading.Event) -> None:  # pragma: no mutate block — process boundary
+def _term_at_eof() -> None:  # pragma: no mutate block — process boundary
     # the descriptor, not `sys.stdin.buffer`: a buffered read holds a lock the interpreter cannot take at shutdown
     while os.read(0, 4096):
         pass
-    stop.set()
-    reloads.set()
+    os.kill(os.getpid(), signal.SIGTERM)

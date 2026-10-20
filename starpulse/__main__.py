@@ -14,6 +14,7 @@ import sys
 from collections.abc import Callable
 
 from starpulse._internal.cli import agent_cli
+from starpulse._internal.server.hold import watch_supervisor
 
 
 def _lazy(module: str) -> Callable[[list[str]], int | None]:
@@ -39,6 +40,8 @@ COMMANDS: dict[str, Callable[[list[str]], int | None]] = {
 def main(argv: list[str] | None = None) -> int | None:
     argv = sys.argv[1:] if argv is None else argv
     if argv and argv[0] in COMMANDS:
+        if argv[0] == "worker":
+            watch_supervisor()
         return COMMANDS[argv[0]](argv[1:])
     return agent_cli.main(argv)
 

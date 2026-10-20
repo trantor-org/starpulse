@@ -74,6 +74,18 @@ def test_a_preloaded_process_serve_forked_itself_forks_children_and_ends_with_th
     assert preloaded.poll() is not None
 
 
+def test_a_forked_child_still_starting_ends_when_serve_closes_its_pipe_without_a_signal() -> None:
+    forked = Forker([], entry=ENTRY)
+    child = forked([*PREFIX, "stall"])
+    try:
+        assert child.poll() is None
+        forked.close()
+
+        _wait_for(lambda: child.poll() is not None)
+    finally:
+        child.kill()
+
+
 def test_a_forked_child_reports_the_exit_code_its_entry_ended_with(forker: Forker) -> None:
     child = forker([*PREFIX, "exit", "3"])
 

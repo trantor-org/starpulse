@@ -1,4 +1,4 @@
-"""The entry a test's forked child runs in place of `starpulse.__main__.main`: `hold`, `exit N`, `report PATH` or `port PATH`."""
+"""The entry a test's forked child runs in place of `starpulse.__main__.main`: `hold`, `stall`, `exit N`, `report PATH` or `port PATH`."""
 
 import os
 import threading
@@ -11,6 +11,8 @@ from starpulse._internal.server.server import inherited_socket
 def main(argv: list[str]) -> None:
     if argv[0] == "exit":
         raise SystemExit(int(argv[1]))
+    if argv[0] == "stall":  # a worker still starting: it never reaches `hold`
+        threading.Event().wait()
     if argv[0] == "report":  # the value of the `marker` the preloaded process imported
         import marker  # noqa: PLC0415 - a test's module, on the path only for the test that preloads it
 
