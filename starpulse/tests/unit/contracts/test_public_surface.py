@@ -100,7 +100,6 @@ PUBLIC: dict[str, set[str]] = {
         "Step",
         "TaskKeys",
     },
-    "starpulse.diagram": {"machine_dot"},
     "starpulse.event_log": {"Entry", "EventLog", "Tail"},
     "starpulse.harnesses": {"Harness", "HarnessError", "Harnesses", "Tier", "load_harnesses"},
     "starpulse.history": {"History", "machine_steps"},
