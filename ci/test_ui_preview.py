@@ -96,7 +96,7 @@ DAGS = "starpulse/web/src/features/dags/Dags.tsx"
         ([KANBAN], ["starpulse-kanban"]),
         ([DAGS], ["starpulse-dags"]),
         ([DAGS, KANBAN, "README.md", "design/data.js"], ["starpulse-kanban", "starpulse-dags"]),
-        # anything the two view folders do not own may draw on every view
+        # anything the view folders do not own may draw on every view
         ([KANBAN, "starpulse/web/src/App.tsx"], list(PAGES[STARPULSE])),
         ([KANBAN, "starpulse/web/src/features/level/ledger.ts"], list(PAGES[STARPULSE])),
         (["starpulse/web/src/features/kanban"], list(PAGES[STARPULSE])),
