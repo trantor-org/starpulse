@@ -166,6 +166,27 @@ def test_a_close_is_not_taken_for_one_of_two_open_pull_requests() -> None:
     assert {r["state"] for r in store.find()} == {"OPEN"}
 
 
+def test_a_close_naming_its_pull_request_closes_only_that_one_of_two_open() -> None:
+    other = "https://github.com/acme/skills/pull/2"
+    projection, store, _ = _projection(references=[URL, other])
+    projection.handle(_entry(*OPEN, at=T0))
+
+    projection.handle(_entry("github-pull-request", "PR_CLOSED", at=T0 + 1, repository="acme/skills", pr="2"))
+
+    assert {(r["repo"], r["state"]) for r in store.find()} == {("acme/widgets", "OPEN"), ("acme/skills", "CLOSED")}
+
+
+def test_a_close_of_a_pull_request_already_closed_does_not_close_the_last_open_one() -> None:
+    other = "https://github.com/acme/skills/pull/2"
+    projection, store, _ = _projection(references=[URL, other])
+    projection.handle(_entry(*OPEN, at=T0))
+    projection.handle(_entry("github-pull-request", "PR_CLOSED", at=T0 + 1, repository="acme/skills", pr="2"))
+
+    projection.handle(_entry("github-pull-request", "PR_CLOSED", at=T0 + 2, repository="acme/skills", pr="2"))
+
+    assert {(r["repo"], r["state"]) for r in store.find()} == {("acme/widgets", "OPEN"), ("acme/skills", "CLOSED")}
+
+
 def test_a_ready_event_reaches_every_pull_request_of_the_task() -> None:
     other = "https://github.com/acme/skills/pull/2"
     projection, store, _ = _projection(references=[URL, other])
