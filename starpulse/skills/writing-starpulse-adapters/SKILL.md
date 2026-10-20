@@ -5,56 +5,65 @@ description: Connects a tracker, a harness, a scheduler or an analysis engine to
 
 # Writing StarPulse Adapters
 
-An adapter produces one of four records for StarPulse. The models are in `starpulse.contracts`, and each has a JSON
-Schema under `starpulse/schemas/`. Unknown fields are an error, so a misspelt one is refused rather than lost.
+An adapter produces one of four records. The models are in `starpulse.contracts`, each with a JSON
+Schema under `starpulse/schemas/`; an unknown field is an error, so a misspelt one is refused, not
+lost.
 
 | Contract | Record | Written to |
 |---|---|---|
 | `board` | `BoardTask`: `id`, `title`, `team`, `lane`, `dependencies`, `references`, `settled`, `created_at`, `settled_at`, `observed_at`, `profile`, `assignee`, `labels`, `milestone`, `description`, `acceptance_criteria`, `acceptance_checked`, `pause_reason`, `notes`, `moves` | a board adapter's `Board` |
-| `machine-events` | `MachineEvent`: `machine`, `event`, exactly one of `task` or `run`, `actor`, `time` (epoch seconds), optionally `source` and `data` (set by a producer posting through `POST /api/machine-events`, see docs/sources.md) | the CloudEvents ingest, `POST /api/machine-events`; an adapter in the server process appends to `machine:events` |
+| `machine-events` | `MachineEvent`: `machine`, `event`, exactly one of `task` or `run`, `actor`, `time` (epoch seconds); `source` and `data` come from a producer posting through the ingest (docs/sources.md) | the ingest, `POST /api/machine-events`; an adapter in the server process appends to `machine:events` |
 | `runs` | `Dag`: `name`, `status`, `runId`, `startedAt`, `finishedAt`, `steps` | a runs adapter's `RunsSink`, or a Step CloudEvent posted to the ingest |
 | `insights` | `Finding`: `id`, `engine` (`name`, `version`), `scope` (any of `team`, `machine`, `state`, `task`), `severity` (`info`, `warn`, `act`), `text` (at most 280 characters), `evidence` (each a labelled `url` or `query`), `created_at`, `expires_at` | a hub's `POST /api/insights` under the engine token; `DELETE /api/insights/<id>` retracts |
 
-Pick the contract first: a tracker is a board, a hook that says a task moved is machine events, a scheduler is runs, an engine that reads the history and reports what it found is insights. A finding is about a team, machine, state or task, never a person: the contract has no field for one, and a scope that names a person is refused.
+Pick the contract first: a tracker is a board, a hook that says a task moved is machine events, a
+scheduler is runs, an engine that reads the history and reports on it is insights. A finding is
+about a team, machine, state or task, never a person: the contract has no field for one, and a
+scope that names a person is refused.
 
 ## Write a board adapter
 
-1. Make a module with `board(settings, base)` returning `starpulse.board.Board`: `settings` is the rest of the
-   `[board]` table and `base` the config file's directory.
-2. Give it `machines` (the machines the page draws, the Board's as `board`), `start` (feeds each task as it changes)
-   and `keys`, a `TaskKeys(key=<whole-key pattern>, branch=<pattern whose group 1 is the key>, key_format=...)`.
-3. A task's `lane` is a state id of the Board machine: the status lower-cased with spaces as `_`.
-4. Add a `writer(task, status, actor)` to let the page and the agent move tasks: it returns a `Written`, and its
-   refusal's `output` and `skill` are what `starpulse task move` reports. An actor outside a move's `writers` is refused
-   before the writer is called. `assign`, `read`, `edit`, `archive` and `history` are optional.
-5. Name the module in `[board] type`, a module under `starpulse` or a dotted path an installed package provides.
-   `starpulse._internal.board.upstream_backlog` is the reference adapter, and `starpulse._internal.board.jira` one that imports its machine from the
-   tracker's own workflow. The machine's states and writers are authored with the
-   `authoring-starpulse-machines` skill.
+1. Make a module with `board(settings, base)` returning `starpulse.board.Board`: `settings` is the
+   rest of the `[board]` table, `base` the config file's directory.
+2. Give it `machines` (the machines the page draws, the Board's as `board`), `start` (feeds each
+   task as it changes) and `keys`, a `TaskKeys(key=<whole-key pattern>, branch=<pattern whose
+   group 1 is the key>, key_format=...)`.
+3. Set each task's `lane` to a state id of the Board machine: the status lower-cased, spaces as `_`.
+4. Add `writer(task, status, actor)` so the page and the agent can move tasks: it returns a
+   `Written`, whose refusal `output` and `skill` are what `starpulse task move` reports. An actor
+   outside a move's `writers` is refused before the writer is called. `assign`, `read`, `edit` and
+   `archive` are optional.
+5. Name the module in `[board] type`: a built-in name or a dotted path an installed package
+   provides. `starpulse._internal.board.upstream_backlog` is the reference adapter;
+   `starpulse._internal.board.jira` imports its machine from the tracker's own workflow. Author the
+   machine's states and writers with the `authoring-starpulse-machines` skill.
 
-Done when `starpulse doctor` reports `adapter:board` as ok.
+Done when `starpulse doctor` reports `adapter:board` ok.
 
 ## Test an adapter with the kit
 
-1. Subclass the kit for the contract: `BoardAdapterKit`, `MachineEventsAdapterKit`, `RunsAdapterKit` or
-   `InsightsEngineKit`, from `starpulse.adapter_kit`. An insights engine declares only `produce()`, its findings as plain
-   dicts; the kit posts, re-posts and retracts each through a served hub and checks the stream sends every state.
-2. Unless it is an insights engine, declare `keys = TaskKeys(...)` and `branches = {"feature/PROJ-1-add-x": "PROJ-1", "main": None}`, with a branch that
-   names a task and one that names none. A board or machine-events kit also declares `machines`; a board kit declares
-   `teams = {"PROJ-1": "PROJ"}`, the team key your adapter derives for each task it produces, and one with a writer
-   sets `writer`.
-3. Override `produce()` to return the records your adapter writes, as plain dicts shaped as the schema. A runs adapter
-   that reports concurrency pools also overrides `produce_pools()`; each `Dag.pool` must name one of them.
-4. Run `pytest`. The kit checks each record against the contract, its keys and branches, that a board task is in the team you declared
-   for it, and that StarPulse places it.
+1. Subclass the kit for the contract, from `starpulse.adapter_kit`: `BoardAdapterKit`,
+   `MachineEventsAdapterKit`, `RunsAdapterKit` or `InsightsEngineKit`. An insights engine declares
+   only `produce()`; the kit posts, re-posts and retracts each finding through a served hub and
+   checks the stream sends every state.
+2. Otherwise declare `keys = TaskKeys(...)` and
+   `branches = {"feature/PROJ-1-add-x": "PROJ-1", "main": None}`, one branch that names a task and
+   one that names none. A board or machine-events kit also declares `machines`; a board kit declares
+   `teams = {"PROJ-1": "PROJ"}`, the team key the adapter derives for each task, and sets `writer`
+   when it has one.
+3. Override `produce()` to return the records the adapter writes, as plain dicts shaped as the
+   schema. A runs adapter that reports concurrency pools also overrides `produce_pools()`; each
+   `Dag.pool` must name one of them.
+4. Run `pytest`: the kit checks each record against the contract, keys, branches and declared
+   team, and that StarPulse places it.
 
-Done when every kit check passes against records your adapter actually produced.
+Done when every kit check passes against records the adapter actually produced.
 
 ## Post machine events and runs to the ingest
 
-The ingest, `POST /api/machine-events`, is the one write path for machine events and for runs, from a cron line, a systemd
-unit, a CI job or a scheduler hook. It needs no Redis and no access to the database. Declare the producer in the server's
-config, with its token in the environment (docs/serving.md):
+The ingest, `POST /api/machine-events`, is the one write path for machine events and runs from a
+cron line, a systemd unit, a CI job or a scheduler hook; it needs no Redis and no database access.
+Declare the producer in the server's config with its token in the environment (docs/serving.md):
 
 ```toml
 [[producers]]
@@ -64,11 +73,15 @@ machines = ["delivery"]      # the machines it may write; a run-only producer le
 actors = ["ci"]
 ```
 
-Post one CloudEvent, `Content-Type: application/cloudevents+json`, or a JSON list as `application/cloudevents-batch+json`,
-with `Authorization: Bearer $CI_BOT_TOKEN`. A machine event carries `machine`, `type` (the event), `actor` and exactly one
-of `subject` (the task) or `run`. A run is a Step event: `type` `StepStarted` or `StepFinished`, `subject` the run's id,
-and `data` holding `workflow`, `status` (`not_started`, `queued`, `running`, `succeeded`, `failed`, `aborted` or `skipped`),
-and for a step's entry `step` with `depends` naming the steps it waits on. The run is drawn as `pushed/<source>/<workflow>`.
+Post one CloudEvent as `Content-Type: application/cloudevents+json`, or a JSON list as
+`application/cloudevents-batch+json`, with `Authorization: Bearer $CI_BOT_TOKEN`.
+
+- A machine event carries `machine`, `type` (the event), `actor` and exactly one of `subject` (the
+  task) or `run`.
+- A run is a Step event: `type` `StepStarted` or `StepFinished`, `subject` the run's id, `data`
+  holding `workflow`, `status` (`not_started`, `queued`, `running`, `succeeded`, `failed`,
+  `aborted` or `skipped`) and, for a step's entry, `step` with `depends` naming the steps it waits
+  on. The run is drawn as `pushed/<source>/<workflow>`.
 
 ```sh
 curl -fsS -X POST "$STARPULSE_URL/api/machine-events" -H "Authorization: Bearer $CI_BOT_TOKEN" \
@@ -77,18 +90,19 @@ curl -fsS -X POST "$STARPULSE_URL/api/machine-events" -H "Authorization: Bearer 
        "data":{"workflow":"nightly","status":"running"}}'
 ```
 
-201 means the entry is in the event log; a repeated `id` from one source is written once. 4xx means the event was
-refused and nothing was written: 401 for a missing or wrong token, 403 for another producer's `source`, machine or actor,
-400 for an event its machine does not declare or a malformed one, 413 for an oversize body. 503 means the database is
-unreachable, so retry. A missing entry never means the run failed.
+201 means the entry is in the event log; a repeated `id` from one source is written once. 4xx means
+refused and nothing written: 401 a missing or wrong token, 403 another producer's `source`, machine
+or actor, 400 a malformed event or one its machine does not declare, 413 an oversize body. 503
+means the database is unreachable, so retry. A missing entry never means the run failed.
 
-A scheduler worth a full adapter is a `[[runs]]` instance (`name`, `type`, `url`) whose module offers `start(url)` and
-`follow(url, runs, group)`, publishing `Dag`s through `RunsSink.set_dags(dags, error, pools, startable)` (a `Dag` lists its running and queued runs in `active`,
-`pools` is the list of concurrency pools, empty when the scheduler has none, and `startable` names the workflows
-`start` can run when it cannot start all of them, such as those a GitHub workflow file marks `workflow_dispatch`);
-its workflows are drawn as `<name>/<workflow>`.
+A scheduler worth a full adapter is a `[[runs]]` instance (`name`, `type`, `url`) whose module
+offers `start(url)` and `follow(url, runs, log)`, publishing `Dag`s through
+`RunsSink.set_dags(dags, error, pools, startable)`: a `Dag` lists its running and queued runs in
+`active`; `pools` is the list of concurrency pools, empty when the scheduler has none; `startable`
+names the workflows `start` can run when it cannot start all of them (those a GitHub workflow file
+marks `workflow_dispatch`). Its workflows are drawn as `<name>/<workflow>`.
 
 ## Check it
 
-Run `starpulse config check` for the effective config and `starpulse doctor` for each adapter, reading each failing
-check's `reason`. Done when `ok` is true for both.
+Run `starpulse config check` for the effective config and `starpulse doctor` for each adapter,
+reading each failing check's `reason`. Done when `ok` is true for both.
