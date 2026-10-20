@@ -813,8 +813,6 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         conformance_metrics=conformance.exposition,
     )
     app = page_app(feed, _STATIC, store, window, board, services)
-    if supervisor:
-        supervisor.start()
     try:
         server = PageServer(
             app,
