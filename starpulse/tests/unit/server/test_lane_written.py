@@ -40,6 +40,7 @@ def test_a_write_then_its_placement_gives_one_history_row_and_one_entry_with_the
 
     entries = [e for e in Tail(log, lane_events.STREAM).poll() if e.fields["lane"] == "in_progress"]
     assert written.ok
+    assert len(entries) == 1
     assert [step["to"] for step in store.lane_path("T-1")] == ["ready", "in_progress"]
     assert [(e.fields.get("actor"), e.fields.get("session"), e.fields.get("harness")) for e in entries] == [
         ("agent", "s1", "claude")
