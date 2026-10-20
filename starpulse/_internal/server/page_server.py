@@ -1,7 +1,8 @@
 """The server of the page: Hypercorn serving `PageApp` on one socket, HTTP/1.1 and HTTP/2 on the same port.
 
 A cleartext port answers HTTP/1.1, and HTTP/2 to a client that opens with its preface (prior knowledge) or asks to
-upgrade; a TLS port negotiates `h2` or `http/1.1` through ALPN.
+upgrade; a TLS port negotiates `h2` or `http/1.1` through ALPN, and a QUIC socket at the same address answers HTTP/3,
+which every TCP response advertises through `alt-svc`.
 """
 
 from __future__ import annotations
@@ -28,6 +29,9 @@ logger = logging.getLogger(__name__)
 #: stock 5 drops the rest's SYNs and each waits out a 1 s retransmit before its first byte.
 BACKLOG = 128
 
+#: Seconds a client may keep using the `h3` alternative the `alt-svc` header offers before it asks again.
+ALT_SVC_MAX_AGE_S = 3600
+
 #: Seconds a stopping server waits for the requests it took, under the 10 s a supervisor allows before it kills a child.
 DRAIN_S = 8.0
 
@@ -36,7 +40,8 @@ class PageServer:
     """Serves `app` on its own thread until `stop`.
 
     Given `listening`, it serves on that socket as passed, its backlog and options untouched, and binds nothing; given
-    `tls` (a certificate and its key), it serves TLS on it. `stopping`, when set, is called once as the server stops
+    `tls` (a certificate and its key), it serves TLS on it and HTTP/3 on a UDP socket bound to the same address.
+    `stopping`, when set, is called once as the server stops
     and before its streams end, so a page learns the server is restarting before it loses the stream.
 
     A stopping server ends every open stream, finishes the requests taken (up to `drain_s` seconds) and closes.
@@ -64,7 +69,14 @@ class PageServer:
         self._config.errorlog = logging.getLogger("hypercorn.error")
         if tls is not None:
             self._config.certfile, self._config.keyfile = str(tls[0]), str(tls[1])
-        self._sockets = Sockets([self.socket], [], []) if tls is not None else Sockets([], [self.socket], [])
+        self._quic: socket.socket | None = None
+        if tls is None:
+            self._sockets = Sockets([], [self.socket], [])
+        else:
+            self._quic = socket.socket(self.socket.family, socket.SOCK_DGRAM)
+            self._quic.bind(self.server_address)
+            self._config.alt_svc_headers = [f'h3=":{self.server_port}"; ma={ALT_SVC_MAX_AGE_S}']
+            self._sockets = Sockets([self.socket], [], [self._quic])
         self._stopped = threading.Event()
         self._wake: asyncio.Event | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -99,6 +111,8 @@ class PageServer:
         self.stop()
         self._thread.join()
         self.socket.close()
+        if self._quic is not None:
+            self._quic.close()
 
     def run(self) -> None:
         """Serve until Ctrl-C or `SIGTERM`, then stop."""

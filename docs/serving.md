@@ -43,7 +43,9 @@ startup line and the board's instance name (`starpulse-<port>`) name the socket'
 
 The page is a Starlette ASGI app (`PageApp`) served by Hypercorn on one socket, on its own thread. The plain port
 answers HTTP/1.1, and HTTP/2 to a client that opens with the HTTP/2 preface (prior knowledge, `curl
---http2-prior-knowledge`); a TLS port negotiates `h2` or `http/1.1` through ALPN. HTTP/3 is not served.
+--http2-prior-knowledge`); a TLS port negotiates `h2` or `http/1.1` through ALPN, and also serves HTTP/3 on a QUIC (UDP) socket bound to the same
+address and port number (the `aioquic` package, Hypercorn's `h3` extra). Every response over TCP carries `alt-svc: h3=":<port>"; ma=3600`,
+so a client moves to HTTP/3 on its next request; a cleartext port has no HTTP/3, since QUIC requires TLS.
 
 The handlers are blocking, so each request runs on a pooled worker thread (`REQUEST_THREADS`, 128, the listen backlog)
 and a crowd of pages queues for a worker rather than starting a thread each. The pooled workers keep the default thread
