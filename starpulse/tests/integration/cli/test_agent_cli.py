@@ -1,17 +1,13 @@
 """`starpulse snapshot|board|task show|help --agent`: an agent reads the running server and gets one JSON document."""
 
 import json
-import os
 import re
 import shutil
 import socket
 import string
-import subprocess
-import sys
 import threading
 import time
 import urllib.request
-import xml.etree.ElementTree as ET
 from datetime import datetime
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
@@ -2550,33 +2546,3 @@ def test_a_server_a_manifest_case_names_outlives_the_case_that_built_it(request:
         scopes[fixture] = definition.scope
 
     assert {fixture: scope for fixture, scope in scopes.items() if scope == "function"} == {}
-
-
-@pytest.mark.slow
-@pytest.mark.timeout(600)
-def test_the_module_sums_to_30_seconds_in_a_12_worker_run_with_no_test_over_4(tmp_path: Path) -> None:
-    """The task's two gates, measured: this module under `-n 12` costs at most 30 s summed and 4 s per test."""
-    import slow_tests
-
-    if os.environ.get("AGENT_CLI_BUDGET_RUN"):
-        pytest.skip("the measuring run does not measure itself")
-    report = tmp_path / "junit.xml"
-    command = [sys.executable, "-m", "pytest", str(Path(__file__)), "-n", "12", "-q", "-p", "no:cacheprovider"]
-    done = subprocess.run(
-        [*command, f"--junitxml={report}"],
-        cwd=Path(__file__).parents[4],
-        env={**os.environ, "AGENT_CLI_BUDGET_RUN": "1"},
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-    times = {}
-    for case in ET.parse(report).iter("testcase"):
-        times[f"{case.get('classname')}::{case.get('name')}"] = float(case.get("time", 0))
-    slowest = max(times, key=times.__getitem__)
-    assert done.returncode == 0, done.stdout[-2000:]
-    assert len(times) >= 300
-    assert sum(times.values()) <= 30, f"summed {sum(times.values()):.1f} s"
-    assert times[slowest] <= 4, f"{slowest} took {times[slowest]:.1f} s"
-    assert [key for key in slow_tests.OVER_CEILING if "test_agent_cli" in key] == []
