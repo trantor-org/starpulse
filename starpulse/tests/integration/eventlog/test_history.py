@@ -15,6 +15,7 @@ from starpulse._internal.eventlog import events
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import HistoryStore, record_machine_events
 from starpulse.tests.machines import MACHINES
+from starpulse.tests.summaries import assert_matches_rebuild
 
 _CLAIM = {"event_id": "e-1", "machine": "in-progress", "event": "WORKTREE_READY", "task": "PROJ-7", "time": "100"}
 _RUN = {"event_id": "r-1", "machine": "authoring-skills", "event": "GUIDANCE_READ", "run": "run-1", "time": "5"}
@@ -419,7 +420,7 @@ def test_the_summaries_a_store_keeps_on_write_match_the_ones_folded_from_its_row
     store.record_lane("L-1", "PROJ-7", "Ready", 90.0)
     store.record_lane("L-2", "PROJ-7", "In Progress", 95.0)
 
-    assert store.summary_differences() == []
+    assert_matches_rebuild(store)
     with store.engine.connect() as db:
         steps = db.execute(text("SELECT sum(steps) FROM starpulse_step_summaries")).scalar()
         open_stays = db.execute(text("SELECT lane FROM starpulse_lane_intervals WHERE left_at IS NULL")).scalars().all()

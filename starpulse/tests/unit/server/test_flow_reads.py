@@ -20,6 +20,7 @@ from starpulse._internal.eventlog.history import HistoryStore
 from starpulse.tests.integration.level.test_level_http import LEVEL
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.rows import rows_fetched
+from starpulse.tests.summaries import assert_matches_rebuild
 from starpulse.tests.unit.level.test_analytics import NOW, ROWS, H
 
 #: The two raw tables a read must never touch: they hold every event and lane change ever kept.
@@ -120,7 +121,8 @@ def test_flow_health_fetches_no_more_rows_as_the_week_holds_more_lane_intervals(
     few = _health_rows(store)
     _churn(store, 40)
 
-    assert (_health_rows(store), store.summary_differences()) == (few, [])
+    assert _health_rows(store) == few
+    assert_matches_rebuild(store)
 
 
 def test_flow_health_seeks_entries_by_the_window_not_every_stay(store: HistoryStore) -> None:
@@ -148,7 +150,8 @@ def test_flow_health_fetches_no_row_for_a_task_in_flight_that_is_not_stuck(store
     few = _health_rows(store)
     _record_all(store, [(f"a/flight-{task}", f"flight-{task}", "In Progress", NOW - H / 2) for task in range(200)])
 
-    assert (_health_rows(store), store.summary_differences()) == (few, [])
+    assert _health_rows(store) == few
+    assert_matches_rebuild(store)
 
 
 def test_flow_health_counts_the_tasks_in_flight_and_lists_the_stuck_ones(store: HistoryStore) -> None:

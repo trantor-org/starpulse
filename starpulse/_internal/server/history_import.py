@@ -5,10 +5,9 @@
 `FILE` is JSON Lines (`starpulse._internal.eventlog.lane_import`): one `{event_id, task, lane, time}` change per line.
 The store is the one `serve` opens, so its board's machines place each change, and the store's lane history is repaired
 and its summaries rebuilt afterwards. It prints one JSON line: `source`, `store` (the database URL, password hidden),
-`read`, `imported` (the changes the store holds afterwards that it did not before: 0 on a second run) and
-`summary_differences` (empty when the rebuilt summaries match the raw rows). The exit code is 1 for a file with a line
-that is not a change and 2 for a flag the command does not allow, a file or config that cannot be read, or a board
-the config does not assemble. Stop `serve` first: a row it records while the summaries rebuild is missing from them.
+`read` and `imported` (the changes the store holds afterwards that it did not before: 0 on a second run). The exit
+code is 1 for a file with a line that is not a change and 2 for a flag the command does not allow, a file or config
+that cannot be read, or a board the config does not assemble. Stop `serve` first: a row it records while the summaries rebuild is missing from them.
 """
 
 from __future__ import annotations
@@ -60,7 +59,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "store": store.engine.url.render_as_string(hide_password=True),
                 "read": len(changes),
                 "imported": imported,
-                "summary_differences": store.summary_differences(),
             }
         )
     )

@@ -21,17 +21,15 @@ kept, as in a store that predates it), and after a repair or an import of lane h
 Rows are folded in the order the store recorded them, not by their time, so a late event counts as a step of zero
 length and leaves its case where the latest recorded event put it. An event the store cannot attribute is not
 summarised: one of a machine the page does not draw, one with neither a task nor a run, or a lane the Board machine
-lacks (its interval is kept all the same). `Summaries` is the same fold held in memory, which rebuilds the tables and
-which `HistoryStore.summary_differences` compares them with.
+lacks (its interval is kept all the same). `HistoryStore.rebuild_summaries` folds the raw rows again
+through the same steps a write takes.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
-import math
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from typing import Any, NamedTuple
 
@@ -56,8 +54,6 @@ from starpulse._internal.machines.transitions import tables as transitions
 from starpulse._internal.eventlog.tables import metadata
 
 BOARD = "board"
-#: How many differences of one summary a consistency check lists before it counts the rest.
-_LISTED = 20
 _CHUNK = 5000
 
 step_summaries = Table(
@@ -115,11 +111,7 @@ lanes = Table(
 )
 SUMMARY_TABLES = (step_summaries, cases, lane_intervals, lanes)
 #: The machines' fingerprint the summaries were folded under: one row, written with the rebuild that folds them.
-summary_basis = Table(
-    "starpulse_summary_basis",
-    metadata,
-    Column("fingerprint", String, primary_key=True),
-)
+summary_basis = Table("starpulse_summary_basis", metadata, Column("fingerprint", String, primary_key=True))
 
 #: A case: the machine, the source that reported it, `task` or `run`, and its id.
 Key = tuple[str, str, str, str]
@@ -298,126 +290,3 @@ def count_lanes(db: Connection) -> None:
     ]
     for start in range(0, len(rows), _CHUNK):
         db.execute(insert(lanes), rows[start : start + _CHUNK])
-
-
-@dataclass
-class Summaries:
-    """The three summaries in memory, folded from raw rows in the order given."""
-
-    #: (day, machine, from, to) -> [steps, seconds]
-    steps: dict[tuple, list] = field(default_factory=dict)
-    cases: dict[Key, Case] = field(default_factory=dict)
-    #: lane-change event id -> (task, lane, entered, left)
-    intervals: dict[str, tuple] = field(default_factory=dict)
-    #: (source, lane) -> (tasks in it now, when one first entered it)
-    lanes: dict[tuple[str, str], tuple[int, float]] = field(default_factory=dict)
-    _open: dict[str, str] = field(default_factory=dict)
-
-    def event(
-        self, who: Summariser, event_id: str, task: str | None, run: str | None, machine: str, event: str, at: float
-    ):
-        if (key := who.event_key(machine, task, run, event_id)) is not None:
-            self._step(key, who.event_step(key, self.cases.get(key), event, at, event_id))
-
-    def lane(self, who: Summariser, event_id: str, task: str, lane: str, at: float) -> None:
-        key = who.lane_key(task, event_id)
-        if (step := who.lane_step(self.cases.get(key), lane, at, event_id)) is not None:
-            self._step(key, step)
-        if (open_id := self._open.get(task)) is not None:
-            prior = self.intervals[open_id]
-            self.intervals[open_id] = (*prior[:3], max(at, prior[2]))
-            held, first = self.lanes[source(open_id), prior[1]]
-            self.lanes[source(open_id), prior[1]] = (held - 1, first)
-        self.intervals[event_id] = (task, lane, at, None)
-        held, first = self.lanes.get((source(event_id), lane), (0, at))
-        self.lanes[source(event_id), lane] = (held + 1, min(first, at))
-        self._open[task] = event_id
-
-    def _step(self, key: Key, step: Step) -> None:
-        total = self.steps.setdefault((step.day, key[0], step.from_state, step.to_state), [0, 0.0])
-        total[0] += 1
-        total[1] += step.duration
-        self.cases[key] = step.case
-
-    def write(self, db: Connection) -> None:
-        """Insert every row; the tables are empty."""
-        rows = {
-            step_summaries: [
-                {"day": d, "machine": m, "from_state": f, "to_state": t, "steps": n, "duration_s": s}
-                for (d, m, f, t), (n, s) in self.steps.items()
-            ],
-            cases: [
-                dict(machine=m, source=src, kind=k, case_id=c, **case._asdict())
-                for (m, src, k, c), case in self.cases.items()
-            ],
-            lane_intervals: [
-                {"task": t, "lane": lane, "entered_at": a, "left_at": b, "event_id": e, "source": source(e)}
-                for e, (t, lane, a, b) in self.intervals.items()
-            ],
-            lanes: [
-                {"source": src, "lane": lane, "open_tasks": n, "first_at": first}
-                for (src, lane), (n, first) in self.lanes.items()
-            ],
-        }
-        for table, values in rows.items():
-            for start in range(0, len(values), _CHUNK):
-                db.execute(insert(table), values[start : start + _CHUNK])
-
-    @classmethod
-    def read(cls, db: Connection) -> Summaries:
-        found = cls()
-        s, c, i = step_summaries.c, cases.c, lane_intervals.c
-        for day, machine, from_state, to_state, n, seconds in db.execute(
-            select(s.day, s.machine, s.from_state, s.to_state, s.steps, s.duration_s)
-        ):
-            found.steps[(day, machine, from_state, to_state)] = [n, seconds]
-        for machine, src, kind, case_id, *state in db.execute(
-            select(c.machine, c.source, c.kind, c.case_id, c.state, c.since, c.first_at, c.last_event_id, c.last_at)
-        ):
-            found.cases[(machine, src, kind, case_id)] = Case(*state)
-        for task, lane, entered, left, event_id in db.execute(
-            select(i.task, i.lane, i.entered_at, i.left_at, i.event_id)
-        ):
-            found.intervals[event_id] = (task, lane, entered, left)
-        found.lanes = {
-            (src, lane): (n, first)
-            for src, lane, n, first in db.execute(
-                select(lanes.c.source, lanes.c.lane, lanes.c.open_tasks, lanes.c.first_at)
-            )
-        }
-        return found
-
-    def differences(self, found: Summaries) -> list[str]:
-        """What `found` lacks, adds or holds differently from these summaries, one line each, a table at a time."""
-        return [
-            *_compare(
-                "starpulse_step_summaries",
-                {k: tuple(v) for k, v in self.steps.items()},
-                {k: tuple(v) for k, v in found.steps.items()},
-            ),
-            *_compare("starpulse_cases", self.cases, found.cases),
-            *_compare("starpulse_lane_intervals", self.intervals, found.intervals),
-            *_compare("starpulse_lanes", self.lanes, found.lanes),
-        ]
-
-
-def _same(a: object, b: object) -> bool:
-    if isinstance(a, float) and isinstance(b, float):
-        return math.isclose(a, b, abs_tol=1e-6)
-    if isinstance(a, tuple) and isinstance(b, tuple):
-        return len(a) == len(b) and all(map(_same, a, b))
-    return a == b
-
-
-def _compare(table: str, expected: Mapping, found: Mapping) -> list[str]:
-    lines = []
-    for key in sorted({*expected, *found}, key=repr):
-        if key not in found:
-            lines.append(f"{table}: {key} is missing, expected {expected[key]}")
-        elif key not in expected:
-            lines.append(f"{table}: {key} is not in the raw rows, found {found[key]}")
-        elif not _same(tuple(expected[key]), tuple(found[key])):
-            lines.append(f"{table}: {key} expected {expected[key]}, found {found[key]}")
-    if len(lines) > _LISTED:
-        lines[_LISTED:] = [f"{table}: and {len(lines) - _LISTED} more"]
-    return lines

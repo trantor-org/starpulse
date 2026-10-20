@@ -11,6 +11,7 @@ from starpulse.contracts import BoardTask
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.eventlog.history import HistoryStore
 from starpulse.tests.machines import MACHINES
+from starpulse.tests.summaries import assert_matches_rebuild
 
 MOVE = ("T-1", 100.0)
 REPLAYED = ("trantor/1bdc9eb7-9413-439e-9749-7cd8d7f8bf13", "Waiting")  # a board event: a UUID, a status as spelled
@@ -85,5 +86,5 @@ def test_a_store_holding_both_writers_rows_ends_with_one_chain_in_the_lane_id(tm
         {"at": 300.0, "from": "ready", "to": "in_progress"},
         {"at": 900.0, "from": "in_progress", "to": "review"},
     ]
-    assert repaired.summary_differences() == []
+    assert_matches_rebuild(repaired)
     assert HistoryStore(url, MACHINES).lane_changes() == repaired.lane_changes()  # a second start repairs nothing

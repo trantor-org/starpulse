@@ -16,6 +16,7 @@ import demo_workspace
 import pytest
 import seeded_server
 from starpulse._internal.eventlog.history import HistoryStore
+from starpulse.tests.summaries import assert_matches_rebuild
 
 # Each test starts the seeded server, a budget-sized start; they run in the nightly only.
 pytestmark = pytest.mark.nightly
@@ -88,7 +89,7 @@ def test_the_seeded_history_holds_every_lane_each_task_passed_through_with_summa
     server.server_close()
     store = HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", feed.machines)
 
-    assert store.summary_differences() == []
+    assert_matches_rebuild(store)
     assert tasks
     for index, final in enumerate(seeded_server.lanes()):
         route = [lane for lane, _ in seeded_server.steps(final, index, now)]

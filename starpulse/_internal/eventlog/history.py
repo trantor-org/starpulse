@@ -18,7 +18,7 @@ import threading
 import time
 import uuid
 from collections import OrderedDict
-from collections.abc import Callable, Hashable, Iterable, Mapping
+from collections.abc import Callable, Hashable, Iterable, Iterator, Mapping
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
@@ -29,6 +29,7 @@ from sqlalchemy import (
     Float,
     Index,
     Integer,
+    Select,
     String,
     Table,
     Text,
@@ -58,7 +59,6 @@ from starpulse._internal.eventlog.event_log import DEFAULT_POLL_INTERVAL, EventL
 from starpulse._internal.eventlog.summaries import (
     BOARD,
     SUMMARY_TABLES,
-    Summaries,
     Summariser,
     cases,
     count_lanes,
@@ -78,6 +78,8 @@ __all__ = ["History", "machine_steps"]
 
 logger = logging.getLogger(__name__)
 
+#: How many raw rows a rebuild of the summaries reads at a time.
+_CHUNK = 5000
 #: How many tasks one statement asks the lane intervals for, under every dialect's limit on bound parameters.
 _TASKS_PER_QUERY = 500
 
@@ -222,6 +224,14 @@ class SummarisedLevel(History, Protocol):
         """`compute()` for `key`, or the answer an earlier request computed in the same few seconds, as long as no
         summary has been written since."""
         ...
+
+
+def _in_id_order(db: Connection, query: Select, id_column: Column) -> Iterator[Mapping[str, Any]]:
+    """The rows of `query`, which selects `id`, in id order, read a chunk at a time so a write may run between them."""
+    after = 0
+    while rows := db.execute(query.where(id_column > after).limit(_CHUNK)).mappings().all():
+        yield from rows
+        after = rows[-1]["id"]
 
 
 def _held_ids(db: Connection, event_ids: list[str]) -> set[str]:
@@ -427,12 +437,15 @@ class HistoryStore:
         )
         if db.execute(change.on_conflict_do_nothing().returning(_lane_changes.c.id)).first() is None:
             return False
+        self._summarise_lane(db, event_id, task, status, at)
+        return True
+
+    def _summarise_lane(self, db: Connection, event_id: str, task: str, status: str, at: float) -> None:
         who = self._summariser
         key = who.lane_key(task, event_id)
         if (step := who.lane_step(read_case(db, key), status, at, event_id)) is not None:
             write_step(db, self._insert, key, step)
         write_lane(db, self._insert, event_id, task, status, at)
-        return True
 
     def import_lanes(self, changes: Iterable[Change]) -> int:
         """Add the lane changes of an earlier history, each once: how many of them the store holds that it did not.
@@ -469,7 +482,7 @@ class HistoryStore:
 
         Summaries that hold rows under the machines this store opened with are left as they are, so a second call
         changes nothing, except that lane counts a store lacks (its intervals predate them) are counted from the
-        intervals; `rebuild_summaries` replaces them and `summary_differences` says whether they match the raw rows.
+        intervals; `rebuild_summaries` replaces them.
         """
         with self.engine.begin() as db:
             held = {table: db.execute(select(table).limit(1)).first() is not None for table in SUMMARY_TABLES}
@@ -481,33 +494,23 @@ class HistoryStore:
 
     def rebuild_summaries(self) -> None:
         """Replace the summaries with ones folded from the raw rows under the machines this store holds, in one
-        transaction.
+        transaction: the machine events, then the lane changes, each in the order it was recorded, through the fold a
+        write takes.
 
         Nothing may record while it runs: a row written meanwhile is missing from them.
         """
+        e, c = _machine_events.c, _lane_changes.c
+        events = select(e.id, e.event_id, e.task, e.run, e.machine, e.event, e.occurred_at).order_by(e.id)
+        changes = select(c.id, c.event_id, c.task, c.new_status, c.observed_at).order_by(c.id)
         with self.engine.begin() as db:
             for table in (*SUMMARY_TABLES, summary_basis):
                 db.execute(delete(table))
-            self._folded(db).write(db)
+            for row in _in_id_order(db, events, e.id):
+                self._summarise_event(db, row)
+            for row in _in_id_order(db, changes, c.id):
+                self._summarise_lane(db, row["event_id"], row["task"], row["new_status"], row["observed_at"])
             db.execute(insert(summary_basis).values(fingerprint=self._summariser.fingerprint()))
         self._summaries_changed()
-
-    def summary_differences(self) -> list[str]:
-        """Each way the summaries differ from the ones folded from the raw rows, one line each; none when they match."""
-        with self.engine.connect() as db:
-            return self._folded(db).differences(Summaries.read(db))
-
-    def _folded(self, db: Connection) -> Summaries:
-        """The summaries the raw rows give, in the order they were recorded."""
-        folded = Summaries()
-        e, c = _machine_events.c, _lane_changes.c
-        events = select(e.event_id, e.task, e.run, e.machine, e.event, e.occurred_at).order_by(e.id)
-        for event_id, task, run, machine, event, at in db.execute(events.execution_options(yield_per=5000)):
-            folded.event(self._summariser, event_id, task, run, machine, event, at)
-        changes = select(c.event_id, c.task, c.new_status, c.observed_at).order_by(c.id)
-        for event_id, task, lane, at in db.execute(changes.execution_options(yield_per=5000)):
-            folded.lane(self._summariser, event_id, task, lane, at)
-        return folded
 
     def criteria_met(self) -> dict[str, float]:
         """When each task's Start Criteria were first seen all met, by task."""

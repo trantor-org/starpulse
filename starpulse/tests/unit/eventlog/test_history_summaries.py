@@ -8,6 +8,7 @@ from sqlalchemy import text
 from starpulse._internal.eventlog.checkpoints import Checkpoints
 from starpulse._internal.eventlog.history import HistoryStore
 from starpulse.tests.machines import MACHINES
+from starpulse.tests.summaries import assert_matches_rebuild
 
 #: 2026-09-22 00:00 UTC, so an event a few seconds before it falls on the day before.
 MIDNIGHT = 1790035200.0
@@ -190,20 +191,28 @@ def _wipe(store: HistoryStore) -> None:
             db.execute(text(f"DELETE FROM {table}"))
 
 
+def test_the_incremental_fold_over_a_seeded_trace_equals_the_rebuild(store: HistoryStore) -> None:
+    _fill(store)
+    _event(store, "e0", "WORKTREE_READY", MIDNIGHT - 500)  # recorded late: a step of zero length
+    _event(store, "u1", "WORKTREE_READY", MIDNIGHT + 5, machine="not-drawn")
+    store.record_lane("a/1", "T-3", "Ready", MIDNIGHT + 20)
+    store.record_lane("b/1", "T-3", "In Progress", MIDNIGHT + 15)  # another source, earlier than a's stay
+    store.record_lane("T-1@Moon@40", "T-1", "Moon", MIDNIGHT + 40)  # a lane the Board machine lacks
+
+    assert_matches_rebuild(store)
+
+
 def test_the_start_up_pass_builds_what_recording_would_have_and_a_second_run_changes_nothing(
     store: HistoryStore,
 ) -> None:
     _fill(store)
     recorded = _snapshot(store)
-    assert store.summary_differences() == []
     _wipe(store)
     assert _snapshot(store) == ([], [], [], [])
-    assert store.summary_differences() != [], "empty summaries over raw rows are a difference"
 
     store.build_summaries()
 
     assert _snapshot(store) == recorded
-    assert store.summary_differences() == []
     store.build_summaries()
     assert _snapshot(store) == recorded
 
@@ -282,7 +291,7 @@ def test_opening_a_store_with_an_edited_machine_folds_its_rows_under_the_edited_
 
     reopened = HistoryStore(url, _with_lint_loop(MACHINES))
 
-    assert reopened.summary_differences() == []
+    assert_matches_rebuild(reopened)
     assert [row[4] for row in _cases(reopened)] == ["checkpointed"]
 
 
@@ -320,27 +329,6 @@ def test_opening_a_store_that_predates_the_machine_record_rebuilds_once(tmp_path
         db.execute(text("DELETE FROM starpulse_summary_basis"))
 
     assert _snapshot(HistoryStore(url, MACHINES)) == recorded
-
-
-def test_the_consistency_check_names_each_summary_that_differs_from_the_raw_rows(store: HistoryStore) -> None:
-    _fill(store)
-    with store.engine.begin() as db:
-        db.execute(text("UPDATE starpulse_step_summaries SET steps = steps + 5 WHERE to_state = 'red_proven'"))
-        db.execute(text("UPDATE starpulse_cases SET state = 'start' WHERE case_id = 'PROJ-7'"))
-        db.execute(text("DELETE FROM starpulse_lane_intervals WHERE lane = 'ready'"))
-        db.execute(text("UPDATE starpulse_lanes SET open_tasks = 7 WHERE lane = 'in_progress'"))
-
-    differences = store.summary_differences()
-
-    assert len(differences) == 4
-    assert [d.split(":")[0] for d in differences] == [
-        "starpulse_step_summaries",
-        "starpulse_cases",
-        "starpulse_lane_intervals",
-        "starpulse_lanes",
-    ]
-    store.rebuild_summaries()
-    assert store.summary_differences() == []
 
 
 def test_a_store_opening_while_another_worker_rebuilds_waits_out_the_rebuild(store: HistoryStore) -> None:

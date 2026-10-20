@@ -415,8 +415,7 @@ start does, so each task's path chains in time order. Stop `serve` first: a row 
 is missing from them.
 
 It prints one JSON line: `source`, `store` (the database URL, password hidden), `read` (the change lines in the file),
-`imported` (the changes the store holds afterwards that it did not before, so a second run reports 0) and
-`summary_differences` (empty when the rebuilt summaries match the raw rows). A line that is not a change exits 1 and
+and `imported` (the changes the store holds afterwards that it did not before, so a second run reports 0). A line that is not a change exits 1 and
 names the file and line; a flag the command does not allow, a file or config that cannot be read, or a board the config
 does not assemble exits 2.
 
