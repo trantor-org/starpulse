@@ -1317,10 +1317,12 @@ export interface MoveRequest {
  * `assignee` is the legacy name of `profile` and is read when `profile` is absent.
  */
 export interface StartRequest {
+  actor?: string | null;
   assignee?: string | null;
   harness?: string | null;
   mode?: string | null;
   profile?: string | null;
+  session?: string | null;
   task: string;
 }
 /**
@@ -1373,25 +1375,38 @@ export interface MissRequest {
   evidence?: string | null;
   fix: CreateRequest;
   harness?: string | null;
+  reason?: string | null;
   session?: string | null;
   task: string;
 }
 /**
- * `POST /api/tasks`: create a task in the board's starting lane, stamped `created_by: <harness>:<session>`.
+ * `POST /api/tasks`: create a task in the lane `status` names or else the board's starting lane, stamped
+ * `created_by: <harness>:<session>`.
+ *
+ * Text is trimmed; list items are trimmed and blank ones dropped, or refused where the list must hold only text.
+ * `task`, `size` and `skill` are read and left unused by a create.
  */
 export interface CreateRequest {
   acceptanceCriteria?: string[] | null;
   actor?: string | null;
   assignee?: string | null;
+  definitionOfDone?: string[] | null;
   dependencies?: string[] | null;
   description?: string | null;
+  documentation?: string[] | null;
   harness?: string | null;
   labels?: string[] | null;
   milestone?: string | null;
   priority?: string | null;
   profile?: string | null;
+  references?: string[] | null;
   session?: string | null;
+  size?: string | null;
+  skill?: string | null;
+  status?: string | null;
+  task?: string | null;
   title: string;
+  type?: string | null;
 }
 /**
  * `POST /api/restore`: return the archived task `task` to the board's tasks, unchanged; the writer names who did.
