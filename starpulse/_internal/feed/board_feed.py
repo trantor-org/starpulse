@@ -117,9 +117,7 @@ def current_keys(agent: dict) -> dict:
 
 def task_agent(task: BoardTask) -> dict:
     """One task as an agent on the Board machine, its lane as the state id."""
-    ticks = task.acceptance_checked + (False,) * len(
-        task.acceptance_criteria
-    )  # a criterion past the ticks is unchecked
+    ticks = task.acceptance_checked + (False,) * len(task.acceptance_criteria)  # a criterion past the ticks is unchecked
     return {
         "id": task.id,
         "title": task.title,
@@ -858,10 +856,7 @@ class BoardFeed:
     def pull_requests(self) -> dict[str, list[str]]:
         """Each open task's pull request links, for the tasks that cite any."""
         with self._lock:
-            prs = {
-                task: agent["prs"] if not is_cold(agent) else self._cited.get(task)
-                for task, agent in self._open.items()
-            }
+            prs = {task: agent["prs"] if not is_cold(agent) else self._cited.get(task) for task, agent in self._open.items()}
             return {task: list(links) for task, links in prs.items() if links}
 
     def put_insight(self, finding: dict) -> None:
@@ -937,15 +932,9 @@ class BoardFeed:
         """Every Board task's `title` and `labels`, open or settled, by id; a settled task saved before its labels
         were kept has none."""
         with self._lock:
-            named = {
-                task_id: {"title": s["title"], "labels": s.get("labels", [])} for task_id, s in self._settled.items()
-            }
+            named = {task_id: {"title": s["title"], "labels": s.get("labels", [])} for task_id, s in self._settled.items()}
             named.update(
-                {
-                    task_id: {"title": a["title"], "labels": a["labels"]}
-                    for task_id, a in self._open.items()
-                    if not is_cold(a)
-                }
+                {task_id: {"title": a["title"], "labels": a["labels"]} for task_id, a in self._open.items() if not is_cold(a)}
             )
             return named
 
@@ -1026,9 +1015,7 @@ class BoardFeed:
             if not (moved or changed):
                 return
             tied = {dag for dags_ in self._ties.values() for dag in dags_}
-            runs_moved = moved and self._tied_runs(instance, dags, tied) != self._tied_runs(
-                instance, self._dags.get(instance, []), tied
-            )
+            runs_moved = moved and self._tied_runs(instance, dags, tied) != self._tied_runs(instance, self._dags.get(instance, []), tied)
             self._dags[instance] = dags
             self._pools[instance] = pools
             if reported is not None:
@@ -1068,9 +1055,7 @@ class BoardFeed:
     @staticmethod
     def _tied_runs(instance: str, dags: list, tied: set[str]) -> dict[str, list]:
         """The recent runs of the workflows of `instance` that an event ties: all the Ledger reads of its workflows."""
-        return {
-            f"{instance}/{dag['name']}": dag.get("recent", []) for dag in dags if f"{instance}/{dag['name']}" in tied
-        }
+        return {f"{instance}/{dag['name']}": dag.get("recent", []) for dag in dags if f"{instance}/{dag['name']}" in tied}
 
     def _runnable(self) -> list[str]:
         """The `run_safe` workflows Run now is declared on: those their instance's adapter can start."""
@@ -1106,9 +1091,7 @@ class BoardFeed:
         if MERGE_EVENT in self._ties:
             events[MERGE_EVENT] = [o for o in pull_occurrences(pulls) if o.at >= since]
         moves = {
-            event: {
-                (t["source"], t["target"]) for t in self._drawn["board"].get("transitions", []) if t["event"] == event
-            }
+            event: {(t["source"], t["target"]) for t in self._drawn["board"].get("transitions", []) if t["event"] == event}
             for event in self._ties.keys() - {MERGE_EVENT}
         }
         if moves and self._lane_rows is not None:
@@ -1126,7 +1109,9 @@ class BoardFeed:
 
     def _recent_runs(self) -> dict[str, list]:
         return {
-            f"{instance}/{dag['name']}": dag.get("recent", []) for instance, dags in self._dags.items() for dag in dags
+            f"{instance}/{dag['name']}": dag.get("recent", [])
+            for instance, dags in self._dags.items()
+            for dag in dags
         }
 
     @property
