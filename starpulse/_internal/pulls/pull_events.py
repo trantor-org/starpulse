@@ -7,7 +7,9 @@ patches the fields it causes on the stored record, or on a new one it opens, and
 Applying an event twice leaves the record as one application did, so the log may be replayed from any point.
 
 A completed job of `ci:jobs` names the pull request it ran for, so it needs no task: it sets the head commit the job
-validated and its check's result on a record the store already holds.
+validated and its check's result on a record the store already holds. The same job also arrives as an event of the
+`ci-job` machine on `machine:events`, its pull request, head commit and job in `data`; both are read until the
+`ci:jobs` stream is dropped.
 
 A task's events cannot say which of two open pull requests they are about, so one that closes a pull request is
 applied only when the task cites a single open one. A record a manual refresh (`POST /api/pulls/refresh`) reads from
@@ -30,8 +32,10 @@ if TYPE_CHECKING:  # annotation only: the event log opens the database stack
 JOBS_STREAM = "ci:jobs"
 MACHINE_STREAM = "machine:events"
 GITHUB_MACHINE = "github-pull-request"
+JOB_MACHINE = "ci-job"
 TASK_MACHINE = "in-progress"
 JOB_RESULTS = {"succeeded": "pass", "failed": "failing"}  # a canceled or unknown job says nothing of its check
+JOB_EVENTS = {"JOB_SUCCEEDED": "succeeded", "JOB_FAILED": "failed"}  # a `ci-job` event as the result `ci:jobs` names
 CLOSING = {(GITHUB_MACHINE, "PR_MERGED"), (GITHUB_MACHINE, "PR_CLOSED")}
 
 Record = dict[str, Any]
@@ -132,6 +136,9 @@ class RecordProjection:
         """Apply one `machine:events` entry; one that is no event of a task's pull request, or whose time is unreadable,
         is dropped."""
         fields = entry.fields
+        if fields.get("machine") == JOB_MACHINE:
+            self._job_event(fields)
+            return
         name = (fields.get("machine"), fields.get("event"))
         key = fields.get("task")
         if name not in _DELTAS or not key:
@@ -166,7 +173,16 @@ class RecordProjection:
         not hold, with no result to record, or with unreadable fields is dropped. A job of another head than the
         record's replaces the head and its checks only if it is no older than the record: a replayed job of an earlier
         head must not take them back."""
-        fields = entry.fields
+        self._apply_job(entry.fields)
+
+    def _job_event(self, fields: Mapping[str, Any]) -> None:
+        """Apply a `ci-job` machine event as the `ci:jobs` entry it stands for; one without data is dropped."""
+        data = fields.get("data")
+        result = JOB_EVENTS.get(str(fields.get("event")))
+        if isinstance(data, Mapping) and result:
+            self._apply_job({**data, "result": result, "time": fields.get("time")})
+
+    def _apply_job(self, fields: Mapping[str, Any]) -> None:
         result = JOB_RESULTS.get(str(fields.get("result")))
         try:
             repo, number, at = str(fields["repository"]), int(fields["pr"]), float(fields["time"])

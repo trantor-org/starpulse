@@ -10,8 +10,10 @@ from sqlalchemy import create_engine
 from starpulse._internal.ci.ci_trail import parse
 from starpulse._internal.config.config import Repo
 from starpulse._internal.config.pins import GitHub
+from starpulse._internal.eventlog.event_log import Entry
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import task
+from starpulse._internal.pulls.pull_events import RecordProjection
 from starpulse._internal.pulls.pull_requests import GhUnavailableError, PullRequests, query_github
 from starpulse._internal.pulls.pulls import PullStore
 
@@ -397,3 +399,22 @@ def test_gh_exiting_non_zero_for_one_missing_pr_still_yields_the_others(monkeypa
     monkeypatch.setattr(subprocess, "run", lambda command, **_: subprocess.CompletedProcess(command, 1, out, "x"))
 
     assert query_github("acme/widgets", "query") == {"p1": {"number": 1}, "p2": None}
+
+
+def test_old_ci_jobs_stream_rows_still_read_dual_read(store: PullStore) -> None:
+    """A job on the old `ci:jobs` stream and one on `machine:events` both land on the pull request until T12."""
+    feed = BoardFeed()
+    feed.put(task("PROJ-1", "In Progress", references=[FIRST]))
+    projection = RecordProjection(store, feed)
+    opened = {"machine": "github-pull-request", "event": "PR_OPENED", "task": "PROJ-1", "time": str(NOW)}
+    projection.handle(Entry(1, "machine:events", "opened", opened, NOW))
+    data = {"repository": "acme/widgets", "pr": 1750, "head_sha": SHA}
+    old = {**data, "job": "lint", "result": "succeeded", "time": str(NOW + 1)}
+    new = {"machine": "ci-job", "event": "JOB_FAILED", "run": "run-1", "time": NOW + 2, "data": {**data, "job": "test"}}
+
+    projection.handle_job(Entry(2, "ci:jobs", "old", old, NOW + 1))
+    projection.handle(Entry(3, "machine:events", "new", new, NOW + 2))
+
+    (record,) = store.find("acme/widgets", 1750)
+    assert record["headRefOid"] == SHA
+    assert record["requiredChecks"] == [{"name": "lint", "result": "pass"}, {"name": "test", "result": "failing"}]

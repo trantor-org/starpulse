@@ -44,7 +44,8 @@ from starpulse._internal.eventlog.history import open_event_log
 MACHINES = Path(__file__).parents[2] / "machines"
 PULL_REQUEST = load_machine(MACHINES / "github-pull-request.yaml")
 COPILOT = load_machine(MACHINES / "copilot.yaml")
-GITHUB_MACHINES = {m.name: describe(m.machine) for m in (PULL_REQUEST, COPILOT)}
+CI_JOB = load_machine(MACHINES / "ci-job.yaml")
+GITHUB_MACHINES = {m.name: describe(m.machine) for m in (PULL_REQUEST, COPILOT, CI_JOB)}
 
 
 #: The timeline events GitHub records when Copilot's coding agent starts and stops work on a pull request; the actor is

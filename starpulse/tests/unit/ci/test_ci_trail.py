@@ -4,13 +4,20 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from sqlalchemy import create_engine
 
+from starpulse._internal.config.config import Producer
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.ci.ci import CI_MACHINES
 from starpulse._internal.ci.ci_trail import CiTrail, parse
 from starpulse._internal.feed.machine_tasks import MachineTasks
 from starpulse._internal.eventlog import events
-from starpulse._internal.eventlog.event_log import EventLog, Tail
+from starpulse._internal.eventlog.event_log import Entry, EventLog, Tail
+from starpulse._internal.kit.adapter_kit import task
+from starpulse._internal.pulls.github import GITHUB_MACHINES
+from starpulse._internal.pulls.pull_events import RecordProjection
+from starpulse._internal.pulls.pulls import PullStore
+from starpulse._internal.runs.cloudevents import CloudEventsIngest
 from starpulse.tests.machines import MACHINES
 
 TASK = "PROJ-7"
@@ -193,3 +200,73 @@ def test_an_app_suite_with_no_workflow_run_stuck_queued_does_not_hold_the_checks
 
     assert [event for _, event, _ in ci.steps()] == ["PR_OPENED", "PUSHED", "CHECKS_PASSED"]
     assert ci.agent()["state"] == "passing"
+
+
+PULL = ("acme/widgets", 7)
+HEAD, NEXT_HEAD = "a" * 40, "b" * 40
+
+
+def _job_cloud_event(event_id: str, kind: str, job: str, head: str, minute: int) -> dict:
+    """A CI job CloudEvent for pull request 7, the head SHA in `data`, keyed by the job's run."""
+    return {
+        "specversion": "1.0",
+        "id": event_id,
+        "source": "ci-bot",
+        "type": kind,
+        "run": f"run-{event_id}",
+        "time": (START + timedelta(minutes=minute)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "machine": "ci-job",
+        "actor": "github",
+        "data": {"repository": PULL[0], "pr": PULL[1], "head_sha": head, "job": job},
+    }
+
+
+class _PullRequest:
+    """A log that CI job CloudEvents are posted to, and the pull request store a projection of it fills."""
+
+    def __init__(self, tmp_path: Path) -> None:
+        self.log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
+        producer = Producer("ci-bot", "CI_TOKEN", machines=("ci-job",), actors=("github",))
+        self.ingest = CloudEventsIngest({producer.name: producer}, {}, self.log, GITHUB_MACHINES)
+        feed = BoardFeed()
+        feed.put(task("PROJ-1", "In Progress", references=[f"https://github.com/{PULL[0]}/pull/{PULL[1]}"]))
+        self.store = PullStore(create_engine("sqlite://"))
+        self.projection = RecordProjection(self.store, feed)
+        self.tail = Tail(self.log, events.STREAM)
+        opened = {"machine": "github-pull-request", "event": "PR_OPENED", "task": "PROJ-1", "time": str(_epoch(-5))}
+        self.projection.handle(Entry(0, events.STREAM, "opened", opened, _epoch(-5)))
+
+    def post(self, *sent: dict) -> None:
+        status, _ = self.ingest.write("ci-bot", list(sent))
+        assert status == 201
+        for entry in self.tail.poll():
+            self.projection.handle(entry)
+
+    def record(self) -> dict:
+        (record,) = self.store.find(*PULL)
+        return record
+
+
+@pytest.fixture
+def pull(tmp_path: Path) -> _PullRequest:
+    return _PullRequest(tmp_path)
+
+
+def test_ci_job_cloud_events_with_a_head_sha_show_on_the_pull_request(pull: _PullRequest) -> None:
+    pull.post(
+        _job_cloud_event("e1", "JOB_SUCCEEDED", "lint", HEAD, 1),
+        _job_cloud_event("e2", "JOB_FAILED", "test", HEAD, 2),
+    )
+
+    record = pull.record()
+    assert record["headRefOid"] == HEAD
+    assert record["requiredChecks"] == [{"name": "lint", "result": "pass"}, {"name": "test", "result": "failing"}]
+
+
+def test_ci_job_cloud_events_are_read_from_machine_events_not_only_ci_jobs(pull: _PullRequest) -> None:
+    pull.post(_job_cloud_event("e1", "JOB_FAILED", "lint", HEAD, 1))
+    pull.post(_job_cloud_event("e2", "JOB_SUCCEEDED", "test", NEXT_HEAD, 2))
+
+    record = pull.record()
+    assert (record["headRefOid"], record["requiredChecks"]) == (NEXT_HEAD, [{"name": "test", "result": "pass"}])
+    assert Tail(pull.log, "ci:jobs").poll() == []
