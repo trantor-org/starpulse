@@ -1,5 +1,5 @@
-"""The event streams as frame generators: no socket, no `http.server`, so the threaded server and an ASGI app write the
-same frames."""
+"""The event streams as frame generators: no socket and no web framework, so the ASGI app (and any
+other front) writes the same frames."""
 
 from __future__ import annotations
 

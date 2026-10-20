@@ -7,21 +7,21 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Iterator
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
 
 from starpulse._internal.board.seam import Board, Written
-from starpulse._internal.server import server as server_module
+from starpulse._internal.config.config import CommitKeys
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.feed.machine_tasks import MachineTasks
 from starpulse._internal.kit.adapter_kit import next_event as _next_event
 from starpulse._internal.kit.adapter_kit import serve as _serve
 from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.kit.adapter_kit import url as _url
+from starpulse._internal.server import server as server_module
+from starpulse._internal.server.page_server import PageServer
 from starpulse.contracts.adapters import Move
-from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.feed.machine_tasks import MachineTasks
-from starpulse._internal.config.config import CommitKeys
 from starpulse.tests.fake_board import bare_board
 from starpulse.tests.machines import MACHINES
 
@@ -29,7 +29,7 @@ RUN_SAFE = frozenset({"dagu/whole-repo-gate"})
 
 
 @pytest.fixture
-def server(tmp_path: Path) -> Iterator[ThreadingHTTPServer]:
+def server(tmp_path: Path) -> Iterator[PageServer]:
     with _serve(tmp_path, BoardFeed(machines=MACHINES)) as server:
         yield server
 
@@ -38,7 +38,7 @@ def server(tmp_path: Path) -> Iterator[ThreadingHTTPServer]:
 _JAVASCRIPT = "application/javascript"
 
 
-def _status(server: ThreadingHTTPServer, path: str) -> tuple[int, str]:
+def _status(server: PageServer, path: str) -> tuple[int, str]:
     try:
         with urllib.request.urlopen(_url(server, path), timeout=5) as resp:
             kind = resp.headers.get_content_type()
@@ -47,7 +47,7 @@ def _status(server: ThreadingHTTPServer, path: str) -> tuple[int, str]:
         return exc.code, ""
 
 
-def test_the_build_is_served_and_nothing_outside_it(server: ThreadingHTTPServer) -> None:
+def test_the_build_is_served_and_nothing_outside_it(server: PageServer) -> None:
     paths = (
         "/",
         "/?demo",
@@ -65,7 +65,9 @@ def test_the_build_is_served_and_nothing_outside_it(server: ThreadingHTTPServer)
     # The stdlib handler reads the host's mime table: a host that maps .js to the legacy
     # application/javascript serves the same script, so both spellings are one type here.
     legacy_js = {"application/javascript": "text/javascript"}
-    served = {path: (code, legacy_js.get(kind, kind)) for path, (code, kind) in ((p, _status(server, p)) for p in paths)}
+    served = {
+        path: (code, legacy_js.get(kind, kind)) for path, (code, kind) in ((p, _status(server, p)) for p in paths)
+    }
 
     assert served == {
         "/": (200, "text/html"),
@@ -83,15 +85,15 @@ def test_the_build_is_served_and_nothing_outside_it(server: ThreadingHTTPServer)
 
 
 def test_a_script_is_text_javascript_on_a_host_whose_mime_table_says_otherwise(
-    server: ThreadingHTTPServer, monkeypatch: pytest.MonkeyPatch
+    server: PageServer, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     host = mimetypes.guess_file_type
     monkeypatch.setattr(
         mimetypes,
         "guess_file_type",
-        lambda path, *, strict=True: ("application/javascript", None)
-        if str(path).endswith(".js")
-        else host(path, strict=strict),
+        lambda path, *, strict=True: (
+            ("application/javascript", None) if str(path).endswith(".js") else host(path, strict=strict)
+        ),
     )
 
     assert _status(server, "/assets/index-abc123.js") == (200, "text/javascript")
@@ -162,7 +164,9 @@ def test_the_event_stream_sends_a_snapshot_then_a_delta_per_change(tmp_path: Pat
     )
 
 
-def test_a_change_is_encoded_once_however_many_pages_are_streaming(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_change_is_encoded_once_however_many_pages_are_streaming(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     encoded: list[str] = []
     encode_event = server_module.event
     monkeypatch.setattr(server_module, "event", lambda name, data: encoded.append(name) or encode_event(name, data))
@@ -179,7 +183,9 @@ def test_a_change_is_encoded_once_however_many_pages_are_streaming(tmp_path: Pat
 
     assert [name for name, _ in seen] == ["dags", "dags"]
     assert seen[0][1] == seen[1][1]
-    assert [name for name in encoded if name != "build"] == ["dags"]  # a build's event is made once per build, not per change
+    assert [name for name in encoded if name != "build"] == [
+        "dags"
+    ]  # a build's event is made once per build, not per change
 
 
 def test_an_idle_event_stream_sends_a_comment_so_a_dead_page_is_noticed(
@@ -217,7 +223,12 @@ def test_a_run_is_started_by_post_and_never_by_get(tmp_path: Path) -> None:
     with _serve(tmp_path, starts={"dagu": start}, run_safe=RUN_SAFE) as server:
         with pytest.raises(urllib.error.HTTPError) as got:
             urllib.request.urlopen(_url(server, "/api/run/dagu/whole-repo-gate"), timeout=5)
-        request = urllib.request.Request(_url(server, "/api/run/dagu/whole-repo-gate"), data=b"", headers={"Content-Type": "application/json"}, method="POST")
+        request = urllib.request.Request(
+            _url(server, "/api/run/dagu/whole-repo-gate"),
+            data=b"",
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
         with urllib.request.urlopen(request, timeout=5) as resp:
             posted = (resp.status, resp.headers.get_content_type(), json.load(resp))
 
@@ -247,10 +258,14 @@ def test_a_forced_rerun_is_started_by_post_and_never_by_get_through_the_reruns_p
         path = "/api/runs/dagu/whole-repo-gate/rerun"
         with pytest.raises(urllib.error.HTTPError) as got:
             urllib.request.urlopen(_url(server, path), timeout=5)
-        request = urllib.request.Request(_url(server, path), data=b"", headers={"Content-Type": "application/json"}, method="POST")
+        request = urllib.request.Request(
+            _url(server, path), data=b"", headers={"Content-Type": "application/json"}, method="POST"
+        )
         with urllib.request.urlopen(request, timeout=5) as resp:
             posted = (resp.status, json.load(resp))
-        plain = urllib.request.Request(_url(server, path), data=b"", headers={"Content-Type": "text/plain"}, method="POST")
+        plain = urllib.request.Request(
+            _url(server, path), data=b"", headers={"Content-Type": "text/plain"}, method="POST"
+        )
         with pytest.raises(urllib.error.HTTPError) as foreign:
             urllib.request.urlopen(plain, timeout=5)
 
@@ -262,7 +277,12 @@ def test_a_forced_rerun_is_started_by_post_and_never_by_get_through_the_reruns_p
 
 def test_a_refused_run_answers_json_with_its_status(tmp_path: Path) -> None:
     with _serve(tmp_path, starts={"dagu": lambda workflow: "run-7"}) as server:
-        request = urllib.request.Request(_url(server, "/api/run/dagu/board-autopilot"), data=b"", headers={"Content-Type": "application/json"}, method="POST")
+        request = urllib.request.Request(
+            _url(server, "/api/run/dagu/board-autopilot"),
+            data=b"",
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
         with pytest.raises(urllib.error.HTTPError) as refused:
             urllib.request.urlopen(request, timeout=5)
 
@@ -273,8 +293,13 @@ def test_a_refused_run_answers_json_with_its_status(tmp_path: Path) -> None:
 def test_post_run_answers_404_for_an_adapter_without_start_and_a_run_id_for_a_run_safe_workflow_on_one_with_it(
     tmp_path: Path,
 ) -> None:
-    def post(server: ThreadingHTTPServer) -> tuple[int, dict]:
-        request = urllib.request.Request(_url(server, "/api/run/dagu/whole-repo-gate"), data=b"", headers={"Content-Type": "application/json"}, method="POST")
+    def post(server: PageServer) -> tuple[int, dict]:
+        request = urllib.request.Request(
+            _url(server, "/api/run/dagu/whole-repo-gate"),
+            data=b"",
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
         try:
             with urllib.request.urlopen(request, timeout=5) as resp:
                 return resp.status, json.load(resp)
@@ -297,7 +322,12 @@ def test_post_run_answers_404_for_an_adapter_without_start_and_a_run_id_for_a_ru
 def test_a_dag_absent_from_the_configs_run_safe_list_answers_404_on_post(tmp_path: Path) -> None:
     """`whole-repo-gate` is a DAG trantor runs, so only the config can be what refuses it here."""
     with _serve(tmp_path, starts={"dagu": lambda workflow: "run-7"}, run_safe=frozenset({"dagu/nightly"})) as server:
-        request = urllib.request.Request(_url(server, "/api/run/dagu/whole-repo-gate"), data=b"", headers={"Content-Type": "application/json"}, method="POST")
+        request = urllib.request.Request(
+            _url(server, "/api/run/dagu/whole-repo-gate"),
+            data=b"",
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
         with pytest.raises(urllib.error.HTTPError) as refused:
             urllib.request.urlopen(request, timeout=5)
 
@@ -305,7 +335,7 @@ def test_a_dag_absent_from_the_configs_run_safe_list_answers_404_on_post(tmp_pat
     assert json.load(refused.value) == {"error": "dagu/whole-repo-gate is not declared run-safe"}
 
 
-def test_a_post_anywhere_but_the_run_endpoint_is_not_found(server: ThreadingHTTPServer) -> None:
+def test_a_post_anywhere_but_the_run_endpoint_is_not_found(server: PageServer) -> None:
     request = urllib.request.Request(_url(server, "/api/snapshot"), data=b"", method="POST")
 
     with pytest.raises(urllib.error.HTTPError) as refused:
@@ -314,8 +344,13 @@ def test_a_post_anywhere_but_the_run_endpoint_is_not_found(server: ThreadingHTTP
     assert refused.value.code == 404
 
 
-def _post_move(server: ThreadingHTTPServer, body: dict) -> tuple[int, dict]:
-    request = urllib.request.Request(_url(server, "/api/move"), data=json.dumps(body).encode(), headers={"Content-Type": "application/json"}, method="POST")
+def _post_move(server: PageServer, body: dict) -> tuple[int, dict]:
+    request = urllib.request.Request(
+        _url(server, "/api/move"),
+        data=json.dumps(body).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
     try:
         with urllib.request.urlopen(request, timeout=5) as resp:
             return resp.status, json.load(resp)
@@ -377,7 +412,9 @@ def test_a_start_posted_to_the_server_saves_the_assignee_starts_the_session_and_
     feed.put(task("PROJ-3", "Ready"))
     body = json.dumps({"task": "PROJ-3", "profile": "@agent-deep-high", "harness": "claude"}).encode()
     with _serve(tmp_path, feed, bare_board(assign=assign), start_session=start_session) as server:
-        request = urllib.request.Request(_url(server, "/api/start"), data=body, headers={"Content-Type": "application/json"}, method="POST")
+        request = urllib.request.Request(
+            _url(server, "/api/start"), data=body, headers={"Content-Type": "application/json"}, method="POST"
+        )
         with urllib.request.urlopen(request, timeout=5) as resp:
             answered = resp.status, json.load(resp)
         with pytest.raises(urllib.error.HTTPError) as got:
@@ -392,8 +429,10 @@ def test_a_start_posted_to_the_server_saves_the_assignee_starts_the_session_and_
     assert (got.value.code, got.value.headers["Allow"]) == (405, "POST")
 
 
-def _post(server: ThreadingHTTPServer, path: str, body: dict) -> tuple[int, dict]:
-    request = urllib.request.Request(_url(server, path), data=json.dumps(body).encode(), headers={"Content-Type": "application/json"}, method="POST")
+def _post(server: PageServer, path: str, body: dict) -> tuple[int, dict]:
+    request = urllib.request.Request(
+        _url(server, path), data=json.dumps(body).encode(), headers={"Content-Type": "application/json"}, method="POST"
+    )
     try:
         with urllib.request.urlopen(request, timeout=5) as resp:
             return resp.status, json.load(resp)
@@ -442,7 +481,9 @@ def test_an_archived_task_is_restored_through_the_server_and_a_refusal_carries_i
 
     def restore(task: str) -> Written:
         restored.append(task)
-        return Written(task == "PROJ-3", "ok" if task == "PROJ-3" else f"{task} is already on the board", skill="reopening")
+        return Written(
+            task == "PROJ-3", "ok" if task == "PROJ-3" else f"{task} is already on the board", skill="reopening"
+        )
 
     with _serve(tmp_path, BoardFeed(), bare_board(restore=restore)) as server:
         back = _post(server, "/api/restore", {"task": "PROJ-3"})
@@ -566,7 +607,7 @@ def test_a_task_is_claimed_through_the_server_and_the_lifecycle_routes_answer_po
 
 
 def test_the_page_script_is_served_as_text_javascript_whatever_the_hosts_mime_table_says(
-    server: ThreadingHTTPServer, monkeypatch: pytest.MonkeyPatch
+    server: PageServer, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setitem(mimetypes.types_map, ".js", "application/javascript")  # what a runner's /etc/mime.types gives
 

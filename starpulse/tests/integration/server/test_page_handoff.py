@@ -3,18 +3,24 @@ descriptor named by `LISTEN_FD_ENV`, and a stopping API child finishes the reque
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
 import signal
 import socket
 import threading
 import time
-from http.server import BaseHTTPRequestHandler
+import urllib.request
+from http.client import HTTPConnection
+from pathlib import Path
 from typing import Any
 
 import pytest
 
+from starpulse._internal.kit.adapter_kit import serve as _serve
 from starpulse._internal.server.hold import LISTEN_FD_ENV
-from starpulse._internal.server.server import DRAIN_S, StarPulseServer, inherited_socket, serve_until_stopped
+from starpulse._internal.server.page_server import DRAIN_S, PageServer
+from starpulse._internal.server.server import inherited_socket, serve_until_stopped
 from starpulse._internal.server.supervisor import Supervisor
 
 
@@ -58,71 +64,32 @@ def test_a_serve_that_re_executes_keeps_the_page_socket_open_for_its_next_image(
         assert listening.get_inheritable()  # `execv` keeps it open
 
 
-class _Held(StarPulseServer):
-    def __init__(self) -> None:
-        super().__init__(("127.0.0.1", 0), BaseHTTPRequestHandler)
-        self.release = threading.Event()
-        self.finished = 0
-
-    def process_request_thread(self, request: Any, client_address: Any) -> None:
-        self.release.wait()
-        self.finished += 1
-
-
-def test_draining_waits_for_the_requests_taken_and_reports_whether_they_finished() -> None:
-    server = _Held()
-    try:
-        server.process_request(object(), ("127.0.0.1", 1))
-        server.process_request(object(), ("127.0.0.1", 2))
-        threading.Timer(0.2, server.release.set).start()
-        started = time.monotonic()
-
-        drained = server.drain(5.0)
-
-        assert drained
-        assert server.finished == 2
-        assert time.monotonic() - started >= 0.15
-    finally:
-        server.release.set()
-        server.server_close()
-
-
-def test_draining_gives_up_after_its_timeout_with_a_request_still_running() -> None:
-    server = _Held()
-    try:
-        server.process_request(object(), ("127.0.0.1", 1))
-
-        assert not server.drain(0.1)
-    finally:
-        server.release.set()
-        server.server_close()
-
-
-def test_a_stream_is_not_a_request_to_wait_for() -> None:
-    server = _Held()
-    try:
-        server.process_request(object(), ("127.0.0.1", 1))
-        assert server.open_stream()  # the worker leaves the request pool for the stream
-
-        assert server.drain(0.1)
-    finally:
-        server.release.set()
-        server.server_close()
-
-
-class _Stopping:
-    """A server `serve_forever` of which returns at once and records when it was drained."""
+class _SlowApp:
+    """An ASGI app whose requests wait for `release`, noting what the server asks of it as it stops."""
 
     def __init__(self, order: list[str], drained: bool = True) -> None:
         self.order = order
-        self.drained = drained
+        self.drained_in_time = drained
+        self.release = threading.Event()
+        self.arrived = threading.Event()
 
-    def serve_forever(self, poll_interval: float = 0.5) -> None:
-        raise KeyboardInterrupt
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope["type"] != "http":  # the lifespan
+            while (await receive())["type"] != "lifespan.shutdown":
+                await send({"type": "lifespan.startup.complete"})
+            await send({"type": "lifespan.shutdown.complete"})
+            return
+        self.arrived.set()
+        await asyncio.to_thread(self.release.wait)
+        await send({"type": "http.response.start", "status": 200, "headers": [(b"content-length", b"2")]})
+        await send({"type": "http.response.body", "body": b"ok"})
 
-    def drain(self, timeout: float) -> bool:
+    async def end_streams(self) -> None:
+        self.order.append("end streams")
+
+    async def drained(self, timeout: float) -> bool:
         self.order.append(f"drain {timeout}")
-        return self.drained
+        return self.drained_in_time
 
 
 class _Feed:
@@ -136,14 +103,75 @@ class _Feed:
         self.order.append("save")
 
 
+def _ask(port: int, answers: list[int]) -> threading.Thread:
+    def get() -> None:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=10) as resp:
+            answers.append(resp.status)
+
+    asking = threading.Thread(target=get)
+    asking.start()
+    return asking
+
+
 @pytest.mark.parametrize("drained", [True, False])
-def test_a_stopping_server_tells_the_streams_then_finishes_its_requests_then_saves(drained: bool) -> None:
+def test_a_stopping_server_tells_the_streams_then_finishes_its_requests_then_saves(
+    drained: bool, caplog: pytest.LogCaptureFixture
+) -> None:
     order: list[str] = []
+    app = _SlowApp(order, drained)
+    feed = _Feed(order)
+    server = PageServer(app, ("127.0.0.1", 0), stopping=lambda: feed.announce("restarting"))  # type: ignore[arg-type]
     before = signal.getsignal(signal.SIGTERM)
+    answers: list[int] = []
+    asking = _ask(server.server_port, answers)  # queued on the bound socket until `serve_until_stopped` starts serving
+
+    def stop_while_the_request_is_taken() -> None:
+        assert app.arrived.wait(5)
+        signal.raise_signal(signal.SIGTERM)
+        threading.Timer(0.5, app.release.set).start()
+
+    stopper = threading.Thread(target=stop_while_the_request_is_taken)
+    stopper.start()
     try:
-        serve_until_stopped(_Stopping(order, drained), _Feed(order))  # type: ignore[arg-type]
+        with caplog.at_level(logging.WARNING):
+            serve_until_stopped(server, feed)  # type: ignore[arg-type]
     finally:
         signal.signal(signal.SIGTERM, before)
+        app.release.set()
+        stopper.join(10)
+        asking.join(10)
 
-    assert order == ["announce", f"drain {DRAIN_S}", "save"]
+    assert order == ["announce", "end streams", f"drain {DRAIN_S}", "save"]
+    assert answers == [200]  # the request taken before the stop was answered
+    assert any("requests still running" in r.getMessage() for r in caplog.records) is (not drained)
     assert DRAIN_S < 10.0  # a supervisor kills a child 10 s after asking it to stop
+
+
+def test_a_server_adopts_a_listening_socket_as_passed_and_serves_on_it() -> None:
+    app = _SlowApp([])
+    app.release.set()
+    listening = socket.create_server(("127.0.0.1", 0))
+    server = PageServer(app, listening=listening)  # type: ignore[arg-type]
+    port = listening.getsockname()[1]
+    server.start()
+    answers: list[int] = []
+    try:
+        _ask(port, answers).join(10)
+    finally:
+        server.close()
+
+    assert server.server_port == port
+    assert answers == [200]
+
+
+def test_a_stop_is_not_held_by_a_push_refused_with_its_body_unread(tmp_path: Path) -> None:
+    with _serve(tmp_path) as server:
+        pusher = HTTPConnection("127.0.0.1", server.server_port, timeout=10)
+        pusher.request("POST", "/api/nowhere", body=b"x" * 3_000_000, headers={"content-type": "application/json"})
+        refused = pusher.getresponse().status
+        stopping = time.monotonic()
+    stopped_in = time.monotonic() - stopping
+    pusher.close()
+
+    assert refused == 404
+    assert stopped_in < 3

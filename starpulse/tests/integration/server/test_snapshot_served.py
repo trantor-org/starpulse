@@ -7,24 +7,24 @@ import time
 import urllib.error
 import urllib.request
 from collections import Counter
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
 
 from starpulse._internal.board.seam import Written
-from starpulse._internal.server import snapshot_cache
-from starpulse.contracts.adapters import Move
+from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import next_event as _next_event
 from starpulse._internal.kit.adapter_kit import serve as _serve
 from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.kit.adapter_kit import url as _url
-from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.server import snapshot_cache
+from starpulse._internal.server.page_server import PageServer
+from starpulse.contracts.adapters import Move
 from starpulse.tests.fake_board import bare_board
 from starpulse.tests.machines import MACHINES
 
 
-def _get(server: ThreadingHTTPServer) -> bytes:
+def _get(server: PageServer) -> bytes:
     with urllib.request.urlopen(_url(server, "/api/snapshot"), timeout=5) as resp:
         return resp.read()
 
@@ -156,7 +156,9 @@ def test_a_connecting_page_neither_misses_nor_repeats_a_change(tmp_path: Path) -
     assert max(int(i.removeprefix("PROJ-")) for i in in_snapshot) + 1 == numbers[0]
 
 
-def test_a_page_connecting_during_a_rebuild_is_not_held_up_by_it(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_page_connecting_during_a_rebuild_is_not_held_up_by_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     feed = BoardFeed(machines=MACHINES)
     feed.put(task("PROJ-1", "To Do"))
     release = threading.Event()
@@ -200,7 +202,9 @@ def _raw_event(resp) -> tuple[str, str]:
     raise AssertionError("the stream ended")
 
 
-def test_a_page_that_asks_for_the_snapshot_by_reference_reads_the_same_snapshot_from_its_body_route(tmp_path: Path) -> None:
+def test_a_page_that_asks_for_the_snapshot_by_reference_reads_the_same_snapshot_from_its_body_route(
+    tmp_path: Path,
+) -> None:
     feed = BoardFeed(machines=MACHINES)
     feed.put(task("PROJ-1"))
     with _serve(tmp_path, feed) as server:

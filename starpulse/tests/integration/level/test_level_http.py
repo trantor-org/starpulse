@@ -6,16 +6,16 @@ import json
 import urllib.error
 import urllib.request
 from collections.abc import Iterator
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
 
-from starpulse._internal.kit.adapter_kit import serve, url
 from starpulse._internal.config.level import Level, Orbit, Terminal
-from starpulse._internal.level.analytics import board_health
-from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.eventlog.history import HistoryStore
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.kit.adapter_kit import serve, url
+from starpulse._internal.level.analytics import board_health
+from starpulse._internal.server.page_server import PageServer
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.unit.level.test_analytics import BOARD, NOW, ROWS, H
 
@@ -30,7 +30,7 @@ LEVEL = Level(
 )
 
 
-def _get(server: ThreadingHTTPServer, query: str = "", path: str = "/api/level") -> tuple[int, dict]:
+def _get(server: PageServer, query: str = "", path: str = "/api/level") -> tuple[int, dict]:
     try:
         with urllib.request.urlopen(url(server, f"{path}{query}"), timeout=5) as resp:
             return resp.status, json.loads(resp.read())
@@ -48,13 +48,13 @@ def store(tmp_path_factory: pytest.TempPathFactory) -> HistoryStore:
 
 
 @pytest.fixture(scope="module")
-def server(tmp_path_factory: pytest.TempPathFactory, store: HistoryStore) -> Iterator[ThreadingHTTPServer]:
+def server(tmp_path_factory: pytest.TempPathFactory, store: HistoryStore) -> Iterator[PageServer]:
     build = tmp_path_factory.mktemp("server")
     with serve(build, BoardFeed(machines=MACHINES), history=store, clock=lambda: NOW, level=LEVEL) as server:
         yield server
 
 
-def test_wip_throughput_and_aging_on_a_fixture_history_equal_the_definitions(server: ThreadingHTTPServer) -> None:
+def test_wip_throughput_and_aging_on_a_fixture_history_equal_the_definitions(server: PageServer) -> None:
     status, body = _get(server, "?hours=48")
 
     assert status == 200
@@ -67,7 +67,7 @@ def test_wip_throughput_and_aging_on_a_fixture_history_equal_the_definitions(ser
     assert (body["now"], body["window_s"], body["history_s"]) == (NOW, 48 * H, 90 * H)
 
 
-def test_the_numbers_both_count_agree_with_the_board_health_of_the_same_history(server: ThreadingHTTPServer) -> None:
+def test_the_numbers_both_count_agree_with_the_board_health_of_the_same_history(server: PageServer) -> None:
     health = board_health(BOARD, ROWS, [], now=NOW, window_s=48 * H, stuck_s=24 * H)
     wip = {state["id"]: state["wip"] for state in health["states"]}
 
@@ -80,7 +80,7 @@ def test_the_numbers_both_count_agree_with_the_board_health_of_the_same_history(
     assert wip["review"] == 0
 
 
-def test_time_in_state_clips_each_stay_to_the_window(server: ThreadingHTTPServer) -> None:
+def test_time_in_state_clips_each_stay_to_the_window(server: PageServer) -> None:
     _, body = _get(server, "?hours=48")
 
     states = {state["id"]: state for state in body["time_in_state"]}
@@ -88,7 +88,7 @@ def test_time_in_state_clips_each_stay_to_the_window(server: ThreadingHTTPServer
     assert (states["in_progress"]["visits"], states["in_progress"]["task_s"]) == (4, 82 * H)
 
 
-def test_each_source_carries_shares_that_sum_to_one(server: ThreadingHTTPServer) -> None:
+def test_each_source_carries_shares_that_sum_to_one(server: PageServer) -> None:
     _, body = _get(server, "?hours=48")
 
     by_source = {source["id"]: source for source in body["sources"]}
@@ -98,7 +98,7 @@ def test_each_source_carries_shares_that_sum_to_one(server: ThreadingHTTPServer)
     assert sum(by_source["b"]["time_share"].values()) == pytest.approx(1.0)
 
 
-def test_a_window_longer_than_the_history_is_refused_with_the_history_length(server: ThreadingHTTPServer) -> None:
+def test_a_window_longer_than_the_history_is_refused_with_the_history_length(server: PageServer) -> None:
     status, body = _get(server, "?hours=91")
 
     assert status == 400
@@ -106,14 +106,14 @@ def test_a_window_longer_than_the_history_is_refused_with_the_history_length(ser
     assert "90 hours" in body["error"]
 
 
-def test_the_default_window_a_short_history_cannot_cover_is_refused_not_padded(server: ThreadingHTTPServer) -> None:
+def test_the_default_window_a_short_history_cannot_cover_is_refused_not_padded(server: PageServer) -> None:
     status, body = _get(server)
 
     assert (status, body["history_s"]) == (400, 90 * H)
 
 
 @pytest.mark.parametrize("query", ["?hours=0", "?hours=-1", "?hours=soon", "?hours=nan", "?hours=inf"])
-def test_a_window_that_is_not_a_positive_number_is_refused(server: ThreadingHTTPServer, query: str) -> None:
+def test_a_window_that_is_not_a_positive_number_is_refused(server: PageServer, query: str) -> None:
     status, body = _get(server, query)
 
     assert status == 400
@@ -142,11 +142,11 @@ def test_a_history_that_cannot_list_runs_is_not_implemented(tmp_path: Path) -> N
     assert (status, "does not keep" in body["error"]) == (501, True)
 
 
-def _trajectories(server: ThreadingHTTPServer, query: str = "") -> tuple[int, dict]:
+def _trajectories(server: PageServer, query: str = "") -> tuple[int, dict]:
     return _get(server, query, "/api/level/trajectories")
 
 
-def test_trajectories_cover_the_runs_that_ended_in_the_window(server: ThreadingHTTPServer) -> None:
+def test_trajectories_cover_the_runs_that_ended_in_the_window(server: PageServer) -> None:
     status, body = _trajectories(server, "?hours=48")
 
     assert status == 200
@@ -159,7 +159,7 @@ def test_trajectories_cover_the_runs_that_ended_in_the_window(server: ThreadingH
     assert body["chain"]["in_progress"]["p_goal"] == pytest.approx(1.0)  # every ended run reached the goal
 
 
-def test_trajectories_report_the_rework_loop_of_a_run_and_its_days(server: ThreadingHTTPServer) -> None:
+def test_trajectories_report_the_rework_loop_of_a_run_and_its_days(server: PageServer) -> None:
     _, body = _trajectories(server, "?hours=48")
 
     assert [(run["task"], run["back_edges"], run["sccs"]) for run in body["runs"]] == [("A", 0, 0), ("B", 1, 1)]
@@ -167,7 +167,7 @@ def test_trajectories_report_the_rework_loop_of_a_run_and_its_days(server: Threa
     assert body["loops"] == [{"from": "review", "to": "in_progress", "runs": 1, "trips": 1, "days": 16 * H / 86400}]
 
 
-def test_trajectories_forecast_each_run_still_going_with_its_rows_sample_size(server: ThreadingHTTPServer) -> None:
+def test_trajectories_forecast_each_run_still_going_with_its_rows_sample_size(server: PageServer) -> None:
     _, body = _trajectories(server, "?hours=48")
 
     forecast = {f["task"]: f for f in body["forecast"]}
@@ -178,12 +178,12 @@ def test_trajectories_forecast_each_run_still_going_with_its_rows_sample_size(se
     assert body["calibration"]["held_out"] == 0  # two ended runs hold none out
 
 
-def _what_if(server: ThreadingHTTPServer, query: str) -> tuple[int, dict]:
+def _what_if(server: PageServer, query: str) -> tuple[int, dict]:
     return _get(server, query, "/api/level/what-if")
 
 
 def test_a_what_if_returns_the_change_in_the_goal_and_the_days_from_the_usual_first_state(
-    server: ThreadingHTTPServer,
+    server: PageServer,
 ) -> None:
     status, body = _what_if(server, "?hours=48&from=review&to=in_progress&p=0")
 
@@ -205,7 +205,7 @@ def test_a_what_if_returns_the_change_in_the_goal_and_the_days_from_the_usual_fi
         ("?hours=91&from=review&to=in_progress&p=0.1", "90 hours"),
     ],
 )
-def test_a_what_if_the_chain_cannot_answer_is_refused(server: ThreadingHTTPServer, query: str, error: str) -> None:
+def test_a_what_if_the_chain_cannot_answer_is_refused(server: PageServer, query: str, error: str) -> None:
     status, body = _what_if(server, query)
 
     assert status == 400
@@ -213,7 +213,7 @@ def test_a_what_if_the_chain_cannot_answer_is_refused(server: ThreadingHTTPServe
 
 
 def test_a_run_that_detoured_through_the_gate_leaves_it_bypassable_with_that_runs_own_path(
-    server: ThreadingHTTPServer,
+    server: PageServer,
 ) -> None:
     _, body = _trajectories(server, "?hours=48")
 
@@ -230,14 +230,14 @@ def test_a_run_that_detoured_through_the_gate_leaves_it_bypassable_with_that_run
     ]
 
 
-def test_trajectories_refuse_a_window_longer_than_the_history_with_its_length(server: ThreadingHTTPServer) -> None:
+def test_trajectories_refuse_a_window_longer_than_the_history_with_its_length(server: PageServer) -> None:
     status, body = _trajectories(server, "?hours=91")
 
     assert (status, body["history_s"], "90 hours" in body["error"]) == (400, 90 * H, True)
 
 
 @pytest.mark.parametrize("query", ["?hours=0", "?hours=soon"])
-def test_trajectories_refuse_a_window_that_is_not_a_positive_number(server: ThreadingHTTPServer, query: str) -> None:
+def test_trajectories_refuse_a_window_that_is_not_a_positive_number(server: PageServer, query: str) -> None:
     status, body = _trajectories(server, query)
 
     assert (status, "positive number" in body["error"]) == (400, True)

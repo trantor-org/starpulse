@@ -8,19 +8,19 @@ import urllib.error
 import urllib.request
 from collections.abc import Iterator
 from http.client import HTTPResponse
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
 import pytest
 from sqlalchemy import select
 
-from starpulse._internal.runs.ingest import MAX_BODY
-from starpulse._internal.kit.adapter_kit import next_event, serve, url
-from starpulse.contracts.adapters import Finding
-from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.level.insights import Insights, InsightStore, restore
 from starpulse._internal.eventlog.tables import insights as insight_table
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.kit.adapter_kit import next_event, serve, url
+from starpulse._internal.level.insights import Insights, InsightStore, restore
+from starpulse._internal.runs.ingest import MAX_BODY
+from starpulse._internal.server.page_server import PageServer
+from starpulse.contracts.adapters import Finding
 
 NOW = 1_700_000_100.0
 FINDING = {
@@ -35,7 +35,7 @@ FINDING = {
 
 
 class Stack:
-    def __init__(self, server: ThreadingHTTPServer, feed: BoardFeed, store: InsightStore) -> None:
+    def __init__(self, server: PageServer, feed: BoardFeed, store: InsightStore) -> None:
         self.server, self.feed, self.store = server, feed, store
 
     def send(self, method: str, path: str, body: Any = None) -> tuple[int, dict]:

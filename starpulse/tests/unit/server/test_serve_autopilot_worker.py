@@ -23,7 +23,7 @@ def _serve(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[list[object
     started: list[object] = []
     monkeypatch.setattr(service, "start_autopilot", lambda *args, **kwargs: started.append(args) or None)
     handled: dict[str, object] = {}
-    monkeypatch.setattr(server, "request_handler", lambda *args, **kwargs: handled.update(kwargs, services=args[5]))
+    monkeypatch.setattr(server, "page_app", lambda *args, **kwargs: handled.update(kwargs, services=args[5]))
     config = tmp_path / "starpulse.toml"
     config.write_text(BOARD)
 

@@ -8,7 +8,6 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Iterator
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -19,13 +18,14 @@ from starpulse._internal.kit.adapter_kit import serve, url
 from starpulse._internal.pulls.pull_refresh import PullRefresh
 from starpulse._internal.pulls.pull_store import PullSync, refresh_pull
 from starpulse._internal.pulls.pulls import PullStore
+from starpulse._internal.server.page_server import PageServer
 from starpulse.tests.unit.pulls.test_pull_store import NEW, REPO, Github
 
 TOKEN = "refresh-secret"
 
 
 class Stack:
-    def __init__(self, server: ThreadingHTTPServer, store: PullStore, github: Github) -> None:
+    def __init__(self, server: PageServer, store: PullStore, github: Github) -> None:
         self.server, self.store, self.github = server, store, github
 
     def post(self, body: object, token: str | None = TOKEN) -> int:

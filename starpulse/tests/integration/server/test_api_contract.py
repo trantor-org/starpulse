@@ -5,7 +5,6 @@ import urllib.error
 import urllib.request
 from collections.abc import Iterator
 from dataclasses import replace
-from http.server import ThreadingHTTPServer
 
 import pytest
 from pydantic import TypeAdapter
@@ -13,19 +12,20 @@ from sqlalchemy import create_engine
 
 from starpulse._internal.autopilot.runtime import build
 from starpulse._internal.config.autopilot import Autopilot
-from starpulse._internal.kit.adapter_kit import serve, task, url
-from starpulse.tests.fake_board import bare_board
-from starpulse.contracts.api.registry import BODIES, RESPONSES
 from starpulse._internal.config.level import Level, Orbit, Terminal
-from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.eventlog.event_log import EventLog
-from starpulse._internal.feed.search import SearchIndex
 from starpulse._internal.eventlog.history import HistoryStore
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.feed.search import SearchIndex
 from starpulse._internal.harnesses.telemetry import Signal, TelemetryLog, signals
+from starpulse._internal.kit.adapter_kit import serve, task, url
+from starpulse._internal.server.page_server import PageServer
+from starpulse.contracts.api.registry import BODIES, RESPONSES
+from starpulse.tests.fake_board import bare_board
 from starpulse.tests.machines import MACHINES
+from starpulse.tests.unit.feed.test_board_feed import _paged_feed
 from starpulse.tests.unit.harnesses.test_telemetry import FIXTURES
 from starpulse.tests.unit.level.test_analytics import NOW, ROWS
-from starpulse.tests.unit.feed.test_board_feed import _paged_feed
 
 #: Every GET route the server answers with JSON, as the page asks for it; `/api/events` is a stream, tested apart.
 ROUTES = (
@@ -48,11 +48,13 @@ ROUTES = (
     "/api/level?hours=48",
     "/api/level/trajectories?hours=48",
 )
-LEVEL = Level("board", "done", (Terminal("done", "goal"),), gates=("review",), orbit=Orbit("working", ("in_progress", "review")))
+LEVEL = Level(
+    "board", "done", (Terminal("done", "goal"),), gates=("review",), orbit=Orbit("working", ("in_progress", "review"))
+)
 
 
 @pytest.fixture(scope="module")
-def server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[ThreadingHTTPServer]:
+def server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[PageServer]:
     """One server for the module: every test reads it with GET and none writes to it."""
     tmp_path = tmp_path_factory.mktemp("contract")
     feed = BoardFeed(machines=MACHINES)
@@ -61,15 +63,25 @@ def server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[ThreadingHTTPSe
     for i, (name, at, _old, new) in enumerate(ROWS):
         store.record_lane(f"{'a' if name in 'AB' else 'b'}/{i}", name, new, at)
     store.record_lane("l0", "T-1", "In Progress", NOW - 3600)
-    runtime = build(Autopilot(), tmp_path, EventLog(f"sqlite:///{tmp_path / 'settings.sqlite'}"), feed, probe=lambda: {"cpu": 10.0, "memory": 20.0})
+    runtime = build(
+        Autopilot(),
+        tmp_path,
+        EventLog(f"sqlite:///{tmp_path / 'settings.sqlite'}"),
+        feed,
+        probe=lambda: {"cpu": 10.0, "memory": 20.0},
+    )
     runtime.sampler.sample()
     telemetry = TelemetryLog(EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}"))
     recorded = [
-        sg for line in (FIXTURES / "claude_code" / "otlp.ndjson").read_text().splitlines() for sg in signals(json.loads(line))
+        sg
+        for line in (FIXTURES / "claude_code" / "otlp.ndjson").read_text().splitlines()
+        for sg in signals(json.loads(line))
     ]
     shift = max(sg.time for sg in recorded) - (NOW - 60)  # the exports ended a minute before the clock
     telemetry.publish([replace(sg, time=sg.time - shift) for sg in recorded])
-    telemetry.publish([Signal("claude-code", "anchor", "prompt", NOW - 7200, "anchor:prompt")])  # a history of two hours
+    telemetry.publish(
+        [Signal("claude-code", "anchor", "prompt", NOW - 7200, "anchor:prompt")]
+    )  # a history of two hours
     search = SearchIndex.open(create_engine(f"sqlite:///{tmp_path / 'search.sqlite'}"))
     assert search is not None
     search.index(task("T-1", "In Progress"))
@@ -93,7 +105,7 @@ def _model(route: str) -> object | None:
     return RESPONSES.get(prefix)
 
 
-def _validate(server: ThreadingHTTPServer, route: str) -> None:
+def _validate(server: PageServer, route: str) -> None:
     model = _model(route)
     assert model is not None, f"{route} has no response model in contracts.api.registry.RESPONSES"
 
@@ -104,16 +116,21 @@ def _validate(server: ThreadingHTTPServer, route: str) -> None:
 
 
 @pytest.mark.parametrize("route", ROUTES)
-def test_api_contract_get_route_body_validates_against_its_model(server: ThreadingHTTPServer, route: str) -> None:
+def test_api_contract_get_route_body_validates_against_its_model(server: PageServer, route: str) -> None:
     _validate(server, route)
 
 
 @pytest.mark.parametrize(
     ("path", "kind"),
-    [("sessions", "sessions"), ("steps", "session_steps"), ("missed-loads", "missed_loads"), ("trace-clusters", "trace_clusters")],
+    [
+        ("sessions", "sessions"),
+        ("steps", "session_steps"),
+        ("missed-loads", "missed_loads"),
+        ("trace-clusters", "trace_clusters"),
+    ],
 )
 def test_api_contract_a_telemetry_window_longer_than_the_history_validates_against_its_body_model(
-    server: ThreadingHTTPServer, path: str, kind: str
+    server: PageServer, path: str, kind: str
 ) -> None:
     route = f"/api/analytics/{path}?hours=3"
 
@@ -126,13 +143,13 @@ def test_api_contract_a_telemetry_window_longer_than_the_history_validates_again
 
 
 @pytest.fixture(scope="module")
-def paged_server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[ThreadingHTTPServer]:
+def paged_server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[PageServer]:
     with serve(tmp_path_factory.mktemp("paged"), _paged_feed()) as server:
         yield server
 
 
 @pytest.mark.parametrize("route", ["/api/snapshot", "/api/ledger/MERGED"])
 def test_api_contract_a_merge_ledger_with_runs_failures_and_pins_validates_against_its_model(
-    paged_server: ThreadingHTTPServer, route: str
+    paged_server: PageServer, route: str
 ) -> None:
     _validate(paged_server, route)

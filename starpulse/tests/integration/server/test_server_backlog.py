@@ -1,13 +1,12 @@
 """The listen backlog: a crowd of pages connecting at once is queued for accept, not dropped into a SYN retransmit."""
 
 import socket
-from http.server import BaseHTTPRequestHandler
 
-from starpulse._internal.server.server import StarPulseServer
+from starpulse._internal.server.page_server import PageServer
 
 
 def test_fifty_pages_connecting_before_any_is_accepted_all_connect() -> None:
-    server = StarPulseServer(("127.0.0.1", 0), BaseHTTPRequestHandler)  # never served: nothing is accepted
+    server = PageServer(None, ("127.0.0.1", 0))  # type: ignore[arg-type] # never started: nothing is accepted
     pages = []
     try:
         for _ in range(50):
@@ -15,6 +14,6 @@ def test_fifty_pages_connecting_before_any_is_accepted_all_connect() -> None:
     finally:
         for page in pages:
             page.close()
-        server.server_close()
+        server.socket.close()
 
     assert len(pages) == 50

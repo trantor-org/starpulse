@@ -5,7 +5,6 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Iterator
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -13,9 +12,10 @@ from sqlalchemy import create_engine
 
 from starpulse._internal.feed.search import SearchIndex
 from starpulse._internal.kit.adapter_kit import serve, task, url
+from starpulse._internal.server.page_server import PageServer
 
 
-def _get(server: ThreadingHTTPServer, path: str) -> tuple[int, dict | None]:
+def _get(server: PageServer, path: str) -> tuple[int, dict | None]:
     try:
         with urllib.request.urlopen(url(server, path), timeout=5) as resp:
             return resp.status, json.load(resp)
@@ -27,7 +27,7 @@ def _get(server: ThreadingHTTPServer, path: str) -> tuple[int, dict | None]:
 
 
 @pytest.fixture
-def server(tmp_path: Path) -> Iterator[ThreadingHTTPServer]:
+def server(tmp_path: Path) -> Iterator[PageServer]:
     index = SearchIndex.open(create_engine(f"sqlite:///{tmp_path / 'search.sqlite'}"))
     assert index is not None
     index.index(task("PROJ-1", "To Do", title="Rotate the signing keys", description="Cycle the authority"))
@@ -37,7 +37,7 @@ def server(tmp_path: Path) -> Iterator[ThreadingHTTPServer]:
         yield server
 
 
-def test_a_query_answers_the_matching_tasks_best_first(server: ThreadingHTTPServer) -> None:
+def test_a_query_answers_the_matching_tasks_best_first(server: PageServer) -> None:
     status, body = _get(server, "/api/search?q=signing")
 
     assert status == 200
@@ -51,11 +51,11 @@ def test_a_query_answers_the_matching_tasks_best_first(server: ThreadingHTTPServ
     assert set(body["hits"][0]) == {"task", "title", "lane", "score", "snippet"}
 
 
-def test_a_query_with_no_match_answers_no_hits(server: ThreadingHTTPServer) -> None:
+def test_a_query_with_no_match_answers_no_hits(server: PageServer) -> None:
     assert _get(server, "/api/search?q=nothing") == (200, {"query": "nothing", "hits": []})
 
 
-def test_the_limit_caps_the_hits(server: ThreadingHTTPServer) -> None:
+def test_the_limit_caps_the_hits(server: PageServer) -> None:
     status, body = _get(server, "/api/search?q=signing&limit=2")
 
     assert status == 200
@@ -108,7 +108,7 @@ def test_each_label_named_narrows_the_hits_to_the_tasks_carrying_it(tmp_path: Pa
         "q=a&finished_within_days=many",
     ],
 )
-def test_a_missing_or_blank_query_or_a_limit_or_window_out_of_range_is_400(server: ThreadingHTTPServer, query: str) -> None:
+def test_a_missing_or_blank_query_or_a_limit_or_window_out_of_range_is_400(server: PageServer, query: str) -> None:
     status, body = _get(server, f"/api/search?{query}")
 
     assert status == 400

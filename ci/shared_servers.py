@@ -153,14 +153,6 @@ def share(module: Any) -> None:
 
     module._real_serve = serve
 
-    class QuickServer(module.ThreadingHTTPServer):
-        """A server whose `shutdown` waits out 10 ms, not the half second the stock poll interval makes every test pay."""
-
-        def serve_forever(self, poll_interval: float = 0.01) -> None:
-            super().serve_forever(poll_interval)
-
-    module.ThreadingHTTPServer = QuickServer
-
     @pytest.fixture(scope="module", name="hosts")
     def hosts(tmp_path_factory: pytest.TempPathFactory) -> Iterator[_Hosts]:
         shared = _Hosts(tmp_path_factory)

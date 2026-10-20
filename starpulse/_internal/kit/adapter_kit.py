@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import json
 import tempfile
-import threading
 import time
 import urllib.error
 import urllib.request
@@ -31,7 +30,6 @@ from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import replace
 from http.client import HTTPResponse
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -49,9 +47,11 @@ from starpulse._internal.eventlog.history import History, HistoryStore
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.feed.history_window import HistoryWindow
 from starpulse._internal.feed.machine_tasks import MachineTasks
+from starpulse._internal.server.gate_request import GateRequest
 from starpulse._internal.level.insights import Insights, InsightStore
+from starpulse._internal.server.asgi_app import page_app
 from starpulse._internal.server.assembly import assemble as _assemble
-from starpulse._internal.server.server import StarPulseServer, request_handler
+from starpulse._internal.server.page_server import PageServer
 from starpulse._internal.server.services import Services
 from starpulse._internal.server.writes import move_task
 from starpulse.contracts.adapters import (
@@ -314,7 +314,7 @@ _INSIGHTS = "/api/insights"
 
 
 @contextmanager
-def _insights_stack(now: float) -> Iterator[tuple[ThreadingHTTPServer, BoardFeed, InsightStore]]:
+def _insights_stack(now: float) -> Iterator[tuple[PageServer, BoardFeed, InsightStore]]:
     """A server with the insights API over a history store in a temporary SQLite file, its clock at `now`."""
     feed = BoardFeed(clock=lambda: now)
     with tempfile.TemporaryDirectory() as tmp:
@@ -323,7 +323,7 @@ def _insights_stack(now: float) -> Iterator[tuple[ThreadingHTTPServer, BoardFeed
             yield server, feed, store
 
 
-def _insight(server: ThreadingHTTPServer, method: str, path: str, body: dict | None = None) -> tuple[int, dict]:
+def _insight(server: PageServer, method: str, path: str, body: dict | None = None) -> tuple[int, dict]:
     request = urllib.request.Request(
         url(server, path), data=None if body is None else json.dumps(body).encode(), method=method
     )
@@ -351,10 +351,11 @@ def serve(
     history: History | None = None,
     window: HistoryWindow | None = None,
     clock: Callable[[], float] = time.time,
-    gate: Callable[[BaseHTTPRequestHandler], bool] | None = None,
+    gate: Callable[[GateRequest], bool] | None = None,
     port: int = 0,
+    tls: tuple[Path, Path] | None = None,
     **services: Any,
-) -> Iterator[ThreadingHTTPServer]:
+) -> Iterator[PageServer]:
     """Serve a stub build in `tmp_path` until the `with` block ends. `board` is the Board the routes write through (a
     bare one when None; a move or start it has no writer for fails the test); `services` are the `Services` fields."""
     static = tmp_path / "static"
@@ -366,7 +367,7 @@ def serve(
     log = EventLog(f"sqlite:///{tmp_path / 'settings.sqlite'}")
     board = board or _bare_board()
     board = replace(board, writer=board.writer or _no_writer, assign=board.assign or _no_writer)
-    handler = request_handler(
+    app = page_app(
         served,
         static,
         history or HistoryStore("sqlite://", feed.machines if feed else {}),
@@ -376,18 +377,16 @@ def serve(
         clock,
         gate,
     )
-    server = StarPulseServer(("127.0.0.1", port), handler)
-    # A short poll interval: `shutdown` waits out the one in flight, so the default half second is paid by every test.
-    threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
+    server = PageServer(app, ("127.0.0.1", port), tls=tls)
+    server.start()
     try:
         yield server
     finally:
-        server.shutdown()
-        server.server_close()
+        server.close()
         log.close()
 
 
-def url(server: ThreadingHTTPServer, path: str) -> str:
+def url(server: PageServer, path: str) -> str:
     return f"http://127.0.0.1:{server.server_port}{path}"
 
 

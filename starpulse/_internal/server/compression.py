@@ -5,7 +5,7 @@ from __future__ import annotations
 import gzip
 import zlib
 from collections.abc import Callable
-from typing import BinaryIO, NamedTuple
+from typing import NamedTuple
 
 #: A body this size or smaller is sent as it is: gzip's header and the page's decode cost more than it saves.
 MIN_BYTES = 64 * 1024
@@ -44,13 +44,12 @@ class Encoded(NamedTuple):
         return cls(body, compressed(body, "gzip", HELD_LEVEL))
 
 
-def gzip_stream(out: BinaryIO) -> Callable[[bytes], None]:
-    """A writer of `out` as one gzip stream that ends a deflate block after each write, so the page decodes
-    every event or ping as it arrives rather than when the next fills the compressor's buffer."""
+def gzip_frames() -> Callable[[bytes], bytes]:
+    """A compressor of one gzip stream that ends a deflate block after each write and returns that write's bytes, so the
+    page decodes every event or ping as it arrives rather than when the next fills the compressor's buffer."""
     deflater = zlib.compressobj(LEVEL, wbits=31)
 
-    def write(data: bytes) -> None:
-        out.write(deflater.compress(data) + deflater.flush(zlib.Z_SYNC_FLUSH))
-        out.flush()
+    def write(data: bytes) -> bytes:
+        return deflater.compress(data) + deflater.flush(zlib.Z_SYNC_FLUSH)
 
     return write

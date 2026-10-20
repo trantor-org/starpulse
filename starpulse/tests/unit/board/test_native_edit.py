@@ -1,7 +1,6 @@
 """Editing, archiving and restoring a task on the native board: the board's `edit`, `archive` and `restore`, `POST /api/edit`, `POST /api/archive` and `POST /api/restore` over them."""
 
 import json
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +15,7 @@ from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import serve
 from starpulse._internal.server import writes
 from starpulse._internal.server.assembly import assemble
+from starpulse._internal.server.page_server import PageServer
 from starpulse._internal.server.writes import archive_task, edit_task, task_record
 
 LAN = "192.168.0.42"
@@ -322,9 +322,7 @@ def test_the_restore_route_on_a_board_that_does_not_restore_is_404() -> None:
     assert writes.restore_task(LAN, _raw(task="task-5"), BoardFeed(), None)[0] == 404
 
 
-def _edit_verb(
-    capsys: pytest.CaptureFixture[str], server: ThreadingHTTPServer, *flags: str
-) -> tuple[int, dict[str, Any]]:
+def _edit_verb(capsys: pytest.CaptureFixture[str], server: PageServer, *flags: str) -> tuple[int, dict[str, Any]]:
     code = cli.main(["task", "edit", "task-5", *flags, "--server", f"http://127.0.0.1:{server.server_port}"], {})
     out = capsys.readouterr()
     assert out.err == ""

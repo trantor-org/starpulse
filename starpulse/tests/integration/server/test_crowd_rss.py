@@ -1,9 +1,9 @@
 """A crowd of gzip snapshot reads must reuse request threads so RSS does not step once per request.
 
-The live server is CPython 3.14t. ThreadingHTTPServer starts a new 8 MiB-stack thread per request; a 5 min
-starpulse-load run creates thousands of them, they exit, FDs and `process_threads` return, and RSS does not (object
-counts fall). Request threads are pooled at 256 KiB; the first crowd may step RSS, a second crowd must reuse those
-workers and hold near that step.
+The live server is CPython 3.14t. A thread per request, each exiting after it, leaves RSS stepped (a 5 min
+starpulse-load run created thousands of them; FDs and `process_threads` returned, RSS did not). The page app runs its
+blocking work on a bounded pool of reused worker threads; the first crowd may step RSS, a second crowd must reuse
+those workers and hold near that step.
 """
 
 from __future__ import annotations
@@ -11,7 +11,6 @@ from __future__ import annotations
 import multiprocessing as mp
 import os
 import sys
-import threading
 import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -21,8 +20,7 @@ from pathlib import Path
 import pytest
 
 from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.kit.adapter_kit import serve, task, url
-from starpulse._internal.server.server import REQUEST_STACK
+from starpulse._internal.kit.adapter_kit import serve, task
 from starpulse.tests.machines import MACHINES
 
 VIEWERS = 40
@@ -73,21 +71,6 @@ def _snapshot_crowd(port: int) -> None:
 
     with ThreadPoolExecutor(max_workers=VIEWERS) as pool:
         list(pool.map(lambda _: read(), range(VIEWERS)))
-
-
-def test_a_request_thread_is_started_at_the_request_stack_size(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    seen: list[int] = []
-    real = threading.Thread
-
-    def wrapped(*args: object, **kwargs: object) -> threading.Thread:
-        seen.append(threading.stack_size())
-        return real(*args, **kwargs)
-
-    monkeypatch.setattr(threading, "Thread", wrapped)
-    with serve(tmp_path, BoardFeed()) as server:
-        urllib.request.urlopen(url(server, "/api/snapshot"), timeout=5).read()
-
-    assert REQUEST_STACK in seen
 
 
 @pytest.mark.skipif(sys._is_gil_enabled(), reason="the live server is 3.14t; GIL heaps return after a crowd")
