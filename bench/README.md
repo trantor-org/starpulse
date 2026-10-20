@@ -237,7 +237,7 @@ USERS=200 bench/free_threading/run.sh .tmp/ft-state .tmp/ft-ab200 2 3m
 ```
 
 The image holds two virtualenvs from the one lockfile, `/opt/gil` on CPython 3.14 and `/opt/ft` on 3.14t, with the
-runtime dependencies only (the `postgres` group is left out: `psycopg-binary` has no 3.14t wheel);
+runtime dependencies only;
 `/opt/gil` also holds the bench group, whose Locust drives both. serve refuses to start without a built page, and
 Locust reads only `/api`, so each virtualenv gets a placeholder `index.html`.
 

@@ -1,4 +1,4 @@
-"""The history store's rules, on SQLite and on Postgres, and its recorder fed from the event log."""
+"""The history store's rules, and its recorder fed from the event log."""
 
 import sqlite3
 import threading

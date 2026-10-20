@@ -9,19 +9,14 @@ uv run starpulse serve
 
 The build also writes `starpulse/static/one-file`, the same page as a single script, which `starpulse demo` inlines: a demo is one HTML file with no server to fetch a view's chunk from.
 
-`uv run pytest` runs the suite with Python alone. When Docker or Podman is available, it also runs the Postgres-backed
-integration cases; otherwise those cases are skipped. `uv sync --no-group postgres` installs without the Postgres extras, as an IC
-instance runs, and the suite then skips the Postgres cases.
+`uv run pytest` runs the suite with Python alone: every store a test opens is a SQLite file.
 `starpulse/tests/e2e/` holds the tests that run an operator's entry point end to end;
 `addopts` deselects them, so no default, pull-request or nightly run pays their seconds, and
 `uv run pytest -m e2e` runs them. Each piece such a test composes keeps a fast integration test of its own.
-`uv sync --no-group postgres --python 3.14t` is the free-threaded build, which CI runs the same selected tests on (`python-ft`, on a pull request and the nightly run, not a required check): `psycopg-binary`
-has no 3.14t wheel, so the Postgres cases stay on 3.14. `test_memray_flagged.py` skips there, since memray reports no allocation for a small test's list on that build.
+`uv sync --python 3.14t` is the free-threaded build, which CI runs the same selected tests on (`python-ft`, on a pull request and the nightly run, not a required check). `test_memray_flagged.py` skips there, since memray reports no allocation for a small test's list on that build.
 `uv run pytest -n 4 --dist worksteal` spreads it over four pytest-xdist workers (CI starts two per runner); `worksteal`
 lets an idle worker take tests queued behind a busy one, so one slow file spreads across workers. Tests are safe to run
-on any worker: a controller-owned Postgres container serves the run, each worker with its own database
-(`starpulse/tests/shared_postgres.py`); the controller starts it only when a worker first requests it, so a selection
-that needs none starts no container, and tests that stub the checkout's `static` directory share it through
+on any worker: tests that stub the checkout's `static` directory share it through
 `starpulse/tests/page_stub.py`. CI sizes `-n` to its runner's memory with `ci/xdist_workers.py`.
 CI splits the suite by test file across the `python-shard` matrix (`ci/shard.py`: `SHARD_INDEX` of `SHARD_COUNT`, both unset
 locally). A `select` job runs `ci/select_tests.py` once and sizes the matrix from the selection: no shard when it selects no
@@ -45,7 +40,7 @@ The screen below runs only in the nightly full suite and a manual `workflow_disp
 and writes no report. A test over 5 s is named at the end of the run, slowest first; in CI each is also a warning annotation
 on its `def` line and a row in the job summary. A test that burns more than 5 CPU-s (`SLOW_TEST_CPU_SECONDS` overrides it; self plus waited-for children)
 is named beside them with its CPU seconds and the growth of its worker's peak RSS, and the summary table has Wall s,
-CPU s and Peak MB columns. Containers a test starts (Postgres, mock-oauth2) run outside the process tree, so their CPU
+CPU s and Peak MB columns. Containers a test starts run outside the process tree, so their CPU
 and memory are not counted. None of the screen fails the run.
 With `TEST_COST_REPORT=1` the flagged tests' node id, wall s, CPU s and peak MB also go to `test-cost.json`
 (`TEST_COST_REPORT_PATH` moves it), and each shard reruns exactly those tests one by one under `pytest --memray`
@@ -72,10 +67,7 @@ budget, edit the context's `Budget(iterations, retained_bytes)` in `BUDGETS` the
 Baselines on CPython 3.14.6 and memray 1.20.0: pull-events 12 880 B over 200 iterations, autopilot 11 680 B over 100 (the
 autopilot tick rereads its growing ledger, so its cost grows with the square of the iterations); budgets 32 KiB each. The gate skips on 3.14t, where memray reports no allocation, and under `pytest --memray`, which cannot nest a
 tracker. A context joins by adding a driver to `test_context_budgets.py` and an entry to `BUDGETS`.
-`starpulse/tests/conftest.py` keeps the suite's fixed costs low: every SQLite connection runs `PRAGMA synchronous=OFF`, and one
-background thread starts the session's Postgres container when the first test that needs one is collected
-(when collection finishes on a `-k` or `-m` run, which deselects after collecting), so the start overlaps collection and a
-test waits on a warm container instead of paying its start.
+`starpulse/tests/conftest.py` keeps the suite's fixed costs low: every SQLite connection runs `PRAGMA synchronous=OFF`.
 The required checks run only the tests a pull request or a merge-queue candidate can reach (`ci/select_tests.py`), as the
 workspace App's check runs from trantor's `ci-sp-*` Dagu DAGs; a push to main runs none, because the merge queue tested
 that very commit, and the full suite runs nightly and on a manual dispatch as this repository's `ci.yml`. Trantor's nightly `starpulse-fresh-serve` Dagu DAG (02:15 MST, on a dedicated worker so it competes with no other CI) builds main's wheel, installs it into an empty virtualenv, starts `starpulse serve` from an empty directory with no config and a bare environment, and runs `ci/fresh_serve.py`, which fails unless `/` answers HTTP 200 and every worker the supervisor names (read from the pid `serve` logs for its context, since a zygote-forked child shows the zygote's argv in `ps`) is alive below `serve` on two checks five seconds apart with the same processes. It proves the out-of-the-box install is the production install. The `macos-fresh-serve` job in `ci.yml` runs the same script on a GitHub-hosted macOS runner in the nightly run and on a manual dispatch (the fleet is Linux), so the supervisor, the resident-size reader and the Page API's handed socket are proven there too; prove a pull request by dispatching `ci.yml` on its branch. CI's `static-checks` job imports every module an IC instance can load without the Postgres extras

@@ -1,4 +1,4 @@
-"""The event log across processes, on SQLite and on Postgres: a second process's append reaches a running tail."""
+"""The event log across processes: a second process's append reaches a running tail."""
 
 import ast
 import multiprocessing

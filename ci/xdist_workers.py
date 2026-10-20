@@ -1,7 +1,6 @@
 """Print the pytest-xdist worker count a self-hosted runner's memory limit can hold.
 
-A runner whose cgroup is capped also holds the Postgres containers the tests start in that cap; a worker
-OOM-killed there leaves xdist hanging until the job timeout. So a memory-limited runner gets one worker per 2 GiB. A runner with no cgroup memory limit shares the build host's cores with the rest of the pool and gets
+A worker OOM-killed in a capped runner leaves xdist hanging until the job timeout. So a memory-limited runner gets one worker per 2 GiB. A runner with no cgroup memory limit shares the build host's cores with the rest of the pool and gets
 MAX_WORKERS: two, so a pool of runners fills the host's test CPU budget instead of oversubscribing it. trantor's
 `bin/ci_pytest_workers.py` applies the same rule to its own Validate job.
 
@@ -21,8 +20,7 @@ CGROUP_MEMORY_MAX = Path("/sys/fs/cgroup/memory.max")
 #: Peak resident memory of one worker and the processes it starts (subprocess servers), in MiB, rounded up from
 #: the largest of eight full-suite sessions at `-n 12`, `-n 16` and `-n 17 --dist worksteal` on the build host
 #: (TASK-6307): 1128, 1099, 1108, 1234, 1100, 1303, 1152 and 1139 MiB per worker subtree. Only the first six workers
-#: reach it; the whole 16-worker tree peaked at 7.1-8.7 GiB, so the bound is conservative. Docker containers sit
-#: outside the tree (the one shared Postgres) and count against the slice too.
+#: reach it; the whole 16-worker tree peaked at 7.1-8.7 GiB, so the bound is conservative.
 PEAK_WORKER_RSS_MIB = 1350
 #: `tests.slice`'s MemoryHigh on the build host: past it the slice is throttled (23,847 MemoryHigh events).
 SLICE_MEMORY_HIGH_GIB = 20

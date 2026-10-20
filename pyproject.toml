@@ -25,7 +25,6 @@ postgres = ["psycopg[binary]>=3.2"]
 [project.scripts]
 starpulse = "starpulse.__main__:main"
 
-# Postgres-backed integration cases use a throwaway container when a container runtime is available.
 [dependency-groups]
 bench = [
     "locust>=2.46.7",
@@ -40,14 +39,6 @@ dev = [
     "pytest-timeout>=2.4.0",
     "pytest-xdist>=3.8.0",
 ]
-postgres = [
-    "psycopg[binary]>=3.2",
-    "testcontainers[postgres]>=4.15.0",
-]
-
-# A plain `uv sync` installs both groups; CI's IC job passes `--no-group postgres` to run without the Postgres driver.
-[tool.uv]
-default-groups = ["dev", "postgres"]
 
 # deptry reads `starpulse` imports as the project's own.
 [tool.deptry]

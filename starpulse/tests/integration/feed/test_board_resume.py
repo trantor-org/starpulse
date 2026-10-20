@@ -1,4 +1,4 @@
-"""A restarted Board reader resumes from the state the last run saved, on SQLite and on Postgres."""
+"""A restarted Board reader resumes from the state the last run saved."""
 
 from __future__ import annotations
 

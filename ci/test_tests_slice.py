@@ -115,32 +115,6 @@ def test_a_refused_scope_warns_once_and_lets_the_run_continue(host, capsys):
     assert "Interactive authentication required." in err
 
 
-class Container:
-    """What testcontainers' `with_kwargs` does to a container: remember the keyword arguments and return itself."""
-
-    def __init__(self):
-        self.kwargs = {}
-
-    def with_kwargs(self, **kwargs):
-        self.kwargs |= kwargs
-        return self
-
-
-def test_a_container_joins_the_slice_when_the_host_has_one(host):
-    container = Container()
-
-    assert tests_slice.join_slice(container) is container
-    assert container.kwargs == {"cgroup_parent": "tests.slice"}
-
-
-def test_a_container_on_a_host_without_the_slice_is_left_as_it_was(host):
-    (host.root / "tests.slice").rmdir()
-    container = Container()
-
-    assert tests_slice.join_slice(container) is container
-    assert container.kwargs == {}
-
-
 WRAPPER = Path(__file__).resolve().parents[1] / "starpulse/web/scripts/in-tests-slice.sh"
 #: A `busctl` that records its arguments and answers with `$FAKE_BUSCTL_RC`.
 #: systemd moves the process after the call returns, so the fake moves `$SELF_CGROUP`'s owner a moment later.

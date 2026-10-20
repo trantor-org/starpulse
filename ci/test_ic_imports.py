@@ -1,4 +1,4 @@
-"""The IC import check: every module an IC instance can load imports without the Postgres driver."""
+"""The IC import check: every module an instance can load imports without the Postgres driver."""
 
 from __future__ import annotations
 
@@ -28,9 +28,9 @@ def test_a_module_that_imports_a_missing_package_is_a_failure(tmp_path, monkeypa
     assert [name for name, _ in failures(["icpkg.fine", "icpkg.leaky"])] == ["icpkg.leaky"]
 
 
-def test_static_checks_runs_the_import_check_without_the_postgres_group_and_no_pytest():
+def test_static_checks_runs_the_import_check_in_its_own_environment_and_no_pytest():
     runs = (ROOT / "ci/static_checks.sh").read_text().partition("\nic() {")[2].partition("\n}")[0]
-    assert "uv sync --locked --no-group postgres" in runs
+    assert "uv sync --locked" in runs
     assert "ci/ic_imports.py" in runs
     assert "pytest" not in runs
 
