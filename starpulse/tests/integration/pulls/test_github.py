@@ -243,7 +243,7 @@ class _Array(BaseHTTPRequestHandler):
 
 def test_the_transport_hands_an_array_body_back_as_items(monkeypatch: pytest.MonkeyPatch) -> None:
     server = ThreadingHTTPServer(("127.0.0.1", 0), _Array)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
     monkeypatch.setenv("GITHUB_API_URL", f"http://127.0.0.1:{server.server_port}")
     try:
         assert connect(None)("GET", "/anything", None) == (200, {"items": [{"id": 1}, {"id": 2}]})

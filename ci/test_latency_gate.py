@@ -30,7 +30,7 @@ def seeded(tmp_path_factory: pytest.TempPathFactory) -> Iterator[ThreadingHTTPSe
     with pytest.MonkeyPatch.context() as patch:
         patch.syspath_prepend(str(ROOT))
         server = seeded_server.serve(0, tmp_path_factory.mktemp("gate"))
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
     yield server
     server.shutdown()
 

@@ -31,7 +31,14 @@ from starpulse._internal.eventlog import event_log
 from starpulse._internal.eventlog.history import HistoryStore
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.mock_issuer import IMAGE, answers
-from starpulse.tests.shared_postgres import publish_error, publish_url, wait_for_url, worker_database
+from starpulse.tests.shared_postgres import (
+    publish_error,
+    publish_url,
+    request_service,
+    serve_requests,
+    wait_for_url,
+    worker_database,
+)
 
 #: StarPulse's own tables, emptied before each Postgres test so it starts empty.
 _TABLES = (
@@ -174,6 +181,9 @@ def _start_issuer() -> tuple[Any, str]:  # pragma: no mutate block — container
     return container, address
 
 
+_STARTS: dict[str, Callable[[], Any]] = {"postgres": _start_postgres, "issuer": _start_issuer}
+
+
 def _warm(name: str, start: Callable[[], Any]) -> Future:
     if name not in _WARM:
         _WARM[name] = _STARTER.submit(start)
@@ -196,11 +206,24 @@ _SHARED_POSTGRES: Path | None = None
 _SHARED_POSTGRES_ROOT: Path | None = None
 
 
+#: The services this worker has asked its controller for.
+_REQUESTED: set[str] = set()
+#: Set at the controller's session finish to stop it serving the workers' requests.
+_SERVING_DONE = threading.Event()
+#: The controller's thread that starts what the workers request; None elsewhere.
+_SERVER: threading.Thread | None = None
+
+
 def _warm_wanted(wanted: set[str]) -> None:  # pragma: no mutate block — container lifecycle
-    if "postgres" in wanted and "db.testing" not in sys.modules and _SHARED_POSTGRES is None:
-        _warm("postgres", _start_postgres)
-    if "issuer" in wanted and _SHARED_POSTGRES is None:
-        _warm("issuer", _start_issuer)
+    """Start each wanted container here, or on a worker ask the controller for it."""
+    if "db.testing" in sys.modules:
+        wanted = wanted - {"postgres"}
+    for service in sorted(wanted - _REQUESTED):
+        if _SHARED_POSTGRES is None:
+            _warm(service, _STARTS[service])
+        else:
+            _REQUESTED.add(service)
+            request_service(_SHARED_POSTGRES, service)
 
 
 def _distributes(config: pytest.Config) -> bool:
@@ -217,22 +240,21 @@ def _publish_when_up(root: Path, future: Future, service: str) -> None:  # pragm
 
 
 def pytest_configure(config: pytest.Config) -> None:  # pragma: no mutate block — container lifecycle
-    """A worker learns where its controller's Postgres and issuer are; a controller starts both while the workers collect."""
-    global _SHARED_POSTGRES, _SHARED_POSTGRES_ROOT  # noqa: PLW0603
+    """A worker learns where its controller's Postgres and issuer are; a controller starts each a worker asks for."""
+    global _SHARED_POSTGRES, _SHARED_POSTGRES_ROOT, _SERVER  # noqa: PLW0603
     workerinput = getattr(config, "workerinput", None)
     if workerinput is not None:
         _SHARED_POSTGRES = Path(workerinput["shared_postgres"]) if workerinput.get("shared_postgres") else None
     elif _distributes(config) and not _container_skip_reason():
         _SHARED_POSTGRES_ROOT = Path(tempfile.mkdtemp(prefix="starpulse-postgres-"))
         root = _SHARED_POSTGRES_ROOT
+
         # One issuer for the run too: a JVM per worker was 8 of them, 140-207 MiB each, on a capped slice.
-        starts = {"issuer": _start_issuer}
-        if "db.testing" not in sys.modules:
-            starts["postgres"] = _start_postgres
-        for service, start in starts.items():
-            _warm(service, start).add_done_callback(
-                lambda future, service=service: _publish_when_up(root, future, service)
-            )
+        def start(service: str) -> None:
+            _warm(service, _STARTS[service]).add_done_callback(lambda future: _publish_when_up(root, future, service))
+
+        _SERVER = threading.Thread(target=serve_requests, args=(root, start, _SERVING_DONE), daemon=True)
+        _SERVER.start()
 
 
 def pytest_configure_node(node: Any) -> None:  # pragma: no mutate block — container lifecycle
@@ -258,6 +280,9 @@ def pytest_collection_finish(session: pytest.Session) -> None:  # pragma: no mut
 
 
 def pytest_sessionfinish(session: pytest.Session) -> None:  # pragma: no mutate block — container lifecycle
+    _SERVING_DONE.set()
+    if _SERVER is not None:
+        _SERVER.join()
     for name, future in _WARM.items():
         if not future.cancel() and future.exception() is None:
             (future.result() if name == "postgres" else future.result()[0]).stop()

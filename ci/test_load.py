@@ -96,7 +96,7 @@ def test_the_snapshot_body_is_read_compressed_as_the_server_sent_it():
             pass
 
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
     try:
         port = server.server_address[1]
         assert load.compressed_body("127.0.0.1", port, "/api/events/body/abc") == (200, len(packed))

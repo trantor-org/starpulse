@@ -486,7 +486,7 @@ def test_a_server_that_answers_json_that_is_no_snapshot_is_unavailable(
             pass
 
     with ThreadingHTTPServer(("127.0.0.1", 0), Other) as other:
-        threading.Thread(target=other.serve_forever, daemon=True).start()
+        threading.Thread(target=other.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
         base = f"http://127.0.0.1:{other.server_address[1]}"
         try:
             code, doc = _run(capsys, [*verb, "--server", base])
@@ -1166,7 +1166,9 @@ def test_task_claim_records_the_session_as_the_assignee_and_names_it(
     )
 
 
-def test_task_claim_without_a_session_is_refused_as_invalid(lifecycled: str, capsys: pytest.CaptureFixture[str]) -> None:
+def test_task_claim_without_a_session_is_refused_as_invalid(
+    lifecycled: str, capsys: pytest.CaptureFixture[str]
+) -> None:
     code, doc = _run(capsys, ["task", "claim", "task-1", "--server", lifecycled])
 
     assert (code, doc["code"]) == (1, "refused")
@@ -1761,7 +1763,7 @@ def _canned(status: int, body: dict[str, Any], reads: dict[str, Any] | None = No
             pass
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
     try:
         yield _url(server, "")
     finally:
@@ -1859,7 +1861,7 @@ def _stream(frames: Sequence[tuple[str, dict[str, Any]]]) -> Iterator[str]:
             pass
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
     try:
         yield _url(server, "")
     finally:

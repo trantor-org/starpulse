@@ -59,7 +59,7 @@ PAYLOAD = {
 def served() -> Iterator[tuple[str, Spy]]:
     spy = Spy()
     server = ThreadingHTTPServer(("127.0.0.1", 0), receiver(spy.ingest))
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
     yield f"http://127.0.0.1:{server.server_port}", spy
     server.shutdown()
     server.server_close()
@@ -234,7 +234,7 @@ def test_json_that_is_not_an_object_is_acknowledged_with_nothing_mapped(served: 
 def test_a_consumer_that_raises_still_acknowledges_the_export() -> None:
     spy = Spy(fail=True)
     server = ThreadingHTTPServer(("127.0.0.1", 0), receiver(spy.ingest))
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
     try:
         status, _ = post(f"http://127.0.0.1:{server.server_port}", "/v1/logs", json.dumps(PAYLOAD).encode())
     finally:

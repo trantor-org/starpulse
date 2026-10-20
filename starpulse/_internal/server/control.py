@@ -53,7 +53,9 @@ class Control:
         handler = _handler(self._supervisor, self._token)
         self._httpd = ThreadingHTTPServer((_LOOPBACK, 0), handler)
         self._httpd.daemon_threads = True
-        threading.Thread(target=self._httpd.serve_forever, name="starpulse-control", daemon=True).start()
+        threading.Thread(  # `stop` waits out one poll
+            target=self._httpd.serve_forever, kwargs={"poll_interval": 0.05}, name="starpulse-control", daemon=True
+        ).start()
         self._path.unlink(missing_ok=True)
         descriptor = os.open(self._path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(descriptor, "w") as file:

@@ -47,7 +47,7 @@ class Page(http.server.BaseHTTPRequestHandler):
 @pytest.fixture
 def page():
     server = http.server.HTTPServer(("127.0.0.1", 0), Page)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
     yield server.server_port
     server.shutdown()
 
@@ -87,7 +87,14 @@ def test_check_reports_a_page_that_is_not_200(table, log, page):
 
 
 def test_worker_contexts_are_the_ones_the_default_config_supervises(tmp_path):
-    assert worker_contexts(sys.executable, str(tmp_path)) == {"api", "pulls", "autopilot", "runs", "flow-metrics", "board"}
+    assert worker_contexts(sys.executable, str(tmp_path)) == {
+        "api",
+        "pulls",
+        "autopilot",
+        "runs",
+        "flow-metrics",
+        "board",
+    }
 
 
 def test_live_children_reads_a_hyphenated_context_name(table, log):

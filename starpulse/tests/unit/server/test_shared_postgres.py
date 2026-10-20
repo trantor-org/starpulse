@@ -7,7 +7,14 @@ import threading
 import pytest
 from sqlalchemy import text
 
-from starpulse.tests.shared_postgres import publish_error, publish_url, wait_for_url, worker_database
+from starpulse.tests.shared_postgres import (
+    publish_error,
+    publish_url,
+    request_service,
+    serve_requests,
+    wait_for_url,
+    worker_database,
+)
 
 
 def test_a_worker_gets_the_url_the_controller_published(tmp_path):
@@ -18,6 +25,18 @@ def test_a_worker_gets_the_url_the_controller_published(tmp_path):
 def test_a_worker_waits_for_a_url_published_while_it_waits(tmp_path):
     threading.Timer(0.3, publish_url, (tmp_path, "postgresql://later")).start()
     assert wait_for_url(tmp_path, timeout=10) == "postgresql://later"
+
+
+def test_the_controller_starts_each_service_a_worker_requests_once_and_no_other(tmp_path):
+    started, stop = [], threading.Event()
+    server = threading.Thread(target=serve_requests, args=(tmp_path, started.append, stop), kwargs={"poll": 0.01})
+    server.start()
+    request_service(tmp_path, "postgres")
+    request_service(tmp_path, "postgres")
+    threading.Event().wait(0.2)
+    stop.set()
+    server.join(timeout=5)
+    assert started == ["postgres"]
 
 
 def test_a_start_that_failed_fails_the_worker_with_its_reason(tmp_path):

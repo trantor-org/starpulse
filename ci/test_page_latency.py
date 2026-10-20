@@ -288,7 +288,7 @@ def test_the_connect_row_is_a_kind_of_its_own_so_judging_streams_leaves_it_out()
             pass
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Snapshot)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
     try:
         row = pl.time_stream(f"http://127.0.0.1:{server.server_port}", 1)
     finally:

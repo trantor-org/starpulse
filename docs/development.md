@@ -20,7 +20,8 @@ has no 3.14t wheel, so hub mode stays on 3.14. `test_memray_flagged.py` skips th
 `uv run pytest -n 4 --dist worksteal` spreads it over four pytest-xdist workers (CI starts two per runner); `worksteal`
 lets an idle worker take tests queued behind a busy one, so one slow file spreads across workers. Tests are safe to run
 on any worker: a controller-owned Postgres container serves the run, each worker with its own database, and one
-controller-owned mock issuer serves every worker (`starpulse/tests/shared_postgres.py`), and tests that stub the checkout's `static` directory share it through
+controller-owned mock issuer serves every worker (`starpulse/tests/shared_postgres.py`); the controller starts each
+only when a worker first requests it, so a selection that needs neither starts no container, and tests that stub the checkout's `static` directory share it through
 `starpulse/tests/page_stub.py`. CI sizes `-n` to its runner's memory with `ci/xdist_workers.py`.
 CI splits the suite by test file across the `python-shard` matrix (`ci/shard.py`: `SHARD_INDEX` of `SHARD_COUNT`, both unset
 locally). A `select` job runs `ci/select_tests.py` once and sizes the matrix from the selection: no shard when it selects no
