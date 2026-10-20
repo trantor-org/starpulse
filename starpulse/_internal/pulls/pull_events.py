@@ -35,7 +35,7 @@ JOBS_STREAM = "ci:jobs"
 MACHINE_STREAM = "machine:events"
 GITHUB_MACHINE = "github-pull-request"
 JOB_MACHINE = "ci-job"
-TASK_MACHINE = "in-progress"
+TASK_MACHINES = ("deliver", "in-progress")  # `in-progress` keeps replayed history that predates the deliver machine
 JOB_RESULTS = {"succeeded": "pass", "failed": "failing"}  # a canceled or unknown job says nothing of its check
 JOB_EVENTS = {"JOB_SUCCEEDED": "succeeded", "JOB_FAILED": "failed"}  # a `ci-job` event as the result `ci:jobs` names
 CLOSING = {(GITHUB_MACHINE, "PR_MERGED"), (GITHUB_MACHINE, "PR_CLOSED")}
@@ -102,8 +102,6 @@ def _threads(_record: Record, fields: Mapping[str, Any], _at: float) -> Record:
 #: What each event causes in the record, by (machine, event); a push leaves the head to the next `ci:jobs` entry.
 _DELTAS: dict[tuple[str, str], Callable[[Record, Mapping[str, Any], float], Record]] = {
     (GITHUB_MACHINE, "PR_OPENED"): lambda *_: {"state": "OPEN"},
-    (TASK_MACHINE, "PR_READY"): lambda *_: {"isDraft": False},
-    (TASK_MACHINE, "PUSHED"): lambda *_: {"checks": "pending", "requiredChecks": [], "mergeable": "UNKNOWN"},
     (GITHUB_MACHINE, "CHECKS_PASSED"): lambda *_: {"checks": "pass"},
     (GITHUB_MACHINE, "CHECKS_FAILED"): lambda *_: {"checks": "failing"},
     (GITHUB_MACHINE, "CONFLICTED"): lambda *_: {"mergeable": "CONFLICTING"},
@@ -112,6 +110,13 @@ _DELTAS: dict[tuple[str, str], Callable[[Record, Mapping[str, Any], float], Reco
     (GITHUB_MACHINE, "PR_MERGED"): _closed("MERGED"),
     (GITHUB_MACHINE, "PR_CLOSED"): _closed("CLOSED"),
 }
+
+_TASK_DELTAS = {
+    "PR_READY": lambda *_: {"isDraft": False},
+    "PUSHED": lambda *_: {"checks": "pending", "requiredChecks": [], "mergeable": "UNKNOWN"},
+}
+for _machine in TASK_MACHINES:
+    _DELTAS |= {(_machine, event): delta for event, delta in _TASK_DELTAS.items()}
 
 
 class RecordProjection:
