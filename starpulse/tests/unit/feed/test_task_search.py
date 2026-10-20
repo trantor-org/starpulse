@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, event
-from sqlalchemy.engine import create_mock_engine
 
 from starpulse._internal.feed.search import SearchIndex
 from starpulse.contracts.adapters import BoardTask
@@ -208,12 +207,6 @@ def test_the_limit_caps_the_hits(index: SearchIndex) -> None:
         index.index(_task(f"PROJ-{number}", title="Drain"))
 
     assert len(index.search("drain", limit=2)) == 2
-
-
-def test_a_database_that_is_not_sqlite_keeps_no_index() -> None:
-    engine = create_mock_engine("postgresql://u:p@localhost/none", lambda sql, *args, **kwargs: None)
-
-    assert SearchIndex.open(engine) is None
 
 
 def test_a_filtered_search_runs_the_fts_match_before_the_facets_narrowing(engine, index: SearchIndex) -> None:

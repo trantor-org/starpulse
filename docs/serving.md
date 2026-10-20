@@ -140,20 +140,20 @@ live; `restarting`, `retrying`, `offline` and `updating` hold one state.
 
 ## Portable database contract
 
-Board and lifecycle state (task lanes, lane changes, machine events, runs) lives in StarPulse's database, SQLite by
-default or Postgres by `database_url`, and nowhere else. A project that embeds StarPulse, such as an agent workspace,
+Board and lifecycle state (task lanes, lane changes, machine events, runs) lives in StarPulse's database, SQLite at
+`database_url` or beside the config, and nowhere else. A project that embeds StarPulse, such as an agent workspace,
 reads and writes that state through the `starpulse` CLI, the HTTP API or a board adapter ([adapters](adapters.md)),
 and keeps no copy of its own: code in the project that stores or derives board state is a gap in this contract, and
 the missing capability is filed against StarPulse. Because the database is the whole state, moving to another host is
-copying the SQLite file (or pointing `database_url` at the same Postgres), with no project-side migration.
+copying the SQLite file, with no project-side migration.
 
 ## Config file
 
 `starpulse serve --config starpulse.toml` reads one TOML file; `starpulse.toml` in the working directory is read
-when it exists. Database credentials never go in it: they come from the driver's environment, such as `PGPASSWORD`.
+when it exists.
 
 The default SQLite store must be on a local disk because WAL mode does not work on network filesystems such as NFS
-or SMB. When the project or config lives on network storage, set `database_url` to a Postgres database instead.
+or SMB. When the project or config lives on network storage, set `database_url` to a SQLite file on a local disk instead.
 
 On every SQLite connection the store sets `journal_size_limit` to 64 MiB, so a checkpoint that resets the WAL
 truncates it to that bound instead of leaving the file at its high-water mark, and runs `PRAGMA optimize` so
@@ -163,8 +163,8 @@ the planner statistics stay fresh. The limit bounds the file after a checkpoint;
 # The tracker's web address: a task links to `<tracker_url>/tasks/<id>`. Unset, it opens in the page's own Kanban.
 tracker_url = "https://tracker.example.com"
 
-# History in Postgres instead of SQLite; install the extra with `uvx --from 'starpulse[postgres]' starpulse serve`.
-database_url = "postgresql+psycopg://db.example.com/starpulse"
+# The SQLite file that holds the history; unset, `starpulse-history.sqlite` beside the config.
+database_url = "sqlite:////var/lib/starpulse/history.sqlite"
 
 # How long `serve` keeps the event log's rows: it prunes older ones at start and hourly, so the table, a SQLite file
 # and every reader's replay at boot stay bounded. A reader that was down longer than this resumes at the oldest kept

@@ -11,7 +11,7 @@ import time
 
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import Connection, Engine, delete, select
-from sqlalchemy.dialects import postgresql, sqlite
+from sqlalchemy.dialects import sqlite
 
 from starpulse._internal.eventlog.tables import checkpoints
 
@@ -46,7 +46,6 @@ class Checkpoints:
             with self.engine.begin() as db:
                 self.save(name, position, model, conn=db)
             return
-        dialect = postgresql if conn.dialect.name == "postgresql" else sqlite
         values = {
             "name": name,
             "position": position,
@@ -54,7 +53,7 @@ class Checkpoints:
             "state": None if model is None else model.model_dump(mode="json"),
             "saved_at": time.time(),
         }
-        insert = dialect.insert(checkpoints).values(**values)
+        insert = sqlite.insert(checkpoints).values(**values)
         conn.execute(
             insert.on_conflict_do_update(
                 index_elements=["name"], set_={key: insert.excluded[key] for key in values if key != "name"}

@@ -1,7 +1,6 @@
-"""StarPulse's history store: a task's paths, kept past the streams' trim, in any SQLAlchemy database.
+"""StarPulse's history store: a task's paths, kept past the streams' trim, in a SQLite database.
 
-`database_url` in the config names the database; without one it is a SQLite file beside the config. A
-Postgres URL (`postgresql+psycopg://...`, with the `postgres` extra installed) keeps it on a server instead.
+`database_url` in the config names the SQLite database; without one it is a file beside the config.
 StarPulse owns these tables and creates them on first use.
 
 A consumer copies `machine:events` (every entry, task- or run-keyed) into it, a board adapter that reads a
@@ -41,8 +40,7 @@ from sqlalchemy import (
     update,
 )
 from sqlalchemy import event as sa_event
-from sqlalchemy.dialects import postgresql, sqlite
-from sqlalchemy.engine import make_url
+from sqlalchemy.dialects import sqlite
 from sqlalchemy.exc import OperationalError
 
 from starpulse._internal.config.config import discover, load
@@ -297,13 +295,8 @@ class HistoryStore:
     """
 
     def __init__(self, url: str, machines: Mapping[str, dict], engine: Engine | None = None) -> None:
-        self.engine = engine or (
-            create_engine(url, connect_args={"timeout": _SQLITE_BUSY_TIMEOUT})
-            if make_url(url).get_backend_name() == "sqlite"
-            else create_engine(url)
-        )
-        if self.engine.dialect.name == "sqlite":
-            sa_event.listen(self.engine, "connect", _sqlite_tune)
+        self.engine = engine or create_engine(url, connect_args={"timeout": _SQLITE_BUSY_TIMEOUT})
+        sa_event.listen(self.engine, "connect", _sqlite_tune)
         self._machines = machines
         self._summariser = Summariser(machines)
         # the level windows read since the last summary write
@@ -313,9 +306,6 @@ class HistoryStore:
         # the level answers computed since the last summary write, least recently used first
         self._answers: OrderedDict[Hashable, _Answer] = OrderedDict()
         self._answer_flight = threading.Lock()
-        # pragma: no mutate start — SQLite compiles the postgresql insert's ON CONFLICT alike
-        self._dialect = postgresql if self.engine.dialect.name == "postgresql" else sqlite
-        # pragma: no mutate end
         create_tables(self.engine)  # a reader thread of the log may be bringing the same store up at the same time
         if self.repair_lanes():
             self.rebuild_summaries()
@@ -336,7 +326,7 @@ class HistoryStore:
         return len(rewrites) + len(drops)
 
     def _insert(self, table: Table):
-        return self._dialect.insert(table)
+        return sqlite.insert(table)
 
     @property
     def checkpoints(self) -> Checkpoints:

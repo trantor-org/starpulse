@@ -247,15 +247,13 @@ STATIC_SCRIPT = WORKFLOWS.parents[1] / "ci/static_checks.sh"
 
 
 def test_the_four_short_jobs_are_gone_and_static_checks_runs_every_check_they_ran():
-    """ic, public-names, api-types and tier-policy share one job so a run starts four fewer jobs."""
+    """public-names, api-types and tier-policy share one job so a run starts three fewer jobs."""
     jobs = yaml.safe_load((WORKFLOWS / "ci.yml").read_text())["jobs"]
     assert not {"ic", "public-names", "api-types", "tier-policy"} & jobs.keys()
     script = STATIC_SCRIPT.read_text()
     runs = "\n".join(step["run"] for step in job("ci.yml", "static-checks")["steps"] if "run" in step)
     assert "ci/static_checks.sh" in runs
     for command in (
-        "uv sync --locked",  # ic: its own environment, checked for the absence of the driver
-        "ci/ic_imports.py",
         "ci/public_names.py",
         "python -m starpulse.contracts.api",  # api-types: regenerate both outputs, fail on a diff
         "pnpm --dir starpulse/web run gen:types",
@@ -309,7 +307,6 @@ def test_static_checks_passes_when_every_check_passes(tmp_path):
 @pytest.mark.parametrize(
     ("fail_on", "name"),
     [
-        ("ci/ic_imports.py", "ic"),
         ("ci/public_names.py", "public-names"),
         ("gen:types", "api-types"),
         ("ci/trantor_tier_policy.py", "tier-policy"),
@@ -323,7 +320,7 @@ def test_static_checks_fails_naming_the_failed_check_and_still_runs_the_others(t
     calls = (tmp_path / "calls").read_text()
     assert all(
         command in calls
-        for command in ("ci/ic_imports.py", "ci/public_names.py", "ci/trantor_tier_policy.py", "ci/busy_modules.py")
+        for command in ("ci/public_names.py", "ci/trantor_tier_policy.py", "ci/busy_modules.py")
     )
 
 

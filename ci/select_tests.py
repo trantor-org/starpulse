@@ -79,7 +79,7 @@ READERS = {
     ),
     "starpulse/_internal/eventlog/migrations/*": ("starpulse/_internal/eventlog/event_log.py",),
     "pyproject.toml": ("ci/avoid_list.py",),
-    "ci/static_checks.sh": ("ci/test_workflow_placement.py", "ci/test_ic_imports.py"),
+    "ci/static_checks.sh": ("ci/test_workflow_placement.py",),
     "starpulse/machines/*": (
         "starpulse/_internal/ci/ci.py",
         "starpulse/_internal/harnesses/harness.py",

@@ -200,7 +200,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm run check
 
-  # The short static checks in one job (ci/static_checks.sh runs them at once): ic, public-names, api-types,
+  # The short static checks in one job (ci/static_checks.sh runs them at once): public-names, api-types,
   # tier-policy, avoid-list and busy-modules.
   static-checks:
     # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved.

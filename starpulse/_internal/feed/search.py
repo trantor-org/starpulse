@@ -219,10 +219,8 @@ class SearchIndex:
 
     @classmethod
     def open(cls, engine: Engine, settings: Search | None = None) -> SearchIndex | None:
-        """The index in `engine`'s database, created when absent; None for a database that is not SQLite or whose
-        SQLite was built without FTS5, which then keeps no search. `settings` names the embeddings endpoint, if any."""
-        if engine.dialect.name != "sqlite":
-            return None
+        """The index in `engine`'s database, created when absent; None for a SQLite built without FTS5, which then keeps
+        no search. `settings` names the embeddings endpoint, if any."""
         index = cls(engine, settings)
         try:
             with engine.begin() as connection:
