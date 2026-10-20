@@ -870,10 +870,25 @@ def _assign(body: str, session: str) -> str:
     return body if _assignee_of(body) == session else _append_notes(body, f"**Assignee:** {session}")
 
 
-def _writer(root: Path, statuses: tuple[str, ...], guard: _Guard = _Guard()) -> MoveWriter:
+class _Claims:
+    """Where the board records an agent's refused claim once `attach` binds the event log: one `board:claims` entry."""
+
+    def __init__(self) -> None:
+        self.log: EventLog | None = None
+
+    def refused(self, task: str, actor: str, reason: str) -> None:
+        """Append the refusal of `actor`'s claim of `task` with its `reason` and the time, fail-open."""
+        if self.log is not None:
+            from starpulse._internal.feed.claim_refusals import CLAIMS_STREAM  # noqa: PLC0415 - loading a board loads no feed
+
+            self.log.append(CLAIMS_STREAM, {"task": task, "actor": actor, "reason": reason, "time": time.time()})
+
+
+def _writer(root: Path, statuses: tuple[str, ...], guard: _Guard = _Guard(), claims: _Claims = _Claims()) -> MoveWriter:
     """A board writer that sets a status in the task's file. A lane's status is the board's own spelling of it.
 
-    An agent's claim (a move to `In Progress` that names its session) also records the session as the task's assignee.
+    An agent's claim (a move to `In Progress` that names its session) also records the session as the task's assignee,
+    and a refused claim is recorded on `board:claims`.
     """
     spelled = {lane_id(status): status for status in statuses}
 
@@ -884,7 +899,10 @@ def _writer(root: Path, statuses: tuple[str, ...], guard: _Guard = _Guard()) -> 
             frontmatter["status"] = spelled.get(lane_id(status), status)
             return _assign(body, session) if claim else body
 
-        return _update(root, task, edit, guard, actor)
+        written = _update(root, task, edit, guard, actor)
+        if claim and not written.ok:
+            claims.refused(task, actor, written.output)
+        return written
 
     return write
 
@@ -1056,6 +1074,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
     link = _doc_linker(root, base)
     evaluate = criteria.evaluator(settings.get("criteria"), base)
     retired = _Retired()
+    claims = _Claims()
     guard = _Guard(
         rules.load(settings.get("rules")), _hook(settings.get("validate")), _state_of(root, retired), _types(settings)
     )
@@ -1073,7 +1092,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         settings,
         base,
         lambda config: {
-            "writer": _writer(root, config.statuses, guard),
+            "writer": _writer(root, config.statuses, guard, claims),
             "assign": assign,
             "create": _creator(root, config, retired, guard, file_name, link),
             "read": _reader(root, evaluate.latest if isinstance(evaluate, criteria.Evaluator) else evaluate),
@@ -1104,6 +1123,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
 
     def attach(log: EventLog) -> None:
         retired.engine = log.engine  # the retired tasks live in the view's history store
+        claims.log = log
 
     def start(feed: BoardFeed, group: str, log: EventLog) -> None:
         attach(log)
