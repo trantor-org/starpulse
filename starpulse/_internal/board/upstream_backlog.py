@@ -32,8 +32,6 @@ except ImportError:
     from yaml import SafeLoader as _FrontmatterLoader
 
 from starpulse._internal.board import project_machines
-from starpulse._internal.board.claims import NOTES as _NOTES
-from starpulse._internal.board.claims import claim_fields, without_markers
 from starpulse._internal.board.seam import Board, MoveWriter, Written
 from starpulse._internal.machines.transitions import DEFAULT_STATUSES, board_machine, lane_id
 from starpulse.contracts.task_keys import TaskKeys
@@ -63,6 +61,8 @@ _FOLDERS: tuple[tuple[str, Literal["completed", "archived"] | None], ...] = (
 _DONE_LANE = "done"
 _DESCRIPTION = re.compile(r"<!-- SECTION:DESCRIPTION:BEGIN -->(.*?)<!-- SECTION:DESCRIPTION:END -->", re.S)
 _HEADED_DESCRIPTION = re.compile(r"^## Description\s*\n(.*?)(?=^## |\Z)", re.S | re.M)
+_NOTES = re.compile(r"<!-- SECTION:NOTES:BEGIN -->(.*?)<!-- SECTION:NOTES:END -->", re.S)
+_ASSIGNEE = re.compile(r"^\*\*Assignee:\*\* (\S+)[ \t]*$", re.M)
 _CRITERIA = re.compile(r"<!-- AC:BEGIN -->(.*?)<!-- AC:END -->", re.S)
 _ITEM = re.compile(r"^- \[([ xX])\] #(\d+) (.*?)[ \t]*$", re.M)
 _NEEDS_ATTENTION = re.compile(
@@ -181,6 +181,17 @@ def _profile(frontmatter: dict) -> str:
     return profiles[0] if profiles else ""
 
 
+def _assignee(body: str) -> str:
+    """The session a claim recorded in the task's notes: the last `**Assignee:** <id>` line there, else empty.
+
+    The marker lives in the notes because the Backlog CLI rewrites a task file's frontmatter and drops a key it
+    does not know, while the notes section survives every edit.
+    """
+    notes = _NOTES.search(body)
+    held = _ASSIGNEE.findall(notes.group(1)) if notes else []
+    return held[-1] if held else ""
+
+
 def _criteria(body: str) -> list[tuple[bool, str]]:
     """Each acceptance criterion as whether it is checked and its text, in file order."""
     found = _CRITERIA.search(body)
@@ -196,7 +207,7 @@ def _pause_reason(body: str, lane: str) -> str:
 def _notes(body: str) -> str:
     """The task's notes without the claim markers, trimmed; empty when it has none."""
     found = _NOTES.search(body)
-    return without_markers(found.group(1)) if found else ""
+    return _ASSIGNEE.sub("", found.group(1)).strip() if found else ""
 
 
 def _split(text: str) -> tuple[Any, str]:
@@ -384,7 +395,7 @@ class UpstreamBacklog:
             created_at=_when(frontmatter.get("created_date")),
             settled_at=_when(frontmatter.get("updated_date")) if settled else None,
             profile=_profile(frontmatter),
-            **claim_fields(body),
+            assignee=_assignee(body),
             labels=_strings(frontmatter.get("labels")),
             milestone=str(frontmatter.get("milestone") or "").strip(),
             type=str(frontmatter.get("type") or "").strip(),

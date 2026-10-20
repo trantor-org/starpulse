@@ -62,7 +62,9 @@ from starpulse._internal.board.upstream_backlog import (
     lane_id,
     project_board,
 )
-from starpulse._internal.board.claims import claimant
+from starpulse._internal.board.upstream_backlog import (
+    _assignee as _assignee_of,
+)
 from starpulse._internal.board.upstream_backlog import (
     _profile as _profile_of,
 )
@@ -865,7 +867,7 @@ def _assign(body: str, session: str) -> str:
 
     A session the notes already name as assignee is not named again: a claim's edit may have recorded it before the move.
     """
-    return body if claimant(body) == session else _append_notes(body, f"**Assignee:** {session}")
+    return body if _assignee_of(body) == session else _append_notes(body, f"**Assignee:** {session}")
 
 
 class _Claims:
