@@ -1,8 +1,8 @@
-"""Import every module an IC instance can load, in an environment without the Postgres driver.
+"""Import every module an instance can load, in an environment without the Postgres driver.
 
-    uv sync --locked --no-group postgres && uv run --no-sync python ci/ic_imports.py
+    uv sync --locked && uv run --no-sync python ci/ic_imports.py
 
-A module an IC instance loads that imports the Postgres driver at import time fails here, in seconds, instead of in
+A module an instance loads that imports the Postgres driver at import time fails here, in seconds, instead of in
 a second run of the whole suite. `POSTGRES_ONLY` names the modules that import it directly; everything else under
 `starpulse/` except the tests must import without it.
 Prints each module that fails and exits 1.

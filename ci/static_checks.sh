@@ -7,11 +7,11 @@ set -uo pipefail
 
 logs=$(mktemp -d)
 
-# An IC instance runs without the Postgres driver: import every module it can load on an environment that holds neither
+# An instance runs without the Postgres driver: import every module it can load on an environment that holds neither
 # the driver nor the container tooling. Its own environment keeps api-types' full one intact.
 ic() {
   export UV_PROJECT_ENVIRONMENT="${RUNNER_TEMP:-$logs}/ic-venv"
-  uv sync --locked --no-group postgres &&
+  uv sync --locked &&
     uv run --no-sync python -c "import importlib.util as u, sys; sys.exit(any(u.find_spec(m) for m in ('psycopg', 'testcontainers')))" &&
     uv run --no-sync python ci/ic_imports.py
 }

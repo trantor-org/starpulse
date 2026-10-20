@@ -48,7 +48,7 @@ github adapter pull requests copilot
 
 ## Duplicate Resolution
 
-Distinct scope: the only candidate is TASK-2433, the slicing task that created this slice. Also distinct: TASK-2511, TASK-2516 are the m-80 retro, sibling core slices, or shipped trantor-only flow-view work (TASK-2356 is trantor's /api/history over its own Postgres machine events), none covering this slice's package scope.
+Distinct scope: the only candidate is TASK-2433, the slicing task that created this slice. Also distinct: TASK-2511, TASK-2516 are the m-80 retro, sibling core slices, or shipped trantor-only flow-view work (TASK-2356 is trantor's /api/history over its own machine events), none covering this slice's package scope.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

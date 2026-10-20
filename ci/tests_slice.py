@@ -1,4 +1,4 @@
-"""Run pytest, and the containers it starts (`join_slice`), inside the host's `tests.slice` cgroup when it has one.
+"""Run pytest inside the host's `tests.slice` cgroup when it has one.
 
 A host that budgets test CPU declares a systemd slice named `tests.slice`, and lets its test users start transient
 `tests-*.scope` units. At configure time, before xdist forks any worker, this plugin asks systemd to put the pytest process
@@ -15,7 +15,6 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -42,11 +41,6 @@ def start_scope(pid: int) -> subprocess.CompletedProcess[str]:
     command += ["org.freedesktop.systemd1.Manager", "StartTransientUnit", "ssa(sv)a(sa(sv))"]
     command += [f"tests-pytest-{pid}.scope", "fail", "3", *properties, "0"]
     return subprocess.run(command, capture_output=True, text=True, check=False)
-
-
-def join_slice(container: Any) -> Any:
-    """Start a testcontainers container under the slice too, so its CPU counts against the same budget."""
-    return container.with_kwargs(cgroup_parent=SLICE) if slice_exists() else container
 
 
 def wait_until_in_slice() -> bool:

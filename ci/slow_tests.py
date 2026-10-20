@@ -17,7 +17,7 @@ RSS ride on its report, so under xdist they reach the controller, which alone pr
 lists print at the end, worst first. Under GitHub Actions each flagged test is also a warning annotation on its `def`
 line and a row in the job summary.
 
-Containers a test starts (Postgres, mock-oauth2) run outside the process tree, so their CPU and memory are not counted.
+Containers a test starts run outside the process tree, so their CPU and memory are not counted.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ import pytest
 SECONDS = float(os.environ.get("SLOW_TEST_SECONDS") or 5)
 CPU_SECONDS = float(os.environ.get("SLOW_TEST_CPU_SECONDS") or 5)
 FAIL_SECONDS = float(os.environ.get("SLOW_TEST_FAIL_SECONDS") or 3 * SECONDS)
-GAP = "CPU counts this process and the children it waited for; containers a test starts (Postgres, mock-oauth2) run outside it and are not counted."
+GAP = "CPU counts this process and the children it waited for; containers a test starts run outside it and are not counted."
 
 # Tests at or over 4 s, a 1 s margin under the ceiling, when the gate's bound landed, each the slice that brings it under: the ceiling's grace, removed by that slice.
 # Keyed `path::name`, without parameters or xdist group, so every case of a parametrized test shares its entry.
