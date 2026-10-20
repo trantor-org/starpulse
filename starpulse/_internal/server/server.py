@@ -887,7 +887,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     if search is not None:
         feed.index_tasks(search)  # `starpulse worker search` catches the vectors up off the feed's path
     stop = threading.Event()
-    replica.read(board, feed, f"starpulse-{port}", log, config, stop, local=False)
+    replica.read(board, feed, f"starpulse-{port}", log, config, stop)
     tasks = MachineTasks(feed, board.keys)
     follow(tasks, log, machine_events.STREAM, tasks.handle_entry)
     refusals = ClaimRefusals(feed)
