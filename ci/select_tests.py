@@ -47,6 +47,16 @@ FULL_SUITE = (
 #: inputs as they were.
 LINT_TABLES = ("importlinter",)
 
+#: Source files whose importers check the import in a subprocess, which the nightly coverage run does not trace, so the
+#: map never lists those tests for them.
+SUBPROCESS_IMPORTERS = {
+    "starpulse/_internal/server/server.py": (
+        "starpulse/tests/unit/server/test_serve_imports.py",
+        "starpulse/tests/integration/server/test_serve_start.py",
+        "starpulse/tests/integration/server/test_supervisor_lifetime.py",
+    ),
+}
+
 #: Non-Python files and the Python files that open them by path; each reader counts as changed.
 READERS = {
     "README.md": ("starpulse/_internal/server/server.py", "ci/ui_preview.py"),
@@ -289,7 +299,9 @@ def _route(
     while pending:
         path = pending.pop()
         if path in covering:  # the map names the tests that ran it; the rules below are for what it never saw
-            covered |= covering[path]
+            covered |= covering[path] | set(SUBPROCESS_IMPORTERS.get(path, ()))
+            if Path(path).name.startswith("test_") and path.endswith(".py"):
+                covered.add(path)  # a changed test file selects itself
             continue
         if path == "pyproject.toml" and _only_lint_tables(root, pyproject_before):
             pending.extend(READERS[path])

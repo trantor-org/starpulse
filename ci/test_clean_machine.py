@@ -9,8 +9,11 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from pathlib import Path
+
 import clean_machine
 import pytest
+import select_tests
 from clean_machine import Placed, cloudevent, logged, redis_answering, smoke
 
 
@@ -127,3 +130,40 @@ def test_a_snapshot_after_the_first_places_the_tasks_a_replaying_machine_held():
 
 def test_the_snapshot_held_at_open_places_nothing_so_it_cannot_stand_for_a_posted_event():
     assert placed_from(snapshot(("delivery", ["r1"]))) == set()
+
+
+SERVER = "starpulse/_internal/server/server.py"
+IMPORTS_TEST = "starpulse/tests/unit/server/test_serve_imports.py"
+START_TEST = "starpulse/tests/integration/server/test_serve_start.py"
+LIFETIME_TEST = "starpulse/tests/integration/server/test_supervisor_lifetime.py"
+OTHER_TEST = "starpulse/tests/unit/server/test_other.py"
+
+
+def _repo_with(root: Path, *paths: str) -> None:
+    for path in paths:
+        (root / path).parent.mkdir(parents=True, exist_ok=True)
+        (root / path).write_text("def test_x(): pass\n")
+
+
+def _coverage_of(**tests: list[str]) -> dict:
+    """A nightly coverage map (`ci/coverage_map.py`): test file -> the source files its tests executed."""
+    ran = {f"{test}::test_it": files for test, files in tests.items()}
+    return {"sha": "a" * 40, "collected": len(tests), "tests": ran}
+
+
+def test_a_changed_test_file_the_map_covers_selects_itself(tmp_path: Path) -> None:
+    _repo_with(tmp_path, IMPORTS_TEST, OTHER_TEST)
+    coverage = _coverage_of(**{OTHER_TEST: [IMPORTS_TEST]})
+
+    selection = select_tests.select(tmp_path, [IMPORTS_TEST], coverage)
+
+    assert selection.tests == sorted([IMPORTS_TEST, OTHER_TEST])
+
+
+def test_changing_server_imports_selects_the_subprocess_import_tests(tmp_path: Path) -> None:
+    _repo_with(tmp_path, SERVER, IMPORTS_TEST, START_TEST, LIFETIME_TEST, OTHER_TEST)
+    coverage = _coverage_of(**{OTHER_TEST: [SERVER]})
+
+    selection = select_tests.select(tmp_path, [SERVER], coverage)
+
+    assert selection.tests == sorted([IMPORTS_TEST, START_TEST, LIFETIME_TEST, OTHER_TEST])
