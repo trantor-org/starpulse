@@ -25,14 +25,10 @@ class Feed(BoardFeed):
     def __init__(self) -> None:
         super().__init__()
         self.taken = threading.Event()
-        self.notes: list[tuple[str, str | None]] = []
 
     def set_pulls(self, pulls: dict, answers: dict | None = None) -> None:
         super().set_pulls(pulls, answers)
         self.taken.set()
-
-    def note_actor(self, task_id: str, actor: str | None, session: str = "", harness: str = "") -> None:
-        self.notes.append((task_id, actor))
 
 
 @pytest.fixture
@@ -153,29 +149,6 @@ def test_each_followed_stream_hands_its_entries_to_its_own_handler_from_the_firs
 
     assert done.wait(WAIT_S)
     assert seen == {"machine:events": [{"task": "TASK-1"}], "ci:jobs": [{"job": "lint"}]}
-
-
-def test_the_workers_actor_notes_reach_the_serving_feed(log: EventLog, stop: threading.Event) -> None:
-    serving = Feed()
-    delivery.follow_notes(log, serving, stop)
-    worker = delivery.NotingFeed(Feed(), log)
-
-    worker.note_actor("TASK-1", "task-actor")
-    worker.note_actor("TASK-2", None)
-
-    deadline = threading.Event()
-    for _ in range(100):
-        if len(serving.notes) == 2:
-            break
-        deadline.wait(0.05)
-    assert serving.notes == [("TASK-1", "task-actor"), ("TASK-2", None)]
-
-
-def test_a_noting_feed_still_answers_for_the_feed_it_wraps(log: EventLog) -> None:
-    feed = Feed()
-    feed.set_pulls(PULLS, ANSWERS)
-
-    assert delivery.NotingFeed(feed, log).pulls() == PULLS
 
 
 def test_the_workers_metrics_are_served_from_the_log(log: EventLog) -> None:

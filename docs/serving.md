@@ -270,13 +270,11 @@ type = "native"
 # written and search ranks by the vectors already stored, else lexically.
 # search_worker = false
 
-# Whether something outside `serve` runs the Board context's writers (the thread that dates when each Waiting task's
-# Start Criteria were met, and the one-pass reconcile of the lanes the history missed). False, the default: `serve`
-# supervises them as a child process, `starpulse worker board`. True: you run `starpulse worker board --config <this
-# file>` yourself and `serve` starts no thread and no child. The dates are saved in the history and read back at start,
-# and a lane is recorded under an id naming the task, the lane and when it entered, so a restarted worker neither drops
-# nor repeats a lane row nor re-dates a task; `serve` rereads the dates every 30 s. A hub (`serve --hub`) keeps both
-# writers in-process and ignores this setting. With the flag set and no worker running, no Start Criteria are
+# Whether something outside `serve` runs the Board context's writer (the thread that dates when each Waiting task's
+# Start Criteria were met). False, the default: `serve` supervises it as a child process, `starpulse worker board`.
+# True: you run `starpulse worker board --config <this file>` yourself and `serve` starts no thread and no child. The
+# dates are saved in the history and read back at start, so a restarted worker does not re-date a task; `serve`
+# rereads the dates every 30 s. A hub (`serve --hub`) keeps the writer in-process and ignores this setting. With the flag set and no worker running, no Start Criteria are
 # evaluated, so a Waiting task with them never becomes workable. The release of dependents belongs to the `pulls` worker.
 # The Board worker is also the only process that runs the board adapter's watchers: it publishes each changed task to
 # the `board:replica` stream of the event log and checkpoints the Board every minute, and `serve` and the other
@@ -642,11 +640,12 @@ A write the board refuses is logged and counted, and is not retried until the ta
 - `starpulse_task_actor_pin_held`: a gauge of Waiting tasks whose dependencies are done but wait for a pin bump to
   merge (`PinGate.unapplied`); one that stays above 0 is a pin that never merges.
 
-Each move the actor writes names `starpulse/task-actor` on its `board:lanes` entry. The Delivery worker logs the
-actor's note before the write, and `serve` reads the notes logged since its last read before it places a move no note
-names yet, so a move the file scan places before the note arrives still names the actor. `GET /metrics` carries
-`starpulse_board_lane_unattributed_total`, a counter of the `board:lanes` entries any process appended since `serve`
-started that name no actor. A move placed while `serve` replays the Board that no note names, one made while it was down, names `starpulse/replay`, and a lane the reconcile repairs names `starpulse/lane-reconcile`.
+Each move the actor writes names `starpulse/task-actor` on its `board:lanes` entry: the Delivery worker records the lane
+change when it writes it, in the history and the log in one transaction, and the file scan that places the change
+later finds the lane recorded. The same holds for every write `serve` makes on the native board, under the request's
+actor. A change no such write recorded (a file edited by hand, a board adapter whose writer does not say the lane it
+set) is recorded at its placement as `external`. `GET /metrics` carries `starpulse_board_lane_unattributed_total`, a
+counter of the `board:lanes` entries any process appended since `serve` started that name no actor.
 
 
 ## Conformance violations

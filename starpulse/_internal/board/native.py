@@ -68,6 +68,7 @@ from starpulse._internal.board.upstream_backlog import (
 from starpulse._internal.board.upstream_backlog import (
     _profile as _profile_of,
 )
+from starpulse._internal.eventlog.lane_events import ARCHIVED, COMPLETED
 from starpulse._internal.eventlog.tables import retired_tasks
 from starpulse._internal.feed import criteria
 from starpulse._internal.machines.transitions import DONE, WAITING
@@ -612,9 +613,11 @@ def _editor(root: Path, statuses: tuple[str, ...], guard: _Guard = _Guard(), lin
             return body
 
         try:
-            return _update(root, task, apply, guard, actor)
+            written = _update(root, task, apply, guard, actor)
         except ValueError as refusal:  # raised before the file is written, so a refusal writes nothing
             return Written(False, f"{task}: {refusal}")
+        status = str(changes.get("status") or "")
+        return _moved(written, spelled.get(lane_id(status), status)) if status else written
 
     return edit
 
@@ -681,7 +684,7 @@ def _archiver(root: Path, statuses: tuple[str, ...], guard: _Guard = _Guard()) -
         except OSError as error:
             return Written(False, f"{path}: {error}")
         unlinked = f"; removed it from the dependencies of {', '.join(dependents)}" if dependents else ""
-        return Written(True, f"Archived task {task}{unlinked}")
+        return _moved(Written(True, f"Archived task {task}{unlinked}"), ARCHIVED)
 
     return archive
 
@@ -884,6 +887,12 @@ class _Claims:
             self.log.append(CLAIMS_STREAM, {"task": task, "actor": actor, "reason": reason, "time": time.time()})
 
 
+def _moved(written: Written, lane: str) -> Written:
+    """`written` once it landed, with the `lane` it put the task in and the moment, for the server to record with the
+    request's actor; a refused write moved nothing."""
+    return written._replace(lane=lane, at=time.time()) if written.ok else written
+
+
 def _writer(root: Path, statuses: tuple[str, ...], guard: _Guard = _Guard(), claims: _Claims = _Claims()) -> MoveWriter:
     """A board writer that sets a status in the task's file. A lane's status is the board's own spelling of it.
 
@@ -902,13 +911,16 @@ def _writer(root: Path, statuses: tuple[str, ...], guard: _Guard = _Guard(), cla
         written = _update(root, task, edit, guard, actor)
         if claim and not written.ok:
             claims.refused(task, actor, written.output)
-        return written
+        return _moved(written, spelled.get(lane_id(status), status))
 
     return write
 
 
-def _completer(root: Path) -> TaskCompleter:
-    """A board writer that moves a Done task's file to `completed/`, where the reader and the projection still find it."""
+def _completer(root: Path, statuses: tuple[str, ...]) -> TaskCompleter:
+    """A board writer that moves a Done task's file to `completed/`, where the reader and the projection still find it.
+
+    The move enters the `completed` lane where the board has one; a board without it keeps the task in Done."""
+    swept = COMPLETED if COMPLETED in {lane_id(status) for status in statuses} else None
 
     def complete(task: str, /) -> Written:
         if (path := _find(root, task)) is None:
@@ -924,7 +936,8 @@ def _completer(root: Path) -> TaskCompleter:
             os.replace(path, target)
         except OSError as error:
             return Written(False, f"{path}: {error}")
-        return Written(True, f"Completed task {task}")
+        written = Written(True, f"Completed task {task}")
+        return written if swept is None else _moved(written, swept)
 
     return complete
 
@@ -1031,7 +1044,7 @@ def _creator(
                 return Written(False, f"{title}: {refusal}")
             except OSError as error:
                 return Written(False, f"{path}: {error}")
-        return Written(True, task)
+        return _moved(Written(True, task), str(frontmatter.get("status") or config.statuses[0]))
 
     return create
 
@@ -1101,7 +1114,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             "edit": _editor(root, config.statuses, guard, link),
             "archive": _archiver(root, config.statuses, guard),
             "restore": _restorer(root, retired),
-            "complete": _completer(root),
+            "complete": _completer(root, config.statuses),
             "retire": _retirer(root, retired),
             "retired": _retired_reader(retired),
             "import_retired": _importer(root, retired),

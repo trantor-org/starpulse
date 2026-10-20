@@ -110,8 +110,9 @@ def test_a_write_naming_an_actor_that_is_not_text_is_a_bad_request(route: str, a
 
 
 def test_a_create_the_watch_places_before_the_create_answers_still_names_its_writer(tmp_path: Path) -> None:
-    """A create learns its task's id only from the write, so it noted its writer after the file landed, and the watch
-    could place the new task first: TASK-5549 entered Ready at 18:05:47 on 2026-10-14 with no actor."""
+    """A create learns its task's id only from the write, and the watch could place the new task first: TASK-5549
+    entered Ready at 18:05:47 on 2026-10-14 with no actor. The create holds the feed's placing until it has recorded
+    its lane, so the placement finds it recorded under the writer."""
     log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
     feed = BoardFeed(machines=MACHINES)
     feed.record_lanes(HistoryStore(f"sqlite:///{tmp_path / 'events.sqlite'}", MACHINES), log)
@@ -121,8 +122,8 @@ def test_a_create_the_watch_places_before_the_create_answers_still_names_its_wri
         placed = threading.Thread(target=feed.put, args=(task("PROJ-9", "Ready"),))  # the watch sees the file land
         watch.append(placed)
         placed.start()
-        placed.join(0.5)
-        return Written(True, "PROJ-9")
+        placed.join(0.5)  # blocked: the create holds the feed's placing until its lane is recorded
+        return Written(True, "PROJ-9", lane="Ready", at=100.0)
 
     body = {"title": "t", "actor": "agent", "session": "s1", "harness": "claude"}
     status, _ = create_task("127.0.0.1", json.dumps(body).encode(), create, feed)

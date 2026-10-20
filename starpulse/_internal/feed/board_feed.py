@@ -14,7 +14,7 @@ import re
 import threading
 import time
 from collections import deque
-from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from starpulse._internal.config.config import CommitKeys
@@ -70,14 +70,6 @@ _PULL_REQUEST = re.compile(r"https://github\.com/[^/\s]+/[^/\s]+/pull/\d+/?")
 PUSHED_INSTANCE = "pushed"
 #: How often a running reader saves the Board, in seconds; a restart reads again what arrived since.
 SAVE_INTERVAL = 60.0
-#: Seconds a write's noted actor stays good for the lane change that write makes, which the board's poll places later:
-#: the scan (`upstream_backlog.POLL_INTERVAL`, 2 s) places it, and a scan on a busy host runs long, so the note
-#: outlasts many of them.
-MOVER_TTL = 300.0
-#: The lane an archived task enters: its file keeps its status, so only the folder it sits in says it was archived.
-ARCHIVED = "archived"
-#: The lane a swept task enters where the Board has it: its file keeps the done status in the folder it was swept to.
-COMPLETED = "completed"
 #: Seconds between passes that evaluate the Start Criteria of the Waiting tasks, as long as the evaluator caches a result.
 CRITERIA_INTERVAL = criteria.CACHE_SECONDS
 #: How far back a task's entry into a lane is an occurrence a run can pair with, in seconds: as far as a tied workflow's recent runs reach.
@@ -228,13 +220,6 @@ class BoardFeed:
         #: Where each lane change `_lanes` wrote is also appended as a `lane_events` entry; None appends nothing.
         self._lane_log: EventLog | None = None
         self._live_lanes = True
-        #: Who wrote each task last through the server (`note_actor`) and when, until the lane change it made is placed.
-        #: Saved with the Board (`save`) and restored by `resume`, so a restart between a write and its placement keeps it.
-        self._movers: dict[str, tuple[tuple[str, str, str], float]] = {}
-        self._movers_saved: dict[str, tuple[tuple[str, str, str], float]] = {}
-        #: Reads the notes another process logged before its write, so a move placed before they arrive still finds its
-        #: note (`read_notes`); None reads none.
-        self._read_notes: Callable[[], None] | None = None
         #: Each task placed or retracted is also kept in `_search`; None keeps none.
         self._search: TaskIndex | None = None
         self._capabilities = {"edit": False, "archive": False, "create": False} | dict(capabilities or {})
@@ -247,7 +232,9 @@ class BoardFeed:
         self._drawn = machines if machines is not None else {"board": board_machine(DEFAULT_STATUSES)}
         #: The settled states a task's settling is recorded as a move into: archived always, completed where the Board
         #: has that state (a board whose last status is its final one settles there already).
-        self._settle_lanes = {ARCHIVED} | ({COMPLETED} & {state["id"] for state in self._drawn["board"]["states"]})
+        self._settle_lanes = {lane_events.ARCHIVED} | (
+            {lane_events.COMPLETED} & {state["id"] for state in self._drawn["board"]["states"]}
+        )
         self._board_url = board_url
         self._commit = commit or {}
         self._ties = self._tied_to_events(cues)
@@ -261,9 +248,10 @@ class BoardFeed:
         self._strip: dict | None = None
         self._pins: list[dict] = []
         self._lock = threading.RLock()
-        #: Held by `put` from placing a change to publishing its lane entry and by `reconcile_lanes` while it repairs, so
-        #: a repair never records bare a change `put` has placed and not yet recorded; a writer that learns its task's id
-        #: only from the write (a create) holds it across the write and its `note_actor`. Taken before `_lock`.
+        #: Held by `put` from placing a change to recording its lane, by `save` while it copies the Board, and by a
+        #: server write from the board's write to the record of its lane (`writes._record_written`), so a write's actor
+        #: is recorded before the placement of its change is and a saved Board never holds a placed but unrecorded
+        #: change. Taken before `_lock`.
         self.recording = threading.RLock()
         #: Counts every publish, suppressed or not: a snapshot held at this number is out of date once it moves.
         self._rev = 0
@@ -414,10 +402,6 @@ class BoardFeed:
                 dict(snapshot.cited),
                 dict(snapshot.source),
             )
-            movers = {
-                task: ((actor, session, harness), float(at))
-                for task, (actor, session, harness, at) in snapshot.movers.items()
-            }
         except TypeError, ValueError:
             logger.warning("StarPulse: replaying: the saved Board cannot be read")
             return None
@@ -433,7 +417,6 @@ class BoardFeed:
             )
             self._pulls, self._pull_answers = pulls, answers
             self._cited, self._kept, self._kept_saved = cited, source, source
-            self._movers, self._movers_saved = dict(movers), movers  # a shared dict would always equal the saved one
             self._gated = {
                 t for t, agent in open_.items() if agent["state"] == WAITING and criteria.authored(agent["description"])
             }
@@ -445,19 +428,17 @@ class BoardFeed:
 
     def save(self) -> None:
         """Write the Board and the position it reflects to the store `resume` was given, unless the feed has read
-        nothing since the last save. A store that cannot be written is logged; the next save tries again."""
+        nothing since the last save. A store that cannot be written is logged; the next save tries again.
+
+        The Board is copied under `recording`, so a saved Board never holds a change `put` has placed and not yet
+        recorded: a restart that resumes from it would never place that change again, and its lane would go unrecorded."""
         if self._store is None:
             return
         store, stream = self._store
-        with self._lock:
-            if (
-                self._seen == self._saved
-                and not self._pulls_unsaved
-                and self._kept is self._kept_saved
-                and self._movers == self._movers_saved
-            ):
+        with self.recording, self._lock:
+            if self._seen == self._saved and not self._pulls_unsaved and self._kept is self._kept_saved:
                 return
-            seen, source, movers = self._seen, self._kept, dict(self._movers)
+            seen, source = self._seen, self._kept
             snapshot = BoardSnapshot(
                 open=dict(self._open),
                 settled=dict(self._settled),
@@ -466,14 +447,13 @@ class BoardFeed:
                 pull_answers=dict(self._pull_answers),
                 cited=dict(self._cited),
                 source=source,
-                movers={task: [*who, at] for task, (who, at) in movers.items()},
             )
         try:
             store.save(stream, seen, snapshot)
         except Exception as exc:  # the store is down; the Board still draws and the next save retries
             logger.warning("StarPulse: cannot save the Board of %s: %s", stream, exc)
             return
-        self._saved, self._pulls_unsaved, self._kept_saved, self._movers_saved = seen, False, source, movers
+        self._saved, self._pulls_unsaved, self._kept_saved = seen, False, source
 
     def pulls(self) -> dict[str, list[dict]]:
         """Each task's pull request state as `set_pulls` last took it."""
@@ -511,54 +491,14 @@ class BoardFeed:
         the change as a `lane_events` entry under the same event id once `lanes` has written it.
 
         The event id names the task, the lane and when it entered it, so a replay of a change the history holds
-        repeats nothing. A history that cannot be written is logged: the task is still placed. A feed that is not `live`
-        records no lane as `put` places it and only repairs the history's (`reconcile_lanes`): the feed that places the
-        same task from a replica records it, naming the actor who wrote it.
+        repeats nothing. `put` records only a change no server write recorded already (`writes._record_written`), as
+        `external`: a lane the history already holds is no change. A history that cannot be written is logged: the task
+        is still placed. A feed that is not `live` records no lane as `put` places it: the feed that places the same
+        task from a replica records it.
         """
         self._lanes = lanes
         self._lane_log = log
         self._live_lanes = live
-
-    def note_actor(self, task_id: str, actor: str | None, session: str = "", harness: str = "") -> None:
-        """Note that `actor`, from `session` on `harness` where it names them, is writing `task_id`, so the lane entry of
-        the change `put` next places names them; None forgets the note, for a write that was refused. The note is kept
-        under the key the scheme spells, since a task file may spell its id another way (`task-45` for `TASK-45`)."""
-        key = self._keys.canonical(task_id) if self._keys else task_id
-        with self._lock:
-            if actor is None:
-                self._movers.pop(key, None)
-            else:
-                self._movers[key] = ((actor, session, harness), self._clock())
-
-    def _mover(self, task_id: str) -> tuple[str, str, str]:
-        """The actor, session and harness noted for `task_id`, taken so one write names them once; empty when none, or
-        when the note is stale. Only a put that changes the lane takes it: a put that changes none (an earlier write of
-        a multi-verb command) would otherwise spend the note of the move that follows."""
-        key = self._keys.canonical(task_id) if self._keys else task_id
-        with self._lock:
-            noted = self._movers.pop(key, None)
-        return noted[0] if noted and self._clock() - noted[1] <= MOVER_TTL else ("", "", "")
-
-    def read_notes(self, catch_up: Callable[[], None]) -> None:
-        """Call `catch_up` (`delivery.Notes.catch_up`) before taking the note of a move none names yet: the worker logs
-        its note before the write the watch may place first."""
-        self._read_notes = catch_up
-
-    def _writer(self, task_id: str) -> tuple[str, str, str]:
-        """`_mover`, reading the notes logged since the last read first when none names `task_id` yet, and a read that
-        fails leaves the move unnamed. A replay's moves are old and were written when nobody saw them: one no note names
-        is the replay's."""
-        writer = self._mover(task_id)
-        if self._replaying():
-            return writer if writer[0] else (lane_events.REPLAY_ACTOR, "", "")
-        if writer[0] or self._read_notes is None:
-            return writer
-        try:
-            self._read_notes()
-        except Exception as exc:  # the database is unreachable; the move is placed without its note
-            logger.warning("StarPulse: cannot read the actor notes for %s: %s", task_id, exc)
-            return writer
-        return self._mover(task_id)
 
     def index_tasks(self, search: TaskIndex) -> None:
         """Keep every task the feed places in `search`, and drop each one it retracts.
@@ -585,8 +525,7 @@ class BoardFeed:
                 except Exception as exc:  # the index is down; the task is placed and the next change is indexed
                     logger.warning("StarPulse: cannot index %s for search: %s", task.id, exc)
             if change is None:
-                return  # the note stays for the lane change of the write that made it: the watch can place an earlier write first
-            writer = self._writer(task.id)
+                return
             if self._lanes is not None and self._live_lanes:
                 lane, entered = change
                 try:
@@ -599,7 +538,10 @@ class BoardFeed:
                     event_id = f"{task.id}@{lane}@{entered}"
                     event = None
                     if self._lane_log is not None:
-                        event = lane_events.entry(task.model_copy(update={"lane": lane}), entered, *writer)
+                        # a lane the server's write recorded already is no change to the history, so this entry is dropped
+                        event = lane_events.entry(
+                            task.model_copy(update={"lane": lane}), entered, lane_events.EXTERNAL_ACTOR
+                        )
                     if self._lanes.record_lane(event_id, task.id, lane, entered, event=event) and event is not None:
                         self._lane_log.committed()
                 except Exception as exc:  # the history is down; the task is placed and the next change is recorded
@@ -607,46 +549,21 @@ class BoardFeed:
         if not self._replaying():
             self._refresh_ledgers()  # the Ledger reads the move from the history; the replay's moves are built once, at its end
 
-    def reconcile_lanes(self, current: Iterable[tuple[str, str, str, float]]) -> int:
-        """Record, and with a log publish, the lane a held task is in where the history's last lane for it differs.
-
-        `current` is `(event_id, task, lane, at)` for each task's latest lane change (`HistoryStore.current_lanes`).
-        It repairs a move the feed applied but never recorded (a restart or a failure between the two), so the history
-        and the hub agree with the Board again. A task the history has never held is left alone, as is one whose last
-        lane agrees; a repair is dated when the task entered the lane, no earlier than the history's last change.
-        Returns how many it recorded; running it again records none.
-        """
+    def record_written(self, task_id: str, lane: str, at: float, who: tuple[str, str, str]) -> None:
+        """Record the lane a board write put `task_id` in at `at`, naming `who` (actor, session, harness), in the history
+        and with a log as its `lane_events` entry, in one transaction (`LaneRecorder`). The caller holds `recording`
+        from the write, so the placement of the change finds it recorded. A history that cannot be written is logged:
+        the placement records the change as `external`. A feed that is not `live` records it all the same: its process
+        made the write."""
         if self._lanes is None:
-            return 0
-        last = {task: (lane, at) for _, task, lane, at in current}
-        with self.recording:
-            return self._reconcile(last)
-
-    def _reconcile(self, last: dict[str, tuple[str, float]]) -> int:
-        with self._lock:
-            held = [(task_id, agent["state"], agent["entered"]) for task_id, agent in self._open.items()]
-            held += [
-                (task_id, settled["state"], settled["at"] or self._clock())
-                for task_id, settled in self._settled.items()
-                if settled["state"] in self._settle_lanes
-            ]
-        recorded = 0
-        for task_id, lane, entered in held:
-            if (before := last.get(task_id)) is None or lane_id(before[0]) == lane:
-                continue
-            at = max(entered, before[1])
-            event_id = f"{task_id}@{lane}@{at}"
-            try:
-                event = None
-                if self._lane_log is not None:
-                    event = lane_events.change(task_id, lane, at, lane_events.RECONCILE_ACTOR)
-                if self._lanes.record_lane(event_id, task_id, lane, at, event=event):
-                    recorded += 1
-                    if event is not None:
-                        self._lane_log.committed()
-            except Exception as exc:  # the history is down; the next start goes again
-                logger.warning("StarPulse: cannot reconcile the lane of %s: %s", task_id, exc)
-        return recorded
+            return
+        task_id, lane = self._keys.canonical(task_id) if self._keys else task_id, lane_id(lane)
+        event = None if self._lane_log is None else lane_events.change(task_id, lane, at, *who)
+        try:
+            if self._lanes.record_lane(f"{task_id}@{lane}@{at}", task_id, lane, at, event=event) and event is not None:
+                self._lane_log.committed()
+        except Exception as exc:  # the history is down; the task is placed and its change recorded then
+            logger.warning("StarPulse: cannot record the lane change of %s: %s", task_id, exc)
 
     def _place(self, task: BoardTask) -> tuple[str, float] | None:
         """Place `task`; the lane it entered and when, if that is a change of lane, else None.

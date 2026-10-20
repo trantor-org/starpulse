@@ -1,4 +1,4 @@
-"""The Delivery context's seam with `serve`: the projection out, the refresh requests, actor notes and metrics across.
+"""The Delivery context's seam with `serve`: the projection out, the refresh requests and metrics across.
 
 The Delivery worker (`starpulse worker pulls`) is the one writer of the pull store and the one reader of GitHub; `serve`
 keeps the store read-only. What the worker projects, and what `serve` must say back to it, cross the event log:
@@ -8,9 +8,6 @@ keeps the store read-only. What the worker projects, and what `serve` must say b
 - the worker announces the records of each save on `SAVED_STREAM` (`announce_saves`); `serve` holds records in memory
   and takes those from the database again (`follow_saves`), so `/api/pulls` never answers from before a save;
 - a page's refresh request lands on `REFRESH_STREAM` (`request_refresh`) and the worker asks `PullSync` for it;
-- the task actor's lane attributions land on `NOTES_STREAM` so the serving feed names the actor on the lane move the
-  board file's change produces (`NotingFeed`, `follow_notes`); the note is logged before the write, so a move placed
-  before the follower read its note reads the stream itself first (`Notes.catch_up`);
 - the actor's `/metrics` text is kept in the `METRICS` setting for `serve` to relay;
 - the poller writes the time to the `POLLER` setting while it runs (`keep_beating`), and `starpulse doctor` reports it
   down once that is older than `DOWN_S` (`poller_problem`).
@@ -36,7 +33,6 @@ METRICS = "pulls.metrics"
 PROJECTED_STREAM = "pulls:projected"
 SAVED_STREAM = "pulls:saved"
 REFRESH_STREAM = "pulls:refresh"
-NOTES_STREAM = "pulls:notes"
 POLLER = "pulls.poller"
 #: Seconds between the worker's writes of its metrics.
 METRICS_S = 15.0
@@ -156,69 +152,6 @@ def follow_events(
     for thread in threads:
         thread.start()
     return threads
-
-
-class NotingFeed:
-    """The worker's feed: `note_actor` is also sent to the serving feed, which sees the lane move the actor's write makes."""
-
-    def __init__(self, feed: Any, log: EventLog) -> None:
-        self._feed = feed
-        self._log = log
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._feed, name)
-
-    def note_actor(self, task_id: str, actor: str | None, session: str = "", harness: str = "") -> None:
-        self._log.append(NOTES_STREAM, {"task": task_id, "actor": actor, "session": session, "harness": harness})
-        self._feed.note_actor(task_id, actor, session, harness)
-
-
-class Notes:
-    """The actor notes the worker makes from now on, each applied to `feed` once: by `run`'s thread as they land, and
-    by `catch_up` on the thread placing a move, since the worker logs its note before the write the move comes from."""
-
-    def __init__(self, log: EventLog, feed: Any) -> None:
-
-        self._log = log
-        self._feed = feed
-        self._tail = log.tail(NOTES_STREAM, after=log.head() or 0, interval=POLL_S)
-        self._lock = threading.Lock()
-
-    def catch_up(self) -> None:
-        """Apply every note logged since the last read; raises when the database is unreachable."""
-        with self._lock:
-            while True:
-                entries = self._tail.poll()
-                for entry in entries:
-                    fields = entry.fields
-                    self._feed.note_actor(
-                        fields["task"], fields["actor"], fields.get("session", ""), fields.get("harness", "")
-                    )
-                if len(entries) < self._tail.batch:
-                    return
-
-    def run(self, stop: threading.Event) -> None:
-        """Catch up on each append until `stop`; a read that fails is retried after `POLL_S`."""
-        while not stop.is_set():
-            seen = self._log.appends  # before the read, so an append during it still ends the wait below
-            try:
-                self.catch_up()
-            except Exception as exc:  # the database is unreachable or locked; the next read retries
-                logger.warning("pull-notes: read failed, retrying in %ss: %s", POLL_S, exc)
-                stop.wait(POLL_S)
-                continue
-            self._log.wait_for_append(seen, POLL_S, stop)
-
-
-def follow_notes(log: EventLog, feed: Any, stop: threading.Event) -> threading.Thread:
-    """Apply each actor note the worker makes from now on to `feed`, on a thread until `stop`, and let a feed that
-    reads them (`BoardFeed.read_notes`) catch up before it places a move no note names yet."""
-    notes = Notes(log, feed)
-    if hasattr(feed, "read_notes"):
-        feed.read_notes(notes.catch_up)
-    thread = threading.Thread(target=notes.run, args=(stop,), name="pull-notes", daemon=True)
-    thread.start()
-    return thread
 
 
 def publish_metrics(log: EventLog, text: str) -> None:

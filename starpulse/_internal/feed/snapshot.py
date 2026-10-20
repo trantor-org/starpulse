@@ -16,4 +16,3 @@ class BoardSnapshot(BaseModel):
     pull_answers: dict[str, Any] = {}
     cited: dict[str, Any] = {}
     source: dict[str, Any] = {}
-    movers: dict[str, list] = {}

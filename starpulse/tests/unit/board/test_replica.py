@@ -295,7 +295,7 @@ class Lanes:
         return True
 
 
-def test_a_feed_that_is_not_live_records_no_lane_as_it_places_but_still_repairs_the_history() -> None:
+def test_a_feed_that_is_not_live_records_no_lane_as_it_places_but_still_records_a_write() -> None:
     lanes = Lanes()
     feed = BoardFeed(clock=lambda: 100.0)
     feed.record_lanes(lanes, live=False)
@@ -303,7 +303,9 @@ def test_a_feed_that_is_not_live_records_no_lane_as_it_places_but_still_repairs_
     feed.put(_task("T-1", "to_do"))
     assert lanes.recorded == []
 
-    assert feed.reconcile_lanes([("T-1@review@50.0", "T-1", "review", 50.0)]) == 1
+    feed.record_written("T-1", "review", 50.0, ("starpulse/task-actor", "", ""))
+
+    assert lanes.recorded == ["T-1@review@50.0"]
 
 
 def test_a_live_feed_records_the_lane_it_places() -> None:

@@ -77,11 +77,16 @@ class Written(NamedTuple):
     `unavailable` marks a board with no writer at all, which is no refusal of this change but of every one."""
 
     ok: bool
-    output: str
+    output: str = ""
     skill: str = ""
     unavailable: bool = False
     advice: str = ""
     """What the writer tells the mover about the task now it is moved (a routing profile); empty when it has nothing to say."""
+    lane: str | None = None
+    """The lane the write put the task in, in the board's spelling; unset when it moved none (a note, a refusal, or a
+    board that does not say), and the server then records nothing for it: the board's watch records the placement."""
+    at: float | None = None
+    """When the write put the task there, in epoch seconds; set with `lane`."""
 
 
 #: A board writer: set a task's status for `actor` and say what it did. A move that names the mover's `session` passes it

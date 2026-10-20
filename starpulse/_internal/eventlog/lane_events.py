@@ -1,11 +1,15 @@
-"""The board:lanes stream contract: one entry per task lane change a Board feed applied.
+"""The board:lanes stream contract: one entry per task lane change.
 
-`BoardFeed` records an entry with each lane change it records in the history (`HistoryStore.record_lane`, one
-transaction), under the same `<task>@<lane>@<entered>` event id, so the log, the history and a hub that folds the entry agree on one id.
+A board write that moves a task records the change when it is written, under the request's actor
+(`HistoryStore.record_lane`, one transaction); `BoardFeed` records the change of any other placement (a file edited by
+hand, a board adapter whose writer does not say the lane it set) as `external`. Both use the
+`<task>@<lane>@<entered>` event id, and a lane the history already holds is no change, so the log, the history and a hub
+that folds the entry agree on one entry per change.
 An entry carries `task`, `lane` (the Board machine state id) and `time` (epoch seconds when the task entered the lane),
-the task's facets `team`, `milestone` and `labels` (absent when empty), `profile` when the task has one and `actor`
-(`operator`, `agent`, `anonymous` or `<instance>/<workflow>`) when the move was a write the board's server judged,
-with the `session` and `harness` that write named. It never carries a title, a description or a holder.
+the task's facets `team`, `milestone` and `labels` (absent when empty; a change recorded at write time carries none),
+`profile` when the task has one and `actor` (`operator`, `agent`, `anonymous`, `<instance>/<workflow>`,
+`starpulse/task-actor` or `external`), with the `session` and `harness` the write named. It never carries a title, a
+description or a holder.
 """
 
 from __future__ import annotations
@@ -18,10 +22,12 @@ if TYPE_CHECKING:
     from starpulse._internal.eventlog.event_log import Entry, EventLog
 
 STREAM = "board:lanes"
-#: The actor of a move the replay of the Board placed with no note naming its writer: written while `serve` was down.
-REPLAY_ACTOR = "starpulse/replay"
-#: The actor of a lane the reconcile recorded, which no write's note names.
-RECONCILE_ACTOR = "starpulse/lane-reconcile"
+#: The actor of a change no write of the server recorded: the feed placed a lane nobody wrote through it.
+EXTERNAL_ACTOR = "external"
+#: The lane an archived task enters: its file keeps its status, so only the folder it sits in says it was archived.
+ARCHIVED = "archived"
+#: The lane a swept task enters where the Board has it: its file keeps the done status in the folder it was swept to.
+COMPLETED = "completed"
 UNATTRIBUTED_METRIC = "starpulse_board_lane_unattributed_total"
 UNATTRIBUTED_HELP = "Lane entries appended to board:lanes since start that name no actor."
 
@@ -42,9 +48,11 @@ def entry(task: BoardTask, at: float, actor: str = "", session: str = "", harnes
     return fields
 
 
-def change(task: str, lane: str, at: float, actor: str = "") -> dict[str, Any]:
-    """The fields of a lane entry of only the task, the lane, the time and the `actor` where given."""
-    return {"task": task, "lane": lane, "time": at, **({"actor": actor} if actor else {})}
+def change(task: str, lane: str, at: float, actor: str = "", session: str = "", harness: str = "") -> dict[str, Any]:
+    """The fields of a lane entry of only the task, the lane, the time and the `actor`, `session` and `harness` where
+    given."""
+    named = {"actor": actor, "session": session, "harness": harness}
+    return {"task": task, "lane": lane, "time": at, **{name: value for name, value in named.items() if value}}
 
 
 def append(log: EventLog, event_id: str, task: str, lane: str, at: float, actor: str = "") -> int | None:

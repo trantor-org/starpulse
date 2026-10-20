@@ -182,11 +182,11 @@ def test_serve_runs_no_embedding_thread_and_supervises_a_search_child_for_a_fals
 
 
 @pytest.mark.parametrize("settings", ["", "board_worker = true\n"])
-def test_serve_runs_neither_the_criteria_nor_the_reconcile_thread_whatever_the_board_setting(
+def test_serve_runs_no_criteria_thread_whatever_the_board_setting(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, supervisors: list[FakeSupervisor], settings: str
 ) -> None:
     before = set(threading.enumerate())
 
     _serve(tmp_path, monkeypatch, settings)
 
-    assert not {"board-criteria", "lane-reconcile"} & {t.name for t in set(threading.enumerate()) - before}
+    assert "board-criteria" not in {t.name for t in set(threading.enumerate()) - before}

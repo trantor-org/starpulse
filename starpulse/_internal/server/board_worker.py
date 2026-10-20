@@ -1,16 +1,14 @@
-"""`starpulse worker board`: the Board context's writers (the thread that dates when each Waiting task's Start Criteria
-were met, and the reconcile that records the lanes the history missed) as their own process, beside `serve`.
+"""`starpulse worker board`: the Board context's writer (the thread that dates when each Waiting task's Start Criteria
+were met) as its own process, beside `serve`.
 
 `board-release` is not here: the release of dependents runs in the Delivery worker (`starpulse worker pulls`).
 
 It reads the config and the database `serve` does and meets `serve` only in the history there: this worker writes when
-each task's criteria were met (`HistoryStore.save_criteria_met`) and the lane rows the history lacks, and `serve` rereads
-the first on a timer (`BoardFeed.follow_criteria`). Both writers are resumable by construction. The dates are read back
-from the history at start, so a task whose criteria stay met keeps the moment it was first seen so, and the writers
-wait for the Board to be read before they evaluate, so a replay in progress forgets no date. The reconcile records a
-lane under an id naming the task, the lane and when it entered it, so a new process records exactly what the last one
-left and neither drops nor repeats a lane row. `SIGTERM` stops it; `SIGHUP` re-reads the config and, as the board and
-the writers are built once, only says whether a restart is needed.
+each task's criteria were met (`HistoryStore.save_criteria_met`), and `serve` rereads it on a timer
+(`BoardFeed.follow_criteria`). The writer is resumable by construction: the dates are read back from the history at
+start, so a task whose criteria stay met keeps the moment it was first seen so, and it waits for the Board to be read
+before it evaluates, so a replay in progress forgets no date. `SIGTERM` stops it; `SIGHUP` re-reads the config and, as
+the board and the writer are built once, only says whether a restart is needed.
 """
 
 from __future__ import annotations
@@ -28,7 +26,6 @@ from starpulse._internal.eventlog.history import HistoryStore, database_url
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.server.assembly import assemble, history_store
 from starpulse._internal.server.hold import hold
-from starpulse._internal.server.writes import reconcile_lanes
 
 logger = logging.getLogger(__name__)
 
@@ -57,10 +54,10 @@ def start_writers(
     evaluate: Callable[[str, str], list[dict]] | None,
     stop: threading.Event,
     live: bool = True,
-) -> tuple[threading.Thread, threading.Thread]:
-    """Start the criteria thread, which runs until `stop` is set, and the lane reconcile, which ends after its one pass.
-    Both wait for `feed` to have read the Board. A `live` feed also records each lane a task enters as it places it; the
-    Board child places none live, as `serve` records the ones its replica puts with whoever moved them."""
+) -> threading.Thread:
+    """Start the criteria thread, which runs until `stop` is set; it waits for `feed` to have read the Board. A `live`
+    feed also records each lane a task enters as it places it; the Board child places none live, as `serve` records the
+    ones its replica puts and the ones its writes make."""
     feed.date_lanes(store.lane_path)
     feed.record_lanes(store, live=live)
     feed.track_criteria(evaluate, store)
@@ -70,10 +67,8 @@ def start_writers(
         feed.keep_criteria(stop)
 
     criteria = threading.Thread(target=keep, name="board-criteria", daemon=True)
-    reconcile = threading.Thread(target=reconcile_lanes, args=(feed, store), name="lane-reconcile", daemon=True)
     criteria.start()
-    reconcile.start()
-    return criteria, reconcile
+    return criteria
 
 
 def main(argv: list[str] | None, parser: argparse.ArgumentParser) -> None:
