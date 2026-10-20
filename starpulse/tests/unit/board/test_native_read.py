@@ -17,7 +17,7 @@ FILE = """---
 id: task-5
 title: Draw the board
 status: In Progress
-assignee:
+profile:
   - '@agent-standard-high'
 labels:
   - ui

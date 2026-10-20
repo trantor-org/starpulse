@@ -225,15 +225,10 @@ def _notes(*lines: str) -> str:
             _notes("**Assignee:** 0d617371-1999-5360-a76f-a26c28d4878d", "Wired the writer."),
             "0d617371-1999-5360-a76f-a26c28d4878d",
         ),
-        (
-            _notes("**Holder:** 0d617371-1999-5360-a76f-a26c28d4878d", "Wired the writer."),  # the legacy marker
-            "0d617371-1999-5360-a76f-a26c28d4878d",
-        ),
+        (_notes("**Holder:** 0d617371-1999-5360-a76f-a26c28d4878d", "Wired the writer."), ""),  # no longer a claim
         (_notes("**Assignee:** first", "text", "**Assignee:** second"), "second"),  # a later claim wins
-        (_notes("**Holder:** first", "text", "**Assignee:** second"), "second"),
         (_notes("Wired the writer."), ""),
         (_notes("see **Assignee:** quoted mid-line"), ""),
-        (_notes("see **Holder:** quoted mid-line"), ""),
     ],
 )
 def test_the_assignee_is_the_last_marker_line_in_the_notes(tmp_path: Path, notes: str, assignee: str) -> None:
@@ -1191,3 +1186,12 @@ def test_a_scan_of_an_unchanged_tree_reads_no_file(tmp_path: Path, monkeypatch: 
 def test_the_adapter_has_no_file_watch() -> None:
     assert not hasattr(upstream_backlog, "DirWatch")
     assert not hasattr(upstream_backlog, "BACKSTOP")
+
+
+def test_upstream_backlog_has_no_legacy_holder_or_assignee_as_profile_readers() -> None:
+    """The legacy `**Holder:**` marker and the `holder`/`assignee`-as-profile wire keys are gone from the adapter."""
+    source = Path(upstream_backlog.__file__).read_text()
+    assert "**Holder:**" not in source
+    assert '"holder"' not in source
+    assert "'holder'" not in source
+    assert "assignee" not in source

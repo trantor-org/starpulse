@@ -286,20 +286,15 @@ def test_an_assignee_change_is_written_to_the_task_file(tmp_path: Path) -> None:
     assert "assignee:" not in path.read_text()
 
 
-def test_a_task_file_in_the_legacy_forms_reads_to_the_same_assignee_and_profile_as_the_new_ones(tmp_path: Path) -> None:
-    notes = "<!-- SECTION:NOTES:BEGIN -->\n{marker} 0d617371\n<!-- SECTION:NOTES:END -->\n"
+def test_a_task_file_reads_its_profile_and_assignee_from_the_profile_field_and_the_assignee_marker(
+    tmp_path: Path,
+) -> None:
+    notes = "<!-- SECTION:NOTES:BEGIN -->\n**Assignee:** 0d617371\n<!-- SECTION:NOTES:END -->\n"
     path, _ = project(tmp_path)
-    forms = (
-        ({"assignee": '["@agent-deep-high"]'}, "**Holder:**"),
-        ({"profile": '["@agent-deep-high"]'}, "**Assignee:**"),
-    )
-    read = []
-    for fields, marker in forms:
-        path = write_task(tmp_path, "task-1", "In Progress", **fields)
-        path.write_text(path.read_text() + notes.format(marker=marker))
-        read.append([(task.profile, task.assignee) for task in scanned(tmp_path)])
+    path = write_task(tmp_path, "task-1", "In Progress", profile='["@agent-deep-high"]')
+    path.write_text(path.read_text() + notes)
 
-    assert read == [[("@agent-deep-high", "0d617371")]] * 2
+    assert [(task.profile, task.assignee) for task in scanned(tmp_path)] == [("@agent-deep-high", "0d617371")]
 
 
 def test_a_task_the_board_does_not_hold_is_refused_by_both_writers(tmp_path: Path) -> None:

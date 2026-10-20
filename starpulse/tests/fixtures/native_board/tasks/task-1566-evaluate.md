@@ -2,7 +2,7 @@
 id: TASK-1566
 title: Evaluate and promote a blue Frigate model trained on the new event labels
 status: Waiting
-assignee:
+profile:
   - '@agent-standard-high'
 created_date: '2026-09-27 17:16'
 updated_date: '2026-10-03 17:40'

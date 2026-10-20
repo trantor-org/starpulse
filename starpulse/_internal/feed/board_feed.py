@@ -105,15 +105,6 @@ def cooled(agent: dict, clock: Callable[[], float]) -> dict:
     return agent
 
 
-def current_keys(agent: dict) -> dict:
-    """The agent as a Board saved before the flip names its keys: `holder` (the session) is now `assignee`, and the
-    `model` it was routed to is also its `profile`."""
-    if "holder" not in agent:
-        return agent
-    renamed = {key: value for key, value in agent.items() if key != "holder"}
-    return {**renamed, "profile": renamed.get("model", ""), "assignee": agent["holder"]}
-
-
 def task_agent(task: BoardTask) -> dict:
     """One task as an agent on the Board machine, its lane as the state id."""
     ticks = task.acceptance_checked + (False,) * len(task.acceptance_criteria)  # a criterion past the ticks is unchecked
@@ -430,9 +421,8 @@ class BoardFeed:
         except TypeError, ValueError:
             logger.warning("StarPulse: replaying: the saved Board cannot be read")
             return None
-        open_ = {
-            task: cooled(current_keys(agent), self._clock) for task, agent in open_.items()
-        }  # a task done while the feed was down is cold
+        # a task done while the feed was down is cold
+        open_ = {task: cooled(agent, self._clock) for task, agent in open_.items()}
         with self._lock:
             self._open, self._settled, self._assignees, self._seen, self._saved = (
                 open_,

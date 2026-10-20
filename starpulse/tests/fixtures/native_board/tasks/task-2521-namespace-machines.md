@@ -4,7 +4,7 @@ title: >-
   Namespace machines by repository and merge them only when compiled definitions
   hash equal
 status: Done
-assignee:
+profile:
   - '@agent-standard-high'
 created_date: '2026-10-03 17:08'
 updated_date: '2026-10-06 22:28'
@@ -76,7 +76,7 @@ Distinct scope: the only candidate is TASK-2433, the slicing task that created t
 <!-- SECTION:NOTES:BEGIN -->
 Package work ships as a PR in trantor-org/starpulse (child); the trantor gitlink bump is Renovate's, never committed here (completing-tasks, edited submodule). ADR decision: none needed; H6 of doc-82 and the Flow View Hub ADR (Drift is drawn, not merged) cover it. Not persisting drift: the ACs ask for records returned by the merge; the hub slices that register sources own storage.
 
-**Holder:** 8844d581-ad5d-4caa-9ad4-d6b7c9e4fadf
+**Assignee:** 8844d581-ad5d-4caa-9ad4-d6b7c9e4fadf
 <!-- SECTION:NOTES:END -->
 
 ## Comments

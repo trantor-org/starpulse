@@ -2,7 +2,7 @@
 id: TASK-2529
 title: 'Add a GitHub adapter for pull requests, checks and Copilot'
 status: Done
-assignee:
+profile:
   - '@agent-standard-high'
 created_date: '2026-10-03 17:10'
 updated_date: '2026-10-06 23:32'
@@ -79,7 +79,7 @@ Distinct scope: the only candidate is TASK-2433, the slicing task that created t
 <!-- SECTION:NOTES:BEGIN -->
 Package work ships as a PR in trantor-org/starpulse (child); trantor gitlink bump is Renovate's, never committed here. ADR decision: none needed; H13 of doc-82 and the Flow View hub ADR (Copilot mapping) cover it. Fixtures are recorded off public Copilot PRs (jeremytrimble/specview#46 and #38), scrubbed of ids and text.
 
-**Holder:** 37a688b6-bfa8-4d9c-8b81-0b83aba08da1
+**Assignee:** 37a688b6-bfa8-4d9c-8b81-0b83aba08da1
 <!-- SECTION:NOTES:END -->
 
 ## Comments
