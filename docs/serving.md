@@ -64,7 +64,7 @@ requests it took and closes.
 
 ### Worker processes
 
-`serve` is a supervisor over the contexts that run as their own `starpulse worker <context>` process: `api` (the Page API), `pulls` (Delivery), `autopilot`, `runs`, `history`, `search` (with an `[search] embeddings_url`) and `board` (the Start Criteria dating and the lane reconcile). `serve` always starts `pulls` and `autopilot` as children; for each other one whose `api_worker`,
+`serve` is a supervisor over the contexts that run as their own `starpulse worker <context>` process: `api` (the Page API), `pulls` (Delivery), `autopilot`, `runs`, `history`, `search` (with an `[search] embeddings_url`) and `board` (the Start Criteria dating). `serve` always starts `pulls` and `autopilot` as children; for each other one whose `api_worker`,
 `runs_worker`, `search_worker` or `board_worker` setting is false, the default, it starts the worker as a child, restarts it with a growing delay (1 s, doubling to 60 s; a child that
 ran a minute restarts at once) when it exits, and stops it when `serve` stops on `SIGTERM` or Ctrl-C. The children read the same config and `database_url` and meet `serve` only in
 the event log. A true setting means something outside `serve` runs that worker, so `serve` starts no child for it. No unit file is needed to run StarPulse.
