@@ -29,7 +29,7 @@ __all__ = [
     "state_roles",
 ]
 
-#: The source of a run that no forwarder named: it counts in the aggregate and no one's Board holds it.
+#: The source of a run that no source named: it counts in the aggregate and no one's Board holds it.
 UNATTRIBUTED = "unattributed"
 _DAY_S = 86400.0
 #: Completions this far back set the aging threshold, whatever window the numbers are asked over.

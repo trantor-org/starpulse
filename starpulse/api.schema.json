@@ -2330,216 +2330,6 @@
       "title": "Forecast",
       "type": "object"
     },
-    "ForwardAccepted": {
-      "additionalProperties": false,
-      "properties": {
-        "accepted": {
-          "type": "integer"
-        },
-        "rejected": {
-          "type": "integer"
-        }
-      },
-      "required": [
-        "accepted",
-        "rejected"
-      ],
-      "title": "ForwardAccepted",
-      "type": "object"
-    },
-    "ForwardRequest": {
-      "additionalProperties": false,
-      "description": "`POST /api/forward`: a batch of events an instance's forwarder sends a hub.",
-      "properties": {
-        "events": {
-          "items": {
-            "$ref": "#/$defs/ForwardedEvent"
-          },
-          "type": "array"
-        },
-        "instance": {
-          "type": "string"
-        },
-        "opt_in": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "opt_in",
-        "instance",
-        "events"
-      ],
-      "title": "ForwardRequest",
-      "type": "object"
-    },
-    "ForwardedEntry": {
-      "additionalProperties": false,
-      "properties": {
-        "fields": {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        "kept": {
-          "description": "The fields of an entry that stay on the instance.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "stream": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "stream",
-        "fields",
-        "kept"
-      ],
-      "title": "ForwardedEntry",
-      "type": "object"
-    },
-    "ForwardedEvent": {
-      "additionalProperties": false,
-      "properties": {
-        "event_id": {
-          "type": "string"
-        },
-        "fields": {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        "stream": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "event_id",
-        "stream",
-        "fields"
-      ],
-      "title": "ForwardedEvent",
-      "type": "object"
-    },
-    "ForwardedField": {
-      "additionalProperties": false,
-      "properties": {
-        "field": {
-          "type": "string"
-        },
-        "person": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "field",
-        "person"
-      ],
-      "title": "ForwardedField",
-      "type": "object"
-    },
-    "ForwardingRequest": {
-      "additionalProperties": false,
-      "description": "`PUT /api/forwarding`: whether a person's name may leave the instance.",
-      "properties": {
-        "opt_in": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "opt_in"
-      ],
-      "title": "ForwardingRequest",
-      "type": "object"
-    },
-    "ForwardingStatus": {
-      "additionalProperties": false,
-      "description": "What the forwarder would send next, and why.",
-      "properties": {
-        "configured": {
-          "const": true,
-          "type": "boolean"
-        },
-        "contract": {
-          "additionalProperties": {
-            "items": {
-              "$ref": "#/$defs/ForwardedField"
-            },
-            "type": "array"
-          },
-          "type": "object"
-        },
-        "lastSent": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "more": {
-          "type": "boolean"
-        },
-        "names": {
-          "type": "boolean"
-        },
-        "next": {
-          "items": {
-            "$ref": "#/$defs/ForwardedEntry"
-          },
-          "type": "array"
-        },
-        "optIn": {
-          "type": "boolean"
-        },
-        "problem": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "refused": {
-          "type": "boolean"
-        },
-        "url": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "configured",
-        "url",
-        "optIn",
-        "names",
-        "refused",
-        "lastSent",
-        "problem",
-        "next",
-        "more",
-        "contract"
-      ],
-      "title": "ForwardingStatus",
-      "type": "object"
-    },
-    "ForwardingUnconfigured": {
-      "additionalProperties": false,
-      "description": "An instance with no `[forward]` block.",
-      "properties": {
-        "configured": {
-          "const": false,
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "configured"
-      ],
-      "title": "ForwardingUnconfigured",
-      "type": "object"
-    },
     "GapWarning": {
       "additionalProperties": false,
       "description": "The history lost entries between two ids, so any number here may miss some.",
@@ -8337,9 +8127,6 @@
             "$ref": "#/$defs/Accepted"
           },
           {
-            "$ref": "#/$defs/ForwardAccepted"
-          },
-          {
             "$ref": "#/$defs/InsightPosted"
           },
           {
@@ -8415,12 +8202,6 @@
         ]
       },
       "type": "array"
-    },
-    "forwardingStatus": {
-      "$ref": "#/$defs/ForwardingStatus"
-    },
-    "forwardingUnconfigured": {
-      "$ref": "#/$defs/ForwardingUnconfigured"
     },
     "graph": {
       "$ref": "#/$defs/FlowGraph"
@@ -8531,13 +8312,7 @@
             "$ref": "#/$defs/WindowRequest"
           },
           {
-            "$ref": "#/$defs/ForwardingRequest"
-          },
-          {
             "$ref": "#/$defs/AutopilotRequest"
-          },
-          {
-            "$ref": "#/$defs/ForwardRequest"
           }
         ]
       },
@@ -8611,8 +8386,6 @@
     "whatIf",
     "harnesses",
     "windowState",
-    "forwardingStatus",
-    "forwardingUnconfigured",
     "autopilotStatus",
     "contractReport",
     "taskRecord",

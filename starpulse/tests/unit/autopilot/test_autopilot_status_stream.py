@@ -12,7 +12,7 @@ from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.harnesses.harness import HARNESS_MACHINES
 from starpulse._internal.server.writes import autopilot
-from starpulse.contracts.api.dto.forwarding import AutopilotStatus
+from starpulse.contracts.api.dto.autopilot import AutopilotStatus
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.unit.server.test_autopilot_route import HOST, _feed
 

@@ -24,7 +24,7 @@ Row = tuple[int, str, str, str | None, str, float]
 
 
 def source_of(event_id: str) -> str:
-    """The `<source>/` a forwarded event id carries; empty for an id with none."""
+    """The `<source>/` a hub-namespaced event id carries; empty for an id with none."""
     name, slash, _ = event_id.partition("/")
     return name if slash else ""
 

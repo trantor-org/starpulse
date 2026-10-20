@@ -2,7 +2,7 @@
 
     .venv/bin/python -m starpulse._internal.server.server [--host 127.0.0.1] [--port 8766] [--hours 6] [--config starpulse.toml]
 
-Every write (POST /api/..., PUT /api/forwarding, PUT /api/autopilot, PUT and DELETE /api/history-window) must be `Content-Type: application/json` (else 415) and carry
+Every write (POST /api/..., PUT /api/autopilot, PUT and DELETE /api/history-window) must be `Content-Type: application/json` (else 415) and carry
 no `Origin` or this server's own (else 403), so a web page on another site cannot write through the operator's browser.
 It listens on --host, 127.0.0.1 by default.
 
@@ -161,9 +161,9 @@ GET /api/analytics/cost-to-go[?hours=N]
 GET /api/level[?hours=N]
                    the level's flow numbers on the Backlog flow metric definitions (`level_metrics`), over the
                    last `hours`, default 168: `wip`, `throughput`, `time_in_state`, `aging`, and the orbit's
-                   `terminals` and `working` totals, plus per source (the forwarder an event id names) its
+                   `terminals` and `working` totals, plus per source (the instance an event id names) its
                    `ended` runs with `terminal_share` and its `dwell` with `time_share`, each set summing to 1, and
-                   whether it is `shared` (a forwarder named it). `level` echoes the config the orbit card draws
+                   whether it is `shared` (an instance named it). `level` echoes the config the orbit card draws
                    (title, subject, runs, gates, terminals with roles, orbit, facets, activity) and `arrivals` lists
                    each entry into a terminal inside the window, `{source, state, at}` oldest first, for the comets.
                    A `hours` that is no positive number is 400, as is one longer than the history, with
@@ -205,7 +205,7 @@ POST /api/insights
                    404): an external engine posts one `Finding` {id, engine {name, version}, scope {team, machine,
                    state, task}, severity (info, warn, act), text (at most 280 characters), evidence [{label, url or
                    query}], created_at[, expires_at]} with `Authorization: Bearer <engine token>`, which no viewer's
-                   session or forwarder's token replaces. 201 {id, replaced: false}; 200 {id, replaced: true} when a
+                   session or source's token replaces. 201 {id, replaced: false}; 200 {id, replaced: true} when a
                    re-post of the id replaced a finding that was not retracted; 400 naming the field to fix, and a
                    `scope` that names a person is one, since the contract has no person field; 413 over 64 KiB; 503
                    when the history store refuses it. A refusal writes and sends nothing. The finding is kept in the
@@ -243,7 +243,6 @@ from starpulse._internal.board.seam import (
 )
 from starpulse._internal.harnesses.session_start import starter
 from starpulse._internal.runs.cloudevents import CloudEventsIngest
-from starpulse._internal.runs.ingest import ForwardIngest
 from starpulse._internal.runs.ingest import tokens as ingest_tokens
 from starpulse._internal.pulls.delivery import Projected, follow_notes, follow_saves, metrics_of, request_refresh
 from starpulse._internal.pulls.task_actor import TaskActor, moves_of
@@ -253,8 +252,7 @@ from starpulse._internal.pulls.pull_requests import PullRequests
 from starpulse._internal.pulls.pull_refresh import PullRefresh
 from starpulse._internal.pulls.pull_store import PullSync
 from starpulse._internal.runs import projection as runs_projection
-from starpulse._internal.hub import forward, forward_report
-from starpulse._internal.server.live_push import wire_forwarding, wire_level
+from starpulse._internal.server.live_push import wire_level
 from starpulse._internal.server.closure import ENTRIES, Reader
 from starpulse._internal.server.control import control_file
 from starpulse._internal.server.hold import LISTEN_FD_ENV, STATIC_ENV
@@ -763,7 +761,6 @@ class Prepared(NamedTuple):
     """What the config and the environment settle before anything starts: `serve` fails on it before it spawns a child,
     and the Page API is built from it."""
 
-    source_tokens: dict[str, str]
     refresh_token: str | None
     gate: Any
     starts: dict[str, Callable[[str], str]]
@@ -775,7 +772,6 @@ class Prepared(NamedTuple):
 def prepare(parser: argparse.ArgumentParser, args: argparse.Namespace, config: Config) -> Prepared:
     """Check `config` and the environment for serving, exiting with the reason when they cannot serve."""
     try:
-        source_tokens = ingest_tokens(config.sources, os.environ)
         producer_tokens = ingest_tokens(config.producers, os.environ)
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")
@@ -811,7 +807,7 @@ def prepare(parser: argparse.ArgumentParser, args: argparse.Namespace, config: C
         if (factory := getattr(adapter, "rerun", None)) and (rerun := factory(instance.url))
     }
     run_safe = [name for name in config.qualified_run_safe() if name.partition("/")[0] in starts]
-    return Prepared(source_tokens, refresh_token, gate, starts, reruns, run_safe, producer_tokens)
+    return Prepared(refresh_token, gate, starts, reruns, run_safe, producer_tokens)
 
 
 def refuse_unassemblable(
@@ -871,7 +867,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     from starpulse._internal.pulls.pulls import PullStore  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse._internal.server.assembly import assemble, history_store  # noqa: PLC0415 - the database stack loads after the config is accepted
 
-    source_tokens, refresh_token, gate, starts, reruns, run_safe, producer_tokens = ready
+    refresh_token, gate, starts, reruns, run_safe, producer_tokens = ready
     if args.hub:
         from starpulse._internal.hub import hub  # noqa: PLC0415 - hub-only code; `prepare` found it importable
     base = args.config.parent if args.config else Path.cwd()
@@ -888,11 +884,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     # the history dates the lanes the board adapter replays, so it is open before the adapter starts
     store = history_store(config, base, feed.machines)
     feed.date_lanes(store.lane_path)
-    if config.forward is not None:
-        # before the adapter starts, so the history precedes the live changes in the log
-        lane_events.replay(store, log)
-    # a lane entry reaches the log for the hub it is forwarded to
-    feed.record_lanes(store, log if config.forward is not None else None)
+    feed.record_lanes(store)
     # `starpulse worker board` dates when each task's Start Criteria were met and reconciles the lanes the history
     # missed; this process rereads the dates it keeps. A hub has no such worker and runs both in-process.
     if args.hub:
@@ -973,25 +965,11 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         threading.Thread(
             target=record_lane_events, args=(store, log, threading.Event()), name="lane-history", daemon=True
         ).start()
-    # `starpulse worker forwarding` runs the forwarder; this process builds one to read the cursor and the opt-in and
-    # to answer the page, and draws the last send and refusal the worker keeps in the log
-    try:
-        forwarder = forward.build(
-            config,
-            log,
-            store,
-            os.environ,
-            hub=args.hub,
-        )
-    except ValueError as exc:
-        parser.exit(1, f"{exc}\n")
     insights = None
     if args.hub and config.oidc.engine_token_env:  # an engine writes findings only to a hub that names its token
         store = InsightStore(url, engine=log.engine)
         restore(store, feed)
         insights = Insights(store, feed)
-    if forwarder is not None:
-        forward_report.Reported(log, forwarder, wire_forwarding(feed, forwarder)).follow(stop)
     level_cfg = config.level if args.hub else None
     if level_cfg is not None:
 
@@ -1032,11 +1010,9 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         complete=board.complete,
         restore=board.restore,
         gate=gate,
-        forward=ForwardIngest(source_tokens, log, aggregates_only=config.aggregates_only) if source_tokens else None,
         level=config.level if args.hub else None,
         insights=insights,
         events=cloudevents,
-        forwarding=forwarder,
         reruns=reruns,
         contract=_cached(lambda: doctor.contract(feed.snapshot(), config, doctor.LIVE), _CONTRACT_TTL_S),
         milestones=board,

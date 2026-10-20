@@ -130,7 +130,6 @@ def test_a_reader_left_behind_by_the_prune_timer_records_a_gap(database_url: str
 #: The readers that built a `Tail` themselves, which the event log's catch-up boundary is to serve instead.
 _FORMER_TAIL_CALLERS = (
     "eventlog/lane_events.py",
-    "hub/forward_report.py",
     "eventlog/conformance_monitor.py",
     "runs/projection.py",
     "eventlog/history.py",

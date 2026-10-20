@@ -61,12 +61,10 @@ from starpulse._internal.feed.history_window import HistoryWindow
 from starpulse._internal.feed.machine_tasks import MachineTasks
 from starpulse._internal.feed.search import SearchIndex
 from starpulse._internal.harnesses.telemetry import TelemetryLog
-from starpulse._internal.hub.forward import Forwarder
 from starpulse._internal.level.insights import Insights, InsightStore
 from starpulse._internal.pulls.pull_refresh import PullRefresh
 from starpulse._internal.pulls.pulls import PullStore
 from starpulse._internal.runs.cloudevents import CloudEventsIngest
-from starpulse._internal.runs.ingest import ForwardIngest
 from starpulse._internal.server.assembly import assemble as _assemble
 from starpulse._internal.server.server import StarPulseServer, request_handler
 from starpulse._internal.server.writes import move_task
@@ -375,9 +373,7 @@ def serve(
     insights: Insights | None = None,
     events: CloudEventsIngest | None = None,
     port: int = 0,
-    forward: ForwardIngest | None = None,
     level: Level | None = None,
-    forwarding: Forwarder | None = None,
     autopilot: Runtime | None = None,
     reruns: Mapping[str, Callable[[str, Mapping[str, str]], str]] | None = None,
     contract: Callable[[], dict[str, Any]] | None = None,
@@ -419,11 +415,9 @@ def serve(
         create,
         clock,
         gate,
-        forward,
         level,
         insights=insights,
         events=events,
-        forwarding=forwarding,
         autopilot=autopilot,
         reruns=reruns,
         contract=contract,

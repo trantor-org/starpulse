@@ -43,7 +43,6 @@ WORKER_FLAGS = {
     "pulls": None,
     "autopilot": None,
     "runs": "runs_worker",
-    "forwarding": "forwarding_worker",
     "flow-metrics": "flow_metrics_worker",
     "search": "search_worker",
     "board": "board_worker",
@@ -60,8 +59,7 @@ def worker_commands(config: Config, config_path: Path | None, *, hub: bool = Fal
 
     A hub serves its page in-process, so it gets no Page API child.
 
-    Forwarding has work only with a `[forward]` table, so a config without one gets no forwarding child. A hub keeps its
-    history threads in-process, so it gets no Flow Metrics child. Search has work only with an `embeddings_url`, and a hub keeps
+    A hub keeps its history threads in-process, so it gets no Flow Metrics child. Search has work only with an `embeddings_url`, and a hub keeps
     no search index, so a config without one, or a hub, gets no search child. A hub keeps its board writers in-process, so it
     gets no board child, and its pulls, runs and autopilot workers start the board adapter themselves
     (`--local-board`) where the others read the replica the Board child publishes.
@@ -79,7 +77,6 @@ def worker_commands(config: Config, config_path: Path | None, *, hub: bool = Fal
         ]
         for context, flag in WORKER_FLAGS.items()
         if not (flag and getattr(config, flag))
-        and (context != "forwarding" or config.forward is not None)
         and (context != "flow-metrics" or not hub)
         and (context != "search" or (config.search.embeddings_url and not hub))
         and (context != "board" or not hub)

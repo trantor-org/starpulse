@@ -16,7 +16,6 @@ import json
 import logging
 import threading
 import time
-import uuid
 from collections import OrderedDict
 from collections.abc import Callable, Hashable, Iterable, Iterator, Mapping
 from pathlib import Path
@@ -145,8 +144,7 @@ _learned_steps = Table(
     Column("depends", Text, nullable=False),
     Index("ux_starpulse_learned_steps", "workflow", "step", unique=True),
 )
-#: The id this store sends a hub under each forwarder's cursor name, minted on first use and kept, so a restarted
-#: forwarder is the instance the hub bound and a second store, with no row here, is a new one.
+#: The table the retired instance-side sender kept its instance id in; declared so the migrations and the metadata agree.
 _instances = Table(
     "starpulse_forward_instances",
     metadata,
@@ -160,7 +158,7 @@ _STEP_ORDER = (_machine_events.c.occurred_at, _machine_events.c.id)
 
 #: A task's last lane: its latest observation, the later insert on a tie.
 def _last_lane(db: Connection, task: str, source_name: str | None) -> str | None:
-    """The status of the task's latest lane change; with a `source_name`, of the change that source forwarded."""
+    """The status of the task's latest lane change; with a `source_name`, of the change that source sent."""
     c = _lane_changes.c
     query = select(c.new_status).where(c.task == task).order_by(c.observed_at.desc(), c.id.desc()).limit(1)
     if source_name is not None:
@@ -345,14 +343,6 @@ class HistoryStore:
         """How far each reader of the log got, so a restart resumes after the last entry it recorded."""
         return Checkpoints(self.engine)
 
-    def instance(self, name: str) -> str:
-        """The id this store sends under `name`, a forwarder's cursor name: minted when the store has none, then the
-        same on every call and every restart. Two processes asking at once get the one that committed first."""
-        take = self._insert(_instances).values(name=name, instance=uuid.uuid4().hex).on_conflict_do_nothing()
-        with self.engine.begin() as db:
-            db.execute(take)
-            return db.execute(select(_instances.c.instance).where(_instances.c.name == name)).scalar_one()
-
     def record_machine(self, entry_id: str, fields: dict, *, cursor: int | None = None) -> None:
         """Write one machine event and fold it into the summaries; one the store already holds is a no-op.
 
@@ -406,7 +396,7 @@ class HistoryStore:
         its lane id (`In Progress` is `in_progress`). One that repeats the task's last (a reconcile) is no change, and
         neither is an event id or a move (task, lane, time) the store already holds: a second writer adds no row.
 
-        A forwarded change (`<source>/<id>`) repeats only the last status of the same source's task: two sources may
+        A source's change (`<source>/<id>`) repeats only the last status of the same source's task: two sources may
         key a task alike. `cursor`, the entry's id in the log, is saved in the same transaction, as is the lane `event`
         (the `board:lanes` fields, under `event_id`) a change writes: both land or neither does.
         """
@@ -680,8 +670,8 @@ class HistoryStore:
 
         The Board's trajectories are its lane changes, each lane read as the state of that name or id (a lane that is
         no state is skipped); another machine's are its events placed as `machine_steps` places them. A source is the
-        `<source>/` an event id carries, which is how the hub namespaces a forwarded event; an id with none is no
-        forwarder's and its run is `UNATTRIBUTED`. A run is one source's one task.
+        `<source>/` an event id carries, which is how the hub namespaces a source's event; an id with none is no
+        source's and its run is `UNATTRIBUTED`. A run is one source's one task.
         """
         machine = self._machines[flow]
         if flow == "board":
@@ -852,7 +842,7 @@ def record_lane_events(
 ) -> None:
     """Fold the log's lane entries into `store`'s lane history until `stop`, resuming after the cursor the store holds.
 
-    This is how a hub learns the lane changes its sources forward; it reads as `record_machine_events` reads, and
+    This is how a hub learns the lane changes its sources send; it reads as `record_machine_events` reads, and
     each entry is written with its cursor in one transaction.
     """
     stream = lane_events.STREAM

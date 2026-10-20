@@ -90,7 +90,7 @@ def test_a_redelivered_event_changes_no_summary(store: HistoryStore) -> None:
     assert (_steps(store), _cases(store)) == before
 
 
-def test_a_run_keyed_event_moves_its_own_case_and_a_forwarded_source_keeps_its_own(store: HistoryStore) -> None:
+def test_a_run_keyed_event_moves_its_own_case_and_a_source_keeps_its_own(store: HistoryStore) -> None:
     run = {"machine": "authoring-skills", "run": "run-1", "task": None}
     store.record_machine("r1", {"event_id": "r1", "event": "GUIDANCE_READ", "time": "5"} | run)
     _event(store, "pod-a/e1", "WORKTREE_READY", 10.0)

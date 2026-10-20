@@ -10,7 +10,7 @@ from pydantic.json_schema import GenerateJsonSchema
 
 from starpulse.contracts.api._base import _Api
 from starpulse.contracts.api.dto.errors import ApiError, SkillRefusal, StaleEdit, WindowTooLong
-from starpulse.contracts.api.dto.forwarding import AutopilotStatus, ForwardingStatus, ForwardingUnconfigured
+from starpulse.contracts.api.dto.autopilot import AutopilotStatus
 from starpulse.contracts.api.dto.harnesses import Harnesses, WindowState
 from starpulse.contracts.api.dto.health import Health, MachineHistory, Sessions, SessionSteps
 from starpulse.contracts.api.dto.level import Level
@@ -30,8 +30,6 @@ from starpulse.contracts.api.dto.requests import (
     DocEditRequest,
     DocRestoreRequest,
     EditRequest,
-    ForwardingRequest,
-    ForwardRequest,
     MilestoneArchiveRequest,
     MilestoneCreateRequest,
     MilestoneEditRequest,
@@ -57,7 +55,6 @@ from starpulse.contracts.api.dto.results import (
     DocEdited,
     DocRestored,
     Edited,
-    ForwardAccepted,
     InsightPosted,
     InsightRetracted,
     Judged,
@@ -123,8 +120,6 @@ class ApiContract(_Api):
     whatIf: WhatIf
     harnesses: Harnesses
     windowState: WindowState
-    forwardingStatus: ForwardingStatus
-    forwardingUnconfigured: ForwardingUnconfigured
     autopilotStatus: AutopilotStatus
     contractReport: ContractReport
     taskRecord: TaskRecord
@@ -156,9 +151,7 @@ class ApiContract(_Api):
         | DocArchiveRequest
         | DocRestoreRequest
         | WindowRequest
-        | ForwardingRequest
         | AutopilotRequest
-        | ForwardRequest
     ]
     answers: list[
         Moved
@@ -183,7 +176,6 @@ class ApiContract(_Api):
         | Started
         | RunStarted
         | Accepted
-        | ForwardAccepted
         | InsightPosted
         | InsightRetracted
         | ApiError

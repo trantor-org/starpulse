@@ -1,4 +1,4 @@
-"""Push level and forwarding status on the feed so the page need not poll those GET routes."""
+"""Push level status on the feed so the page need not poll that GET route."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ from collections.abc import Callable
 from typing import Any
 
 from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.hub.forward import Forwarder
 
 logger = logging.getLogger(__name__)
 
@@ -57,24 +56,3 @@ def wire_level(feed: BoardFeed, build: BuildLevel, *, delay_s: float = 0.25) -> 
             nudge()
 
     feed._publish = published  # type: ignore[method-assign]
-
-
-def wire_forwarding(feed: BoardFeed, forwarder: Forwarder) -> Callable[[], None]:
-    """Publish a `forwarding` feed event after each opt-in change; returns the push, which the forwarding worker's
-    reports (`forward_report.Reported`) call when the forwarder's runtime changed."""
-
-    def push() -> None:
-        try:
-            feed.publish("forwarding", {"configured": True, **forwarder.status()})
-        except Exception:
-            logger.exception("StarPulse: cannot build a forwarding event")
-
-    original_set = forwarder.opt_in.set
-
-    def set_opt(value: bool) -> None:
-        original_set(value)
-        forwarder.forget_status()
-        push()
-
-    forwarder.opt_in.set = set_opt  # type: ignore[method-assign]
-    return push

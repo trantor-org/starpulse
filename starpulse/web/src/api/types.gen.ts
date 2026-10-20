@@ -27,7 +27,6 @@ export interface ApiContract {
     | Started
     | RunStarted
     | Accepted
-    | ForwardAccepted
     | InsightPosted
     | InsightRetracted
     | ApiError
@@ -46,8 +45,6 @@ export interface ApiContract {
   events: (
     TaskDelta | MoveDelta | DagsDelta | PullsDelta | ClaimDelta | LedgersDelta | InsightDelta | AutopilotStatus
   )[];
-  forwardingStatus: ForwardingStatus;
-  forwardingUnconfigured: ForwardingUnconfigured;
   graph: FlowGraph;
   harnesses: Harnesses;
   health: Health;
@@ -84,9 +81,7 @@ export interface ApiContract {
     | DocArchiveRequest
     | DocRestoreRequest
     | WindowRequest
-    | ForwardingRequest
     | AutopilotRequest
-    | ForwardRequest
   )[];
   restarting: RestartingEvent;
   retiredTasks: RetiredTasks;
@@ -182,10 +177,6 @@ export interface RunStarted {
 export interface Accepted {
   accepted: boolean;
   deprecated?: string | null;
-}
-export interface ForwardAccepted {
-  accepted: number;
-  rejected: number;
 }
 export interface InsightPosted {
   id: string;
@@ -1009,43 +1000,6 @@ export interface FindingScope {
   team?: string | null;
 }
 /**
- * What the forwarder would send next, and why.
- */
-export interface ForwardingStatus {
-  configured: true;
-  contract: {
-    [k: string]: ForwardedField[];
-  };
-  lastSent: number | null;
-  more: boolean;
-  names: boolean;
-  next: ForwardedEntry[];
-  optIn: boolean;
-  problem: string | null;
-  refused: boolean;
-  url: string;
-}
-export interface ForwardedField {
-  field: string;
-  person: boolean;
-}
-export interface ForwardedEntry {
-  fields: {
-    [k: string]: unknown;
-  };
-  /**
-   * The fields of an entry that stay on the instance.
-   */
-  kept: string[];
-  stream: string;
-}
-/**
- * An instance with no `[forward]` block.
- */
-export interface ForwardingUnconfigured {
-  configured: false;
-}
-/**
  * `GET /api/analytics/graph`: the branching directly-follows graph of each transition, Codex left out.
  */
 export interface FlowGraph {
@@ -1784,33 +1738,12 @@ export interface WindowRequest {
   hours: number;
 }
 /**
- * `PUT /api/forwarding`: whether a person's name may leave the instance.
- */
-export interface ForwardingRequest {
-  opt_in: boolean;
-}
-/**
  * `PUT /api/autopilot`: whether the autopilot admits tasks, which harness it starts on, and/or its quiet hours.
  */
 export interface AutopilotRequest {
   enabled?: boolean | null;
   harness?: string | null;
   quietHours?: QuietHours | null;
-}
-/**
- * `POST /api/forward`: a batch of events an instance's forwarder sends a hub.
- */
-export interface ForwardRequest {
-  events: ForwardedEvent[];
-  instance: string;
-  opt_in: boolean;
-}
-export interface ForwardedEvent {
-  event_id: string;
-  fields: {
-    [k: string]: unknown;
-  };
-  stream: string;
 }
 /**
  * The server was told to stop and will not answer after this: sent to every open stream before it exits.

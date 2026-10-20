@@ -49,7 +49,6 @@ ROUTES: Mapping[str, str] = {
     "/auth/login": PUBLIC,
     "/auth/callback": PUBLIC,
     "/api/machine-events": INSTANCE,
-    "/api/forward": INSTANCE,
     "/api/insights": ENGINE,
 }
 #: Routes that are not viewer routes because their path starts so: `/api/insights/<id>` retracts a finding.

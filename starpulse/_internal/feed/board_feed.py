@@ -59,7 +59,6 @@ FEED_EVENT_RESEND = {
     "dags": False,
     "ledgers": False,
     "level": False,
-    "forwarding": False,
     "autopilot": False,
 }
 

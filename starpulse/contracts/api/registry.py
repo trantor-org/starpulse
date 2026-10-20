@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from starpulse.contracts.adapters import Finding
 from starpulse.contracts.api.dto.errors import ApiError, SkillRefusal, StaleEdit, WindowTooLong
-from starpulse.contracts.api.dto.forwarding import AutopilotStatus, ForwardingStatus, ForwardingUnconfigured
+from starpulse.contracts.api.dto.autopilot import AutopilotStatus
 from starpulse.contracts.api.dto.harnesses import Harnesses, WindowState
 from starpulse.contracts.api.dto.health import Health, MachineHistory, Sessions, SessionSteps
 from starpulse.contracts.api.dto.level import Level
@@ -28,8 +28,6 @@ from starpulse.contracts.api.dto.requests import (
     DocEditRequest,
     DocRestoreRequest,
     EditRequest,
-    ForwardingRequest,
-    ForwardRequest,
     MilestoneArchiveRequest,
     MilestoneCreateRequest,
     MilestoneEditRequest,
@@ -55,7 +53,6 @@ from starpulse.contracts.api.dto.results import (
     DocEdited,
     DocRestored,
     Edited,
-    ForwardAccepted,
     InsightPosted,
     InsightRetracted,
     Judged,
@@ -103,7 +100,6 @@ EVENTS: dict[str, type[BaseModel]] = {
 }
 EVENTS["autopilot"] = AutopilotStatus
 EVENTS["level"] = Level
-EVENTS["forwarding"] = ForwardingStatus
 
 #: Each GET route's `200` body, by path; `/api/task/<id>` and `/api/ledger/<event>` by their prefix.
 RESPONSES: dict[str, Any] = {
@@ -136,7 +132,6 @@ RESPONSES: dict[str, Any] = {
     "/api/history": LaneHistory | MachineHistory,
     "/api/pulls": Pulls,
     "/api/search": SearchResults,
-    "/api/forwarding": ForwardingStatus | ForwardingUnconfigured,
     "/api/autopilot": AutopilotStatus,
 }
 
@@ -164,9 +159,7 @@ REQUESTS: dict[str, type[BaseModel]] = {
     "/api/docs/archive": DocArchiveRequest,
     "/api/docs/restore": DocRestoreRequest,
     "/api/history-window": WindowRequest,
-    "/api/forwarding": ForwardingRequest,
     "/api/autopilot": AutopilotRequest,
-    "/api/forward": ForwardRequest,
     "/api/insights": Finding,
 }
 
@@ -197,7 +190,6 @@ BODIES: dict[str, Any] = {
     "what_if": WhatIf | ApiError | WindowTooLong,
     "harnesses": Harnesses,
     "window": WindowState | ApiError,
-    "forwarding": ForwardingStatus | ForwardingUnconfigured | ApiError,
     "autopilot": AutopilotStatus | ApiError,
     "doctor": ContractReport,
     "task": TaskRecord | ApiError,
@@ -228,6 +220,5 @@ BODIES: dict[str, Any] = {
     "doc_restore": DocRestored | SkillRefusal | ApiError,
     "run": RunStarted | ApiError,
     "ingest": Accepted | ApiError,
-    "forward": ForwardAccepted | ApiError,
     "insight": InsightPosted | InsightRetracted | ApiError,
 }

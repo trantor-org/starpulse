@@ -108,11 +108,6 @@ class Accepted(_Api):
     deprecated: str | None = None
 
 
-class ForwardAccepted(_Api):
-    accepted: int
-    rejected: int
-
-
 class InsightPosted(_Api):
     id: str
     replaced: bool

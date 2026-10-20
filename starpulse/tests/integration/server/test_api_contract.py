@@ -40,7 +40,6 @@ ROUTES = (
     "/api/analytics/trace-clusters?outliers=2&hours=1",
     "/api/harnesses",
     "/api/history-window",
-    "/api/forwarding",
     "/api/autopilot",
     "/api/doctor",
     "/api/task/T-1",

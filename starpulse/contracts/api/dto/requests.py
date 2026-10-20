@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from starpulse.contracts.api._base import _Api
-from starpulse.contracts.api.dto.forwarding import QuietHours
+from starpulse.contracts.api.dto.autopilot import QuietHours
 
 
 class _Writer(_Api):
@@ -201,29 +201,9 @@ class WindowRequest(_Api):
     hours: float
 
 
-class ForwardingRequest(_Api):
-    """`PUT /api/forwarding`: whether a person's name may leave the instance."""
-
-    opt_in: bool
-
-
 class AutopilotRequest(_Api):
     """`PUT /api/autopilot`: whether the autopilot admits tasks, which harness it starts on, and/or its quiet hours."""
 
     enabled: bool | None = None
     harness: str | None = None
     quietHours: QuietHours | None = None
-
-
-class ForwardedEvent(_Api):
-    event_id: str
-    stream: str
-    fields: dict[str, Any]
-
-
-class ForwardRequest(_Api):
-    """`POST /api/forward`: a batch of events an instance's forwarder sends a hub."""
-
-    opt_in: bool
-    instance: str
-    events: list[ForwardedEvent]

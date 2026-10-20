@@ -27,7 +27,6 @@ ATTRIBUTE = {
     "ci": "ci",
     "event_log_retention_days": "event_log_retention_days",
     "event_log_archive_dir": "event_log_archive_dir",
-    "forward": "forward",
     "autopilot": "autopilot",
     "release": "release",
     "analytics": "analytics",
@@ -63,7 +62,6 @@ def test_a_worker_flag_is_read_by_serve_alone(flag: str) -> None:
     ("old", "new"),
     [
         ({"runs": [{"name": "a"}]}, {"runs": [{"name": "a", "domains": {"x": ["y"]}}]}),
-        ({"forward": {"url": "http://a"}}, {"forward": {"url": "http://b"}}),
         ({"search": {"embeddings_url": "http://a"}}, {"search": {"embeddings_url": "http://b"}}),
         ({"board": {"x": 1}}, {"board": {"x": 2}}),
         ({"ci": {"wait": 1}}, {"ci": {"wait": 2}}),
@@ -80,7 +78,6 @@ def test_a_change_to_a_context_owned_table_does_not_restart_serve(old: dict, new
         ({}, {"worker_memory": {"runs": {"soft_mb": 1, "hard_mb": 2}}}),
         ({}, {"mode": "hub"}),
         ({}, {"unheard_of": 1}),
-        ({}, {"forward": {"url": "http://a"}}),
         ({"search": {"embeddings_url": "http://a"}}, {"search": {}}),
     ],
 )
@@ -90,12 +87,11 @@ def test_a_change_serve_reads_or_that_changes_the_children_restarts_serve(old: d
 
 @pytest.mark.parametrize(
     "raw",
-    [{}, {"forward": {"url": "http://a", "token_env": "T"}}, {"search": {"embeddings_url": "http://a"}}],
+    [{}, {"search": {"embeddings_url": "http://a"}}],
 )
 def test_the_structural_rule_agrees_with_the_children_serve_starts(raw: dict, tmp_path) -> None:
     absent: Config = load(None)
-    config = replace(absent, forward=object() if "forward" in raw else None)
-    config = replace(config, search=replace(absent.search, embeddings_url=raw.get("search", {}).get("embeddings_url")))
+    config = replace(absent, search=replace(absent.search, embeddings_url=raw.get("search", {}).get("embeddings_url")))
 
     assert (worker_commands(config, None) != worker_commands(absent, None)) is restarts_serve({}, raw)
 
@@ -112,11 +108,6 @@ url = "http://dagu.invalid"
 [runs.domains]
 Ops = ["nightly", "task-duplicate-retrain"]
 
-[forward]
-url = "https://hub.example.test"
-token_env = "HUB_TOKEN"
-batch = 50
-
 [search]
 embeddings_url = "http://embed.invalid"
 model = "small"
@@ -126,7 +117,6 @@ model = "small"
 #: them, which is built from the whole config and swaps behind its socket without dropping a request.
 EDITS = {
     "runs": ('"nightly", "task-duplicate-retrain"', '"nightly"', {"api", "runs"}),
-    "forward": ("batch = 50", "batch = 10", {"api", "forwarding", "board"}),
     "search": ('model = "small"', 'model = "large"', {"api", "search"}),
     "board": ("interval = 1", "interval = 2", {"api", "pulls", "autopilot", "runs", "flow-metrics", "board"}),
 }

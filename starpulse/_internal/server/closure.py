@@ -31,7 +31,6 @@ ENTRIES = {
     "pulls": "starpulse._internal.server.worker",
     "autopilot": "starpulse._internal.server.autopilot_worker",
     "runs": "starpulse._internal.server.runs_worker",
-    "forwarding": "starpulse._internal.server.forwarding_worker",
     "flow-metrics": "starpulse._internal.server.flow_metrics_worker",
     "search": "starpulse._internal.server.search_worker",
     "board": "starpulse._internal.server.board_worker",
@@ -53,7 +52,6 @@ _SERVE_KEYS = (
     "worker_memory",
     "api_worker",
     "runs_worker",
-    "forwarding_worker",
     "flow_metrics_worker",
     "search_worker",
     "board_worker",
@@ -76,7 +74,6 @@ CONFIG_OWNERS: dict[str, tuple[str, ...]] = {
     "database_url": _CHILDREN,
     "board": _owned_by(*_BOARD_READERS),
     "runs": _owned_by("runs"),
-    "forward": _owned_by("forwarding", "board"),
     "search": _owned_by("search"),
     "release": _owned_by("pulls"),
     "repos": _owned_by("pulls"),
@@ -95,11 +92,11 @@ def restarts_serve(old: Mapping[str, object], new: Mapping[str, object]) -> bool
     """Whether a change from the `old` to the `new` raw `starpulse.toml` needs `serve` itself restarted.
 
     True when a changed key is one only `serve` reads, one no owner is named for, or one that adds or drops a supervised child:
-    a `[forward]` table, or a search `embeddings_url`. Any other change is applied by replacing the children that own it."""
+    a search `embeddings_url`. Any other change is applied by replacing the children that own it."""
     changed = {key for key in old.keys() | new.keys() if old.get(key) != new.get(key)}
     if any(SELF in CONFIG_OWNERS.get(key, (SELF,)) for key in changed):
         return True
-    return ("forward" in old) != ("forward" in new) or bool(_embeddings_url(old)) != bool(_embeddings_url(new))
+    return bool(_embeddings_url(old)) != bool(_embeddings_url(new))
 
 
 def _embeddings_url(raw: Mapping[str, object]) -> object:
@@ -175,7 +172,6 @@ def _blocks(name: str, config: Config) -> tuple[object, object]:
         api_worker,
         autopilot_worker,
         board_worker,
-        forwarding_worker,
         flow_metrics_worker,
         runs_worker,
         search_worker,
@@ -190,8 +186,6 @@ def _blocks(name: str, config: Config) -> tuple[object, object]:
         return autopilot_worker.fixed_blocks(config), autopilot_worker.autopilot_blocks(config)
     if name == "runs":
         return runs_worker.built_blocks(config), ()
-    if name == "forwarding":
-        return forwarding_worker.built_blocks(config), ()
     if name == "flow-metrics":
         return flow_metrics_worker.built_blocks(config), ()
     if name == "search":

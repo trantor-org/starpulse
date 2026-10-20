@@ -18,7 +18,7 @@ import pytest
 from starpulse._internal.config.config import Producer
 from starpulse._internal.runs import run_events
 from starpulse._internal.runs.cloudevents import SINGLE, CloudEventsIngest
-from starpulse._internal.runs.ingest import MAX_FORWARD_BODY
+from starpulse._internal.runs.ingest import MAX_BATCH_BODY
 from starpulse._internal.runs.ingest import tokens as ingest_tokens
 from starpulse._internal.runs.push_runs import PUSHED_INSTANCE, PushRuns
 from starpulse._internal.kit.adapter_kit import serve, url
@@ -159,7 +159,7 @@ def test_a_body_larger_than_the_limit_answers_413_and_writes_nothing(stack: Stac
         connection.putrequest("POST", "/api/machine-events")
         connection.putheader("Authorization", "Bearer cron-secret")
         connection.putheader("Content-Type", SINGLE)
-        connection.putheader("Content-Length", str(MAX_FORWARD_BODY + 1))
+        connection.putheader("Content-Length", str(MAX_BATCH_BODY + 1))
         connection.endheaders()
         status = connection.getresponse().status
     finally:
