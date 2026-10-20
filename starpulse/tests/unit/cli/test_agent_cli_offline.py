@@ -158,6 +158,7 @@ class TestConfigCheck:
             "search_worker": False,
             "board_worker": False,
             "api_worker": False,
+            "tls": None,
             "slow_read_seconds": 1.0,
             "worker_memory": {
                 "pulls": {"soft_mb": 768, "hard_mb": 1536},

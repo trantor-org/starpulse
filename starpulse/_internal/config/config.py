@@ -68,6 +68,8 @@ _KEYS = {
     "board_worker",
     "api_worker",
     "slow_read_seconds",
+    "tls_cert",
+    "tls_key",
     "worker_memory",
 }
 _INSTANCE_KEYS = {"name", "type", "url", "run_safe", "domains", "commit"}
@@ -447,6 +449,8 @@ class Config:
     """The Runs context (the run adapters and the pushed-runs follower) runs in `starpulse worker runs`, not in `serve`: `serve` starts none of them and draws the workflows the worker keeps in the event log; false: `serve` supervises that worker as a child."""
     worker_memory: Mapping[str, MemoryLimit] = field(default_factory=lambda: dict(WORKER_MEMORY))
     """The memory limits `serve` holds each worker child to: past `soft_mb` it replaces the child (starts a new one, then stops the old), past `hard_mb` it kills and restarts it. Keyed by context, `pulls`, `autopilot`, `runs`, `history` and `search`."""
+    tls: tuple[Path, Path] | None = None
+    """The certificate and key `tls_cert` and `tls_key` name: `serve` answers TLS, and HTTP/3 beside it; none is cleartext."""
     slow_read_seconds: float = SLOW_READ_S
     """`serve` logs a `slow_read` line for each `GET /api/pulls` that took this many seconds or more, from accept to the last byte written, with the seconds it waited for a handler thread, computed its answer and wrote it."""
     flow_metrics_worker: bool = False
@@ -582,6 +586,23 @@ def _retention(value: object, key: str) -> int:
     return value
 
 
+def _tls(raw: dict, path: Path | None) -> tuple[Path, Path] | None:
+    """The certificate and key `raw` names, from beside the config file; both or neither, each a file that exists."""
+    names = [raw.get("tls_cert"), raw.get("tls_key")]
+    if names == [None, None]:
+        return None
+    if None in names or path is None:
+        raise ConfigError("tls_cert and tls_key are set together")
+    files = []
+    for key, name in zip(("tls_cert", "tls_key"), names, strict=True):
+        if not isinstance(name, str):
+            raise ConfigError(f"{key} must be text")
+        if not (file := path.parent / name).is_file():
+            raise ConfigError(f"{key} {file} does not exist")
+        files.append(file)
+    return files[0], files[1]
+
+
 def _slow_read(value: object) -> float:
     """The seconds a read takes to be logged as slow; a number above zero."""
     if not isinstance(value, int | float) or isinstance(value, bool) or not value > 0:
@@ -620,6 +641,7 @@ def load(path: Path | None) -> Config:
         if not (file := path.parent / name).is_file():
             raise ConfigError(f"harnesses_file {file} does not exist")
         harnesses = load_harnesses(file)
+    tls = _tls(raw, path)
     board = raw.get("board", {})
     if not isinstance(board, dict):
         raise ConfigError("board must be a [board] table")
@@ -673,4 +695,5 @@ def load(path: Path | None) -> Config:
         board_worker=_flag(raw, "board_worker", False),
         api_worker=_flag(raw, "api_worker", False),
         slow_read_seconds=_slow_read(raw.get("slow_read_seconds", SLOW_READ_S)),
+        tls=tls,
     )

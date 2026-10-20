@@ -818,6 +818,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
             app,
             (args.host, args.port),
             listening,
+            tls=config.tls,
             stopping=lambda: feed.announce("restarting", {"at": time.time()}),
             drain_s=DRAIN_S,
         )
