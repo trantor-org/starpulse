@@ -134,27 +134,6 @@ day_rollups = Table(
     PrimaryKeyConstraint("day", "team", "machine", "state"),
 )
 
-#: The findings an engine posted through the removed insights API, kept so an existing history keeps its rows; nothing
-#: reads or writes it now.
-insights = Table(
-    "starpulse_insights",
-    metadata,
-    Column("id", String, primary_key=True),
-    Column("engine_name", String, nullable=False),
-    Column("engine_version", String, nullable=False),
-    Column("team", String),
-    Column("machine", String),
-    Column("state", String),
-    Column("task", String),
-    Column("severity", String, nullable=False),
-    Column("text", Text, nullable=False),
-    Column("evidence", JSON, nullable=False),
-    Column("created_at", Float, nullable=False),
-    Column("expires_at", Float),
-    Column("retracted_at", Float),
-    Index("ix_starpulse_insights_live", "retracted_at", "expires_at"),
-)
-
 #: Each pull request the PR store read from GitHub, one row per (repository, number), replaced by each read of an open
 #: one and never read again once `state` is MERGED or CLOSED (a MERGED row without `merge_sha` is read until it has one). `checks` is the required-check rollup (pass, failing,
 #: pending, none), `required` each required check as {name, result}, `updated_at` GitHub's own ISO 8601 UTC text

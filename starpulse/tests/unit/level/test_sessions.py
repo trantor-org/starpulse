@@ -4,6 +4,7 @@ import json
 import re
 from dataclasses import replace
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 
@@ -575,3 +576,8 @@ def test_a_failed_shell_write_is_not_the_first_edit() -> None:
     ]
 
     assert only(session_health(found, KEYS))["steps_before_edit"] is None
+
+
+def test_no_doc_lists_starpulse_insights() -> None:
+    docs = Path(__file__).resolve().parents[4] / "docs"
+    assert [path.name for path in docs.glob("*.md") if "starpulse_insights" in path.read_text()] == []
