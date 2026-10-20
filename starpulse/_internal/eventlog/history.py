@@ -55,7 +55,7 @@ from starpulse._internal.config.config import discover, load
 from starpulse._internal.eventlog import events as machine_events
 from starpulse._internal.eventlog import lane_events, lane_repair
 from starpulse._internal.eventlog.checkpoints import Checkpoints
-from starpulse._internal.eventlog.event_log import DEFAULT_POLL_INTERVAL, EventLog, Tail, create_tables, insert_event
+from starpulse._internal.eventlog.event_log import DEFAULT_POLL_INTERVAL, EventLog, create_tables, insert_event
 from starpulse._internal.eventlog.summaries import (
     BOARD,
     SUMMARY_TABLES,
@@ -825,7 +825,7 @@ def record_machine_events(
             stop.wait(interval)
     else:
         return
-    Tail(log, stream, after=after, interval=interval).run(
+    log.tail(stream, after=after, interval=interval).run(
         lambda entry: store.record_machine(entry.event_id, entry.fields, cursor=entry.id),
         stop,
         transient=(OperationalError,),
@@ -850,7 +850,7 @@ def record_lane_events(
             stop.wait(interval)
     else:
         return
-    Tail(log, stream, after=after, interval=interval).run(
+    log.tail(stream, after=after, interval=interval).run(
         lambda entry: store.record_lane_entry(entry.event_id, entry.fields, cursor=entry.id),
         stop,
         transient=(OperationalError,),

@@ -1,5 +1,6 @@
 """The event log across processes, on SQLite and on Postgres: a second process's append reaches a running tail."""
 
+import ast
 import multiprocessing
 import threading
 import time
@@ -10,6 +11,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import event, select, text, update
 
+import starpulse._internal as internal
 from starpulse._internal.eventlog.event_log import Entry, EventLog, Tail, prune_forever
 from starpulse._internal.eventlog.tables import events, gaps
 
@@ -123,3 +125,30 @@ def test_a_reader_left_behind_by_the_prune_timer_records_a_gap(database_url: str
     with log.engine.connect() as db:
         gaps_ = [tuple(r) for r in db.execute(select(gaps.c.stream, gaps.c.after_id, gaps.c.before_id, gaps.c.lost))]
     assert gaps_ == [("machine:events", "1", "6", 4)]
+
+
+#: The readers that built a `Tail` themselves, which the event log's catch-up boundary is to serve instead.
+_FORMER_TAIL_CALLERS = (
+    "eventlog/lane_events.py",
+    "hub/forward_report.py",
+    "eventlog/conformance_monitor.py",
+    "runs/projection.py",
+    "eventlog/history.py",
+)
+
+
+def _tail_constructions(path: Path) -> list[int]:
+    """The line of each `Tail(...)` call in `path`, found in its syntax tree so a comment or docstring is not one."""
+    calls = [node for node in ast.walk(ast.parse(path.read_text())) if isinstance(node, ast.Call)]
+    named = [
+        call for call in calls if getattr(call.func, "id", None) == "Tail" or getattr(call.func, "attr", None) == "Tail"
+    ]
+    return sorted(call.lineno for call in named)
+
+
+def test_no_reader_outside_the_event_log_constructs_a_tail_itself() -> None:
+    root = Path(next(iter(internal.__path__)))
+
+    constructed = {name: _tail_constructions(root / name) for name in _FORMER_TAIL_CALLERS}
+
+    assert {name: lines for name, lines in constructed.items() if lines} == {}

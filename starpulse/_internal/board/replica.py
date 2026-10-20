@@ -21,7 +21,7 @@ import threading
 import time
 from typing import TYPE_CHECKING, Any
 
-from starpulse._internal.eventlog.event_log import EventLog, Tail
+from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.feed.board_feed import BoardFeed, retained
 from starpulse.contracts import BoardTask
 
@@ -98,7 +98,7 @@ class Publisher:
         self._adapter = {name: value for name, value in kept.items() if name != "published"}
         if self._cursor is None or not retained(self._log, REPLICA_STREAM)(self._cursor):
             return  # nothing published is known: the first scan publishes every task
-        tail = Tail(self._log, REPLICA_STREAM, after=self._cursor)
+        tail = self._log.tail(REPLICA_STREAM, after=self._cursor)
         while entries := tail.poll():
             for entry in entries:
                 self._catch_up(entry.id, entry.fields)
@@ -233,7 +233,7 @@ def follow(
             finally:
                 feed.seen(str(entry.id))
 
-        Tail(log, REPLICA_STREAM, after=after, interval=interval).run(apply, stop)
+        log.tail(REPLICA_STREAM, after=after, interval=interval).run(apply, stop)
 
     thread = threading.Thread(target=run, name="board-replica", daemon=True)
     thread.start()

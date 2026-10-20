@@ -23,7 +23,7 @@ from typing import Any
 from starpulse._internal.autopilot.harness_setting import HarnessSetting
 from starpulse._internal.autopilot.quiet_hours import QuietHoursSetting
 from starpulse._internal.autopilot.toggle import TOGGLE_FILE, Toggle
-from starpulse._internal.eventlog.event_log import Entry, EventLog, Tail
+from starpulse._internal.eventlog.event_log import Entry, EventLog
 from starpulse._internal.feed.board_feed import BoardFeed
 
 logger = logging.getLogger(__name__)
@@ -36,7 +36,7 @@ POLL_S = 0.5
 
 
 def _follow(name: str, log: EventLog, stream: str, handle: Callable[[Entry], None], stop: threading.Event) -> None:
-    tail = Tail(log, stream, after=log.head() or 0, interval=POLL_S)
+    tail = log.tail(stream, after=log.head() or 0, interval=POLL_S)
     threading.Thread(target=tail.run, args=(handle, stop), name=name, daemon=True).start()
 
 

@@ -1474,9 +1474,8 @@ def follow(
         if isinstance(feed, Resumable):
             threading.Thread(target=feed.keep_saved, args=(stop,), name="board-state", daemon=True).start()
         # no cursor replays the whole retention
-        from starpulse._internal.eventlog.event_log import Tail  # noqa: PLC0415 - the database stack loads when a log opens
 
-        tail = Tail(log, stream, after=after, interval=interval)
+        tail = log.tail(stream, after=after, interval=interval)
         tail.run(lambda entry: handle(str(entry.id), entry.fields), stop)
 
     thread = threading.Thread(target=run, name="board-feed", daemon=True)

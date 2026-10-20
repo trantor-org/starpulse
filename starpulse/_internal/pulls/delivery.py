@@ -41,9 +41,8 @@ POLL_S = 1.0
 
 
 def _follow(name: str, log: EventLog, stream: str, after: int, handle: Callable[[Entry], None], stop: threading.Event):
-    from starpulse._internal.eventlog.event_log import Tail  # noqa: PLC0415 - the database stack loads when a log opens
 
-    tail = Tail(log, stream, after=after, interval=POLL_S)
+    tail = log.tail(stream, after=after, interval=POLL_S)
     thread = threading.Thread(target=tail.run, args=(handle, stop), name=name, daemon=True)
     thread.start()
     return thread
@@ -139,11 +138,10 @@ def follow_events(
     per stream until `stop`. Each waits for the Board replay: an event lands on the pull requests its task cites,
     which the feed knows only once it has read the Board. An entry applied twice leaves the store as once did, so a
     restart replays them all."""
-    from starpulse._internal.eventlog.event_log import Tail  # noqa: PLC0415 - the database stack loads when a log opens
 
     def run(stream: str, handle: Callable[[Entry], None]) -> None:
         feed.wait_replayed()
-        Tail(log, stream, after=0, interval=POLL_S).run(handle, stop)
+        log.tail(stream, after=0, interval=POLL_S).run(handle, stop)
 
     threads = [
         threading.Thread(target=run, args=item, name=f"pull-events-{item[0]}", daemon=True) for item in handlers.items()
@@ -173,11 +171,10 @@ class Notes:
     by `catch_up` on the thread placing a move, since the worker logs its note before the write the move comes from."""
 
     def __init__(self, log: EventLog, feed: Any) -> None:
-        from starpulse._internal.eventlog.event_log import Tail  # noqa: PLC0415 - the database stack loads when a log opens
 
         self._log = log
         self._feed = feed
-        self._tail = Tail(log, NOTES_STREAM, after=log.head() or 0, interval=POLL_S)
+        self._tail = log.tail(NOTES_STREAM, after=log.head() or 0, interval=POLL_S)
         self._lock = threading.Lock()
 
     def catch_up(self) -> None:
