@@ -46,3 +46,8 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         cues=lambda qualify: [{"event": "SHUT", "dag": "q/nightly", "state": lanes[-1]}],
         **writers,
     )
+
+
+def bare_board(**fields: Any) -> Board:
+    """A Board that places nothing and keeps only `fields`, for a test of one route through `serve`."""
+    return Board(machines=lambda qualify, workflows: {}, start=lambda feed, name, log: None, **fields)

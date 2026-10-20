@@ -11,7 +11,9 @@ from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.feed.history_window import HistoryWindow
 from starpulse._internal.server.reads import Response
+from starpulse._internal.server.services import Services
 from starpulse._internal.server.write_routes import WriteRequest, WriteRoutes
+from starpulse.tests.fake_board import bare_board
 
 _JSON = {"Content-Type": "application/json"}
 
@@ -28,7 +30,8 @@ def feed() -> BoardFeed:
 def _routes(feed: BoardFeed, tmp_path: Path, **pushes) -> WriteRoutes:
     log = EventLog(f"sqlite:///{tmp_path / 'settings.sqlite'}")
     window = HistoryWindow(feed, 6, log, tmp_path / "starpulse-settings.json")
-    return WriteRoutes(feed, window, lambda *args, **kwargs: None, lambda *args, **kwargs: None, {}, set(), **pushes)
+    unwritten = lambda *args, **kwargs: None  # noqa: E731 - a writer that answers nothing
+    return WriteRoutes(feed, window, bare_board(writer=unwritten, assign=unwritten), Services(**pushes))
 
 
 @pytest.fixture

@@ -18,7 +18,7 @@ WINDOWS = 2
 
 
 #: A test measures only where memray sees allocations (the free-threaded build reports none) and owns the one Tracker
-#: (`pytest --memray`, which ci/memray_flagged.py reruns slow tests under, holds it for the whole test).
+#: (`pytest --memray` holds it for the whole test).
 measures_allocations = pytest.mark.skipif(
     not sys._is_gil_enabled() or any(arg.startswith("--memray") for arg in sys.argv),
     reason="memray reports no allocation on the free-threaded build, and only one Tracker may be active under --memray",

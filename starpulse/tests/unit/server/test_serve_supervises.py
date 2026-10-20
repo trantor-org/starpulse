@@ -35,7 +35,7 @@ def _serve(
     monkeypatch.setattr(service, "start_autopilot", lambda *args, **kwargs: threads.append("autopilot"))
     monkeypatch.setattr(server, "start_delivery", lambda *args, **kwargs: threads.append("delivery") or (None, None))
     handled: dict[str, object] = {}
-    monkeypatch.setattr(server, "request_handler", lambda *args, **kwargs: handled.update(kwargs, args=args))
+    monkeypatch.setattr(server, "request_handler", lambda *args, **kwargs: handled.update(kwargs, services=args[5]))
     config = tmp_path / "starpulse.toml"
     config.write_text(settings + BOARD)
 
@@ -54,7 +54,7 @@ def test_serve_supervises_every_worker_and_starts_no_context_in_process(
     handled, threads = _serve(tmp_path, monkeypatch, "")
 
     assert threads == []
-    assert isinstance(handled["autopilot"], Remote)
+    assert isinstance(handled["services"].autopilot, Remote)
     [supervisor] = supervisors
     assert set(supervisor.commands) == {"api", "pulls", "autopilot", "runs", "flow-metrics", "board"}
     assert supervisor.started
@@ -148,7 +148,7 @@ def test_serve_follows_no_run_adapter_and_starts_no_pushed_run_reader(
     handled, _ = _serve(tmp_path, monkeypatch, settings + RUNS)
 
     assert Dagu.followed == []
-    assert "dagu" in handled["args"][2]  # the page's Run now still reaches the adapter
+    assert "dagu" in handled["services"].starts  # the page's Run now still reaches the adapter
 
 
 @pytest.mark.parametrize("settings", ["", "flow_metrics_worker = true\n"])

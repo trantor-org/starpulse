@@ -23,6 +23,7 @@ import sqlite3
 import threading
 import time
 from collections.abc import Callable, Iterator
+from dataclasses import replace
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
@@ -40,6 +41,7 @@ from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.feed.history_window import HistoryWindow
 from starpulse._internal.server.assembly import assemble
 from starpulse._internal.server.server import StarPulseServer, request_handler
+from starpulse._internal.server.services import Services
 from starpulse.contracts.adapters import BoardTask
 
 import starpulse
@@ -208,18 +210,20 @@ def build(
     store = HistoryStore(log.url, feed.machines)
     records, tasks = seed(feed, store, time.time() if now is None else now)
     window = HistoryWindow(feed, 24 * 7, log, directory / "starpulse-settings.json")
-    handler = request_handler(
-        feed,
-        STATIC,
-        {},
-        [],
-        store,
-        window,
+    # The preview reads its seeded task records and the native milestones and docs, and refuses every task write.
+    board = replace(
+        native_board(directory),
+        writer=None,
+        assign=None,
+        edit=None,
+        archive=None,
+        restore=None,
+        complete=None,
+        create=None,
         read=lambda task: records.get(task),
-        level=config.level,
-        autopilot=autopilot(directory, log, feed, config.autopilot),
-        milestones=native_board(directory),
     )
+    services = Services(level=config.level, autopilot=autopilot(directory, log, feed, config.autopilot))
+    handler = request_handler(feed, STATIC, store, window, board, services)
     return StarPulseServer(("127.0.0.1", port), handler), feed, tasks
 
 

@@ -13,7 +13,9 @@ from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.feed.history_window import HistoryWindow
 from starpulse._internal.server.compression import Encoded
 from starpulse._internal.server.reads import Arrival, ReadRoutes, Request, Response
+from starpulse._internal.server.services import Services
 from starpulse._internal.server.snapshot_cache import SnapshotCache
+from starpulse.tests.fake_board import bare_board
 
 
 @pytest.fixture
@@ -25,7 +27,8 @@ def routes(tmp_path: Path):
         history=HistoryStore("sqlite://", feed.machines),
         snapshots=SnapshotCache(feed),
         window=HistoryWindow(feed, 6, log, tmp_path / "starpulse-settings.json"),
-        slow_read_s=0.0,
+        board=bare_board(),
+        services=Services(slow_read_s=0.0),
     )
 
 

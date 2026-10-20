@@ -16,6 +16,7 @@ from starpulse._internal.board.seam import Board, Written
 from starpulse._internal.cli import agent_cli as cli
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import serve, task, url
+from starpulse.tests.fake_board import bare_board
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.unit.board.test_native import native_root, write_task
 
@@ -69,7 +70,7 @@ def _served(tmp_path: Path, description: str = BLOCK + "\n```\n", **seams: Calla
     for number in (1, 2):
         feed.put(task(f"task-{number}", "In Progress"))
     writers = {"read": built.read, "edit": built.edit, "archive": built.archive, "create": built.create, **seams}
-    with serve(tmp_path, feed, **writers) as server:
+    with serve(tmp_path, feed, bare_board(**writers)) as server:
         yield Served(url(server, ""), built, tmp_path)
 
 

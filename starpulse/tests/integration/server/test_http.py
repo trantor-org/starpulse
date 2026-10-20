@@ -22,6 +22,7 @@ from starpulse.contracts.adapters import Move
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.feed.machine_tasks import MachineTasks
 from starpulse._internal.config.config import CommitKeys
+from starpulse.tests.fake_board import bare_board
 from starpulse.tests.machines import MACHINES
 
 RUN_SAFE = frozenset({"dagu/whole-repo-gate"})
@@ -347,7 +348,7 @@ def test_a_move_posted_to_the_server_reaches_the_writer_and_answers_json(tmp_pat
 
     feed = BoardFeed()
     feed.put(task("PROJ-3", "Ready", moves={"in_progress": Move(allowed=True), "waiting": Move(allowed=True)}))
-    with _serve(tmp_path, feed, writer=writer) as server:
+    with _serve(tmp_path, feed, bare_board(writer=writer)) as server:
         allowed = _post_move(server, {"task": "PROJ-3", "to": "in_progress", "actor": "operator"})
         refused = _post_move(server, {"task": "PROJ-3", "to": "waiting"})
         with pytest.raises(urllib.error.HTTPError) as got:
@@ -375,7 +376,7 @@ def test_a_start_posted_to_the_server_saves_the_assignee_starts_the_session_and_
     feed = BoardFeed()
     feed.put(task("PROJ-3", "Ready"))
     body = json.dumps({"task": "PROJ-3", "profile": "@agent-deep-high", "harness": "claude"}).encode()
-    with _serve(tmp_path, feed, assign=assign, start_session=start_session) as server:
+    with _serve(tmp_path, feed, bare_board(assign=assign), start_session=start_session) as server:
         request = urllib.request.Request(_url(server, "/api/start"), data=body, headers={"Content-Type": "application/json"}, method="POST")
         with urllib.request.urlopen(request, timeout=5) as resp:
             answered = resp.status, json.load(resp)
@@ -416,7 +417,7 @@ def test_a_task_is_read_edited_and_archived_through_the_server(tmp_path: Path) -
 
     feed = BoardFeed()
     feed.put(task("PROJ-3", "Ready"))
-    with _serve(tmp_path, feed, read=lambda _: dict(record), edit=edit, archive=archive) as server:
+    with _serve(tmp_path, feed, bare_board(read=lambda _: dict(record), edit=edit, archive=archive)) as server:
         with urllib.request.urlopen(_url(server, "/api/task/PROJ-3"), timeout=5) as resp:
             opened = json.load(resp)
         record["plan"] = "another writer's plan"
@@ -443,7 +444,7 @@ def test_an_archived_task_is_restored_through_the_server_and_a_refusal_carries_i
         restored.append(task)
         return Written(task == "PROJ-3", "ok" if task == "PROJ-3" else f"{task} is already on the board", skill="reopening")
 
-    with _serve(tmp_path, BoardFeed(), restore=restore) as server:
+    with _serve(tmp_path, BoardFeed(), bare_board(restore=restore)) as server:
         back = _post(server, "/api/restore", {"task": "PROJ-3"})
         taken = _post(server, "/api/restore", {"task": "PROJ-4"})
         malformed = _post(server, "/api/restore", {})
@@ -473,7 +474,7 @@ def test_a_task_is_retired_read_back_and_imported_through_the_server(tmp_path: P
         retired=lambda task: [row for key, row in kept.items() if task in ("", key)],
         import_retired=import_retired,
     )
-    with _serve(tmp_path, BoardFeed(), milestones=board) as server:
+    with _serve(tmp_path, BoardFeed(), board) as server:
         retired = _post(server, "/api/retire", {"task": "PROJ-3"})
         refused = _post(server, "/api/retire", {"task": "PROJ-4"})
         imported = _post(server, "/api/retired/import", {"name": "PROJ-2.md", "text": "---\nid: PROJ-2\n---\n"})
@@ -509,7 +510,7 @@ def test_a_done_task_is_completed_through_the_server_and_a_refusal_carries_its_s
     feed = BoardFeed()
     feed.put(task("PROJ-3", "Done"))
     feed.put(task("PROJ-4", "Ready"))
-    with _serve(tmp_path, feed, complete=complete) as server:
+    with _serve(tmp_path, feed, bare_board(complete=complete)) as server:
         done = _post(server, "/api/complete", {"task": "PROJ-3"})
         early = _post(server, "/api/complete", {"task": "PROJ-4"})
         absent = _post(server, "/api/complete", {"task": "PROJ-9"})
@@ -543,7 +544,7 @@ def test_a_task_is_claimed_through_the_server_and_the_lifecycle_routes_answer_po
 
     feed = BoardFeed()
     feed.put(task("PROJ-3", "Ready", moves={"in_progress": Move(allowed=True)}))
-    with _serve(tmp_path, feed, writer=writer) as server:
+    with _serve(tmp_path, feed, bare_board(writer=writer)) as server:
         claimed = _post(server, "/api/claim", {"task": "PROJ-3", "session": "s-1"})
         sessionless = _post(server, "/api/claim", {"task": "PROJ-3"})
         parked = _post(server, "/api/park", {"task": "PROJ-3", "operator": "needs a decision"})

@@ -1,5 +1,6 @@
 """The server draws the Board its config's `[board]` adapter builds, and keeps history where `database_url` says."""
 
+import ast
 import time
 from dataclasses import fields
 from pathlib import Path
@@ -127,3 +128,44 @@ def test_a_board_type_whose_module_builds_no_board_is_refused_by_name(tmp_path: 
         load_board("starpulse.contracts", {}, tmp_path)
 
     assert str(refused.value) == "board type starpulse.contracts: starpulse.contracts has no board(settings, base)"
+
+
+SEAM_FILES = (
+    "board/seam.py",
+    "kit/adapter_kit.py",
+    "server/api_handler.py",
+    "server/reads.py",
+    "server/write_routes.py",
+    "server/services.py",
+)
+MOST_PARAMETERS = 12
+
+
+def _seam_functions() -> list[tuple[str, int]]:
+    """Every function the Board seam and its server side define, with the number of parameters it takes."""
+    root = Path(__file__).parents[3] / "_internal"
+    rows = []
+    for name in SEAM_FILES:
+        for node in ast.walk(ast.parse((root / name).read_text())):
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                args = node.args
+                count = len(args.posonlyargs) + len(args.args) + len(args.kwonlyargs)
+                rows.append((f"{name}:{node.name}", count + bool(args.vararg) + bool(args.kwarg)))
+    return rows
+
+
+def test_no_seam_function_takes_more_than_a_dozen_parameters() -> None:
+    wide = [row for row in _seam_functions() if row[1] > MOST_PARAMETERS]
+
+    assert wide == []
+
+
+def test_the_seam_declares_no_one_method_protocols() -> None:
+    source = (Path(__file__).parents[3] / "_internal" / "board" / "seam.py").read_text()
+    protocols = [
+        node.name
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.ClassDef) and any(ast.unparse(base).endswith("Protocol") for base in node.bases)
+    ]
+
+    assert protocols == []

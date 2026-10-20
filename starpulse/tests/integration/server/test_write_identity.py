@@ -38,11 +38,7 @@ def _served(tmp_path: Path) -> Iterator[tuple[str, BoardFeed, EventLog]]:
     with serve(
         tmp_path,
         feed,
-        writer=built.writer,
-        read=built.read,
-        edit=built.edit,
-        archive=built.archive,
-        create=built.create,
+        built,
     ) as server:
         yield url(server, ""), feed, log
 

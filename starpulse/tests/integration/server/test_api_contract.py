@@ -14,6 +14,7 @@ from sqlalchemy import create_engine
 from starpulse._internal.autopilot.runtime import build
 from starpulse._internal.config.autopilot import Autopilot
 from starpulse._internal.kit.adapter_kit import serve, task, url
+from starpulse.tests.fake_board import bare_board
 from starpulse.contracts.api.registry import BODIES, RESPONSES
 from starpulse._internal.config.level import Level, Orbit, Terminal
 from starpulse._internal.feed.board_feed import BoardFeed
@@ -75,8 +76,8 @@ def server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[ThreadingHTTPSe
     with serve(
         tmp_path,
         feed,
+        bare_board(read=lambda t: {"title": t}),
         history=store,
-        read=lambda t: {"title": t},
         clock=lambda: NOW,
         level=LEVEL,
         autopilot=runtime,

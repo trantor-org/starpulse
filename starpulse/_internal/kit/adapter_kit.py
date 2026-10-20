@@ -29,6 +29,7 @@ import urllib.error
 import urllib.request
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
+from dataclasses import replace
 from http.client import HTTPResponse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -37,36 +38,21 @@ from typing import Any, ClassVar
 import jsonschema
 from pydantic import BaseModel
 
-from starpulse._internal.autopilot.runtime import Runtime
 from starpulse._internal.board.seam import (
-    AssigneeWriter,
     Board,
     MoveWriter,
-    TaskArchiver,
-    TaskCompleter,
-    TaskCreator,
-    TaskEditor,
-    TaskReader,
-    TaskRestorer,
     Written,
 )
-from starpulse._internal.config.analytics import Analytics
-from starpulse._internal.config.config import SLOW_READ_S, Config
-from starpulse._internal.config.harnesses import Harnesses
-from starpulse._internal.config.level import Level
+from starpulse._internal.config.config import Config
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import History, HistoryStore
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.feed.history_window import HistoryWindow
 from starpulse._internal.feed.machine_tasks import MachineTasks
-from starpulse._internal.feed.search import SearchIndex
-from starpulse._internal.harnesses.telemetry import TelemetryLog
 from starpulse._internal.level.insights import Insights, InsightStore
-from starpulse._internal.pulls.pull_refresh import PullRefresh
-from starpulse._internal.pulls.pulls import PullStore
-from starpulse._internal.runs.cloudevents import CloudEventsIngest
 from starpulse._internal.server.assembly import assemble as _assemble
 from starpulse._internal.server.server import StarPulseServer, request_handler
+from starpulse._internal.server.services import Services
 from starpulse._internal.server.writes import move_task
 from starpulse.contracts.adapters import (
     FINDING_TEXT_MAX,
@@ -352,45 +338,25 @@ def _no_writer(task: str, status: str, actor: str = "") -> Written:
     raise AssertionError(f"the test reached the board writer: {task} {status}")
 
 
+def _bare_board() -> Board:
+    return Board(machines=lambda qualify, workflows: {}, start=lambda feed, name, log: None)
+
+
 @contextmanager
 def serve(
     tmp_path: Path,
     feed: BoardFeed | None = None,
-    starts: Mapping[str, Callable[[str], str]] | None = None,
+    board: Board | None = None,
+    *,
     history: History | None = None,
-    run_safe: frozenset[str] = frozenset(),
-    writer: MoveWriter | None = None,
-    harnesses: Harnesses | None = None,
-    assign: AssigneeWriter | None = None,
-    start_session: Callable[..., str] | None = None,
     window: HistoryWindow | None = None,
-    read: TaskReader | None = None,
-    edit: TaskEditor | None = None,
-    archive: TaskArchiver | None = None,
-    create: TaskCreator | None = None,
     clock: Callable[[], float] = time.time,
     gate: Callable[[BaseHTTPRequestHandler], bool] | None = None,
-    insights: Insights | None = None,
-    events: CloudEventsIngest | None = None,
     port: int = 0,
-    level: Level | None = None,
-    autopilot: Runtime | None = None,
-    reruns: Mapping[str, Callable[[str, Mapping[str, str]], str]] | None = None,
-    contract: Callable[[], dict[str, Any]] | None = None,
-    milestones: Board | None = None,
-    pulls: PullStore | None = None,
-    telemetry: TelemetryLog | None = None,
-    complete: TaskCompleter | None = None,
-    restore: TaskRestorer | None = None,
-    search: SearchIndex | None = None,
-    analytics: Analytics | None = None,
-    pull_refresh: PullRefresh | None = None,
-    slow_read_s: float = SLOW_READ_S,
-    actor_metrics: Callable[[], str] | None = None,
-    lane_metrics: Callable[[], str] | None = None,
-    conformance_metrics: Callable[[], str] | None = None,
+    **services: Any,
 ) -> Iterator[ThreadingHTTPServer]:
-    """Serve a stub build in `tmp_path` until the `with` block ends."""
+    """Serve a stub build in `tmp_path` until the `with` block ends. `board` is the Board the routes write through (a
+    bare one when None; a move or start it has no writer for fails the test); `services` are the `Services` fields."""
     static = tmp_path / "static"
     (static / "assets").mkdir(parents=True, exist_ok=True)
     (static / "index.html").write_text("<!doctype html>")
@@ -398,41 +364,17 @@ def serve(
     (tmp_path / "secret.txt").write_text("")
     served = feed or BoardFeed()
     log = EventLog(f"sqlite:///{tmp_path / 'settings.sqlite'}")
+    board = board or _bare_board()
+    board = replace(board, writer=board.writer or _no_writer, assign=board.assign or _no_writer)
     handler = request_handler(
         served,
         static,
-        starts or {},
-        run_safe,
         history or HistoryStore("sqlite://", feed.machines if feed else {}),
         window or HistoryWindow(served, 6, log, tmp_path / "starpulse-settings.json"),
-        writer or _no_writer,
-        harnesses,
-        assign or _no_writer,
-        start_session,
-        read,
-        edit,
-        archive,
-        create,
+        board,
+        Services(**services),
         clock,
         gate,
-        level,
-        insights=insights,
-        events=events,
-        autopilot=autopilot,
-        reruns=reruns,
-        contract=contract,
-        milestones=milestones,
-        pulls=pulls,
-        telemetry=telemetry,
-        complete=complete,
-        restore=restore,
-        search=search,
-        analytics=analytics,
-        pull_refresh=pull_refresh,
-        slow_read_s=slow_read_s,
-        actor_metrics=actor_metrics,
-        lane_metrics=lane_metrics,
-        conformance_metrics=conformance_metrics,
     )
     server = StarPulseServer(("127.0.0.1", port), handler)
     # A short poll interval: `shutdown` waits out the one in flight, so the default half second is paid by every test.

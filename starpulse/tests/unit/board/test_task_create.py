@@ -233,7 +233,7 @@ def test_post_api_tasks_creates_on_the_native_board_and_answers_405_to_a_get(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     built, feed = _serving(tmp_path, monkeypatch)
-    with serve(tmp_path, feed, create=built.create) as server:
+    with serve(tmp_path, feed, built) as server:
         request = urllib.request.Request(
             url(server, "/api/tasks"),
             data=_raw(title="Over HTTP"),

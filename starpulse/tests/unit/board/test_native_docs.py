@@ -360,7 +360,7 @@ def test_native_doc_routes_list_show_create_update_and_archive_over_http(
     served: tuple[Board, Path], tmp_path: Path
 ) -> None:
     built, docs = served
-    with serve(tmp_path, BoardFeed(), milestones=built) as server:
+    with serve(tmp_path, BoardFeed(), built) as server:
         listed = _call(server, "/api/docs")
         shown = _call(server, "/api/docs/doc-84")
         missing = _call(server, "/api/docs/doc-9")
@@ -390,7 +390,7 @@ def test_native_doc_restore_route_answers_the_doc_and_the_writers_refusal(
     served: tuple[Board, Path], tmp_path: Path
 ) -> None:
     built, docs = served
-    with serve(tmp_path, BoardFeed(), milestones=built) as server:
+    with serve(tmp_path, BoardFeed(), built) as server:
         archived = _call(server, "/api/docs/archive", {"doc": "doc-84"})
         restored = _call(server, "/api/docs/restore", {"doc": "doc-84", "folder": "specs"})
         again = _call(server, "/api/docs/restore", {"doc": "doc-84", "folder": "specs"})
@@ -458,7 +458,7 @@ def test_native_doc_cli_show_json_returns_the_doc_type_and_body(
         "---\nid: doc-1\ntitle: Plan\ntype: specification\ncreated_date: '2026-10-01 08:00'\n"
         "updated_date: '2026-10-01 08:00'\n---\n# Plan\n\nBody text.\n"
     )
-    with serve(tmp_path, BoardFeed(), milestones=built) as server:
+    with serve(tmp_path, BoardFeed(), built) as server:
         code, doc = _verb(capsys, server, "doc", "show", "doc-1", "--json")
 
     assert code == 0
@@ -469,7 +469,7 @@ def test_native_doc_cli_lists_creates_updates_and_archives(
     served: tuple[Board, Path], tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     built, docs = served
-    with serve(tmp_path, BoardFeed(), milestones=built) as server:
+    with serve(tmp_path, BoardFeed(), built) as server:
         listed = _verb(capsys, server, "doc", "list", "--json")
         created = _verb(
             capsys, server, "doc", "create", "Next", "--type", "guide", "--folder", "guides", "--body", "Hi\n"
@@ -492,7 +492,7 @@ def test_native_doc_cli_restores_an_archived_doc_into_the_folder_named(
     served: tuple[Board, Path], tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     built, docs = served
-    with serve(tmp_path, BoardFeed(), milestones=built) as server:
+    with serve(tmp_path, BoardFeed(), built) as server:
         archived = _verb(capsys, server, "doc", "archive", "doc-84")
         restored = _verb(capsys, server, "doc", "restore", "doc-84", "--folder", "specs")
         again = _verb(capsys, server, "doc", "restore", "doc-84")
@@ -506,7 +506,7 @@ def test_native_doc_cli_update_with_nothing_to_change_is_a_usage_error(
     served: tuple[Board, Path], tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     built, _ = served
-    with serve(tmp_path, BoardFeed(), milestones=built) as server:
+    with serve(tmp_path, BoardFeed(), built) as server:
         code, doc = _verb(capsys, server, "doc", "update", "doc-84")
 
     assert (code, doc["code"]) == (2, "usage")

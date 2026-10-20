@@ -270,7 +270,8 @@ from starpulse._internal.server.zygote import Forker
 from starpulse._internal.server.writes import (
     reconcile_lanes,
 )
-from starpulse._internal.server.api_handler import _CONTRACT_TTL_S, Arrival, _cached, _no_writer, request_handler
+from starpulse._internal.server.api_handler import _CONTRACT_TTL_S, Arrival, _cached, request_handler
+from starpulse._internal.server.services import Services
 from starpulse._internal.server.responses import _HEALTH_HOURS, _error, _hours
 from starpulse._internal.server.responses import health_response, history_response  # noqa: F401 - the read routes stay importable from here
 from starpulse._internal.server.encoding import encode, event
@@ -1028,41 +1029,28 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         if producer_tokens
         else None
     )
-    handler = request_handler(
-        feed,
-        _STATIC,
-        starts,
-        run_safe,
-        store,
-        window,
-        board.writer or _no_writer,
-        config.harnesses,
-        board.assign or _no_writer,
-        starter(config.session_start_url),
-        board.read,
-        board.edit,
-        board.archive,
-        board.create,
-        complete=board.complete,
-        restore=board.restore,
-        gate=gate,
+    services = Services(
+        starts=starts,
+        run_safe=run_safe,
+        reruns=reruns,
+        harnesses=config.harnesses,
+        start_session=starter(config.session_start_url),
         level=config.level if args.hub else None,
         insights=insights,
         events=cloudevents,
-        reruns=reruns,
-        contract=_cached(lambda: doctor.contract(feed.snapshot(), config, probes), _CONTRACT_TTL_S),
-        milestones=board,
-        pulls=pulls,
-        actor_metrics=actor_metrics,
-        lane_metrics=lane_metrics,
-        conformance_metrics=conformance_metrics,
-        telemetry=TelemetryLog(log),
         autopilot=autopilot_runtime,
+        contract=_cached(lambda: doctor.contract(feed.snapshot(), config, probes), _CONTRACT_TTL_S),
+        pulls=pulls,
+        telemetry=TelemetryLog(log),
         search=search,
         analytics=config.analytics,
         pull_refresh=pull_refresh,
         slow_read_s=config.slow_read_seconds,
+        actor_metrics=actor_metrics,
+        lane_metrics=lane_metrics,
+        conformance_metrics=conformance_metrics,
     )
+    handler = request_handler(feed, _STATIC, store, window, board, services, gate=gate)
     if supervisor:
         supervisor.start()
     try:
