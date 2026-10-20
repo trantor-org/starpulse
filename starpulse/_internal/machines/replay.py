@@ -11,6 +11,8 @@ from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass
 
+from starpulse._internal.machines.transitions import Table
+
 #: How many example tasks a violation names.
 EXAMPLES = 5
 
@@ -74,21 +76,16 @@ class EventJudge:
     An event several transitions share leaves the key in any state it leads to, so the key's possible states are tracked,
     and a key in a final state may also begin again from the initial one."""
 
-    def __init__(self, machine: dict) -> None:
-        self._start = initial(machine)
-        self._finals = {s["id"] for s in machine["states"] if s["final"]}
-        self._moves: dict[str, dict[str, set[str]]] = defaultdict(lambda: defaultdict(set))
-        for t in machine["transitions"]:
-            self._moves[t["event"]][t["source"]].add(t["target"])
-        self._where: dict[str, set[str]] = {}
+    def __init__(self, table: Table) -> None:
+        self._table = table
+        self._where: dict[str, frozenset[str]] = {}
 
     def judge(self, key: str, event: str) -> str | None:
         """Apply `event` to `key`: None when a state it may be in declares the event, else those states joined with `|`.
 
         The event a state does not declare leaves the key where it was."""
-        here = self._where.setdefault(key, {self._start})
-        sources = here | ({self._start} if here & self._finals else set())
-        if leads := {target for source in sources for target in self._moves[event].get(source, ())}:
+        here = self._where.setdefault(key, frozenset({self._table.initial}))
+        if leads := self._table.place(here, event, lenient=False):
             self._where[key] = leads
             return None
         return " | ".join(sorted(here))
@@ -96,7 +93,7 @@ class EventJudge:
 
 def check_events(name: str, machine: dict, rows: Iterable[tuple[str, float, str]]) -> Report:
     """Judge `(key, at, event)` rows, oldest first, each key replayed on its own from the initial state."""
-    judge = EventJudge(machine)
+    judge = EventJudge(Table(machine))
     replayed = 0
     refused: dict[tuple[str, str], list[str]] = defaultdict(list)
     for key, _, event in rows:
