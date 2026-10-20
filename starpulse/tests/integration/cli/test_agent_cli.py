@@ -2299,7 +2299,8 @@ def test_a_manifest_case_builds_only_the_servers_its_template_names(request: pyt
 
         _servers(request, template)
 
-        assert STARTED[0] - before == built
+        # the servers are shared (ci/shared_servers.py): one an earlier case built is not built again
+        assert STARTED[0] - before <= built
 
 
 @pytest.mark.parametrize(("verb", "exit_code"), list(CASES))
@@ -2534,3 +2535,14 @@ def test_board_milestone_lists_the_done_tasks_past_their_hot_day(
     assert code == 0
     assert sorted(t["id"] for t in done["tasks"]) == ["PROJ-1", "PROJ-3", "PROJ-4"]
     assert {t["lane"] for t in done["tasks"]} == {"done"}
+
+
+def test_a_server_a_manifest_case_names_outlives_the_case_that_built_it(request: pytest.FixtureRequest) -> None:
+    """A server per case is the module's cost: a fixture the cases share is built once per worker, not once per case."""
+    manager = request.session._fixturemanager
+    scopes = {}
+    for fixture in SERVERS.values():
+        (definition, *_) = manager.getfixturedefs(fixture, request.node)
+        scopes[fixture] = definition.scope
+
+    assert {fixture: scope for fixture, scope in scopes.items() if scope == "function"} == {}
