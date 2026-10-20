@@ -6,7 +6,7 @@ import threading
 
 from starpulse._internal.feed.board_feed import BoardFeed, entry_position
 
-CLAIMS_STREAM = "board:claims"  # read, not produced here: the contract scan counts only `STREAM` producers
+CLAIMS_STREAM = "board:claims"  # the native board writer appends it; the contract scan counts only `STREAM` producers
 
 
 class ClaimRefusals:
