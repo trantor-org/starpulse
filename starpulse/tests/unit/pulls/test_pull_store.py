@@ -450,6 +450,21 @@ def test_reconciling_the_open_records_closes_each_one_github_reports_closed_and_
     assert all("pullRequests" not in query for query in github.queries)  # a read of one pull request, never a listing
 
 
+def test_reconcile_reads_a_merged_record_that_has_no_merge_sha(store: PullStore) -> None:
+    github = Github()
+    github.add(1, state="MERGED", updated=NEW, merged_at=NEW)
+    github.add(2, state="MERGED", updated=NEW, merged_at=NEW)
+    store.save([{**_stored(REPO, 1), "state": "MERGED", "mergedAt": NEW}])
+    store.save([{**_stored(REPO, 2), "state": "MERGED", "mergedAt": NEW, "mergeSha": "a" * 40}])
+    sync = PullSync(store, BoardFeed(), (), github, lambda: 160.0)
+
+    assert sync.reconcile_open() == 1  # #2 already holds its merge commit
+    sync.serve_requests()
+
+    assert store.find(number=1)[0]["mergeSha"]
+    assert sync.reconcile_open() == 0
+
+
 def test_a_second_reconcile_reads_only_the_records_still_open(store: PullStore) -> None:
     github = Github()
     github.add(1)

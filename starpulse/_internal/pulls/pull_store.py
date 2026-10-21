@@ -183,9 +183,11 @@ class PullSync:
 
     def reconcile_open(self) -> int:
         """Queue a read of each pull request the store holds OPEN, and say how many: one the retired listing poll left
-        open, and no event will close, closes on its read. Each read is one pull request alone, so a clean store costs
-        one read per genuinely open pull request."""
-        stale = self._store.find(state="OPEN", held_only=True)
+        open, and no event will close, closes on its read. So is a MERGED one with no merge commit, which only a
+        lifecycle event wrote and the pin gate cannot release a dependent on. Each read is one pull request alone, so a
+        clean store costs one read per genuinely open pull request."""
+        held = self._store.find(held_only=True)
+        stale = [r for r in held if r["state"] == "OPEN" or (r["state"] == "MERGED" and not r["mergeSha"])]
         for record in stale:
             self._requests.put((record["repo"], record["number"]))
         if stale:
