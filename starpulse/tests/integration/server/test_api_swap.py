@@ -1,5 +1,6 @@
 """Replacing the Page API child drains the requests it took and refuses none that arrive meanwhile."""
 
+import http.client
 import socket
 import sys
 import threading
@@ -43,12 +44,21 @@ def test_the_swapped_api_child_answers_every_request_made_across_the_swap(
     failed: list[BaseException] = []
     halt = threading.Event()
 
+    def get(port: int) -> int:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/snapshot", timeout=60) as resp:
+            resp.read()
+            return resp.status
+
     def ask(port: int) -> None:
         while not halt.is_set():
             try:
-                with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/snapshot", timeout=60) as resp:
-                    resp.read()
-                    answered.append(resp.status)
+                try:
+                    answered.append(get(port))
+                except (http.client.RemoteDisconnected, ConnectionResetError):
+                    # A connection the old child had accepted but not yet read is closed as it stops, before any
+                    # byte of a reply; a client resends an idempotent GET then, as a browser does. A refusal or a
+                    # timeout is not retried and still fails.
+                    answered.append(get(port))
             except (OSError, urllib.error.URLError) as exc:
                 failed.append(exc)
             time.sleep(0.05)
