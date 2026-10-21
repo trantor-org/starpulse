@@ -398,9 +398,6 @@ jobs:
   # server time), and 450 sits over the worst loaded p95 seen there (408 ms, October 2026).
   latency-gate:
     if: github.event_name != 'push'
-    # Advisory: the shared runner's load pushes rows a few ms over the 50 ms budget on most runs, so the table is
-    # reported on every PR without blocking merge.
-    continue-on-error: true
     runs-on: [self-hosted, ai-vm-1]
     timeout-minutes: 30
     steps:
@@ -442,8 +439,11 @@ jobs:
             cat "$WORK/server.log"
             exit 1
           fi
+          # Advisory: the shared runner's load pushes rows a few ms over the 50 ms budget on most runs, so a miss warns
+          # with the table and does not block merge; setup failures above still fail the job.
           uv run --no-sync python bench/page_latency.py "http://127.0.0.1:$port" --repeat 3 \
-            --ceiling "first paint of the board=450" --fail-non-2xx
+            --ceiling "first paint of the board=450" --fail-non-2xx \
+            || echo "::warning::latency budget missed; advisory on the shared runner, see the table above"
 
   # The out-of-the-box install on macOS: the wheel goes into an empty virtualenv and `starpulse serve` starts from an empty
   # directory with no config, then ci/fresh_serve.py fails unless the page answers and every worker child, the Page API
