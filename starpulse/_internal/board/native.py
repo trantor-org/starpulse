@@ -698,15 +698,21 @@ class _Retired:
     def __init__(self) -> None:
         self.engine: Engine | None = None
 
-    def rows(self, task: str = "") -> list[dict[str, str]]:
-        """The retired task `task` as `[{task, name, text}]`, empty when it is not retired; every one, by id, for ""."""
+    def rows(self, task: str = "", milestone: str = "") -> list[dict[str, str]]:
+        """The retired task `task` as `[{task, name, text}]`, empty when it is not retired; every one, by id, for "".
+        A `milestone` keeps only the tasks whose front matter names it."""
         if self.engine is None:
             return []
         query = select(retired_tasks.c.task, retired_tasks.c.name, retired_tasks.c.text).order_by(retired_tasks.c.task)
         if task:
             query = query.where(func.lower(retired_tasks.c.task) == task.lower())
+        if milestone:  # the text search narrows the rows; the front matter decides
+            query = query.where(retired_tasks.c.text.contains(milestone))
         with self.engine.connect() as db:
-            return [dict(row._mapping) for row in db.execute(query)]
+            rows = [dict(row._mapping) for row in db.execute(query)]
+        if not milestone:
+            return rows
+        return [row for row in rows if str(_split_record(row["text"])[0].get("milestone") or "").strip() == milestone]
 
     def texts(self) -> Iterator[str]:
         """Every retired task's text, by id, a page of rows at a time, so no more than a page is held at once."""
@@ -814,8 +820,8 @@ def _retirer(root: Path, retired: _Retired) -> TaskRetirer:
 
 
 def _retired_reader(retired: _Retired) -> RetiredReader:
-    def read(task: str, /) -> list[Mapping[str, str]]:
-        return list(retired.rows(task))
+    def read(task: str, milestone: str, /) -> list[Mapping[str, str]]:
+        return list(retired.rows(task, milestone))
 
     return read
 

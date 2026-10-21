@@ -47,10 +47,10 @@ def test_a_retired_done_task_leaves_the_board_and_its_file_is_kept_byte_for_byte
 
     assert written.ok, written.output
     assert not _path(base).exists()
-    assert built.retired("task-5") == [{"task": "task-5", "name": "task-5 - Title.md", "text": text}]
-    assert built.retired("TASK-5") == built.retired("task-5")
-    assert built.retired("") == built.retired("task-5")
-    assert built.retired("task-6") == []
+    assert built.retired("task-5", "") == [{"task": "task-5", "name": "task-5 - Title.md", "text": text}]
+    assert built.retired("TASK-5", "") == built.retired("task-5", "")
+    assert built.retired("", "") == built.retired("task-5", "")
+    assert built.retired("task-6", "") == []
 
 
 def test_a_retired_task_may_come_from_completed_or_the_archive_whatever_its_status(
@@ -66,7 +66,7 @@ def test_a_retired_task_may_come_from_completed_or_the_archive_whatever_its_stat
     assert built.retire("task-5").ok
     assert built.retire("task-6").ok
 
-    assert [row["task"] for row in built.retired("")] == ["task-5", "task-6"]
+    assert [row["task"] for row in built.retired("", "")] == ["task-5", "task-6"]
     assert list(native_root(base).glob("**/*.md")) == []
 
 
@@ -79,7 +79,7 @@ def test_retiring_an_open_or_unknown_task_is_refused_and_keeps_its_file(started:
     assert not built.retire("task-404").ok
 
     assert open_task.is_file()
-    assert built.retired("") == []
+    assert built.retired("", "") == []
 
 
 def test_retiring_a_task_whose_number_is_kept_with_other_text_is_refused_and_keeps_its_file(
@@ -95,7 +95,7 @@ def test_retiring_a_task_whose_number_is_kept_with_other_text_is_refused_and_kee
 
     assert not refused.ok and "task-5" in refused.output
     assert rewritten.is_file()
-    assert [row["text"] for row in built.retired("task-5")] == [kept]
+    assert [row["text"] for row in built.retired("task-5", "")] == [kept]
 
 
 def test_a_board_that_has_not_started_keeps_no_retired_tasks(tmp_path: Path) -> None:
@@ -104,7 +104,7 @@ def test_a_board_that_has_not_started_keeps_no_retired_tasks(tmp_path: Path) -> 
     assert built.retire is not None and built.retired is not None
 
     assert not built.retire("task-5").ok
-    assert built.retired("") == []
+    assert built.retired("", "") == []
     assert _path(tmp_path).is_file()
 
 
@@ -118,7 +118,7 @@ def test_a_restore_returns_a_retired_task_to_tasks_unchanged(started: tuple[Boar
 
     assert restored.ok, restored.output
     assert _path(base).read_bytes() == before
-    assert built.retired("task-5") == []
+    assert built.retired("task-5", "") == []
 
 
 def test_a_restore_of_a_retired_task_never_replaces_a_file_and_keeps_the_row(started: tuple[Board, Path]) -> None:
@@ -130,7 +130,7 @@ def test_a_restore_of_a_retired_task_never_replaces_a_file_and_keeps_the_row(sta
 
     assert not built.restore("task-5").ok
 
-    assert len(built.retired("task-5")) == 1
+    assert len(built.retired("task-5", "")) == 1
 
 
 def test_a_new_task_numbers_past_the_retired_tasks(started: tuple[Board, Path]) -> None:
@@ -165,7 +165,7 @@ def test_an_imported_retired_task_is_kept_and_the_same_import_again_is_accepted(
     again = built.import_retired("task-3 - Old.md", text)
 
     assert (first.ok, first.output, again.ok) == (True, "task-3", True)
-    assert built.retired("task-3") == [{"task": "task-3", "name": "task-3 - Old.md", "text": text}]
+    assert built.retired("task-3", "") == [{"task": "task-3", "name": "task-3 - Old.md", "text": text}]
 
 
 @pytest.mark.parametrize(
@@ -187,7 +187,7 @@ def test_an_import_of_a_retired_task_is_refused_when_it_conflicts_or_names_no_ta
 
     assert not built.import_retired(name, text).ok
 
-    assert [row["task"] for row in built.retired("")] == ["task-3"]
+    assert [row["task"] for row in built.retired("", "")] == ["task-3"]
 
 
 LAN = "192.168.0.42"
@@ -339,3 +339,17 @@ def test_a_restored_retired_task_is_open_again_for_its_dependents(
 
     assert feed.is_done("task-5")
     assert feed.task("task-5") is not None
+
+
+def test_retired_filters_by_the_milestone_in_the_front_matter(started: tuple[Board, Path]) -> None:
+    built, base = started
+    assert built.retire is not None and built.retired is not None
+    write_task(base, "task-6", "Done", milestone="m-1")
+    write_task(base, "task-7", "Done", milestone="m-12")
+    write_task(base, "task-8", "Done", note="'mentions milestone: m-1 in a field'")
+    for task in ("task-5", "task-6", "task-7", "task-8"):
+        assert built.retire(task).ok
+
+    assert [row["task"] for row in built.retired("", "m-1")] == ["task-6"]
+    assert [row["task"] for row in built.retired("", "")] == ["task-5", "task-6", "task-7", "task-8"]
+    assert built.retired("task-7", "m-1") == []

@@ -347,7 +347,9 @@ class ReadRoutes:
         return Response(encode("docs", body), status)
 
     def _retired(self, request: Request, query: Query) -> Response:
-        status, body = retired_list(self._milestones, query.get("task", [""])[0])
+        status, body = retired_list(
+            self._milestones, query.get("task", [""])[0], query.get("milestone", [""])[0]
+        )
         return Response(encode("retired", body), status)
 
     def _history_window(self, request: Request, query: Query) -> Response:

@@ -55,7 +55,7 @@ def test_a_scan_settles_a_retired_done_task_without_holding_its_text(
 
     assert adapter._settled_retired == {"task-5"}
     assert not any(_holds(held, text) for held in vars(adapter).values())
-    assert built.retired("task-5")[0]["text"] == text
+    assert built.retired("task-5", "")[0]["text"] == text
 
 
 def test_the_reader_streams_every_text_in_id_order_across_pages(
@@ -66,7 +66,7 @@ def test_the_reader_streams_every_text_in_id_order_across_pages(
     monkeypatch.setattr(native, "_RETIRED_PAGE", 1)
     for task in ("task-6", "task-5"):
         built.retire(task)
-    texts = [row["text"] for row in built.retired("")]
+    texts = [row["text"] for row in built.retired("", "")]
     retired = _Retired()
     retired.engine = EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}").engine
 

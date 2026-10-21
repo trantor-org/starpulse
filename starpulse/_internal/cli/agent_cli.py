@@ -902,6 +902,7 @@ def _parser() -> argparse.ArgumentParser:
         (0, 2, 3),
     )
     retired.add_argument("task", nargs="?", default="", help="one retired task's key (`PROJ-45`); default: every one")
+    retired.add_argument("--milestone", default="", help="only the retired tasks of this milestone (`m-9`)")
     import_retired = leaf(
         task_verbs,
         "import-retired",

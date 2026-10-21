@@ -496,7 +496,8 @@ def task_retire(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[st
 
 def task_retired(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     base = agent_wire.server_url(args.server, environ)
-    path = f"/api/retired?task={urllib.parse.quote(args.task, safe='')}" if args.task else "/api/retired"
+    params = {key: value for key, value in (("task", args.task), ("milestone", args.milestone)) if value}
+    path = f"/api/retired?{urllib.parse.urlencode(params)}" if params else "/api/retired"
     status, reply = agent_wire.get(base, path)
     return {"tasks": _record_call(base, path, status, reply, noun="retired task")["tasks"]}
 

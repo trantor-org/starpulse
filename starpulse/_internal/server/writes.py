@@ -856,12 +856,12 @@ def retire_task(request: RetireRequest, board: Board | None) -> tuple[int, dict[
     return 200, {"task": task}
 
 
-def retired_list(board: Board | None, task: str) -> tuple[int, dict[str, Any]]:
-    """The retired task `task` names, or every retired task for a blank one, each {task, name, text}: the HTTP status and
-    JSON body. Reading is not LAN-limited."""
+def retired_list(board: Board | None, task: str, milestone: str = "") -> tuple[int, dict[str, Any]]:
+    """The retired task `task` names, or every retired task for a blank one, each {task, name, text}, only those of
+    `milestone` when it is not blank: the HTTP status and JSON body. Reading is not LAN-limited."""
     if board is None or board.retired is None:
         return 404, {"error": "this board keeps no retired tasks"}
-    return 200, {"tasks": board.retired(task)}
+    return 200, {"tasks": board.retired(task, milestone)}
 
 
 @_write(RetiredImportRequest, "Importing a retired task")

@@ -2345,3 +2345,18 @@ def test_the_drop_migration_is_the_only_new_reference_to_starpulse_insights() ->
         if "tests" not in path.parts and "starpulse_insights" in path.read_text(errors="ignore")
     ]
     assert {path.name for path in hits} == {"0004_insights.py", "0026_drop_insights.py"}
+
+
+def test_task_retired_milestone_prints_only_that_milestones_tasks(
+    retiring: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    held = tmp_path / "held-milestone"
+    held.mkdir()
+    (held / "task-3 - In.md").write_text("---\nid: task-3\nstatus: Done\nmilestone: m-9\n---\n")
+    (held / "task-4 - Out.md").write_text("---\nid: task-4\nstatus: Done\nmilestone: m-8\n---\n")
+    _run(capsys, ["task", "import-retired", *map(str, held.iterdir()), "--server", retiring])
+
+    code, body = _run(capsys, ["task", "retired", "--milestone", "m-9", "--server", retiring])
+
+    assert code == 0
+    assert [row["task"] for row in body["tasks"]] == ["task-3"]
