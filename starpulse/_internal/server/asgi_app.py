@@ -33,9 +33,9 @@ from starlette.routing import Route
 from starpulse._internal.board.seam import Board
 from starpulse._internal.config.harnesses import Harnesses
 from starpulse._internal.feed.history_window import HistoryWindow
-from starpulse._internal.server.gate_request import GateRequest
 from starpulse._internal.server.compression import LEVEL, Encoded, accepts_gzip, compressed, gzip_frames
 from starpulse._internal.server.encoding import encode, event
+from starpulse._internal.server.gate_request import GateRequest
 from starpulse._internal.server.reads import Arrival, ReadRoutes, Request, Response
 from starpulse._internal.server.routes import _PAGES
 from starpulse._internal.server.services import Services
@@ -199,7 +199,9 @@ class PageApp:
         self.open_streams = 0  # streams open
         self._scopes: set[CancelScope] = set()  # the wait for a frame of each stream open, so a stop can end it
         self._ending = False
-        self._pending = 0  # requests being answered, a stream not among them
+        self._pending = (
+            0  # requests the app has taken and not yet started answering; `end_streams` ends a stream among them
+        )
         self._quiet = asyncio.Event()
         self._quiet.set()
         self._app = Starlette(routes=[Route("/{path:path}", self._endpoint, methods=list(_METHODS))])
@@ -208,6 +210,27 @@ class PageApp:
         if scope["type"] != "http":
             await self._app(scope, receive, send)
             return
+        self._pending += 1  # from the app's entry: a request taken before its endpoint holds a stop open too
+        self._quiet.clear()
+        held = True
+
+        def started() -> None:
+            # a response's start is what a stop waits for; a stream's body goes on after it, as before the count moved
+            nonlocal held
+            if held:
+                held = False
+                self._pending -= 1
+                if not self._pending:
+                    self._quiet.set()
+
+        try:
+            await self._answer(scope, receive, send, started)
+        finally:
+            started()
+
+    async def _answer(
+        self, scope: MutableMapping[str, Any], receive: Any, send: Any, started: Callable[[], None]
+    ) -> None:
         body_done, dropping = False, None
 
         async def counted() -> MutableMapping[str, Any]:
@@ -225,6 +248,8 @@ class PageApp:
             if message["type"] == "http.response.start" and not body_done and dropping is None:
                 dropping = asyncio.ensure_future(drop())  # a body left unread stalls Hypercorn's end of the response
             await send(message)
+            if message["type"] == "http.response.start":
+                started()
 
         try:
             await self._app(scope, counted, answering)
@@ -279,16 +304,9 @@ class PageApp:
         arrival = Arrival(
             time.monotonic(), self._workers.borrowed_tokens + 1, self.open_streams
         )  # busy counts this request
-        self._pending += 1
-        self._quiet.clear()
-        try:
-            return await to_thread.run_sync(
-                self._respond, request, arrival, _Body(request), abandon_on_cancel=True, limiter=self._workers
-            )
-        finally:
-            self._pending -= 1
-            if not self._pending:
-                self._quiet.set()
+        return await to_thread.run_sync(
+            self._respond, request, arrival, _Body(request), abandon_on_cancel=True, limiter=self._workers
+        )
 
     def _respond(self, request: Incoming, arrival: Arrival, body: _Body) -> Reply:
         """Answer one request on a worker thread; a body its model refuses is a logged 500, since the page reads only
