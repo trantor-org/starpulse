@@ -36,7 +36,7 @@ tier_policy() {
 avoid_list() {
   local base=${AVOID_LIST_BASE:-HEAD^1}
   git rev-parse -q --verify "$base^{commit}" >/dev/null || git fetch -q --deepen 1 origin "$(git rev-parse HEAD)"
-  uv run --no-project --python 3.14 --with pytest --with pydantic-settings python -m pytest -q -p no:cacheprovider ci/test_avoid_list.py &&
+  uv run --no-project --python 3.14 --with pytest --with pytest-xdist --with pydantic-settings python -m pytest -q -p no:cacheprovider ci/test_avoid_list.py &&
     uv run --no-project --python 3.14 --with pydantic-settings python ci/avoid_list.py .trantor/lib .trantor-docs/governance/architecture "$base"
 }
 
