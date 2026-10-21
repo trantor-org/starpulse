@@ -27,7 +27,7 @@ def test_pruning_the_event_log_keeps_every_retired_task(tmp_path: Path) -> None:
     log = EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}")
     with log.engine.begin() as db:
         db.execute(insert(retired_tasks).values(task="TASK-1", name="task-1.md", text="---\n", retired_at=0.0))
-    log.append("board", {"kind": "old"})
+    log._append("board", {"kind": "old"})
 
     assert log.prune(0, now=time.time() + 86400, archive_dir=tmp_path / "archive") == 1
 

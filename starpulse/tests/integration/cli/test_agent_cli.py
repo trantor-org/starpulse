@@ -2239,7 +2239,7 @@ def _named_verbs(skill: str, verbs: dict[str, set[str]]) -> list[str]:
     named = []
     for span in re.findall(r"`starpulse ([^`]+)`", (skill_install.SOURCE / skill / "SKILL.md").read_text()):
         words = span.split()
-        if words[0] in ("serve", "emit"):  # run through their own parsers, not the verb manifest
+        if words[0] == "serve":  # run through their own parsers, not the verb manifest
             continue
         leaf = next((" ".join(words[:n]) for n in (3, 2, 1) if " ".join(words[:n]) in verbs), None)
         assert leaf, f"{skill} names `starpulse {span}`, which is no manifest verb"

@@ -688,7 +688,7 @@ def log(tmp_path: Path) -> EventLog:
 
 def _run_event(log: EventLog, phase: str, status: str, workflow: str = "d1", at: float | None = None) -> None:
     now = time.time() + 60 if at is None else at  # after any listing the test's follow takes
-    log.append(run_events.STREAM, run_events.entry(phase, workflow, "r1", status, now=now))
+    log._append(run_events.STREAM, run_events.entry(phase, workflow, "r1", status, now=now))
 
 
 def _wait_until(condition, timeout: float = 5.0) -> None:

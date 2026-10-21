@@ -131,13 +131,13 @@ def test_a_publish_that_failed_is_made_by_the_next_put_of_the_task(
     log: EventLog, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     child = _child(log)
-    appended = log.append
+    appended = log._append
     down = iter([True])  # the first append finds the database locked
 
     def flaky(stream: str, fields: dict, **kwargs: object) -> int | None:
         return None if next(down, False) else appended(stream, fields, **kwargs)
 
-    monkeypatch.setattr(log, "append", flaky)
+    monkeypatch.setattr(log, "_append", flaky)
     child.put(_task("T-1", "to_do"))
     assert _deltas(log) == []
 
@@ -153,13 +153,13 @@ def test_a_retract_that_failed_is_made_by_the_next_scan(
     reader = _reader(log, stop)
     child.put(_task("T-1", "to_do"))
     assert _eventually(lambda: _states(reader) == {"T-1": "to_do"})
-    appended = log.append
+    appended = log._append
     down = iter([True])
 
     def flaky(stream: str, fields: dict, **kwargs: object) -> int | None:
         return None if next(down, False) else appended(stream, fields, **kwargs)
 
-    monkeypatch.setattr(log, "append", flaky)
+    monkeypatch.setattr(log, "_append", flaky)
     child.retract("T-1")
     child.keep_source({"files": {}})  # the adapter notes the scan it just finished
 

@@ -86,7 +86,7 @@ The modules an adapter may import, each exporting exactly the names in its `__al
 - `starpulse.machine_definition`: loading and validating a machine, and the `Registry` of guards and actions.
 - `starpulse.snapshot`: how a machine is described to the page, and how its workflows are named.
 - `starpulse.history`: the history a board adapter may keep itself, and placing a task's events on a machine.
-- `starpulse.event_log`: the database event log producers append to and readers tail; [Build a consumer](consumers.md) shows a reader that keeps its cursor in its own store.
+- `starpulse.event_log`: the database event log readers tail; [Build a consumer](consumers.md) shows a reader that keeps its cursor in its own store.
 - `starpulse.config`: loading the config file, the runs adapter a `type` names, and `CONFIG_OWNERS` (the processes that read each key) with `restarts_serve` (whether a change to the raw tables needs `serve` itself restarted).
 - `starpulse.harnesses`: loading the harness file, the tiers and efforts an agent profile names.
 - `starpulse.conformance`: replaying recorded moves (`check_lanes`, `check_events`) and event traces (`conform`, `replay`, `runs`) against a declared machine, and the paths and gate `bypasses` a machine generates.

@@ -223,8 +223,8 @@ def test_the_event_log_keeps_one_saved_board_per_stream_and_the_oldest_row_it_ho
     log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
     assert (log.oldest(), log.checkpoints.load(STREAM, BoardSnapshot)) == (None, (None, None))
 
-    first = log.append(STREAM, {"n": "1"})
-    log.append(STREAM, {"n": "2"})
+    first = log._append(STREAM, {"n": "1"})
+    log._append(STREAM, {"n": "2"})
     log.checkpoints.save(STREAM, 1, BoardSnapshot(open={}, settled={}, assignees={}))
     log.checkpoints.save(STREAM, 2, BoardSnapshot(open={"TASK-1": {"id": "TASK-1"}}, settled={}, assignees={}))
     log.checkpoints.save("other", 5, BoardSnapshot(open={}, settled={}, assignees={}))

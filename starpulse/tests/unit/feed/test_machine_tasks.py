@@ -232,14 +232,14 @@ def test_tasks_fed_from_the_event_log_replay_its_retained_machine_events_then_fo
 ) -> None:
     log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
     _, fields = _entry("in-progress", "WORKTREE_READY", task="PROJ-1")
-    log.append(machine_events.STREAM, fields)
-    log.append("runs:events", {"event": "StepStarted"})  # another stream's row
+    log._append(machine_events.STREAM, fields)
+    log._append("runs:events", {"event": "StepStarted"})  # another stream's row
     feed, tasks = _feed()
     stop = threading.Event()
 
     follow(tasks, log, machine_events.STREAM, tasks.handle_entry, stop=stop, interval=0.01)
     assert tasks.ready.wait(5)
-    log.append(machine_events.STREAM, _entry("in-progress", "RED_PROVEN", task="PROJ-1")[1])
+    log._append(machine_events.STREAM, _entry("in-progress", "RED_PROVEN", task="PROJ-1")[1])
     deadline = time.monotonic() + 5
     while [a["state"] for a in _agents(feed, "in-progress")] != ["red_proven"]:
         assert time.monotonic() < deadline, "the new event never reached the tasks"

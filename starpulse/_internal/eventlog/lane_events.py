@@ -56,7 +56,7 @@ def change(task: str, lane: str, at: float, actor: str = "", session: str = "", 
 def append(log: EventLog, event_id: str, task: str, lane: str, at: float, actor: str = "") -> int | None:
     """Append a lane entry of only the task, the lane, the time and the `actor` where given to `log` under `event_id`,
     fail-open."""
-    return log.append(STREAM, change(task, lane, at, actor), event_id=event_id)
+    return log._append(STREAM, change(task, lane, at, actor), event_id=event_id)
 
 
 class Unattributed:

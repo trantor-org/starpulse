@@ -48,8 +48,8 @@ def test_serve_and_the_flow_metrics_worker_record_run_and_task_machine_events(
 
     own = HistoryStore(f"sqlite:///{tmp_path / 'starpulse-history.sqlite'}", {})
     log = EventLog(str(own.engine.url))
-    log.append(events.STREAM, {"machine": "in-progress", "event": "WORKTREE_READY", "task": "FAKE-1", "time": 10.0})
-    log.append(events.STREAM, {"machine": "authoring-skills", "event": "GUIDANCE_READ", "run": "run-1", "time": 11.0})
+    log._append(events.STREAM, {"machine": "in-progress", "event": "WORKTREE_READY", "task": "FAKE-1", "time": 10.0})
+    log._append(events.STREAM, {"machine": "authoring-skills", "event": "GUIDANCE_READ", "run": "run-1", "time": 11.0})
     _until(lambda: len(_rows(own, "starpulse_machine_events", "id")) == 2)
 
     assert _rows(own, "starpulse_machine_events", "task, run, machine, event") == [

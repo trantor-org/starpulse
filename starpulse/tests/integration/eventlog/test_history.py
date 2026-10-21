@@ -267,7 +267,7 @@ def _record(store: HistoryStore, log: EventLog, stop: threading.Event) -> thread
 
 
 def _emit(log: EventLog, event: str, at: float, task: str = "PROJ-7") -> int:
-    cursor = log.append(
+    cursor = log._append(
         events.STREAM, {"machine": "in-progress", "event": event, "task": task, "actor": "agent", "time": at}
     )
     assert cursor is not None
@@ -290,7 +290,7 @@ def test_the_recorder_copies_the_logs_machine_events_into_the_store_and_keeps_it
     store: HistoryStore, log: EventLog, stop: threading.Event
 ) -> None:
     _emit(log, "WORKTREE_READY", 100.0)
-    log.append("board:events", {"machine": "in-progress", "event": "OTHER", "task": "PROJ-7", "time": 1})
+    log._append("board:events", {"machine": "in-progress", "event": "OTHER", "task": "PROJ-7", "time": 1})
     thread = _record(store, log, stop)
     newest = _emit(log, "RED_PROVEN", 101.0)  # appended while it runs
     _until(lambda: store.checkpoints.load(events.STREAM)[0] == newest)

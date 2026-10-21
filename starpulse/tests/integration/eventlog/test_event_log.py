@@ -17,7 +17,7 @@ from starpulse._internal.eventlog.tables import events, gaps
 
 
 def _append(url: str, event: str) -> int | None:
-    return EventLog(url).append("machine:events", {"event": event})
+    return EventLog(url)._append("machine:events", {"event": event})
 
 
 @pytest.fixture(scope="module")
@@ -43,7 +43,7 @@ def test_an_idle_poll_reads_the_oldest_and_newest_id_without_scanning_the_table(
     if not database_url.startswith("sqlite"):
         pytest.skip("the query plan asserted is SQLite's")
     log = EventLog(database_url)
-    log.append("machine:events", {"event": "FIRST"})
+    log._append("machine:events", {"event": "FIRST"})
     tail = Tail.replay(log, "machine:events")
     tail.poll()
     statements: list[str] = []
@@ -97,11 +97,11 @@ def test_appends_from_several_processes_are_all_read_once_in_cursor_order(
 def test_a_reader_left_behind_by_the_prune_timer_records_a_gap(database_url: str, tmp_path: Path) -> None:
     log = EventLog(database_url)
     for n in range(1, 5):
-        log.append("machine:events", {"n": n})
+        log._append("machine:events", {"n": n})
     reader = Tail.replay(log, "machine:events")
     assert [e.id for e in reader.poll()] == [1, 2, 3, 4]
     for n in range(5, 8):
-        log.append("machine:events", {"n": n})
+        log._append("machine:events", {"n": n})
     with log.engine.begin() as db:  # rows 1 to 5 are 10 days old; the reader's cursor is row 1, so 2 to 5 go unread
         db.execute(update(events).where(events.c.id.between(1, 5)).values(at=time.time() - 10 * 86400))
     reader.cursor = 1

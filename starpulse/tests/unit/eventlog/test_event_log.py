@@ -40,8 +40,8 @@ def _gaps(log: EventLog) -> list[tuple]:
 
 
 def test_append_returns_the_next_cursor_and_keeps_the_fields(log: EventLog) -> None:
-    first = log.append("machine:events", {"machine": "m", "event": "A"})
-    second = log.append("machine:events", {"machine": "m", "event": "B"})
+    first = log._append("machine:events", {"machine": "m", "event": "A"})
+    second = log._append("machine:events", {"machine": "m", "event": "B"})
 
     assert (first, second) == (1, 2)
     [entry, _] = Tail.replay(log, "machine:events").poll()
@@ -49,9 +49,9 @@ def test_append_returns_the_next_cursor_and_keeps_the_fields(log: EventLog) -> N
 
 
 def test_an_append_mints_an_event_id_unless_the_fields_or_caller_supply_one(log: EventLog) -> None:
-    log.append("s", {"k": "v"})
-    log.append("s", {"event_id": "from-fields"})
-    log.append("s", {"event_id": "ignored"}, event_id="from-caller")
+    log._append("s", {"k": "v"})
+    log._append("s", {"event_id": "from-fields"})
+    log._append("s", {"event_id": "ignored"}, event_id="from-caller")
 
     ids = [e.event_id for e in Tail.replay(log, "s").poll()]
 
@@ -60,9 +60,9 @@ def test_an_append_mints_an_event_id_unless_the_fields_or_caller_supply_one(log:
 
 
 def test_a_repeated_event_id_is_one_row_and_returns_the_first_cursor(log: EventLog) -> None:
-    first = log.append("s", {"event_id": "e-1", "n": "1"})
-    again = log.append("s", {"event_id": "e-1", "n": "2"})
-    after = log.append("s", {"event_id": "e-2"})
+    first = log._append("s", {"event_id": "e-1", "n": "1"})
+    again = log._append("s", {"event_id": "e-1", "n": "2"})
+    after = log._append("s", {"event_id": "e-2"})
 
     assert (first, again, after) == (1, 1, 2)
     assert [e.fields.get("n") for e in Tail.replay(log, "s").poll()] == ["1", None]
@@ -71,28 +71,28 @@ def test_a_repeated_event_id_is_one_row_and_returns_the_first_cursor(log: EventL
 def test_an_append_to_an_unreachable_database_returns_none_without_raising(tmp_path: Path) -> None:
     log = EventLog(f"sqlite:///{tmp_path / 'missing-directory' / 'events.sqlite'}")
 
-    assert log.append("s", {"k": "v"}) is None
+    assert log._append("s", {"k": "v"}) is None
 
 
 def test_an_append_with_fields_that_are_not_json_returns_none_without_raising(log: EventLog) -> None:
-    assert log.append("s", {"k": object()}) is None  # type: ignore[dict-item]
-    assert log.append("s", {"k": "v"}) == 1  # the failed attempt left no row and the log still works
+    assert log._append("s", {"k": object()}) is None  # type: ignore[dict-item]
+    assert log._append("s", {"k": "v"}) == 1  # the failed attempt left no row and the log still works
 
 
 def test_a_log_whose_database_appears_later_appends_once_it_is_reachable(tmp_path: Path) -> None:
     directory = tmp_path / "later"
     log = EventLog(f"sqlite:///{directory / 'events.sqlite'}")
-    assert log.append("s", {"k": "v"}) is None
+    assert log._append("s", {"k": "v"}) is None
 
     directory.mkdir()
 
-    assert log.append("s", {"k": "v"}) == 1
+    assert log._append("s", {"k": "v"}) == 1
 
 
 def test_a_new_tail_replays_its_stream_from_the_start_of_retention_in_order(log: EventLog) -> None:
-    log.append("a", {"n": "1"})
-    log.append("b", {"n": "other stream"})
-    log.append("a", {"n": "2"})
+    log._append("a", {"n": "1"})
+    log._append("b", {"n": "other stream"})
+    log._append("a", {"n": "2"})
     tail = Tail.replay(log, "a")
 
     assert [e.fields["n"] for e in tail.poll()] == ["1", "2"]
@@ -102,17 +102,17 @@ def test_a_new_tail_replays_its_stream_from_the_start_of_retention_in_order(log:
 
 def test_a_tail_returns_only_what_was_appended_since_its_last_poll(log: EventLog) -> None:
     tail = Tail.replay(log, "a")
-    log.append("a", {"n": "1"})
+    log._append("a", {"n": "1"})
     assert [e.id for e in tail.poll()] == [1]
 
-    log.append("a", {"n": "2"})
+    log._append("a", {"n": "2"})
 
     assert [e.id for e in tail.poll()] == [2]
 
 
 def test_a_tail_resumes_after_the_cursor_it_is_given(log: EventLog) -> None:
     for n in range(4):
-        log.append("a", {"n": str(n)})
+        log._append("a", {"n": str(n)})
 
     resumed = Tail(log, "a", after=2)
 
@@ -122,11 +122,11 @@ def test_a_tail_resumes_after_the_cursor_it_is_given(log: EventLog) -> None:
 
 def test_a_live_tail_reads_only_what_is_appended_after_it_was_taken(log: EventLog) -> None:
     for n in range(3):
-        log.append("a", {"n": str(n)})
-    log.append("b", {"n": "other"})
+        log._append("a", {"n": str(n)})
+    log._append("b", {"n": "other"})
 
     tail = Tail.live(log, "a")
-    log.append("a", {"n": "3"})
+    log._append("a", {"n": "3"})
 
     assert [e.id for e in tail.poll()] == [5]
     assert _gaps(log) == []
@@ -134,23 +134,23 @@ def test_a_live_tail_reads_only_what_is_appended_after_it_was_taken(log: EventLo
 
 def test_a_live_tail_of_an_empty_stream_reads_everything_appended_later(log: EventLog) -> None:
     tail = Tail.live(log, "a")
-    log.append("a", {"n": "1"})
+    log._append("a", {"n": "1"})
 
     assert [e.id for e in tail.poll()] == [1]
 
 
 def test_a_live_tail_replays_the_retention_when_the_log_cannot_be_reached(log: EventLog) -> None:
-    log.append("a", {"n": "1"})
+    log._append("a", {"n": "1"})
     log.last = lambda stream: (_ for _ in ()).throw(OperationalError("select", {}, Exception("down")))  # type: ignore[method-assign]
 
     assert Tail.live(log, "a").cursor is None
 
 
 def test_a_tail_over_several_streams_reads_them_in_log_order_under_one_cursor(log: EventLog) -> None:
-    log.append("a", {"n": 1})
-    log.append("other", {"n": 2})
-    log.append("b", {"n": 3})
-    log.append("a", {"n": 4})
+    log._append("a", {"n": 1})
+    log._append("other", {"n": 2})
+    log._append("b", {"n": 3})
+    log._append("a", {"n": 4})
 
     tail = Tail.replay(log, "forward", streams=("a", "b"))
 
@@ -161,9 +161,9 @@ def test_a_tail_over_several_streams_reads_them_in_log_order_under_one_cursor(lo
 
 def test_a_gap_before_a_multi_stream_tail_is_recorded_under_the_readers_name(log: EventLog, archive: Path) -> None:
     for n in range(4):
-        log.append("a", {"n": n})
+        log._append("a", {"n": n})
     log.prune(0, now=time.time() + 1, archive_dir=archive)
-    log.append("a", {"n": 9})
+    log._append("a", {"n": 9})
 
     Tail(log, "forward", streams=("a", "b"), after=2).poll()
 
@@ -172,7 +172,7 @@ def test_a_gap_before_a_multi_stream_tail_is_recorded_under_the_readers_name(log
 
 def test_a_poll_reads_at_most_one_batch(log: EventLog) -> None:
     for n in range(5):
-        log.append("a", {"n": str(n)})
+        log._append("a", {"n": str(n)})
     tail = Tail.replay(log, "a", batch=2)
 
     assert [[e.id for e in tail.poll()] for _ in range(3)] == [[1, 2], [3, 4], [5]]
@@ -180,10 +180,10 @@ def test_a_poll_reads_at_most_one_batch(log: EventLog) -> None:
 
 def test_a_cursor_below_the_oldest_retained_row_is_a_gap_and_the_tail_reads_on(log: EventLog, archive: Path) -> None:
     for n in range(3):
-        log.append("a", {"n": str(n)})
+        log._append("a", {"n": str(n)})
     assert log.prune(retention=0, now=time.time() + 10, archive_dir=archive) == 3
-    log.append("a", {"n": "kept-1"})
-    log.append("a", {"n": "kept-2"})
+    log._append("a", {"n": "kept-1"})
+    log._append("a", {"n": "kept-2"})
     resumed = Tail(log, "a", after=1)  # read row 1 and nothing after it before the prune
 
     assert [e.fields["n"] for e in resumed.poll()] == ["kept-1", "kept-2"]
@@ -192,9 +192,9 @@ def test_a_cursor_below_the_oldest_retained_row_is_a_gap_and_the_tail_reads_on(l
 
 
 def test_a_gap_is_recorded_once_for_the_same_cursor(log: EventLog, archive: Path) -> None:
-    log.append("a", {"n": "old"})
+    log._append("a", {"n": "old"})
     log.prune(retention=0, now=time.time() + 10, archive_dir=archive)
-    log.append("a", {"n": "new"})
+    log._append("a", {"n": "new"})
 
     Tail(log, "a", after=0).poll()
     Tail(log, "a", after=0).poll()
@@ -203,9 +203,9 @@ def test_a_gap_is_recorded_once_for_the_same_cursor(log: EventLog, archive: Path
 
 
 def test_a_replay_from_the_start_of_retention_is_not_a_gap(log: EventLog, archive: Path) -> None:
-    log.append("a", {"n": "old"})
+    log._append("a", {"n": "old"})
     log.prune(retention=0, now=time.time() + 10, archive_dir=archive)
-    log.append("a", {"n": "new"})
+    log._append("a", {"n": "new"})
 
     assert [e.fields["n"] for e in Tail.replay(log, "a").poll()] == ["new"]
     assert _gaps(log) == []
@@ -213,19 +213,19 @@ def test_a_replay_from_the_start_of_retention_is_not_a_gap(log: EventLog, archiv
 
 def test_a_tail_that_kept_up_across_a_prune_of_everything_it_read_is_no_gap(log: EventLog, archive: Path) -> None:
     tail = Tail.replay(log, "a")
-    log.append("a", {"n": "1"})
+    log._append("a", {"n": "1"})
     tail.poll()
     log.prune(retention=0, now=time.time() + 10, archive_dir=archive)
-    log.append("a", {"n": "2"})
+    log._append("a", {"n": "2"})
 
     assert [e.id for e in tail.poll()] == [2]  # the id after the pruned one: SQLite does not reuse it
     assert _gaps(log) == []
 
 
 def test_a_prune_removes_only_rows_older_than_the_retention(log: EventLog, archive: Path) -> None:
-    log.append("a", {"n": "old"})
+    log._append("a", {"n": "old"})
     time.sleep(0.05)
-    log.append("a", {"n": "new"})
+    log._append("a", {"n": "new"})
     newest = Tail.replay(log, "a").poll()[-1].at
 
     assert (
@@ -275,7 +275,7 @@ class _RunningTail:
 def test_an_append_in_this_process_reaches_a_waiting_tail_before_its_interval(log: EventLog) -> None:
     with _RunningTail(log) as running:
         started = time.monotonic()
-        log.append("a", {"n": "1"})
+        log._append("a", {"n": "1"})
 
         assert running.arrived.wait(timeout=2)
         assert time.monotonic() - started < 2  # the interval is 30 s
@@ -288,7 +288,7 @@ def test_an_append_through_another_connection_reaches_a_waiting_tail_before_its_
 ) -> None:
     other = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
     with _RunningTail(log) as running:
-        other.append("a", {"n": "elsewhere"})
+        other._append("a", {"n": "elsewhere"})
 
         assert running.arrived.wait(timeout=2)
 
@@ -299,7 +299,7 @@ def test_a_commit_elsewhere_after_appends_is_read_ends_the_wait_that_follows(log
     other = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
     log.engine  # noqa: B018 - create the tables before reading the baseline
     seen = log.appends
-    other.append("a", {"n": "between"})
+    other._append("a", {"n": "between"})
 
     log.wait_for_append(seen, timeout=2, stop=threading.Event())
 
@@ -331,7 +331,7 @@ def test_an_idle_tail_issues_one_log_query_per_interval(log: EventLog) -> None:
 @pytest.mark.parametrize("appended", [False, True])
 def test_a_poll_returns_its_connection_so_no_read_transaction_outlasts_it(log: EventLog, appended: bool) -> None:
     if appended:
-        log.append("a", {"n": "1"})
+        log._append("a", {"n": "1"})
     tail = Tail.replay(log, "a")
 
     tail.poll()
@@ -346,7 +346,7 @@ def test_the_sqlite_log_is_in_wal_mode_so_other_processes_append_while_a_reader_
 
 def test_run_hands_each_entry_to_the_handler_and_stops_when_asked(log: EventLog) -> None:
     for n in range(3):
-        log.append("a", {"n": str(n)})
+        log._append("a", {"n": str(n)})
     stop = threading.Event()
     seen: list[int] = []
 
@@ -363,8 +363,8 @@ def test_run_hands_each_entry_to_the_handler_and_stops_when_asked(log: EventLog)
 def test_run_keeps_polling_after_a_failed_poll_and_after_a_failing_handler(
     log: EventLog, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    log.append("a", {"n": "1"})
-    log.append("a", {"n": "2"})
+    log._append("a", {"n": "1"})
+    log._append("a", {"n": "2"})
     tail = Tail.replay(log, "a", interval=0.01)
     real_poll = tail.poll
     calls = {"n": 0}
@@ -391,16 +391,16 @@ def test_run_keeps_polling_after_a_failed_poll_and_after_a_failing_handler(
 
 
 def test_last_is_the_newest_cursor_of_one_stream_and_none_when_it_has_no_rows(log: EventLog) -> None:
-    log.append("a", {"n": "1"})
-    newest = log.append("a", {"n": "2"})
-    log.append("b", {"n": "3"})
+    log._append("a", {"n": "1"})
+    newest = log._append("a", {"n": "2"})
+    log._append("b", {"n": "3"})
 
     assert (log.last("a"), log.last("c")) == (newest, None)
 
 
 def test_run_reads_an_entry_again_when_its_handler_fails_with_a_transient_error(log: EventLog) -> None:
-    log.append("a", {"n": "1"})
-    log.append("a", {"n": "2"})
+    log._append("a", {"n": "1"})
+    log._append("a", {"n": "2"})
     stop = threading.Event()
     seen: list[int] = []
 
@@ -524,7 +524,7 @@ def test_a_prune_writes_every_row_it_deletes_to_its_utc_day_file_and_a_later_pru
     log: EventLog, archive: Path
 ) -> None:
     for n in range(4):
-        log.append("a", {"n": n}, event_id=f"e{n}")
+        log._append("a", {"n": n}, event_id=f"e{n}")
     late_day_one = _day(2026, 9, 1, 23, 59, 59)
     early_day_two = _day(2026, 9, 2, 0, 0, 1)
     _age(log, {1: late_day_one, 2: early_day_two, 3: early_day_two + 5})
@@ -542,7 +542,7 @@ def test_a_prune_writes_every_row_it_deletes_to_its_utc_day_file_and_a_later_pru
 
 
 def test_an_archived_row_carries_every_column(log: EventLog, archive: Path) -> None:
-    log.append("machine:events", {"machine": "m", "event": "A", "nested": {"k": [1, 2]}}, event_id="evt-1")
+    log._append("machine:events", {"machine": "m", "event": "A", "nested": {"k": [1, 2]}}, event_id="evt-1")
     at = _day(2026, 9, 3, 12, 30)
     _age(log, {1: at})
 
@@ -560,7 +560,7 @@ def test_an_archived_row_carries_every_column(log: EventLog, archive: Path) -> N
 
 def test_a_failed_archive_write_deletes_no_row(log: EventLog, archive: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     for n in range(3):
-        log.append("a", {"n": n})
+        log._append("a", {"n": n})
     at = _day(2026, 9, 4)
     _age(log, {1: at, 2: at, 3: at})
 
@@ -580,9 +580,9 @@ def test_a_failed_archive_write_deletes_no_row(log: EventLog, archive: Path, mon
 
 
 def test_a_replay_tail_reads_everything_the_log_retains(log: EventLog) -> None:
-    log.append("a", {"n": "1"})
+    log._append("a", {"n": "1"})
     tail = Tail.replay(log, "a")
-    log.append("a", {"n": "2"})
+    log._append("a", {"n": "2"})
 
     assert [e.id for e in tail.poll()] == [1, 2]
 

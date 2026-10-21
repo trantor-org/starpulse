@@ -120,7 +120,7 @@ class CloudEventsIngest:
         except _Refused as refused:
             return refused.status, {"error": str(refused)}
         for stream, event_id, fields in entries:
-            if self._log.append(stream, fields, event_id=event_id) is None:
+            if self._log._append(stream, fields, event_id=event_id) is None:
                 return 503, {"error": "the event log did not take the event; send it again"}
         return 201, {"accepted": True}
 
