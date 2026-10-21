@@ -670,8 +670,9 @@ counters for each machine the feed draws:
 - `starpulse_machine_conformance_violations_total{machine}`: the moves no transition declares.
 
 The `board` machine is judged on `board:lanes`, every other machine on `machine:events`. `serve` counts every entry
-the log still retains before the first scrape and follows new ones after, so a restart recounts the retained entries
-rather than starting at 0, and an entry pruned from the log leaves the count. Every machine has both series from the
+the log still retains and follows new ones after, so a restart recounts the retained entries rather than starting at 0,
+and an entry pruned from the log leaves the count. The count of retained entries runs on a background thread, so the
+banner does not wait on it: until it finishes, a scrape shows the counts so far. Every machine has both series from the
 first scrape, at 0 until a move arrives. The first lane seen for a task is placed unjudged, because the log keeps no
 earlier history; the stored-history replay judges it from the initial state. Guards are not judged.
 
