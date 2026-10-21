@@ -199,7 +199,9 @@ class PageApp:
         self.open_streams = 0  # streams open
         self._scopes: set[CancelScope] = set()  # the wait for a frame of each stream open, so a stop can end it
         self._ending = False
-        self._pending = 0  # requests the app has taken and not yet answered; `end_streams` ends a stream among them
+        self._pending = (
+            0  # requests the app has taken and not yet started answering; `end_streams` ends a stream among them
+        )
         self._quiet = asyncio.Event()
         self._quiet.set()
         self._app = Starlette(routes=[Route("/{path:path}", self._endpoint, methods=list(_METHODS))])
@@ -210,14 +212,25 @@ class PageApp:
             return
         self._pending += 1  # from the app's entry: a request taken before its endpoint holds a stop open too
         self._quiet.clear()
-        try:
-            await self._answer(scope, receive, send)
-        finally:
-            self._pending -= 1
-            if not self._pending:
-                self._quiet.set()
+        held = True
 
-    async def _answer(self, scope: MutableMapping[str, Any], receive: Any, send: Any) -> None:
+        def started() -> None:
+            # a response's start is what a stop waits for; a stream's body goes on after it, as before the count moved
+            nonlocal held
+            if held:
+                held = False
+                self._pending -= 1
+                if not self._pending:
+                    self._quiet.set()
+
+        try:
+            await self._answer(scope, receive, send, started)
+        finally:
+            started()
+
+    async def _answer(
+        self, scope: MutableMapping[str, Any], receive: Any, send: Any, started: Callable[[], None]
+    ) -> None:
         body_done, dropping = False, None
 
         async def counted() -> MutableMapping[str, Any]:
@@ -235,6 +248,8 @@ class PageApp:
             if message["type"] == "http.response.start" and not body_done and dropping is None:
                 dropping = asyncio.ensure_future(drop())  # a body left unread stalls Hypercorn's end of the response
             await send(message)
+            if message["type"] == "http.response.start":
+                started()
 
         try:
             await self._app(scope, counted, answering)
