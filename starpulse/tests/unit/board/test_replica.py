@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -336,6 +337,14 @@ def test_the_checkpoint_key_follows_the_projection_the_adapter_names() -> None:
     assert replica.key(_board([], []), CONFIG) == same
     assert replica.key(_board([], [], "another projection"), CONFIG) != same
     assert same.startswith(f"{replica.REPLICA_STREAM}@")
+
+
+def test_the_checkpoint_key_ignores_an_edit_to_the_board_table_but_follows_the_board_type() -> None:
+    same = replica.key(_board([], []), CONFIG)
+    edited = dataclasses.replace(CONFIG, board={"criteria": "other {id}", "holds": "other {id}"})
+
+    assert replica.key(_board([], []), edited) == same
+    assert replica.key(_board([], []), dataclasses.replace(CONFIG, board_type="jira")) != same
 
 
 def test_a_reading_context_attaches_to_the_log_and_follows_the_replica_instead_of_starting_the_board(
