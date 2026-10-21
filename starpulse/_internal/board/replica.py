@@ -46,11 +46,10 @@ def _read(raw: str) -> BoardTask | None:
 
 
 def key(board: Board, config: Config) -> str:
-    """Where the Board's checkpoint is kept: it changes with what the adapter's `state_key` names and the `[board]`
-    table, so a checkpoint of another project or setting is never resumed."""
-    settings = json.dumps(
-        [board.state_key and board.state_key(), config.board_type, config.board], sort_keys=True, default=str
-    )
+    """Where the Board's checkpoint is kept: it changes with what the adapter's `state_key` names and the board type,
+    so a checkpoint of another project is never resumed. The `[board]` table is not in it: an edit to a command or a
+    rule there leaves the saved Board in place instead of replaying every task."""
+    settings = json.dumps([board.state_key and board.state_key(), config.board_type], sort_keys=True)
     return f"{REPLICA_STREAM}@{hashlib.sha256(settings.encode()).hexdigest()[:12]}"
 
 
