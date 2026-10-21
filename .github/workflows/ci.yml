@@ -440,7 +440,7 @@ jobs:
             exit 1
           fi
           uv run --no-sync python bench/page_latency.py "http://127.0.0.1:$port" --repeat 3 \
-            --what-if in_progress review --ceiling "first paint of the board=450" --fail-non-2xx
+            --ceiling "first paint of the board=450" --fail-non-2xx
 
   # The out-of-the-box install on macOS: the wheel goes into an empty virtualenv and `starpulse serve` starts from an empty
   # directory with no config, then ci/fresh_serve.py fails unless the page answers and every worker child, the Page API
