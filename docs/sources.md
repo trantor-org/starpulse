@@ -397,6 +397,23 @@ a `machine:events` row like any other: it moves the task on the page and in the 
 | 413 | `data` over 8 KiB, or a body over the ingest's size limit |
 | 503 | the event log did not take an entry; every entry has a stable id, so post the batch again |
 
+### Over gRPC
+
+The same ingest is served on the same port as gRPC: service `starpulse.v1.CloudEventsIngest`, methods `Publish`
+(one `io.cloudevents.v1.CloudEvent`) and `PublishBatch` (a `CloudEventBatch` of up to 200), both answering
+`google.protobuf.Empty`. The token is the `authorization` metadata, `Bearer <token>`. Attributes are the table above's,
+carried in the event's `attributes` map (`time` as `ce_timestamp` or an RFC 3339 `ce_string`); `data` is JSON text or
+bytes, never a protobuf `Any`. The checks and the all-or-nothing batch are the HTTP ingest's; `grpc-status` arrives in
+the HTTP/2 trailers. A refusal's HTTP status maps to a code:
+
+| HTTP | gRPC |
+|---|---|
+| 400 | `INVALID_ARGUMENT` |
+| 401 | `UNAUTHENTICATED` |
+| 403 | `PERMISSION_DENIED` |
+| 413 | `RESOURCE_EXHAUSTED` |
+| 503 | `UNAVAILABLE` |
+
 ## GitHub Actions
 
 `type = "github_actions"` reads one repository's workflows: each active workflow file is a workflow named for the file

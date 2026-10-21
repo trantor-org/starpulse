@@ -1,0 +1,14 @@
+// StarPulse's gRPC binding of the CloudEvents ingest: the same events and refusals as `POST /api/machine-events`.
+syntax = "proto3";
+
+package starpulse.v1;
+
+import "google/protobuf/empty.proto";
+import "starpulse/_internal/runs/wire/cloudevents.proto";
+
+service CloudEventsIngest {
+  // One event; a refusal is a non-OK status carrying the reason.
+  rpc Publish(io.cloudevents.v1.CloudEvent) returns (google.protobuf.Empty);
+  // A batch is checked whole before any entry is appended, so a refused entry writes none.
+  rpc PublishBatch(io.cloudevents.v1.CloudEventBatch) returns (google.protobuf.Empty);
+}

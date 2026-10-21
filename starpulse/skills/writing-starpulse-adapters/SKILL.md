@@ -67,6 +67,7 @@ with `Authorization: Bearer $CI_BOT_TOKEN`. A machine event carries `machine`, `
 of `subject` (the task) or `run`. A run is a Step event: `type` `StepStarted` or `StepFinished`, `subject` the run's id,
 and `data` holding `workflow`, `status` (`not_started`, `queued`, `running`, `succeeded`, `failed`, `aborted` or `skipped`),
 and for a step's entry `step` with `depends` naming the steps it waits on. The run is drawn as `pushed/<source>/<workflow>`.
+A producer that speaks gRPC calls `starpulse.v1.CloudEventsIngest` `Publish` or `PublishBatch` on the same port, the token in `authorization` metadata and the event as `io.cloudevents.v1.CloudEvent` (docs/sources.md, Over gRPC).
 
 ```sh
 curl -fsS -X POST "$STARPULSE_URL/api/machine-events" -H "Authorization: Bearer $CI_BOT_TOKEN" \

@@ -153,7 +153,7 @@ GET /api/analytics/cost-to-go[?hours=N]
                    left in the clean completed runs; every state is listed whatever its `n`. Refusals as
                    `/api/analytics/steps`
 GET /api/harnesses  {tiers, harnesses} from the config's `harnesses_file`; both empty with no file
-POST /api/machine-events
+POST /api/machine-events (also gRPC `starpulse.v1.CloudEventsIngest` Publish and PublishBatch on this port, docs/sources.md)
                    post machine events and runs as CloudEvents 1.0 JSON (`application/cloudevents+json`, or a JSON array
                    as `application/cloudevents-batch+json`), with `Authorization: Bearer <token>` of a `[[producers]]`
                    entry; the one write path for both, needing no Redis (docs/sources.md). A machine event is written to

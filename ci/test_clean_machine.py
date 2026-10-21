@@ -5,16 +5,16 @@ from __future__ import annotations
 import json
 import socket
 import sqlite3
+import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-
 from pathlib import Path
 
 import clean_machine
 import pytest
 import select_tests
-from clean_machine import Placed, cloudevent, logged, redis_answering, smoke
+from clean_machine import Placed, cloudevent, logged, publish_grpc, redis_answering, smoke
 
 
 @pytest.fixture
@@ -45,6 +45,10 @@ def test_the_proof_fails_before_serving_when_a_redis_port_answers(listener, monk
     problem = smoke("/nonexistent/python", 1)
 
     assert problem == f"a Redis port answers on [{listener}]: the proof needs a machine without one"
+
+
+def test_publish_grpc_names_the_status_of_a_call_that_reached_no_server():
+    assert publish_grpc(sys.executable, closed_port(), "BUILT", "r1") == "UNAVAILABLE"
 
 
 def write_log(directory, *entries):
