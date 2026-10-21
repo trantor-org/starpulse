@@ -296,9 +296,10 @@ jobs:
       - run: bash ci/static_checks.sh
 
   # trantor main's (newest green commit) tests of this package, run against this tree in place of trantor's starpulse submodule: the same
-  # `make test-changed FILES=starpulse` trantor's Validate runs on a bump PR. A commit that fails them would fail every
-  # trantor bump pinning it, so it must not go green here. A change trantor must adopt (a new table needs an Alembic
-  # adoption; a test that pins a feed key this package owns) lands in trantor first, then here.
+  # `make test-changed FILES=starpulse` trantor's Validate runs on a bump PR. The check is advisory, not required: a
+  # change trantor must adopt (a renamed public name, a new table needing an Alembic adoption, a test that pins a feed
+  # key this package owns) merges here with it red, and trantor commits its migration on the bump pull request
+  # starpulse_pin.sh opens instead of pinning.
   trantor-contract:
     needs: select
     # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved. A pull
