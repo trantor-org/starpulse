@@ -286,17 +286,21 @@ def _ci() -> dict:
 def test_the_nightly_schedule_and_a_dispatch_select_everything_once_in_a_job():
     workflow = yaml.safe_load(CI.read_text())
     # PyYAML reads the bare `on:` key as True.
-    # A pull request and a merge group run on Dagu; only a push, the schedule and a dispatch reach this workflow.
-    assert set(workflow[True]) == {"push", "schedule", "workflow_dispatch"}
+    assert set(workflow[True]) == {"push", "pull_request", "merge_group", "schedule", "workflow_dispatch"}
     job = workflow["jobs"]["select"]
     assert job["if"] == "github.event_name != 'push'"
     assert job["outputs"] == {
         "PYTEST_TARGETS": "${{ steps.select.outputs.PYTEST_TARGETS }}",
         "PYTEST_SHARDS": "${{ steps.select.outputs.PYTEST_SHARDS }}",
+        "web": "${{ steps.select.outputs.web }}",
+        "contract": "${{ steps.select.outputs.contract }}",
+        "static": "${{ steps.select.outputs.static }}",
     }
     select_step = next(s for s in job["steps"] if s.get("id") == "select")
-    # Only the nightly schedule and a dispatch reach this workflow, and neither has a diff: both select everything.
-    assert select_step["run"] == 'uv run --no-sync python ci/select_tests.py --full >> "$GITHUB_OUTPUT"'
+    # The nightly schedule and a dispatch have no base commit, so both select everything; a pull request selects from its diff.
+    run = select_step["run"]
+    assert 'uv run --no-sync python ci/select_tests.py --full >> "$GITHUB_OUTPUT"' in run
+    assert '--base "$BASE"' in run
 
 
 def test_the_import_layers_are_checked_once_in_the_select_job_not_in_every_shard():

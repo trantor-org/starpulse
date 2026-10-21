@@ -15,10 +15,10 @@ import yaml
 WORKFLOWS = Path(__file__).resolve().parents[1] / ".github/workflows"
 AI_VM_1_LANE = ["self-hosted", "ai-vm-1"]
 HOSTED = "ubuntu-latest"
-#: The required checks the workspace App reports (trantor's `ci-sp-*` Dagu DAGs, submitted by trantor's webhook receiver): the
-#: contexts of trantor's infrastructure/github/starpulse.tf that ci.yml no longer runs on a pull request or a candidate.
-APP_CHECKS = ["python", "web", "static-checks", "trantor-contract"]
-CI_TEST_JOBS = ["select", "python-shard", "python", "web", "static-checks", "trantor-contract"]
+#: The required checks a pull request and a merge candidate get from ci.yml.
+REQUIRED_CHECKS = ["python", "web", "static-checks", "trantor-contract", "build"]
+APP_CHECKS = REQUIRED_CHECKS
+CI_TEST_JOBS = ["select", "python-shard", "python", "build", "web", "static-checks", "trantor-contract"]
 
 
 def job(workflow: str, name: str) -> dict:
@@ -41,10 +41,24 @@ def test_ci_test_job_runs_on_the_ai_vm_1_fleet(name):
     assert job("ci.yml", name)["runs-on"] == AI_VM_1_LANE
 
 
-def test_ci_runs_only_the_nightly_dispatch_and_push_events():
-    """A pull request and a merge-queue candidate get their required checks from the App, not from this workflow."""
+def test_ci_runs_on_a_pull_request_a_merge_candidate_the_nightly_a_dispatch_and_a_push():
+    """This workflow defines the required checks: a pull request and a merge-queue candidate run them on the changed files."""
     document = yaml.safe_load((WORKFLOWS / "ci.yml").read_text())
-    assert set(document[True]) == {"push", "schedule", "workflow_dispatch"}
+    assert set(document[True]) == {"push", "pull_request", "merge_group", "schedule", "workflow_dispatch"}
+
+
+@pytest.mark.parametrize("name", REQUIRED_CHECKS)
+def test_every_required_check_is_a_ci_job(name):
+    """The job id is the check's context; `build` is the release build without its publishing."""
+    assert name in yaml.safe_load((WORKFLOWS / "ci.yml").read_text())["jobs"]
+
+
+@pytest.mark.parametrize("name", ["coverage-map", "python-ft", "macos-fresh-serve", "clean-machine-ingest"])
+def test_a_nightly_only_job_skips_a_pull_request(name):
+    """A pull request's partial selection would publish a partial coverage map, and the others cost a whole-suite run."""
+    condition = job("ci.yml", name)["if"]
+    assert "'schedule'" in condition
+    assert "pull_request" not in condition
 
 
 def test_release_build_runs_hosted_for_a_push_and_on_the_ai_vm_1_fleet_otherwise():
@@ -190,6 +204,7 @@ TEST_JOBS = [
     "coverage-map",
     "python-ft",
     "python",
+    "build",
     "web",
     "static-checks",
     "trantor-contract",
@@ -199,7 +214,8 @@ TEST_JOBS = [
 @pytest.mark.parametrize("name", TEST_JOBS)
 def test_a_push_to_main_runs_no_test_job(name):
     """Main moves only through the merge queue, which already tested the pushed commit (its candidate)."""
-    assert "github.event_name != 'push'" in job("ci.yml", name)["if"]
+    condition = job("ci.yml", name)["if"]
+    assert "github.event_name != 'push'" in condition or "github.event_name == 'schedule'" in condition
 
 
 def test_every_ci_job_but_the_macos_smoke_is_a_test_job():
@@ -417,7 +433,7 @@ def test_a_shard_with_no_selected_files_passes_but_a_failing_or_empty_full_run_d
 
 
 def test_release_runs_only_the_push_and_dispatch_events():
-    """A pull request and a merge-queue candidate get the required `build` from the Dagu DAG, not from this workflow."""
+    """A pull request and a merge-queue candidate get the required `build` from ci.yml, not from this workflow."""
     document = yaml.safe_load((WORKFLOWS / "release.yml").read_text())
     assert set(document[True]) == {"push", "workflow_dispatch"}
 
@@ -473,5 +489,5 @@ def test_ci_proves_the_ingest_on_a_hosted_runner_with_no_redis():
     """The ai-vm-1 fleet sits beside a Redis; a hosted runner has none, so only it can show the ingest needs none."""
     proof = job("ci.yml", "clean-machine-ingest")
     assert proof["runs-on"] == "ubuntu-latest"
-    assert "github.event_name != 'push'" in proof["if"]
+    assert "github.event_name == 'schedule'" in proof["if"]
     assert any("ci/clean_machine.py" in step.get("run", "") for step in proof["steps"])

@@ -1,11 +1,14 @@
 name: CI
 
-# A pull request and a merge-queue candidate are not here: their required checks (`python`, `web`, `static-checks`,
-# `trantor-contract`) are the workspace App's check runs, posted by trantor's `ci-sp-*` Dagu DAGs, which trantor's webhook receiver
-# submits (trantor's ci.md). What runs here is the nightly suite and a manual dispatch; a push to main runs none.
+# This workflow defines StarPulse's CI: a pull request and a merge-queue candidate run `python`, `web`, `static-checks`
+# and `trantor-contract` on the changed files (ci/select_tests.py, ci/reach.py), with `build` beside them; the nightly
+# suite and a manual dispatch run every job in full. A push to main runs none: the merge queue tested its candidate.
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
+  merge_group:
   schedule:
     - cron: "17 9 * * *" # 02:17 MST, after trantor's 01:17 whole-repo gate
   workflow_dispatch:
@@ -17,7 +20,7 @@ permissions:
 # pool. That runner group serves private repositories only: making this repository public strands these jobs.
 jobs:
   # Chooses the tests once for the shards: the nightly schedule and a manual dispatch select the whole suite
-  # (ci/select_tests.py --full; the `ci-sp-*` DAGs select by changed files for a pull request). Its output sizes the
+  # (ci/select_tests.py --full); a pull request and a merge candidate select by the files changed since the base. Its output sizes the
   # shard matrix. It also runs the import layers (pyproject's [tool.importlinter]).
   select:
     # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved.
@@ -27,16 +30,32 @@ jobs:
     outputs:
       PYTEST_TARGETS: ${{ steps.select.outputs.PYTEST_TARGETS }}
       PYTEST_SHARDS: ${{ steps.select.outputs.PYTEST_SHARDS }}
+      # Whether the change reaches each job below (ci/reach.py); true on the nightly schedule and a dispatch.
+      web: ${{ steps.select.outputs.web }}
+      contract: ${{ steps.select.outputs.contract }}
+      static: ${{ steps.select.outputs.static }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           sparse-checkout: /*
           sparse-checkout-cone-mode: false
+          # The diff starts at the pull request's or the candidate's base, which a one-commit checkout lacks.
+          fetch-depth: 0
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       - run: uv sync --locked
       - run: uv run --no-sync lint-imports
       - id: select
-        run: uv run --no-sync python ci/select_tests.py --full >> "$GITHUB_OUTPUT"
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+        run: |
+          if [ -z "$BASE" ]; then
+            uv run --no-sync python ci/select_tests.py --full >> "$GITHUB_OUTPUT"
+            printf 'web=true\ncontract=true\nstatic=true\n' >> "$GITHUB_OUTPUT"
+          else
+            git diff --name-only --no-renames "$BASE" HEAD > "$RUNNER_TEMP/changed.txt"
+            uv run --no-sync python ci/select_tests.py --base "$BASE" < "$RUNNER_TEMP/changed.txt" >> "$GITHUB_OUTPUT"
+            uv run --no-sync python ci/reach.py < "$RUNNER_TEMP/changed.txt" >> "$GITHUB_OUTPUT"
+          fi
 
   # The suite is split by test file across the shards `select` launches (ci/shard.py), each on its own runner: one to six. The matrix is its PYTEST_SHARDS output, and SHARD_COUNT the matrix's size.
   python-shard:
@@ -104,7 +123,8 @@ jobs:
   # would leave tests out of the map.
   coverage-map:
     needs: [select, python-shard]
-    if: github.event_name != 'push' && needs.python-shard.result == 'success'
+    # Only the whole suite maps every test; a pull request's selection would publish a partial map.
+    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && needs.python-shard.result == 'success'
     runs-on: [self-hosted, ai-vm-1]
     timeout-minutes: 10
     steps:
@@ -128,7 +148,8 @@ jobs:
   # does not wait for it.
   python-ft:
     needs: select
-    if: github.event_name != 'push' && needs.select.outputs.PYTEST_SHARDS != '[]'
+    # A nightly and dispatch check only: the pull request's `python` does not wait for it and the whole suite is its cost.
+    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && needs.select.outputs.PYTEST_SHARDS != '[]'
     runs-on: [self-hosted, ai-vm-1]
     timeout-minutes: 45
     env:
@@ -176,9 +197,36 @@ jobs:
           test "$SELECT" = success
           test "$SHARDS" = success || { test "$SHARDS" = skipped && test "$LAUNCHED" = '[]'; }
 
-  web:
-    # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved.
+  # The release build without publishing (release.yml's `build`): the page, then the wheel that must ship it. A pull
+  # request that breaks either fails here instead of at the merge to main.
+  build:
     if: github.event_name != 'push'
+    runs-on: [self-hosted, ai-vm-1]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: /*
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: 12.6.0
+          dest: ${{ runner.temp }}/setup-pnpm
+      - run: pnpm install --frozen-lockfile && pnpm run build
+        working-directory: starpulse/web
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - run: uv build
+      - name: The wheel carries the page
+        run: unzip -l dist/*.whl | grep -q 'starpulse/static/index.html'
+
+  web:
+    needs: select
+    # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved. A pull
+    # request the change does not reach skips the job, which a required check counts as passed.
+    if: github.event_name != 'push' && needs.select.outputs.web == 'true'
     runs-on: [self-hosted, ai-vm-1]
     timeout-minutes: 15
     defaults:
@@ -203,8 +251,10 @@ jobs:
   # The short static checks in one job (ci/static_checks.sh runs them at once): public-names, api-types,
   # tier-policy, avoid-list and busy-modules.
   static-checks:
-    # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved.
-    if: github.event_name != 'push'
+    needs: select
+    # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved. A pull
+    # request the change does not reach skips the job, which a required check counts as passed.
+    if: github.event_name != 'push' && needs.select.outputs.static == 'true'
     runs-on: [self-hosted, ai-vm-1]
     timeout-minutes: 15
     steps:
@@ -250,8 +300,10 @@ jobs:
   # trantor bump pinning it, so it must not go green here. A change trantor must adopt (a new table needs an Alembic
   # adoption; a test that pins a feed key this package owns) lands in trantor first, then here.
   trantor-contract:
-    # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved.
-    if: github.event_name != 'push'
+    needs: select
+    # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved. A pull
+    # request the change does not reach skips the job, which a required check counts as passed.
+    if: github.event_name != 'push' && needs.select.outputs.contract == 'true'
     runs-on: [self-hosted, ai-vm-1]
     timeout-minutes: 30
     steps:
@@ -318,7 +370,7 @@ jobs:
   # runner (free: this repository is public); trantor's `starpulse-fresh-serve` DAG is the Linux counterpart. Not a
   # required check: a pull request is proven by dispatching this workflow on its branch.
   macos-fresh-serve:
-    if: github.event_name != 'push'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
     timeout-minutes: 20
     steps:
@@ -346,7 +398,7 @@ jobs:
   # GitHub-hosted runner has no Redis service, which is the point: nothing the proof reads can have come through one. Not a
   # required check: a pull request is proven by dispatching this workflow on its branch.
   clean-machine-ingest:
-    if: github.event_name != 'push'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
