@@ -391,9 +391,9 @@ applied_by = "pin-bump"
 # correction = "The agent did something wrong or must stop or undo it."
 # approval = "Proceed, yes, continue, or an answer to a question the agent asked."
 # operator_tools = ["AskUserQuestion", "ExitPlanMode"]    # tools whose result is the operator's answer: the silence before one is their wait
-# claims = ['backlog_task\.py\s+start\s+(TASK-\d+)']        # group 1 is the task a command or `Skill` args claims
+# claims = ['\.venv/bin/backlog-task\s+start\s+(TASK-\d+)']        # group 1 is the task a command or `Skill` args claims
 # completion_skill = "completing-tasks"                    # with `completion_call`, marks a session's task complete
-# completion_call = 'backlog_task\.py\s+deliver\b'          # a shell command run after that skill loaded
+# completion_call = '\.venv/bin/deliver\b'                 # a shell command run after that skill loaded
 # [[analytics.skill_machines]]                             # what a run under a skill reaches, in order, to conform (see Diff a fast run against a slow one in docs/sources.md)
 # skill = "developing-test-first"
 # stages = [
