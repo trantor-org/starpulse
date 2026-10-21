@@ -317,7 +317,7 @@ run_safe = ["nightly"]                   # the workflows the page's Run now may 
 domains = { Data = ["nightly", "etl"] }  # how the page groups this instance's workflows
 
 # Optional: a producer that posts machine events as CloudEvents (see docs/sources.md, Post machine events as CloudEvents).
-# `POST /api/machine-events` answers 404 until one is declared. A producer writes only the machines and actors listed here.
+# `POST /api/machine-events` and the gRPC `starpulse.v1.CloudEventsIngest` answer 404 until one is declared. A producer writes only the machines and actors listed here.
 [[producers]]
 name = "ci-bot"                          # the CloudEvents `source` its events carry; unique
 token_env = "CI_BOT_TOKEN"               # the environment variable holding its bearer token; never the token; no two producers share one

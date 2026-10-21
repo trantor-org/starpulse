@@ -33,6 +33,8 @@ from starlette.routing import Route
 from starpulse._internal.board.seam import Board
 from starpulse._internal.config.harnesses import Harnesses
 from starpulse._internal.feed.history_window import HistoryWindow
+from starpulse._internal.runs.cloudevents_grpc import PATH as CLOUDEVENTS_GRPC_PATH
+from starpulse._internal.runs.cloudevents_grpc import cloudevents_grpc
 from starpulse._internal.server.compression import LEVEL, Encoded, accepts_gzip, compressed, gzip_frames
 from starpulse._internal.server.encoding import encode, event
 from starpulse._internal.server.gate_request import GateRequest
@@ -44,6 +46,8 @@ from starpulse._internal.server.streams import Stream, Streams
 from starpulse._internal.server.write_routes import WriteRequest, WriteRoutes
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the autopilot in the Delivery worker's import closure
+    from starlette.types import ASGIApp
+
     from starpulse._internal.eventlog.history import History
     from starpulse._internal.feed.board_feed import BoardFeed
 
@@ -188,8 +192,10 @@ class PageApp:
         static: Path,
         flows: Collection[str],
         gate: Callable[[GateRequest], bool] | None = None,
+        grpc: ASGIApp | None = None,
     ) -> None:
         self._routes, self._writes, self._streams, self._snapshots = routes, writes, streams, snapshots
+        self._grpc = grpc
         self._static, self._flows, self._gate = static, flows, gate
         self._workers = CapacityLimiter(REQUEST_THREADS)
         self._frames = CapacityLimiter(
@@ -231,6 +237,9 @@ class PageApp:
     async def _answer(
         self, scope: MutableMapping[str, Any], receive: Any, send: Any, started: Callable[[], None]
     ) -> None:
+        if self._grpc is not None and scope["path"].startswith(CLOUDEVENTS_GRPC_PATH):
+            await self._grpc(scope, receive, send)  # its own token, so no gate; a gRPC body is read by the handler
+            return
         body_done, dropping = False, None
 
         async def counted() -> MutableMapping[str, Any]:
@@ -462,4 +471,5 @@ def page_app(
         return None if build is None else _build_text(build)
 
     streams = Streams(feed, snapshots, build_frame)
-    return PageApp(routes, writes, streams, snapshots, static, feed.machines.keys(), gate)
+    grpc = None if services.events is None else cloudevents_grpc(services.events)
+    return PageApp(routes, writes, streams, snapshots, static, feed.machines.keys(), gate, grpc)

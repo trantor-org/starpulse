@@ -1,4 +1,4 @@
-"""The ingest on a machine with no Redis: declare a machine, post its events over HTTP, read them back.
+"""The ingest on a machine with no Redis: declare a machine, post its events over HTTP and gRPC, read them back.
 
 Usage: python3 -I ci/clean_machine.py PYTHON   (PYTHON is the interpreter of a venv holding the installed wheel)
 
@@ -8,7 +8,10 @@ Fails unless every step holds, in order:
 2. `starpulse serve` starts in an empty directory holding one `.starpulse/machines/` file and one `[[producers]]` entry;
 3. the declared events, POSTed to `/api/machine-events` with the producer's token, answer 201;
 4. they come back from the event log (the sqlite history file beside the config) and from the SSE stream `/api/events`;
-5. an event the machine does not declare is refused 4xx and never reaches the log.
+5. an event the machine does not declare is refused 4xx and never reaches the log;
+6. the same server takes a CloudEvent over gRPC on the same port (`starpulse.v1.CloudEventsIngest/Publish`, sent by
+   the wheel venv's own connect-python client): a declared event is accepted and read back from the log, an
+   undeclared one and a wrong token are refused with a non-OK gRPC status and never reach the log.
 
 Stdlib only, run as `python3 -I` so nothing beside the script is importable; it works the same on Linux and macOS.
 """
@@ -84,6 +87,54 @@ def cloudevent(event_id: str, kind: str, run: str) -> dict:
         "machine": "delivery",
         "actor": "ci",
     }
+
+
+GRPC_CLIENT = """\
+import sys
+
+from connectrpc.client import ConnectClientSync
+from connectrpc.errors import ConnectError
+from connectrpc.method import IdempotencyLevel, MethodInfo
+from connectrpc.protocol import ProtocolType
+from google.protobuf.empty_pb2 import Empty
+from pyqwest import HTTPVersion, SyncClient, SyncHTTPTransport
+
+from starpulse._internal.runs.wire.cloudevents_pb2 import CloudEvent
+
+port, token, kind, run = sys.argv[1:]
+client = ConnectClientSync(
+    f"http://127.0.0.1:{port}",
+    protocol=ProtocolType.GRPC,
+    http_client=SyncClient(SyncHTTPTransport(http_version=HTTPVersion.HTTP2)),
+)
+method = MethodInfo(
+    name="Publish",
+    service_name="starpulse.v1.CloudEventsIngest",
+    input=CloudEvent,
+    output=Empty,
+    idempotency_level=IdempotencyLevel.UNKNOWN,
+)
+event = CloudEvent(id=run, source="builder", spec_version="1.0", type=kind)
+for name, value in {"run": run, "machine": "delivery", "actor": "ci"}.items():
+    event.attributes[name].ce_string = value
+try:
+    client.execute_unary(request=event, method=method, headers={"authorization": f"Bearer {token}"}, timeout_ms=5000)
+    print("OK")
+except ConnectError as error:
+    print(error.code.name)
+"""
+
+
+def publish_grpc(python: str, port: int, kind: str, run: str, token: str = TOKEN) -> str:
+    """The gRPC status name of publishing one `kind` event of `run`, sent by `python`'s own connect-python client."""
+    done = subprocess.run(
+        [python, "-I", "-c", GRPC_CLIENT, str(port), token, kind, run],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    return done.stdout.strip() or f"client exited {done.returncode}: {done.stderr.strip()[-200:]}"
 
 
 def post(port: int, event: dict, token: str = TOKEN) -> int:
@@ -162,6 +213,23 @@ def wait_for_page(port: int, serve: subprocess.Popen, deadline: float) -> str | 
     return f"serve exited {serve.returncode}" if serve.poll() is not None else "serve never answered"
 
 
+def grpc_problem(python: str, port: int, base: Path, sent: list[tuple[str, str]]) -> str | None:
+    """The first thing that fails when the server takes `sent`'s events over gRPC too, or None; appends the one it takes."""
+    if (status := publish_grpc(python, port, "BUILT", "r4")) != "OK":
+        return f"gRPC Publish of a declared event answered {status}, not OK"
+    sent.append(("BUILT", "r4"))
+    if (status := publish_grpc(python, port, "UNDECLARED", "r5")) in {
+        "OK",
+        "UNIMPLEMENTED",
+    } or status.startswith("client"):
+        return f"gRPC Publish of an undeclared event answered {status}, not a refusal"
+    if (status := publish_grpc(python, port, "BUILT", "r6", token="wrong")) != "UNAUTHENTICATED":
+        return f"gRPC Publish under a wrong token answered {status}, not UNAUTHENTICATED"
+    if (found := logged(base)) != sent:
+        return f"the gRPC events in the log are {found}, not {sent}"
+    return None
+
+
 def smoke(python: str, deadline: float) -> str | None:
     """Run the whole proof and return the first thing that failed, or None."""
     if answering := redis_answering(REDIS_PORTS):
@@ -202,7 +270,7 @@ def smoke(python: str, deadline: float) -> str | None:
                 return f"a wrong token answered HTTP {status}, not 4xx"
             if (found := logged(base)) != sent:
                 return f"a refused event reached the log: {found}"
-            return None
+            return grpc_problem(python, port, base, sent)
         finally:
             serve.terminate()
             try:
@@ -213,7 +281,10 @@ def smoke(python: str, deadline: float) -> str | None:
 
 def main(argv: list[str]) -> int:
     problem = smoke(argv[0], float(argv[1]) if len(argv) > 1 else DEADLINE)
-    print(problem or "ok: no Redis answered; two events posted, read from the event log and SSE; an undeclared one refused 4xx")
+    print(
+        problem
+        or "ok: no Redis answered; two events posted, read from the event log and SSE; an undeclared one refused 4xx; one more published and two refused over gRPC"
+    )
     return 1 if problem else 0
 
 
