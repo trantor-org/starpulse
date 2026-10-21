@@ -7,3 +7,5 @@ starpulse/static/
 *.sqlite
 *.egg-info/
 .tmp/
+# setuptools build output from the editable `uv sync` install.
+build/
