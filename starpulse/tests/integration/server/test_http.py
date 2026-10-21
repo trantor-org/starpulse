@@ -512,7 +512,7 @@ def test_a_task_is_retired_read_back_and_imported_through_the_server(tmp_path: P
         machines=lambda qualify, workflows: {},
         start=lambda *_: None,
         retire=retire,
-        retired=lambda task: [row for key, row in kept.items() if task in ("", key)],
+        retired=lambda task, milestone: [row for key, row in kept.items() if task in ("", key)],
         import_retired=import_retired,
     )
     with _serve(tmp_path, BoardFeed(), board) as server:

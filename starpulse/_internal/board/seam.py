@@ -110,7 +110,7 @@ TaskRestorer = Callable[[str], Written]
 TaskRetirer = Callable[[str], Written]
 #: The retired task `task` as `[{task, name, text}]` (id, file name and file text), empty when it is not retired; a blank
 #: `task` reads every retired task, by id.
-RetiredReader = Callable[[str], list[Mapping[str, str]]]
+RetiredReader = Callable[[str, str], list[Mapping[str, str]]]
 #: Keep the file `name` with `text`, retired elsewhere, among the retired tasks; a successful `Written.output` is the
 #: task's id. Text that names no task id, a name that is no plain file name, a task on the board, or a task retired with
 #: other text is refused; the same task with the same text is accepted again.
