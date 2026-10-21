@@ -227,9 +227,9 @@ def test_a_step_reported_again_is_published_to_a_subscriber_that_saw_the_earlier
 
 def test_pushed_runs_fed_from_the_event_log_draw_the_workflow_with_its_learned_steps(tmp_path: Path) -> None:
     log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
-    log.append(run_events.STREAM, fields("StepStarted", "running"))
-    log.append(run_events.STREAM, fields("StepFinished", "succeeded", step="fetch"))
-    log.append(run_events.STREAM, fields("StepStarted", "running", step="load", depends=["fetch"]))
+    log._append(run_events.STREAM, fields("StepStarted", "running"))
+    log._append(run_events.STREAM, fields("StepFinished", "succeeded", step="fetch"))
+    log._append(run_events.STREAM, fields("StepStarted", "running", step="load", depends=["fetch"]))
     feed = BoardFeed()
     runs = PushRuns(feed.runs(PUSHED_INSTANCE), HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", {}))
     stop = threading.Event()
@@ -326,16 +326,16 @@ def test_a_restarted_reader_resumes_from_its_saved_state_and_reads_only_the_entr
 ) -> None:
     log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
     history = f"sqlite:///{tmp_path / 'history.sqlite'}"
-    log.append(run_events.STREAM, fields("StepStarted", "running"))
-    log.append(run_events.STREAM, fields("StepStarted", "running", step="load", depends=["fetch"]))
-    log.append(run_events.STREAM, fields("StepFinished", "succeeded"))
+    log._append(run_events.STREAM, fields("StepStarted", "running"))
+    log._append(run_events.STREAM, fields("StepStarted", "running", step="load", depends=["fetch"]))
+    log._append(run_events.STREAM, fields("StepFinished", "succeeded"))
     first, stop = BoardFeed(), threading.Event()
     runs = PushRuns(first.runs(PUSHED_INSTANCE), HistoryStore(history, {}))
     follow(runs, log, run_events.STREAM, runs.handle_entry, stop=stop, interval=0.01)
     _wait_until(lambda: first.snapshot()["dags"] and drawn(first)["status"] == "succeeded")
     stop.set()
     _wait_until(lambda: log.checkpoints.load(run_events.STREAM)[0] == 3)
-    log.append(run_events.STREAM, fields("StepStarted", "running", run="r2", at=START + 60))
+    log._append(run_events.STREAM, fields("StepStarted", "running", run="r2", at=START + 60))
 
     handled: list[str] = []
     second, stop = BoardFeed(), threading.Event()
@@ -350,7 +350,7 @@ def test_a_restarted_reader_resumes_from_its_saved_state_and_reads_only_the_entr
 
 def test_a_restart_with_nothing_new_draws_the_saved_workflows_without_reading_an_entry(tmp_path: Path) -> None:
     log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
-    log.append(run_events.STREAM, fields("StepStarted", "running"))
+    log._append(run_events.STREAM, fields("StepStarted", "running"))
     first = PushRuns(BoardFeed().runs(PUSHED_INSTANCE), None)
     first.resume(log.checkpoints, run_events.STREAM, lambda cursor: True)
     first.handle_entry("1-0", fields("StepStarted", "running"))

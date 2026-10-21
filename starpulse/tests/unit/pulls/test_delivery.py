@@ -133,8 +133,8 @@ def test_a_refresh_asked_before_the_worker_started_is_not_replayed(log: EventLog
 def test_each_followed_stream_hands_its_entries_to_its_own_handler_from_the_first(
     log: EventLog, stop: threading.Event
 ) -> None:
-    log.append("machine:events", {"task": "TASK-1"})
-    log.append("ci:jobs", {"job": "lint"})
+    log._append("machine:events", {"task": "TASK-1"})
+    log._append("ci:jobs", {"job": "lint"})
     seen: dict[str, list] = {"machine:events": [], "ci:jobs": []}
     done = threading.Event()
 

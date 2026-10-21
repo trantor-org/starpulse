@@ -1,6 +1,6 @@
 """StarPulse's event log: an append-only table in the history store that producers write and readers poll.
 
-Every producer on the host appends one row (`EventLog.append`), which never raises, so reporting an event never
+Every producer on the host appends one row (`EventLog._append`), which never raises, so reporting an event never
 fails the work that caused it. Every reader keeps its own cursor, the `id` of the last row it passed, and
 polls `id > cursor` (`Tail`); there are no consumer groups. A tail without a cursor replays the retained log, one
 given a cursor resumes after it, and `EventLog.prune` drops rows older than a retention, which `serve` runs hourly
@@ -151,7 +151,7 @@ class EventLog:
         with self.engine.begin() as db:
             db.execute(delete(settings).where(settings.c.key == key))
 
-    def append(self, stream: str, fields: Mapping[str, Any], *, event_id: str | None = None) -> int | None:
+    def _append(self, stream: str, fields: Mapping[str, Any], *, event_id: str | None = None) -> int | None:
         """Append one event and return its cursor, or None when it was not appended; never raises.
 
         `event_id` is the caller's, else the fields', else minted; a row with that `event_id` already in the log

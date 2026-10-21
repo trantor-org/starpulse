@@ -11,7 +11,6 @@ HEAVY = (
     "sqlalchemy",
     "starpulse._internal.server",
     "starpulse._internal.eventlog.event_log",
-    "starpulse._internal.runs.emit",
 )
 
 UNREACHABLE = "http://127.0.0.1:1"

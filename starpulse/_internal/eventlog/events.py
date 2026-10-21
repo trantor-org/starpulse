@@ -1,7 +1,7 @@
 """The machine:events stream contract: one entry per lifecycle-machine event its writer caused.
 
 A declared writer of a machine event publishes the event it fires here, keyed by the task or run it moved;
-StarPulse draws each machine's tasks from this stream. Emission is fail-open (`EventLog.append` never raises), so a
+StarPulse draws each machine's tasks from this stream. Emission is fail-open (`EventLog._append` never raises), so a
 missing entry means "the writer's emit failed or the writer does not emit yet", never "the machine did not move".
 
 Each entry carries `event_id` plus these string fields (absent when empty): `machine` (the machine's name, e.g.
@@ -48,4 +48,4 @@ def publish(
         "time": time.time() if now is None else now,
         **({"event_id": event_id} if event_id else {}),
     }
-    return log.append(STREAM, fields)
+    return log._append(STREAM, fields)

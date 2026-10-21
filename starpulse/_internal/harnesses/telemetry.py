@@ -370,7 +370,7 @@ class TelemetryLog:
 
     def publish(self, found: Iterable[Signal]) -> None:
         for signal in found:
-            self._log.append(self.STREAM, asdict(signal), event_id=signal.key)
+            self._log._append(self.STREAM, asdict(signal), event_id=signal.key)
 
     def read(self, since: float = 0.0) -> list[Signal]:
         """The held signals from `since` on; raises when the database cannot be read."""

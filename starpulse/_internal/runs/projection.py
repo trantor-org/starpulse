@@ -57,7 +57,7 @@ class Publisher:
                 logger.warning("runs: the projection was not kept", exc_info=True)
                 return
             self._kept[instance] = kept
-            self._log.append(PROJECTED_STREAM, {})
+            self._log._append(PROJECTED_STREAM, {})
 
 
 class _Sink:

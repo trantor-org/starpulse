@@ -772,7 +772,7 @@ def test_a_rerun_the_adapter_fails_answers_with_its_reason() -> None:
 
 def test_an_instance_serve_archives_the_rows_it_prunes_beside_the_config(tmp_path: Path) -> None:
     log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
-    log.append("a", {"n": 1}, event_id="old")
+    log._append("a", {"n": 1}, event_id="old")
     stale = time.time() - 30 * 86400
     with log.engine.begin() as db:
         db.execute(update(events).values(at=stale))

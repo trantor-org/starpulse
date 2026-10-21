@@ -46,9 +46,9 @@ def test_an_entry_each_producer_writes_validates_against_its_streams_schema(tmp_
         id="T-1", title="t", team="core", lane="in_progress", milestone="m-1", labels=("a",), profile="ana"
     )
     events.publish("in-progress", "WORKTREE_READY", actor="agent", task="T-1", now=5.0, log=log)
-    log.append(lane_events.STREAM, lane_events.entry(task, 5.0), event_id="T-1@in_progress@5.0")
-    log.append(run_events.STREAM, run_events.entry("StepStarted", "nightly", "r1", "running", now=6.0))
-    log.append(
+    log._append(lane_events.STREAM, lane_events.entry(task, 5.0), event_id="T-1@in_progress@5.0")
+    log._append(run_events.STREAM, run_events.entry("StepStarted", "nightly", "r1", "running", now=6.0))
+    log._append(
         run_events.STREAM,
         run_events.entry("StepFinished", "nightly", "r1", "succeeded", now=7.0, step="load", depends=["fetch"], instance="ana"),
     )

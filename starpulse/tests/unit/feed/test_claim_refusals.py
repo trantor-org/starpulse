@@ -33,7 +33,7 @@ def test_a_board_claims_entry_is_the_tasks_claim_with_its_reason_and_time(
     tmp_path: Path, stop: threading.Event
 ) -> None:
     log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
-    log.append(CLAIMS_STREAM, {"task": "TASK-7", "reason": "no worktree", "actor": "agent", "time": "100.5"})
+    log._append(CLAIMS_STREAM, {"task": "TASK-7", "reason": "no worktree", "actor": "agent", "time": "100.5"})
     feed = BoardFeed(None, machines=MACHINES)
     refusals = ClaimRefusals(feed)
 

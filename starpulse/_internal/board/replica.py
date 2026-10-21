@@ -131,7 +131,7 @@ class Publisher:
                     "digest": digest,
                     "task": stamped.model_dump_json(),
                 }
-                if (entry := self._log.append(REPLICA_STREAM, fields)) is not None:
+                if (entry := self._log._append(REPLICA_STREAM, fields)) is not None:
                     self._digests[task.id], self._dirty = digest, True
                     self._feed.seen(str(entry))
             self._flush()
@@ -151,14 +151,14 @@ class Publisher:
     def _flush(self) -> None:
         """Append the retractions and the ready marker the log has not taken yet; the caller holds the lock."""
         for task_id in sorted(self._pending):
-            entry = self._log.append(REPLICA_STREAM, {"id": task_id, "digest": "", "task": ""})
+            entry = self._log._append(REPLICA_STREAM, {"id": task_id, "digest": "", "task": ""})
             if entry is not None:
                 self._pending.discard(task_id)
                 self._digests.pop(task_id, None)
                 self._dirty = True
                 self._feed.seen(str(entry))
         if not self._marked and self._feed.ready.is_set():
-            entry = self._log.append(REPLICA_STREAM, {"ready": "1"})
+            entry = self._log._append(REPLICA_STREAM, {"ready": "1"})
             if entry is not None:
                 self._marked = True
                 self._feed.seen(str(entry))

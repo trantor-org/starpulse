@@ -27,7 +27,7 @@ def test_migration_0016_creates_the_autopilot_runs_table_the_code_declares() -> 
 def test_pruning_the_event_log_keeps_every_recorded_run(tmp_path: Path) -> None:
     log = EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}")
     Ledger(log, tmp_path / "runs.jsonl").record(RunRecord("TASK-1", "standard", 8, "review", 60.0, {"cpu": 10.0}))
-    log.append("board", {"kind": "old"})
+    log._append("board", {"kind": "old"})
 
     pruned = log.prune(0, now=time.time() + 86400, archive_dir=tmp_path / "archive")
 

@@ -436,7 +436,7 @@ def test_following_a_repository_lists_it_then_moves_a_workflow_by_the_entries_on
     follow_repository(f"https://github.com/{REPO}", feed.runs("gh"), log, interval=0.01)
     wait_until(lambda: feed.snapshot()["dags"])
     served[0] = Recorded(runs={"ci": "ci-success"})
-    log.append(run_events.STREAM, run_events.entry("StepFinished", "ci.yml", "1", "succeeded", now=time.time() + 60))
+    log._append(run_events.STREAM, run_events.entry("StepFinished", "ci.yml", "1", "succeeded", now=time.time() + 60))
     wait_until(lambda: next(d for d in feed.snapshot()["dags"] if d["name"] == "gh/ci.yml")["status"] == "succeeded")
 
     assert [(t.name, t.daemon) for t in started if t.name.startswith("github-")] == [
@@ -456,12 +456,12 @@ def test_the_tail_starts_at_the_log_head_so_no_retained_entry_is_replayed_and_a_
     monkeypatch.setattr(GitHubRuns, "handle_entry", lambda self, entry_id, fields: (handled.append(entry_id), real_handle(self, entry_id, fields))[1])
     log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
     for _ in range(3):  # the retention the listing already covers
-        log.append(run_events.STREAM, run_events.entry("StepFinished", "ci.yml", "1", "succeeded", now=1.0))
+        log._append(run_events.STREAM, run_events.entry("StepFinished", "ci.yml", "1", "succeeded", now=1.0))
     feed = BoardFeed()
 
     follow_repository(f"https://github.com/{REPO}", feed.runs("gh"), log, interval=0.01)
     wait_until(lambda: feed.snapshot()["dags"])
-    log.append(run_events.STREAM, run_events.entry("StepFinished", "ci.yml", "2", "succeeded", now=time.time() + 60))
+    log._append(run_events.STREAM, run_events.entry("StepFinished", "ci.yml", "2", "succeeded", now=time.time() + 60))
     wait_until(lambda: handled)
 
     assert handled == ["4"]
