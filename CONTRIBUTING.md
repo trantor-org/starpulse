@@ -24,9 +24,11 @@ collaborator, say so in an issue.
   notes, so write the title for someone who uses StarPulse.
 - Nobody pushes to `main` directly, force-pushes it or deletes it.
 - A push to `main` is pinned on trantor by trantor's `starpulse-restart` Dagu DAG, whose first step runs
-  `bin/starpulse_ops/starpulse_pin.sh` once the workspace App's check runs (`python`, `web`, `static-checks`,
-  `trantor-contract`) on the merge-queue candidate that tested the commit have passed; the script re-checks them and
-  does nothing for a SHA already pinned. No workflow here pins, and no secret here holds the pin's deploy key.
+  `bin/starpulse_ops/starpulse_pin.sh` once the workspace App's check runs (`python`, `web`, `static-checks`) on the
+  merge-queue candidate that tested the commit have passed; the script re-checks them and does nothing for a SHA
+  already pinned. `trantor-contract` is advisory: when it is red the script opens a bump pull request on trantor
+  instead of pinning, and trantor's migration lands there. No workflow here pins, and no secret here holds the pin's
+  deploy key.
 
 ## License
 
