@@ -70,8 +70,8 @@ to no function is a startup error) and calls it before every task write with the
 (`None` for a create) and the text about to be written. A returned string refuses the write: the writer answers with it
 as its refusal and writes nothing, so a refused create leaves no file and its id to the next create. `None` lets the
 write land.
-With `[[board.rules]]` set, the board judges each task write against those rules first, as the actor that makes it, and
-a rule broken refuses the write with its `reason` and `skill` before `validate` is asked (see Board rules in
+With `[[board.guards]]` set, the board judges each task write against those rules first, as the actor that makes it, and
+a rule broken refuses the write with its `reason` and `skill` before `validate` is asked (see Board guards in
 [public-surface.md](public-surface.md)); the `edit`, `archive`, `create` and `assign` writers take that actor as a
 keyword, `edit(task, changes, comment, actor="agent")`, which the server always passes on `edit`, `archive` and `create`
 (`anonymous` when the request names none); a `create` writer's `details` also carry `created_by`, the writer's

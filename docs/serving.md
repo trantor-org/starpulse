@@ -200,7 +200,7 @@ type = "native"
 # types = ["spike", "bug"]  # the names a task's `type` may take; a write setting any other is refused with this list in its reason, so with no list any non-empty type is accepted and a board names none of its own
 # task_file_name = "title"   # the name a created task's file is written under: "title" is `task-1 - Draw-the-board.md`, "slug" is `task-1-draw-the-board.md`, lowercase, its slug capped at 19 characters
 
-# Rules every task write must satisfy, whoever makes it: the agent CLI, the page or a workflow (see Board rules in
+# Rules every task write must satisfy, whoever makes it: the agent CLI, the page or a workflow (see Board guards in
 # docs/public-surface.md for every primitive). Each is judged on the task as it will be after the write, by the actor
 # that makes it, and the first one broken refuses the write with its `reason` (and `skill`), the same text to the CLI
 # and the page; nothing is written. A board with no rules accepts every write it accepted before.
@@ -210,7 +210,7 @@ type = "native"
 #   require  = one primitive: field, label, section, body, block, dependencies, checklist, or all_of, any_of, exactly_one,
 #              none_of over a list of them
 #   unless_actor = ["dagu/reconciler"]         actors the rule does not judge: operator, agent, <instance>/<workflow>
-# [[board.rules]]
+# [[board.guards]]
 # on = { to = "Done" }
 # require = { field = { field = "references", matches = "/pull/\\d+$", min = 1 } }
 # reason = "Done needs a pull request in references"

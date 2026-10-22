@@ -106,15 +106,20 @@ unchanged is not refused, so narrowing the list never blocks an edit to a task a
 any non-empty string lands. `starpulse board --type NAME` keeps only the tasks of that type, and each task the board
 reports carries its `type` (empty when it has none). The Backlog.md adapter does not enforce the list.
 
-## Board rules
+## Board guards
 
-`[[board.rules]]` in the config file (the native board's `rules` setting) declares record-level rules every task write
+`[[board.guards]]` in the config file (the native board's `guards` setting) declares record-level rules every task write
 must satisfy, whichever writer makes it: `starpulse task move` and the other agent verbs, the page, and a workflow.
 They are enforced where the native board lands a task file, so a move from the CLI and the same move from the page
 meet the same rule and are refused with the same `reason` and `skill`, and nothing is written. The Backlog.md adapter
 writes through the upstream CLI and does not enforce them. A board with no rules accepts every write it accepted
 before, and a rule it cannot read (an unknown key or primitive, a missing `reason`, a bad pattern) is a startup error
-naming `rules[N]`.
+naming `guards[N]`.
+
+Release note: guards were `[[board.rules]]`. A config that still has that table is refused at startup with an error naming
+`[[board.guards]]`; rename the table, nothing else changes. Every entry path is judged by the same enforcement point: the
+config file's table, the task write verbs, the page, and `/api/tasks` and `/api/edit`. The Backlog.md adapter still
+does not enforce guards, unchanged.
 
 A rule is a table of:
 

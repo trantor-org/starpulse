@@ -145,7 +145,7 @@ def test_a_dependency_on_a_retired_task_is_in_the_state_it_was_retired_in(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(UpstreamBacklog, "start", lambda self, interval, scanned: (self.scan(), scanned()))
-    settings = replace(load(None), board={"rules": [done_needs({"dependencies": {"all_in": ["Done"]}})]})
+    settings = replace(load(None), board={"guards": [done_needs({"dependencies": {"all_in": ["Done"]}})]})
     built, feed = assemble(settings, tmp_path, None, ())
     write_task(tmp_path, "task-5", "Done")
     write_task(tmp_path, "task-1", "In Progress", dependencies="[task-5]")

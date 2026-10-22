@@ -1,6 +1,6 @@
 """A board's rules: what a task must satisfy for a write to land.
 
-`[board] rules` lists them. Each is `{on, require, reason}` (and optionally `skill` and `unless_actor`): `on` says
+`[board] guards` lists them. Each is `{on, require, reason}` (and optionally `skill` and `unless_actor`): `on` says
 which writes it judges, `require` is one primitive the task as it will be after the write must satisfy, and `reason`
 is the refusal every writer, the CLI's and the page's, answers with. A primitive is a one-key table naming its kind:
 `{field: {...}}`, `{label: {...}}`, `{section: {...}}`, `{body: {...}}`, `{block: {...}}`,
@@ -319,14 +319,14 @@ def _primitive(spec: object, where: str) -> Primitive:
 
 
 def load(declared: object) -> tuple[Rule, ...]:
-    """The rules a `[board] rules` setting declares, in order; a rule the board cannot read is a ValueError naming it."""
+    """The rules a `[board] guards` setting declares, in order; a rule the board cannot read is a ValueError naming it."""
     if declared is None:
         return ()
     if not isinstance(declared, list):
-        raise ValueError("board: rules must be a list of tables, `[[board.rules]]`")
+        raise ValueError("board: guards must be a list of tables, `[[board.guards]]`")
     rules = []
     for number, spec in enumerate(declared):
-        where = f"board: rules[{number}]"
+        where = f"board: guards[{number}]"
         if not isinstance(spec, dict):
             raise ValueError(f"{where}: a rule is a table")
         if unknown := sorted(spec.keys() - _RULE_KEYS):

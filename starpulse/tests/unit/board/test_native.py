@@ -154,7 +154,7 @@ def test_a_move_a_board_rule_refuses_is_offered_as_refused_with_the_rules_reason
     tmp_path: Path, tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     rule = (
-        '\n[[board.rules]]\non = { to = "In Progress" }\n'
+        '\n[[board.guards]]\non = { to = "In Progress" }\n'
         'require = { none_of = [{ field = { field = "type", in = ["retro"] } }] }\n'
         'reason = "A retro ships no pull request"\nskill = "running-milestone-retros"\n'
     )

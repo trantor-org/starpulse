@@ -1,4 +1,4 @@
-"""The native board's `[board] rules`: record-level rules a write must satisfy, enforced where every task write lands."""
+"""The native board's `[board] guards`: record-level rules a write must satisfy, enforced where every task write lands."""
 
 from pathlib import Path
 from typing import Any
@@ -25,7 +25,7 @@ DONE_NEEDS_PR: dict[str, Any] = {
 def ruled(base: Path, rules: list[dict[str, Any]], status: str = "In Progress", **fields: object) -> tuple[Path, Board]:
     """A native board with the default lanes and `rules`, holding `task-1` in `status`."""
     board({}, base)  # makes the default lanes
-    return write_task(base, "task-1", status, **fields), board({"rules": rules}, base)
+    return write_task(base, "task-1", status, **fields), board({"guards": rules}, base)
 
 
 def test_a_rule_refuses_a_move_into_its_state_with_its_reason_and_skill_and_writes_nothing(tmp_path: Path) -> None:
@@ -73,8 +73,8 @@ def test_a_rule_the_board_cannot_read_is_a_startup_error_naming_it(
 ) -> None:
     board({}, tmp_path)
 
-    with pytest.raises(ValueError, match=rf"rules\[0\].*{complaint}"):
-        board({"rules": [rule]}, tmp_path)
+    with pytest.raises(ValueError, match=rf"guards\[0\].*{complaint}"):
+        board({"guards": [rule]}, tmp_path)
     assert list(native_root(tmp_path).glob("tasks/*")) == []
 
 
@@ -438,8 +438,8 @@ def test_a_primitive_the_board_cannot_read_is_a_startup_error_naming_it(
 ) -> None:
     board({}, tmp_path)
 
-    with pytest.raises(ValueError, match=rf"rules\[0\].*{complaint}"):
-        board({"rules": [done_needs(require)]}, tmp_path)
+    with pytest.raises(ValueError, match=rf"guards\[0\].*{complaint}"):
+        board({"guards": [done_needs(require)]}, tmp_path)
 
 
 @pytest.mark.parametrize("actor", ["operator", "agent", "dagu/reconciler"])
@@ -461,7 +461,7 @@ def test_the_rules_a_config_files_board_tables_declare_reach_the_board(tmp_path:
 [board]
 type = "native"
 
-[[board.rules]]
+[[board.guards]]
 on = { to = "Done" }
 require = { field = { field = "references", matches = "/pull/\\\\d+$", min = 1 } }
 reason = "Done needs a pull request in references"
@@ -489,3 +489,11 @@ def test_a_standing_refusal_leaves_out_a_rule_that_exempts_an_actor_or_reads_ano
 
     assert rules.standing_refusal(rules.load([gated, exempting]), front, "", "done") is None
     assert rules.standing_refusal(rules.load([DONE_NEEDS_PR]), front, "", "done") is not None
+
+
+def test_a_config_with_board_rules_is_refused_naming_board_guards(tmp_path: Path) -> None:
+    (tmp_path / "starpulse.toml").write_text('[board]\ntype = "native"\n\n[[board.rules]]\non = { to = "Done" }\n')
+    config = load(tmp_path / "starpulse.toml")
+
+    with pytest.raises(ValueError, match=r"\[\[board\.guards\]\]"):
+        board(config.board, tmp_path)
