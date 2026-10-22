@@ -1,4 +1,4 @@
-"""A Board task reports the phase its In Progress machine is in, that phase's subflow state and when it reached Done."""
+"""A Board task reports the phase its In Progress machine is in, that phase's submachine state and when it reached Done."""
 
 from __future__ import annotations
 
@@ -17,16 +17,16 @@ def _agent(task: str, state: str, **extra: Any) -> dict[str, Any]:
 
 def _snapshot() -> dict[str, Any]:
     links = [
-        {"state": "build", "flow": "build"},
-        {"state": "deliver", "flow": "deliver"},
-        {"state": "deliver", "flow": "triaging-cr-reviews"},
+        {"state": "build", "machine": "build"},
+        {"state": "deliver", "machine": "deliver"},
+        {"state": "deliver", "machine": "triaging-cr-reviews"},
     ]
     board = [_agent("T-1", "in_progress"), _agent("T-2", "in_progress"), _agent("T-3", "done", entered=DONE_AT)]
     return {
         "flows": [
-            {"name": "board", "agents": board, "machine": {"states": [], "subflows": [{"state": "in_progress", "flow": "in-progress"}]}},
+            {"name": "board", "agents": board, "machine": {"states": [], "submachines": [{"state": "in_progress", "machine": "in-progress"}]}},
             {"name": "in-progress", "agents": [_agent("T-1", "deliver"), _agent("T-2", "worktree_ready"),
-                                               _agent("T-3", "finalized")], "machine": {"subflows": links}},
+                                               _agent("T-3", "finalized")], "machine": {"submachines": links}},
             {"name": "build", "agents": [_agent("T-1", "docs_reconciled")], "machine": {}},
             {"name": "deliver", "agents": [_agent("T-1", "pr_opened")], "machine": {}},
             {"name": "triaging-cr-reviews", "agents": [], "machine": {}},

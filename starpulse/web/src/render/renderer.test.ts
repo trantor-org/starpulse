@@ -65,7 +65,7 @@ describe("the Recent feed's lines", () => {
   const fin = Date.parse(dag.finishedAt) / 1000;
 
   it("points a move's line at the task it moved", () => {
-    const [line] = feedOf([{ flow: "delivery", task: "TASK-7", at: 10, event: "PR_OPENED", to: "pr_opened", from: "claimed" }], [], [], 20);
+    const [line] = feedOf([{ machine: "delivery", task: "TASK-7", at: 10, event: "PR_OPENED", to: "pr_opened", from: "claimed" }], [], [], 20);
 
     expect(line).toMatchObject({ who: "TASK-7", what: "pr_opened", where: "delivery", task: "TASK-7" });
   });
@@ -78,8 +78,8 @@ describe("the Recent feed's lines", () => {
   });
 
   it("keeps a move line's key when an older move ages out, so the line under the pointer is not remounted", () => {
-    const old = { flow: "delivery", task: "TASK-6", at: 5, event: "CLAIMED", to: "claimed", from: "ready" };
-    const kept = { flow: "delivery", task: "TASK-7", at: 10, event: "PR_OPENED", to: "pr_opened", from: "claimed" };
+    const old = { machine: "delivery", task: "TASK-6", at: 5, event: "CLAIMED", to: "claimed", from: "ready" };
+    const kept = { machine: "delivery", task: "TASK-7", at: 10, event: "PR_OPENED", to: "pr_opened", from: "claimed" };
 
     const before = feedOf([old, kept], [], [], 20).find((l) => l.task === "TASK-7");
     const after = feedOf([kept], [], [], 20).find((l) => l.task === "TASK-7");
@@ -88,7 +88,7 @@ describe("the Recent feed's lines", () => {
   });
 
   it("keys a task's repeated move apart from its earlier one, so a note lands on the hovered line alone", () => {
-    const red = (at: number) => ({ flow: "delivery", task: "TASK-7", at, event: "CI_RED", to: "ci_red", from: "ci_red" });
+    const red = (at: number) => ({ machine: "delivery", task: "TASK-7", at, event: "CI_RED", to: "ci_red", from: "ci_red" });
 
     const [late, early] = feedOf([red(5), red(10)], [], [], 20);
 
@@ -96,7 +96,7 @@ describe("the Recent feed's lines", () => {
   });
 
   const SID = "92ead411-c78b-4454-a63e-fcae6a3d6259";
-  const session = (event: string, at = 10) => ({ flow: "harness", task: SID, at, event, to: "active", from: "active" });
+  const session = (event: string, at = 10) => ({ machine: "harness", task: SID, at, event, to: "active", from: "active" });
 
   it("leaves out a session's tool and skill uses, keeping its start and stop", () => {
     const lines = feedOf([session("TOOL_USED", 5), session("SKILL_USED", 6), session("SESSION_STARTED", 4), session("SESSION_STOPPED", 7)], [], [], 20);

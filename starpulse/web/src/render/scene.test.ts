@@ -12,12 +12,12 @@ const sky = () => {
     flows: [
       { name: "board", agents: [{ id: "PROJ-1", title: "t", state: "ready", model: "", labels: [] }], machine: machine(["ready", "in_progress", "review"], {
         transitions: [{ source: "ready", target: "in_progress", event: "CLAIM" }, { source: "in_progress", target: "review", event: "REVIEW" }],
-        subflows: [{ state: "in_progress", flow: "in-progress", exits: {}, parent: "board", when: "" }],
+        submachines: [{ state: "in_progress", machine: "in-progress", exits: {}, parent: "board", when: "" }],
         writers: { CLAIM: [{ actor: "board-autopilot", trigger: "dagu" }] },
       }) },
       { name: "in-progress", agents: [], machine: machine(["worktree_ready", "pr_opened"], {
         transitions: [{ source: "worktree_ready", target: "pr_opened", event: "PR_OPENED" }],
-        subflows: [{ state: "pr_opened", flow: "triaging-cr-reviews", exits: {}, parent: "in-progress", when: "a PR is open" }],
+        submachines: [{ state: "pr_opened", machine: "triaging-cr-reviews", exits: {}, parent: "in-progress", when: "a PR is open" }],
       }) },
       { name: "triaging-cr-reviews", agents: [], machine: machine(["fetch", "reply"]) },
     ],
@@ -46,7 +46,7 @@ describe("a terminal state", () => {
 });
 
 describe("a machine's final state", () => {
-  const st = (final: boolean, mini?: boolean): MState => ({ id: "s", name: "S", final, initial: false, flow: "f", n: 4, color: "#fff", mini, loops: [], x: 0, y: 0 });
+  const st = (final: boolean, mini?: boolean): MState => ({ id: "s", name: "S", final, initial: false, machine: "f", n: 4, color: "#fff", mini, loops: [], x: 0, y: 0 });
   it("is the size of any other state with as many tasks, at the machine level and inside a machine planet", () => {
     expect(stateR(st(true))).toBe(stateR(st(false)));
     expect(stateR(st(true, true))).toBe(stateR(st(false, true)));
@@ -113,8 +113,8 @@ const boardSky = ({ writes = {}, cues = [], launches = [], free = {}, ledgers, m
           { source: "ready", target: "in_progress", event: "CLAIM" }, { source: "in_progress", target: "review", event: "REVIEW" },
           { source: "review", target: "done", event: "MERGED" }, { source: "in_progress", target: "in_progress", event: "STAY" },
         ],
-        subflows: [{ state: "in_progress", flow: "in-progress", exits: {}, parent: "board", when: "" }],
-        launches: Object.fromEntries(launches.map((d) => [d, { skill: "delivering", flow: "in-progress" }])),
+        submachines: [{ state: "in_progress", machine: "in-progress", exits: {}, parent: "board", when: "" }],
+        launches: Object.fromEntries(launches.map((d) => [d, { skill: "delivering", machine: "in-progress" }])),
         writers, dagActors: Object.keys(writes), mainLine: ["new", "ready", "in_progress", "review", "done"],
       }) },
       { name: "in-progress", agents: [], machine: machine(["worktree_ready", "pr_opened"]) },
@@ -615,7 +615,7 @@ const DEFAULT_TIERS = [["new"], ["ready", "waiting"], ["needs_attention"], ["in_
 
 /** `n` machines open under `state`, each its own flow. */
 const machinesOn = (state: string, n: number) => (snap: Snapshot) => {
-  snap.flows[0].machine.subflows = Array.from({ length: n }, (_, i) => ({ state, flow: `m${i}`, exits: {}, parent: "board", when: "" }));
+  snap.flows[0].machine.submachines = Array.from({ length: n }, (_, i) => ({ state, machine: `m${i}`, exits: {}, parent: "board", when: "" }));
   for (let i = 0; i < n; i++) {
     snap.graphs.push(`m${i}`);
     snap.flows.push({ name: `m${i}`, agents: [], machine: machine(["a", "b"]) });
@@ -783,7 +783,7 @@ describe("the Board's tiers", () => {
     const px = (W: number, H: number) => {
       const s = tiered(W, H, DEFAULT_TIERS, (snap) => {
         const ids = DEFAULT_TIERS.flat();
-        snap.flows[0].machine.subflows = ids.map((state) => ({ state, flow: `m-${state}`, exits: {}, parent: "board", when: "" }));
+        snap.flows[0].machine.submachines = ids.map((state) => ({ state, machine: `m-${state}`, exits: {}, parent: "board", when: "" }));
         for (const state of ids) {
           snap.graphs.push(`m-${state}`);
           snap.flows.push({ name: `m-${state}`, agents: [], machine: machine(["a", "b"]) });
@@ -849,8 +849,8 @@ describe("the Board's tiers", () => {
     /** Two machines under each of In Progress and Review: the two states that draw a moon ring. */
     const rings = (snap: Snapshot) => {
       const m = snap.flows[0].machine;
-      m.subflows = ["in_progress", "review"].flatMap((state) => [0, 1].map((i) => ({ state, flow: `${state}-${i}`, exits: {}, parent: "board", when: "" })));
-      for (const { flow } of m.subflows) {
+      m.submachines = ["in_progress", "review"].flatMap((state) => [0, 1].map((i) => ({ state, machine: `${state}-${i}`, exits: {}, parent: "board", when: "" })));
+      for (const { machine: flow } of m.submachines) {
         snap.graphs.push(flow);
         snap.flows.push({ name: flow, agents: [], machine: machine(["a", "b"]) });
       }
@@ -1130,7 +1130,7 @@ const inProgressSky = () => {
           { source: "in_progress", target: "review", event: "REVIEW" },
           { source: "in_progress", target: "needs_attention", event: "DEFER" },
         ],
-        subflows: [{ state: "in_progress", flow: "in-progress", exits: { review_recorded: "REVIEW", needs_attention: "DEFER" }, parent: "board", when: "" }],
+        submachines: [{ state: "in_progress", machine: "in-progress", exits: { review_recorded: "REVIEW", needs_attention: "DEFER" }, parent: "board", when: "" }],
       }) },
       { name: "in-progress", agents: [placed("worktree_ready", [["WORKTREE", 800], ["BACK", 980]])], machine: machine(["worktree_ready", "pr_opened"]) },
       { name: "triaging-cr-reviews", agents: [placed("fetch", [["OPEN", 900]])], machine: machine(["fetch", "reply"]) },
@@ -1147,8 +1147,8 @@ describe("the In Progress state level's machine ledger top", () => {
 
   it("draws the in-progress machine across the top, its states, flow lines and tasks placed in the canvas", () => {
     const { top, mStates, mEdges, machineTasks } = at(1350, 900);
-    expect([top?.flow, Object.keys(mStates)]).toEqual(["in-progress", ["worktree_ready", "pr_opened"]]);
-    expect(machineTasks.map((t) => [t.id, t.flow])).toEqual([["PROJ-1", "in-progress"]]);
+    expect([top?.machine, Object.keys(mStates)]).toEqual(["in-progress", ["worktree_ready", "pr_opened"]]);
+    expect(machineTasks.map((t) => [t.id, t.machine])).toEqual([["PROJ-1", "in-progress"]]);
     expect(mEdges).toEqual([]);
     for (const s of Object.values(mStates)) expect([s.x > 0 && s.x < 1350, s.y > 0 && s.y < top!.hdrB]).toEqual([true, true]);
   });
@@ -1189,7 +1189,7 @@ describe("the In Progress state level", () => {
   });
 
   it("sends each exit its SUBFLOW declares to the Board state its event moves to, and enters from the state that claims it", () => {
-    const declared = Object.values(sky.S.board.machine.subflows![0].exits), target = (event: string) => scene.exits.find((x) => x.event === event)?.target;
+    const declared = Object.values(sky.S.board.machine.submachines![0].exits), target = (event: string) => scene.exits.find((x) => x.event === event)?.target;
 
     expect(declared.map(target)).toEqual(["review", "needs_attention"]);
     expect(scene.entries.map((x) => x.source)).toEqual(["ready"]);
@@ -1206,7 +1206,7 @@ const nestedSky = () => {
   const snap: Snapshot = {
     graphs: ["board", "in-progress", "audit", "scan", "lint", "lonely", "runs"],
     flows: [
-      { name: "board", agents: [], machine: machine(["ready", "in_progress"], { subflows: [{ state: "in_progress", flow: "in-progress", exits: {}, parent: "board", when: "" }] }) },
+      { name: "board", agents: [], machine: machine(["ready", "in_progress"], { submachines: [{ state: "in_progress", machine: "in-progress", exits: {}, parent: "board", when: "" }] }) },
       derived("in-progress", null, [], branched),
       derived("audit", "in-progress", [], chain(["x", "y"])),
       derived("scan", "audit", ["audit"], chain(["x", "y"])),
@@ -1226,7 +1226,7 @@ describe("a machine opened from a row", () => {
   it("takes the top, drawn at the height of the In Progress machine whatever its own flow", () => {
     const ip = build(nestedSky(), { kind: "state", id: "in_progress" }).top!, audit = at("audit").top!;
 
-    expect([audit.flow, audit.nodes.map((n) => n.id)]).toEqual(["audit", ["x", "y"]]);
+    expect([audit.machine, audit.nodes.map((n) => n.id)]).toEqual(["audit", ["x", "y"]]);
     expect(audit.hdrB).toBe(ip.hdrB);
     expect(at("lint").top!.hdrB).toBe(ip.hdrB);
   });
@@ -1271,7 +1271,7 @@ const moonSky = (skills = 2, W = 1920, H = 1080, ties: { writes?: Record<string,
   const tied = [...new Set([...Object.keys(writes), ...cues.map((c) => c.dag), ...Object.keys(launches)])];
   const names = Array.from({ length: skills }, (_, i) => `skill-${String(i).padStart(2, "0")}`);
   const session = (task: string, state: string, active: number) => ({ id: `${task}-${state}`, title: "t", state, model: "", task, active });
-  const link = (state: string, parent: string) => ({ state, flow: "running-skill-evals", exits: {}, parent, when: "it reads" });
+  const link = (state: string, parent: string) => ({ state, machine: "running-skill-evals", exits: {}, parent, when: "it reads" });
   // `busy` more tasks work the first twelve skills, dealt round in turn
   const extra = Array.from({ length: busy }, (_, i) => `TASK-${10 + i}`);
   const snap: Snapshot = {
@@ -1280,15 +1280,15 @@ const moonSky = (skills = 2, W = 1920, H = 1080, ties: { writes?: Record<string,
       { name: "board", agents: ["PROJ-1", "PROJ-2", "PROJ-3", ...extra].map((id) => ({ id, title: "t", state: "in_progress", model: "", labels: [] })).concat([{ id: "PROJ-4", title: "t", state: "review", model: "", labels: [] }]),
         machine: machine(["ready", "in_progress", "review"], {
           transitions: [{ source: "ready", target: "in_progress", event: "CLAIM" }, { source: "in_progress", target: "review", event: "REVIEW" }],
-          subflows: [{ state: "in_progress", flow: "in-progress", exits: {}, parent: "board", when: "" }],
-          writers, launches: Object.fromEntries(Object.entries(launches).map(([d, flow]) => [d, { skill: "delivering", flow }])),
+          submachines: [{ state: "in_progress", machine: "in-progress", exits: {}, parent: "board", when: "" }],
+          writers, launches: Object.fromEntries(Object.entries(launches).map(([d, flow]) => [d, { skill: "delivering", machine: flow }])),
         }) },
       { name: "in-progress", agents: [session("PROJ-1", "pr_opened", 900), session("PROJ-3", "worktree_ready", 950)], machine: machine(["worktree_ready", "pr_opened"], {
-        subflows: [{ state: "pr_opened", flow: "triaging-cr-reviews", exits: {}, parent: "in-progress", when: "a PR is open" }],
+        submachines: [{ state: "pr_opened", machine: "triaging-cr-reviews", exits: {}, parent: "in-progress", when: "a PR is open" }],
       }) },
       { name: "triaging-cr-reviews", agents: [], machine: machine(["fetch", "reply"]) },
       { name: "running-skill-evals", agents: [], machine: machine(["run", "score"]) },
-      ...names.map((name, i) => ({ name, agents: [...(i ? [] : [session("PROJ-2", "writing", 980)]), ...extra.filter((_, j) => j % 12 === i).map((t) => session(t, "writing", 980))], machine: machine(["reading", "writing"], { subflows: i % 3 === 0 ? [link("reading", name)] : [] }) })),
+      ...names.map((name, i) => ({ name, agents: [...(i ? [] : [session("PROJ-2", "writing", 980)]), ...extra.filter((_, j) => j % 12 === i).map((t) => session(t, "writing", 980))], machine: machine(["reading", "writing"], { submachines: i % 3 === 0 ? [link("reading", name)] : [] }) })),
     ],
     dags: tied.map((n) => dag(n, [["run", []]])), domains: [{ name: "Board", dags: tied.map((name) => ({ name, runSafe: false })) }], cues, settled: {}, error: null, now: 1000,
   };
@@ -1510,7 +1510,7 @@ describe("the state level's sub-state chains", () => {
 describe("the state level's tasks", () => {
   // PROJ-1 holds the primary's pr_opened (no body drawn for it), PROJ-2 reads skill-00 (a sub-state) and PROJ-3 writes skill-01 (no sub-state).
   const level = () => {
-    const sky = moonSky(4), move = (task: string, flow: string, to: string, at: number) => ({ flow, task, at, event: "MOVE", to, from: null });
+    const sky = moonSky(4), move = (task: string, flow: string, to: string, at: number) => ({ machine: flow, task, at, event: "MOVE", to, from: null });
     sky.moves.events.push(move("PROJ-1", "in-progress", "pr_opened", 900), move("PROJ-2", "skill-00", "reading", 920), move("PROJ-3", "skill-01", "writing", 940));
     return build(sky, { kind: "state", id: "in_progress" });
   };
@@ -1826,9 +1826,9 @@ describe("a flow shared by two Board states", () => {
     const snap: Snapshot = {
       graphs: ["board", "ci", "runs"],
       flows: [
-        { name: "board", machine: machine(["ready", "in_progress", "review"], { subflows: [
-          { state: "in_progress", flow: "ci", exits: {}, parent: "board", when: "a PR is open" },
-          { state: "review", flow: "ci", exits: {}, parent: "board", when: "a PR is open" },
+        { name: "board", machine: machine(["ready", "in_progress", "review"], { submachines: [
+          { state: "in_progress", machine: "ci", exits: {}, parent: "board", when: "a PR is open" },
+          { state: "review", machine: "ci", exits: {}, parent: "board", when: "a PR is open" },
         ] }), agents: [
           { id: "T-1", title: "a", state: "in_progress", model: "", labels: [] },
           { id: "T-2", title: "b", state: "review", model: "", labels: [] },

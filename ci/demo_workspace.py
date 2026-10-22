@@ -28,7 +28,7 @@ SUBFLOWS = [("board", "in_progress", "delivery", ""), ("delivery", "pr_opened", 
 
 
 def _drawn(workflows: Collection[str]) -> tuple[dict[str, dict], list[dict]]:
-    """Each machine file drawn under its file name, with the sub-flows that open under it, and the Board's cues."""
+    """Each machine file drawn under its file name, with the submachines that open under it, and the Board's cues."""
     machines, cues = {}, []
     for path in sorted(WORKSPACE.glob("*.yaml")):
         name, compiled = path.stem, load_machine(path)
@@ -36,11 +36,11 @@ def _drawn(workflows: Collection[str]) -> tuple[dict[str, dict], list[dict]]:
             refuse_unlisted(name, compiled.writers, workflows)
         body = describe(compiled.machine)
         if links := [
-            {"state": state, "flow": flow, "exits": {}, "parent": parent, "when": when}
+            {"state": state, "machine": flow, "exits": {}, "parent": parent, "when": when}
             for parent, state, flow, when in SUBFLOWS
             if parent == name
         ]:
-            body["subflows"] = links
+            body["submachines"] = links
         if name == "board":
             # Done reopens, so the file declares it open; the page still draws it as the end of a task's lifecycle
             for state in body["states"]:

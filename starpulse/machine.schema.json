@@ -68,11 +68,11 @@
       "uniqueItems": true,
       "items": {"$ref": "#/$defs/identifier"}
     },
-    "subflows": {
+    "submachines": {
       "description": "Machines that open under one of this machine's states, each a sibling file named by its stem.",
       "type": "array",
       "minItems": 1,
-      "items": {"$ref": "#/$defs/subflow"}
+      "items": {"$ref": "#/$defs/submachine"}
     },
     "launches": {
       "description": "Per launching workflow (its own name, or <instance>/<workflow>), the skill it starts and the sibling machine that skill draws.",
@@ -90,19 +90,13 @@
       "properties": {
         "initial": {"type": "boolean"},
         "final": {"type": "boolean"},
-        "flow": {
-          "description": "A machine file, relative to this one, that runs while this state is active. One level only.",
-          "type": "string",
-          "minLength": 1
-        },
         "waits": {
           "description": "The facts this state waits on, each a fact kind (pr_terminal, deps_done, deps_unresolved, criteria_met, criteria_unmet) mapped to the event that leaves this state when the fact holds. The loader refuses an unknown fact kind and an event that is not a transition out of this state.",
           "type": "object",
           "minProperties": 1,
           "additionalProperties": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$"}
         }
-      },
-      "not": {"required": ["flow", "final"]}
+      }
     },
     "transition": {
       "type": "object",
@@ -144,13 +138,13 @@
         "trigger": {"type": "string", "minLength": 1}
       }
     },
-    "subflow": {
+    "submachine": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["state", "flow", "exits"],
+      "required": ["state", "machine", "exits"],
       "properties": {
         "state": {"$ref": "#/$defs/identifier"},
-        "flow": {"description": "The sibling machine file's stem.", "type": "string", "minLength": 1},
+        "machine": {"description": "The sibling machine file's stem.", "type": "string", "minLength": 1},
         "exits": {
           "description": "Per final state of the inner machine, the event of this machine that leaves the state.",
           "type": "object",
@@ -166,7 +160,7 @@
       "required": ["skill"],
       "properties": {
         "skill": {"type": "string", "minLength": 1},
-        "flow": {"description": "The sibling machine file's stem; absent when the skill has no machine.", "type": "string", "minLength": 1}
+        "machine": {"description": "The sibling machine file's stem; absent when the skill has no machine.", "type": "string", "minLength": 1}
       }
     },
     "cue": {

@@ -26,7 +26,7 @@ def test_the_native_board_draws_the_harness_machine_and_answers_its_history(tmp_
 
     with serve(tmp_path, feed, history=store) as server:
         flows = [f["name"] for f in _get(server, "/api/snapshot")["flows"]]
-        history = _get(server, "/api/history?task=PROJ-1&flow=harness")
+        history = _get(server, "/api/history?task=PROJ-1&machine=harness")
 
     assert flows == ["board", "harness"]
     assert [step["event"] for step in history["path"]] == [e["event"] for e in events if e["task"] == "PROJ-1"]

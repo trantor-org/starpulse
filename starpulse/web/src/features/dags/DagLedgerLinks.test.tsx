@@ -16,7 +16,7 @@ const board: Machine = {
   transitions: [{ source: "backlog", target: "ready", event: "task_ready" }, { source: "ready", target: "review", event: "pr_opened" }],
   writers: { pr_opened: [{ actor: "runs/pr-watch", trigger: "schedule" }] },
   dagActors: ["runs/pr-watch", "runs/sweeper"],
-  launches: { "runs/triage": { skill: "triaging", flow: "" } },
+  launches: { "runs/triage": { skill: "triaging", machine: "" } },
 };
 const data: DagData = {
   now: 3600,

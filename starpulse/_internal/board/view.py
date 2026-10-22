@@ -60,15 +60,16 @@ def _state_in(snapshot: dict[str, Any], flow: str, task: str) -> str | None:
 
 def _phase(agent: dict[str, Any], snapshot: dict[str, Any]) -> tuple[str | None, str | None]:
     """An In Progress task's `(phase, substate)`: the state of the In Progress machine, and the state of the first
-    subflow that phase links which holds the task. Only the current phase's subflows count."""
+    submachine that phase links which holds the task. Only the current phase's submachines count."""
     if agent["state"] != "in_progress":
         return None, None
-    inner = board_flow(snapshot)["machine"].get("subflows") or [{}]
-    machine = next((f for f in snapshot["flows"] if f["name"] == inner[0].get("flow")), None)
+    inner = board_flow(snapshot)["machine"].get("submachines") or [{}]
+    machine = next((f for f in snapshot["flows"] if f["name"] == inner[0].get("machine")), None)
     if machine is None:
         return None, None
     phase = _state_in(snapshot, machine["name"], agent["id"])
-    states = (_state_in(snapshot, link["flow"], agent["id"]) for link in machine["machine"].get("subflows", []) if link["state"] == phase)
+    links = machine["machine"].get("submachines", [])
+    states = (_state_in(snapshot, link["machine"], agent["id"]) for link in links if link["state"] == phase)
     return phase, next((state for state in states if state), None)
 
 

@@ -303,13 +303,13 @@ describe("the demo server", () => {
   it("answers a machine path from the task's trail on that machine, with its step total", async () => {
     const s = new DemoServer(fixture());
 
-    expect(await body(s.fetch("/api/history?task=DEMO-1&flow=in-progress"))).toEqual({
+    expect(await body(s.fetch("/api/history?task=DEMO-1&machine=in-progress"))).toEqual({
       task: "DEMO-1",
-      flow: "in-progress",
+      machine: "in-progress",
       path: [{ at: 50, event: "RED", state: "red" }],
       steps: 4,
     });
-    expect((await s.fetch("/api/history?task=DEMO-1&flow=nowhere")).status).toBe(404);
+    expect((await s.fetch("/api/history?task=DEMO-1&machine=nowhere")).status).toBe(404);
   });
 
   it("gives each Board card a verdict for every column its lane exits to", () => {

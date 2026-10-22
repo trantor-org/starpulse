@@ -401,8 +401,8 @@ class TestMachineShow:
             ],
             "transitions": [{"source": "start", "target": "done", "event": "FINISH"}],
             "writers": {"FINISH": [{"actor": "ops/nightly", "trigger": "emit"}]},
-            "subflows": [{"state": "start", "flow": "review", "exits": {}, "parent": "in-progress", "when": ""}],
-            "launches": {"ops/nightly": {"skill": "audit", "flow": "review"}},
+            "submachines": [{"state": "start", "machine": "review", "exits": {}, "parent": "in-progress", "when": ""}],
+            "launches": {"ops/nightly": {"skill": "audit", "machine": "review"}},
         },
     }
 
@@ -410,15 +410,15 @@ class TestMachineShow:
     def served(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(agent_wire, "get_snapshot", lambda url: {"flows": [self.FLOW]})
 
-    def test_it_returns_the_subflows_launches_and_writers_the_machine_declares(
+    def test_it_returns_the_submachines_launches_and_writers_the_machine_declares(
         self, capsys: pytest.CaptureFixture[str]
     ) -> None:
         code, document = _run(capsys, ["machine", "show", "in-progress"])
 
         assert code == 0
         machine = self.FLOW["machine"]
-        assert {key: document[key] for key in ("subflows", "launches", "writers")} == {
-            key: machine[key] for key in ("subflows", "launches", "writers")
+        assert {key: document[key] for key in ("submachines", "launches", "writers")} == {
+            key: machine[key] for key in ("submachines", "launches", "writers")
         }
 
     def test_a_machine_that_declares_none_of_them_returns_none(
@@ -429,7 +429,7 @@ class TestMachineShow:
 
         _, document = _run(capsys, ["machine", "show", "in-progress"])
 
-        assert not {"subflows", "launches", "writers"} & document.keys()
+        assert not {"submachines", "launches", "writers"} & document.keys()
 
     def test_format_dot_returns_the_static_diagram_beside_the_machine(self, capsys: pytest.CaptureFixture[str]) -> None:
         code, document = _run(capsys, ["machine", "show", "in-progress", "--format", "dot"])

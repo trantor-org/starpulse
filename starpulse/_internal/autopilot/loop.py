@@ -170,7 +170,7 @@ class Loop:
             agent = data["agent"]
             return data["id"] in self._running or (agent is not None and agent["state"] == self._lane)
         if kind == "move":
-            if data["flow"] != HARNESS.name:
+            if data["machine"] != HARNESS.name:
                 return False
             if data["agent"]["state"] == "stopped":
                 return True

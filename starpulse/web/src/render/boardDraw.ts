@@ -204,7 +204,7 @@ export function boardDraw(dc: DrawCtx, d: Drawing, io: BoardIO) {
   function drawMachineEdges(edges: MEdge[], thin = false) {
     for (const e of edges) {
       if (!e.a || !e.b) continue;
-      const lit = isHot("medge", e), heat = io.hotEdge.has(`${e.flow}:${e.source}>${e.target}`) ? 1 : 0;
+      const lit = isHot("medge", e), heat = io.hotEdge.has(`${e.machine}:${e.source}>${e.target}`) ? 1 : 0;
       if (e.a === e.b) continue; // a self-transition would sit under the orbiting tasks, so the state's tooltip lists it
       const c = curveOf(e.a, e.b), L = Math.hypot(e.b.x - e.a.x, e.b.y - e.a.y), t0 = Math.min(0.4, stateR(e.a) / L), tEnd = 1 - Math.min(0.4, (stateR(e.b) + 2) / L);
       flowLine(e.a, e.b, lit ? 0.95 : 0.2 + heat * 0.55, heat + (lit ? 0.8 : 0), thin ? [1.5, 4] : [2, 5]);
@@ -220,7 +220,7 @@ export function boardDraw(dc: DrawCtx, d: Drawing, io: BoardIO) {
   }
   function drawStates(states: Record<string, MState>, labels: boolean) {
     for (const s of Object.values(states)) {
-      const R = io.sized(`state|${s.flow}:${s.id}`, stateR(s)), hot = isHot("state", s);
+      const R = io.sized(`state|${s.machine}:${s.id}`, stateR(s)), hot = isHot("state", s);
       if (terminal(s)) {
         hole(s.x, s.y, R, s.color, hot);
         if (labels) label(s.name, s.lab ? s.lab.x : s.x, s.lab ? s.lab.y : s.y + R + 16, hot);
@@ -237,7 +237,7 @@ export function boardDraw(dc: DrawCtx, d: Drawing, io: BoardIO) {
     const sc = io.scene!, at: Record<string, number> = {};
     for (const s of sc.machineTasks) {
       s._x = undefined;
-      const ev = io.events().findLast((e) => e.task === s.id && e.flow === s.flow && e.at <= io.T), state = ev ? ev.to : s.state;
+      const ev = io.events().findLast((e) => e.task === s.id && e.machine === s.machine && e.at <= io.T), state = ev ? ev.to : s.state;
       const cur = sc.mStates[state];
       if (!cur) continue;
       s._state = state;
@@ -251,7 +251,7 @@ export function boardDraw(dc: DrawCtx, d: Drawing, io: BoardIO) {
       }
       const pa = ev ? (io.T - ev.at - TRAVEL) / PULSE : 9;
       if (prev && prev !== cur && pa >= 0 && pa < 1) pulse(cur.x, cur.y, stateR(cur), pa, cur.color); // the state it landed on rings once
-      const k = (at[state] = (at[state] || 0) + 1) - 1, { t, rr } = taskSlot(io.sized(`state|${cur.flow}:${cur.id}`, stateR(cur)) + 7, k);
+      const k = (at[state] = (at[state] || 0) + 1) - 1, { t, rr } = taskSlot(io.sized(`state|${cur.machine}:${cur.id}`, stateR(cur)) + 7, k);
       s._x = cur.x + Math.cos(t) * rr;
       s._y = cur.y + Math.sin(t) * rr;
       const hot = isHot("mtask", s), r = hot ? 4.5 : 2.8;

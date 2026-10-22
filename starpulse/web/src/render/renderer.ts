@@ -152,7 +152,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   const level = (): Level => path[path.length - 1];
   const stateName = (id: string) => S?.board.machine.states.find((s) => s.id === id)?.name || id;
   const EVENTS = () => moves.events;
-  const moving = (flow: string) => EVENTS().filter((e) => e.flow === flow && e.from && e.at <= T && T - e.at < TRAVEL);
+  const moving = (flow: string) => EVENTS().filter((e) => e.machine === flow && e.from && e.at <= T && T - e.at < TRAVEL);
   const cueLine = (n: string) => (S?.cues ?? []).filter((c) => c.dag === n).map((c) => `runs on ${esc(c.on)}, beside ${esc(c.event)}`).join("; ");
   const writes = (n: string) => Object.entries(S!.writers).filter(([, ws]) => ws.some((w) => w.actor === n)).map(([ev]) => ev);
 
@@ -546,7 +546,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   /** Every quarter second: the feed and the navigator's moving machines, written only when they change. */
   function heartbeat() {
     if (!S) return;
-    const feed: FeedLine[] = feedOf(EVENTS(), S.dags, runEvents.lines, T, heldTasks(S.board)).map((l) => ({ ...l, time: hhmm(l.at) })), mv = [...new Set(EVENTS().filter((e) => e.from && e.at <= T && T - e.at < TRAVEL).map((e) => e.flow))].sort();
+    const feed: FeedLine[] = feedOf(EVENTS(), S.dags, runEvents.lines, T, heldTasks(S.board)).map((l) => ({ ...l, time: hhmm(l.at) })), mv = [...new Set(EVENTS().filter((e) => e.from && e.at <= T && T - e.at < TRAVEL).map((e) => e.machine))].sort();
     const now = hud.get();
     if (feed.map((f) => f.key + f.at + f.time).join() !== now.feed.map((f) => f.key + f.at + f.time).join()) hud.set({ feed });
     if (mv.join() !== now.moving.join()) hud.set({ moving: mv });
@@ -556,7 +556,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   function update(t: number) {
     const sc = scene!, board = level().kind === "board";
     for (const l of [...sc.hops, ...sc.entries, ...sc.exits]) l.busy = false; // a path glows while a task travels it
-    hotEdge = new Set(EVENTS().filter((e) => e.from && e.at <= T && T - e.at < TRAVEL).map((e) => `${e.flow}:${e.from}>${e.to}`));
+    hotEdge = new Set(EVENTS().filter((e) => e.from && e.at <= T && T - e.at < TRAVEL).map((e) => `${e.machine}:${e.from}>${e.to}`));
     for (const k of sc.tasks) {
       const a = k.a0 + k.w * t, R = k.R;
       k.ang = a;
@@ -568,7 +568,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       k.via = null;
       if (!k.host.states && board && !k.today) {
         // Board: a task sits on the state it held at this moment and hops along the transition's curve
-        const bev = EVENTS().filter((e) => e.flow === "board" && e.task === k.id);
+        const bev = EVENTS().filter((e) => e.machine === "board" && e.task === k.id);
         if (!bev.length) continue;
         let st = bev[0].from ?? bev[0].to, ev: Move | null = null;
         for (const e of bev) if (e.at <= T) [st, ev] = [e.to, e];
@@ -596,7 +596,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       if (level().kind === "state" && !k.today && stateHop(k, t)) continue;
       // a task whose machine is changing its state leaves its orbit, rides the machine's chord like the current board's hop (ease-out, comet tail),
       // rings the state it lands on, then drops back into orbit
-      const st = k.host.states, ev = st && EVENTS().findLast((e) => e.task === k.id && e.flow === k.host.name && e.from && st[e.from] && st[e.to] && e.from !== e.to && e.at <= T && T - e.at < TRAVEL + PULSE);
+      const st = k.host.states, ev = st && EVENTS().findLast((e) => e.task === k.id && e.machine === k.host.name && e.from && st[e.from] && st[e.to] && e.from !== e.to && e.at <= T && T - e.at < TRAVEL + PULSE);
       if (!st || !ev) continue;
       const u = (T - ev.at) / TRAVEL;
       if (u >= 1) {
@@ -673,7 +673,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       ring(bs.at);
     }
     if (!sc.hostAt) return !!k.arrive;
-    const he = EVENTS().findLast((e) => e.task === k.id && e.at <= T && e.flow === ((k.host as Planet).machine ?? k.host.name)), prev = he && sc.hostAt(k.id, he.at - 0.001);
+    const he = EVENTS().findLast((e) => e.task === k.id && e.at <= T && e.machine === ((k.host as Planet).machine ?? k.host.name)), prev = he && sc.hostAt(k.id, he.at - 0.001);
     if (!he || prev === k.host.name || (bs && bs.at > he.at)) return !!k.arrive;
     const from = sc.tasks.find((q) => q.id === k.id && q.host.name === prev), u = (T - he.at) / TRAVEL, l = sc.hops.find((x) => x.from === prev && x.to === k.host.name);
     if (from && u < 1) {
@@ -849,11 +849,11 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
         return traceCard({ kind, id: o.id, title: o.title, goal: goalOf(sky.board.machine) }, runFor(at), prefs().clock);
       }
       case "mtask": {
-        const o = h.o, at = subjectOf(h)!, kind = `${taskKicker(o.flow, o._state || o.state, sourceOf(o.flow))} · click ${pinnable(at) ? "to pin its path" : "for details"}`;
-        return traceCard({ kind, id: o.id, title: "", goal: goalOf(sky.flows[o.flow]?.machine) }, runFor(at), prefs().clock);
+        const o = h.o, at = subjectOf(h)!, kind = `${taskKicker(o.machine, o._state || o.state, sourceOf(o.machine))} · click ${pinnable(at) ? "to pin its path" : "for details"}`;
+        return traceCard({ kind, id: o.id, title: "", goal: goalOf(sky.flows[o.machine]?.machine) }, runFor(at), prefs().clock);
       }
       case "dag": {
-        const o = h.o, crit = (o.tether?.crit ?? []).map(esc).join("<br>"), l = sky.launches.filter((x) => x.dag === o.name && x.flow).map((x) => x.flow!);
+        const o = h.o, crit = (o.tether?.crit ?? []).map(esc).join("<br>"), l = sky.launches.filter((x) => x.dag === o.name && x.machine).map((x) => x.machine!);
         return `<div class="k">DAG · ${esc(o.group)} · ${esc(o.active?.some((r) => r.status === "running") ? "running" : o.status)}${o.runnable ? " · runnable" : ""}</div><div class="n">${esc(o.name)}</div>${fanTip(o, S?.pools)}${crit ? `<div class="k">${crit}</div>` : ""}${l.length ? `<div class="k">launches ${l.map(esc).join(", ")}</div>` : ""}${o.steps.length} step${o.steps.length === 1 ? "" : "s"}: ${o.steps.map((s) => esc(s.name)).join(" → ")}${o.finishedAt ? `<div class="k">last run ${hhmm(finished(o.finishedAt))} MST</div>` : ""}`;
       }
       case "galaxy":
@@ -864,11 +864,11 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
         return `<div class="k">${sourceOf(o.name) ? `machine mapped from ${esc(sourceOf(o.name)!)}` : "lifecycle machine"} inside ${esc(o.parent.name)} · click to open it</div><div class="n">${esc(o.name)}</div>${o.nStates} states · ${nAgents} session${nAgents === 1 ? "" : "s"}${mv ? ` · ${mv} moving now` : ""}`;
       }
       case "sat":
-        return `<div class="k">state of the ${esc(h.o.machine)} machine · opens ${esc(h.o.flow)} ${esc(h.o.when)} · click to open ${esc(h.o.machine)}</div><div class="n">${esc(h.o.name)}</div>${h.o.n} task${h.o.n === 1 ? "" : "s"} orbiting`;
+        return `<div class="k">state of the ${esc(h.o.machine)} machine · opens ${esc(h.o.machine)} ${esc(h.o.when)} · click to open ${esc(h.o.machine)}</div><div class="n">${esc(h.o.name)}</div>${h.o.n} task${h.o.n === 1 ? "" : "s"} orbiting`;
       case "sun":
         return `<div class="k">Board state</div><div class="n">${esc(h.o.name)}</div>${h.o.n} tasks${h.o.today === undefined ? "" : ` · ${h.o.today} today`}${scene!.planets.length ? ` · ${scene!.planets.length} lifecycle machines orbiting it` : ""}`;
       case "state":
-        return `<div class="k">${esc(h.o.flow)} state</div><div class="n">${esc(h.o.name)}</div>${h.o.n} task${h.o.n === 1 ? "" : "s"} here now${h.o.loops.length ? `<div class="k">stays here on ${h.o.loops.map(esc).join(", ")}</div>` : ""}`;
+        return `<div class="k">${esc(h.o.machine)} state</div><div class="n">${esc(h.o.name)}</div>${h.o.n} task${h.o.n === 1 ? "" : "s"} here now${h.o.loops.length ? `<div class="k">stays here on ${h.o.loops.map(esc).join(", ")}</div>` : ""}`;
       case "planet": {
         const o = h.o, mv = moving(o.name).length;
         if (o.pager) return pagerTip(o.pager);
@@ -898,7 +898,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
           (oth.length ? `<br><span class="k">also on</span> ${oth.map((b) => `${esc(b.machine)} › ${esc(stName(b.machine, b.agent.state))}`).join(", ")}` : "") + `<div class="k">its path is traced in order · click to pin it</div>`;
       }
       case "row": {
-        const m = rowMeta(sky.flows, h.o.name, scene!.top!.flow, T);
+        const m = rowMeta(sky.flows, h.o.name, scene!.top!.machine, T);
         return `<div class="k">${esc(m.tie.text)}</div><div class="n">${esc(h.o.name)}</div>${esc(m.sub)}<div class="k">${esc(m.status.text)}</div>`;
       }
       case "rstate": {
@@ -906,7 +906,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
         return `<div class="k">${esc(row.name)} state</div><div class="n">${esc(o.name)}</div>${o.n} task${o.n === 1 ? "" : "s"} here now`;
       }
       case "medge":
-        return `<div class="k">${esc(h.o.flow)} transition · ${esc(h.o.source)} → ${esc(h.o.target)}</div><div class="n">${esc(h.o.event)}</div>`;
+        return `<div class="k">${esc(h.o.machine)} transition · ${esc(h.o.source)} → ${esc(h.o.target)}</div><div class="n">${esc(h.o.event)}</div>`;
       case "pivot":
         return pivotTip(h.o, { sky, stateName });
       case "tie":
@@ -991,10 +991,10 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   function openLedgerTask(o: LTask) {
     const sky = S!, all = sessionsOf(sky.flows, o.flow, o.agent);
     pinLedger({ flow: o.flow, id: o.agent.id, task: o.agent.task ?? null, label: o.agent.task || o.agent.title || o.agent.id, machines: all.map((b) => b.machine) });
-    const top = scene!.top!, steps = traceSteps(sky.flows, all, top.flow, ensureMled()?.ledgerHas ?? (() => false));
+    const top = scene!.top!, steps = traceSteps(sky.flows, all, top.machine, ensureMled()?.ledgerHas ?? (() => false));
     const colOf = (m: string) => {
       const init = sky.flows[m]?.machine.states.find((s) => s.initial)?.id ?? sky.flows[m]?.machine.states[0]?.id;
-      return (m === top.flow ? scene!.mStates[init ?? ""]?.color : top.rows.find((r) => r.name === m)?.nodes.find((n) => n.id === init)?.color) ?? RAMP[2];
+      return (m === top.machine ? scene!.mStates[init ?? ""]?.color : top.rows.find((r) => r.name === m)?.nodes.find((n) => n.id === init)?.color) ?? RAMP[2];
     };
     panel.innerHTML = `<span class="x">✕</span><h2>${esc(o.agent.task || o.agent.title)}</h2><div class="k">${esc(boardTitle(o.agent) || o.agent.title || "")}</div>
       <table>${all.map((b) => `<tr class="mrow"><td><i style="background:${colOf(b.machine)}"></i>${esc(b.machine)}</td><td>${esc(stName(b.machine, b.agent.state))}</td><td style="text-align:right;color:#6b7a93">${hhmm(b.agent.active ?? 0)}</td></tr>`).join("")}</table>
@@ -1005,8 +1005,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     const h = hover, sky = S;
     const rail = scene?.top ? railHit(fx - view.x, fy) : null;
     if (rail) return railClick(rail);
-    if (h?.kind === "state" && scene?.top && h.o.flow === scene.top.flow && sky) {
-      const to = firstOpened(sky.flows, scene.top.ranked, h.o.flow, h.o.id);
+    if (h?.kind === "state" && scene?.top && h.o.machine === scene.top.machine && sky) {
+      const to = firstOpened(sky.flows, scene.top.ranked, h.o.machine, h.o.id);
       if (to) revealRow(to); // a state of the top scrolls to the first machine it opens, and picks it out
       return to ? setFocus(to) : undefined;
     }
@@ -1042,7 +1042,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     if (h.kind === "task") panel.innerHTML = taskPanel(h.o, sky, stateName);
     else if (h.kind === "mtask") {
       const o = h.o;
-      panel.innerHTML = `<span class="x">✕</span><div class="k">${esc(taskKicker(o.flow, o._state || o.state, sourceOf(o.flow)))}</div><h2>${esc(o.id)} — ${esc(o.title)}</h2>
+      panel.innerHTML = `<span class="x">✕</span><div class="k">${esc(taskKicker(o.machine, o._state || o.state, sourceOf(o.machine)))}</div><h2>${esc(o.id)} — ${esc(o.title)}</h2>
         <table>${(o.trail ?? []).slice(-12).map((t) => `<tr><td>${hhmm(t.at)}</td><td>${esc(t.event)} → ${esc(t.state)}</td></tr>`).join("")}</table>`;
     } else return;
     // the hop table sits under the facts, above the board link

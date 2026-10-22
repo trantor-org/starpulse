@@ -192,7 +192,7 @@ class Placed:
                         self.opened.set()
                     elif line.startswith("data:") and name == "move":
                         data = json.loads(line.removeprefix("data:").strip())
-                        self.tasks.add((data["flow"], data["id"]))
+                        self.tasks.add((data["machine"], data["id"]))
                     elif line.startswith("data:") and name == "snapshot" and not first:
                         for flow in json.loads(line.removeprefix("data:").strip()).get("flows", []):
                             self.tasks |= {(flow["name"], agent["id"]) for agent in flow["agents"]}

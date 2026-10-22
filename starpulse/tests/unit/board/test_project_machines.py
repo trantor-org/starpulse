@@ -68,31 +68,31 @@ def test_the_board_file_draws_its_tiers_main_line_and_rests(tmp_path: Path) -> N
 def test_a_state_that_opens_a_sibling_machine_draws_the_link_with_the_event_each_exit_fires(tmp_path: Path) -> None:
     declared = (
         BOARD
-        + "subflows:\n  - {state: in_progress, flow: in-progress, exits: {shipped: to_done}, when: a PR is open}\n"
+        + "submachines:\n  - {state: in_progress, machine: in-progress, exits: {shipped: to_done}, when: a PR is open}\n"
     )
 
     machines = project(tmp_path, board=declared, in_progress=DELIVERY)
 
-    assert machines["board"]["subflows"] == [
+    assert machines["board"]["submachines"] == [
         {
             "state": "in_progress",
-            "flow": "in-progress",
+            "machine": "in-progress",
             "exits": {"shipped": "to_done"},
             "parent": "board",
             "when": "a PR is open",
         }
     ]
-    assert "subflows" not in machines["in-progress"]
+    assert "submachines" not in machines["in-progress"]
 
 
 def test_a_launching_workflow_is_drawn_as_the_page_names_it_beside_the_flow_it_starts(tmp_path: Path) -> None:
-    declared = BOARD + "launches:\n  nightly: {skill: shipping, flow: in-progress}\n  weekly: {skill: auditing}\n"
+    declared = BOARD + "launches:\n  nightly: {skill: shipping, machine: in-progress}\n  weekly: {skill: auditing}\n"
 
     launches = project(tmp_path, board=declared, in_progress=DELIVERY)["board"]["launches"]
 
     assert launches == {
-        "dagu/nightly": {"skill": "shipping", "flow": "in-progress"},
-        "dagu/weekly": {"skill": "auditing", "flow": None},
+        "dagu/nightly": {"skill": "shipping", "machine": "in-progress"},
+        "dagu/weekly": {"skill": "auditing", "machine": None},
     }
 
 
@@ -121,10 +121,10 @@ def test_a_machine_whose_writers_name_an_unlisted_workflow_is_refused_by_name(tm
     [
         ("tiers: [[to_do, nowhere]]\n", "tiers.*nowhere"),
         ("rests: [nowhere]\n", "rests.*nowhere"),
-        ("subflows: [{state: in_progress, flow: absent, exits: {}}]\n", "absent"),
-        ("subflows: [{state: nowhere, flow: in-progress, exits: {}}]\n", "nowhere"),
-        ("subflows: [{state: in_progress, flow: in-progress, exits: {shipped: NOPE}}]\n", "NOPE"),
-        ("launches: {nightly: {skill: s, flow: absent}}\n", "absent"),
+        ("submachines: [{state: in_progress, machine: absent, exits: {}}]\n", "absent"),
+        ("submachines: [{state: nowhere, machine: in-progress, exits: {}}]\n", "nowhere"),
+        ("submachines: [{state: in_progress, machine: in-progress, exits: {shipped: NOPE}}]\n", "NOPE"),
+        ("launches: {nightly: {skill: s, machine: absent}}\n", "absent"),
     ],
 )
 def test_a_declaration_naming_a_state_event_or_flow_that_does_not_exist_is_refused(
@@ -132,12 +132,6 @@ def test_a_declaration_naming_a_state_event_or_flow_that_does_not_exist_is_refus
 ) -> None:
     with pytest.raises(ValueError, match=named):
         project(tmp_path, board=BOARD + declared, in_progress=DELIVERY)
-
-
-def test_a_machine_another_opens_with_flow_is_a_child_not_a_flow_of_its_own(tmp_path: Path) -> None:
-    parent = BOARD.replace("in_progress: {}", "in_progress: {flow: delivery.yaml}")
-
-    assert list(project(tmp_path, board=parent, delivery=DELIVERY)) == ["board"]
 
 
 def test_loading_the_machines_leaves_board_client_unimported(tmp_path: Path) -> None:

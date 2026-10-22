@@ -116,7 +116,7 @@ class TaskDelta(_Api):
 class MoveDelta(_Api):
     """A task a machine event placed on another machine."""
 
-    flow: str
+    machine: str
     id: str
     agent: RawTask
 

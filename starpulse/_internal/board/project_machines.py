@@ -1,8 +1,8 @@
 """The machines a project declares under `.starpulse/machines/`, drawn as the page reads them.
 
-The Board's own file is the one `[board] machine` names. Every other file there that no machine opens with a state's
-`flow:` is a flow of its own, named by its file stem. A file may also declare how the page draws it (`tiers`,
-`main_line`, `rests`) and what opens under it or is launched from it (`subflows`, `launches`); the Board's writers and
+The Board's own file is the one `[board] machine` names. Every other file there is a machine of its own, named by its file
+stem. A file may also declare how the page draws it (`tiers`,
+`main_line`, `rests`) and what opens under it or is launched from it (`submachines`, `launches`); the Board's writers and
 the workflows among them are drawn beside those.
 """
 
@@ -25,13 +25,11 @@ def load(base: Path, board_file: Path | None) -> dict[str, Compiled]:
     """Each machine file under `base`'s machines directory except the Board's, compiled, by file stem."""
     from starpulse._internal.machines.machine_definition import (  # noqa: PLC0415 - import cost, paid on first use
         load_machine,
-        opened_by,
     )
 
     board = board_file.resolve() if board_file else None
     files = [path for path in sorted((base / DIRECTORY).glob("*.yaml")) if path.resolve() != board]
-    opened = {child.resolve() for path in (*files, *([board_file] if board_file else [])) for child in opened_by(path)}
-    return {path.stem: load_machine(path) for path in files if path.resolve() not in opened}
+    return {path.stem: load_machine(path) for path in files}
 
 
 def draw(flows: Mapping[str, Compiled], qualify: Qualify, workflows: Collection[str]) -> dict[str, dict]:
@@ -69,12 +67,12 @@ def draw(flows: Mapping[str, Compiled], qualify: Qualify, workflows: Collection[
             body["mainLine"] = list(declared["main_line"])
         if "rests" in declared:
             body["states"] = [{**s, "final": s["final"] or s["id"] in declared["rests"]} for s in body["states"]]
-        if "subflows" in declared:
+        if "submachines" in declared:
             events = {t["event"] for t in body["transitions"]}
-            body["subflows"] = [_link(name, link, states, events, drawn) for link in declared["subflows"]]
+            body["submachines"] = [_link(name, link, states, events, drawn) for link in declared["submachines"]]
         if "launches" in declared:
             body["launches"] = {
-                qualify(dag): {"skill": launch["skill"], "flow": _flow(name, launch.get("flow"), drawn)}
+                qualify(dag): {"skill": launch["skill"], "machine": _machine(name, launch.get("machine"), drawn)}
                 for dag, launch in declared["launches"].items()
             }
         if name == "board":
@@ -89,24 +87,24 @@ def _known(name: str, key: str, states: set[str], named: Iterable[str]) -> None:
         raise ValueError(f"{name}: {key} names states the machine lacks: {unknown}")
 
 
-def _flow(name: str, flow: str | None, drawn: Mapping[str, dict]) -> str | None:
-    if flow is not None and flow not in drawn:
-        raise ValueError(f"{name}: names the flow {flow!r}, which no machine file under {DIRECTORY} is")
-    return flow
+def _machine(name: str, machine: str | None, drawn: Mapping[str, dict]) -> str | None:
+    if machine is not None and machine not in drawn:
+        raise ValueError(f"{name}: names the machine {machine!r}, which no machine file under {DIRECTORY} is")
+    return machine
 
 
 def _link(name: str, link: Mapping[str, Any], states: set[str], events: set[str], drawn: Mapping[str, dict]) -> dict:
-    """A subflow link as the page draws it, refused unless its state, its inner flow, the inner final states it exits
-    from and the events it fires all exist."""
-    _known(name, "subflows", states, [link["state"]])
-    flow = _flow(name, link["flow"], drawn)
-    inner = {state["id"] for state in drawn[flow]["states"]}
-    _known(f"{name} -> {flow}", "subflow exits", inner, link["exits"])
+    """A submachine link as the page draws it, refused unless its state, its inner machine, the inner final states it
+    exits from and the events it fires all exist."""
+    _known(name, "submachines", states, [link["state"]])
+    machine = _machine(name, link["machine"], drawn)
+    inner = {state["id"] for state in drawn[machine]["states"]}
+    _known(f"{name} -> {machine}", "submachine exits", inner, link["exits"])
     if unknown := sorted(set(link["exits"].values()) - events):
-        raise ValueError(f"{name}: subflow exits fire events the machine lacks: {unknown}")
+        raise ValueError(f"{name}: submachine exits fire events the machine lacks: {unknown}")
     return {
         "state": link["state"],
-        "flow": flow,
+        "machine": machine,
         "exits": dict(link["exits"]),
         "parent": name,
         "when": link.get("when", ""),

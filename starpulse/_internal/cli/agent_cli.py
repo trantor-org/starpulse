@@ -7,7 +7,7 @@
     starpulse task claim PROJ-45 --session s-1
     starpulse task park PROJ-45 --until-task PROJ-40 --comment "needs the API"
     starpulse task review PROJ-45 --ref https://example.test/pull/9 --summary "Shipped"
-    starpulse task trace PROJ-45 --flow in-progress
+    starpulse task trace PROJ-45 --machine in-progress
     starpulse task create "Rotate the secret" --priority high --label ops --ac "It rotates"
     starpulse task edit PROJ-45 --title "Rotate the signing secret" --label ops --label security
     starpulse task profile PROJ-45 @agent-standard-high
@@ -166,18 +166,18 @@ class _Parser(argparse.ArgumentParser):
 
 
 def _trace(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    """The task's Board lane changes, or with `--flow` its events on that machine, both as the server's history has them."""
+    """The task's Board lane changes, or with `--machine` its events on that machine, both as the server's history has them."""
     base = agent_wire.server_url(args.server, environ)
-    query = urllib.parse.urlencode({"task": args.task, **({"flow": args.flow} if args.flow else {})})
+    query = urllib.parse.urlencode({"task": args.task, **({"machine": args.machine} if args.machine else {})})
     path = f"/api/history?{query}"
     status, document = agent_wire.get(base, path)
-    if args.flow and status == 404 and isinstance(document, dict) and "error" in document:
+    if args.machine and status == 404 and isinstance(document, dict) and "error" in document:
         raise agent_wire.CliError("not_found", document["error"])
     if status != 200 or not isinstance(document, dict) or "path" not in document:
         raise agent_wire.CliError("unavailable", f"{base} answered {status} for {path}: is it a StarPulse server?")
     return {
         "task": document["task"],
-        "flow": document.get("flow"),
+        "machine": document.get("machine"),
         "path": document["path"],
         "steps": document.get("steps", len(document["path"])),
     }
@@ -208,7 +208,7 @@ def _machine(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, 
             {**state, "count": len(tasks[state["id"]]), "tasks": tasks[state["id"]]} for state in machine["states"]
         ],
         "transitions": machine["transitions"],
-        **{key: machine[key] for key in ("subflows", "launches", "writers") if key in machine},
+        **{key: machine[key] for key in ("submachines", "launches", "writers") if key in machine},
     }
     if args.format == "dot":
         from starpulse._internal.machines.diagram import dot  # noqa: PLC0415 - import cost, paid on first use
@@ -289,7 +289,7 @@ def _delta(event: str, data: dict[str, Any], machine: str | None, task: str | No
         return {"pulls": pulls} if pulls and machine in (None, "board") else None
     about = {
         "task": lambda d: ("board", d["id"]),
-        "move": lambda d: (d["flow"], d["id"]),
+        "move": lambda d: (d["machine"], d["id"]),
         "claim": lambda d: ("board", d["task"]),
     }.get(event)
     if about is None:
@@ -745,13 +745,13 @@ def _parser() -> argparse.ArgumentParser:
     trace = leaf(
         task_verbs,
         "trace",
-        "a task's path: its Board lane changes, or with --flow its events on that machine, oldest first; a run id traces on --flow",
+        "a task's path: its Board lane changes, or with --machine its events on that machine, oldest first; a run id traces on --machine",
         _trace,
-        ("task", "flow", "path", "steps"),
+        ("task", "machine", "path", "steps"),
         (0, 2, 3, 4),
     )
-    trace.add_argument("task", help="the task's key (`PROJ-45`), or with --flow a run id")
-    trace.add_argument("--flow", help="the machine to trace the task on (`in-progress`), else the Board's lanes")
+    trace.add_argument("task", help="the task's key (`PROJ-45`), or with --machine a run id")
+    trace.add_argument("--machine", help="the machine to trace the task on (`in-progress`), else the Board's lanes")
     create = leaf(
         task_verbs,
         "create",
@@ -950,7 +950,7 @@ def _parser() -> argparse.ArgumentParser:
     show_machine = leaf(
         machine_verbs,
         "show",
-        "one machine: its states with the live task count and tasks in each, its transitions, and the subflows, launches and writers it declares; `--format dot` adds a static Graphviz diagram",
+        "one machine: its states with the live task count and tasks in each, its transitions, and the submachines, launches and writers it declares; `--format dot` adds a static Graphviz diagram",
         _machine,
         ("name", "states", "transitions"),
         (0, 2, 3, 4),

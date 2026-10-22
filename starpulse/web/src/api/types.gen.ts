@@ -653,7 +653,7 @@ export interface Settled {
  */
 export interface MoveDelta {
   agent: RawTask;
-  flow: string;
+  machine: string;
   id: string;
 }
 /**
@@ -1052,10 +1052,10 @@ export interface LedgerChange {
   rows: LedgerRow[];
 }
 /**
- * `GET /api/history?task=&flow=`: a task's path on one machine, and how many steps it has taken.
+ * `GET /api/history?task=&machine=`: a task's path on one machine, and how many steps it has taken.
  */
 export interface MachineHistory {
-  flow: string;
+  machine: string;
   path: MachineStep[];
   steps: number;
   task: string;
@@ -1094,7 +1094,7 @@ export interface Machine {
    */
   dagActors?: string[] | null;
   /**
-   * Only the board machine: the skill flow each launching DAG starts.
+   * Only the board machine: the skill machine each launching DAG starts.
    */
   launches?: {
     [k: string]: Launch;
@@ -1109,9 +1109,9 @@ export interface Machine {
   source?: string | null;
   states: MachineState[];
   /**
-   * The flows that open under this machine's states; the board's first is its In Progress delivery machine.
+   * The machines that open under this machine's states; the board's first is its In Progress delivery machine.
    */
-  subflows?: SubFlow[] | null;
+  submachines?: Submachine[] | null;
   /**
    * Only the board machine: the state ids the Star Map draws at each stage, left to right, a tier's states stacked in its cell; a state no tier names is drawn with the tier at the mean of the tiers its transitions join it to, stacked in it or in a tier of its own after it, else in a tier of its own after the last, and with none the Board draws its own columns.
    */
@@ -1125,10 +1125,10 @@ export interface Machine {
   } | null;
 }
 /**
- * A runs workflow's launch: the skill it starts and the flow that skill draws, null when it has none.
+ * A runs workflow's launch: the skill it starts and the machine that skill draws, null when it has none.
  */
 export interface Launch {
-  flow: string | null;
+  machine: string | null;
   skill: string;
 }
 export interface MachineState {
@@ -1140,18 +1140,18 @@ export interface MachineState {
 /**
  * Where a Board state opens into another machine, and which Board event each inner final state fires.
  */
-export interface SubFlow {
+export interface Submachine {
   exits: {
     [k: string]: string;
   };
-  flow: string;
+  machine: string;
   /**
-   * The flow the link opens under: `board`, or the flow whose `state` it hangs off.
+   * The machine the link opens under: `board`, or the machine whose `state` it hangs off.
    */
   parent: string;
   state: string;
   /**
-   * What has to hold for the inner flow to run under `state`; empty when always.
+   * What has to hold for the inner machine to run under `state`; empty when always.
    */
   when: string;
 }
@@ -1192,7 +1192,7 @@ export interface Stuck {
 /**
  * Where a lifecycle machine is entered from.
  *
- * `declared` is a SubFlow on `machine`'s `state`; `observed` is the state the task held on `machine` when its session
+ * `declared` is a Submachine on `machine`'s `state`; `observed` is the state the task held on `machine` when its session
  * entered this one; `dag` is a launch by `dag`, which names no machine or state. `count` is the sessions entered
  * through it, null for a launch.
  */

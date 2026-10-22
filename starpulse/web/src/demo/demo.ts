@@ -111,13 +111,13 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 
 const HANDLERS: Record<string, Handler> = {
   "/api/history": (server, _path, query) => {
-    const task = query.get("task") ?? "", flow = query.get("flow");
-    if (!flow) return json({ task, path: server.lanes[task] ?? [] });
-    const f = server.snapshot.flows.find((x) => x.name === flow);
-    if (!f) return json({ error: `no machine ${flow}` }, 404);
+    const task = query.get("task") ?? "", machine = query.get("machine");
+    if (!machine) return json({ task, path: server.lanes[task] ?? [] });
+    const f = server.snapshot.flows.find((x) => x.name === machine);
+    if (!f) return json({ error: `no machine ${machine}` }, 404);
     const a = f.agents.find((x) => (x.task ?? x.id) === task);
     const path = (a?.trail ?? []).map(({ at, event, state }) => ({ at, event, state }));
-    return json({ task, flow, path, steps: a ? (a.steps ?? path.length) : 0 });
+    return json({ task, machine, path, steps: a ? (a.steps ?? path.length) : 0 });
   },
   "/api/move": async (server, _path, _query, init) => {
     const { task, to } = JSON.parse(String(init?.body ?? "{}")) as { task?: string; to?: string };

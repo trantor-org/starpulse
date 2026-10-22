@@ -82,7 +82,7 @@ GET /api/done[?before=T][&limit=N]
                    newest done first, each {id, title, state, model, labels, milestone, type, entered} read from the
                    board on request. `before` is the `entered` of the last one held (epoch seconds; none: the newest).
                    A board that cannot read a task is 404, a bad `before` or `limit` 400
-GET /api/history?task=TASK-N[&flow=NAME]
+GET /api/history?task=TASK-N[&machine=NAME]
                    {task, path}: the task's Board lane changes as [{at, from, to}], oldest first (`at`
                    epoch seconds). With `flow`, {task, flow, path, steps}: its events on that lifecycle
                    machine as [{at, event, state}] in order, `steps` their count; with `flow`, `task` may be a run id. A task never seen has an empty path; no `task` is 400

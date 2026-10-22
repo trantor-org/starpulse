@@ -17,12 +17,12 @@ const snap = (now: number, tasks: RawTask[], machineTasks: RawTask[], finishedAt
   flows: [
     { name: "board", agents: tasks, machine: machine(["ready", "in_progress", "review"], {
       transitions: [{ source: "ready", target: "in_progress", event: "CLAIM" }],
-      subflows: [{ state: "in_progress", flow: "in-progress", exits: {}, parent: "board", when: "" }],
-      launches: { "board-autopilot": { skill: "starting-tasks", flow: "in-progress" }, "weekly-code-audit": { skill: "auditing-code", flow: null } },
+      submachines: [{ state: "in_progress", machine: "in-progress", exits: {}, parent: "board", when: "" }],
+      launches: { "board-autopilot": { skill: "starting-tasks", machine: "in-progress" }, "weekly-code-audit": { skill: "auditing-code", machine: null } },
       writers: { CLAIM: [{ actor: "board-autopilot", trigger: "dagu" }] },
     }) },
     { name: "in-progress", agents: machineTasks, machine: machine(["worktree_ready", "pr_opened"], {
-      subflows: [{ state: "pr_opened", flow: "triaging-cr-reviews", exits: {}, parent: "in-progress", when: "a PR is open" }],
+      submachines: [{ state: "pr_opened", machine: "triaging-cr-reviews", exits: {}, parent: "in-progress", when: "a PR is open" }],
     }) },
     { name: "triaging-cr-reviews", agents: [], machine: machine(["fetch"]) },
   ],
@@ -75,7 +75,7 @@ describe("the sky", () => {
   });
   it("gives a flow two Board states open each state only the tasks whose Board task sits there, reading the Board once however often it is asked", () => {
     const base = snap(5000, [task("PROJ-1", "in_progress"), task("PROJ-2", "review")], [placed("PROJ-1", [["worktree_ready", "w", 1]]), placed("PROJ-2", [["pr_opened", "p", 2]])]);
-    base.flows[0].machine.subflows!.push({ state: "review", flow: "in-progress", exits: {}, parent: "board", when: "" });
+    base.flows[0].machine.submachines!.push({ state: "review", machine: "in-progress", exits: {}, parent: "board", when: "" });
     const S = merge(base, 1000), agents = S.board.agents;
     let reads = 0;
     Object.defineProperty(S.board, "agents", { get: () => (reads++, agents) });
@@ -104,11 +104,11 @@ describe("the sky", () => {
     expect(S.groups).toEqual([{ name: "Board", dags: ["board-autopilot", "worktree-reap"] }]);
     expect([...S.runnable]).toEqual(["worktree-reap"]);
     expect(S.launches).toEqual([
-      { dag: "board-autopilot", skill: "starting-tasks", flow: "in-progress" },
-      { dag: "weekly-code-audit", skill: "auditing-code", flow: null },
+      { dag: "board-autopilot", skill: "starting-tasks", machine: "in-progress" },
+      { dag: "weekly-code-audit", skill: "auditing-code", machine: null },
     ]);
     expect(S.subs).toEqual({ in_progress: ["in-progress", "auditing-docs"] });
-    expect(S.child).toEqual({ "in-progress": { pr_opened: { flow: "triaging-cr-reviews", when: "while a PR is open" } } });
+    expect(S.child).toEqual({ "in-progress": { pr_opened: { machine: "triaging-cr-reviews", when: "while a PR is open" } } });
     expect(S.boardUrl).toBe("http://board");
   });
 
@@ -145,7 +145,7 @@ describe("the moves", () => {
 
     m.observe(merge(snap(1000, [], [placed("PROJ-1", [["worktree_ready", "WORKTREE_READY", 900]])])), 1005);
 
-    expect(m.events.map((e) => [e.flow, e.task, e.at, e.from, e.to])).toEqual([["in-progress", "PROJ-1", 905, null, "worktree_ready"]]);
+    expect(m.events.map((e) => [e.machine, e.task, e.at, e.from, e.to])).toEqual([["in-progress", "PROJ-1", 905, null, "worktree_ready"]]);
   });
 
   it("plays each new step when it is seen, one travel after the last, so a burst between snapshots still draws", () => {
@@ -166,7 +166,7 @@ describe("the moves", () => {
 
     m.observe(merge(snap(1004, [task("PROJ-1", "in_progress"), task("PROJ-2", "ready")], [])), 1004);
 
-    expect(m.events.map((e) => [e.flow, e.task, e.at, e.from, e.to, e.event])).toEqual([
+    expect(m.events.map((e) => [e.machine, e.task, e.at, e.from, e.to, e.event])).toEqual([
       ["board", "PROJ-1", 1004, "ready", "in_progress", "CLAIM"],
       ["board", "PROJ-2", 1004, null, "ready", "CREATE"],
     ]);
@@ -189,7 +189,7 @@ describe("the moves", () => {
     m.resync(1000);
     m.observe(merge(snap(3000, [task("PROJ-1", "in_progress")], [placed("PROJ-1", [["worktree_ready", "WORKTREE_READY", 900], ["pr_opened", "PR_OPENED", 2000], ["worktree_ready", "FIX", 2100]])], "2026-09-30T21:00:00Z")), 3000);
 
-    expect(m.events.map((e) => [e.flow, e.at, e.to])).toEqual([
+    expect(m.events.map((e) => [e.machine, e.at, e.to])).toEqual([
       ["in-progress", 900, "worktree_ready"],
       ["in-progress", 2000, "pr_opened"],
       ["in-progress", 2100, "worktree_ready"],
@@ -205,7 +205,7 @@ describe("the moves", () => {
     m.resync(1004);
     m.observe(merge(snap(3000, [task("PROJ-1", "review")], [])), 3000);
 
-    expect(m.events.filter((e) => e.flow === "board")).toEqual([]);
+    expect(m.events.filter((e) => e.machine === "board")).toEqual([]);
   });
 
   it("queues a task's moves at most one travel ahead, so a burst nobody watched cannot bank a replay", () => {
@@ -255,7 +255,7 @@ describe("a page opened while the server is still reading its board", () => {
 
     m.observe(merge(snap(1010, [task("PROJ-1", "in_progress"), task("PROJ-2", "review")], [placed("PROJ-1", [["worktree_ready", "START", 900], ["pr_opened", "PR_OPENED", 1005]])])), 1010);
 
-    expect(m.events.filter((e) => e.flow === "board")).toEqual([]);
+    expect(m.events.filter((e) => e.machine === "board")).toEqual([]);
     expect(m.events.filter((e) => e.event === "PR_OPENED").map((e) => e.at)).toEqual([1005]);
   });
 });

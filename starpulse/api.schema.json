@@ -2669,9 +2669,9 @@
     },
     "Launch": {
       "additionalProperties": false,
-      "description": "A runs workflow's launch: the skill it starts and the flow that skill draws, null when it has none.",
+      "description": "A runs workflow's launch: the skill it starts and the machine that skill draws, null when it has none.",
       "properties": {
-        "flow": {
+        "machine": {
           "anyOf": [
             {
               "type": "string"
@@ -2687,7 +2687,7 @@
       },
       "required": [
         "skill",
-        "flow"
+        "machine"
       ],
       "title": "Launch",
       "type": "object"
@@ -3076,7 +3076,7 @@
             }
           ],
           "default": null,
-          "description": "Only the board machine: the skill flow each launching DAG starts."
+          "description": "Only the board machine: the skill machine each launching DAG starts."
         },
         "mainLine": {
           "anyOf": [
@@ -3111,11 +3111,11 @@
           },
           "type": "array"
         },
-        "subflows": {
+        "submachines": {
           "anyOf": [
             {
               "items": {
-                "$ref": "#/$defs/SubFlow"
+                "$ref": "#/$defs/Submachine"
               },
               "type": "array"
             },
@@ -3124,7 +3124,7 @@
             }
           ],
           "default": null,
-          "description": "The flows that open under this machine's states; the board's first is its In Progress delivery machine."
+          "description": "The machines that open under this machine's states; the board's first is its In Progress delivery machine."
         },
         "tiers": {
           "anyOf": [
@@ -3238,9 +3238,9 @@
     },
     "MachineHistory": {
       "additionalProperties": false,
-      "description": "`GET /api/history?task=&flow=`: a task's path on one machine, and how many steps it has taken.",
+      "description": "`GET /api/history?task=&machine=`: a task's path on one machine, and how many steps it has taken.",
       "properties": {
-        "flow": {
+        "machine": {
           "type": "string"
         },
         "path": {
@@ -3258,7 +3258,7 @@
       },
       "required": [
         "task",
-        "flow",
+        "machine",
         "path",
         "steps"
       ],
@@ -3890,15 +3890,15 @@
         "agent": {
           "$ref": "#/$defs/RawTask"
         },
-        "flow": {
+        "id": {
           "type": "string"
         },
-        "id": {
+        "machine": {
           "type": "string"
         }
       },
       "required": [
-        "flow",
+        "machine",
         "id",
         "agent"
       ],
@@ -6418,41 +6418,6 @@
       "title": "Stuck",
       "type": "object"
     },
-    "SubFlow": {
-      "additionalProperties": false,
-      "description": "Where a Board state opens into another machine, and which Board event each inner final state fires.",
-      "properties": {
-        "exits": {
-          "additionalProperties": {
-            "type": "string"
-          },
-          "type": "object"
-        },
-        "flow": {
-          "type": "string"
-        },
-        "parent": {
-          "description": "The flow the link opens under: `board`, or the flow whose `state` it hangs off.",
-          "type": "string"
-        },
-        "state": {
-          "type": "string"
-        },
-        "when": {
-          "description": "What has to hold for the inner flow to run under `state`; empty when always.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "state",
-        "flow",
-        "exits",
-        "parent",
-        "when"
-      ],
-      "title": "SubFlow",
-      "type": "object"
-    },
     "SubStage": {
       "additionalProperties": false,
       "description": "One stage mined at the judgement cuts of the stretches no skill governs, this week and the week before.",
@@ -6543,6 +6508,41 @@
         "stages"
       ],
       "title": "SubStages",
+      "type": "object"
+    },
+    "Submachine": {
+      "additionalProperties": false,
+      "description": "Where a Board state opens into another machine, and which Board event each inner final state fires.",
+      "properties": {
+        "exits": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "machine": {
+          "type": "string"
+        },
+        "parent": {
+          "description": "The machine the link opens under: `board`, or the machine whose `state` it hangs off.",
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "when": {
+          "description": "What has to hold for the inner machine to run under `state`; empty when always.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "state",
+        "machine",
+        "exits",
+        "parent",
+        "when"
+      ],
+      "title": "Submachine",
       "type": "object"
     },
     "TaskCriterion": {
@@ -6642,7 +6642,7 @@
     },
     "Tie": {
       "additionalProperties": false,
-      "description": "Where a lifecycle machine is entered from.\n\n`declared` is a SubFlow on `machine`'s `state`; `observed` is the state the task held on `machine` when its session\nentered this one; `dag` is a launch by `dag`, which names no machine or state. `count` is the sessions entered\nthrough it, null for a launch.",
+      "description": "Where a lifecycle machine is entered from.\n\n`declared` is a Submachine on `machine`'s `state`; `observed` is the state the task held on `machine` when its session\nentered this one; `dag` is a launch by `dag`, which names no machine or state. `count` is the sessions entered\nthrough it, null for a launch.",
       "properties": {
         "count": {
           "anyOf": [

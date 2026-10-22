@@ -1,7 +1,7 @@
 name: deploy
 states:
   planned: {initial: true}
-  rollout: {flow: rollout.yaml}
+  rollout: {}
   live: {final: true}
 events:
   STARTED:

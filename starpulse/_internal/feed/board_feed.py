@@ -849,7 +849,7 @@ class BoardFeed:
         with self._lock:
             self._machines[flow][agent["id"]] = agent
             if publish:
-                self._publish("move", {"flow": flow, "id": agent["id"], "agent": self._modelled(agent)})
+                self._publish("move", {"machine": flow, "id": agent["id"], "agent": self._modelled(agent)})
 
     def _modelled(self, agent: dict) -> dict:
         """A machine's task with its Board task's assignee as its model when it carries none of its own."""

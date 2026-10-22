@@ -156,7 +156,7 @@ def test_the_event_stream_sends_a_snapshot_then_a_delta_per_change(tmp_path: Pat
     assert second[0] == "task"
     assert (second[1]["id"], second[1]["agent"]["state"], second[1]["settled"]) == ("PROJ-1", "in_progress", None)
     assert (third[0], [d["name"] for d in third[1]["dags"]]) == ("dags", ["ci/d"])
-    assert (fourth[0], fourth[1]["flow"], fourth[1]["id"], fourth[1]["agent"]["state"]) == (
+    assert (fourth[0], fourth[1]["machine"], fourth[1]["id"], fourth[1]["agent"]["state"]) == (
         "move",
         "in-progress",
         "PROJ-1",

@@ -64,9 +64,9 @@ def test_the_preview_board_reopens_done_to_every_open_lane_and_still_draws_done_
 def test_in_progress_opens_the_delivery_machine_and_at_least_three_more_lifecycle_machines() -> None:
     machines = _machines()
 
-    assert machines["board"]["subflows"][0] == {
+    assert machines["board"]["submachines"][0] == {
         "state": "in_progress",
-        "flow": "delivery",
+        "machine": "delivery",
         "exits": {},
         "parent": "board",
         "when": "",
