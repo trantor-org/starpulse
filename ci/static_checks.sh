@@ -14,8 +14,7 @@ public_names() {
 
 # The page's API types are generated from starpulse/contracts/api/: regenerate both outputs, fail when either differs.
 api_types() {
-  uv sync --locked &&
-    pnpm --dir starpulse/web install --frozen-lockfile &&
+  pnpm --dir starpulse/web install --frozen-lockfile &&
     uv run --no-sync python -m starpulse.contracts.api &&
     pnpm --dir starpulse/web run gen:types &&
     git diff --exit-code -- starpulse/api.schema.json starpulse/web/src/api/types.gen.ts
@@ -39,6 +38,10 @@ avoid_list() {
   uv run --no-project --python 3.14 --with pytest --with pytest-xdist --with pydantic-settings python -m pytest -q -p no:cacheprovider ci/test_avoid_list.py &&
     uv run --no-project --python 3.14 --with pydantic-settings python ci/avoid_list.py .trantor/lib .trantor-docs/governance/architecture "$base"
 }
+
+# `uv sync` creates .venv, which the checks below read: it runs once here, before any of them starts, so no two uv
+# invocations race to create .venv/bin (a concurrent sync broke avoid_list with a missing .venv/bin temp file).
+uv sync --locked || exit 1
 
 checks=(api_types public_names tier_policy avoid_list)
 pids=()
