@@ -60,8 +60,6 @@ def repo(tmp_path: Path) -> Path:
         "starpulse/tests/integration/cli/test_agent_cli.py": "from starpulse._internal.cli import skill_install\n",
         "ci/sizer.py": "",
         "ci/test_sizer.py": "from sizer import X\n",
-        "ci/avoid_list.py": "",
-        "ci/test_avoid_list.py": "import avoid_list\n",
         "ci/test_workflow_placement.py": "",
         "ci/ui_preview.py": "",
         "ci/test_page_latency.py": "",
@@ -139,7 +137,6 @@ def test_a_change_whose_readers_the_graph_cannot_name_runs_the_full_suite(repo, 
         (
             ".github/workflows/ci.yml",
             [
-                "ci/test_avoid_list.py",
                 "ci/test_load.py",
                 "ci/test_page_latency.py",
                 "ci/test_sizer.py",
@@ -293,7 +290,6 @@ def test_the_nightly_schedule_and_a_dispatch_select_everything_once_in_a_job():
         "PYTEST_TARGETS": "${{ steps.select.outputs.PYTEST_TARGETS }}",
         "PYTEST_SHARDS": "${{ steps.select.outputs.PYTEST_SHARDS }}",
         "web": "${{ steps.select.outputs.web }}",
-        "contract": "${{ steps.select.outputs.contract }}",
         "static": "${{ steps.select.outputs.static }}",
     }
     select_step = next(s for s in job["steps"] if s.get("id") == "select")
@@ -421,11 +417,11 @@ def test_main_selects_by_the_newest_published_map(monkeypatch, capsys, repo, tmp
 PYPROJECT = '[project]\nname = "starpulse"\n\n[tool.importlinter]\nroot_package = "starpulse"\n'
 
 
-def test_a_pyproject_edit_to_the_import_contracts_alone_selects_the_tests_that_read_them(repo):
+def test_a_pyproject_edit_to_the_import_contracts_alone_selects_no_test(repo):
     (repo / "pyproject.toml").write_text(
         PYPROJECT.replace("root_package", "include_external_packages = true\nroot_package")
     )
-    assert select(repo, ["pyproject.toml"], pyproject_before=PYPROJECT) == Selection(["ci/test_avoid_list.py"])
+    assert select(repo, ["pyproject.toml"], pyproject_before=PYPROJECT) == Selection([])
 
 
 def test_a_pyproject_edit_outside_the_import_contracts_runs_the_full_suite(repo):
@@ -459,7 +455,7 @@ def test_main_compares_pyproject_with_the_base_it_is_given(monkeypatch, capsys, 
     (repo / "pyproject.toml").write_text(PYPROJECT + '[[tool.importlinter.contracts]]\nname = "c"\n')
     monkeypatch.setattr("sys.stdin", io.StringIO("pyproject.toml\n"))
     main(["--base", base])
-    assert "PYTEST_TARGETS=ci/test_avoid_list.py\n" in capsys.readouterr().out
+    assert "PYTEST_TARGETS=\n" in capsys.readouterr().out
 
 
 def test_a_change_to_the_board_seam_selects_the_lane_written_test(repo, tmp_path):

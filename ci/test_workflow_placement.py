@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import re
 import subprocess
-import time
 import tomllib
 from pathlib import Path
 
@@ -16,9 +15,9 @@ WORKFLOWS = Path(__file__).resolve().parents[1] / ".github/workflows"
 AI_VM_1_LANE = ["self-hosted", "ai-vm-1"]
 HOSTED = "ubuntu-latest"
 #: The required checks a pull request and a merge candidate get from ci.yml.
-REQUIRED_CHECKS = ["python", "web", "static-checks", "trantor-contract", "build"]
+REQUIRED_CHECKS = ["python", "web", "static-checks", "build"]
 APP_CHECKS = REQUIRED_CHECKS
-CI_TEST_JOBS = ["select", "python-shard", "python", "build", "web", "static-checks", "trantor-contract", "fresh-serve", "latency-gate"]
+CI_TEST_JOBS = ["select", "python-shard", "python", "build", "web", "static-checks", "fresh-serve", "latency-gate"]
 
 
 def job(workflow: str, name: str) -> dict:
@@ -176,25 +175,12 @@ def test_every_workspace_root_checkout_selects_the_full_tree():
         assert options.get("sparse-checkout-cone-mode") is False, where
 
 
-def test_trantor_tier_policy_gates_every_merge():
-    """A commit failing trantor's tier policy fails every bump that pins it, so it must not reach main."""
-    assert "ci/trantor_tier_policy.py" in STATIC_SCRIPT.read_text()
-    assert "static-checks" in APP_CHECKS
-
-
-def test_trantor_tests_of_this_package_gate_every_merge():
-    """A commit failing trantor's tests of this package fails every bump that pins it, so it must not reach main."""
-    contract = job("ci.yml", "trantor-contract")
-    checkouts = [
-        step.get("with", {}) for step in contract["steps"] if step.get("uses", "").startswith("actions/checkout")
-    ]
-    runs = "\n".join(step["run"] for step in contract["steps"] if "run" in step)
-    assert contract["runs-on"] == AI_VM_1_LANE
-    assert checkouts[0]["sparse-checkout"] == "/*"  # a sparse root checkout empties every later job on the runner
-    assert {"repository": "trantor-org/trantor", "path": ".trantor"}.items() <= checkouts[1].items()
-    assert checkouts[2]["path"] == ".trantor/starpulse"  # this tree in the submodule's place
-    assert "make test-changed FILES=starpulse CI=1" in runs
-    assert "trantor-contract" in APP_CHECKS
+def test_no_job_or_check_reaches_a_checkout_of_another_repository():
+    """The package is tested on its own tree alone: no job fetches the workspace that consumes it."""
+    jobs = yaml.safe_load((WORKFLOWS / "ci.yml").read_text())["jobs"]
+    for name, body in jobs.items():
+        for step in body.get("steps", []):
+            assert "repository" not in step.get("with", {}), name
 
 
 #: Every ci.yml job but the macOS smoke: the jobs that test a tree.
@@ -207,7 +193,6 @@ TEST_JOBS = [
     "build",
     "web",
     "static-checks",
-    "trantor-contract",
     "fresh-serve",
     "latency-gate",
 ]
@@ -234,7 +219,7 @@ def test_the_coverage_map_is_published_only_by_a_green_nightly_and_is_no_require
 
 
 def test_the_free_threaded_suite_runs_beside_the_shards_and_is_no_required_check():
-    """trantor's live server runs on 3.14t, so a change that breaks that build must show in the nightly run. The job is
+    """The live server runs on 3.14t, so a change that breaks that build must show in the nightly run. The job is
     not a required check: `python` neither waits for it nor counts it."""
     ft = job("ci.yml", "python-ft")
     assert ft["runs-on"] == AI_VM_1_LANE
@@ -265,7 +250,7 @@ STATIC_SCRIPT = WORKFLOWS.parents[1] / "ci/static_checks.sh"
 
 
 def test_the_four_short_jobs_are_gone_and_static_checks_runs_every_check_they_ran():
-    """public-names, api-types and tier-policy share one job so a run starts three fewer jobs."""
+    """public-names and api-types share one job so a run starts fewer jobs."""
     jobs = yaml.safe_load((WORKFLOWS / "ci.yml").read_text())["jobs"]
     assert not {"ic", "public-names", "api-types", "tier-policy"} & jobs.keys()
     script = STATIC_SCRIPT.read_text()
@@ -276,15 +261,8 @@ def test_the_four_short_jobs_are_gone_and_static_checks_runs_every_check_they_ra
         "python -m starpulse.contracts.api",  # api-types: regenerate both outputs, fail on a diff
         "pnpm --dir starpulse/web run gen:types",
         "git diff --exit-code -- starpulse/api.schema.json starpulse/web/src/api/types.gen.ts",
-        "ci/trantor_tier_policy.py .trantor/lib/linting/check_config_checks/tier_policy.py",  # tier-policy
     ):
         assert command in script, command
-
-
-def test_static_checks_checks_out_trantor_for_the_tier_policy():
-    steps = job("ci.yml", "static-checks")["steps"]
-    checkouts = [step.get("with", {}) for step in steps if step.get("uses", "").startswith("actions/checkout")]
-    assert {"repository": "trantor-org/trantor", "path": ".trantor"}.items() <= checkouts[1].items()
 
 
 def stub_tools(tmp_path, *, delay: float = 0.0) -> Path:
@@ -327,7 +305,6 @@ def test_static_checks_passes_when_every_check_passes(tmp_path):
     [
         ("ci/public_names.py", "public-names"),
         ("gen:types", "api-types"),
-        ("ci/trantor_tier_policy.py", "tier-policy"),
     ],
 )
 def test_static_checks_fails_naming_the_failed_check_and_still_runs_the_others(tmp_path, fail_on, name):
@@ -335,25 +312,17 @@ def test_static_checks_fails_naming_the_failed_check_and_still_runs_the_others(t
     assert result.returncode == 1
     assert re.findall(r"static check failed: (\S+)", result.stdout) == [name]
     calls = (tmp_path / "calls").read_text()
-    assert all(command in calls for command in ("ci/public_names.py", "ci/trantor_tier_policy.py"))
+    assert all(command in calls for command in ("ci/public_names.py", "gen:types"))
 
 
 def test_static_checks_runs_its_checks_concurrently(tmp_path):
-    """Run in sequence, the stubbed calls would take their summed delay; the job's wall time is the longest check's."""
-    started = time.monotonic()
-    result = run_static_checks(tmp_path, delay=0.6)
-    calls = len((tmp_path / "calls").read_text().splitlines())
+    """Run in sequence, the first check's last call would come before the second's first; started together, it follows."""
+    result = run_static_checks(tmp_path, delay=0.3)
+    calls = (tmp_path / "calls").read_text().splitlines()
     assert result.returncode == 0
-    assert time.monotonic() - started < 0.6 * calls * 0.75  # the longest check is half the calls
-
-
-def test_trantor_contract_re_locks_only_when_this_trees_dependencies_moved_off_trantors_lock():
-    """`uv sync --locked` refuses a stale lock, so a dependency change here still reaches `uv lock`; an unchanged one resolves once."""
-    runs = [step["run"] for step in job("ci.yml", "trantor-contract")["steps"] if "run" in step]
-    sync = next(run for run in runs if "uv sync" in run)
-    assert "uv sync --all-packages --locked || " in sync
-    assert sync.index("uv lock") > sync.index("--locked")  # the re-lock is the fallback, never the first command
-    assert not [run for run in runs if run.lstrip().startswith("uv lock")]
+    first_of_second = next(i for i, call in enumerate(calls) if "ci/public_names.py" in call)
+    last_of_first = max(i for i, call in enumerate(calls) if call.startswith("git diff"))
+    assert first_of_second < last_of_first
 
 
 def run_step(step: dict, tmp_path, env: dict[str, str], *, uv_exit: int = 0) -> int:
@@ -481,7 +450,7 @@ def test_starpulse_names_its_commitizen_version_source_and_treats_a_breaking_cha
 
 
 def test_ci_runs_the_fresh_install_smoke_on_a_hosted_macos_runner():
-    """The Linux smoke is trantor's nightly DAG; macOS has no fleet runner, so a hosted one proves the supervisor, resident-size reader and socket handoff there."""
+    """The Linux smoke is the fresh-serve job; macOS has no fleet runner, so a hosted one proves the supervisor, resident-size reader and socket handoff there."""
     smoke = job("ci.yml", "macos-fresh-serve")
     assert smoke["runs-on"] == "macos-latest"
     assert any("ci/fresh_serve.py" in step.get("run", "") for step in smoke["steps"])

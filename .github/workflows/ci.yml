@@ -1,7 +1,7 @@
 name: CI
 
-# This workflow defines StarPulse's CI: a pull request and a merge-queue candidate run `python`, `web`, `static-checks`
-# and `trantor-contract` on the changed files (ci/select_tests.py, ci/reach.py), with `build` beside them; the nightly
+# This workflow defines StarPulse's CI: a pull request and a merge-queue candidate run `python`, `web` and `static-checks`
+# on the changed files (ci/select_tests.py, ci/reach.py), with `build` beside them; the nightly
 # suite and a manual dispatch run every job in full. A push to main runs none: the merge queue tested its candidate.
 on:
   push:
@@ -10,7 +10,7 @@ on:
     branches: [main]
   merge_group:
   schedule:
-    - cron: "17 9 * * *" # 02:17 MST, after trantor's 01:17 whole-repo gate
+    - cron: "17 9 * * *" # 02:17 MST
   workflow_dispatch:
 
 permissions:
@@ -32,7 +32,6 @@ jobs:
       PYTEST_SHARDS: ${{ steps.select.outputs.PYTEST_SHARDS }}
       # Whether the change reaches each job below (ci/reach.py); true on the nightly schedule and a dispatch.
       web: ${{ steps.select.outputs.web }}
-      contract: ${{ steps.select.outputs.contract }}
       static: ${{ steps.select.outputs.static }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -50,7 +49,7 @@ jobs:
         run: |
           if [ -z "$BASE" ]; then
             uv run --no-sync python ci/select_tests.py --full >> "$GITHUB_OUTPUT"
-            printf 'web=true\ncontract=true\nstatic=true\n' >> "$GITHUB_OUTPUT"
+            printf 'web=true\nstatic=true\n' >> "$GITHUB_OUTPUT"
           else
             git diff --name-only --no-renames "$BASE" HEAD > "$RUNNER_TEMP/changed.txt"
             uv run --no-sync python ci/select_tests.py --base "$BASE" < "$RUNNER_TEMP/changed.txt" >> "$GITHUB_OUTPUT"
@@ -119,7 +118,7 @@ jobs:
           if-no-files-found: error
 
   # Combines the shards' coverage data into the per-test coverage map (ci/coverage_map.py) and publishes it on ai-vm-1, where
-  # trantor's `ci-sp-python` select step reads `latest.json`. Only a fully green nightly publishes: a red shard's data
+  # the CI select step reads `latest.json`. Only a fully green nightly publishes: a red shard's data
   # would leave tests out of the map.
   coverage-map:
     needs: [select, python-shard]
@@ -143,7 +142,7 @@ jobs:
           uv run --no-sync pytest --collect-only -q | grep '::' > collected.txt
           uv run --no-sync python ci/coverage_map.py build .coverage --sha "$GITHUB_SHA" --collected collected.txt
 
-  # The same selected tests on the free-threaded build (3.14t). trantor's live server runs on 3.14t, so a change that
+  # The same selected tests on the free-threaded build (3.14t). The live server runs on 3.14t, so a change that
   # breaks that build shows in the nightly suite. One job, not a shard matrix. It is not a required check and `python`
   # does not wait for it.
   python-ft:
@@ -248,8 +247,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm run check
 
-  # The short static checks in one job (ci/static_checks.sh runs them at once): public-names, api-types,
-  # tier-policy, avoid-list and busy-modules.
+  # The short static checks in one job (ci/static_checks.sh runs them at once): public-names and api-types.
   static-checks:
     needs: select
     # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved. A pull
@@ -258,33 +256,10 @@ jobs:
     runs-on: [self-hosted, ai-vm-1]
     timeout-minutes: 15
     steps:
-      # The workspace App token, not GITHUB_TOKEN: GITHUB_TOKEN reads only this repository.
-      - name: Mint App token
-        id: app-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        with:
-          client-id: ${{ secrets.WORKSPACE_APP_CLIENT_ID }}
-          private-key: ${{ secrets.WORKSPACE_APP_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-          repositories: trantor,trantor-docs
-      # Depth 2: avoid-list diffs against HEAD^1.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 2
           sparse-checkout: /*
           sparse-checkout-cone-mode: false
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: trantor-org/trantor
-          token: ${{ steps.app-token.outputs.token }}
-          path: .trantor
-          sparse-checkout: lib
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: trantor-org/trantor-docs
-          token: ${{ steps.app-token.outputs.token }}
-          path: .trantor-docs
-          sparse-checkout: governance/architecture
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -294,76 +269,6 @@ jobs:
           version: 12.6.0
           dest: ${{ runner.temp }}/setup-pnpm
       - run: bash ci/static_checks.sh
-
-  # trantor main's (newest green commit) tests of this package, run against this tree in place of trantor's starpulse submodule: the same
-  # `make test-changed FILES=starpulse` trantor's Validate runs on a bump PR. The check is advisory, not required: a
-  # change trantor must adopt (a renamed public name, a new table needing an Alembic adoption, a test that pins a feed
-  # key this package owns) merges here with it red, and trantor commits its migration on the bump pull request
-  # starpulse_pin.sh opens instead of pinning.
-  trantor-contract:
-    needs: select
-    # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved. A pull
-    # request the change does not reach skips the job, which a required check counts as passed.
-    if: github.event_name != 'push' && needs.select.outputs.contract == 'true'
-    runs-on: [self-hosted, ai-vm-1]
-    timeout-minutes: 30
-    steps:
-      # The workspace App token, not GITHUB_TOKEN: GITHUB_TOKEN reads only this repository.
-      - name: Mint App token
-        id: app-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        with:
-          client-id: ${{ secrets.WORKSPACE_APP_CLIENT_ID }}
-          private-key: ${{ secrets.WORKSPACE_APP_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-          repositories: trantor
-      # Trantor's tip can be red for a reason this package did not cause, and a red tip ejected a merge-queue entry three
-      # times. Test the newest main commit whose `Validate` passed (ci/trantor_green_sha.py logs it; none in the newest 15
-      # commits fails).
-      # A full checkout, never sparse: a sparse root checkout persists core.sparseCheckout in the runner's shared
-      # workspace, and every later job on that runner checks out an empty tree.
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          sparse-checkout: /*
-          sparse-checkout-cone-mode: false
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-      - name: Pick trantor's newest green main SHA
-        id: trantor-sha
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          # The App's `Validate` check run on trantor main's newest 15 commits, reshaped to the workflow-runs shape the
-          # selector reads. Kept in step with trantor's bin/ci/ci_starpulse.py (VALIDATE_QUERY, validate_runs).
-          QUERY: >-
-            query { repository(owner: "trantor-org", name: "trantor") { ref(qualifiedName: "refs/heads/main") {
-            target { ... on Commit { history(first: 15) { nodes { oid checkSuites(first: 8) { nodes { app { slug }
-            checkRuns(first: 5, filterBy: {checkName: "Validate"}) { nodes { conclusion completedAt } } } } } } } } } } }
-          RUNS: >-
-            {workflow_runs: [.data.repository.ref.target.history.nodes[] | . as $commit
-            | .checkSuites.nodes[] | select(.app.slug == "trantor-agent") | .checkRuns.nodes[]
-            | {head_sha: $commit.oid, conclusion: ((.conclusion // "") | ascii_downcase), created_at: .completedAt}]}
-        run: |
-          gh api graphql -f query="$QUERY" --jq "$RUNS" \
-            | uv run --no-project --python 3.14 python ci/trantor_green_sha.py > sha.txt
-          echo "sha=$(cat sha.txt)" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: trantor-org/trantor
-          ref: ${{ steps.trantor-sha.outputs.sha }}
-          token: ${{ steps.app-token.outputs.token }}
-          persist-credentials: false
-          path: .trantor
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          path: .trantor/starpulse
-      # `uv lock` as trantor's bump does, but only when this tree's dependencies differ from the ones trantor's lock pins:
-      # `--locked` refuses a stale lock, so a dependency change here still reaches the re-lock, and an unchanged one
-      # resolves once (the lock is not the cost: the sync builds trantor's workspace members).
-      - working-directory: .trantor
-        run: |
-          uv sync --all-packages --locked || { uv lock && make sync; }
-          echo "PYTEST_WORKERS=$(uv run --no-project --python 3.14 bin/ci_pytest_workers.py)" >> "$GITHUB_ENV"
-      - working-directory: .trantor
-        run: make test-changed FILES=starpulse CI=1
 
   # The out-of-the-box install on Linux, the ai-vm-1 fleet's own platform: the wheel goes into an empty virtualenv and
   # `starpulse serve` starts from an empty directory with no config, then ci/fresh_serve.py fails unless the page answers

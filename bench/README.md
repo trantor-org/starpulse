@@ -132,8 +132,7 @@ interaction rows but can hold its routes and stream deliveries. An untimed reque
 
 ## Latency gate
 
-trantor's nightly whole-repo gate runs it (`make starpulse-latency`, `bin/starpulse_latency_gate.sh` in trantor) against
-the starpulse commit trantor pins; pull requests do not, because on the shared `validate` lane it was the slowest job and
+The nightly `latency-gate` job in `ci.yml` runs it against main; pull requests do not, because on the shared `validate` lane it was the slowest job and
 red from host load alone. It builds the page, serves `ci/seeded_server.py` (`ci/preview.toml`'s workspace with the real
 request handler, a month of lane history for about 160 tasks, a level, 16 milestones and 24 docs on a native board,
 and an autopilot with one capacity sample), runs `page_latency.py --repeat 3 --fail-non-2xx` against it

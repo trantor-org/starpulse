@@ -1,8 +1,7 @@
 """Print the pytest-xdist worker count a self-hosted runner's memory limit can hold.
 
 A worker OOM-killed in a capped runner leaves xdist hanging until the job timeout. So a memory-limited runner gets one worker per 2 GiB. A runner with no cgroup memory limit shares the build host's cores with the rest of the pool and gets
-MAX_WORKERS: two, so a pool of runners fills the host's test CPU budget instead of oversubscribing it. trantor's
-`bin/ci_pytest_workers.py` applies the same rule to its own Validate job.
+MAX_WORKERS: two, so a pool of runners fills the host's test CPU budget instead of oversubscribing it.
 
 `--slice` prints the count for the build host's `tests.slice` instead: one pytest session of work-stealing workers
 (`--dist worksteal`) under that slice's MemoryHigh, sized from the peak RSS measured below.

@@ -1,6 +1,6 @@
 """Page latency: every request and page surface of a running StarPulse, timed against the latency budget.
 
-The budget (trantor ADR "StarPulse Holds a Latency Budget on Every Request and Frame"): every request, interaction
+The budget (ADR "StarPulse Holds a Latency Budget on Every Request and Frame"): every request, interaction
 and stream delivery within 50 ms at p95, every animation frame's work within 16.7 ms at p95. This script times:
 
 - each read route, called directly `--samples` times, with the parameters it needs drawn from the server's snapshot;

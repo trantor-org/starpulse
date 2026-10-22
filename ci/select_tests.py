@@ -78,7 +78,7 @@ READERS = {
         "starpulse/_internal/machines/machine_definition.py",
     ),
     "starpulse/_internal/eventlog/migrations/*": ("starpulse/_internal/eventlog/event_log.py",),
-    "pyproject.toml": ("ci/avoid_list.py",),
+    "pyproject.toml": (),
     "ci/static_checks.sh": ("ci/test_workflow_placement.py",),
     "starpulse/machines/*": (
         "starpulse/_internal/ci/ci.py",

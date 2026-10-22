@@ -20,30 +20,11 @@ api_types() {
     git diff --exit-code -- starpulse/api.schema.json starpulse/web/src/api/types.gen.ts
 }
 
-# trantor's check-config test-tier policy over this tree, with trantor's lib checked out at .trantor. GIT_CLI_LIST_TIMEOUT
-# is read by git_cli.list_timeout: unset is the fail-sentinel 0 and times out ls-files immediately. Every check that loads
-# trantor's lib runs `--with pydantic-settings`: its git_cli reads trantor_settings, which needs it.
-tier_policy() {
-  PYTHONPATH=.trantor/lib GIT_CLI_LIST_TIMEOUT=60 uv run --no-project --python 3.14 --with pyyaml --with pydantic-settings \
-    python ci/trantor_tier_policy.py .trantor/lib/linting/check_config_checks/tier_policy.py
-}
-
-# trantor's glossary avoid-list gate over the names this change adds to a context package (the `context-*` import
-# contracts), with trantor-docs' glossaries at .trantor-docs. The base is AVOID_LIST_BASE, the event's base that trantor's
-# ci-sp-static DAG passes its depth-1 clone, else HEAD^1, the commit the nightly job's push sits on; a depth-1 clone given
-# no base fetches that parent from the public origin.
-avoid_list() {
-  local base=${AVOID_LIST_BASE:-HEAD^1}
-  git rev-parse -q --verify "$base^{commit}" >/dev/null || git fetch -q --deepen 1 origin "$(git rev-parse HEAD)"
-  uv run --no-project --python 3.14 --with pytest --with pytest-xdist --with pydantic-settings python -m pytest -q -p no:cacheprovider ci/test_avoid_list.py &&
-    uv run --no-project --python 3.14 --with pydantic-settings python ci/avoid_list.py .trantor/lib .trantor-docs/governance/architecture "$base"
-}
-
 # `uv sync` creates .venv, which the checks below read: it runs once here, before any of them starts, so no two uv
-# invocations race to create .venv/bin (a concurrent sync broke avoid_list with a missing .venv/bin temp file).
+# invocations race to create .venv/bin (a concurrent sync once broke a check with a missing .venv/bin temp file).
 uv sync --locked || exit 1
 
-checks=(api_types public_names tier_policy avoid_list)
+checks=(api_types public_names)
 pids=()
 for check in "${checks[@]}"; do
   "$check" >"$logs/$check.log" 2>&1 &

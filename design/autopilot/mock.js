@@ -32,7 +32,7 @@
     url: `#demo-session-${a.id.replace(/\D/g, "").padStart(4, "0")}` }); // a fragment, as the demo's own sessions, so the public demo names no real host
   const flying = inLane("in_progress").slice(0, 3).map(session);
 
-  // the loop's state: limits are trantor's defaults in the spec's shape; CPU and RAM drift with the sampler
+  // the loop's state: limits are acme's defaults in the spec's shape; CPU and RAM drift with the sampler
   const st = { on: s !== "off", cpu: 41, ram: 58, review: 13, sessions: flying.slice(0, s === "on" ? 2 : 3), phase: "starting", at: now() };
   if (s === "over") Object.assign(st, { cpu: 74, ram: 91 });
   const LIM = { cpu: 80, ram: 85, sessions: 4, review: 24 };
