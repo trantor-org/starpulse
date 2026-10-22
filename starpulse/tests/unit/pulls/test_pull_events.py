@@ -1,5 +1,7 @@
 """The PR store follows the lifecycle events of the tasks whose pull requests it holds."""
 
+from typing import Any
+
 import pytest
 from sqlalchemy import create_engine
 
@@ -14,7 +16,7 @@ PULL = ("acme/widgets", 7)
 T0 = 1_700_000_000.0
 
 
-def _entry(machine: str, event: str, key: str = "PROJ-1", at: float = T0, **extra: str) -> Entry:
+def _entry(machine: str, event: str, key: str = "PROJ-1", at: float = T0, **extra: Any) -> Entry:
     fields = {"event_id": f"{machine}-{event}-{at}", "machine": machine, "event": event, "task": key, "time": str(at)}
     return Entry(1, "machine:events", fields["event_id"], fields | extra, at)
 
@@ -263,3 +265,17 @@ def test_replaying_the_jobs_changes_nothing() -> None:
 
     assert _record(store) == before
     assert len(changes) == announced
+
+
+def test_a_close_names_its_pull_request_in_the_data_of_a_machine_event() -> None:
+    """The merge of trantor#5459 arrived with its pull request under `data`, and with 5459 already closed
+    the lone open one, starpulse#764 (queued then removed unmerged), was recorded merged."""
+    other = "https://github.com/acme/skills/pull/2"
+    projection, store, _ = _projection(references=[URL, other])
+    projection.handle(_entry(*OPEN, at=T0))
+    event = _entry("github-pull-request", "PR_MERGED", at=T0 + 1, data={"repository": "acme/skills", "pr": 2})
+    projection.handle(event)
+
+    projection.handle(_entry("github-pull-request", "PR_MERGED", at=T0 + 2, data={"repository": "acme/skills", "pr": 2}))
+
+    assert {(r["repo"], r["state"]) for r in store.find()} == {("acme/widgets", "OPEN"), ("acme/skills", "MERGED")}

@@ -176,8 +176,10 @@ class RecordProjection:
         opened = [pull for pull in pulls if not stored[pull] or stored[pull][0]["state"] == "OPEN"]
         if not closing:
             return opened
-        number = str(fields.get("pr", ""))
-        named = (str(fields.get("repository")), int(number) if number.isdigit() else 0)
+        data = fields.get("data")
+        source = data if isinstance(data, Mapping) else fields
+        number = str(source.get("pr", ""))
+        named = (str(source.get("repository")), int(number) if number.isdigit() else 0)
         if named in pulls:
             return [named] if named in opened else []
         return opened if len(opened) == 1 else []
