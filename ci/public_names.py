@@ -1,4 +1,4 @@
-"""Fail when a tracked file names one of the operator's private hosts.
+"""Fail when a tracked file names one of the operator's private hosts, or a shipped skill or machine names Trantor.
 
     python ci/public_names.py
 
@@ -20,6 +20,9 @@ from pathlib import Path
 DENIED = re.compile(r"ai-v[m](-\d+)?|unrai[d]|proxmo[x]|\bTowe[r]\b", re.IGNORECASE)
 CANDIDATE = re.compile(r"ai-v[m]|unrai[d]|proxmo[x]|towe[r]")  # DENIED's names, lowercased and loosened, to skip files that cannot match
 EXEMPT =re.compile(r"^\.github/(workflows/|actionlint\.yaml$)|(^|/)(tests/|test_[^/]*$)")
+# Trantor names are refused under starpulse/skills and starpulse/machines, which ship in the public package (the public-package ADR).
+SHIPPED = re.compile(r"^starpulse/(skills|machines)/")
+TRANTOR = re.compile(r"trantor|backlog-task|\.venv/bin/|bin/workspace|agent-cmd", re.IGNORECASE)
 
 
 def violations(files: Iterable[Path], root: Path) -> list[str]:
@@ -39,10 +42,25 @@ def violations(files: Iterable[Path], root: Path) -> list[str]:
     return rows
 
 
+def trantor_violations(files: Iterable[Path], root: Path) -> list[str]:
+    rows = []
+    for path in files:
+        rel = path.relative_to(root).as_posix()
+        if not SHIPPED.search(rel) or EXEMPT.search(rel):
+            continue
+        try:
+            text = path.read_text()
+        except UnicodeDecodeError, OSError:  # a binary file, or a tracked symlink to nothing
+            continue
+        rows += [f"{rel}:{n}: {m.group()}" for n, line in enumerate(text.splitlines(), 1) for m in TRANTOR.finditer(line)]
+    return rows
+
+
 def main() -> int:
     root = Path(__file__).resolve().parents[1]
     tracked = subprocess.run(["git", "ls-files", "-z"], cwd=root, capture_output=True, check=True).stdout
-    rows = violations([root / p for p in tracked.decode().split("\0") if p], root)
+    files = [root / p for p in tracked.decode().split("\0") if p]
+    rows = violations(files, root) + trantor_violations(files, root)
     print("\n".join(rows))
     return 1 if rows else 0
 
