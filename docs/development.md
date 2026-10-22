@@ -78,8 +78,9 @@ file the map lacks, such as a new module, falls back to the import graph, and a 
 machine, skill or `pyproject.toml` lint-table edit selects the tests of the code that reads it; only a dependency,
 `conftest.py` or fixture change, or any other `pyproject.toml` edit, runs the whole suite.
 `uv run lint-imports` checks the tiers under `starpulse/_internal`, top to bottom: `api` over `cli` (the server's routes,
-then the command line), `adapters`, `level`, `feed` and `ci`, `eventlog`, then `config`, `machines` and
+then the command line), `adapters`, `level`, `feed` and `ci`, `store`, `eventlog`, then `config`, `machines` and
 `contracts`. A package imports its own tier or one below; none import upward, and `feed` and `ci` never import each other.
+The `store-table-private` contract lets only `store` import its tables, so every stream write goes through `EventStore`.
 The `context-*` contracts hold each bounded context of trantor's Bounded Contexts map (Board, Delivery, Autopilot, Runs,
 Flow Metrics, Harness Telemetry) to the contexts the map names upstream of it; `config`, `eventlog`, `machines` and
 `contracts` are the shared kernel and belong to none. CI's `static-checks` job also runs `ci/avoid_list.py`, which fails
