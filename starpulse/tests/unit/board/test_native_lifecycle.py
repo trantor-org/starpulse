@@ -55,7 +55,7 @@ def _lifecycle(
     )
     for task, (status, fields) in tasks.items():
         write_task(base, task, status, **fields)
-    built = board({"machine": "board.yaml", "rules": list(rules)}, base)
+    built = board({"machine": "board.yaml", "guards": list(rules)}, base)
     feed = BoardFeed(machines=built.machines(lambda name: name, ()), keys=built.keys)
     built.start(feed, "test", EventLog(f"sqlite:///{base / 'events.sqlite'}"))
     return feed, built

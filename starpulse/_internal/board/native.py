@@ -81,10 +81,10 @@ if TYPE_CHECKING:
 DEFAULT_PATH = ".starpulse/board"
 #: The `[board]` settings this adapter reads: `path` is the board's directory, `machine` a machine file for the Board,
 #: relative to the config, `criteria` the command that evaluates a task's Start Criteria (`{id}` is the task's id),
-#: `validate` the `module:function` that may refuse a task write before it lands, `rules` the record-level rules every
-#: task write must satisfy (`starpulse._internal.board.rules`), `task_file_name` the form of the name a created task's
+#: `validate` the `module:function` that may refuse a task write before it lands, `guards` the record-level rules every
+#: task write must satisfy (the `rules` module of `starpulse._internal.board`), `task_file_name` the form of the name a created task's
 #: file is written under (`_FILE_NAMES`), `types` the names a task's `type` may take (any when absent).
-_SETTINGS = {"type", "path", "interval", "machine", "criteria", "holds", "validate", "rules", "task_file_name", "types"}
+_SETTINGS = {"type", "path", "interval", "machine", "criteria", "holds", "validate", "guards", "task_file_name", "types"}
 #: The forms of a created task's file name: `title` is `<id> - <Title>.md`, as Backlog.md writes it (the default), `slug`
 #: is `<id>-<slug>.md`, lowercase and space-free, its slug capped at `_SLUG_MAX` characters.
 _FILE_NAMES = ("title", "slug")
@@ -1083,6 +1083,8 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
     Moves, profile changes, creates, edits and archives write the task files directly, and `read` returns a task's record from its file. Any lane reaches any other unless `machine` names a
     machine file, whose transitions and `writers` then decide which moves are offered, and to whom.
     """
+    if "rules" in settings:
+        raise ValueError("board: `[[board.rules]]` is now `[[board.guards]]`; rename the table")
     if unknown := sorted(settings.keys() - _SETTINGS):
         raise ValueError(f"board: unknown key(s) {', '.join(unknown)}; known: {', '.join(sorted(_SETTINGS))}")
     file_name = str(settings.get("task_file_name", _FILE_NAMES[0]))
@@ -1095,7 +1097,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
     retired = _Retired()
     claims = _Claims()
     guard = _Guard(
-        rules.load(settings.get("rules")), _hook(settings.get("validate")), _state_of(root, retired), _types(settings)
+        rules.load(settings.get("guards")), _hook(settings.get("validate")), _state_of(root, retired), _types(settings)
     )
 
     def assign(task: str, profile: str, /, actor: str = OPERATOR) -> Written:

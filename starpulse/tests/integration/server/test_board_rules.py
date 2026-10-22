@@ -1,4 +1,4 @@
-"""A `[board] rules` rule refuses the same move with the same reason from an agent's CLI and from the page."""
+"""A `[board] guards` rule refuses the same move with the same reason from an agent's CLI and from the page."""
 
 import json
 import urllib.error
@@ -32,7 +32,7 @@ def _served(tmp_path: Path, rules: list[dict[str, Any]]) -> Iterator[str]:
     """A server whose board writer is a native board with `rules`, holding `task-1` In Progress with Done offered."""
     native.board({}, tmp_path)
     write_task(tmp_path, "task-1", "In Progress")
-    built = native.board({"rules": rules}, tmp_path)
+    built = native.board({"guards": rules}, tmp_path)
     feed = BoardFeed(machines=MACHINES)
     feed.put(task("task-1", "In Progress", moves={"done": Move(allowed=True)}))
     with serve(tmp_path, feed, built) as server:

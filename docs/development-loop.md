@@ -15,7 +15,7 @@ not a setup guide for GitHub, Dagu or any other tool StarPulse does not ship.
 | [CD applies merged changes unattended](#4-cd-applies-merged-changes-unattended) | The Ledger pairs a merge with its apply run and can re-run a failed one | The apply workflow, its allowlist and its verification |
 | [Scheduled workflows take fixed sequences off agents](#5-scheduled-workflows-take-fixed-sequences-off-agents) | Draws runs from Dagu, GitHub Actions or systemd; [CloudEvents ingest](sources.md#post-machine-events-as-cloudevents) | The workflows and their schedules |
 | [Documentation is code and is linted](#6-documentation-is-code-and-is-linted) | Nothing | The repository, the lint, the scheduled commit |
-| [Lifecycle guards refuse an out-of-order move](#7-lifecycle-guards-refuse-an-out-of-order-move) | State machines with `writers`, and [`[[board.rules]]`](public-surface.md#board-rules) | The machines and rules I declared, and the skills they name |
+| [Lifecycle guards refuse an out-of-order move](#7-lifecycle-guards-refuse-an-out-of-order-move) | State machines with `writers`, and [`[[board.guards]]`](public-surface.md#board-guards) | The machines and rules I declared, and the skills they name |
 | [Telemetry is read back](#8-telemetry-and-projections-are-read-back-to-size-and-steer-the-next-task) | [Session health, flow health, missed skill loads, trace clusters](sources.md#measure-session-and-slice-health), [autopilot](serving.md#autopilot) | Size bands, agent profiles, what I change after reading a report |
 
 ## Scale
@@ -118,7 +118,7 @@ search.
 
 **What.** A task's lifecycle is a state machine declared as data: its states, its transitions and who may make each
 move (the operator, an agent or a named workflow). The board writer refuses a move the machine or a
-[board rule](public-surface.md#board-rules) forbids, the same way for the command line and the page, and the refusal
+[board rule](public-surface.md#board-guards) forbids, the same way for the command line and the page, and the refusal
 names the skill that satisfies it. Examples: an agent never sets `Done`, which is set only once every referenced pull
 request is terminal; a test must fail before the change that makes it pass; work that changes what a page draws
 cannot reach `Review` until I have seen a render. A new guard is replayed over recorded board history before it
