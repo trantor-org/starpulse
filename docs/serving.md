@@ -138,6 +138,20 @@ reload does not reload it again.
 A demo page plays these states with `?link=`: `restart`, `update` (a restart that ships a new build) and `drop` play from
 live; `restarting`, `retrying`, `offline` and `updating` hold one state.
 
+## Event store
+
+`starpulse/_internal/store` keeps one append-only stream per subject, `(subject_kind, subject_id)`, in
+`starpulse_stream_events` (migration 0027). A row is a typed envelope (`event_id`, `version`, `type`, `schema_version`,
+`at`, `actor`, `writer`, `definition_hash`, `causation_id`, `correlation_id`) and a JSON `payload`.
+
+- `EventStore.append(kind, id, expected_version, events)` is the one write path. It compares `expected_version` with the
+  stream's head and raises `StaleVersion` on a mismatch; the unique `(kind, id, version)` constraint turns a racing
+  writer's collision into the same error. The events and their outbox rows commit together or not at all.
+- `starpulse_outbox` holds a row per event, `sent_at` null until `mark_sent` records its acknowledgement. A consumer
+  reads `outbox_pending()` and gets each event at least once under its stable `event_id`.
+- `Upcasters` upgrade an old `schema_version` while a stream is read; the stored row is never rewritten.
+- Event-log pruning never touches these tables.
+
 ## Portable database contract
 
 Board and lifecycle state (task lanes, lane changes, machine events, runs) lives in StarPulse's database, SQLite at

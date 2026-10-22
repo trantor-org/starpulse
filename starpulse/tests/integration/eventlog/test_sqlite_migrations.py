@@ -15,6 +15,7 @@ from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import HistoryStore
 from starpulse._internal.eventlog.migrate import alembic_config
 from starpulse._internal.eventlog.tables import VERSION_TABLE, checkpoints, day_rollups, metadata
+from starpulse._internal.store import metadata as store_metadata
 from starpulse.tests.machines import MACHINES
 
 _MIGRATIONS = Path(history.__file__).parent / "migrations"
@@ -61,7 +62,7 @@ def _a_pre_alembic_store(path: Path) -> Engine:
 
 
 def test_the_chain_has_one_head() -> None:
-    assert ScriptDirectory(str(_MIGRATIONS)).get_heads() == ["0026"]
+    assert ScriptDirectory(str(_MIGRATIONS)).get_heads() == ["0027"]
 
 
 def test_a_fresh_store_is_built_by_the_chain_and_matches_the_declared_schema(tmp_path: Path) -> None:
@@ -76,7 +77,7 @@ def test_a_fresh_store_is_built_by_the_chain_and_matches_the_declared_schema(tmp
                 "include_object": lambda obj, name, kind, reflected, _: name not in _DIALECT_ONLY,
             },
         )
-        drift = compare_metadata(context, metadata)
+        drift = compare_metadata(context, [metadata, store_metadata])
 
     assert (_versions(store.engine), drift) == ([_head()], [])
 
