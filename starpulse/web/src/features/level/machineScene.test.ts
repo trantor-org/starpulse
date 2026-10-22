@@ -8,7 +8,7 @@ import type { FlowSnapshot, Machine, Snapshot } from "../../api";
 
 const NOW = 1_800_000_000;
 const machine = (...ids: string[]): Machine => ({ states: ids.map((id, i) => ({ id, name: id, initial: !i, final: i === ids.length - 1 })), transitions: ids.slice(1).map((t, i) => ({ source: ids[i], target: t, event: t })) });
-const board: Machine = { ...machine("ready", "in_progress", "done"), subflows: [{ state: "in_progress", flow: "in-progress", exits: {}, parent: "board", when: "" }], mainLine: ["ready", "in_progress", "done"] };
+const board: Machine = { ...machine("ready", "in_progress", "done"), submachines: [{ state: "in_progress", machine: "in-progress", exits: {}, parent: "board", when: "" }], mainLine: ["ready", "in_progress", "done"] };
 /** `n` machines entered from the In Progress machine, kid0 the newest. */
 function sky(n: number, page?: { machines: string[]; more: boolean }) {
   const kids: FlowSnapshot[] = Array.from({ length: n }, (_, i) => ({ name: `kid${i}`, machine: machine("a", "b"), agents: [], ties: [], parent: "in-progress", depth: 1, chain: [], nested: [], last: NOW - 60 * i, stuck: null }));

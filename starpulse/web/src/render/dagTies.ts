@@ -64,7 +64,7 @@ export interface Touch {
 export function touches({ pivots }: Ties, moves: readonly Move[], ran: (dag: string, at: number) => boolean, now: number): Touch[] {
   const out: Touch[] = [];
   for (const m of moves) {
-    if (m.flow !== "board" || m.at > now || now - m.at >= TRAVEL + PULSE) continue;
+    if (m.machine !== "board" || m.at > now || now - m.at >= TRAVEL + PULSE) continue;
     for (const h of pivots)
       for (const orbiter of h.orbs)
         for (const anchor of orbiter.anchors)
@@ -103,7 +103,7 @@ export function boardTies(sc: Scene, sky: Sky, u: number, ts = 1): Ties {
   }
   // a tied DAG that also writes the events of the machine it launches is that machine's writer too, anchored at the machine's moon
   for (const l of sky.launches) {
-    const t = byDag.get(l.dag), flow = t && launchedFlow(sky, l.dag, l.flow);
+    const t = byDag.get(l.dag), flow = t && launchedFlow(sky, l.dag, l.machine);
     if (!t || !flow || !Object.values(sky.flows[flow].machine.writers ?? {}).some((ws) => ws.some((w) => w.actor === l.dag))) continue;
     const moon = sc.moons.find((m) => m.name === flow), host = sc.galaxies[sky.tree.ipState ?? "in_progress"];
     if (moon || host) t.subs.push({ flow, ...(moon ?? { x: host.x, y: host.y - host.R }) });

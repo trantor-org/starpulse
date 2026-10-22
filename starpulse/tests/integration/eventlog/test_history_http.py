@@ -52,11 +52,11 @@ def test_a_task_answers_its_lane_changes(server: PageServer) -> None:
 
 
 def test_a_task_and_flow_answer_that_machines_path_with_its_step_total(server: PageServer) -> None:
-    assert _get(server, "?task=PROJ-7&flow=in-progress") == (
+    assert _get(server, "?task=PROJ-7&machine=in-progress") == (
         200,
         {
             "task": "PROJ-7",
-            "flow": "in-progress",
+            "machine": "in-progress",
             "path": [
                 {"at": 100.0, "event": "WORKTREE_READY", "state": "worktree_ready"},
                 {"at": 101.0, "event": "RED_PROVEN", "state": "red_proven"},
@@ -68,9 +68,9 @@ def test_a_task_and_flow_answer_that_machines_path_with_its_step_total(server: P
 
 def test_an_unknown_task_answers_an_empty_path(server: PageServer) -> None:
     assert _get(server, "?task=PROJ-404") == (200, {"task": "PROJ-404", "path": []})
-    assert _get(server, "?task=PROJ-404&flow=in-progress") == (
+    assert _get(server, "?task=PROJ-404&machine=in-progress") == (
         200,
-        {"task": "PROJ-404", "flow": "in-progress", "path": [], "steps": 0},
+        {"task": "PROJ-404", "machine": "in-progress", "path": [], "steps": 0},
     )
 
 
@@ -81,4 +81,4 @@ def test_a_request_without_a_task_is_refused(server: PageServer) -> None:
 
 
 def test_an_unknown_flow_is_not_found(server: PageServer) -> None:
-    assert _get(server, "?task=PROJ-7&flow=nope") == (404, {"error": "unknown flow nope"})
+    assert _get(server, "?task=PROJ-7&machine=nope") == (404, {"error": "unknown machine nope"})

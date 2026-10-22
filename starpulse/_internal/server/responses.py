@@ -101,18 +101,18 @@ def _done_card(stub: dict, record: Mapping[str, Any]) -> dict:
 def history_response(
     history: History, query: dict[str, list[str]], flows: Collection[str], keys: TaskKeys | None = None
 ) -> tuple[bytes, int]:
-    """The body and status for `/api/history`: a task's lane path, or with `flow` its path on that machine.
+    """The body and status for `/api/history`: a task's lane path, or with `machine` its path on that machine.
 
     `flows` are the machines the page draws; a task is looked up under the spelling `keys` gives it."""
-    task, flow = (query.get(key, [""])[0] for key in ("task", "flow"))
+    task, flow = (query.get(key, [""])[0] for key in ("task", "machine"))
     task = keys.canonical(task) if keys else task
     if not task:
         return _error("history needs ?task=TASK-N"), 400
     if flow and flow not in flows:
-        return _error(f"unknown flow {flow}"), 404
+        return _error(f"unknown machine {flow}"), 404
     body: dict[str, Any] = {"task": task}
     if flow:
-        body |= {"flow": flow}
+        body |= {"machine": flow}
         body["path"], body["steps"] = history.machine_path(task, flow)
     else:
         body["path"] = history.lane_path(task)

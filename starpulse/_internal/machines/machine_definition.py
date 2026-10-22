@@ -8,9 +8,8 @@ field match on the event that fires the transition (`equals`, `in`,
 `Registry`; a transition may name a registered `action` the same way. Config
 holds no expressions or code, so a shared definition is never executable.
 
-A state may open another machine file with `flow:`. The child's states nest
-under that state as `<state>_<child state>`, and the child's own states may
-not open a further file: one level of subflows.
+A machine composes with another through `submachines:`, each naming a state, a sibling machine file's stem and the
+events that machine's final states fire; the loader compiles each file on its own.
 
 A state may list `waits`: a fact kind mapped to the event that leaves the state when the fact holds. The loader
 refuses an unknown fact kind and an event that is not a transition out of the state; it fires nothing.
@@ -59,7 +58,7 @@ __all__ = [
 ]
 
 #: The top-level keys that only change how the page draws a machine.
-DRAWING = ("tiers", "main_line", "rests", "subflows", "launches")
+DRAWING = ("tiers", "main_line", "rests", "submachines", "launches")
 #: The fact kinds a state's `waits` may name: what the task actor derives from a task's pull request, dependencies and criteria.
 WAIT_FACTS = ("pr_terminal", "deps_done", "deps_unresolved", "criteria_met", "criteria_unmet")
 SCHEMA = json.loads((Path(__file__).parents[2] / "machine.schema.json").read_text())
@@ -128,11 +127,6 @@ def writers_of(machine: type[StateChart]) -> Mapping[str, tuple[Writer, ...]]:
     return getattr(machine, "writers", {})
 
 
-def opened_by(path: Path) -> list[Path]:
-    """The machine files the machine file at `path` opens with a state's `flow:`."""
-    return [path.parent / state["flow"] for state in _read(path)["states"].values() if "flow" in state]
-
-
 def _schema_error(document: Any) -> ValidationError | None:
     return best_match(_VALIDATOR.iter_errors(document))
 
@@ -165,13 +159,13 @@ def _line_of(text: str, parts: Iterable[str | int]) -> int:
 
 
 def load_machine(path: Path, registry: Registry = Registry()) -> Compiled:
-    """Compile the machine file at `path`, opening each state's `flow:` child file."""
+    """Compile the machine file at `path`."""
     return compile_document(_read(path), path, registry)
 
 
 def compile_document(document: dict[str, Any], path: Path, registry: Registry = Registry()) -> Compiled:
-    """Compile a machine `document` the schema has accepted; `path` names it in errors and resolves its `flow:` files."""
-    states, bindings, waits = _compile(document, path, registry, prefix="")
+    """Compile a machine `document` the schema has accepted; `path` names it in errors."""
+    states, bindings, waits = _compile(document, path, registry)
     writers = {
         event: tuple(Writer(**writer) for writer in declared) for event, declared in document.get("writers", {}).items()
     }
@@ -199,6 +193,10 @@ def _read(path: Path) -> dict[str, Any]:
         mark = getattr(error, "problem_mark", None)
         raise MachineDefinitionError(f"{path}: {error}", path, mark.line + 1 if mark else None) from error
     _spell_on(document)
+    if isinstance(document, dict) and "subflows" in document:
+        raise MachineDefinitionError(
+            f"{path}: `subflows:` is now `submachines:`; rename the key", path, _line_of(text, ["subflows"])
+        )
     if (error := _schema_error(document)) is not None:
         raise MachineDefinitionError(f"{path}: {_describe(error)}", path, _line_of(text, error.absolute_path))
     return document
@@ -213,16 +211,16 @@ def _spell_on(document: Any) -> None:
 
 
 def _compile(
-    document: dict[str, Any], path: Path, registry: Registry, *, prefix: str, nested: bool = False
+    document: dict[str, Any], path: Path, registry: Registry
 ) -> tuple[dict[str, Any], dict[str, str], dict[str, dict[str, str]]]:
-    """The library's state definitions, bindings and waits for one machine file, ids prefixed when it is a child."""
+    """The library's state definitions, bindings and waits for one machine file."""
     declared = document["states"]
     if sum(bool(state.get("initial")) for state in declared.values()) != 1:
         raise MachineDefinitionError(f"{path}: a machine needs exactly one initial state", path)
     if unknown := {event for event in document.get("bindings", {}).values() if event not in document["events"]}:
         raise MachineDefinitionError(f"{path}: bindings name events the machine lacks: {sorted(unknown)}", path)
 
-    states: dict[str, Any] = {f"{prefix}{name}": _state(state) for name, state in declared.items()}
+    states: dict[str, Any] = {name: _state(state) for name, state in declared.items()}
     bindings = dict(document.get("bindings", {}))
     for event, transitions in document["events"].items():
         for transition in transitions:
@@ -231,7 +229,7 @@ def _compile(
                 if name not in declared:
                     raise MachineDefinitionError(f"{path}: event {event} names undeclared state {name!r}", path)
             target = {
-                "target": f"{prefix}{transition['to']}",
+                "target": transition["to"],
                 **{
                     callback: _guard(transition[key], registry, path)
                     for key, callback in (("if", "cond"), ("unless", "unless"))
@@ -240,23 +238,9 @@ def _compile(
                 **({"on": _named(transition["action"], registry.actions, path)} if "action" in transition else {}),
             }
             for source in sources:
-                states[f"{prefix}{source}"].setdefault("on", {}).setdefault(event, []).append(target)
+                states[source].setdefault("on", {}).setdefault(event, []).append(target)
 
-    waits = _waits(declared, document["events"], path, prefix)
-    for name, state in declared.items():
-        if "flow" not in state:
-            continue
-        if nested:
-            raise MachineDefinitionError(f"{path}: state {name!r} opens a flow, but subflows go one level only", path)
-        child_path = path.parent / state["flow"]
-        children, child_bindings, child_waits = _compile(
-            _read(child_path), child_path, registry, prefix=f"{prefix}{name}_", nested=True
-        )
-        if clash := bindings.keys() & child_bindings.keys():
-            raise MachineDefinitionError(f"{child_path}: bindings already bound by {path}: {sorted(clash)}", child_path)
-        bindings |= child_bindings
-        waits |= child_waits
-        states[f"{prefix}{name}"]["states"] = children
+    waits = _waits(declared, document["events"], path)
     return states, bindings, waits
 
 
@@ -275,10 +259,8 @@ def _sources(transition: Mapping[str, Any]) -> list[str]:
     return [transition["from"]] if isinstance(transition["from"], str) else transition["from"]
 
 
-def _waits(
-    declared: Mapping[str, Any], events: Mapping[str, Any], path: Path, prefix: str
-) -> dict[str, dict[str, str]]:
-    """Each state's `waits` by prefixed id, refusing an unknown fact kind and an event that does not leave the state."""
+def _waits(declared: Mapping[str, Any], events: Mapping[str, Any], path: Path) -> dict[str, dict[str, str]]:
+    """Each state's `waits` by id, refusing an unknown fact kind and an event that does not leave the state."""
     waits: dict[str, dict[str, str]] = {}
     for name, state in declared.items():
         for fact, event in state.get("waits", {}).items():
@@ -293,7 +275,7 @@ def _waits(
                     path,
                 )
         if "waits" in state:
-            waits[f"{prefix}{name}"] = dict(state["waits"])
+            waits[name] = dict(state["waits"])
     return waits
 
 

@@ -20,7 +20,7 @@ WHEN = "a PR is open"
 
 
 def attach(machines: Mapping[str, dict], states: Collection[str]) -> dict[str, dict]:
-    """`machines` with the CI machine added and a sub-flow link to it under each of the Board's `states`.
+    """`machines` with the CI machine added and a submachine link to it under each of the Board's `states`.
 
     A state the Board machine lacks is a `ConfigError` naming it; the Board machine passed in is left as it was.
     """
@@ -30,5 +30,5 @@ def attach(machines: Mapping[str, dict], states: Collection[str]) -> dict[str, d
         raise ConfigError(
             f"ci: {', '.join(missing)} is not a state of the board machine; it has {', '.join(sorted(known))}"
         )
-    links = [{"state": state, "flow": CI.name, "exits": {}, "parent": "board", "when": WHEN} for state in states]
-    return {**machines, "board": {**board, "subflows": [*board.get("subflows", []), *links]}, **CI_MACHINES}
+    links = [{"state": state, "machine": CI.name, "exits": {}, "parent": "board", "when": WHEN} for state in states]
+    return {**machines, "board": {**board, "submachines": [*board.get("submachines", []), *links]}, **CI_MACHINES}

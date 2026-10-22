@@ -32,7 +32,7 @@ describe("the history cache", () => {
     history.machine("PROJ-7", "in-progress");
     await settle();
 
-    expect(f).toHaveBeenCalledWith("/api/history?task=PROJ-7&flow=in-progress");
+    expect(f).toHaveBeenCalledWith("/api/history?task=PROJ-7&machine=in-progress");
     expect(history.machine("PROJ-7", "in-progress")).toEqual({ path: [], steps: 9 });
     expect(history.lane("PROJ-7")).toBe("loading");
   });

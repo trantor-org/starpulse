@@ -6,7 +6,6 @@ from typing import Any
 import pytest
 import yaml
 
-from starpulse._internal.machines.machine_definition import MachineDefinitionError
 from starpulse._internal.machines.machine_namespace import Source, definition, merge
 
 MACHINES = Path(__file__).parent.parent.parent / "fixtures" / "machines"
@@ -75,20 +74,6 @@ class TestTheDefinitionHash:
             definition(_written(tmp_path, guarded)).digest
             != definition(_written(tmp_path, PULL_REQUEST, "b.yaml")).digest
         )
-
-    def test_a_changed_flow_child_changes_the_parent_hash(self, tmp_path: Path) -> None:
-        for name in ("deploy.yaml", "rollout.yaml"):
-            (tmp_path / name).write_text((MACHINES / name).read_text())
-        before = definition(tmp_path / "deploy.yaml")
-        child = yaml.safe_load((tmp_path / "rollout.yaml").read_text())
-        child["states"]["extra"] = {}
-        (tmp_path / "rollout.yaml").write_text(yaml.safe_dump(child))
-
-        assert definition(tmp_path / "deploy.yaml").digest != before.digest
-
-    def test_a_flow_opening_a_further_flow_is_refused_as_the_compiler_refuses_it(self) -> None:
-        with pytest.raises(MachineDefinitionError, match="one level only"):
-            definition(MACHINES / "nested.yaml")
 
 
 def _pull_request_in(tmp_path: Path, repo: str, **changes: Any) -> Source:

@@ -582,7 +582,7 @@ def _seed_delivery(flows: list[dict], now: float) -> None:
     state along that machine, so its level and its back-trace have a task to show; and on every other machine the
     capture placed none on, a few sessions working those tasks, as an agent's other skills run beside delivery."""
     board = next(f for f in flows if f["name"] == "board")
-    sub = next(iter(board["machine"].get("subflows", [])), None)
+    sub = next(iter(board["machine"].get("submachines", [])), None)
     if sub is None:
         return
     working = [x for x in board["agents"] if x["state"] == sub["state"]]
@@ -593,7 +593,7 @@ def _seed_delivery(flows: list[dict], now: float) -> None:
         inner = [s["id"] for s in m["states"] if not s.get("final") and _route(m, s["id"])]
         if not inner:
             continue
-        if flow["name"] == sub["flow"]:
+        if flow["name"] == sub["machine"]:
             placed = [(a["id"], a) for a in working]
         else:
             n = (2 + k % 3) if working else 0

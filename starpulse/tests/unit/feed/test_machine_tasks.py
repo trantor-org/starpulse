@@ -96,7 +96,7 @@ def test_a_move_reaches_every_subscriber_as_a_delta_with_the_tasks_new_place() -
 
     kind, delta = changes.get_nowait()
     assert kind == "move"
-    assert (delta["flow"], delta["id"], delta["agent"]["state"]) == ("in-progress", "PROJ-7", "worktree_ready")
+    assert (delta["machine"], delta["id"], delta["agent"]["state"]) == ("in-progress", "PROJ-7", "worktree_ready")
     assert changes.empty()
 
 

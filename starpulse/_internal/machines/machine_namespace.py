@@ -1,7 +1,7 @@
 """Machines are namespaced `<repo>/<machine>`; two merge only when their compiled definitions hash equal.
 
 A definition reduces to a set of facts: one for its `source`, one per state flag, per transition (one for each source state, with its
-guards and action), per binding and per writer, a `flow:` child's facts under the state that opens it. The hash is
+guards and action), per binding and per writer. The hash is
 over the sorted facts, so the order of keys, states, events and `from` lists never moves it, and the difference of
 two fact sets is the transition diff a drift record carries.
 """
@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from starpulse._internal.machines.machine_definition import MachineDefinitionError, _read
+from starpulse._internal.machines.machine_definition import _read
 
 __all__ = ["Definition", "Drift", "Merged", "Source", "definition", "merge"]
 
@@ -29,9 +29,9 @@ class Definition:
 
 
 def definition(path: Path) -> Definition:
-    """The definition of the machine file at `path`, opening each state's `flow:` child file."""
+    """The definition of the machine file at `path`, """
     document = _read(path)
-    facts = _facts(document, path, prefix="")
+    facts = _facts(document)
     facts |= {f"binding {adapter} -> {event}" for adapter, event in document.get("bindings", {}).items()}
     for event, writers in document.get("writers", {}).items():
         facts |= {f"writer {event} {writer['actor']} via {writer['trigger']}" for writer in writers}
@@ -41,25 +41,18 @@ def definition(path: Path) -> Definition:
     return Definition(document["name"], digest, frozenset(facts))
 
 
-def _facts(document: Mapping[str, Any], path: Path, *, prefix: str, nested: bool = False) -> set[str]:
+def _facts(document: Mapping[str, Any]) -> set[str]:
     facts: set[str] = set()
     for name, state in document["states"].items():
-        facts |= {f"state {prefix}{name} {flag}" for flag in ("initial", "final") if state.get(flag)}
-        facts.add(f"state {prefix}{name}")
-        if "flow" in state:
-            if nested:
-                raise MachineDefinitionError(
-                    f"{path}: state {name!r} opens a flow, but subflows go one level only", path
-                )
-            child = path.parent / state["flow"]
-            facts |= _facts(_read(child), child, prefix=f"{prefix}{name}_", nested=True)
+        facts |= {f"state {name} {flag}" for flag in ("initial", "final") if state.get(flag)}
+        facts.add(f"state {name}")
     for event, transitions in document["events"].items():
         for transition in transitions:
             sources = [transition["from"]] if isinstance(transition["from"], str) else transition["from"]
             guards = "".join(
                 f" {key} {_spec(transition[key])}" for key in ("if", "unless", "action") if key in transition
             )
-            facts |= {f"{event}: {prefix}{source} -> {prefix}{transition['to']}{guards}" for source in sources}
+            facts |= {f"{event}: {source} -> {transition['to']}{guards}" for source in sources}
     return facts
 
 

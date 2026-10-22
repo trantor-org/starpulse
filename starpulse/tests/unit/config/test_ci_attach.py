@@ -21,8 +21,8 @@ def _flows(snapshot: dict) -> dict[str, dict]:
 def test_the_ci_machine_is_a_sub_flow_under_each_board_state_the_config_names(tmp_path: Path) -> None:
     flows = _flows(_snapshot(tmp_path, '[ci]\nstates = ["to_do", "in_progress"]\n'))
 
-    link = {"flow": "ci", "exits": {}, "parent": "board", "when": "a PR is open"}
-    assert flows["board"]["machine"]["subflows"] == [{"state": "to_do", **link}, {"state": "in_progress", **link}]
+    link = {"machine": "ci", "exits": {}, "parent": "board", "when": "a PR is open"}
+    assert flows["board"]["machine"]["submachines"] == [{"state": "to_do", **link}, {"state": "in_progress", **link}]
     assert flows["ci"]["machine"]["source"] == "GitHub"
 
 
@@ -30,7 +30,7 @@ def test_without_a_ci_table_the_board_has_no_ci_flow(tmp_path: Path) -> None:
     flows = _flows(_snapshot(tmp_path, ""))
 
     assert "ci" not in flows
-    assert "subflows" not in flows["board"]["machine"]
+    assert "submachines" not in flows["board"]["machine"]
 
 
 def test_a_state_the_board_machine_lacks_is_refused_naming_it(tmp_path: Path) -> None:

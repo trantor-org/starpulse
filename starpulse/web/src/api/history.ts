@@ -10,7 +10,7 @@ export interface MachineHistory {
 
 export interface History {
   lane(task: string): Loaded<LaneStep[]>;
-  machine(task: string, flow: string): Loaded<MachineHistory>;
+  machine(task: string, machine: string): Loaded<MachineHistory>;
 }
 
 export interface HistoryOptions {
@@ -50,6 +50,6 @@ export function createHistory({ onChange, fetch: get = (u) => apiFetch(u), now =
   }
   return {
     lane: (task) => read(`/api/history?task=${task}`, (b) => b.path as LaneStep[]),
-    machine: (task, flow) => read(`/api/history?task=${task}&flow=${flow}`, (b) => ({ path: b.path as MachineStep[], steps: b.steps ?? 0 })),
+    machine: (task, machine) => read(`/api/history?task=${task}&machine=${machine}`, (b) => ({ path: b.path as MachineStep[], steps: b.steps ?? 0 })),
   };
 }

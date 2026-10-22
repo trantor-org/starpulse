@@ -2,21 +2,21 @@ import { describe, expect, it } from "vitest";
 import { BOARD, hostOf, pathKey, pathTo, startPath, taskKicker, topFlow, topOf, tree, type Level, type Path } from "./levels";
 import type { Machine, Snapshot } from "../api";
 
-const machine = (ids: string[], subflows: Machine["subflows"] = [], source?: string): Machine => ({
+const machine = (ids: string[], submachines: Machine["submachines"] = [], source?: string): Machine => ({
   ...(source ? { source } : {}),
   states: ids.map((id, i) => ({ id, name: id.replace(/_/g, " "), initial: i === 0, final: false })),
   transitions: [],
-  subflows,
+  submachines,
 });
 // The live shape: the Board opens In Progress into the delivery machine, which opens pr_opened into CR triage.
 const SNAP: Snapshot = {
   graphs: ["board", "in-progress", "triaging-cr-reviews", "auditing-docs", "graph-traversal", "runs"],
   flows: [
     { name: "board", agents: [], machine: machine(["ready", "in_progress", "review"], [
-      { state: "in_progress", flow: "in-progress", exits: {}, parent: "board", when: "" },
+      { state: "in_progress", machine: "in-progress", exits: {}, parent: "board", when: "" },
     ]) },
     { name: "in-progress", agents: [], machine: machine(["worktree_ready", "pr_opened"], [
-      { state: "pr_opened", flow: "triaging-cr-reviews", exits: {}, parent: "in-progress", when: "a PR is open" },
+      { state: "pr_opened", machine: "triaging-cr-reviews", exits: {}, parent: "in-progress", when: "a PR is open" },
     ]) },
     { name: "triaging-cr-reviews", agents: [], machine: machine(["fetch", "done"]) },
   ],
@@ -29,7 +29,7 @@ const DELIVERY: Path = [...IN_PROGRESS, { kind: "machine", flow: "in-progress" }
 describe("the level tree", () => {
   it("opens the Board's sub-flow and every skill machine under the sub-flow's state, and a child under its parent", () => {
     expect(T.subs).toEqual({ in_progress: ["in-progress", "auditing-docs", "graph-traversal"] });
-    expect(T.children).toEqual({ "in-progress": [{ state: "pr_opened", flow: "triaging-cr-reviews", when: "a PR is open" }] });
+    expect(T.children).toEqual({ "in-progress": [{ state: "pr_opened", machine: "triaging-cr-reviews", when: "a PR is open" }] });
   });
 
   it("finds the path down to any machine", () => {
@@ -99,9 +99,9 @@ describe("one flow under several Board states", () => {
     graphs: ["board", "in-progress", "ci", "runs"],
     flows: [
       { name: "board", agents: [], machine: machine(["ready", "in_progress", "review"], [
-        { state: "in_progress", flow: "in-progress", exits: {}, parent: "board", when: "" },
-        { state: "in_progress", flow: "ci", exits: {}, parent: "board", when: "a PR is open" },
-        { state: "review", flow: "ci", exits: {}, parent: "board", when: "a PR is open" },
+        { state: "in_progress", machine: "in-progress", exits: {}, parent: "board", when: "" },
+        { state: "in_progress", machine: "ci", exits: {}, parent: "board", when: "a PR is open" },
+        { state: "review", machine: "ci", exits: {}, parent: "board", when: "a PR is open" },
       ]) },
       { name: "in-progress", agents: [], machine: machine(["worktree_ready"]) },
       { name: "ci", agents: [], machine: machine(["opened", "running"]) },
@@ -153,7 +153,7 @@ describe("machines entered from the top, each a level of its own", () => {
   const deep: Snapshot = {
     graphs: ["board", "in-progress", "audit", "scan", "lint", "runs"],
     flows: [
-      { name: "board", agents: [], machine: machine(["ready", "in_progress"], [{ state: "in_progress", flow: "in-progress", exits: {}, parent: "board", when: "" }]) },
+      { name: "board", agents: [], machine: machine(["ready", "in_progress"], [{ state: "in_progress", machine: "in-progress", exits: {}, parent: "board", when: "" }]) },
       derived("in-progress", null, []),
       derived("audit", "in-progress", []),
       derived("scan", "audit", ["audit"]),

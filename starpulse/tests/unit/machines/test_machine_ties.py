@@ -15,20 +15,20 @@ def _now(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("starpulse._internal.feed.board_feed.time.time", lambda: NOW)
 
 
-def _machine(*states: str, subflows: list[dict] | None = None, **extra: object) -> dict:
+def _machine(*states: str, submachines: list[dict] | None = None, **extra: object) -> dict:
     """A machine of `states` in order, the first initial and the last final."""
     return {
         "states": [
             {"id": s, "name": s, "initial": i == 0, "final": i == len(states) - 1} for i, s in enumerate(states)
         ],
         "transitions": [],
-        **({"subflows": subflows} if subflows else {}),
+        **({"submachines": submachines} if submachines else {}),
         **extra,
     }
 
 
 def _link(state: str, flow: str, parent: str) -> dict:
-    return {"state": state, "flow": flow, "exits": {}, "parent": parent, "when": f"{flow} applies"}
+    return {"state": state, "machine": flow, "exits": {}, "parent": parent, "when": f"{flow} applies"}
 
 
 def _session(task: str, trail: list[tuple[str, float]]) -> dict:
@@ -44,11 +44,11 @@ def _flows(sessions: dict[str, list[dict]] | None = None, launches: dict | None 
         "new",
         "in_progress",
         "done",
-        subflows=[_link("in_progress", IP, "board")],
+        submachines=[_link("in_progress", IP, "board")],
         **({"launches": launches} if launches else {}),
     )
     machines = {
-        IP: _machine("start", "pr_opened", "merged", subflows=[_link("pr_opened", "review", IP)]),
+        IP: _machine("start", "pr_opened", "merged", submachines=[_link("pr_opened", "review", IP)]),
         "review": _machine("triage", "fixed", "clean"),
         "audit": _machine("scan", "report", "filed"),
         "fix": _machine("diagnose", "patched", "closed"),
@@ -109,14 +109,14 @@ class TestTies:
         ]
 
     def test_a_dag_launch_is_a_tie_naming_the_dag_and_no_machine(self) -> None:
-        launches = {"ops/nightly": {"skill": "audit", "flow": None}}
+        launches = {"ops/nightly": {"skill": "audit", "machine": None}}
 
         assert _derived(launches=launches)["audit"]["ties"] == [_tie("dag", None, None, None, "ops/nightly")]
 
     def test_a_launch_names_the_skill_when_its_flow_is_not_a_machine_here(self) -> None:
         launches = {
-            "ops/nightly": {"skill": "audit", "flow": "elsewhere"},
-            "ops/triage": {"skill": "x", "flow": "review"},
+            "ops/nightly": {"skill": "audit", "machine": "elsewhere"},
+            "ops/triage": {"skill": "x", "machine": "review"},
         }
         derived = _derived(launches=launches)
 
@@ -133,7 +133,7 @@ class TestTies:
             ],
             "review": [_session("T1", [("triage", 900)])],
         }
-        launches = {"ops/nightly": {"skill": "audit", "flow": None}}
+        launches = {"ops/nightly": {"skill": "audit", "machine": None}}
         derived = _derived(sessions, launches)
 
         assert [t["kind"] for t in derived["audit"]["ties"]] == ["observed", "dag"]
@@ -347,7 +347,7 @@ class TestEntries:
         assert found["audit"]["row"] == "audit"
 
     def test_an_entry_by_a_dag_launch_names_the_dag_and_no_state(self) -> None:
-        launches = {"ops/nightly": {"skill": "audit", "flow": None}}
+        launches = {"ops/nightly": {"skill": "audit", "machine": None}}
         run = {"id": "run-1", "state": "scan", "trail": [{"state": "scan", "event": "SCAN", "at": NOW - 600}]}
         run["active"] = NOW - 600
 

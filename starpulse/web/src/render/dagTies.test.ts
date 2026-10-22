@@ -33,7 +33,7 @@ const machine: Machine = {
   transitions: TRANSITIONS.map(([source, target, event]) => ({ source, target, event })),
   mainLine: ["new", "ready", "in_progress", "review", "done"],
   writers: Object.fromEntries(Object.entries(WRITES).flatMap(([d, evs]) => evs.map((e) => [e, [{ actor: d, trigger: "dagu" }]] as const))),
-  launches: Object.fromEntries(["dagu/board-autopilot", ...LAUNCH_ONLY].map((d) => [d, { skill: "delivering", flow: null }])),
+  launches: Object.fromEntries(["dagu/board-autopilot", ...LAUNCH_ONLY].map((d) => [d, { skill: "delivering", machine: null }])),
   dagActors: Object.keys(WRITES),
 };
 /** A machine the Board's DAGs launch: `writer` writes its events itself, as dependency-update-investigation does. */
@@ -47,7 +47,7 @@ const liveSky = (status: Record<string, Dag["status"]> = {}, sub: Record<string,
   const names = [...Object.keys(WRITES), ...CUES.map((c) => c.dag), ...LAUNCH_ONLY, ...UNTIED];
   const snap: Snapshot = {
     graphs: ["board"],
-    flows: [{ name: "board", agents: [], machine: { ...machine, tiers, launches: { ...machine.launches, ...Object.fromEntries(Object.keys(sub).map((d) => [d, { skill: "investigating", flow: sub[d] }])) } } }, ...new Set(Object.values(sub))].map((f) => (typeof f === "string" ? { name: f, agents: [], machine: launched(Object.keys(sub).find((d) => sub[d] === f)!) } : f)),
+    flows: [{ name: "board", agents: [], machine: { ...machine, tiers, launches: { ...machine.launches, ...Object.fromEntries(Object.keys(sub).map((d) => [d, { skill: "investigating", machine: sub[d] }])) } } }, ...new Set(Object.values(sub))].map((f) => (typeof f === "string" ? { name: f, agents: [], machine: launched(Object.keys(sub).find((d) => sub[d] === f)!) } : f)),
     dags: names.map((n) => dag(n, status[n])),
     domains: [], cues: CUES, settled: {}, error: null, now: 1000,
   };
@@ -161,14 +161,14 @@ describe("a hangar's name", () => {
 
 describe("the comet a tied DAG's Board transition runs", () => {
   const ctx = liveSky(), sc = build(ctx, { kind: "board" }), ties = boardTies(sc, ctx.S, unitOf(sc));
-  const merged: Move = { flow: "board", task: "TASK-1", at: 1000, event: "MERGED", from: "review", to: "done" };
+  const merged: Move = { machine: "board", task: "TASK-1", at: 1000, event: "MERGED", from: "review", to: "done" };
   const ran: (dag: string, at: number) => boolean = () => true;
   const dags = (now: number, moves: Move[] = [merged], did: (d: string, at: number) => boolean = ran) => touches(ties, moves, did, now).map((t) => `${t.orbiter.dag}:${t.anchor.kind}`).sort();
 
   it("draws nothing on a tied transition's line while no Board move plays", () => {
     expect(dags(1001, [])).toEqual([]);
     expect(dags(1001, [{ ...merged, event: "ARCHIVE" }])).toEqual([]);
-    expect(dags(1001, [{ ...merged, flow: "in-progress" }])).toEqual([]);
+    expect(dags(1001, [{ ...merged, machine: "in-progress" }])).toEqual([]);
   });
 
   it("runs the comet for the DAG that wrote the move and the DAGs the event cues", () => {

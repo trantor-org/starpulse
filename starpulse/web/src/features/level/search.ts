@@ -30,7 +30,7 @@ export function search(query: string, s: Sources): Hit[] {
   // a flow several Board states open is one result under each, told apart by the state's name
   const named = (id: string) => s.states.find((st) => st.id === id)?.name ?? id;
   const homes = Object.entries(s.tree.subs).flatMap(([state, flows]) => flows.map((flow) => ({ flow, state })));
-  const kids = [...new Set(Object.values(s.tree.children).flat().map((c) => c.flow))].filter((flow) => !homes.some((h) => h.flow === flow));
+  const kids = [...new Set(Object.values(s.tree.children).flat().map((c) => c.machine))].filter((flow) => !homes.some((h) => h.flow === flow));
   return [
     ...s.states.filter((st) => has(st.name)).map((st): Hit => ({ target: { kind: "state", id: st.id }, label: st.name, count: st.count })),
     ...homes.filter((h) => has(h.flow)).flatMap((h): Hit[] => {

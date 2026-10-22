@@ -1,6 +1,6 @@
 ---
 name: authoring-starpulse-machines
-description: Writes and checks the lifecycle machine YAML that StarPulse draws and enforces, with `starpulse machine validate` and `starpulse machine import mermaid`. Use when asked to add or change a board's columns, states, events, transitions, guards, writers (who may make a move, such as operator-only) or subflows, or to turn a Mermaid stateDiagram into a machine file.
+description: Writes and checks the lifecycle machine YAML that StarPulse draws and enforces, with `starpulse machine validate` and `starpulse machine import mermaid`. Use when asked to add or change a board's columns, states, events, transitions, guards, writers (who may make a move, such as operator-only) or submachines, or to turn a Mermaid stateDiagram into a machine file.
 ---
 
 # Authoring StarPulse Machines
@@ -8,8 +8,7 @@ description: Writes and checks the lifecycle machine YAML that StarPulse draws a
 A machine is a YAML file, by convention under `.starpulse/machines/`; `[board] machine` in `starpulse.toml` names the
 Board's. The file is the source of truth: a `.mmd` diagram is generated from it, never the reverse. The file holds
 data only: no expressions or code, so never write a condition as a script.
-A native or Backlog.md board draws every other file in that directory as a flow of its own, named by its file stem, unless
-a state opens it with `flow:`. A file may also declare `tiers`, `main_line`, `rests`, `subflows` and `launches`, which
+A native or Backlog.md board draws every other file in that directory as a flow of its own, named by its file stem. A file may also declare `tiers`, `main_line`, `rests`, `submachines` and `launches`, which
 change how the page draws it; `docs/cli.md` describes each.
 
 ## Write the machine
@@ -43,9 +42,9 @@ change how the page draws it; `docs/cli.md` describes each.
    a workflow a configured runs adapter lists, and `trigger` is how it fires. A move to an actor outside the event's
    writers is refused with the reason; an event with no `writers` entry may be made by any actor. Every `writers` key
    must be an event the machine declares.
-7. A subflow is a state with `flow: child.yaml`, a path relative to this file. The child's states nest under it as
-   `<state>_<child state>`. Only one level is allowed, a `flow` state cannot be `final`, and a child may not bind an
-   adapter event the parent binds.
+7. A submachine is an entry in the Board file's `submachines:` list: `state` it opens under, `machine` the sibling file's
+   name, and `exits` mapping each of that machine's final states to the Board event it fires. A machine composes only
+   by this list; a state has no `flow:` key.
 8. `source` names a third party that moves the machine, such as `GitHub`. StarPulse only observes a machine with a
    `source`, and the page draws it apart from one its own actors move. Leave it out for a machine StarPulse moves.
 

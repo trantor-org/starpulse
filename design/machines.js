@@ -225,7 +225,7 @@
     const TIES = [];
     const tieOf = (child, pm, ps, kind, dag) => TIES.find((t) => t.child === child && t.pm === pm && t.ps === ps && t.kind === kind && t.dag === dag);
     const addTie = (child, pm, ps, kind, dag, when) => tieOf(child, pm, ps, kind, dag) || TIES[TIES.push({ child, pm, ps, kind, dag, when, count: 0, flash: -1e9 }) - 1];
-    for (const n of Object.keys(M)) for (const sf of F[n]?.machine.subflows || []) if (M[sf.flow]) addTie(sf.flow, n, sf.state, "declared", null, sf.when);
+    for (const n of Object.keys(M)) for (const sf of F[n]?.machine.submachines || []) if (M[sf.machine]) addTie(sf.machine, n, sf.state, "declared", null, sf.when);
     for (const [n, [pm, ps]] of Object.entries(CR)) if (M[n]) addTie(n, pm, ps, "declared", null);
     const byTask = {};
     const indexTasks = () => { for (const k in byTask) delete byTask[k]; for (const m of Object.values(M)) for (const a of m.agents) if (a.task) (byTask[a.task] ||= []).push(a); };

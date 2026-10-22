@@ -21,7 +21,7 @@ export function feedOf(moves: Move[], dags: Dag[], runs: RunLine[], now: number,
   const ev: Omit<FeedLine, "time">[] = moves.filter((e) => e.at <= now && !CHATTER.has(e.event)).map((e) => {
     const task = (e.task && held.get(e.task)) ?? e.task ?? undefined;
     const who = task && SESSION_ID.test(task) ? task.slice(0, 8) : task ?? "";
-    return { key: `m${e.flow}:${e.task ?? ""}:${e.event}:${e.at}`, at: e.at, who, what: e.event.toLowerCase(), where: e.flow, task };
+    return { key: `m${e.machine}:${e.task ?? ""}:${e.event}:${e.at}`, at: e.at, who, what: e.event.toLowerCase(), where: e.machine, task };
   });
   // a run line already says how its run ended, so the DAG's own line for that run is left out
   const told = new Set(runs.filter((l) => l.tone).map((l) => l.runId));

@@ -161,8 +161,8 @@ describe("applyDelta", () => {
     s.flows.push({ name: "in-progress", machine: { states: [], transitions: [] } as never, agents: [agent("PROJ-1", "worktree_ready")] });
     s.flows.push({ name: "auditing-docs", machine: { states: [], transitions: [] } as never, agents: [] });
 
-    const moved = applyDelta(s, { kind: "move", flow: "in-progress", id: "PROJ-1", agent: agent("PROJ-1", "pushed") });
-    const added = applyDelta(moved, { kind: "move", flow: "in-progress", id: "PROJ-2", agent: agent("PROJ-2", "worktree_ready") });
+    const moved = applyDelta(s, { kind: "move", machine: "in-progress", id: "PROJ-1", agent: agent("PROJ-1", "pushed") });
+    const added = applyDelta(moved, { kind: "move", machine: "in-progress", id: "PROJ-2", agent: agent("PROJ-2", "worktree_ready") });
 
     expect(moved.flows.map((f) => f.agents.map((a) => `${a.id}:${a.state}`))).toEqual([["PROJ-1:in_progress"], ["PROJ-1:pushed"], []]);
     expect(added.flows[1].agents.map((a) => `${a.id}:${a.state}`)).toEqual(["PROJ-1:pushed", "PROJ-2:worktree_ready"]);
@@ -408,7 +408,7 @@ describe("openStream", () => {
     snap.flows.push({ name: "in-progress", machine: { states: [], transitions: [] } as never, agents: [] });
     last().send("snapshot", snap);
 
-    last().send("move", { flow: "in-progress", id: "PROJ-1", agent: agent("PROJ-1", "worktree_ready") });
+    last().send("move", { machine: "in-progress", id: "PROJ-1", agent: agent("PROJ-1", "worktree_ready") });
     vi.advanceTimersByTime(60_000);
 
     expect(seen.at(-1)!.flows[1].agents.map((a) => `${a.id}:${a.state}`)).toEqual(["PROJ-1:worktree_ready"]);
@@ -512,7 +512,7 @@ describe("openStream", () => {
     last().onerror?.(); // the server restarted
     vi.advanceTimersByTime(0);
     last().send("snapshot", board([], { reading: true, error: "board: reading q:tasks" }));
-    last().send("move", { flow: "board", id: "PROJ-9", agent: agent("PROJ-9", "x") });
+    last().send("move", { machine: "board", id: "PROJ-9", agent: agent("PROJ-9", "x") });
     last().send("dags", { dags: [], error: "board: reading q:tasks" });
     last().send("snapshot", board([agent("PROJ-1", "in_progress"), agent("PROJ-2", "review")], { reading: false }));
 

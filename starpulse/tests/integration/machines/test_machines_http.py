@@ -16,13 +16,13 @@ NOW = 1_000_000.0
 IP = "delivery"
 
 
-def _machine(*states: str, subflows: list[dict] | None = None) -> dict:
+def _machine(*states: str, submachines: list[dict] | None = None) -> dict:
     return {
         "states": [
             {"id": s, "name": s, "initial": i == 0, "final": i == len(states) - 1} for i, s in enumerate(states)
         ],
         "transitions": [],
-        **({"subflows": subflows} if subflows else {}),
+        **({"submachines": submachines} if submachines else {}),
     }
 
 
@@ -52,9 +52,9 @@ def _get(server: PageServer, query: str) -> tuple[int, dict]:
 def server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[PageServer]:
     """Five machines entered from `delivery`, `m1` the newest and `m4` and `m5` tied, and `inner` entered from `m1`."""
     monkeypatch.setattr("starpulse._internal.feed.board_feed.time.time", lambda: NOW)
-    link = {"state": "s", "flow": IP, "exits": {}, "parent": "board", "when": ""}
+    link = {"state": "s", "machine": IP, "exits": {}, "parent": "board", "when": ""}
     machines = {
-        "board": _machine("new", "in_progress", "done", subflows=[link | {"state": "in_progress"}]),
+        "board": _machine("new", "in_progress", "done", submachines=[link | {"state": "in_progress"}]),
         IP: _machine("start", "merged"),
         **{f"m{i}": _machine("a", "b") for i in range(1, 6)},
         "inner": _machine("c", "d"),

@@ -1425,19 +1425,19 @@ def test_task_trace_without_a_flow_is_the_boards_lane_path(base: str, capsys: py
     assert code == 0
     assert doc == {
         "task": "PROJ-1",
-        "flow": None,
+        "machine": None,
         "path": [{"at": 200.0, "from": None, "to": "to_do"}, {"at": 201.0, "from": "to_do", "to": "ready"}],
         "steps": 2,
     }
 
 
 def test_task_trace_with_a_flow_is_the_machine_path(base: str, capsys: pytest.CaptureFixture[str]) -> None:
-    code, doc = _run(capsys, ["task", "trace", "PROJ-1", "--flow", "in-progress", "--server", base])
+    code, doc = _run(capsys, ["task", "trace", "PROJ-1", "--machine", "in-progress", "--server", base])
 
     assert code == 0
     assert doc == {
         "task": "PROJ-1",
-        "flow": "in-progress",
+        "machine": "in-progress",
         "path": [
             {"at": 100.0, "event": "WORKTREE_READY", "state": "worktree_ready"},
             {"at": 101.0, "event": "RED_PROVEN", "state": "red_proven"},
@@ -1447,12 +1447,12 @@ def test_task_trace_with_a_flow_is_the_machine_path(base: str, capsys: pytest.Ca
 
 
 def test_task_trace_with_a_flow_takes_a_run_id(base: str, capsys: pytest.CaptureFixture[str]) -> None:
-    code, doc = _run(capsys, ["task", "trace", "run-9", "--flow", "in-progress", "--server", base])
+    code, doc = _run(capsys, ["task", "trace", "run-9", "--machine", "in-progress", "--server", base])
 
     assert code == 0
     assert doc == {
         "task": "run-9",
-        "flow": "in-progress",
+        "machine": "in-progress",
         "path": [{"at": 300.0, "event": "WORKTREE_READY", "state": "worktree_ready"}],
         "steps": 1,
     }
@@ -1465,9 +1465,9 @@ def test_task_trace_of_a_task_never_seen_is_an_empty_path(base: str, capsys: pyt
 
 
 def test_task_trace_of_an_unknown_flow_is_not_found(base: str, capsys: pytest.CaptureFixture[str]) -> None:
-    code, doc = _run(capsys, ["task", "trace", "PROJ-1", "--flow", "nowhere", "--server", base])
+    code, doc = _run(capsys, ["task", "trace", "PROJ-1", "--machine", "nowhere", "--server", base])
 
-    assert (code, doc) == (4, {"error": "unknown flow nowhere", "code": "not_found"})
+    assert (code, doc) == (4, {"error": "unknown machine nowhere", "code": "not_found"})
 
 
 def test_analytics_health_reports_the_boards_flow_health_with_a_stay_still_open_counted_to_now(
@@ -1664,9 +1664,9 @@ FLOWS = ("board", "in-progress", "deploy")
 DELTAS: list[tuple[str, dict[str, Any]]] = [
     ("task", {"id": "PROJ-1", "agent": {"state": "ready"}, "settled": None}),
     ("task", {"id": "PROJ-2", "agent": {"state": "review"}, "settled": None}),
-    ("move", {"flow": "in-progress", "id": "PROJ-1", "agent": {"state": "green"}}),
-    ("move", {"flow": "in-progress", "id": "PROJ-2", "agent": {"state": "red"}}),
-    ("move", {"flow": "deploy", "id": "PROJ-1", "agent": {"state": "live"}}),
+    ("move", {"machine": "in-progress", "id": "PROJ-1", "agent": {"state": "green"}}),
+    ("move", {"machine": "in-progress", "id": "PROJ-2", "agent": {"state": "red"}}),
+    ("move", {"machine": "deploy", "id": "PROJ-1", "agent": {"state": "live"}}),
     ("pulls", {"pulls": {"PROJ-1": [{"number": 5}], "PROJ-2": [{"number": 6}]}}),
     ("claim", {"task": "PROJ-2", "reason": "claim it first", "at": 1.0}),
     ("dags", {"dags": [], "error": None}),
@@ -1854,10 +1854,10 @@ CASES = {
     ("task review", 2): ["task", "review"],
     ("task review", 3): ["task", "review", "task-2", "--ref", PULL, "--server", "{down}"],
     ("task review", 4): ["task", "review", "task-99", "--ref", PULL, "--server", "{lifecycled}"],
-    ("task trace", 0): ["task", "trace", "PROJ-1", "--flow", "in-progress", "--server", "{server}"],
+    ("task trace", 0): ["task", "trace", "PROJ-1", "--machine", "in-progress", "--server", "{server}"],
     ("task trace", 2): ["task", "trace"],
     ("task trace", 3): ["task", "trace", "PROJ-1", "--server", "{down}"],
-    ("task trace", 4): ["task", "trace", "PROJ-1", "--flow", "nowhere", "--server", "{server}"],
+    ("task trace", 4): ["task", "trace", "PROJ-1", "--machine", "nowhere", "--server", "{server}"],
     ("task create", 0): ["task", "create", "Rotate the secret", "--server", "{tasked}"],
     ("task create", 1): ["task", "create", " ", "--server", "{tasked}"],
     ("task create", 2): ["task", "create"],

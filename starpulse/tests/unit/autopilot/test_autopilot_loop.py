@@ -329,9 +329,9 @@ def test_a_timer_wake_finishes_and_settles_but_starts_nothing(rig: Rig) -> None:
     [
         ("task", {"id": "T-1", "agent": {"state": "ready"}}, True),  # a task entering the eligible lane
         ("task", {"id": "T-1", "agent": {"state": "to_do"}}, False),
-        ("move", {"flow": "harness", "id": "T-1", "agent": {"state": "stopped"}}, True),  # a session stop
-        ("move", {"flow": "harness", "id": "T-1", "agent": {"state": "active"}}, False),  # every tool use is one of these
-        ("move", {"flow": "in-progress", "id": "T-1", "agent": {"state": "stopped"}}, False),
+        ("move", {"machine": "harness", "id": "T-1", "agent": {"state": "stopped"}}, True),  # a session stop
+        ("move", {"machine": "harness", "id": "T-1", "agent": {"state": "active"}}, False),  # every tool use is one of these
+        ("move", {"machine": "in-progress", "id": "T-1", "agent": {"state": "stopped"}}, False),
         ("claim", {"task": "T-1"}, False),
         ("wake", {}, True),  # the toggle turning on, or a sampler crossing
         ("autopilot", {"sampledAt": 1.0, "enabled": True, "next": {"verdict": "starting"}}, True),  # a sample leaves room

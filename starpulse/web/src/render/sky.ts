@@ -17,7 +17,7 @@ export const HOUR = 3600;
 export interface Launch {
   dag: string;
   skill: string;
-  flow: string | null;
+  machine: string | null;
 }
 export interface Group {
   name: string;
@@ -26,7 +26,7 @@ export interface Group {
   processes?: { name: string; dags: string[] }[];
 }
 export interface ChildLink {
-  flow: string;
+  machine: string;
   when: string;
 }
 export interface Sky {
@@ -141,7 +141,7 @@ export function merge(snap: Snapshot, since = midnight()): Sky {
     if (f.name !== "board")
       for (const a of f.agents)
         if (a.task && (active[a.task] === undefined || (a.active ?? 0) > active[a.task])) [active[a.task], latest[a.task]] = [a.active ?? 0, { flow: f.name, state: a.state, at: a.active ?? 0 }];
-  for (const [parent, kids] of Object.entries(t.children)) for (const c of kids) (child[parent] ??= {})[c.state] = { flow: c.flow, when: c.when && `while ${c.when}` };
+  for (const [parent, kids] of Object.entries(t.children)) for (const c of kids) (child[parent] ??= {})[c.state] = { machine: c.machine, when: c.when && `while ${c.when}` };
   return {
     now: snap.now,
     flows,
@@ -150,7 +150,7 @@ export function merge(snap: Snapshot, since = midnight()): Sky {
     pools: snap.pools ?? [],
     dagBy: Object.fromEntries(snap.dags.map((d) => [d.name, d])),
     writers: Object.fromEntries(Object.entries(board.machine.writers ?? {}).map(([event, ws]) => [event, ws.filter((w) => !actors.has(w.actor))])),
-    launches: Object.entries(board.machine.launches ?? {}).map(([dag, l]) => ({ dag, skill: l.skill, flow: l.flow })),
+    launches: Object.entries(board.machine.launches ?? {}).map(([dag, l]) => ({ dag, skill: l.skill, machine: l.machine })),
     cues: snap.cues ?? [],
     groups,
     dagGroup: Object.fromEntries(groups.flatMap((g) => g.dags.map((d) => [d, g.name]))),
@@ -200,7 +200,7 @@ export const countText = (n: number, today?: number) => (today === undefined ? `
 
 /** One step a task takes: from null is where it was first seen. */
 export interface Move {
-  flow: string;
+  machine: string;
   task?: string | null;
   at: number;
   event: string;
@@ -241,7 +241,7 @@ export class Moves {
   resync(now: number) {
     this.prev = null;
     this.last = {};
-    this.events = this.events.filter((e) => e.flow !== "board" && e.at <= now);
+    this.events = this.events.filter((e) => e.machine !== "board" && e.at <= now);
   }
 
   observe(S: Sky, t: number) {
@@ -261,7 +261,7 @@ export class Moves {
           if (this.seen.has(id)) return;
           this.seen.add(id);
           const fresh = prev !== null && st.at > prev.now;
-          add({ flow: f.name, task: s.id, at: fresh ? queue(s.id) : st.at + off, event: st.event, to: st.state, from: i ? trail[i - 1].state : null }, s.id);
+          add({ machine: f.name, task: s.id, at: fresh ? queue(s.id) : st.at + off, event: st.event, to: st.state, from: i ? trail[i - 1].state : null }, s.id);
         });
     }
     if (prev) {
@@ -270,7 +270,7 @@ export class Moves {
         const from = was[a.id] ?? null;
         if (from === a.state) continue;
         const event = from ? (S.board.machine.transitions.find((x) => x.source === from && x.target === a.state)?.event ?? "MOVE") : "CREATE";
-        add({ flow: "board", task: a.id, at: queue(a.id), event, from, to: a.state }, a.id);
+        add({ machine: "board", task: a.id, at: queue(a.id), event, from, to: a.state }, a.id);
       }
     }
     for (const d of S.dags) {

@@ -41,7 +41,7 @@ export function traceDraw(dc: DrawCtx, pen: Drawing, io: TraceIO): TraceDrawing 
   function bodyOf(s: Subject): (Pt & { model: string }) | null {
     const sc = io.scene!;
     if (s.kind === "task") return sc.tasks.find((t) => t.id === s.id && !t.gone) ?? null;
-    const m = sc.machineTasks.find((t) => t.id === s.id && t.flow === s.flow);
+    const m = sc.machineTasks.find((t) => t.id === s.id && t.machine === s.flow);
     return m && m._x !== undefined ? { x: m._x, y: m._y!, model: m.model } : null;
   }
   /** A state level's body by the name its trail gives it, and the name a trace shows for it. */

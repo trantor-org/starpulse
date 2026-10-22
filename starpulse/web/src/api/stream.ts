@@ -49,7 +49,7 @@ export function applyDelta(snap: Snapshot, delta: Delta): Snapshot {
   if (delta.kind === "claim") return { ...snap, claims: { ...snap.claims, [delta.task]: { reason: delta.reason, at: delta.at } } };
   if (delta.kind === "move") {
     const flows = snap.flows.map((flow) => {
-      if (flow.name !== delta.flow) return flow;
+      if (flow.name !== delta.machine) return flow;
       const at = flow.agents.findIndex((a) => a.id === delta.id);
       const agents = at < 0 ? [...flow.agents, delta.agent] : flow.agents.map((a, i) => (i === at ? delta.agent : a));
       return { ...flow, agents };

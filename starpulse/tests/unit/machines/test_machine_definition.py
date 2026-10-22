@@ -404,28 +404,14 @@ class TestWriters:
         refuse_unlisted("sample", writers, {"dagu/nightly"})
 
 
-class TestSubflows:
-    def test_a_state_opens_a_child_machine_file_as_a_nested_machine(self) -> None:
-        machine = load_machine(MACHINES / "deploy.yaml").machine()
+class TestSubflowsAreRefused:
+    def test_the_old_key_is_refused_naming_the_file_and_the_new_key(self, tmp_path: Path) -> None:
+        path = _written(tmp_path, _doc(subflows=[{"state": "a", "flow": "child.yaml", "exits": {}}]))
 
-        machine.send("STARTED")
-        assert {s.id for s in machine.configuration} == {"rollout", "rollout_canary"}
+        with pytest.raises(MachineDefinitionError) as raised:
+            load_machine(path)
 
-        machine.send("PROMOTED")
-        assert {s.id for s in machine.configuration} == {"rollout", "rollout_fleet"}
-
-        machine.send("FINISHED")
-        assert machine.is_terminated
-
-    def test_a_second_nesting_level_is_rejected(self) -> None:
-        with pytest.raises(MachineDefinitionError, match="one level"):
-            load_machine(MACHINES / "nested.yaml")
-
-    def test_a_missing_child_file_is_refused(self, tmp_path: Path) -> None:
-        document = _doc(states={"a": {"initial": True, "flow": "absent.yaml"}, "b": {"final": True}})
-
-        with pytest.raises(MachineDefinitionError, match="absent.yaml"):
-            load_machine(_written(tmp_path, document))
+        assert str(raised.value).startswith(f"{path}: `subflows:` is now `submachines:`")
 
 
 class TestErrorsNameTheirSource:
@@ -503,59 +489,6 @@ class TestGuardsAndStatesOnTheEdges:
         machine = load_machine(_written(tmp_path, document)).machine()
 
         assert [state.id for state in machine.configuration] == ["b"]
-
-
-class TestSubflowFiles:
-    def _parent(self, tmp_path: Path, child: dict[str, Any], **parent: Any) -> Path:
-        (tmp_path / "child.yaml").write_text(yaml.safe_dump(child))
-        document = {
-            "name": "parent",
-            "states": {"top": {"initial": True, "flow": "child.yaml"}},
-            "events": {"STOP": [{"from": "top", "to": "top"}]},
-            **parent,
-        }
-        path = tmp_path / "parent.yaml"
-        path.write_text(yaml.safe_dump(document))
-        return path
-
-    def _child(self, **extra: Any) -> dict[str, Any]:
-        return {
-            "name": "child",
-            "states": {"one": {"initial": True}, "two": {}},
-            "events": {"NEXT": [{"from": "one", "to": "two"}]},
-            **extra,
-        }
-
-    def test_child_bindings_join_the_parents(self, tmp_path: Path) -> None:
-        path = self._parent(tmp_path, self._child(bindings={"adapter.next": "NEXT"}), bindings={"adapter.stop": "STOP"})
-
-        assert load_machine(path).bindings == {"adapter.stop": "STOP", "adapter.next": "NEXT"}
-
-    def test_a_child_binding_an_adapter_event_the_parent_binds_is_refused(self, tmp_path: Path) -> None:
-        path = self._parent(tmp_path, self._child(bindings={"adapter.go": "NEXT"}), bindings={"adapter.go": "STOP"})
-
-        with pytest.raises(MachineDefinitionError) as raised:
-            load_machine(path)
-
-        assert str(raised.value) == f"{tmp_path / 'child.yaml'}: bindings already bound by {path}: ['adapter.go']"
-
-    def test_a_child_uses_the_adapters_registered_guards(self, tmp_path: Path) -> None:
-        child = self._child(events={"NEXT": [{"from": "one", "to": "two", "if": "ready"}]})
-        path = self._parent(tmp_path, child)
-
-        machine = load_machine(path, Registry(guards={"ready": lambda: True})).machine()
-        machine.send("NEXT")
-
-        assert {state.id for state in machine.configuration} == {"top", "top_two"}
-
-    def test_an_error_in_a_child_names_the_child_file(self, tmp_path: Path) -> None:
-        child = self._child(events={"NEXT": [{"from": "one", "to": "two", "if": "unregistered"}]})
-        path = self._parent(tmp_path, child)
-
-        with pytest.raises(MachineDefinitionError) as raised:
-            load_machine(path)
-
-        assert str(raised.value).startswith(f"{tmp_path / 'child.yaml'}: ")
 
 
 class TestCitations:

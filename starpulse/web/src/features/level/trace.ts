@@ -10,7 +10,7 @@ export interface LaneStep {
   from: string | null;
   to: string;
 }
-/** One event of a task on a lifecycle machine, as `/api/history?task=&flow=` answers it: `state` is the state it left the task in. */
+/** One event of a task on a lifecycle machine, as `/api/history?task=&machine=` answers it: `state` is the state it left the task in. */
 export interface MachineStep {
   at: number;
   event: string;

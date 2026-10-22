@@ -17,10 +17,10 @@ describe("a Board whose every open state opens into lifecycle machines", () => {
       snap.domains = [{ name: "Board", dags: tied.map((name) => ({ name, runSafe: false })) }, ...Object.entries(free).map(([name, ds]) => ({ name, dags: ds.map((d) => ({ name: d, runSafe: false })) }))];
     }
     board.agents = OPEN.flatMap((state) => Array.from({ length: tasks }, (_, i) => ({ id: `${state}-${i}`, title: "t", state, model: "", labels: [] })));
-    board.machine.subflows = OPEN.flatMap((state) => Array.from({ length: n }, (_, i) => {
+    board.machine.submachines = OPEN.flatMap((state) => Array.from({ length: n }, (_, i) => {
       const name = short ? `${state.slice(0, 2)}${i}` : `${state}-machine-${String(i).padStart(2, "0")}`;
-      flows.push({ name, agents: board.agents.filter((a) => a.state === state && i === 0).map((a, j) => ({ id: `${a.id}-s`, title: "t", state: "reading", model: "", task: a.id, active: 900 + j })), machine: machine(["reading", "writing"], short ? {} : { subflows: [{ state: "reading", flow: "child", exits: {}, parent: name, when: "it reads" }] }) });
-      return { state, flow: name, exits: {}, parent: "board", when: "" };
+      flows.push({ name, agents: board.agents.filter((a) => a.state === state && i === 0).map((a, j) => ({ id: `${a.id}-s`, title: "t", state: "reading", model: "", task: a.id, active: 900 + j })), machine: machine(["reading", "writing"], short ? {} : { submachines: [{ state: "reading", machine: "child", exits: {}, parent: name, when: "it reads" }] }) });
+      return { state, machine: name, exits: {}, parent: "board", when: "" };
     }));
     flows.push({ name: "child", agents: [], machine: machine(["a", "b"]) });
     snap.flows.push(...flows);

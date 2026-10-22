@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Tree } from "../../render/levels";
 import { search, spotIn, type SpotScene } from "./search";
 
-const tree: Tree = { states: ["ready", "in_progress", "review"], subs: { in_progress: ["delivery", "review-loop"] }, children: { delivery: [{ state: "ci", flow: "ci-watch", when: "on push" }] } };
+const tree: Tree = { states: ["ready", "in_progress", "review"], subs: { in_progress: ["delivery", "review-loop"] }, children: { delivery: [{ state: "ci", machine: "ci-watch", when: "on push" }] } };
 const sources = {
   tree,
   states: [{ id: "ready", name: "Ready", count: 3 }, { id: "in_progress", name: "In progress", count: 2 }, { id: "review", name: "Review", count: 1 }],

@@ -18,7 +18,7 @@ export type Path = Level[];
 /** A machine that opens under one state of another machine. */
 export interface Child {
   state: string;
-  flow: string;
+  machine: string;
   when: string;
 }
 export interface Tree {
@@ -47,17 +47,17 @@ export function tree(snap: Pick<Snapshot, "graphs" | "flows">): Tree {
   const t: Tree = { states: board?.states.map((s) => s.id) ?? [], subs: {}, children: {}, sources: {} };
   for (const f of snap.flows) if (f.machine.source) t.sources![f.name] = f.machine.source;
   const inner = new Set<string>();
-  for (const link of board?.subflows ?? []) {
-    (t.subs[link.state] ??= []).push(link.flow);
-    inner.add(link.flow);
+  for (const link of board?.submachines ?? []) {
+    (t.subs[link.state] ??= []).push(link.machine);
+    inner.add(link.machine);
   }
   for (const f of snap.flows)
-    for (const link of f.machine.subflows ?? [])
+    for (const link of f.machine.submachines ?? [])
       if (link.parent !== "board") {
-        (t.children[f.name] ??= []).push({ state: link.state, flow: link.flow, when: link.when });
-        inner.add(link.flow);
+        (t.children[f.name] ??= []).push({ state: link.state, machine: link.machine, when: link.when });
+        inner.add(link.machine);
       }
-  const primary = board?.subflows?.[0]?.state, ip = snap.flows.find((f) => f.parent === null)?.name;
+  const primary = board?.submachines?.[0]?.state, ip = snap.flows.find((f) => f.parent === null)?.name;
   if (primary && ip && t.subs[primary]?.[0] === ip) {
     t.ipState = primary;
     t.chains = Object.fromEntries(snap.flows.flatMap((f) => (f.parent && f.chain ? [[f.name, f.chain]] : [])));
@@ -88,7 +88,7 @@ export function pathTo(t: Tree, flow: string, host?: string): Path | null {
   for (const [state, subs] of Object.entries(t.subs))
     if ((host === undefined || state === host) && subs.includes(flow)) return [...BOARD, { kind: "state", id: state }, { kind: "machine", flow }];
   for (const [parent, kids] of Object.entries(t.children))
-    if (kids.some((c) => c.flow === flow)) {
+    if (kids.some((c) => c.machine === flow)) {
       const up = pathTo(t, parent, host);
       return up && [...up, { kind: "machine", flow }];
     }

@@ -1,7 +1,7 @@
 """How each lifecycle machine is entered, where it nests, when it was last active and what is stuck in it.
 
 The page draws the In Progress machine across the top and every machine entered from it as a row. A machine's
-**ties** say where it is entered from: *declared* by a `SubFlow` on another machine's state, *observed* from the
+**ties** say where it is entered from: *declared* by a `Submachine` on another machine's state, *observed* from the
 trails (the state a task held on the machine it came from when its session entered this one, counted), or a *dag*
 launch. Its **parent** is the machine its leading tie enters it from, else the In Progress machine; **last** and
 **stuck** roll up from the machine and every machine nested below it.
@@ -27,7 +27,7 @@ _DECLARED = 1_000_000
 def derive(flows: Sequence[Mapping[str, Any]], now: float) -> dict[str, dict]:
     """Each machine's `ties`, `parent`, `depth`, `chain`, `nested`, `last` and `stuck`, by machine name.
 
-    The In Progress machine is the Board's first sub-flow; with none, no machine nests and every `parent` is None.
+    The In Progress machine is the Board's first submachine; with none, no machine nests and every `parent` is None.
     A tie is `{kind, machine, state, count, dag, when}`: `machine` and `state` name where it enters from (None for a
     DAG launch, which names `dag` instead), `count` is the sessions entered through it (None for a launch, which
     the machine events do not count). A machine's ties lead with the declared one, then the most observed, then the
@@ -37,17 +37,17 @@ def derive(flows: Sequence[Mapping[str, Any]], now: float) -> dict[str, dict]:
     """
     machines = {f["name"]: f for f in flows if f["name"] != "board"}
     board = next((f["machine"] for f in flows if f["name"] == "board"), {})
-    first = (board.get("subflows") or [{}])[0].get("flow")
+    first = (board.get("submachines") or [{}])[0].get("machine")
     ip = first if first in machines else None
 
     ties = _Ties()
     for name, f in machines.items():
-        for link in f["machine"].get("subflows", []):
-            if link["flow"] in machines and link["flow"] != ip:
-                ties.add(link["flow"], name, link["state"], "declared", None, link.get("when", ""))
+        for link in f["machine"].get("submachines", []):
+            if link["machine"] in machines and link["machine"] != ip:
+                ties.add(link["machine"], name, link["state"], "declared", None, link.get("when", ""))
     _observe(ties, machines, ip)
     for dag, launch in (board.get("launches") or {}).items():
-        if child := next((n for n in (launch.get("flow"), launch.get("skill")) if n in machines), None):
+        if child := next((n for n in (launch.get("machine"), launch.get("skill")) if n in machines), None):
             ties.add(child, None, None, "dag", dag)
 
     leading = {n: ties.leading(n) for n in machines if n != ip}

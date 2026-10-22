@@ -137,7 +137,7 @@ export function ties(data: DagData, name: string): Tie[] {
         note: t ? `${ev}: ${stateName(m, t.source)} → ${stateName(m, t.target)}${f.name === "board" ? "" : ` (${f.name})`}` : ev, color: (t && BOARD_COLOR[t.target]) ?? "var(--agent)" });
     }
     const l = m.launches?.[name];
-    if (l) out.push({ kind: "launches", text: l.skill, note: l.flow ? `launches ${l.skill}, which runs the ${l.flow} machine` : `launches ${l.skill}`, color: "var(--agent)" });
+    if (l) out.push({ kind: "launches", text: l.skill, note: l.machine ? `launches ${l.skill}, which runs the ${l.machine} machine` : `launches ${l.skill}`, color: "var(--agent)" });
   }
   if (board?.dagActors?.includes(name) && !out.some((t) => t.kind === "writes")) out.push({ kind: "acts", text: "Board", note: "acts on Board tasks", color: "var(--agent)" });
   const seen = new Set<string>();

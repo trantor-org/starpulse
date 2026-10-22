@@ -80,7 +80,7 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
   };
   function ledgerHas(s: Spot) {
     const top = io.scene!.top!;
-    return s.machine === top.flow ? top.nodes.some((n) => n.id === s.state) : !!top.rows.find((r) => r.name === s.machine)?.nodes.some((n) => n.id === s.state);
+    return s.machine === top.machine ? top.nodes.some((n) => n.id === s.state) : !!top.rows.find((r) => r.name === s.machine)?.nodes.some((n) => n.id === s.state);
   }
   // ---- the machine across a state level's top, in screen pixels (machineLedger.ts places it; the type and dots grow with the square root of the text size) ----
   const INK = "#cfd9ea", SUB = "#94a3b8", DAGC = "#fcd34d", PLANET = RAMP[4];
@@ -99,12 +99,12 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
   }
   /** Each task orbits the state its latest move left it on; one that moved just now rides the flow line there as a comet. `seen` is told where each is drawn. */
   function orbitTasks(
-    flow: string, agents: { id: string; state: string; model?: string }[], where: (state: string) => (Pt & { r: number }) | undefined,
+    machine: string, agents: { id: string; state: string; model?: string }[], where: (state: string) => (Pt & { r: number }) | undefined,
     bend: (from: string, to: string) => number, seen?: (id: string, at: Pt | null, state: string) => void, big?: (id: string) => boolean,
   ) {
     const scale = dc.scale, { gs, dot: dr } = ledgerSizes(scale), seat: Record<string, number> = {};
     for (const s of agents) {
-      const ev = io.events().findLast((m) => m.task === s.id && m.flow === flow && m.at <= io.T), state = ev ? ev.to : s.state, cur = where(state);
+      const ev = io.events().findLast((m) => m.task === s.id && m.machine === machine && m.at <= io.T), state = ev ? ev.to : s.state, cur = where(state);
       if (!cur) {
         seen?.(s.id, null, state);
         continue;
@@ -138,7 +138,7 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
   }
   function drawTop() {
     const sc = io.scene!, top = sc.top!, scale = dc.scale, { fs, gs } = ledgerSizes(scale), nodes = new Map(top.nodes.map((n) => [n.id, n]));
-    const flow = io.S!.flows[top.flow], stuck = stuckCount(io.S!.flows, top.ranked);
+    const flow = io.S!.flows[top.machine], stuck = stuckCount(io.S!.flows, top.ranked);
     const name = 12 * fs, sub = 10 * fs, mx = top.metaX, mw = top.metaW;
     led.tasks = [];
     led.labs = [];
@@ -146,7 +146,7 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
     led.rowNames.clear();
     // the template's own name and what it holds, then the machines entered from it, over the spine under the header
     cx.letterSpacing = "0.6px";
-    text(fitText(top.flow, mw, name * 1.08), mx, top.metaT + 4 + name * 0.6, name * 1.08, rgba(INK, 0.9), "left", 400);
+    text(fitText(top.machine, mw, name * 1.08), mx, top.metaT + 4 + name * 0.6, name * 1.08, rgba(INK, 0.9), "left", 400);
     text(fitText(`template · ${top.nodes.length} states · ${flow?.agents.length ?? 0} tasks`, mw, sub), mx, top.metaT + 6 + name * 1.3 + sub * 0.6, sub, rgba(SUB, 0.7), "left", 300);
     const count = (ink: number) => text(fitText(`${top.total} machine${top.total === 1 ? "" : "s"}${top.task ? ` holding ${top.task}` : stuck ? ` · ${stuck} stuck` : " · newest first"}`, mw, sub), mx, top.hdrB - sub, sub, rgba(SUB, ink), "left", 300);
     count(0.6);
@@ -164,7 +164,7 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
     for (const e of sc.mEdges) {
       const a = e.a && nodes.get(e.a.id), b = e.b && nodes.get(e.b.id);
       if (!e.a || !e.b || !a || !b || e.a === e.b) continue;
-      const hot = dc.hover?.kind === "state" && (dc.hover.o === e.a || dc.hover.o === e.b), heat = io.hotEdge.has(`${e.flow}:${e.source}>${e.target}`) ? 1 : 0;
+      const hot = dc.hover?.kind === "state" && (dc.hover.o === e.a || dc.hover.o === e.b), heat = io.hotEdge.has(`${e.machine}:${e.source}>${e.target}`) ? 1 : 0;
       flowBetween({ x: a.x, y: a.y, r: a.r, color: e.a.color }, { x: b.x, y: b.y, r: b.r, color: e.b.color }, e.bend ?? 0.08, Math.min(1, (hot || isHot("medge", e) ? 0.95 : 0.4) + heat * 0.5), heat + (hot ? 0.8 : 0));
     }
     // a state: a coloured rim and centre over a faint wash of its own colour; a final state has a second ring
@@ -174,23 +174,23 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
       circle(n.x, n.y, n.r, rgba(col, hot ? 1 : 0.85), hot ? 2 : 1.6);
       if (n.final) circle(n.x, n.y, n.r + 2.5, rgba(col, 0.45), 1);
       dot(n.x, n.y, Math.min((n.initial ? 5.5 : 4) * gs, n.r * 0.4), rgba(col, 0.9));
-      led.spots.set(`${top.flow}:${n.id}`, { x: n.x, y: n.y, r: n.r, color: col, y0: 0, y1: top.hdrB });
+      led.spots.set(`${top.machine}:${n.id}`, { x: n.x, y: n.y, r: n.r, color: col, y0: 0, y1: top.hdrB });
     }
     // a DAG that launches this machine itself: its star left of the first state
     const first = top.nodes.find((n) => n.initial) ?? top.nodes[0];
     (flow?.ties ?? []).filter((t) => t.kind === "dag").forEach((_, k) => first && launch(first.x - first.orbit - 14, first.y + k * 14, { ...first, color: sc.mStates[first.id].color }, gs));
     // each task orbits the state its latest move left it on
-    orbitTasks(top.flow, sc.machineTasks, (st) => nodes.get(st), (from, to) => sc.mEdges.find((e) => e.a === sc.mStates[from] && e.b === sc.mStates[to])?.bend ?? 0.28, (id, at, state) => {
+    orbitTasks(top.machine, sc.machineTasks, (st) => nodes.get(st), (from, to) => sc.mEdges.find((e) => e.a === sc.mStates[from] && e.b === sc.mStates[to])?.bend ?? 0.28, (id, at, state) => {
       const s = sc.machineTasks.find((q) => q.id === id)!;
       s._x = at?.x;
       s._y = at?.y;
       if (at) s._state = state;
-      if (at) led.tasks.push({ o: ltaskOf(top.flow, s), x: at.x, y: at.y });
-    }, (id) => dc.hover?.kind === "ltask" && dc.hover.o.flow === top.flow && dc.hover.o.agent.id === id);
+      if (at) led.tasks.push({ o: ltaskOf(top.machine, s), x: at.x, y: at.y });
+    }, (id) => dc.hover?.kind === "ltask" && dc.hover.o.flow === top.machine && dc.hover.o.agent.id === id);
     // names: beside or against a state, or on a hairline from it when crowded; drawn last, over the trace
     for (const l of top.labels) {
       const cy = l.y + l.h / 2;
-      led.labs.push({ key: `${top.flow}:${l.id}`, text: l.text, x: l.x, y: cy, px: l.px, ink: 0.7, ga: 1, weight: top.entered.includes(l.id) ? 400 : 300, hot: isHot("state", sc.mStates[l.id]), lead: l.lead ? { ...l.lead, to: l.lead.y > cy ? l.y + l.h : l.y } : undefined, y0: 0, y1: top.hdrB });
+      led.labs.push({ key: `${top.machine}:${l.id}`, text: l.text, x: l.x, y: cy, px: l.px, ink: 0.7, ga: 1, weight: top.entered.includes(l.id) ? 400 : 300, hot: isHot("state", sc.mStates[l.id]), lead: l.lead ? { ...l.lead, to: l.lead.y > cy ? l.y + l.h : l.y } : undefined, y0: 0, y1: top.hdrB });
     }
     cx.restore();
     drawLane();
@@ -252,7 +252,7 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
     const src = dc.hover?.kind === "ltask" ? dc.hover.o : pinnedTask(), sc = io.scene!, top = sc.top!;
     if (!src || !io.S) return new Set();
     const key = (s: Spot) => `${s.machine}:${s.state}`, sessions = sessionsOf(io.S.flows, src.flow, src.agent);
-    const steps = traceSteps(io.S.flows, sessions, top.flow, ledgerHas).filter((s) => led.spots.has(key(s.a)) && led.spots.has(key(s.b)));
+    const steps = traceSteps(io.S.flows, sessions, top.machine, ledgerHas).filter((s) => led.spots.has(key(s.a)) && led.spots.has(key(s.b)));
     const lit = new Set(steps.flatMap((s) => [key(s.a), key(s.b)]));
     const bendOf = (a: LSpot, b: LSpot, from: string, to: string) =>
       a.row === undefined ? (sc.mEdges.find((e) => e.a === sc.mStates[from] && e.b === sc.mStates[to])?.bend ?? 0.08) : b.x < a.x - 1 ? Math.min(0.28, (a.row * 0.6) / (Math.hypot(b.x - a.x, b.y - a.y) || 1)) : 0.04;
@@ -337,7 +337,7 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
     const sc = io.scene!, top = sc.top!;
     if (e.dag != null) return DAGC;
     if (!e.from) return PLANET;
-    if (e.from.machine === top.flow) return sc.mStates[e.from.state]?.color ?? PLANET;
+    if (e.from.machine === top.machine) return sc.mStates[e.from.state]?.color ?? PLANET;
     const st = io.S!.flows[e.from.machine]?.machine.states ?? [], j = st.findIndex((s) => s.id === e.from!.state);
     return j < 0 ? PLANET : RAMP[Math.round((st.length > 1 ? j / (st.length - 1) : 0) * (RAMP.length - 1))];
   }
@@ -489,12 +489,12 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
       return { row, y: eased - io.scrollPos, to: to - io.scrollPos };
     });
     if (fl) led.sliding = true; // the glow fades over frames
-    if (!top.rows.length) text(emptyNote(top.flow), (top.x0 + top.x1) / 2, (top.laneTop + top.laneBottom) / 2, subP, rgba(SUB, 0.6), "center", 300);
+    if (!top.rows.length) text(emptyNote(top.machine), (top.x0 + top.x1) / 2, (top.laneTop + top.laneBottom) / 2, subP, rgba(SUB, 0.6), "center", 300);
     const shown = led.lane.filter(({ row, y }) => y + row.h > top.laneTop && y < top.laneBottom);
     const pos = (row: RowView, y: number) => new Map(row.nodes.map((n) => [n.id, { x: n.x, y: y + row.c + n.oy, r: n.r, color: n.color, orbit: n.orbit }]));
     const spots = new Map(shown.map((d) => [d.row.name, pos(d.row, d.y)])); // only the rows in view are placed
     for (const { row, y, to: place } of shown) {
-      const f = io.S!.flows[row.name], m = rowMeta(io.S!.flows, row.name, top.flow, now), ns = spots.get(row.name)!, picked = io.pickedRow === row.name, on = hot === row.name || picked, fade = Math.abs(y - place) > 3 ? 0.3 : 1;
+      const f = io.S!.flows[row.name], m = rowMeta(io.S!.flows, row.name, top.machine, now), ns = spots.get(row.name)!, picked = io.pickedRow === row.name, on = hot === row.name || picked, fade = Math.abs(y - place) > 3 ? 0.3 : 1;
       for (const [id, p] of ns) led.spots.set(`${row.name}:${id}`, { ...p, y0: top.laneTop, y1: top.laneBottom, row: row.h });
       cx.globalAlpha = fade;
       const lit = Math.max(on ? (picked ? 0.09 : 0.055) : 0, io.glow?.name === row.name ? 0.16 * fl : 0);
@@ -509,7 +509,7 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
         cx.fillRect(mx - 10, y + 6, 2, row.h - 12);
       }
       // the notch under the column of the template state this machine is entered from: filled when declared, hollow when observed
-      const src = m.tie.machine === top.flow && m.tie.state ? top0.get(m.tie.state) : undefined;
+      const src = m.tie.machine === top.machine && m.tie.state ? top0.get(m.tie.state) : undefined;
       if (src && m.tie.state) {
         const col = rgba(sc.mStates[m.tie.state].color, 0.95);
         cx.fillStyle = col;
@@ -531,7 +531,7 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
       const nm = { text: fitText(row.name, mw - endW, nameP), x: mx, y: ty + nameP * 0.7, px: nameP };
       led.rowNames.set(row.name, nm);
       text(nm.text, nm.x, nm.y, nameP, rgba(INK, on ? 0.97 : m.status.idle ? 0.55 : 0.85), "left", 400);
-      const dotCol = m.tie.kind === "none" || m.tie.kind === "dag" ? null : m.tie.machine === top.flow ? sc.mStates[m.tie.state!]?.color : (top.rows.find((q) => q.name === m.tie.machine)?.nodes.find((n) => n.id === m.tie.state)?.color ?? PLANET);
+      const dotCol = m.tie.kind === "none" || m.tie.kind === "dag" ? null : m.tie.machine === top.machine ? sc.mStates[m.tie.state!]?.color : (top.rows.find((q) => q.name === m.tie.machine)?.nodes.find((n) => n.id === m.tie.state)?.color ?? PLANET);
       const tieInk = m.tie.kind === "dag" ? rgba(DAGC, 0.75) : m.tie.kind === "none" ? rgba(SUB, 0.5) : rgba(INK, 0.62), ly = ty + nameP * 1.4 + subP * 0.75;
       if (dotCol) dot(mx + 3, ly, 2.6 * gs, rgba(dotCol, 0.95));
       text(fitText(m.tie.text, mw - (dotCol ? 11 : 0), subP), mx + (dotCol ? 11 : 0), ly, subP, tieInk, "left", 300);
@@ -582,11 +582,11 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
       if (!to) continue;
       f.ties?.forEach((t, i) => {
         if (t.kind === "dag" || !t.machine || !t.state) return;
-        const a = t.machine === top.flow ? top0.get(t.state) : spots.get(t.machine)?.get(t.state);
+        const a = t.machine === top.machine ? top0.get(t.state) : spots.get(t.machine)?.get(t.state);
         if (!a) return;
-        const al = hot === row.name || io.pickedRow === row.name || (hs && hs.flow === t.machine && hs.id === t.state) ? (i ? 0.45 : 0.9) : 0;
+        const al = hot === row.name || io.pickedRow === row.name || (hs && hs.machine === t.machine && hs.id === t.state) ? (i ? 0.45 : 0.9) : 0;
         if (!al) return;
-        const col = t.machine === top.flow ? sc.mStates[t.state].color : (a as { color: string }).color, e = entryPath(a, to), len = Math.hypot(to.x - a.x, to.y - a.y) || 1, t0 = Math.min(0.4, (a.r + 2) / len), t1 = 1 - Math.min(0.4, (to.r + 3) / len);
+        const col = t.machine === top.machine ? sc.mStates[t.state].color : (a as { color: string }).color, e = entryPath(a, to), len = Math.hypot(to.x - a.x, to.y - a.y) || 1, t0 = Math.min(0.4, (a.r + 2) / len), t1 = 1 - Math.min(0.4, (to.r + 3) / len);
         flowLine({ x: a.x, y: a.y, color: col }, { x: to.x, y: to.y, color: to.color }, al, 0.5, t.kind === "observed" ? [1.5, 6] : [2, 5]);
         cx.beginPath();
         for (let k = 0; k <= 28; k++) {

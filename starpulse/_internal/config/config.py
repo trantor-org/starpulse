@@ -438,7 +438,7 @@ class Config:
     repos: tuple[Repo, ...] = ()
     """The repositories whose merges apply through the parent's pin bump (`[[repos]]`)."""
     ci: tuple[str, ...] = ()
-    """The Board states the shipped `ci` machine is attached to as a sub-flow (`[ci] states`); none: it is not drawn."""
+    """The Board states the shipped `ci` machine is attached to as a submachine (`[ci] states`); none: it is not drawn."""
     autopilot: Autopilot = field(default_factory=Autopilot)
     """The policy the autopilot runs under (`[autopilot]`); every key is optional, so no block is the defaults."""
     refresh_token_env: str | None = None

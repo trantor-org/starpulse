@@ -14,7 +14,7 @@ const board: Machine = {
   ],
   transitions: [{ source: "ready", target: "review", event: "pr_opened" }],
   writers: { pr_opened: [{ actor: "runs/pr-watch", trigger: "schedule" }] },
-  launches: { "runs/triage": { skill: "triaging", flow: "triage-flow" } },
+  launches: { "runs/triage": { skill: "triaging", machine: "triage-flow" } },
   dagActors: ["runs/sweeper"],
 };
 

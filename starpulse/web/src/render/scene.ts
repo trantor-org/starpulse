@@ -109,7 +109,7 @@ export interface SubState extends Host {
   machine: string;
   state: string;
   /** The child machine the state opens, and when it runs. */
-  flow: string;
+  child: string;
   when: string;
   n: number;
   /** The body before it in the row: the moon, or the sub-state ahead of it. */
@@ -130,7 +130,7 @@ export interface MState extends Pt {
   name: string;
   final: boolean;
   initial: boolean;
-  flow: string;
+  machine: string;
   n: number;
   color: string;
   mini?: boolean;
@@ -141,7 +141,7 @@ export interface MState extends Pt {
   lab?: Pt;
 }
 export interface MEdge extends Transition {
-  flow: string;
+  machine: string;
   /** How far the line bows from the chord, as a fraction of its length; the ledger bows a back edge more than a forward one. */
   bend?: number;
   a?: MState;
@@ -235,7 +235,7 @@ export interface Body extends RawTask {
 }
 /** A task a lifecycle machine placed, drawn on the state its latest event left it in. */
 export interface MachineTask extends RawTask {
-  flow: string;
+  machine: string;
   _x?: number;
   _y?: number;
   _state?: string;
@@ -332,7 +332,7 @@ export interface Scene {
   stars: Record<string, Star>;
   groups: StarGroup[];
   sun: Sun | null;
-  flow: string | null;
+  machine: string | null;
   pivot: Host | null;
   hops: Hop[];
   entries: BEdge[];
@@ -350,7 +350,7 @@ export interface Scene {
 }
 /** The machine across a level's top: where each state and name sits, how tall it is, and the states some other machine is entered from. */
 export interface MachineTop extends LedgerTop {
-  flow: string;
+  machine: string;
   entered: string[];
   /** The machines entered from this one, newest activity first: each row's height and states, the lane's top and bottom in canvas pixels. */
   rows: RowView[];
@@ -779,7 +779,7 @@ export function build(ctx: Ctx, l: Level): Scene {
 function layoutLevel(ctx: Ctx, l: Level): Scene {
   const { S, moves, W, H, T } = ctx, ease = ctx.ease ?? ((_key: string, v: number) => v), routes = ctx.routes ?? new Map<string, Pt>(), EVENTS = moves.events, board = S.board, SUBS = S.subs, dagBy = S.dagBy;
   const stateName = (id: string) => board.machine.states.find((s) => s.id === id)?.name || id;
-  const scene: Scene = { w: 2460, h: 1340, galaxies: {}, bEdges: [], names: [], tasks: [], machineTasks: [], mStates: {}, mEdges: [], planets: [], moons: [], subStates: [], stars: {}, groups: [], sun: null, flow: null, pivot: null, hops: [], entries: [], exits: [] };
+  const scene: Scene = { w: 2460, h: 1340, galaxies: {}, bEdges: [], names: [], tasks: [], machineTasks: [], mStates: {}, mEdges: [], planets: [], moons: [], subStates: [], stars: {}, groups: [], sun: null, machine: null, pivot: null, hops: [], entries: [], exits: [] };
   // a DAG's instance prefix is drawn only where another instance runs a DAG by the same bare name
   const bare = (name: string) => name.slice(name.indexOf("/") + 1), bareCount = new Map<string, number>();
   for (const n of Object.keys(dagBy)) bareCount.set(bare(n), (bareCount.get(bare(n)) ?? 0) + 1);
@@ -1046,7 +1046,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
         for (const q of m.ss) {
           const ts = on(m.f, q.id), link = S.child[m.f][q.id], R = FOOT.sub;
           c += 8;
-          const b: SubState = { name: q.name, parent: g, machine: m.f, state: q.id, flow: link.flow, when: link.when, n: ts.length, x: mx + sg * (c + R), y: my, r: 6, R, color: "#e879f9", prev };
+          const b: SubState = { name: q.name, parent: g, machine: m.f, state: q.id, child: link.machine, when: link.when, n: ts.length, x: mx + sg * (c + R), y: my, r: 6, R, color: "#e879f9", prev };
           if (ts.length) {
             const fit = pack(ts.length, 11, FOOT.sub, 9, 8);
             attach(ts, b, 11, fit.gap, fit.ringGap, false);
@@ -1127,10 +1127,10 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     agents.forEach((a) => (counts[a.state] = (counts[a.state] || 0) + 1));
     st.forEach((s, i) => {
       const t = (i / st.length) * TAU - Math.PI / 2;
-      out[s.id] = { id: s.id, name: s.name, final: s.final, initial: s.initial, flow: name, n: counts[s.id] || 0, loops: loopsOf(flow, s.id), mini: true,
+      out[s.id] = { id: s.id, name: s.name, final: s.final, initial: s.initial, machine: name, n: counts[s.id] || 0, loops: loopsOf(flow, s.id), mini: true,
         dx: Math.cos(t) * R, dy: Math.sin(t) * R, x: 0, y: 0, color: RAMP[Math.round((i / st.length) * (RAMP.length - 1))] };
     });
-    const p: Planet = { name, R, primary, states: out, edges: flow.machine.transitions.map((t) => ({ ...t, flow: name, a: out[t.source], b: out[t.target] })), n: agents.length, x: 0, y: 0 };
+    const p: Planet = { name, R, primary, states: out, edges: flow.machine.transitions.map((t) => ({ ...t, machine: name, a: out[t.source], b: out[t.target] })), n: agents.length, x: 0, y: 0 };
     place(p, cx, cy);
     return p;
   }
@@ -1139,7 +1139,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
   // paths as the Board joins its states; a state with no machines is a small sun. Each task orbits the machine it is working in, else the
   // primary. The Board transitions into and out of the state run as paths off the left and right edges.
   function buildState(sid: string) {
-    const subs = (SUBS[sid] || []).filter((f) => S.flows[f]), bevOf = (id: string) => EVENTS.filter((e) => e.flow === "board" && e.task === id);
+    const subs = (SUBS[sid] || []).filter((f) => S.flows[f]), bevOf = (id: string) => EVENTS.filter((e) => e.machine === "board" && e.task === id);
     // a task in the state or passing through it is drawn once, and on a terminal state a day's arrival there only when it is neither; a starting
     // state draws none
     const st = board.machine.states.find((s) => s.id === sid), here = st?.initial ? [] : board.agents.filter((a) => (a.state === sid && !stale(S, a)) || bevOf(a.id).some((e) => e.from === sid || e.to === sid));
@@ -1165,7 +1165,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
       // a skill machine's sub-states (its states that open a child machine) are small bodies in a chain beside its moon, each opening that machine
       const chains = moons.filter((p) => !p.pager).flatMap((p) => {
         const qs = S.flows[p.name].machine.states.filter((q) => S.child[p.name]?.[q.id]);
-        p.chain = qs.map((q) => ({ name: `${p.name}>${q.id}`, title: q.name.replace(/^Pr /, "PR "), machine: p.name, state: q.id, flow: S.child[p.name][q.id].flow, when: S.child[p.name][q.id].when, subState: true,
+        p.chain = qs.map((q) => ({ name: `${p.name}>${q.id}`, title: q.name.replace(/^Pr /, "PR "), machine: p.name, state: q.id, flow: S.child[p.name][q.id].machine, when: S.child[p.name][q.id].when, subState: true,
           primary: false, R: 6, x: 0, y: 0, states: {}, edges: [], n: hosted(S, p.name, sid).filter((a) => a.state === q.id).length }));
         if (p.chain.length) p.label = `${p.name} › ${p.chain.map((b) => b.title).join(" · ")}`;
         return p.chain;
@@ -1174,20 +1174,20 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
       // a task orbits the deepest body drawn that it is in: the sub-state its latest event left it in, else the moon of the skill machine it works,
       // else the primary. It gets a place on each body it visits in the hour and hops between them as its session moves
       const rawHostAt = (id: string, t: number) => {
-        const e = EVENTS.findLast((e) => e.task === id && e.at <= t && subs.includes(e.flow));
-        return e && e.flow !== subs[0] && S.child[e.flow]?.[e.to] ? `${e.flow}>${e.to}` : e?.flow || subs[0];
+        const e = EVENTS.findLast((e) => e.task === id && e.at <= t && subs.includes(e.machine));
+        return e && e.machine !== subs[0] && S.child[e.machine]?.[e.to] ? `${e.machine}>${e.to}` : e?.machine || subs[0];
       };
       // a task in a hidden machine orbits the pager node standing in for it
       const shown = (name: string) => pg.pagers.find((pager) => pager.hidden.includes(name.split(">")[0]))?.title ?? name;
       scene.hostAt = (id: string, t: number) => shown(rawHostAt(id, t));
       // on the primary, the trail names the primary's state (`in-progress#pr_opened`), so its moves inside the primary are hops too
       scene.hostTrail = (id: string) =>
-        EVENTS.filter((e) => e.task === id && subs.includes(e.flow))
-          .map((e) => ({ at: e.at, host: e.flow === subs[0] && pivot.states[e.to] ? `${subs[0]}#${e.to}` : scene.hostAt!(id, e.at) }))
+        EVENTS.filter((e) => e.task === id && subs.includes(e.machine))
+          .map((e) => ({ at: e.at, host: e.machine === subs[0] && pivot.states[e.to] ? `${subs[0]}#${e.to}` : scene.hostAt!(id, e.at) }))
           .filter((r, i, all) => r.host !== all[i - 1]?.host);
       const rawVisits = list.map((a) => {
         const seen = new Set([rawHostAt(a.id, T - HOUR), rawHostAt(a.id, T)]);
-        for (const e of EVENTS) if (e.task === a.id && e.at >= T - HOUR && subs.includes(e.flow)) seen.add(rawHostAt(a.id, e.at));
+        for (const e of EVENTS) if (e.task === a.id && e.at >= T - HOUR && subs.includes(e.machine)) seen.add(rawHostAt(a.id, e.at));
         return seen;
       });
       const byPlanet = new Map<Planet, RawTask[]>(scene.planets.map((p) => [p, []]));
@@ -1306,13 +1306,13 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
       return { ...r, init: (st.find((x) => x.initial) ?? st[0]).id, nodes: r.nodes.map((n) => ({ ...n, color: RAMP[Math.round(n.u * (RAMP.length - 1))] })) };
     });
     const more = ranked.length - rows.length, foot = more ? 34 * fs : 0;
-    scene.top = { ...top, flow: name, entered, rows, laneTop, laneBottom, total: ranked.length, ranked, more, foot, task: only?.task, ...laneContent(rows, foot, { h: laneBottom - laneTop, fs }) };
-    for (const n of top.nodes) scene.mStates[n.id] = { id: n.id, name: n.name, final: n.final, initial: n.initial, flow: name, n: n.n, x: n.x, y: n.y, loops: loopsOf(flow, n.id), color: RAMP[Math.round(n.u * (RAMP.length - 1))] };
+    scene.top = { ...top, machine: name, entered, rows, laneTop, laneBottom, total: ranked.length, ranked, more, foot, task: only?.task, ...laneContent(rows, foot, { h: laneBottom - laneTop, fs }) };
+    for (const n of top.nodes) scene.mStates[n.id] = { id: n.id, name: n.name, final: n.final, initial: n.initial, machine: name, n: n.n, x: n.x, y: n.y, loops: loopsOf(flow, n.id), color: RAMP[Math.round(n.u * (RAMP.length - 1))] };
     scene.mEdges = flow.machine.transitions.map((t) => {
       const a = scene.mStates[t.source], b = scene.mStates[t.target];
-      return { ...t, flow: name, a, b, bend: a && b && b.x < a.x - 1 ? 0.28 : 0.08 };
+      return { ...t, machine: name, a, b, bend: a && b && b.x < a.x - 1 ? 0.28 : 0.08 };
     });
-    agents.forEach((a) => scene.machineTasks.push({ ...a, flow: name }));
+    agents.forEach((a) => scene.machineTasks.push({ ...a, machine: name }));
   }
 
   // Fold level. A fold over a Board path is that path's Ledger (ledger.ts): the DAGs tied to the event as templates in one row, the DAG that

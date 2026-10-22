@@ -124,7 +124,7 @@ def test_a_single_event_posted_under_a_producer_token_is_in_the_log_and_on_the_s
             "source": "builder",
         }
     ]
-    assert (moved[0], moved[1]["flow"], moved[1]["id"], moved[1]["agent"]["state"]) == (
+    assert (moved[0], moved[1]["machine"], moved[1]["id"], moved[1]["agent"]["state"]) == (
         "move",
         "delivery",
         "PROJ-1",

@@ -666,7 +666,7 @@ def _snap() -> dict:
         "now": 1.0,
         "dags": live["dags"],
         "writers": {"CLAIM": [{"actor": "agent", "trigger": "bin/backlog_task.py dispatch"}]},
-        "launches": [{"dag": "nightly", "skill": "auditing", "flow": "auditing"}],
+        "launches": [{"dag": "nightly", "skill": "auditing", "machine": "auditing"}],
         "domains": live["domains"],
         "descriptions": {"PROJ-2201": SECRET, "PROJ-2202": "Fixes PROJ-2190"},
         "flows": {"board": board, "in-progress": sessions},
@@ -891,7 +891,7 @@ def _structured(board: list[dict], placed: list[dict]) -> dict:
         {
             "name": "board",
             "machine": BOARD
-            | {"subflows": [{"state": "in_progress", "flow": "in-progress"}], "mainLine": ["new", "ready"]},
+            | {"submachines": [{"state": "in_progress", "machine": "in-progress"}], "mainLine": ["new", "ready"]},
             "agents": board,
         },
         {"name": "in-progress", "machine": DELIVERY, "agents": placed},

@@ -11,10 +11,10 @@ from starpulse.contracts.api.dto.pages import MachineStep
 
 
 class MachineHistory(_Api):
-    """`GET /api/history?task=&flow=`: a task's path on one machine, and how many steps it has taken."""
+    """`GET /api/history?task=&machine=`: a task's path on one machine, and how many steps it has taken."""
 
     task: str
-    flow: str
+    machine: str
     path: list[MachineStep]
     steps: int
 

@@ -123,7 +123,7 @@ def placed_from(body: str) -> set:
 
 
 def test_a_move_event_places_its_task():
-    move = 'event: move\ndata: {"flow": "delivery", "id": "r1"}\n\n'
+    move = 'event: move\ndata: {"machine": "delivery", "id": "r1"}\n\n'
 
     assert placed_from(snapshot(("delivery", [])) + move) == {("delivery", "r1")}
 

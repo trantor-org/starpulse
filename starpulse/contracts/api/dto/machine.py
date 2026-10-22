@@ -1,4 +1,4 @@
-"""The machines the page draws: states, transitions, writers and sub-flows."""
+"""The machines the page draws: states, transitions, writers and submachines."""
 
 from __future__ import annotations
 
@@ -37,21 +37,21 @@ class Writer(_Api):
     trigger: str
 
 
-class SubFlow(_Api):
+class Submachine(_Api):
     """Where a Board state opens into another machine, and which Board event each inner final state fires."""
 
     state: str
-    flow: str
+    machine: str
     exits: dict[str, str]
-    parent: str = Field(description="The flow the link opens under: `board`, or the flow whose `state` it hangs off.")
-    when: str = Field(description="What has to hold for the inner flow to run under `state`; empty when always.")
+    parent: str = Field(description="The machine the link opens under: `board`, or the machine whose `state` it hangs off.")
+    when: str = Field(description="What has to hold for the inner machine to run under `state`; empty when always.")
 
 
 class Launch(_Api):
-    """A runs workflow's launch: the skill it starts and the flow that skill draws, null when it has none."""
+    """A runs workflow's launch: the skill it starts and the machine that skill draws, null when it has none."""
 
     skill: str
-    flow: str | None
+    machine: str | None
 
 
 class Machine(_Api):
@@ -62,13 +62,13 @@ class Machine(_Api):
     )
     states: list[MachineState]
     transitions: list[Transition]
-    subflows: list[SubFlow] | None = Field(
+    submachines: list[Submachine] | None = Field(
         default=None,
-        description="The flows that open under this machine's states; the board's first is its In Progress delivery "
+        description="The machines that open under this machine's states; the board's first is its In Progress delivery "
         "machine.",
     )
     launches: dict[str, Launch] | None = Field(
-        default=None, description="Only the board machine: the skill flow each launching DAG starts."
+        default=None, description="Only the board machine: the skill machine each launching DAG starts."
     )
     writers: dict[str, list[Writer]] | None = Field(default=None, description="Its YAML-declared writers per event.")
     dagActors: list[str] | None = Field(
