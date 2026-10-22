@@ -125,6 +125,19 @@ PUBLIC: dict[str, set[str]] = {
         "parse",
         "receiver",
     },
+    "starpulse.sessions": {
+        "SHELLS",
+        "SHELL_OTHER",
+        "SHELL_READ",
+        "SHELL_SEARCH",
+        "TOOL_OTHER",
+        "SessionHealth",
+        "SliceHealth",
+        "TokenCounts",
+        "activities",
+        "session_health",
+        "slice_health",
+    },
     "starpulse.snapshot": {"Qualify", "describe", "is_workflow", "qualifier", "writers"},
 }
 

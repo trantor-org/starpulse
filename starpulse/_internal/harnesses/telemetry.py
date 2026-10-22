@@ -39,7 +39,7 @@ from starpulse.contracts.adapters import TaskKeys
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     from starpulse._internal.eventlog.event_log import EventLog
 
-__all__ = ["CLAUDE_CODE", "CODEX", "Signal", "TelemetryLog", "redactor", "signals"]
+__all__ = ["CLAUDE_CODE", "CODEX", "Signal", "TelemetryLog", "held", "redactor", "signals"]
 
 log = logging.getLogger(__name__)
 
@@ -342,6 +342,15 @@ def _signal(stored: dict[str, Any]) -> Signal:
     # Read from the stored command, so a row stored before the mark existed carries it too.
     kept["shell_write"] = kept.get("kind") == "tool" and kept.get("name") in SHELLS and writes_file(kept.get("command", ""))
     return Signal(**{k: tuple(v) if k in _LISTS else v for k, v in kept.items()})
+
+
+def held(found: Iterable[Signal]) -> list[Signal]:
+    """`found` as `TelemetryLog.read` gives it back once published: the first signal of each key, read from its stored
+    fields, so a replayed record counts once and a shell command that writes a file carries `shell_write`."""
+    first: dict[str, Signal] = {}
+    for signal in found:
+        first.setdefault(signal.key, signal)
+    return [_signal(asdict(signal)) for signal in first.values()]
 
 
 class TelemetryLog:
