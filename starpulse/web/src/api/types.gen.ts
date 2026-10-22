@@ -653,8 +653,8 @@ export interface Settled {
  */
 export interface MoveDelta {
   agent: RawTask;
-  machine: string;
   id: string;
+  machine: string;
 }
 /**
  * A runs instance's workflows.
