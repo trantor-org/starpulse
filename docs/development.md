@@ -70,7 +70,7 @@ tracker. A context joins by adding a driver to `test_context_budgets.py` and an 
 `starpulse/tests/conftest.py` keeps the suite's fixed costs low: every SQLite connection runs `PRAGMA synchronous=OFF`.
 The required checks run only the tests a pull request or a merge-queue candidate can reach (`ci/select_tests.py`), as the
 jobs of this repository's `ci.yml` (`ci/reach.py` skips a job the change cannot reach); a push to main runs none, because the merge queue tested
-that very commit, and the full suite runs nightly and on a manual dispatch from the same file. Trantor's nightly `starpulse-fresh-serve` Dagu DAG (02:15 MST, on a dedicated worker so it competes with no other CI) builds main's wheel, installs it into an empty virtualenv, starts `starpulse serve` from an empty directory with no config and a bare environment, and runs `ci/fresh_serve.py`, which fails unless `/` answers HTTP 200 and every worker the supervisor names (read from the pid `serve` logs for its context, since a zygote-forked child shows the zygote's argv in `ps`) is alive below `serve` on two checks five seconds apart with the same processes. It proves the out-of-the-box install is the production install. The `macos-fresh-serve` job in `ci.yml` runs the same script on a GitHub-hosted macOS runner in the nightly run and on a manual dispatch (the fleet is Linux), so the supervisor, the resident-size reader and the Page API's handed socket are proven there too; prove a pull request by dispatching `ci.yml` on its branch. This repository is public, so its `ci/public_names.py` check fails
+that very commit, and the full suite runs nightly and on a manual dispatch from the same file. A nightly fresh-serve run (the `fresh-serve` job in `ci.yml`, on a dedicated worker so it competes with no other CI) builds main's wheel, installs it into an empty virtualenv, starts `starpulse serve` from an empty directory with no config and a bare environment, and runs `ci/fresh_serve.py`, which fails unless `/` answers HTTP 200 and every worker the supervisor names (read from the pid `serve` logs for its context, since a zygote-forked child shows the zygote's argv in `ps`) is alive below `serve` on two checks five seconds apart with the same processes. It proves the out-of-the-box install is the production install. The `macos-fresh-serve` job in `ci.yml` runs the same script on a GitHub-hosted macOS runner in the nightly run and on a manual dispatch (the fleet is Linux), so the supervisor, the resident-size reader and the Page API's handed socket are proven there too; prove a pull request by dispatching `ci.yml` on its branch. This repository is public, so its `ci/public_names.py` check fails
 when a tracked file other than a workflow, the runner-label list or a test names the operator's private hosts; docs, comments and fixtures use neutral names.
 A pull request's CI runs only the test files its changes can reach, chosen by `ci/select_tests.py` from the per-test
 coverage map the nightly full suite records (`ci/coverage_map.py`): a changed file selects the tests that executed it. A
@@ -81,11 +81,9 @@ machine, skill or `pyproject.toml` lint-table edit selects the tests of the code
 then the command line), `adapters`, `level`, `feed` and `ci`, `store`, `eventlog`, then `config`, `machines` and
 `contracts`. A package imports its own tier or one below; none import upward, and `feed` and `ci` never import each other.
 The `store-table-private` contract lets only `store` import its tables, so every stream write goes through `EventStore`.
-The `context-*` contracts hold each bounded context of trantor's Bounded Contexts map (Board, Delivery, Autopilot, Runs,
-Flow Metrics, Harness Telemetry) to the contexts the map names upstream of it; `config`, `eventlog`, `machines` and
-`contracts` are the shared kernel and belong to none. CI's `static-checks` job also runs `ci/avoid_list.py`, which fails
-a change that adds a def, class or module-level name inside a context's packages holding a word that context's glossary
-in trantor-docs lists under `_Avoid_`.
+The `context-*` contracts hold each bounded context (Board, Delivery, Autopilot, Runs,
+Flow Metrics, Harness Telemetry) to the contexts upstream of it; `config`, `eventlog`, `machines` and
+`contracts` are the shared kernel and belong to none.
 The top level holds only the public modules the [Public surface](public-surface.md#public-surface) lists, each a facade over its feature.
 `pnpm --dir starpulse/web run check` typechecks, lints, tests and builds the page.
 The page's `web/src` is organized by feature: `api/` (types, `apiFetch`, the event stream), `features/<name>/` (a view with its

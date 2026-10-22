@@ -77,7 +77,7 @@ const DONE = tasksIn("done"), FEED = [...tasksIn("in_progress"), ...tasksIn("rea
 const prOf = (t) => { const m = (t?.prs?.at(-1) || "").match(/github\.com\/[^/]+\/([^/]+)\/pull\/(\d+)/); return m ? { repo: m[1], n: +m[2] } : null; };
 const merges = [], RERUNS = []; let prSeq = 1830, tuI = 0;
 function addMerge(o) {
-  const m = { t: o.t, task: o.task || null, title: o.title || o.task?.title || "", repo: o.repo || "trantor", pr: o.pr || prSeq--, sha: hex(7), cross: !!o.cross, bumpOf: o.bumpOf || null, bump: null };
+  const m = { t: o.t, task: o.task || null, title: o.title || o.task?.title || "", repo: o.repo || "acme", pr: o.pr || prSeq--, sha: hex(7), cross: !!o.cross, bumpOf: o.bumpOf || null, bump: null };
   const tu = TU[tuI++ % TU.length];
   // a scheduled 5-minute pass carries no params, so other repos' merges pair by time even when commit keys are declared
   if (m.cross) { const s = Math.ceil((m.t + 4) / 300) * 300 + 2; m.runs = { mf: { k: "mf", start: s, dur: 11 + Math.round(rn() * 6), inf: true } }; }
@@ -89,12 +89,12 @@ function addMerge(o) {
 { const times = [];
   for (let h = Math.floor((NOW0 - 86400) / 3600) * 3600; h < NOW0; h += 3600) for (let i = 0, n = HOURLY[mstHour(h)] || 0; i < n; i++) { const t = Math.round(h + rn() * 3600); if (t > NOW0 - 86400 && t < NOW0 - 150) times.push(t); }
   times.sort((a, b) => b - a);
-  const anyCross = DONE.some((t) => prOf(t) && prOf(t).repo !== "trantor"), streak = times.findIndex((t) => NOW0 - t > 3 * 3600), grAt = times.findIndex((t) => NOW0 - t > 5400);
+  const anyCross = DONE.some((t) => prOf(t) && prOf(t).repo !== "acme"), streak = times.findIndex((t) => NOW0 - t > 3 * 3600), grAt = times.findIndex((t) => NOW0 - t > 5400);
   times.forEach((t, i) => { const task = DONE[i % DONE.length], pr = i < DONE.length ? prOf(task) : null;
-    const cross = anyCross ? (pr && pr.repo !== "trantor" ? pr.repo : null) : i === 4 ? "backlog.md" : i === 13 ? "skills" : null;
+    const cross = anyCross ? (pr && pr.repo !== "acme" ? pr.repo : null) : i === 4 ? "backlog.md" : i === 13 ? "skills" : null;
     const fail = cross ? null : SCN === "fail" ? (i < 3 ? FAILS : null) : SCN === "live" && i >= streak && i < streak + 7 ? FAILS : null;
     const grFail = cross ? null : (SCN === "fail" && i === 0) || (SCN === "live" && i === grAt) ? GRFAIL : null;
-    addMerge({ t, task, cross, repo: cross || "trantor", pr: cross ? pr?.n || 20 + Math.floor(rn() * 40) : pr?.n, fail, grFail }); });
+    addMerge({ t, task, cross, repo: cross || "acme", pr: cross ? pr?.n || 20 + Math.floor(rn() * 40) : pr?.n, fail, grFail }); });
   if (SCN === "live" && streak >= 0) RERUNS.push({ start: times[streak] + 240, dur: 52, upto: times[streak] });
   for (const m of merges.filter((x) => x.cross)) { const bt = m.mergedAt + 600 + rn() * 900; if (bt < NOW0 - 150) m.bump = addMerge({ t: Math.round(bt), title: `bump the ${m.repo} pin`, applied: new Set([...ALWAYS, ...(PIN[m.repo] || [])]), bumpOf: m }); } }
 for (const r of RERUNS) { r.end = r.start + r.dur; r.ref = { kind: "mgRerun", o: r }; }
@@ -119,7 +119,7 @@ queue.forEach((q) => (q.ref = { kind: "mgQ", o: q }));
 function refill() { while (queue.filter((q) => !q.merged).length < 3 && FEED.length) { const q = { t: FEED[feedAt++ % FEED.length], enter: clock }; q.ref = { kind: "mgQ", o: q }; queue.push(q); } }
 function arrive(kind) {
   refill(); const q = queue.find((x) => !x.merged), cross = kind === "cross" ? "skills" : null, t = now();
-  const m = addMerge({ t, task: q.t, cross, repo: cross || "trantor", pr: cross ? 40 + Math.floor(rn() * 20) : undefined, fail: !cross && deployBroken ? FAILS : null });
+  const m = addMerge({ t, task: q.t, cross, repo: cross || "acme", pr: cross ? 40 + Math.floor(rn() * 20) : undefined, fail: !cross && deployBroken ? FAILS : null });
   q.merged = m; m.fresh = clock; if (cross) m.wantBump = m.mergedAt + 20; refill(); fx("J");
 }
 const PUL = [], COM = [], SEEN = new Map(); let HITS = [], sel = null, lastClock = 0;
@@ -435,7 +435,7 @@ tipHtml = function (h) {
   if (h.kind === "mgMerge") {
     return `<div class="k">${o.bumpOf ? `pin bump for ${esc(o.bumpOf.repo)} #${o.bumpOf.pr}` : `merge to ${esc(o.repo)}`} · ${hms(o.t)} MST · #${o.pr} · ${esc(o.sha)}</div><div class="n">${esc(o.task?.id || "pin bump")}</div>${esc(o.title)}
       ${KS.map((k) => runRow(o, k, t)).join("")}${failHtml(o, t, "k")}
-      ${o.cross ? `<div class="k">another repo's merge: main-follow's 5-minute pass writes MERGED; nothing applies until the trantor pin bump</div>` : ""}<div class="k">click for its runs</div>`; }
+      ${o.cross ? `<div class="k">another repo's merge: main-follow's 5-minute pass writes MERGED; nothing applies until the acme pin bump</div>` : ""}<div class="k">click for its runs</div>`; }
   if (h.kind === "mgStep") { const m = focusM(), r = m?.runs[o.k], deps = dagBy[NM[o.k]].steps.find((s) => s.name === o.name).depends;
     return `<div class="k">step of ${esc(NM[o.k])}${deps.length ? ` · after ${deps.map(esc).join(", ")}` : ""}</div><div class="n">${esc(o.name)}</div>${m ? `${esc(stepSt(r, o.name, t).replace("_", " "))} in ${m === merges[0] ? "the newest merge" : `the ${hhmm(m.t)} merge`} (${esc(m.sha)})` : ""}<div class="k">hover a merge to see its run here · click for the DAG</div>`; }
   if (h.kind === "mgJ") return `<div class="k">merge to main · ${merges.filter((m) => m.t > t - 3600).length} in the last hour</div><div class="n">A PR merges</div>main-follow runs on the push and writes MERGED, moving the task Review → Done. The merge also cues apply-on-merge and graph-refresh, which apply and index it.`;
@@ -459,7 +459,7 @@ function openMerge(m) {
   panel.innerHTML = `<span class="x">✕</span><div class="k">${m.bumpOf ? `pin bump for ${esc(m.bumpOf.repo)} #${m.bumpOf.pr}` : `merge to ${esc(m.repo)}`} · ${hms(m.t)} MST</div><h2>${esc(m.task?.id || "pin bump")} — ${esc(m.title)}</h2>
     <table><tr><td>Commit</td><td>${esc(m.repo)} #${m.pr} · ${esc(m.sha)}</td></tr>
     <tr><td>Board</td><td>${t >= m.mergedAt ? `Review → Done: main-follow wrote MERGED ${hms(m.mergedAt)} MST, ${dur(m.mergedAt - m.t)} after the merge` : "in Review until main-follow writes MERGED"}</td></tr>
-    ${m.cross ? `<tr><td>Other repo</td><td>Its merge starts no run here. ${m.bump ? `The pin bump ${esc(m.bump.sha)} applied it at ${hhmm(m.bump.t)} MST.` : "It applies when trantor's pin bump merges."}</td></tr>` : ""}${runs}</table>
+    ${m.cross ? `<tr><td>Other repo</td><td>Its merge starts no run here. ${m.bump ? `The pin bump ${esc(m.bump.sha)} applied it at ${hhmm(m.bump.t)} MST.` : "It applies when acme's pin bump merges."}</td></tr>` : ""}${runs}</table>
     ${failHtml(m, t, "note")}${unres ? `<button class="run" id="mgRerun">↻ Force rerun apply-on-merge</button>` : ""}
     <div class="note">Open on board ↗ · PR ↗ · Dagu run ↗ (the build slice links them)</div>`;
   panel.querySelector(".x").onclick = () => { panel.classList.remove("open"); sel = null; };

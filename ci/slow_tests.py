@@ -1,9 +1,9 @@
 """Fail a slow test in the gate; name every slow or costly test, failing none, when `TEST_COST_REPORT=1` (the nightly).
 
-A run without it is the gate (the `ci-sp-python` shards, a local run): a test whose wall time passes the gate's bound,
+A run without it is the gate (the `python` shards, a local run): a test whose wall time passes the gate's bound,
 `SLOW_TEST_FAIL_SECONDS` (default three times the 5 s ceiling), fails at teardown unless it carries `@pytest.mark.slow`
 or an `OVER_CEILING` entry, and the run prints no section, no annotation and no summary row and writes no report. The
-bound keeps the gate's test window inside its budget (trantor's StarPulse CI under 30 s spec: no selected test over
+bound keeps the gate's test window inside its budget (a 30 s budget for the gate's test window: no selected test over
 ~15 s) and sits above the ceiling because the gate's host is shared: one 0.7 s test took 9.4 s at a load of 4.6 per CPU.
 The nightly names every test over the ceiling itself. A budget test that cannot fit is marked `nightly`, which the gate
 deselects. With `TEST_COST_REPORT=1`, the flagged tests' node id, wall seconds, CPU seconds and peak-RSS growth in MB

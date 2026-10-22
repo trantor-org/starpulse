@@ -1,5 +1,5 @@
-"""The seeded server the latency gate measures. trantor's nightly whole-repo gate runs `bench/page_latency.py` against
-it (`make starpulse-latency`); no pull request does. The harness's own rules are `ci/test_page_latency.py`."""
+"""The seeded server the latency gate measures. the nightly `latency-gate` job runs `bench/page_latency.py` against
+it; no pull request does. The harness's own rules are `ci/test_page_latency.py`."""
 
 from __future__ import annotations
 

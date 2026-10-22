@@ -267,7 +267,7 @@ first step in it until the run ends, and the unit is steps, not days. A skill wi
 
 - `kind`, `size`, `skill`, `state`: the cell.
 - `n`: the times the state was seen left in those runs. Every state is listed whatever its `n`; a consumer holds a cell
-  with a small one (trantor's tier gate holds under 5).
+  with a small one (a gate on cost holds a cell under 5).
 - `cost_to_go`: the expected steps, as the closed form `(I - Q)^-1` of the observed transitions.
 
 Blind spot: a state reached once reads as certain. The chain is the observed transitions only, with no smoothing, so

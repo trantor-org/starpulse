@@ -1,6 +1,6 @@
 """Soak: hold the live page open idle for hours and fail on degradation.
 
-The budget is trantor ADR "StarPulse Holds a Latency Budget on Every Request and Frame"; this is its endurance half.
+The budget is the ADR "StarPulse Holds a Latency Budget on Every Request and Frame"; this is its endurance half.
 One Chrome tab opens the page and then sits untouched. Two things happen on a schedule:
 
 - every ``--sample-every``: a sample of the tab (JS heap after a garbage collection, DOM nodes, event listeners,

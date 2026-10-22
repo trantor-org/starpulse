@@ -421,7 +421,7 @@ window.SNAP = {
       "TASK-2204"
      ],
      "prs": [
-      "https://github.com/trantor-org/trantor/pull/1779"
+      "https://github.com/trantor-org/acme/pull/1779"
      ]
     },
     {
@@ -453,7 +453,7 @@ window.SNAP = {
      ],
      "dependencies": [],
      "prs": [
-      "https://github.com/trantor-org/trantor/pull/1791"
+      "https://github.com/trantor-org/acme/pull/1791"
      ]
     },
     {
@@ -467,7 +467,7 @@ window.SNAP = {
      ],
      "dependencies": [],
      "prs": [
-      "https://github.com/trantor-org/trantor/pull/1793"
+      "https://github.com/trantor-org/acme/pull/1793"
      ]
     },
     {
@@ -495,7 +495,7 @@ window.SNAP = {
      ],
      "dependencies": [],
      "prs": [
-      "https://github.com/trantor-org/trantor/pull/1794"
+      "https://github.com/trantor-org/acme/pull/1794"
      ]
     },
     {
@@ -509,7 +509,7 @@ window.SNAP = {
      ],
      "dependencies": [],
      "prs": [
-      "https://github.com/trantor-org/trantor/pull/1789"
+      "https://github.com/trantor-org/acme/pull/1789"
      ]
     },
     {
@@ -542,7 +542,7 @@ window.SNAP = {
      ],
      "dependencies": [],
      "prs": [
-      "https://github.com/trantor-org/trantor/pull/1796"
+      "https://github.com/trantor-org/acme/pull/1796"
      ]
     },
     {
@@ -588,7 +588,7 @@ window.SNAP = {
      ],
      "dependencies": [],
      "prs": [
-      "https://github.com/trantor-org/trantor/pull/1797"
+      "https://github.com/trantor-org/acme/pull/1797"
      ]
     },
     {
@@ -602,7 +602,7 @@ window.SNAP = {
      ],
      "dependencies": [],
      "prs": [
-      "https://github.com/trantor-org/trantor/pull/1795"
+      "https://github.com/trantor-org/acme/pull/1795"
      ]
     },
     {
@@ -926,7 +926,7 @@ window.SNAP = {
      ],
      "dependencies": [],
      "prs": [
-      "https://github.com/trantor-org/trantor/pull/1355"
+      "https://github.com/trantor-org/acme/pull/1355"
      ]
     },
     {
@@ -1533,10 +1533,10 @@ window.SNAP = {
      ],
      "dependencies": [],
      "prs": [
-      "https://github.com/trantor-org/trantor/pull/1643",
-      "https://github.com/trantor-org/trantor/pull/1647",
-      "https://github.com/trantor-org/trantor/pull/1682",
-      "https://github.com/trantor-org/trantor/pull/1685"
+      "https://github.com/trantor-org/acme/pull/1643",
+      "https://github.com/trantor-org/acme/pull/1647",
+      "https://github.com/trantor-org/acme/pull/1682",
+      "https://github.com/trantor-org/acme/pull/1685"
      ]
     },
     {
@@ -1829,7 +1829,7 @@ window.SNAP = {
       "TASK-2223"
      ],
      "prs": [
-      "https://github.com/trantor-org/trantor/pull/1802"
+      "https://github.com/trantor-org/acme/pull/1802"
      ]
     },
     {
@@ -1905,7 +1905,7 @@ window.SNAP = {
      ],
      "dependencies": [],
      "prs": [
-      "https://github.com/trantor-org/trantor/pull/1798"
+      "https://github.com/trantor-org/acme/pull/1798"
      ]
     },
     {
@@ -1919,7 +1919,7 @@ window.SNAP = {
      ],
      "dependencies": [],
      "prs": [
-      "https://github.com/trantor-org/trantor/pull/1801"
+      "https://github.com/trantor-org/acme/pull/1801"
      ]
     },
     {
@@ -2024,7 +2024,7 @@ window.SNAP = {
      ],
      "dependencies": [],
      "prs": [
-      "https://github.com/trantor-org/trantor/pull/1803"
+      "https://github.com/trantor-org/acme/pull/1803"
      ]
     },
     {
@@ -2038,8 +2038,8 @@ window.SNAP = {
      ],
      "dependencies": [],
      "prs": [
-      "https://github.com/trantor-org/trantor/pull/1807",
-      "https://github.com/trantor-org/trantor/pull/1816"
+      "https://github.com/trantor-org/acme/pull/1807",
+      "https://github.com/trantor-org/acme/pull/1816"
      ]
     },
     {
@@ -2053,7 +2053,7 @@ window.SNAP = {
      ],
      "dependencies": [],
      "prs": [
-      "https://github.com/trantor-org/trantor/pull/1805"
+      "https://github.com/trantor-org/acme/pull/1805"
      ]
     },
     {
@@ -2100,7 +2100,7 @@ window.SNAP = {
      ],
      "dependencies": [],
      "prs": [
-      "https://github.com/trantor-org/trantor/pull/1808"
+      "https://github.com/trantor-org/acme/pull/1808"
      ]
     },
     {
@@ -2114,7 +2114,7 @@ window.SNAP = {
      ],
      "dependencies": [],
      "prs": [
-      "https://github.com/trantor-org/trantor/pull/1809"
+      "https://github.com/trantor-org/acme/pull/1809"
      ]
     },
     {
@@ -2142,7 +2142,7 @@ window.SNAP = {
      ],
      "dependencies": [],
      "prs": [
-      "https://github.com/trantor-org/trantor/pull/1810"
+      "https://github.com/trantor-org/acme/pull/1810"
      ]
     },
     {
@@ -2158,7 +2158,7 @@ window.SNAP = {
       "TASK-2239"
      ],
      "prs": [
-      "https://github.com/trantor-org/trantor/pull/1811"
+      "https://github.com/trantor-org/acme/pull/1811"
      ]
     },
     {
@@ -2173,7 +2173,7 @@ window.SNAP = {
      ],
      "dependencies": [],
      "prs": [
-      "https://github.com/trantor-org/trantor/pull/1817"
+      "https://github.com/trantor-org/acme/pull/1817"
      ]
     },
     {
@@ -2200,7 +2200,7 @@ window.SNAP = {
      ],
      "dependencies": [],
      "prs": [
-      "https://github.com/trantor-org/trantor/pull/1818"
+      "https://github.com/trantor-org/acme/pull/1818"
      ]
     },
     {
@@ -2250,7 +2250,7 @@ window.SNAP = {
      ],
      "dependencies": [],
      "prs": [
-      "https://github.com/trantor-org/trantor/pull/1822"
+      "https://github.com/trantor-org/acme/pull/1822"
      ]
     },
     {
