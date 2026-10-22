@@ -20,7 +20,7 @@ from pathlib import Path
 DENIED = re.compile(r"ai-v[m](-\d+)?|unrai[d]|proxmo[x]|\bTowe[r]\b", re.IGNORECASE)
 CANDIDATE = re.compile(r"ai-v[m]|unrai[d]|proxmo[x]|towe[r]")  # DENIED's names, lowercased and loosened, to skip files that cannot match
 EXEMPT =re.compile(r"^\.github/(workflows/|actionlint\.yaml$)|(^|/)(tests/|test_[^/]*$)")
-# Shipped skills and machines must run outside Trantor: no workspace name, command or path (the public-package ADR).
+# Trantor names are refused under starpulse/skills and starpulse/machines, which ship in the public package (the public-package ADR).
 SHIPPED = re.compile(r"^starpulse/(skills|machines)/")
 TRANTOR = re.compile(r"trantor|backlog-task|\.venv/bin/|bin/workspace|agent-cmd", re.IGNORECASE)
 
