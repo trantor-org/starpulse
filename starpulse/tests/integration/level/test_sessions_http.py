@@ -1,6 +1,7 @@
 """GET /api/analytics/sessions against recorded exports of both harnesses published to the event log."""
 
 import json
+import math
 import re
 import urllib.error
 import urllib.request
@@ -10,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from starpulse import sessions
 from starpulse._internal.config.analytics import Analytics
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.feed.board_feed import BoardFeed
@@ -173,3 +175,27 @@ def test_a_window_longer_than_the_telemetry_history_is_refused_with_the_history_
         True,
     )
     assert (shorter_status, history["window_s"]) == (200, 1800)
+
+
+
+def test_the_public_module_gives_the_rows_the_route_serves_for_the_same_exports(
+    server: PageServer, telemetry: TelemetryLog
+) -> None:
+    """Over a window that is the whole telemetry history, so the route leaves out no record the exports carry."""
+    history = NOW - min(s.time for s in telemetry.read())
+    hours = history / 3600
+    if hours * 3600 > history:  # a window one rounding longer than the history is refused
+        hours = math.nextafter(hours, 0)
+    status, body = _get(server, f"?hours={hours!r}")
+    exports = [
+        json.loads(line)
+        for name in ("claude_code/otlp.ndjson", "codex/otlp.ndjson")
+        for line in (FIXTURES / name).read_text().splitlines()
+    ]
+
+    rows = sessions.session_health(exports, KEYS)
+
+    dumped = [row.model_dump(mode="json", by_alias=True, exclude_unset=True) for row in rows]
+    sliced = [s.model_dump(mode="json", by_alias=True, exclude_unset=True) for s in sessions.slice_health(rows)]
+    assert status == 200
+    assert (dumped, sliced) == (body["sessions"], body["slices"])

@@ -92,6 +92,7 @@ The modules an adapter may import, each exporting exactly the names in its `__al
 - `starpulse.conformance`: replaying recorded moves (`check_lanes`, `check_events`) and event traces (`conform`, `replay`, `runs`) against a declared machine, and the paths and gate `bypasses` a machine generates.
 - `starpulse.mermaid_import`: drafting a machine definition from a Mermaid state diagram.
 - `starpulse.otlp`: decoding Claude Code's OpenTelemetry log export.
+- `starpulse.sessions`: what an agent session did: the Activity each tool call performed (`activities`, labels with no arguments), and session and slice Health folded from Claude Code's and Codex's log exports (`session_health`, `slice_health`) as the DTOs `GET /api/analytics/sessions` serves.
 
 A package test pins this list and each module's names, so adding or removing one is a reviewed change.
 
