@@ -1,0 +1,9 @@
+.venv
+.git
+.tmp
+.github
+docs
+design
+bench
+**/__pycache__
+starpulse.egg-info
