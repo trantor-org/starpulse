@@ -45,6 +45,8 @@ class StoredEvent:
     causation_id: str | None
     correlation_id: str | None
     payload: Mapping[str, Any]
+    position: int = 0
+    """The Event's place in the order every stream was appended in; 0 on an Event not yet stored."""
 
 
 class Upcasters:
@@ -105,9 +107,13 @@ class EventStore:
                     raise StaleVersion(f"{subject_kind} {subject_id} is at version {head}, not {expected_version}")
                 db.execute(insert(stream_events), rows)
                 db.execute(insert(outbox), [{"event_id": row["event_id"]} for row in rows])
+                ids = select(stream_events.c.event_id, stream_events.c.id).where(
+                    stream_events.c.event_id.in_([row["event_id"] for row in rows])
+                )
+                positions = dict(db.execute(ids).tuples().all())
         except IntegrityError as exc:
             raise StaleVersion(f"{subject_kind} {subject_id} moved past version {expected_version}") from exc
-        return [self._upcasters.apply(_stored(row)) for row in rows]
+        return [self._upcasters.apply(_stored(row | {"id": positions[row["event_id"]]})) for row in rows]
 
     def read(self, subject_kind: str, subject_id: str, after: int = 0) -> list[StoredEvent]:
         """The stream's Events after version `after`, in order, at their newest schema version."""
@@ -119,6 +125,17 @@ class EventStore:
                 stream_events.c.version > after,
             )
             .order_by(stream_events.c.version)
+        )
+        with self._engine.connect() as db:
+            return [self._upcasters.apply(_stored(row)) for row in db.execute(query).mappings()]
+
+    def read_after(self, subject_kind: str, position: int, limit: int = 1000) -> list[StoredEvent]:
+        """Up to `limit` Events of every `subject_kind` stream after `position`, in the order they were appended."""
+        query = (
+            select(stream_events)
+            .where(stream_events.c.subject_kind == subject_kind, stream_events.c.id > position)
+            .order_by(stream_events.c.id)
+            .limit(limit)
         )
         with self._engine.connect() as db:
             return [self._upcasters.apply(_stored(row)) for row in db.execute(query).mappings()]
@@ -156,4 +173,5 @@ class EventStore:
 
 
 def _stored(row: Mapping[str, Any]) -> StoredEvent:
-    return StoredEvent(**{name: row[name] for name in StoredEvent.__dataclass_fields__})
+    values = {name: row[name] for name in StoredEvent.__dataclass_fields__ if name != "position"}
+    return StoredEvent(position=row.get("id", 0), **values)

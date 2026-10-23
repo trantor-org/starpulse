@@ -32,6 +32,7 @@ dev = [
     "commitizen>=4.19.2",
     "grpcio>=1.84.0",
     "grpcio-tools>=1.84.0",
+    "hypothesis>=6.170.8",
     "import-linter>=2.15",
     "pytest>=9",
     "pytest-cov>=7.1.0",
@@ -117,6 +118,16 @@ type = "forbidden"
 # and be skipped, and the store package itself contains it, so it may import it.
 source_modules = ["starpulse.*", "starpulse._internal.*"]
 forbidden_modules = ["starpulse._internal.store.tables"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+id = "readmodel-table-private"
+name = "Only the read model package imports its tables"
+type = "forbidden"
+# A Task row is written by the projector alone and read through `ReadModel`: a module that imports the tables could
+# write a row no History folds into, or filter in Python what an index serves. The wildcards work as for the store.
+source_modules = ["starpulse.*", "starpulse._internal.*"]
+forbidden_modules = ["starpulse._internal.readmodel.tables"]
 allow_indirect_imports = true
 
 # Bounded contexts: one per StarPulse context, id `context-<glossary slug>`.

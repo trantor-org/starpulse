@@ -151,6 +151,37 @@ live; `restarting`, `retrying`, `offline` and `updating` hold one state.
   reads `outbox_pending()` and gets each event at least once under its stable `event_id`.
 - `Upcasters` upgrade an old `schema_version` while a stream is read; the stored row is never rewritten.
 - Event-log pruning never touches these tables.
+- `StoredEvent.position` is the event's global, increasing row id; `read_after(subject_kind, position, limit)` pages events
+  past a position in that order.
+
+## Task read model
+
+`starpulse/_internal/readmodel` folds the `task` streams into tables that answer reads by index, so no read loads every
+Task. A `Projector(engine, store)` folds events past its checkpoint (`read-model:tasks`, in `Checkpoints`); each batch of 500
+commits its rows and the checkpoint together. `rebuild()` empties the tables and replays from position 0; a replay and an
+incremental fold give the same rows.
+
+- `starpulse_tasks` (migration 0029) has a typed column per StarPulse field, JSON `fields`, `meta` and `comments`, and
+  `seq`, the position of the last event folded into the row. `starpulse_task_criteria` holds one row per Criterion.
+- Partial indexes `WHERE archived = 0` (`ix_starpulse_tasks_live_{id,state,milestone,assignee}`) keep the live set small
+  whatever the archive holds. `ix_starpulse_tasks_seq` serves the delta read.
+- `ReadModel(engine, declared)` is the query surface: `task(id)`, `snapshot(state=None)`, `with_field(name, value)`,
+  `ready(state, done)` (live Tasks in `state` whose every dependency is in `done`; a dependency with no row blocks) and
+  `since(seq, limit)` (the delta: rows changed after a cursor, archived included). Each statement is a SQLAlchemy `Select`
+  in `readmodel.queries`; its test asserts the plan uses an index and has no table scan.
+- Only `readmodel` reads `readmodel.tables` (the `readmodel-table-private` import contract).
+
+A deployment declares its own Task fields in `[board.fields]`:
+
+```toml
+[board.fields]
+area = { type = "string", queried = true }  # type: string, integer, number or boolean; a queried field gets an indexed generated column
+```
+
+`declared_fields(board)` parses the table and refuses a name that is not lower snake case or a type outside the four.
+`check_fields(declared, fields)` raises `UndeclaredField` or `MistypedField` (a boolean is not an integer). `ensure_columns`
+adds `field_<name>`, a VIRTUAL generated column over `json_extract(fields, '$.<name>')`, and a partial index on it for each
+queried field; it is idempotent, so it runs at every start.
 
 ## Portable database contract
 
@@ -213,6 +244,10 @@ type = "native"
 # validate = "my_checks:task_write"  # may refuse a task write before it lands (see docs/adapters.md)
 # types = ["spike", "bug"]  # the names a task's `type` may take; a write setting any other is refused with this list in its reason, so with no list any non-empty type is accepted and a board names none of its own
 # task_file_name = "title"   # the name a created task's file is written under: "title" is `task-1 - Draw-the-board.md`, "slug" is `task-1-draw-the-board.md`, lowercase, its slug capped at 19 characters
+
+# Task fields this deployment adds to StarPulse's own, checked on write and kept in the read model (see Task read model):
+# [board.fields]
+# area = { type = "string", queried = true }  # type: string, integer, number or boolean; queried gives an indexed generated column, so a read filters by this field without a scan
 
 # Rules every task write must satisfy, whoever makes it: the agent CLI, the page or a workflow (see Board guards in
 # docs/public-surface.md for every primitive). Each is judged on the task as it will be after the write, by the actor

@@ -112,3 +112,19 @@ def test_pruning_the_event_log_leaves_the_store_untouched(log: EventLog, engine:
     assert pruned == 1
     assert _count(engine, "starpulse_stream_events") == before == 1
     assert store.read("task", "TASK-1")
+
+
+def test_events_of_a_kind_are_read_after_a_position_in_the_order_every_stream_was_appended(engine: Engine) -> None:
+    store = EventStore(engine)
+    store.append("task", "TASK-1", 0, [_event(title="a")])
+    store.append("run", "r-1", 0, [_event("RunStarted")])
+    store.append("task", "TASK-2", 0, [_event(title="b")])
+    store.append("task", "TASK-1", 1, [_event("FieldsEdited", changes={})])
+
+    first = store.read_after("task", 0, limit=2)
+    rest = store.read_after("task", first[-1].position)
+
+    assert [(e.subject_id, e.version) for e in first] == [("TASK-1", 1), ("TASK-2", 1)]
+    assert [(e.subject_id, e.version) for e in rest] == [("TASK-1", 2)]
+    assert store.read_after("task", rest[-1].position) == []
+    assert first[0].position < first[1].position < rest[0].position
