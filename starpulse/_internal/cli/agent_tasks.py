@@ -26,6 +26,8 @@ _TASK_EDIT_FIELDS = {
     "title": "title",
     "type": "type",
     "priority": "priority",
+    "impact": "impact",
+    "urgency": "urgency",
     "milestone": "milestone",
     "label": "labels",
     "dependency": "dependencies",
@@ -314,6 +316,8 @@ def create_flags(sub: argparse.ArgumentParser) -> None:
     """Add the detail flags of a task a `create` or `miss` command files; the title is the caller's."""
     sub.add_argument("--description", help="the task's Description section")
     sub.add_argument("--priority", help="`high`, `medium` or `low`")
+    sub.add_argument("--impact", help="how much the work matters: `high`, `medium` or `low`")
+    sub.add_argument("--urgency", help="how soon the work matters: `high`, `medium` or `low`")
     sub.add_argument("--milestone", help="the milestone's id (`m-106`)")
     sub.add_argument("--profile", "--assignee", dest="profile", help="the agent profile it is routed to (`@agent-standard-high`)")
     sub.add_argument("--label", action="append", help="a label; repeat for several")
@@ -335,6 +339,8 @@ def _created_task(args: argparse.Namespace) -> dict[str, Any]:
     given = {
         "description": args.description,
         "priority": args.priority,
+        "impact": args.impact,
+        "urgency": args.urgency,
         "milestone": args.milestone,
         "profile": args.profile,
         "labels": args.label,

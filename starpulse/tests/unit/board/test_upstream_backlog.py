@@ -106,6 +106,17 @@ def test_a_project_without_a_config_has_upstream_defaults(tmp_path: Path) -> Non
     assert read_config(tmp_path) == BacklogConfig(("To Do", "In Progress", "Done"), "task", "")
 
 
+def test_a_task_file_drafted_in_markdown_carries_its_impact_and_urgency(tmp_path: Path) -> None:
+    write_config(tmp_path)
+    write_task(tmp_path, "tasks", "task-7", "Doing", impact="high", urgency="low")
+    write_task(tmp_path, "tasks", "task-8", "Doing")
+
+    by_id = {task.id: task for task in scanned(tmp_path)}
+
+    assert (by_id["task-7"].impact, by_id["task-7"].urgency) == ("high", "low")
+    assert (by_id["task-8"].impact, by_id["task-8"].urgency) == ("", "")
+
+
 @pytest.mark.parametrize("text", ["statuses: [unclosed", "- just\n- a list\n", ""])
 def test_a_config_that_is_not_a_mapping_has_upstream_defaults(tmp_path: Path, text: str) -> None:
     (tmp_path / "config.yml").write_text(text)

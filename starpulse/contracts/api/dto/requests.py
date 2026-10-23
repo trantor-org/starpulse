@@ -11,11 +11,11 @@ from starpulse.contracts.api.dto.scheduler import QuietHours
 
 #: The details a create takes besides its title, as one text value or a list of them. A create takes every one in its
 #: single write: a second write to finish a task is refused as not on the board until the next scan places the card.
-CREATE_TEXT = ("description", "priority", "milestone", "profile", "assignee", "status", "type")
+CREATE_TEXT = ("description", "priority", "impact", "urgency", "milestone", "profile", "assignee", "status", "type")
 CREATE_LISTS = ("labels", "dependencies", "acceptanceCriteria", "references", "documentation", "definitionOfDone")
 #: The lists whose every item must be nonblank, rather than dropped when blank.
 _CREATE_NONBLANK = ("acceptanceCriteria", "definitionOfDone")
-_PRIORITIES = frozenset({"high", "medium", "low"})
+_PRIORITIES = frozenset({"high", "medium", "low"})  # also the levels of Impact and Urgency
 
 
 def _nonblank(value: str) -> str:
@@ -139,6 +139,8 @@ class CreateRequest(_Writer):
     title: str
     description: str | None = None
     priority: str | None = None
+    impact: str | None = None
+    urgency: str | None = None
     milestone: str | None = None
     profile: str | None = None
     assignee: str | None = None
@@ -159,7 +161,7 @@ class CreateRequest(_Writer):
     def _trimmed(cls, value: str | None) -> str | None:
         return None if value is None else value.strip()
 
-    @field_validator("priority")
+    @field_validator("priority", "impact", "urgency")
     @classmethod
     def _known_priority(cls, value: str | None) -> str | None:
         if value and value.lower() not in _PRIORITIES:

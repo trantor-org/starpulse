@@ -3,19 +3,29 @@
 With no block the scheduler has everything it needs: the board's initial lane is the eligible lane, the built-in
 tier weights price a task by its tier, an unsized task counts as `unsized_points`, and the four capacity
 dimensions have the limits below, and a session idle for `idle_minutes` with its task still open is settled to Needs
-attention. `lane`, `review_lane`, `unsized_points`, `idle_minutes`, `state_dir`, `[scheduler.tier_weights]` and
-`[scheduler.limits]` each override one default; a key left out keeps its default.
+attention. `lane`, `review_lane`, `unsized_points`, `idle_minutes`, `state_dir`, `[scheduler.tier_weights]`,
+`[scheduler.priority_matrix]` and `[scheduler.limits]` each override one default; a key left out keeps its default.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from typing import Any
 
-__all__ = ["DIMENSIONS", "Scheduler", "SchedulerError", "parse_scheduler"]
+__all__ = ["DIMENSIONS", "LEVELS", "Scheduler", "SchedulerError", "parse_scheduler"]
 
 #: The capacity dimensions: host CPU and memory (percent), scheduler sessions in flight, and review-lane points.
 DIMENSIONS = ("cpu", "memory", "sessions", "review")
+
+#: A Task's Impact and Urgency levels, lowest first.
+LEVELS = ("low", "medium", "high")
+
+#: The Priority matrix: the weight of each `<impact>/<urgency>` cell (the product of the two levels' places, 1 to 3),
+#: and `default`, the weight of a Task that carries neither, which is the middle cell's.
+_MATRIX = {f"{i}/{u}": float((a + 1) * (b + 1)) for a, i in enumerate(LEVELS) for b, u in enumerate(LEVELS)} | {
+    "default": 4.0
+}
 
 _KEYS = {
     "lane",
@@ -24,6 +34,7 @@ _KEYS = {
     "idle_minutes",
     "state_dir",
     "tier_weights",
+    "priority_matrix",
     "limits",
     "session_limits",
 }
@@ -47,6 +58,8 @@ class Scheduler:
     """Where the files the switch and the run ledger were kept in before the store are imported from, relative to the config's directory; none: beside the config."""
     tier_weights: Mapping[str, float] = field(default_factory=lambda: {"fast": 1, "standard": 2, "deep": 4})
     """What a point costs on each agent tier: a task's demand starts from its points times its tier's weight."""
+    priority_matrix: Mapping[str, float] = field(default_factory=lambda: dict(_MATRIX))
+    """The Priority weight of each `<impact>/<urgency>` cell, and `default` for a Task with no Impact or Urgency."""
     limits: Mapping[str, float] = field(
         default_factory=lambda: {"cpu": 80, "memory": 80, "sessions": 2, "review": 20}
     )
@@ -61,6 +74,12 @@ class Scheduler:
     def reviewed_lane(self, review: str | None) -> str | None:
         """The lane whose points are the review load: the configured one, else the board's `review` lane."""
         return self.review_lane or review
+
+    def priority_of(self, task: Mapping[str, Any]) -> tuple[str, float]:
+        """The task's Priority cell (`default` without both Impact and Urgency) and the weight the matrix gives it."""
+        cell = f"{task.get('impact')}/{task.get('urgency')}"
+        cell = cell if cell in self.priority_matrix else "default"
+        return cell, float(self.priority_matrix[cell])
 
     def session_limit(self, harness: str) -> float:
         """The session cap for `harness`: its own when set, else the shared `sessions` limit."""
@@ -106,6 +125,7 @@ def parse_scheduler(raw: object) -> Scheduler:
     if state_dir is not None and not (isinstance(state_dir, str) and state_dir):
         raise SchedulerError("scheduler state_dir must be a directory path")
     weights = _table(raw.get("tier_weights", {}), "tier_weights", None)
+    matrix = _table(raw.get("priority_matrix", {}), "priority_matrix", defaults.priority_matrix)
     limits = _table(raw.get("limits", {}), "limits", defaults.limits)
     session_limits = _table(raw.get("session_limits", {}), "session_limits", None)
     return Scheduler(
@@ -115,6 +135,7 @@ def parse_scheduler(raw: object) -> Scheduler:
         idle,
         state_dir,
         {**defaults.tier_weights, **weights},
+        {**defaults.priority_matrix, **matrix},
         {**defaults.limits, **limits},
         session_limits,
     )

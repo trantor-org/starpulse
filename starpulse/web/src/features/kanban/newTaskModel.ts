@@ -6,6 +6,8 @@ export interface NewTaskDraft {
   title: string;
   description: string;
   priority: string;
+  impact: string;
+  urgency: string;
   labels: string;
   milestone: string;
   assignee: string;
@@ -14,7 +16,7 @@ export interface NewTaskDraft {
 }
 
 export const EMPTY_DRAFT: NewTaskDraft = {
-  title: "", description: "", priority: "", labels: "", milestone: "", assignee: "", dependencies: "", acceptanceCriteria: [],
+  title: "", description: "", priority: "", impact: "", urgency: "", labels: "", milestone: "", assignee: "", dependencies: "", acceptanceCriteria: [],
 };
 
 export type CreateResult = { ok: true; task: string } | { ok: false; reason: string; skill: string };
@@ -24,7 +26,7 @@ const list = (text: string) => text.split(",").map((v) => v.trim()).filter(Boole
 /** `POST /api/tasks`'s body: the trimmed title, the page's actor and every other field the draft filled, lists split and blank criteria dropped. */
 export function createBody(draft: NewTaskDraft): Record<string, string | string[]> {
   const body: Record<string, string | string[]> = { title: draft.title.trim(), actor: PAGE_ACTOR };
-  for (const field of ["description", "priority", "milestone", "assignee"] as const) {
+  for (const field of ["description", "priority", "impact", "urgency", "milestone", "assignee"] as const) {
     if (draft[field].trim()) body[field] = draft[field].trim();
   }
   for (const [field, values] of [["labels", list(draft.labels)], ["dependencies", list(draft.dependencies)],

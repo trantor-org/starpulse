@@ -15,7 +15,7 @@ directory. The `Board` says:
   (`POST /api/retire`, `GET /api/retired[?task=<id>]`, `POST /api/retired/import`), a `complete(task)` that
   moves a Done task out of the lanes (the native board's to `completed/`, where `read` and `edit` still find it), a `create(title, details)` that
   makes a task whole, in one write, in the board's starting lane or the lane a `status` detail names, with the
-  details the page filled (description, priority, labels, milestone, assignee, dependencies, acceptance
+  details the page filled (description, priority, impact, urgency, labels, milestone, assignee, dependencies, acceptance
   criteria, type, references, documentation, Definition of Done) and answers with its id (`POST /api/tasks`;
   `capabilities.create`), and optionally milestone records: `milestones()`, `read_milestone(id)`,
   `create_milestone(title, details)` (answering with the new id), `edit_milestone(id, changes)` and
@@ -107,7 +107,7 @@ number past every file in `docs/` and `archive/docs/`; an update rewrites only t
 changes nothing; an archive moves the file to `archive/docs/`, and a restore moves it back unchanged into the folder it
 names under `docs/` (`docs/` itself by default), never replacing a file there.
 The native board's task `edit` writes every field of Backlog.md's task file and only the one it is given: the front
-matter's `title`, `type`, `status` (spelled as the board's lane), `priority`, `milestone`, assignee (`profile`),
+matter's `title`, `type`, `status` (spelled as the board's lane), `priority`, `impact`, `urgency` (each `low`, `medium` or `high`, or empty), `milestone`, assignee (`profile`),
 `labels`, `dependencies`, `references`, `documentation` and `modifiedFiles` (an empty one of the last three leaves its
 key out), and the body's description, plan, notes, final summary, acceptance criteria and definition of done (an item
 with its `n` keeps it, one without takes the next after the highest `n` given, so a list given without numbers is

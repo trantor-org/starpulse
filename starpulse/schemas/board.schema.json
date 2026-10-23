@@ -163,6 +163,18 @@
       "title": "Milestone",
       "type": "string"
     },
+    "impact": {
+      "default": "",
+      "description": "How much the work matters (`low`, `medium` or `high`); empty when the board keeps none. With `urgency` it picks the task's Priority weight.",
+      "title": "Impact",
+      "type": "string"
+    },
+    "urgency": {
+      "default": "",
+      "description": "How soon the work matters (`low`, `medium` or `high`); empty when the board keeps none.",
+      "title": "Urgency",
+      "type": "string"
+    },
     "type": {
       "default": "",
       "description": "The task's type, a name the deployment chooses (`spike`, `bug`); empty when it has none. StarPulse names no type.",

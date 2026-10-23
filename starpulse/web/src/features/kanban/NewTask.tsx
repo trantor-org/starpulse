@@ -2,7 +2,7 @@
 // the card lands in the board's starting lane.
 import { useState } from "react";
 import { EMPTY_DRAFT, createOutcome, newTaskKey, postCreate, type NewTaskDraft } from "./newTaskModel";
-import { PRIORITIES } from "./taskViewModel";
+import { LEVELS, PRIORITIES } from "./taskViewModel";
 import type { Capabilities } from "../../api";
 
 type Field = Exclude<keyof NewTaskDraft, "acceptanceCriteria">;
@@ -52,6 +52,16 @@ export function NewTaskForm({ draft, busy, refused, lane, assignees, milestones,
             <tr><td>priority</td><td>
               <select className="fv" value={draft.priority} aria-label="Priority" disabled={busy} onChange={set("priority")}>
                 {[["", "—"], ...PRIORITIES.map((v) => [v, v])].map(([v, t]) => <option key={v} value={v}>{t}</option>)}
+              </select>
+            </td></tr>
+            <tr><td>impact</td><td>
+              <select className="fv" value={draft.impact} aria-label="Impact" disabled={busy} onChange={set("impact")}>
+                {[["", "—"], ...LEVELS.map((v) => [v, v])].map(([v, t]) => <option key={v} value={v}>{t}</option>)}
+              </select>
+            </td></tr>
+            <tr><td>urgency</td><td>
+              <select className="fv" value={draft.urgency} aria-label="Urgency" disabled={busy} onChange={set("urgency")}>
+                {[["", "—"], ...LEVELS.map((v) => [v, v])].map(([v, t]) => <option key={v} value={v}>{t}</option>)}
               </select>
             </td></tr>
             <tr><td>labels</td><td><input className="fv" value={draft.labels} aria-label="Labels" placeholder="comma-separated" disabled={busy} onChange={set("labels")} /></td></tr>

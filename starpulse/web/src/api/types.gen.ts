@@ -426,6 +426,10 @@ export interface RawTask {
    */
   entered?: number | null;
   id: string;
+  /**
+   * A Board task's Impact (low, medium or high); empty or absent when it has none.
+   */
+  impact?: string | null;
   labels?: string[] | null;
   /**
    * A Board task's milestone; empty or absent when it has none.
@@ -474,6 +478,10 @@ export interface RawTask {
    * A Board task's type; empty or absent when it has none.
    */
   type?: string | null;
+  /**
+   * A Board task's Urgency (low, medium or high); empty or absent when it has none.
+   */
+  urgency?: string | null;
   /**
    * Whether a Board task can be worked now.
    */
@@ -858,6 +866,10 @@ export interface SchedulerSession {
  * The task the loop would admit next, or, when none fits, the top-ranked one and what it waits on.
  */
 export interface SchedulerNext {
+  /**
+   * The Priority matrix cell the task ranked by, `<impact>/<urgency>`, or `default` when it has no Impact or Urgency.
+   */
+  priority: string;
   /**
    * `goes next`, `quiet hours` while the quiet hours hold admission, `<harness> usage limit` while that harness is paused, or the first dimension the task overfits, which the strip shows after `waits:`.
    */
@@ -1395,6 +1407,7 @@ export interface CreateRequest {
   description?: string | null;
   documentation?: string[] | null;
   harness?: string | null;
+  impact?: string | null;
   labels?: string[] | null;
   milestone?: string | null;
   priority?: string | null;
@@ -1407,6 +1420,7 @@ export interface CreateRequest {
   task?: string | null;
   title: string;
   type?: string | null;
+  urgency?: string | null;
 }
 /**
  * `POST /api/restore`: return the archived task `task` to the board's tasks, unchanged; the writer names who did.

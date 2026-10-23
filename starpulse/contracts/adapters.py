@@ -112,6 +112,14 @@ class BoardTask(_Contract):
     )
     labels: tuple[str, ...] = Field(default=(), description="The task's labels.")
     milestone: str = Field(default="", description="The milestone the task belongs to; empty when it has none.")
+    impact: str = Field(
+        default="",
+        description="How much the work matters (`low`, `medium` or `high`); empty when the board keeps none. With `urgency` it picks the task's Priority weight.",
+    )
+    urgency: str = Field(
+        default="",
+        description="How soon the work matters (`low`, `medium` or `high`); empty when the board keeps none.",
+    )
     type: str = Field(
         default="",
         description="The task's type, a name the deployment chooses (`spike`, `bug`); empty when it has none. StarPulse names no type.",

@@ -384,6 +384,8 @@ def test_a_board_task_an_adapter_wrote_is_an_agent_in_its_lane() -> None:
             "assignee": "",
             "labels": ["spike"],
             "milestone": "m-3",
+            "impact": "",
+            "urgency": "",
             "type": "",
             "dependencies": ["PROJ-0"],
             "prs": [PR],

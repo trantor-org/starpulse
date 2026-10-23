@@ -71,6 +71,8 @@ review = 30
         ("[scheduler.limits]\ncpu = 0\n", "cpu"),
         ("[scheduler.limits]\nsessions = 'two'\n", "sessions"),
         ("[scheduler.tier_weights]\nstandard = -1\n", "standard"),
+        ("[scheduler.priority_matrix]\n'huge/low' = 2\n", "huge/low"),
+        ("[scheduler.priority_matrix]\n'high/high' = 0\n", "high/high"),
         ("[scheduler]\nunsized_points = 0\n", "unsized_points"),
         ("[scheduler]\nidle_minutes = 0\n", "idle_minutes"),
         ("[scheduler]\nidle_minutes = 'soon'\n", "idle_minutes"),
@@ -84,3 +86,17 @@ review = 30
 def test_a_block_the_loop_cannot_run_from_is_refused_naming_the_key(tmp_path: Path, text: str, names: str) -> None:
     with pytest.raises(ConfigError, match=names):
         load(_write(tmp_path, text))
+
+
+def test_the_priority_matrix_states_its_default_weight_and_a_block_overrides_a_cell(tmp_path: Path) -> None:
+    default = load(None).scheduler
+    override = load(_write(tmp_path, "[scheduler.priority_matrix]\n'high/high' = 20\ndefault = 5\n")).scheduler
+
+    assert default.priority_matrix["default"] == 4.0
+    assert default.priority_of({"impact": "low", "urgency": "low"}) == ("low/low", 1.0)
+    assert default.priority_of({"impact": "high", "urgency": "high"}) == ("high/high", 9.0)
+    assert default.priority_of({"impact": "", "urgency": ""}) == ("default", 4.0)  # no Impact or Urgency
+    assert default.priority_of({"impact": "high"}) == ("default", 4.0)  # a half-set Task has no cell
+    assert override.priority_of({"impact": "high", "urgency": "high"}) == ("high/high", 20.0)
+    assert override.priority_of({}) == ("default", 5.0)
+    assert override.priority_of({"impact": "low", "urgency": "low"}) == ("low/low", 1.0)  # a cell left out keeps its weight

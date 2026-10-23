@@ -861,6 +861,29 @@ def test_task_create_writes_a_task_with_the_details_given_and_reports_its_id(
     assert "- [ ] #1 It rotates\n- [ ] #2 It logs" in written
 
 
+def test_task_create_and_edit_write_the_impact_and_urgency(
+    tasked: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["task", "create", "Rank it", "--impact", "high", "--urgency", "low", "--server", tasked])
+    assert (code, doc) == (0, {"task": "task-2"})
+    written = _task_file(tmp_path, "task-2").read_text()
+    assert "impact: high" in written and "urgency: low" in written
+
+    code, doc = _run(capsys, ["task", "edit", "task-1", "--impact", "low", "--urgency", "high", "--server", tasked])
+    assert (code, doc["changed"]) == (0, ["impact", "urgency"])
+    edited = _task_file(tmp_path).read_text()
+    assert "impact: low" in edited and "urgency: high" in edited
+
+
+def test_task_create_with_an_impact_the_matrix_does_not_know_is_refused_and_writes_nothing(
+    tasked: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["task", "create", "Rank it", "--impact", "huge", "--server", tasked])
+
+    assert (code, doc["code"]) == (1, "refused")
+    assert not list((tmp_path / ".starpulse" / "board" / "tasks").glob("task-2 - *.md"))
+
+
 def test_task_create_still_reads_assignee_as_the_profile(
     tasked: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

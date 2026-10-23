@@ -809,6 +809,8 @@ def _parser() -> argparse.ArgumentParser:
     edit.add_argument("--title", help="the new title; blank is refused")
     edit.add_argument("--type", help="the task's type; blank removes it")
     edit.add_argument("--priority", help="`high`, `medium` or `low`; blank removes it")
+    edit.add_argument("--impact", help="how much the work matters, `high`, `medium` or `low`; blank removes it")
+    edit.add_argument("--urgency", help="how soon the work matters, `high`, `medium` or `low`; blank removes it")
     edit.add_argument("--milestone", help="the milestone's id; blank removes it")
     edit.add_argument("--label", action="append", help="a label; given at all, replaces the whole list (blank clears)")
     edit.add_argument("--dependency", action="append", help="a task it depends on; replaces the whole list")

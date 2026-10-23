@@ -68,7 +68,7 @@ POST /api/retired/import
                    {name, text}: keep a retired task file a client held in the history store through the board's
                    `import_retired`, and answer 200 {task}; the same file again is accepted, 409 for other text under a
                    kept number, a task on the board or a file with no id, 404 when the board does not import
-POST /api/tasks    {title, description, priority, labels, milestone, profile, dependencies, acceptanceCriteria[,
+POST /api/tasks    {title, description, priority, impact, urgency, labels, milestone, profile, dependencies, acceptanceCriteria[,
                    actor, session, harness]}: create, stamping `created_by: <harness>:<session>`
                    a task in the board's starting lane through the board's `create`, and answer 201 {task}
                    with its id; only the title is required. 400 for a missing, blank or over-long title or a detail of
