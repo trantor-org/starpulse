@@ -11,6 +11,7 @@ from sqlalchemy import Engine
 from starpulse._internal.board.view import board_columns
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.machines.transitions import board_machine
 from starpulse._internal.readmodel.projector import Projector
 from starpulse._internal.readmodel.read_model import ReadModel
 from starpulse._internal.store import EventStore, NewEvent
@@ -35,9 +36,9 @@ def _append(engine: Engine, number: int, state: str, *, archived: bool = False) 
     EventStore(engine).append("task", f"TASK-{number}", 0, events)
 
 
-def _feed(engine: Engine) -> BoardFeed:
+def _feed(engine: Engine, machines: dict | None = None) -> BoardFeed:
     Projector(engine, EventStore(engine)).catch_up()
-    return BoardFeed(read_model=ReadModel(engine))
+    return BoardFeed(machines=machines, read_model=ReadModel(engine))
 
 
 def _board(feed: BoardFeed) -> dict:
@@ -185,3 +186,35 @@ def test_the_tasks_the_read_model_changed_are_published_as_deltas_once(engine: E
     assert set(published) == {"TASK-2", "TASK-3"}
     assert published["TASK-2"]["state"] == "ready"
     assert published["TASK-3"] is None
+
+
+def test_a_ready_task_offers_the_board_machines_move_to_in_progress(engine: Engine) -> None:
+    _append(engine, 1, "Ready")
+    feed = _feed(engine, {"board": board_machine(("Ready", "In Progress", "Done"))})
+
+    task = feed.task("TASK-1")
+
+    assert task is not None
+    assert task["moves"]["in_progress"]["allowed"] is True
+
+
+def test_a_move_the_machine_writes_to_one_actor_offers_only_that_actor(engine: Engine) -> None:
+    _append(engine, 1, "Ready")
+    machine = board_machine(("Ready", "In Progress", "Done"))
+    machine["writers"] = {"to_in_progress": [{"actor": "operator", "trigger": "claim"}]}
+    feed = _feed(engine, {"board": machine})
+
+    task = feed.task("TASK-1")
+
+    assert task is not None
+    assert task["moves"]["in_progress"]["writers"] == ("operator",)
+
+
+def test_a_done_task_offers_no_moves(engine: Engine) -> None:
+    _append(engine, 1, "Done")
+    feed = _feed(engine, {"board": board_machine(("Ready", "In Progress", "Done"))})
+
+    task = feed.task("TASK-1")
+
+    assert task is not None
+    assert task["moves"] == {}

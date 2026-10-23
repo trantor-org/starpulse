@@ -1,9 +1,16 @@
 """Where an event leaves a task: one machine's transitions by event, and the Board state id a status names."""
 
-from collections import defaultdict
-from collections.abc import Mapping
+from __future__ import annotations
 
-__all__ = ["DEFAULT_STATUSES", "Table", "board_machine", "lane_id", "tables"]
+from collections import defaultdict
+from collections.abc import Collection, Mapping
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # annotation only: the machine definition imports this module
+    from starpulse._internal.machines.machine_definition import Writer
+    from starpulse.contracts.adapters import Move
+
+__all__ = ["DEFAULT_STATUSES", "Table", "board_machine", "board_moves", "lane_id", "tables"]
 
 
 #: Upstream's own defaults, used for a project with no `config.yml`.
@@ -34,6 +41,31 @@ def board_machine(statuses: tuple[str, ...]) -> dict:
         ],
         "mainLine": ids,
     }
+
+
+def board_moves(
+    machine: dict, writers: Mapping[str, tuple[Writer, ...]] = {}, lanes: Collection[str] | None = None
+) -> dict[str, dict[str, Move]]:
+    """The move verdicts out of each lane of a Board machine, by lane and then by the lane reached.
+
+    A machine state that is not among `lanes` (a creation or archive state) is neither left nor reached; `None`
+    counts every state as a lane.
+
+    A move's writers are the actors the YAML declares for the events that make it; when any of those events
+    declares none, anyone may make the move.
+    """
+    from starpulse.contracts.adapters import Move  # noqa: PLC0415 - import cost, paid on first use
+
+    events: dict[tuple[str, str], list[str]] = {}
+    for t in machine["transitions"]:
+        if t["source"] != t["target"] and (lanes is None or {t["source"], t["target"]} <= set(lanes)):
+            events.setdefault((t["source"], t["target"]), []).append(t["event"])
+    moves: dict[str, dict[str, Move]] = {}
+    for (source, target), names in events.items():
+        declared = [writers.get(name, ()) for name in names]
+        actors = () if not all(declared) else tuple(dict.fromkeys(w.actor for ws in declared for w in ws))
+        moves.setdefault(source, {})[target] = Move(allowed=True, writers=actors)
+    return moves
 
 
 class Table:

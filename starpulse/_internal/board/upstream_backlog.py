@@ -34,7 +34,7 @@ except ImportError:
 from starpulse._internal.board import project_machines
 from starpulse._internal.board.seam import Board, MoveWriter, Written
 from starpulse._internal.machines.state_roles import StateRoles
-from starpulse._internal.machines.transitions import DEFAULT_STATUSES, board_machine, lane_id
+from starpulse._internal.machines.transitions import DEFAULT_STATUSES, board_machine, board_moves, lane_id
 from starpulse.contracts.task_keys import TaskKeys
 
 if TYPE_CHECKING:
@@ -123,31 +123,6 @@ def canonical_key(prefix: str, key: str) -> str:
     """`key` with its prefix spelled as the configured `prefix` is (`task-45` is `TASK-45` for `TASK`); a key of another prefix is as written."""
     head, dash, rest = key.partition("-")
     return f"{prefix}-{rest}" if dash and head.casefold() == prefix.casefold() else key
-
-
-def board_moves(
-    machine: dict, writers: Mapping[str, tuple[Writer, ...]] = {}, lanes: Collection[str] | None = None
-) -> dict[str, dict[str, Move]]:
-    """The move verdicts out of each lane of a Board machine, by lane and then by the lane reached.
-
-    A machine state that is not among `lanes` (a creation or archive state) is neither left nor reached; `None`
-    counts every state as a lane.
-
-    A move's writers are the actors the YAML declares for the events that make it; when any of those events
-    declares none, anyone may make the move.
-    """
-    from starpulse.contracts.adapters import Move  # noqa: PLC0415 - import cost, paid on first use
-
-    events: dict[tuple[str, str], list[str]] = {}
-    for t in machine["transitions"]:
-        if t["source"] != t["target"] and (lanes is None or {t["source"], t["target"]} <= set(lanes)):
-            events.setdefault((t["source"], t["target"]), []).append(t["event"])
-    moves: dict[str, dict[str, Move]] = {}
-    for (source, target), names in events.items():
-        declared = [writers.get(name, ()) for name in names]
-        actors = () if not all(declared) else tuple(dict.fromkeys(w.actor for ws in declared for w in ws))
-        moves.setdefault(source, {})[target] = Move(allowed=True, writers=actors)
-    return moves
 
 
 def _when(value: object) -> float | None:

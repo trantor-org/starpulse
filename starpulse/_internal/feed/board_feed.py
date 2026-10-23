@@ -38,7 +38,8 @@ from starpulse._internal.machines.machine_ties import page as machine_page
 from starpulse._internal.machines.snapshot import declared, qualifier
 from starpulse._internal.machines.stays import LaneRow
 from starpulse._internal.machines.state_roles import StateRoles
-from starpulse._internal.machines.transitions import DEFAULT_STATUSES, board_machine, lane_id
+from starpulse._internal.machines.machine_definition import Writer
+from starpulse._internal.machines.transitions import DEFAULT_STATUSES, board_machine, board_moves, lane_id
 from starpulse.contracts.adapters import BoardTask, TaskKeys
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
@@ -123,7 +124,18 @@ def task_agent(task: BoardTask) -> dict:
     }
 
 
-def summary_agent(summary: Mapping[str, Any], workable: bool = False) -> dict:
+def read_model_lane_moves(machine: dict) -> dict[str, dict[str, dict]]:
+    """The Board machine's moves out of each lane, as dumps a read-model agent carries, keyed by source lane id."""
+    writers = {
+        event: tuple(Writer(**writer) for writer in declared) for event, declared in machine.get("writers", {}).items()
+    }
+    return {
+        source: {target: move.model_dump() for target, move in moves.items()}
+        for source, moves in board_moves(machine, writers).items()
+    }
+
+
+def summary_agent(summary: Mapping[str, Any], workable: bool = False, moves: Mapping[str, Any] = {}) -> dict:
     """One read-model summary as an agent on the Board machine: what a card draws; the record is `/api/task/<id>`.
 
     A workable Task is workable since it last changed: the read model keeps no finer date.
@@ -144,7 +156,7 @@ def summary_agent(summary: Mapping[str, Any], workable: bool = False) -> dict:
         "description": "",
         "criteria": [],
         "pause_reason": None,
-        "moves": {},
+        "moves": dict(moves),
         "created": summary["updated_at"],
         "entered": summary["updated_at"],
         "workable": workable,
@@ -276,6 +288,8 @@ class BoardFeed:
         self._cues = cues
         self._source = source
         self._drawn = machines if machines is not None else {"board": board_machine(DEFAULT_STATUSES)}
+        #: The Board machine's moves by source lane, which a read-model agent offers; a task's done lane offers none.
+        self._lane_moves = read_model_lane_moves(self._drawn["board"]) if read_model is not None else {}
         #: The settled states a task's settling is recorded as a move into: archived always, completed where the Board
         #: has that state (a board whose last status is its final one settles there already).
         self._settle_lanes = {lane_events.ARCHIVED} | (
@@ -855,11 +869,17 @@ class BoardFeed:
         agent = self.held(task_id)
         return None if agent is not None and is_cold(agent) else agent
 
+    def _read_model_moves(self, summary: Mapping[str, Any]) -> dict:
+        """The moves a read-model Task offers: the Board machine's out of its lane, none out of the done lane."""
+        lane = lane_id(summary["state"])
+        return {} if lane == self._roles.done else self._lane_moves.get(lane, {})
+
     def _read_model_agent(self, task_id: str) -> dict | None:
         row = self._read_model.task(task_id)  # type: ignore[union-attr]
         if row is None or row["archived"]:
             return None
-        return summary_agent(row, task_id in self._read_model.ready(row["state"], self._roles.done))  # type: ignore[union-attr]
+        ready = task_id in self._read_model.ready(row["state"], self._roles.done)  # type: ignore[union-attr]
+        return summary_agent(row, ready, self._read_model_moves(row))
 
     def follow_read_model(self, limit: int = 1000) -> int:
         """Publish a `task` delta for each Task the read model changed since the last call, an archived one as gone, and
@@ -1197,7 +1217,10 @@ class BoardFeed:
                 for state in {summary["state"] for summary in summaries}
                 for task_id in self._read_model.ready(state, self._roles.done)  # type: ignore[union-attr]
             }
-            self._hot_cache = (position, [summary_agent(summary, summary["id"] in ready) for summary in summaries])
+            self._hot_cache = (
+                position,
+                [summary_agent(summary, summary["id"] in ready, self._read_model_moves(summary)) for summary in summaries],
+            )
         return [dict(agent) for agent in self._hot_cache[1]]
 
     def _flows(self, now: float) -> tuple[list[dict], dict[str, dict]]:
