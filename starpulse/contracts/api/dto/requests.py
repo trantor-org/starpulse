@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from pydantic import AfterValidator, ValidationInfo, field_validator
+from pydantic import AfterValidator, Field, ValidationInfo, field_validator
 
 from starpulse.contracts.api._base import _Api
 from starpulse.contracts.api.dto.scheduler import QuietHours
@@ -66,6 +66,7 @@ class EditRequest(_Writer):
     base: dict[str, Any]
     changes: dict[str, Any]
     comment: str | None = None
+    break_glass: bool = Field(False, alias="breakGlass")  # an editor import: its Events are marked break-glass (D5)
 
 
 class ArchiveRequest(_Writer):

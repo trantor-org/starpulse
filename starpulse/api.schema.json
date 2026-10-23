@@ -1606,6 +1606,10 @@
           "additionalProperties": true,
           "type": "object"
         },
+        "breakGlass": {
+          "default": false,
+          "type": "boolean"
+        },
         "changes": {
           "additionalProperties": true,
           "type": "object"

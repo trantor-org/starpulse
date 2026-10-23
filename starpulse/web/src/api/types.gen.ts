@@ -1345,6 +1345,7 @@ export interface EditRequest {
   base: {
     [k: string]: unknown;
   };
+  breakGlass?: boolean;
   changes: {
     [k: string]: unknown;
   };

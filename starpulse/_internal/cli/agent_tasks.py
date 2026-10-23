@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import shlex
+import subprocess
+import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -14,6 +18,8 @@ from typing import Any
 
 import yaml
 
+from starpulse._internal.board.markdown import MarkdownRefusedError, imported, render
+from starpulse._internal.board.seam import OPERATOR
 from starpulse._internal.board.view import AGENT, board_columns, board_flow, cold_agent, done_ids, roles_of, task_view
 from starpulse._internal.cli import agent_wire
 from starpulse._internal.cli.agent_keys import CLAIM_KEYS, LIFECYCLE_KEYS
@@ -119,6 +125,8 @@ def _described(view: dict[str, Any], description: str, base: str) -> dict[str, A
 
 
 def show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    if getattr(args, "markdown", False):
+        return {"task": args.task, "markdown": render(_read_record(args, environ))}
     snapshot = agent_wire.snapshot(args, environ)
     wanted = args.task.casefold()
     agents = {agent["id"].casefold(): agent for agent in board_flow(snapshot)["agents"]}
@@ -319,7 +327,9 @@ def create_flags(sub: argparse.ArgumentParser) -> None:
     sub.add_argument("--impact", help="how much the work matters: `high`, `medium` or `low`")
     sub.add_argument("--urgency", help="how soon the work matters: `high`, `medium` or `low`")
     sub.add_argument("--milestone", help="the milestone's id (`m-106`)")
-    sub.add_argument("--profile", "--assignee", dest="profile", help="the agent profile it is routed to (`@agent-standard-high`)")
+    sub.add_argument(
+        "--profile", "--assignee", dest="profile", help="the agent profile it is routed to (`@agent-standard-high`)"
+    )
     sub.add_argument("--label", action="append", help="a label; repeat for several")
     sub.add_argument("--dependency", action="append", help="a task it depends on; repeat for several")
     sub.add_argument("--ac", action="append", help="an Acceptance Criterion; repeat for several, in order")
@@ -384,8 +394,10 @@ def _task_edit_call(
     changes: dict[str, Any],
     base_record: dict[str, Any] | None,
     comment: str = "",
+    *,
+    break_glass: bool = False,
 ) -> list[str]:
-    """Send `changes` to `/api/edit` as one write and return the fields that changed.
+    """Send `changes` to `/api/edit` as one write and return the fields that changed; `break_glass` makes it the operator's.
 
     `base_record` is what the caller read the task as; without one the task is read now, so the edit is refused only
     for a field another writer changes between that read and this write.
@@ -394,7 +406,8 @@ def _task_edit_call(
     if base_record is None:
         current = _read_record(args, environ)
         base_record = {field: current.get(field) for field in changes}
-    body = {"task": args.task, "base": base_record, "changes": changes, "comment": comment, **_writer(args, environ)}
+    writer = {"actor": OPERATOR, "breakGlass": True} if break_glass else _writer(args, environ)
+    body = {"task": args.task, "base": base_record, "changes": changes, "comment": comment, **writer}
     status, reply = agent_wire.post(base, "/api/edit", body)
     return _record_call(base, "/api/edit", status, reply, missing=_TASK_MISSING)["changed"]
 
@@ -443,7 +456,36 @@ def _checklist_after(args: argparse.Namespace, field: str, items: list[dict[str,
     return [{k: v for k, v in item.items() if k != "n"} for item in after] if remove else after
 
 
+def _edited(text: str, environ: Mapping[str, str]) -> str:
+    """`text` as the operator leaves it in `$VISUAL`, else `$EDITOR`, else `vi`."""
+    editor = shlex.split(environ.get("VISUAL") or environ.get("EDITOR") or "vi")
+    with tempfile.TemporaryDirectory() as folder:
+        path = Path(folder, "task.md")
+        path.write_text(text)
+        if subprocess.run([*editor, str(path)], env={**os.environ, **environ}, check=False).returncode:
+            raise agent_wire.CliError("refused", "the editor exited with an error; nothing was imported")
+        return path.read_text()
+
+
+def _edit_in_editor(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """The break-glass edit (D5): open the task's rendering, import what the operator changed as Events by the operator."""
+    record = _read_record(args, environ)
+    try:
+        changes = imported(_edited(render(record), environ), record)
+    except MarkdownRefusedError as exc:
+        raise agent_wire.CliError("refused", f"{args.task}: {exc}") from exc
+    if not changes:
+        return {"task": args.task, "changed": []}
+    base_record = {field: record.get(field) for field in changes}
+    return {
+        "task": args.task,
+        "changed": _task_edit_call(args, environ, changes, base_record, args.comment, break_glass=True),
+    }
+
+
 def task_edit(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    if args.editor:
+        return _edit_in_editor(args, environ)
     changes = {
         field: getattr(args, flag) for flag, field in _TASK_EDIT_FIELDS.items() if getattr(args, flag) is not None
     }

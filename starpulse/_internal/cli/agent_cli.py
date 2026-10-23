@@ -114,7 +114,6 @@ from typing import Any, NoReturn
 from starpulse._internal.cli import agent_commands, agent_tasks, agent_wire, demo, doctor, skill_install
 from starpulse._internal.cli.agent_keys import (
     CELL_KEYS,
-    SCORE_KEYS,
     CLAIM_KEYS,
     DIFF_KEYS,
     DOC_KEYS,
@@ -123,17 +122,18 @@ from starpulse._internal.cli.agent_keys import (
     LIFECYCLE_KEYS,
     MILESTONE_KEYS,
     MOVE_KEYS,
+    SCORE_KEYS,
     SNAPSHOT_KEYS,
     STAGE_KEYS,
     STEP_KEYS,
     TASK_KEYS,
     TRANSITION_KEYS,
 )
+from starpulse._internal.config.config import Config, ConfigError, load
 from starpulse._internal.github_api import GitHubError, connect, repo_of
 from starpulse._internal.level.cells import cell_of
 from starpulse._internal.level.scores import PullFacts, cell_task_scores, merged_pulls, pull_facts, score_cells
 from starpulse._internal.level.verdicts import cell_verdicts
-from starpulse._internal.config.config import Config, ConfigError, load
 
 #: What each exit code means, as the manifest says it.
 EXIT_CODES = {0: "ok", 1: "refused or invalid", 2: "usage", 3: "unavailable", 4: "not found"}
@@ -710,6 +710,7 @@ def _parser() -> argparse.ArgumentParser:
         (0, 2, 3, 4),
     )
     show.add_argument("task", help="the task's key (`PROJ-45`)")
+    show.add_argument("--markdown", action="store_true", help="the task rendered as markdown, in `markdown`, instead")
     moves = leaf(
         task_verbs,
         "moves",
@@ -807,6 +808,11 @@ def _parser() -> argparse.ArgumentParser:
     )
     agent_tasks.writer_flags(edit)
     edit.add_argument("task", help="the task's key (`PROJ-45`)")
+    edit.add_argument(
+        "--editor",
+        action="store_true",
+        help="break-glass: open the task's markdown in `$VISUAL` or `$EDITOR` and import the changes as Events by the operator",
+    )
     edit.add_argument("--title", help="the new title; blank is refused")
     edit.add_argument("--type", help="the task's type; blank removes it")
     edit.add_argument("--priority", help="`high`, `medium` or `low`; blank removes it")
