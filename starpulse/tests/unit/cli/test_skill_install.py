@@ -84,3 +84,70 @@ def test_a_newer_bundle_makes_an_untouched_copy_outdated_and_a_plain_install_upd
 def test_the_bundle_lists_its_skills_with_their_descriptions(source: Path) -> None:
     assert skills.names(source) == ["demo"]
     assert skills.description("demo", source) == "Does a demo."
+
+
+VALID_MACHINE = """\
+name: demo
+states:
+  idle: {initial: true}
+  review: {role: waiting_on_person}
+  done: {final: true}
+events:
+  SUBMIT:
+    - {from: idle, to: review}
+  APPROVE:
+    - {from: review, to: done}
+"""
+
+
+def _declare_machine(source: Path, machine: str | None) -> None:
+    """Rewrite the demo skill's SKILL.md to name `machine` beside it, or to name none."""
+    declared = f"machine: {machine}\n" if machine else ""
+    (source / "demo/SKILL.md").write_text(f"---\nname: demo\ndescription: Does a demo.\n{declared}---\nv1\n")
+
+
+def test_an_install_copies_a_skills_machine_beside_its_skill(tmp_path: Path, source: Path) -> None:
+    _declare_machine(source, "machine.yaml")
+    (source / "demo/machine.yaml").write_text(VALID_MACHINE)
+
+    skills.install(tmp_path, ["claude"], force=False, source=source)
+
+    assert (tmp_path / ".claude/skills/demo/machine.yaml").read_text() == VALID_MACHINE
+
+
+def test_a_skill_with_no_machine_still_installs(tmp_path: Path, source: Path) -> None:
+    _declare_machine(source, None)
+
+    skills.install(tmp_path, ["claude"], force=False, source=source)
+
+    assert skills.status(tmp_path, "claude", "demo", source) == "installed"
+
+
+def test_install_fails_when_a_skill_names_a_missing_machine_and_writes_nothing(tmp_path: Path, source: Path) -> None:
+    _declare_machine(source, "machine.yaml")
+
+    with pytest.raises(ValueError, match=r"demo names machine machine\.yaml, which is missing"):
+        skills.install(tmp_path, ["claude", "codex"], force=False, source=source)
+
+    assert not (tmp_path / ".claude").exists()
+    assert not (tmp_path / ".agents").exists()
+
+
+def test_install_refuses_a_shipped_machine_with_a_state_that_declares_no_role(tmp_path: Path, source: Path) -> None:
+    _declare_machine(source, "machine.yaml")
+    (source / "demo/machine.yaml").write_text(VALID_MACHINE.replace("{role: waiting_on_person}", "{}"))
+
+    with pytest.raises(ValueError, match=r"state review declares no role"):
+        skills.install(tmp_path, ["claude"], force=False, source=source)
+
+    assert not (tmp_path / ".claude").exists()
+
+
+def test_install_accepts_a_machine_whose_guard_the_adapter_registers_at_runtime(tmp_path: Path, source: Path) -> None:
+    _declare_machine(source, "machine.yaml")
+    guarded = VALID_MACHINE.replace("- {from: idle, to: review}", "- {from: idle, to: review, if: ready}")
+    (source / "demo/machine.yaml").write_text(guarded)
+
+    skills.install(tmp_path, ["claude"], force=False, source=source)
+
+    assert skills.status(tmp_path, "claude", "demo", source) == "installed"
