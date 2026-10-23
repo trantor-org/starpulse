@@ -5,7 +5,7 @@ It reads the config and the history database `serve` does and meets `serve` only
 (`starpulse._internal.scheduler.remote`): it publishes the status the page strip draws and wakes on the settings `serve`
 writes. What a restart must keep (a task's one start, a harness's pause, the switch) is in that log, so a new process
 resumes where the last stopped. `SIGTERM` stops it; `SIGHUP` re-reads the config and rebuilds the runtime in the same
-process when an Scheduler setting changed.
+process when a Scheduler setting changed.
 """
 
 from __future__ import annotations
@@ -107,7 +107,7 @@ class Scheduler:
         if scheduler_blocks(new) == scheduler_blocks(self._config):
             logger.info("reload: no Scheduler setting changed")
             return
-        logger.info("reload: an Scheduler setting changed; rebuilding the runtime")
+        logger.info("reload: a Scheduler setting changed; rebuilding the runtime")
         self.stop()
         self._config = new
         self.start()

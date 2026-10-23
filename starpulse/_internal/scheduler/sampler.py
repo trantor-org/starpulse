@@ -98,7 +98,7 @@ class Sampler:
                 try:
                     self._on_crossing(Crossing(reading.name, reading.use, reading.limit, reading.full))
                 except Exception:  # a listener's bug must not stop the sampler or hide the next crossing
-                    logger.exception("StarPulse: an scheduler capacity listener failed")
+                    logger.exception("StarPulse: a scheduler capacity listener failed")
 
     def run_forever(self, stop: threading.Event, interval: float = PERIOD) -> None:
         """Sample now and then every `interval` seconds until `stop` is set."""

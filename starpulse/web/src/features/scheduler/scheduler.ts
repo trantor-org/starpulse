@@ -152,7 +152,7 @@ function harnessOptions(body: unknown): HarnessOption[] {
   });
 }
 
-/** The card's state from an answer, or null when the answer is not an scheduler status. `inFlight`, `next`, `pauses` and `sessionsByHarness` are additive: absent is fine, present must hold. */
+/** The card's state from an answer, or null when the answer is not a scheduler status. `inFlight`, `next`, `pauses` and `sessionsByHarness` are additive: absent is fine, present must hold. */
 function parse(body: unknown): SchedulerState | null {
   const status = body as Partial<SchedulerStatus> & { inFlight?: unknown; next?: unknown; pauses?: unknown; sessionsByHarness?: unknown };
   if (!isRecord(body) || typeof status.enabled !== "boolean" || !Array.isArray(status.dimensions)) return null;
@@ -204,7 +204,7 @@ async function ask(fetcher: typeof apiFetch, init: RequestInit | undefined, unre
   const body: unknown = await response.json().catch(() => null);
   if (response.ok) {
     const state = parse(body);
-    return state ? { ok: true, state } : { ok: false, reason: "the server's answer is not an scheduler status" };
+    return state ? { ok: true, state } : { ok: false, reason: "the server's answer is not a scheduler status" };
   }
   const error = isRecord(body) && typeof body.error === "string" ? body.error : "";
   return { ok: false, reason: error || `the server answered ${response.status}` };

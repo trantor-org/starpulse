@@ -133,7 +133,7 @@ describe("the Autopilot card's store", () => {
     const bad = new SchedulerStore(server({ body }));
     await bad.load();
 
-    expect(bad.get()).toMatchObject({ current: null, unavailable: "the server's answer is not an scheduler status" });
+    expect(bad.get()).toMatchObject({ current: null, unavailable: "the server's answer is not a scheduler status" });
     expect(store.get().current).not.toBeNull();
   });
 
