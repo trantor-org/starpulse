@@ -1,12 +1,12 @@
-// Design mockup layer (the Kanban autopilot toggle and capacity strip), never part of the page. The page above is the branch's real page over the
-// PR demo's capture, with autopilot-src.patch: the strip replaces Connect a tracker in the Kanban toolbar, which moves to an Admin card.
-// This layer answers /api/autopilot with a simulated admission loop and adds the review bar. States (?s=):
+// Design mockup layer (the Kanban scheduler toggle and capacity strip), never part of the page. The page above is the branch's real page over the
+// PR demo's capture, with scheduler-src.patch: the strip replaces Connect a tracker in the Kanban toolbar, which moves to an Admin card.
+// This layer answers /api/scheduler with a simulated admission loop and adds the review bar. States (?s=):
 //   on       admitting: the next pick starts (its card moves to In Progress), fills the last session, and the one after waits on Sessions until a session settles
 //   off      paused: admission stopped, three sessions still running, the meters dimmed
 //   over     on, RAM over its limit and CPU near it: the next pick waits on RAM
 //   empty    on, nothing eligible
 //   refused  on; turning it off is refused, as a write from outside loopback and RFC 1918 is
-//   down     the server has no autopilot route: the strip says so
+//   down     the server has no scheduler route: the strip says so
 // ?view=admin shows Connect a tracker on the Admin view, and ?fs=100|125|150 sets the text size. It runs before the page's module.
 (() => {
   const q = new URLSearchParams(location.search);
@@ -42,7 +42,7 @@
   // the on state's cycle: the pick starts (4 s), takes the last session, the next waits on Sessions; a session settles (12 s) and frees it
   let srv = null; // the demo server, so an admitted task moves to In Progress and a settled one to Review on the board
   // the demo server's own move checks the Board machine's drag rules; an admission is a start, so the card is placed directly,
-  // and held out of the demo's random walk as a card the viewer created is, so it stays where autopilot put it
+  // and held out of the demo's random walk as a card the viewer created is, so it stays where scheduler put it
   const place = (id, to) => {
     if (!srv) return;
     srv.created?.add(id);
@@ -59,7 +59,7 @@
       return a && { task: a.id, title: titleOf(a) };
     }
     if (!card) return undefined;
-    srv?.created?.add(card.dataset.id); // a named pick stays in Ready until autopilot starts it, as the real loop would hold it
+    srv?.created?.add(card.dataset.id); // a named pick stays in Ready until scheduler starts it, as the real loop would hold it
     return { task: card.dataset.id, title: card.querySelector(".t")?.textContent ?? card.dataset.id };
   };
   function step() {
@@ -87,7 +87,7 @@
     const dims = [
       dim("cpu", "CPU", st.cpu, LIM.cpu, "%", `Host CPU over the last minute, ${st.cpu}% of 8 cores. Admission holds it under ${LIM.cpu}%.`),
       dim("ram", "RAM", st.ram, LIM.ram, "%", `Host memory in use, ${(st.ram * 0.32).toFixed(1)} of 32 GiB. Admission holds it under ${LIM.ram}%.`),
-      dim("sessions", "Sessions", st.sessions.length, LIM.sessions, "", `Autopilot sessions running. Click for the list.`),
+      dim("sessions", "Sessions", st.sessions.length, LIM.sessions, "", `Scheduler sessions running. Click for the list.`),
       dim("review", "Review", st.review, LIM.review, " pts", `Points waiting in Review: ${st.review}. Admission stops at ${LIM.review} so review keeps up.`),
     ];
     let next = null;
@@ -103,11 +103,11 @@
   }
 
   window.__MOCK_API__ = {
-    "/api/autopilot": (init, server) => {
+    "/api/scheduler": (init, server) => {
       srv = server;
-      if (s === "down") return [{ error: "This server has no autopilot." }, 404];
+      if (s === "down") return [{ error: "This server has no scheduler." }, 404];
       if (init?.method === "PUT") {
-        if (s === "refused") return [{ error: "Autopilot changes are taken only from loopback or a private address; this request came from 203.0.113.24." }, 403];
+        if (s === "refused") return [{ error: "Scheduler changes are taken only from loopback or a private address; this request came from 203.0.113.24." }, 403];
         st.on = Boolean(JSON.parse(init.body || "{}").on);
         if (st.on) { st.phase = "starting"; st.at = now(); }
       }
@@ -129,7 +129,7 @@
   const cur = { view: q.get("view"), s, fs: q.get("fs") || "100" };
   const groups = [
     ["View", "view", [["kanban", "Kanban"], ["admin", "Admin"]]],
-    ["Autopilot", "s", [["on", "On"], ["off", "Off"], ["over", "Over limit"], ["empty", "Nothing eligible"], ["refused", "Refused"], ["down", "Unavailable"]]],
+    ["Scheduler", "s", [["on", "On"], ["off", "Off"], ["over", "Over limit"], ["empty", "Nothing eligible"], ["refused", "Refused"], ["down", "Unavailable"]]],
     ["Text", "fs", [["100", "100%"], ["125", "125%"], ["150", "150%"]]],
   ];
   for (const [title, key, opts] of groups) {

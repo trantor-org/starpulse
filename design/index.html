@@ -145,7 +145,7 @@ const S = window.SNAP, TAU = Math.PI * 2, TZ = "America/Phoenix";
 // ?stress=N, for design review only: N more lifecycle machines under In Progress, each launched by two DAGs, and N/2 more DAGs that write
 // Board events, so a review can see how the layout holds as the system grows
 const STRESS = +new URLSearchParams(location.search).get("stress") || 0, STRESS_FLOWS = [], STRESS_DAGS = { launch: [], board: [] };
-if (STRESS) { const base = S.flows["auditing-docs"], d0 = S.dags.find((d) => d.name === "board-autopilot"), evs = ["CLAIM", "REVIEW", "DEFER", "MERGED", "DEPS_DONE", "PARK_ON_TASK", "SEND_BACK", "RESUME"];
+if (STRESS) { const base = S.flows["auditing-docs"], d0 = S.dags.find((d) => d.name === "board-scheduler"), evs = ["CLAIM", "REVIEW", "DEFER", "MERGED", "DEPS_DONE", "PARK_ON_TASK", "SEND_BACK", "RESUME"];
   for (let i = 1; i <= STRESS; i++) { const n = `machine-${String(i).padStart(2, "0")}`; S.flows[n] = { ...base, name: n, agents: [] }; STRESS_FLOWS.push(n);
     for (const k of [1, 2]) { const dn = `${n}-dag-${k}`; S.dags.push({ ...d0, name: dn }); S.launches.push({ dag: dn, skill: n, flow: n }); STRESS_DAGS.launch.push(dn); } }
   for (let i = 1; i <= Math.ceil(STRESS / 2); i++) { const dn = `board-writer-${String(i).padStart(2, "0")}`; S.dags.push({ ...d0, name: dn }); STRESS_DAGS.board.push(dn);
@@ -165,7 +165,7 @@ const ease = (u) => (u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2);
 // ---- DAG constellations: grouped by domain, ordered by name, spread along a band ----
 const GROUPS = [
   { id: "delivery", name: "Delivery & CI", dags: ["apply-on-merge", "coderabbit-usage-metrics", "cr-sweep", "deliver", "github-actions-queue-metrics", "github-rulesets-drift", "mutation-metrics", "setup-vm-apply", "nas-apply-merged", "whole-repo-gate"] },
-  { id: "board", name: "Board", dags: ["backlog-sweep", "board-autopilot", "board-dependency-reconciliation", "drift-to-task", "main-follow", "phantom-deletes-to-task", "worktree-reap"] },
+  { id: "board", name: "Board", dags: ["backlog-sweep", "board-scheduler", "board-dependency-reconciliation", "drift-to-task", "main-follow", "phantom-deletes-to-task", "worktree-reap"] },
   { id: "agents", name: "Agent jobs & evals", dags: ["alert-investigation", "nightly-audit", "session-transcript-stats", "skill-conformance", "skill-eval", "skill-optimize", "trace-cluster-report", "weekly-code-audit"] },
   { id: "retrieval", name: "Retrieval & tags", dags: ["graph-refresh", "memory-reindex", "rag-audit-nominations", "rag-metrics", "semantic-tag-merges", "tag-analytics", "tag-optimizer", "tag-performers", "tag-signals"] },
   { id: "ops", name: "Host ops & backups", dags: ["cleanup-workspace", "grafana-db-snapshot", "grafana-rule-health", "healthcheck", "postgres-backup", "postgres-restore-verify", "superseded-images-sweep", "testcontainers-sweep"] },
@@ -281,7 +281,7 @@ const QUEUE_OF = { deliver: "deliver", "alert-investigation": "alert-investigati
 const FAN_STATES = { // each seed is [step index, seconds in that step]
   live: { note: "5 of 32: the deliver runs in flight at 16:00 MST on Oct 5; a new one arrives every ~15 s on screen, which holds about five in flight", deliver: [[5, 40], [5, 300], [5, 520], [1, 60], [5, 450]], other: { "alert-investigation": [[1, 30]] }, arrive: 15 },
   idle: { note: "nothing in flight: no badge, and the panel says when the last run ended", deliver: [], other: {} },
-  burst: { note: "saturated: 32 of 32 running and 6 queued; a freed slot starts the next queued run", deliver: Array.from({ length: 32 }, (_, i) => [i % 3 ? 5 : 1, i % 3 ? (i * 37) % 600 : (i * 13) % 130]), queued: 6, other: { "board-autopilot": [[0, 20]], "alert-investigation": [[1, 10], [2, 30]] }, arrive: 2.5 },
+  burst: { note: "saturated: 32 of 32 running and 6 queued; a freed slot starts the next queued run", deliver: Array.from({ length: 32 }, (_, i) => [i % 3 ? 5 : 1, i % 3 ? (i * 37) % 600 : (i * 13) % 130]), queued: 6, other: { "board-scheduler": [[0, 20]], "alert-investigation": [[1, 10], [2, 30]] }, arrive: 2.5 },
   panel: { note: "deliver's panel open at 5 of 32; a new run arrives every ~15 s on screen", deliver: [[5, 40], [5, 300], [5, 520], [1, 60], [5, 450]], other: {}, open: "deliver", arrive: 15 },
   failed: { note: "a run fails at lint after ~1 s: its row, strip, step and feed line turn red and the row leaves 12 s later", deliver: [[1, 130], [5, 200], [5, 400]], other: {}, open: "deliver" },
 };
@@ -780,7 +780,7 @@ function buildMachine(name) {
   for (const [sid, c] of Object.entries(CHILD[name] || {})) { const a = scene.mStates[sid]; if (!a || !S.flows[c.flow]) continue;
     const p = planet(S.flows[c.flow], 0, 0, 50, false); p.anchor = a; p.when = c.when; place(p, a.x, a.y + 230); scene.planets.push(p); }
   // every DAG lives on the Board; one also shows here only when this machine is its one declared relationship (it launches only this machine
-  // and writes no Board transition), so board-autopilot, which drives the Board, never appears inside a state
+  // and writes no Board transition), so board-scheduler, which drives the Board, never appears inside a state
   const writesBoard = (d) => Object.values(S.writers).some((ws) => ws.some((w) => w.actor === d));
   dagBand([...new Set(S.launches.filter((l) => l.flow === name && dagBy[l.dag] && !writesBoard(l.dag) && S.launches.every((m) => m.dag !== l.dag || m.flow === name)).map((l) => l.dag))], "DAGs that launch this machine");
   scene.box = boxOf([...Object.values(scene.mStates).flatMap((s) => { const w = textW(s.name, 12.5) / 2 + 10; return [[s.x - 50, s.y - 50], [s.x + 50, s.y + 50], [s.lab.x - w, s.lab.y - 20], [s.lab.x + w, s.lab.y + 20]]; }),

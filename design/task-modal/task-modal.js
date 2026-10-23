@@ -199,7 +199,7 @@
   const STARTABLE = ["ready", "waiting", "needs_attention"];
   function startBtn(r) {
     return h("button", { class: "tm-btn start",
-      title: r.state === "waiting" ? "Starts it now: its Start Criteria and dependencies gate only autopilot's claim" : `Opens a Remote Control session for ${r.id}`,
+      title: r.state === "waiting" ? "Starts it now: its Start Criteria and dependencies gate only scheduler's claim" : `Opens a Remote Control session for ${r.id}`,
       onclick: (e) => {
         const b = e.currentTarget; b.disabled = true; b.textContent = "Starting…";
         // simulated: the session-start service answers, the task moves to In Progress and the session claims it

@@ -1,12 +1,12 @@
-"""Build the autopilot toggle and capacity strip mockup: the real page, built from this branch with `autopilot-src.patch` applied, over the demo capture.
+"""Build the scheduler toggle and capacity strip mockup: the real page, built from this branch with `scheduler-src.patch` applied, over the demo capture.
 
-usage: git apply design/autopilot/autopilot-src.patch
+usage: git apply design/scheduler/scheduler-src.patch
        pnpm --dir starpulse/web --ignore-workspace run build
-       PYTHONPATH=. python design/autopilot/build.py --fixture PATH
-       git apply -R design/autopilot/autopilot-src.patch
+       PYTHONPATH=. python design/scheduler/build.py --fixture PATH
+       git apply -R design/scheduler/scheduler-src.patch
 
-The patch draws the strip (features/autopilot) in place of Connect a tracker, which it moves to an Admin card, and lets mock.js answer a
-demo page's /api routes (`window.__MOCK_API__`), so /api/autopilot answers with each capacity state, which a demo page, with no autopilot
+The patch draws the strip (features/scheduler) in place of Connect a tracker, which it moves to an Admin card, and lets mock.js answer a
+demo page's /api routes (`window.__MOCK_API__`), so /api/scheduler answers with each capacity state, which a demo page, with no scheduler
 loop, never does. The strip's styles ship in style.css; the components are U1's to build, with its tests. `--fixture` is a saved capture (the PR demo's `__FLOW_FIXTURE__`),
 else the server is captured, scrubbed and saved there.
 """
@@ -31,8 +31,8 @@ else:
         a.fixture.write_text(json.dumps(snap))
 html = demo.page(demo.STATIC, snap)
 head = (
-    "<!--\n  Design mockup of the Kanban autopilot toggle and capacity strip, under operator review; not served by starpulse.\n"
-    "  The real page, built from the branch with autopilot-src.patch, over the demo capture, with mock.js layered on.\n"
+    "<!--\n  Design mockup of the Kanban scheduler toggle and capacity strip, under operator review; not served by starpulse.\n"
+    "  The real page, built from the branch with scheduler-src.patch, over the demo capture, with mock.js layered on.\n"
     "  Variants: ?view=kanban|admin  ?s=on|off|over|empty|refused|down  ?fs=100|125|150\n-->\n"
 )
 html = html.replace("<head>", "<head>\n" + head, 1).replace("</body>", '<script src="mock.js"></script>\n</body>', 1)
