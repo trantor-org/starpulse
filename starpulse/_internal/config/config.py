@@ -28,11 +28,11 @@ from types import ModuleType
 
 from starpulse._internal.config.adapter_types import module_name
 from starpulse._internal.config.analytics import Analytics, AnalyticsError, parse_analytics
-from starpulse._internal.config.scheduler import Scheduler, SchedulerError, parse_scheduler
 from starpulse._internal.config.cursor_context import CursorContext, CursorContextError, parse_cursor_context
 from starpulse._internal.config.harnesses import Harnesses, load_harnesses
 from starpulse._internal.config.level import Level, LevelError, parse_level
 from starpulse._internal.config.project import Project, ProjectError, parse_project
+from starpulse._internal.config.scheduler import Scheduler, SchedulerError, parse_scheduler
 from starpulse._internal.config.search import Search, SearchError, parse_search
 
 #: The default of `slow_read_seconds`.
@@ -585,9 +585,10 @@ def _ci(raw: Mapping[str, object]) -> tuple[str, ...]:
 
 
 def discover(path: Path | None) -> Path | None:
-    """`path`, else `starpulse.toml` in the working directory when it exists, else None (the defaults)."""
+    """`path`, else `starpulse.toml` in the working directory when it exists, else None (the defaults). A linked
+    `starpulse.toml` resolves to its target, so the files the config names are read from beside the target."""
     if path is None and Path("starpulse.toml").is_file():
-        return Path("starpulse.toml")
+        return Path("starpulse.toml").resolve()
     return path
 
 
