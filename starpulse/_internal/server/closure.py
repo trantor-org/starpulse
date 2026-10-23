@@ -74,6 +74,7 @@ CONFIG_OWNERS: dict[str, tuple[str, ...]] = {
     "board": _owned_by(*_BOARD_READERS),
     "runs": _owned_by("runs"),
     "search": _owned_by("search"),
+    "read_model": (SELF,),
     "release": _owned_by("pulls"),
     "repos": _owned_by("pulls"),
     "pull_requests": _owned_by("pulls"),

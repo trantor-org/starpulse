@@ -212,7 +212,7 @@ def test_a_mode_other_than_ic_is_not_a_config_setting(tmp_path: Path) -> None:
 def test_unknown_keys_are_refused_by_name_beside_the_known_ones(tmp_path: Path) -> None:
     assert _refusal(tmp_path, 'zeta = 1\ntrakcer_url = "http://x.test"\n') == (
         "unknown config key(s) trakcer_url, zeta; known: analytics, api_worker, board, board_worker, ci, cursor_context, database_url, event_log_archive_dir, event_log_retention_days, "
-        "flow_metrics_worker, harnesses_file, level, mode, producers, project, pull_requests, refresh_token_env, release, repos, runs, runs_worker, scheduler, search, search_worker, session_start_url, slow_read_seconds, tls_cert, tls_key, tracker_url, worker_memory"
+        "flow_metrics_worker, harnesses_file, level, mode, producers, project, pull_requests, read_model, refresh_token_env, release, repos, runs, runs_worker, scheduler, search, search_worker, session_start_url, slow_read_seconds, tls_cert, tls_key, tracker_url, worker_memory"
     )
 
 
@@ -425,6 +425,12 @@ def test_board_worker_defaults_off_and_is_a_flag(tmp_path: Path) -> None:
     assert load(None).board_worker is False
     assert load(_write(tmp_path, "board_worker = true\n")).board_worker is True
     assert _refusal(tmp_path, 'board_worker = "yes"\n') == "board_worker must be true or false"
+
+
+def test_read_model_defaults_off_and_is_a_flag(tmp_path: Path) -> None:
+    assert load(None).read_model is False
+    assert load(_write(tmp_path, "read_model = true\n")).read_model is True
+    assert _refusal(tmp_path, 'read_model = "yes"\n') == "read_model must be true or false"
 
 
 def test_search_worker_defaults_off_and_is_a_flag(tmp_path: Path) -> None:
