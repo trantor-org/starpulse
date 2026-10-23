@@ -171,6 +171,21 @@ incremental fold give the same rows.
   in `readmodel.queries`; its test asserts the plan uses an index and has no table scan.
 - Only `readmodel` reads `readmodel.tables` (the `readmodel-table-private` import contract).
 
+## Task History
+
+The native board records every successful Task write in the Task's `task` stream (`board/task_history.py`), beside the
+task file it still writes. One wrapper around the board's `writer`, `assign`, `edit`, `archive`, `restore`, `complete`,
+`retire` and `create` covers every entry path: the `starpulse task` verbs, `/api/tasks`, `/api/edit`, the page, the
+Scheduler and the Unblocker, which all call those verbs.
+
+- The Events are the intent the file's before and after show: `TaskCreated`, `FieldsEdited` (own columns and `meta`),
+  `Transitioned` (both states), `CriterionAdded`, `CriterionChecked`, `CommentAdded`, `Claimed`/`Released`, `Archived` and
+  `Rehydrated`. A refused write appends nothing.
+- A Task whose stream is empty is seeded first with a `TaskImported` of its record, so a replay equals the row for tasks
+  written before History.
+- An append that finds the head moved reads it again and retries once, then raises `StaleVersion`.
+- A board whose log is not attached records nothing.
+
 A deployment declares its own Task fields in `[board.fields]`:
 
 ```toml

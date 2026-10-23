@@ -47,6 +47,7 @@ from starpulse._internal.board.seam import (
     TaskRetirer,
     Written,
 )
+from starpulse._internal.board.task_history import TaskHistory
 from starpulse._internal.board.upstream_backlog import (
     _CRITERIA,
     _FOLDERS,
@@ -1155,12 +1156,26 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         guard.standing,
     )
 
+    history = TaskHistory()
+
     def attach(log: EventLog) -> None:
         retired.engine = log.engine  # the retired tasks live in the view's history store
         claims.log = log
+        history.attach(log.engine)
 
     def start(feed: BoardFeed, group: str, log: EventLog) -> None:
         attach(log)
         made.start(feed, group, log)
 
-    return replace(made, start=start, attach=attach)
+    read = made.read
+    recorded = {
+        "writer": history.recorded(made.writer, read, actor_at=1),
+        "assign": history.recorded(made.assign, read),
+        "edit": history.recorded(made.edit, read),
+        "archive": history.recorded(made.archive, read, reason_at=0),
+        "restore": history.recorded(made.restore, read),
+        "complete": history.recorded(made.complete, read),
+        "retire": history.recorded(made.retire, read),
+        "create": history.created(made.create, read),
+    }
+    return replace(made, start=start, attach=attach, **recorded)
