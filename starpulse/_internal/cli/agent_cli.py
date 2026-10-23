@@ -114,6 +114,7 @@ from typing import Any, NoReturn
 from starpulse._internal.cli import agent_commands, agent_tasks, agent_wire, demo, doctor, skill_install
 from starpulse._internal.cli.agent_keys import (
     CELL_KEYS,
+    SCORE_KEYS,
     CLAIM_KEYS,
     DIFF_KEYS,
     DOC_KEYS,
@@ -128,6 +129,9 @@ from starpulse._internal.cli.agent_keys import (
     TASK_KEYS,
     TRANSITION_KEYS,
 )
+from starpulse._internal.github_api import GitHubError, connect, repo_of
+from starpulse._internal.level.cells import cell_of
+from starpulse._internal.level.scores import PullFacts, merged_pulls, pull_facts, score_cells
 from starpulse._internal.config.config import Config, ConfigError, load
 
 #: What each exit code means, as the manifest says it.
@@ -370,6 +374,28 @@ def _cells(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, An
     """The median steps per clean completion of each kind and size over `--hours`, as `/api/analytics/cells`
     answers; refusals as `analytics transitions`."""
     return _window_read(args, environ, "/api/analytics/cells", CELL_KEYS)
+
+
+def _scores(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """The score of each kind x size cell and profile over `--hours` (`level.scores`): the completed slices of
+    `/api/analytics/sessions`, the labels of the snapshot's settled tasks and, for each task's merged pull request in
+    `--repo`, the commits after it was ready and its time to merge from GitHub; refusals as `analytics transitions`."""
+    window = _window_read(args, environ, "/api/analytics/sessions", ("now", "window_s", "slices"))
+    settled = agent_wire.get_snapshot(agent_wire.server_url(args.server, environ))["settled"]
+    tasks = {task: {"labels": found.get("labels", [])} for task, found in settled.items()}
+    repo = repo_of(args.repo)
+    transport = connect(environ.get("GITHUB_TOKEN") or environ.get("GH_TOKEN"))
+    facts: dict[str, PullFacts] = {}
+    try:
+        scored = [f["task"] for f in window["slices"] if f["complete"] and cell_of(tasks, f["task"]) is not None]
+        numbers = merged_pulls(transport, repo) if scored else {}
+        for task in scored:
+            pull = pull_facts(transport, repo, numbers[task]) if task in numbers else None
+            if pull is not None:
+                facts[task] = pull
+    except GitHubError as exc:
+        raise agent_wire.CliError("unavailable", str(exc)) from exc
+    return {"now": window["now"], "window_s": window["window_s"], "scores": score_cells(window["slices"], tasks, facts)}
 
 
 def _graph(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
@@ -1203,6 +1229,17 @@ def _parser() -> argparse.ArgumentParser:
             type=float,
             help="the window to read, in hours; past the telemetry history it is refused (default 168)",
         )
+    scores = leaf(
+        analytics_verbs,
+        "scores",
+        "the score of each kind and size cell per profile (model and effort) over completed tasks, weighting clean "
+        "completion, mid-task prompts, commits after the PR was ready and time to merge, the last two from GitHub",
+        _scores,
+        SCORE_KEYS,
+        (0, 1, 2, 3),
+    )
+    scores.add_argument("--hours", type=float, help="the window to read, in hours (default 168)")
+    scores.add_argument("--repo", required=True, help="the repository whose pull requests to read, `owner/name`")
     command = verbs.add_parser("command", description="the project's commands", help="the project's commands")
     command_run = leaf(
         command.add_subparsers(dest="verb", required=True, metavar="verb"),
