@@ -8,11 +8,11 @@ from typing import Any
 import pytest
 import yaml
 
-from starpulse._internal.autopilot.inputs import review_points
+from starpulse._internal.scheduler.inputs import review_points
 from starpulse._internal.board.native import board
 from starpulse._internal.board.seam import Board
 from starpulse._internal.board.upstream_backlog import UpstreamBacklog
-from starpulse._internal.config.autopilot import Autopilot
+from starpulse._internal.config.scheduler import Scheduler
 from starpulse._internal.config.level import Level, Terminal
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.level_metrics import Run, level_metrics
@@ -180,7 +180,7 @@ def test_the_scheduler_counts_the_review_load_in_the_state_that_waits_on_a_pull_
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     feed, _ = _renamed(tmp_path, monkeypatch, {"task-1": ("Checking", {}), "task-2": ("Doing", {})})
-    policy = Autopilot()
+    policy = Scheduler()
 
     lane = policy.reviewed_lane(feed.roles.review)
 
