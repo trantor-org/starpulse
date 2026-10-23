@@ -37,8 +37,8 @@ class AutopilotError(ValueError):
 class Autopilot:
     lane: str | None = None
     """The lane whose tasks are eligible; none: the board's initial lane."""
-    review_lane: str = "review"
-    """The lane whose tasks' points are the review load."""
+    review_lane: str | None = None
+    """The lane whose tasks' points are the review load; none: the board's lane that waits on a pull request."""
     unsized_points: int = 3
     """The points a task with no `size-N` label counts as."""
     idle_minutes: float = 30
@@ -57,6 +57,10 @@ class Autopilot:
     def eligible_lane(self, initial: str) -> str:
         """The lane autopilot admits from: the configured one, else the board's `initial` lane."""
         return self.lane or initial
+
+    def reviewed_lane(self, review: str | None) -> str | None:
+        """The lane whose points are the review load: the configured one, else the board's `review` lane."""
+        return self.review_lane or review
 
     def session_limit(self, harness: str) -> float:
         """The session cap for `harness`: its own when set, else the shared `sessions` limit."""
@@ -93,7 +97,7 @@ def parse_autopilot(raw: object) -> Autopilot:
     if unknown := sorted(raw.keys() - _KEYS):
         raise AutopilotError(f"unknown autopilot key(s) {', '.join(unknown)}; known: {', '.join(sorted(_KEYS))}")
     defaults = Autopilot()
-    lane, review_lane = _lane(raw.get("lane"), "lane"), _lane(raw.get("review_lane", defaults.review_lane), "review_lane")
+    lane, review_lane = _lane(raw.get("lane"), "lane"), _lane(raw.get("review_lane"), "review_lane")
     unsized = raw.get("unsized_points", defaults.unsized_points)
     if isinstance(unsized, bool) or not isinstance(unsized, int) or unsized < 1:
         raise AutopilotError("autopilot unsized_points must be a whole number of 1 or more")

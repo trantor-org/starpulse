@@ -13,7 +13,7 @@ from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.kit.adapter_kit import url as _url
 from starpulse._internal.server.column_stream import ColumnViews
 from starpulse._internal.server.snapshot_cache import SnapshotCache
-from starpulse.tests.machines import MACHINES
+from starpulse.tests.machines import MACHINES, ROLES
 
 
 def test_a_stream_never_builds_the_snapshot_on_its_own_thread(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -26,7 +26,7 @@ def test_a_stream_never_builds_the_snapshot_on_its_own_thread(tmp_path: Path, mo
         return build(self, max_age_s)
 
     monkeypatch.setattr(SnapshotCache, "_build", recording)
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.put(task("PROJ-1", "In Progress", assignee="session-1"))
     with _serve(tmp_path, feed) as server:
         with urllib.request.urlopen(_url(server, "/api/held?assignee=session-1"), timeout=5) as resp:
@@ -39,7 +39,7 @@ def test_a_stream_never_builds_the_snapshot_on_its_own_thread(tmp_path: Path, mo
 
 
 def test_a_stale_cache_is_waited_on_not_built_by_the_caller() -> None:
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.put(task("PROJ-1", "To Do"))
     cache = SnapshotCache(feed, ttl_s=60, settle_s=0)
     first = cache.get()

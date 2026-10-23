@@ -19,7 +19,7 @@ from starpulse._internal.harnesses.telemetry import Signal, TelemetryLog, signal
 from starpulse._internal.kit.adapter_kit import serve, url
 from starpulse._internal.server.page_server import PageServer
 from starpulse.contracts.adapters import TaskKeys
-from starpulse.tests.machines import MACHINES
+from starpulse.tests.machines import MACHINES, ROLES
 from starpulse.tests.unit.harnesses.test_telemetry import FIXTURES
 
 KEYS = TaskKeys(
@@ -53,7 +53,7 @@ def telemetry(tmp_path: Path) -> TelemetryLog:
 @pytest.fixture
 def server(tmp_path: Path, telemetry: TelemetryLog) -> Iterator[PageServer]:
     publish_recorded(telemetry)
-    with serve(tmp_path, BoardFeed(machines=MACHINES, keys=KEYS), telemetry=telemetry, clock=lambda: NOW) as server:
+    with serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES, keys=KEYS), telemetry=telemetry, clock=lambda: NOW) as server:
         yield server
 
 
@@ -126,7 +126,7 @@ def test_a_window_that_is_not_a_positive_number_is_refused(server: PageServer, q
 
 
 def test_an_instance_that_receives_no_telemetry_cannot_report_session_health(tmp_path: Path) -> None:
-    with serve(tmp_path, BoardFeed(machines=MACHINES, keys=KEYS)) as server:
+    with serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES, keys=KEYS)) as server:
         status, body = _get(server)
 
     assert (status, "telemetry" in body["error"]) == (501, True)
@@ -151,10 +151,10 @@ def test_a_session_that_loaded_the_completion_skill_then_delivered_is_complete_b
     declared = Analytics(completion_skill="completing-tasks")
 
     with serve(
-        tmp_path, BoardFeed(machines=MACHINES, keys=KEYS), telemetry=telemetry, analytics=declared, clock=lambda: NOW
+        tmp_path, BoardFeed(roles=ROLES, machines=MACHINES, keys=KEYS), telemetry=telemetry, analytics=declared, clock=lambda: NOW
     ) as live:
         _, body = _get(live, "?hours=1")
-    with serve(tmp_path, BoardFeed(machines=MACHINES, keys=KEYS), telemetry=telemetry, clock=lambda: NOW) as bare:
+    with serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES, keys=KEYS), telemetry=telemetry, clock=lambda: NOW) as bare:
         _, undeclared = _get(bare, "?hours=1")
 
     (row,) = body["sessions"]

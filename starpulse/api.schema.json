@@ -5066,6 +5066,117 @@
       "title": "Reviewed",
       "type": "object"
     },
+    "Roles": {
+      "additionalProperties": false,
+      "description": "Which of the board's States play which part, as its machine declares them: a client reads these and never a\nState's name.",
+      "properties": {
+        "attention": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Where a task waits on a person."
+        },
+        "done": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Where the work is done: a resting State, else the final one."
+        },
+        "final": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Where a task is settled for good."
+        },
+        "initial": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Where a task starts."
+        },
+        "ready": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Where a task waits to be picked up."
+        },
+        "review": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Where a task waits on its pull request."
+        },
+        "startable": {
+          "description": "The States a session starts a task from.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "waiting": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Where a task waits on its Start Criteria or dependencies."
+        },
+        "working": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Where a session works a task."
+        }
+      },
+      "title": "Roles",
+      "type": "object"
+    },
     "RunDiff": {
       "additionalProperties": false,
       "description": "One transition's reference run against its slowest clean run.",
@@ -6130,6 +6241,18 @@
           ],
           "default": null,
           "description": "True while a just-started server is still reading its board: its Board is partial until a snapshot without it follows."
+        },
+        "roles": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Roles"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Which State plays which part on the board."
         },
         "settled": {
           "additionalProperties": {

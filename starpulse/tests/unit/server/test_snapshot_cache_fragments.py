@@ -3,11 +3,11 @@
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.server.snapshot_cache import SnapshotCache
-from starpulse.tests.machines import MACHINES
+from starpulse.tests.machines import MACHINES, ROLES
 
 
 def test_a_move_of_one_task_keeps_unrelated_agent_json_bytes() -> None:
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     for task_id in ("PROJ-1", "PROJ-2", "PROJ-3"):
         feed.put(task(task_id, "To Do", description=f"About {task_id}"))
     cache = SnapshotCache(feed, ttl_s=60, settle_s=0)

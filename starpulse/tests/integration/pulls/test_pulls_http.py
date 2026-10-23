@@ -17,7 +17,7 @@ from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import serve, url
 from starpulse._internal.pulls.pulls import PullStore
 from starpulse._internal.server.page_server import PageServer
-from starpulse.tests.machines import MACHINES
+from starpulse.tests.machines import MACHINES, ROLES
 
 
 def _pull(repo: str, number: int, state: str, body: str, fetched: float) -> dict:
@@ -66,7 +66,7 @@ def server(tmp_path: Path) -> Iterator[PageServer]:
             _pull("acme/skills", 1, "OPEN", "Session: bbb-222", 102.5),
         ]
     )
-    with serve(tmp_path, BoardFeed(machines=MACHINES), pulls=store) as server:
+    with serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES), pulls=store) as server:
         yield server
 
 
@@ -115,7 +115,7 @@ def test_a_repeated_read_is_answered_without_asking_the_store_again_until_it_cha
     asked = []
     find = store.find
     store.find = lambda *a, **k: asked.append(a) or find(*a, **k)  # type: ignore[method-assign]
-    with serve(tmp_path, BoardFeed(machines=MACHINES), pulls=store) as server:
+    with serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES), pulls=store) as server:
         for _ in range(3):
             _get(server, "")
         store.save([_pull("acme/widgets", 2, "OPEN", "Session: bbb-222", 101.0)])
@@ -126,7 +126,7 @@ def test_a_repeated_read_is_answered_without_asking_the_store_again_until_it_cha
 
 
 def test_metrics_serves_the_server_process_gauges_with_or_without_a_pull_store(tmp_path: Path) -> None:
-    with serve(tmp_path, BoardFeed(machines=MACHINES)) as server:
+    with serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES)) as server:
         with urllib.request.urlopen(url(server, "/metrics"), timeout=5) as resp:
             samples = dict(line.split() for line in resp.read().decode().splitlines() if not line.startswith("#"))
 
@@ -157,7 +157,7 @@ def test_slow_read_logs_one_line_with_the_query_and_each_phase_in_seconds(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     caplog.set_level(logging.INFO)
-    with serve(tmp_path, BoardFeed(machines=MACHINES), pulls=_slow_store(tmp_path, 0.2), slow_read_s=0.1) as server:
+    with serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES), pulls=_slow_store(tmp_path, 0.2), slow_read_s=0.1) as server:
         _get(server, "?repo=acme/widgets")
 
     (line,) = _slow_reads(caplog)
@@ -172,9 +172,9 @@ def test_slow_read_logs_nothing_for_a_fast_read_or_a_slow_read_of_another_route(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     caplog.set_level(logging.INFO)
-    with serve(tmp_path, BoardFeed(machines=MACHINES), pulls=_slow_store(tmp_path, 0.0), slow_read_s=60.0) as server:
+    with serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES), pulls=_slow_store(tmp_path, 0.0), slow_read_s=60.0) as server:
         _get(server, "")
-    with serve(tmp_path, BoardFeed(machines=MACHINES), pulls=_slow_store(tmp_path, 0.0), slow_read_s=0.0) as server:
+    with serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES), pulls=_slow_store(tmp_path, 0.0), slow_read_s=0.0) as server:
         urllib.request.urlopen(url(server, "/metrics"), timeout=5).read()
 
     assert _slow_reads(caplog) == []
@@ -195,7 +195,7 @@ def _counting_store(tmp_path: Path, seconds: float = 0.0) -> tuple[PullStore, li
 
 def test_a_save_computes_the_unfiltered_answer_before_any_reader_asks(tmp_path: Path) -> None:
     store, calls = _counting_store(tmp_path)
-    with serve(tmp_path, BoardFeed(machines=MACHINES), pulls=store) as server:
+    with serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES), pulls=store) as server:
         store.save([_pull("acme/widgets", 2, "OPEN", "Session: bbb-222", 101.0)])
         computed_by_save = len(calls)
         status, body = _get(server, "")
@@ -206,7 +206,7 @@ def test_a_save_computes_the_unfiltered_answer_before_any_reader_asks(tmp_path: 
 
 def test_readers_asking_together_for_an_answer_nobody_holds_share_one_computation(tmp_path: Path) -> None:
     store, calls = _counting_store(tmp_path, seconds=0.3)
-    with serve(tmp_path, BoardFeed(machines=MACHINES), pulls=store) as server:
+    with serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES), pulls=store) as server:
         with ThreadPoolExecutor(6) as pool:
             answers = list(pool.map(lambda _: _get(server, "?state=open"), range(6)))
 

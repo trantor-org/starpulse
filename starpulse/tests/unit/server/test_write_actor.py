@@ -17,7 +17,7 @@ from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.server.writes import archive_task, create_task, edit_task, start_task
 from starpulse.contracts.adapters import Move
-from starpulse.tests.machines import MACHINES
+from starpulse.tests.machines import MACHINES, ROLES
 
 
 class _Writer:
@@ -32,7 +32,7 @@ class _Writer:
 
 
 def _feed() -> BoardFeed:
-    feed = BoardFeed(machines=MACHINES, domains={}, run_safe=frozenset())
+    feed = BoardFeed(roles=ROLES, machines=MACHINES, domains={}, run_safe=frozenset())
     feed.put(task("PROJ-3", "Ready", moves={"in_progress": Move(allowed=True)}))
     return feed
 
@@ -114,7 +114,7 @@ def test_a_create_the_watch_places_before_the_create_answers_still_names_its_wri
     entered Ready at 18:05:47 on 2026-10-14 with no actor. The create holds the feed's placing until it has recorded
     its lane, so the placement finds it recorded under the writer."""
     log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.record_lanes(HistoryStore(f"sqlite:///{tmp_path / 'events.sqlite'}", MACHINES), log)
     watch: list[threading.Thread] = []
 

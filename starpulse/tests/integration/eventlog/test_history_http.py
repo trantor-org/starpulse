@@ -12,7 +12,7 @@ from starpulse._internal.eventlog.history import HistoryStore
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import serve, url
 from starpulse._internal.server.page_server import PageServer
-from starpulse.tests.machines import MACHINES
+from starpulse.tests.machines import MACHINES, ROLES
 
 
 def _get(server: PageServer, query: str) -> tuple[int, dict]:
@@ -37,7 +37,7 @@ def server(tmp_path: Path) -> Iterator[PageServer]:
     )
     for i, status in enumerate(("Waiting", "Ready")):
         store.record_lane(f"l{i}", "PROJ-7", status, 200.0 + i)
-    with serve(tmp_path, BoardFeed(machines=MACHINES), history=store) as server:
+    with serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES), history=store) as server:
         yield server
 
 

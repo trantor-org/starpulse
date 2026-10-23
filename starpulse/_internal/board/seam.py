@@ -17,6 +17,8 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 
 from starpulse._internal.config.adapter_types import module_name
 from starpulse._internal.config.config import DEFAULT_TYPE
+from starpulse._internal.machines.state_roles import StateRoles
+from starpulse._internal.machines.transitions import DEFAULT_STATUSES
 
 if TYPE_CHECKING:
     from starpulse._internal.feed.board_feed import BoardFeed
@@ -172,6 +174,8 @@ class Board:
     """The workflow cues the page draws, each `{dag, ...}` with its workflow named as `qualify` does."""
     waits: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
     """The facts the Board machine's states wait on, `{lane: {fact kind: event}}`; empty when the machine declares none."""
+    roles: StateRoles = field(default_factory=lambda: StateRoles.of_statuses(DEFAULT_STATUSES))
+    """The Board machine's states by the role each plays; a board with no machine file has the roles its statuses imply."""
     writer: MoveWriter | None = None
     """Sets a task's status when the page moves it; None refuses every move."""
     assign: AssigneeWriter | None = None

@@ -23,6 +23,7 @@ import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
 
+from starpulse._internal.machines.state_roles import StateRoles
 from starpulse._internal.machines.transitions import board_machine
 
 #: The page built as one script (`vite build --mode one-file`): a demo is one file, with no server to fetch a lazy chunk from.
@@ -288,6 +289,18 @@ SEED = [
 #: The lanes `SEED` fills, as the Board machine a capture with no board of its own is drawn on: CI's native board has
 #: three lanes, which the Kanban would draw as three columns and leave every other seeded card without one.
 SEED_LANES = ("Ready", "Waiting", "In Progress", "Review", "Needs attention", "Done")
+#: The roles the seeded lanes play, as a deployment's machine would declare them.
+SEED_ROLES = StateRoles(
+    {
+        "ready": "initial",
+        "waiting": "waiting_on_fact",
+        "in_progress": "resting",
+        "review": "waiting_on_fact",
+        "needs_attention": "waiting_on_person",
+        "done": "final",
+    },
+    {"ready": {"criteria_unmet": ""}, "waiting": {"criteria_met": ""}, "review": {"pr_terminal": ""}},
+)
 #: The tiers the seeded Board declares for the Star Map, as a trantor Board does: the unworked lanes stacked in one cell, then each working
 #: stage in its own, left to right.
 SEED_TIERS = [["ready", "waiting"], ["needs_attention"], ["in_progress"], ["review"], ["done"]]
@@ -421,6 +434,7 @@ def scrub(live: dict) -> dict:
                     {**f, "machine": {**board_machine(SEED_LANES), "tiers": SEED_TIERS}} if f["name"] == "board" else f
                     for f in live["flows"]
                 ],
+                "roles": SEED_ROLES.wire(),
             }
     for a in board:  # the Board's tasks are DEMO-1.. in Board order, whichever flow comes first
         names.setdefault(a["id"], f"DEMO-{len(names) + 1}")
@@ -470,7 +484,7 @@ def scrub(live: dict) -> dict:
         demo_pulls,
         live["now"],
     )
-    _seed_task_runs(flows, live["now"])
+    _seed_task_runs(flows, live["roles"]["working"], live["now"])
 
     def settled_task(id_: str, entry: dict) -> tuple[str, dict]:
         name = names.setdefault(id_, f"DEMO-{len(names) + 1}")
@@ -565,11 +579,11 @@ def _walk(machine: dict, state: str, i: int, now: float, via: str | None = None,
     return [{"state": t, "event": e, "at": at} for (_, e, t), at in zip(steps, _times(len(steps), i, now))]
 
 
-def _seed_task_runs(flows: list[dict], now: float) -> None:
+def _seed_task_runs(flows: list[dict], working_state: str, now: float) -> None:
     """Give the first In Progress Board task a failed run and the retry that succeeded, so its task view draws a Runs
     section; the capture's own runs are dropped, as they link the live scheduler."""
     board = next(f for f in flows if f["name"] == "board")
-    working = next((a for a in board["agents"] if a["state"] == "in_progress"), None)
+    working = next((a for a in board["agents"] if a["state"] == working_state), None)
     if working is not None:
         working["runs"] = [
             {"url": "#", "status": "failed", "startedAt": _iso(now - 7200)},

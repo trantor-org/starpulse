@@ -21,6 +21,21 @@ class Capabilities(_Api):
     create: bool | None = None
 
 
+class Roles(_Api):
+    """Which of the board's States play which part, as its machine declares them: a client reads these and never a
+    State's name."""
+
+    initial: str | None = Field(default=None, description="Where a task starts.")
+    final: str | None = Field(default=None, description="Where a task is settled for good.")
+    done: str | None = Field(default=None, description="Where the work is done: a resting State, else the final one.")
+    working: str | None = Field(default=None, description="Where a session works a task.")
+    ready: str | None = Field(default=None, description="Where a task waits to be picked up.")
+    waiting: str | None = Field(default=None, description="Where a task waits on its Start Criteria or dependencies.")
+    review: str | None = Field(default=None, description="Where a task waits on its pull request.")
+    attention: str | None = Field(default=None, description="Where a task waits on a person.")
+    startable: list[str] = Field(default_factory=list, description="The States a session starts a task from.")
+
+
 class Claim(_Api):
     reason: str
     at: float
@@ -78,6 +93,7 @@ class Snapshot(_Api):
     mergePins: list[LedgerRow] | None = Field(
         default=None, description="The pinned merge rows of the last day that the newest page leaves out."
     )
+    roles: Roles | None = Field(default=None, description="Which State plays which part on the board.")
     capabilities: Capabilities | None = Field(
         default=None,
         description="What the board writes: the task modal draws Edit and Archive only when its board does.",

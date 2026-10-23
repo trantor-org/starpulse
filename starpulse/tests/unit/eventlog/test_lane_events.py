@@ -10,7 +10,7 @@ from starpulse._internal.eventlog.event_log import EventLog, Tail
 from starpulse._internal.eventlog.history import HistoryStore
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse.contracts import BoardTask
-from starpulse.tests.machines import MACHINES
+from starpulse.tests.machines import MACHINES, ROLES
 
 GOOD = {"task": "T-1", "lane": "in_progress", "time": 5.0}
 
@@ -32,7 +32,7 @@ def test_a_lane_entry_is_appended_only_when_the_history_wrote_a_row(tmp_path: Pa
     log = EventLog(f"sqlite:///{tmp_path / 'ic.sqlite'}")
     store = HistoryStore(f"sqlite:///{tmp_path / 'ic.sqlite'}", MACHINES)
     clock = iter(range(100, 200))
-    feed = BoardFeed(machines=MACHINES, clock=lambda: float(next(clock)))
+    feed = BoardFeed(roles=ROLES, machines=MACHINES, clock=lambda: float(next(clock)))
     feed.record_lanes(store, log)
     store.record_lane("T-1@in_progress@50.0", "T-1", "in_progress", 50.0)  # the history already has this lane
 

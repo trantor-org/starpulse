@@ -12,14 +12,14 @@ from starpulse._internal.kit.adapter_kit import serve as _serve
 from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.kit.adapter_kit import url as _url
 from starpulse._internal.server.page_server import PageServer
-from starpulse.tests.machines import MACHINES
+from starpulse.tests.machines import MACHINES, ROLES
 
 GZIP = {"Accept-Encoding": "gzip"}
 
 
 def _large_feed() -> BoardFeed:
     """A board whose snapshot is well over 64 KB."""
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     for n in range(400):
         feed.put(task(f"PROJ-{n}", title=f"{'a long title ' * 20}{n}"))
     return feed
@@ -66,7 +66,7 @@ def test_a_snapshot_over_64_kb_is_gzipped_for_a_page_that_accepts_gzip(tmp_path:
 
 
 def test_a_body_under_64_kb_is_not_compressed_even_for_a_page_that_accepts_gzip(tmp_path: Path) -> None:
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.put(task("PROJ-1"))
     with _serve(tmp_path, feed) as server:
         encoding, body = _get(server, "/api/snapshot", GZIP)

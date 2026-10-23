@@ -23,7 +23,7 @@ def test_no_block_resolves_every_default_but_the_starter(tmp_path: Path) -> None
         assert autopilot.eligible_lane("to_do") == "to_do"  # the board's initial lane
         assert autopilot.tier_weights == {"fast": 1, "standard": 2, "deep": 4}
         assert autopilot.unsized_points == 3
-        assert autopilot.review_lane == "review"
+        assert autopilot.reviewed_lane("pr") == "pr"  # the board's review lane
         assert autopilot.idle_minutes == 30
         assert autopilot.state_dir is None  # the switch and the ledger sit beside the config
         assert set(autopilot.limits) == set(DIMENSIONS) == {"cpu", "memory", "sessions", "review"}

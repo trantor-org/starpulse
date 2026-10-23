@@ -42,6 +42,7 @@ def assemble(config: Config, base: Path, window_s: float | None, run_safe: Colle
         board.keys,
         config.tracker_url,
         machines=machines,
+        roles=board.roles,
         domains=domains,
         processes=config.qualified_processes(),
         run_safe=run_safe,

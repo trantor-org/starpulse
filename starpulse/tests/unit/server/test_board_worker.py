@@ -12,7 +12,7 @@ from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.server import board_worker, worker
 from starpulse.contracts import BoardTask
 from starpulse.tests import fake_board
-from starpulse.tests.machines import MACHINES
+from starpulse.tests.machines import MACHINES, ROLES
 
 BOARD = '[board]\ntype = "starpulse.tests.fake_board"\nlanes = ["waiting", "ready", "done"]\nwrites = true\n'
 WAIT_S = 5.0
@@ -50,7 +50,7 @@ def _store(tmp_path: Path) -> HistoryStore:
 
 def _feed(*tasks: BoardTask, clock: float = 100.0) -> BoardFeed:
     """A feed that has read its Board: the writers wait for that."""
-    feed = BoardFeed(machines=MACHINES, clock=lambda: clock)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES, clock=lambda: clock)
     feed.expect("0-0")
     for task in tasks:
         feed.put(task)
@@ -96,7 +96,7 @@ def test_the_writers_wait_for_the_board_to_be_read_before_they_forget_a_met_date
 ) -> None:
     store = _store(tmp_path)
     store.save_criteria_met({"T-1": 50.0})
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.expect("1-0")  # the stream has more to read than the feed has
 
     board_worker.start_writers(feed, store, _met, stop)

@@ -22,7 +22,7 @@ from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.feed.machine_tasks import MachineTasks
 from starpulse._internal.harnesses.harness import HARNESS_MACHINES
 from starpulse.contracts.adapters import BoardTask, MachineEvent, StartFailedError
-from starpulse.tests.machines import MACHINES
+from starpulse.tests.machines import MACHINES, ROLES
 
 START = 10_000.0
 PROFILE = "@agent-standard-high"  # tier standard: weight 2, so a size-8 task prices 16 percent of CPU and memory
@@ -40,7 +40,7 @@ class Rig:
     ) -> None:
         self.now = START
         self.host = {"cpu": 5.0, "memory": 5.0}
-        self.feed = BoardFeed(machines={**MACHINES, **HARNESS_MACHINES})
+        self.feed = BoardFeed(roles=ROLES, machines={**MACHINES, **HARNESS_MACHINES})
         self.harness = MachineTasks(self.feed)
         self.policy = Autopilot(lane="ready", limits={**Autopilot().limits, **(limits or {})}, **policy)
         self.sampler = Sampler(

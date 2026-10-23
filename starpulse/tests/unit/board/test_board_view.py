@@ -6,6 +6,7 @@ from collections.abc import Iterator
 from typing import Any
 
 from starpulse._internal.board.view import board_columns, cold_agent, done_ids, task_view
+from starpulse.tests.machines import ROLES
 
 
 class _CountedAgents(list):
@@ -34,7 +35,7 @@ def _snapshot(tasks: int) -> dict[str, Any]:
         for n in range(tasks)
     )
     states = [{"id": "ready", "name": "Ready"}, {"id": "done", "name": "Done"}]
-    return {"flows": [{"name": "board", "agents": agents, "machine": {"states": states}}], "pulls": {}, "settled": {}}
+    return {"flows": [{"name": "board", "agents": agents, "machine": {"states": states}}], "pulls": {}, "settled": {}, "roles": ROLES.wire()}
 
 
 def _passes(tasks: int) -> int:
@@ -55,7 +56,7 @@ def test_board_columns_still_reports_each_undone_dependency_as_waiting() -> None
 
 def test_a_cold_done_task_is_done_to_a_dependent_and_a_verb_view_loads_its_full_fields_from_the_record() -> None:
     waiting = {**_snapshot(1)["flows"][0]["agents"][0], "id": "T-9", "state": "ready", "dependencies": ["T-cold"]}
-    snapshot = {"flows": [{"name": "board", "agents": [waiting]}], "pulls": {}, "settled": {}, "cold_done": ["T-cold"]}
+    snapshot = {"flows": [{"name": "board", "agents": [waiting]}], "pulls": {}, "settled": {}, "roles": ROLES.wire(), "cold_done": ["T-cold"]}
     record = {
         "title": "Old work",
         "type": "story",
@@ -67,7 +68,7 @@ def test_a_cold_done_task_is_done_to_a_dependent_and_a_verb_view_loads_its_full_
         "acceptanceCriteria": [{"n": 1, "text": "ships", "checked": True}],
     }
 
-    cold = cold_agent("T-cold", record)
+    cold = cold_agent("T-cold", record, "done")
 
     assert done_ids(snapshot) == {"T-cold"}
     assert task_view(waiting, snapshot)["waiting_on"] == []

@@ -9,6 +9,19 @@ from starpulse._internal.board.upstream_backlog import _split
 from starpulse.tests.unit.board.test_native import native_root, write_task
 
 LANES = ["Waiting", "Ready", "In Progress", "Done"]
+MACHINE = """\
+name: board
+states:
+  waiting: {initial: true, waits: {criteria_met: CRITERIA_MET}}
+  ready: {role: waiting_on_fact, waits: {criteria_unmet: CRITERIA_UNMET}}
+  in_progress: {role: resting}
+  done: {final: true}
+events:
+  CRITERIA_MET: [{from: waiting, to: ready}]
+  CRITERIA_UNMET: [{from: ready, to: waiting}]
+  CLAIM: [{from: ready, to: in_progress}]
+  FINISH: [{from: in_progress, to: done}]
+"""
 CRITERIA = "\n## Start Criteria\n\n```yaml\nstart_criteria:\n  - {id: up, kind: cmd, expr: 'true'}\n```\n"
 
 
@@ -16,7 +29,8 @@ def _board(base: Path):
     native_root(base).mkdir(parents=True)
     (native_root(base) / "config.yml").write_text(yaml.safe_dump({"project_name": "demo", "statuses": LANES}))
     write_task(base, "task-5", "In Progress")
-    return board({}, base)
+    (base / "board.yaml").write_text(MACHINE)
+    return board({"machine": "board.yaml"}, base)
 
 
 def _front(path: Path) -> dict:

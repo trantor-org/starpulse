@@ -13,7 +13,7 @@ from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.harnesses.harness import HARNESS_MACHINES
 from starpulse._internal.server.writes import autopilot
 from starpulse.contracts.api.dto.autopilot import AutopilotStatus
-from starpulse.tests.machines import MACHINES
+from starpulse.tests.machines import MACHINES, ROLES
 from starpulse.tests.unit.server.test_autopilot_route import HOST, _feed
 
 
@@ -54,7 +54,7 @@ def test_a_sample_publishes_an_autopilot_event_matching_status(tmp_path: Path) -
 
 
 def test_a_put_publishes_an_autopilot_event_with_the_new_enabled(tmp_path: Path) -> None:
-    feed = BoardFeed(machines={**MACHINES, **HARNESS_MACHINES})
+    feed = BoardFeed(roles=ROLES, machines={**MACHINES, **HARNESS_MACHINES})
     runtime = _runtime(tmp_path, feed)
     runtime.sampler.sample()
     _, changes = feed.subscribe()

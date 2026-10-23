@@ -15,7 +15,7 @@ from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.config.config import CommitKeys, Config, Repo, RunsInstance
 from starpulse.tests.dagu_stub import dagu
 from starpulse.tests.hosts import FakeHost
-from starpulse.tests.machines import MACHINES
+from starpulse.tests.machines import MACHINES, ROLES
 
 CHECKS = ["config", "server", "adapter:board", "adapter:nightly", "gh"]
 
@@ -83,7 +83,7 @@ def test_the_doctor_verb_prints_the_checks_and_exits_1_when_one_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(doctor, "LIVE", FakeHost(gh_login=False).probes())
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.put(task("PROJ-1", "Ready"))
     with serve(tmp_path, feed) as server:
         code = cli.main(["doctor", "--server", url(server, "")], {})
@@ -98,7 +98,7 @@ def test_the_doctor_verb_exits_0_when_every_check_passes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(doctor, "LIVE", FakeHost().probes())
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.put(task("PROJ-1", "Ready"))
     with serve(tmp_path, feed) as server:
         code = cli.main(["doctor", "--server", url(server, "")], {})

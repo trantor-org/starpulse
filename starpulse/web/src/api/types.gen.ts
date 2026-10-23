@@ -1801,6 +1801,10 @@ export interface Snapshot {
    * True while a just-started server is still reading its board: its Board is partial until a snapshot without it follows.
    */
   reading?: boolean | null;
+  /**
+   * Which State plays which part on the board.
+   */
+  roles?: Roles | null;
   settled: {
     [k: string]: Settled;
   };
@@ -1889,6 +1893,48 @@ export interface MachineEntry {
 export interface MachineEntryFrom {
   machine: string;
   state: string;
+}
+/**
+ * Which of the board's States play which part, as its machine declares them: a client reads these and never a
+ * State's name.
+ */
+export interface Roles {
+  /**
+   * Where a task waits on a person.
+   */
+  attention?: string | null;
+  /**
+   * Where the work is done: a resting State, else the final one.
+   */
+  done?: string | null;
+  /**
+   * Where a task is settled for good.
+   */
+  final?: string | null;
+  /**
+   * Where a task starts.
+   */
+  initial?: string | null;
+  /**
+   * Where a task waits to be picked up.
+   */
+  ready?: string | null;
+  /**
+   * Where a task waits on its pull request.
+   */
+  review?: string | null;
+  /**
+   * The States a session starts a task from.
+   */
+  startable?: string[];
+  /**
+   * Where a task waits on its Start Criteria or dependencies.
+   */
+  waiting?: string | null;
+  /**
+   * Where a session works a task.
+   */
+  working?: string | null;
 }
 /**
  * `GET /api/analytics/stages`: sub-stages and their stability from one window to the one before.

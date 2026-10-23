@@ -17,7 +17,7 @@ from starpulse._internal.ci.ci import CI_MACHINES
 from starpulse._internal.feed.machine_tasks import MachineTasks
 from starpulse._internal.eventlog import events as machine_events
 from starpulse._internal.eventlog.event_log import EventLog
-from starpulse.tests.machines import FLOWS, MACHINES
+from starpulse.tests.machines import FLOWS, MACHINES, ROLES
 
 _ids = itertools.count(1)
 
@@ -59,7 +59,7 @@ def test_every_machine_level_is_in_the_snapshot_beside_the_board_with_its_tasks(
 
 
 def test_machines_given_to_the_placer_replace_the_feeds_and_one_it_was_not_given_places_nothing() -> None:
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     tasks = MachineTasks(feed, machines={name: m for name, m in MACHINES.items() if name != "in-progress"})
     tasks.handle_entry(*_entry("in-progress", "WORKTREE_READY", task="PROJ-1", at=100.0))
     tasks.handle_entry(*_entry("authoring-skills", "GUIDANCE_READ", task="PROJ-2", at=101.0))
@@ -111,7 +111,7 @@ def test_a_trail_keeps_only_the_latest_steps() -> None:
 
 
 def test_a_machine_a_third_party_moves_keeps_its_whole_history_for_the_task_views_totals() -> None:
-    feed = BoardFeed(machines={**MACHINES, **CI_MACHINES})
+    feed = BoardFeed(roles=ROLES, machines={**MACHINES, **CI_MACHINES})
     tasks = MachineTasks(feed)
     for event in ["PR_OPENED", "PUSHED", *["CHECKS_FAILED", "RERUN"] * 20]:
         tasks.handle_entry(*_entry("ci", event, at=100.0))

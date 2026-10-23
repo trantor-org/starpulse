@@ -21,7 +21,7 @@ from starpulse._internal.kit.adapter_kit import serve, task, url
 from starpulse._internal.server.page_server import PageServer
 from starpulse.contracts.api.registry import BODIES, RESPONSES
 from starpulse.tests.fake_board import bare_board
-from starpulse.tests.machines import MACHINES
+from starpulse.tests.machines import MACHINES, ROLES
 from starpulse.tests.unit.feed.test_board_feed import _paged_feed
 from starpulse.tests.unit.harnesses.test_telemetry import FIXTURES
 from starpulse.tests.unit.level.test_analytics import NOW, ROWS
@@ -51,7 +51,7 @@ ROUTES = (
 def server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[PageServer]:
     """One server for the module: every test reads it with GET and none writes to it."""
     tmp_path = tmp_path_factory.mktemp("contract")
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.put(task("T-1", "In Progress"))
     store = HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", MACHINES)
     for i, (name, at, _old, new) in enumerate(ROWS):

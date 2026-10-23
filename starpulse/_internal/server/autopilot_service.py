@@ -53,7 +53,9 @@ def start_autopilot(
     def settle(task: str, reason: str) -> Written:
         if board.edit is None:
             return Written(False, "this board has no editor", unavailable=True)
-        return board.edit(task, {"status": "needs_attention"}, reason)
+        if board.roles.attention is None:
+            return Written(False, "this board's machine has no lane that waits on a person", unavailable=True)
+        return board.edit(task, {"status": board.roles.attention}, reason)
 
     def claim(task: str, comment: str) -> Written:
         if board.edit is None:

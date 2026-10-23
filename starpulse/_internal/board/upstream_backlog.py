@@ -33,6 +33,7 @@ except ImportError:
 
 from starpulse._internal.board import project_machines
 from starpulse._internal.board.seam import Board, MoveWriter, Written
+from starpulse._internal.machines.state_roles import StateRoles
 from starpulse._internal.machines.transitions import DEFAULT_STATUSES, board_machine, lane_id
 from starpulse.contracts.task_keys import TaskKeys
 
@@ -58,7 +59,6 @@ _FOLDERS: tuple[tuple[str, Literal["completed", "archived"] | None], ...] = (
     ("completed", "completed"),
     ("archive/tasks", "archived"),
 )
-_DONE_LANE = "done"
 _DESCRIPTION = re.compile(r"<!-- SECTION:DESCRIPTION:BEGIN -->(.*?)<!-- SECTION:DESCRIPTION:END -->", re.S)
 _HEADED_DESCRIPTION = re.compile(r"^## Description\s*\n(.*?)(?=^## |\Z)", re.S | re.M)
 _NOTES = re.compile(r"<!-- SECTION:NOTES:BEGIN -->(.*?)<!-- SECTION:NOTES:END -->", re.S)
@@ -198,9 +198,9 @@ def _criteria(body: str) -> list[tuple[bool, str]]:
     return [(mark != " ", text) for mark, _, text in _ITEM.findall(found.group(1))] if found else []
 
 
-def _pause_reason(body: str, lane: str) -> str:
+def _pause_reason(body: str, lane: str, attention: str | None) -> str:
     """The first line of a `Needs attention` task's `## Needs attention` section, else empty."""
-    found = _NEEDS_ATTENTION.search(body) if lane == "needs_attention" else None
+    found = _NEEDS_ATTENTION.search(body) if lane == attention else None
     return next((line.strip() for line in found.group(1).splitlines() if line.strip()), "") if found else ""
 
 
@@ -251,6 +251,7 @@ class UpstreamBacklog:
         kept: Callable[[dict[str, list]], None] = lambda _files: None,
         retired: Callable[[bool], Iterable[str] | None] = lambda _force=False: None,
         refusal: Callable[[Mapping[str, Any], str, str], tuple[str, str] | None] = lambda *_: None,
+        roles: StateRoles | None = None,
     ) -> None:
         """`files` are the fingerprints a saved Board was placed from (`files`), so the first scan reads only the files
         changed since; `kept` is handed them after each scan that placed or retracted a task. `retired` streams the
@@ -269,6 +270,7 @@ class UpstreamBacklog:
         self._refusal = refusal
         self._moves = moves if moves is not None else board_moves(board_machine(self.config.statuses))
         self._lanes = {lane_id(status) for status in self.config.statuses}
+        self._roles = roles or StateRoles.of_statuses(self.config.statuses)
         # keyed by the listing's path string, so a scan of unchanged files builds no Path
         self._seen: dict[str, tuple[int, int]] = {}
         self._ids: dict[str, str] = {}
@@ -356,7 +358,7 @@ class UpstreamBacklog:
         held = set(self._ids.values())
         for text in texts:
             task = self._task(self.root, text, "completed")
-            if task is None or task.lane != _DONE_LANE:
+            if task is None or task.lane != self._roles.done:
                 continue
             done.add(task.id)
             if task.id not in held:
@@ -402,7 +404,7 @@ class UpstreamBacklog:
             description=_description(body),
             acceptance_criteria=tuple(text for _, text in criteria),
             acceptance_checked=tuple(checked for checked, _ in criteria),
-            pause_reason=_pause_reason(body, lane),
+            pause_reason=_pause_reason(body, lane, self._roles.attention),
             notes=_notes(body),
             moves={} if settled else self._offered(lane, frontmatter, body),
         )
@@ -463,18 +465,18 @@ def _listing(folder: Path) -> list[tuple[str, tuple[int, int]]]:
 _SETTINGS = {"type", "path", "interval", "machine", "command"}
 
 
-def cli_writer(root: Path, statuses: tuple[str, ...], command: list[str]) -> MoveWriter:
+def cli_writer(root: Path, statuses: tuple[str, ...], roles: StateRoles, command: list[str]) -> MoveWriter:
     """A board writer that sets a status with the `backlog` CLI run in the project and answers with its output.
 
     A lane's status is the project's own spelling of it (`QA` for a move to `Qa`). An agent's claim (a move to
-    `In Progress` that names its session) also appends the `**Assignee:** <session>` marker to the task's notes, in
+    working state that names its session) also appends the `**Assignee:** <session>` marker to the task's notes, in
     the same edit as the status, so the board can say which session holds the task.
     """
     spelled = {lane_id(status): status for status in statuses}
 
     def write(task: str, status: str, actor: str, session: str = "") -> Written:
         argv = [*command, "task", "edit", task, "-s", spelled.get(lane_id(status), status)]
-        if actor != "operator" and session and lane_id(status) == "in_progress":
+        if actor != "operator" and session and lane_id(status) == roles.working:
             argv += ["--append-notes", f"**Assignee:** {session}"]
         try:
             done = subprocess.run(argv, cwd=root.parent, capture_output=True, text=True, timeout=30.0, check=False)
@@ -510,7 +512,7 @@ def project_board(
     root: Path,
     settings: Mapping[str, Any],
     base: Path,
-    writers: Callable[[BacklogConfig], Mapping[str, Any]],
+    writers: Callable[[BacklogConfig, StateRoles], Mapping[str, Any]],
     retired: Callable[[bool], Iterable[str] | None] = lambda _force=False: None,
     refusal: Callable[[Mapping[str, Any], str, str], tuple[str, str] | None] = lambda *_: None,
 ) -> Board:
@@ -530,6 +532,7 @@ def project_board(
         declared = compiled.writers
     else:
         compiled, drawn, cues, declared = None, board_machine(config.statuses), [], {}
+    roles = StateRoles.of_machine(compiled) if compiled else StateRoles.of_statuses(config.statuses)
 
     def machines(qualify: Qualify, workflows: Collection[str]) -> dict[str, dict]:
         flows = {**({"board": compiled} if compiled else {}), **project_machines.load(base, board_file)}
@@ -562,6 +565,7 @@ def project_board(
             kept=lambda scanned: feed.keep_source({"files": scanned, "projection": projection}),
             retired=retired,
             refusal=refusal,
+            roles=roles,
         ).start(interval, scanned=lambda: feed.expect("0-0"))
         threading.Thread(target=feed.keep_saved, args=(threading.Event(),), name="board-state", daemon=True).start()
 
@@ -571,9 +575,10 @@ def project_board(
         keys=upstream_keys(config.prefix),
         cues=lambda qualify: cues,
         waits=compiled.waits if compiled else {},
+        roles=roles,
         source=str(root),
         state_key=lambda: _state_key(root),
-        **writers(config),
+        **writers(config, roles),
     )
 
 
@@ -604,4 +609,4 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         raise ValueError(f"board: unknown key(s) {', '.join(unknown)}; known: {', '.join(sorted(_SETTINGS))}")
     command = shlex.split(str(settings.get("command", "backlog")))
     root = base / str(settings.get("path", "backlog"))
-    return project_board(root, settings, base, lambda config: {"writer": cli_writer(root, config.statuses, command)})
+    return project_board(root, settings, base, lambda config, roles: {"writer": cli_writer(root, config.statuses, roles, command)})

@@ -21,7 +21,7 @@ import pytest
 
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import serve, task
-from starpulse.tests.machines import MACHINES
+from starpulse.tests.machines import MACHINES, ROLES
 
 VIEWERS = 40
 FETCHES = 4
@@ -47,7 +47,7 @@ def _threads(pid: int) -> int:
 
 
 def _feed() -> BoardFeed:
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.put(task("PROJ-0", title="crowd", description=os.urandom(400_000).hex()))
     return feed
 

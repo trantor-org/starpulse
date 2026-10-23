@@ -16,7 +16,7 @@ from starpulse._internal.harnesses.telemetry import TelemetryLog, signals
 from starpulse._internal.kit.adapter_kit import serve, url
 from starpulse._internal.server.page_server import PageServer
 from starpulse.contracts.adapters import TaskKeys
-from starpulse.tests.machines import MACHINES
+from starpulse.tests.machines import MACHINES, ROLES
 from starpulse.tests.unit.harnesses.test_telemetry import FIXTURES
 
 KEYS = TaskKeys(
@@ -42,7 +42,7 @@ def server(tmp_path: Path) -> Iterator[PageServer]:
     for name in ("claude_code/otlp.ndjson", "codex/otlp.ndjson"):
         for line in (FIXTURES / name).read_text().splitlines():
             telemetry.publish(signals(json.loads(line)))
-    with serve(tmp_path, BoardFeed(machines=MACHINES, keys=KEYS), telemetry=telemetry, clock=lambda: NOW) as server:
+    with serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES, keys=KEYS), telemetry=telemetry, clock=lambda: NOW) as server:
         yield server
 
 
@@ -88,7 +88,7 @@ def test_a_window_that_is_not_a_positive_number_is_refused(server: PageServer, q
 
 
 def test_an_instance_that_receives_no_telemetry_cannot_report_steps(tmp_path: Path) -> None:
-    with serve(tmp_path, BoardFeed(machines=MACHINES, keys=KEYS)) as server:
+    with serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES, keys=KEYS)) as server:
         status, body = _get(server)
 
     assert (status, "telemetry" in body["error"]) == (501, True)

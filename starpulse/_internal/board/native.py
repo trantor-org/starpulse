@@ -71,7 +71,7 @@ from starpulse._internal.board.upstream_backlog import (
 from starpulse._internal.eventlog.lane_events import ARCHIVED, COMPLETED
 from starpulse._internal.eventlog.tables import retired_tasks
 from starpulse._internal.feed import criteria
-from starpulse._internal.machines.transitions import DONE, WAITING
+from starpulse._internal.machines.state_roles import StateRoles
 
 if TYPE_CHECKING:
     from starpulse._internal.eventlog.event_log import EventLog
@@ -622,7 +622,7 @@ def _editor(root: Path, statuses: tuple[str, ...], guard: _Guard = _Guard(), lin
     return edit
 
 
-def _open_dependents(root: Path, task: str) -> list[str]:
+def _open_dependents(root: Path, task: str, done: str | None) -> list[str]:
     """Ids of the tasks under `tasks/` that are not Done and list `task` as a dependency, in file order."""
     found = []
     for path in sorted((root / "tasks").glob("*.md")):
@@ -630,14 +630,14 @@ def _open_dependents(root: Path, task: str) -> list[str]:
             frontmatter, _ = _split(path.read_text())
         except OSError:
             continue  # moved or removed while looking
-        if not isinstance(frontmatter, dict) or lane_id(str(frontmatter.get("status") or "")) == DONE:
+        if not isinstance(frontmatter, dict) or lane_id(str(frontmatter.get("status") or "")) == done:
             continue
         if task.casefold() in {dependency.casefold() for dependency in _strings(frontmatter.get("dependencies"))}:
             found.append(str(frontmatter.get("id") or path.stem).strip())
     return found
 
 
-def _unlinker(task: str, reason: str, ready: str | None) -> Callable[[dict, str], str]:
+def _unlinker(task: str, reason: str, ready: str | None, waiting: str | None) -> Callable[[dict, str], str]:
     """An edit that drops `task` from a task's dependencies and says why; a Waiting task left with no dependency and
     no Start Criteria moves to `ready`, since the release pass reads only Waiting tasks that still have one."""
     note = f"Removed dependency on {task}: archived" + (f" ({reason.strip()})" if reason.strip() else "")
@@ -645,8 +645,8 @@ def _unlinker(task: str, reason: str, ready: str | None) -> Callable[[dict, str]
     def edit(frontmatter: dict, body: str) -> str:
         kept = [name for name in _strings(frontmatter.get("dependencies")) if name.casefold() != task.casefold()]
         frontmatter["dependencies"] = kept
-        waiting = lane_id(str(frontmatter.get("status") or "")) == WAITING
-        if waiting and not kept and ready is not None and not criteria.authored(body):
+        held = lane_id(str(frontmatter.get("status") or "")) == waiting
+        if held and not kept and ready is not None and not criteria.authored(body):
             frontmatter["status"] = ready
             return _comment(body, f"{note}; no dependency is left, so it moved to {ready}.")
         return _comment(body, note)
@@ -654,12 +654,12 @@ def _unlinker(task: str, reason: str, ready: str | None) -> Callable[[dict, str]
     return edit
 
 
-def _archiver(root: Path, statuses: tuple[str, ...], guard: _Guard = _Guard()) -> TaskArchiver:
+def _archiver(root: Path, statuses: tuple[str, ...], roles: StateRoles, guard: _Guard = _Guard()) -> TaskArchiver:
     """A board writer that moves a task's file to `archive/tasks/`, from any lane, after recording a non-blank reason as a comment.
 
     An archived task never reaches Done, so each open task that depends on it has that dependency removed first, with
     a comment saying why; a Waiting one left with no dependency is released to Ready."""
-    ready = {lane_id(status): status for status in statuses}.get("ready")
+    ready = {lane_id(status): status for status in statuses}.get(roles.ready or "")
 
     def archive(task: str, reason: str, /, actor: str = OPERATOR) -> Written:
         if (path := _find(root, task)) is None:
@@ -673,9 +673,9 @@ def _archiver(root: Path, statuses: tuple[str, ...], guard: _Guard = _Guard()) -
             ).ok
         ):
             return noted
-        dependents = _open_dependents(root, task)
+        dependents = _open_dependents(root, task, roles.done)
         for dependent in dependents:
-            if not (unlinked := _update(root, dependent, _unlinker(task, reason, ready), guard, actor)).ok:
+            if not (unlinked := _update(root, dependent, _unlinker(task, reason, ready, roles.waiting), guard, actor)).ok:
                 return unlinked
         target = root / "archive" / "tasks" / path.name
         try:
@@ -792,7 +792,7 @@ class _Retired:
 _RETIRABLE = ("tasks", "completed", "archive/tasks")
 
 
-def _retirer(root: Path, retired: _Retired) -> TaskRetirer:
+def _retirer(root: Path, retired: _Retired, roles: StateRoles) -> TaskRetirer:
     """A board writer that takes a Done or archived task's file off the board into `retired`, byte for byte.
 
     The file is first renamed to a name no scan reads, so a write meeting the retire finds no file rather than losing
@@ -803,7 +803,7 @@ def _retirer(root: Path, retired: _Retired) -> TaskRetirer:
             return Written(False, f"{task} has no task file on the board")
         frontmatter, _ = _split(text := path.read_bytes().decode())
         status = str(frontmatter.get("status") or "") if isinstance(frontmatter, dict) else ""
-        if path.parent != root / "archive" / "tasks" and lane_id(status) != "done":
+        if path.parent != root / "archive" / "tasks" and lane_id(status) != roles.done:
             return Written(False, f"{task} is {status or 'without a status'}, neither Done nor archived")
         held = path.with_name(f"{path.name}.retiring")
         try:
@@ -899,16 +899,18 @@ def _moved(written: Written, lane: str) -> Written:
     return written._replace(lane=lane, at=time.time()) if written.ok else written
 
 
-def _writer(root: Path, statuses: tuple[str, ...], guard: _Guard = _Guard(), claims: _Claims = _Claims()) -> MoveWriter:
+def _writer(
+    root: Path, statuses: tuple[str, ...], roles: StateRoles, guard: _Guard = _Guard(), claims: _Claims = _Claims()
+) -> MoveWriter:
     """A board writer that sets a status in the task's file. A lane's status is the board's own spelling of it.
 
-    An agent's claim (a move to `In Progress` that names its session) also records the session as the task's assignee,
+    An agent's claim (a move to the working State that names its session) also records the session as the task's assignee,
     and a refused claim is recorded on `board:claims`.
     """
     spelled = {lane_id(status): status for status in statuses}
 
     def write(task: str, status: str, actor: str, session: str = "") -> Written:
-        claim = actor != OPERATOR and session and lane_id(status) == "in_progress"
+        claim = actor != OPERATOR and session and lane_id(status) == roles.working
 
         def edit(frontmatter: dict, body: str) -> str:
             frontmatter["status"] = spelled.get(lane_id(status), status)
@@ -922,7 +924,7 @@ def _writer(root: Path, statuses: tuple[str, ...], guard: _Guard = _Guard(), cla
     return write
 
 
-def _completer(root: Path, statuses: tuple[str, ...]) -> TaskCompleter:
+def _completer(root: Path, statuses: tuple[str, ...], roles: StateRoles) -> TaskCompleter:
     """A board writer that moves a Done task's file to `completed/`, where the reader and the projection still find it.
 
     The move enters the `completed` lane where the board has one; a board without it keeps the task in Done."""
@@ -934,7 +936,7 @@ def _completer(root: Path, statuses: tuple[str, ...]) -> TaskCompleter:
         if path.parent.name == "completed":
             return Written(False, f"{task} is already completed")
         status = str(_split(path.read_text())[0].get("status") or "")
-        if lane_id(status) != "done":
+        if lane_id(status) != roles.done:
             return Written(False, f"{task} is {status or 'without a status'}, not Done")
         target = root / "completed" / path.name
         try:
@@ -1112,18 +1114,18 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         root,
         settings,
         base,
-        lambda config: {
-            "writer": _writer(root, config.statuses, guard, claims),
+        lambda config, roles: {
+            "writer": _writer(root, config.statuses, roles, guard, claims),
             "assign": assign,
             "create": _creator(root, config, retired, guard, file_name, link),
             "read": _reader(root, evaluate.latest if isinstance(evaluate, criteria.Evaluator) else evaluate),
             "evaluate": evaluate,
             "holds": _holds(settings.get("holds"), base),
             "edit": _editor(root, config.statuses, guard, link),
-            "archive": _archiver(root, config.statuses, guard),
+            "archive": _archiver(root, config.statuses, roles, guard),
             "restore": _restorer(root, retired),
-            "complete": _completer(root, config.statuses),
-            "retire": _retirer(root, retired),
+            "complete": _completer(root, config.statuses, roles),
+            "retire": _retirer(root, retired, roles),
             "retired": _retired_reader(retired),
             "import_retired": _importer(root, retired),
             "docs": native_docs.lister(root),

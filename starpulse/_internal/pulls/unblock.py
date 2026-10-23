@@ -22,7 +22,7 @@ from starpulse._internal.board.seam import TaskEditor
 from starpulse._internal.config.config import Repo
 from starpulse._internal.config.pins import GitHub, LiveBuild, Pins, link
 from starpulse._internal.feed import criteria
-from starpulse._internal.feed.board_feed import WAITING, BoardFeed
+from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.pulls.pull_requests import PULL_URL
 
 if TYPE_CHECKING:  # annotation only: the pull store opens the database stack
@@ -32,7 +32,6 @@ logger = logging.getLogger(__name__)
 
 #: Seconds between passes over the Waiting tasks.
 UNBLOCK_S = 30.0
-READY = "ready"
 COMMENT = "Every dependency has merged; StarPulse moved this task to Ready."
 
 
@@ -148,7 +147,7 @@ class Unblocker:
         waiting = [
             agent
             for agent in sorted(self._feed.open_tasks(), key=lambda agent: agent["id"])
-            if agent["state"] == WAITING and agent["dependencies"]
+            if agent["state"] == self._feed.roles.waiting and agent["dependencies"]
         ]
         self._sent &= {agent["id"] for agent in waiting}
         moved: list[str] = []
@@ -159,7 +158,7 @@ class Unblocker:
             if self._gate.unapplied(agent):
                 continue
             try:
-                written = self._edit(name, {"status": READY}, COMMENT)
+                written = self._edit(name, {"status": self._feed.roles.ready}, COMMENT)
             except Exception:  # one task's write must not end the pass
                 logger.exception("unblock: cannot move %s to Ready", name)
                 continue

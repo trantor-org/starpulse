@@ -1,0 +1,24 @@
+# A board whose States are renamed (todo, doing, on_me, shipped, ...): every role is declared, none is read from a name.
+name: renamed-board
+states:
+  inbox: {initial: true}
+  todo: {role: waiting_on_fact, waits: {deps_unresolved: WAIT_ON_DEPS, criteria_unmet: CRITERIA_UNMET}}
+  parked: {role: waiting_on_fact, waits: {deps_done: DEPS_DONE, criteria_met: CRITERIA_MET}}
+  doing: {role: resting}
+  checking: {role: waiting_on_fact, waits: {pr_terminal: MERGED}}
+  on_me: {role: waiting_on_person}
+  shipped: {role: resting}
+  gone: {final: true}
+events:
+  WAIT_ON_DEPS: [{from: todo, to: parked}]
+  CRITERIA_UNMET: [{from: todo, to: parked}]
+  DEPS_DONE: [{from: parked, to: todo}]
+  CRITERIA_MET: [{from: parked, to: todo}]
+  MERGED: [{from: checking, to: shipped}]
+  TRIAGE: [{from: inbox, to: todo}]
+  START: [{from: todo, to: doing}, {from: parked, to: doing}, {from: on_me, to: doing}]
+  REVIEW: [{from: doing, to: checking}]
+  PARK: [{from: doing, to: parked}]
+  ASK: [{from: doing, to: on_me}]
+  ARCHIVE: [{from: shipped, to: gone}]
+rests: [shipped]

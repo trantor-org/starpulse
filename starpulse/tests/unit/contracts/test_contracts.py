@@ -25,7 +25,7 @@ from starpulse.contracts.adapters import (
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse.contracts.api.registry import REQUESTS
 from starpulse._internal.feed.machine_tasks import MachineTasks
-from starpulse.tests.machines import MACHINES
+from starpulse.tests.machines import MACHINES, ROLES
 from starpulse.tests.unit.feed.test_machine_tasks import _agents, _entry
 
 PROJ = TaskKeys(key=re.compile(r"PROJ-\d+"), branch=re.compile(r"(?:refs/heads/)?feature/(PROJ-\d+)(?:-|$)"))
@@ -50,7 +50,7 @@ def test_a_branch_maps_to_its_task_key_through_the_scheme_format() -> None:
 
 
 def test_starpulse_places_a_task_whose_key_the_adapter_declared() -> None:
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     tasks = MachineTasks(feed, keys=PROJ)
 
     tasks.handle_entry(*_entry("in-progress", "WORKTREE_READY", task="PROJ-123", at=100.0))
@@ -59,7 +59,7 @@ def test_starpulse_places_a_task_whose_key_the_adapter_declared() -> None:
 
 
 def test_a_task_outside_the_declared_scheme_is_not_placed() -> None:
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     tasks = MachineTasks(feed, keys=NUMBERED)
 
     tasks.handle_entry(*_entry("in-progress", "WORKTREE_READY", task="PROJ-123", at=100.0))
@@ -200,7 +200,7 @@ def test_a_pool_is_a_name_with_its_capacity_and_load() -> None:
 
 
 def test_a_machine_event_an_adapter_wrote_places_its_task_or_run_without_a_stream_entry() -> None:
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     tasks = MachineTasks(feed, keys=PROJ)
 
     tasks.put(MachineEvent(machine="in-progress", event="WORKTREE_READY", task="PROJ-5", actor="hook", time=100.0))

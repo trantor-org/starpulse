@@ -17,7 +17,7 @@ from h2.exceptions import ProtocolError
 
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import serve
-from starpulse.tests.machines import MACHINES
+from starpulse.tests.machines import MACHINES, ROLES
 
 
 class _Answer:
@@ -61,7 +61,7 @@ def _h2_request(
 
 @pytest.fixture
 def cleartext(tmp_path: Path) -> Iterator[int]:
-    with serve(tmp_path, BoardFeed(machines=MACHINES)) as server:
+    with serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES)) as server:
         yield server.server_port
 
 
@@ -112,7 +112,7 @@ def test_a_tls_client_offering_h2_in_alpn_is_negotiated_to_http2(
 ) -> None:
     context = ssl.create_default_context(cafile=str(certificate[0]))
     context.set_alpn_protocols(["h2", "http/1.1"])
-    with serve(tmp_path, BoardFeed(machines=MACHINES), tls=certificate) as server:
+    with serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES), tls=certificate) as server:
         port: Any = server.server_port
         with socket.create_connection(("127.0.0.1", port), timeout=5) as raw:
             with context.wrap_socket(raw, server_hostname="127.0.0.1") as connection:

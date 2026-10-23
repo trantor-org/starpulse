@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Any
 
-from starpulse._internal.machines.transitions import DONE
 from starpulse.contracts.adapters import Move
 
 #: Who `task move` moves as: the machine YAML's writers say which moves an agent may make.
@@ -25,20 +25,25 @@ def _agent_moves(agent: dict[str, Any]) -> dict[str, dict[str, Any]]:
     }
 
 
+def roles_of(snapshot: dict[str, Any]) -> SimpleNamespace:
+    """The snapshot's state roles, each point an attribute: `roles_of(snapshot).done` is the State where work is done."""
+    return SimpleNamespace(**snapshot["roles"])
+
+
 def done_ids(snapshot: dict[str, Any]) -> set[str]:
-    """The tasks a dependency no longer waits on: those in the `done` lane, those past their hot day (`cold_done`, held
+    """The tasks a dependency no longer waits on: those in the done lane, those past their hot day (`cold_done`, held
     by the full view alone) and those settled as completed."""
-    done = {task["id"] for task in board_flow(snapshot)["agents"] if task["state"] == DONE}
+    done = {task["id"] for task in board_flow(snapshot)["agents"] if task["state"] == roles_of(snapshot).done}
     done |= set(snapshot.get("cold_done", ()))
     return done | {task_id for task_id, entry in snapshot["settled"].items() if entry["state"] == "completed"}
 
 
-def cold_agent(task_id: str, record: dict[str, Any]) -> dict[str, Any]:
+def cold_agent(task_id: str, record: dict[str, Any], done: str) -> dict[str, Any]:
     """A cold done task as a snapshot agent, built from its board record (`GET /api/task`) for a verb to view whole."""
     return {
         "id": task_id,
         "title": record["title"],
-        "state": DONE,
+        "state": done,
         "model": record["profile"],
         "profile": record["profile"],
         "milestone": record["milestone"],
@@ -61,7 +66,7 @@ def _state_in(snapshot: dict[str, Any], flow: str, task: str) -> str | None:
 def _phase(agent: dict[str, Any], snapshot: dict[str, Any]) -> tuple[str | None, str | None]:
     """An In Progress task's `(phase, substate)`: the state of the In Progress machine, and the state of the first
     submachine that phase links which holds the task. Only the current phase's submachines count."""
-    if agent["state"] != "in_progress":
+    if agent["state"] != roles_of(snapshot).working:
         return None, None
     inner = board_flow(snapshot)["machine"].get("submachines") or [{}]
     machine = next((f for f in snapshot["flows"] if f["name"] == inner[0].get("machine")), None)
@@ -87,7 +92,7 @@ def task_view(agent: dict[str, Any], snapshot: dict[str, Any], done: set[str] | 
         "lane": agent["state"],
         "phase": phase,
         "substate": substate,
-        "done_at": datetime.fromtimestamp(entered, UTC).isoformat() if agent["state"] == DONE and entered else None,
+        "done_at": datetime.fromtimestamp(entered, UTC).isoformat() if agent["state"] == roles_of(snapshot).done and entered else None,
         "profile": agent["model"],
         "assignee": agent.get("assignee", ""),
         "milestone": agent["milestone"],

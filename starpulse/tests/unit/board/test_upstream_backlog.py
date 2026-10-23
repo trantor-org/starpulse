@@ -33,10 +33,15 @@ from starpulse._internal.eventlog.tables import events
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import BoardAdapterKit
 from starpulse._internal.machines.machine_definition import Writer
+from starpulse._internal.machines.state_roles import StateRoles
 from starpulse._internal.server.writes import move_task
 from starpulse.contracts.adapters import BoardTask, Move
 
 STATUSES = ("To Do", "Doing", "Review", "Done")
+BOARD_ROLES = StateRoles(
+    {"to_do": "initial", "doing": "resting", "waiting": "waiting_on_fact", "review": "waiting_on_fact", "done": "final"},
+    {"waiting": {"criteria_met": ""}, "review": {"pr_terminal": ""}},
+)
 
 
 def write_task(root: Path, folder: str, task_id: str, status: str, **fields: object) -> Path:
@@ -59,9 +64,9 @@ def write_config(
     (root / "config.yml").write_text(f'{named}statuses: [{listed}]\ntask_prefix: "{prefix}"\n')
 
 
-def scanned(root: Path) -> list[BoardTask]:
+def scanned(root: Path, roles: StateRoles | None = None) -> list[BoardTask]:
     tasks: list[BoardTask] = []
-    UpstreamBacklog(root, tasks.append).scan()
+    UpstreamBacklog(root, tasks.append, roles=roles).scan()
     return tasks
 
 
@@ -283,7 +288,9 @@ def test_a_needs_attention_task_carries_the_first_line_of_its_reason_section(
     description = f"<!-- SECTION:DESCRIPTION:BEGIN -->\n{body}\n<!-- SECTION:DESCRIPTION:END -->"
     write_task(tmp_path, "tasks", "task-1", status, body=description)
 
-    assert [t.pause_reason for t in scanned(tmp_path)] == [reason]
+    roles = StateRoles({"to_do": "initial", "doing": "resting", "needs_attention": "waiting_on_person"}, {})
+
+    assert [t.pause_reason for t in scanned(tmp_path, roles)] == [reason]
 
 
 def test_a_task_with_no_assignee_labels_or_description_has_the_contract_defaults(tmp_path: Path) -> None:
@@ -627,7 +634,7 @@ def _restarted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[BoardFe
     monkeypatch.setattr(
         UpstreamBacklog, "_task", lambda self, path, *a: (read.append(path.name), parse(self, path, *a))[1]
     )
-    feed = BoardFeed()
+    feed = BoardFeed(roles=BOARD_ROLES)
     # one scan per start: the poll that follows it sleeps past the test
     board({"interval": "3600"}, tmp_path).start(feed, "test", EventLog(f"sqlite:///{tmp_path / 'log.sqlite'}"))
     assert feed.ready.wait(timeout=5)

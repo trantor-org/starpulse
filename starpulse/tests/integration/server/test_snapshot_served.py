@@ -21,7 +21,7 @@ from starpulse._internal.server import snapshot_cache
 from starpulse._internal.server.page_server import PageServer
 from starpulse.contracts.adapters import Move
 from starpulse.tests.fake_board import bare_board
-from starpulse.tests.machines import MACHINES
+from starpulse.tests.machines import MACHINES, ROLES
 
 
 def _get(server: PageServer) -> bytes:
@@ -45,7 +45,7 @@ def builds(monkeypatch: pytest.MonkeyPatch) -> Counter[int]:
 
 
 def test_the_snapshot_leaves_a_tasks_detail_out_and_its_full_view_keeps_it(tmp_path: Path) -> None:
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.put(task("PROJ-1", description="About it", moves={"in_progress": Move(allowed=True)}))
 
     with _serve(tmp_path, feed) as server:
@@ -59,7 +59,7 @@ def test_the_snapshot_leaves_a_tasks_detail_out_and_its_full_view_keeps_it(tmp_p
 
 
 def test_the_full_view_sends_a_pull_request_without_the_fields_the_feed_keeps_for_itself(tmp_path: Path) -> None:
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.put(task("PROJ-1"))
     pull = {
         "number": 7,
@@ -84,7 +84,7 @@ def test_the_full_view_sends_a_pull_request_without_the_fields_the_feed_keeps_fo
 
 
 def test_a_snapshot_is_built_once_however_many_pages_ask(tmp_path: Path, builds: Counter[int]) -> None:
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.put(task("PROJ-1"))
     with _serve(tmp_path, feed) as server:
         started = builds[id(feed)]  # serving the window built one
@@ -98,7 +98,7 @@ def test_a_snapshot_is_built_once_however_many_pages_ask(tmp_path: Path, builds:
 
 
 def test_a_change_is_in_the_next_snapshot_served(tmp_path: Path, builds: Counter[int]) -> None:
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.put(task("PROJ-1", "To Do"))
     with _serve(tmp_path, feed) as server:
         started = builds[id(feed)]
@@ -116,7 +116,7 @@ def test_a_change_is_in_the_next_snapshot_served(tmp_path: Path, builds: Counter
 
 
 def test_a_connecting_page_neither_misses_nor_repeats_a_change(tmp_path: Path) -> None:
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.put(task("PROJ-0"))
     seen: set[str] = set()
     repeats: list[str] = []
@@ -159,7 +159,7 @@ def test_a_connecting_page_neither_misses_nor_repeats_a_change(tmp_path: Path) -
 def test_a_page_connecting_during_a_rebuild_is_not_held_up_by_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.put(task("PROJ-1", "To Do"))
     release = threading.Event()
     building = threading.Event()
@@ -205,7 +205,7 @@ def _raw_event(resp) -> tuple[str, str]:
 def test_a_page_that_asks_for_the_snapshot_by_reference_reads_the_same_snapshot_from_its_body_route(
     tmp_path: Path,
 ) -> None:
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.put(task("PROJ-1"))
     with _serve(tmp_path, feed) as server:
         with urllib.request.urlopen(_url(server, "/api/events"), timeout=5) as resp:
@@ -226,7 +226,7 @@ def test_a_page_that_asks_for_the_snapshot_by_reference_reads_the_same_snapshot_
 
 
 def test_a_snapshot_body_the_server_does_not_hold_is_not_found(tmp_path: Path) -> None:
-    with _serve(tmp_path, BoardFeed(machines=MACHINES)) as server:
+    with _serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES)) as server:
         with pytest.raises(urllib.error.HTTPError) as refused:
             urllib.request.urlopen(_url(server, "/api/events/body/" + "0" * 40), timeout=5)
     assert refused.value.code == 404
@@ -235,7 +235,7 @@ def test_a_snapshot_body_the_server_does_not_hold_is_not_found(tmp_path: Path) -
 def test_a_snapshot_is_gzipped_when_built_not_by_the_request_that_reads_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.put(task("PROJ-1", title="x" * 100_000))  # over the size gzip is worth; a description is no longer sent
     compressions: list[int] = []
     real = gzip.compress
@@ -262,7 +262,7 @@ def test_a_snapshot_is_gzipped_when_built_not_by_the_request_that_reads_it(
 
 
 def test_a_snapshot_read_straight_after_a_write_holds_the_write(tmp_path: Path) -> None:
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.put(task("PROJ-1", "Ready", moves={"in_progress": Move(allowed=True)}))
 
     def writer(name: str, status: str, actor: str) -> Written:
@@ -285,7 +285,7 @@ def test_a_snapshot_read_straight_after_a_write_holds_the_write(tmp_path: Path) 
 
 
 def test_a_snapshot_change_with_pull_files_is_sent_and_the_stream_stays_open(tmp_path: Path) -> None:
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.put(task("PROJ-1"))
     pull = {
         "number": 7,

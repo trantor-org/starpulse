@@ -17,7 +17,7 @@ from starpulse._internal.server.assembly import assemble
 from starpulse._internal.server.writes import archive_task, edit_task, task_record
 from starpulse.contracts.adapters import Move
 from starpulse.tests import fake_board
-from starpulse.tests.machines import MACHINES
+from starpulse.tests.machines import MACHINES, ROLES
 
 LAN = "192.168.0.42"
 RECORD = {
@@ -58,7 +58,7 @@ def file(tmp_path: Path) -> _File:
 
 
 def _feed() -> BoardFeed:
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.put(task("PROJ-3", "Ready", moves={"in_progress": Move(allowed=True)}))
     return feed
 
@@ -220,7 +220,7 @@ def test_a_task_the_board_does_not_hold_is_not_edited(file: _File) -> None:
 
 def _replaying() -> BoardFeed:
     """A feed a restart left reading its stream: no task placed, not ready."""
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.await_stream()
     return feed
 
@@ -289,7 +289,7 @@ def _archive(body: Any, archive: _Archive | None, source: str = LAN, feed: Board
 
 @pytest.mark.parametrize("lane", ["Ready", "In Progress", "Waiting", "Needs attention", "Review"])
 def test_a_task_is_archived_from_any_column_with_its_reason(lane: str) -> None:
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.put(task("PROJ-4", lane))
     archive = _Archive()
 

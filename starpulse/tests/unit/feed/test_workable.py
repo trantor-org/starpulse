@@ -8,6 +8,7 @@ import pytest
 
 from starpulse.contracts.adapters import BoardTask
 from starpulse._internal.feed import criteria
+from starpulse.tests.machines import ROLES
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.eventlog.history import HistoryStore
 
@@ -36,7 +37,7 @@ def _agent(feed: BoardFeed, task_id: str) -> dict:
 
 
 def _live(clock: list[float]) -> BoardFeed:
-    feed = BoardFeed(clock=lambda: clock[0])
+    feed = BoardFeed(clock=lambda: clock[0], roles=ROLES)
     feed.expect("0-0")  # read up to the stream's end: every put from here is live
     return feed
 
@@ -249,7 +250,7 @@ def test_the_moment_the_criteria_were_met_survives_a_restart(tmp_path: Path) -> 
     first.evaluate_criteria()
 
     now[0] = 900.0
-    restarted = BoardFeed(clock=lambda: now[0])  # replaying: the lane entry is dated by the history
+    restarted = BoardFeed(clock=lambda: now[0], roles=ROLES)  # replaying: the lane entry is dated by the history
     restarted.date_lanes(lambda _task: [{"at": 100.0, "from": None, "to": "Waiting"}])
     restarted.put(_task("PROJ-1", "waiting", description=BLOCK))
     restarted.track_criteria(Evaluator(), HistoryStore(url, {}))

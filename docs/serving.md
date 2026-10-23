@@ -359,7 +359,7 @@ applied_by = "pin-bump"
 # Optional: the autopilot's policy. Every key is optional; with no [autopilot] table the defaults below apply.
 # [autopilot]
 # lane = "to_do"          # the lane whose tasks are eligible; unset: the board's initial lane
-# review_lane = "review"  # the lane whose tasks' points are the review load
+# review_lane = "qa"     # the lane whose tasks' points are the review load; unset: the board's lane that waits on a pull request
 # unsized_points = 3      # the points a task with no `size-N` label counts as, a whole number of 1 or more
 # idle_minutes = 30       # minutes a started session may sit idle with its task still open before it is settled
 # state_dir = "state"     # where the older switch and run-ledger files are imported from, relative to this file; unset: beside it

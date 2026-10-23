@@ -17,7 +17,7 @@ from starpulse._internal.cli import agent_cli as cli
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import serve, task, url
 from starpulse.tests.fake_board import bare_board
-from starpulse.tests.machines import MACHINES
+from starpulse.tests.machines import MACHINES, ROLES
 from starpulse.tests.unit.board.test_native import native_root, write_task
 
 CHECK = "  - {{id: {id}, text: It answers, within: 1d, pass: {{kind: prom, expr: up}}}}"
@@ -66,7 +66,7 @@ def _served(tmp_path: Path, description: str = BLOCK + "\n```\n", **seams: Calla
     first = next(native_root(tmp_path).glob("tasks/task-1 *.md"))
     first.write_text(first.read_text().replace("Why\n", description, 1))
     built = native.board({}, tmp_path)
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     for number in (1, 2):
         feed.put(task(f"task-{number}", "In Progress"))
     writers = {"read": built.read, "edit": built.edit, "archive": built.archive, "create": built.create, **seams}

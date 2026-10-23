@@ -6,11 +6,11 @@ import time
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.server.snapshot_cache import SnapshotCache
-from starpulse.tests.machines import MACHINES
+from starpulse.tests.machines import MACHINES, ROLES
 
 
 def _cache(ttl_s: float = 60, settle_s: float = 60) -> tuple[BoardFeed, SnapshotCache]:
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.put(task("PROJ-1", "To Do"))
     return feed, SnapshotCache(feed, ttl_s=ttl_s, settle_s=settle_s)
 
