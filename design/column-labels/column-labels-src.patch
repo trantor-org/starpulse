@@ -1,26 +1,23 @@
 diff --git a/starpulse/web/src/features/kanban/Kanban.tsx b/starpulse/web/src/features/kanban/Kanban.tsx
-index 1b6d31bb..124f7a10 100644
+index 1b6d31bb..6dc174ed 100644
 --- a/starpulse/web/src/features/kanban/Kanban.tsx
 +++ b/starpulse/web/src/features/kanban/Kanban.tsx
-@@ -10,11 +10,12 @@ import { Viewport, ViewportRow } from "../../shared/ViewportRows";
- import { ago } from "../../shared/clock";
- import type { HudState } from "../../render/hud";
+@@ -12,9 +12,10 @@ import type { HudState } from "../../render/hud";
  import {
--  CLOSED, applySuggestion, applyTaskRecord, assigneeOptions, chainOf, clearFilters, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, labelSuggestions, layout, milestoneOptions, milestoneOutline, recent, show, showAll,
-+  CLOSED, applySuggestion, roleOf, applyTaskRecord, assigneeOptions, chainOf, clearFilters, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, labelSuggestions, layout, milestoneOptions, milestoneOutline, recent, show, showAll,
+   CLOSED, applySuggestion, applyTaskRecord, assigneeOptions, chainOf, clearFilters, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, labelSuggestions, layout, milestoneOptions, milestoneOutline, recent, show, showAll,
    stacked as stacksState, stackOf, stackStep, toggleFold, unstacked, whyHidden,
-   type KanbanTask, type Prefs, type Stack, type StackEvent, type StackOpen,
+-  type KanbanTask, type Prefs, type Stack, type StackEvent, type StackOpen,
++  type Column, type KanbanTask, type Prefs, type Stack, type StackEvent, type StackOpen,
  } from "./kanbanModel";
  import { linkedTask, loadPrefs, savePrefs, withoutFilters } from "./kanbanPrefs";
-+import { LABEL_MAX, arranged, changed, hiddenOf, labelOf, moved as reordered, ordered, viewColumns, withPref } from "./viewColumns";
++import { shown, viewColumns } from "./viewColumns";
  import { codeParts, place, targets, type MoveStore, type Refusal, type Target } from "./move";
  import { browserStorage } from "../../shared/nav";
  import {
-@@ -417,7 +418,100 @@ function HiddenMenu({ prefs, tasks, set, close }: { prefs: Prefs; tasks: KanbanT
+@@ -417,6 +418,26 @@ function HiddenMenu({ prefs, tasks, set, close }: { prefs: Prefs; tasks: KanbanT
    );
  }
  
--type MenuName = "assignee" | "milestone" | "hidden";
 +/** Each machine role's mark: a column header says what its state is for, whatever the state is called. */
 +const ROLE_MARKS: Record<string, ReactNode> = {
 +  ready: <circle cx="5" cy="5" r="3.4" />,
@@ -41,96 +38,23 @@ index 1b6d31bb..124f7a10 100644
 +  );
 +}
 +
-+/** The Columns chip's menu: each board state's label, place and whether its column is drawn, saved to serve for the install's one viewer. A sheet at phone width. */
-+function ColumnsMenu({ ids, machine, roles, close }: { ids: string[]; machine: Record<string, string>; roles: Roles; close: () => void }) {
-+  const v = useSyncExternalStore(viewColumns.subscribe, viewColumns.get);
-+  const saving = useSyncExternalStore(viewColumns.subscribe, viewColumns.saving);
-+  const [said, say] = useState("");
-+  const [drag, setDrag] = useState<{ id: string; at: number } | null>(null);
-+  const list = useRef<HTMLOListElement>(null);
-+  const order = ordered(v, ids);
-+  const shown = order.filter((id) => !hiddenOf(v, id)).length;
-+  const nameOf = (id: string) => labelOf(v, id) ?? machine[id] ?? id;
-+  const move = (id: string, by: number) => {
-+    const next = reordered(order, id, by);
-+    if (next.join() === order.join()) return;
-+    viewColumns.set({ ...v, order: next }, 0);
-+    say(`${nameOf(id)} moved to place ${next.indexOf(id) + 1} of ${next.length}`);
-+  };
-+  // the pointer drops before the row whose middle it is above, or after the last
-+  const dropAt = (y: number) => {
-+    const rows = [...(list.current?.children ?? [])];
-+    const at = rows.findIndex((r) => { const b = r.getBoundingClientRect(); return y < b.top + b.height / 2; });
-+    return at < 0 ? rows.length : at;
-+  };
-+  const drop = () => {
-+    if (!drag) return;
-+    const from = order.indexOf(drag.id);
-+    move(drag.id, (drag.at > from ? drag.at - 1 : drag.at) - from);
-+    setDrag(null);
-+  };
-+  const done = () => { viewColumns.flush(); close(); };
-+  const status = saving.state === "saving" ? "saving…" : saving.state === "saved" ? "saved for this install" : saving.state === "offline" ? "serve did not answer · kept on this page" : saving.state === "refused" && saving.id ? "not saved · kept the last saved names" : "";
-+  return (
-+    <>
-+      <div className="scrim cols" onClick={done} />
-+      <div className="menu cols" role="dialog" aria-label="Columns" onKeyDown={(e) => e.key === "Escape" && (e.stopPropagation(), done())}>
-+        <span className="grab" aria-hidden />
-+        <div className="hd">Columns<button className="x" onClick={done}>Done</button></div>
-+        <ol ref={list} onPointerMove={(e) => drag && setDrag({ ...drag, at: dropAt(e.clientY) })} onPointerUp={drop} onPointerCancel={() => setDrag(null)}>
-+          {order.map((id, i) => {
-+            const label = labelOf(v, id), hidden = hiddenOf(v, id);
-+            const refused = saving.state === "refused" && saving.id === id;
-+            const cls = [hidden && "off", drag?.id === id && "lifted", drag && drag.at === i && "before", drag && drag.at === order.length && i === order.length - 1 && "after"].filter(Boolean).join(" ");
-+            return (
-+              <li key={id} className={cls || undefined} data-lane={id}>
-+                <button className="hdl" aria-label={`Move ${nameOf(id)}: arrow keys`} title="Drag, or arrow keys, to move"
-+                  onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); setDrag({ id, at: i }); }}
-+                  onKeyDown={(e) => (e.key === "ArrowUp" || e.key === "ArrowDown") && (e.preventDefault(), move(id, e.key === "ArrowUp" ? -1 : 1))}>⋮⋮</button>
-+                <RoleGlyph role={roleOf(roles, id)} />
-+                <span className="lb">
-+                  <input value={label ?? ""} placeholder={machine[id] ?? id} maxLength={LABEL_MAX} spellCheck={false} aria-label={`Label for ${machine[id] ?? id}`} aria-invalid={refused || undefined}
-+                    onChange={(e) => viewColumns.set(withPref(v, id, { label: e.target.value }))} onBlur={viewColumns.flush} onKeyDown={(e) => e.key === "Enter" && viewColumns.flush()} />
-+                  {label && <span className="was">machine: {machine[id] ?? id}</span>}
-+                  {refused && <span className="why" role="alert">{saving.reason}</span>}
-+                </span>
-+                <button className="vis" aria-pressed={hidden} disabled={!hidden && shown === 1} title={!hidden && shown === 1 ? "The board keeps one column drawn" : undefined}
-+                  onClick={() => viewColumns.set(withPref(v, id, { hidden: !hidden }), 0)}>{hidden ? "show" : "hide"}</button>
-+                <button className="rs" disabled={!label && !hidden} title={`Back to the machine's ${machine[id] ?? id}, drawn`} aria-label={`Reset ${machine[id] ?? id} to the machine`}
-+                  onClick={() => viewColumns.set(withPref(v, id, { label: null, hidden: false }), 0)}>↺</button>
-+              </li>
-+            );
-+          })}
-+        </ol>
-+        <div className="ft">
-+          <button disabled={!v.order.length} onClick={() => viewColumns.set({ ...v, order: [] }, 0)}>Machine order</button>
-+          <button disabled={!changed(v, ids)} onClick={() => viewColumns.set({ columns: [], order: [] }, 0)}>Reset all to machine</button>
-+          <span className={`st ${saving.state}`}>{status}{saving.state === "refused" && !saving.id && saving.reason}
-+            {saving.state === "offline" && <> · <button className="retry" onClick={() => void viewColumns.save()}>retry</button></>}</span>
-+        </div>
-+        <span className="sr" aria-live="polite">{said}</span>
-+      </div>
-+    </>
-+  );
-+}
-+
-+type MenuName = "assignee" | "milestone" | "hidden" | "columns";
+ type MenuName = "assignee" | "milestone" | "hidden";
  
  /** What a press on a card and the pointer after it are doing: nothing yet (a click), or carrying the card to a column. */
- interface Press {
-@@ -586,7 +680,10 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
+@@ -586,7 +607,11 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
      const saved = edited[card.id];
      return saved?.source === hud.cards ? applyTaskRecord(card, saved.record) : card;
    }), gone), [edited, gone, hud.cards, moved, started, roles]);
 -  const view = useMemo(() => layout(cards, hud.names, roles, prefs, now), [cards, hud.names, roles, prefs, now]);
 +  const chosen = useSyncExternalStore(viewColumns.subscribe, viewColumns.get);
-+  const shownLanes = useMemo(() => arranged(chosen, columnsOf(hud.names, roles)), [chosen, hud.names, roles]);
++  const shownLanes = useMemo(() => shown(chosen, columnsOf(hud.names, roles)), [chosen, hud.names, roles]);
++  // a relabeled header names the machine's state on hover, the name `starpulse columns` and every write take
++  const titleOf = (col: Column) => (col.name === (hud.machineNames?.[col.id] ?? col.name) ? col.name : `${col.name} — ${hud.machineNames?.[col.id]} (${col.id})`);
 +  const view = useMemo(() => layout(cards, hud.names, roles, prefs, now, shownLanes), [cards, hud.names, roles, prefs, now, shownLanes]);
-+  const changedCols = changed(chosen, columnsOf(hud.names, roles));
    const holds = useMemo(() => holdCounts(cards, roles), [cards, roles]);
    const blockers = useMemo(() => holders(cards, roles, holds), [cards, roles, holds]);
    const [pointed, setHovered] = useState<string | null>(null);
-@@ -599,9 +696,9 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
+@@ -599,9 +624,9 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
    }, [cards, hovered, lift, roles, spot]);
    useEffect(() => {
      if (!spot) return void note?.(null);
@@ -142,32 +66,23 @@ index 1b6d31bb..124f7a10 100644
    // each click is a new object, so the same line clicked twice opens it twice; a task with no card opens no modal
    const opened = useRef(opening);
    useLayoutEffect(() => {
-@@ -795,6 +892,10 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
-             {menu === "hidden" && <HiddenMenu prefs={prefs} tasks={cards} set={setPrefs} close={() => setMenu(null)} />}
-           </div>
-         )}
-+        <div className="fw">
-+          {chip("columns", "Columns", changedCols ? String(changedCols) : null, `${changedCols} changed`)}
-+          {menu === "columns" && <ColumnsMenu ids={columnsOf(hud.names, roles)} machine={hud.machineNames} roles={roles} close={() => setMenu(null)} />}
-+        </div>
-         <div className="rt">
-           <span className="shown">{view.shown} of {view.total} tasks</span>
-           <span className="nt">
-@@ -807,7 +908,7 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
+@@ -806,8 +831,8 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
+       </div>
        <div className="lanes" role="tablist" aria-label="Lanes">
          {view.columns.map((col) => (
-           <button key={col.id} role="tab" data-lane={col.id} data-role={col.role} aria-selected={col.id === shownLane} title={col.name} onClick={() => setPhoneLane(col.id)}>
+-          <button key={col.id} role="tab" data-lane={col.id} data-role={col.role} aria-selected={col.id === shownLane} title={col.name} onClick={() => setPhoneLane(col.id)}>
 -            <span className="g" /><span className="c">{col.count}</span><span className="nm">{col.name}</span>
++          <button key={col.id} role="tab" data-lane={col.id} data-role={col.role} aria-selected={col.id === shownLane} title={titleOf(col)} onClick={() => setPhoneLane(col.id)}>
 +            <RoleGlyph role={col.role} /><span className="c">{col.count}</span><span className="nm">{col.name}</span>
            </button>
          ))}
        </div>
-@@ -819,7 +920,7 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
+@@ -819,7 +844,7 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
            const colCls = ["col", col.id === shownLane && "on", target && target.kind !== "here" && target.kind, lift?.over === col.id && target?.kind !== "here" && "over"].filter(Boolean).join(" ");
            return (
              <section key={col.id} className={colCls} data-lane={col.id} data-role={col.role}>
 -              <h2><span className="g" /><span className="nm" title={col.name}>{col.name}</span><span className="c">{col.count}</span>
-+              <h2><RoleGlyph role={col.role} /><span className="nm" title={col.name}>{col.name}</span><span className="c">{col.count}</span>
++              <h2><RoleGlyph role={col.role} /><span className="nm" title={titleOf(col)}>{col.name}</span><span className="c">{col.count}</span>
                  {inChain > 0 && <span className="cc" title={`${inChain} of this column's tasks are in the hovered task's chain`}>⛓{inChain}</span>}
                  {target && target.kind !== "here" && (
                    <span className="hint">{target.kind === "ok" ? "drop" : target.kind === "guard" ? `guarded · ${target.skill || "refused"}` : "no transition"}</span>
@@ -242,115 +157,57 @@ index 8ee2091c..1f45b4fd 100644
        .map((t) => ({ id: t.id, title: t.title, seconds: Math.max(0, now - t.workableSince!), width: 0 }))
 diff --git a/starpulse/web/src/features/kanban/viewColumns.ts b/starpulse/web/src/features/kanban/viewColumns.ts
 new file mode 100644
-index 00000000..099efe6c
+index 00000000..435f41eb
 --- /dev/null
 +++ b/starpulse/web/src/features/kanban/viewColumns.ts
-@@ -0,0 +1,109 @@
+@@ -0,0 +1,51 @@
 +import { apiFetch } from "../../api/apiFetch";
 +import type { Machine } from "../../api";
 +
-+/** The viewer's own choice for one board state: a label in place of the machine's name, and whether its column is drawn. */
++/** The install's choice for one board state, set with `starpulse columns`: a label in place of the machine's name, and whether its column is drawn. */
 +export interface ColumnPref {
 +  id: string;
 +  label: string | null;
 +  hidden: boolean;
 +}
-+/** What serve stores for the install's one viewer (GET/PUT /api/views/columns): one row per state changed, and the column order when moved. */
++/** What serve stores for the install's one viewer (GET /api/views/columns): one row per state changed. The page only reads it. */
 +export interface ViewColumns {
 +  columns: ColumnPref[];
-+  order: string[];
 +}
-+export type Saving = { state: "idle" | "saving" | "saved" } | { state: "refused"; reason: string; id?: string } | { state: "offline" };
 +
-+export const NONE: ViewColumns = { columns: [], order: [] };
-+export const LABEL_MAX = 40;
++export const NONE: ViewColumns = { columns: [] };
 +
 +const prefOf = (v: ViewColumns, id: string): ColumnPref => v.columns.find((c) => c.id === id) ?? { id, label: null, hidden: false };
 +export const labelOf = (v: ViewColumns, id: string): string | null => prefOf(v, id).label;
 +export const hiddenOf = (v: ViewColumns, id: string): boolean => prefOf(v, id).hidden;
 +
-+/** `v` with `id`'s row changed; a row back at the machine's name and drawn is dropped, so an unchanged state stores nothing. */
-+export function withPref(v: ViewColumns, id: string, change: Partial<Omit<ColumnPref, "id">>): ViewColumns {
-+  const next = { ...prefOf(v, id), ...change };
-+  const label = next.label?.trim() ? next.label : null;
-+  const rows = v.columns.filter((c) => c.id !== id);
-+  return { ...v, columns: label === null && !next.hidden ? rows : [...rows, { id, label, hidden: next.hidden }] };
-+}
++/** The columns drawn: the machine's order, less the hidden ones. */
++export const shown = (v: ViewColumns, ids: string[]): string[] => ids.filter((id) => !hiddenOf(v, id));
 +
-+/** The board's columns in the viewer's order: a state the order does not name keeps the machine's place after the ones it does. */
-+export const ordered = (v: ViewColumns, ids: string[]): string[] => [...v.order.filter((id) => ids.includes(id)), ...ids.filter((id) => !v.order.includes(id))];
-+/** The columns drawn: in the viewer's order, less the hidden ones. */
-+export const arranged = (v: ViewColumns, ids: string[]): string[] => ordered(v, ids).filter((id) => !hiddenOf(v, id));
-+/** `ids` with `id` moved by `by` places. */
-+export const moved = (ids: string[], id: string, by: number): string[] => {
-+  const at = ids.indexOf(id), to = Math.max(0, Math.min(ids.length - 1, at + by)), next = ids.filter((x) => x !== id);
-+  next.splice(to, 0, id);
-+  return next;
-+};
-+/** How many columns differ from the machine: relabeled, hidden or out of the machine's order. */
-+export function changed(v: ViewColumns, ids: string[]): number {
-+  const order = ordered(v, ids);
-+  return ids.filter((id, i) => labelOf(v, id) !== null || hiddenOf(v, id) || order[i] !== id).length;
-+}
-+
-+/** The machine with each state's name overlaid by the viewer's label: every name the page draws reads it, while writes keep the state id. */
++/** The machine with each state's name overlaid by its label: every name the page draws reads it, while writes keep the state id. */
 +export function relabel(machine: Machine, v: ViewColumns): Machine {
 +  if (!v.columns.some((c) => c.label)) return machine;
 +  return { ...machine, states: machine.states.map((s) => ({ ...s, name: labelOf(v, s.id) ?? s.name })) };
 +}
 +
-+const send = (url: string, init?: RequestInit): Promise<Response> =>
-+  ((globalThis as { __MOCK_FETCH__?: typeof apiFetch }).__MOCK_FETCH__ ?? apiFetch)(url, init);
++const send = (url: string): Promise<Response> =>
++  ((globalThis as { __MOCK_FETCH__?: typeof apiFetch }).__MOCK_FETCH__ ?? apiFetch)(url);
 +
-+/** The page's one copy of the viewer's columns: drawn at once on a change, saved after a pause in typing. */
++/** The page's one copy of the install's columns, read once at load. */
 +class ViewColumnsStore {
 +  private v: ViewColumns = NONE;
-+  /** What serve last accepted: a refused save draws this again, so a label serve would not keep never reaches the page. */
-+  private kept: ViewColumns = NONE;
-+  private s: Saving = { state: "idle" };
 +  private fns = new Set<() => void>();
-+  private timer = 0;
 +  get = () => this.v;
-+  saving = () => this.s;
 +  subscribe = (fn: () => void) => {
 +    this.fns.add(fn);
 +    return () => void this.fns.delete(fn);
 +  };
-+  private emit() {
-+    for (const fn of this.fns) fn();
-+  }
 +  load = async () => {
 +    const res = await send("/api/views/columns").catch(() => null);
 +    if (res?.ok) {
-+      this.v = this.kept = (await res.json()) as ViewColumns;
-+      this.emit();
++      this.v = (await res.json()) as ViewColumns;
++      for (const fn of this.fns) fn();
 +    }
-+  };
-+  set = (next: ViewColumns, wait = 600) => {
-+    this.v = next;
-+    this.s = { state: "saving" };
-+    this.emit();
-+    clearTimeout(this.timer);
-+    this.timer = window.setTimeout(() => void this.save(), wait);
-+  };
-+  flush = () => {
-+    if (this.s.state !== "saving") return;
-+    clearTimeout(this.timer);
-+    void this.save();
-+  };
-+  save = async () => {
-+    const sent = this.v;
-+    const res = await send("/api/views/columns", { method: "PUT", body: JSON.stringify(sent) }).catch(() => null);
-+    if (!res) this.s = { state: "offline" };
-+    else if (res.ok) {
-+      this.kept = sent;
-+      this.s = { state: "saved" };
-+    } else {
-+      const body = (await res.json().catch(() => ({}))) as { error?: string; id?: string };
-+      this.v = this.kept;
-+      this.s = { state: "refused", reason: body.error ?? `serve refused the save (${res.status})`, id: body.id };
-+    }
-+    this.emit();
 +  };
 +}
 +
@@ -417,41 +274,13 @@ index a02a8e37..6557596a 100644
        boardUrl: sky.boardUrl,
        capabilities: sky.capabilities,
 diff --git a/starpulse/web/src/style.css b/starpulse/web/src/style.css
-index 38fa45c5..57ec8b3d 100644
+index 38fa45c5..914322ba 100644
 --- a/starpulse/web/src/style.css
 +++ b/starpulse/web/src/style.css
-@@ -219,6 +219,39 @@ aside h3 { margin: 0 0 8px; font-size: calc(10px * var(--fs)); font-weight: 500;
+@@ -219,6 +219,11 @@ aside h3 { margin: 0 0 8px; font-size: calc(10px * var(--fs)); font-weight: 500;
  :is(#kb, #nav, #dg) .menu button span { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
  :is(#kb, #nav, #dg) .menu em.tt { font-style: normal; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
  :is(#kb, #nav, #dg) .menu button.all { border-top: 1px solid color-mix(in srgb, var(--slate) 12%, transparent); margin-top: 4px; padding-top: 7px; border-radius: 0 0 5px 5px; color: var(--agent-text); }
-+/* The Columns menu: one row per board state to rename, hide or drag into the viewer's order; serve keeps the choice for this install. */
-+#kb .menu.cols { width: min(420px, calc(100vw - 2 * var(--pm, 16px))); max-height: min(70vh, 560px); display: flex; flex-direction: column; overflow: hidden; }
-+#kb .menu.cols .hd { display: flex; align-items: center; }
-+#kb .menu.cols :is(.hd .x, .grab) { display: none; }
-+#kb .menu.cols ol { list-style: none; margin: 0; padding: 0; overflow-y: auto; min-height: 0; }
-+#kb .menu.cols li { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto auto; align-items: center; gap: 6px; padding: 4px 4px; border-radius: 5px; border-block: 1px solid transparent; }
-+#kb .menu.cols li.off :is(input, .rg) { opacity: .45; }
-+#kb .menu.cols li.lifted { background: color-mix(in srgb, var(--agent) 12%, transparent); }
-+#kb .menu.cols li.before { border-top-color: var(--agent); }
-+#kb .menu.cols li.after { border-bottom-color: var(--agent); }
-+#kb .menu.cols li > button { width: auto; padding: 3px 6px; color: var(--muted); }
-+#kb .menu.cols li > button:disabled { opacity: .35; }
-+#kb .menu.cols .hdl { touch-action: none; letter-spacing: -.2em; }
-+#kb .menu.cols .vis[aria-pressed=true] { color: var(--hold-text); }
-+#kb .menu.cols .lb { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-+#kb .menu.cols input { all: unset; box-sizing: border-box; width: 100%; padding: 4px 7px; border-radius: 5px; border: 1px solid color-mix(in srgb, var(--slate) 18%, transparent); background: var(--field);
-+  font-size: calc(12px * var(--fs)); color: var(--ink); }
-+#kb .menu.cols input::placeholder { color: var(--muted); }
-+#kb .menu.cols input:focus { border-color: var(--agent); }
-+#kb .menu.cols input[aria-invalid=true] { border-color: var(--fail); }
-+#kb .menu.cols .was { font-size: calc(10px * var(--fs)); color: var(--muted); }
-+#kb .menu.cols .why { font-size: calc(10.5px * var(--fs)); color: var(--fail-text); }
-+#kb .menu.cols .ft { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; padding: 7px 4px 2px; border-top: 1px solid color-mix(in srgb, var(--slate) 12%, transparent); }
-+#kb .menu.cols .ft > button { width: auto; border: 1px solid color-mix(in srgb, var(--slate) 18%, transparent); font-size: calc(11px * var(--fs)); }
-+#kb .menu.cols .st { margin-left: auto; font-size: calc(10.5px * var(--fs)); color: var(--muted); }
-+#kb .menu.cols .st.saved { color: var(--ok-text); } #kb .menu.cols .st.refused { color: var(--fail-text); } #kb .menu.cols .st.offline { color: var(--run-text); }
-+#kb .menu.cols .st .retry { display: inline; width: auto; padding: 0; margin-left: 4px; color: var(--agent-text); text-decoration: underline; font-size: inherit; }
-+#kb .menu.cols .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 +/* A state's role mark: its shape and hue say how the board treats the column (start, at rest, waiting on a fact or a person, done); hover names it. */
 +#kb .rg { --rc: var(--faint); flex: none; width: calc(10px * var(--fs)); height: calc(10px * var(--fs)); align-self: center; fill: none; stroke: var(--rc); stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
 +#kb .rg .f { fill: var(--rc); stroke: none; }
@@ -460,18 +289,3 @@ index 38fa45c5..57ec8b3d 100644
  
  #kb #cols { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(var(--cols, 6), minmax(0, 1fr)); gap: 10px; padding-bottom: 16px; }
  #kb .col { min-height: 0; display: flex; flex-direction: column; border-radius: 10px; background: color-mix(in srgb, var(--slate) 3.5%, transparent); border: 1px solid color-mix(in srgb, var(--slate) 8%, transparent); }
-@@ -989,6 +1022,14 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
-   /* the Move to menu is how a card changes lane here: it hangs from the whole header, so it stays inside the viewport wherever the actions wrap to */
-   #kbm .modal.tv:not(.dgm) .tvhead { position: relative; }
-   #kbm .modal.tv:not(.dgm) .tvhead .mv { position: static; }
-+  /* the Columns menu opens as a sheet from the bottom edge, over the bar, with a grab pill and a Done button; its rows take a thumb */
-+  #kb .scrim.cols { z-index: 40; background: color-mix(in srgb, var(--scrim) 55%, transparent); }
-+  #kb .menu.cols { position: fixed; top: auto; left: 0; right: 0; bottom: 0; width: 100vw; max-width: 100vw; max-height: 70dvh; border-radius: 12px 12px 0 0; z-index: 41;
-+    padding-bottom: calc(8px + env(safe-area-inset-bottom)); }
-+  #kb .menu.cols .grab { display: block; width: 36px; height: 4px; margin: 4px auto 2px; border-radius: 2px; background: color-mix(in srgb, var(--slate) 35%, transparent); }
-+  #kb .menu.cols .hd .x { display: block; margin-left: auto; color: var(--agent-text); text-transform: none; letter-spacing: 0; }
-+  #kb .menu.cols li { padding-block: 8px; }
-+  #kb .menu.cols li > button, #kb .menu.cols .ft button { padding: 8px; }
-   #kbm .modal.tv:not(.dgm) .tvhead .mvmenu { left: 14px; right: 14px; min-width: 0; }
- 
-   /* The Start session dialog keeps the page's side margins and may take the screen's height; its padding, grid gap and choice buttons tighten so the Tier choices fit beside their label at the largest text size, and its three answers wrap onto more rows instead of running past the screen. */
