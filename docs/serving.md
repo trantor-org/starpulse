@@ -194,7 +194,7 @@ row in that transaction, in lane `archived` when the row is archived; no non-tes
   `ready(state, done)` (live Tasks in `state` whose every dependency is in `done`; a dependency with no row blocks) and
   `since(seq, limit)` (the delta: rows changed after a cursor, archived included). Each statement is a SQLAlchemy `Select`
   in `readmodel.queries`; its test asserts the plan uses an index and has no table scan.
-  `archived(before, limit)` pages the archive newest first (partial index `ix_starpulse_tasks_archived_updated`) and
+  `archived(before, limit)` pages the archive newest first (partial index `ix_starpulse_tasks_archived_updated`, migration 0031) and
   `position()` is the highest `seq`, the cursor a cache keys on.
 - Only `readmodel` reads `readmodel.tables` (the `readmodel-table-private` import contract).
 
