@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from sqlalchemy import Engine, delete
+from sqlalchemy import Connection, Engine, delete
 
 from starpulse._internal.eventlog.checkpoints import Checkpoints
+from starpulse._internal.feed.search import SearchIndex
 from starpulse._internal.readmodel import rows
 from starpulse._internal.readmodel.fold import fold
 from starpulse._internal.readmodel.tables import criteria, tasks
@@ -15,9 +16,10 @@ BATCH = 500
 
 
 class Projector:
-    def __init__(self, engine: Engine, store: EventStore) -> None:
+    def __init__(self, engine: Engine, store: EventStore, search: SearchIndex | None = None) -> None:
         self._engine = engine
         self._store = store
+        self._search = search
         self._checkpoints = Checkpoints(engine)
 
     def catch_up(self) -> int:
@@ -51,3 +53,18 @@ class Projector:
             touched[event.subject_id] = (fold(row, event), event.position)
         for row, seq in touched.values():
             rows.save(db, row, seq)
+            if self._search is not None:
+                self._index(db, row)
+
+    def _index(self, db: Connection, row: dict) -> None:
+        """Make the search index hold the Task's folded row: an archived Task is found in the archived lane."""
+        self._search.index_fields(
+            row["id"],
+            title=row["title"],
+            description=row["description"],
+            criteria=[item["text"] for item in row["criteria"] if item["kind"] == "ac"],
+            notes=row["notes"],
+            lane="archived" if row["archived"] else row["state"],
+            labels=row["labels"],
+            connection=db,
+        )
