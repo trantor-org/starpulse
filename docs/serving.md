@@ -202,8 +202,9 @@ row in that transaction, in lane `archived` when the row is archived; no non-tes
 paths. The feed holds no Task; `_hot()` is one `snapshot()` per `position()`, `task`, `held` and `is_done` are single-row
 reads, `cold_page` pages `archived`, and the snapshot carries no archived Task (`cold_done` is empty). The Scheduler's
 `open_tasks` and the write guards go through the same reads. `follow_read_model()` publishes the Tasks changed since it last
-ran as page deltas, to run after each `Projector.catch_up`. Without a read model the in-memory path serves unchanged until the
-cutover passes one in. In this mode entered and workable-since times are approximated, and the overlays for runs,
+ran as page deltas, to run after each `Projector.catch_up`. Without a read model the in-memory path serves unchanged. Top-level `read_model = true` in the config is the cutover: `serve`
+folds the History into the read tables every 0.5 s (`Projector.catch_up`, then `follow_read_model`), draws the board from them
+and skips the file replica, so the board reader opens no task file. Run `starpulse import-board` first; a restart picks the flag up. In this mode entered and workable-since times are approximated, and the overlays for runs,
 pulls and acceptance criteria are empty on the board card; `/api/task/<id>` returns the full record. The search index is its
 own FTS table, queried by term and never by loading Tasks; `put` still feeds it, so the cutover feeds it from the read model.
 `ci/test_read_model_latency.py` (nightly) serves 20,000 Tasks with 18,000 archived and holds every read surface to the page

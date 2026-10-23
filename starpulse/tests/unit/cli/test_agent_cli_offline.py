@@ -230,6 +230,7 @@ class TestConfigCheck:
                 "labeller": None,
             },
             "task_actor": False,
+            "read_model": False,
             "search": {"embeddings_url": None, "model": None, "token_env": None},
             "project": {"commands": {}},
             "cursor_context": {"limit_tokens": 150000, "window_tokens": 200000, "wrapup_s": 600.0},

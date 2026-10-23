@@ -34,6 +34,7 @@ class Report:
     equal: int = 0
     differing: dict[str, list[str]] = field(default_factory=dict)
     gaps: list[str] = field(default_factory=list)
+    reconciled: list[str] = field(default_factory=list)
     runs: int = 0
     runs_imported: int = 0
 
@@ -42,30 +43,49 @@ class Report:
         return not self.differing
 
 
+def _lane_id(name: object) -> str:
+    """A lane's id, the form `HistoryStore.lane_changes` lists: `In Progress` is `in_progress`."""
+    return str(name or "").lower().replace(" ", "_").replace("-", "_")
+
+
 def _new(kind: str, payload: dict[str, Any]) -> NewEvent:
     return NewEvent(kind, payload, OPERATOR, WRITER)
+
+
+def _reconcile(store: EventStore, task: str, record: Record, report: Report) -> None:
+    """Append one `FieldsEdited` carrying what the record moved on from its History (a write the old path never
+    recorded), and list the Task."""
+    wanted = seed(record, 0.0)
+    drifted = {name: wanted[name] for name in _differing(store, task, record)}
+    if drifted:
+        edit = _new("FieldsEdited", {"changes": drifted, "imported": True})
+        store.append(KIND, task, len(store.read(KIND, task)), [edit])
+        report.reconciled.append(task)
 
 
 def _import_task(store: EventStore, task: str, record: Record, lanes: list[Lane], report: Report) -> None:
     """Append the Task's History unless it has one; list it when its lane history does not end at the record."""
     ends = lanes[-1][2] if lanes else None
-    if ends != record.get("status"):
+    if ends is None or _lane_id(ends) != _lane_id(record.get("status")):
         report.gaps.append(task)
     if store.head(KIND, task):
+        _reconcile(store, task, record, report)
         return
     first = seed(record, 0.0)
     if lanes:
         first["state"] = ""
     version = len(store.append(KIND, task, 0, [_new("TaskImported", first)], at=lanes[0][3] if lanes else None))
     previous = ""
-    for _, _, lane, at in lanes:
+    for index, (_, _, lane, at) in enumerate(lanes):
+        if index == len(lanes) - 1 and _lane_id(lane) == _lane_id(record.get("status")):
+            lane = record["status"]
         version += len(
             store.append(
                 KIND, task, version, [_new("Transitioned", {"from": previous, "to": lane, "imported": True})], at=at
             )
         )
         previous = lane
-    if lanes and ends != record.get("status"):
+    if lanes and ends is not None and _lane_id(ends) != _lane_id(record.get("status")):
         move = {"from": previous, "to": record.get("status") or "", "imported": True}
         store.append(KIND, task, version, [_new("Transitioned", move)])
     report.imported += 1

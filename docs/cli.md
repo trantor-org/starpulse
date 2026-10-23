@@ -446,7 +446,7 @@ imported `Transitioned` Events; each `runs:events` entry becomes an Event of its
 task and compares the row with the board's record. Like `import-history` it is not an agent verb; stop `serve` first.
 
 It prints one JSON line, the verification report: `tasks`, `imported`, `equal`, `differing` (task to the fields whose
-replay differs), `gaps`, `runs`, `runs_imported` and `verified`. A task whose lane history ends elsewhere than the board,
+replay differs), `gaps`, `reconciled` (tasks whose History fell behind their file, caught up by one `FieldsEdited`), `runs`, `runs_imported` and `verified`. A task whose lane history ends elsewhere than the board,
 or that has none, is a gap the earlier writes left: it is imported as the board shows it and listed in `gaps`. The exit
 code is 0 when every task is equal, 1 when one differs, and 2 for a config or board that cannot be read. A second run
 imports nothing and verifies again. `--dry-run` imports into a scratch store and reports, leaving the real store untouched.

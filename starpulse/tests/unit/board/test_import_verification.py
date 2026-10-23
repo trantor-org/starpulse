@@ -55,12 +55,26 @@ def test_a_second_import_adds_nothing_and_still_verifies(tmp_path: Path) -> None
     engine.dispose()
 
 
-def test_a_task_whose_file_changed_since_its_history_is_reported_differing(tmp_path: Path) -> None:
+def test_a_task_whose_file_moved_past_its_history_is_reconciled_and_listed(tmp_path: Path) -> None:
     store, engine = _store(tmp_path)
     import_board(store, {"TASK-1": _RECORD}, _LANES, [], RunStreams(store).record)
+    moved = _RECORD | {"title": "Renamed"}
 
-    report = import_board(store, {"TASK-1": _RECORD | {"title": "Renamed"}}, _LANES, [], RunStreams(store).record)
+    report = import_board(store, {"TASK-1": moved}, _LANES, [], RunStreams(store).record)
+    again = import_board(store, {"TASK-1": moved}, _LANES, [], RunStreams(store).record)
 
-    assert report.differing == {"TASK-1": ["title"]}
-    assert not report.ok
+    assert (report.reconciled, report.differing, report.ok) == (["TASK-1"], {}, True)
+    assert store.read(KIND, "TASK-1")[-1].type == "FieldsEdited"
+    assert (again.reconciled, len(store.read(KIND, "TASK-1"))) == ([], 5)
+    engine.dispose()
+
+
+def test_lane_ids_match_the_records_display_status_and_leave_no_gap(tmp_path: Path) -> None:
+    store, engine = _store(tmp_path)
+    lanes = [("e1", "TASK-1", "ready", 10.0), ("e2", "TASK-1", "in_progress", 20.0)]
+
+    report = import_board(store, {"TASK-1": _RECORD | {"status": "In Progress"}}, lanes, [], RunStreams(store).record)
+
+    assert (report.gaps, report.equal) == ([], 1)
+    assert [event.payload["to"] for event in store.read(KIND, "TASK-1")[1:]] == ["ready", "In Progress"]
     engine.dispose()

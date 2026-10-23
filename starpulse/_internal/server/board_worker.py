@@ -24,8 +24,13 @@ from starpulse._internal.config.config import Config, discover, load
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import HistoryStore, database_url
 from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.readmodel.declared import declared_fields
+from starpulse._internal.readmodel.projector import Projector
+from starpulse._internal.readmodel.read_model import ReadModel
+from starpulse._internal.server import read_model_follow
 from starpulse._internal.server.assembly import assemble, history_store
 from starpulse._internal.server.hold import hold
+from starpulse._internal.store import EventStore
 
 logger = logging.getLogger(__name__)
 
@@ -79,13 +84,20 @@ def main(argv: list[str] | None, parser: argparse.ArgumentParser) -> None:
     except (OSError, ValueError) as exc:
         parser.exit(1, f"{path}: {exc}\n")
     base = args.config.parent if args.config else Path.cwd()
+    log = EventLog(database_url(config.database_url, base))
+    model = ReadModel(log.engine, declared_fields(config.board)) if config.read_model else None
     try:
-        board, feed = assemble(config, base, None, [])
+        board, feed = assemble(config, base, None, [], model)
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")
-    log = EventLog(database_url(config.database_url, base))
     store = history_store(config, base, feed.machines)
     stop = threading.Event()
-    start_writers(feed, store, board.evaluate, stop, live=False)
-    replica.publish(board, feed, "starpulse-board", log, config)
+    if model is None:
+        start_writers(feed, store, board.evaluate, stop, live=False)
+        replica.publish(board, feed, "starpulse-board", log, config)
+    else:
+        # the read model replaces the task files as the board's reader: nothing publishes a replica of them
+        feed.ready.set()
+        start_writers(feed, store, board.evaluate, stop, live=False)
+        read_model_follow.follow(Projector(log.engine, EventStore(log.engine)), feed, stop)
     hold(stop, lambda: reload(path, config))

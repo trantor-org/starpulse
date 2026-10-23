@@ -657,18 +657,25 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     from starpulse._internal.feed.search import SearchIndex  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse._internal.pulls.pulls import PullStore  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse._internal.server.assembly import assemble, history_store  # noqa: PLC0415 - the database stack loads after the config is accepted
+    from starpulse._internal.readmodel.declared import declared_fields  # noqa: PLC0415 - the database stack loads after the config is accepted
+    from starpulse._internal.readmodel.projector import Projector  # noqa: PLC0415 - the database stack loads after the config is accepted
+    from starpulse._internal.readmodel.read_model import ReadModel  # noqa: PLC0415 - the database stack loads after the config is accepted
+    from starpulse._internal.server import read_model_follow  # noqa: PLC0415 - the database stack loads after the config is accepted
+    from starpulse._internal.store import EventStore  # noqa: PLC0415 - the database stack loads after the config is accepted
 
     refresh_token, starts, reruns, run_safe, producer_tokens, opted_in = ready
     base = args.config.parent if args.config else Path.cwd()
     port = listening.getsockname()[1]
-    try:
-        board, feed = assemble(config, base, args.hours * 3600, run_safe)
-    except ValueError as exc:
-        parser.exit(1, f"{exc}\n")
     # Every reader keeps its own cursor over the one event log, so a second copy on another port sees every entry too.
     # The declared --hours is the default; an override Admin wrote beside the config replaces it from the first snapshot.
     url = database_url(config.database_url, base)
     log = EventLog(url)
+    # `read_model`: the page is drawn from the Task read model the projector folds, so no task file is read here
+    model = ReadModel(log.engine, declared_fields(config.board)) if config.read_model else None
+    try:
+        board, feed = assemble(config, base, args.hours * 3600, run_safe, model)
+    except ValueError as exc:
+        parser.exit(1, f"{exc}\n")
     window = HistoryWindow(feed, args.hours, log, base / SETTINGS_FILE)
     # the history dates the lanes the board adapter replays, so it is open before the adapter starts
     store = history_store(config, base, feed.machines)
@@ -684,7 +691,18 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     if search is not None:
         feed.index_tasks(search)  # `starpulse worker search` catches the vectors up off the feed's path
     stop = threading.Event()
-    replica.read(board, feed, f"starpulse-{port}", log, config, stop)
+    if model is None:
+        replica.read(board, feed, f"starpulse-{port}", log, config, stop)
+    else:
+        if board.attach is not None:
+            board.attach(log)
+        # `starpulse worker board` folds the events when it runs; otherwise this process does
+        projector = None if config.board_worker else Projector(log.engine, EventStore(log.engine), search)
+        if projector is not None:
+            projector.catch_up()
+        feed.follow_read_model()
+        feed.ready.set()
+        read_model_follow.follow(projector, feed, stop)
     tasks = MachineTasks(feed, board.keys)
     follow(tasks, log, machine_events.STREAM, tasks.handle_entry)
     refusals = ClaimRefusals(feed)
