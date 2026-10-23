@@ -13,7 +13,8 @@ its own machines and actors. A batch is checked whole before any entry is append
 
 A run's Step event rides the same route: `type` is `StepStarted` or `StepFinished`, there is no `machine`, `subject`
 is the run id and `data` carries `workflow`, `status` and, for a step's entry, `step` and `depends`. It lands on the
-runs stream under the producer's name as its `instance`, and a producer needs no machines to post it.
+runs stream under the producer's name as its `instance`, and a producer needs no machines to post it. With a
+`RunHistory` it also appends to the run's event stream, once per event id.
 
 Answers 201, 400 (the entry is wrong), 401 (no known token), 403 (a machine, actor or source the producer may not
 use), 413 (`data` over the cap) or 503 (the log did not take an entry; every entry carries a stable id, so the sender
@@ -23,6 +24,7 @@ posts the batch again).
 from __future__ import annotations
 
 import json
+import logging
 import time
 from collections.abc import Callable, Mapping
 from datetime import datetime
@@ -36,6 +38,9 @@ from starpulse._internal.runs.ingest import run_event, token_owner
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     from starpulse._internal.config.config import Producer
     from starpulse._internal.eventlog.event_log import EventLog
+    from starpulse._internal.runs.run_history import RunHistory
+
+logger = logging.getLogger(__name__)
 
 #: The structured and batch content types the route takes.
 SINGLE = "application/cloudevents+json"
@@ -85,6 +90,7 @@ class CloudEventsIngest:
         log: EventLog,
         machines: Mapping[str, dict],
         clock: Callable[[], float] = time.time,
+        history: RunHistory | None = None,
     ) -> None:
         self._producers, self._tokens, self._log, self._machines, self._clock = (
             producers,
@@ -93,6 +99,7 @@ class CloudEventsIngest:
             machines,
             clock,
         )
+        self._history = history
 
     def owner(self, authorization: str | None) -> str | None:
         """The producer the bearer token belongs to, or None."""
@@ -122,6 +129,12 @@ class CloudEventsIngest:
         for stream, event_id, fields in entries:
             if self._log._append(stream, fields, event_id=event_id) is None:
                 return 503, {"error": "the event log did not take the event; send it again"}
+            if stream == run_events.STREAM and self._history is not None:
+                try:
+                    self._history.ingest(event_id, fields)
+                except Exception:
+                    logger.warning("runs: the run history did not take %s", event_id, exc_info=True)
+                    return 503, {"error": "the run history did not take the event; send it again"}
         return 201, {"accepted": True}
 
     def _entry(self, producer: Producer, event: object) -> tuple[str, str, dict[str, Any]]:

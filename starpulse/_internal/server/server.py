@@ -694,10 +694,17 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     autopilot_stop = threading.Event()
     autopilot_runtime = autopilot_remote(config, base, feed, log, autopilot_stop)
     from starpulse._internal.pulls.github import GITHUB_MACHINES  # noqa: PLC0415 - the database stack loads after the config is accepted
+    from starpulse._internal.runs.run_history import RunHistory  # noqa: PLC0415 - the database stack loads after the config is accepted
+    from starpulse._internal.store import EventStore  # noqa: PLC0415 - the database stack loads after the config is accepted
 
+    run_history = RunHistory(EventStore(log.engine))
     cloudevents = (
         CloudEventsIngest(
-            {p.name: p for p in config.producers}, producer_tokens, log, {**feed.machines, **GITHUB_MACHINES}
+            {p.name: p for p in config.producers},
+            producer_tokens,
+            log,
+            {**feed.machines, **GITHUB_MACHINES},
+            history=run_history,
         )
         if producer_tokens
         else None

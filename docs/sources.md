@@ -395,7 +395,13 @@ a `machine:events` row like any other: it moves the task on the page and in the 
 | 401 | a missing or unknown token |
 | 403 | a `source`, `machine` or `actor` the producer is not declared for |
 | 413 | `data` over 8 KiB, or a body over the ingest's size limit |
-| 503 | the event log did not take an entry; every entry has a stable id, so post the batch again |
+| 503 | the event log or the run History did not take an entry; every entry has a stable id, so post the batch again |
+
+A run's `StepStarted` and `StepFinished` events (no `machine`) also land in the run's History: the event stream
+`("run", "<producer>/<run id>")`, once per event id, over HTTP and gRPC alike. Every Adapter's report (`dagu`,
+`github_actions`, `systemd`) appends to the same stream the `status` changes it reads from its source, and a
+correction is a new Event that leaves the earlier one. A step that started in a run that has finished, with no
+end, is a gap: the run's record names it instead of guessing.
 
 ### Over gRPC
 

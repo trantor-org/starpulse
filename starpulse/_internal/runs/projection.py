@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     from starpulse._internal.eventlog.event_log import EventLog
+    from starpulse._internal.runs.run_history import RunHistory
 
 logger = logging.getLogger(__name__)
 
@@ -26,8 +27,9 @@ POLL_S = 1.0
 class Publisher:
     """Keeps each instance's last report in the log, announcing a change."""
 
-    def __init__(self, log: EventLog) -> None:
+    def __init__(self, log: EventLog, history: RunHistory | None = None) -> None:
         self._log = log
+        self._history = history
         self._lock = threading.Lock()
         self._kept: dict[str, dict] = {}
 
@@ -50,6 +52,7 @@ class Publisher:
             }
             if kept == last:
                 return
+            self._observe(instance, dags)
             body = {**self._kept, instance: kept}
             try:
                 self._log.set_setting(PROJECTION, body)
@@ -58,6 +61,16 @@ class Publisher:
                 return
             self._kept[instance] = kept
             self._log._append(PROJECTED_STREAM, {})
+
+    def _observe(self, instance: str, dags: list | None) -> None:
+        """Append what a report of `dags` adds to the run history; a history that cannot be written is logged, for the
+        page does not wait on it."""
+        if self._history is None or not dags:
+            return
+        try:
+            self._history.observe(instance, dags)
+        except Exception:
+            logger.warning("runs: the run history did not take %s's report", instance, exc_info=True)
 
 
 class _Sink:
@@ -107,6 +120,7 @@ class Projected:
     def follow(self, stop: threading.Event) -> threading.Thread:
         """Apply the kept reports now, then each one announced after, on a thread until `stop`."""
         from starpulse._internal.eventlog.event_log import Tail  # noqa: PLC0415 - the database stack loads when a log opens
+
         tail = Tail.live(self._log, PROJECTED_STREAM, interval=POLL_S)
         self.apply()
         thread = threading.Thread(

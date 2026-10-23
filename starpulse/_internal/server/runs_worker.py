@@ -22,9 +22,11 @@ from starpulse._internal.feed.board_feed import follow
 from starpulse._internal.runs import run_events
 from starpulse._internal.runs.projection import Publisher
 from starpulse._internal.runs.push_runs import PUSHED_INSTANCE, PushRuns
+from starpulse._internal.runs.run_history import RunHistory
 from starpulse._internal.server.assembly import history_store, worker_board
 from starpulse._internal.server.hold import hold
 from starpulse._internal.server.server import run_adapters
+from starpulse._internal.store import EventStore
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +66,7 @@ def main(argv: list[str] | None, parser: argparse.ArgumentParser) -> None:
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")
     store = history_store(config, base, feed.machines)
-    publisher = Publisher(log)
+    publisher = Publisher(log, RunHistory(EventStore(log.engine)))
     for instance, adapter in adapters:
         adapter.follow(instance.url, publisher.runs(instance.name, feed.runs(instance.name)), log)
     # The learned step graphs persist only in StarPulse's own store.
