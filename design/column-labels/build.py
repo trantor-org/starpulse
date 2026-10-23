@@ -1,13 +1,12 @@
-"""Build the column-labels mockup: the real page, built from this branch with `column-labels-src.patch` applied, over the demo capture.
+"""Build the state-type display mockup (in design/column-labels/): the real page, built from this branch with `column-labels-src.patch` applied, over the demo capture.
 
 usage: git apply design/column-labels/column-labels-src.patch
        pnpm --dir starpulse/web --ignore-workspace run build
        PYTHONPATH=. python design/column-labels/build.py --fixture PATH
        git apply -R design/column-labels/column-labels-src.patch
 
-The patch adds the Columns menu (relabel, hide, reorder, reset to machine), the label overlay on every name the page draws, and
-each column's role mark and role-based stacking. mock.js plays serve's GET/PUT /api/views/columns (`window.__MOCK_FETCH__`),
-refusals and a dropped save included. The capture's board machine gets the seeded roles on its states, the field the API
+The patch puts a glyph for each column state's declared type (initial, resting, waiting_on_fact, waiting_on_person, final) in its header, named on hover; columns keep the machine's names and
+order. mock.js adds the review bar (view and text size). The capture's board machine gets the seeded types on its states (as `role`), the field the API
 slice adds. `--fixture` is a saved capture (the PR demo's `__FLOW_FIXTURE__`), else the server is captured, scrubbed and saved there.
 """
 
@@ -34,10 +33,10 @@ for state in board["machine"]["states"]:
     state["role"] = demo.SEED_ROLES.roles.get(state["id"])
 html = demo.page(demo.STATIC, snap)
 head = (
-    "<!--\n  Design mockup of per-viewer column labels and state-role display, under operator review; not served by starpulse.\n"
+    "<!--\n  Design mockup of state-type display, under operator review; not served by starpulse.\n"
     "  The real page, built from the branch with column-labels-src.patch, over the demo capture, with mock.js layered on.\n"
-    "  Review is waiting_on_fact like Waiting, so it stacks by dependency too; the Held by strip stays on the first such column.\n"
-    "  Variants: ?s=default|relabeled|hidden|reordered|one|refusal|offline  ?view=kanban|constellation  ?fs=100|125|150\n-->\n"
+    "  Each header glyph is its state's declared type; two states may share one (Waiting and Review both wait on a fact).\n"
+    "  Variants: ?view=kanban|constellation  ?fs=100|125|150\n-->\n"
 )
 html = html.replace("<head>", "<head>\n" + head, 1).replace("</body>", '<script src="mock.js"></script>\n</body>', 1)
 (HERE / "index.html").write_text(html)

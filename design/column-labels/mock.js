@@ -1,8 +1,7 @@
-// Design mockup layer (per-viewer column labels and state-role display), never part of the page. The page above is the branch's real page,
-// built with column-labels-src.patch, over the PR demo's capture. This layer plays serve's GET /api/views/columns for the install's one
-// viewer, as `starpulse columns` left it: each starting state (?s=default|relabeled|hidden|one), the view (?view=kanban|constellation) and
-// the text size (?fs=100|125|150). ?bar=0 hides this bar. The page only reads the columns: labels and hidden columns are set with the CLI,
-// and the columns keep the machine's order.
+// Design mockup layer (state-type display), never part of the page. The page above is the branch's real page, built with
+// column-labels-src.patch, over the PR demo's capture. Each column keeps the machine's name and order; its header carries a glyph
+// for the state's declared type, named on hover. This bar picks the view (?view=kanban|constellation) and the text size
+// (?fs=100|125|150); ?bar=0 hides it.
 (() => {
   const q = new URLSearchParams(location.search);
   if (!q.has("view")) { q.set("view", "kanban"); history.replaceState(null, "", `?${q}`); }
@@ -12,40 +11,7 @@
     localStorage.setItem(k, JSON.stringify(p));
   } catch { /* storage off: the page keeps 100% */ }
 
-  const s = q.get("s") || "default";
-  const board = (window.__FLOW_FIXTURE__?.flows || []).find((f) => f.name === "board");
-  const states = board?.machine?.states || [];
-  const LABELS = [["ready", "Up next"], ["in_progress", "Doing"], ["needs_attention", "Blocked on me"], ["done", "Shipped"]];
-  const HIDDEN = { hidden: ["waiting", "done"], one: states.map((x) => x.id).filter((id) => id !== "in_progress") };
-  const SEEDS = {
-    default: { columns: [] },
-    relabeled: { columns: LABELS.map(([id, label]) => ({ id, label, hidden: false })) },
-    hidden: { columns: HIDDEN.hidden.map((id) => ({ id, label: null, hidden: true })) },
-    one: { columns: HIDDEN.one.map((id) => ({ id, label: null, hidden: true })) },
-  };
-  const stored = SEEDS[s] || SEEDS.default;
-
-  const reply = (status, body) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
-  globalThis.__MOCK_FETCH__ = (url) => new Promise((resolve, reject) => setTimeout(() => {
-    if (!String(url).endsWith("/api/views/columns")) return reject(new TypeError(`mockup serves no ${url}`));
-    resolve(reply(200, stored));
-  }, 60));
-
-  // The CLI run that leaves serve holding each state, and what to look at.
-  const cli = {
-    default: ["starpulse columns reset"],
-    relabeled: LABELS.map(([id, label]) => `starpulse columns label ${id} "${label}"`),
-    hidden: [`starpulse columns hide ${HIDDEN.hidden.join(" ")}`],
-    one: [`starpulse columns hide ${HIDDEN.one.join(" ")}`],
-  };
-  const steps = {
-    default: "the machine's names and order · hover a header's mark for its role",
-    relabeled: "hover a relabeled header for the machine's name · open a card: its Move menu reads the labels · the Star Map draws them too",
-    hidden: "Waiting and Done are not drawn · the rest keep the machine's order",
-    one: "one column drawn: the CLI refuses hiding the last one",
-  };
-
-  // The review bar: every state, each a link to its own address, and the CLI run behind it.
+  // The review bar: each choice a link to its own address.
   const bar = document.createElement("div");
   bar.id = "mockbar";
   bar.innerHTML = `<style>
@@ -57,12 +23,10 @@
     #mockbar span { display: inline-flex; flex-wrap: wrap; gap: 3px; align-items: center; }
     #mockbar a { all: unset; cursor: pointer; padding: 1px 6px; border-radius: 4px; border: 1px solid rgba(148,163,184,.18); color: #b6c0d3; text-decoration: none; }
     #mockbar a.on { border-color: #fbbf24; color: #fde68a; background: rgba(251,191,36,.10); }
-    #mockbar code { flex-basis: 100%; text-align: center; font: 10.5px ui-monospace, monospace; color: #fde68a; white-space: pre-wrap; overflow-wrap: anywhere; }
     #mockbar i { flex-basis: 100%; text-align: center; font-style: normal; color: #b6c0d3; }
   </style><b>MOCKUP</b>`;
-  const cur = { view: q.get("view"), s, fs: q.get("fs") || "100" };
+  const cur = { view: q.get("view"), fs: q.get("fs") || "100" };
   const groups = [
-    ["State", "s", [["default", "Machine"], ["relabeled", "Relabeled"], ["hidden", "Hidden"], ["one", "One column"]]],
     ["View", "view", [["kanban", "Kanban"], ["constellation", "Star Map"]]],
     ["Text", "fs", [["100", "100%"], ["125", "125%"], ["150", "150%"]]],
   ];
@@ -79,11 +43,9 @@
     }
     bar.append(g);
   }
-  const code = document.createElement("code");
-  code.textContent = `$ ${(cli[s] || cli.default).join("\n$ ")}`;
   const line = document.createElement("i");
-  line.textContent = steps[s] || steps.default;
-  bar.append(code, line);
+  line.textContent = "each header's glyph marks its state's declared type: hover it for the type · names and order are the machine's";
+  bar.append(line);
 
   // Once the page has drawn, show the bar.
   const start = (tries = 150) => {
