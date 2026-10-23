@@ -190,8 +190,9 @@ def compile_document(document: dict[str, Any], path: Path, registry: Registry = 
     setattr(machine, "writers", writers)
     setattr(machine, "citations", _citations(document["events"]))
     setattr(machine, "source", document.get("source"))
-    drawing = {key: document[key] for key in DRAWING if key in document}
     roles = {name: _role(state) for name, state in document["states"].items()}
+    setattr(machine, "roles", roles)
+    drawing = {key: document[key] for key in DRAWING if key in document}
     return Compiled(document["name"], machine, bindings, writers, cues, drawing, waits, roles)
 
 

@@ -9,7 +9,8 @@ from statemachine import State, StateChart
 from starpulse._internal.machines import snapshot
 from starpulse._internal.machines.machine_definition import MachineDefinitionError, load_machine
 from starpulse._internal.machines.snapshot import describe
-from starpulse.contracts.api.dto.machine import Cite, Transition
+from starpulse.contracts.api.dto.machine import Cite, MachineState, Transition
+from starpulse.tests.machines import FIXTURES
 
 
 class _Tiny(StateChart):
@@ -24,14 +25,33 @@ class TestDescribe:
     def test_a_machine_is_its_states_and_every_transition_including_self_loops(self) -> None:
         assert describe(_Tiny) == {
             "states": [
-                {"id": "a", "name": "A", "initial": True, "final": False},
-                {"id": "b", "name": "B", "initial": False, "final": True},
+                {"id": "a", "name": "A", "initial": True, "final": False, "role": None},
+                {"id": "b", "name": "B", "initial": False, "final": True, "role": None},
             ],
             "transitions": [
                 {"source": "a", "target": "b", "event": "GO"},
                 {"source": "a", "target": "a", "event": "STAY"},
             ],
         }
+
+    def test_each_state_is_served_with_the_type_its_yaml_declares(self) -> None:
+        states = describe(load_machine(FIXTURES / "renamed-board.yaml").machine)["states"]
+
+        assert {s["id"]: s["role"] for s in states} == {
+            "inbox": "initial",
+            "todo": "waiting_on_fact",
+            "parked": "waiting_on_fact",
+            "doing": "resting",
+            "checking": "waiting_on_fact",
+            "on_me": "waiting_on_person",
+            "shipped": "resting",
+            "gone": "final",
+        }
+
+    def test_a_served_state_validates_as_the_api_state_with_its_role(self) -> None:
+        state = describe(load_machine(FIXTURES / "renamed-board.yaml").machine)["states"][1]
+
+        assert MachineState.model_validate(state).model_dump()["role"] == "waiting_on_fact"
 
 
 class TestDeclared:

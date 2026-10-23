@@ -43,9 +43,11 @@ def describe(machine: Any) -> dict:
     `writers`.
     """
     cited = getattr(machine, "citations", {})
+    roles = getattr(machine, "roles", {})
     body: dict[str, Any] = {
         "states": [
-            {"id": s.id, "name": _titled(s.name), "initial": s.initial, "final": s.final} for s in machine.states
+            {"id": s.id, "name": _titled(s.name), "initial": s.initial, "final": s.final, "role": roles.get(s.id)}
+            for s in machine.states
         ],
         "transitions": [
             {"source": t.source.id, "target": t.target.id, "event": str(t.event)}

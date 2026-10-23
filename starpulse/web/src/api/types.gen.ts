@@ -1148,6 +1148,10 @@ export interface MachineState {
   id: string;
   initial: boolean;
   name: string;
+  /**
+   * The type the machine declares the state: `initial`, `final`, `resting`, `waiting_on_fact` or `waiting_on_person`; null when it declares none.
+   */
+  role?: string | null;
 }
 /**
  * Where a Board state opens into another machine, and which Board event each inner final state fires.

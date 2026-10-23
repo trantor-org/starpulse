@@ -12,6 +12,11 @@ class MachineState(_Api):
     name: str
     initial: bool
     final: bool
+    role: str | None = Field(
+        default=None,
+        description="The type the machine declares the state: `initial`, `final`, `resting`, `waiting_on_fact` or "
+        "`waiting_on_person`; null when it declares none.",
+    )
 
 
 class Cite(_Api):

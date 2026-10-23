@@ -417,6 +417,25 @@ function HiddenMenu({ prefs, tasks, set, close }: { prefs: Prefs; tasks: KanbanT
   );
 }
 
+/** Each declared state type's mark: a column header says what kind of state the machine declares it, whatever the state is called. */
+const TYPE_MARKS: Record<string, ReactNode> = {
+  initial: <path className="f" d="M3.3 2.2v5.6L8 5z" />,
+  resting: <circle className="f" cx="5" cy="5" r="3" />,
+  waiting_on_fact: <><circle cx="5" cy="5" r="3.8" /><path d="M5 2.9v2.3l1.5 1" /></>,
+  waiting_on_person: <><circle className="f" cx="5" cy="3.2" r="1.7" /><path className="f" d="M1.8 9.2c.3-2.1 1.6-3.3 3.2-3.3s2.9 1.2 3.2 3.3z" /></>,
+  final: <><circle cx="5" cy="5" r="3.8" /><path d="M3.2 5.1l1.3 1.3 2.4-2.6" /></>,
+};
+const TYPE_NAMES: Record<string, string> = { waiting_on_fact: "waiting on a fact", waiting_on_person: "waiting on a person" };
+
+function TypeGlyph({ type }: { type?: string | null }) {
+  const known = type && type in TYPE_MARKS ? type : null, name = known ? `Type: ${TYPE_NAMES[known] ?? known}` : "No declared type";
+  return (
+    <svg className="rg" data-type={known ?? "none"} viewBox="0 0 10 10" role="img" aria-label={name}>
+      <title>{name}</title>{known ? TYPE_MARKS[known] : <circle className="f" cx="5" cy="5" r="1.4" />}
+    </svg>
+  );
+}
+
 type MenuName = "assignee" | "milestone" | "hidden";
 
 /** What a press on a card and the pointer after it are doing: nothing yet (a click), or carrying the card to a column. */
@@ -807,7 +826,7 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
       <div className="lanes" role="tablist" aria-label="Lanes">
         {view.columns.map((col) => (
           <button key={col.id} role="tab" data-lane={col.id} data-role={col.role} aria-selected={col.id === shownLane} title={col.name} onClick={() => setPhoneLane(col.id)}>
-            <span className="g" /><span className="c">{col.count}</span><span className="nm">{col.name}</span>
+            <TypeGlyph type={hud.types?.[col.id]} /><span className="c">{col.count}</span><span className="nm">{col.name}</span>
           </button>
         ))}
       </div>
@@ -819,7 +838,7 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
           const colCls = ["col", col.id === shownLane && "on", target && target.kind !== "here" && target.kind, lift?.over === col.id && target?.kind !== "here" && "over"].filter(Boolean).join(" ");
           return (
             <section key={col.id} className={colCls} data-lane={col.id} data-role={col.role}>
-              <h2><span className="g" /><span className="nm" title={col.name}>{col.name}</span><span className="c">{col.count}</span>
+              <h2><TypeGlyph type={hud.types?.[col.id]} /><span className="nm" title={col.name}>{col.name}</span><span className="c">{col.count}</span>
                 {inChain > 0 && <span className="cc" title={`${inChain} of this column's tasks are in the hovered task's chain`}>⛓{inChain}</span>}
                 {target && target.kind !== "here" && (
                   <span className="hint">{target.kind === "ok" ? "drop" : target.kind === "guard" ? `guarded · ${target.skill || "refused"}` : "no transition"}</span>
