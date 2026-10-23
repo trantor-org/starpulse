@@ -823,6 +823,11 @@ review: a state taken out, a state no tier names, or fourteen states over thirty
 
 ## Connect a tracker
 
+`starpulse init [--dir DIR] [--harness claude-code]` scaffolds a first install: `starpulse.toml` (a native `[board]` with
+one `[[board.guards]]` rule, a `[scheduler]` table and a `[[producers]]` entry reading `STARPULSE_TOKEN`), `board.yaml`
+(four States, every role declared) and the harness's telemetry settings (`.claude/settings.json`). It never writes a
+token, and writes nothing, naming the file on stderr and exiting 1, when any of the files exists.
+
 `starpulse connect` checks that a tracker answers, then writes the `[board]` table of `starpulse.toml` for you, keeping
 every other table and comment. It prints one line saying what it read. A tracker that does not answer writes nothing,
 says why on stderr and exits 1; `--config` names another file, and `starpulse connect <tracker> --help` lists each
