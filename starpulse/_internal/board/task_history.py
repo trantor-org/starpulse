@@ -5,7 +5,9 @@ with no History yet is seeded with a `TaskImported` of its record before the wri
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Any
 
 from sqlalchemy import Engine
@@ -14,6 +16,21 @@ from starpulse._internal.board.seam import OPERATOR, Written
 from starpulse._internal.store import EventStore, NewEvent, StaleVersion
 
 WRITER = "native-board"
+#: The writer of Events an editor import appends: the operator's break-glass edit, not a command of the board (D5).
+BREAK_GLASS = "break-glass"
+_break_glass: ContextVar[bool] = ContextVar("break_glass", default=False)
+
+
+@contextmanager
+def break_glass() -> Iterator[None]:
+    """Mark the Events the writes made inside as break-glass."""
+    token = _break_glass.set(True)
+    try:
+        yield
+    finally:
+        _break_glass.reset(token)
+
+
 KIND = "task"
 
 #: The record's keys that are the fold's own Task fields, by the fold's name.
@@ -219,4 +236,4 @@ class TaskHistory:
 
     @staticmethod
     def _new(kind: str, payload: dict[str, Any], actor: str) -> NewEvent:
-        return NewEvent(kind, payload, actor, WRITER)
+        return NewEvent(kind, payload, actor, BREAK_GLASS if _break_glass.get() else WRITER)

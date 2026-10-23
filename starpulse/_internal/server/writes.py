@@ -687,7 +687,10 @@ def edit_task(
             todo[_APPEND_NOTES] = changes[_APPEND_NOTES]
         if not todo and not comment.strip():
             return 200, {"task": task, "changed": []}
-        written = _record_written(feed, task, who, lambda: edit(task, todo, comment, actor=who.actor))
+        from starpulse._internal.board.task_history import break_glass  # noqa: PLC0415 - the database stack loads when a store does
+
+        with break_glass() if request.break_glass else contextlib.nullcontext():
+            written = _record_written(feed, task, who, lambda: edit(task, todo, comment, actor=who.actor))
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
     changed = ("notes" if field == _APPEND_NOTES else field for field in todo)

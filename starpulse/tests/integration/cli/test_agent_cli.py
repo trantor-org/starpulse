@@ -1,6 +1,7 @@
 """`starpulse snapshot|board|task show|help --agent`: an agent reads the running server and gets one JSON document."""
 
 import json
+import sys
 import re
 import shutil
 import socket
@@ -2410,3 +2411,52 @@ def test_task_retired_milestone_prints_only_that_milestones_tasks(
 
     assert code == 0
     assert [row["task"] for row in body["tasks"]] == ["task-3"]
+
+
+def _editor(tmp_path: Path, replace: str, with_: str) -> dict[str, str]:
+    """An environment whose `$EDITOR` is a script that rewrites the file it is given, `replace` to `with_`."""
+    script = tmp_path / "edit.py"
+    script.write_text(
+        "import sys, pathlib\np = pathlib.Path(sys.argv[1])\n"
+        f"p.write_text(p.read_text().replace({replace!r}, {with_!r}, 1))\n"
+    )
+    return {"EDITOR": f"{sys.executable} {script}"}
+
+
+def test_task_show_markdown_renders_the_task(tasked: str, capsys: pytest.CaptureFixture[str]) -> None:
+    code, doc = _run(capsys, ["task", "show", "task-1", "--markdown", "--server", tasked])
+
+    assert code == 0
+    assert doc["task"] == "task-1"
+    assert doc["markdown"].startswith("# ")
+    assert "## Acceptance Criteria" in doc["markdown"]
+
+
+def test_task_edit_editor_imports_the_change(
+    tasked: str,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _, shown = _run(capsys, ["task", "show", "task-1", "--markdown", "--server", tasked])
+    title = shown["markdown"].splitlines()[0]
+    environ = _editor(tmp_path, title, "# Retitled in the editor")
+
+    code, doc = _run(capsys, ["task", "edit", "task-1", "--editor", "--server", tasked], environ)
+
+    assert (code, doc["changed"]) == (0, ["title"])
+    assert "title: Retitled in the editor" in _task_file(tmp_path).read_text()
+
+
+def test_task_edit_editor_that_removes_a_section_is_refused_naming_it_and_writes_nothing(
+    tasked: str,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    before = _task_file(tmp_path).read_text()
+    environ = _editor(tmp_path, "## Final Summary", "")
+
+    code, doc = _run(capsys, ["task", "edit", "task-1", "--editor", "--server", tasked], environ)
+
+    assert (code, doc["code"]) == (1, "refused")
+    assert "Final Summary" in doc["error"]
+    assert _task_file(tmp_path).read_text() == before
