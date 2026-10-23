@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { LIFECYCLE_ROLES } from "../../tests/lifecycleRoles";
 import type { KanbanTask } from "./kanbanModel";
 import { MoveStore, type Post, type Reply } from "./move";
 import {
@@ -43,34 +44,34 @@ const flush = () => new Promise((r) => setTimeout(r));
 
 describe("the start question", () => {
   it.each(["ready", "waiting", "needs_attention"])("is asked when a %s card is dropped on In progress", (lane) => {
-    expect(dropAsks(task("TASK-D1", lane), "in_progress")).toBe(true);
+    expect(dropAsks(task("TASK-D1", lane), "in_progress", LIFECYCLE_ROLES)).toBe(true);
   });
 
   it("is not asked for another column, for Review's send-back, or for a move a guard refuses", () => {
-    expect(dropAsks(task("TASK-D1", "ready", "", { waiting: OK, in_progress: OK }), "waiting")).toBe(false);
-    expect(dropAsks(task("TASK-D1", "review"), "in_progress")).toBe(false);
-    expect(dropAsks(task("TASK-D1", "waiting", "", { in_progress: GUARD }), "in_progress")).toBe(false);
-    expect(startable(task("TASK-D1", "waiting", "", { in_progress: GUARD }))).toBe(false);
+    expect(dropAsks(task("TASK-D1", "ready", "", { waiting: OK, in_progress: OK }), "waiting", LIFECYCLE_ROLES)).toBe(false);
+    expect(dropAsks(task("TASK-D1", "review"), "in_progress", LIFECYCLE_ROLES)).toBe(false);
+    expect(dropAsks(task("TASK-D1", "waiting", "", { in_progress: GUARD }), "in_progress", LIFECYCLE_ROLES)).toBe(false);
+    expect(startable(task("TASK-D1", "waiting", "", { in_progress: GUARD }), LIFECYCLE_ROLES)).toBe(false);
   });
 
   it.each(["drop", "modal", "play"] as const)("opens from a %s on the task with its pick", (via) => {
     const { starts } = stores();
 
-    starts.ask(task("TASK-D1", "ready", "@agent-deep-medium"), via);
+    starts.ask(task("TASK-D1", "ready", "@agent-deep-medium"), via, LIFECYCLE_ROLES);
 
     expect(starts.get().asking).toMatchObject({ task: { id: "TASK-D1" }, via, pick: { harness: "claude", tier: "deep", effort: "medium" } });
   });
 
   it("key 1 starts a session on the picked profile and key 2 moves the task without one", async () => {
     const { starts, post, moves, writer } = stores();
-    starts.ask(task("TASK-D1", "ready"), "play");
+    starts.ask(task("TASK-D1", "ready"), "play", LIFECYCLE_ROLES);
     starts.pick({ tier: "deep" });
 
     expect(starts.key("1")).toBe(true);
     expect(post).toHaveBeenCalledWith("TASK-D1", "@agent-deep-high", "claude");
     expect(starts.get().asking).toBeNull();
 
-    starts.ask(task("TASK-D2", "waiting"), "drop");
+    starts.ask(task("TASK-D2", "waiting"), "drop", LIFECYCLE_ROLES);
     expect(starts.key("2")).toBe(true);
     await flush();
     expect(writer).toHaveBeenCalledWith("TASK-D2", "in_progress");
@@ -80,7 +81,7 @@ describe("the start question", () => {
 
   it("Esc returns the card and starts nothing", () => {
     const { starts, post, writer } = stores();
-    starts.ask(task("TASK-D1", "ready"), "drop");
+    starts.ask(task("TASK-D1", "ready"), "drop", LIFECYCLE_ROLES);
 
     expect(starts.key("Escape")).toBe(true);
     expect(starts.get().asking).toBeNull();
@@ -93,7 +94,7 @@ describe("the start question", () => {
     const writer = vi.fn<Post>(() => Promise.resolve<Reply>({ ok: true }));
     const { post } = service();
     const starts = new StartStore(post, new MoveStore(writer, () => 900));
-    starts.ask(task("TASK-D1", "ready"), "play");
+    starts.ask(task("TASK-D1", "ready"), "play", LIFECYCLE_ROLES);
 
     expect(starts.canStart()).toBe(false);
     expect(starts.key("1")).toBe(false);
@@ -108,7 +109,7 @@ describe("the start question", () => {
     const starts = new StartStore(post, new MoveStore(vi.fn<Post>(), () => 900));
 
     starts.load(HARNESSES);
-    starts.ask(task("TASK-D1", "ready"), "play");
+    starts.ask(task("TASK-D1", "ready"), "play", LIFECYCLE_ROLES);
 
     expect([starts.get().harnesses, starts.canStart()]).toEqual([HARNESSES, true]);
   });
@@ -117,7 +118,7 @@ describe("the start question", () => {
     const { writer, moves, post } = stores();
     const open = vi.fn<(url: string) => void>();
     const starts = new StartStore(post, moves, DESKTOP, open);
-    starts.ask(task("TASK-D1", "ready"), "play");
+    starts.ask(task("TASK-D1", "ready"), "play", LIFECYCLE_ROLES);
 
     expect(starts.canDesktop()).toBe(true);
     expect(starts.key("3")).toBe(true);
@@ -131,7 +132,7 @@ describe("the start question", () => {
     const { moves, post } = stores();
     const open = vi.fn<(url: string) => void>();
     const starts = new StartStore(post, moves, HARNESSES, open);
-    starts.ask(task("TASK-D1", "ready"), "play");
+    starts.ask(task("TASK-D1", "ready"), "play", LIFECYCLE_ROLES);
 
     expect(starts.canDesktop()).toBe(false);
     expect(starts.key("3")).toBe(false);
@@ -141,10 +142,10 @@ describe("the start question", () => {
 
   it("is not asked for a card already waiting for its claim", () => {
     const { starts } = stores();
-    starts.ask(task("TASK-D1", "ready"), "play");
+    starts.ask(task("TASK-D1", "ready"), "play", LIFECYCLE_ROLES);
     starts.key("1");
 
-    starts.ask(task("TASK-D1", "ready"), "play");
+    starts.ask(task("TASK-D1", "ready"), "play", LIFECYCLE_ROLES);
 
     expect(starts.get().asking).toBeNull();
   });
@@ -174,11 +175,11 @@ describe("a started card", () => {
   it("moves to In progress at once, marked starting, then waiting for its claim with the session link", async () => {
     const { starts, settle } = stores();
     const t = task("TASK-D1", "ready");
-    starts.ask(t, "play");
+    starts.ask(t, "play", LIFECYCLE_ROLES);
     starts.key("1");
 
     expect(starts.get().claiming["TASK-D1"]).toEqual({ from: "ready", phase: "starting", url: "", at: null });
-    expect(placeClaims([t], starts.get())[0].lane).toBe("in_progress");
+    expect(placeClaims([t], starts.get(), LIFECYCLE_ROLES)[0].lane).toBe("in_progress");
     expect(canDrag("TASK-D1", starts.get())).toBe(false);
 
     settle({ ok: true, url: SESSION, at: 1000 });
@@ -190,7 +191,7 @@ describe("a started card", () => {
   it("returns to its column with the reason when the start fails", async () => {
     const { starts, settle } = stores();
     const t = task("TASK-D1", "waiting");
-    starts.ask(t, "play");
+    starts.ask(t, "play", LIFECYCLE_ROLES);
     starts.key("1");
 
     settle({ ok: false, reason: "tmux could not start session task-1" });
@@ -198,14 +199,14 @@ describe("a started card", () => {
 
     expect(starts.get().claiming).toEqual({});
     expect(starts.get().failed["TASK-D1"]).toEqual({ from: "waiting", reason: "tmux could not start session task-1", url: "", refused: false });
-    expect(placeClaims([t], starts.get())[0].lane).toBe("waiting");
+    expect(placeClaims([t], starts.get(), LIFECYCLE_ROLES)[0].lane).toBe("waiting");
     expect(canDrag("TASK-D1", starts.get())).toBe(true);
   });
 
   it("returns to its column with the writer's reason and keeps the session link when the claim is refused", async () => {
     const { starts, settle } = stores();
     const t = task("TASK-D1", "waiting");
-    starts.ask(t, "play");
+    starts.ask(t, "play", LIFECYCLE_ROLES);
     starts.key("1");
     settle({ ok: true, url: SESSION, at: 1000 });
     await flush();
@@ -217,7 +218,7 @@ describe("a started card", () => {
 
     expect(starts.get().claiming).toEqual({});
     expect(starts.get().failed["TASK-D1"]).toEqual({ from: "waiting", reason: "TASK-D3 is not Done", url: SESSION, refused: true });
-    expect(placeClaims([t], starts.get())[0].lane).toBe("waiting");
+    expect(placeClaims([t], starts.get(), LIFECYCLE_ROLES)[0].lane).toBe("waiting");
 
     starts.dismiss("TASK-D1");
     expect(starts.get().failed).toEqual({});
@@ -226,7 +227,7 @@ describe("a started card", () => {
   it("applies a refusal the stream reported before the start answered", async () => {
     const { starts, settle } = stores();
     const t = task("TASK-D1", "ready");
-    starts.ask(t, "play");
+    starts.ask(t, "play", LIFECYCLE_ROLES);
     starts.key("1");
     starts.sync([t], { "TASK-D1": { reason: "refused", at: 1001 } });
 
@@ -238,7 +239,7 @@ describe("a started card", () => {
 
   it("clears its mark once the projection reports the agent's claim", async () => {
     const { starts, settle } = stores();
-    starts.ask(task("TASK-D1", "ready"), "play");
+    starts.ask(task("TASK-D1", "ready"), "play", LIFECYCLE_ROLES);
     starts.key("1");
     settle({ ok: true, url: SESSION, at: 1000 });
     await flush();

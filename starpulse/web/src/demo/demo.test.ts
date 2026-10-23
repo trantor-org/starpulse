@@ -4,6 +4,7 @@ import { PAGE } from "../features/level/ledgerScroll";
 import { fetchHarnesses, postStart } from "../features/kanban/start";
 import type { FlowSnapshot, LedgerRow, Machine, RawTask, RunStatus, Snapshot } from "../api";
 import type { TaskRecord } from "../features/kanban/taskViewModel";
+import { LIFECYCLE_ROLES } from "../tests/lifecycleRoles";
 
 const machine = (initial: string, edges: [string, string, string][], final = ""): Machine => {
   const ids = [...new Set(edges.flatMap(([s, t]) => [s, t]))];
@@ -37,6 +38,7 @@ function fixture(): DemoFixture {
         agents: [{ ...card("DEMO-1", "red"), task: "DEMO-1", steps: 4, trail: [{ state: "red", event: "RED", at: 50 }] }],
       },
     ],
+    roles: LIFECYCLE_ROLES,
     settled: {},
     error: null,
     now: 100,
@@ -521,7 +523,7 @@ describe("the demo server", () => {
   });
 
   it("creates a task in the board's starting lane, not its first working lane", async () => {
-    const f = fixture();
+    const f = { ...fixture(), roles: {} };
     const native = { ...machine("to_do", [["to_do", "in_progress", "START"], ["in_progress", "done", "FINISH"]], "done"), mainLine: ["to_do", "in_progress", "done"] };
     f.flows = [{ name: "board", machine: native, agents: [card("DEMO-1", "in_progress")] }];
     const s = new DemoServer(f);
@@ -531,7 +533,7 @@ describe("the demo server", () => {
   });
 
   it("leaves a task the viewer created in its starting lane while the demo walks, until the viewer moves it", async () => {
-    const f = fixture();
+    const f = { ...fixture(), roles: {} };
     f.flows = [{ name: "board", machine: { ...machine("to_do", [["to_do", "in_progress", "START"], ["in_progress", "done", "FINISH"]], "done"), mainLine: ["to_do", "in_progress", "done"] }, agents: [] }];
     const s = new DemoServer(f);
     const { task } = await (await s.fetch("/api/tasks", { method: "POST", body: JSON.stringify({ title: "Write the docs" }) })).json();

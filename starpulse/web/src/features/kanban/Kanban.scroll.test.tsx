@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Kanban } from "./Kanban";
 import type { HudState } from "../../render/hud";
+import { LIFECYCLE_ROLES } from "../../tests/lifecycleRoles";
 import type { KanbanTask } from "./kanbanModel";
 import { MoveStore } from "./move";
 import { StartStore, startLane } from "./start";
@@ -17,7 +18,7 @@ vi.mock("./start", async (actual) => {
 const card = (id: string, title = `title ${id}`): KanbanTask => ({
   id, title, lane: "ready", milestone: "", labels: [], assignee: "", dependencies: [], openDeps: 0, prs: [], description: "", live: null, released: false, moves: {}, entered: 0, created: null, workableSince: null, machines: [],
 });
-const hud = { cards: [card("TASK-1"), card("TASK-2"), card("TASK-3")], names: {}, claims: {}, settled: [], boardUrl: null, stats: "live · 10:00 MST", dags: ["a"], pools: [], feed: [] } as unknown as HudState;
+const hud = { cards: [card("TASK-1"), card("TASK-2"), card("TASK-3")], names: {}, roles: LIFECYCLE_ROLES, claims: {}, settled: [], boardUrl: null, stats: "live · 10:00 MST", dags: ["a"], pools: [], feed: [] } as unknown as HudState;
 
 let host: HTMLDivElement, root: Root;
 const moves = new MoveStore(async () => ({ ok: true }) as never);

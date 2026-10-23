@@ -105,7 +105,7 @@ export function boardTies(sc: Scene, sky: Sky, u: number, ts = 1): Ties {
   for (const l of sky.launches) {
     const t = byDag.get(l.dag), flow = t && launchedFlow(sky, l.dag, l.machine);
     if (!t || !flow || !Object.values(sky.flows[flow].machine.writers ?? {}).some((ws) => ws.some((w) => w.actor === l.dag))) continue;
-    const moon = sc.moons.find((m) => m.name === flow), host = sc.galaxies[sky.tree.ipState ?? "in_progress"];
+    const moon = sc.moons.find((m) => m.name === flow), host = sc.galaxies[sky.tree.ipState ?? sky.roles.working ?? ""];
     if (moon || host) t.subs.push({ flow, ...(moon ?? { x: host.x, y: host.y - host.R }) });
   }
   const all = [...byDag.values()];

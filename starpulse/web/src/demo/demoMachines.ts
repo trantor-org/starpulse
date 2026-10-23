@@ -1,15 +1,16 @@
 // A demo page's machines grown to a count (`?demo&many=N`), so the In Progress ledger has more than a page to scroll and a 24 h strip to draw.
 import { PAGE } from "../features/level/machineLanes";
-import type { FlowSnapshot, MachineEntry, Snapshot } from "../api";
+import type { FlowSnapshot, MachineEntry, Roles, Snapshot } from "../api";
 
 const DAY = 86400;
 /** The seconds from now to a machine's last move, spread over the day: close together near now, wide apart far back. */
-const FROM = ["ready", "in_progress", "review", "waiting"];
+const FROM = (roles: Roles) => [roles.ready ?? "", roles.working ?? "", roles.review ?? "", roles.waiting ?? ""];
 const age = (i: number, n: number) => 90 + Math.round((DAY - 600) * (i / Math.max(1, n - 1)) ** 1.6);
 
 /** `snap` with the machines under its open one cloned from the ones it has until there are `n`, their last moves spread over the 24 hours, the first page and the strip drawn over them. */
 export function padMachines(snap: Snapshot, n: number): Snapshot {
   const top = snap.machinePage?.open;
+  const from_ = FROM(snap.roles ?? {});
   const kids = snap.flows.filter((f) => f.parent === top && f.name !== top);
   if (!top || !kids.length || kids.length >= n) return snap;
   const made: FlowSnapshot[] = Array.from({ length: n }, (_, i) => {
@@ -31,7 +32,7 @@ export function padMachines(snap: Snapshot, n: number): Snapshot {
         at: s.at,
         machine: f.name,
         row: f.name,
-        from: j === 0 ? { machine: "board", state: FROM[(i + k) % FROM.length] } : null,
+        from: j === 0 ? { machine: "board", state: from_[(i + k) % from_.length] } : null,
         dag: j === 0 && k === 0 && i % 7 === 3 ? "nightly-sweep" : null,
       })),
     ),
@@ -44,17 +45,21 @@ export function padMachines(snap: Snapshot, n: number): Snapshot {
   };
 }
 
-const TIERS_14 = [["new"], ["triage"], ["ready", "waiting", "blocked"], ["needs_attention"], ["in_progress"], ["qa"], ["staging"], ["review"], ["approved"], ["done", "archived", "completed"]];
-const PATHS_14 = `new>triage triage>ready ready>in_progress in_progress>qa qa>staging staging>review review>approved approved>done done>completed
-  ready>waiting waiting>ready ready>blocked blocked>ready in_progress>waiting waiting>in_progress in_progress>needs_attention needs_attention>ready
-  needs_attention>in_progress qa>in_progress review>in_progress staging>qa review>done review>archived done>archived ready>archived new>ready
-  new>in_progress triage>blocked blocked>needs_attention approved>archived qa>needs_attention waiting>archived completed>archived`.split(/\s+/).map((p) => p.split(">"));
+/** The fourteen-state Board's tiers: the states that play a role are the Board's own, the rest are named here. */
+const tiers14 = (r: Roles) => [["new"], ["triage"], [r.ready ?? "", r.waiting ?? "", "blocked"], [r.attention ?? ""], [r.working ?? ""], ["qa"], ["staging"], [r.review ?? ""], ["approved"], [r.done ?? "", "closed", "completed"]];
+const paths14 = (r: Roles) => {
+  const [ready, waiting, working, review, attention, done] = [r.ready, r.waiting, r.working, r.review, r.attention, r.done];
+  return `new>triage triage>${ready} ${ready}>${working} ${working}>qa qa>staging staging>${review} ${review}>approved approved>${done} ${done}>completed
+  ${ready}>${waiting} ${waiting}>${ready} ${ready}>blocked blocked>${ready} ${working}>${waiting} ${waiting}>${working} ${working}>${attention} ${attention}>${ready}
+  ${attention}>${working} qa>${working} ${review}>${working} staging>qa ${review}>${done} ${review}>closed ${done}>closed ${ready}>closed new>${ready}
+  new>${working} triage>blocked blocked>${attention} approved>closed qa>${attention} ${waiting}>closed completed>closed`.split(/\s+/).map((p) => p.split(">"));
+};
 
 /** `snap` with its Board reshaped for a Star Map review (`?demo&board=`): `no-archived` and `no-attention` take that state out, `unlisted` adds one no tier names joined to Ready and In Progress, `fourteen` draws fourteen states over thirty-three paths. Any other value leaves it alone. */
 export function shapeBoard(snap: Snapshot, variant: string | null): Snapshot {
   const at = snap.flows.findIndex((f) => f.name === "board");
   if (at < 0) return snap;
-  const { machine, agents } = snap.flows[at], out = (...gone: string[]) => ({
+  const roles = snap.roles ?? {}, tiers = tiers14(roles), { machine, agents } = snap.flows[at], out = (...gone: string[]) => ({
     machine: {
       ...machine,
       states: machine.states.filter((s) => !gone.includes(s.id)),
@@ -64,22 +69,22 @@ export function shapeBoard(snap: Snapshot, variant: string | null): Snapshot {
     agents: agents.filter((a) => !gone.includes(a.state)),
   });
   const shaped: Partial<Pick<FlowSnapshot, "machine" | "agents">> | null =
-    variant === "no-archived" ? out("archived")
-    : variant === "no-attention" ? out("needs_attention")
+    variant === "no-archived" ? out(...machine.states.filter((s) => s.final).map((s) => s.id))
+    : variant === "no-attention" ? out(roles.attention ?? "")
     : variant === "unlisted" ? {
       machine: {
         ...machine,
         states: [...machine.states, { id: "held", name: "Held", initial: false, final: false }],
-        transitions: [...machine.transitions, { source: "ready", target: "held", event: "ready_held" }, { source: "held", target: "in_progress", event: "held_in_progress" }],
+        transitions: [...machine.transitions, { source: roles.ready ?? "", target: "held", event: "ready_held" }, { source: "held", target: roles.working ?? "", event: "held_working" }],
       },
     }
     : variant === "fourteen" ? {
       machine: {
         ...machine,
-        states: TIERS_14.flat().map((id, i) => ({ id, name: id, initial: i === 0, final: ["archived", "completed"].includes(id) })),
-        transitions: PATHS_14.map(([source, target]) => ({ source, target, event: `${source}_${target}` })),
-        mainLine: ["new", "triage", "ready", "in_progress", "qa", "staging", "review", "approved", "done"],
-        tiers: TIERS_14,
+        states: tiers.flat().map((id, i) => ({ id, name: id, initial: i === 0, final: ["closed", "completed"].includes(id) })),
+        transitions: paths14(roles).map(([source, target]) => ({ source, target, event: `${source}_${target}` })),
+        mainLine: ["new", "triage", roles.ready ?? "", roles.working ?? "", "qa", "staging", roles.review ?? "", "approved", roles.done ?? ""],
+        tiers,
       },
     }
     : null;

@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HudState } from "../../render/hud";
+import { LIFECYCLE_ROLES } from "../../tests/lifecycleRoles";
 import { Kanban } from "./Kanban";
 import type { KanbanTask } from "./kanbanModel";
 import { MoveStore } from "./move";
@@ -13,7 +14,7 @@ const card = (i: number): KanbanTask => ({
   prs: [], description: "", live: null, released: false, moves: {}, entered: 100 - i, created: null, workableSince: null, machines: [],
 });
 const cards = Array.from({ length: 40 }, (_, i) => card(i));
-const hud = { cards, names: {}, claims: {}, settled: [], boardUrl: null } as unknown as HudState;
+const hud = { cards, names: {}, roles: LIFECYCLE_ROLES, claims: {}, settled: [], boardUrl: null } as unknown as HudState;
 
 let host: HTMLDivElement, root: Root;
 beforeEach(() => {

@@ -4,13 +4,14 @@ import { describe, expect, it, vi } from "vitest";
 import { Card, HeldBy, StackList, StackView, Stacks } from "./Kanban";
 import { CLOSED, NO_PREFS, layout, stackOf, stackStep, stacksOf, type KanbanTask, type StackEvent } from "./kanbanModel";
 import { place } from "./move";
+import { LIFECYCLE_ROLES } from "../../tests/lifecycleRoles";
 import { TaskView } from "./TaskView";
 
 const task: KanbanTask = {
   id: "PROJ-1", title: "A title long enough to need two lines in a comfortable card", lane: "in_progress", milestone: "m-1", labels: ["feature", "needs-review"], assignee: "@agent-standard-high",
   dependencies: [], openDeps: 2, prs: [], description: "", live: { machine: "in-progress", state: "red_proven", at: 100 }, released: false, moves: {}, entered: 0, created: null, workableSince: null, machines: [],
 };
-const draw = (compact: boolean) => renderToStaticMarkup(<Card task={task} now={160} marks={{}} names={{}} onOpen={() => {}} dismiss={() => {}} compact={compact} />);
+const draw = (compact: boolean) => renderToStaticMarkup(<Card task={task} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} compact={compact} />);
 
 describe("a Kanban card's density", () => {
   it("keeps the footer of labels, dependencies and profile when comfortable", () => {
@@ -36,7 +37,7 @@ describe("a Kanban card's density", () => {
 });
 
 describe("a Kanban card's machine line", () => {
-  const line = (live: KanbanTask["live"]) => renderToStaticMarkup(<Card task={{ ...task, live }} now={160} marks={{}} names={{}} onOpen={() => {}} dismiss={() => {}} />);
+  const line = (live: KanbanTask["live"]) => renderToStaticMarkup(<Card task={{ ...task, live }} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} />);
 
   it("marks the dot mapped and names the source when the latest machine has one", () => {
     const html = line({ machine: "ci", state: "running", at: 100, source: "GitHub" });
@@ -57,8 +58,8 @@ describe("what holds the Waiting lane", () => {
   const holder = (id: string, holds: number, lane = "ready") => ({ task: { ...task, id, lane }, holds });
 
   it("marks a card with the Waiting tasks it holds, and draws no mark on a card that holds none", () => {
-    const held = renderToStaticMarkup(<Card task={task} holds={23} now={160} marks={{}} names={{}} onOpen={() => {}} dismiss={() => {}} />);
-    const free = renderToStaticMarkup(<Card task={task} now={160} marks={{}} names={{}} onOpen={() => {}} dismiss={() => {}} />);
+    const held = renderToStaticMarkup(<Card task={task} holds={23} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} />);
+    const free = renderToStaticMarkup(<Card task={task} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} />);
 
     expect(held).toContain('title="holds 23 Waiting tasks"');
     expect(held).toContain("⛓23");
@@ -67,7 +68,7 @@ describe("what holds the Waiting lane", () => {
 
   it("lists the top three holders with their counts, flags a Needs attention one and counts the rest", () => {
     const html = renderToStaticMarkup(
-      <HeldBy holders={[holder("TASK-2706", 23, "needs_attention"), holder("TASK-2875", 3), holder("TASK-2873", 3), holder("TASK-1878", 2)]} open={() => {}} />,
+      <HeldBy holders={[holder("TASK-2706", 23, "needs_attention"), holder("TASK-2875", 3), holder("TASK-2873", 3), holder("TASK-1878", 2)]} roles={LIFECYCLE_ROLES} open={() => {}} />,
     );
 
     expect(html).toContain("Held by");
@@ -80,7 +81,7 @@ describe("what holds the Waiting lane", () => {
 
   it("marks a card's place in the hovered chain, and leaves a card outside it as it was", () => {
     const as = (chain?: "self" | "holds" | "waits") =>
-      renderToStaticMarkup(<Card task={task} chain={chain} now={160} marks={{}} names={{}} onOpen={() => {}} dismiss={() => {}} />);
+      renderToStaticMarkup(<Card task={task} chain={chain} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} />);
 
     expect(as("self")).toContain('class="card chain-self"');
     expect(as("holds")).toContain('class="card chain-holds"');
@@ -89,7 +90,7 @@ describe("what holds the Waiting lane", () => {
   });
 
   it("draws nothing when no task holds Waiting work", () => {
-    expect(renderToStaticMarkup(<HeldBy holders={[]} open={() => {}} />)).toBe("");
+    expect(renderToStaticMarkup(<HeldBy holders={[]} roles={LIFECYCLE_ROLES} open={() => {}} />)).toBe("");
   });
 });
 
@@ -97,7 +98,7 @@ describe("a Kanban card's start control", () => {
   type El = ReactElement<{ children?: ReactNode; className?: string; onClick?: (e: unknown) => void; disabled?: boolean; title?: string }>;
   const ready = (allowed = true): KanbanTask => ({ ...task, lane: "ready", moves: { in_progress: { allowed, reason: allowed ? "" : "needs an Implementation Plan", skill: "" } } });
   const card = (t: KanbanTask, onOpen = () => {}, onPlay = () => {}) =>
-    Card({ task: t, now: 160, marks: {}, names: {}, onOpen, onPlay, dismiss: () => {} }) as El;
+    Card({ task: t, now: 160, marks: {}, names: {}, roles: LIFECYCLE_ROLES, onOpen, onPlay, dismiss: () => {} }) as El;
   const kids = (el: El) => [el.props.children].flat(Infinity).filter(isValidElement) as El[];
   const play = (el: El) => kids(el).find((k) => k.type === "button" && /\bplay\b/.test(k.props.className ?? ""));
   const click = () => ({ stopPropagation: vi.fn() });
@@ -148,9 +149,9 @@ describe("a Kanban card's start control", () => {
 describe("a Waiting stack", () => {
   const wait = (id: string, ...dependencies: string[]): KanbanTask => ({ ...task, id, title: `Title of ${id}`, lane: "waiting", dependencies, openDeps: dependencies.length, live: null });
   const chain = [wait("T-1"), wait("T-2", "T-1"), wait("T-3", "T-2")];
-  const stack = stacksOf(chain)[0];
+  const stack = stacksOf(chain, LIFECYCLE_ROLES)[0];
   const card = (t: KanbanTask, extra: { under?: boolean; stacked?: number; links?: string[] } = {}) =>
-    <Card key={t.id} task={t} holds={t.id === "T-1" ? 2 : undefined} now={160} marks={{}} names={{}} onOpen={() => {}} dismiss={() => {}} {...extra} />;
+    <Card key={t.id} task={t} holds={t.id === "T-1" ? 2 : undefined} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} {...extra} />;
   type Root = ReactElement<{ onPointerEnter: () => void; onPointerLeave: () => void; onFocus: () => void; onBlur: (e: unknown) => void; onKeyDown: (e: { key: string }) => void }>;
   /** The stack drawn from its state, with the events it raises applied to that state, as the Kanban's stack does. */
   const drive = () => {
@@ -167,7 +168,7 @@ describe("a Waiting stack", () => {
     expect(html).toMatch(/class="holds"[^>]*>⛓2/);
     expect(html).not.toContain('class="sk');
     expect(html.match(/class="edge"/g)).toHaveLength(2);
-    expect(renderToStaticMarkup(<StackView stack={stacksOf(chain.slice(0, 2))[0]} state={CLOSED} card={card} onEvent={() => {}} />).match(/class="edge"/g)).toHaveLength(1);
+    expect(renderToStaticMarkup(<StackView stack={stacksOf(chain.slice(0, 2), LIFECYCLE_ROLES)[0]} state={CLOSED} card={card} onEvent={() => {}} />).match(/class="edge"/g)).toHaveLength(1);
     expect(html).not.toContain("waits on");
   });
 
@@ -219,12 +220,12 @@ describe("a Waiting stack", () => {
 
   it("re-forms when a drag moves a stacked task out of Waiting, so the badge and its cards go with it", () => {
     const draw = (tasks: KanbanTask[]) => renderToStaticMarkup(
-      <>{layout(tasks, { waiting: "Waiting" }, NO_PREFS, 0).columns.find((c) => c.id === "waiting")!.buckets.map((b) => <Stacks key={b.milestone} stacks={b.stacks} card={card} enabled />)}</>,
+      <>{layout(tasks, { waiting: "Waiting" }, LIFECYCLE_ROLES, NO_PREFS, 0).columns.find((c) => c.id === "waiting")!.buckets.map((b) => <Stacks key={b.milestone} stacks={b.stacks} card={card} enabled />)}</>,
     );
     const moved = place(chain, { pending: { "T-2": { from: "waiting", to: "ready", saving: true, at: 1 } }, refused: {} });
 
     expect(draw(chain)).toContain('class="stack"');
-    expect(stackOf(layout(chain, {}, NO_PREFS, 0), "T-3")?.members).toHaveLength(3);
+    expect(stackOf(layout(chain, {}, LIFECYCLE_ROLES, NO_PREFS, 0), "T-3")?.members).toHaveLength(3);
     const after = draw(moved);
     expect(after).not.toContain('class="stack"');
     expect(after).not.toContain('class="sk"');
@@ -237,9 +238,9 @@ describe("a Waiting stack", () => {
 describe("a Done chain", () => {
   const fin = (id: string, ...dependencies: string[]): KanbanTask => ({ ...task, id, title: `Title of ${id}`, lane: "done", dependencies, openDeps: 0, live: null });
   const chain = [fin("T-1"), fin("T-2", "T-1"), fin("T-3", "T-2")];
-  const stack = stacksOf(chain, "done")[0];
+  const stack = stacksOf(chain, LIFECYCLE_ROLES, LIFECYCLE_ROLES.done)[0];
   const card = (t: KanbanTask, extra: { under?: boolean; stacked?: number; links?: string[] } = {}) =>
-    <Card key={t.id} task={t} now={160} marks={{}} names={{}} onOpen={() => {}} dismiss={() => {}} {...extra} />;
+    <Card key={t.id} task={t} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} {...extra} />;
   type Root = ReactElement<{ onPointerEnter: () => void; onPointerLeave: () => void }>;
   const drive = () => {
     let state = CLOSED;
@@ -256,7 +257,7 @@ describe("a Done chain", () => {
   });
 
   it("draws no count badge on a Waiting stack's top: its ⛓ already says what it holds", () => {
-    const html = renderToStaticMarkup(<Card task={{ ...task, lane: "waiting" }} stacked={2} now={160} marks={{}} names={{}} onOpen={() => {}} dismiss={() => {}} />);
+    const html = renderToStaticMarkup(<Card task={{ ...task, lane: "waiting" }} stacked={2} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} />);
 
     expect(html).not.toContain('class="sk');
   });
@@ -278,7 +279,7 @@ describe("a Done chain", () => {
 
   it("labels the task modal's stack section done chain, and a Waiting stack's waiting stack", () => {
     const draw = (lane: string) => renderToStaticMarkup(
-      <TaskView task={{ ...task, lane }} tasks={[]} record={null} lane="" now={0} open={() => {}} profiles={[]} milestones={[]} refusal={null} startNote={null} capabilities={undefined}
+      <TaskView task={{ ...task, lane }} tasks={[]} roles={LIFECYCLE_ROLES} record={null} lane="" now={0} open={() => {}} profiles={[]} milestones={[]} refusal={null} startNote={null} capabilities={undefined}
         saving={false} claiming={false} close={() => {}} hide={() => {}} constellation={() => {}} move={() => {}} start={() => {}}
         stack={<StackList stack={stack} id="T-2" open={() => {}} />} />,
     );
@@ -293,7 +294,7 @@ describe("a Waiting card linked to a blocker in another milestone", () => {
   const blocker: KanbanTask = { ...task, id: "T-1", milestone: "m-1", lane: "waiting" };
   const waiting: KanbanTask = { ...task, id: "T-2", milestone: "m-2", lane: "waiting", dependencies: ["T-1"], openDeps: 1 };
   const card = (onOpen = () => {}, onCross = () => {}, cross: KanbanTask[] = [blocker]) =>
-    Card({ task: waiting, now: 160, marks: {}, names: {}, onOpen, dismiss: () => {}, cross, onCross }) as El;
+    Card({ task: waiting, now: 160, marks: {}, names: {}, roles: LIFECYCLE_ROLES, onOpen, dismiss: () => {}, cross, onCross }) as El;
   const walk = (el: El): El[] => [el, ...[el.props.children].flat(Infinity).filter(isValidElement).flatMap((k) => walk(k as El))];
   const badge = (el: El) => walk(el).find((k) => /\bxm\b/.test(k.props.className ?? ""));
   const ev = () => ({ stopPropagation: vi.fn(), key: "Enter", preventDefault: vi.fn() });
@@ -306,7 +307,7 @@ describe("a Waiting card linked to a blocker in another milestone", () => {
     expect(html.indexOf("⧗1")).toBeLessThan(html.indexOf('class="xm"'));
     expect(html.indexOf('class="xm"')).toBeLessThan(html.indexOf('class="who"'));
     expect(badge(card(() => {}, () => {}, []))).toBeUndefined();
-    expect(renderToStaticMarkup(<Card task={waiting} now={160} marks={{}} names={{}} onOpen={() => {}} dismiss={() => {}} />)).not.toContain("↗");
+    expect(renderToStaticMarkup(<Card task={waiting} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} />)).not.toContain("↗");
   });
 
   it("opens the blocker's task on a click of the badge, without opening the card or starting a drag", () => {
@@ -338,6 +339,6 @@ describe("a Waiting card linked to a blocker in another milestone", () => {
   });
 
   it("is left off a compact card, which drops the footer", () => {
-    expect(renderToStaticMarkup(<Card task={waiting} now={160} marks={{}} names={{}} onOpen={() => {}} dismiss={() => {}} cross={[blocker]} compact />)).not.toContain("↗");
+    expect(renderToStaticMarkup(<Card task={waiting} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} cross={[blocker]} compact />)).not.toContain("↗");
   });
 });

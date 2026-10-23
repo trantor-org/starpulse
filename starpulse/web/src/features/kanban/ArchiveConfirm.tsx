@@ -1,10 +1,12 @@
 // The archive confirm: a reason, a warning for work that outlives the task, and the writer's refusal.
 import { useEffect, useState } from "react";
 import { archiveKey, archiveWarnings, postArchive } from "./archive";
+import type { Roles } from "../../api";
 import type { KanbanTask } from "./kanbanModel";
 
 export interface ArchiveConfirmProps {
   task: KanbanTask;
+  roles: Roles;
   lane: string;
   reason: string;
   busy: boolean;
@@ -14,8 +16,8 @@ export interface ArchiveConfirmProps {
   confirm: () => void;
 }
 
-export function ArchiveConfirm({ task, lane, reason, busy, refused, onReason, cancel, confirm }: ArchiveConfirmProps) {
-  const { pull, session } = archiveWarnings(task);
+export function ArchiveConfirm({ task, roles, lane, reason, busy, refused, onReason, cancel, confirm }: ArchiveConfirmProps) {
+  const { pull, session } = archiveWarnings(task, roles);
   return (
     <div id="efa" onClick={(event) => event.target === event.currentTarget && !busy && cancel()}>
       <div className="box" role="alertdialog" aria-label={`Archive ${task.id}`}>
@@ -47,7 +49,7 @@ export function ArchiveConfirm({ task, lane, reason, busy, refused, onReason, ca
 }
 
 /** The confirm with its own state: it posts the archive, closes on success and, on a refusal, stays open with the reason. */
-export function ArchiveDialog({ task, lane, close, archived }: { task: KanbanTask; lane: string; close: () => void; archived: (reason: string) => void }) {
+export function ArchiveDialog({ task, roles, lane, close, archived }: { task: KanbanTask; roles: Roles; lane: string; close: () => void; archived: (reason: string) => void }) {
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [refused, setRefused] = useState<string | null>(null);
@@ -72,5 +74,5 @@ export function ArchiveDialog({ task, lane, close, archived }: { task: KanbanTas
     addEventListener("keydown", onKey, true);
     return () => removeEventListener("keydown", onKey, true);
   });
-  return <ArchiveConfirm task={task} lane={lane} reason={reason} busy={busy} refused={refused} onReason={setReason} cancel={close} confirm={() => void confirm()} />;
+  return <ArchiveConfirm task={task} roles={roles} lane={lane} reason={reason} busy={busy} refused={refused} onReason={setReason} cancel={close} confirm={() => void confirm()} />;
 }

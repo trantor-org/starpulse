@@ -11,7 +11,7 @@ import { ago } from "../../shared/clock";
 import type { HudState } from "../../render/hud";
 import {
   CLOSED, applySuggestion, applyTaskRecord, assigneeOptions, chainOf, clearFilters, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, labelSuggestions, layout, milestoneOptions, milestoneOutline, recent, show, showAll,
-  STACKED, stackOf, stackStep, toggleFold, unstacked, whyHidden,
+  stacked as stacksState, stackOf, stackStep, toggleFold, unstacked, whyHidden,
   type KanbanTask, type Prefs, type Stack, type StackEvent, type StackOpen,
 } from "./kanbanModel";
 import { linkedTask, loadPrefs, savePrefs, withoutFilters } from "./kanbanPrefs";
@@ -27,7 +27,7 @@ import { SearchClear } from "../../shared/SearchClear";
 import { useScrollRest } from "../../shared/scrollRest";
 import { TaskView } from "./TaskView";
 import { PRE_DRAW_REST_MS, READ_AHEAD_MS, RecordCache, fetchRecord, type TaskRecord } from "./taskViewModel";
-import type { Capabilities, Pull } from "../../api";
+import type { Capabilities, Pull, Roles } from "../../api";
 
 /** A milestone's header: the key the snapshot carries, or the bucket for tasks with none. */
 const milestoneName = (milestone: string) => milestone || "No milestone";
@@ -97,22 +97,23 @@ function StartNote({ id, failed, names, dismiss }: { id: string; failed: Failed;
 export type Chain = "self" | "holds" | "waits";
 
 /** A task card; compact keeps the id, pull request, title and machine line and drops the footer of labels, dependencies and profile. */
-export function Card({ task, holds = 0, chain, stacked = 0, under = false, links, cross, onCross, now, marks, names, compact = false, onOpen, onPress, onPlay, onHover, dismiss, dismissStart, style }: {
+export function Card({ task, holds = 0, chain, stacked = 0, under = false, links, cross, onCross, now, marks, names, roles, compact = false, onOpen, onPress, onPlay, onHover, dismiss, dismissStart, style }: {
   task: KanbanTask; holds?: number; chain?: Chain;
   /** The tasks stacked under this one, on a stack's top card; whether this card sits under one, and while that stack is unstacked the open tasks it waits on, or the Done tasks it unblocked. */
   stacked?: number; under?: boolean; links?: string[];
   /** The Waiting blockers in other milestones, each drawn as a link badge in the footer that opens that task through `onCross`. */
-  cross?: KanbanTask[]; onCross?: (id: string) => void; now: number; marks: Marks; names: Record<string, string>; compact?: boolean; onOpen: () => void; onPress?: (e: React.PointerEvent<HTMLDivElement>) => void;
+  cross?: KanbanTask[]; onCross?: (id: string) => void; now: number; marks: Marks; names: Record<string, string>; roles: Roles; compact?: boolean; onOpen: () => void; onPress?: (e: React.PointerEvent<HTMLDivElement>) => void;
   onPlay?: () => void; onHover?: (on: boolean) => void; dismiss: () => void; dismissStart?: () => void; style?: CSSProperties;
 }) {
   const labels = task.labels.filter((l) => !/^kind-/.test(l)).slice(0, 3);
   const live = task.live, claim = marks.claim;
-  const playing = onPlay && !claim && startLane(task);
+  const playing = onPlay && !claim && startLane(task, roles);
   const cls = ["card", chain && `chain-${chain}`, under && "under", compact && "compact", playing && "startable", marks.saving && "saving", (marks.refusal || marks.failed) && "bad", marks.lifted && "ghost", claim && "claiming"].filter(Boolean).join(" ");
-  const finished = task.lane === "done";
+  const finished = task.lane === roles.done;
   // a Waiting stack's ⛓ already counts what it holds; only a Done chain adds the green count
   const badge = stacked > 0 && finished && <StackBadge count={stacked} />;
-  const guard = task.moves.in_progress?.allowed === false ? task.moves.in_progress.reason : "";
+  const working = roles.working ? task.moves[roles.working] : undefined;
+  const guard = working?.allowed === false ? working.reason : "";
   return (
     <div className={cls} role="button" tabIndex={0} data-id={task.id} style={style} onClick={onOpen} onPointerDown={onPress}
       onPointerEnter={onHover && (() => onHover(true))} onPointerLeave={onHover && (() => onHover(false))}
@@ -157,7 +158,7 @@ export function Card({ task, holds = 0, chain, stacked = 0, under = false, links
       )}
       {playing && (
         // a full-height strip on the card's right edge, so a near miss lands on the card and opens the task
-        <button className="play edge" title={guard || "Start a session"} aria-label={`Start ${task.id}`} disabled={!startable(task)}
+        <button className="play edge" title={guard || "Start a session"} aria-label={`Start ${task.id}`} disabled={!startable(task, roles)}
           onClick={(e) => { e.stopPropagation(); onPlay(); }} onPointerDown={stop}
           // only the keys that would open the card stop here: the question ▶ asks still answers 1, 2 and Esc while ▶ keeps focus
           onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && e.stopPropagation()}>▶</button>
@@ -260,15 +261,15 @@ export function StackList({ stack, id, open }: { stack: Stack; id: string; open:
 }
 
 /** The Waiting column's strip: the tasks at the bottom of its chains, most held first, each opening its card. */
-export function HeldBy({ holders: held, open, hover }: {
-  holders: { task: KanbanTask; holds: number }[]; open: (id: string) => void; hover?: (id: string | null) => void;
+export function HeldBy({ holders: held, roles, open, hover }: {
+  holders: { task: KanbanTask; holds: number }[]; roles: Roles; open: (id: string) => void; hover?: (id: string | null) => void;
 }) {
   if (!held.length) return null;
   return (
     <div className="heldby">
       <span className="k" title="The tasks every Waiting chain ends at; finishing one releases the Waiting tasks it holds">Held by</span>
       {held.slice(0, 3).map(({ task, holds }) => (
-        <button key={task.id} className={`hb${task.lane === "needs_attention" ? " nh" : ""}`} onClick={() => open(task.id)}
+        <button key={task.id} className={`hb${task.lane === roles.attention ? " nh" : ""}`} onClick={() => open(task.id)}
           onPointerEnter={hover && (() => hover(task.id))} onPointerLeave={hover && (() => hover(null))}
           title={`${task.title} · ${task.lane.replace(/_/g, " ")} · holds ${holds} Waiting task${holds === 1 ? "" : "s"}`}>
           {task.id}<b>⛓{holds}</b>
@@ -279,8 +280,8 @@ export function HeldBy({ holders: held, open, hover }: {
   );
 }
 
-function Modal({ task, tasks, records, stack, names, marks, now, profiles, milestones, capabilities, close, open, hide, archive, constellation, move, start, dismiss, dismissStart, saved }: {
-  task: KanbanTask; tasks: KanbanTask[]; records: RecordCache; stack?: ReactNode; names: Record<string, string>; marks: Marks; now: number; profiles: string[]; milestones: string[];
+function Modal({ task, tasks, records, stack, names, roles, marks, now, profiles, milestones, capabilities, close, open, hide, archive, constellation, move, start, dismiss, dismissStart, saved }: {
+  task: KanbanTask; tasks: KanbanTask[]; records: RecordCache; stack?: ReactNode; names: Record<string, string>; roles: Roles; marks: Marks; now: number; profiles: string[]; milestones: string[];
   capabilities?: Capabilities; close: () => void; open: (id: string) => void; hide: () => void; archive: () => void; constellation: () => void;
   move: (to: string) => void; start: () => void; dismiss: () => void; dismissStart: () => void; saved: (record: TaskRecord) => void;
 }) {
@@ -303,7 +304,7 @@ function Modal({ task, tasks, records, stack, names, marks, now, profiles, miles
     return () => { current = false; };
   }, [held, task.id, attempt]);
   return (
-      <TaskView task={task} tasks={tasks} record={record} stack={stack} lane={names[task.lane] ?? task.lane} names={names} now={now} open={open}
+      <TaskView task={task} tasks={tasks} record={record} stack={stack} lane={names[task.lane] ?? task.lane} names={names} roles={roles} now={now} open={open}
         profiles={profiles} milestones={milestones} capabilities={capabilities} saving={!!marks.saving} claiming={!!marks.claim}
         refusal={marks.refusal && <RefusalNote refusal={marks.refusal} names={names} dismiss={dismiss} />}
         startNote={marks.failed && <StartNote id={task.id} failed={marks.failed} names={names} dismiss={dismissStart} />}
@@ -346,7 +347,7 @@ export function StartQuestion({ asking, harnesses, names, canStart, pick, start,
   return (
     <div id="kbm" onClick={(e) => e.target === e.currentTarget && cancel()}>
       <div className="modal ask" role="dialog" aria-label={`Start ${task.id}`}>
-        <div className="k">{task.id} · {names[task.lane] ?? task.lane} → {names.in_progress ?? "In progress"}</div>
+        <div className="k">{task.id} · {names[task.lane] ?? task.lane} → {names[asking.working] ?? asking.working}</div>
         <h2>{task.title}</h2>
         <div className="sh">Session</div>
         <div className={`opt${canStart ? "" : " off"}`}>
@@ -580,26 +581,27 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
     document.body.classList.toggle("dragging", lift !== null);
     return () => document.body.classList.remove("dragging");
   }, [lift]);
-  const cards = useMemo(() => withoutArchived(placeClaims(place(hud.cards, moved), started).map((card) => {
+  const { roles } = hud;
+  const cards = useMemo(() => withoutArchived(placeClaims(place(hud.cards, moved), started, roles).map((card) => {
     const saved = edited[card.id];
     return saved?.source === hud.cards ? applyTaskRecord(card, saved.record) : card;
-  }), gone), [edited, gone, hud.cards, moved, started]);
-  const view = useMemo(() => layout(cards, hud.names, prefs, now), [cards, hud.names, prefs, now]);
-  const holds = useMemo(() => holdCounts(cards), [cards]);
-  const blockers = useMemo(() => holders(cards, holds), [cards, holds]);
+  }), gone), [edited, gone, hud.cards, moved, started, roles]);
+  const view = useMemo(() => layout(cards, hud.names, roles, prefs, now), [cards, hud.names, roles, prefs, now]);
+  const holds = useMemo(() => holdCounts(cards, roles), [cards, roles]);
+  const blockers = useMemo(() => holders(cards, roles, holds), [cards, roles, holds]);
   const [pointed, setHovered] = useState<string | null>(null);
   // a card the Recent rail points at draws as the hovered one, ringed even when it holds and waits on nothing, since no pointer is on it
   const hovered = pointed ?? spot;
   const chain = useMemo(() => {
-    const c = hovered && !lift ? chainOf(cards, hovered) : null;
+    const c = hovered && !lift ? chainOf(cards, hovered, roles) : null;
     if (!c || (!c.holds.size && !c.waitsOn.size && hovered !== spot)) return null;
     return (id: string): Chain | undefined => (id === hovered ? "self" : c.holds.has(id) ? "holds" : c.waitsOn.has(id) ? "waits" : undefined);
-  }, [cards, hovered, lift, spot]);
+  }, [cards, hovered, lift, roles, spot]);
   useEffect(() => {
     if (!spot) return void note?.(null);
-    note?.(whyHidden(cards, hud.names, prefs, spot, now));
+    note?.(whyHidden(cards, hud.names, roles, prefs, spot, now));
     document.querySelector<HTMLElement>(`#cols .card[data-id="${spot}"]`)?.scrollIntoView({ block: "nearest" });
-  }, [spot, cards, hud.names, prefs, note, now]);
+  }, [spot, cards, hud.names, roles, prefs, note, now]);
   // each click is a new object, so the same line clicked twice opens it twice; a task with no card opens no modal
   const opened = useRef(opening);
   useLayoutEffect(() => {
@@ -614,8 +616,8 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
     return () => clearTimeout(timer);
   }, [toast]);
   const marksOf = (id: string): Marks => ({ saving: moved.pending[id]?.saving, refusal: moved.refused[id], claim: started.claiming[id], failed: started.failed[id] });
-  const lanes = useMemo(() => columnsOf(hud.names), [hud.names]);
-  const drawn = useMemo(() => recent(cards, now), [cards, now]);
+  const lanes = useMemo(() => columnsOf(hud.names, roles), [hud.names, roles]);
+  const drawn = useMemo(() => recent(cards, now, roles), [cards, now, roles]);
   const suggestions = useMemo(() => labelSuggestions(drawn, prefs.query, lanes), [drawn, prefs.query, lanes]);
   const at = Math.min(pick, suggestions.length - 1);
   const assignees = useMemo(() => assigneeOptions(drawn, lanes), [drawn, lanes]);
@@ -709,9 +711,9 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
       setLift(null);
       const to = overOf(u.clientX, u.clientY);
       const kind = to ? p.kinds[to]?.kind : undefined;
-      if (to && dropAsks(t, to)) {
+      if (to && dropAsks(t, to, roles)) {
         if (rect) setHeld({ id: t.id, rect, w: p.w });
-        starts.ask(t, "drop");
+        starts.ask(t, "drop", roles);
       } else if (to && (kind === "ok" || kind === "guard")) {
         if (rect) dropRect.current = { id: t.id, rect };
         void moves.drop(t, to);
@@ -735,16 +737,17 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
   const heldTask = held ? cards.find((t) => t.id === held.id) : undefined;
   const openCard = (id: string) => () => !clickEnds.current && setOpen(id);
   const drawCard: DrawCard = (t, extra) => (
-    <BoardCard key={t.id} task={t} holds={holds.get(t.id)} chain={chain?.(t.id)} cross={view.cross.get(t.id)} onCross={setOpen} {...extra} now={now} names={hud.names} compact={compact} marks={{ ...marksOf(t.id), lifted: lift?.id === t.id || held?.id === t.id }}
+    <BoardCard key={t.id} task={t} holds={holds.get(t.id)} chain={chain?.(t.id)} cross={view.cross.get(t.id)} onCross={setOpen} {...extra} now={now} names={hud.names} roles={roles} compact={compact} marks={{ ...marksOf(t.id), lifted: lift?.id === t.id || held?.id === t.id }}
       style={bounced === t.id ? { animation: "kb-shake .65s" } : undefined}
-      onOpen={openCard(t.id)} onPress={canDrag(t.id, started) ? begin(t) : undefined} onPlay={() => starts.ask(t, "play")}
+      onOpen={openCard(t.id)} onPress={canDrag(t.id, started) ? begin(t) : undefined} onPlay={() => starts.ask(t, "play", roles)}
       onHover={(on) => { rest(t.id, on); setHovered((h) => (on ? t.id : h === t.id ? null : h)); }}
       dismiss={() => moves.dismiss(t.id)} dismissStart={() => starts.dismiss(t.id)} />
   );
-  const outline = useMemo(() => milestoneOutline(cards, hud.milestoneDone), [cards, hud.milestoneDone]);
-  // phone width: the lane showing, In Progress first as the lane a phone is most often opened to check, else the board's first
-  const [phoneLane, setPhoneLane] = useState("in_progress");
-  const shownLane = view.columns.some((c) => c.id === phoneLane) ? phoneLane : view.columns[0]?.id;
+  const outline = useMemo(() => milestoneOutline(cards, roles, hud.milestoneDone), [cards, roles, hud.milestoneDone]);
+  // phone width: the lane showing, the working lane first as the lane a phone is most often opened to check, else the board's first
+  const [phoneLane, setPhoneLane] = useState<string | null>(null);
+  const wanted = phoneLane ?? roles.working;
+  const shownLane = view.columns.some((c) => c.id === wanted) ? wanted : view.columns[0]?.id;
   return (
     <main id="kb" className={compact ? "compact" : undefined}>
       <header><span className="title">Kanban</span><span className="count">{view.open} open · {view.done} done</span></header>
@@ -803,7 +806,7 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
       </div>
       <div className="lanes" role="tablist" aria-label="Lanes">
         {view.columns.map((col) => (
-          <button key={col.id} role="tab" data-lane={col.id} aria-selected={col.id === shownLane} title={col.name} onClick={() => setPhoneLane(col.id)}>
+          <button key={col.id} role="tab" data-lane={col.id} data-role={col.role} aria-selected={col.id === shownLane} title={col.name} onClick={() => setPhoneLane(col.id)}>
             <span className="g" /><span className="c">{col.count}</span><span className="nm">{col.name}</span>
           </button>
         ))}
@@ -815,7 +818,7 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
           const inChain = chain ? col.buckets.flatMap((b) => b.tasks).filter((t) => chain(t.id) === "holds" || chain(t.id) === "waits").length : 0;
           const colCls = ["col", col.id === shownLane && "on", target && target.kind !== "here" && target.kind, lift?.over === col.id && target?.kind !== "here" && "over"].filter(Boolean).join(" ");
           return (
-            <section key={col.id} className={colCls} data-lane={col.id}>
+            <section key={col.id} className={colCls} data-lane={col.id} data-role={col.role}>
               <h2><span className="g" /><span className="nm" title={col.name}>{col.name}</span><span className="c">{col.count}</span>
                 {inChain > 0 && <span className="cc" title={`${inChain} of this column's tasks are in the hovered task's chain`}>⛓{inChain}</span>}
                 {target && target.kind !== "here" && (
@@ -823,7 +826,7 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
                 )}
               </h2>
               {target?.kind === "guard" && <div className="why"><Reason text={target.reason} /></div>}
-              {col.id === "waiting" && !lift && <HeldBy holders={blockers} open={(id) => setOpen(id)} hover={setHovered} />}
+              {col.id === roles.waiting && !lift && <HeldBy holders={blockers} roles={roles} open={(id) => setOpen(id)} hover={setHovered} />}
               <Viewport className="body">
                 {col.buckets.length === 0 && <div className="empty">no tasks</div>}
                 {col.buckets.map((b) => (
@@ -833,7 +836,7 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
                       <span className="tw">▾</span><span className="bn">{milestoneName(b.milestone)}</span><span className="c">{b.tasks.length}</span>
                       <button className="hide" title="Hide this milestone" onClick={(e) => { e.stopPropagation(); setPrefs((p) => hideMilestone(p, b.milestone)); }}>hide</button>
                     </div>
-                    {!b.folded && (STACKED.includes(col.id)
+                    {!b.folded && (stacksState(roles, col.id)
                       ? b.stacks.map((s) => {
                         const at = row++;
                         return <ViewportRow key={s.top.id} initial={at < 12} estimate={96} force={s.members.some((t) => t.id === spot)}>
@@ -853,12 +856,12 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
       </div>
       {lifted && (
         <div ref={ghost} className="lift">
-          <Card task={lifted} now={now} names={hud.names} compact={compact} marks={{}} onOpen={() => {}} dismiss={() => {}} style={{ width: lift?.w }} />
+          <Card task={lifted} now={now} names={hud.names} roles={roles} compact={compact} marks={{}} onOpen={() => {}} dismiss={() => {}} style={{ width: lift?.w }} />
         </div>
       )}
       {held && heldTask && (
         <div className="lift" style={{ left: held.rect.left, top: held.rect.top }}>
-          <Card task={heldTask} now={now} names={hud.names} compact={compact} marks={{}} onOpen={() => {}} dismiss={() => {}} style={{ width: held.w }} />
+          <Card task={heldTask} now={now} names={hud.names} roles={roles} compact={compact} marks={{}} onOpen={() => {}} dismiss={() => {}} style={{ width: held.w }} />
         </div>
       )}
       {active && started.asking && (
@@ -868,17 +871,17 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
       {active && (
         <ModalHost store={openTask} cards={cards} draw={(task) => {
           const taskStack = stackOf(view, task.id);
-          return <Modal key={task.id} task={task} tasks={cards} records={records} open={setOpen} stack={taskStack && <StackList stack={taskStack} id={task.id} open={setOpen} />} names={hud.names} marks={marksOf(task.id)} now={now} capabilities={hud.capabilities}
+          return <Modal key={task.id} task={task} tasks={cards} records={records} open={setOpen} stack={taskStack && <StackList stack={taskStack} id={task.id} open={setOpen} />} names={hud.names} roles={roles} marks={marksOf(task.id)} now={now} capabilities={hud.capabilities}
           profiles={assignees.map((o) => o.value).filter(Boolean)} milestones={milestones.map((o) => o.value).filter(Boolean)} close={() => setOpen(null)}
           hide={() => { setPrefs((p) => hideTask(p, task.id)); setOpen(null); }} archive={() => setArchiving(task.id)} constellation={() => constellation(task.lane)}
-          move={(to) => { if (!dropAsks(task, to)) return void moves.drop(task, to); starts.ask(task, "modal"); setOpen(null); }}
-          start={() => { starts.ask(task, "modal"); setOpen(null); }}
+          move={(to) => { if (!dropAsks(task, to, roles)) return void moves.drop(task, to); starts.ask(task, "modal", roles); setOpen(null); }}
+          start={() => { starts.ask(task, "modal", roles); setOpen(null); }}
           dismiss={() => moves.dismiss(task.id)} dismissStart={() => starts.dismiss(task.id)}
           saved={(record) => { records.forget(task.id); setEdited((all) => ({ ...all, [task.id]: { record, source: hud.cards } })); }} />;
         }} />
       )}
       {active && archiveTask && (
-        <ArchiveDialog key={archiveDialogKey(archiveTask.id)} task={archiveTask} lane={hud.names[archiveTask.lane] ?? archiveTask.lane} close={() => setArchiving(null)}
+        <ArchiveDialog key={archiveDialogKey(archiveTask.id)} task={archiveTask} roles={hud.roles} lane={hud.names[archiveTask.lane] ?? archiveTask.lane} close={() => setArchiving(null)}
           archived={(reason) => {
             setGone((ids) => new Set(ids).add(archiveTask.id));
             setArchiving(null);

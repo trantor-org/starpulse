@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Kanban } from "./Kanban";
 import type { HudState } from "../../render/hud";
+import { LIFECYCLE_ROLES } from "../../tests/lifecycleRoles";
 import type { KanbanTask } from "./kanbanModel";
 import { MoveStore } from "./move";
 import { StartStore } from "./start";
@@ -12,7 +13,7 @@ import type { TaskRecord } from "./taskViewModel";
 const card = (id: string): KanbanTask => ({
   id, title: `title ${id}`, lane: "ready", milestone: "", labels: [], assignee: "", dependencies: [], openDeps: 0, prs: [], description: "", live: null, released: false, moves: {}, entered: 0, created: null, workableSince: null, machines: [],
 });
-const hud = { cards: [card("TASK-1"), card("TASK-2")], names: {}, claims: {}, boardUrl: null, hint: "found", capabilities: { create: true } } as unknown as HudState;
+const hud = { cards: [card("TASK-1"), card("TASK-2")], names: {}, roles: LIFECYCLE_ROLES, claims: {}, boardUrl: null, hint: "found", capabilities: { create: true } } as unknown as HudState;
 const record: TaskRecord = {
   title: "title TASK-1", profile: "", priority: "High", labels: [], milestone: "", dependencies: [], description: "", plan: "", notes: "the full record's notes",
   acceptanceCriteria: [], definitionOfDone: [], session: "",

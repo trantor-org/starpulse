@@ -27,12 +27,13 @@ export function foldRows(rows: LedgerRow[], changed: LedgerRow[]): LedgerRow[] {
   return added.length ? [...kept, ...added].sort((x, y) => y.at - x.at) : kept;
 }
 
-/** The milestone a settled task counts toward in `milestone_done`: the one it completed in, if any. */
-const completedIn =(entry: Settled | null | undefined) => (entry?.state === "completed" && entry.milestone ? entry.milestone : null);
+/** The milestone a settled task counts toward in `milestone_done`: the one it completed in (settled in the `final` State), if any. */
+const completedIn = (final: string | null | undefined, entry: Settled | null | undefined) =>
+  (final && entry?.state === final && entry.milestone ? entry.milestone : null);
 
 /** `done` with a task's settling `was` taken back and `now` counted; `done` itself when neither counts. */
-function recount(done: Snapshot["milestone_done"], was: Settled | undefined, now: Settled | null): Snapshot["milestone_done"] {
-  const [from, to] = [completedIn(was), completedIn(now)];
+function recount(done: Snapshot["milestone_done"], final: string | null | undefined, was: Settled | undefined, now: Settled | null): Snapshot["milestone_done"] {
+  const [from, to] = [completedIn(final, was), completedIn(final, now)];
   if (from === to) return done;
   const next = { ...done };
   if (from) next[from] = (next[from] ?? 0) - 1;
@@ -67,7 +68,7 @@ export function applyDelta(snap: Snapshot, delta: Delta): Snapshot {
   const settled = { ...snap.settled };
   if (delta.settled === null) delete settled[delta.id];
   else settled[delta.id] = delta.settled;
-  return { ...snap, flows, settled, milestone_done: recount(snap.milestone_done, snap.settled[delta.id], delta.settled) };
+  return { ...snap, flows, settled, milestone_done: recount(snap.milestone_done, snap.roles?.final, snap.settled[delta.id], delta.settled) };
 }
 
 /**

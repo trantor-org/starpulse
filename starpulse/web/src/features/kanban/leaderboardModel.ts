@@ -1,3 +1,4 @@
+import type { Roles } from "../../api";
 import type { KanbanTask } from "./kanbanModel";
 
 /** One leaderboard row: a workable task and how long it has been workable. `width` is its bar, a percent of the longest age shown. */
@@ -6,7 +7,8 @@ export interface LeaderRow { id: string; title: string; seconds: number; width: 
 export interface LeaderGroup { status: string; label: string; workable: number; held: number; rows: LeaderRow[] }
 
 /** The open statuses in the order the leaderboard draws them, each with the label the navigator shows. */
-const STATUSES: [string, string][] = [["needs_attention", "Needs you"], ["in_progress", "Working"], ["review", "Review"], ["waiting", "Waiting"], ["ready", "Ready"]];
+const statuses = (roles: Roles): [string, string][] =>
+  [[roles.attention ?? "", "Needs you"], [roles.working ?? "", "Working"], [roles.review ?? "", "Review"], [roles.waiting ?? "", "Waiting"], [roles.ready ?? "", "Ready"]];
 /** Tasks drawn per status. */
 const PER_STATUS = 3;
 
@@ -21,8 +23,8 @@ const number = (id: string) => Number(/(\d+)$/.exec(id)?.[1] ?? 0);
  * workable never shows, only counts in its status's `held`; a status with no workable task is left out. Every bar is sized
  * against the longest age shown, so the groups compare with each other.
  */
-export function leaderboard(tasks: KanbanTask[], now: number): LeaderGroup[] {
-  const groups = STATUSES.map(([status, label]) => {
+export function leaderboard(tasks: KanbanTask[], roles: Roles, now: number): LeaderGroup[] {
+  const groups = statuses(roles).map(([status, label]) => {
     const open = tasks.filter((t) => t.lane === status);
     const ranked = open.filter((t) => t.workableSince !== null)
       .map((t) => ({ id: t.id, title: t.title, seconds: Math.max(0, now - t.workableSince!), width: 0 }))

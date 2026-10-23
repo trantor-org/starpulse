@@ -9,7 +9,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { KanbanTask } from "./kanbanModel";
 import { TaskView } from "./TaskView";
-import { board, card, props, record, task } from "./taskViewFixtures";
+import { board, card, props, record, task } from "../../tests/taskViewFixtures";
 import { closesOnKey, copyText, copyToClipboard, menuKey, onScrim, type StartCriterion } from "./taskViewModel";
 
 const styles = readFileSync(new NodeURL("../../style.css", import.meta.url), "utf8");
@@ -175,7 +175,7 @@ describe("the task view's right rail", () => {
   });
 
   it("draws the lane and the time in it under Status, and leaves the time out when the board gave none", () => {
-    expect(rows(draw(), "Status")).toMatch(/class="tvlane sm" data-lane="ready"><i><\/i>Ready<\/span><span class="k">for 5m<\/span>/);
+    expect(rows(draw(), "Status")).toMatch(/class="tvlane sm" data-lane="ready" data-role="ready"><i><\/i>Ready<\/span><span class="k">for 5m<\/span>/);
     expect(rows(draw({ task: { ...task, entered: 0 } }), "Status")).not.toContain("for ");
   });
 
@@ -239,7 +239,7 @@ describe("the task view's right rail", () => {
     const html = rows(draw({ tasks: many }), "Dependencies");
 
     expect(html.indexOf("Depends on")).toBeLessThan(html.indexOf("Holds"));
-    expect(html).toMatch(/<button class="dep"><span class="id">TASK-1<\/span><span class="tt">title TASK-1<\/span><span class="tvlane sm" data-lane="done"><i><\/i>Done<\/span><\/button>/);
+    expect(html).toMatch(/<button class="dep"><span class="id">TASK-1<\/span><span class="tt">title TASK-1<\/span><span class="tvlane sm" data-lane="done" data-role="done"><i><\/i>Done<\/span><\/button>/);
     expect(html).toContain("TASK-101");
     expect(rows(draw({ task: { ...task, dependencies: ["TASK-404"] } }), "Dependencies")).toContain("not on the board");
   });

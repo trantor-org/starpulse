@@ -4,7 +4,7 @@ import { ledgerLevel, type Level } from "./levels";
 import { merge, midnight, Moves } from "./sky";
 import { emptyNote } from "../features/level/machineRows";
 import type { Cue, LedgerRow, Machine, Snapshot } from "../api";
-import { dag, machine, SAVED_STATES, savedBoardSky } from "./sceneFixtures";
+import { dag, machine, SAVED_STATES, savedBoardSky } from "../tests/sceneFixtures";
 
 const sky = () => {
   const snap: Snapshot = {

@@ -536,6 +536,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       pools: sky.pools,
       milestoneDone: sky.milestoneDone,
       names: Object.fromEntries(board.machine.states.map((s) => [s.id, s.name])),
+      roles: sky.roles,
       claims: sky.claims,
       boardUrl: sky.boardUrl,
       capabilities: sky.capabilities,

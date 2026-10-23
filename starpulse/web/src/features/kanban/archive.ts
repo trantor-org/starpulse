@@ -1,7 +1,7 @@
 // Archiving a task from the task view: what the confirm warns about, the one request, and the cards an archive removes.
 import { apiFetch, PAGE_ACTOR } from "../../api/apiFetch";
 import type { KanbanTask } from "./kanbanModel";
-import type { Pull } from "../../api";
+import type { Pull, Roles } from "../../api";
 
 /** Work that outlives the archive: the task's open pull request and the agent session still working it. */
 export interface ArchiveWarnings {
@@ -11,9 +11,9 @@ export interface ArchiveWarnings {
 export type ArchiveResult = { ok: true } | { ok: false; reason: string; skill: string };
 export type ArchiveAction = "cancel" | "confirm";
 
-export const archiveWarnings = (task: KanbanTask): ArchiveWarnings => ({
+export const archiveWarnings = (task: KanbanTask, roles: Roles): ArchiveWarnings => ({
   pull: task.prs.find((pr) => !pr.merged) ?? null,
-  session: task.lane === "in_progress" ? task.live : null,
+  session: task.lane === roles.working ? task.live : null,
 });
 
 /** Archive one task, recording `reason` as its comment when it is not empty; a refusal comes back as a value, never a throw. */

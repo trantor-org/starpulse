@@ -2,6 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { LIFECYCLE_ROLES } from "../../tests/lifecycleRoles";
 import type { KanbanTask } from "./kanbanModel";
 import { Leaderboard } from "./Leaderboard";
 
@@ -15,7 +16,7 @@ const cards = [
 
 let host: HTMLDivElement, root: Root;
 const open = vi.fn();
-const draw = (tasks = cards) => act(() => root.render(<Leaderboard tasks={tasks} now={NOW} open={open} />));
+const draw = (tasks = cards) => act(() => root.render(<Leaderboard tasks={tasks} roles={LIFECYCLE_ROLES} now={NOW} open={open} />));
 const rows = () => [...host.querySelectorAll<HTMLButtonElement>("button.lb-row")];
 
 beforeEach(() => {

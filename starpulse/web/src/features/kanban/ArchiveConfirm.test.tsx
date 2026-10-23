@@ -1,7 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { ArchiveConfirm, type ArchiveConfirmProps } from "./ArchiveConfirm";
-import { COLUMNS, type KanbanTask } from "./kanbanModel";
+import { LIFECYCLE_COLUMNS, LIFECYCLE_ROLES } from "../../tests/lifecycleRoles";
+import type { KanbanTask } from "./kanbanModel";
 
 const task = (lane: string, over: Partial<KanbanTask> = {}): KanbanTask => ({
   id: "TASK-9", title: "Redraw the view", lane, milestone: "m-89", labels: [], assignee: "", dependencies: [], openDeps: 0, prs: [],
@@ -9,12 +10,12 @@ const task = (lane: string, over: Partial<KanbanTask> = {}): KanbanTask => ({
 });
 const pull = { number: 12, url: "http://pr/12", checks: "pending" as const, merged: false, merge_sha: null, merged_at: null, threads: 0, stale: false };
 const draw = (t: KanbanTask, over: Partial<ArchiveConfirmProps> = {}) => renderToStaticMarkup(
-  <ArchiveConfirm task={t} lane="Ready" reason="" busy={false} refused={null} onReason={() => {}} cancel={() => {}} confirm={() => {}} {...over} />,
+  <ArchiveConfirm task={t} lane="Ready" roles={LIFECYCLE_ROLES} reason="" busy={false} refused={null} onReason={() => {}} cancel={() => {}} confirm={() => {}} {...over} />,
 );
 
 describe("the archive confirm", () => {
   it("is offered from every lane, naming the task and its lane", () => {
-    for (const lane of COLUMNS) {
+    for (const lane of LIFECYCLE_COLUMNS) {
       const html = draw(task(lane), { lane });
 
       expect(html).toContain('role="alertdialog"');

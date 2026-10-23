@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { NO_PREFS, applySuggestion, applyTaskRecord, assigneeOptions, chainOf, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, kanbanTasks, labelSuggestions, layout, milestoneOptions, milestoneOutline, recent, show, showAll, stackOf, toggleFold, whyHidden, type KanbanTask } from "./kanbanModel";
 import { merge, midnight } from "../../render/sky";
+import { LIFECYCLE_COLUMNS, LIFECYCLE_ROLES } from "../../tests/lifecycleRoles";
 import type { TaskRecord } from "./taskViewModel";
 import type { Pull, RawTask, Snapshot } from "../../api";
 
@@ -9,7 +10,7 @@ const task = (id: string, lane: string, milestone = "", at = 0, entered = 0): Ka
   id, title: id, lane, milestone, labels: [], assignee: "", dependencies: [], openDeps: 0, prs: [], description: "", live: at ? { machine: "m", state: "s", at } : null, released: false, moves: {}, entered, created: null, workableSince: null, machines: [],
 });
 const HOURS = 3600, NOW = midnight(new Date(2026, 9, 10)) + 12 * HOURS;
-const view = (tasks: KanbanTask[], prefs = NO_PREFS) => layout(tasks, NAMES, prefs, NOW);
+const view = (tasks: KanbanTask[], prefs = NO_PREFS) => layout(tasks, NAMES, LIFECYCLE_ROLES, prefs, NOW);
 const column = (v: ReturnType<typeof view>, id: string) => v.columns.find((c) => c.id === id)!;
 const headers = (v: ReturnType<typeof view>, id: string) => column(v, id).buckets.map((b) => b.milestone);
 
@@ -23,12 +24,12 @@ describe("the columns", () => {
 
   it("are the board's own lanes in order when it has no ready lane, so a native board's first-lane task is drawn", () => {
     const native = { to_do: "To Do", in_progress: "In Progress", done: "Done" };
-    const v = layout([task("TASK-1", "to_do"), task("TASK-2", "done")], native, NO_PREFS, NOW);
+    const v = layout([task("TASK-1", "to_do"), task("TASK-2", "done")], native, {}, NO_PREFS, NOW);
 
-    expect(columnsOf(native)).toEqual(["to_do", "in_progress", "done"]);
+    expect(columnsOf(native, {})).toEqual(["to_do", "in_progress", "done"]);
     expect(v.columns.map((c) => [c.id, c.name, c.count])).toEqual([["to_do", "To Do", 1], ["in_progress", "In Progress", 0], ["done", "Done", 1]]);
     expect(v.shown).toBe(2);
-    expect(assigneeOptions([task("TASK-1", "to_do")], columnsOf(native))).toEqual([{ value: "", count: 1 }]);
+    expect(assigneeOptions([task("TASK-1", "to_do")], columnsOf(native, {}))).toEqual([{ value: "", count: 1 }]);
   });
 
   it("order a column's cards by when each entered the column, newest first, then by id, newest first", () => {
@@ -134,6 +135,7 @@ describe("the cards drawn from a snapshot", () => {
       { name: "in-progress", machine, agents: [agent("PROJ-1", "pr_opened", { task: "PROJ-1", active: 500 })] },
     ],
     pulls: { "PROJ-1": [pull(7, "pass", 2)] },
+    roles: LIFECYCLE_ROLES,
     settled: { "PROJ-4": { state: "completed", at: null, created: null, title: "t", model: "" } },
     error: null,
     now: 600,
@@ -330,10 +332,10 @@ describe("the filters", () => {
   });
 
   it("list the assignees and milestones to choose from, busiest first, with unassigned and No milestone", () => {
-    expect(assigneeOptions(tasks)).toEqual([
+    expect(assigneeOptions(tasks, LIFECYCLE_COLUMNS)).toEqual([
       { value: "@alice", count: 2 }, { value: "@agent-deep-high", count: 1 }, { value: "", count: 1 },
     ]);
-    expect(milestoneOptions(tasks)).toEqual([{ value: "m-12", count: 2 }, { value: "m-9", count: 1 }, { value: "", count: 1 }]);
+    expect(milestoneOptions(tasks, LIFECYCLE_COLUMNS)).toEqual([{ value: "m-12", count: 2 }, { value: "m-9", count: 1 }, { value: "", count: 1 }]);
   });
 });
 
@@ -342,15 +344,15 @@ describe("label suggestions", () => {
   const tasks = [labelled("PROJ-1", ["needs-review", "size-3"]), labelled("PROJ-2", ["needs-review"]), labelled("PROJ-3", ["adr-needed", "size-3"])];
 
   it("offer the labels that contain the word being typed, most used first, with their counts", () => {
-    expect(labelSuggestions(tasks, "need")).toEqual([{ label: "needs-review", count: 2 }, { label: "adr-needed", count: 1 }]);
-    expect(labelSuggestions(tasks, "kanban need")).toEqual([{ label: "needs-review", count: 2 }, { label: "adr-needed", count: 1 }]);
+    expect(labelSuggestions(tasks, "need", LIFECYCLE_COLUMNS)).toEqual([{ label: "needs-review", count: 2 }, { label: "adr-needed", count: 1 }]);
+    expect(labelSuggestions(tasks, "kanban need", LIFECYCLE_COLUMNS)).toEqual([{ label: "needs-review", count: 2 }, { label: "adr-needed", count: 1 }]);
   });
 
   it("read the word after label: and offer nothing for an empty or finished word", () => {
-    expect(labelSuggestions(tasks, "label:size")).toEqual([{ label: "size-3", count: 2 }]);
-    expect(labelSuggestions(tasks, "")).toEqual([]);
-    expect(labelSuggestions(tasks, "need ")).toEqual([]);
-    expect(labelSuggestions(tasks, "zzz")).toEqual([]);
+    expect(labelSuggestions(tasks, "label:size", LIFECYCLE_COLUMNS)).toEqual([{ label: "size-3", count: 2 }]);
+    expect(labelSuggestions(tasks, "", LIFECYCLE_COLUMNS)).toEqual([]);
+    expect(labelSuggestions(tasks, "need ", LIFECYCLE_COLUMNS)).toEqual([]);
+    expect(labelSuggestions(tasks, "zzz", LIFECYCLE_COLUMNS)).toEqual([]);
   });
 
   it("write label:<name> in place of the word being typed, ready for the next word", () => {
@@ -371,7 +373,7 @@ describe("what holds the Waiting lane", () => {
   ];
 
   it("count every Waiting task behind a task, through other Waiting tasks, once each", () => {
-    const counts = holdCounts(board);
+    const counts = holdCounts(board, LIFECYCLE_ROLES);
 
     expect(counts.get("GATE")).toBe(3);
     expect(counts.get("PIVOT")).toBe(2);
@@ -380,39 +382,39 @@ describe("what holds the Waiting lane", () => {
   });
 
   it("leave out a dependent that is not Waiting and a dependency that is Done", () => {
-    const counts = holdCounts(board);
+    const counts = holdCounts(board, LIFECYCLE_ROLES);
 
     expect(counts.get("DONE-1") ?? 0).toBe(0);
     expect(counts.get("TIMED") ?? 0).toBe(0);
   });
 
   it("rank the tasks at the bottom of the chains, most held first, leaving out a Waiting task that waits on open work", () => {
-    expect(holders(board).map((h) => [h.task.id, h.holds])).toEqual([["GATE", 3], ["SIDE", 1]]);
+    expect(holders(board, LIFECYCLE_ROLES).map((h) => [h.task.id, h.holds])).toEqual([["GATE", 3], ["SIDE", 1]]);
   });
 
   it("count a Waiting task held only by its own Start Criteria as a holder of the tasks behind it", () => {
     const timed = [dep("TIMED", "waiting"), dep("AFTER", "waiting", "TIMED")];
 
-    expect(holders(timed).map((h) => [h.task.id, h.holds])).toEqual([["TIMED", 1]]);
+    expect(holders(timed, LIFECYCLE_ROLES).map((h) => [h.task.id, h.holds])).toEqual([["TIMED", 1]]);
   });
 
   it("trace a task's chain: the Waiting tasks it holds and the open tasks it waits on, both transitively", () => {
-    expect(chainOf(board, "PIVOT")).toEqual({ holds: new Set(["S1", "S2"]), waitsOn: new Set(["GATE"]) });
-    expect(chainOf(board, "S2")).toEqual({ holds: new Set(), waitsOn: new Set(["PIVOT", "SIDE", "GATE"]) });
-    expect(chainOf(board, "TIMED")).toEqual({ holds: new Set(), waitsOn: new Set() });
+    expect(chainOf(board, "PIVOT", LIFECYCLE_ROLES)).toEqual({ holds: new Set(["S1", "S2"]), waitsOn: new Set(["GATE"]) });
+    expect(chainOf(board, "S2", LIFECYCLE_ROLES)).toEqual({ holds: new Set(), waitsOn: new Set(["PIVOT", "SIDE", "GATE"]) });
+    expect(chainOf(board, "TIMED", LIFECYCLE_ROLES)).toEqual({ holds: new Set(), waitsOn: new Set() });
   });
 
   it("stop at a dependency cycle instead of counting forever", () => {
     const cycle = [dep("A", "waiting", "B"), dep("B", "waiting", "A")];
 
-    expect(holdCounts(cycle).get("A")).toBe(1);
-    expect(holders(cycle)).toEqual([]);
+    expect(holdCounts(cycle, LIFECYCLE_ROLES).get("A")).toBe(1);
+    expect(holders(cycle, LIFECYCLE_ROLES)).toEqual([]);
   });
 });
 
 describe("why a task the Recent rail points at has no card in view", () => {
   const tasks = [task("PROJ-1", "ready", "m-12"), task("PROJ-2", "ready", "m-9"), task("PROJ-3", "archived")];
-  const why = (id: string, prefs: Partial<typeof NO_PREFS> = {}) => whyHidden(tasks, NAMES, { ...NO_PREFS, ...prefs }, id, NOW);
+  const why = (id: string, prefs: Partial<typeof NO_PREFS> = {}) => whyHidden(tasks, NAMES, LIFECYCLE_ROLES, { ...NO_PREFS, ...prefs }, id, NOW);
 
   it("is nothing for a card the board draws", () => {
     expect(why("PROJ-1")).toBeNull();
@@ -593,7 +595,7 @@ describe("the milestone outline", () => {
       task("T-10", "ready"),
     ];
 
-    expect(milestoneOutline(tasks)).toEqual([
+    expect(milestoneOutline(tasks, LIFECYCLE_ROLES)).toEqual([
       { milestone: "m-1", done: 1, total: 2 },
       { milestone: "m-3", done: 0, total: 3 },
       { milestone: "m-4", done: 1, total: 2 },
@@ -604,7 +606,7 @@ describe("the milestone outline", () => {
     const tasks = [task("T-1", "ready", "m-10"), task("T-2", "done", "m-10"), task("T-3", "ready", "m-9")];
     const settled = { "m-10": 2, "m-8": 1 };
 
-    expect(milestoneOutline(tasks, settled)).toEqual([
+    expect(milestoneOutline(tasks, LIFECYCLE_ROLES, settled)).toEqual([
       { milestone: "m-9", done: 0, total: 1 },
       { milestone: "m-10", done: 3, total: 4 },
     ]);
@@ -621,8 +623,8 @@ describe("the Done column", () => {
 
     expect(column(v, "done").buckets.flatMap((b) => b.tasks.map((t) => t.id))).toEqual(["T-NEW"]);
     expect([column(v, "done").count, v.done, v.open, v.shown, v.total]).toEqual([1, 1, 1, 2, 2]);
-    expect(whyHidden(tasks, NAMES, NO_PREFS, "T-OLD", NOW)).toBe("Done before today");
-    expect(whyHidden(tasks, NAMES, NO_PREFS, "T-NEW", NOW)).toBeNull();
+    expect(whyHidden(tasks, NAMES, LIFECYCLE_ROLES, NO_PREFS, "T-OLD", NOW)).toBe("Done before today");
+    expect(whyHidden(tasks, NAMES, LIFECYCLE_ROLES, NO_PREFS, "T-NEW", NOW)).toBeNull();
   });
 
   it("draws a Done task the snapshot gave no time for, since its age is unknown", () => {
@@ -633,12 +635,12 @@ describe("the Done column", () => {
     const tasks = [finished("T-OLD", 13), finished("T-NEW", 1), task("T-1", "ready", "m-1")];
 
     expect(column(view(tasks), "done").count).toBe(1);
-    expect(milestoneOutline(tasks)).toEqual([{ milestone: "m-1", done: 2, total: 3 }]);
+    expect(milestoneOutline(tasks, LIFECYCLE_ROLES)).toEqual([{ milestone: "m-1", done: 2, total: 3 }]);
   });
 
   it("keeps the toolbar's counts to the tasks drawn", () => {
     const tasks = [{ ...finished("T-OLD", 13), assignee: "gone" }, finished("T-NEW", 1)];
 
-    expect(assigneeOptions(recent(tasks, NOW))).toEqual([{ value: "", count: 1 }]);
+    expect(assigneeOptions(recent(tasks, NOW, LIFECYCLE_ROLES), LIFECYCLE_COLUMNS)).toEqual([{ value: "", count: 1 }]);
   });
 });

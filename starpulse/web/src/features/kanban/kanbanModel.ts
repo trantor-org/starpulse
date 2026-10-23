@@ -2,17 +2,23 @@
 import { midnight, type Sky } from "../../render/sky";
 import type { TaskRecord } from "./taskViewModel";
 import type { Option } from "../../shared/ChoiceMenu";
-import type { Move, Pull, TrailStep } from "../../api";
+import type { Move, Pull, Roles, TrailStep } from "../../api";
 
-/** The Board states drawn as columns, in order. New is the creation pseudo-state and Completed and Archived have left the lanes. */
-export const COLUMNS = ["ready", "waiting", "in_progress", "review", "needs_attention", "done"];
+/** The States the machine gives a lifecycle role, keyed by role, in column order. The creation and final States have left the lanes. */
+const lifecycleStates = ({ ready, waiting, working, review, attention, done }: Roles) => ({ ready, waiting, working, review, attention, done });
 
+/** The role a State plays in the lifecycle columns, when it plays one. */
+export const roleOf = (roles: Roles, state: string): string | undefined => Object.entries(lifecycleStates(roles)).find(([, s]) => s === state)?.[0];
 
 /** The tasks a column may draw: every task, except a Done one that entered before the local midnight of `now`'s day. A Done task the snapshot gave no time for (`entered` 0) is drawn. */
-export const recent = (tasks: KanbanTask[], now: number): KanbanTask[] => tasks.filter((t) => t.lane !== "done" || !t.entered || t.entered >= midnight(new Date(now * 1000)));
+export const recent = (tasks: KanbanTask[], now: number, roles: Roles): KanbanTask[] =>
+  tasks.filter((t) => t.lane !== roles.done || !t.entered || t.entered >= midnight(new Date(now * 1000)));
 
-/** The lanes drawn as columns: the board's own lanes in order (StarPulse's native board, a Backlog.md project's statuses), except those six on a board with the `ready` lane (trantor's lifecycle) and before the board's lanes are known. */
-export const columnsOf = (names: Record<string, string>): string[] => ("ready" in names || !Object.keys(names).length ? COLUMNS : Object.keys(names));
+/** The lanes drawn as columns: the machine's lifecycle States in order when it names a ready State (trantor's lifecycle), else the board's own lanes in order (StarPulse's native board, a Backlog.md project's statuses); none before the lanes are known. */
+export const columnsOf = (names: Record<string, string>, roles: Roles): string[] => {
+  const states = new Set(Object.values(lifecycleStates(roles)).filter((s): s is string => !!s));
+  return roles.ready ? [...states] : Object.keys(names);
+};
 
 export interface KanbanTask {
   id: string;
@@ -112,10 +118,10 @@ const options = (tasks: KanbanTask[], columns: string[], of: (t: KanbanTask) => 
   return [...counts].map(([value, count]) => ({ value, count })).sort(order);
 };
 /** Busiest first, the unassigned after the named. */
-export const assigneeOptions = (tasks: KanbanTask[], columns = COLUMNS) =>
+export const assigneeOptions = (tasks: KanbanTask[], columns: string[]) =>
   options(tasks, columns, (t) => t.assignee, (a, b) => Number(a.value === "") - Number(b.value === "") || b.count - a.count || a.value.localeCompare(b.value));
 /** Newest first, as the buckets run, with No milestone last. */
-export const milestoneOptions = (tasks: KanbanTask[], columns = COLUMNS) => options(tasks, columns, (t) => t.milestone, (a, b) => milestoneNumber(b.value) - milestoneNumber(a.value));
+export const milestoneOptions = (tasks: KanbanTask[], columns: string[]) => options(tasks, columns, (t) => t.milestone, (a, b) => milestoneNumber(b.value) - milestoneNumber(a.value));
 
 /** One open milestone of the navigator's outline: how many of its tasks are done. */
 export interface Outline {
@@ -128,7 +134,7 @@ export interface Outline {
  * `settled`, so it is counted in `completed`, each milestone's count of them, done, or finishing a task would shrink its milestone's total
  * instead of raising its done count.
  */
-export function milestoneOutline(tasks: KanbanTask[], completed: Record<string, number> = {}): Outline[] {
+export function milestoneOutline(tasks: KanbanTask[], roles: Roles, completed: Record<string, number> = {}): Outline[] {
   const counts = new Map<string, Outline>();
   const count = (milestone: string, done: boolean, n = 1) => {
     const row = counts.get(milestone) ?? { milestone, done: 0, total: 0 };
@@ -136,13 +142,13 @@ export function milestoneOutline(tasks: KanbanTask[], completed: Record<string, 
     if (done) row.done += n;
     counts.set(milestone, row);
   };
-  for (const t of tasks) if (t.milestone) count(t.milestone, t.lane === "done");
+  for (const t of tasks) if (t.milestone) count(t.milestone, t.lane === roles.done);
   for (const [milestone, n] of Object.entries(completed)) if (milestone && n > 0) count(milestone, true, n);
   return [...counts.values()].filter((r) => r.done < r.total).sort((a, b) => milestoneNumber(a.milestone) - milestoneNumber(b.milestone));
 }
 
 /** The labels containing the word being typed (the last word of the bar, after a `label:` prefix), most used first. */
-export function labelSuggestions(tasks: KanbanTask[], query: string, columns = COLUMNS): { label: string; count: number }[] {
+export function labelSuggestions(tasks: KanbanTask[], query: string, columns: string[]): { label: string; count: number }[] {
   const word = /\S+$/.exec(query)?.[0].toLowerCase().replace(LABEL, "") ?? "";
   if (!word) return [];
   const counts = new Map<string, number>();
@@ -173,6 +179,8 @@ export interface Bucket {
 export interface Column {
   id: string;
   name: string;
+  /** The lifecycle role the column's State plays; absent on a board with no lifecycle roles. */
+  role?: string;
   /** Visible tasks, those inside a folded bucket included. */
   count: number;
   buckets: Bucket[];
@@ -200,25 +208,26 @@ const filtered = (t: KanbanTask, prefs: Prefs) =>
 
 const byId = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true });
 
-/** The lanes whose tasks fold into stacks. */
-export const STACKED = ["waiting", "done"];
+/** Whether the lane's tasks fold into stacks: the Waiting and Done lanes. */
+export const stacked = (roles: Roles, lane: string) => lane === roles.waiting || lane === roles.done;
 
 /**
  * A bucket's tasks of one lane as stacks. A Waiting task folds under its first blocker: of its Waiting dependencies in the bucket, the one
  * that unblocks first (lowest chain depth, then id). A Done task folds the other way, under the Done task that depends on it, so the chain's
  * last finished sits on top. A dependency in another milestone, or in another lane, does not stack.
  */
-export function stacksOf(tasks: KanbanTask[], lane = "waiting"): Stack[] {
+export function stacksOf(tasks: KanbanTask[], roles: Roles, lane = roles.waiting): Stack[] {
+  const finished = !!lane && lane === roles.done;
   const here = new Map(tasks.map((t) => [t.id, t]));
   const links = new Map(tasks.map((t) => [t.id, [] as string[]]));
   for (const t of tasks) {
     for (const d of t.dependencies) {
       if (d === t.id || !here.has(d)) continue;
-      if (lane === "done") links.get(d)!.push(t.id);
+      if (finished) links.get(d)!.push(t.id);
       else links.get(t.id)!.push(d);
     }
   }
-  if (lane === "done") for (const l of links.values()) l.sort(byId);
+  if (finished) for (const l of links.values()) l.sort(byId);
   const depth = new Map<string, number>();
   // a cycle stops counting where it closes
   const depthOf = (id: string, path: string[] = []): number => {
@@ -241,8 +250,8 @@ export function stacksOf(tasks: KanbanTask[], lane = "waiting"): Stack[] {
 }
 
 /** Each Waiting task's Waiting dependencies in other milestones, among `visible` cards: they cannot stack, so the card links to each instead. */
-export function crossOf(visible: KanbanTask[]): Map<string, KanbanTask[]> {
-  const waiting = new Map(visible.filter((t) => t.lane === "waiting").map((t) => [t.id, t]));
+export function crossOf(visible: KanbanTask[], roles: Roles): Map<string, KanbanTask[]> {
+  const waiting = new Map(visible.filter((t) => t.lane === roles.waiting).map((t) => [t.id, t]));
   const cross = new Map<string, KanbanTask[]>();
   for (const t of waiting.values()) {
     const held = t.dependencies.map((d) => waiting.get(d)).filter((d): d is KanbanTask => d !== undefined && d.milestone !== t.milestone);
@@ -263,9 +272,9 @@ export const unstacked = (s: StackOpen) => s.hover || s.focus;
 export const stackOf = (l: Layout, id: string): Stack | undefined =>
   l.columns.flatMap((c) => c.buckets).flatMap((b) => b.stacks).find((s) => s.members.length > 1 && s.members.some((t) => t.id === id));
 
-export function layout(tasks: KanbanTask[], names: Record<string, string>, prefs: Prefs, now: number): Layout {
-  const lanes = columnsOf(names);
-  const drawn = recent(tasks, now).filter((t) => lanes.includes(t.lane));
+export function layout(tasks: KanbanTask[], names: Record<string, string>, roles: Roles, prefs: Prefs, now: number): Layout {
+  const lanes = columnsOf(names, roles);
+  const drawn = recent(tasks, now, roles).filter((t) => lanes.includes(t.lane));
   const visible = drawn.filter(
 (t) => !prefs.hiddenTasks.has(t.id) && !prefs.hiddenMilestones.has(t.milestone) && filtered(t, prefs));
   const columns = lanes.map((id): Column => {
@@ -273,22 +282,22 @@ export function layout(tasks: KanbanTask[], names: Record<string, string>, prefs
     const keys = [...new Set(here.map((t) => t.milestone))].sort((a, b) => milestoneNumber(b) - milestoneNumber(a));
     const buckets = keys.map((milestone): Bucket => {
       const inBucket = here.filter((t) => t.milestone === milestone);
-      return { milestone, tasks: inBucket, stacks: STACKED.includes(id) ? stacksOf(inBucket, id) : [], folded: prefs.folded.has(milestone) };
+      return { milestone, tasks: inBucket, stacks: stacked(roles, id) ? stacksOf(inBucket, roles, id) : [], folded: prefs.folded.has(milestone) };
     });
-    return { id, name: names[id] ?? id, count: here.length, buckets };
+    return { id, name: names[id] ?? id, role: roleOf(roles, id), count: here.length, buckets };
   });
-  const done = columns.find((c) => c.id === "done")?.count ?? 0;
+  const done = columns.find((c) => c.id === roles.done)?.count ?? 0;
   return {
-    columns, cross: crossOf(visible), open: visible.length - done, done, shown: visible.length, total: drawn.length,
+    columns, cross: crossOf(visible, roles), open: visible.length - done, done, shown: visible.length, total: drawn.length,
     hidden: prefs.hiddenMilestones.size + prefs.hiddenTasks.size,
   };
 }
 
 /** Why task `id` has no card in view: Done before today, hidden, its milestone hidden, filtered out or folded away; null when its card is drawn. */
-export function whyHidden(tasks: KanbanTask[], names: Record<string, string>, prefs: Prefs, id: string, now: number): string | null {
+export function whyHidden(tasks: KanbanTask[], names: Record<string, string>, roles: Roles, prefs: Prefs, id: string, now: number): string | null {
   const t = tasks.find((x) => x.id === id);
-  if (!t || !columnsOf(names).includes(t.lane)) return "not on the board";
-  if (!recent([t], now).length) return "Done before today";
+  if (!t || !columnsOf(names, roles).includes(t.lane)) return "not on the board";
+  if (!recent([t], now, roles).length) return "Done before today";
   if (prefs.hiddenTasks.has(id)) return "hidden";
   if (prefs.hiddenMilestones.has(t.milestone)) return "its milestone is hidden";
   if (!filtered(t, prefs)) return "filtered out";
@@ -303,7 +312,8 @@ const cited = (urls: string[], read: Pull[]): Pull[] => {
 
 /** The Board's tasks as cards: its own fields, the pull requests the server read for it and the machine that last placed it. */
 export function kanbanTasks(sky: Sky): KanbanTask[] {
-  const open = new Set(sky.board.agents.filter((a) => a.state !== "done").map((a) => a.id));
+  const { roles } = sky;
+  const open = new Set(sky.board.agents.filter((a) => a.state !== roles.done).map((a) => a.id));
   // every machine's sessions by task, read in one pass over the machines and kept in their order
   const sessions = new Map<string, KanbanTask["machines"]>();
   for (const f of Object.values(sky.flows)) {
@@ -320,21 +330,21 @@ export function kanbanTasks(sky: Sky): KanbanTask[] {
       id: a.id, title: a.title, lane: a.state, milestone: a.milestone ?? "", labels: a.labels ?? [], assignee: a.model, dependencies,
       openDeps: dependencies.filter((d) => open.has(d)).length, prs: cited(a.prs ?? [], sky.pulls[a.id] ?? []), runs: a.runs ?? [], description: a.description ?? "",
       live: latest ? { machine: latest.flow, state: latest.state, at: latest.at, source: sky.flows[latest.flow]?.machine.source } : null,
-      released: a.state === "ready" && a.previous === "waiting", moves: a.moves ?? (a.move_set ? sky.moveSets[a.move_set] : undefined) ?? {}, entered: a.entered ?? 0, created: a.created ?? null, workableSince: a.workable_since ?? null,
+      released: a.state === roles.ready && a.previous === roles.waiting, moves: a.moves ?? (a.move_set ? sky.moveSets[a.move_set] : undefined) ?? {}, entered: a.entered ?? 0, created: a.created ?? null, workableSince: a.workable_since ?? null,
       machines: sessions.get(a.id) ?? [],
     };
   });
 }
 
 /** The dependency edges between open tasks: each task's open dependencies, and each task's Waiting dependents. */
-function edges(tasks: KanbanTask[]) {
-  const open = new Set(tasks.filter((t) => t.lane !== "done").map((t) => t.id));
+function edges(tasks: KanbanTask[], roles: Roles) {
+  const open = new Set(tasks.filter((t) => t.lane !== roles.done).map((t) => t.id));
   const waitsOn = new Map<string, string[]>(), heldBy = new Map<string, string[]>();
   for (const t of tasks) {
     const deps = t.dependencies.filter((d) => open.has(d));
-    if (t.lane === "done" || !deps.length) continue;
+    if (t.lane === roles.done || !deps.length) continue;
     waitsOn.set(t.id, deps);
-    if (t.lane === "waiting") for (const d of deps) heldBy.set(d, [...(heldBy.get(d) ?? []), t.id]);
+    if (t.lane === roles.waiting) for (const d of deps) heldBy.set(d, [...(heldBy.get(d) ?? []), t.id]);
   }
   return { waitsOn, heldBy };
 }
@@ -353,21 +363,21 @@ function reach(id: string, next: Map<string, string[]>): Set<string> {
 }
 
 /** A task's chain: the Waiting tasks it holds and the open tasks it waits on, both transitively. */
-export function chainOf(tasks: KanbanTask[], id: string): { holds: Set<string>; waitsOn: Set<string> } {
-  const e = edges(tasks);
+export function chainOf(tasks: KanbanTask[], id: string, roles: Roles): { holds: Set<string>; waitsOn: Set<string> } {
+  const e = edges(tasks, roles);
   return { holds: reach(id, e.heldBy), waitsOn: reach(id, e.waitsOn) };
 }
 
 /** How many Waiting tasks each task holds: those that depend on it while it is not Done, directly or through other Waiting tasks, each counted once. */
-export function holdCounts(tasks: KanbanTask[]): Map<string, number> {
-  const { heldBy } = edges(tasks);
+export function holdCounts(tasks: KanbanTask[], roles: Roles): Map<string, number> {
+  const { heldBy } = edges(tasks, roles);
   return new Map([...heldBy.keys()].map((id) => [id, reach(id, heldBy).size]));
 }
 
 /** The tasks at the bottom of the Waiting chains, most held first: each holds Waiting work and is not itself waiting on open work. */
-export function holders(tasks: KanbanTask[], counts = holdCounts(tasks)): { task: KanbanTask; holds: number }[] {
+export function holders(tasks: KanbanTask[], roles: Roles, counts = holdCounts(tasks, roles)): { task: KanbanTask; holds: number }[] {
   return tasks
-    .filter((t) => (counts.get(t.id) ?? 0) > 0 && !(t.lane === "waiting" && t.openDeps > 0))
+    .filter((t) => (counts.get(t.id) ?? 0) > 0 && !(t.lane === roles.waiting && t.openDeps > 0))
     .map((task) => ({ task, holds: counts.get(task.id)! }))
     .sort((a, b) => b.holds - a.holds || a.task.id.localeCompare(b.task.id, undefined, { numeric: true }));
 }

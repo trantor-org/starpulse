@@ -2,6 +2,7 @@
 // in In progress for its agent's claim. The session-start service opens the session; the agent's own claim moves the task, and the
 // board writer's refusal of that claim (a `claim` delta) returns the card to its lane.
 import { apiFetch } from "../../api/apiFetch";
+import type { Roles } from "../../api";
 import type { KanbanTask } from "./kanbanModel";
 import type { MoveStore } from "./move";
 
@@ -37,8 +38,10 @@ export interface Asking {
   task: KanbanTask;
   via: Via;
   pick: Pick;
+  /** The State a manual start moves the task to: the machine's working State. */
+  working: string;
 }
-/** A started card held in In progress: `starting` until the service answers, then `waiting` for the agent's claim. */
+/** A started card held in the working State: `starting` until the service answers, then `waiting` for the agent's claim. */
 export interface Claiming {
   from: string;
   phase: "starting" | "waiting";
@@ -60,17 +63,15 @@ export interface StartState {
   failed: Record<string, Failed>;
 }
 
-const STARTABLE = new Set(["ready", "waiting", "needs_attention"]);
-const ACTIVE = "in_progress";
 const DEFAULT = { tier: "standard", effort: "high" };
 const PROFILE = /^@agent-([a-z]+)(?:-([a-z]+))?$/;
 
-/** A task in a lane a session starts from; its ▶ is disabled while a guard refuses the move to In progress. */
-export const startLane = (task: KanbanTask) => STARTABLE.has(task.lane);
-/** A task a session can start: in a lane a session starts from, with the move to In progress allowed. */
-export const startable = (task: KanbanTask) => startLane(task) && task.moves[ACTIVE]?.allowed === true;
+/** A task in a State a session starts from (the machine's startable States); its ▶ is disabled while a guard refuses the move to the working State. */
+export const startLane = (task: KanbanTask, roles: Roles) => !!roles.startable?.includes(task.lane);
+/** A task a session can start: in a State a session starts from, with the move to the working State allowed. */
+export const startable = (task: KanbanTask, roles: Roles) => startLane(task, roles) && !!roles.working && task.moves[roles.working]?.allowed === true;
 /** Whether dropping `task` on column `to` asks how it starts rather than moving it. */
-export const dropAsks = (task: KanbanTask, to: string) => to === ACTIVE && startable(task);
+export const dropAsks = (task: KanbanTask, to: string, roles: Roles) => to === roles.working && startable(task, roles);
 
 const harnessOf = (name: string, h: Harnesses) => h.harnesses.find((x) => x.name === name);
 
@@ -110,9 +111,9 @@ const desktopLink = (task: string, desktop: { host: string; folder: string }) =>
 /** A card waiting for its claim stays put: the session is already working it. */
 export const canDrag = (id: string, state: StartState) => !state.claiming[id];
 
-/** The cards with each started one already in In progress. */
-export const placeClaims = (tasks: KanbanTask[], state: StartState): KanbanTask[] =>
-  tasks.map((t) => (state.claiming[t.id] ? { ...t, lane: ACTIVE } : t));
+/** The cards with each started one already in the working State. */
+export const placeClaims = (tasks: KanbanTask[], state: StartState, roles: Roles): KanbanTask[] =>
+  tasks.map((t) => (state.claiming[t.id] && roles.working ? { ...t, lane: roles.working } : t));
 
 const without = <T>(map: Record<string, T>, id: string) => Object.fromEntries(Object.entries(map).filter(([key]) => key !== id));
 
@@ -147,9 +148,9 @@ export class StartStore {
   }
 
   /** Ask how `task` starts; nothing for a task no session can start or one already waiting for its claim. */
-  ask(task: KanbanTask, via: Via) {
-    if (!startable(task) || this.state.claiming[task.id]) return;
-    this.set({ asking: { task, via, pick: defaultPick(task.assignee, this.state.harnesses) } });
+  ask(task: KanbanTask, via: Via, roles: Roles) {
+    if (!roles.working || !startable(task, roles) || this.state.claiming[task.id]) return;
+    this.set({ asking: { task, via, pick: defaultPick(task.assignee, this.state.harnesses), working: roles.working } });
   }
 
   pick(change: Partial<Pick>) {
@@ -194,7 +195,7 @@ export class StartStore {
     const asking = this.state.asking;
     if (!asking) return;
     this.set({ asking: null });
-    void this.moves.drop(asking.task, ACTIVE);
+    void this.moves.drop(asking.task, asking.working);
   }
 
   /** Open the task in a Claude Desktop SSH session: Desktop asks to connect and prefills the prompt, and that session's own claim moves
