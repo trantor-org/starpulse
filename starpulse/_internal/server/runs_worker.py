@@ -22,9 +22,11 @@ from starpulse._internal.feed.board_feed import follow
 from starpulse._internal.runs import run_events
 from starpulse._internal.runs.projection import Publisher
 from starpulse._internal.runs.push_runs import PUSHED_INSTANCE, PushRuns
+from starpulse._internal.runs.run_streams import RunStreams, record_run_streams
 from starpulse._internal.server.assembly import history_store, worker_board
 from starpulse._internal.server.hold import hold
 from starpulse._internal.server.server import run_adapters
+from starpulse._internal.store import EventStore
 
 logger = logging.getLogger(__name__)
 
@@ -70,4 +72,7 @@ def main(argv: list[str] | None, parser: argparse.ArgumentParser) -> None:
     # The learned step graphs persist only in StarPulse's own store.
     pushed = PushRuns(publisher.runs(PUSHED_INSTANCE, feed.runs(PUSHED_INSTANCE)), store)
     follow(pushed, log, run_events.STREAM, pushed.handle_entry, stop=stop)
+    # Every entry path's run entries also land in the event store, one stream per run.
+    streams = RunStreams(EventStore(log.engine))
+    threading.Thread(target=record_run_streams, args=(streams, log, stop), daemon=True).start()
     hold(stop, lambda: reload(path, config))
