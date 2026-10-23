@@ -1,0 +1,26 @@
+# The review-fix phase: a ready PR's threads, conflicts and checks answered, then the task moved to review, or the
+# change sent back through delivery. Each transition cites the sentence of this skill that authorizes it, and
+# `writers` names who fires each event.
+name: ReviewFix
+states:
+  start: {initial: true}
+  review_recorded: {final: true}
+  redeliver: {final: true}
+events:
+  GREEN:
+    - {from: start, to: start, cite: {skill: review-fix, quote: "A correct finding that changes behavior gets a failing test"}}
+  AC_CHECKPOINTED:
+    - {from: start, to: start, cite: {skill: review-fix, quote: "Checkpoint any criterion the fixes touched"}}
+  LINT_GREEN:
+    - {from: start, to: redeliver, cite: {skill: review-fix, quote: "change goes back to delivery, which pushes it and waits for green checks again."}}
+  REVIEW_RECORDED:
+    - {from: start, to: review_recorded, cite: {skill: review-fix, quote: "Done when `starpulse task show PROJ-45` shows the task in review with the PR linked."}}
+writers:
+  GREEN:
+    - {actor: agent, trigger: "starpulse command run test"}
+  AC_CHECKPOINTED:
+    - {actor: agent, trigger: "starpulse task checkpoint-ac"}
+  LINT_GREEN:
+    - {actor: agent, trigger: "starpulse command run check"}
+  REVIEW_RECORDED:
+    - {actor: agent, trigger: "starpulse task review"}

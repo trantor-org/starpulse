@@ -1,0 +1,22 @@
+# The starting-task phase: a task found or filed, claimed, and given its worktree. Each transition cites the sentence
+# of this skill that authorizes it, and `writers` names who fires each event.
+name: StartingTask
+states:
+  start: {initial: true}
+  claimed: {role: resting}
+  worktree_ready: {final: true}
+  parked: {final: true}
+events:
+  CLAIMED:
+    - {from: start, to: claimed, cite: {skill: starting-task, quote: "Claim the task before checking it against code"}}
+  WORKTREE_READY:
+    - {from: claimed, to: worktree_ready, cite: {skill: starting-task, quote: "Done when `git -C <worktree> rev-parse --show-toplevel` prints the worktree."}}
+  PARKED:
+    - {from: claimed, to: parked, cite: {skill: starting-task, quote: "When the work cannot continue, park it with the one reason that holds"}}
+writers:
+  CLAIMED:
+    - {actor: agent, trigger: "starpulse task claim"}
+  WORKTREE_READY:
+    - {actor: agent, trigger: "starpulse command run start"}
+  PARKED:
+    - {actor: agent, trigger: "starpulse task park"}

@@ -1,0 +1,45 @@
+# The tdd phase: from a ready worktree through red, green, checkpointed criteria and reconciled docs. Each transition
+# cites the sentence of this skill that authorizes it, and `writers` names who fires each event.
+name: Tdd
+states:
+  start: {initial: true}
+  red_proven: {role: resting}
+  green: {role: resting}
+  criteria_checked: {role: resting}
+  docs_reconciled: {final: true}
+events:
+  RED_PROVEN:
+    - {from: start, to: red_proven, cite: {skill: tdd, quote: "Done when the run records red for the intended reason."}}
+    - {from: green, to: red_proven, cite: {skill: tdd, quote: "the next behavior starts again at step 1"}}
+    - {from: criteria_checked, to: red_proven, cite: {skill: tdd, quote: "the next behavior starts again at step 1"}}
+  RED_WRONG:
+    - {from: start, to: start, cite: {skill: tdd, quote: "or environment errors are not red: fix the test and run it again."}}
+  GREEN:
+    - {from: red_proven, to: green, cite: {skill: tdd, quote: "Change only enough production code to satisfy that test. Run the same command."}}
+    - {from: green, to: green, cite: {skill: tdd, quote: "Rerun the focused test after each meaningful refactor."}}
+  AC_CHECKPOINTED:
+    - {from: start, to: criteria_checked, cite: {skill: tdd, quote: "exist, is checkpointed the same way once its command passes."}}
+    - {from: green, to: criteria_checked, cite: {skill: tdd, quote: "Checkpoint every passed criterion that has no entry yet"}}
+    - {from: criteria_checked, to: criteria_checked, cite: {skill: tdd, quote: "Checkpoint every passed criterion that has no entry yet"}}
+  DOCS_RECONCILED:
+    - {from: criteria_checked, to: docs_reconciled, cite: {skill: tdd, quote: "Done when the docs match the change and a task comment says which ones changed."}}
+  LINT_GREEN:
+    - {from: green, to: green, cite: {skill: tdd, quote: "Run the project's checks on the changed files"}}
+    - {from: criteria_checked, to: criteria_checked, cite: {skill: tdd, quote: "Run the project's checks on the changed files"}}
+  LINT_RED:
+    - {from: criteria_checked, to: criteria_checked, cite: {skill: tdd, quote: "fix what they report."}}
+writers:
+  RED_PROVEN:
+    - {actor: agent, trigger: "starpulse command run test"}
+  RED_WRONG:
+    - {actor: agent, trigger: "starpulse command run test"}
+  GREEN:
+    - {actor: agent, trigger: "starpulse command run test"}
+  AC_CHECKPOINTED:
+    - {actor: agent, trigger: "starpulse task checkpoint-ac"}
+  DOCS_RECONCILED:
+    - {actor: agent, trigger: "the docs step's task comment"}
+  LINT_GREEN:
+    - {actor: agent, trigger: "starpulse command run check"}
+  LINT_RED:
+    - {actor: agent, trigger: "starpulse command run check"}

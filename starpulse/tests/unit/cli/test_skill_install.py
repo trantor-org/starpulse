@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import pytest
+import yaml
 
 from starpulse._internal.cli import skill_install as skills
 
@@ -151,3 +152,21 @@ def test_install_accepts_a_machine_whose_guard_the_adapter_registers_at_runtime(
     skills.install(tmp_path, ["claude"], force=False, source=source)
 
     assert skills.status(tmp_path, "claude", "demo", source) == "installed"
+
+
+PHASE_SKILLS = ("starting-task", "tdd", "deliver", "review-fix")
+
+
+def test_the_bundled_task_phase_skills_install_with_their_machines(tmp_path: Path) -> None:
+    skills.install(tmp_path, ["claude"], force=False)
+
+    assert [(tmp_path / f".claude/skills/{name}/machine.yaml").is_file() for name in PHASE_SKILLS] == [True] * 4
+
+
+@pytest.mark.parametrize("name", PHASE_SKILLS)
+def test_every_transition_of_a_phase_machine_cites_a_sentence_of_its_own_skill(name: str) -> None:
+    skill = (skills.SOURCE / name / "SKILL.md").read_text()
+    events = yaml.safe_load((skills.SOURCE / name / "machine.yaml").read_text())["events"]
+    cites = [transition["cite"] for transitions in events.values() for transition in transitions]
+
+    assert [c["quote"] for c in cites if c["skill"] != name or c["quote"] not in skill] == []

@@ -2166,8 +2166,12 @@ def test_a_manifest_verb_writes_one_json_document_and_exits_as_declared(
 
 SKILLS = [
     "authoring-starpulse-machines",
+    "deliver",
     "operating-starpulse-board",
+    "review-fix",
     "setting-up-starpulse",
+    "starting-task",
+    "tdd",
     "writing-starpulse-adapters",
 ]
 
@@ -2244,10 +2248,7 @@ def test_skills_list_reports_each_skills_status_per_harness(
     assert code == 0
     assert doc["scope"] == "project"
     assert [(s["name"], s["claude"], s["codex"]) for s in doc["skills"]] == [
-        ("authoring-starpulse-machines", "installed", "absent"),
-        ("operating-starpulse-board", "installed", "absent"),
-        ("setting-up-starpulse", "modified", "absent"),
-        ("writing-starpulse-adapters", "installed", "absent"),
+        (s, "modified" if s == "setting-up-starpulse" else "installed", "absent") for s in SKILLS
     ]
     assert all(s["description"] for s in doc["skills"])
 
@@ -2295,7 +2296,9 @@ def _named_verbs(skill: str, verbs: dict[str, set[str]]) -> list[str]:
             continue
         leaf = next((" ".join(words[:n]) for n in (3, 2, 1) if " ".join(words[:n]) in verbs), None)
         assert leaf, f"{skill} names `starpulse {span}`, which is no manifest verb"
-        flags = {w.split("=")[0] for w in words if w.startswith("--")}
+        # What follows a bare `--` goes to the project's command, not to the verb.
+        options = words[: words.index("--")] if "--" in words else words
+        flags = {w.split("=")[0] for w in options if w.startswith("--")}
         assert flags <= verbs[leaf], f"{skill} gives `starpulse {leaf}` {flags - verbs[leaf]}"
         named.append(leaf)
     return named
@@ -2309,6 +2312,7 @@ def test_every_verb_and_flag_a_bundled_skill_names_is_in_the_manifest(capsys: py
     )  # the skills do name verbs; a regex that matched nothing would pass vacuously
     assert {"machine validate", "machine import mermaid"} <= set(named["authoring-starpulse-machines"])
     assert {"doctor", "config check"} <= set(named["writing-starpulse-adapters"])
+    assert {"task claim", "command run"} <= set(named["starting-task"])
 
 
 @pytest.mark.parametrize("task", ["proj-1", "PROJ-1", "Proj-1"])
