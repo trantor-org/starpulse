@@ -28,8 +28,12 @@ def _workflows() -> list[str]:
     return [f"{r['name']}/{w}" for r in runs for ws in r["domains"].values() for w in _domain_workflows(ws)]
 
 
+def _board():
+    return demo_workspace.board({"type": "demo_workspace"}, PREVIEW.parent)
+
+
 def _machines() -> dict[str, dict]:
-    return demo_workspace.board({"type": "demo_workspace"}, PREVIEW.parent).machines(lambda n: n, _workflows())
+    return _board().machines(lambda n: n, _workflows())
 
 
 def test_the_preview_board_draws_a_real_workspaces_eight_lanes_in_order() -> None:
@@ -102,6 +106,7 @@ def _capture() -> dict:
     ]
     return {
         "now": NOW,
+        "roles": _board().roles.wire(),
         "flows": [{"name": name, "machine": body, "agents": []} for name, body in machines.items()],
         "graphs": [*machines, "runs"],
         "domains": domains,
