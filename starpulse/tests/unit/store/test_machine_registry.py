@@ -12,7 +12,8 @@ from sqlalchemy import Engine
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.machines.machine_definition import MachineDefinitionError
 from starpulse._internal.readmodel.fold import replay
-from starpulse._internal.store import EventStore, LiveTask, MachineRegistry, NewEvent, StaleVersion
+from starpulse._internal.store import EventStore, NewEvent, StaleVersion
+from starpulse._internal.store.machine_registry import LiveTask, MachineRegistry
 
 BOARD: dict[str, Any] = {
     "name": "board",
