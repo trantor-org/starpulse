@@ -89,8 +89,8 @@ session's first claim or task-naming switch, when its launch branch names no tas
   hook's gate is the tool it refused), and `compactions` by trigger. `tokens` is `{input, output, cache_read, cache_write, reasoning}`, with Codex's cached
   tokens taken out of its input; `cost_usd` is null for a session whose harness exports no cost.
 - A `slices` entry adds up the sessions that worked one task: `sessions`, `steps`, `operator_prompts`, `prompt_labels`, `interrupts`,
-  `rejections`, `user_rejects`, `interventions` (operator prompts plus interrupts), `escalated` (a model or effort changed between main-thread
-  requests) and `clean` (one session, no intervention, not escalated), with the same tokens, cost and time sums, and
+  `rejections`, `user_rejects`, `interventions` (operator prompts plus interrupts), `raises` and `lowers` (sessions that moved up or down the
+  step-down ladder mid-task), `escalated` (a model or effort changed between main-thread requests) and `clean` (one session, no intervention, not escalated), with the same tokens, cost and time sums, and
   `complete` and `steps_before_edit` of its sessions (the earliest that has one).
   Whether the task then settled in Review or Done is the board's fact, which the reader joins.
 - A turn is the signals that share a Claude Code `prompt.id`; its end is its last signal. A prompt is labelled
