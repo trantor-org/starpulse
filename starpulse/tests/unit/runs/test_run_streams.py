@@ -85,6 +85,13 @@ def test_an_adapter_entry_lands_in_the_same_stream(log: EventLog, streams: RunSt
     assert [e.payload["step"] for e in streams.read("build", "r1")] == ["lint"]
 
 
+def test_a_phase_only_entry_from_before_the_event_field_is_skipped(streams: RunStreams) -> None:
+    legacy = {"phase": "compile", "workflow": "build", "run_id": "r1", "status": "running", "time": 1.0}
+
+    assert streams.record("legacy-1", legacy) is False
+    assert streams.read("build", "r1") == []
+
+
 def test_a_lost_step_end_shows_as_a_step_with_no_finish(
     log: EventLog, streams: RunStreams, ingest: CloudEventsIngest
 ) -> None:
