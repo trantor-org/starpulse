@@ -211,6 +211,7 @@ from starpulse._internal.pulls.pull_requests import PullRequests
 from starpulse._internal.pulls.pull_store import PullSync
 from starpulse._internal.pulls.task_actor import TaskActor, moves_of
 from starpulse._internal.pulls.unblock import READY, UNBLOCK_S, Unblocker
+from starpulse._internal.runs import opt_in
 from starpulse._internal.runs import projection as runs_projection
 from starpulse._internal.runs.cloudevents import CloudEventsIngest
 from starpulse._internal.runs.ingest import tokens as ingest_tokens
@@ -560,6 +561,8 @@ class Prepared(NamedTuple):
     reruns: dict[str, Any]
     run_safe: list[str]
     producer_tokens: dict[str, str]
+    opt_in_workers: list[str]
+    """The `[[runs]]` instances an opt-in worker runs (`starpulse._internal.runs.opt_in`): none of them runs in `serve`."""
 
 
 def prepare(parser: argparse.ArgumentParser, args: argparse.Namespace, config: Config) -> Prepared:
@@ -582,7 +585,8 @@ def prepare(parser: argparse.ArgumentParser, args: argparse.Namespace, config: C
         if (factory := getattr(adapter, "rerun", None)) and (rerun := factory(instance.url))
     }
     run_safe = [name for name in config.qualified_run_safe() if name.partition("/")[0] in starts]
-    return Prepared(refresh_token, starts, reruns, run_safe, producer_tokens)
+    opted_in = [instance.name for instance, adapter in adapters if opt_in.worker_of(adapter)]
+    return Prepared(refresh_token, starts, reruns, run_safe, producer_tokens, opted_in)
 
 
 def refuse_unassemblable(
@@ -637,7 +641,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     from starpulse._internal.pulls.pulls import PullStore  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse._internal.server.assembly import assemble, history_store  # noqa: PLC0415 - the database stack loads after the config is accepted
 
-    refresh_token, starts, reruns, run_safe, producer_tokens = ready
+    refresh_token, starts, reruns, run_safe, producer_tokens, opted_in = ready
     base = args.config.parent if args.config else Path.cwd()
     port = listening.getsockname()[1]
     try:
@@ -683,8 +687,10 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     conformance = Conformance(feed.machines)
     conformance.follow(log, stop)
     # `starpulse worker runs` runs the run adapters and the pushed-runs follower; this process
-    # draws the workflows that worker keeps in the log, and starts a run only when the page asks
-    runs_projection.Projected(log, feed).follow(stop)
+    # draws the workflows that worker keeps in the log, and starts a run only when the page asks; an opt-in
+    # worker's instance also shows the page whether that worker is beating
+    watched = {name: opt_in.problem(log, name) for name in opted_in}
+    runs_projection.Projected(log, feed, watched).follow(stop)
     if config.task_actor:
         actor_metrics = metrics_of(log)
     probes = dataclasses.replace(doctor.LIVE, poller=poller_problem(log))

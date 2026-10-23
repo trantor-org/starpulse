@@ -1,4 +1,4 @@
-"""`starpulse worker runs`: the Runs context (the run adapters and the pushed-runs follower) as its own process, beside
+"""`starpulse worker runs`: the Runs context (the run adapters no opt-in worker runs, and the pushed-runs follower) as its own process, beside
 `serve`.
 
 It reads the config and the history database `serve` does and meets `serve` only in the event log: the workflows each
@@ -19,7 +19,7 @@ from starpulse._internal.config.config import Config, discover, load
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import database_url
 from starpulse._internal.feed.board_feed import follow
-from starpulse._internal.runs import run_events
+from starpulse._internal.runs import opt_in, run_events
 from starpulse._internal.runs.projection import Publisher
 from starpulse._internal.runs.push_runs import PUSHED_INSTANCE, PushRuns
 from starpulse._internal.runs.run_streams import RunStreams, record_run_streams
@@ -58,7 +58,7 @@ def main(argv: list[str] | None, parser: argparse.ArgumentParser) -> None:
     except (OSError, ValueError) as exc:
         parser.exit(1, f"{path}: {exc}\n")
     base = args.config.parent if args.config else Path.cwd()
-    adapters = run_adapters(parser, config)
+    adapters = opt_in.followed_by(run_adapters(parser, config), None)
     log = EventLog(database_url(config.database_url, base))
     stop = threading.Event()
     try:
