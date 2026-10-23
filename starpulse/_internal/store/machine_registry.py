@@ -50,10 +50,10 @@ class MachineRegistry:
         compile_document(dict(document), Path(name))
         digest = definition_of(document).digest
         mapping = document.get("migrations", {})
-        _check_mapping(name, mapping, document["states"], live)
         with self._engine.begin() as db:
             if self._active(db, name) == digest:
                 return digest
+            _check_mapping(name, mapping, document["states"], live)
             for task in live:
                 if task.state in mapping and mapping[task.state] != task.state:
                     remap = NewEvent(

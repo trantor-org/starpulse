@@ -165,3 +165,10 @@ def test_a_split_that_no_mapping_expresses_is_refused(store: EventStore, registr
         registry.activate(split | {"migrations": {"doing": "nowhere"}}, live)
 
     assert registry.active_hash("board") == first
+
+
+def test_reactivating_the_active_definition_ignores_live_states_it_lacks(registry: MachineRegistry) -> None:
+    active = registry.activate(BOARD, [])
+    stranded = [LiveTask("TASK-1", "Done", 1), LiveTask("TASK-2", "", 1)]
+
+    assert registry.activate(copy.deepcopy(BOARD), stranded) == active
