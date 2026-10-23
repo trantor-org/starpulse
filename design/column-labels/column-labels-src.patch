@@ -1,0 +1,559 @@
+diff --git a/starpulse/web/src/api/types.gen.ts b/starpulse/web/src/api/types.gen.ts
+index 2de86188..56af6cf4 100644
+--- a/starpulse/web/src/api/types.gen.ts
++++ b/starpulse/web/src/api/types.gen.ts
+@@ -1136,6 +1136,8 @@ export interface MachineState {
+   id: string;
+   initial: boolean;
+   name: string;
++  /** The state's UL role: initial, resting, waiting_on_fact, waiting_on_person or final. */
++  role?: string | null;
+ }
+ /**
+  * Where a Board state opens into another machine, and which Board event each inner final state fires.
+diff --git a/starpulse/web/src/features/kanban/Kanban.tsx b/starpulse/web/src/features/kanban/Kanban.tsx
+index 43247b33..ff143566 100644
+--- a/starpulse/web/src/features/kanban/Kanban.tsx
++++ b/starpulse/web/src/features/kanban/Kanban.tsx
+@@ -11,10 +11,11 @@ import { ago } from "../../shared/clock";
+ import type { HudState } from "../../render/hud";
+ import {
+   CLOSED, applySuggestion, applyTaskRecord, assigneeOptions, chainOf, clearFilters, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, labelSuggestions, layout, milestoneOptions, milestoneOutline, recent, show, showAll,
+-  STACKED, stackOf, stackStep, toggleFold, unstacked, whyHidden,
++  stackOf, stackStep, toggleFold, unstacked, whyHidden,
+   type KanbanTask, type Prefs, type Stack, type StackEvent, type StackOpen,
+ } from "./kanbanModel";
+ import { linkedTask, loadPrefs, savePrefs, withoutFilters } from "./kanbanPrefs";
++import { LABEL_MAX, arranged, changed, hiddenOf, labelOf, moved as reordered, ordered, viewColumns, withPref } from "./viewColumns";
+ import { codeParts, place, targets, type MoveStore, type Refusal, type Target } from "./move";
+ import { browserStorage } from "../../shared/nav";
+ import {
+@@ -416,7 +417,99 @@ function HiddenMenu({ prefs, tasks, set, close }: { prefs: Prefs; tasks: KanbanT
+   );
+ }
+ 
+-type MenuName = "assignee" | "milestone" | "hidden";
++/** Each machine role's mark: a column header says what its state is for, whatever the state is called. */
++const ROLE_MARKS: Record<string, ReactNode> = {
++  initial: <circle cx="5" cy="5" r="3.4" />,
++  resting: <circle className="f" cx="5" cy="5" r="3" />,
++  waiting_on_fact: <><circle cx="5" cy="5" r="3.8" /><path d="M5 2.9v2.3l1.5 1" /></>,
++  waiting_on_person: <><circle className="f" cx="5" cy="3.2" r="1.7" /><path className="f" d="M1.8 9.2c.3-2.1 1.6-3.3 3.2-3.3s2.9 1.2 3.2 3.3z" /></>,
++  final: <><circle cx="5" cy="5" r="3.8" /><path d="M3.2 5.1l1.3 1.3 2.4-2.6" /></>,
++};
++const roleName = (role: string | null) => (role ? role.replaceAll("_", " ") : "no role");
++
++function RoleGlyph({ role }: { role: string | null }) {
++  const name = `Role: ${roleName(role)}`;
++  return (
++    <svg className="rg" data-role={role && role in ROLE_MARKS ? role : "none"} viewBox="0 0 10 10" role="img" aria-label={name}>
++      <title>{name}</title>{(role && ROLE_MARKS[role]) ?? <circle className="f" cx="5" cy="5" r="1.4" />}
++    </svg>
++  );
++}
++
++/** The Columns chip's menu: each board state's label, place and whether its column is drawn, saved to serve for the install's one viewer. A sheet at phone width. */
++function ColumnsMenu({ ids, machine, roles, close }: { ids: string[]; machine: Record<string, string>; roles: Record<string, string | null>; close: () => void }) {
++  const v = useSyncExternalStore(viewColumns.subscribe, viewColumns.get);
++  const saving = useSyncExternalStore(viewColumns.subscribe, viewColumns.saving);
++  const [said, say] = useState("");
++  const [drag, setDrag] = useState<{ id: string; at: number } | null>(null);
++  const list = useRef<HTMLOListElement>(null);
++  const order = ordered(v, ids);
++  const shown = order.filter((id) => !hiddenOf(v, id)).length;
++  const nameOf = (id: string) => labelOf(v, id) ?? machine[id] ?? id;
++  const move = (id: string, by: number) => {
++    const next = reordered(order, id, by);
++    if (next.join() === order.join()) return;
++    viewColumns.set({ ...v, order: next }, 0);
++    say(`${nameOf(id)} moved to place ${next.indexOf(id) + 1} of ${next.length}`);
++  };
++  // the pointer drops before the row whose middle it is above, or after the last
++  const dropAt = (y: number) => {
++    const rows = [...(list.current?.children ?? [])];
++    const at = rows.findIndex((r) => { const b = r.getBoundingClientRect(); return y < b.top + b.height / 2; });
++    return at < 0 ? rows.length : at;
++  };
++  const drop = () => {
++    if (!drag) return;
++    const from = order.indexOf(drag.id);
++    move(drag.id, (drag.at > from ? drag.at - 1 : drag.at) - from);
++    setDrag(null);
++  };
++  const done = () => { viewColumns.flush(); close(); };
++  const status = saving.state === "saving" ? "saving…" : saving.state === "saved" ? "saved for this install" : saving.state === "offline" ? "serve did not answer · kept on this page" : saving.state === "refused" && saving.id ? "not saved · kept the last saved names" : "";
++  return (
++    <>
++      <div className="scrim cols" onClick={done} />
++      <div className="menu cols" role="dialog" aria-label="Columns" onKeyDown={(e) => e.key === "Escape" && (e.stopPropagation(), done())}>
++        <span className="grab" aria-hidden />
++        <div className="hd">Columns<button className="x" onClick={done}>Done</button></div>
++        <ol ref={list} onPointerMove={(e) => drag && setDrag({ ...drag, at: dropAt(e.clientY) })} onPointerUp={drop} onPointerCancel={() => setDrag(null)}>
++          {order.map((id, i) => {
++            const label = labelOf(v, id), hidden = hiddenOf(v, id);
++            const refused = saving.state === "refused" && saving.id === id;
++            const cls = [hidden && "off", drag?.id === id && "lifted", drag && drag.at === i && "before", drag && drag.at === order.length && i === order.length - 1 && "after"].filter(Boolean).join(" ");
++            return (
++              <li key={id} className={cls || undefined} data-lane={id}>
++                <button className="hdl" aria-label={`Move ${nameOf(id)}: arrow keys`} title="Drag, or arrow keys, to move"
++                  onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); setDrag({ id, at: i }); }}
++                  onKeyDown={(e) => (e.key === "ArrowUp" || e.key === "ArrowDown") && (e.preventDefault(), move(id, e.key === "ArrowUp" ? -1 : 1))}>⋮⋮</button>
++                <RoleGlyph role={roles[id] ?? null} />
++                <span className="lb">
++                  <input value={label ?? ""} placeholder={machine[id] ?? id} maxLength={LABEL_MAX} spellCheck={false} aria-label={`Label for ${machine[id] ?? id}`} aria-invalid={refused || undefined}
++                    onChange={(e) => viewColumns.set(withPref(v, id, { label: e.target.value }))} onBlur={viewColumns.flush} onKeyDown={(e) => e.key === "Enter" && viewColumns.flush()} />
++                  {label && <span className="was">machine: {machine[id] ?? id}</span>}
++                  {refused && <span className="why" role="alert">{saving.reason}</span>}
++                </span>
++                <button className="vis" aria-pressed={hidden} disabled={!hidden && shown === 1} title={!hidden && shown === 1 ? "The board keeps one column drawn" : undefined}
++                  onClick={() => viewColumns.set(withPref(v, id, { hidden: !hidden }), 0)}>{hidden ? "show" : "hide"}</button>
++                <button className="rs" disabled={!label && !hidden} title={`Back to the machine's ${machine[id] ?? id}, drawn`} aria-label={`Reset ${machine[id] ?? id} to the machine`}
++                  onClick={() => viewColumns.set(withPref(v, id, { label: null, hidden: false }), 0)}>↺</button>
++              </li>
++            );
++          })}
++        </ol>
++        <div className="ft">
++          <button disabled={!v.order.length} onClick={() => viewColumns.set({ ...v, order: [] }, 0)}>Machine order</button>
++          <button disabled={!changed(v, ids)} onClick={() => viewColumns.set({ columns: [], order: [] }, 0)}>Reset all to machine</button>
++          <span className={`st ${saving.state}`}>{status}{saving.state === "refused" && !saving.id && saving.reason}
++            {saving.state === "offline" && <> · <button className="retry" onClick={() => void viewColumns.save()}>retry</button></>}</span>
++        </div>
++        <span className="sr" aria-live="polite">{said}</span>
++      </div>
++    </>
++  );
++}
++
++type MenuName = "assignee" | "milestone" | "hidden" | "columns";
+ 
+ /** What a press on a card and the pointer after it are doing: nothing yet (a click), or carrying the card to a column. */
+ interface Press {
+@@ -584,7 +677,13 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
+     const saved = edited[card.id];
+     return saved?.source === hud.cards ? applyTaskRecord(card, saved.record) : card;
+   }), gone), [edited, gone, hud.cards, moved, started]);
+-  const view = useMemo(() => layout(cards, hud.names, prefs, now), [cards, hud.names, prefs, now]);
++  const chosen = useSyncExternalStore(viewColumns.subscribe, viewColumns.get);
++  const shownLanes = useMemo(() => arranged(chosen, columnsOf(hud.names)), [chosen, hud.names]);
++  const roles = useMemo(() => Object.fromEntries((hud.states ?? []).map((s) => [s.id, s.role ?? null])), [hud.states]);
++  const view = useMemo(() => layout(cards, hud.names, prefs, now, roles, shownLanes), [cards, hud.names, prefs, now, roles, shownLanes]);
++  // the Held by strip sits atop the first column that stacks by dependency, whatever the viewer calls it
++  const heldLane = view.columns.find((c) => c.stack === "waiting")?.id;
++  const changedCols = changed(chosen, columnsOf(hud.names));
+   const holds = useMemo(() => holdCounts(cards), [cards]);
+   const blockers = useMemo(() => holders(cards, holds), [cards, holds]);
+   const [pointed, setHovered] = useState<string | null>(null);
+@@ -597,9 +696,9 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
+   }, [cards, hovered, lift, spot]);
+   useEffect(() => {
+     if (!spot) return void note?.(null);
+-    note?.(whyHidden(cards, hud.names, prefs, spot, now));
++    note?.(whyHidden(cards, hud.names, prefs, spot, now, shownLanes));
+     document.querySelector<HTMLElement>(`#cols .card[data-id="${spot}"]`)?.scrollIntoView({ block: "nearest" });
+-  }, [spot, cards, hud.names, prefs, note, now]);
++  }, [spot, cards, hud.names, prefs, note, now, shownLanes]);
+   // each click is a new object, so the same line clicked twice opens it twice; a task with no card opens no modal
+   const opened = useRef(opening);
+   useLayoutEffect(() => {
+@@ -792,6 +891,10 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
+             {menu === "hidden" && <HiddenMenu prefs={prefs} tasks={cards} set={setPrefs} close={() => setMenu(null)} />}
+           </div>
+         )}
++        <div className="fw">
++          {chip("columns", "Columns", changedCols ? String(changedCols) : null, `${changedCols} changed`)}
++          {menu === "columns" && <ColumnsMenu ids={columnsOf(hud.names)} machine={hud.machineNames} roles={roles} close={() => setMenu(null)} />}
++        </div>
+         <div className="rt">
+           <span className="shown">{view.shown} of {view.total} tasks</span>
+           <span className="nt">
+@@ -804,7 +907,7 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
+       <div className="lanes" role="tablist" aria-label="Lanes">
+         {view.columns.map((col) => (
+           <button key={col.id} role="tab" data-lane={col.id} aria-selected={col.id === shownLane} title={col.name} onClick={() => setPhoneLane(col.id)}>
+-            <span className="g" /><span className="c">{col.count}</span><span className="nm">{col.name}</span>
++            <RoleGlyph role={col.role} /><span className="c">{col.count}</span><span className="nm">{col.name}</span>
+           </button>
+         ))}
+       </div>
+@@ -816,14 +919,14 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
+           const colCls = ["col", col.id === shownLane && "on", target && target.kind !== "here" && target.kind, lift?.over === col.id && target?.kind !== "here" && "over"].filter(Boolean).join(" ");
+           return (
+             <section key={col.id} className={colCls} data-lane={col.id}>
+-              <h2><span className="g" /><span className="nm" title={col.name}>{col.name}</span><span className="c">{col.count}</span>
++              <h2><RoleGlyph role={col.role} /><span className="nm" title={col.name}>{col.name}</span><span className="c">{col.count}</span>
+                 {inChain > 0 && <span className="cc" title={`${inChain} of this column's tasks are in the hovered task's chain`}>⛓{inChain}</span>}
+                 {target && target.kind !== "here" && (
+                   <span className="hint">{target.kind === "ok" ? "drop" : target.kind === "guard" ? `guarded · ${target.skill || "refused"}` : "no transition"}</span>
+                 )}
+               </h2>
+               {target?.kind === "guard" && <div className="why"><Reason text={target.reason} /></div>}
+-              {col.id === "waiting" && !lift && <HeldBy holders={blockers} open={(id) => setOpen(id)} hover={setHovered} />}
++              {col.id === heldLane && !lift && <HeldBy holders={blockers} open={(id) => setOpen(id)} hover={setHovered} />}
+               <Viewport className="body">
+                 {col.buckets.length === 0 && <div className="empty">no tasks</div>}
+                 {col.buckets.map((b) => (
+@@ -833,7 +936,7 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
+                       <span className="tw">▾</span><span className="bn">{milestoneName(b.milestone)}</span><span className="c">{b.tasks.length}</span>
+                       <button className="hide" title="Hide this milestone" onClick={(e) => { e.stopPropagation(); setPrefs((p) => hideMilestone(p, b.milestone)); }}>hide</button>
+                     </div>
+-                    {!b.folded && (STACKED.includes(col.id)
++                    {!b.folded && (col.stack
+                       ? b.stacks.map((s) => {
+                         const at = row++;
+                         return <ViewportRow key={s.top.id} initial={at < 12} estimate={96} force={s.members.some((t) => t.id === spot)}>
+diff --git a/starpulse/web/src/features/kanban/Leaderboard.tsx b/starpulse/web/src/features/kanban/Leaderboard.tsx
+index db9fec7f..44d4b9dd 100644
+--- a/starpulse/web/src/features/kanban/Leaderboard.tsx
++++ b/starpulse/web/src/features/kanban/Leaderboard.tsx
+@@ -1,5 +1,6 @@
+ import type { KanbanTask } from "./kanbanModel";
+ import { age, leaderboard } from "./leaderboardModel";
++import { labelOf, viewColumns } from "./viewColumns";
+ 
+ /**
+  * The Star Map navigator's Leaderboard: for each open status, the workable tasks that have been workable longest, each a row
+@@ -7,7 +8,8 @@ import { age, leaderboard } from "./leaderboardModel";
+  * Nothing is drawn while no task is workable.
+  */
+ export function Leaderboard({ tasks, now, open }: { tasks: KanbanTask[]; now: number; open: (id: string) => void }) {
+-  const groups = leaderboard(tasks, now);
++  const v = viewColumns.get();
++  const groups = leaderboard(tasks, now, Object.fromEntries(v.columns.map((c) => [c.id, labelOf(v, c.id)])));
+   if (!groups.length) return null;
+   return (
+     <section className="away leaderboard">
+diff --git a/starpulse/web/src/features/kanban/kanbanModel.ts b/starpulse/web/src/features/kanban/kanbanModel.ts
+index 70100b4d..9d84d483 100644
+--- a/starpulse/web/src/features/kanban/kanbanModel.ts
++++ b/starpulse/web/src/features/kanban/kanbanModel.ts
+@@ -176,6 +176,10 @@ export interface Column {
+   /** Visible tasks, those inside a folded bucket included. */
+   count: number;
+   buckets: Bucket[];
++  /** The state's UL role: what its glyph draws and whether its tasks stack. */
++  role: string | null;
++  /** How its tasks stack: under their first blocker, under the task that depends on them, or not at all. */
++  stack: "waiting" | "done" | null;
+ }
+ export interface Layout {
+   columns: Column[];
+@@ -203,6 +207,10 @@ const byId = (a: string, b: string) => a.localeCompare(b, undefined, { numeric:
+ /** The lanes whose tasks fold into stacks. */
+ export const STACKED = ["waiting", "done"];
+ 
++/** How a column stacks, by its state's role: a final state folds each chain under its last finished, a state waiting on a fact under the first blocker. A machine with no roles keeps the id rule. */
++export const stackingOf = (id: string, role: string | null): Column["stack"] =>
++  role ? (role === "final" ? "done" : role === "waiting_on_fact" ? "waiting" : null) : STACKED.includes(id) ? (id as "waiting" | "done") : null;
++
+ /**
+  * A bucket's tasks of one lane as stacks. A Waiting task folds under its first blocker: of its Waiting dependencies in the bucket, the one
+  * that unblocks first (lowest chain depth, then id). A Done task folds the other way, under the Done task that depends on it, so the chain's
+@@ -263,19 +271,19 @@ export const unstacked = (s: StackOpen) => s.hover || s.focus;
+ export const stackOf = (l: Layout, id: string): Stack | undefined =>
+   l.columns.flatMap((c) => c.buckets).flatMap((b) => b.stacks).find((s) => s.members.length > 1 && s.members.some((t) => t.id === id));
+ 
+-export function layout(tasks: KanbanTask[], names: Record<string, string>, prefs: Prefs, now: number): Layout {
+-  const lanes = columnsOf(names);
++export function layout(tasks: KanbanTask[], names: Record<string, string>, prefs: Prefs, now: number, roles: Record<string, string | null> = {}, lanes = columnsOf(names)): Layout {
+   const drawn = recent(tasks, now).filter((t) => lanes.includes(t.lane));
+   const visible = drawn.filter(
+ (t) => !prefs.hiddenTasks.has(t.id) && !prefs.hiddenMilestones.has(t.milestone) && filtered(t, prefs));
+   const columns = lanes.map((id): Column => {
+     const here = visible.filter((t) => t.lane === id).sort((a, b) => b.entered - a.entered || b.id.localeCompare(a.id, undefined, { numeric: true }));
++    const stack = stackingOf(id, roles[id] ?? null);
+     const keys = [...new Set(here.map((t) => t.milestone))].sort((a, b) => milestoneNumber(b) - milestoneNumber(a));
+     const buckets = keys.map((milestone): Bucket => {
+       const inBucket = here.filter((t) => t.milestone === milestone);
+-      return { milestone, tasks: inBucket, stacks: STACKED.includes(id) ? stacksOf(inBucket, id) : [], folded: prefs.folded.has(milestone) };
++      return { milestone, tasks: inBucket, stacks: stack ? stacksOf(inBucket, stack) : [], folded: prefs.folded.has(milestone) };
+     });
+-    return { id, name: names[id] ?? id, count: here.length, buckets };
++    return { id, name: names[id] ?? id, count: here.length, buckets, role: roles[id] ?? null, stack };
+   });
+   const done = columns.find((c) => c.id === "done")?.count ?? 0;
+   return {
+@@ -285,9 +293,10 @@ export function layout(tasks: KanbanTask[], names: Record<string, string>, prefs
+ }
+ 
+ /** Why task `id` has no card in view: Done before today, hidden, its milestone hidden, filtered out or folded away; null when its card is drawn. */
+-export function whyHidden(tasks: KanbanTask[], names: Record<string, string>, prefs: Prefs, id: string, now: number): string | null {
++export function whyHidden(tasks: KanbanTask[], names: Record<string, string>, prefs: Prefs, id: string, now: number, shown = columnsOf(names)): string | null {
+   const t = tasks.find((x) => x.id === id);
+   if (!t || !columnsOf(names).includes(t.lane)) return "not on the board";
++  if (!shown.includes(t.lane)) return `its column, ${names[t.lane] ?? t.lane}, is hidden`;
+   if (!recent([t], now).length) return "Done before today";
+   if (prefs.hiddenTasks.has(id)) return "hidden";
+   if (prefs.hiddenMilestones.has(t.milestone)) return "its milestone is hidden";
+diff --git a/starpulse/web/src/features/kanban/leaderboardModel.ts b/starpulse/web/src/features/kanban/leaderboardModel.ts
+index 9d88f9bc..4b108b9a 100644
+--- a/starpulse/web/src/features/kanban/leaderboardModel.ts
++++ b/starpulse/web/src/features/kanban/leaderboardModel.ts
+@@ -19,10 +19,11 @@ const number = (id: string) => Number(/(\d+)$/.exec(id)?.[1] ?? 0);
+ /**
+  * The workable tasks of each open status, longest since `workableSince` first, the longest three kept. A task that is not
+  * workable never shows, only counts in its status's `held`; a status with no workable task is left out. Every bar is sized
+- * against the longest age shown, so the groups compare with each other.
++ * against the longest age shown, so the groups compare with each other. A status the viewer relabeled reads `labels`' name.
+  */
+-export function leaderboard(tasks: KanbanTask[], now: number): LeaderGroup[] {
+-  const groups = STATUSES.map(([status, label]) => {
++export function leaderboard(tasks: KanbanTask[], now: number, labels: Record<string, string | null> = {}): LeaderGroup[] {
++  const groups = STATUSES.map(([status, own]) => {
++    const label = labels[status] ?? own;
+     const open = tasks.filter((t) => t.lane === status);
+     const ranked = open.filter((t) => t.workableSince !== null)
+       .map((t) => ({ id: t.id, title: t.title, seconds: Math.max(0, now - t.workableSince!), width: 0 }))
+diff --git a/starpulse/web/src/features/kanban/viewColumns.ts b/starpulse/web/src/features/kanban/viewColumns.ts
+new file mode 100644
+index 00000000..099efe6c
+--- /dev/null
++++ b/starpulse/web/src/features/kanban/viewColumns.ts
+@@ -0,0 +1,109 @@
++import { apiFetch } from "../../api/apiFetch";
++import type { Machine } from "../../api";
++
++/** The viewer's own choice for one board state: a label in place of the machine's name, and whether its column is drawn. */
++export interface ColumnPref {
++  id: string;
++  label: string | null;
++  hidden: boolean;
++}
++/** What serve stores for the install's one viewer (GET/PUT /api/views/columns): one row per state changed, and the column order when moved. */
++export interface ViewColumns {
++  columns: ColumnPref[];
++  order: string[];
++}
++export type Saving = { state: "idle" | "saving" | "saved" } | { state: "refused"; reason: string; id?: string } | { state: "offline" };
++
++export const NONE: ViewColumns = { columns: [], order: [] };
++export const LABEL_MAX = 40;
++
++const prefOf = (v: ViewColumns, id: string): ColumnPref => v.columns.find((c) => c.id === id) ?? { id, label: null, hidden: false };
++export const labelOf = (v: ViewColumns, id: string): string | null => prefOf(v, id).label;
++export const hiddenOf = (v: ViewColumns, id: string): boolean => prefOf(v, id).hidden;
++
++/** `v` with `id`'s row changed; a row back at the machine's name and drawn is dropped, so an unchanged state stores nothing. */
++export function withPref(v: ViewColumns, id: string, change: Partial<Omit<ColumnPref, "id">>): ViewColumns {
++  const next = { ...prefOf(v, id), ...change };
++  const label = next.label?.trim() ? next.label : null;
++  const rows = v.columns.filter((c) => c.id !== id);
++  return { ...v, columns: label === null && !next.hidden ? rows : [...rows, { id, label, hidden: next.hidden }] };
++}
++
++/** The board's columns in the viewer's order: a state the order does not name keeps the machine's place after the ones it does. */
++export const ordered = (v: ViewColumns, ids: string[]): string[] => [...v.order.filter((id) => ids.includes(id)), ...ids.filter((id) => !v.order.includes(id))];
++/** The columns drawn: in the viewer's order, less the hidden ones. */
++export const arranged = (v: ViewColumns, ids: string[]): string[] => ordered(v, ids).filter((id) => !hiddenOf(v, id));
++/** `ids` with `id` moved by `by` places. */
++export const moved = (ids: string[], id: string, by: number): string[] => {
++  const at = ids.indexOf(id), to = Math.max(0, Math.min(ids.length - 1, at + by)), next = ids.filter((x) => x !== id);
++  next.splice(to, 0, id);
++  return next;
++};
++/** How many columns differ from the machine: relabeled, hidden or out of the machine's order. */
++export function changed(v: ViewColumns, ids: string[]): number {
++  const order = ordered(v, ids);
++  return ids.filter((id, i) => labelOf(v, id) !== null || hiddenOf(v, id) || order[i] !== id).length;
++}
++
++/** The machine with each state's name overlaid by the viewer's label: every name the page draws reads it, while writes keep the state id. */
++export function relabel(machine: Machine, v: ViewColumns): Machine {
++  if (!v.columns.some((c) => c.label)) return machine;
++  return { ...machine, states: machine.states.map((s) => ({ ...s, name: labelOf(v, s.id) ?? s.name })) };
++}
++
++const send = (url: string, init?: RequestInit): Promise<Response> =>
++  ((globalThis as { __MOCK_FETCH__?: typeof apiFetch }).__MOCK_FETCH__ ?? apiFetch)(url, init);
++
++/** The page's one copy of the viewer's columns: drawn at once on a change, saved after a pause in typing. */
++class ViewColumnsStore {
++  private v: ViewColumns = NONE;
++  /** What serve last accepted: a refused save draws this again, so a label serve would not keep never reaches the page. */
++  private kept: ViewColumns = NONE;
++  private s: Saving = { state: "idle" };
++  private fns = new Set<() => void>();
++  private timer = 0;
++  get = () => this.v;
++  saving = () => this.s;
++  subscribe = (fn: () => void) => {
++    this.fns.add(fn);
++    return () => void this.fns.delete(fn);
++  };
++  private emit() {
++    for (const fn of this.fns) fn();
++  }
++  load = async () => {
++    const res = await send("/api/views/columns").catch(() => null);
++    if (res?.ok) {
++      this.v = this.kept = (await res.json()) as ViewColumns;
++      this.emit();
++    }
++  };
++  set = (next: ViewColumns, wait = 600) => {
++    this.v = next;
++    this.s = { state: "saving" };
++    this.emit();
++    clearTimeout(this.timer);
++    this.timer = window.setTimeout(() => void this.save(), wait);
++  };
++  flush = () => {
++    if (this.s.state !== "saving") return;
++    clearTimeout(this.timer);
++    void this.save();
++  };
++  save = async () => {
++    const sent = this.v;
++    const res = await send("/api/views/columns", { method: "PUT", body: JSON.stringify(sent) }).catch(() => null);
++    if (!res) this.s = { state: "offline" };
++    else if (res.ok) {
++      this.kept = sent;
++      this.s = { state: "saved" };
++    } else {
++      const body = (await res.json().catch(() => ({}))) as { error?: string; id?: string };
++      this.v = this.kept;
++      this.s = { state: "refused", reason: body.error ?? `serve refused the save (${res.status})`, id: body.id };
++    }
++    this.emit();
++  };
++}
++
++export const viewColumns = new ViewColumnsStore();
+diff --git a/starpulse/web/src/render/hud.ts b/starpulse/web/src/render/hud.ts
+index b45b96b3..7f903e18 100644
+--- a/starpulse/web/src/render/hud.ts
++++ b/starpulse/web/src/render/hud.ts
+@@ -27,6 +27,8 @@ export interface BoardState {
+   id: string;
+   name: string;
+   count: number;
++  /** The state's UL role, which its column's glyph and stacking follow. */
++  role?: string | null;
+ }
+ export interface HudState {
+   stats: string;
+@@ -57,6 +59,8 @@ export interface HudState {
+   /** How many tasks each milestone has completed, which the Kanban's milestone outline still counts. */
+   milestoneDone: Record<string, number>;
+   names: Record<string, string>;
++  /** Each state's name in the machine, under the viewer's label: what Columns resets to. */
++  machineNames: Record<string, string>;
+   /** Each task's latest refused claim, which returns a card the view started a session for. */
+   claims: Record<string, { reason: string; at: number }>;
+   /** The Backlog board a task links into. */
+@@ -70,7 +74,7 @@ export interface HudState {
+ export class HudStore {
+   private state: HudState = {
+     stats: "reading machine events…", live: "", path: BOARD, tree: null, states: [], counts: {}, hostCounts: {}, dags: [], dagData: null,
+-    moving: [], pools: [], feed: [], cards: [], milestoneDone: {}, names: {}, claims: {}, boardUrl: null,
++    moving: [], pools: [], feed: [], cards: [], milestoneDone: {}, names: {}, machineNames: {}, claims: {}, boardUrl: null,
+   };
+   private listeners = new Set<() => void>();
+ 
+diff --git a/starpulse/web/src/render/renderer.ts b/starpulse/web/src/render/renderer.ts
+index eacf5987..e56ae27c 100644
+--- a/starpulse/web/src/render/renderer.ts
++++ b/starpulse/web/src/render/renderer.ts
+@@ -41,6 +41,7 @@ import { hostRun, laneRun, machineRun, subjectOf, traceCard, traceTable, type Ru
+ import { boardTies, hangarLevel, tieLedger, type Ties } from "./dagTies";
+ import { pivotTip, tieTip } from "./dagTieTips";
+ import type { Dag, Delta, LedgerRow, Machine, RawTask, Snapshot, Writer } from "../api";
++import { relabel, viewColumns } from "../features/kanban/viewColumns";
+ import { fanTip, stepStatus } from "../features/fanout/fanoutModel";
+ import { esc, fanList, queueCell, startRun, taskLink, taskPanel } from "./panels";
+ import { emptyFan, fanRows, queueRow, stepRuns, track, type Fan } from "../features/fanout/fan";
+@@ -438,6 +439,9 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+     build: onBuild,
+     scheduler: pushSchedulerStatus,
+   };
++  // a relabel redraws every name the page shows: the Kanban, the task view, the Star Map
++  viewColumns.subscribe(() => { if (snap && !stopped) apply(snap); });
++  void viewColumns.load();
+   const demoTick = () => {
+     if (stopped || !snap || !demoWalk) return;
+     apply(demoWalk.step(snap));
+@@ -447,7 +451,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+     const first = !S;
+     snap = next;
+     T = Date.now() / 1000;
+-    S = { ...merge(next), ledgers: ledgerRows };
++    S = { ...merge({ ...next, flows: next.flows.map((f) => (f.name === "board" ? { ...f, machine: relabel(f.machine, viewColumns.get()) } : f)) }), ledgers: ledgerRows };
+     for (const d of S.dags) fans[d.name] = track(fans[d.name] ?? emptyFan(), d, T);
+     moves.observe(S, T);
+     if (first) runEvents.resync(); // the runs already in flight when the page opens are not announced as new
+@@ -528,7 +532,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+       path,
+       tree: sky.tree,
+       stats: sky.error ? `live · ${at} MST · ${sky.error}` : `live · ${at} MST`,
+-      states: board.machine.states.map((s) => ({ id: s.id, name: s.name, count: stateCount(sky, s.id) })),
++      states: board.machine.states.map((s) => ({ id: s.id, name: s.name, count: stateCount(sky, s.id), role: s.role ?? null })),
+       counts: Object.fromEntries(Object.values(sky.flows).map((f) => [f.name, f.agents.length])),
+       hostCounts: Object.fromEntries(Object.entries(sky.tree.subs).flatMap(([state, flows]) => flows.map((f) => [`${state}/${f}`, hosted(sky, f, state).length]))),
+       dags: sky.dags.map((d) => d.name),
+@@ -536,6 +540,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+       pools: sky.pools,
+       milestoneDone: sky.milestoneDone,
+       names: Object.fromEntries(board.machine.states.map((s) => [s.id, s.name])),
++      machineNames: Object.fromEntries((snap?.flows.find((f) => f.name === "board")?.machine.states ?? []).map((s) => [s.id, s.name])),
+       claims: sky.claims,
+       boardUrl: sky.boardUrl,
+       capabilities: sky.capabilities,
+diff --git a/starpulse/web/src/style.css b/starpulse/web/src/style.css
+index 50e5ae44..badfb1b9 100644
+--- a/starpulse/web/src/style.css
++++ b/starpulse/web/src/style.css
+@@ -219,6 +219,39 @@ aside h3 { margin: 0 0 8px; font-size: calc(10px * var(--fs)); font-weight: 500;
+ :is(#kb, #nav, #dg) .menu button span { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+ :is(#kb, #nav, #dg) .menu em.tt { font-style: normal; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
+ :is(#kb, #nav, #dg) .menu button.all { border-top: 1px solid color-mix(in srgb, var(--slate) 12%, transparent); margin-top: 4px; padding-top: 7px; border-radius: 0 0 5px 5px; color: var(--agent-text); }
++/* The Columns menu: one row per board state to rename, hide or drag into the viewer's order; serve keeps the choice for this install. */
++#kb .menu.cols { width: min(420px, calc(100vw - 2 * var(--pm, 16px))); max-height: min(70vh, 560px); display: flex; flex-direction: column; overflow: hidden; }
++#kb .menu.cols .hd { display: flex; align-items: center; }
++#kb .menu.cols :is(.hd .x, .grab) { display: none; }
++#kb .menu.cols ol { list-style: none; margin: 0; padding: 0; overflow-y: auto; min-height: 0; }
++#kb .menu.cols li { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto auto; align-items: center; gap: 6px; padding: 4px 4px; border-radius: 5px; border-block: 1px solid transparent; }
++#kb .menu.cols li.off :is(input, .rg) { opacity: .45; }
++#kb .menu.cols li.lifted { background: color-mix(in srgb, var(--agent) 12%, transparent); }
++#kb .menu.cols li.before { border-top-color: var(--agent); }
++#kb .menu.cols li.after { border-bottom-color: var(--agent); }
++#kb .menu.cols li > button { width: auto; padding: 3px 6px; color: var(--muted); }
++#kb .menu.cols li > button:disabled { opacity: .35; }
++#kb .menu.cols .hdl { touch-action: none; letter-spacing: -.2em; }
++#kb .menu.cols .vis[aria-pressed=true] { color: var(--hold-text); }
++#kb .menu.cols .lb { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
++#kb .menu.cols input { all: unset; box-sizing: border-box; width: 100%; padding: 4px 7px; border-radius: 5px; border: 1px solid color-mix(in srgb, var(--slate) 18%, transparent); background: var(--field);
++  font-size: calc(12px * var(--fs)); color: var(--ink); }
++#kb .menu.cols input::placeholder { color: var(--muted); }
++#kb .menu.cols input:focus { border-color: var(--agent); }
++#kb .menu.cols input[aria-invalid=true] { border-color: var(--fail); }
++#kb .menu.cols .was { font-size: calc(10px * var(--fs)); color: var(--muted); }
++#kb .menu.cols .why { font-size: calc(10.5px * var(--fs)); color: var(--fail-text); }
++#kb .menu.cols .ft { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; padding: 7px 4px 2px; border-top: 1px solid color-mix(in srgb, var(--slate) 12%, transparent); }
++#kb .menu.cols .ft > button { width: auto; border: 1px solid color-mix(in srgb, var(--slate) 18%, transparent); font-size: calc(11px * var(--fs)); }
++#kb .menu.cols .st { margin-left: auto; font-size: calc(10.5px * var(--fs)); color: var(--muted); }
++#kb .menu.cols .st.saved { color: var(--ok-text); } #kb .menu.cols .st.refused { color: var(--fail-text); } #kb .menu.cols .st.offline { color: var(--run-text); }
++#kb .menu.cols .st .retry { display: inline; width: auto; padding: 0; margin-left: 4px; color: var(--agent-text); text-decoration: underline; font-size: inherit; }
++#kb .menu.cols .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
++/* A state's role mark: its shape and hue say how the board treats the column (start, at rest, waiting on a fact or a person, done); hover names it. */
++#kb .rg { --rc: var(--faint); flex: none; width: calc(10px * var(--fs)); height: calc(10px * var(--fs)); align-self: center; fill: none; stroke: var(--rc); stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
++#kb .rg .f { fill: var(--rc); stroke: none; }
++#kb .rg[data-role=initial] { --rc: var(--ready); } #kb .rg[data-role=resting] { --rc: var(--run); } #kb .rg[data-role=waiting_on_fact] { --rc: var(--waits); }
++#kb .rg[data-role=waiting_on_person] { --rc: var(--fail); } #kb .rg[data-role=final] { --rc: var(--ok); }
+ 
+ #kb #cols { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(var(--cols, 6), minmax(0, 1fr)); gap: 10px; padding-bottom: 16px; }
+ #kb .col { min-height: 0; display: flex; flex-direction: column; border-radius: 10px; background: color-mix(in srgb, var(--slate) 3.5%, transparent); border: 1px solid color-mix(in srgb, var(--slate) 8%, transparent); }
+@@ -989,6 +1022,14 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
+   /* the Move to menu is how a card changes lane here: it hangs from the whole header, so it stays inside the viewport wherever the actions wrap to */
+   #kbm .modal.tv:not(.dgm) .tvhead { position: relative; }
+   #kbm .modal.tv:not(.dgm) .tvhead .mv { position: static; }
++  /* the Columns menu opens as a sheet from the bottom edge, over the bar, with a grab pill and a Done button; its rows take a thumb */
++  #kb .scrim.cols { z-index: 40; background: color-mix(in srgb, var(--scrim) 55%, transparent); }
++  #kb .menu.cols { position: fixed; top: auto; left: 0; right: 0; bottom: 0; width: 100vw; max-width: 100vw; max-height: 70dvh; border-radius: 12px 12px 0 0; z-index: 41;
++    padding-bottom: calc(8px + env(safe-area-inset-bottom)); }
++  #kb .menu.cols .grab { display: block; width: 36px; height: 4px; margin: 4px auto 2px; border-radius: 2px; background: color-mix(in srgb, var(--slate) 35%, transparent); }
++  #kb .menu.cols .hd .x { display: block; margin-left: auto; color: var(--agent-text); text-transform: none; letter-spacing: 0; }
++  #kb .menu.cols li { padding-block: 8px; }
++  #kb .menu.cols li > button, #kb .menu.cols .ft button { padding: 8px; }
+   #kbm .modal.tv:not(.dgm) .tvhead .mvmenu { left: 14px; right: 14px; min-width: 0; }
+ 
+   /* The Start session dialog keeps the page's side margins and may take the screen's height; its padding, grid gap and choice buttons tighten so the Tier choices fit beside their label at the largest text size, and its three answers wrap onto more rows instead of running past the screen. */
