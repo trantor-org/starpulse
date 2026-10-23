@@ -5,7 +5,7 @@ with no History yet is seeded with a `TaskImported` of its record before the wri
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
 from sqlalchemy import Engine
@@ -184,6 +184,16 @@ class TaskHistory:
 
         return run
 
+    def import_retired(self, rows: Iterable[tuple[str, str]], parse: Callable[[str], Record]) -> None:
+        """Give each retired `(task, text)` row without History its `TaskImported` of `parse(text)` and an `Archived`."""
+        store = self._store
+        if store is None:
+            return
+        for task, text in rows:
+            if store.head(KIND, task) == 0:
+                events = [self._new("TaskImported", _seed(parse(text), 0.0), OPERATOR), self._new("Archived", {}, OPERATOR)]
+                store.append(KIND, task, 0, events)
+
     def _append(self, task: str, before: Record | None, after: Record | None, actor: str, note: str) -> None:
         store = self._store
         if store is None:
@@ -191,6 +201,8 @@ class TaskHistory:
         events = _events(before or {}, after, note)
         for _ in range(2):
             head = store.head(KIND, task)
+            if after is None and head and store.read(KIND, task, head - 1)[-1].type == "Archived":
+                return  # retiring an archived task leaves the board no more than it already has
             base = before if before is not None else after
             seeded = [("TaskImported", _seed(base, 0.0))] if head == 0 and base else []
             if not events and not seeded:
