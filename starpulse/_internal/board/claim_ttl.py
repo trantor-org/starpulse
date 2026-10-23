@@ -8,8 +8,9 @@ from __future__ import annotations
 import json
 import threading
 import time
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from datetime import UTC, datetime
+from functools import partial
 from typing import TYPE_CHECKING, Any
 
 from starpulse._internal.board.seam import Board
@@ -45,8 +46,13 @@ def sweep(
     *,
     ttl: float = DEFAULT_TTL,
     now: float | None = None,
+    activity: Callable[[str], float | None] = lambda _session: None,
 ) -> list[str]:
-    """Releases each working Task in `rows` whose Assignee renewed nothing for `ttl`; the ids released."""
+    """Releases each working Task in `rows` whose Assignee renewed nothing for `ttl`; the ids released.
+
+    `activity` is when a session last acted outside the Task's stream, such as a harness event of its run: a session
+    working in its worktree renews its claim that way without a Task Event.
+    """
     now = time.time() if now is None else now
     working, resting = board.roles.working, board.roles.ready or board.roles.initial
     if board.release is None or not (working and resting):
@@ -56,7 +62,8 @@ def sweep(
         session = row.get("assignee") or ""
         if not session or lane_id(row.get("state") or "") != working:
             continue
-        renewed = last_renewal(store.read("task", row["id"]), session)
+        renewals = (last_renewal(store.read("task", row["id"]), session), activity(session))
+        renewed = max((at for at in renewals if at is not None), default=None)
         if renewed is None or now - renewed < ttl:
             continue
         if board.release(row["id"], resting, actor=ACTOR).ok:
@@ -69,16 +76,18 @@ def sweep(
     return released
 
 
-def start(board: Board, log: "EventLog", settings: Mapping[str, Any]) -> None:
+def start(board: Board, log: EventLog, settings: Mapping[str, Any]) -> None:
     """Sweeps on a daemon thread every sixth of the TTL, at most every minute, for `[board] claim_ttl` seconds."""
+    from starpulse._internal.eventlog.history import last_run_event  # noqa: PLC0415 — keeps the board's import light
     from starpulse._internal.readmodel.read_model import ReadModel  # noqa: PLC0415 — keeps the board's import light
 
     ttl = float(settings.get("claim_ttl", DEFAULT_TTL))
     store, model = EventStore(log.engine), ReadModel(log.engine)
+    activity = partial(last_run_event, log.engine)
 
     def run() -> None:
         while True:
             time.sleep(min(60.0, ttl / 6))
-            sweep(board, store, model.snapshot(), ttl=ttl)
+            sweep(board, store, model.snapshot(), ttl=ttl, activity=activity)
 
     threading.Thread(target=run, name="claim-ttl", daemon=True).start()
