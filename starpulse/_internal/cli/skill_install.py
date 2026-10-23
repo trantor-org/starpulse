@@ -16,8 +16,6 @@ from pathlib import Path
 
 import yaml
 
-from starpulse._internal.machines.machine_definition import Registry, load_machine, role_of
-
 SOURCE = Path(__file__).parents[2] / "skills"
 #: Each harness's documented discovery path, relative to a project or the home directory.
 HARNESS_DIRS = {"claude": ".claude/skills", "codex": ".agents/skills"}
@@ -53,6 +51,9 @@ class _EveryNameRegistered(dict):
 
 def _check_machines(source: Path) -> None:
     """Refuse the bundle when a skill names a missing machine or a machine has a State that declares no role."""
+    # imported here: a read verb loads this module and must not pull in the state machine library
+    from starpulse._internal.machines.machine_definition import Registry, load_machine, role_of
+
     for name in names(source):
         file = machine_of(name, source)
         if file is None:

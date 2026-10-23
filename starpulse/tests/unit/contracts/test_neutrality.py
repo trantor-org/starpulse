@@ -1,11 +1,11 @@
-"""The public package names no workflow runner: only its Dagu adapter module, the table of built-in adapters, the opt-in worker that runs it (and tests) may say `dagu`."""
+"""The public package names no workflow runner: only its Dagu adapter module, the table of built-in adapters, the opt-in worker that runs it and the Adapters (and tests) may say `dagu`."""
 
 import re
 from pathlib import Path
 
 PACKAGE = next(root for root in Path(__file__).resolve().parents if (root / "board.py").is_file())
 RUNNER = re.compile(r"\bdagu\b", re.IGNORECASE)
-ADAPTER = {"dagu.py", "dagu_worker.py"}
+ADAPTER = {"dagu.py", "adapter_worker.py"}
 #: The adapter table and the worker dispatcher, which names the `dagu` context it launches.
 SEAMS = (("_internal", "config", "adapter_types.py"), ("_internal", "server", "worker.py"))
 

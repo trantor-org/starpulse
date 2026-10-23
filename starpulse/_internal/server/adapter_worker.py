@@ -1,10 +1,11 @@
-"""`starpulse worker dagu`: the Dagu Adapter as its own process, which an operator opts into and `serve` never starts.
+"""`starpulse worker <dagu|github-actions|systemd>`: a run Adapter as its own process, which an operator opts into and `serve` never starts.
 
 It follows each `[[runs]]` instance whose adapter names this worker (`starpulse._internal.runs.opt_in`) and keeps the
-workflows it reports in the event log (`starpulse._internal.runs.projection`), where `serve` reads them for the page. Dagu
-pushes each run's start and end to the ingest through its handlers; this worker reads the rest from Dagu. It beats into
-the log while it runs, so `serve` shows the page an instance whose worker stopped. `SIGTERM` stops it; `SIGHUP` re-reads
-the config and, as the adapters are built once, only says whether a restart is needed.
+workflows it reports in the event log (`starpulse._internal.runs.projection`), where `serve` reads them for the page.
+A source that offers its own push (Dagu's handlers, GitHub's `workflow_run` webhook) pushes through the ingest; this
+worker reads the rest from the source. It beats into the log while it runs, so `serve` shows the page an instance whose
+worker stopped. `SIGTERM` stops it; `SIGHUP` re-reads the config and, as the adapters are built once, only says whether
+a restart is needed.
 """
 
 from __future__ import annotations
@@ -23,10 +24,7 @@ from starpulse._internal.server.hold import hold
 from starpulse._internal.server.runs_worker import reload
 from starpulse._internal.server.server import run_adapters
 
-CONTEXT = "dagu"
-
-
-def main(argv: list[str] | None, parser: argparse.ArgumentParser) -> None:
+def main(argv: list[str] | None, parser: argparse.ArgumentParser, context: str) -> None:
     args = parser.parse_args(argv)
     path = discover(args.config)
     try:
@@ -34,11 +32,11 @@ def main(argv: list[str] | None, parser: argparse.ArgumentParser) -> None:
     except (OSError, ValueError) as exc:
         parser.exit(1, f"{path}: {exc}\n")
     base = args.config.parent if args.config else Path.cwd()
-    adapters = opt_in.followed_by(run_adapters(parser, config), CONTEXT)
+    adapters = opt_in.followed_by(run_adapters(parser, config), context)
     log = EventLog(database_url(config.database_url, base))
     stop = threading.Event()
     try:
-        _, feed = worker_board(config, base, log, "starpulse-dagu", stop)
+        _, feed = worker_board(config, base, log, f"starpulse-{context}", stop)
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")
     publisher = Publisher(log)

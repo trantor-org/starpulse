@@ -1,4 +1,4 @@
-"""`starpulse worker dagu` is the Dagu Adapter as an opt-in process: `serve` starts none of it, and the page shows when it is down."""
+"""`starpulse worker <dagu|github-actions|systemd>` is each run Adapter as an opt-in process: `serve` starts none of it, and the page shows when it is down."""
 
 import threading
 import time
@@ -10,23 +10,27 @@ import pytest
 from starpulse._internal.config.config import load
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.runs import opt_in, projection
-from starpulse._internal.server import dagu_worker, runs_worker, server, supervisor, worker
+from starpulse._internal.runs import dagu, github_actions, systemd
+from starpulse._internal.server import adapter_worker, runs_worker, server, supervisor, worker
 from starpulse.tests import fake_board
 
 BOARD = '[board]\ntype = "starpulse.tests.fake_board"\nlanes = ["waiting", "ready", "done"]\nwrites = true\n'
-RUNS = '[[runs]]\nname = "dagu"\ntype = "dagu"\nurl = "http://dagu.invalid"\n'
-CONFIG = RUNS + BOARD
+WORKERS = {"dagu": "dagu", "github_actions": "github-actions", "systemd": "systemd"}
+ADAPTERS = {"dagu": dagu, "github_actions": github_actions, "systemd": systemd}
+
+
+def config_of(kind: str) -> str:
+    return f'[[runs]]\nname = "{kind}"\ntype = "{kind}"\nurl = "http://adapter.invalid"\n' + BOARD
 DAGS = [{"name": "ci", "status": "success", "runId": "1", "startedAt": "", "finishedAt": "", "steps": []}]
 WAIT_S = 5.0
 NOW = 1_700_000_000.0
 
 
-class Dagu:
-    """The adapter module `runs_adapter` resolves for `dagu`: it names the worker that runs it and reports one workflow."""
+class Adapter:
+    """The adapter module `runs_adapter` resolves: it names the worker that runs it and reports one workflow."""
 
-    WORKER = "dagu"
-
-    def __init__(self) -> None:
+    def __init__(self, worker: str) -> None:
+        self.WORKER = worker
         self.followed: list[str] = []
 
     def follow(self, url: str, sink: object, log: object) -> None:
@@ -58,9 +62,14 @@ def log(tmp_path: Path) -> EventLog:
     return EventLog(f"sqlite:///{(tmp_path / 'starpulse-history.sqlite').resolve()}")
 
 
+@pytest.fixture(params=sorted(WORKERS))
+def kind(request: pytest.FixtureRequest) -> str:
+    return request.param
+
+
 @pytest.fixture
-def dagu() -> Dagu:
-    return Dagu()
+def adapter(kind: str) -> Adapter:
+    return Adapter(WORKERS[kind])
 
 
 @pytest.fixture
@@ -69,16 +78,18 @@ def held() -> list[threading.Event]:
 
 
 @pytest.fixture
-def run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, dagu: Dagu, held: list[threading.Event], log: EventLog):
-    """`worker.main` of a context on the config, holding returns at once."""
+def run(
+    kind: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, adapter: Adapter, held: list[threading.Event], log: EventLog
+):
+    """`worker.main` of a context on the config of `kind`, holding returns at once."""
     monkeypatch.setattr(fake_board, "BUILT", [])
-    monkeypatch.setattr(server, "runs_adapter", lambda kind: dagu)
+    monkeypatch.setattr(server, "runs_adapter", lambda _kind: adapter)
     monkeypatch.setattr(runs_worker, "hold", lambda stop, reload: held.append(stop))
-    monkeypatch.setattr(dagu_worker, "hold", lambda stop, reload: held.append(stop))
+    monkeypatch.setattr(adapter_worker, "hold", lambda stop, reload: held.append(stop))
 
     def start(context: str) -> None:
         config = tmp_path / "starpulse.toml"
-        config.write_text(CONFIG)
+        config.write_text(config_of(kind))
         worker.main([context, "--config", str(config)])
 
     yield start
@@ -86,33 +97,42 @@ def run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, dagu: Dagu, held: list[
         stop.set()
 
 
-def test_serve_supervises_no_dagu_worker(tmp_path: Path) -> None:
+@pytest.mark.parametrize("module", ADAPTERS.items())
+def test_each_shipped_adapter_names_its_opt_in_worker(module: tuple) -> None:
+    kind, adapter = module
+
+    assert opt_in.worker_of(adapter) == WORKERS[kind]
+
+
+def test_serve_supervises_no_adapter_worker(kind: str, tmp_path: Path) -> None:
     path = tmp_path / "starpulse.toml"
-    path.write_text(CONFIG)
+    path.write_text(config_of(kind))
 
     commands = supervisor.worker_commands(load(path), path)
 
-    assert "dagu" not in commands
-    assert all("dagu" not in command[-3:] for command in commands.values())
+    assert WORKERS[kind] not in commands
+    assert all(WORKERS[kind] not in command[-3:] for command in commands.values())
 
 
-def test_the_dagu_worker_follows_the_instance_and_keeps_its_workflows_in_the_log(run, dagu: Dagu, log: EventLog) -> None:
-    run("dagu")
+def test_the_worker_follows_the_instance_and_keeps_its_workflows_in_the_log(
+    kind: str, run, adapter: Adapter, log: EventLog
+) -> None:
+    run(WORKERS[kind])
 
-    assert dagu.followed == ["http://dagu.invalid"]
-    assert log.setting(projection.PROJECTION)["dagu"]["dags"] == DAGS
+    assert adapter.followed == ["http://adapter.invalid"]
+    assert log.setting(projection.PROJECTION)[kind]["dags"] == DAGS
 
 
-def test_the_runs_worker_leaves_the_dagu_instance_to_the_dagu_worker(run, dagu: Dagu) -> None:
+def test_the_runs_worker_leaves_the_instance_to_its_worker(run, adapter: Adapter) -> None:
     run("runs")
 
-    assert dagu.followed == []
+    assert adapter.followed == []
 
 
-def test_the_dagu_worker_beats_while_it_runs(run, log: EventLog) -> None:
-    run("dagu")
+def test_the_worker_beats_while_it_runs(kind: str, run, log: EventLog) -> None:
+    run(WORKERS[kind])
 
-    assert _eventually(lambda: opt_in.problem(log, "dagu")() is None)
+    assert _eventually(lambda: opt_in.problem(log, kind)() is None)
 
 
 def test_the_page_is_told_when_the_adapter_never_reported(log: EventLog) -> None:

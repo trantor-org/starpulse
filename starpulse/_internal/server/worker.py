@@ -2,8 +2,8 @@
 
 `api` is the Page API, run by `starpulse._internal.server.api_worker` on the socket `serve` hands it; `pulls` is the Delivery context (the pull request store's projection from the machine events and its manual refresh, the task actor and the release of
 dependents); `scheduler` is the Scheduler context, run by `starpulse._internal.server.scheduler_worker`; `runs` is the
-Runs context, run by `starpulse._internal.server.runs_worker`; `dagu` is the Dagu Adapter, an opt-in worker `serve` never starts, run by
-`starpulse._internal.server.dagu_worker`; `flow-metrics` is the Flow Metrics context, run by
+Runs context, run by `starpulse._internal.server.runs_worker`; `dagu`, `github-actions` and `systemd` are the run Adapters, opt-in workers `serve` never starts, run by
+`starpulse._internal.server.adapter_worker`; `flow-metrics` is the Flow Metrics context, run by
 `starpulse._internal.server.flow_metrics_worker`; `search` is the Search context's embedding catch-up, run by
 `starpulse._internal.server.search_worker`; `board` is the Board context's writer (the Start Criteria dating), run by `starpulse._internal.server.board_worker`.
 
@@ -42,7 +42,9 @@ from starpulse._internal.server.server import listen_options, start_delivery
 
 logger = logging.getLogger(__name__)
 
-CONTEXTS = ("api", "pulls", "scheduler", "runs", "flow-metrics", "search", "board", "dagu")
+#: The run Adapters that are opt-in workers (`starpulse._internal.server.adapter_worker`): `serve` supervises none.
+OPT_IN = ("dagu", "github-actions", "systemd")
+CONTEXTS = ("api", "pulls", "scheduler", "runs", "flow-metrics", "search", "board", *OPT_IN)
 
 
 def delivery_blocks(config: Config) -> tuple:
@@ -155,10 +157,10 @@ def main(argv: list[str] | None = None) -> None:
         from starpulse._internal.server import runs_worker
 
         return runs_worker.main(argv, parser)
-    if args.context == "dagu":  # an opt-in worker: `serve` supervises none
-        from starpulse._internal.server import dagu_worker
+    if args.context in OPT_IN:  # an opt-in worker: `serve` supervises none
+        from starpulse._internal.server import adapter_worker
 
-        return dagu_worker.main(argv, parser)
+        return adapter_worker.main(argv, parser, args.context)
     if args.context == "flow-metrics":
         from starpulse._internal.server import flow_metrics_worker
 

@@ -375,6 +375,8 @@ def workflow_run_entry(payload: dict) -> dict:
 #: Seconds between two readings of a followed repository; a workflow file added since the last one shows at the next.
 #: A reading of a repository where no run changed is two calls, so this is also GitHub's only cost while it is quiet.
 RECONCILE_INTERVAL = 60.0
+#: The opt-in worker that runs this adapter (`starpulse._internal.runs.opt_in`): `serve` runs none of it.
+WORKER = "github-actions"
 
 
 def _reconcile_forever(runs: GitHubRuns) -> None:

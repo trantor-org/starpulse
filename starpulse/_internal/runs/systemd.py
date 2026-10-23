@@ -160,6 +160,8 @@ def start(url: str) -> None:
 
 #: Seconds between two listings of the allowlist while a monitor is down; a timer that fired shows at the next.
 RECONCILE_INTERVAL = 30.0
+#: The opt-in worker that runs this adapter (`starpulse._internal.runs.opt_in`): `serve` runs none of it.
+WORKER = "systemd"
 
 #: Seconds between two listings while every monitor is up: the signals carry the changes, this catches a missed one.
 BACKSTOP_INTERVAL = 600.0

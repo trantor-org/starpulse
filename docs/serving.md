@@ -326,7 +326,7 @@ type = "native"
 [[runs]]
 name = "dagu"
 type = "dagu"
-url = "http://dagu.example.com:8080"     # the Dagu Adapter is an opt-in worker: you run `starpulse worker dagu --config <this file>`;
+url = "http://dagu.example.com:8080"     # the Dagu Adapter is an opt-in worker: you run `starpulse worker dagu --config <this file>` (`github-actions` and `systemd` likewise);
                                          # `serve` starts it nowhere (not in the `runs` worker, not as a child) and, with it down or never
                                          # started, the page shows this instance with the error "the dagu worker has not reported" or
                                          # "last reported Ns ago" (its beat is older than 60s)
