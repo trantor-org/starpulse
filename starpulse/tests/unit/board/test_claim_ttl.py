@@ -1,6 +1,7 @@
-"""A claim not renewed within the claim TTL is released: StarPulse appends Released and the Task returns to its resting
-State, and the release names the last renewal (D6)."""
+"""A claim not renewed within the claim TTL is released: StarPulse appends Released and the Task moves to the State that
+waits on a person, and the release names the last renewal (D6)."""
 
+from dataclasses import replace
 from functools import partial
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from starpulse._internal.config.config import load
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import HistoryStore, last_run_event
 from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.machines.state_roles import StateRoles
 from starpulse._internal.server.assembly import assemble
 from starpulse._internal.store import EventStore, NewEvent
 
@@ -109,3 +111,16 @@ def test_a_harness_event_of_the_assignee_session_renews_the_claim(served) -> Non
 
     assert sweep(built, store, _rows(built), ttl=1800, now=claimed + 3400, activity=activity) == []
     assert sweep(built, store, _rows(built), ttl=1800, now=claimed + 3501, activity=activity) == ["task-5"]
+
+
+def test_an_expired_claim_goes_to_the_attention_state_when_the_machine_has_one(served) -> None:
+    built, _, store, _ = served
+    claimed = _claim(built, store)
+    roles = StateRoles(
+        {"to_do": "initial", "in_progress": "resting", "needs_attention": "waiting_on_person", "done": "final"}, {}
+    )
+    with_attention = replace(built, roles=roles)
+
+    assert sweep(with_attention, store, _rows(built), ttl=1800, now=claimed + 1801) == ["task-5"]
+
+    assert built.read("task-5")["status"] == "needs_attention"

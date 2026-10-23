@@ -1,7 +1,8 @@
 """A stale Assignee is released (D6): a claim no Event by its session renewed within the claim TTL ends.
 
-StarPulse appends `Released`, the Task returns to its resting State, and a comment names the last renewal, so the
-operator sees why a session that is alive but silent lost its claim."""
+StarPulse appends `Released`, the Task moves to the State that waits on a person (Needs attention; the board's ready or
+initial State when its machine declares none), and a comment names the last renewal. A released Task is never offered
+to another agent as Ready, and the operator sees why a session that is alive but silent lost its claim."""
 
 from __future__ import annotations
 
@@ -54,7 +55,8 @@ def sweep(
     working in its worktree renews its claim that way without a Task Event.
     """
     now = time.time() if now is None else now
-    working, resting = board.roles.working, board.roles.ready or board.roles.initial
+    working = board.roles.working
+    resting = board.roles.attention or board.roles.ready or board.roles.initial
     if board.release is None or not (working and resting):
         return []
     released = []
