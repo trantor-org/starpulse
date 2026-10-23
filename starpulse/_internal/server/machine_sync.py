@@ -8,18 +8,23 @@ and Tasks it strands. Only the Board's machine moves Tasks, so only it is checke
 
 from __future__ import annotations
 
+import argparse
+import sys
 from pathlib import Path
 
 from starpulse._internal.board.project_machines import DIRECTORY
-from starpulse._internal.config.config import Config
+from starpulse._internal.config.config import Config, discover, load
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import database_url
-from starpulse._internal.machines.machine_definition import _read
+from starpulse._internal.machines.machine_definition import MachineDefinitionError, _read
 from starpulse._internal.readmodel.projector import Projector
 from starpulse._internal.readmodel.read_model import ReadModel
 from starpulse._internal.store import EventStore, LiveTask, MachineRegistry
 
-__all__ = ["sync_definitions"]
+__all__ = ["REFUSED", "main", "sync_definitions"]
+
+#: The exit status of `main` when the registry refuses a definition; the reason is on stderr.
+REFUSED = 3
 
 EVERY_TASK = 2**31 - 1
 
@@ -43,3 +48,21 @@ def sync_definitions(config: Config, base: Path) -> dict[str, str]:
             document = _read(path)
             hashes[document["name"]] = registry.activate(document, [])
     return hashes
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Run `sync_definitions` for the config at `--config` (found from the working directory without it), the way
+    `serve` admits definitions without loading the database stack itself."""
+    parser = argparse.ArgumentParser(prog="machine_sync")
+    parser.add_argument("--config", type=Path)
+    args = parser.parse_args(argv)
+    try:
+        sync_definitions(load(discover(args.config)), args.config.parent if args.config else Path.cwd())
+    except MachineDefinitionError as exc:
+        print(exc, file=sys.stderr)
+        return REFUSED
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

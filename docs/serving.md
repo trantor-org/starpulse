@@ -173,8 +173,9 @@ included), and one active hash per machine in `starpulse_machine_active`. Nothin
 - Archived Tasks count as live. The live board is still file-based, so only the event-sourced Task streams are remapped.
 
 `sync_definitions` (`starpulse/_internal/server/machine_sync.py`) activates the Board's `[board] machine` file against the
-live Tasks and each file in `.starpulse/machines/` (the owners' definitions directory). `serve` runs it at start, exiting 1
-with the refusal, and again before every reload (`starpulse reload`, `POST /reload`): a refused reload changes
+live Tasks and each file in `.starpulse/machines/` (the owners' definitions directory). `serve` runs it at start, once the
+port is bound, in a child process (`python -m starpulse._internal.server.machine_sync`, exit 3 on a refusal) so the
+server itself never loads the database stack; a refusal exits `serve` 1. It runs again before every reload (`starpulse reload`, `POST /reload`): a refused reload changes
 nothing and the running workers stay on the active version.
 
 ## Task read model

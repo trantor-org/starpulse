@@ -118,5 +118,5 @@ def test_serve_admits_the_definitions_its_config_names_and_refuses_a_stranding_e
     )
 
     _write(tmp_path, "board.yaml", RENAMED)
-    with pytest.raises(MachineDefinitionError, match=r"doing.*TASK-1"):
+    with pytest.raises(ValueError, match=r"doing.*TASK-1"):
         admit_definitions(args)

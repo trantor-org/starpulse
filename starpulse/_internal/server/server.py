@@ -174,6 +174,7 @@ import shutil
 import signal
 import socket
 import stat
+import subprocess
 import sys
 import threading
 import time
@@ -601,12 +602,22 @@ def refuse_unassemblable(
         parser.exit(1, f"{exc}\n")
 
 
+#: `machine_sync.REFUSED`, which this module cannot import without loading the database stack.
+_ADMISSION_REFUSED = 3
+
+
 def admit_definitions(args: argparse.Namespace) -> None:
     """Register the machine files the config now names, so `serve` starts and reloads only on definitions the registry
-    accepts; a ValueError names the States and Tasks a missing mapping strands."""
-    from starpulse._internal.server.machine_sync import sync_definitions  # noqa: PLC0415 - the database stack loads after the config is accepted
-
-    sync_definitions(load(discover(args.config)), args.config.parent if args.config else Path.cwd())
+    accepts. Runs in a child process: this one never loads the database stack. A ValueError names the States and
+    Tasks a missing mapping strands."""
+    command = [sys.executable, "-m", "starpulse._internal.server.machine_sync"]
+    if args.config:
+        command += ["--config", str(args.config)]
+    ran = subprocess.run(command, capture_output=True, text=True, check=False)
+    if ran.returncode == _ADMISSION_REFUSED:
+        raise ValueError(ran.stderr.strip())
+    if ran.returncode:
+        raise RuntimeError(f"machine definitions could not be registered:\n{ran.stderr.strip()}")
 
 
 def listen(parser: argparse.ArgumentParser, args: argparse.Namespace) -> socket.socket:
@@ -779,15 +790,15 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         LISTEN_FD_ENV, None
     )  # the workers started below are handed what they hold, not what this process was
     ready = prepare(parser, args, config)
-    try:
-        admit_definitions(args)
-    except ValueError as exc:
-        parser.exit(1, f"{exc}\n")
     commands = worker_commands(config, args.config)
     if "api" in commands:  # bound once the config is accepted and before the board, the history or a worker starts
         os.environ[STATIC_ENV] = str(_STATIC)
         listening = listening or listen(parser, args)
         commands["api"] += ["--hours", str(args.hours)]
+    try:
+        admit_definitions(args)
+    except ValueError as exc:
+        parser.exit(1, f"{exc}\n")
     # the preloaded process inherits the bound socket, so the Page API child forks from it like every other worker
     forker = Forker(
         [*DATABASE_STACK, *(ENTRIES[context] for context in commands)],
