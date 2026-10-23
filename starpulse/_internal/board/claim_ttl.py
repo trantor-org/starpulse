@@ -1,7 +1,7 @@
 """A stale Assignee is released (D6): a claim no Event by its session renewed within the claim TTL ends.
 
-StarPulse appends `Released`, the Task returns to its resting State, and a comment names the last renewal, so the
-operator sees why a session that is alive but silent lost its claim."""
+StarPulse appends `Released` and a comment naming the last renewal. The Task keeps its State, so a Task still in
+progress is never offered to another agent as Ready; it only has no Assignee, and any session may claim it."""
 
 from __future__ import annotations
 
@@ -54,8 +54,8 @@ def sweep(
     working in its worktree renews its claim that way without a Task Event.
     """
     now = time.time() if now is None else now
-    working, resting = board.roles.working, board.roles.ready or board.roles.initial
-    if board.release is None or not (working and resting):
+    working = board.roles.working
+    if board.release is None or not working:
         return []
     released = []
     for row in rows:
@@ -66,7 +66,7 @@ def sweep(
         renewed = max((at for at in renewals if at is not None), default=None)
         if renewed is None or now - renewed < ttl:
             continue
-        if board.release(row["id"], resting, actor=ACTOR).ok:
+        if board.release(row["id"], row["state"], actor=ACTOR).ok:
             events = [
                 NewEvent("Released", {"session": session, "last_renewal": renewed, "ttl": ttl}, ACTOR, WRITER),
                 NewEvent("CommentAdded", {"text": _note(session, renewed, ttl)}, ACTOR, WRITER),

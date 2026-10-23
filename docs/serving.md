@@ -203,7 +203,7 @@ paths. The feed holds no Task; `_hot()` is one `snapshot()` per `position()`, `t
 reads, `cold_page` pages `archived`, and the snapshot carries no archived Task (`cold_done` is empty). The Scheduler's
 `open_tasks` and the write guards go through the same reads. `follow_read_model()` publishes the Tasks changed since it last
 ran as page deltas, to run after each `Projector.catch_up`. Without a read model the in-memory path serves unchanged until the
-cutover (TASK-7409) passes one in. In this mode entered and workable-since times are approximated, and the overlays for runs,
+cutover passes one in. In this mode entered and workable-since times are approximated, and the overlays for runs,
 pulls and acceptance criteria are empty on the board card; `/api/task/<id>` returns the full record. The search index is its
 own FTS table, queried by term and never by loading Tasks; `put` still feeds it, so the cutover feeds it from the read model.
 `ci/test_read_model_latency.py` (nightly) serves 20,000 Tasks with 18,000 archived and holds every read surface to the page
@@ -295,7 +295,7 @@ type = "native"
 # criteria = "my-evaluator {id}"  # evaluates a task's Start Criteria; {id} is the task's id (see docs/adapters.md)
 # holds = "my-holds {id}"    # prints a JSON array of reasons the task actor withholds the task's `deps_done` (see Task actor)
 # validate = "my_checks:task_write"  # may refuse a task write before it lands (see docs/adapters.md)
-# claim_ttl = 1800   # seconds a claim lives without an Event by its session or a machine event of its run (harness telemetry keyed by the session id); past it StarPulse appends `Released` (naming the last renewal) and the Task returns to its Ready State, or its initial one when the machine has none
+# claim_ttl = 1800   # seconds a claim lives without an Event by its session or a machine event of its run (harness telemetry keyed by the session id); past it StarPulse appends `Released` (naming the last renewal) and the Task keeps its State with no Assignee, free for any session to claim
 # types = ["spike", "bug"]  # the names a task's `type` may take; a write setting any other is refused with this list in its reason, so with no list any non-empty type is accepted and a board names none of its own
 # task_file_name = "title"   # the name a created task's file is written under: "title" is `task-1 - Draw-the-board.md`, "slug" is `task-1-draw-the-board.md`, lowercase, its slug capped at 19 characters
 

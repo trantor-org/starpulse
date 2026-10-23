@@ -1,5 +1,5 @@
-"""A claim not renewed within the claim TTL is released: StarPulse appends Released and the Task returns to its resting
-State, and the release names the last renewal (D6)."""
+"""A claim not renewed within the claim TTL is released: StarPulse appends Released, the Task keeps its State and may be
+claimed by another session, and the release names the last renewal (D6)."""
 
 from functools import partial
 from pathlib import Path
@@ -72,8 +72,8 @@ def test_a_claim_releases_at_the_ttl_not_before(served) -> None:
     assert sweep(built, store, _rows(built), ttl=1800, now=claimed + 1801) == ["task-5"]
 
     types = [event.type for event in store.read("task", "task-5")]
-    assert {"Released", "Transitioned"} <= set(types)
-    assert built.read("task-5")["status"] == "To Do"
+    assert "Released" in types
+    assert built.read("task-5")["status"] == "In Progress"
 
 
 def test_an_event_by_the_assignee_renews_the_claim(served) -> None:
@@ -109,3 +109,14 @@ def test_a_harness_event_of_the_assignee_session_renews_the_claim(served) -> Non
 
     assert sweep(built, store, _rows(built), ttl=1800, now=claimed + 3400, activity=activity) == []
     assert sweep(built, store, _rows(built), ttl=1800, now=claimed + 3501, activity=activity) == ["task-5"]
+
+
+def test_an_expired_claim_keeps_the_state_and_frees_the_task_for_another_session(served) -> None:
+    built, _, store, _ = served
+    claimed = _claim(built, store)
+
+    assert sweep(built, store, _rows(built), ttl=1800, now=claimed + 1801) == ["task-5"]
+
+    assert built.read("task-5")["status"] == "In Progress"
+    assert [event.type for event in store.read("task", "task-5")].count("Transitioned") == 1
+    assert built.writer("task-5", "In Progress", "agent", "session-2").ok
