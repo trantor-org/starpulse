@@ -420,6 +420,8 @@ process's config blocks with the last reading, taken when `serve` started or at 
 
 A change to a `runs_worker` setting is read when `serve` starts and is not reconciled by
 `reload`. A closure that cannot be read, such as a half-written module, or a config that does not load, changes nothing.
+So does a machine definition change that drops a State holding live Tasks without a `migrations` mapping; the refusal
+names the States and Tasks ([the machine registry](serving.md#machine-registry)).
 
 It prints one JSON object, and the reply is sent before a `serve` that re-executes replaces itself:
 

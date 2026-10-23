@@ -174,6 +174,7 @@ import shutil
 import signal
 import socket
 import stat
+import subprocess
 import sys
 import threading
 import time
@@ -601,6 +602,24 @@ def refuse_unassemblable(
         parser.exit(1, f"{exc}\n")
 
 
+#: `machine_sync.REFUSED`, which this module cannot import without loading the database stack.
+_ADMISSION_REFUSED = 3
+
+
+def admit_definitions(args: argparse.Namespace) -> None:
+    """Register the machine files the config now names, so `serve` starts and reloads only on definitions the registry
+    accepts. Runs in a child process: this one never loads the database stack. A ValueError names the States and
+    Tasks a missing mapping strands."""
+    command = [sys.executable, "-m", "starpulse._internal.server.machine_sync"]
+    if args.config:
+        command += ["--config", str(args.config)]
+    ran = subprocess.run(command, capture_output=True, text=True, check=False)
+    if ran.returncode == _ADMISSION_REFUSED:
+        raise ValueError(ran.stderr.strip())
+    if ran.returncode:
+        raise RuntimeError(f"machine definitions could not be registered:\n{ran.stderr.strip()}")
+
+
 def listen(parser: argparse.ArgumentParser, args: argparse.Namespace) -> socket.socket:
     """Bind `--host` and `--port`, exiting with the reason when something holds them."""
     try:
@@ -776,6 +795,10 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         os.environ[STATIC_ENV] = str(_STATIC)
         listening = listening or listen(parser, args)
         commands["api"] += ["--hours", str(args.hours)]
+    try:
+        admit_definitions(args)
+    except ValueError as exc:
+        parser.exit(1, f"{exc}\n")
     # the preloaded process inherits the bound socket, so the Page API child forks from it like every other worker
     forker = Forker(
         [*DATABASE_STACK, *(ENTRIES[context] for context in commands)],
@@ -793,6 +816,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         baseline=reader.at_start,
         control=control_file(args.config),
         limits=config.worker_memory,
+        admit=lambda: admit_definitions(args),
     )
     supervisor.start()
     try:

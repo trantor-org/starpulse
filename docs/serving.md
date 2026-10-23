@@ -154,6 +154,30 @@ live; `restarting`, `retrying`, `offline` and `updating` hold one state.
 - `StoredEvent.position` is the event's global, increasing row id; `read_after(subject_kind, position, limit)` pages events
   past a position in that order.
 
+## Machine registry
+
+`MachineRegistry` (`starpulse/_internal/store/machine_registry.py`, migration 0030) keeps every machine definition ever
+activated in `starpulse_machine_versions`, keyed by the hash of the whole compiled definition (writers and `migrations`
+included), and one active hash per machine in `starpulse_machine_active`. Nothing prunes or rewrites either table.
+
+- `MachineRegistry.append(...)` is `EventStore.append` for a command: it checks each State an Event names against the
+  active `board` version and stamps the Event's `definition_hash`, so a replay reads each Event under the version that
+  wrote it. It checks State existence only, not the legal From-To move.
+- A change that drops or renames a State holding live Tasks is accepted only with a top-level `migrations` map in the
+  machine file (`migrations: {doing: in_progress}`). `activate` then appends a `Remapped` Event to each affected Task and
+  switches the active version in one transaction, each append checked against the Task's expected version: a Task that
+  moved since it was read raises `StaleVersion` and rolls the whole change back.
+- Without a mapping the change is refused, naming the States and Task ids. A mapping names one target per State, so a
+  split of one State into two cannot be expressed and is refused until Tasks are moved by hand; a mapping to a State the
+  new version lacks is refused too.
+- Archived Tasks count as live. The live board is still file-based, so only the event-sourced Task streams are remapped.
+
+`sync_definitions` (`starpulse/_internal/server/machine_sync.py`) activates the Board's `[board] machine` file against the
+live Tasks and each file in `.starpulse/machines/` (the owners' definitions directory). `serve` runs it at start, once the
+port is bound, in a child process (`python -m starpulse._internal.server.machine_sync`, exit 3 on a refusal) so the
+server itself never loads the database stack; a refusal exits `serve` 1. It runs again before every reload (`starpulse reload`, `POST /reload`): a refused reload changes
+nothing and the running workers stay on the active version.
+
 ## Task read model
 
 `starpulse/_internal/readmodel` folds the `task` streams into tables that answer reads by index, so no read loads every

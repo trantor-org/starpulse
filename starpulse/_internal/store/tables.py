@@ -37,3 +37,23 @@ outbox = Table(
     Column("sent_at", Float),
     Index("ix_starpulse_outbox_unsent", "sent_at"),
 )
+
+#: Every compiled definition ever activated, kept by the hash of the whole compiled definition so an Event is read
+#: under the version that wrote it. Nothing prunes or rewrites it.
+machine_versions = Table(
+    "starpulse_machine_versions",
+    metadata,
+    Column("hash", String, primary_key=True),
+    Column("machine", String, nullable=False),
+    Column("document", JSON, nullable=False),
+    Column("created_at", Float, nullable=False),
+)
+
+#: The version a machine's commands validate against: one row per machine.
+machine_active = Table(
+    "starpulse_machine_active",
+    metadata,
+    Column("machine", String, primary_key=True),
+    Column("hash", String, ForeignKey("starpulse_machine_versions.hash"), nullable=False),
+    Column("activated_at", Float, nullable=False),
+)

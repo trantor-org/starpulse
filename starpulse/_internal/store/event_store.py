@@ -77,10 +77,18 @@ class EventStore:
         self._upcasters = upcasters or Upcasters()
 
     def append(
-        self, subject_kind: str, subject_id: str, expected_version: int, events: Sequence[NewEvent], *, at: float | None = None
+        self,
+        subject_kind: str,
+        subject_id: str,
+        expected_version: int,
+        events: Sequence[NewEvent],
+        *,
+        at: float | None = None,
+        connection: Connection | None = None,
     ) -> list[StoredEvent]:
         """Write `events` as the versions after `expected_version`, the head the caller read (0 for a new stream), with
-        an outbox row each in the same transaction. Raises `StaleVersion` when the head has moved."""
+        an outbox row each in the same transaction. Raises `StaleVersion` when the head has moved. With `connection`,
+        the write joins the caller's transaction, so appends to several streams commit or roll back together."""
         at = time.time() if at is None else at
         rows = [
             {
@@ -101,19 +109,27 @@ class EventStore:
             for offset, event in enumerate(events, start=1)
         ]
         try:
-            with self._engine.begin() as db:
-                head = self._head(db, subject_kind, subject_id)
-                if head != expected_version:
-                    raise StaleVersion(f"{subject_kind} {subject_id} is at version {head}, not {expected_version}")
-                db.execute(insert(stream_events), rows)
-                db.execute(insert(outbox), [{"event_id": row["event_id"]} for row in rows])
-                ids = select(stream_events.c.event_id, stream_events.c.id).where(
-                    stream_events.c.event_id.in_([row["event_id"] for row in rows])
-                )
-                positions = dict(db.execute(ids).tuples().all())
+            if connection is None:
+                with self._engine.begin() as db:
+                    positions = self._insert(db, subject_kind, subject_id, expected_version, rows)
+            else:
+                positions = self._insert(connection, subject_kind, subject_id, expected_version, rows)
         except IntegrityError as exc:
             raise StaleVersion(f"{subject_kind} {subject_id} moved past version {expected_version}") from exc
         return [self._upcasters.apply(_stored(row | {"id": positions[row["event_id"]]})) for row in rows]
+
+    def _insert(
+        self, db: Connection, subject_kind: str, subject_id: str, expected_version: int, rows: list[dict[str, Any]]
+    ) -> dict[str, int]:
+        head = self._head(db, subject_kind, subject_id)
+        if head != expected_version:
+            raise StaleVersion(f"{subject_kind} {subject_id} is at version {head}, not {expected_version}")
+        db.execute(insert(stream_events), rows)
+        db.execute(insert(outbox), [{"event_id": row["event_id"]} for row in rows])
+        ids = select(stream_events.c.event_id, stream_events.c.id).where(
+            stream_events.c.event_id.in_([row["event_id"] for row in rows])
+        )
+        return dict(db.execute(ids).tuples().all())
 
     def read(self, subject_kind: str, subject_id: str, after: int = 0) -> list[StoredEvent]:
         """The stream's Events after version `after`, in order, at their newest schema version."""
@@ -161,7 +177,9 @@ class EventStore:
         """Record that the stream acknowledged `event_ids`; one already marked keeps its first time."""
         with self._engine.begin() as db:
             db.execute(
-                update(outbox).where(outbox.c.event_id.in_(event_ids), outbox.c.sent_at.is_(None)).values(sent_at=time.time())
+                update(outbox)
+                .where(outbox.c.event_id.in_(event_ids), outbox.c.sent_at.is_(None))
+                .values(sent_at=time.time())
             )
 
     @staticmethod
