@@ -30,6 +30,8 @@ from starpulse.contracts.adapters import RunsSink, RunStatus, StartFailedError
 
 #: Seconds between two listings of a followed Dagu instance.
 RECONCILE_INTERVAL = 30.0
+#: The opt-in worker that runs this adapter (`starpulse._internal.runs.opt_in`): `serve` runs none of it.
+WORKER = "dagu"
 
 #: Each status label Dagu reports (plus `skipped` for a step) and the status it becomes.
 #: A run that finished with a failed step is `failed`, one held for an approval is still `running`, and one whose

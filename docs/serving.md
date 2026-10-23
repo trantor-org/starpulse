@@ -276,7 +276,7 @@ type = "native"
 # manager passes in), and `serve` binds and supervises nothing for it.
 # api_worker = false
 
-# Whether something outside `serve` runs the Runs context (the run adapters and the pushed-runs follower). False, the default: `serve` supervises it as a child process, `starpulse worker runs`. True: you run
+# Whether something outside `serve` runs the Runs context (the run adapters no opt-in worker runs, and the pushed-runs follower). False, the default: `serve` supervises it as a child process, `starpulse worker runs`. True: you run
 # `starpulse worker runs --config <this file>` yourself and `serve` starts no child for it. Either way `serve` runs
 # none of them: it draws the workflows, pools and startable workflows the worker keeps in the event log
 # (`runs.projection`), and the page's Run now still starts a workflow through the adapter. Run-stream cursors stay in the
@@ -326,7 +326,10 @@ type = "native"
 [[runs]]
 name = "dagu"
 type = "dagu"
-url = "http://dagu.example.com:8080"
+url = "http://dagu.example.com:8080"     # the Dagu Adapter is an opt-in worker: you run `starpulse worker dagu --config <this file>`;
+                                         # `serve` starts it nowhere (not in the `runs` worker, not as a child) and, with it down or never
+                                         # started, the page shows this instance with the error "the dagu worker has not reported" or
+                                         # "last reported Ns ago" (its beat is older than 60s)
 run_safe = ["nightly"]                   # the workflows the page's Run now may start
 domains = { Data = ["nightly", "etl"] }  # how the page groups this instance's workflows
 
