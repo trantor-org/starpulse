@@ -9,11 +9,13 @@
 # and their sdists fail to build there, so `vendor` is a directory holding trantor's patched `aioquic` and `pylsqpack`
 # copies; the locked requirements are exported and those two lines point at it.
 #
-# Run it with `--network none`, the live config and machines read-only, and the store copy read-write as /work/history.sqlite:
+# Run it with `--network none`, the live config and machines read-only, and the store copy read-write as /work/history.sqlite.
+# Mount the config directory at the same depth under /live as under <live> (`<config-dir>` is `infrastructure/<host>`), since the
+# config reads its board and machines by relative path:
 #
-#     docker run --rm --network none -v <live>/infrastructure/ai-vm-1:/live/infrastructure/ai-vm-1:ro \
+#     docker run --rm --network none -v <live>/<config-dir>:/live/<config-dir>:ro \
 #       -v <live>/.starpulse:/live/.starpulse:ro -v <copy>:/work/history.sqlite starpulse-canary \
-#       --url http://127.0.0.1:8766 --config /live/infrastructure/ai-vm-1/starpulse.toml \
+#       --url http://127.0.0.1:8766 --config /live/<config-dir>/starpulse.toml \
 #       --machines /live/.starpulse/machines --db /work/history.sqlite
 FROM debian:trixie-slim
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential ca-certificates procps \
