@@ -13,6 +13,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+
+# aioquic and pylsqpack ship no free-threaded wheels and their sources do not build on 3.14t, so the `python-ft` job installs
+# without them; the canary covers HTTP/3 there. `test_serve_tls` imports from this module and skips with it.
+pytest.importorskip("aioquic")
+
 from aioquic.asyncio import QuicConnectionProtocol, connect
 from aioquic.h3.connection import H3_ALPN, H3Connection
 from aioquic.h3.events import DataReceived, H3Event, HeadersReceived

@@ -16,6 +16,7 @@ from starpulse._internal.scheduler.toggle import Toggle
 from starpulse._internal.board.seam import Written
 from starpulse._internal.config.scheduler import Scheduler
 from starpulse._internal.eventlog.event_log import Entry, EventLog
+from starpulse._internal.feed import board_feed
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.harnesses.harness import HARNESS_MACHINES
 from starpulse._internal.kit.adapter_kit import task
@@ -112,7 +113,10 @@ def test_pull_events_stay_within_their_retained_memory_budget() -> None:
     check("pull-events", _pull_events_step(), BUDGETS["pull-events"])
 
 
-def test_scheduler_stays_within_its_retained_memory_budget(tmp_path: Path) -> None:
+def test_scheduler_stays_within_its_retained_memory_budget(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # The feed's reconnect log holds the last 512 events by design, so a window shorter than that reads as retained;
+    # a log the warm-up fills leaves only what the scheduler itself keeps.
+    monkeypatch.setattr(board_feed, "_SENT_LOG", 8)
     step, starts = _scheduler_step(tmp_path)
 
     retained = check("scheduler", step, BUDGETS["scheduler"])

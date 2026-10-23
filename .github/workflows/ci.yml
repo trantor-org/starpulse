@@ -168,7 +168,9 @@ jobs:
       - run: |
           echo "UV_PROJECT_ENVIRONMENT=$RUNNER_TEMP/ft-venv" >> "$GITHUB_ENV"
           echo "UV_PYTHON_INSTALL_DIR=$RUNNER_TEMP/uv-python" >> "$GITHUB_ENV"
-      - run: uv sync --locked --python 3.14t
+      # aioquic and pylsqpack have no 3.14t wheels and their sources do not build there; only the HTTP/3 tests need them
+      # (see the importorskip in starpulse/tests/integration/server/test_http3.py).
+      - run: uv sync --locked --python 3.14t --no-install-package aioquic --no-install-package pylsqpack
       # A dependency that re-enables the GIL on import leaves every test green on the build this job exists to test.
       - run: uv run --no-sync python -c "import sys, starpulse._internal.server.server; sys.exit(sys._is_gil_enabled())"
       - run: echo "PYTEST_ADDOPTS=-n $(uv run --no-sync python ci/xdist_workers.py) --dist worksteal" >> "$GITHUB_ENV"

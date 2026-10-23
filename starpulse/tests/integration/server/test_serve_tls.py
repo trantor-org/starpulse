@@ -12,6 +12,9 @@ from pathlib import Path
 
 import pytest
 
+# The HTTP/3 client of `test_http3` is absent on the free-threaded build; see the skip there.
+pytest.importorskip("aioquic")
+
 from starpulse.tests.integration.server.test_http2 import _h2_request
 from starpulse.tests.integration.server.test_http3 import _h3, certificate  # noqa: F401 - `certificate` is a fixture
 from starpulse.tests.integration.server.test_standalone import _env, _free_port, _serve_command, build  # noqa: F401 - `build` is a fixture
