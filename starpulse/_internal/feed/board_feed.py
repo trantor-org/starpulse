@@ -45,6 +45,7 @@ if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     from pydantic import BaseModel
 
     from starpulse._internal.eventlog.event_log import EventLog
+    from starpulse._internal.readmodel.read_model import ReadModel
 
 __all__ = ["BoardFeed", "BoardStore", "FEED_EVENT_RESEND", "Followed", "Resumable"]
 
@@ -120,6 +121,39 @@ def task_agent(task: BoardTask) -> dict:
         "moves": {column: move.model_dump() for column, move in task.moves.items()},
         "created": task.created_at,
     }
+
+
+def summary_agent(summary: Mapping[str, Any], workable: bool = False) -> dict:
+    """One read-model summary as an agent on the Board machine: what a card draws; the record is `/api/task/<id>`.
+
+    A workable Task is workable since it last changed: the read model keeps no finer date.
+    """
+    return {
+        "id": summary["id"],
+        "title": summary["title"],
+        "state": summary["state"],
+        "model": "",
+        "profile": None,
+        "assignee": summary["assignee"],
+        "labels": list(summary["labels"]),
+        "milestone": summary["milestone"],
+        "type": summary["type"],
+        "dependencies": list(summary.get("dependencies", ())),
+        "prs": [],
+        "runs": [],
+        "description": "",
+        "criteria": [],
+        "pause_reason": None,
+        "moves": {},
+        "created": summary["updated_at"],
+        "entered": summary["updated_at"],
+        "workable": workable,
+        "workable_since": summary["updated_at"] if workable else None,
+    }
+
+
+def _cold_stub(summary: Mapping[str, Any]) -> dict:
+    return {"id": summary["id"], "state": summary["state"], "entered": summary["updated_at"]}
 
 
 def settled_entry(task: BoardTask) -> dict | None:
@@ -212,8 +246,14 @@ class BoardFeed:
         processes: Mapping[str, Sequence[tuple[str, Sequence[str]]]] | None = None,
         clock: Callable[[], float] = time.time,
         roles: StateRoles | None = None,
+        read_model: ReadModel | None = None,
     ) -> None:
         self._hint = hint
+        #: When set, the Board's Tasks are read from it on each request and `_open` stays empty (D3: the feed holds no board).
+        self._read_model = read_model
+        self._hot_cache: tuple[int, list[dict]] | None = None
+        #: The read model's position the page's deltas have been published up to; the snapshot carries what came before.
+        self._followed = read_model.position() if read_model is not None else 0
         #: Which of the Board's States play which part (`Board.roles`); the default is Backlog.md's default statuses.
         self._roles = roles or StateRoles.of_statuses(DEFAULT_STATUSES)
         self._clock = clock
@@ -799,11 +839,32 @@ class BoardFeed:
         It takes no lock, so opening a task never waits on the feed: one dict read is atomic, and a placed task's
         entry is replaced, never changed in place.
         """
+        if self._read_model is not None:
+            return self._read_model_agent(task_id)
         agent = self.held(task_id)
         return None if agent is not None and is_cold(agent) else agent
 
+    def _read_model_agent(self, task_id: str) -> dict | None:
+        row = self._read_model.task(task_id)  # type: ignore[union-attr]
+        if row is None or row["archived"]:
+            return None
+        return summary_agent(row, task_id in self._read_model.ready(row["state"], self._roles.done))  # type: ignore[union-attr]
+
+    def follow_read_model(self, limit: int = 1000) -> int:
+        """Publish a `task` delta for each Task the read model changed since the last call, an archived one as gone, and
+        return how many; the projector's catch-up is followed by a call, so a page open on `/api/events` sees the change."""
+        changed = self._read_model.since(self._followed, limit)  # type: ignore[union-attr]
+        for summary in changed:
+            agent = None if summary["archived"] else self._read_model_agent(summary["id"])
+            self._publish("task", {"id": summary["id"], "agent": agent, "settled": None})
+        if changed:
+            self._followed = changed[-1]["seq"]
+        return len(changed)
+
     def held(self, task_id: str) -> dict | None:
         """The open Board task as `task` has it, or its cold stub (`is_cold`) when it is done and past `HOT_S`."""
+        if self._read_model is not None:
+            return self._read_model_agent(task_id)
         return self._open.get(task_id) or self._open.get(self._keys.canonical(task_id) if self._keys else task_id)
 
     def cited(self, task_id: str) -> list[str]:
@@ -818,6 +879,9 @@ class BoardFeed:
 
     def is_done(self, task_id: str) -> bool:
         """Whether the task is done: completed, or in the done lane; a task the Board does not hold is not."""
+        if self._read_model is not None:
+            row = self._read_model.task(task_id)
+            return row is not None and row["state"] == self._roles.done
         with self._lock:
             return self._done_at(task_id) is not None
 
@@ -1098,6 +1162,9 @@ class BoardFeed:
     def cold_page(self, before: float | None, limit: int) -> tuple[list[dict], bool]:
         """`GET /api/done`: the next `limit` cold done stubs entered before `before` (None: the newest), and whether
         older ones remain."""
+        if self._read_model is not None:
+            page = self._read_model.archived(before, limit + 1)
+            return [_cold_stub(item) for item in page[:limit]], len(page) > limit
         with self._lock:
             cold = sorted((a for a in self._open.values() if is_cold(a)), key=lambda a: a["entered"], reverse=True)
         older = [a for a in cold if before is None or a["entered"] < before]
@@ -1105,7 +1172,22 @@ class BoardFeed:
 
     def _hot(self) -> list[dict]:
         """Every open task but the cold done ones; the caller holds the lock."""
+        if self._read_model is not None:
+            return self._read_model_hot()
         return [agent for agent in self._open.values() if not is_cold(agent)]
+
+    def _read_model_hot(self) -> list[dict]:
+        """The live Tasks of the read model as agents, queried again only after the read model changed."""
+        position = self._read_model.position()  # type: ignore[union-attr]
+        if self._hot_cache is None or self._hot_cache[0] != position:
+            summaries = self._read_model.snapshot()  # type: ignore[union-attr]
+            ready = {
+                task_id
+                for state in {summary["state"] for summary in summaries}
+                for task_id in self._read_model.ready(state, self._roles.done)  # type: ignore[union-attr]
+            }
+            self._hot_cache = (position, [summary_agent(summary, summary["id"] in ready) for summary in summaries])
+        return [dict(agent) for agent in self._hot_cache[1]]
 
     def _flows(self, now: float) -> tuple[list[dict], dict[str, dict]]:
         """Every flow with its tasks as the page draws them, and each machine's derivation (`machine_ties.derive`)."""
@@ -1269,7 +1351,7 @@ class BoardFeed:
                 "roles": self._roles.wire(),
                 "capabilities": dict(self._capabilities),
                 "settled": dict(self._settled),
-                "cold_done": sorted(task for task, agent in self._open.items() if is_cold(agent)),
+                "cold_done": [] if self._read_model else sorted(t for t, a in self._open.items() if is_cold(a)),
                 "error": self._error(),
                 "reading": self._replaying(),
                 **declared(self._domains, self._runnable(), self._cues, self._processes),

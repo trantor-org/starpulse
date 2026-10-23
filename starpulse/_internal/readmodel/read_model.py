@@ -25,6 +25,10 @@ class ReadModel:
         """The unarchived Tasks as summaries, in id order."""
         return self._summaries(queries.snapshot(state))
 
+    def archived(self, before: float | None, limit: int) -> list[dict[str, Any]]:
+        """Up to `limit` archived Tasks changed before `before` (None: any time), newest first."""
+        return self._summaries(queries.archived(before, limit))
+
     def with_field(self, name: str, value: object) -> list[str]:
         """The ids of unarchived Tasks whose queried declared field `name` equals `value`; KeyError when not queried."""
         field = self._declared.get(name)
@@ -39,6 +43,11 @@ class ReadModel:
     def since(self, seq: int, limit: int = 1000) -> list[dict[str, Any]]:
         """Summaries of the Tasks changed after `seq`, archived ones included, in the order they changed."""
         return self._summaries(queries.since(seq, limit))
+
+    def position(self) -> int:
+        """The stream position of the newest change; 0 when no Task has one."""
+        with self._engine.connect() as db:
+            return db.execute(queries.position()).scalar() or 0
 
     def _summaries(self, statement: Select[Any]) -> list[dict[str, Any]]:
         with self._engine.connect() as db:

@@ -194,7 +194,20 @@ row in that transaction, in lane `archived` when the row is archived; no non-tes
   `ready(state, done)` (live Tasks in `state` whose every dependency is in `done`; a dependency with no row blocks) and
   `since(seq, limit)` (the delta: rows changed after a cursor, archived included). Each statement is a SQLAlchemy `Select`
   in `readmodel.queries`; its test asserts the plan uses an index and has no table scan.
+  `archived(before, limit)` pages the archive newest first (partial index `ix_starpulse_tasks_archived_updated`) and
+  `position()` is the highest `seq`, the cursor a cache keys on.
 - Only `readmodel` reads `readmodel.tables` (the `readmodel-table-private` import contract).
+
+`BoardFeed(read_model=ReadModel(engine))` serves the page from it: the reader switch, with no bridge between the two
+paths. The feed holds no Task; `_hot()` is one `snapshot()` per `position()`, `task`, `held` and `is_done` are single-row
+reads, `cold_page` pages `archived`, and the snapshot carries no archived Task (`cold_done` is empty). The Scheduler's
+`open_tasks` and the write guards go through the same reads. `follow_read_model()` publishes the Tasks changed since it last
+ran as page deltas, to run after each `Projector.catch_up`. Without a read model the in-memory path serves unchanged until the
+cutover (TASK-7409) passes one in. In this mode entered and workable-since times are approximated, and the overlays for runs,
+pulls and acceptance criteria are empty on the board card; `/api/task/<id>` returns the full record. The search index is its
+own FTS table, queried by term and never by loading Tasks; `put` still feeds it, so the cutover feeds it from the read model.
+`ci/test_read_model_latency.py` (nightly) serves 20,000 Tasks with 18,000 archived and holds every read surface to the page
+budget and the board to its soft memory limit.
 
 ## Task History
 
