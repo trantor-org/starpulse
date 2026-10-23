@@ -5799,6 +5799,9 @@
         "last_at": {
           "type": "number"
         },
+        "lowers": {
+          "type": "integer"
+        },
         "main_effort": {
           "anyOf": [
             {
@@ -5841,6 +5844,9 @@
           "type": "object"
         },
         "prompts": {
+          "type": "integer"
+        },
+        "raises": {
           "type": "integer"
         },
         "rejections": {
@@ -5930,6 +5936,8 @@
         "main_effort",
         "model_changes",
         "effort_changes",
+        "raises",
+        "lowers",
         "tokens",
         "cost_usd",
         "agent_s",
@@ -6205,6 +6213,9 @@
         "last_at": {
           "type": "number"
         },
+        "lowers": {
+          "type": "integer"
+        },
         "models": {
           "items": {
             "type": "string"
@@ -6222,6 +6233,9 @@
             "type": "integer"
           },
           "type": "object"
+        },
+        "raises": {
+          "type": "integer"
         },
         "rejections": {
           "type": "integer"
@@ -6283,6 +6297,8 @@
         "interventions",
         "compactions",
         "skills",
+        "raises",
+        "lowers",
         "escalated",
         "clean",
         "tokens",
