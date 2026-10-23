@@ -111,7 +111,7 @@ _PLAN = re.compile(r"<!-- SECTION:PLAN:BEGIN -->(.*?)<!-- SECTION:PLAN:END -->",
 _DONE = re.compile(r"<!-- DOD:BEGIN -->(.*?)<!-- DOD:END -->", re.S)
 _FINAL_SUMMARY = re.compile(r"<!-- SECTION:FINAL_SUMMARY:BEGIN -->(.*?)<!-- SECTION:FINAL_SUMMARY:END -->", re.S)
 _COMMENTS_SECTION = re.compile(r"<!-- COMMENTS:BEGIN -->(.*?)<!-- COMMENTS:END -->", re.S)
-_COMMENT_HEAD = re.compile(r"^created: (\S+ \S+)\n---\n", re.M)
+_COMMENT_HEAD = re.compile(r"^created: (\S+ \S+)\n(?:author: (\S+)\n)?---\n", re.M)
 _SESSION_LINK = re.compile(r"^\*\*Session Link:\*\* (\S+)", re.M)
 _NOTES_SECTION = "\n## Implementation Notes\n\n<!-- SECTION:NOTES:BEGIN -->\n{}\n<!-- SECTION:NOTES:END -->\n"
 
@@ -359,7 +359,11 @@ def _comments(body: str) -> list[dict[str, str]]:
     heads = list(_COMMENT_HEAD.finditer(region))
     ends = [*(head.start() for head in heads[1:]), len(region)]
     return [
-        {"created": head[1], "text": region[head.end() : end].rstrip().removesuffix("---").strip()}
+        {
+            "created": head[1],
+            "text": region[head.end() : end].rstrip().removesuffix("---").strip(),
+            **({"author": head[2]} if head[2] else {}),
+        }
         for head, end in zip(heads, ends, strict=False)
     ]
 
@@ -507,9 +511,9 @@ def _set_items(task: str, body: str, field: str, value: Any) -> str:
     return _marked(body, marker, heading, "\n" + "".join(lines), after="")
 
 
-def _comment(body: str, text: str) -> str:
-    """`body` with `text` appended to its comments, as the Backlog this workspace runs writes one."""
-    entry = f"created: {datetime.now():%Y-%m-%d %H:%M}\n---\n{text.strip()}\n---\n\n"
+def _comment(body: str, text: str, actor: str = OPERATOR) -> str:
+    """`body` with `text` appended to its comments by `actor`, as the Backlog this workspace runs writes one."""
+    entry = f"created: {datetime.now():%Y-%m-%d %H:%M}\nauthor: {actor}\n---\n{text.strip()}\n---\n\n"
     if _COMMENTS.search(body):
         return _COMMENTS.sub(lambda end: f"{entry}{end.group()}", body, count=1)
     return body.rstrip("\n") + f"\n\n## Comments\n\n<!-- COMMENTS:BEGIN -->\n{entry}<!-- COMMENTS:END -->\n"
@@ -627,7 +631,7 @@ def _editor(root: Path, statuses: tuple[str, ...], guard: _Guard = _Guard(), lin
             body = _apply(task, frontmatter, body, link(changes), spelled)
             for text in [comment] if isinstance(comment, str) else comment:
                 recorded = _recorded(text, _comments(body))
-                body = _comment(body, text) if text.strip() and not recorded else body
+                body = _comment(body, text, actor) if text.strip() and not recorded else body
             return body
 
         try:
@@ -686,7 +690,7 @@ def _archiver(root: Path, statuses: tuple[str, ...], roles: StateRoles, guard: _
             reason.strip()
             and not (
                 noted := _update(
-                    root, task, lambda _, body: _comment(body, f"Archived: {reason.strip()}"), guard, actor
+                    root, task, lambda _, body: _comment(body, f"Archived: {reason.strip()}", actor), guard, actor
                 )
             ).ok
         ):

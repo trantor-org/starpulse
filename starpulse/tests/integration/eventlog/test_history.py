@@ -68,6 +68,16 @@ def test_a_tasks_machine_path_places_each_event_and_counts_every_row(store: Hist
     assert store.machine_path("PROJ-404", "in-progress") == ([], 0)
 
 
+def test_a_lane_change_keeps_the_actor_that_made_it(store: HistoryStore) -> None:
+    store.record_lane("a", "PROJ-7", "Needs attention", 1.0, event={"task": "PROJ-7", "lane": "needs_attention", "time": 1.0})
+    store.record_lane("b", "PROJ-7", "Done", 2.0, event={"task": "PROJ-7", "lane": "done", "time": 2.0, "actor": "operator"})
+
+    assert store.lane_path("PROJ-7") == [
+        {"at": 1.0, "from": None, "to": "needs_attention"},
+        {"at": 2.0, "from": "needs_attention", "to": "done", "by": "operator"},
+    ]
+
+
 def test_a_status_that_repeats_the_tasks_last_adds_no_lane_change(store: HistoryStore) -> None:
     for at, (status, event_id) in enumerate((("Ready", "a"), ("Ready", "b"), ("Doing", "c"), ("Ready", "d"))):
         store.record_lane(event_id, "PROJ-7", status, float(at))
