@@ -105,12 +105,14 @@ def _serve(
     children: set[int] = set()
     exits: dict[int, int] = {}
     retired = False
+    readable = select.poll()
+    readable.register(control, select.POLLIN)
     while True:
         _reap(exits)
         children -= exits.keys()
         if retired and not children:
             return
-        if not select.select([control], [], [], _REAP_S)[0]:
+        if not readable.poll(_REAP_S * 1000):
             continue
         line = requests.readline()
         if not line:
