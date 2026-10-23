@@ -3,14 +3,14 @@ import { EMPTY_DRAFT, createBody, createOutcome, postCreate, newTaskKey, type Ne
 
 const answer = (status: number, body: unknown) => async () => new Response(JSON.stringify(body), { status });
 const FULL: NewTaskDraft = {
-  title: " Write the quickstart ", description: "Explain the lanes.\n", priority: "High", labels: "docs, ui ,", milestone: "m-1",
+  title: " Write the quickstart ", description: "Explain the lanes.\n", priority: "High", impact: "high", urgency: " low ", labels: "docs, ui ,", milestone: "m-1",
   assignee: "@agent-fast-low", dependencies: "task-1", acceptanceCriteria: ["Names every lane", " ", "Creates a task"],
 };
 
 describe("the body of a create", () => {
   it("names the operator and carries every filled field, trimmed, with labels and dependencies split on commas and blank criteria dropped", () => {
     expect(createBody(FULL)).toEqual({
-      title: "Write the quickstart", description: "Explain the lanes.", priority: "High", labels: ["docs", "ui"], milestone: "m-1",
+      title: "Write the quickstart", description: "Explain the lanes.", priority: "High", impact: "high", urgency: "low", labels: ["docs", "ui"], milestone: "m-1",
       assignee: "@agent-fast-low", dependencies: ["task-1"], acceptanceCriteria: ["Names every lane", "Creates a task"], actor: "operator",
     });
   });

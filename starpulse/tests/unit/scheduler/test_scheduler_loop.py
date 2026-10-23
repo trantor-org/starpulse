@@ -115,10 +115,20 @@ class Rig:
         self.put(task, "needs_attention")
         return Written(True, task)
 
-    def put(self, task: str, lane: str = "ready", size: int = 8, deps: tuple[str, ...] = ()) -> None:
+    def put(
+        self, task: str, lane: str = "ready", size: int = 8, deps: tuple[str, ...] = (), impact: str = "", urgency: str = ""
+    ) -> None:
         self.feed.put(
             BoardTask(
-                id=task, team="demo", title=task, lane=lane, labels=[f"size-{size}"], profile=PROFILE, dependencies=deps
+                id=task,
+                team="demo",
+                title=task,
+                lane=lane,
+                labels=[f"size-{size}"],
+                profile=PROFILE,
+                dependencies=deps,
+                impact=impact,
+                urgency=urgency,
             )
         )
 
@@ -406,7 +416,22 @@ def test_next_pick_is_the_task_admission_would_start_with_its_reason(rig: Rig) -
     rig.put("T-3", lane="to_do", deps=("T-2",))  # T-2 heads the longer chain, so it ranks first
     rig.sampler.sample()
 
-    assert rig.loop.next_pick() == {"task": "T-2", "title": "T-2", "verdict": "starting", "reason": "goes next"}
+    assert rig.loop.next_pick() == {"task": "T-2", "title": "T-2", "verdict": "starting", "reason": "goes next", "priority": "default"}
+
+
+def test_next_pick_names_the_priority_it_ranked_by(rig: Rig) -> None:
+    rig.put("T-1", impact="low", urgency="low")
+    rig.put("T-2", impact="high", urgency="high")  # a leaf, but its weight outranks T-1's
+    rig.put("T-3", lane="to_do", deps=("T-1",))
+    rig.sampler.sample()
+
+    assert rig.loop.next_pick() == {
+        "task": "T-2",
+        "title": "T-2",
+        "verdict": "starting",
+        "reason": "goes next",
+        "priority": "high/high",
+    }
 
 
 def test_next_pick_names_the_top_ranked_task_and_the_dimension_it_waits_on_when_nothing_fits(tmp_path: Path) -> None:
@@ -416,7 +441,7 @@ def test_next_pick_names_the_top_ranked_task_and_the_dimension_it_waits_on_when_
     rig.put("T-3", lane="to_do", deps=("T-2",))
     rig.sampler.sample()
 
-    assert rig.loop.next_pick() == {"task": "T-2", "title": "T-2", "verdict": "waits", "reason": "cpu"}
+    assert rig.loop.next_pick() == {"task": "T-2", "title": "T-2", "verdict": "waits", "reason": "cpu", "priority": "default"}
 
 
 def test_next_pick_counts_a_started_run_it_will_not_pick_again(tmp_path: Path) -> None:
@@ -425,7 +450,7 @@ def test_next_pick_counts_a_started_run_it_will_not_pick_again(tmp_path: Path) -
     rig.put("T-2")
     assert rig.loop.tick() == ["T-1"]  # the board still shows it Ready
 
-    assert rig.loop.next_pick() == {"task": "T-2", "title": "T-2", "verdict": "waits", "reason": "cpu"}
+    assert rig.loop.next_pick() == {"task": "T-2", "title": "T-2", "verdict": "waits", "reason": "cpu", "priority": "default"}
 
 
 def test_next_pick_is_none_without_a_reading_or_a_workable_task(rig: Rig) -> None:
@@ -488,7 +513,7 @@ def test_next_pick_names_quiet_hours_as_why_the_top_task_waits(tmp_path: Path) -
     rig.put("T-1")
     rig.sampler.sample()
 
-    assert rig.loop.next_pick() == {"task": "T-1", "title": "T-1", "verdict": "waits", "reason": "quiet hours"}
+    assert rig.loop.next_pick() == {"task": "T-1", "title": "T-1", "verdict": "waits", "reason": "quiet hours", "priority": "default"}
 
 
 def test_a_session_stop_with_the_task_still_open_closes_the_run_and_does_not_start_it_again(
@@ -577,6 +602,7 @@ def test_a_usage_limit_stop_pauses_that_harness_until_its_reset(rig: Rig) -> Non
         "title": "T-1",
         "verdict": "waits",
         "reason": "claude usage limit",
+        "priority": "default",
     }
 
     rig.limit = None

@@ -108,6 +108,8 @@ def task_agent(task: BoardTask) -> dict:
         "assignee": task.assignee,
         "labels": list(task.labels),
         "milestone": task.milestone,
+        "impact": task.impact,
+        "urgency": task.urgency,
         "type": task.type,
         "dependencies": list(task.dependencies),
         "prs": cited_pulls(task),

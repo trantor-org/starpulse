@@ -157,7 +157,7 @@ def test_a_get_with_a_loop_names_the_next_pick_and_lists_no_session_before_any_s
 
     assert status == 200
     assert body["inFlight"] == []
-    assert body["next"] == {"task": "T-4", "title": "Serve it", "verdict": "starting", "reason": "goes next"}
+    assert body["next"] == {"task": "T-4", "title": "Serve it", "verdict": "starting", "reason": "goes next", "priority": "default"}
 
 
 def test_a_get_with_a_loop_lists_each_started_session_and_no_pick_once_nothing_is_left(tmp_path: Path) -> None:
@@ -316,6 +316,7 @@ def test_inside_quiet_hours_the_loop_admits_nothing_and_the_next_pick_waits_for_
         "title": "Serve it",
         "verdict": "waits",
         "reason": "quiet hours",
+        "priority": "default",
     }
 
     _put(runtime, {"quietHours": None})

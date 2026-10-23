@@ -121,7 +121,7 @@ RetiredImporter = Callable[[str, str], Written]
 #: no file is refused. A completed task is still read and edited.
 TaskCompleter = Callable[[str], Written]
 #: Create a task with this title and details in the starting lane, `(title, details, /, actor=)`. `details` holds only
-#: the fields the page filled (`description`, `priority`, `labels`, `milestone`, `assignee`, `dependencies`,
+#: the fields the page filled (`description`, `priority`, `impact`, `urgency`, `labels`, `milestone`, `assignee`, `dependencies`,
 #: `acceptanceCriteria`); a caller in the same process may pass any other field `TaskEditor` sets. A successful
 #: `Written.output` is the new task's id.
 TaskCreator = Callable[..., Written]

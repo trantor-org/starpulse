@@ -222,3 +222,31 @@ def test_a_predictor_that_fails_leaves_the_decision_without_a_score(ledger: Ledg
     [decision] = _decide([_task()], ledger, predictor=broken)
 
     assert (decision.admitted, decision.predictor) == (True, None)
+
+
+def test_a_high_priority_leaf_outranks_a_deeper_low_priority_chain(ledger: Ledger) -> None:
+    tasks = [
+        _task("CHAIN", impact="low", urgency="low"),  # weight 1 x depth 3
+        _task("MID", deps=("CHAIN",), state="waiting"),
+        _task("END", deps=("MID",), state="waiting"),
+        _task("LEAF", impact="high", urgency="high"),  # weight 9 x depth 1
+    ]
+
+    decisions = _decide(tasks, ledger)
+
+    assert _by_rank(decisions, "enforced_rank") == ["LEAF", "CHAIN"]
+    assert {d.task: d.priority for d in decisions} == {"CHAIN": "low/low", "LEAF": "high/high"}
+
+
+def test_a_task_with_no_impact_or_urgency_ranks_with_the_matrixs_default_weight(ledger: Ledger) -> None:
+    policy = Scheduler(lane="ready", priority_matrix={**Scheduler().priority_matrix, "default": 3})
+    tasks = [
+        _task("BARE"),  # no Impact or Urgency: the default weight 3 x depth 1
+        _task("LOW", impact="low", urgency="low"),  # weight 1 x depth 2
+        _task("AFTER", deps=("LOW",), state="waiting"),
+    ]
+
+    decisions = decide(tasks, "ready", _readings(policy), policy, {}, ledger)
+
+    assert _by_rank(decisions, "enforced_rank") == ["BARE", "LOW"]
+    assert next(d for d in decisions if d.task == "BARE").priority == "default"

@@ -1,8 +1,8 @@
 """Admission: whether a Ready task fits the capacity left, and in what order the tasks that fit go.
 
 A task's demand is priced by what a task of its tier and size has drawn. The tasks that fit rank two ways: the enforced
-order is critical-path depth, and the shadow order is `value / dominant share` (Dominant Resource Fairness), where
-value is depth times the chance of the goal. The shadow order is only logged beside the enforced one until a calibration
+order is Priority weight times critical-path depth, and the shadow order is `value / dominant share` (Dominant Resource
+Fairness), where value is that weight times depth times the chance of the goal. The shadow order is only logged beside the enforced one until a calibration
 report earns it the enforced place (`shadow=False`).
 
 The rule is pure over the sampler's readings, the policy, the run ledger, the board's tasks, the trajectory chain and
@@ -58,7 +58,8 @@ class Decision:
 
     It is `admitted` when its `demand` fits every dimension's headroom, else `blocked_by` the first dimension it overfits.
     `depth` is the longest chain of open tasks waiting on it; `p_goal` the forecast chance of the goal for that task in
-    the eligible lane, else the chain's chance from the lane; `predictor` the optional predictor's score. The ranks number
+    the eligible lane, else the chain's chance from the lane; `predictor` the optional predictor's score; `priority` the Priority matrix cell the task ranked by (`<impact>/<urgency>`,
+    or `default` for a task with neither) and `weight` that cell's Priority weight. The ranks number
     the admitted tasks from 1: `shadow_rank` by value over dominant share and `enforced_rank` by the order admission follows.
     """
 
@@ -69,6 +70,8 @@ class Decision:
     depth: int
     p_goal: float
     predictor: float | None
+    priority: str = "default"
+    weight: float = 1.0
     shadow_rank: int | None = None
     enforced_rank: int | None = None
 
@@ -152,14 +155,17 @@ def decide(
         blocked_by = next((name for name in DIMENSIONS if need[name] > headroom[name]), None)
         score = _score(predictor, task)
         p_goal = chances.get(task["id"], lane_p_goal)
-        decision = Decision(task["id"], blocked_by is None, blocked_by, need, depths[task["id"]], p_goal, score)
+        priority, weight = policy.priority_of(task)
+        decision = Decision(
+            task["id"], blocked_by is None, blocked_by, need, depths[task["id"]], p_goal, score, priority, weight
+        )
         share = max(need[name] / limits[name] for name in DIMENSIONS)
-        values[decision.task] = decision.depth * (p_goal if score is None else score) / share
+        values[decision.task] = decision.weight * decision.depth * (p_goal if score is None else score) / share
         decisions.append(decision)
     admitted = [d for d in decisions if d.admitted]
     by_shadow = sorted(admitted, key=lambda d: (-values[d.task], -d.depth, d.task))
-    by_depth = sorted(admitted, key=lambda d: (-d.depth, d.task))
-    enforced = by_depth if shadow else by_shadow
+    by_weighted_depth = sorted(admitted, key=lambda d: (-d.weight * d.depth, d.task))
+    enforced = by_weighted_depth if shadow else by_shadow
     shadow_rank = {d.task: rank for rank, d in enumerate(by_shadow, 1)}
     enforced_rank = {d.task: rank for rank, d in enumerate(enforced, 1)}
     ranked = [replace(d, shadow_rank=shadow_rank[d.task], enforced_rank=enforced_rank[d.task]) for d in enforced]

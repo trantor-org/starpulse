@@ -147,6 +147,8 @@ export function editKey(key: string, ctrl: boolean, meta: boolean): EditAction |
 }
 
 export const PRIORITIES = ["High", "Medium", "Low"];
+/** The levels of a task's Impact and Urgency, which the scheduler's Priority matrix maps to a weight. */
+export const LEVELS = ["high", "medium", "low"];
 
 /** The task's record from the server, or null when the board cannot read it or the request failed. */
 export async function fetchRecord(id: string, fetcher: typeof apiFetch = apiFetch): Promise<TaskRecord | null> {

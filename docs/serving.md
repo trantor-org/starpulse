@@ -5,7 +5,7 @@
 Open <http://localhost:8766>. The first serve creates `.starpulse/board/` in the working directory (beside the config file when `--config`
 names one): a `config.yml`
 holding the project name (that directory's name, the team its tasks are in), the lanes (To Do, In Progress, Done) and an empty `tasks/` directory, one Markdown file per task. The
-Kanban view starts with no tasks: **New task**, at the top right beside the task count, opens a form for its title, description, priority, labels,
+Kanban view starts with no tasks: **New task**, at the top right beside the task count, opens a form for its title, description, priority, impact, urgency, labels,
 milestone, assignee, dependencies and acceptance criteria and adds it to the first column, and
 the Admin view's **Tracker** card has **Connect a tracker**, which opens a modal with one collapsible row per tracker (the native board, Backlog.md, Jira), each expanding to
 numbered setup steps whose commands copy with one click (see [Connect a tracker](#connect-a-tracker)). The `starpulse` verbs, `task create`
@@ -402,6 +402,9 @@ applied_by = "pin-bump"
 # fast = 1
 # standard = 2
 # deep = 4
+# [scheduler.priority_matrix]  # the Priority weight of an <impact>/<urgency> cell (low, medium or high each); a cell left out keeps its weight
+# "high/high" = 9
+# default = 4               # a task with no Impact or Urgency ranks with this weight
 # [scheduler.limits]        # each dimension's limit; a dimension left out keeps its limit
 # cpu = 80       # host CPU, percent
 # memory = 80    # host memory, percent
@@ -492,7 +495,7 @@ time as the row's `updated_at`, then renamed to the same name plus `.imported`.
   "sampledAt": 1788307200.5,
   "dimensions": [{"name": "cpu", "use": 35.0, "limit": 80.0}],
   "inFlight": [{"task": "TASK-1", "title": "First", "model": "@agent-standard-high", "started": 1788307000.0, "url": "https://claude.ai/code/session_01"}],
-  "next": {"task": "TASK-2", "title": "Second", "verdict": "waits", "reason": "cpu"},
+  "next": {"task": "TASK-2", "title": "Second", "verdict": "waits", "reason": "cpu", "priority": "high/low"},
   "pauses": [{"harness": "claude", "until": 1788344400.0, "reason": "usage limit"}],
   "sessionsByHarness": {"claude": {"use": 1.0, "limit": 3.0}, "cursor": {"use": 0.0, "limit": 2.0}}
 }
@@ -518,7 +521,8 @@ harness lands in `pauses` and blocks admission for that harness only.
   `verdict` `starting` and `reason` `goes next`; when none fits, the top-ranked task with `verdict` `waits` and the first
   dimension it overfits as `reason`. Inside the quiet hours the top-ranked task `waits` with `reason` `quiet hours`,
   whatever room the host has. While a harness usage pause holds, it `waits` with `reason` `<harness> usage limit`. It is
-  `null` before the first sample or with no workable task in the eligible lane. Reading it logs no decision.
+  `null` before the first sample or with no workable task in the eligible lane. Reading it logs no decision. Its `priority`
+  names the Priority matrix cell the task ranked by (`high/low`, or `default`).
 - `pauses` lists each harness whose admission is paused until `until` (epoch seconds) after a usage or credit-limit
   start, with `reason` `usage limit`. The key is absent when none are paused.
 
@@ -562,9 +566,11 @@ forecast P(goal), and the run ledger.
   that prior.
 - **Fit.** A task is admitted only if its demand is at most the headroom (limit less use) on every dimension; otherwise
   the decision names the first dimension it overfits.
-- **Order.** The admitted tasks go in the order of critical-path depth, the task itself plus the longest chain of open
-  tasks waiting on it. In shadow, the default, a second order is only logged: `value / dominant share`, where value is depth
-  times P(goal) and dominant share is the largest `demand / limit` over the dimensions. P(goal) is the task's forecast
+- **Order.** The admitted tasks go in the order of Priority weight times critical-path depth (the task itself plus the
+  longest chain of open tasks waiting on it), the lowest id breaking a tie. The weight is the `[scheduler.priority_matrix]`
+  cell of the task's `<impact>/<urgency>` (`high/low`), 1 to 9 by default as the product of the two levels' places
+  (low 1, medium 2, high 3); a task missing either field ranks under `default`, 4. In shadow, the default, a second order
+  is only logged: `value / dominant share`, where value is weight times depth times P(goal) and dominant share is the largest `demand / limit` over the dimensions. P(goal) is the task's forecast
   chance of the goal in the eligible lane (`trajectory_analytics(...)["forecast"]`), else the chain's `p_goal` for that
   lane, and 1 when the lane has no history. The loop reads those ranks whenever `[level]` is set. An optional predictor, a
   function from a task's title and description to a score, replaces P(goal) in that shadow value and is logged; a

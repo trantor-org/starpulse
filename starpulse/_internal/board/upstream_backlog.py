@@ -399,6 +399,8 @@ class UpstreamBacklog:
             profile=_profile(frontmatter),
             assignee=_assignee(body),
             labels=_strings(frontmatter.get("labels")),
+            impact=str(frontmatter.get("impact") or "").strip().lower(),
+            urgency=str(frontmatter.get("urgency") or "").strip().lower(),
             milestone=str(frontmatter.get("milestone") or "").strip(),
             type=str(frontmatter.get("type") or "").strip(),
             description=_description(body),

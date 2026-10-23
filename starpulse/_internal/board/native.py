@@ -396,6 +396,8 @@ def _reader(root: Path, evaluate: Callable[[str, str], list[dict[str, Any]]]) ->
             "status": str(frontmatter.get("status") or ""),
             "profile": _profile_of(frontmatter),
             "priority": str(frontmatter.get("priority") or ""),
+            "impact": str(frontmatter.get("impact") or ""),
+            "urgency": str(frontmatter.get("urgency") or ""),
             "labels": list(_strings(frontmatter.get("labels"))),
             "milestone": str(frontmatter.get("milestone") or ""),
             "dependencies": list(_strings(frontmatter.get("dependencies"))),
@@ -428,7 +430,14 @@ _CHECKLISTS = {
     "acceptanceCriteria": ("AC", "Acceptance Criteria", _CRITERIA),
     "definitionOfDone": ("DOD", "Definition of Done", _DONE),
 }
-_SCALARS = {"title": "title", "type": "type", "priority": "priority", "milestone": "milestone"}
+_SCALARS = {
+    "title": "title",
+    "type": "type",
+    "priority": "priority",
+    "impact": "impact",
+    "urgency": "urgency",
+    "milestone": "milestone",
+}
 _LISTS = {
     "labels": "labels",
     "dependencies": "dependencies",
@@ -973,6 +982,8 @@ _NEW_TASK_DETAILS = {
     "milestone",
     "dependencies",
     "priority",
+    "impact",
+    "urgency",
     "description",
     "acceptanceCriteria",
     "created_by",
@@ -984,7 +995,7 @@ def _new_task(task: str, title: str, status: str, details: Mapping[str, Any]) ->
     frontmatter: dict[str, Any] = {"id": task, "title": title, "status": status}
     if profile := details.get("profile", details.get("assignee")):
         frontmatter["profile"] = [profile]
-    keys = ("labels", "milestone", "dependencies", "priority", "created_by")
+    keys = ("labels", "milestone", "dependencies", "priority", "impact", "urgency", "created_by")
     frontmatter |= {key: details[key] for key in keys if key in details}
     text = f"---\n{yaml.safe_dump(frontmatter, sort_keys=False, allow_unicode=True)}---\n"
     if description := details.get("description"):

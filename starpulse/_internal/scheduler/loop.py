@@ -421,6 +421,7 @@ class Loop:
             "title": agent["title"],
             "verdict": "waits" if waits else "starting",
             "reason": reason,
+            "priority": top.priority,
         }
 
     def _admit(self, now: float) -> list[str]:
