@@ -608,7 +608,7 @@ def _manifest(parser: argparse.ArgumentParser) -> dict[str, Any]:
             for verb, leaf in _leaves(parser)
             if leaf.get_default(
                 "run"
-            )  # `serve`, `connect`, `worker`, `import-history`, `conform` and `reload` are listed for `--help` but read no running server
+            )  # `serve`, `connect`, `worker`, `import-history`, `import-board`, `conform` and `reload` are listed for `--help` but read no running server
         ],
     }
 
@@ -632,6 +632,7 @@ def _parser() -> argparse.ArgumentParser:
     verbs.add_parser(
         "import-history", help="add a board's earlier lane changes to the store, once each", add_help=False
     )
+    verbs.add_parser("import-board", help="import the board and its recorded runs, verified by replay", add_help=False)
     verbs.add_parser(
         "conform", help="replay the recorded history against the machines the project declares", add_help=False
     )

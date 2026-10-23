@@ -434,3 +434,16 @@ It prints one JSON object, and the reply is sent before a `serve` that re-execut
 | 0 | The reload ran; the JSON names what each did. |
 | 1 | No supervisor is running: no `<config stem>.control` beside the config, or nothing answers on its port. Says so on stderr. |
 | 2 | `serve` refused the reload, such as a closure that does not import; the reason is on stderr and nothing changed. |
+
+## Importing a board with its runs
+
+`starpulse import-board [--config starpulse.toml]` moves a board over in one verified import (D11). Each task the
+store's lane history names becomes a `TaskImported` of the board's record followed by its recorded lane changes as
+imported `Transitioned` Events; each `runs:events` entry becomes an Event of its run's stream. It then replays every
+task and compares the row with the board's record. Like `import-history` it is not an agent verb; stop `serve` first.
+
+It prints one JSON line, the verification report: `tasks`, `imported`, `equal`, `differing` (task to the fields whose
+replay differs), `gaps`, `runs`, `runs_imported` and `verified`. A task whose lane history ends elsewhere than the board,
+or that has none, is a gap the earlier writes left: it is imported as the board shows it and listed in `gaps`. The exit
+code is 0 when every task is equal, 1 when one differs, and 2 for a config or board that cannot be read. A second run
+imports nothing and verifies again. `--dry-run` imports into a scratch store and reports, leaving the real store untouched.
