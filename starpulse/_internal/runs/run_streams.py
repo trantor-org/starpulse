@@ -46,7 +46,12 @@ class RunStreams:
         return list(open_steps)
 
     def record(self, event_id: str, fields: dict[str, Any]) -> bool:
-        """Append the entry as an Event of its run's stream, unless the stream holds it already."""
+        """Append the entry as an Event of its run's stream, unless the stream holds it already.
+
+        An entry with no `event` field predates the field (phase-only rows, before the schema change): it is no Event, so it is skipped.
+        """
+        if "event" not in fields:
+            return False
         subject = f"{fields['workflow']}/{fields['run_id']}"
         writer = fields.get("instance") or ADAPTER
         event = NewEvent(
