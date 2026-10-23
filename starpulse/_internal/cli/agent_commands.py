@@ -6,11 +6,10 @@ import argparse
 import subprocess
 import time
 from collections.abc import Mapping
-from pathlib import Path
 from typing import Any
 
 from starpulse._internal.cli.agent_wire import CliError
-from starpulse._internal.config.config import ConfigError, load
+from starpulse._internal.config.config import ConfigError, discover, load
 
 #: What a caller does for a step the project has not mapped.
 FALLBACK = "AGENTS.md"
@@ -40,7 +39,7 @@ def _argv(template: tuple[str, ...], values: _Values, extra: list[str]) -> list[
 
 def run(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """Run one named command; the child's output streams to stderr and the document is its name, argv, exit and seconds."""
-    path = args.config or (Path("starpulse.toml") if Path("starpulse.toml").is_file() else None)
+    path = discover(args.config)
     try:
         commands = load(path).project.commands
     except (ConfigError, OSError, ValueError) as exc:

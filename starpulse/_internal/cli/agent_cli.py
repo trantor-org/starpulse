@@ -129,7 +129,7 @@ from starpulse._internal.cli.agent_keys import (
     TASK_KEYS,
     TRANSITION_KEYS,
 )
-from starpulse._internal.config.config import Config, ConfigError, load
+from starpulse._internal.config.config import Config, ConfigError, discover, load
 from starpulse._internal.github_api import GitHubError, connect, repo_of
 from starpulse._internal.level.cells import cell_of
 from starpulse._internal.level.scores import PullFacts, cell_task_scores, merged_pulls, pull_facts, score_cells
@@ -426,7 +426,7 @@ def _diff(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any
 def _doctor(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """Every install check of `starpulse._internal.cli.doctor`; `ok` is false, and the exit code 1, when any fails."""
     base = agent_wire.server_url(args.server, environ)
-    path = args.config or (Path("starpulse.toml") if Path("starpulse.toml").is_file() else None)
+    path = discover(args.config)
     try:
         config = load(path)
     except (OSError, ValueError) as exc:
@@ -514,7 +514,7 @@ def _plain(value: object) -> Any:
 
 def _config_check(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """The config as it would run, every default filled in; `ok` is false, and the exit code 1, when it would not."""
-    path = args.config or (Path("starpulse.toml") if Path("starpulse.toml").is_file() else None)
+    path = discover(args.config)
     checked: dict[str, Any] = {"file": str(path) if path else None, "unknown_keys": [], "errors": [], "config": None}
     try:
         config = load(path)

@@ -67,3 +67,21 @@ def test_an_unknown_name_exits_4_naming_the_fallback(capsys: pytest.CaptureFixtu
     assert code == 4
     assert document["code"] == "not_found"
     assert document["fallback"] == "AGENTS.md"
+
+
+def test_a_linked_config_in_the_working_directory_reads_its_files_beside_the_target(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    deploy = tmp_path / "deploy"
+    deploy.mkdir()
+    (deploy / "harnesses.toml").write_text(
+        'tiers = ["standard"]\n[harnesses.claude]\nsessions = true\n'
+        '[harnesses.claude.tiers.standard]\nmodel = "sonnet"\nefforts = ["high"]\n'
+    )
+    (deploy / "starpulse.toml").write_text('harnesses_file = "harnesses.toml"\n' + _table([sys.executable, "-c", "pass"]))
+    (tmp_path / "starpulse.toml").symlink_to(deploy / "starpulse.toml")
+    monkeypatch.chdir(tmp_path)
+
+    code = cli.main(["command", "run", "go"], {})
+
+    assert (code, json.loads(capsys.readouterr().out)["exit"]) == (0, 0)
