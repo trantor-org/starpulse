@@ -295,6 +295,7 @@ type = "native"
 # criteria = "my-evaluator {id}"  # evaluates a task's Start Criteria; {id} is the task's id (see docs/adapters.md)
 # holds = "my-holds {id}"    # prints a JSON array of reasons the task actor withholds the task's `deps_done` (see Task actor)
 # validate = "my_checks:task_write"  # may refuse a task write before it lands (see docs/adapters.md)
+# claim_ttl = 1800   # seconds a claim lives without an Event by its session; past it StarPulse appends `Released` (naming the last renewal) and the Task returns to its Ready State, or its initial one when the machine has none
 # types = ["spike", "bug"]  # the names a task's `type` may take; a write setting any other is refused with this list in its reason, so with no list any non-empty type is accepted and a board names none of its own
 # task_file_name = "title"   # the name a created task's file is written under: "title" is `task-1 - Draw-the-board.md`, "slug" is `task-1-draw-the-board.md`, lowercase, its slug capped at 19 characters
 

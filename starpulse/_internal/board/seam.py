@@ -54,6 +54,7 @@ __all__ = [
     "TaskCreator",
     "TaskEditor",
     "TaskReader",
+    "TaskReleaser",
     "TaskRestorer",
     "TaskRetirer",
     "Written",
@@ -98,6 +99,8 @@ MoveWriter = Callable[..., Written]
 #: Set a task's assignee for `actor` (a keyword, omitted when the write names none), and say what it did. The same holds
 #: for `TaskEditor`, `TaskArchiver` and `TaskCreator`.
 AssigneeWriter = Callable[..., Written]
+#: Ends a task's claim: move it to a State and drop its session, `(task, status, /, actor=)`.
+TaskReleaser = Callable[..., Written]
 #: One task's full record keyed by its editable fields, or None when the board has no such task.
 TaskReader = Callable[[str], Mapping[str, Any] | None]
 #: Apply every change to a task in one write, `(task, changes, comment | [comment, ...], /, actor=)`.
@@ -180,6 +183,8 @@ class Board:
     """Sets a task's status when the page moves it; None refuses every move."""
     assign: AssigneeWriter | None = None
     """Sets the assignee the page picked when starting a task's session; None refuses a changed assignee."""
+    release: TaskReleaser | None = None
+    """Ends a task's claim and returns it to a State; None releases nothing."""
     source: str = "the board"
     """What the page says the Board is read from until the adapter is ready."""
     read: TaskReader | None = None

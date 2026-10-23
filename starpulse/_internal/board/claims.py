@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-__all__ = ["NOTES", "claim_fields", "assignee_of", "without_markers"]
+__all__ = ["NOTES", "claim_fields", "assignee_of", "without_markers", "released"]
 
 NOTES = re.compile(r"<!-- SECTION:NOTES:BEGIN -->(.*?)<!-- SECTION:NOTES:END -->", re.S)
 _MARKER = re.compile(r"^\*\*Assignee:\*\* (\S+)[ \t]*$", re.M)
@@ -29,3 +29,8 @@ def claim_fields(body: str) -> dict[str, str]:
 def without_markers(notes: str) -> str:
     """`notes` without its claim markers, trimmed."""
     return _MARKER.sub("", notes).strip()
+
+
+def released(body: str) -> str:
+    """`body` with its notes' claim markers dropped, which ends the claim."""
+    return NOTES.sub(lambda notes: notes.group(0).replace(notes.group(1), f"\n{without_markers(notes.group(1))}\n"), body)
