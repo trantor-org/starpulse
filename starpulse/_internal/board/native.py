@@ -386,37 +386,42 @@ def _reader(root: Path, evaluate: Callable[[str, str], list[dict[str, Any]]]) ->
         if (path := _find(root, task)) is None:
             return None
         try:
-            frontmatter, body = _split(path.read_text())
+            return _record_of(path.read_text(), task, evaluate)
         except OSError:
             return None  # moved or removed while reading
-        description = _description(body)
-        notes, comments = _section(_NOTES, body), _comments(body)
-        return {
-            "title": str(frontmatter.get("title") or ""),
-            "type": str(frontmatter.get("type") or ""),
-            "status": str(frontmatter.get("status") or ""),
-            "profile": _profile_of(frontmatter),
-            "priority": str(frontmatter.get("priority") or ""),
-            "impact": str(frontmatter.get("impact") or ""),
-            "urgency": str(frontmatter.get("urgency") or ""),
-            "labels": list(_strings(frontmatter.get("labels"))),
-            "milestone": str(frontmatter.get("milestone") or ""),
-            "dependencies": list(_strings(frontmatter.get("dependencies"))),
-            "references": list(_strings(frontmatter.get("references"))),
-            "documentation": list(_strings(frontmatter.get("documentation"))),
-            "modifiedFiles": list(_strings(frontmatter.get("modified_files"))),
-            "description": description,
-            "start_criteria": evaluate(task, description),
-            "plan": _section(_PLAN, body),
-            "notes": notes,
-            "finalSummary": _section(_FINAL_SUMMARY, body),
-            "comments": comments,
-            "session": _session(notes, comments),
-            "acceptanceCriteria": _items(_CRITERIA, body),
-            "definitionOfDone": _items(_DONE, body),
-        }
 
     return read
+
+
+def _record_of(text: str, task: str, evaluate: Callable[[str, str], list[dict[str, Any]]]) -> dict[str, Any]:
+    """The record of the task file `text`, keyed by the fields the task view draws and edits."""
+    frontmatter, body = _split(text)
+    description = _description(body)
+    notes, comments = _section(_NOTES, body), _comments(body)
+    return {
+        "title": str(frontmatter.get("title") or ""),
+        "type": str(frontmatter.get("type") or ""),
+        "status": str(frontmatter.get("status") or ""),
+        "profile": _profile_of(frontmatter),
+        "priority": str(frontmatter.get("priority") or ""),
+        "impact": str(frontmatter.get("impact") or ""),
+        "urgency": str(frontmatter.get("urgency") or ""),
+        "labels": list(_strings(frontmatter.get("labels"))),
+        "milestone": str(frontmatter.get("milestone") or ""),
+        "dependencies": list(_strings(frontmatter.get("dependencies"))),
+        "references": list(_strings(frontmatter.get("references"))),
+        "documentation": list(_strings(frontmatter.get("documentation"))),
+        "modifiedFiles": list(_strings(frontmatter.get("modified_files"))),
+        "description": description,
+        "start_criteria": evaluate(task, description),
+        "plan": _section(_PLAN, body),
+        "notes": notes,
+        "finalSummary": _section(_FINAL_SUMMARY, body),
+        "comments": comments,
+        "session": _session(notes, comments),
+        "acceptanceCriteria": _items(_CRITERIA, body),
+        "definitionOfDone": _items(_DONE, body),
+    }
 
 
 #: The sections an edit rewrites as text: the field's name, the markers' name and the heading a new section gets.
@@ -1162,6 +1167,8 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         retired.engine = log.engine  # the retired tasks live in the view's history store
         claims.log = log
         history.attach(log.engine)
+        rows = [(row["task"], row["text"]) for row in retired.rows()]
+        history.import_retired(rows, lambda text: _record_of(text, "", lambda *_: []))
 
     def start(feed: BoardFeed, group: str, log: EventLog) -> None:
         attach(log)

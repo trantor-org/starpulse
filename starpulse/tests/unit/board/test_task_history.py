@@ -10,6 +10,7 @@ from starpulse._internal.board.seam import Board
 from starpulse._internal.board.upstream_backlog import UpstreamBacklog
 from starpulse._internal.config.config import load
 from starpulse._internal.eventlog.event_log import EventLog
+from starpulse._internal.eventlog.tables import retired_tasks
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.readmodel.fold import replay
 from starpulse._internal.readmodel.projector import Projector
@@ -149,3 +150,30 @@ def test_replaying_every_task_equals_its_read_model_row_and_its_file(served) -> 
             record["notes"],
             record["labels"],
         )
+
+
+def test_a_retire_and_a_restore_of_a_retired_task_keep_its_history_archived_then_rehydrated(served) -> None:
+    built, _, store, _ = served
+
+    assert built.archive("task-5", "", actor="adin").ok
+    assert built.retire("task-5").ok
+    assert built.restore("task-5").ok
+
+    assert _types(store, "task-5")[-2:] == ["Archived", "Rehydrated"]
+    assert _types(store, "task-5").count("Archived") == 1
+
+
+def test_starting_the_board_gives_a_retired_row_without_history_its_imported_and_archived_events(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(UpstreamBacklog, "start", lambda self, interval, scanned: (self.scan(), scanned()))
+    built, feed = assemble(load(None), tmp_path, None, ())
+    log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
+    with log.engine.begin() as db:
+        db.execute(
+            retired_tasks.insert().values(task="TASK-9", name="task-9 - Old.md", text=FILE.replace("task-5", "TASK-9"), retired_at=0.0)
+        )
+
+    built.start(feed, "test", log)
+
+    assert _types(EventStore(log.engine), "TASK-9") == ["TaskImported", "Archived"]
