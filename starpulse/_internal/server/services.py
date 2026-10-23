@@ -8,9 +8,9 @@ from typing import TYPE_CHECKING, Any
 
 from starpulse._internal.config.config import SLOW_READ_S
 
-if TYPE_CHECKING:  # annotation only: a runtime import would put the autopilot in the Delivery worker's import closure
-    from starpulse._internal.autopilot.remote import Remote
-    from starpulse._internal.autopilot.runtime import Runtime
+if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
+    from starpulse._internal.scheduler.remote import Remote
+    from starpulse._internal.scheduler.runtime import Runtime
     from starpulse._internal.config.analytics import Analytics
     from starpulse._internal.config.harnesses import Harnesses
     from starpulse._internal.feed.search import SearchIndex
@@ -34,7 +34,7 @@ class Services:
     start_session: Callable[..., str] | None = None
     """Starts a task's session in the harness the page picked."""
     events: CloudEventsIngest | None = None
-    autopilot: Runtime | Remote | None = None
+    scheduler: Runtime | Remote | None = None
     contract: Callable[[], dict[str, Any]] | None = None
     pulls: PullStore | None = None
     telemetry: TelemetryLog | None = None

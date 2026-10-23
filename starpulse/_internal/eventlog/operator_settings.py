@@ -1,4 +1,4 @@
-"""Operator settings kept in the history store: the autopilot switch and the history window.
+"""Operator settings kept in the history store: the scheduler switch and the history window.
 
 Each was once a JSON file beside the config. A setting with no row imports its file's value once, keeping the time the
 file was last written, and retires the file by renaming it, so the file is neither read nor written again and an old

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:  # annotation only: a runtime import would put the autopilot in the Delivery worker's import closure
+if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     pass
 
 
@@ -30,7 +30,7 @@ _START = "/api/start"
 _WINDOW = "/api/history-window"
 
 
-_AUTOPILOT = "/api/autopilot"
+_SCHEDULER = "/api/scheduler"
 
 
 _TASK = "/api/task/"

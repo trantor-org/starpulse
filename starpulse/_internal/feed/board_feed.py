@@ -58,7 +58,7 @@ FEED_EVENT_RESEND = {
     "claim": False,
     "dags": False,
     "ledgers": False,
-    "autopilot": False,
+    "scheduler": False,
 }
 
 # The public path's name, not this module's: operators and trantor's tests filter the feed's records by it.

@@ -278,7 +278,7 @@ def test_a_forced_rerun_is_started_by_post_and_never_by_get_through_the_reruns_p
 def test_a_refused_run_answers_json_with_its_status(tmp_path: Path) -> None:
     with _serve(tmp_path, starts={"dagu": lambda workflow: "run-7"}) as server:
         request = urllib.request.Request(
-            _url(server, "/api/run/dagu/board-autopilot"),
+            _url(server, "/api/run/dagu/board-scheduler"),
             data=b"",
             headers={"Content-Type": "application/json"},
             method="POST",
@@ -287,7 +287,7 @@ def test_a_refused_run_answers_json_with_its_status(tmp_path: Path) -> None:
             urllib.request.urlopen(request, timeout=5)
 
     assert refused.value.code == 404
-    assert json.load(refused.value) == {"error": "dagu/board-autopilot is not declared run-safe"}
+    assert json.load(refused.value) == {"error": "dagu/board-scheduler is not declared run-safe"}
 
 
 def test_post_run_answers_404_for_an_adapter_without_start_and_a_run_id_for_a_run_safe_workflow_on_one_with_it(

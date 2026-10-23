@@ -55,12 +55,12 @@ def _closure_names(entry: str) -> set[str]:
     return {Path(file).name for file, _ in Reader(None)(entry).code}
 
 
-def test_the_pulls_closure_holds_no_autopilot_module() -> None:
+def test_the_pulls_closure_holds_no_scheduler_module() -> None:
     assert "loop.py" not in _closure_names("pulls")
 
 
-def test_the_autopilot_closure_holds_the_autopilot_modules() -> None:
-    assert {"loop.py", "autopilot_worker.py"} <= _closure_names("autopilot")
+def test_the_scheduler_closure_holds_the_scheduler_modules() -> None:
+    assert {"loop.py", "scheduler_worker.py"} <= _closure_names("scheduler")
 
 
 def test_the_serve_closure_holds_the_supervisor() -> None:
@@ -79,17 +79,17 @@ def no_code(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.usefixtures("no_code")
-def test_a_delivery_setting_is_a_live_change_to_pulls_and_leaves_autopilot_and_serve_unchanged(tmp_path: Path) -> None:
+def test_a_delivery_setting_is_a_live_change_to_pulls_and_leaves_scheduler_and_serve_unchanged(tmp_path: Path) -> None:
     path = _toml(tmp_path, "")
     before = Reader(path)
-    old = {name: before(name) for name in ("pulls", "autopilot", SELF)}
+    old = {name: before(name) for name in ("pulls", "scheduler", SELF)}
     _toml(tmp_path, "pull_requests = false\n")
 
-    new = {name: before(name) for name in ("pulls", "autopilot", SELF)}
+    new = {name: before(name) for name in ("pulls", "scheduler", SELF)}
 
     assert (new["pulls"].live, new["pulls"].restart) != (old["pulls"].live, old["pulls"].restart)
     assert new["pulls"].restart == old["pulls"].restart
-    assert new["autopilot"] == old["autopilot"]
+    assert new["scheduler"] == old["scheduler"]
     assert new[SELF] == old[SELF]
 
 

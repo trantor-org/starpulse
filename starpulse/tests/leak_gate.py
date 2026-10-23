@@ -86,5 +86,5 @@ def check(context: str, step: Callable[[], None], budget: Budget) -> int:
 # A context that now holds more has leaked or grown: find the cause before raising its budget.
 BUDGETS: dict[str, Budget] = {
     "pull-events": Budget(iterations=200, retained_bytes=32 * 1024),
-    "autopilot": Budget(iterations=100, retained_bytes=32 * 1024),
+    "scheduler": Budget(iterations=100, retained_bytes=32 * 1024),
 }

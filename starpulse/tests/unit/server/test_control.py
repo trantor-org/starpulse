@@ -17,7 +17,7 @@ from starpulse._internal.server import control
 from starpulse._internal.server.closure import ReloadError
 from starpulse._internal.server.control import Control
 
-REPORT = {"supervisor": "kept", "children": {"pulls": "kept", "autopilot": "replaced"}}
+REPORT = {"supervisor": "kept", "children": {"pulls": "kept", "scheduler": "replaced"}}
 
 
 class FakeSupervisor:

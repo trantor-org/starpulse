@@ -13,7 +13,7 @@ const sky = () => {
       { name: "board", agents: [{ id: "PROJ-1", title: "t", state: "ready", model: "", labels: [] }], machine: machine(["ready", "in_progress", "review"], {
         transitions: [{ source: "ready", target: "in_progress", event: "CLAIM" }, { source: "in_progress", target: "review", event: "REVIEW" }],
         submachines: [{ state: "in_progress", machine: "in-progress", exits: {}, parent: "board", when: "" }],
-        writers: { CLAIM: [{ actor: "board-autopilot", trigger: "dagu" }] },
+        writers: { CLAIM: [{ actor: "board-scheduler", trigger: "dagu" }] },
       }) },
       { name: "in-progress", agents: [], machine: machine(["worktree_ready", "pr_opened"], {
         transitions: [{ source: "worktree_ready", target: "pr_opened", event: "PR_OPENED" }],
@@ -21,8 +21,8 @@ const sky = () => {
       }) },
       { name: "triaging-cr-reviews", agents: [], machine: machine(["fetch", "reply"]) },
     ],
-    dags: [dag("board-autopilot", [["claim", []]]), dag("worktree-reap", [["list", []], ["reap", ["list"]]])],
-    domains: [{ name: "Board", dags: [{ name: "board-autopilot", runSafe: false }, { name: "worktree-reap", runSafe: true }] }],
+    dags: [dag("board-scheduler", [["claim", []]]), dag("worktree-reap", [["list", []], ["reap", ["list"]]])],
+    domains: [{ name: "Board", dags: [{ name: "board-scheduler", runSafe: false }, { name: "worktree-reap", runSafe: true }] }],
     settled: {}, error: null, now: 1000,
   };
   const S = merge(snap), moves = new Moves();

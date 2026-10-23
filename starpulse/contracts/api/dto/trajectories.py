@@ -1,4 +1,4 @@
-"""Trajectories and forecasts, the autopilot's ranks read."""
+"""Trajectories and forecasts, the scheduler's ranks read."""
 
 from __future__ import annotations
 

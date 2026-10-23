@@ -107,10 +107,10 @@ function ServerCard({ store, clock }: { store: HistoryWindowStore; clock: "24" |
 }
 
 /**
- * `autopilot` and `tracker` draw the Autopilot and Tracker cards in the settings column: each card is its own
- * feature, so App hands them in, `autopilot` with the clock it is to show.
+ * `scheduler` and `tracker` draw the Scheduler and Tracker cards in the settings column: each card is its own
+ * feature, so App hands them in, `scheduler` with the clock it is to show.
  */
-export function Admin({ store, window: historyWindow, autopilot, tracker }: { store: AdminStore; window: HistoryWindowStore; autopilot: (clock: ClockMode) => ReactNode; tracker?: ReactNode }) {
+export function Admin({ store, window: historyWindow, scheduler, tracker }: { store: AdminStore; window: HistoryWindowStore; scheduler: (clock: ClockMode) => ReactNode; tracker?: ReactNode }) {
   const { scale, motion, view, density, clock } = useSyncExternalStore(store.subscribe, store.get);
   return (
     <div id="admin">
@@ -151,7 +151,7 @@ export function Admin({ store, window: historyWindow, autopilot, tracker }: { st
             <div className="foot">Changes apply as you make them.<button type="button" className="btn" onClick={() => store.reset()}>Reset this browser</button></div>
           </section>
           <ServerCard store={historyWindow} clock={clock} />
-          {autopilot(clock)}
+          {scheduler(clock)}
           {tracker}
         </div>
         <Preview scale={scale} compact={density === "compact"} />

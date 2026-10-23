@@ -14,7 +14,7 @@ from starpulse._internal.server.encoding import encode
 from starpulse._internal.server.reads import Response
 from starpulse._internal.server.routes import (
     _ARCHIVE,
-    _AUTOPILOT,
+    _SCHEDULER,
     _CLAIM,
     _COMPLETE,
     _DOC_ARCHIVE,
@@ -47,7 +47,7 @@ from starpulse._internal.server.writes import (
     archive_doc,
     archive_milestone,
     archive_task,
-    autopilot,
+    scheduler,
     claim_task,
     complete_task,
     create_doc,
@@ -72,7 +72,7 @@ from starpulse._internal.server.writes import (
     write_refusal,
 )
 
-if TYPE_CHECKING:  # annotation only: a runtime import would put the autopilot in the Delivery worker's import closure
+if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     from starpulse._internal.board.seam import Board
     from starpulse._internal.feed.board_feed import BoardFeed
     from starpulse._internal.feed.history_window import HistoryWindow
@@ -119,7 +119,7 @@ class WriteRoutes:
         self._starts = services.starts
         self._reruns = services.reruns or {}
         self._run_safe = services.run_safe
-        self._autopilot = services.autopilot
+        self._scheduler = services.scheduler
         # Every write route, by path: the handler over the seams it needs and the kind of body it answers
         # (`contracts.api.registry.BODIES`). Each handler parses its body through the request model it is declared with.
         self._writes: dict[str, tuple[TaskWrite, str]] = {
@@ -194,11 +194,11 @@ class WriteRoutes:
         return Response(encode(kind, body), status)
 
     def _put(self, request: WriteRequest) -> Response | None:
-        """The switches a page puts: the autopilot's and the history window."""
+        """The switches a page puts: the scheduler's and the history window."""
         path = request.path
-        if path == _AUTOPILOT:
+        if path == _SCHEDULER:
             return self._guarded(
-                request, "autopilot", lambda raw: autopilot(request.client, "PUT", raw, self._autopilot)
+                request, "scheduler", lambda raw: scheduler(request.client, "PUT", raw, self._scheduler)
             )
         return self._windowed(request)
 

@@ -190,7 +190,7 @@ describe("the hover card and the pinned panel's hop table", () => {
 describe("what a hover draws", () => {
   const task = { kind: "task", o: { id: "PROJ-7" } }, other = { kind: "task", o: { id: "PROJ-8" } };
   const ses = { kind: "mtask", o: { id: "PROJ-7", flow: "in-progress" } };
-  const dag = { kind: "dag", o: { name: "board-autopilot" } };
+  const dag = { kind: "dag", o: { name: "board-scheduler" } };
   const pin: Subject = { kind: "task", id: "PROJ-7" };
 
   it("traces a hovered task or machine task but only highlights: nothing is veiled until a click pins it", () => {

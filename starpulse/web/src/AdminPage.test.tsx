@@ -30,9 +30,9 @@ describe("the Admin view", () => {
     expect(card?.textContent).toContain("Connect a tracker");
   });
 
-  it("draws an Autopilot card holding the switch and autopilot's quiet hours, on and in the window's zone, and the Server card holds neither", async () => {
+  it("draws an Autopilot card holding the switch and scheduler's quiet hours, on and in the window's zone, and the Server card holds neither", async () => {
     const status = { enabled: true, harness: "claude", quietHours: { start: "22:00", end: "07:00", timezone: "America/Phoenix" }, sampledAt: null, dimensions: [] };
-    vi.stubGlobal("fetch", vi.fn(async (url: string) => (String(url).endsWith("/api/autopilot") ? new Response(JSON.stringify(status)) : new Response("{}", { status: 503 }))));
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => (String(url).endsWith("/api/scheduler") ? new Response(JSON.stringify(status)) : new Response("{}", { status: 503 }))));
 
     await act(async () => root.render(<AdminPage store={new AdminStore()} window={new HistoryWindowStore()} hint={null} />));
     await act(async () => { for (let i = 0; i < 6; i++) await Promise.resolve(); });

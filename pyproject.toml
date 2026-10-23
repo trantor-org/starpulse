@@ -69,7 +69,7 @@ type = "layers"
 # Four tiers, each importing only the tiers below it and `contracts`. Features on one `|` line are independent; a line
 # of its own marks a named edge (the ADR "StarPulse Is Layered Around Its Event Log"): `kit` drives a `server`,
 # `server` serves the doctor's checks from `cli`, `pulls` reads GitHub Actions runs from `runs`,
-# `autopilot` samples the board feed and the harness machine, and the
+# `scheduler` samples the board feed and the harness machine, and the
 # history store in `eventlog` reads `config` and `machines`.
 layers = [
     # entrypoints
@@ -77,7 +77,7 @@ layers = [
     "starpulse._internal.server",
     "starpulse._internal.cli",
     # producers
-    "starpulse._internal.pulls | starpulse._internal.autopilot",
+    "starpulse._internal.pulls | starpulse._internal.scheduler",
     "starpulse._internal.board | starpulse._internal.runs | starpulse._internal.harnesses",
     # derived
     "starpulse._internal.level",
@@ -97,7 +97,7 @@ type = "forbidden"
 # encodes them, and the kit drives a server. Every other tier reads `contracts.adapters` and the rest of `contracts`.
 source_modules = [
     "starpulse._internal.cli",
-    "starpulse._internal.pulls", "starpulse._internal.autopilot",
+    "starpulse._internal.pulls", "starpulse._internal.scheduler",
     "starpulse._internal.board", "starpulse._internal.runs", "starpulse._internal.harnesses",
     "starpulse._internal.level",
     "starpulse._internal.feed", "starpulse._internal.ci",
@@ -131,7 +131,7 @@ type = "forbidden"
 allow_indirect_imports = true
 source_modules = ["starpulse._internal.board", "starpulse._internal.feed"]
 forbidden_modules = [
-    "starpulse._internal.autopilot",
+    "starpulse._internal.scheduler",
     "starpulse._internal.level",
     "starpulse._internal.harnesses",
     "starpulse._internal.pulls", "starpulse._internal.ci",
@@ -139,11 +139,11 @@ forbidden_modules = [
 ]
 
 [[tool.importlinter.contracts]]
-id = "context-autopilot"
-name = "Autopilot imports only Board, Harness Telemetry and Flow Metrics among StarPulse contexts"
+id = "context-scheduler"
+name = "Scheduler imports only Board, Harness Telemetry and Flow Metrics among StarPulse contexts"
 type = "forbidden"
 allow_indirect_imports = true
-source_modules = ["starpulse._internal.autopilot"]
+source_modules = ["starpulse._internal.scheduler"]
 forbidden_modules = [
     "starpulse._internal.pulls", "starpulse._internal.ci",
     "starpulse._internal.runs",
@@ -156,7 +156,7 @@ type = "forbidden"
 allow_indirect_imports = true
 source_modules = ["starpulse._internal.level"]
 forbidden_modules = [
-    "starpulse._internal.autopilot",
+    "starpulse._internal.scheduler",
     "starpulse._internal.harnesses",
     "starpulse._internal.pulls", "starpulse._internal.ci",
 ]
@@ -169,7 +169,7 @@ allow_indirect_imports = true
 source_modules = ["starpulse._internal.harnesses"]
 forbidden_modules = [
     "starpulse._internal.board", "starpulse._internal.feed",
-    "starpulse._internal.autopilot",
+    "starpulse._internal.scheduler",
     "starpulse._internal.level",
     "starpulse._internal.pulls", "starpulse._internal.ci",
     "starpulse._internal.runs",
@@ -182,7 +182,7 @@ type = "forbidden"
 allow_indirect_imports = true
 source_modules = ["starpulse._internal.pulls", "starpulse._internal.ci"]
 forbidden_modules = [
-    "starpulse._internal.autopilot",
+    "starpulse._internal.scheduler",
     "starpulse._internal.level",
     "starpulse._internal.harnesses",
     "starpulse._internal.runs",
@@ -195,7 +195,7 @@ type = "forbidden"
 allow_indirect_imports = true
 source_modules = ["starpulse._internal.runs"]
 forbidden_modules = [
-    "starpulse._internal.autopilot",
+    "starpulse._internal.scheduler",
     "starpulse._internal.level",
     "starpulse._internal.harnesses",
     "starpulse._internal.pulls", "starpulse._internal.ci",

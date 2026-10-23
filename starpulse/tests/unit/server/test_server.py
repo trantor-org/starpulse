@@ -29,7 +29,7 @@ from starpulse.tests.machines import MACHINES, ROLES
 
 #: The workflows the config declares run-safe in these tests, and the domains it groups them in.
 RUN_SAFE = frozenset({"dagu/whole-repo-gate", "dagu/healthcheck"})
-DOMAINS = {"Ops": ("dagu/whole-repo-gate", "dagu/healthcheck", "dagu/board-autopilot"), "Data": ("dagu/etl",)}
+DOMAINS = {"Ops": ("dagu/whole-repo-gate", "dagu/healthcheck", "dagu/board-scheduler"), "Data": ("dagu/etl",)}
 
 
 def _feed() -> BoardFeed:
@@ -149,10 +149,10 @@ def test_a_source_outside_loopback_and_rfc_1918_is_refused_before_the_adapter_is
 def test_a_workflow_the_config_does_not_declare_run_safe_is_refused_before_the_adapter_is_asked() -> None:
     start = _Start()
 
-    status, body = run_dag(_ip(192, 168, 0, 42), "dagu/board-autopilot", {"dagu": start}, RUN_SAFE)
+    status, body = run_dag(_ip(192, 168, 0, 42), "dagu/board-scheduler", {"dagu": start}, RUN_SAFE)
 
     assert (status, start.sent) == (404, [])
-    assert body == {"error": "dagu/board-autopilot is not declared run-safe"}
+    assert body == {"error": "dagu/board-scheduler is not declared run-safe"}
 
 
 @pytest.mark.parametrize("name", ["dagu/whole-repo-gate", "whole-repo-gate", "gone/whole-repo-gate"])
@@ -719,10 +719,10 @@ def test_a_rerun_carries_only_the_parameters_the_instance_names_as_commit_keys()
 def test_a_rerun_of_a_workflow_outside_the_run_safe_set_is_refused_before_the_adapter_is_asked() -> None:
     rerun = _Rerun()
 
-    status, body = _rerun(rerun, name="dagu/board-autopilot")
+    status, body = _rerun(rerun, name="dagu/board-scheduler")
 
     assert (status, rerun.sent) == (404, [])
-    assert body == {"error": "dagu/board-autopilot is not declared run-safe"}
+    assert body == {"error": "dagu/board-scheduler is not declared run-safe"}
 
 
 def test_a_rerun_on_an_instance_with_no_rerun_capability_answers_404() -> None:

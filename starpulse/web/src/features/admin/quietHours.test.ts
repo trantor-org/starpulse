@@ -3,12 +3,12 @@ import { QuietHoursStore, type Window } from "./quietHours";
 
 const NIGHT: Window = { start: "22:00", end: "07:00", timezone: "America/Phoenix" };
 
-/** A server that keeps the window as `PUT /api/autopilot` does: a window or null, with an unreadable one refused. */
+/** A server that keeps the window as `PUT /api/scheduler` does: a window or null, with an unreadable one refused. */
 function server(opts: { window?: Window | null; status?: number } = {}) {
   let window = opts.window ?? null;
   const sent: unknown[] = [];
   const fetcher = vi.fn<typeof fetch>((_url, init) => {
-    if (opts.status) return Promise.resolve(new Response(JSON.stringify({ error: "this instance runs no autopilot" }), { status: opts.status }));
+    if (opts.status) return Promise.resolve(new Response(JSON.stringify({ error: "this instance runs no scheduler" }), { status: opts.status }));
     if (init?.method === "PUT") {
       const body = JSON.parse(String(init.body)) as { quietHours: Window | null };
       sent.push(body);
@@ -42,12 +42,12 @@ describe("the Autopilot card's quiet hours", () => {
     expect(store.zone()).toBe("America/Phoenix");
   });
 
-  it("names why it cannot be read, as on a server with no autopilot", async () => {
+  it("names why it cannot be read, as on a server with no scheduler", async () => {
     const store = new QuietHoursStore(server({ status: 404 }).fetcher, () => "UTC");
 
     await store.load();
 
-    expect(store.get()).toMatchObject({ loaded: false, unavailable: "this instance runs no autopilot" });
+    expect(store.get()).toMatchObject({ loaded: false, unavailable: "this instance runs no scheduler" });
   });
 
   it("saves a window turned on in the browser's zone, and the server's answer becomes the window", async () => {

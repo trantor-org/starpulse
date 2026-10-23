@@ -65,13 +65,13 @@ def test_a_start_names_harness_and_mode_in_the_query_the_service_reads() -> None
     assert asked == ["/start/TASK-D7?harness=cursor&mode=headless"]
 
 
-def test_a_start_by_the_autopilot_says_so_in_the_request_the_service_reads() -> None:
+def test_a_start_by_the_scheduler_says_so_in_the_request_the_service_reads() -> None:
     with _service(200, json.dumps({"task": "TASK-D7", "url": "https://claude.ai/code/session_01"})) as (url, asked):
-        start = starter(url, by="autopilot")
+        start = starter(url, by="scheduler")
         assert start is not None
         assert start("TASK-D7") == "https://claude.ai/code/session_01"
 
-    assert asked == ["/start/TASK-D7?harness=claude&mode=interactive&by=autopilot"]
+    assert asked == ["/start/TASK-D7?harness=claude&mode=interactive&by=scheduler"]
 
 
 @pytest.mark.parametrize(

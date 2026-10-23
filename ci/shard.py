@@ -30,7 +30,7 @@ SECONDS = {
     "starpulse/tests/unit/server/test_flow_reads.py": 16,
     "starpulse/tests/integration/server/test_http.py": 13,
     "ci/test_latency_gate.py": 13,
-    "starpulse/tests/integration/autopilot/test_autopilot_served.py": 11,
+    "starpulse/tests/integration/scheduler/test_scheduler_served.py": 11,
     "starpulse/tests/unit/feed/test_lane_history_dedupe.py": 11,
 }
 UNMEASURED = 0.3

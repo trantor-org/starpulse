@@ -58,7 +58,7 @@ start_criteria:
 <!-- COMMENTS:BEGIN -->
 created: 2026-09-28 20:32
 ---
-[board-autopilot] moved this task to `Ready` because every native dependency is `Done`. Its autonomy label is unchanged.
+[board-scheduler] moved this task to `Ready` because every native dependency is `Done`. Its autonomy label is unchanged.
 ---
 
 created: 2026-09-28 21:17

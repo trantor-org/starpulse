@@ -94,10 +94,10 @@ POST /api/docs, /api/docs/edit, /api/docs/archive, /api/docs/restore
                    409 for the writer's refusal. A GET answers 405. These routes read the same Board as the milestone routes
 POST /api/start    {task, profile, harness[, mode, actor]}: start a task's session at `session_start_url` on
                    `harness` (`mode` defaults to `interactive`; see Start in the README)
-GET /api/autopilot {enabled, sampledAt, dimensions}: whether the autopilot admits tasks, when capacity was last sampled
+GET /api/scheduler {enabled, sampledAt, dimensions}: whether the scheduler admits tasks, when capacity was last sampled
                    and, for `cpu`, `memory`, `sessions` and `review`, each dimension's {name, use, limit}; no
                    dimensions before the first sample
-PUT /api/autopilot {enabled: bool}: switch admission on or off by writing the file the autopilot reads, and answer the
+PUT /api/scheduler {enabled: bool}: switch admission on or off by writing the file the scheduler reads, and answer the
                    status as a GET does; 400 for a body naming none of `enabled`, `harness` and `quietHours` or
                    naming `enabled` as anything but a boolean, 403 outside loopback and RFC 1918
 """
@@ -139,7 +139,7 @@ from starpulse._internal.feed.history_window import HistoryWindow
 from starpulse.contracts.adapters import Move, StartFailedError
 from starpulse.contracts.api.dto.requests import (
     ArchiveRequest,
-    AutopilotRequest,
+    SchedulerRequest,
     ClaimRequest,
     CREATE_LISTS,
     CREATE_TEXT,
@@ -167,9 +167,9 @@ from starpulse.contracts.api.dto.requests import (
     _Writer,
 )
 
-if TYPE_CHECKING:  # annotation only: a runtime import would put the autopilot in the Delivery worker's import closure
-    from starpulse._internal.autopilot.remote import Remote
-    from starpulse._internal.autopilot.runtime import Runtime
+if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
+    from starpulse._internal.scheduler.remote import Remote
+    from starpulse._internal.scheduler.runtime import Runtime
 
 logger = logging.getLogger(__name__)
 
@@ -1142,17 +1142,17 @@ def history_window(source: str, method: str, raw: bytes, window: HistoryWindow) 
     return 200, window.state()
 
 
-_AUTOPILOT_USAGE = (
-    'the autopilot takes {"enabled": true|false}, {"harness": "<name>"} and/or '
+_SCHEDULER_USAGE = (
+    'the scheduler takes {"enabled": true|false}, {"harness": "<name>"} and/or '
     '{"quietHours": {"start", "end", "timezone"}|null}'
 )
 
 
-@_write(AutopilotRequest, "The autopilot switch")
-def _put_autopilot(request: AutopilotRequest, runtime: Runtime | Remote) -> tuple[int, dict[str, Any]]:
+@_write(SchedulerRequest, "The scheduler switch")
+def _put_scheduler(request: SchedulerRequest, runtime: Runtime | Remote) -> tuple[int, dict[str, Any]]:
     named = request.model_fields_set
     if not named or ("enabled" in named and request.enabled is None):
-        return 400, {"error": _AUTOPILOT_USAGE}
+        return 400, {"error": _SCHEDULER_USAGE}
     try:
         if "quietHours" in named:
             quiet = request.quietHours
@@ -1166,17 +1166,17 @@ def _put_autopilot(request: AutopilotRequest, runtime: Runtime | Remote) -> tupl
     return 200, runtime.served_status()
 
 
-def autopilot(source: str, method: str, raw: bytes, runtime: Runtime | Remote | None) -> tuple[int, dict[str, Any]]:
-    """Read (`GET`) whether the autopilot admits tasks, which harness it starts on, its quiet hours and each capacity
+def scheduler(source: str, method: str, raw: bytes, runtime: Runtime | Remote | None) -> tuple[int, dict[str, Any]]:
+    """Read (`GET`) whether the scheduler admits tasks, which harness it starts on, its quiet hours and each capacity
     dimension's use against its limit, or set (`PUT {"enabled": bool}`, `PUT {"harness": "<name>"}`,
     `PUT {"quietHours": {...} | null}`, or any combination) those settings, for a browser at `source`.
 
-    Settings are kept in the store the autopilot reads, so a PUT takes effect at the next admission and survives a
+    Settings are kept in the store the scheduler reads, so a PUT takes effect at the next admission and survives a
     restart. A read answers any address, as every read does; a write answers only loopback and RFC 1918. A body with
     anything wrong changes nothing.
     """
     if runtime is None:
-        return 404, {"error": "this instance runs no autopilot"}
+        return 404, {"error": "this instance runs no scheduler"}
     if method == "PUT":
-        return _put_autopilot(source, raw, runtime)
+        return _put_scheduler(source, raw, runtime)
     return 200, runtime.served_status()

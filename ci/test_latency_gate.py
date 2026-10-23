@@ -52,11 +52,11 @@ def test_the_seeded_server_holds_a_kanban_a_task_record_and_its_history(seeded: 
     assert len(_get(seeded, f"/api/history?task={task}")[1]["path"]) >= 1
 
 
-def test_the_seeded_server_answers_the_autopilot_milestone_and_doc_routes_with_records(
+def test_the_seeded_server_answers_the_scheduler_milestone_and_doc_routes_with_records(
     seeded: PageServer,
 ) -> None:
-    status, autopilot = _get(seeded, "/api/autopilot")
-    assert status == 200 and autopilot["dimensions"], autopilot
+    status, scheduler = _get(seeded, "/api/scheduler")
+    assert status == 200 and scheduler["dimensions"], scheduler
 
     for route, key in (("/api/milestones", "milestones"), ("/api/docs", "docs")):
         status, listing = _get(seeded, route)

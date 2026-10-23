@@ -22,7 +22,7 @@ _TIMEOUT_S = 75.0
 def starter(url: str | None, by: str | None = None) -> Callable[..., str] | None:
     """Start a task's session at the service `url` names and return the session's URL; None without an address.
 
-    With `by`, each request names who starts the session (`?by=autopilot`), so the service can brief an unattended
+    With `by`, each request names who starts the session (`?by=scheduler`), so the service can brief an unattended
     session differently from one an operator opened. Every start names `harness` and `mode` (default `interactive`)
     so the service can dispatch; an operator's start carries no `by` marker.
     """

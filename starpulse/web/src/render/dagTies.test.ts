@@ -16,7 +16,7 @@ const TRANSITIONS: [string, string, string][] = [
   ["review", "done", "MERGED"], ["done", "completed", "SWEEP"], ["needs_attention", "ready", "RETRY"], ["ready", "archived", "ARCHIVE"],
 ];
 const WRITES: Record<string, string[]> = {
-  "dagu/board-autopilot": ["CREATE_IN_PROGRESS", "CLAIM", "WAIT_ON_DEPS", "DEFER"],
+  "dagu/board-scheduler": ["CREATE_IN_PROGRESS", "CLAIM", "WAIT_ON_DEPS", "DEFER"],
   "dagu/board-dependency-reconciliation": ["DEP_RESOLVED", "DEPS_DONE", "CRITERIA_MET", "CRITERIA_UNMET"],
   "dagu/main-follow": ["MERGED"],
   "dagu/backlog-sweep": ["SWEEP"],
@@ -33,7 +33,7 @@ const machine: Machine = {
   transitions: TRANSITIONS.map(([source, target, event]) => ({ source, target, event })),
   mainLine: ["new", "ready", "in_progress", "review", "done"],
   writers: Object.fromEntries(Object.entries(WRITES).flatMap(([d, evs]) => evs.map((e) => [e, [{ actor: d, trigger: "dagu" }]] as const))),
-  launches: Object.fromEntries(["dagu/board-autopilot", ...LAUNCH_ONLY].map((d) => [d, { skill: "delivering", machine: null }])),
+  launches: Object.fromEntries(["dagu/board-scheduler", ...LAUNCH_ONLY].map((d) => [d, { skill: "delivering", machine: null }])),
   dagActors: Object.keys(WRITES),
 };
 /** A machine the Board's DAGs launch: `writer` writes its events itself, as dependency-update-investigation does. */
@@ -63,8 +63,8 @@ describe("the tied DAGs of the Board level", () => {
   const pivotOf = (state: string) => ties.pivots.find((h) => h.state === state);
 
   it("puts each DAG in the hangar of the state most of its ties act on", () => {
-    // board-autopilot writes from new (1), ready (2) and in_progress (1); reconciliation's four ties each act on another state, so the first wins
-    expect(pivotOf("ready")?.orbs.map((o) => o.dag)).toEqual(["dagu/board-autopilot"]);
+    // board-scheduler writes from new (1), ready (2) and in_progress (1); reconciliation's four ties each act on another state, so the first wins
+    expect(pivotOf("ready")?.orbs.map((o) => o.dag)).toEqual(["dagu/board-scheduler"]);
     expect(pivotOf("waiting")?.orbs.map((o) => o.dag)).toEqual(["dagu/board-dependency-reconciliation"]);
     expect(pivotOf("review")?.orbs.map((o) => o.dag)).toEqual(["dagu/main-follow"]);
     // a cue belongs to the state its event lands in, beside the DAG that writes that state's transition
@@ -148,14 +148,14 @@ describe("a hangar's name", () => {
   });
 
   it("breaks a lone long name after the hyphen nearest the middle", () => {
-    expect(nameLines(orbs("board-autopilot"))).toEqual(["board-", "autopilot"]);
+    expect(nameLines(orbs("board-scheduler"))).toEqual(["board-", "scheduler"]);
     expect(nameLines(orbs("board-dependency-reconciliation"))).toEqual(["board-dependency-", "reconciliation"]);
   });
 
   it("keeps a name of 12 characters or fewer, a name with no hyphen and a count whole", () => {
     expect(nameLines(orbs("main-follow"))).toEqual(["main-follow"]);
     expect(nameLines(orbs("graphrefreshing"))).toEqual(["graphrefreshing"]);
-    expect(nameLines(orbs("board-autopilot", "main-follow"))).toEqual(["2 DAGs"]);
+    expect(nameLines(orbs("board-scheduler", "main-follow"))).toEqual(["2 DAGs"]);
   });
 });
 
@@ -202,7 +202,7 @@ describe("the sub-machine a tied DAG writes", () => {
   });
 
   it("leaves a launcher that does not write the machine's events, and a DAG with no launch, unanchored", () => {
-    expect(orb("dagu/board-autopilot").subs).toEqual([]);
+    expect(orb("dagu/board-scheduler").subs).toEqual([]);
     expect(orb("dagu/backlog-sweep").subs).toEqual([]);
   });
 

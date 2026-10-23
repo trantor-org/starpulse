@@ -10,7 +10,7 @@ from pydantic.json_schema import GenerateJsonSchema
 
 from starpulse.contracts.api._base import _Api
 from starpulse.contracts.api.dto.errors import ApiError, SkillRefusal, StaleEdit, WindowTooLong
-from starpulse.contracts.api.dto.autopilot import AutopilotStatus
+from starpulse.contracts.api.dto.scheduler import SchedulerStatus
 from starpulse.contracts.api.dto.harnesses import Harnesses, WindowState
 from starpulse.contracts.api.dto.health import Health, MachineHistory, Sessions, SessionSteps
 from starpulse.contracts.api.dto.milestones import Docs, DocShown, Milestones, MilestoneShown, RetiredTasks, TaskRecord
@@ -20,7 +20,7 @@ from starpulse.contracts.api.dto.pulls import Pulls
 from starpulse.contracts.api.dto.report import ContractReport
 from starpulse.contracts.api.dto.requests import (
     ArchiveRequest,
-    AutopilotRequest,
+    SchedulerRequest,
     ClaimRequest,
     CompleteRequest,
     CreateRequest,
@@ -88,7 +88,7 @@ class ApiContract(_Api):
 
     snapshot: Snapshot
     events: list[
-        TaskDelta | MoveDelta | DagsDelta | PullsDelta | ClaimDelta | LedgersDelta | AutopilotStatus
+        TaskDelta | MoveDelta | DagsDelta | PullsDelta | ClaimDelta | LedgersDelta | SchedulerStatus
     ]
     build: BuildEvent
     restarting: RestartingEvent
@@ -113,7 +113,7 @@ class ApiContract(_Api):
     trajectories: Trajectories
     harnesses: Harnesses
     windowState: WindowState
-    autopilotStatus: AutopilotStatus
+    schedulerStatus: SchedulerStatus
     contractReport: ContractReport
     taskRecord: TaskRecord
     milestones: Milestones
@@ -144,7 +144,7 @@ class ApiContract(_Api):
         | DocArchiveRequest
         | DocRestoreRequest
         | WindowRequest
-        | AutopilotRequest
+        | SchedulerRequest
     ]
     answers: list[
         Moved

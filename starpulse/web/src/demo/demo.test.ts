@@ -402,10 +402,10 @@ describe("the demo server", () => {
     expect((await reply.json()).error).toBe(ROUTES["/api/run"]);
   });
 
-  it("answers /api/autopilot with the board's sessions in flight and the pick the loop would admit next", async () => {
+  it("answers /api/scheduler with the board's sessions in flight and the pick the loop would admit next", async () => {
     const s = new DemoServer(fixture(), () => 1000);
 
-    const status = await body(s.fetch("/api/autopilot"));
+    const status = await body(s.fetch("/api/scheduler"));
 
     expect(status).toMatchObject({ enabled: true, sampledAt: 1000 });
     expect(status.dimensions.map((d: { name: string }) => d.name)).toEqual(["cpu", "memory", "sessions", "review"]);
@@ -414,9 +414,9 @@ describe("the demo server", () => {
     expect(status.next).toMatchObject({ task: "DEMO-2", verdict: "starting" });
   });
 
-  it("flips the autopilot switch with a PUT, names no pick while it is off, and refuses a non-boolean", async () => {
+  it("flips the scheduler switch with a PUT, names no pick while it is off, and refuses a non-boolean", async () => {
     const s = new DemoServer(fixture(), () => 1000);
-    const put = (enabled: unknown) => s.fetch("/api/autopilot", { method: "PUT", body: JSON.stringify({ enabled }) });
+    const put = (enabled: unknown) => s.fetch("/api/scheduler", { method: "PUT", body: JSON.stringify({ enabled }) });
 
     const off = await body(put(false));
     const bad = await put("no");
@@ -424,35 +424,35 @@ describe("the demo server", () => {
     expect(off).toMatchObject({ enabled: false, next: null });
     expect(off.inFlight).toHaveLength(1);
     expect(bad.status).toBe(400);
-    expect(await body(s.fetch("/api/autopilot"))).toMatchObject({ enabled: false });
+    expect(await body(s.fetch("/api/scheduler"))).toMatchObject({ enabled: false });
   });
 
-  it("can stand in for a paused autopilot, a host over its limit, an empty queue, a refused switch and a server with no autopilot", async () => {
+  it("can stand in for a paused scheduler, a host over its limit, an empty queue, a refused switch and a server with no scheduler", async () => {
     const mode = (m: "off" | "over" | "empty" | "refused" | "down") => new DemoServer(fixture(), () => 1000, false, false, m);
     const turnOff = { method: "PUT", body: JSON.stringify({ enabled: false }) };
 
-    expect(await body(mode("off").fetch("/api/autopilot"))).toMatchObject({ enabled: false });
-    const over = await body(mode("over").fetch("/api/autopilot"));
+    expect(await body(mode("off").fetch("/api/scheduler"))).toMatchObject({ enabled: false });
+    const over = await body(mode("over").fetch("/api/scheduler"));
     expect(over.next).toMatchObject({ task: "DEMO-2", verdict: "waits", reason: "RAM 91/85%" });
-    expect(await body(mode("empty").fetch("/api/autopilot"))).toMatchObject({ enabled: true, next: null });
+    expect(await body(mode("empty").fetch("/api/scheduler"))).toMatchObject({ enabled: true, next: null });
     const refused = mode("refused");
-    expect((await refused.fetch("/api/autopilot", turnOff)).status).toBe(403);
-    expect(await body(refused.fetch("/api/autopilot"))).toMatchObject({ enabled: true });
-    const down = await mode("down").fetch("/api/autopilot");
+    expect((await refused.fetch("/api/scheduler", turnOff)).status).toBe(403);
+    expect(await body(refused.fetch("/api/scheduler"))).toMatchObject({ enabled: true });
+    const down = await mode("down").fetch("/api/scheduler");
     expect(down.status).toBe(404);
-    expect((await down.json()).error).toContain("no autopilot");
+    expect((await down.json()).error).toContain("no scheduler");
   });
 
   it("keeps quiet hours with a PUT and, in its quiet state, holds the pick for them", async () => {
     const s = new DemoServer(fixture(), () => 1000);
-    const put = (quietHours: unknown) => s.fetch("/api/autopilot", { method: "PUT", body: JSON.stringify({ quietHours }) });
+    const put = (quietHours: unknown) => s.fetch("/api/scheduler", { method: "PUT", body: JSON.stringify({ quietHours }) });
     const night = { start: "22:00", end: "07:00", timezone: "America/Phoenix" };
 
-    expect(await body(s.fetch("/api/autopilot"))).toMatchObject({ quietHours: null });
+    expect(await body(s.fetch("/api/scheduler"))).toMatchObject({ quietHours: null });
     expect(await body(put(night))).toMatchObject({ enabled: true, quietHours: night });
     expect(await body(put(null))).toMatchObject({ quietHours: null });
     expect((await put({ start: "22:00", end: "22:00", timezone: "UTC" })).status).toBe(400);
-    const quiet = await body(new DemoServer(fixture(), () => 1000, false, false, "quiet").fetch("/api/autopilot"));
+    const quiet = await body(new DemoServer(fixture(), () => 1000, false, false, "quiet").fetch("/api/scheduler"));
     expect(quiet).toMatchObject({ quietHours: { start: "22:00", end: "07:00" }, next: { verdict: "waits", reason: "quiet hours" } });
   });
 
@@ -460,8 +460,8 @@ describe("the demo server", () => {
     const s = new DemoServer(fixture(), () => 1000, false, false, "credits");
     const pause = { harness: "cursor", until: 1000 + 2 * 3600, reason: "usage limit" };
 
-    expect(await body(s.fetch("/api/autopilot"))).toMatchObject({ harness: "cursor", pauses: [pause], next: { verdict: "waits", reason: "cursor usage limit" } });
-    const claude = await body(s.fetch("/api/autopilot", { method: "PUT", body: JSON.stringify({ harness: "claude" }) }));
+    expect(await body(s.fetch("/api/scheduler"))).toMatchObject({ harness: "cursor", pauses: [pause], next: { verdict: "waits", reason: "cursor usage limit" } });
+    const claude = await body(s.fetch("/api/scheduler", { method: "PUT", body: JSON.stringify({ harness: "claude" }) }));
     expect(claude).toMatchObject({ harness: "claude", pauses: [pause], next: { verdict: "starting" }, sessionsByHarness: { claude: { limit: 3 }, cursor: { limit: 2 } } });
   });
 
@@ -473,8 +473,8 @@ describe("the demo server", () => {
     };
     const sessions = (s: { dimensions: { name: string; use: number }[]; inFlight: unknown[] }) => [s.dimensions.find((d) => d.name === "sessions")?.use, s.inFlight.length];
 
-    const calm = await body(new DemoServer(crowded(), () => 1000).fetch("/api/autopilot"));
-    const over = await body(new DemoServer(crowded(), () => 1000, false, false, "over").fetch("/api/autopilot"));
+    const calm = await body(new DemoServer(crowded(), () => 1000).fetch("/api/scheduler"));
+    const over = await body(new DemoServer(crowded(), () => 1000, false, false, "over").fetch("/api/scheduler"));
 
     expect(sessions(calm)).toEqual([2, 2]);
     expect(calm.next).toMatchObject({ task: "DEMO-10", verdict: "starting" });
@@ -482,7 +482,7 @@ describe("the demo server", () => {
   });
 
   it("names its stand-in sessions without a host, which the demo publisher refuses in a public page", async () => {
-    const listed = await new DemoServer(fixture(), () => 1000).fetch("/api/autopilot").then((r) => r.json());
+    const listed = await new DemoServer(fixture(), () => 1000).fetch("/api/scheduler").then((r) => r.json());
 
     expect(JSON.stringify(listed)).not.toMatch(/https?:\/\//);
   });

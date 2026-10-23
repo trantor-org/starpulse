@@ -184,7 +184,7 @@ class TestConfigCheck:
             "slow_read_seconds": 1.0,
             "worker_memory": {
                 "pulls": {"soft_mb": 768, "hard_mb": 1536},
-                "autopilot": {"soft_mb": 384, "hard_mb": 768},
+                "scheduler": {"soft_mb": 384, "hard_mb": 768},
                 "runs": {"soft_mb": 512, "hard_mb": 1024},
                 "flow-metrics": {"soft_mb": 384, "hard_mb": 768},
                 "search": {"soft_mb": 384, "hard_mb": 768},
@@ -193,7 +193,7 @@ class TestConfigCheck:
             "event_log_retention_days": 7,
             "event_log_archive_dir": "starpulse-archive",
             "ci": [],
-            "autopilot": {
+            "scheduler": {
                 "lane": None,
                 "review_lane": None,
                 "unsized_points": 3,

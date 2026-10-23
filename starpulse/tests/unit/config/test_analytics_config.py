@@ -55,7 +55,7 @@ def test_a_table_declares_how_a_session_is_read_for_its_turns_claims_and_complet
         tmp_path,
         r"""
 [analytics]
-injected_openings = ["<task-notification", "[board-autopilot]"]
+injected_openings = ["<task-notification", "[board-scheduler]"]
 operator_tools = ["AskUserQuestion", "ExitPlanMode"]
 claims = ['backlog_task\.py\s+start\s+(TASK-\d+)', '^\s*(TASK-\d+)\s*$']
 completion_skill = "completing-tasks"
@@ -65,7 +65,7 @@ completion_call = 'backlog_task\.py\s+deliver\b'
 
     analytics = load(path).analytics
 
-    assert analytics.injected_openings == ("<task-notification", "[board-autopilot]")
+    assert analytics.injected_openings == ("<task-notification", "[board-scheduler]")
     assert analytics.operator_tools == frozenset({"AskUserQuestion", "ExitPlanMode"})
     assert [c.pattern for c in analytics.claims] == [r"backlog_task\.py\s+start\s+(TASK-\d+)", r"^\s*(TASK-\d+)\s*$"]
     assert analytics.completion_skill == "completing-tasks"

@@ -1,7 +1,7 @@
-// The Autopilot card's quiet hours: the daily window in which autopilot starts no task, kept by the server with the switch
-// (`PUT /api/autopilot {"quietHours": ...}`). The server validates it; this store only asks, and shows what the server answered.
+// The Scheduler card's quiet hours: the daily window in which scheduler starts no task, kept by the server with the switch
+// (`PUT /api/scheduler {"quietHours": ...}`). The server validates it; this store only asks, and shows what the server answered.
 import { apiFetch } from "../../api/apiFetch";
-import { ROUTE } from "../autopilot/autopilot";
+import { ROUTE } from "../scheduler/scheduler";
 
 /** The window as the server keeps it: `start` up to `end`, `HH:MM` on `timezone`'s clock; an end before the start runs past midnight. */
 export interface Window {

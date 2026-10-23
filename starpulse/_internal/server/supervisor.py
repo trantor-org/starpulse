@@ -42,7 +42,7 @@ _HANGUP = getattr(signal, "SIGHUP", None)
 WORKER_FLAGS = {
     "api": "api_worker",
     "pulls": None,
-    "autopilot": None,
+    "scheduler": None,
     "runs": "runs_worker",
     "flow-metrics": "flow_metrics_worker",
     "search": "search_worker",
@@ -53,7 +53,7 @@ _MB = 1024 * 1024
 
 
 def worker_commands(config: Config, config_path: Path | None) -> dict[str, list[str]]:
-    """The command of each context `serve` supervises: pulls, autopilot, and the others whose `*_worker` setting is false.
+    """The command of each context `serve` supervises: pulls, scheduler, and the others whose `*_worker` setting is false.
 
     Search has work only with an `embeddings_url`, so a config without one gets no search child.
     """

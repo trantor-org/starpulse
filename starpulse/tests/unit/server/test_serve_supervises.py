@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.autopilot.remote import Remote
-from starpulse._internal.server import autopilot_service as service
+from starpulse._internal.scheduler.remote import Remote
+from starpulse._internal.server import scheduler_service as service
 from starpulse._internal.server import server, worker
 from starpulse._internal.server.closure import ENTRIES, Reader
 from starpulse._internal.server.server import DATABASE_STACK
@@ -32,7 +32,7 @@ def _serve(
     monkeypatch.setattr(server, "stay_until_stopped", end)
     monkeypatch.setattr(server, "serve_until_stopped", lambda httpd, feed: None)
     threads: list[str] = []
-    monkeypatch.setattr(service, "start_autopilot", lambda *args, **kwargs: threads.append("autopilot"))
+    monkeypatch.setattr(service, "start_scheduler", lambda *args, **kwargs: threads.append("scheduler"))
     monkeypatch.setattr(server, "start_delivery", lambda *args, **kwargs: threads.append("delivery") or (None, None))
     handled: dict[str, object] = {}
     monkeypatch.setattr(server, "page_app", lambda *args, **kwargs: handled.update(kwargs, services=args[5]))
@@ -54,9 +54,9 @@ def test_serve_supervises_every_worker_and_starts_no_context_in_process(
     handled, threads = _serve(tmp_path, monkeypatch, "")
 
     assert threads == []
-    assert isinstance(handled["services"].autopilot, Remote)
+    assert isinstance(handled["services"].scheduler, Remote)
     [supervisor] = supervisors
-    assert set(supervisor.commands) == {"api", "pulls", "autopilot", "runs", "flow-metrics", "board"}
+    assert set(supervisor.commands) == {"api", "pulls", "scheduler", "runs", "flow-metrics", "board"}
     assert supervisor.started
 
 
@@ -86,13 +86,13 @@ def test_serve_forks_its_workers_from_one_preloaded_process_it_closes_at_the_end
 @pytest.mark.parametrize(
     ("settings", "supervised"),
     [
-        ("api_worker = true\n", {"pulls", "autopilot", "runs", "flow-metrics", "board"}),
-        ("runs_worker = true\n", {"api", "pulls", "autopilot", "flow-metrics", "board"}),
-        ("flow_metrics_worker = true\n", {"api", "pulls", "autopilot", "runs", "board"}),
-        ("board_worker = true\n", {"api", "pulls", "autopilot", "runs", "flow-metrics"}),
+        ("api_worker = true\n", {"pulls", "scheduler", "runs", "flow-metrics", "board"}),
+        ("runs_worker = true\n", {"api", "pulls", "scheduler", "flow-metrics", "board"}),
+        ("flow_metrics_worker = true\n", {"api", "pulls", "scheduler", "runs", "board"}),
+        ("board_worker = true\n", {"api", "pulls", "scheduler", "runs", "flow-metrics"}),
         (
             "api_worker = true\nruns_worker = true\nflow_metrics_worker = true\nboard_worker = true\n",
-            {"pulls", "autopilot"},
+            {"pulls", "scheduler"},
         ),
     ],
 )
