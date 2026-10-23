@@ -23,7 +23,7 @@ def _store(tmp_path: Path) -> tuple[EventStore, object]:
 def test_lane_history_imports_as_transitioned_events_and_replay_equals_the_file(tmp_path: Path) -> None:
     store, engine = _store(tmp_path)
 
-    report = import_board(store, {"TASK-1": _RECORD}, _LANES, [_RUN])
+    report = import_board(store, {"TASK-1": _RECORD}, _LANES, [_RUN], RunStreams(store).record)
 
     events = store.read(KIND, "TASK-1")
     assert [event.type for event in events] == ["TaskImported", "Transitioned", "Transitioned", "Transitioned"]
@@ -36,7 +36,7 @@ def test_lane_history_imports_as_transitioned_events_and_replay_equals_the_file(
 def test_a_lane_history_that_ends_elsewhere_than_the_file_is_imported_as_is_and_listed(tmp_path: Path) -> None:
     store, engine = _store(tmp_path)
 
-    report = import_board(store, {"TASK-1": _RECORD}, _LANES[:2], [])
+    report = import_board(store, {"TASK-1": _RECORD}, _LANES[:2], [], RunStreams(store).record)
 
     assert report.gaps == ["TASK-1"]
     assert report.equal == 1
@@ -46,9 +46,9 @@ def test_a_lane_history_that_ends_elsewhere_than_the_file_is_imported_as_is_and_
 
 def test_a_second_import_adds_nothing_and_still_verifies(tmp_path: Path) -> None:
     store, engine = _store(tmp_path)
-    import_board(store, {"TASK-1": _RECORD}, _LANES, [_RUN])
+    import_board(store, {"TASK-1": _RECORD}, _LANES, [_RUN], RunStreams(store).record)
 
-    report = import_board(store, {"TASK-1": _RECORD}, _LANES, [_RUN])
+    report = import_board(store, {"TASK-1": _RECORD}, _LANES, [_RUN], RunStreams(store).record)
 
     assert len(store.read(KIND, "TASK-1")) == 4
     assert (report.imported, report.equal, report.runs_imported) == (0, 1, 0)
@@ -57,9 +57,9 @@ def test_a_second_import_adds_nothing_and_still_verifies(tmp_path: Path) -> None
 
 def test_a_task_whose_file_changed_since_its_history_is_reported_differing(tmp_path: Path) -> None:
     store, engine = _store(tmp_path)
-    import_board(store, {"TASK-1": _RECORD}, _LANES, [])
+    import_board(store, {"TASK-1": _RECORD}, _LANES, [], RunStreams(store).record)
 
-    report = import_board(store, {"TASK-1": _RECORD | {"title": "Renamed"}}, _LANES, [])
+    report = import_board(store, {"TASK-1": _RECORD | {"title": "Renamed"}}, _LANES, [], RunStreams(store).record)
 
     assert report.differing == {"TASK-1": ["title"]}
     assert not report.ok

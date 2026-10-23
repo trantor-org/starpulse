@@ -8,14 +8,13 @@ imported as the record shows it and listed in the report's `gaps`."""
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
 from starpulse._internal.board.seam import OPERATOR
 from starpulse._internal.board.task_history import KIND, WRITER, Record, seed
 from starpulse._internal.readmodel.fold import replay
-from starpulse._internal.runs.run_streams import RunStreams
 from starpulse._internal.store import EventStore, NewEvent
 
 __all__ = ["Report", "import_board"]
@@ -79,9 +78,15 @@ def _differing(store: EventStore, task: str, record: Record) -> list[str]:
 
 
 def import_board(
-    store: EventStore, records: Mapping[str, Record], lanes: Iterable[Lane], runs: Iterable[Run]
+    store: EventStore,
+    records: Mapping[str, Record],
+    lanes: Iterable[Lane],
+    runs: Iterable[Run],
+    record_run: Callable[[str, dict[str, Any]], bool],
 ) -> Report:
-    """Import `records` with their `lanes` and the recorded `runs` into `store`, once each, and verify every Task."""
+    """Import `records` with their `lanes` and the recorded `runs` into `store`, once each, and verify every Task.
+
+    `record_run(event_id, fields)` appends one run entry and says whether it was new; the caller owns the runs context."""
     by_task: dict[str, list[Lane]] = defaultdict(list)
     for lane in lanes:
         by_task[lane[1]].append(lane)
@@ -92,8 +97,7 @@ def import_board(
             report.differing[task] = differing
         else:
             report.equal += 1
-    streams = RunStreams(store)
     for event_id, fields in runs:
         report.runs += 1
-        report.runs_imported += streams.record(event_id, fields)
+        report.runs_imported += record_run(event_id, fields)
     return report

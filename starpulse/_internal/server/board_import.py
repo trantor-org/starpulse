@@ -28,6 +28,7 @@ from starpulse._internal.config.config import ConfigError, discover, load
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.tables import events
 from starpulse._internal.runs.run_events import STREAM
+from starpulse._internal.runs.run_streams import RunStreams
 from starpulse._internal.server.assembly import assemble, history_store
 from starpulse._internal.store import EventStore
 
@@ -67,9 +68,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.dry_run:
         with tempfile.TemporaryDirectory() as scratch:
             store = EventStore(EventLog(f"sqlite:///{Path(scratch) / 'events.sqlite'}").engine)
-            report = import_board(store, records, lanes, runs)
+            report = import_board(store, records, lanes, runs, RunStreams(store).record)
     else:
-        report = import_board(EventStore(history.engine), records, lanes, runs)
+        live = EventStore(history.engine)
+        report = import_board(live, records, lanes, runs, RunStreams(live).record)
     print(json.dumps({**dataclasses.asdict(report), "verified": report.ok}))
     return 0 if report.ok else 1
 
