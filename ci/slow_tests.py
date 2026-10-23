@@ -5,7 +5,7 @@ A run without it is the gate (the `python` shards, a local run): a test whose wa
 or an `OVER_CEILING` entry, and the run prints no section, no annotation and no summary row and writes no report. The
 bound keeps the gate's test window inside its budget (a 30 s budget for the gate's test window: no selected test over
 ~15 s) and sits above the ceiling because the gate's host is shared: one 0.7 s test took 9.4 s at a load of 4.6 per CPU.
-The nightly names every test over the ceiling itself. A budget test that cannot fit is marked `nightly`, which the gate
+The bound is stretched by the host's 1-minute load per CPU when that exceeds 1 (`gate_bound`); `SLOW_TEST_LOAD_SCALE=0` turns this off. The nightly names every test over the ceiling itself. A budget test that cannot fit is marked `nightly`, which the gate
 deselects. With `TEST_COST_REPORT=1`, the flagged tests' node id, wall seconds, CPU seconds and peak-RSS growth in MB
 are also written to the JSON file `TEST_COST_REPORT_PATH` (default `test-cost.json`) as `{"tests": [...]}`, empty when
 nothing was flagged; ci/memray_flagged.py reruns exactly them.
@@ -33,6 +33,20 @@ import pytest
 SECONDS = float(os.environ.get("SLOW_TEST_SECONDS") or 5)
 CPU_SECONDS = float(os.environ.get("SLOW_TEST_CPU_SECONDS") or 5)
 FAIL_SECONDS = float(os.environ.get("SLOW_TEST_FAIL_SECONDS") or 3 * SECONDS)
+
+
+def gate_bound(base: float, load1: float, cpus: int) -> float:
+    """The gate's wall bound stretched by the host's 1-minute load per CPU: a shared runner at load 4.6/CPU runs a 15 s test in ~70 s."""
+    return base * max(1.0, load1 / cpus)
+
+
+def _bound() -> float:
+    """`FAIL_SECONDS` stretched by host load unless `SLOW_TEST_LOAD_SCALE=0` (the plugin's own tests, whose bounds are tenths of a second)."""
+    if os.environ.get("SLOW_TEST_LOAD_SCALE") == "0":
+        return FAIL_SECONDS
+    return gate_bound(FAIL_SECONDS, os.getloadavg()[0], os.cpu_count() or 1)
+
+
 GAP = "CPU counts this process and the children it waited for; containers a test starts run outside it and are not counted."
 
 # Tests at or over 4 s, a 1 s margin under the ceiling, when the gate's bound landed, each the slice that brings it under: the ceiling's grace, removed by that slice.
@@ -68,7 +82,7 @@ def pytest_runtest_makereport(item, call):
     if report.failed:
         _failed.add(item.nodeid)
     exempt = item.get_closest_marker("slow") or f"{item.nodeid.split('::')[0]}::{item.originalname}" in OVER_CEILING
-    over = call.when == "teardown" and wall > FAIL_SECONDS and not exempt
+    over = call.when == "teardown" and wall > _bound() and not exempt
     if over and os.environ.get("TEST_COST_REPORT") != "1" and item.nodeid not in _failed:
         report.outcome = "failed"
         report.longrepr = f"{item.nodeid} took {wall:.1f} s, over the gate's {FAIL_SECONDS:g} s bound: make it faster, mark it slow or nightly"
