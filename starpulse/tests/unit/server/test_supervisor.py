@@ -334,3 +334,48 @@ def test_the_supervisor_hands_its_socket_to_the_named_child_each_time_it_starts_
     assert len(Handed.made) == 3
     assert handed.count(None) == 1  # pulls never holds the page's socket
     assert handed.count(listening) == 2
+
+
+class Beside(Handed):
+    """A `Handed` that holds the readiness pipe like a child that inherited it, and says whether its predecessor still ran."""
+
+    report = True
+
+    def __init__(self, command: list[str], listening: socket.socket | None = None, ready: int | None = None) -> None:
+        self.predecessor_ended = Beside.made[-1].ended if Beside.made else None
+        self.ready = os.dup(ready) if ready is not None else None
+        if self.ready is not None and Beside.report:
+            os.write(self.ready, b"1")
+        super().__init__(command, listening)
+
+    def close(self) -> None:
+        if self.ready is not None:
+            os.close(self.ready)
+
+
+def test_replacing_the_listening_child_starts_the_new_one_and_waits_for_it_before_ending_the_old_one() -> None:
+    Beside.made, Beside.report = [], True
+    with socket.socket() as listening:
+        supervisor = Supervisor({"api": SLEEP}, spawn=Beside, sockets={"api": listening}, warm=5.0)
+        supervisor.tick(0.0)
+        old = Beside.made[0]
+        assert supervisor._replace("api", supervisor._children["api"]) == "replaced"
+
+    new = Beside.made[1]
+    new.close()
+    assert old.ended
+    assert not new.ended
+    assert new.predecessor_ended is False  # the old child was still running when the new one started
+
+
+def test_replacing_the_listening_child_ends_the_old_one_after_the_bound_when_the_new_one_never_reports() -> None:
+    Beside.made, Beside.report = [], False
+    with socket.socket() as listening:
+        supervisor = Supervisor({"api": SLEEP}, spawn=Beside, sockets={"api": listening}, warm=0.3)
+        supervisor.tick(0.0)
+        started = time.monotonic()
+        supervisor._replace("api", supervisor._children["api"])
+
+    Beside.made[1].close()
+    assert Beside.made[0].ended
+    assert time.monotonic() - started >= 0.3

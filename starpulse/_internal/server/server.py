@@ -219,7 +219,7 @@ from starpulse._internal.server.asgi_app import _CONTRACT_TTL_S, _cached, page_a
 from starpulse._internal.server.closure import ENTRIES, Reader
 from starpulse._internal.server.control import control_file
 from starpulse._internal.server.encoding import encode, event
-from starpulse._internal.server.hold import LISTEN_FD_ENV, STATIC_ENV
+from starpulse._internal.server.hold import LISTEN_FD_ENV, STATIC_ENV, announce_ready
 from starpulse._internal.server.page_server import BACKLOG, DRAIN_S, PageServer
 from starpulse._internal.server.responses import _HEALTH_HOURS, _error, _hours, health_response, history_response  # noqa: F401 - the read routes stay importable from here
 from starpulse._internal.server.services import Services
@@ -735,6 +735,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
             stopping=lambda: feed.announce("restarting", {"at": time.time()}),
             drain_s=DRAIN_S,
         )
+        announce_ready(os.environ)
         serve_until_stopped(server, feed)
     finally:
         autopilot_stop.set()
