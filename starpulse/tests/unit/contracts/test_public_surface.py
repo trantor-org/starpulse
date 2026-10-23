@@ -111,6 +111,7 @@ PUBLIC: dict[str, set[str]] = {
         "Writer",
         "load_machine",
         "refuse_unlisted",
+        "role_of",
         "validate",
         "writers_of",
     },

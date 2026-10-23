@@ -8,6 +8,7 @@ from starpulse._internal.machines.machine_definition import (
     Writer,
     load_machine,
     refuse_unlisted,
+    role_of,
     validate,
     writers_of,
 )
@@ -20,6 +21,7 @@ __all__ = [
     "Writer",
     "load_machine",
     "refuse_unlisted",
+    "role_of",
     "validate",
     "writers_of",
 ]

@@ -17,6 +17,7 @@ from starpulse._internal.machines.machine_definition import (
     Writer,
     load_machine,
     refuse_unlisted,
+    role_of,
     validate,
     writers_of,
 )
@@ -520,3 +521,40 @@ class TestCitations:
         machine = load_machine(_written(tmp_path, _doc())).machine
 
         assert all("cite" not in t for t in describe(machine)["transitions"])
+
+
+def _roled(role: object) -> dict[str, Any]:
+    """A machine whose `parked` state declares `role`, between an initial and a final state."""
+    return {
+        "name": "sample",
+        "states": {"open": {"initial": True}, "parked": {"role": role}, "shut": {"final": True}},
+        "events": {"PARK": [{"from": "open", "to": "parked"}], "SHUT": [{"from": "parked", "to": "shut"}]},
+    }
+
+
+class TestRoles:
+    @pytest.mark.parametrize("role", ["resting", "waiting_on_fact", "waiting_on_person"])
+    def test_a_state_declares_its_role_and_a_renamed_state_resolves_the_same(self, tmp_path: Path, role: str) -> None:
+        compiled = load_machine(_written(tmp_path, _roled(role)))
+
+        assert role_of(compiled, "parked") == role
+
+    def test_the_initial_and_final_flags_resolve_as_the_initial_and_final_roles(self, tmp_path: Path) -> None:
+        compiled = load_machine(_written(tmp_path, _roled("resting")))
+
+        assert (role_of(compiled, "open"), role_of(compiled, "shut")) == ("initial", "final")
+
+    def test_a_state_declaring_no_role_resolves_to_none(self, tmp_path: Path) -> None:
+        document = _roled("resting")
+        del document["states"]["parked"]["role"]
+
+        assert role_of(load_machine(_written(tmp_path, document)), "parked") is None
+
+    @pytest.mark.parametrize("role", ["initial", "done", 3])
+    def test_an_unknown_role_is_rejected_by_the_schema(self, role: object) -> None:
+        with pytest.raises(MachineDefinitionError):
+            validate(_roled(role))
+
+    def test_resolving_a_state_the_machine_lacks_is_an_error(self, tmp_path: Path) -> None:
+        with pytest.raises(KeyError):
+            role_of(load_machine(_written(tmp_path, _roled("resting"))), "nowhere")

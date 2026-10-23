@@ -1,7 +1,7 @@
 """Compile a YAML machine definition to a python-statemachine class.
 
 A machine is declared in YAML and validated against `machine.schema.json`, the
-published schema. States carry `initial` or `final`; each event lists
+published schema. States carry `initial` or `final`, or a `role` (`resting`, `waiting_on_fact`, `waiting_on_person`) that `role_of` answers by state, so code reads roles and never a deployment's state names; each event lists
 transitions from one or more states to one state. A guard is either a `when:`
 field match on the event that fires the transition (`equals`, `in`,
 `exists`) or the name of a guard an adapter registers in Python through a
@@ -53,6 +53,7 @@ __all__ = [
     "load_machine",
     "opened_by",
     "refuse_unlisted",
+    "role_of",
     "validate",
     "writers_of",
 ]
@@ -120,11 +121,19 @@ class Compiled:
     cues: tuple[Cue, ...] = ()
     drawing: Mapping[str, Any] = field(default_factory=dict)
     waits: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
+    roles: Mapping[str, str | None] = field(default_factory=dict)
 
 
 def writers_of(machine: type[StateChart]) -> Mapping[str, tuple[Writer, ...]]:
     """The writers a compiled machine declares per event, `{}` for a machine written in Python."""
     return getattr(machine, "writers", {})
+
+
+def role_of(compiled: Compiled, state: str) -> str | None:
+    """The role `state` plays in the machine: `initial` or `final` from its flags, else the `role:` it declares, else `None`.
+
+    Raises `KeyError` for a state the machine lacks."""
+    return compiled.roles[state]
 
 
 def _schema_error(document: Any) -> ValidationError | None:
@@ -182,7 +191,8 @@ def compile_document(document: dict[str, Any], path: Path, registry: Registry = 
     setattr(machine, "citations", _citations(document["events"]))
     setattr(machine, "source", document.get("source"))
     drawing = {key: document[key] for key in DRAWING if key in document}
-    return Compiled(document["name"], machine, bindings, writers, cues, drawing, waits)
+    roles = {name: _role(state) for name, state in document["states"].items()}
+    return Compiled(document["name"], machine, bindings, writers, cues, drawing, waits, roles)
 
 
 def _read(path: Path) -> dict[str, Any]:
@@ -277,6 +287,10 @@ def _waits(declared: Mapping[str, Any], events: Mapping[str, Any], path: Path) -
         if "waits" in state:
             waits[name] = dict(state["waits"])
     return waits
+
+
+def _role(declared: Mapping[str, Any]) -> str | None:
+    return "initial" if declared.get("initial") else "final" if declared.get("final") else declared.get("role")
 
 
 def _state(declared: Mapping[str, Any]) -> dict[str, Any]:
