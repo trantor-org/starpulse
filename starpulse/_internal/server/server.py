@@ -210,7 +210,7 @@ from starpulse._internal.pulls.delivery import (
 from starpulse._internal.pulls.pull_refresh import PullRefresh
 from starpulse._internal.pulls.pull_requests import PullRequests
 from starpulse._internal.pulls.pull_store import PullSync
-from starpulse._internal.pulls.task_actor import TaskActor, moves_of
+from starpulse._internal.pulls.task_actor import ACTOR, TaskActor, moves_of
 from starpulse._internal.pulls.unblock import UNBLOCK_S, Unblocker
 from starpulse._internal.runs import opt_in
 from starpulse._internal.runs import projection as runs_projection
@@ -509,6 +509,9 @@ def start_delivery(
             evaluate=board.evaluate,
             holds=board.holds,
             live=live,
+            advance=lambda machine, task, event: machine_events.publish(
+                machine, event, actor=ACTOR, task=task, log=log
+            ),
         )
         actor.start(stop)
     sync = None

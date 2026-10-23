@@ -742,6 +742,12 @@ move the machine declares. For a task in a state with `waits`, the first fact th
 - `criteria_met`: the task's Start Criteria were last evaluated all `met`.
 - `criteria_unmet`: a Start Criterion was last evaluated `unmet` or `error`.
 
+A lifecycle machine whose phase state links a skill machine with `exits` (`submachines[].exits`, [Public surface](public-surface.md))
+advances too. When the skill machine of the task's current phase reaches a state its link exits on, the actor publishes
+the exit's event for that machine to `machine:events` as `starpulse/task-actor`, once per visit to the phase. A skill
+machine the current phase does not link advances nothing, so a late final event of an earlier phase's skill cannot move
+the task. The machine's `writers` name `starpulse/task-actor` for each such event.
+
 The actor evaluates a task's Start Criteria with the board's evaluator (`[board] criteria`) on a thread of its own, when
 the task is in a lane that waits on a criteria fact and has no result or one older than the evaluator's cache (30 s), and
 re-derives the task when the result changes. A board with no `criteria` command fires neither criteria fact. A criterion
