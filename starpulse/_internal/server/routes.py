@@ -53,6 +53,7 @@ _EDIT = "/api/edit"
 
 _ARCHIVE = "/api/archive"
 _VERDICT = "/api/verdict"
+_RATING = "/api/rating"
 _MISS = "/api/miss"
 
 

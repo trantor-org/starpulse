@@ -520,6 +520,7 @@ def scrub(live: dict) -> dict:
         "milestone_done": {},  # the demo's settled tasks carry no milestone, as `milestone_done` counts by it
         "move_sets": {},  # the demo's tasks carry no moves
         "cold_done": [],  # the demo holds no done task past 24 h
+        "ratings": {},  # the demo rates no task: a live rating names a real one
         "error": None,
         "history": history,
     }

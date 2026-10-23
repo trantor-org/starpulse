@@ -15,6 +15,7 @@ SNAPSHOT_KEYS = (
     "claims",
     "settled",
     "cold_done",
+    "ratings",
     "roles",
     "error",
     "cues",
@@ -67,6 +68,7 @@ TASK_KEYS = (
     "pause_reason",
     "prs",
     "moves",
+    "rating",
     "description",
 )
 

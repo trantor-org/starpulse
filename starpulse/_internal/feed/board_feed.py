@@ -18,7 +18,7 @@ from collections.abc import Callable, Collection, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from starpulse._internal.config.config import CommitKeys
-from starpulse._internal.eventlog import DEFAULT_POLL_INTERVAL, lane_events
+from starpulse._internal.eventlog import DEFAULT_POLL_INTERVAL, lane_events, rating_events
 from starpulse._internal.feed import criteria
 from starpulse._internal.feed.snapshot import BoardSnapshot
 from starpulse._internal.feed.ledger import (
@@ -263,6 +263,8 @@ class BoardFeed:
         self._lanes: LaneRecorder | None = None
         #: Where each lane change `_lanes` wrote is also appended as a `lane_events` entry; None appends nothing.
         self._lane_log: EventLog | None = None
+        #: The pass/fail ratings the `task:ratings` stream holds, shown in the snapshot; None shows none.
+        self._ratings: rating_events.Ratings | None = None
         self._live_lanes = True
         #: Each task placed or retracted is also kept in `_search`; None keeps none.
         self._search: TaskIndex | None = None
@@ -532,6 +534,15 @@ class BoardFeed:
     def date_lanes(self, lane_path: Callable[[str], list[dict]]) -> None:
         """Date a lane the feed replays by the history's last change into it (`History.lane_path`), not by the replay."""
         self._lane_path = lane_path
+
+    def record_ratings(self, log: EventLog) -> None:
+        """Show the ratings `log` holds in each snapshot, and append the changes `rate` records to it."""
+        self._ratings = rating_events.Ratings(log)
+
+    def rate(self, fields: dict[str, Any]) -> dict[str, Any] | None:
+        """Record a change of a task's rating (`rating_events.change`): the task's rating now with its change count,
+        or None when the change is not recorded (no ratings log, or the append failed)."""
+        return None if self._ratings is None else self._ratings.rate(fields)
 
     def record_lanes(self, lanes: LaneRecorder, log: EventLog | None = None, *, live: bool = True) -> None:
         """Keep each lane change the feed applies in `lanes` (`HistoryStore.record_lane`), and with a `log`, append
@@ -1352,6 +1363,7 @@ class BoardFeed:
                 "capabilities": dict(self._capabilities),
                 "settled": dict(self._settled),
                 "cold_done": [] if self._read_model else sorted(t for t, a in self._open.items() if is_cold(a)),
+                "ratings": {} if self._ratings is None else self._ratings.latest(),
                 "error": self._error(),
                 "reading": self._replaying(),
                 **declared(self._domains, self._runnable(), self._cues, self._processes),

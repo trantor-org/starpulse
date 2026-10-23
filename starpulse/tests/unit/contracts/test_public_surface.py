@@ -92,6 +92,7 @@ PUBLIC: dict[str, set[str]] = {
         "MachineEvent",
         "Move",
         "Pool",
+        "RatingEvent",
         "RecentRun",
         "RunEvent",
         "RunStatus",

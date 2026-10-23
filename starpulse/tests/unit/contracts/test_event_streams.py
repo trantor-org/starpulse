@@ -10,7 +10,7 @@ import pytest
 
 import starpulse
 from starpulse import contracts
-from starpulse._internal.eventlog import events, lane_events
+from starpulse._internal.eventlog import events, lane_events, rating_events
 from starpulse._internal.eventlog.event_log import EventLog, Tail
 from starpulse._internal.runs import run_events
 
@@ -35,7 +35,8 @@ def _declared_streams() -> set[str]:
 def test_every_stream_a_producer_declares_has_a_contract_schema() -> None:
     declared = _declared_streams()
 
-    assert declared == {events.STREAM, run_events.STREAM, lane_events.STREAM}, "a producer declared a new stream"
+    expected = {events.STREAM, run_events.STREAM, lane_events.STREAM, rating_events.STREAM}
+    assert declared == expected, "a producer declared a new stream"
     assert sorted(declared - set(STREAMS)) == [], "declare the stream's record in starpulse.contracts.EVENT_STREAMS"
     assert sorted(set(STREAMS.values()) - set(contracts.CONTRACTS)) == []
 

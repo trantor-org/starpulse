@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from pydantic import AfterValidator, Field, ValidationInfo, field_validator
 
@@ -191,6 +191,16 @@ class VerdictRequest(_Writer):
     verdict: str
     evidence: str | None = None
     fix: str | None = None
+
+
+class RatingRequest(_Writer):
+    """`POST /api/rating`: record one change of `task`'s pass/fail rating: `pass`, `fail` with an optional `reason`, or
+    `cleared`. Every change is kept; the latest one is the task's rating.
+    """
+
+    task: NonBlank
+    verdict: Literal["pass", "fail", "cleared"]
+    reason: str | None = Field(default=None, max_length=120)
 
 
 class MissRequest(_Writer):

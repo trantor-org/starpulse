@@ -27,6 +27,13 @@ class Judged(_Api):
     fix: str | None = None
 
 
+class Rated(_Api):
+    task: str
+    verdict: str
+    reason: str
+    changes: int
+
+
 class Restored(_Api):
     task: str
 
