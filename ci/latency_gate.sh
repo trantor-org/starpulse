@@ -3,7 +3,7 @@
 # on a free port and times every surface three times with bench/page_latency.py, judging the median run's p95 against the
 # 50 ms budget. Exits with the harness's status: 1 on a row over budget or a non-2xx request row.
 # Run from the repository root. Pull requests do not run it (it was the slowest job on each); trantor's nightly
-# `starpulse-latency` Dagu DAG clones main and runs it on the Unraid worker, and fails the whole-repo gate on a miss.
+# `starpulse-latency` Dagu DAG clones main and runs it on a dedicated worker, and fails the whole-repo gate on a miss.
 # The board's first paint holds a 450 ms ceiling: startup JavaScript, not server time, keeps it over 50 ms on shared hardware.
 set -euo pipefail
 
