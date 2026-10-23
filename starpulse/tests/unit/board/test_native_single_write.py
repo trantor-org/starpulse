@@ -161,3 +161,14 @@ def test_a_refused_create_writes_no_file_and_leaves_its_id_free(tmp_path: Path) 
 def test_a_validate_setting_that_names_no_function_is_refused_when_the_board_loads(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="no_such_hook"):
         board({"validate": f"{__name__}:no_such_hook"}, tmp_path)
+
+
+def test_a_comment_keeps_its_author_and_a_read_returns_it(tmp_path: Path) -> None:
+    built = board({}, tmp_path)
+    task = built.create("Draw the board", {}).output.split()[-1]
+
+    assert built.edit(task, {}, "by hand").ok
+    assert built.edit(task, {}, "by a session", actor="e4732f9b").ok
+
+    comments = built.read(task)["comments"]
+    assert [(c["text"], c.get("author")) for c in comments] == [("by hand", "operator"), ("by a session", "e4732f9b")]

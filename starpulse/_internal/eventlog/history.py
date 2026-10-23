@@ -124,6 +124,7 @@ _lane_changes = Table(
     Column("old_status", String),
     Column("new_status", String, nullable=False),
     Column("observed_at", Float, nullable=False),
+    Column("actor", String),
     Index("ix_starpulse_lane_changes_task", "task", "observed_at"),
 )
 #: When each Waiting task's Start Criteria were first seen all met, for as long as they have stayed met: one row per task.
@@ -257,9 +258,9 @@ def open_event_log(path: Path | None = None) -> EventLog:
     return EventLog(database_url(load(path).database_url, path.parent if path else Path.cwd()))
 
 
-def lane_changes(rows: list[tuple[float, str | None, str]]) -> list[dict]:
-    """`{at, from, to}` for each `(at, old, new)` row that changed lane."""
-    return [{"at": at, "from": old, "to": new} for at, old, new in rows if old != new]
+def lane_changes(rows: list[tuple[float, str | None, str, str | None]]) -> list[dict]:
+    """`{at, from, to}` for each `(at, old, new, actor)` row that changed lane, with `by` where a write named its actor."""
+    return [{"at": at, "from": old, "to": new, **({"by": actor} if actor else {})} for at, old, new, actor in rows if old != new]
 
 
 def machine_steps(machine: dict, rows: list[tuple[float, str]]) -> tuple[list[dict], int]:
@@ -381,6 +382,7 @@ class HistoryStore:
         *,
         cursor: int | None = None,
         event: Mapping[str, Any] | None = None,
+        actor: str | None = None,
     ) -> bool:
         """Write a task's lane change and fold it into the summaries; True when a row was written. The status is kept as
         its lane id (`In Progress` is `in_progress`). One that repeats the task's last (a reconcile) is no change, and
@@ -388,10 +390,11 @@ class HistoryStore:
 
         A source's change (`<source>/<id>`) repeats only the last status of the same source's task: two sources may
         key a task alike. `cursor`, the entry's id in the log, is saved in the same transaction, as is the lane `event`
-        (the `board:lanes` fields, under `event_id`) a change writes: both land or neither does.
+        (the `board:lanes` fields, under `event_id`) a change writes: both land or neither does. The row keeps the `actor`
+        that made the change, else the `event`'s.
         """
         with self.engine.begin() as db:
-            written = self._fold_lane(db, event_id, task, status, at)
+            written = self._fold_lane(db, event_id, task, status, at, actor or (event or {}).get("actor"))
             if written and event is not None:
                 insert_event(db, lane_events.STREAM, event, event_id)
             if cursor is not None:
@@ -403,10 +406,13 @@ class HistoryStore:
     def record_lane_entry(self, entry_id: str, fields: dict, *, cursor: int | None = None) -> bool:
         """Fold one `lane_events` entry (`fields`) into the lane history as `record_lane` does, under its log id."""
         return self.record_lane(
-            fields.get("event_id") or entry_id, fields["task"], fields["lane"], float(fields["time"]), cursor=cursor
+            fields.get("event_id") or entry_id, fields["task"], fields["lane"], float(fields["time"]), cursor=cursor,
+            actor=fields.get("actor"),
         )
 
-    def _fold_lane(self, db: Connection, event_id: str, task: str, status: str, at: float) -> bool:
+    def _fold_lane(
+        self, db: Connection, event_id: str, task: str, status: str, at: float, actor: str | None = None
+    ) -> bool:
         status = lane_id(status)
         name, slash, _ = event_id.partition("/")
         source = name if slash and name else None
@@ -414,7 +420,7 @@ class HistoryStore:
         if (last is not None and lane_id(last) == status) or _holds_move(db, task, source, status, at):
             return False
         change = self._insert(_lane_changes).values(
-            event_id=event_id, task=task, old_status=last, new_status=status, observed_at=at
+            event_id=event_id, task=task, old_status=last, new_status=status, observed_at=at, actor=actor
         )
         if db.execute(change.on_conflict_do_nothing().returning(_lane_changes.c.id)).first() is None:
             return False
@@ -785,7 +791,7 @@ class HistoryStore:
         c = _lane_changes.c
         with self.engine.connect() as db:
             rows = db.execute(
-                select(c.observed_at, c.old_status, c.new_status).where(c.task == task).order_by(*_LANE_ORDER)
+                select(c.observed_at, c.old_status, c.new_status, c.actor).where(c.task == task).order_by(*_LANE_ORDER)
             ).all()
         return lane_changes([tuple(row) for row in rows])
 
