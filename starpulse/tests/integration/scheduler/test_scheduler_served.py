@@ -199,5 +199,5 @@ def test_the_switch_and_the_run_ledger_are_kept_in_the_store_not_in_files_beside
 
     assert EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}").setting("scheduler.enabled") is True
     assert not (state / LEDGER_FILE).exists()  # the ledger is a table in the store, not a file
-    assert not (state / "starpulse-autopilot.json").exists()  # the switch is a row in the store, not a file
-    assert sorted(path.name for path in tmp_path.glob("starpulse-autopilot*")) == []  # nothing beside the config
+    assert not (state / "starpulse-scheduler.json").exists()  # the switch is a row in the store, not a file
+    assert sorted(path.name for path in tmp_path.glob("starpulse-scheduler*")) == []  # nothing beside the config

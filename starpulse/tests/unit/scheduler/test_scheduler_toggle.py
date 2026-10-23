@@ -31,7 +31,7 @@ def test_the_switch_is_a_row_in_the_store_not_a_file(tmp_path: Path) -> None:
     _toggle(tmp_path).set(True)
 
     assert EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}").setting("scheduler.enabled") is True
-    assert list(tmp_path.glob("starpulse-autopilot*")) == []
+    assert list(tmp_path.glob("starpulse-scheduler*")) == []
 
 
 def test_a_switch_file_from_before_the_store_is_imported_once(tmp_path: Path) -> None:

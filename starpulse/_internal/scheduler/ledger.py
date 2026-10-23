@@ -25,7 +25,7 @@ from starpulse._internal.eventlog.tables import scheduler_runs
 logger = logging.getLogger(__name__)
 
 #: The ledger's file before it moved into the store; a file by this name in `state_dir` is imported once.
-LEDGER_FILE = "starpulse-autopilot-runs.jsonl"
+LEDGER_FILE = "starpulse-scheduler-runs.jsonl"
 
 
 @dataclass(frozen=True)

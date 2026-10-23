@@ -6,7 +6,7 @@ from starpulse._internal.eventlog import operator_settings
 from starpulse._internal.eventlog.event_log import EventLog
 
 #: The switch's file before it moved into the store; a file by this name in `state_dir` is imported once.
-TOGGLE_FILE = "starpulse-autopilot.json"
+TOGGLE_FILE = "starpulse-scheduler.json"
 KEY = "scheduler.enabled"
 
 
