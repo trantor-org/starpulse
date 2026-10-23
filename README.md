@@ -42,14 +42,14 @@ and records them.
 ## Quick start
 
 ```sh
-uvx starpulse init    # writes starpulse.toml, board.yaml and .claude/settings.json (--harness, --dir)
+uvx starpulse init    # writes starpulse.toml, board.yaml, .starpulse/board/ and .claude/settings.json (--harness, --dir)
 export STARPULSE_TOKEN=$(openssl rand -hex 16)
 uvx starpulse serve   # then open http://localhost:8766
 ```
 
 `init` scaffolds a board machine with its roles declared, a `[[board.guards]]` rule, a `[scheduler]` table, a producer
 whose token is read from `STARPULSE_TOKEN`, and the Claude Code telemetry export settings; it refuses to overwrite an
-existing file. The board starts empty.
+existing file. The board starts empty, with the lanes the machine's states name, ready for `uvx starpulse task create`.
 
 ### Working with AI agents
 

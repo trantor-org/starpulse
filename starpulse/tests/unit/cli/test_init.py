@@ -4,10 +4,12 @@ import json
 from pathlib import Path
 
 import pytest
+import yaml
 
 from starpulse._internal.cli import init
 from starpulse._internal.config.config import load
 from starpulse._internal.machines.machine_definition import load_machine
+from starpulse._internal.machines.transitions import lane_id
 
 
 def test_init_writes_a_config_the_server_loads(tmp_path: Path) -> None:
@@ -28,6 +30,20 @@ def test_init_writes_a_machine_that_declares_its_roles(tmp_path: Path) -> None:
 
     assert set(compiled.roles.values()) >= {"resting", "waiting_on_person"}
     assert None not in compiled.roles.values()
+
+
+def test_init_writes_board_lanes_that_are_the_machines_states(tmp_path: Path) -> None:
+    init.main(["--dir", str(tmp_path)])
+
+    statuses = yaml.safe_load((tmp_path / ".starpulse" / "board" / "config.yml").read_text())["statuses"]
+
+    assert [lane_id(status) for status in statuses] == list(load_machine(tmp_path / "board.yaml").roles)
+
+
+def test_init_writes_a_tasks_directory_a_task_can_be_created_in(tmp_path: Path) -> None:
+    init.main(["--dir", str(tmp_path)])
+
+    assert (tmp_path / ".starpulse" / "board" / "tasks").is_dir()
 
 
 def test_init_writes_the_claude_code_telemetry_settings(tmp_path: Path) -> None:
