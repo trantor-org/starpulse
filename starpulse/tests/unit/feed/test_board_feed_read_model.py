@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import Engine
 
+from starpulse._internal.board.view import board_columns
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.readmodel.projector import Projector
@@ -51,9 +52,21 @@ def test_the_board_flow_draws_the_live_tasks_of_the_read_model(engine: Engine) -
     agents = _board(_feed(engine))["agents"]
 
     assert [(agent["id"], agent["title"], agent["state"]) for agent in agents] == [
-        ("TASK-1", "Task 1", "Ready"),
-        ("TASK-2", "Task 2", "In Progress"),
+        ("TASK-1", "Task 1", "ready"),
+        ("TASK-2", "Task 2", "in_progress"),
     ]
+
+
+def test_the_kanban_columns_hold_the_read_model_tasks_by_state_id(engine: Engine) -> None:
+    _append(engine, 1, "To Do")
+    _append(engine, 2, "In Progress")
+
+    columns = board_columns(_feed(engine).snapshot(), lambda agent: True)["columns"]
+
+    assert {column["state"]: [task["id"] for task in column["tasks"]] for column in columns if column["tasks"]} == {
+        "to_do": ["TASK-1"],
+        "in_progress": ["TASK-2"],
+    }
 
 
 def test_the_snapshot_lists_no_archived_task_and_the_archive_is_paged(engine: Engine) -> None:
@@ -170,5 +183,5 @@ def test_the_tasks_the_read_model_changed_are_published_as_deltas_once(engine: E
 
     published = {data["id"]: data["agent"] for kind, data in _deltas(subscriber) if kind == "task"}
     assert set(published) == {"TASK-2", "TASK-3"}
-    assert published["TASK-2"]["state"] == "Ready"
+    assert published["TASK-2"]["state"] == "ready"
     assert published["TASK-3"] is None

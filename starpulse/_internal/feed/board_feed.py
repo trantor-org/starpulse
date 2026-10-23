@@ -131,7 +131,7 @@ def summary_agent(summary: Mapping[str, Any], workable: bool = False) -> dict:
     return {
         "id": summary["id"],
         "title": summary["title"],
-        "state": summary["state"],
+        "state": lane_id(summary["state"]),
         "model": "",
         "profile": None,
         "assignee": summary["assignee"],
@@ -153,7 +153,7 @@ def summary_agent(summary: Mapping[str, Any], workable: bool = False) -> dict:
 
 
 def _cold_stub(summary: Mapping[str, Any]) -> dict:
-    return {"id": summary["id"], "state": summary["state"], "entered": summary["updated_at"]}
+    return {"id": summary["id"], "state": lane_id(summary["state"]), "entered": summary["updated_at"]}
 
 
 def settled_entry(task: BoardTask) -> dict | None:
@@ -881,7 +881,7 @@ class BoardFeed:
         """Whether the task is done: completed, or in the done lane; a task the Board does not hold is not."""
         if self._read_model is not None:
             row = self._read_model.task(task_id)
-            return row is not None and row["state"] == self._roles.done
+            return row is not None and lane_id(row["state"]) == self._roles.done
         with self._lock:
             return self._done_at(task_id) is not None
 
