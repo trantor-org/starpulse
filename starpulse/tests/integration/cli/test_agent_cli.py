@@ -1346,6 +1346,7 @@ def test_the_manifest_describes_every_verb_and_each_of_its_arguments(capsys: pyt
         "analytics graph",
         "analytics stages",
         "analytics diff",
+        "command run",
         "config check",
         "demo",
         "doctor",
@@ -1997,6 +1998,11 @@ CASES = {
     ("machine import mermaid", 1): ["machine", "import", "mermaid", "{dir}/flow.mmd", "--out", "{dir}/bad.yaml"],
     ("machine import mermaid", 2): ["machine", "import", "mermaid"],
     ("machine import mermaid", 4): ["machine", "import", "mermaid", "{dir}/nope.mmd"],
+    ("command run", 0): ["command", "run", "--config", "{dir}/commands.toml", "pass"],
+    ("command run", 1): ["command", "run", "--config", "{dir}/commands.toml", "fail"],
+    ("command run", 2): ["command", "run", "--config", "{dir}/commands.toml", "needs-task"],
+    ("command run", 3): ["command", "run", "--config", "{dir}/commands.toml", "missing-binary"],
+    ("command run", 4): ["command", "run", "--config", "{dir}/commands.toml", "nope"],
     ("config check", 0): ["config", "check", "--config", "{dir}/ok.toml"],
     ("config check", 1): ["config", "check", "--config", "{dir}/bad.toml"],
     ("config check", 2): ["config", "check", "--nope"],
@@ -2023,6 +2029,9 @@ def _edit_an_installed_copy() -> None:
     (Path.cwd() / ".claude/skills/operating-starpulse-board/SKILL.md").write_text("mine\n")
 
 
+# An error document that carries a key beyond `error` and `code`: an unmapped command names the fallback.
+ERROR_EXTRAS = {("command run", 4): {"fallback"}}
+
 PREPARE = {("skills install", 1): _edit_an_installed_copy}
 
 
@@ -2046,6 +2055,13 @@ def _case_files(root: Path) -> Path:
     (root / "bad.yaml").write_text("name: flow\nstates:\n  idle: {initial: true}\n  done: {final: maybe}\nevents: {}\n")
     (root / "ok.toml").write_text('tracker_url = "http://tracker.example"\n')
     (root / "bad.toml").write_text('colour = "red"\n')
+    (root / "commands.toml").write_text(
+        "[project.commands]\n"
+        'pass = ["true"]\n'
+        'fail = ["false"]\n'
+        'needs-task = ["echo", "{task}"]\n'
+        'missing-binary = ["./no-such-binary"]\n'
+    )
     (root / "retired.md").write_text("---\nid: task-3\nstatus: Done\n---\n")
     (root / "no-id.md").write_text("no front matter\n")
     (root / "flow.mmd").write_text("stateDiagram-v2\n    [*] --> open\n    open --> closed : Close it\n")
@@ -2115,7 +2131,9 @@ def test_a_manifest_verb_writes_one_json_document_and_exits_as_declared(
     assert exit_code in manifest["exit_codes"]
     # A verb that reports `ok` still reports every check it made when it fails; any other refusal is an error document.
     reports = exit_code == 0 or (exit_code == 1 and "ok" in manifest["outputs"])
-    assert set(doc) == (set(manifest["outputs"]) if reports else {"error", "code"})
+    assert set(doc) == (
+        set(manifest["outputs"]) if reports else {"error", "code"} | ERROR_EXTRAS.get((verb, exit_code), set())
+    )
 
 
 SKILLS = [

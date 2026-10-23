@@ -1210,13 +1210,15 @@ def _parser() -> argparse.ArgumentParser:
         "run the argv `[project.commands]` maps NAME to, offline, in this directory; its output goes to stderr. "
         "An unknown NAME exits 4 with a `fallback`: do the step as the project's AGENTS.md says",
         agent_commands.run,
-        ("name", "argv", "exit", "seconds"),
+        ("name", "argv", "exit", "seconds", "ok"),
         (0, 1, 2, 3, 4),
         reads_server=False,
     )
     command_run.add_argument("name", help="the step's name (`deliver`)")
     command_run.add_argument("--task", help="fills {task}")
-    command_run.add_argument("--arg", action="append", default=[], metavar="NAME=VALUE", help="fills {NAME}; repeatable")
+    command_run.add_argument(
+        "--arg", action="append", default=[], metavar="NAME=VALUE", help="fills {NAME}; repeatable"
+    )
     command_run.add_argument("--config", type=Path, help="the TOML config file; default starpulse.toml when it exists")
     command_run.add_argument("args", nargs="*", help="after `--`: spliced where the argv has {args}")
     config = verbs.add_parser("config", description="the config file", help="the config file")
