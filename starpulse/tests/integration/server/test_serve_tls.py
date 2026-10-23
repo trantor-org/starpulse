@@ -53,6 +53,8 @@ def _await_answer(port: int, context: ssl.SSLContext | None) -> http.client.HTTP
             time.sleep(0.2)
 
 
+# Stays slow: a real `starpulse serve` child cold-imports the server (~2.3 s) and boots to its first answer (~4 s)
+@pytest.mark.slow
 @pytest.mark.usefixtures("build")
 def test_serve_with_a_certificate_answers_http11_http2_and_http3_on_one_port(
     tmp_path: Path, certificate: tuple[Path, Path]
