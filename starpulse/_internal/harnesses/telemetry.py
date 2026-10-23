@@ -64,6 +64,11 @@ def _flag(value: Any) -> bool:
     return str(value).lower() == "true"
 
 
+def _skill(attributes: dict[str, Any]) -> str:
+    """The bare skill name: a plugin skill arrives as `plugin:skill`, and the analytics config keys on the bare one."""
+    return str(attributes.get("skill.name") or "").rpartition(":")[2]
+
+
 def _cost(value: Any) -> float | None:
     try:
         return float(value)
@@ -177,7 +182,7 @@ def _claude(name: str, a: dict[str, Any]) -> Iterator[dict[str, Any]]:
     elif name == "hook_execution_complete" and a.get("prompt.id"):
         yield {"kind": "hook", "name": str(a.get("hook_name") or ""), "seconds": _seconds(a.get("total_duration_ms"))}
     elif name == "skill_activated":
-        yield {"kind": "skill", "name": str(a.get("skill.name") or "")}
+        yield {"kind": "skill", "name": _skill(a)}
     elif name == "assistant_response":
         source = str(a.get("query_source") or "")
         yield {"kind": "reply", "origin": _claude_origin(source), "detail": _asks(a.get("response"))}
@@ -222,7 +227,7 @@ def _codex(name: str, a: dict[str, Any]) -> Iterator[dict[str, Any]]:
             **_call(a),
         }
     elif name == "codex.skill_invocation":
-        yield {"kind": "skill", "name": str(a.get("skill.name") or "")}
+        yield {"kind": "skill", "name": _skill(a)}
     elif name == "codex.turn_cost" and _flag(a.get("turn.interrupted")):
         yield {"kind": "interrupt", "effort": str(a.get("reasoning_effort") or "")}
 

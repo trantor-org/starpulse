@@ -166,6 +166,16 @@ def test_a_skill_activation_names_the_skill_for_either_harness() -> None:
     ]
 
 
+def test_a_plugin_skill_activation_names_the_bare_skill_for_either_harness() -> None:
+    claude_skill = signals(export(claude("skill_activated", 4, **{"skill.name": "starpulse:tdd"})))
+    codex_skill = signals(export(codex("codex.skill_invocation", **{"skill.name": "starpulse:tdd"})))
+
+    assert [(s.kind, s.name, s.harness) for s in claude_skill + codex_skill] == [
+        ("skill", "tdd", CLAUDE_CODE),
+        ("skill", "tdd", CODEX),
+    ]
+
+
 def test_a_rejected_tool_decision_is_not_ok_and_names_its_source() -> None:
     (found,) = signals(export(claude("tool_decision", 5, decision="reject", source="hook", tool_name="Edit")))
 
