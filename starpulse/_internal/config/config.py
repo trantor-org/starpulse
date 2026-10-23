@@ -63,6 +63,7 @@ _KEYS = {
     "project",
     "cursor_context",
     "refresh_token_env",
+    "temporal_address",
     "pull_requests",
     "runs_worker",
     "flow_metrics_worker",
@@ -313,6 +314,12 @@ def _refresh_token_env(raw: object) -> str | None:
     return raw
 
 
+def _temporal_address(raw: object) -> str | None:
+    if raw is not None and not (isinstance(raw, str) and raw):
+        raise ConfigError("temporal_address must be a host:port string")
+    return raw
+
+
 def _token_env(raw: object, who: str) -> str:
     if not (isinstance(raw, str) and _ENV_NAME.fullmatch(raw)):
         raise ConfigError(f"{who} token_env must be the name of an environment variable")
@@ -446,6 +453,8 @@ class Config:
     """The policy the scheduler runs under (`[scheduler]`); every key is optional, so no block is the defaults."""
     refresh_token_env: str | None = None
     """The environment variable holding the token `POST /api/pulls/refresh` accepts; none: the route answers 404."""
+    temporal_address: str | None = None
+    """The Temporal frontend (`host:port`) `POST /api/take-over` sends its Update through; none: the route answers 404."""
     pull_requests: bool = True
     """`serve` keeps the pull request store, current from the lifecycle events (GitHub is read only for a pull request a refresh asks for); false: no store is kept, so an instance beside another that reads the same repositories keeps no second copy."""
     runs_worker: bool = False
@@ -704,6 +713,7 @@ def load(path: Path | None) -> Config:
         project=_project(raw.get("project")),
         cursor_context=_cursor_context(raw.get("cursor_context")),
         refresh_token_env=_refresh_token_env(raw.get("refresh_token_env")),
+        temporal_address=_temporal_address(raw.get("temporal_address")),
         pull_requests=_flag(raw, "pull_requests", True),
         runs_worker=_flag(raw, "runs_worker", False),
         worker_memory=_worker_memory(raw.get("worker_memory", {})),

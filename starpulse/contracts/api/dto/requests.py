@@ -82,6 +82,12 @@ class RestoreRequest(_Writer):
     task: str
 
 
+class TakeOverRequest(_Api):
+    """`POST /api/take-over`: flip the unattended task `task` to interactive; its workflow types nothing more."""
+
+    task: str
+
+
 class RetireRequest(_Api):
     """`POST /api/retire`: take the finished task `task` off the board into the history store's retired tasks."""
 

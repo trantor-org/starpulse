@@ -6869,6 +6869,33 @@
       "title": "Submachine",
       "type": "object"
     },
+    "TakeOverRequest": {
+      "additionalProperties": false,
+      "description": "`POST /api/take-over`: flip the unattended task `task` to interactive; its workflow types nothing more.",
+      "properties": {
+        "task": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task"
+      ],
+      "title": "TakeOverRequest",
+      "type": "object"
+    },
+    "TakenOver": {
+      "additionalProperties": false,
+      "properties": {
+        "task": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task"
+      ],
+      "title": "TakenOver",
+      "type": "object"
+    },
     "TaskCriterion": {
       "additionalProperties": false,
       "description": "One acceptance criterion of a Board task and whether it is checked.",
@@ -7745,6 +7772,9 @@
             "$ref": "#/$defs/Retired"
           },
           {
+            "$ref": "#/$defs/TakenOver"
+          },
+          {
             "$ref": "#/$defs/RetiredImported"
           },
           {
@@ -7922,6 +7952,9 @@
           },
           {
             "$ref": "#/$defs/RetireRequest"
+          },
+          {
+            "$ref": "#/$defs/TakeOverRequest"
           },
           {
             "$ref": "#/$defs/RetiredImportRequest"

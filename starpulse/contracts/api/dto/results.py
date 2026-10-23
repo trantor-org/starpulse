@@ -38,6 +38,10 @@ class Restored(_Api):
     task: str
 
 
+class TakenOver(_Api):
+    task: str
+
+
 class Retired(_Api):
     task: str
 

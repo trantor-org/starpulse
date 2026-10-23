@@ -63,6 +63,9 @@ _RESTORE = "/api/restore"
 _RETIRE = "/api/retire"
 
 
+_TAKE_OVER = "/api/take-over"
+
+
 _RETIRED = "/api/retired"
 
 

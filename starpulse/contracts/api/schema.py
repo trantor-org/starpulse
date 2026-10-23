@@ -38,6 +38,7 @@ from starpulse.contracts.api.dto.requests import (
     RestoreRequest,
     RetiredImportRequest,
     RetireRequest,
+    TakeOverRequest,
     RatingRequest,
     ReviewRequest,
     StartRequest,
@@ -64,6 +65,7 @@ from starpulse.contracts.api.dto.results import (
     Rated,
     Restored,
     Retired,
+    TakenOver,
     RetiredImported,
     Reviewed,
     RunStarted,
@@ -133,6 +135,7 @@ class ApiContract(_Api):
         | MissRequest
         | RestoreRequest
         | RetireRequest
+        | TakeOverRequest
         | RetiredImportRequest
         | CompleteRequest
         | ClaimRequest
@@ -157,6 +160,7 @@ class ApiContract(_Api):
         | Rated
         | Restored
         | Retired
+        | TakenOver
         | RetiredImported
         | Completed
         | Claimed

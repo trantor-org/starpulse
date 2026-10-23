@@ -40,10 +40,11 @@ _CHILDREN = tuple(name for name in ENTRIES if name != SELF)
 _BOARD_READERS = ("pulls", "scheduler", "runs", "flow-metrics", "board")
 
 
-#: The keys `serve` alone reads: whether each child runs, its memory limit, and its refresh token.
+#: The keys `serve` alone reads: whether each child runs, its memory limit, its refresh token and its Temporal address.
 _SERVE_KEYS = (
     "mode",
     "refresh_token_env",
+    "temporal_address",
     "slow_read_seconds",
     "worker_memory",
     "api_worker",
