@@ -13,7 +13,8 @@ from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.machines.machine_definition import MachineDefinitionError
 from starpulse._internal.readmodel.fold import replay
 from starpulse._internal.server.machine_sync import sync_definitions
-from starpulse._internal.store import EventStore, MachineRegistry, NewEvent
+from starpulse._internal.store import EventStore, NewEvent
+from starpulse._internal.store.machine_registry import MachineRegistry
 
 BOARD = {
     "name": "board",

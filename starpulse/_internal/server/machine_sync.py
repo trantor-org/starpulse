@@ -19,7 +19,8 @@ from starpulse._internal.eventlog.history import database_url
 from starpulse._internal.machines.machine_definition import MachineDefinitionError, _read
 from starpulse._internal.readmodel.projector import Projector
 from starpulse._internal.readmodel.read_model import ReadModel
-from starpulse._internal.store import EventStore, LiveTask, MachineRegistry
+from starpulse._internal.store import EventStore
+from starpulse._internal.store.machine_registry import LiveTask, MachineRegistry
 
 __all__ = ["REFUSED", "main", "sync_definitions"]
 
