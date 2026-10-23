@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import os
+import select
 import signal
 import socket
 import subprocess
@@ -30,7 +31,7 @@ from typing import Any
 from starpulse._internal.config.config import Config, MemoryLimit
 from starpulse._internal.server.closure import SELF, Reading, ReloadError
 from starpulse._internal.server.control import Control
-from starpulse._internal.server.hold import LISTEN_FD_ENV, SUPERVISED_ENV
+from starpulse._internal.server.hold import LISTEN_FD_ENV, READY_FD_ENV, SUPERVISED_ENV
 from starpulse._internal.server.memory import memory_reader
 
 logger = logging.getLogger(__name__)
@@ -72,19 +73,24 @@ def worker_commands(config: Config, config_path: Path | None) -> dict[str, list[
     }
 
 
-def spawn_child(command: Sequence[str], listening: socket.socket | None = None) -> subprocess.Popen:
+def spawn_child(
+    command: Sequence[str], listening: socket.socket | None = None, ready: int | None = None
+) -> subprocess.Popen:
     """Start a child that dies with `serve` (its stdin pipe closes) and sits outside the terminal's process group.
 
-    A `listening` socket is handed to it on the same descriptor number, named by `LISTEN_FD_ENV`."""
+    A `listening` socket is handed to it on the same descriptor number, named by `LISTEN_FD_ENV`; a `ready` descriptor
+    (the write end of a pipe), likewise by `READY_FD_ENV`."""
     env = {**os.environ, SUPERVISED_ENV: "1"}
     if listening is not None:
         env[LISTEN_FD_ENV] = str(listening.fileno())
+    if ready is not None:
+        env[READY_FD_ENV] = str(ready)
     return subprocess.Popen(
         command,
         stdin=subprocess.PIPE,
         env=env,
         start_new_session=True,
-        pass_fds=() if listening is None else (listening.fileno(),),
+        pass_fds=tuple(fd for fd in (listening and listening.fileno(), ready) if fd is not None),
     )
 
 
@@ -116,6 +122,7 @@ class Supervisor:
         stable_after: float = 60.0,
         poll: float = 0.5,
         grace: float = 10.0,
+        warm: float = 30.0,
         read: Callable[[str], Reading] | None = None,
         baseline: Callable[[str], Reading] | None = None,
         execute: Callable[[], None] = _exec_self,
@@ -133,6 +140,7 @@ class Supervisor:
         self._stable_after = stable_after
         self._poll = poll
         self._grace = grace
+        self._warm = warm
         self._limits = dict(limits or {})
         self._memory = memory
         self._sample_every = sample_every
@@ -173,9 +181,14 @@ class Supervisor:
                     child.sampled = now
                     self._check_memory(name, child, now)
 
-    def _launch(self, name: str, child: _Child, now: float) -> None:
+    def _launch(self, name: str, child: _Child, now: float, ready: int | None = None) -> None:
         listening = self._sockets.get(name)
-        child.proc = self._spawn(child.command) if listening is None else self._spawn(child.command, listening)
+        if listening is None:
+            child.proc = self._spawn(child.command)
+        elif ready is None:
+            child.proc = self._spawn(child.command, listening)
+        else:
+            child.proc = self._spawn(child.command, listening, ready)
         child.started = child.sampled = now
         logger.info("worker %s started as pid %s", name, child.proc.pid)
 
@@ -278,11 +291,34 @@ class Supervisor:
         return "reloaded"
 
     def _replace(self, name: str, child: _Child) -> str:
-        if child.proc is not None:
-            self._end([child.proc])
+        old = child.proc
         child.failures = 0
-        self._launch(name, child, time.monotonic())
+        if old is not None and old.poll() is None and name in self._sockets:
+            self._launch_beside(name, child, old)
+        else:
+            if old is not None:
+                self._end([old])
+            self._launch(name, child, time.monotonic())
         return "replaced"
+
+    def _launch_beside(self, name: str, child: _Child, old: Any) -> None:
+        """Start the new child on the shared socket, wait until it is about to serve (or `warm` seconds, or its exit),
+        then end `old`, so the old one keeps answering while the new one starts."""
+        read_end, write_end = os.pipe()
+        try:
+            self._launch(name, child, time.monotonic(), write_end)
+            os.close(write_end)
+            write_end = -1
+            deadline = time.monotonic() + self._warm
+            while child.proc.poll() is None and not select.select([read_end], [], [], 0.1)[0]:
+                if time.monotonic() >= deadline:
+                    logger.warning("worker %s pid %s was not serving after %.0fs; ending the old one", name, child.proc.pid, self._warm)
+                    break
+        finally:
+            os.close(read_end)
+            if write_end >= 0:
+                os.close(write_end)
+        self._end([old])
 
     def reexec(self) -> None:
         """Replace this process with a new one running the same command, after `reload` reported "re-executed".

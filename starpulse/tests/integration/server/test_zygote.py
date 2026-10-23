@@ -139,6 +139,18 @@ def test_a_platform_that_cannot_fork_starts_the_child_with_the_socket_the_forker
     listening.close()
 
 
+def test_a_child_handed_a_ready_descriptor_starts_with_the_fallback_beside_the_socket_the_forker_holds() -> None:
+    started: list[tuple[object, ...]] = []
+    listening = socket.socket()
+    held = Forker([], entry=ENTRY, fallback=lambda *args: started.append(args) or "child", listening=listening)
+
+    child = held([*PREFIX, "api"], listening, 7)
+
+    assert child == "child"
+    assert started == [([*PREFIX, "api"], listening, 7)]
+    listening.close()
+
+
 def test_a_child_handed_the_socket_the_forker_holds_forks_with_it_named_in_its_environment(tmp_path: Path) -> None:
     listening = socket.socket()
     listening.bind(("127.0.0.1", 0))

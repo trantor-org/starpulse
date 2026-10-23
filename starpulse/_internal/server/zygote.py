@@ -339,8 +339,10 @@ class Forker:
         self._listening.set_inheritable(True)
         return [self._listening.fileno()]
 
-    def __call__(self, command: Sequence[str], listening: socket.socket | None = None) -> Any:
+    def __call__(self, command: Sequence[str], listening: socket.socket | None = None, ready: int | None = None) -> Any:
         handed = () if listening is None else (listening,)  # every start but a fork must still pass the socket on
+        if ready is not None:  # the preloaded process cannot inherit a descriptor made after it started
+            return self._fallback(command, listening, ready)
         if (
             listening is not None and listening is not self._listening
         ):  # a fork inherits only what the preloaded process holds

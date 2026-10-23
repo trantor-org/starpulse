@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 import signal
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, MutableMapping
 
 #: Set in a supervised child's environment: its stdin is a pipe from `serve`.
 SUPERVISED_ENV = "STARPULSE_SUPERVISED"
@@ -18,10 +18,26 @@ SUPERVISED_ENV = "STARPULSE_SUPERVISED"
 #: child, and by a `serve` that re-executes itself to its next image.
 LISTEN_FD_ENV = "STARPULSE_LISTEN_FD"
 
+#: Set to a descriptor number in the Page API child a replacing `serve` starts beside the old one: the child writes a byte
+#: to it when it is about to serve, and `serve` ends the old child on that byte (`announce_ready`).
+READY_FD_ENV = "STARPULSE_READY_FD"
+
 #: The directory of the page build `serve` checked, handed to the Page API child so both serve the same one.
 STATIC_ENV = "STARPULSE_STATIC"
 
 _watching = False
+
+
+def announce_ready(environ: MutableMapping[str, str]) -> None:
+    """Tell the supervisor this child is about to serve, when it asked to be told; a closed pipe is no reason to stop."""
+    fd = environ.pop(READY_FD_ENV, None)
+    if fd is None:
+        return
+    try:
+        os.write(int(fd), b"1")
+        os.close(int(fd))
+    except (OSError, ValueError):
+        pass
 
 
 def watch_supervisor() -> None:  # pragma: no mutate block — process boundary
