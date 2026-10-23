@@ -32,6 +32,7 @@ from starpulse._internal.config.autopilot import Autopilot, AutopilotError, pars
 from starpulse._internal.config.cursor_context import CursorContext, CursorContextError, parse_cursor_context
 from starpulse._internal.config.harnesses import Harnesses, load_harnesses
 from starpulse._internal.config.level import Level, LevelError, parse_level
+from starpulse._internal.config.project import Project, ProjectError, parse_project
 from starpulse._internal.config.search import Search, SearchError, parse_search
 
 #: The default of `slow_read_seconds`.
@@ -59,6 +60,7 @@ _KEYS = {
     "release",
     "analytics",
     "search",
+    "project",
     "cursor_context",
     "refresh_token_env",
     "pull_requests",
@@ -469,6 +471,8 @@ class Config:
     """The `[board.actor]` table is present: `serve` runs the task actor, which moves a task on the facts its lane waits on and replaces the release pass."""
     search: Search = field(default_factory=Search)
     """The optional embeddings service that ranks search by meaning (`[search]`); no table: search is lexical only."""
+    project: Project = field(default_factory=Project)
+    """The project's own command line for each step a shipped skill names (`[project.commands]`); no table: none is mapped."""
     cursor_context: CursorContext = field(default_factory=CursorContext)
     """The context limit a Cursor task session is reset at (`[cursor_context]`); no table: 150000 of a 200000 window."""
 
@@ -507,6 +511,14 @@ def _analytics(raw: object) -> Analytics:
     try:
         return parse_analytics(raw)
     except AnalyticsError as exc:
+        raise ConfigError(str(exc)) from exc
+
+
+def _project(raw: object) -> Project:
+    """The `[project]` table, or the empty one when the config has none; a refusal is a `ConfigError`."""
+    try:
+        return parse_project(raw)
+    except ProjectError as exc:
         raise ConfigError(str(exc)) from exc
 
 
@@ -685,6 +697,7 @@ def load(path: Path | None) -> Config:
         release=_release(raw, repos),
         task_actor=actor is not None,
         search=_search(raw.get("search")),
+        project=_project(raw.get("project")),
         cursor_context=_cursor_context(raw.get("cursor_context")),
         refresh_token_env=_refresh_token_env(raw.get("refresh_token_env")),
         pull_requests=_flag(raw, "pull_requests", True),

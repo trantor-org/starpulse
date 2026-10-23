@@ -422,6 +422,13 @@ applied_by = "pin-bump"
 # model = "nomic-embed-text"                             # required with embeddings_url: the model the endpoint is asked for
 # token_env = "EMBEDDINGS_TOKEN"                         # optional: the environment variable holding the endpoint's bearer token
 
+# Optional: map the steps a shipped skill names to this project's own command lines (see `command run` in docs/cli.md).
+# Each name maps to an argv, run with no shell. Placeholders: {task}, {worktree}, {NAME} (from --arg NAME=VALUE), and the
+# whole element {args} (the arguments after `--`). `starpulse config check` refuses a malformed entry.
+# [project.commands]
+# deliver = ["./bin/ship", "{task}"]
+# test = ["make", "test", "{args}"]
+
 # Optional: hold Cursor task sessions to a context limit (see `python -m starpulse.cursor_context` in docs/sources.md).
 # [cursor_context]
 # limit_tokens = 150000    # a session past this many context tokens is asked to checkpoint, then restarted fresh

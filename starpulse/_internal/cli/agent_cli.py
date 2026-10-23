@@ -111,7 +111,7 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any, NoReturn
 
-from starpulse._internal.cli import agent_tasks, agent_wire, demo, doctor, skill_install
+from starpulse._internal.cli import agent_commands, agent_tasks, agent_wire, demo, doctor, skill_install
 from starpulse._internal.cli.agent_keys import (
     CELL_KEYS,
     CLAIM_KEYS,
@@ -1203,6 +1203,22 @@ def _parser() -> argparse.ArgumentParser:
             type=float,
             help="the window to read, in hours; past the telemetry history it is refused (default 168)",
         )
+    command = verbs.add_parser("command", description="the project's commands", help="the project's commands")
+    command_run = leaf(
+        command.add_subparsers(dest="verb", required=True, metavar="verb"),
+        "run",
+        "run the argv `[project.commands]` maps NAME to, offline, in this directory; its output goes to stderr. "
+        "An unknown NAME exits 4 with a `fallback`: do the step as the project's AGENTS.md says",
+        agent_commands.run,
+        ("name", "argv", "exit", "seconds"),
+        (0, 1, 2, 3, 4),
+        reads_server=False,
+    )
+    command_run.add_argument("name", help="the step's name (`deliver`)")
+    command_run.add_argument("--task", help="fills {task}")
+    command_run.add_argument("--arg", action="append", default=[], metavar="NAME=VALUE", help="fills {NAME}; repeatable")
+    command_run.add_argument("--config", type=Path, help="the TOML config file; default starpulse.toml when it exists")
+    command_run.add_argument("args", nargs="*", help="after `--`: spliced where the argv has {args}")
     config = verbs.add_parser("config", description="the config file", help="the config file")
     config_verbs = config.add_subparsers(dest="verb", required=True, metavar="verb")
     config_check = leaf(
@@ -1283,7 +1299,7 @@ def main(argv: Sequence[str] | None = None, environ: Mapping[str, str] = os.envi
             return 0
         document, status = result, 0 if result.get("ok", True) else 1  # only `doctor` reports `ok`
     except agent_wire.CliError as exc:
-        document, status = {"error": str(exc), "code": exc.code}, _ERROR_EXIT[exc.code]
+        document, status = {"error": str(exc), "code": exc.code, **exc.extra}, _ERROR_EXIT[exc.code]
     except KeyboardInterrupt:  # the one way a `watch` ends well
         return 0
     print(json.dumps(document))

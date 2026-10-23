@@ -69,6 +69,7 @@ CONFIG_OWNERS: dict[str, tuple[str, ...]] = {
     "analytics": _owned_by(),
     "cursor_context": _owned_by(),
     "producers": _owned_by(),
+    "project": _owned_by(),
     "database_url": _CHILDREN,
     "board": _owned_by(*_BOARD_READERS),
     "runs": _owned_by("runs"),
