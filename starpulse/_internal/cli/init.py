@@ -4,8 +4,8 @@
     starpulse init --dir demo --harness claude-code
 
 Writes `starpulse.toml` (a native `[board]` with one `[[board.guards]]` rule, a `[scheduler]` table and a `[[producers]]`
-entry whose token is read from `STARPULSE_TOKEN`), `board.yaml` (a four-State machine with every role declared) and the
-harness's telemetry export settings (`.claude/settings.json` for Claude Code, so its sessions reach the OTLP receiver
+entry whose token is read from `STARPULSE_TOKEN`), `board.yaml` (a four-State machine with every role declared), `.starpulse/board/config.yml` (the board's lanes, the
+machine's States), an empty `tasks/` and the harness's telemetry export settings (`.claude/settings.json` for Claude Code, so its sessions reach the OTLP receiver
 and link to the Tasks they claim). It writes nothing when any of them exists, says which on stderr and exits 1; it
 never writes a token.
 """
@@ -50,6 +50,13 @@ events:
   FINISH: [{from: review, to: done}]
 """
 
+#: The board's lanes, spelled as `MACHINE`'s States: the native board refuses to open when the two disagree.
+BOARD_CONFIG = """\
+project_name: demo
+statuses: [Backlog, In Progress, Review, Done]
+task_prefix: task
+"""
+
 CLAUDE_CODE_TELEMETRY = {
     "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
     "OTEL_LOGS_EXPORTER": "otlp",
@@ -67,6 +74,8 @@ def _files(harness: str) -> dict[Path, str]:
     return {
         Path("starpulse.toml"): CONFIG.replace("HARNESS", harness),
         Path("board.yaml"): MACHINE,
+        Path(".starpulse") / "board" / "config.yml": BOARD_CONFIG,
+        Path(".starpulse") / "board" / "tasks" / ".gitkeep": "",
         settings: json.dumps({"env": env}, indent=2) + "\n",
     }
 
