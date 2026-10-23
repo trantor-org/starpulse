@@ -174,9 +174,8 @@ incremental fold give the same rows.
 A deployment declares its own Task fields in `[board.fields]`:
 
 ```toml
-[board.fields.area]
-type = "string"      # string, integer, number or boolean
-queried = true       # a queried field gets an indexed generated column
+[board.fields]
+area = { type = "string", queried = true }  # type: string, integer, number or boolean; a queried field gets an indexed generated column
 ```
 
 `declared_fields(board)` parses the table and refuses a name that is not lower snake case or a type outside the four.
@@ -247,9 +246,8 @@ type = "native"
 # task_file_name = "title"   # the name a created task's file is written under: "title" is `task-1 - Draw-the-board.md`, "slug" is `task-1-draw-the-board.md`, lowercase, its slug capped at 19 characters
 
 # Task fields this deployment adds to StarPulse's own, checked on write and kept in the read model (see Task read model):
-# [board.fields.area]
-# type = "string"   # string, integer, number or boolean
-# queried = true    # an indexed generated column, so a read filters by this field without a scan
+# [board.fields]
+# area = { type = "string", queried = true }  # type: string, integer, number or boolean; queried gives an indexed generated column, so a read filters by this field without a scan
 
 # Rules every task write must satisfy, whoever makes it: the agent CLI, the page or a workflow (see Board guards in
 # docs/public-surface.md for every primitive). Each is judged on the task as it will be after the write, by the actor
