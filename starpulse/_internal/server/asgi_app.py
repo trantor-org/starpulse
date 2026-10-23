@@ -45,7 +45,7 @@ from starpulse._internal.server.snapshot_cache import SnapshotCache
 from starpulse._internal.server.streams import Stream, Streams
 from starpulse._internal.server.write_routes import WriteRequest, WriteRoutes
 
-if TYPE_CHECKING:  # annotation only: a runtime import would put the autopilot in the Delivery worker's import closure
+if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     from starlette.types import ASGIApp
 
     from starpulse._internal.eventlog.history import History

@@ -64,8 +64,8 @@ under `memray.Tracker` and takes the smaller one's leaked allocations after `gc.
 SQLite allocation per process) lands in one window and never fails the gate, while a leak shows in both. To change a
 budget, edit the context's `Budget(iterations, retained_bytes)` in `BUDGETS` there: measure the new baseline with the gate
 (the failure message prints the retained bytes) and set the budget about twice the baseline, never to the leak's size.
-Baselines on CPython 3.14.6 and memray 1.20.0: pull-events 12 880 B over 200 iterations, autopilot 11 680 B over 100 (the
-autopilot tick rereads its growing ledger, so its cost grows with the square of the iterations); budgets 32 KiB each. The gate skips on 3.14t, where memray reports no allocation, and under `pytest --memray`, which cannot nest a
+Baselines on CPython 3.14.6 and memray 1.20.0: pull-events 12 880 B over 200 iterations, scheduler 11 680 B over 100 (the
+scheduler tick rereads its growing ledger, so its cost grows with the square of the iterations); budgets 32 KiB each. The gate skips on 3.14t, where memray reports no allocation, and under `pytest --memray`, which cannot nest a
 tracker. A context joins by adding a driver to `test_context_budgets.py` and an entry to `BUDGETS`.
 `starpulse/tests/conftest.py` keeps the suite's fixed costs low: every SQLite connection runs `PRAGMA synchronous=OFF`.
 The required checks run only the tests a pull request or a merge-queue candidate can reach (`ci/select_tests.py`), as the
@@ -81,7 +81,7 @@ machine, skill or `pyproject.toml` lint-table edit selects the tests of the code
 then the command line), `adapters`, `level`, `feed` and `ci`, `store`, `eventlog`, then `config`, `machines` and
 `contracts`. A package imports its own tier or one below; none import upward, and `feed` and `ci` never import each other.
 The `store-table-private` contract lets only `store` import its tables, so every stream write goes through `EventStore`.
-The `context-*` contracts hold each bounded context (Board, Delivery, Autopilot, Runs,
+The `context-*` contracts hold each bounded context (Board, Delivery, Scheduler, Runs,
 Flow Metrics, Harness Telemetry) to the contexts upstream of it; `config`, `eventlog`, `machines` and
 `contracts` are the shared kernel and belong to none.
 The top level holds only the public modules the [Public surface](public-surface.md#public-surface) lists, each a facade over its feature.

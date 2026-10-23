@@ -146,7 +146,7 @@ else:
 
         def _paths(self) -> dict[str, str]:
             """Each read route's path, filled from this server's own records; a route with none to read, or that does not
-            answer 200 (a server with no milestones, docs or autopilot), is skipped."""
+            answer 200 (a server with no milestones, docs or scheduler), is skipped."""
 
             def json(path: str) -> object:
                 answer = self._probe(path)

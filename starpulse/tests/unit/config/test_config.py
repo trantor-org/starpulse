@@ -211,8 +211,8 @@ def test_a_mode_other_than_ic_is_not_a_config_setting(tmp_path: Path) -> None:
 
 def test_unknown_keys_are_refused_by_name_beside_the_known_ones(tmp_path: Path) -> None:
     assert _refusal(tmp_path, 'zeta = 1\ntrakcer_url = "http://x.test"\n') == (
-        "unknown config key(s) trakcer_url, zeta; known: analytics, api_worker, autopilot, board, board_worker, ci, cursor_context, database_url, event_log_archive_dir, event_log_retention_days, "
-        "flow_metrics_worker, harnesses_file, level, mode, producers, project, pull_requests, refresh_token_env, release, repos, runs, runs_worker, search, search_worker, session_start_url, slow_read_seconds, tls_cert, tls_key, tracker_url, worker_memory"
+        "unknown config key(s) trakcer_url, zeta; known: analytics, api_worker, board, board_worker, ci, cursor_context, database_url, event_log_archive_dir, event_log_retention_days, "
+        "flow_metrics_worker, harnesses_file, level, mode, producers, project, pull_requests, refresh_token_env, release, repos, runs, runs_worker, scheduler, search, search_worker, session_start_url, slow_read_seconds, tls_cert, tls_key, tracker_url, worker_memory"
     )
 
 
@@ -392,7 +392,7 @@ def test_an_instance_keeps_a_pull_request_store_unless_configured_off(tmp_path: 
     assert _refusal(tmp_path, 'pull_requests = "no"\n') == "pull_requests must be true or false"
 
 
-@pytest.mark.parametrize("context", ["delivery", "autopilot"])
+@pytest.mark.parametrize("context", ["delivery", "scheduler"])
 def test_a_removed_worker_setting_is_refused_by_name(tmp_path: Path, context: str) -> None:
     key = f"{context}_worker"
     assert _refusal(tmp_path, f"{key} = true\n").startswith(f"unknown config key(s) {key};")
@@ -574,19 +574,19 @@ def test_duplicate_workflow_in_two_processes_is_refused(tmp_path: Path) -> None:
 
 def test_each_worker_context_has_a_packaged_memory_limit_that_the_config_overrides_per_key(tmp_path: Path) -> None:
     packaged = load(None).worker_memory
-    text = "[worker_memory.pulls]\nsoft_mb = 100\n[worker_memory.autopilot]\nsoft_mb = 10\nhard_mb = 20\n"
+    text = "[worker_memory.pulls]\nsoft_mb = 100\n[worker_memory.scheduler]\nsoft_mb = 10\nhard_mb = 20\n"
     tuned = load(_write(tmp_path, text)).worker_memory
 
-    assert set(packaged) == {"pulls", "autopilot", "runs", "flow-metrics", "search", "board"}
+    assert set(packaged) == {"pulls", "scheduler", "runs", "flow-metrics", "search", "board"}
     assert all(0 < limit.soft_mb < limit.hard_mb for limit in packaged.values())
     assert tuned["pulls"] == MemoryLimit(100, packaged["pulls"].hard_mb)
-    assert tuned["autopilot"] == MemoryLimit(10, 20)
+    assert tuned["scheduler"] == MemoryLimit(10, 20)
 
 
 @pytest.mark.parametrize(
     ("text", "message"),
     [
-        ("[worker_memory.pulss]\nsoft_mb = 1\n", "worker_memory: unknown context(s) pulss; known: autopilot, board, flow-metrics, pulls, runs, search"),
+        ("[worker_memory.pulss]\nsoft_mb = 1\n", "worker_memory: unknown context(s) pulss; known: board, flow-metrics, pulls, runs, scheduler, search"),
         ("[worker_memory.pulls]\nsoft_mb = 900\nhard_mb = 900\n", "worker_memory.pulls: soft_mb must be below hard_mb"),
         ("[worker_memory.pulls]\nsoft_mb = 5000\n", "worker_memory.pulls: soft_mb must be below hard_mb"),
         (

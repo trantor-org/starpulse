@@ -56,7 +56,7 @@ writers:
   CREATE_WAITING:
     - {actor: agent, trigger: "tracker create --depends"}
   CLAIM:
-    - {actor: dagu/board-autopilot, trigger: "dispatch the next Ready task"}
+    - {actor: dagu/board-scheduler, trigger: "dispatch the next Ready task"}
     - {actor: agent, trigger: "tracker start"}
   WAIT_ON_DEPS:
     - {actor: dagu/dependency-promotion, trigger: "hold a task on an open dependency"}

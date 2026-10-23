@@ -10,8 +10,8 @@ import pytest
 from pydantic import TypeAdapter
 from sqlalchemy import create_engine
 
-from starpulse._internal.autopilot.runtime import build
-from starpulse._internal.config.autopilot import Autopilot
+from starpulse._internal.scheduler.runtime import build
+from starpulse._internal.config.scheduler import Scheduler
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import HistoryStore
 from starpulse._internal.feed.board_feed import BoardFeed
@@ -40,7 +40,7 @@ ROUTES = (
     "/api/analytics/trace-clusters?outliers=2&hours=1",
     "/api/harnesses",
     "/api/history-window",
-    "/api/autopilot",
+    "/api/scheduler",
     "/api/doctor",
     "/api/task/T-1",
     "/api/search?q=T-1",
@@ -58,7 +58,7 @@ def server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[PageServer]:
         store.record_lane(f"{'a' if name in 'AB' else 'b'}/{i}", name, new, at)
     store.record_lane("l0", "T-1", "In Progress", NOW - 3600)
     runtime = build(
-        Autopilot(),
+        Scheduler(),
         tmp_path,
         EventLog(f"sqlite:///{tmp_path / 'settings.sqlite'}"),
         feed,
@@ -85,7 +85,7 @@ def server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[PageServer]:
         bare_board(read=lambda t: {"title": t}),
         history=store,
         clock=lambda: NOW,
-        autopilot=runtime,
+        scheduler=runtime,
         telemetry=telemetry,
         search=search,
     ) as server:

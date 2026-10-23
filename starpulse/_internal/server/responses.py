@@ -29,7 +29,7 @@ from starpulse._internal.harnesses.telemetry import Signal, TelemetryLog
 
 logger = logging.getLogger(__name__)
 
-if TYPE_CHECKING:  # annotation only: a runtime import would put the autopilot in the Delivery worker's import closure
+if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     from starpulse._internal.eventlog.history import History
     from starpulse._internal.feed.board_feed import BoardFeed
     from starpulse._internal.feed.search import SearchIndex

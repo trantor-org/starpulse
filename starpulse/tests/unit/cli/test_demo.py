@@ -103,7 +103,7 @@ def test_scrub_seeds_pools_and_runs_that_follow_the_contract() -> None:
 
 def _with_catalog(live: dict) -> dict:
     """One domain: `deliver`, the three DAGs `_finished` gives a finished run, then the four the catalog cycles."""
-    names = ("deliver", "f1", "f2", "f3", "apply-on-merge", "whole-repo-gate", "backlog-sweep", "board-autopilot")
+    names = ("deliver", "f1", "f2", "f3", "apply-on-merge", "whole-repo-gate", "backlog-sweep", "board-scheduler")
     live["domains"] = [{"name": "Delivery", "dags": [{"name": f"dagu/{n}", "runSafe": False} for n in names]}]
     live["dags"] = []
     return live
@@ -121,7 +121,7 @@ def test_scrub_seeds_every_other_declared_dag_in_a_state_of_its_own_and_marks_so
         "apply-on-merge": "failed",
         "whole-repo-gate": "succeeded",
         "backlog-sweep": "not_started",
-        "board-autopilot": "queued",
+        "board-scheduler": "queued",
     }
     failed = by["dagu/apply-on-merge"]
     assert "failed" in {s["status"] for s in failed["steps"]}

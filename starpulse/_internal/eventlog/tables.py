@@ -76,7 +76,7 @@ source_instances = Table(
     Column("bound_at", Float, nullable=False),
 )
 
-#: An operator setting the instance keeps across restarts: the autopilot switch and the Admin
+#: An operator setting the instance keeps across restarts: the scheduler switch and the Admin
 #: history-window override. One row per key, with the epoch second it was last written; a missing row means the
 #: setting's default.
 settings = Table(
@@ -87,11 +87,11 @@ settings = Table(
     Column("updated_at", Float, nullable=False),
 )
 
-#: The autopilot's run ledger: one row per finished run, the labelled data admission learns demand from. `peak` is the
+#: The scheduler's run ledger: one row per finished run, the labelled data admission learns demand from. `peak` is the
 #: demand the run drew per capacity dimension; `recorded_at` is the epoch second the run was recorded (a run imported
 #: from the old JSONL file carries that file's modification time). Event-log pruning never touches it.
-autopilot_runs = Table(
-    "starpulse_autopilot_runs",
+scheduler_runs = Table(
+    "starpulse_scheduler_runs",
     metadata,
     Column("id", Integer, primary_key=True, autoincrement=True),
     Column("task", String, nullable=False),
@@ -101,7 +101,7 @@ autopilot_runs = Table(
     Column("duration_s", Float, nullable=False),
     Column("peak", JSON, nullable=False),
     Column("recorded_at", Float, nullable=False),
-    Index("ix_starpulse_autopilot_runs_tier_points", "tier", "points"),
+    Index("ix_starpulse_scheduler_runs_tier_points", "tier", "points"),
     sqlite_autoincrement=True,
 )
 

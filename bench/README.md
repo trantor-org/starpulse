@@ -135,7 +135,7 @@ interaction rows but can hold its routes and stream deliveries. An untimed reque
 The nightly `latency-gate` job in `ci.yml` runs it against main; pull requests do not, because on the shared `validate` lane it was the slowest job and
 red from host load alone. It builds the page, serves `ci/seeded_server.py` (`ci/preview.toml`'s workspace with the real
 request handler, a month of lane history for about 160 tasks, a level, 16 milestones and 24 docs on a native board,
-and an autopilot with one capacity sample), runs `page_latency.py --repeat 3 --fail-non-2xx` against it
+and an scheduler with one capacity sample), runs `page_latency.py --repeat 3 --fail-non-2xx` against it
 and fails on a row over budget, a non-2xx request row, or an untimed request. `ci/seeded_server.py` runs the same server by hand:
 
 ```sh
@@ -213,7 +213,7 @@ uv run --group bench locust -f bench/load.py --host http://127.0.0.1:8766
 `page_latency.py` times one viewer; this times the same budget under a crowd. Each Locust user is one open page: it
 holds `/api/events?snapshot=ref` open, reads the snapshot body its first event names, then reads a random `/api` route
 from `page_latency.py`'s `READS` every 0.5 to 2 seconds. The first viewer probes every route once (the `discovery`
-row, not judged) and skips one that does not answer 200, as a server with no milestones, docs or autopilot does not; the
+row, not judged) and skips one that does not answer 200, as a server with no milestones, docs or scheduler does not; the
 viewers that spawn meanwhile wait for its answer. Every judged read, the body row (`/api/events/body/<id>`) and the
 `/api` routes alike, asks for gzip and leaves the body compressed: a viewer's browser inflates it on the viewer's
 machine, and inflating a crowd's bodies in Locust's one process timed that process, not the server (the 5 MB
@@ -242,7 +242,7 @@ Locust reads only `/api`, so each virtualenv gets a placeholder `index.html`.
 The state directory is what the server serves: a `starpulse.toml`, the SQLite history its `database_url` names at
 `/tmp/work/` (the container copies the read-only directory there before each run, so every run starts from the same
 state) and the `.starpulse/` board and machines it reads. Copy a live instance's with SQLite's backup API, and drop
-the config's tables that reach out (`[search]`, `[[runs]]`, `[[repos]]`, `[autopilot]`, `[forward]`,
+the config's tables that reach out (`[search]`, `[[runs]]`, `[[repos]]`, `[scheduler]`, `[forward]`,
 `session_start_url`, the board's `criteria`): the container runs with `--network none` either way.
 
 Each run serves the copy on `SERVER_CPUS` (default `0-7`) through `serve.py`, which reports `sys._is_gil_enabled()`

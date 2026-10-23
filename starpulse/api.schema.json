@@ -199,262 +199,6 @@
       "title": "Archived",
       "type": "object"
     },
-    "AutopilotDimension": {
-      "additionalProperties": false,
-      "description": "One capacity dimension's use against its limit: percent for `cpu` and `memory`, a count for `sessions`, points for `review`.",
-      "properties": {
-        "limit": {
-          "type": "number"
-        },
-        "name": {
-          "enum": [
-            "cpu",
-            "memory",
-            "sessions",
-            "review"
-          ],
-          "type": "string"
-        },
-        "use": {
-          "type": "number"
-        }
-      },
-      "required": [
-        "name",
-        "use",
-        "limit"
-      ],
-      "title": "AutopilotDimension",
-      "type": "object"
-    },
-    "AutopilotHarnessSessions": {
-      "additionalProperties": false,
-      "description": "One harness's autopilot sessions in flight against its own session cap.",
-      "properties": {
-        "limit": {
-          "type": "number"
-        },
-        "use": {
-          "type": "number"
-        }
-      },
-      "required": [
-        "use",
-        "limit"
-      ],
-      "title": "AutopilotHarnessSessions",
-      "type": "object"
-    },
-    "AutopilotNext": {
-      "additionalProperties": false,
-      "description": "The task the loop would admit next, or, when none fits, the top-ranked one and what it waits on.",
-      "properties": {
-        "reason": {
-          "description": "`goes next`, `quiet hours` while the quiet hours hold admission, `<harness> usage limit` while that harness is paused, or the first dimension the task overfits, which the strip shows after `waits:`.",
-          "type": "string"
-        },
-        "task": {
-          "type": "string"
-        },
-        "title": {
-          "type": "string"
-        },
-        "verdict": {
-          "enum": [
-            "starting",
-            "waits"
-          ],
-          "type": "string"
-        }
-      },
-      "required": [
-        "task",
-        "title",
-        "verdict",
-        "reason"
-      ],
-      "title": "AutopilotNext",
-      "type": "object"
-    },
-    "AutopilotPause": {
-      "additionalProperties": false,
-      "description": "A harness whose admission is paused until `until` after a usage or credit limit.",
-      "properties": {
-        "harness": {
-          "type": "string"
-        },
-        "reason": {
-          "type": "string"
-        },
-        "until": {
-          "description": "When admission for this harness may resume, in epoch seconds.",
-          "type": "number"
-        }
-      },
-      "required": [
-        "harness",
-        "until",
-        "reason"
-      ],
-      "title": "AutopilotPause",
-      "type": "object"
-    },
-    "AutopilotRequest": {
-      "additionalProperties": false,
-      "description": "`PUT /api/autopilot`: whether the autopilot admits tasks, which harness it starts on, and/or its quiet hours.",
-      "properties": {
-        "enabled": {
-          "anyOf": [
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "harness": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "quietHours": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/QuietHours"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        }
-      },
-      "title": "AutopilotRequest",
-      "type": "object"
-    },
-    "AutopilotSession": {
-      "additionalProperties": false,
-      "description": "A session the autopilot started whose task is still running: the strip's Sessions menu draws one row of it.",
-      "properties": {
-        "model": {
-          "description": "The task's agent profile, empty when it has none.",
-          "type": "string"
-        },
-        "started": {
-          "description": "When the loop started the session, in epoch seconds.",
-          "type": "number"
-        },
-        "task": {
-          "type": "string"
-        },
-        "title": {
-          "type": "string"
-        },
-        "url": {
-          "description": "The session's address, as `start` answered it.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "task",
-        "title",
-        "model",
-        "started",
-        "url"
-      ],
-      "title": "AutopilotSession",
-      "type": "object"
-    },
-    "AutopilotStatus": {
-      "additionalProperties": false,
-      "description": "Whether the autopilot admits tasks, and the capacity strip's readings; no dimensions before the first sample.\n\n`inFlight`, `next` and `sessionsByHarness` are served only by a server that runs a dispatch loop; without one they\nare absent.",
-      "properties": {
-        "dimensions": {
-          "items": {
-            "$ref": "#/$defs/AutopilotDimension"
-          },
-          "type": "array"
-        },
-        "enabled": {
-          "type": "boolean"
-        },
-        "harness": {
-          "description": "The harness the loop starts sessions on; defaults to claude.",
-          "type": "string"
-        },
-        "inFlight": {
-          "description": "The sessions the loop started and has not finished, oldest first.",
-          "items": {
-            "$ref": "#/$defs/AutopilotSession"
-          },
-          "type": "array"
-        },
-        "next": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/AutopilotNext"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Null when no task in the eligible lane is workable."
-        },
-        "pauses": {
-          "description": "Harnesses whose admission is paused until `until`. Absent when none are paused.",
-          "items": {
-            "$ref": "#/$defs/AutopilotPause"
-          },
-          "type": "array"
-        },
-        "quietHours": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/QuietHours"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Null when no window holds admission back."
-        },
-        "sampledAt": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "sessionsByHarness": {
-          "additionalProperties": {
-            "$ref": "#/$defs/AutopilotHarnessSessions"
-          },
-          "description": "Each harness's in-flight count against its session cap; the Sessions meter follows `harness`.",
-          "type": "object"
-        }
-      },
-      "required": [
-        "enabled",
-        "harness",
-        "sampledAt",
-        "dimensions"
-      ],
-      "title": "AutopilotStatus",
-      "type": "object"
-    },
     "Bottleneck": {
       "additionalProperties": false,
       "properties": {
@@ -4445,7 +4189,7 @@
     },
     "QuietHours": {
       "additionalProperties": false,
-      "description": "A daily window in which the autopilot admits nothing: `start` up to `end`, `HH:MM` in `timezone`; an `end` before\n`start` runs past midnight.",
+      "description": "A daily window in which the scheduler admits nothing: `start` up to `end`, `HH:MM` in `timezone`; an `end` before\n`start` runs past midnight.",
       "properties": {
         "end": {
           "type": "string"
@@ -5371,6 +5115,262 @@
         "runId"
       ],
       "title": "RunStarted",
+      "type": "object"
+    },
+    "SchedulerDimension": {
+      "additionalProperties": false,
+      "description": "One capacity dimension's use against its limit: percent for `cpu` and `memory`, a count for `sessions`, points for `review`.",
+      "properties": {
+        "limit": {
+          "type": "number"
+        },
+        "name": {
+          "enum": [
+            "cpu",
+            "memory",
+            "sessions",
+            "review"
+          ],
+          "type": "string"
+        },
+        "use": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "name",
+        "use",
+        "limit"
+      ],
+      "title": "SchedulerDimension",
+      "type": "object"
+    },
+    "SchedulerHarnessSessions": {
+      "additionalProperties": false,
+      "description": "One harness's scheduler sessions in flight against its own session cap.",
+      "properties": {
+        "limit": {
+          "type": "number"
+        },
+        "use": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "use",
+        "limit"
+      ],
+      "title": "SchedulerHarnessSessions",
+      "type": "object"
+    },
+    "SchedulerNext": {
+      "additionalProperties": false,
+      "description": "The task the loop would admit next, or, when none fits, the top-ranked one and what it waits on.",
+      "properties": {
+        "reason": {
+          "description": "`goes next`, `quiet hours` while the quiet hours hold admission, `<harness> usage limit` while that harness is paused, or the first dimension the task overfits, which the strip shows after `waits:`.",
+          "type": "string"
+        },
+        "task": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "verdict": {
+          "enum": [
+            "starting",
+            "waits"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "title",
+        "verdict",
+        "reason"
+      ],
+      "title": "SchedulerNext",
+      "type": "object"
+    },
+    "SchedulerPause": {
+      "additionalProperties": false,
+      "description": "A harness whose admission is paused until `until` after a usage or credit limit.",
+      "properties": {
+        "harness": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "until": {
+          "description": "When admission for this harness may resume, in epoch seconds.",
+          "type": "number"
+        }
+      },
+      "required": [
+        "harness",
+        "until",
+        "reason"
+      ],
+      "title": "SchedulerPause",
+      "type": "object"
+    },
+    "SchedulerRequest": {
+      "additionalProperties": false,
+      "description": "`PUT /api/scheduler`: whether the scheduler admits tasks, which harness it starts on, and/or its quiet hours.",
+      "properties": {
+        "enabled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "harness": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "quietHours": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/QuietHours"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "SchedulerRequest",
+      "type": "object"
+    },
+    "SchedulerSession": {
+      "additionalProperties": false,
+      "description": "A session the scheduler started whose task is still running: the strip's Sessions menu draws one row of it.",
+      "properties": {
+        "model": {
+          "description": "The task's agent profile, empty when it has none.",
+          "type": "string"
+        },
+        "started": {
+          "description": "When the loop started the session, in epoch seconds.",
+          "type": "number"
+        },
+        "task": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "url": {
+          "description": "The session's address, as `start` answered it.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "title",
+        "model",
+        "started",
+        "url"
+      ],
+      "title": "SchedulerSession",
+      "type": "object"
+    },
+    "SchedulerStatus": {
+      "additionalProperties": false,
+      "description": "Whether the scheduler admits tasks, and the capacity strip's readings; no dimensions before the first sample.\n\n`inFlight`, `next` and `sessionsByHarness` are served only by a server that runs a dispatch loop; without one they\nare absent.",
+      "properties": {
+        "dimensions": {
+          "items": {
+            "$ref": "#/$defs/SchedulerDimension"
+          },
+          "type": "array"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "harness": {
+          "description": "The harness the loop starts sessions on; defaults to claude.",
+          "type": "string"
+        },
+        "inFlight": {
+          "description": "The sessions the loop started and has not finished, oldest first.",
+          "items": {
+            "$ref": "#/$defs/SchedulerSession"
+          },
+          "type": "array"
+        },
+        "next": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SchedulerNext"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Null when no task in the eligible lane is workable."
+        },
+        "pauses": {
+          "description": "Harnesses whose admission is paused until `until`. Absent when none are paused.",
+          "items": {
+            "$ref": "#/$defs/SchedulerPause"
+          },
+          "type": "array"
+        },
+        "quietHours": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/QuietHours"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Null when no window holds admission back."
+        },
+        "sampledAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sessionsByHarness": {
+          "additionalProperties": {
+            "$ref": "#/$defs/SchedulerHarnessSessions"
+          },
+          "description": "Each harness's in-flight count against its session cap; the Sessions meter follows `harness`.",
+          "type": "object"
+        }
+      },
+      "required": [
+        "enabled",
+        "harness",
+        "sampledAt",
+        "dimensions"
+      ],
+      "title": "SchedulerStatus",
       "type": "object"
     },
     "SearchHit": {
@@ -7604,9 +7604,6 @@
       },
       "type": "array"
     },
-    "autopilotStatus": {
-      "$ref": "#/$defs/AutopilotStatus"
-    },
     "build": {
       "$ref": "#/$defs/BuildEvent"
     },
@@ -7650,7 +7647,7 @@
             "$ref": "#/$defs/LedgersDelta"
           },
           {
-            "$ref": "#/$defs/AutopilotStatus"
+            "$ref": "#/$defs/SchedulerStatus"
           }
         ]
       },
@@ -7762,7 +7759,7 @@
             "$ref": "#/$defs/WindowRequest"
           },
           {
-            "$ref": "#/$defs/AutopilotRequest"
+            "$ref": "#/$defs/SchedulerRequest"
           }
         ]
       },
@@ -7773,6 +7770,9 @@
     },
     "retiredTasks": {
       "$ref": "#/$defs/RetiredTasks"
+    },
+    "schedulerStatus": {
+      "$ref": "#/$defs/SchedulerStatus"
     },
     "searchResults": {
       "$ref": "#/$defs/SearchResults"
@@ -7831,7 +7831,7 @@
     "trajectories",
     "harnesses",
     "windowState",
-    "autopilotStatus",
+    "schedulerStatus",
     "contractReport",
     "taskRecord",
     "milestones",

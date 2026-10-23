@@ -5,7 +5,7 @@ gate (`bench/page_latency.py`, run nightly) needs every route and page surface t
 something, so this serves the preview workspace with the real request handler and the built page,
 and seeds what `starpulse serve` would hold after a month at a working team's scale: a Kanban of open tasks, the
 lane history behind each, the finished runs the level reads, the milestone and doc files of a native board, and an
-autopilot with one capacity reading. It writes nothing outside its directory.
+scheduler with one capacity reading. It writes nothing outside its directory.
 
     uv run python -m ci.seeded_server --port 8766 --dir .tmp/gate
 
@@ -26,11 +26,11 @@ from dataclasses import replace
 from pathlib import Path
 
 from sqlalchemy import Engine, event
-from starpulse._internal.autopilot.runtime import Runtime
-from starpulse._internal.autopilot.runtime import build as build_autopilot
+from starpulse._internal.scheduler.runtime import Runtime
+from starpulse._internal.scheduler.runtime import build as build_scheduler
 from starpulse._internal.board import native
 from starpulse._internal.board.seam import Board, Written
-from starpulse._internal.config.autopilot import Autopilot
+from starpulse._internal.config.scheduler import Scheduler
 from starpulse._internal.config.config import load
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import HistoryStore
@@ -56,7 +56,7 @@ DONE = 90
 #: parses every doc file (about 0.4 ms each), so this leaves the route a margin under the budget on a loaded runner.
 MILESTONES = 16
 DOCS = 24
-#: The host reading the autopilot's sampler takes once, so the capacity strip has dimensions to draw.
+#: The host reading the scheduler's sampler takes once, so the capacity strip has dimensions to draw.
 HOST = {"cpu": 0.25, "memory": 0.4}
 #: The lanes a task walks to reach each lane, the order the Board machine allows.
 ROUTES = {
@@ -173,10 +173,10 @@ def native_board(directory: Path) -> Board:
     return board
 
 
-def autopilot(directory: Path, log: EventLog, feed: BoardFeed, policy: Autopilot) -> Runtime:
-    """The autopilot `GET /api/autopilot` reads, with its loop built over a starter that starts nothing, one capacity
+def scheduler(directory: Path, log: EventLog, feed: BoardFeed, policy: Scheduler) -> Runtime:
+    """The scheduler `GET /api/scheduler` reads, with its loop built over a starter that starts nothing, one capacity
     sample taken and no thread running: the route reads the last sample and the loop's next pick, as a served one does."""
-    runtime = build_autopilot(
+    runtime = build_scheduler(
         policy,
         directory,
         log,
@@ -219,7 +219,7 @@ def build(port: int, directory: Path, *, now: float | None = None) -> tuple[Page
         create=None,
         read=lambda task: records.get(task),
     )
-    services = Services(autopilot=autopilot(directory, log, feed, config.autopilot))
+    services = Services(scheduler=scheduler(directory, log, feed, config.scheduler))
     app = page_app(feed, STATIC, store, window, board, services)
     return PageServer(app, ("127.0.0.1", port)), feed, tasks
 

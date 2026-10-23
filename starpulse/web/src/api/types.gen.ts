@@ -32,7 +32,6 @@ export interface ApiContract {
     | StaleEdit
     | WindowTooLong
   )[];
-  autopilotStatus: AutopilotStatus;
   build: BuildEvent;
   cells: Cells;
   contractReport: ContractReport;
@@ -40,7 +39,7 @@ export interface ApiContract {
   diff: RunDiffs;
   docShown: DocShown;
   docs: Docs;
-  events: (TaskDelta | MoveDelta | DagsDelta | PullsDelta | ClaimDelta | LedgersDelta | AutopilotStatus)[];
+  events: (TaskDelta | MoveDelta | DagsDelta | PullsDelta | ClaimDelta | LedgersDelta | SchedulerStatus)[];
   graph: FlowGraph;
   harnesses: Harnesses;
   health: Health;
@@ -76,10 +75,11 @@ export interface ApiContract {
     | DocArchiveRequest
     | DocRestoreRequest
     | WindowRequest
-    | AutopilotRequest
+    | SchedulerRequest
   )[];
   restarting: RestartingEvent;
   retiredTasks: RetiredTasks;
+  schedulerStatus: SchedulerStatus;
   searchResults: SearchResults;
   sessionSteps: SessionSteps;
   sessions: Sessions;
@@ -201,112 +201,6 @@ export interface StaleEdit {
 export interface WindowTooLong {
   error: string;
   history_s: number;
-}
-/**
- * Whether the autopilot admits tasks, and the capacity strip's readings; no dimensions before the first sample.
- *
- * `inFlight`, `next` and `sessionsByHarness` are served only by a server that runs a dispatch loop; without one they
- * are absent.
- */
-export interface AutopilotStatus {
-  dimensions: AutopilotDimension[];
-  enabled: boolean;
-  /**
-   * The harness the loop starts sessions on; defaults to claude.
-   */
-  harness: string;
-  /**
-   * The sessions the loop started and has not finished, oldest first.
-   */
-  inFlight?: AutopilotSession[];
-  /**
-   * Null when no task in the eligible lane is workable.
-   */
-  next?: AutopilotNext | null;
-  /**
-   * Harnesses whose admission is paused until `until`. Absent when none are paused.
-   */
-  pauses?: AutopilotPause[];
-  /**
-   * Null when no window holds admission back.
-   */
-  quietHours?: QuietHours | null;
-  sampledAt: number | null;
-  /**
-   * Each harness's in-flight count against its session cap; the Sessions meter follows `harness`.
-   */
-  sessionsByHarness?: {
-    [k: string]: AutopilotHarnessSessions;
-  };
-}
-/**
- * One capacity dimension's use against its limit: percent for `cpu` and `memory`, a count for `sessions`, points for `review`.
- */
-export interface AutopilotDimension {
-  limit: number;
-  name: "cpu" | "memory" | "sessions" | "review";
-  use: number;
-}
-/**
- * A session the autopilot started whose task is still running: the strip's Sessions menu draws one row of it.
- */
-export interface AutopilotSession {
-  /**
-   * The task's agent profile, empty when it has none.
-   */
-  model: string;
-  /**
-   * When the loop started the session, in epoch seconds.
-   */
-  started: number;
-  task: string;
-  title: string;
-  /**
-   * The session's address, as `start` answered it.
-   */
-  url: string;
-}
-/**
- * The task the loop would admit next, or, when none fits, the top-ranked one and what it waits on.
- */
-export interface AutopilotNext {
-  /**
-   * `goes next`, `quiet hours` while the quiet hours hold admission, `<harness> usage limit` while that harness is paused, or the first dimension the task overfits, which the strip shows after `waits:`.
-   */
-  reason: string;
-  task: string;
-  title: string;
-  verdict: "starting" | "waits";
-}
-/**
- * A harness whose admission is paused until `until` after a usage or credit limit.
- */
-export interface AutopilotPause {
-  harness: string;
-  reason: string;
-  /**
-   * When admission for this harness may resume, in epoch seconds.
-   */
-  until: number;
-}
-/**
- * A daily window in which the autopilot admits nothing: `start` up to `end`, `HH:MM` in `timezone`; an `end` before
- * `start` runs past midnight.
- */
-export interface QuietHours {
-  end: string;
-  start: string;
-  /**
-   * The IANA zone the window's times are read in, such as America/Phoenix.
-   */
-  timezone: string;
-}
-/**
- * One harness's autopilot sessions in flight against its own session cap.
- */
-export interface AutopilotHarnessSessions {
-  limit: number;
-  use: number;
 }
 /**
  * The page build the server serves, sent right after each connect's snapshot: a hash of the built page's `index.html`,
@@ -895,6 +789,112 @@ export interface StripBucket {
   failed: number;
   merges: number;
   reruns: number;
+}
+/**
+ * Whether the scheduler admits tasks, and the capacity strip's readings; no dimensions before the first sample.
+ *
+ * `inFlight`, `next` and `sessionsByHarness` are served only by a server that runs a dispatch loop; without one they
+ * are absent.
+ */
+export interface SchedulerStatus {
+  dimensions: SchedulerDimension[];
+  enabled: boolean;
+  /**
+   * The harness the loop starts sessions on; defaults to claude.
+   */
+  harness: string;
+  /**
+   * The sessions the loop started and has not finished, oldest first.
+   */
+  inFlight?: SchedulerSession[];
+  /**
+   * Null when no task in the eligible lane is workable.
+   */
+  next?: SchedulerNext | null;
+  /**
+   * Harnesses whose admission is paused until `until`. Absent when none are paused.
+   */
+  pauses?: SchedulerPause[];
+  /**
+   * Null when no window holds admission back.
+   */
+  quietHours?: QuietHours | null;
+  sampledAt: number | null;
+  /**
+   * Each harness's in-flight count against its session cap; the Sessions meter follows `harness`.
+   */
+  sessionsByHarness?: {
+    [k: string]: SchedulerHarnessSessions;
+  };
+}
+/**
+ * One capacity dimension's use against its limit: percent for `cpu` and `memory`, a count for `sessions`, points for `review`.
+ */
+export interface SchedulerDimension {
+  limit: number;
+  name: "cpu" | "memory" | "sessions" | "review";
+  use: number;
+}
+/**
+ * A session the scheduler started whose task is still running: the strip's Sessions menu draws one row of it.
+ */
+export interface SchedulerSession {
+  /**
+   * The task's agent profile, empty when it has none.
+   */
+  model: string;
+  /**
+   * When the loop started the session, in epoch seconds.
+   */
+  started: number;
+  task: string;
+  title: string;
+  /**
+   * The session's address, as `start` answered it.
+   */
+  url: string;
+}
+/**
+ * The task the loop would admit next, or, when none fits, the top-ranked one and what it waits on.
+ */
+export interface SchedulerNext {
+  /**
+   * `goes next`, `quiet hours` while the quiet hours hold admission, `<harness> usage limit` while that harness is paused, or the first dimension the task overfits, which the strip shows after `waits:`.
+   */
+  reason: string;
+  task: string;
+  title: string;
+  verdict: "starting" | "waits";
+}
+/**
+ * A harness whose admission is paused until `until` after a usage or credit limit.
+ */
+export interface SchedulerPause {
+  harness: string;
+  reason: string;
+  /**
+   * When admission for this harness may resume, in epoch seconds.
+   */
+  until: number;
+}
+/**
+ * A daily window in which the scheduler admits nothing: `start` up to `end`, `HH:MM` in `timezone`; an `end` before
+ * `start` runs past midnight.
+ */
+export interface QuietHours {
+  end: string;
+  start: string;
+  /**
+   * The IANA zone the window's times are read in, such as America/Phoenix.
+   */
+  timezone: string;
+}
+/**
+ * One harness's scheduler sessions in flight against its own session cap.
+ */
+export interface SchedulerHarnessSessions {
+  limit: number;
+  use: number;
 }
 /**
  * `GET /api/analytics/graph`: the branching directly-follows graph of each transition, Codex left out.
@@ -1541,9 +1541,9 @@ export interface WindowRequest {
   hours: number;
 }
 /**
- * `PUT /api/autopilot`: whether the autopilot admits tasks, which harness it starts on, and/or its quiet hours.
+ * `PUT /api/scheduler`: whether the scheduler admits tasks, which harness it starts on, and/or its quiet hours.
  */
-export interface AutopilotRequest {
+export interface SchedulerRequest {
   enabled?: boolean | null;
   harness?: string | null;
   quietHours?: QuietHours | null;

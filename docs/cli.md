@@ -389,7 +389,7 @@ process's config blocks with the last reading, taken when `serve` started or at 
   started again with a new pid. The `runs` child builds its adapters once, so a `runs`
   change also replaces it.
 - **reloaded**: a child whose only change is its own config block (`pull_requests`, `repos`, `ci`, `release`,
-  `task_actor` for `pulls`; `autopilot`, `level`, `session_start_url` for `autopilot`) keeps its pid and re-reads the
+  `task_actor` for `pulls`; `scheduler`, `level`, `session_start_url` for `scheduler`) keeps its pid and re-reads the
   config on `SIGHUP`. Where the platform has no `SIGHUP`, it is replaced instead.
 - **kept**: a child with no change.
 - **re-executed**: `serve` replaced itself, in place, because its own closure changed. Every child is ended first, so each
@@ -401,7 +401,7 @@ A change to a `runs_worker` setting is read when `serve` starts and is not recon
 It prints one JSON object, and the reply is sent before a `serve` that re-executes replaces itself:
 
 ```json
-{"supervisor": "kept", "children": {"pulls": "kept", "autopilot": "replaced"}}
+{"supervisor": "kept", "children": {"pulls": "kept", "scheduler": "replaced"}}
 ```
 
 | Exit | Meaning |

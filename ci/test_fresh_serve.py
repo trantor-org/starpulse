@@ -90,7 +90,7 @@ def test_worker_contexts_are_the_ones_the_default_config_supervises(tmp_path):
     assert worker_contexts(sys.executable, str(tmp_path)) == {
         "api",
         "pulls",
-        "autopilot",
+        "scheduler",
         "runs",
         "flow-metrics",
         "board",

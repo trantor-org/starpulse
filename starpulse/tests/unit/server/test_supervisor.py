@@ -60,7 +60,7 @@ def _wait_for(check, timeout: float = 10.0):
 
 def test_a_context_whose_worker_setting_is_false_gets_a_child_command_and_a_true_one_gets_none() -> None:
     every = worker_commands(load(None), None)
-    only_delivery_and_autopilot = worker_commands(
+    only_delivery_and_scheduler = worker_commands(
         replace(
             load(None),
             runs_worker=True,
@@ -74,10 +74,10 @@ def test_a_context_whose_worker_setting_is_false_gets_a_child_command_and_a_true
     assert every["pulls"] == [sys.executable, "-m", "starpulse", "worker", "pulls"]
     assert every["runs"] == [sys.executable, "-m", "starpulse", "worker", "runs"]
     assert every["flow-metrics"] == [sys.executable, "-m", "starpulse", "worker", "flow-metrics"]
-    assert set(every) == {"api", "pulls", "autopilot", "runs", "flow-metrics", "board"}
-    assert only_delivery_and_autopilot == {
+    assert set(every) == {"api", "pulls", "scheduler", "runs", "flow-metrics", "board"}
+    assert only_delivery_and_scheduler == {
         context: [sys.executable, "-m", "starpulse", "worker", context, "--config", "/etc/starpulse.toml"]
-        for context in ("pulls", "autopilot")
+        for context in ("pulls", "scheduler")
     }
 
 
@@ -129,7 +129,7 @@ def test_a_child_that_ran_stably_restarts_at_once_and_resets_the_delay() -> None
 
 def test_stop_ends_every_child_and_nothing_restarts_after_it() -> None:
     Spawned.made = []
-    supervisor = Supervisor({"pulls": SLEEP, "autopilot": SLEEP}, spawn=Spawned)
+    supervisor = Supervisor({"pulls": SLEEP, "scheduler": SLEEP}, spawn=Spawned)
     supervisor.tick(0.0)
 
     supervisor.stop()
@@ -154,7 +154,7 @@ def test_killing_a_child_yields_a_replacement_with_a_new_pid() -> None:
 
 
 def test_stopping_the_supervisor_leaves_no_child_running() -> None:
-    supervisor = Supervisor({"pulls": SLEEP, "autopilot": SLEEP}, poll=0.02)
+    supervisor = Supervisor({"pulls": SLEEP, "scheduler": SLEEP}, poll=0.02)
     supervisor.start()
     pids = _wait_for(lambda: len(supervisor.pids()) == 2 and list(supervisor.pids().values()))
 

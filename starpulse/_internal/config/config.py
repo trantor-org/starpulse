@@ -28,7 +28,7 @@ from types import ModuleType
 
 from starpulse._internal.config.adapter_types import module_name
 from starpulse._internal.config.analytics import Analytics, AnalyticsError, parse_analytics
-from starpulse._internal.config.autopilot import Autopilot, AutopilotError, parse_autopilot
+from starpulse._internal.config.scheduler import Scheduler, SchedulerError, parse_scheduler
 from starpulse._internal.config.cursor_context import CursorContext, CursorContextError, parse_cursor_context
 from starpulse._internal.config.harnesses import Harnesses, load_harnesses
 from starpulse._internal.config.level import Level, LevelError, parse_level
@@ -56,7 +56,7 @@ _KEYS = {
     "event_log_retention_days",
     "event_log_archive_dir",
     "producers",
-    "autopilot",
+    "scheduler",
     "release",
     "analytics",
     "search",
@@ -371,7 +371,7 @@ class MemoryLimit:
 #: The limit of each `starpulse worker` context when `worker_memory` does not name one.
 WORKER_MEMORY = {
     "pulls": MemoryLimit(768, 1536),
-    "autopilot": MemoryLimit(384, 768),
+    "scheduler": MemoryLimit(384, 768),
     "runs": MemoryLimit(512, 1024),
     "flow-metrics": MemoryLimit(384, 768),
     "search": MemoryLimit(384, 768),
@@ -441,8 +441,8 @@ class Config:
     """The repositories whose merges apply through the parent's pin bump (`[[repos]]`)."""
     ci: tuple[str, ...] = ()
     """The Board states the shipped `ci` machine is attached to as a submachine (`[ci] states`); none: it is not drawn."""
-    autopilot: Autopilot = field(default_factory=Autopilot)
-    """The policy the autopilot runs under (`[autopilot]`); every key is optional, so no block is the defaults."""
+    scheduler: Scheduler = field(default_factory=Scheduler)
+    """The policy the scheduler runs under (`[scheduler]`); every key is optional, so no block is the defaults."""
     refresh_token_env: str | None = None
     """The environment variable holding the token `POST /api/pulls/refresh` accepts; none: the route answers 404."""
     pull_requests: bool = True
@@ -450,7 +450,7 @@ class Config:
     runs_worker: bool = False
     """The Runs context (the run adapters and the pushed-runs follower) runs in `starpulse worker runs`, not in `serve`: `serve` starts none of them and draws the workflows the worker keeps in the event log; false: `serve` supervises that worker as a child."""
     worker_memory: Mapping[str, MemoryLimit] = field(default_factory=lambda: dict(WORKER_MEMORY))
-    """The memory limits `serve` holds each worker child to: past `soft_mb` it replaces the child (starts a new one, then stops the old), past `hard_mb` it kills and restarts it. Keyed by context, `pulls`, `autopilot`, `runs`, `history` and `search`."""
+    """The memory limits `serve` holds each worker child to: past `soft_mb` it replaces the child (starts a new one, then stops the old), past `hard_mb` it kills and restarts it. Keyed by context, `pulls`, `scheduler`, `runs`, `history` and `search`."""
     tls: tuple[Path, Path] | None = None
     """The certificate and key `tls_cert` and `tls_key` name: `serve` answers TLS, and HTTP/3 beside it; none is cleartext."""
     slow_read_seconds: float = SLOW_READ_S
@@ -498,11 +498,11 @@ class Config:
         return tuple(f"{instance.name}/{w}" for instance in self.runs for w in instance.run_safe)
 
 
-def _autopilot(raw: object) -> Autopilot:
-    """The `[autopilot]` table's policy, or the defaults when the config has none; a refusal is a `ConfigError`."""
+def _scheduler(raw: object) -> Scheduler:
+    """The `[scheduler]` table's policy, or the defaults when the config has none; a refusal is a `ConfigError`."""
     try:
-        return parse_autopilot(raw)
-    except AutopilotError as exc:
+        return parse_scheduler(raw)
+    except SchedulerError as exc:
         raise ConfigError(str(exc)) from exc
 
 
@@ -692,7 +692,7 @@ def load(path: Path | None) -> Config:
         event_log_archive_dir=_archive_dir(raw.get("event_log_archive_dir", "starpulse-archive")),
         repos=repos,
         ci=_ci(raw),
-        autopilot=_autopilot(raw.get("autopilot")),
+        scheduler=_scheduler(raw.get("scheduler")),
         analytics=_analytics(raw.get("analytics")),
         release=_release(raw, repos),
         task_actor=actor is not None,

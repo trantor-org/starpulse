@@ -127,7 +127,7 @@ const HANDLERS: Record<string, Handler> = {
   "/api/edit": (server, _path, _query, init) => server.edit(String(init?.body ?? "{}")),
   "/api/archive": (server, _path, _query, init) => server.archive(String(init?.body ?? "{}")),
   "/api/tasks": (server, _path, _query, init) => server.create(String(init?.body ?? "{}")),
-  "/api/autopilot": (server, _path, _query, init) => server.autopilot(init?.method ?? "GET", String(init?.body ?? "")),
+  "/api/scheduler": (server, _path, _query, init) => server.scheduler(init?.method ?? "GET", String(init?.body ?? "")),
   "/api/harnesses": () => json(HARNESSES),
   "/api/doctor": (server) => json(demoContract(server.snapshot, scenarioOf(globalThis.location?.search ?? ""))),
   "/api/ledger": (server, path, query) => json(server.ledgerPage(decodeURIComponent(path.slice("/api/ledger/".length)), query.has("before") ? Number(query.get("before")) : undefined, Number(query.get("limit") ?? PAGE))),
@@ -147,14 +147,14 @@ const HANDLERS: Record<string, Handler> = {
 };
 
 /**
- * The autopilot a demo page pretends to run: `off` is paused, `over` a host past its RAM limit, `empty` a queue with nothing eligible,
- * `refused` a switch only a loopback or private-network browser may flip, `down` a server with no autopilot, `quiet` inside its quiet hours,
+ * The scheduler a demo page pretends to run: `off` is paused, `over` a host past its RAM limit, `empty` a queue with nothing eligible,
+ * `refused` a switch only a loopback or private-network browser may flip, `down` a server with no scheduler, `quiet` inside its quiet hours,
  * `credits` Cursor paused for two hours on a usage limit.
  */
-export type AutopilotDemo = "off" | "over" | "empty" | "refused" | "down" | "quiet" | "credits";
+export type SchedulerDemo = "off" | "over" | "empty" | "refused" | "down" | "quiet" | "credits";
 /** The quiet hours the `quiet` demo holds admission in; the demo treats any window it keeps as holding now. */
 const NIGHT = { start: "22:00", end: "07:00", timezone: "America/Phoenix" };
-/** The harnesses the demo names, so the Autopilot card draws its harness Segments; a start on either is still refused (`/api/start`). */
+/** The harnesses the demo names, so the Scheduler card draws its harness Segments; a start on either is still refused (`/api/start`). */
 const HARNESSES = {
   tiers: ["fast", "standard", "deep"],
   harnesses: [
@@ -166,7 +166,7 @@ const HARNESSES = {
 };
 /** The limits the demo's capacity strip holds its stand-in host under, in the units the server samples. */
 const PILOT = { cpu: 80, memory: 85, sessions: 4, review: 24 };
-/** Each harness's session cap, as `[autopilot.session_limits]` sets it on the live server. */
+/** Each harness's session cap, as `[scheduler.session_limits]` sets it on the live server. */
 const CAPS: Record<string, number> = { claude: 3, cursor: 2 };
 
 /**
@@ -211,7 +211,7 @@ export class DemoServer {
   private timer: ReturnType<typeof setTimeout> | undefined;
   private merges: ReturnType<typeof setInterval> | undefined;
 
-  constructor(fixture: DemoFixture, private clock: () => number = () => Date.now() / 1000, private refuseEdits = false, private failingEvaluator = false, private pilot?: AutopilotDemo) {
+  constructor(fixture: DemoFixture, private clock: () => number = () => Date.now() / 1000, private refuseEdits = false, private failingEvaluator = false, private pilot?: SchedulerDemo) {
     this.admitting = pilot !== "off";
     // the credits state opens on the paused harness, so the page draws its disabled option and the pick it holds
     if (pilot === "credits") this.harness = "cursor";
@@ -416,16 +416,16 @@ export class DemoServer {
   }
 
   /**
-   * `/api/autopilot` as starpulse._internal.server.writes.autopilot answers it, with the sessions in flight and the next pick the
+   * `/api/scheduler` as starpulse._internal.server.writes.scheduler answers it, with the sessions in flight and the next pick the
    * strip also draws: the Board's In Progress cards are the sessions and its first unblocked Ready card is the pick.
    */
-  autopilot(method: string, raw: string): Response {
-    if (this.pilot === "down") return json({ error: "This server has no autopilot." }, 404);
+  scheduler(method: string, raw: string): Response {
+    if (this.pilot === "down") return json({ error: "This server has no scheduler." }, 404);
     if (method === "PUT") {
       if (this.pilot === "refused") return json({ error: "Autopilot changes are taken only from loopback or a private address; this demo is neither." }, 403);
       let sent: { enabled?: unknown; quietHours?: unknown; harness?: unknown } = {};
       try { sent = JSON.parse(raw) as typeof sent; } catch { /* refused below */ }
-      const usage = 'the autopilot takes {"enabled": true|false}, {"harness": "<name>"} and/or {"quietHours": {"start", "end", "timezone"}|null}';
+      const usage = 'the scheduler takes {"enabled": true|false}, {"harness": "<name>"} and/or {"quietHours": {"start", "end", "timezone"}|null}';
       const window = sent?.quietHours as typeof NIGHT | null | undefined;
       const noField = sent.enabled === undefined && window === undefined && sent.harness === undefined;
       if (!sent || noField || (sent.enabled !== undefined && typeof sent.enabled !== "boolean")) return json({ error: usage }, 400);
@@ -535,11 +535,11 @@ export function ensureDemoServer(): DemoServer | null {
   const fixture = embedded() as DemoFixture | null;
   const query = new URLSearchParams(globalThis.location?.search ?? "");
   const refuseEdits = query.get("edit") === "refuse";
-  const autopilot = (["off", "over", "empty", "refused", "down", "quiet", "credits"] as const).find((state) => state === query.get("autopilot"));
+  const scheduler = (["off", "over", "empty", "refused", "down", "quiet", "credits"] as const).find((state) => state === query.get("scheduler"));
   const many = Number(query.get("many")) || 0; // `?many=N` grows the machines under the open one to N
   const shaped = fixture ? shapeBoard(fixture, query.get("board")) : null; // `?board=no-archived|no-attention|unlisted|fourteen` reshapes the Board for a Star Map review
   if (!shaped) return null;
-  const server = new DemoServer(many ? padMachines(shaped, many) : shaped, undefined, refuseEdits, query.get("evaluator") === "error", autopilot);
+  const server = new DemoServer(many ? padMachines(shaped, many) : shaped, undefined, refuseEdits, query.get("evaluator") === "error", scheduler);
   setDemoServer(server);
   return server;
 }

@@ -7,7 +7,7 @@ from typing import Annotated, Any
 from pydantic import AfterValidator, ValidationInfo, field_validator
 
 from starpulse.contracts.api._base import _Api
-from starpulse.contracts.api.dto.autopilot import QuietHours
+from starpulse.contracts.api.dto.scheduler import QuietHours
 
 #: The details a create takes besides its title, as one text value or a list of them. A create takes every one in its
 #: single write: a second write to finish a task is refused as not on the board until the next scan places the card.
@@ -259,8 +259,8 @@ class WindowRequest(_Api):
     hours: float
 
 
-class AutopilotRequest(_Api):
-    """`PUT /api/autopilot`: whether the autopilot admits tasks, which harness it starts on, and/or its quiet hours."""
+class SchedulerRequest(_Api):
+    """`PUT /api/scheduler`: whether the scheduler admits tasks, which harness it starts on, and/or its quiet hours."""
 
     enabled: bool | None = None
     harness: str | None = None

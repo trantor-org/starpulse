@@ -292,7 +292,7 @@ def test_the_connect_row_is_a_kind_of_its_own_so_judging_streams_leaves_it_out()
     assert (row.name, row.kind, len(row.samples)) == ("/api/events", "connect", 1)
 
 
-def test_the_autopilot_strip_the_live_page_reads_is_a_timed_surface():
+def test_the_scheduler_strip_the_live_page_reads_is_a_timed_surface():
     timed = [*pl.READS, "/api/events"]
 
-    assert pl.untimed(["http://h/api/autopilot"], timed) == []
+    assert pl.untimed(["http://h/api/scheduler"], timed) == []

@@ -7,7 +7,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from starpulse.contracts.api.dto.errors import ApiError, SkillRefusal, StaleEdit, WindowTooLong
-from starpulse.contracts.api.dto.autopilot import AutopilotStatus
+from starpulse.contracts.api.dto.scheduler import SchedulerStatus
 from starpulse.contracts.api.dto.harnesses import Harnesses, WindowState
 from starpulse.contracts.api.dto.health import Health, MachineHistory, Sessions, SessionSteps
 from starpulse.contracts.api.dto.milestones import Docs, DocShown, Milestones, MilestoneShown, RetiredTasks, TaskRecord
@@ -17,7 +17,7 @@ from starpulse.contracts.api.dto.pulls import Pulls
 from starpulse.contracts.api.dto.report import ContractReport
 from starpulse.contracts.api.dto.requests import (
     ArchiveRequest,
-    AutopilotRequest,
+    SchedulerRequest,
     ClaimRequest,
     CompleteRequest,
     CreateRequest,
@@ -91,7 +91,7 @@ EVENTS: dict[str, type[BaseModel]] = {
     "claim": ClaimDelta,
     "ledgers": LedgersDelta,
 }
-EVENTS["autopilot"] = AutopilotStatus
+EVENTS["scheduler"] = SchedulerStatus
 
 #: Each GET route's `200` body, by path; `/api/task/<id>` and `/api/ledger/<event>` by their prefix.
 RESPONSES: dict[str, Any] = {
@@ -121,7 +121,7 @@ RESPONSES: dict[str, Any] = {
     "/api/history": LaneHistory | MachineHistory,
     "/api/pulls": Pulls,
     "/api/search": SearchResults,
-    "/api/autopilot": AutopilotStatus,
+    "/api/scheduler": SchedulerStatus,
 }
 
 #: Each write route's request body.
@@ -148,7 +148,7 @@ REQUESTS: dict[str, type[BaseModel]] = {
     "/api/docs/archive": DocArchiveRequest,
     "/api/docs/restore": DocRestoreRequest,
     "/api/history-window": WindowRequest,
-    "/api/autopilot": AutopilotRequest,
+    "/api/scheduler": SchedulerRequest,
 }
 
 #: Every body a route may send, by route: what `encode` validates a body against.
@@ -176,7 +176,7 @@ BODIES: dict[str, Any] = {
     "trajectories": Trajectories | ApiError | WindowTooLong,
     "harnesses": Harnesses,
     "window": WindowState | ApiError,
-    "autopilot": AutopilotStatus | ApiError,
+    "scheduler": SchedulerStatus | ApiError,
     "doctor": ContractReport,
     "task": TaskRecord | ApiError,
     "move": Moved | SkillRefusal | ApiError,

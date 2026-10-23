@@ -1,7 +1,7 @@
 """`starpulse worker <context>`: one bounded context as its own process, beside `serve`.
 
 `api` is the Page API, run by `starpulse._internal.server.api_worker` on the socket `serve` hands it; `pulls` is the Delivery context (the pull request store's projection from the machine events and its manual refresh, the task actor and the release of
-dependents); `autopilot` is the Autopilot context, run by `starpulse._internal.server.autopilot_worker`; `runs` is the
+dependents); `scheduler` is the Scheduler context, run by `starpulse._internal.server.scheduler_worker`; `runs` is the
 Runs context, run by `starpulse._internal.server.runs_worker`; `dagu` is the Dagu Adapter, an opt-in worker `serve` never starts, run by
 `starpulse._internal.server.dagu_worker`; `flow-metrics` is the Flow Metrics context, run by
 `starpulse._internal.server.flow_metrics_worker`; `search` is the Search context's embedding catch-up, run by
@@ -42,7 +42,7 @@ from starpulse._internal.server.server import listen_options, start_delivery
 
 logger = logging.getLogger(__name__)
 
-CONTEXTS = ("api", "pulls", "autopilot", "runs", "flow-metrics", "search", "board", "dagu")
+CONTEXTS = ("api", "pulls", "scheduler", "runs", "flow-metrics", "search", "board", "dagu")
 
 
 def delivery_blocks(config: Config) -> tuple:
@@ -147,8 +147,8 @@ def main(argv: list[str] | None = None) -> None:
         from starpulse._internal.server import api_worker
 
         return api_worker.main(argv, parser)
-    if args.context == "autopilot":  # imported here: the Delivery worker's closure holds no autopilot module
-        from starpulse._internal.server import autopilot_worker as worker
+    if args.context == "scheduler":  # imported here: the Delivery worker's closure holds no scheduler module
+        from starpulse._internal.server import scheduler_worker as worker
 
         return worker.main(argv, parser)
     if args.context == "runs":  # imported here: the Delivery worker's closure holds no run adapter module

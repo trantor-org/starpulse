@@ -27,7 +27,7 @@ ATTRIBUTE = {
     "ci": "ci",
     "event_log_retention_days": "event_log_retention_days",
     "event_log_archive_dir": "event_log_archive_dir",
-    "autopilot": "autopilot",
+    "scheduler": "scheduler",
     "release": "release",
     "analytics": "analytics",
     "search": "search",
@@ -118,7 +118,7 @@ model = "small"
 EDITS = {
     "runs": ('"nightly", "task-duplicate-retrain"', '"nightly"', {"api", "runs"}),
     "search": ('model = "small"', 'model = "large"', {"api", "search"}),
-    "board": ("interval = 1", "interval = 2", {"api", "pulls", "autopilot", "runs", "flow-metrics", "board"}),
+    "board": ("interval = 1", "interval = 2", {"api", "pulls", "scheduler", "runs", "flow-metrics", "board"}),
 }
 
 

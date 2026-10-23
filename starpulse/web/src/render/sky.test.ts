@@ -18,16 +18,16 @@ const snap = (now: number, tasks: RawTask[], machineTasks: RawTask[], finishedAt
     { name: "board", agents: tasks, machine: machine(["ready", "in_progress", "review"], {
       transitions: [{ source: "ready", target: "in_progress", event: "CLAIM" }],
       submachines: [{ state: "in_progress", machine: "in-progress", exits: {}, parent: "board", when: "" }],
-      launches: { "board-autopilot": { skill: "starting-tasks", machine: "in-progress" }, "weekly-code-audit": { skill: "auditing-code", machine: null } },
-      writers: { CLAIM: [{ actor: "board-autopilot", trigger: "dagu" }] },
+      launches: { "board-scheduler": { skill: "starting-tasks", machine: "in-progress" }, "weekly-code-audit": { skill: "auditing-code", machine: null } },
+      writers: { CLAIM: [{ actor: "board-scheduler", trigger: "dagu" }] },
     }) },
     { name: "in-progress", agents: machineTasks, machine: machine(["worktree_ready", "pr_opened"], {
       submachines: [{ state: "pr_opened", machine: "triaging-cr-reviews", exits: {}, parent: "in-progress", when: "a PR is open" }],
     }) },
     { name: "triaging-cr-reviews", agents: [], machine: machine(["fetch"]) },
   ],
-  dags: [{ name: "board-autopilot", status: "succeeded", runId: "r", startedAt: "", finishedAt, steps: [] }],
-  domains: [{ name: "Board", dags: [{ name: "board-autopilot", runSafe: false }, { name: "worktree-reap", runSafe: true }] }],
+  dags: [{ name: "board-scheduler", status: "succeeded", runId: "r", startedAt: "", finishedAt, steps: [] }],
+  domains: [{ name: "Board", dags: [{ name: "board-scheduler", runSafe: false }, { name: "worktree-reap", runSafe: true }] }],
   cues: [{ dag: "apply-on-merge", event: "MERGED", state: "done", on: "each merge to main" }],
   boardUrl: "http://board",
   settled: {},
@@ -101,10 +101,10 @@ describe("the sky", () => {
   it("reads the relationships the drawing needs from the Board snapshot", () => {
     const S = merge(snap(1000, [task("PROJ-1", "ready")], []));
 
-    expect(S.groups).toEqual([{ name: "Board", dags: ["board-autopilot", "worktree-reap"] }]);
+    expect(S.groups).toEqual([{ name: "Board", dags: ["board-scheduler", "worktree-reap"] }]);
     expect([...S.runnable]).toEqual(["worktree-reap"]);
     expect(S.launches).toEqual([
-      { dag: "board-autopilot", skill: "starting-tasks", machine: "in-progress" },
+      { dag: "board-scheduler", skill: "starting-tasks", machine: "in-progress" },
       { dag: "weekly-code-audit", skill: "auditing-code", machine: null },
     ]);
     expect(S.subs).toEqual({ in_progress: ["in-progress", "auditing-docs"] });
@@ -175,11 +175,11 @@ describe("the moves", () => {
   it("flares a DAG whose run ended since the last poll at the time it is seen", () => {
     const m = new Moves();
     m.observe(merge(snap(1000, [], [])), 1000);
-    expect(m.flare["board-autopilot"]).toBe(Date.parse("2026-09-30T20:00:00Z") / 1000);
+    expect(m.flare["board-scheduler"]).toBe(Date.parse("2026-09-30T20:00:00Z") / 1000);
 
     m.observe(merge(snap(1004, [], [], "2026-09-30T21:00:00Z")), 1004);
 
-    expect(m.flare["board-autopilot"]).toBe(1004);
+    expect(m.flare["board-scheduler"]).toBe(1004);
   });
 
   it("after a resync, places what changed while the page was away at the time it happened instead of queueing it to play", () => {
@@ -194,7 +194,7 @@ describe("the moves", () => {
       ["in-progress", 2000, "pr_opened"],
       ["in-progress", 2100, "worktree_ready"],
     ]);
-    expect(m.flare["board-autopilot"]).toBe(Date.parse("2026-09-30T21:00:00Z") / 1000);
+    expect(m.flare["board-scheduler"]).toBe(Date.parse("2026-09-30T21:00:00Z") / 1000);
   });
 
   it("after a resync, keeps no Board move from before it, so no task is drawn in a state it has since left", () => {

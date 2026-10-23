@@ -39,7 +39,7 @@ from starpulse._internal.server.responses import (
     transitions_response,
 )
 from starpulse._internal.server.routes import (
-    _AUTOPILOT,
+    _SCHEDULER,
     _DOC_WRITES,
     _DOCS,
     _LEDGER,
@@ -51,7 +51,7 @@ from starpulse._internal.server.routes import (
     _WINDOW,
 )
 from starpulse._internal.server.writes import (
-    autopilot,
+    scheduler,
     doc_record,
     docs_list,
     history_window,
@@ -61,7 +61,7 @@ from starpulse._internal.server.writes import (
     task_record,
 )
 
-if TYPE_CHECKING:  # annotation only: a runtime import would put the autopilot in the Delivery worker's import closure
+if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     from starpulse._internal.board.seam import Board
     from starpulse._internal.eventlog.history import History
     from starpulse._internal.feed.board_feed import BoardFeed
@@ -225,7 +225,7 @@ class ReadRoutes:
         self._clock = clock
         self._contract = services.contract
         self._milestones = board
-        self._autopilot = services.autopilot
+        self._scheduler = services.scheduler
         metrics = (services.actor_metrics, services.lane_metrics, services.conformance_metrics, snapshots.metrics, page_gauge)
         self._metrics = tuple(m for m in metrics if m)
         self._harnesses = encode("harnesses", (services.harnesses or Harnesses((), {})).as_json())
@@ -259,7 +259,7 @@ class ReadRoutes:
             _RETIRED: self._retired,
             "/api/harnesses": lambda request, query: Response(self._harnesses),
             _WINDOW: self._history_window,
-            _AUTOPILOT: self._autopilot_status,
+            _SCHEDULER: self._scheduler_status,
         }
 
     @contextmanager
@@ -356,6 +356,6 @@ class ReadRoutes:
         status, body = history_window(request.client, "GET", b"", self._window)
         return Response(encode("window", body), status)
 
-    def _autopilot_status(self, request: Request, query: Query) -> Response:
-        status, body = autopilot(request.client, "GET", b"", self._autopilot)
-        return Response(encode("autopilot", body), status)
+    def _scheduler_status(self, request: Request, query: Query) -> Response:
+        status, body = scheduler(request.client, "GET", b"", self._scheduler)
+        return Response(encode("scheduler", body), status)

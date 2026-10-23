@@ -249,7 +249,7 @@ _REPLAY_DELTAS = (
     "claim",
     "dags",
     "ledgers",
-    "autopilot",
+    "scheduler",
 )
 
 

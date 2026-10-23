@@ -2,7 +2,7 @@
 
     .venv/bin/python -m starpulse._internal.server.server [--host 127.0.0.1] [--port 8766] [--hours 6] [--config starpulse.toml]
 
-Every write (POST /api/..., PUT /api/autopilot, PUT and DELETE /api/history-window) must be `Content-Type: application/json` (else 415) and carry
+Every write (POST /api/..., PUT /api/scheduler, PUT and DELETE /api/history-window) must be `Content-Type: application/json` (else 415) and carry
 no `Origin` or this server's own (else 403), so a web page on another site cannot write through the operator's browser.
 It listens on --host, 127.0.0.1 by default.
 
@@ -244,8 +244,8 @@ _PING_S = 15.0
 _HELD_SETTLE_S = 0.5
 
 
-if TYPE_CHECKING:  # annotation only: a runtime import would put the autopilot in the Delivery worker's import closure
-    from starpulse._internal.autopilot.remote import Remote
+if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
+    from starpulse._internal.scheduler.remote import Remote
     from starpulse._internal.eventlog.event_log import EventLog
     from starpulse._internal.eventlog.history import History
     from starpulse._internal.feed.board_feed import BoardFeed
@@ -256,7 +256,7 @@ def trajectories_response(
     history: History, query: dict[str, list[str]], level: Level, machines: Mapping[str, dict], now: float
 ) -> tuple[bytes, int]:
     """The body and status of the trajectory analytics of the runs that ended in the last `hours` as of `now`, which
-    the autopilot ranks tasks by; refused when `hours` is no positive number."""
+    the scheduler ranks tasks by; refused when `hours` is no positive number."""
     from starpulse._internal.eventlog.history import LevelHistory, SummarisedLevel  # noqa: PLC0415 - the database stack loads when a store does
 
     window = _hours(query, "hours", _HEALTH_HOURS)
@@ -335,17 +335,17 @@ def announce(port: int, hint: str | None) -> None:
         print(hint, flush=True)
 
 
-def autopilot_remote(config: Config, base: Path, feed: BoardFeed, log: EventLog, stop: threading.Event) -> Remote:
-    """The autopilot `serve` answers `/api/autopilot` from: the `Remote` that reads the status the autopilot worker
+def scheduler_remote(config: Config, base: Path, feed: BoardFeed, log: EventLog, stop: threading.Event) -> Remote:
+    """The scheduler `serve` answers `/api/scheduler` from: the `Remote` that reads the status the scheduler worker
     publishes and writes the settings the worker reads. The loop itself runs in that worker, never in `serve`. The status
     follower runs until `stop` is set.
 
-    The autopilot modules are imported here, not at the top, so `starpulse worker pulls` does not load them.
+    The scheduler modules are imported here, not at the top, so `starpulse worker pulls` does not load them.
     """
-    from starpulse._internal.autopilot.remote import Remote, follow_status
+    from starpulse._internal.scheduler.remote import Remote, follow_status
 
     follow_status(log, feed, stop)
-    return Remote(log, base / (config.autopilot.state_dir or ""))
+    return Remote(log, base / (config.scheduler.state_dir or ""))
 
 
 #: The first file descriptor a service manager passes (`sd_listen_fds(3)`): 0, 1 and 2 are stdio.
@@ -695,8 +695,8 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     if refresh_token:
         pull_refresh = PullRefresh(refresh_token, request_refresh(log, PullSync(pulls, feed, config.repos).tracked))
     announce(port, feed.snapshot()["hint"])
-    autopilot_stop = threading.Event()
-    autopilot_runtime = autopilot_remote(config, base, feed, log, autopilot_stop)
+    scheduler_stop = threading.Event()
+    scheduler_runtime = scheduler_remote(config, base, feed, log, scheduler_stop)
     from starpulse._internal.pulls.github import GITHUB_MACHINES  # noqa: PLC0415 - the database stack loads after the config is accepted
 
     cloudevents = (
@@ -713,7 +713,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         harnesses=config.harnesses,
         start_session=starter(config.session_start_url),
         events=cloudevents,
-        autopilot=autopilot_runtime,
+        scheduler=scheduler_runtime,
         contract=_cached(lambda: doctor.contract(feed.snapshot(), config, probes), _CONTRACT_TTL_S),
         pulls=pulls,
         telemetry=TelemetryLog(log),
@@ -738,7 +738,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         announce_ready(os.environ)
         serve_until_stopped(server, feed)
     finally:
-        autopilot_stop.set()
+        scheduler_stop.set()
         log.close()
         store.engine.dispose()
 

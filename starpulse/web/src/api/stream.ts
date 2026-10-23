@@ -2,7 +2,7 @@
 
 import { demoServer, type DemoServerHandle } from "../demo/host";
 import { playLink } from "../demo/linkDemo";
-import type { AutopilotStatus, Delta, LedgerRow, Settled, Snapshot } from ".";
+import type { SchedulerStatus, Delta, LedgerRow, Settled, Snapshot } from ".";
 import { keep } from "./same";
 
 export { embedded } from "../demo/host";
@@ -103,8 +103,8 @@ export interface StreamHandlers {
   link?(state: Link): void;
   /** The server named a page build other than the one the page holds, once per such build, once that server has read its board. */
   build?(id: string): void;
-  /** Autopilot capacity and next pick: not part of the snapshot; the Kanban strip applies each body. */
-  autopilot?(status: AutopilotStatus): void;
+  /** Scheduler capacity and next pick: not part of the snapshot; the Kanban strip applies each body. */
+  scheduler?(status: SchedulerStatus): void;
 }
 
 /**
@@ -248,8 +248,8 @@ export function openStream(
     src.addEventListener("claim", later((e) =>
       fold({ kind: "claim", ...JSON.parse((e as MessageEvent<string>).data) }),
     ));
-    src.addEventListener("autopilot", later((e) => {
-      handlers.autopilot?.(JSON.parse((e as MessageEvent<string>).data) as AutopilotStatus);
+    src.addEventListener("scheduler", later((e) => {
+      handlers.scheduler?.(JSON.parse((e as MessageEvent<string>).data) as SchedulerStatus);
     }));
     src.addEventListener("restarting", () => {
       announced = true;

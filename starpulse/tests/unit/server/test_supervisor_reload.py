@@ -13,7 +13,7 @@ import starpulse._internal.server.supervisor as supervisor_module
 from starpulse._internal.server.closure import SELF, Reading, ReloadError
 from starpulse._internal.server.supervisor import Supervisor
 
-NAMES = ("pulls", "autopilot")
+NAMES = ("pulls", "scheduler")
 
 
 class Child:
@@ -86,20 +86,20 @@ def supervisor(install: Install, executed: list[bool]) -> Iterator[Supervisor]:
     running.stop()
 
 
-def test_a_change_in_only_the_autopilot_closure_replaces_only_the_autopilot_child(
+def test_a_change_in_only_the_scheduler_closure_replaces_only_the_scheduler_child(
     supervisor: Supervisor, install: Install
 ) -> None:
     before = supervisor.pids()
-    install.now["autopilot"] = reading(code="v2")
+    install.now["scheduler"] = reading(code="v2")
 
     report = supervisor.reload()
 
     after = supervisor.pids()
-    assert report == {"supervisor": "kept", "children": {"pulls": "kept", "autopilot": "replaced"}}
+    assert report == {"supervisor": "kept", "children": {"pulls": "kept", "scheduler": "replaced"}}
     assert after["pulls"] == before["pulls"]
-    assert after["autopilot"] != before["autopilot"]
-    pulls, autopilot, replacement = Child.made
-    assert (pulls.ended, autopilot.ended, replacement.ended) == (False, True, False)
+    assert after["scheduler"] != before["scheduler"]
+    pulls, scheduler, replacement = Child.made
+    assert (pulls.ended, scheduler.ended, replacement.ended) == (False, True, False)
 
 
 def test_a_change_to_only_the_pulls_config_block_keeps_the_pid_and_asks_it_to_reload(
@@ -110,10 +110,10 @@ def test_a_change_to_only_the_pulls_config_block_keeps_the_pid_and_asks_it_to_re
 
     report = supervisor.reload()
 
-    pulls, autopilot = Child.made
-    assert report == {"supervisor": "kept", "children": {"pulls": "reloaded", "autopilot": "kept"}}
+    pulls, scheduler = Child.made
+    assert report == {"supervisor": "kept", "children": {"pulls": "reloaded", "scheduler": "kept"}}
     assert supervisor.pids() == before
-    assert (pulls.signals, autopilot.signals) == ([signal.SIGHUP], [])
+    assert (pulls.signals, scheduler.signals) == ([signal.SIGHUP], [])
     assert not pulls.ended
 
 
@@ -124,7 +124,7 @@ def test_a_config_block_a_running_child_cannot_take_in_place_replaces_it(
 
     report = supervisor.reload()
 
-    assert report["children"] == {"pulls": "replaced", "autopilot": "kept"}
+    assert report["children"] == {"pulls": "replaced", "scheduler": "kept"}
     assert Child.made[0].ended
     assert len(Child.made) == 3
 
@@ -148,7 +148,7 @@ def test_a_change_to_the_supervisors_own_closure_ends_every_child_and_re_execute
 
     report = supervisor.reload()
 
-    assert report == {"supervisor": "re-executed", "children": {"pulls": "replaced", "autopilot": "replaced"}}
+    assert report == {"supervisor": "re-executed", "children": {"pulls": "replaced", "scheduler": "replaced"}}
     assert [child.ended for child in Child.made] == [True, True]
     assert executed == []
     supervisor.reexec()
@@ -158,10 +158,10 @@ def test_a_change_to_the_supervisors_own_closure_ends_every_child_and_re_execute
 def test_a_reload_with_nothing_changed_keeps_everything_and_the_next_one_compares_with_the_last(
     supervisor: Supervisor, install: Install
 ) -> None:
-    kept = {"supervisor": "kept", "children": {"pulls": "kept", "autopilot": "kept"}}
+    kept = {"supervisor": "kept", "children": {"pulls": "kept", "scheduler": "kept"}}
     assert supervisor.reload() == kept
-    install.now["autopilot"] = reading(code="v2")
-    assert supervisor.reload()["children"]["autopilot"] == "replaced"
+    install.now["scheduler"] = reading(code="v2")
+    assert supervisor.reload()["children"]["scheduler"] == "replaced"
     assert supervisor.reload() == kept
     assert len(Child.made) == 3
 
@@ -283,7 +283,7 @@ def test_reload_compares_each_closure_to_the_hashes_taken_at_start(
     install: Install, code: str, outcome: str
 ) -> None:
     Child.made = []
-    install.now["autopilot"] = reading(code=code)
+    install.now["scheduler"] = reading(code=code)
     running = Supervisor(
         {name: [name] for name in NAMES},
         spawn=Child,
@@ -298,8 +298,8 @@ def test_reload_compares_each_closure_to_the_hashes_taken_at_start(
     again = running.reload()
     running.stop()
 
-    assert report == {"supervisor": "kept", "children": {"pulls": "kept", "autopilot": outcome}}
-    assert again == {"supervisor": "kept", "children": {"pulls": "kept", "autopilot": "kept"}}
+    assert report == {"supervisor": "kept", "children": {"pulls": "kept", "scheduler": outcome}}
+    assert again == {"supervisor": "kept", "children": {"pulls": "kept", "scheduler": "kept"}}
 
 
 def test_serve_re_executes_when_its_own_closure_changed_since_start(install: Install, executed: list[bool]) -> None:

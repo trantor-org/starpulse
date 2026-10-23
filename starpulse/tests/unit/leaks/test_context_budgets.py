@@ -9,12 +9,12 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine
 
-from starpulse._internal.autopilot.ledger import Ledger
-from starpulse._internal.autopilot.loop import Loop
-from starpulse._internal.autopilot.sampler import Sampler
-from starpulse._internal.autopilot.toggle import Toggle
+from starpulse._internal.scheduler.ledger import Ledger
+from starpulse._internal.scheduler.loop import Loop
+from starpulse._internal.scheduler.sampler import Sampler
+from starpulse._internal.scheduler.toggle import Toggle
 from starpulse._internal.board.seam import Written
-from starpulse._internal.config.autopilot import Autopilot
+from starpulse._internal.config.scheduler import Scheduler
 from starpulse._internal.eventlog.event_log import Entry, EventLog
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.harnesses.harness import HARNESS_MACHINES
@@ -51,12 +51,12 @@ def _pull_events_step() -> Callable[[], None]:
     return step
 
 
-def _autopilot_step(tmp_path: Path) -> tuple[Callable[[], None], list[int]]:
+def _scheduler_step(tmp_path: Path) -> tuple[Callable[[], None], list[int]]:
     """A tick that starts a ready task, then finishes it, over a fixed set of task ids; and the count of starts."""
     now = [10_000.0]
     starts = [0]
-    limits = Autopilot().limits
-    policy = Autopilot(lane="ready", limits=limits)
+    limits = Scheduler().limits
+    policy = Scheduler(lane="ready", limits=limits)
     feed = BoardFeed(roles=ROLES, machines={**MACHINES, **HARNESS_MACHINES})
     sampler = Sampler(
         policy.limits,
@@ -112,9 +112,9 @@ def test_pull_events_stay_within_their_retained_memory_budget() -> None:
     check("pull-events", _pull_events_step(), BUDGETS["pull-events"])
 
 
-def test_autopilot_stays_within_its_retained_memory_budget(tmp_path: Path) -> None:
-    step, starts = _autopilot_step(tmp_path)
+def test_scheduler_stays_within_its_retained_memory_budget(tmp_path: Path) -> None:
+    step, starts = _scheduler_step(tmp_path)
 
-    retained = check("autopilot", step, BUDGETS["autopilot"])
+    retained = check("scheduler", step, BUDGETS["scheduler"])
 
     assert starts[0] > 0, f"the loop started nothing, so {retained} B measures an idle loop"

@@ -29,7 +29,7 @@ ENTRIES = {
     SELF: "starpulse._internal.server.server",
     "api": "starpulse._internal.server.api_worker",
     "pulls": "starpulse._internal.server.worker",
-    "autopilot": "starpulse._internal.server.autopilot_worker",
+    "scheduler": "starpulse._internal.server.scheduler_worker",
     "runs": "starpulse._internal.server.runs_worker",
     "flow-metrics": "starpulse._internal.server.flow_metrics_worker",
     "search": "starpulse._internal.server.search_worker",
@@ -37,7 +37,7 @@ ENTRIES = {
 }
 
 _CHILDREN = tuple(name for name in ENTRIES if name != SELF)
-_BOARD_READERS = ("pulls", "autopilot", "runs", "flow-metrics", "board")
+_BOARD_READERS = ("pulls", "scheduler", "runs", "flow-metrics", "board")
 
 
 #: The keys `serve` alone reads: whether each child runs, its memory limit, and its refresh token.
@@ -78,9 +78,9 @@ CONFIG_OWNERS: dict[str, tuple[str, ...]] = {
     "repos": _owned_by("pulls"),
     "pull_requests": _owned_by("pulls"),
     "ci": _owned_by("pulls"),
-    "autopilot": _owned_by("autopilot"),
-    "level": _owned_by("autopilot"),
-    "session_start_url": _owned_by("autopilot"),
+    "scheduler": _owned_by("scheduler"),
+    "level": _owned_by("scheduler"),
+    "session_start_url": _owned_by("scheduler"),
     "event_log_retention_days": _owned_by("flow-metrics"),
     "event_log_archive_dir": _owned_by("flow-metrics"),
     **dict.fromkeys(_SERVE_KEYS, (SELF,)),
@@ -169,7 +169,7 @@ def _blocks(name: str, config: Config) -> tuple[object, object]:
     re-reads on `SIGHUP`. `serve` itself has none."""
     from starpulse._internal.server import (  # noqa: PLC0415 - imported only when read
         api_worker,
-        autopilot_worker,
+        scheduler_worker,
         board_worker,
         flow_metrics_worker,
         runs_worker,
@@ -181,8 +181,8 @@ def _blocks(name: str, config: Config) -> tuple[object, object]:
         return api_worker.built_blocks(config), ()
     if name == "pulls":
         return worker.fixed_blocks(config), worker.delivery_blocks(config)
-    if name == "autopilot":
-        return autopilot_worker.fixed_blocks(config), autopilot_worker.autopilot_blocks(config)
+    if name == "scheduler":
+        return scheduler_worker.fixed_blocks(config), scheduler_worker.scheduler_blocks(config)
     if name == "runs":
         return runs_worker.built_blocks(config), ()
     if name == "flow-metrics":

@@ -24,7 +24,7 @@ url = "http://127.0.0.1:9"
 "Metrics & drift" = ["ruleset-drift", "ci-queue-metrics", "mutation-sweep"]
 
 [runs.domains.Board]
-Reconcile = ["backlog-sweep", "board-autopilot", "dependency-promotion", "duplicate-detect"]
+Reconcile = ["backlog-sweep", "board-scheduler", "dependency-promotion", "duplicate-detect"]
 Hygiene = ["board-lint", "drift-to-task", "stale-branch-reap", "main-follow"]
 
 [runs.domains."Agent jobs & evals"]

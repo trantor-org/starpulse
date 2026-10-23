@@ -70,7 +70,7 @@ requests it took and closes.
 
 ### Worker processes
 
-`serve` is a supervisor over the contexts that run as their own `starpulse worker <context>` process: `api` (the Page API), `pulls` (Delivery), `autopilot`, `runs`, `history`, `search` (with an `[search] embeddings_url`) and `board` (the Start Criteria dating). `serve` always starts `pulls` and `autopilot` as children; for each other one whose `api_worker`,
+`serve` is a supervisor over the contexts that run as their own `starpulse worker <context>` process: `api` (the Page API), `pulls` (Delivery), `scheduler`, `runs`, `history`, `search` (with an `[search] embeddings_url`) and `board` (the Start Criteria dating). `serve` always starts `pulls` and `scheduler` as children; for each other one whose `api_worker`,
 `runs_worker`, `search_worker` or `board_worker` setting is false, the default, it starts the worker as a child, restarts it with a growing delay (1 s, doubling to 60 s; a child that
 ran a minute restarts at once) when it exits, and stops it when `serve` stops on `SIGTERM` or Ctrl-C. The children read the same config and `database_url` and meet `serve` only in
 the event log. A true setting means something outside `serve` runs that worker, so `serve` starts no child for it. No unit file is needed to run StarPulse.
@@ -88,7 +88,7 @@ On Linux `serve` starts one preloaded process before any thread, `python -m star
 | Context | `soft_mb` | `hard_mb` |
 | --- | --- | --- |
 | `pulls` | 768 | 1536 |
-| `autopilot` | 384 | 768 |
+| `scheduler` | 384 | 768 |
 | `runs` | 512 | 1024 |
 | `history` | 384 | 768 |
 | `search` | 384 | 768 |
@@ -116,8 +116,8 @@ Each connect replaces the page's Board with a fresh snapshot.
 
 While the Board is replaying after a start, `/api/events` resends only `snapshot`, once the replay has ended, because a
 reconnecting page needs the Board the replay built. Every other kind is a delta of that Board; resending it would make
-consumers such as the autopilot act twice. `FEED_EVENT_RESEND` in the feed module is the table: `snapshot` is resent,
-and `task`, `move`, `pulls`, `claim`, `dags`, `ledgers` and `autopilot` are not.
+consumers such as the scheduler act twice. `FEED_EVENT_RESEND` in the feed module is the table: `snapshot` is resent,
+and `task`, `move`, `pulls`, `claim`, `dags`, `ledgers` and `scheduler` are not.
 `build` and `restarting` are process announcements on an open stream, not replayed deltas.
 
 Two events on `/api/events` carry what the page needs:
@@ -196,7 +196,7 @@ event_log_archive_dir = "starpulse-archive"   # the default
 slow_read_seconds = 1   # the default
 
 # The memory limits (proportional size on Linux, resident size on macOS) `serve` holds each worker child to, in megabytes (see Worker processes): past `soft_mb` it
-# replaces the child, past `hard_mb` it kills and restarts it. Contexts: `pulls`, `autopilot`, `runs`. Either key may be left out.
+# replaces the child, past `hard_mb` it kills and restarts it. Contexts: `pulls`, `scheduler`, `runs`. Either key may be left out.
 # [worker_memory.pulls]
 # soft_mb = 768    # the default
 # hard_mb = 1536   # the default
@@ -356,23 +356,23 @@ name = "skills"
 path = "skills"
 applied_by = "pin-bump"
 
-# Optional: the autopilot's policy. Every key is optional; with no [autopilot] table the defaults below apply.
-# [autopilot]
+# Optional: the scheduler's policy. Every key is optional; with no [scheduler] table the defaults below apply.
+# [scheduler]
 # lane = "to_do"          # the lane whose tasks are eligible; unset: the board's initial lane
 # review_lane = "qa"     # the lane whose tasks' points are the review load; unset: the board's lane that waits on a pull request
 # unsized_points = 3      # the points a task with no `size-N` label counts as, a whole number of 1 or more
 # idle_minutes = 30       # minutes a started session may sit idle with its task still open before it is settled
 # state_dir = "state"     # where the older switch and run-ledger files are imported from, relative to this file; unset: beside it
-# [autopilot.tier_weights]  # what a point costs on each agent tier; a tier left out keeps its weight
+# [scheduler.tier_weights]  # what a point costs on each agent tier; a tier left out keeps its weight
 # fast = 1
 # standard = 2
 # deep = 4
-# [autopilot.limits]        # each dimension's limit; a dimension left out keeps its limit
+# [scheduler.limits]        # each dimension's limit; a dimension left out keeps its limit
 # cpu = 80       # host CPU, percent
 # memory = 80    # host memory, percent
 # sessions = 2   # default harness sessions in flight (used when a harness has no session_limits row)
 # review = 20    # points of tasks in the review lane
-# [autopilot.session_limits]  # optional per-harness session caps; a harness left out uses limits.sessions
+# [scheduler.session_limits]  # optional per-harness session caps; a harness left out uses limits.sessions
 # claude = 3
 # cursor = 2
 
@@ -439,15 +439,15 @@ applied_by = "pin-bump"
 # wrapup_s = 600           # seconds an asked session has to checkpoint before it is restarted regardless
 ```
 
-## Autopilot
+## Scheduler
 
-The autopilot is a switch, a capacity reading, an admission rule and a loop that acts on the rule. The switch is persisted in
-the `autopilot.enabled` row of the history store's `starpulse_settings` table, so it survives a restart, and it starts off. A missing row,
-an unreadable store or a malformed value reads as off. `[autopilot] state_dir` (relative to the config file; `serve` creates it) is where the older
+The scheduler is a switch, a capacity reading, an admission rule and a loop that acts on the rule. The switch is persisted in
+the `scheduler.enabled` row of the history store's `starpulse_settings` table, so it survives a restart, and it starts off. A missing row,
+an unreadable store or a malformed value reads as off. `[scheduler] state_dir` (relative to the config file; `serve` creates it) is where the older
 state files are looked for. An older `starpulse-autopilot.json` beside the config or in `state_dir` is imported once on first read, keeping its modification
 time as the row's `updated_at`, then renamed to `starpulse-autopilot.json.imported`.
 
-`GET /api/autopilot` answers any address:
+`GET /api/scheduler` answers any address:
 
 ```json
 {
@@ -463,10 +463,10 @@ time as the row's `updated_at`, then renamed to `starpulse-autopilot.json.import
 }
 ```
 
-`harness` is the harness the loop starts sessions on (default `claude`); `PUT /api/autopilot` with `{"harness": "<name>"}` selects another.
+`harness` is the harness the loop starts sessions on (default `claude`); `PUT /api/scheduler` with `{"harness": "<name>"}` selects another.
 `quietHours` is the daily window in which the loop admits nothing, or `null` for none (see Quiet hours below).
 `dimensions` lists `cpu`, `memory`, `sessions` and `review` in that order, each as its use against its limit; the
-`sessions` meter follows the selected harness's cap from `[autopilot.session_limits]` (else `limits.sessions`).
+`sessions` meter follows the selected harness's cap from `[scheduler.session_limits]` (else `limits.sessions`).
 `sessionsByHarness` names every harness's in-flight count against its own cap. A credit or usage pause for one
 harness lands in `pauses` and blocks admission for that harness only.
 `sampledAt` is epoch seconds, and `dimensions` is empty with `sampledAt` null until the first sample.
@@ -487,38 +487,38 @@ harness lands in `pauses` and blocks admission for that harness only.
 - `pauses` lists each harness whose admission is paused until `until` (epoch seconds) after a usage or credit-limit
   start, with `reason` `usage limit`. The key is absent when none are paused.
 
-`PUT /api/autopilot` with `{"enabled": true}` or `{"enabled": false}` sets the switch, and with
+`PUT /api/scheduler` with `{"enabled": true}` or `{"enabled": false}` sets the switch, and with
 `{"quietHours": {"start": "HH:MM", "end": "HH:MM", "timezone": "<IANA zone>"}}` or `{"quietHours": null}` sets or clears
 the quiet hours; a body may carry both. It answers the same body as the `GET`, and a body with anything wrong is a 400
 that changes nothing. It answers only loopback and private-network (RFC 1918) addresses, with 403 elsewhere, and like every write it needs
-`Content-Type: application/json`. A `serve` that runs no autopilot, an adapter-kit server, answers 404.
+`Content-Type: application/json`. A `serve` that runs no scheduler, an adapter-kit server, answers 404.
 
 The sampler reads every 60 seconds. The first sample is a baseline; after it, a dimension going from below its limit
-to at or over it, or back, logs one `StarPulse autopilot: <dimension> is full|free (<use> of <limit>)` line.
+to at or over it, or back, logs one `StarPulse scheduler: <dimension> is full|free (<use> of <limit>)` line.
 
-StarPulse Admin's Autopilot card shows it: the switch with **On** or **Paused**, a meter per dimension (amber from
+StarPulse Admin's Scheduler card shows it: the switch with **On** or **Paused**, a meter per dimension (amber from
 80% of its limit, red past it, dimmed while the switch is off), the next pick as text (its task, title and `starting`
 in green or `waits: <reason>` in yellow, or **Nothing eligible**), the count of sessions in flight (the Sessions
 dimension's use, or the length of `inFlight` without it), and the quiet hours row. A click on the switch sends the
 `PUT` with no dialog, and a refusal shows its reason under the switch. The card reads `next` from the same body when it
-carries it, and shows no pick without it. It reads once when Admin opens and follows the `/api/events` `autopilot`
-event after. A server with no autopilot (404) shows the card with its reason and no controls. The Kanban draws no
-autopilot control.
+carries it, and shows no pick without it. It reads once when Admin opens and follows the `/api/events` `scheduler`
+event after. A server with no scheduler (404) shows the card with its reason and no controls. The Kanban draws no
+scheduler control.
 
 ### Quiet hours
 
 The quiet hours are a daily window, from `start` up to but not including `end` on `timezone`'s wall clock, in which the
 loop admits nothing; an `end` before the `start` runs past midnight. Sessions already running continue, and the loop
-still finishes and settles them: only admission stops, as with the switch off. The window is the `autopilot.quiet_hours`
+still finishes and settles them: only admission stops, as with the switch off. The window is the `scheduler.quiet_hours`
 row of `starpulse_settings`, so it survives a restart; no row, or one that cannot be read, is no window. Setting it wakes
 the loop, so a window that no longer covers now admits at once. There is no config key: the operator sets it from
-StarPulse Admin, whose Autopilot card has a **Quiet hours** row (a switch, start and end times, and Save) that
+StarPulse Admin, whose Scheduler card has a **Quiet hours** row (a switch, start and end times, and Save) that
 sends the browser's own zone with the times.
 
 ### Admission
 
-`autopilot.admission.decide` answers, for each workable task in the eligible lane, whether it fits and where it ranks. It is
-a pure function of the open tasks, the sampler's readings, the `[autopilot]` policy, the trajectory chain, each task's
+`scheduler.admission.decide` answers, for each workable task in the eligible lane, whether it fits and where it ranks. It is
+a pure function of the open tasks, the sampler's readings, the `[scheduler]` policy, the trajectory chain, each task's
 forecast P(goal), and the run ledger.
 
 - **Demand.** A task draws `size points x its tier's weight` percent of CPU and of memory, one session, and its points of
@@ -535,10 +535,10 @@ forecast P(goal), and the run ledger.
   function from a task's title and description to a score, replaces P(goal) in that shadow value and is logged; a
   predictor that raises leaves the score empty.
 - **Log.** Each decision logs one line:
-  `StarPulse autopilot: <task> admitted|refused (<dimension> full) p_goal=<p> predictor=<score> shadow_rank=<n> enforced_rank=<n>`.
+  `StarPulse scheduler: <task> admitted|refused (<dimension> full) p_goal=<p> predictor=<score> shadow_rank=<n> enforced_rank=<n>`.
   Ranks number the admitted tasks from 1; a refused task has none.
 
-The run ledger is the history store's `starpulse_autopilot_runs` table (migration 0016), one row per finished run: its task, tier,
+The run ledger is the history store's `starpulse_scheduler_runs` table (migration 0016, renamed by 0028), one row per finished run: its task, tier,
 points, outcome, duration in seconds, the peak demand it drew on each dimension and the epoch second it was recorded. Event-log pruning never deletes
 it, and the store's snapshot carries it. A `starpulse-autopilot-runs.jsonl` in `state_dir` when set, else beside the config, is imported
 once into an empty table, each run stamped with the file's modification time, then renamed to `starpulse-autopilot-runs.jsonl.imported`. While
@@ -552,7 +552,7 @@ While the switch is on, the loop calls `decide` and starts the admitted tasks. I
 - a harness session stops, or a started task changes;
 - the switch turns on;
 - the sampler's reading of a dimension crosses its limit;
-- the feed's `autopilot` status event of a new sample says the next pick would start: a task's demand can fit a
+- the feed's `scheduler` status event of a new sample says the next pick would start: a task's demand can fit a
   dimension's headroom without the dimension ever having reached its limit, so a crossing alone would leave it waiting.
   The loop reads that event from the feed it already subscribes to (the stream `/api/events` serves), once per sample.
 
@@ -561,16 +561,16 @@ do not fit together are never both started in one pass. A run holds its capacity
 `in_progress`; until the harness reports the session active the loop adds that demand to the sampler's readings itself.
 A start that fails (`StartFailedError`) is logged and skipped until the next pass, unless the refusal names a usage or
 credit limit: admission for that harness then pauses until the reset clock the message names (or five hours when it
-names none), `GET /api/autopilot` lists it under `pauses`, and the next pick `waits` with `reason` `<harness> usage
+names none), `GET /api/scheduler` lists it under `pauses`, and the next pick `waits` with `reason` `<harness> usage
 limit`. A start that succeeds comments
-`Autopilot started <task>: <session address>` on the task; a board that refuses the comment leaves the session started.
+`Scheduler started <task>: <session address>` on the task; a board that refuses the comment leaves the session started.
 
 A session starts through `session_start_url` when the config sets it; the loop's request is
-`POST <url>/start/<task>?harness=<selected harness>&mode=interactive&by=autopilot`, so the service can brief an unattended session
+`POST <url>/start/<task>?harness=<selected harness>&mode=interactive&by=scheduler`, so the service can brief an unattended session
 unlike one an operator opened (an operator's start has no `by`, and the page's `POST /api/start` body names `harness` with
 `mode` defaulting to `interactive`). With none, the built-in starter runs
 `tmux new-session -d -s starpulse-<task> -c <config directory> claude --remote-control <task> "Start <task>"` and needs
-`tmux` and `claude` on `PATH`, so a board with no `[autopilot]` table and no `session_start_url` starts a task out of the
+`tmux` and `claude` on `PATH`, so a board with no `[scheduler]` table and no `session_start_url` starts a task out of the
 box. The built-in starter starts only Claude: with another harness selected it refuses the start, naming
 `session_start_url`, and ignores `mode`.
 
@@ -584,9 +584,9 @@ refusal and retries on the next sampler period. The sampler period (60 seconds) 
 runs and never admits.
 
 The runs in flight, each task's last start time and the last capacity sample live in `starpulse_settings`
-(`autopilot.inflight`, `autopilot.starts`, `autopilot.sample`), so a restart restores them: `GET /api/autopilot` still
+(`scheduler.inflight`, `scheduler.starts`, `scheduler.sample`), so a restart restores them: `GET /api/scheduler` still
 lists the sessions, the loop still settles and records them, and a task it already started is not started again. A restart
-logs `StarPulse autopilot: restored N in-flight`. A start still inside 15 minutes (`START_COOLDOWN`) is not admitted
+logs `StarPulse scheduler: restored N in-flight`. A start still inside 15 minutes (`START_COOLDOWN`) is not admitted
 even when the in-flight row is missing, so a restart that lost that row does not send a second `started`.
 Held `session-ended` tasks and harness pauses live in the history store, so a restart still keeps those tasks out of
 admission and keeps that harness paused.

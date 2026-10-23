@@ -9,7 +9,7 @@ import pytest
 from starpulse._internal.eventlog import operator_settings as settings
 from starpulse._internal.eventlog.event_log import EventLog
 
-KEY = "autopilot.enabled"
+KEY = "scheduler.enabled"
 
 
 @pytest.fixture

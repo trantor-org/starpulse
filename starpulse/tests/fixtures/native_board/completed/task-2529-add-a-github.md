@@ -87,7 +87,7 @@ Package work ships as a PR in trantor-org/starpulse (child); trantor gitlink bum
 <!-- COMMENTS:BEGIN -->
 created: 2026-10-06 22:50
 ---
-[board-autopilot] (board-dependency-reconciliation) moved this task to `Ready` because every native dependency is `Done`. Its autonomy label is unchanged.
+[board-scheduler] (board-dependency-reconciliation) moved this task to `Ready` because every native dependency is `Done`. Its autonomy label is unchanged.
 ---
 
 created: 2026-10-06 22:52

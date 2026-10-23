@@ -38,7 +38,7 @@ def _routes(feed: BoardFeed, tmp_path: Path, **pushes) -> WriteRoutes:
 
 @pytest.fixture
 def routes(feed: BoardFeed, tmp_path: Path) -> WriteRoutes:
-    return _routes(feed, tmp_path, autopilot=SimpleNamespace())
+    return _routes(feed, tmp_path, scheduler=SimpleNamespace())
 
 
 def _write(
@@ -81,7 +81,7 @@ def test_a_write_from_outside_the_lan_is_a_403(routes: WriteRoutes) -> None:
     assert response.status == 403
 
 
-_PUT_ROUTES = {"/api/autopilot", "/api/history-window"}
+_PUT_ROUTES = {"/api/scheduler", "/api/history-window"}
 
 
 @pytest.mark.parametrize("path", [path for path in REQUESTS if path != "/api/insights"])

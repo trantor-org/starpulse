@@ -19,25 +19,25 @@ def log(tmp_path: Path) -> EventLog:
 
 
 def test_a_setting_is_kept_replaced_and_deleted(log: EventLog) -> None:
-    assert log.setting("autopilot.enabled") is None
+    assert log.setting("scheduler.enabled") is None
 
-    log.set_setting("autopilot.enabled", True)
-    assert log.setting("autopilot.enabled") is True
+    log.set_setting("scheduler.enabled", True)
+    assert log.setting("scheduler.enabled") is True
 
-    log.set_setting("autopilot.enabled", False)
-    assert log.setting("autopilot.enabled") is False
+    log.set_setting("scheduler.enabled", False)
+    assert log.setting("scheduler.enabled") is False
 
-    log.delete_setting("autopilot.enabled")
-    assert log.setting("autopilot.enabled") is None
+    log.delete_setting("scheduler.enabled")
+    assert log.setting("scheduler.enabled") is None
 
 
 def test_a_setting_remembers_when_it_was_last_written(log: EventLog) -> None:
-    assert log.setting_updated_at("autopilot.enabled") is None
+    assert log.setting_updated_at("scheduler.enabled") is None
 
     before = time.time()
-    log.set_setting("autopilot.enabled", True)
+    log.set_setting("scheduler.enabled", True)
 
-    assert before <= (log.setting_updated_at("autopilot.enabled") or 0) <= time.time()
+    assert before <= (log.setting_updated_at("scheduler.enabled") or 0) <= time.time()
 
 
 def test_settings_outlive_the_log_object(tmp_path: Path) -> None:

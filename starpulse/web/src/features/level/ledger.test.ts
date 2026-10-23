@@ -15,8 +15,8 @@ const snap = (): Pick<Snapshot, "flows" | "cues"> => ({
         { source: "ready", target: "in_progress", event: "CLAIM" }, { source: "in_progress", target: "review", event: "REVIEW" },
         { source: "review", target: "done", event: "MERGED" }, { source: "in_progress", target: "in_progress", event: "STAY" },
       ],
-      writers: { CLAIM: [{ actor: "dagu/autopilot", trigger: "dagu" }, { actor: "operator", trigger: "ui" }], MERGED: [{ actor: "dagu/main-follow", trigger: "bin/board_reconcile_merged.py" }], STAY: [{ actor: "dagu/stayer", trigger: "dagu" }] },
-      dagActors: ["dagu/autopilot", "dagu/main-follow", "dagu/stayer"],
+      writers: { CLAIM: [{ actor: "dagu/scheduler", trigger: "dagu" }, { actor: "operator", trigger: "ui" }], MERGED: [{ actor: "dagu/main-follow", trigger: "bin/board_reconcile_merged.py" }], STAY: [{ actor: "dagu/stayer", trigger: "dagu" }] },
+      dagActors: ["dagu/scheduler", "dagu/main-follow", "dagu/stayer"],
     },
   }],
   cues: [
@@ -53,7 +53,7 @@ describe("a Board transition's Ledger level", () => {
   it("opens for every Board transition a DAG writes or is cued by, not only MERGED", () => {
     const level = ledgerLevel(snap(), "CLAIM")!;
 
-    expect(level).toMatchObject({ kind: "fold", event: "CLAIM", path: ["ready", "in_progress"], dags: ["dagu/autopilot", "dagu/notifier"] });
+    expect(level).toMatchObject({ kind: "fold", event: "CLAIM", path: ["ready", "in_progress"], dags: ["dagu/scheduler", "dagu/notifier"] });
     // an event no DAG writes or is cued by has no Ledger, and nor has one that leaves its state where it was
     expect(ledgerLevel(snap(), "REVIEW")).toBeNull();
     expect(ledgerLevel(snap(), "STAY")).toBeNull();
