@@ -69,7 +69,9 @@ internal and can change in any release.
 - A machine state's optional `role` key: `resting`, `waiting_on_fact` or `waiting_on_person`; a state flagged `initial`
   or `final` has that role already. `Compiled.roles` maps every state id to its role (`None` when it declares none) and
   `role_of(compiled, state)` answers it, raising `KeyError` for a state the machine lacks. StarPulse code reads roles,
-  never a deployment's state names.
+  never a deployment's state names. The snapshot serves it as the `role` of each `Machine.states` entry in
+  `api.schema.json` (`null` when none), and the Kanban draws it on each column header. A state the machine's `rests`
+  names ends the lifecycle though an event leaves it, so it is served as `final`.
 - A machine state's optional `waits` key: a map from a fact kind (`pr_terminal`, `deps_done`, `deps_unresolved`,
   `criteria_met` or `criteria_unmet`) to the event that leaves the state when that fact holds. The loader refuses an
   unknown fact kind and an event that is not a transition out of the declaring state, naming the state and event, and

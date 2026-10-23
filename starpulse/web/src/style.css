@@ -219,13 +219,17 @@ aside h3 { margin: 0 0 8px; font-size: calc(10px * var(--fs)); font-weight: 500;
 :is(#kb, #nav, #dg) .menu button span { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 :is(#kb, #nav, #dg) .menu em.tt { font-style: normal; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
 :is(#kb, #nav, #dg) .menu button.all { border-top: 1px solid color-mix(in srgb, var(--slate) 12%, transparent); margin-top: 4px; padding-top: 7px; border-radius: 0 0 5px 5px; color: var(--agent-text); }
+/* A state's type mark: its shape and hue say what the machine declares the state (initial, resting, waiting on a fact or a person, final); hover names it. */
+#kb .rg { --rc: var(--faint); flex: none; width: calc(10px * var(--fs)); height: calc(10px * var(--fs)); align-self: center; fill: none; stroke: var(--rc); stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
+#kb .rg .f { fill: var(--rc); stroke: none; }
+#kb .rg[data-type=initial] { --rc: var(--ready); } #kb .rg[data-type=resting] { --rc: var(--run); } #kb .rg[data-type=waiting_on_fact] { --rc: var(--slate); }
+#kb .rg[data-type=waiting_on_person] { --rc: var(--fail); } #kb .rg[data-type=final] { --rc: var(--ok); }
 
 #kb #cols { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(var(--cols, 6), minmax(0, 1fr)); gap: 10px; padding-bottom: 16px; }
 #kb .col { min-height: 0; display: flex; flex-direction: column; border-radius: 10px; background: color-mix(in srgb, var(--slate) 3.5%, transparent); border: 1px solid color-mix(in srgb, var(--slate) 8%, transparent); }
 #kb .col h2 { margin: 0; flex: none; display: flex; align-items: baseline; gap: 8px; padding: 12px 12px 10px; font-size: calc(11px * var(--fs)); font-weight: 500; letter-spacing: .2em;
   text-transform: uppercase; color: var(--slate); border-bottom: 1px solid color-mix(in srgb, var(--slate) 8%, transparent); }
 #kb .col h2 .c { font-size: calc(11px * var(--fs)); letter-spacing: 0; color: var(--muted); font-variant-numeric: tabular-nums; }
-#kb .col h2 .g { flex: none; width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid currentColor; box-sizing: border-box; }
 /* A long name ("Needs Attention") at a large font size shortens to an ellipsis rather than wrapping to a second line; its title carries the whole name. */
 #kb .col h2 { white-space: nowrap; }
 #kb .col h2 .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -970,16 +974,13 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
   #kb :is(.lanes button, .col)[data-role=ready] { --c: var(--ready); } #kb :is(.lanes button, .col)[data-role=working] { --c: var(--run); }
   #kb :is(.lanes button, .col)[data-role=review] { --c: var(--agent); } #kb :is(.lanes button, .col)[data-role=attention] { --c: var(--fail); }
   #kb :is(.lanes button, .col)[data-role=done] { --c: var(--ok); }
-  #kb .col h2 .g { border-color: var(--c, currentColor); }
 
   /* the strip: each lane's ring and count; the lane showing keeps its own header, so its name is always spelled out */
   #kb .lanes { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 4px; flex: none; margin-bottom: 8px; }
   #kb .lanes button { all: unset; --c: var(--slate); box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 6px; min-width: 0; min-height: 34px; padding: 4px 2px; border-radius: 6px;
     border: 1px solid color-mix(in srgb, var(--slate) 18%, transparent); font-size: calc(11.5px * var(--fs)); color: var(--slate); font-variant-numeric: tabular-nums; }
-  #kb .lanes button .g { flex: none; width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--c); box-sizing: border-box; }
   #kb .lanes button .nm { display: none; }
   #kb .lanes button[aria-selected=true] { border-color: color-mix(in srgb, var(--agent) 60%, transparent); background: color-mix(in srgb, var(--agent) 10%, transparent); color: var(--ink); }
-  #kb .lanes button[aria-selected=true] .g { background: var(--c); }
   #kb .lanes button:focus-visible { outline: 1px solid var(--agent); outline-offset: 1px; }
   #kb .col:not(.on) { display: none; }
 

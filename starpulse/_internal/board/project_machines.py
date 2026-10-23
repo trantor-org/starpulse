@@ -50,7 +50,7 @@ def draw(flows: Mapping[str, Compiled], qualify: Qualify, workflows: Collection[
     if workflows:
         for name, compiled in flows.items():
             refuse_unlisted(name, compiled.writers, workflows)
-    drawn = {name: describe(compiled.machine) for name, compiled in flows.items()}
+    drawn = {name: describe(compiled.machine, compiled.drawing.get("rests", ())) for name, compiled in flows.items()}
     for name, compiled in flows.items():
         body, declared = drawn[name], compiled.drawing
         states = {state["id"] for state in body["states"]}

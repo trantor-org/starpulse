@@ -57,6 +57,8 @@ export interface HudState {
   /** How many tasks each milestone has completed, which the Kanban's milestone outline still counts. */
   milestoneDone: Record<string, number>;
   names: Record<string, string>;
+  /** Each Board state's declared type (initial, final, resting, waiting_on_fact, waiting_on_person), null when the machine declares none. */
+  types?: Record<string, string | null>;
   /** Which of those States plays which part: the Kanban draws and gates by these, never by a State's name. */
   roles: Roles;
   /** Each task's latest refused claim, which returns a card the view started a session for. */
@@ -72,7 +74,7 @@ export interface HudState {
 export class HudStore {
   private state: HudState = {
     stats: "reading machine events…", live: "", path: BOARD, tree: null, states: [], counts: {}, hostCounts: {}, dags: [], dagData: null,
-    moving: [], pools: [], feed: [], cards: [], milestoneDone: {}, names: {}, roles: {}, claims: {}, boardUrl: null,
+    moving: [], pools: [], feed: [], cards: [], milestoneDone: {}, names: {}, types: {}, roles: {}, claims: {}, boardUrl: null,
   };
   private listeners = new Set<() => void>();
 

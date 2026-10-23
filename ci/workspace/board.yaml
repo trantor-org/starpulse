@@ -2,13 +2,13 @@
 name: Board
 states:
   new: {initial: true}
-  ready: {}
-  waiting: {}
-  in_progress: {}
-  review: {}
-  needs_attention: {}
+  ready: {role: waiting_on_fact}
+  waiting: {role: waiting_on_fact}
+  in_progress: {role: resting}
+  review: {role: waiting_on_fact}
+  needs_attention: {role: waiting_on_person}
   # Done reopens (REOPEN), so the machine declares it open; the preview draws it as an end (`ci/demo_workspace.py`).
-  done: {}
+  done: {role: resting}
   archived: {final: true}
 events:
   CREATE_READY:

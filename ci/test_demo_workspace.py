@@ -36,6 +36,21 @@ def _machines() -> dict[str, dict]:
     return _board().machines(lambda n: n, _workflows())
 
 
+def test_the_preview_board_serves_each_lanes_declared_type_for_the_column_headers() -> None:
+    states = _machines()["board"]["states"]
+
+    assert {s["id"]: s["role"] for s in states} == {
+        "new": "initial",
+        "ready": "waiting_on_fact",
+        "waiting": "waiting_on_fact",
+        "in_progress": "resting",
+        "review": "waiting_on_fact",
+        "needs_attention": "waiting_on_person",
+        "done": "final",
+        "archived": "final",
+    }
+
+
 def test_the_preview_board_draws_a_real_workspaces_eight_lanes_in_order() -> None:
     board = _machines()["board"]
 
