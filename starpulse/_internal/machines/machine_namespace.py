@@ -16,7 +16,7 @@ from typing import Any
 
 from starpulse._internal.machines.machine_definition import _read
 
-__all__ = ["Definition", "Drift", "Merged", "Source", "definition", "merge"]
+__all__ = ["Definition", "Drift", "Merged", "Source", "definition", "definition_of", "merge"]
 
 
 @dataclass(frozen=True)
@@ -29,9 +29,14 @@ class Definition:
 
 
 def definition(path: Path) -> Definition:
-    """The definition of the machine file at `path`, """
-    document = _read(path)
+    """The definition of the machine file at `path`."""
+    return definition_of(_read(path))
+
+
+def definition_of(document: Mapping[str, Any]) -> Definition:
+    """The definition of a read machine `document`; its `migrations` are part of the hash."""
     facts = _facts(document)
+    facts |= {f"migration {old} -> {new}" for old, new in document.get("migrations", {}).items()}
     facts |= {f"binding {adapter} -> {event}" for adapter, event in document.get("bindings", {}).items()}
     for event, writers in document.get("writers", {}).items():
         facts |= {f"writer {event} {writer['actor']} via {writer['trigger']}" for writer in writers}

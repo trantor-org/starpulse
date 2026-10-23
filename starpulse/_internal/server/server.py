@@ -601,6 +601,14 @@ def refuse_unassemblable(
         parser.exit(1, f"{exc}\n")
 
 
+def admit_definitions(args: argparse.Namespace) -> None:
+    """Register the machine files the config now names, so `serve` starts and reloads only on definitions the registry
+    accepts; a ValueError names the States and Tasks a missing mapping strands."""
+    from starpulse._internal.server.machine_sync import sync_definitions  # noqa: PLC0415 - the database stack loads after the config is accepted
+
+    sync_definitions(load(discover(args.config)), args.config.parent if args.config else Path.cwd())
+
+
 def listen(parser: argparse.ArgumentParser, args: argparse.Namespace) -> socket.socket:
     """Bind `--host` and `--port`, exiting with the reason when something holds them."""
     try:
@@ -771,6 +779,10 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         LISTEN_FD_ENV, None
     )  # the workers started below are handed what they hold, not what this process was
     ready = prepare(parser, args, config)
+    try:
+        admit_definitions(args)
+    except ValueError as exc:
+        parser.exit(1, f"{exc}\n")
     commands = worker_commands(config, args.config)
     if "api" in commands:  # bound once the config is accepted and before the board, the history or a worker starts
         os.environ[STATIC_ENV] = str(_STATIC)
@@ -793,6 +805,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         baseline=reader.at_start,
         control=control_file(args.config),
         limits=config.worker_memory,
+        admit=lambda: admit_definitions(args),
     )
     supervisor.start()
     try:

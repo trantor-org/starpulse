@@ -28,6 +28,12 @@
         "items": {"$ref": "#/$defs/transition"}
       }
     },
+    "migrations": {
+      "description": "Old State to the State its live Tasks move to when this version replaces one that had the old State. A change that drops or renames a State holding live Tasks is accepted only with the mapping.",
+      "type": "object",
+      "propertyNames": {"$ref": "#/$defs/identifier"},
+      "additionalProperties": {"$ref": "#/$defs/identifier"}
+    },
     "bindings": {
       "description": "Adapter event name to the machine event it moves.",
       "type": "object",

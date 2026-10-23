@@ -68,8 +68,7 @@ def worker_commands(config: Config, config_path: Path | None) -> dict[str, list[
             *tail,
         ]
         for context, flag in WORKER_FLAGS.items()
-        if not (flag and getattr(config, flag))
-        and (context != "search" or config.search.embeddings_url)
+        if not (flag and getattr(config, flag)) and (context != "search" or config.search.embeddings_url)
     }
 
 
@@ -131,7 +130,9 @@ class Supervisor:
         limits: Mapping[str, MemoryLimit] | None = None,
         memory: Callable[[int], int] | None = memory_reader(),
         sample_every: float = 5.0,
+        admit: Callable[[], None] | None = None,
     ) -> None:
+        self._admit = admit
         self._children = {name: _Child(command) for name, command in commands.items()}
         self._spawn = spawn
         self._sockets = dict(sockets or {})
@@ -252,12 +253,22 @@ class Supervisor:
         with ThreadPoolExecutor(len(names)) as pool:
             return dict(zip(names, pool.map(read, names), strict=True))
 
+    def _admitted(self) -> None:
+        if self._admit is None:
+            return
+        try:
+            self._admit()
+        except ValueError as exc:
+            raise ReloadError(str(exc)) from exc
+
     def reload(self) -> dict[str, Any]:
         """Replace each child whose code or database changed since the last reading, tell each whose only change is its
         live config block to re-read it, and keep the rest; report each as "replaced", "reloaded" or "kept".
 
         When `serve`'s own code changed every child is ended and `supervisor` reports "re-executed": the caller
-        sends that report, then calls `reexec`. Raises `ReloadError`, changing nothing, when a reading fails."""
+        sends that report, then calls `reexec`. Raises `ReloadError`, changing nothing, when a reading fails or `admit`
+        refuses the definitions the config now names."""
+        self._admitted()
         after = self._readings()
         with self._lock:
             if self._halt.is_set():
@@ -314,7 +325,12 @@ class Supervisor:
             serving.register(read_end, select.POLLIN)
             while child.proc.poll() is None and not serving.poll(100):
                 if time.monotonic() >= deadline:
-                    logger.warning("worker %s pid %s was not serving after %.0fs; ending the old one", name, child.proc.pid, self._warm)
+                    logger.warning(
+                        "worker %s pid %s was not serving after %.0fs; ending the old one",
+                        name,
+                        child.proc.pid,
+                        self._warm,
+                    )
                     break
         finally:
             os.close(read_end)

@@ -279,9 +279,7 @@ def test_start_takes_the_baseline_from_the_start_reader_and_reads_no_code() -> N
 
 
 @pytest.mark.parametrize(("code", "outcome"), [("v1", "kept"), ("v2", "replaced")])
-def test_reload_compares_each_closure_to_the_hashes_taken_at_start(
-    install: Install, code: str, outcome: str
-) -> None:
+def test_reload_compares_each_closure_to_the_hashes_taken_at_start(install: Install, code: str, outcome: str) -> None:
     Child.made = []
     install.now["scheduler"] = reading(code=code)
     running = Supervisor(
@@ -319,3 +317,22 @@ def test_serve_re_executes_when_its_own_closure_changed_since_start(install: Ins
     running.stop()
 
     assert report["supervisor"] == "re-executed"
+
+
+def test_a_reload_whose_definitions_are_refused_changes_nothing(install: Install) -> None:
+    def refuse() -> None:
+        raise ValueError("board: States dropped with live Tasks and no migrations mapping: doing (TASK-1)")
+
+    Child.made = []
+    running = Supervisor({name: [name] for name in NAMES}, spawn=Child, read=install, admit=refuse, poll=60.0)
+    running.start()
+    try:
+        before = running.pids()
+        install.now["scheduler"] = reading(code="v2")
+
+        with pytest.raises(ReloadError, match=r"doing \(TASK-1\)"):
+            running.reload()
+
+        assert running.pids() == before
+    finally:
+        running.stop()
