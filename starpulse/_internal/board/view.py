@@ -74,6 +74,10 @@ def _phase(agent: dict[str, Any], snapshot: dict[str, Any]) -> tuple[str | None,
         return None, None
     phase = _state_in(snapshot, machine["name"], agent["id"])
     links = machine["machine"].get("submachines", [])
+    if phase is None:
+        # the subflows hold the task while the In Progress machine has no state for it: the first to hold it names the phase
+        held = ((link["state"], _state_in(snapshot, link["machine"], agent["id"])) for link in links)
+        return next(((state, sub) for state, sub in held if sub), (None, None))
     states = (_state_in(snapshot, link["machine"], agent["id"]) for link in links if link["state"] == phase)
     return phase, next((state for state in states if state), None)
 
