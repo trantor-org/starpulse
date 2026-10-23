@@ -173,3 +173,22 @@ def test_reactivating_the_active_definition_ignores_live_states_it_lacks(registr
     stranded = [LiveTask("TASK-1", "Done", 1), LiveTask("TASK-2", "", 1)]
 
     assert registry.activate(copy.deepcopy(BOARD), stranded) == active
+
+
+def test_a_changed_definition_activates_over_live_tasks_held_in_display_names(
+    store: EventStore, registry: MachineRegistry
+) -> None:
+    registry.activate(BOARD, [])
+    live: list[LiveTask] = []
+    for task, status in (("TASK-1", "In Progress"), ("TASK-2", "Doing")):
+        events = store.append(
+            "task", task, 0, [NewEvent("TaskImported", {"title": task, "state": status}, "adin", "operator")]
+        )
+        live.append(LiveTask(task, status, events[-1].version))
+
+    second = registry.activate(_renamed(migrations={"doing": "in_progress"}), live)
+
+    assert registry.active_hash("board") == second
+    assert [e.type for e in store.read("task", "TASK-1")] == ["TaskImported"]
+    assert [e.type for e in store.read("task", "TASK-2")] == ["TaskImported", "Remapped"]
+    assert replay(store.read("task", "TASK-2"))["state"] == "in_progress"
