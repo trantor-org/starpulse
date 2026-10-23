@@ -19,9 +19,11 @@ DEFAULT_SERVER = "http://localhost:8766"
 class CliError(Exception):
     """A request a verb cannot answer: `code` is one of `_ERROR_EXIT`, the message says why."""
 
-    def __init__(self, code: str, message: str) -> None:
+    def __init__(self, code: str, message: str, **extra: Any) -> None:
         super().__init__(message)
         self.code = code
+        self.extra = extra
+        """Keys the error document carries beside `error` and `code`."""
 
 
 class Server(str):
