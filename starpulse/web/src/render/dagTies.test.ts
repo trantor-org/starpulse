@@ -7,6 +7,7 @@ import { build, sample, type Curve, type Scene } from "./scene";
 import { fitLevel } from "./zoom";
 import { merge, Moves, PULSE, TRAVEL, type Move } from "./sky";
 import type { Cue, Dag, Machine, Snapshot } from "../api";
+import { LIFECYCLE_ROLES } from "../tests/lifecycleRoles";
 
 // The live Board of 2026-10-07 (doc-111, D7b): ten states, the writers and cues of its tied DAGs, and DAGs that only launch or have no tie.
 const STATES = ["new", "ready", "blocked", "waiting", "in_progress", "review", "needs_attention", "done", "completed", "archived"];
@@ -49,7 +50,7 @@ const liveSky = (status: Record<string, Dag["status"]> = {}, sub: Record<string,
     graphs: ["board"],
     flows: [{ name: "board", agents: [], machine: { ...machine, tiers, launches: { ...machine.launches, ...Object.fromEntries(Object.keys(sub).map((d) => [d, { skill: "investigating", machine: sub[d] }])) } } }, ...new Set(Object.values(sub))].map((f) => (typeof f === "string" ? { name: f, agents: [], machine: launched(Object.keys(sub).find((d) => sub[d] === f)!) } : f)),
     dags: names.map((n) => dag(n, status[n])),
-    domains: [], cues: CUES, settled: {}, error: null, now: 1000,
+    domains: [], cues: CUES, roles: LIFECYCLE_ROLES, settled: {}, error: null, now: 1000,
   };
   const S = merge(snap), moves = new Moves();
   moves.observe(S, 1000);

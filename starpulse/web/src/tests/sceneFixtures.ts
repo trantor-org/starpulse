@@ -1,4 +1,5 @@
-import { merge, Moves } from "./sky";
+import { merge, Moves } from "../render/sky";
+import { LIFECYCLE_ROLES } from "./lifecycleRoles";
 import type { Dag, Machine, Snapshot } from "../api";
 
 /** Test fixtures shared by the scene's test files. */
@@ -25,7 +26,7 @@ export const savedBoardSky = (W: number, H: number, patch: (snap: Snapshot) => v
       transitions: SAVED_TRANSITIONS.map(([source, target]) => ({ source, target, event: `${source}_${target}` })),
       mainLine: ["new", "ready", "in_progress", "review", "done"],
     } }],
-    dags: [], domains: [], settled: {}, error: null, now: 1000,
+    dags: [], domains: [], settled: {}, error: null, now: 1000, roles: LIFECYCLE_ROLES,
   };
   patch(snap);
   const S = merge(snap), moves = new Moves();

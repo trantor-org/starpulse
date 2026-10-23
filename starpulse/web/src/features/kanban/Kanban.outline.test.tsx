@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Kanban } from "./Kanban";
 import type { HudState } from "../../render/hud";
+import { LIFECYCLE_ROLES } from "../../tests/lifecycleRoles";
 import type { KanbanTask } from "./kanbanModel";
 import { MoveStore } from "./move";
 import { StartStore } from "./start";
@@ -17,7 +18,7 @@ const cards = [
   card("TASK-3", "done", "m-2"),
   card("TASK-4", "ready", "m-3"), card("TASK-5", "ready", "m-3"), card("TASK-6", "review", "m-3"),
 ];
-const hud = { cards, names: {}, claims: {}, boardUrl: null } as unknown as HudState;
+const hud = { cards, names: {}, roles: LIFECYCLE_ROLES, claims: {}, boardUrl: null } as unknown as HudState;
 
 let host: HTMLDivElement, search: HTMLDivElement, outline: HTMLDivElement, root: Root;
 const rows = () => [...outline.querySelectorAll<HTMLButtonElement>("button.ms")];

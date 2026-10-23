@@ -8,12 +8,15 @@ import { padMachines, shapeBoard } from "./demoMachines";
 import { rankRows } from "../features/level/machineRows";
 import { columnsOf } from "../features/kanban/kanbanModel";
 import type { LaneStep } from "../features/level/trace";
-import type { LedgerRow, Machine, RawTask, Snapshot } from "../api";
+import type { LedgerRow, Machine, RawTask, Roles, Snapshot } from "../api";
 import { criteriaBlock, demoCriteria } from "./demoCriteria";
 import type { TaskRecord } from "../features/kanban/taskViewModel";
 import { demoServer as installed, embedded, setDemoServer } from "./host";
 
 export { embedded } from "./host";
+
+/** Whether `state` is the State a machine gives `role`; a machine with no such State matches nothing. */
+const plays = (state: string | undefined, role: string | null | undefined) => !!role && state === role;
 
 let demoN = 0;
 /** Seconds between two merges landing on a demo page's Ledger. */
@@ -33,7 +36,7 @@ export function demoStep(prev: Snapshot, random = Math.random): Snapshot {
   const finals = new Set(f.machine.states.filter((s) => s.final).map((s) => s.id));
   const now = Date.now() / 1000;
   if (f.name === "board") {
-    const pool = f.agents.filter((a) => a.state !== "done" || random() < 0.1);
+    const pool = f.agents.filter((a) => !plays(a.state, snap.roles?.done) || random() < 0.1);
     const ag = pool[Math.floor(random() * f.agents.length * 0.9)] ?? f.agents[0];
     const outs = ag ? trans.filter((e) => e.source === ag.state && e.target !== e.source) : [];
     if (ag && outs.length) {
@@ -224,7 +227,7 @@ export class DemoServer {
     for (const f of snap.flows) if (f.last != null) f.last += age;
     for (const e of snap.machineStrip?.entries ?? []) e.at += age;
     this.lanes = history ?? {};
-    this.records = Object.fromEntries((snap.flows.find((f) => f.name === "board")?.agents ?? []).map((card) => [card.id, demoRecord(card, clock(), failingEvaluator)]));
+    this.records = Object.fromEntries((snap.flows.find((f) => f.name === "board")?.agents ?? []).map((card) => [card.id, demoRecord(card, snap.roles ?? {}, clock(), failingEvaluator)]));
     const ledger = demoLedger(snap, clock(), scenarioOf(globalThis.location?.search ?? ""));
     this.day = ledger;
     this.snapshot = this.verdicts({ ...snap, ...(ledger.length ? this.ledgerFields() : {}), capabilities: { edit: true, archive: true, create: true } });
@@ -321,7 +324,7 @@ export class DemoServer {
       for (const card of prev.filter((a) => a.id in next.settled && !(a.id in this.snapshot.settled))) {
         next.settled[card.id].at = this.clock();
         const work = { ...card, id: `DEMO-${++n}`, state: lane, moves: undefined, created: this.clock() };
-        this.records[work.id] = demoRecord(work, this.clock(), this.failingEvaluator);
+        this.records[work.id] = demoRecord(work, this.snapshot.roles ?? {}, this.clock(), this.failingEvaluator);
         fresh.add(work.id);
         board.agents.push(work);
       }
@@ -345,7 +348,7 @@ export class DemoServer {
   task(id: string): Response {
     const record = this.records[id];
     if (!record) return json({ error: `${id} has no record to read` }, 404);
-    const working = this.snapshot.flows.find((f) => f.name === "board")?.agents.find((a) => a.id === id)?.state === "in_progress";
+    const working = plays(this.snapshot.flows.find((f) => f.name === "board")?.agents.find((a) => a.id === id)?.state, this.snapshot.roles?.working);
     return json({ task: id, record: { ...record, session: working ? `#demo-session-${id.replace(/\D/g, "").padStart(4, "0")}` : "" } });
   }
 
@@ -400,7 +403,7 @@ export class DemoServer {
     const prefix = board.agents[0]?.id.match(/^(.*?)\d+$/)?.[1] ?? "TASK-";
     const ids = board.agents.map((a) => a.id).concat(Object.keys(next.settled));
     const id = `${prefix}${Math.max(0, ...ids.map((n) => Number(n.match(/\d+$/)?.[0] ?? 0))) + 1}`;
-    const lane = startingLane(board.machine);
+    const lane = startingLane(board.machine, this.snapshot.roles ?? {});
     const card: RawTask = {
       id, title: title.trim(), state: lane, model: text("assignee"), labels: list("labels"), milestone: text("milestone"),
       dependencies: list("dependencies"), description: text("description"),
@@ -408,7 +411,7 @@ export class DemoServer {
     board.agents.push(card);
     this.created.add(id);
     this.records[id] = {
-      ...demoRecord(card, this.clock(), this.failingEvaluator), priority: text("priority"), plan: "", notes: "", definitionOfDone: [],
+      ...demoRecord(card, this.snapshot.roles ?? {}, this.clock(), this.failingEvaluator), priority: text("priority"), plan: "", notes: "", definitionOfDone: [],
       acceptanceCriteria: list("acceptanceCriteria").map((item, i) => ({ n: i + 1, text: item, checked: false })),
     };
     this.publish(next, new Set([id]));
@@ -438,7 +441,7 @@ export class DemoServer {
     const at = this.clock();
     const cards = this.snapshot.flows.find((f) => f.name === "board")?.agents ?? [];
     // a demo board holds far more In Progress cards than a host admits: the listing stands in for two sessions, or the limit when over
-    const inFlight = cards.filter((a) => a.state === "in_progress").slice(0, this.pilot === "over" ? PILOT.sessions : 2).map((a, i) => ({
+    const inFlight = cards.filter((a) => plays(a.state, this.snapshot.roles?.working)).slice(0, this.pilot === "over" ? PILOT.sessions : 2).map((a, i) => ({
       task: a.id,
       title: a.title ?? a.id,
       model: a.model || "sonnet · high",
@@ -447,7 +450,7 @@ export class DemoServer {
     }));
     const over = this.pilot === "over";
     const use = { cpu: over ? 74 : 41, memory: over ? 91 : 58, sessions: inFlight.length, review: 13 };
-    const pick = this.pilot === "empty" ? undefined : cards.find((a) => a.state === "ready" && !a.dependencies?.length);
+    const pick = this.pilot === "empty" ? undefined : cards.find((a) => plays(a.state, this.snapshot.roles?.ready) && !a.dependencies?.length);
     const pauses = this.pilot === "credits" ? [{ harness: "cursor", until: at + 2 * 3600, reason: "usage limit" }] : [];
     const paused = pauses.some((p) => p.harness === this.harness);
     const waits = this.quietHours ? "quiet hours" : paused ? `${this.harness} usage limit` : use.memory > PILOT.memory ? `RAM ${use.memory}/${PILOT.memory}%` : use.sessions >= CAPS[this.harness] ? `Sessions ${use.sessions}/${CAPS[this.harness]}` : "";
@@ -497,14 +500,14 @@ export class DemoServer {
 }
 
 /** Where a new task starts: the machine's initial state when the Kanban draws it as a column, else the first column. */
-const startingLane = (machine: Machine): string => {
-  const lanes = columnsOf(Object.fromEntries(machine.states.map((s) => [s.id, s.name])));
+const startingLane = (machine: Machine, roles: Roles): string => {
+  const lanes = columnsOf(Object.fromEntries(machine.states.map((s) => [s.id, s.name])), roles);
   const initial = machine.states.find((s) => s.initial)?.id ?? "";
   return lanes.includes(initial) ? initial : lanes[0];
 };
 
-const demoRecord = (card: RawTask, now: number, failing = false): TaskRecord => {
-  const criteria = card.state === "waiting" ? demoCriteria(now, failing) : undefined;
+const demoRecord = (card: RawTask, roles: Roles, now: number, failing = false): TaskRecord => {
+  const criteria = plays(card.state, roles.waiting) ? demoCriteria(now, failing) : undefined;
   return {
     title: card.title,
     profile: card.model,

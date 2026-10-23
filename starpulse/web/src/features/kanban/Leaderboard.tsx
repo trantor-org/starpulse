@@ -1,3 +1,4 @@
+import type { Roles } from "../../api";
 import type { KanbanTask } from "./kanbanModel";
 import { age, leaderboard } from "./leaderboardModel";
 
@@ -6,8 +7,8 @@ import { age, leaderboard } from "./leaderboardModel";
  * with its age and a bar against the longest shown. A click or Enter on a row opens the task as a search hit does.
  * Nothing is drawn while no task is workable.
  */
-export function Leaderboard({ tasks, now, open }: { tasks: KanbanTask[]; now: number; open: (id: string) => void }) {
-  const groups = leaderboard(tasks, now);
+export function Leaderboard({ tasks, roles, now, open }: { tasks: KanbanTask[]; roles: Roles; now: number; open: (id: string) => void }) {
+  const groups = leaderboard(tasks, roles, now);
   if (!groups.length) return null;
   return (
     <section className="away leaderboard">

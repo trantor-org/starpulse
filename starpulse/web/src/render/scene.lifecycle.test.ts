@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { build, clip, textW, type Scene } from "./scene";
-import { dag, machine, SAVED_STATES, savedBoardSky } from "./sceneFixtures";
+import { dag, machine, SAVED_STATES, savedBoardSky } from "../tests/sceneFixtures";
 import type { Snapshot } from "../api";
 
 describe("a Board whose every open state opens into lifecycle machines", () => {

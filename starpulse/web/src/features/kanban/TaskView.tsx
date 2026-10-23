@@ -1,10 +1,10 @@
 // The task view: every section reads in place and edits in place, one at a time, each Save a guarded write of that section's diff.
 import { Fragment, useCallback, useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 import { ago, fmtAt } from "../../shared/clock";
-import { columnsOf, type KanbanTask } from "./kanbanModel";
+import { columnsOf, roleOf, type KanbanTask } from "./kanbanModel";
 import { startLane, startable } from "./start";
 import { StartCriteria } from "./StartCriteria";
-import type { Capabilities, Pull } from "../../api";
+import type { Capabilities, Pull, Roles } from "../../api";
 import {
   PRIORITIES, SECTION_NAMES, ciHistory, closesOnKey, copyText, copyToClipboard, dependencyRows, editKey, fetchRecord, markdown, menuKey, metCount, onScrim, saveSection, sessionOf, toggleItem,
   type CiPull, type DepRow, type Item, type MenuState, type Section, type TaskField, type TaskRecord,
@@ -28,6 +28,8 @@ export interface TaskViewProps {
   stack?: ReactNode;
   capabilities?: Capabilities;
   names?: Record<string, string>;
+  /** Which State plays which part, as the snapshot publishes it: the part, never the State's id, decides what the view offers. */
+  roles: Roles;
   saving: boolean;
   claiming: boolean;
   close: () => void;
@@ -78,8 +80,8 @@ function ChipList({ values }: { values: string[] }) {
   return values.length ? <span className="chips">{values.map((v) => <span key={v} className="chip">{v}</span>)}</span> : <span className="k">—</span>;
 }
 
-const LanePill = ({ lane, name, small = false }: { lane: string; name: string; small?: boolean }) =>
-  <span className={`tvlane${small ? " sm" : ""}`} data-lane={lane}><i />{name}</span>;
+const LanePill = ({ lane, role, name, small = false }: { lane: string; role?: string; name: string; small?: boolean }) =>
+  <span className={`tvlane${small ? " sm" : ""}`} data-lane={lane} data-role={role}><i />{name}</span>;
 
 /** One section of the right rail: a small-caps heading with its count, the live state first. */
 function RailSection({ name, count, children }: { name: string; count?: number | string; children: ReactNode }) {
@@ -87,7 +89,7 @@ function RailSection({ name, count, children }: { name: string; count?: number |
 }
 
 /** The session that holds the task as a link that opens it in a new tab, or why none does. */
-function SessionRows({ session, lane, startLane }: { session: ReturnType<typeof sessionOf>; lane: string; startLane: boolean }) {
+function SessionRows({ session, worked, startLane }: { session: ReturnType<typeof sessionOf>; worked: boolean; startLane: boolean }) {
   if (session) {
     return (
       <div className="session">
@@ -96,7 +98,7 @@ function SessionRows({ session, lane, startLane }: { session: ReturnType<typeof 
       </div>
     );
   }
-  return <div className="none">{lane === "in_progress" ? "No session has claimed it: worked by hand" : startLane ? "No session holds this task. ▶ Start session, top right, opens one." : "No session holds this task"}</div>;
+  return <div className="none">{worked ?"No session has claimed it: worked by hand" : startLane ? "No session holds this task. ▶ Start session, top right, opens one." : "No session holds this task"}</div>;
 }
 
 /** A run's ISO start in Arizona time, or a dash when the scheduler gave none it can parse. */
@@ -148,11 +150,11 @@ function CiRows({ task }: { task: KanbanTask }) {
 }
 
 /** A dependency or a held task: its id, title and lane, opening that task's modal; a task off the board is only named. */
-function DepRows({ rows, names, open }: { rows: DepRow[]; names: Record<string, string>; open: (id: string) => void }) {
+function DepRows({ rows, names, roles, open }: { rows: DepRow[]; names: Record<string, string>; roles: Roles; open: (id: string) => void }) {
   return rows.map((r) => r.lane === null ? (
     <div key={r.id} className="dep off"><span className="id">{r.id}</span><span className="tt">not on the board</span></div>
   ) : (
-    <button key={r.id} className="dep" onClick={() => open(r.id)}><span className="id">{r.id}</span><span className="tt">{r.title}</span><LanePill lane={r.lane} name={names[r.lane] ?? r.lane} small /></button>
+    <button key={r.id} className="dep" onClick={() => open(r.id)}><span className="id">{r.id}</span><span className="tt">{r.title}</span><LanePill lane={r.lane} role={roleOf(roles, r.lane)} name={names[r.lane] ?? r.lane} small /></button>
   ));
 }
 
@@ -273,6 +275,7 @@ export function TaskView(p: TaskViewProps) {
   const [writeRefusal, setWriteRefusal] = useState<{ reason: string; skill: string } | null>(null);
   const [toast, setToast] = useState("");
   const names = p.names ?? {};
+  const { roles } = p;
   const canEdit = Boolean(p.capabilities?.edit && p.record);
   const change = (field: TaskField, value: TaskRecord[TaskField]) => {
     setDraft((record) => ({ ...record, [field]: value } as TaskRecord));
@@ -368,10 +371,11 @@ export function TaskView(p: TaskViewProps) {
 
   const criteria = base.start_criteria ?? [];
   const deps = dependencyRows(p.tasks, p.task);
-  const offered = columnsOf(names).filter((c) => c in p.task.moves).map((c) => ({
+  const offered = columnsOf(names, roles).filter((c) => c in p.task.moves).map((c) => ({
     to: c, text: names[c] ?? c, allowed: p.task.moves[c].allowed, reason: p.task.moves[c].reason ?? "",
   }));
-  const startVisible = startLane(p.task) && !p.claiming;
+  const startVisible = startLane(p.task, roles) && !p.claiming;
+  const working = roles.working ? p.task.moves[roles.working] : undefined;
   const unavailable = p.saving || writing;
   const [copied, setCopied] = useState(false);
   const copy = () => void copyToClipboard(copyText(p.task, base.title)).then((ok) => {
@@ -425,12 +429,12 @@ export function TaskView(p: TaskViewProps) {
             <button className={`copybtn${copied ? " ok" : ""}`} title={`Copy “${copyText(p.task, base.title)}”`} aria-label="Copy id and title" onClick={copy}>
               <span className="g">⧉</span>{copied ? "Copied" : "Copy"}
             </button>
-            <LanePill lane={p.task.lane} name={p.lane} />
+            <LanePill lane={p.task.lane} role={roleOf(roles, p.task.lane)} name={p.lane} />
             {p.saving && <span className="k">saving</span>}
             <a href="/" onClick={(e) => { e.preventDefault(); p.constellation(); }}>Open in Star Map ↗</a>
             <div className="acts">
-              {startVisible && <button className="startbtn" disabled={!startable(p.task) || unavailable}
-                title={startable(p.task) ? undefined : p.task.moves.in_progress?.reason}
+              {startVisible && <button className="startbtn" disabled={!startable(p.task, roles) || unavailable}
+                title={startable(p.task, roles) ? undefined : working?.reason}
                 onClick={p.start}>▶ Start session</button>}
               <MoveMenu items={offered} disabled={unavailable} move={p.move} />
               <button className="hidebtn" onClick={p.hide}>Hide task</button>
@@ -461,10 +465,10 @@ export function TaskView(p: TaskViewProps) {
             {p.refusal}
             {p.startNote}
             <RailSection name="Status">
-              <div className="row"><LanePill lane={p.task.lane} name={p.lane} small />{p.task.entered > 0 && <span className="k">{`for ${ago(p.now - p.task.entered)}`}</span>}</div>
-              {p.stack && <table className="props"><tbody><tr className="ro"><td>{p.task.lane === "done" ? "done chain" : "waiting stack"}</td><td className="stacklist">{p.stack}</td></tr></tbody></table>}
+              <div className="row"><LanePill lane={p.task.lane} role={roleOf(roles, p.task.lane)} name={p.lane} small />{p.task.entered > 0 && <span className="k">{`for ${ago(p.now - p.task.entered)}`}</span>}</div>
+              {p.stack && <table className="props"><tbody><tr className="ro"><td>{p.task.lane === roles.done ? "done chain" : "waiting stack"}</td><td className="stacklist">{p.stack}</td></tr></tbody></table>}
             </RailSection>
-            <RailSection name="Session"><SessionRows session={sessionOf(p.task, p.record, p.now, startLane(p.task))} lane={p.task.lane} startLane={startLane(p.task)} /></RailSection>
+            <RailSection name="Session"><SessionRows session={sessionOf(p.task, p.record, p.now, startLane(p.task, roles))} worked={p.task.lane === roles.working} startLane={startLane(p.task, roles)} /></RailSection>
             {criteria.length > 0 && <RailSection name="Start Criteria" count={`${metCount(criteria)}/${criteria.length} met`}><StartCriteria criteria={criteria} now={p.now} /></RailSection>}
             {!!p.task.runs?.length && (
               <RailSection name="Runs" count={p.task.runs.length}>
@@ -476,10 +480,10 @@ export function TaskView(p: TaskViewProps) {
             <RailSection name="Dependencies" count={deps.dependsOn.length + deps.holds.length + deps.more}>
               <div className="deps">
                 <div className="lb">Depends on</div>
-                {deps.dependsOn.length ? <DepRows rows={deps.dependsOn} names={names} open={p.open} /> : <span className="none">—</span>}
+                {deps.dependsOn.length ? <DepRows rows={deps.dependsOn} names={names} roles={roles} open={p.open} /> : <span className="none">—</span>}
                 {deps.holds.length > 0 && <>
                   <div className="lb">Holds</div>
-                  <DepRows rows={deps.holds} names={names} open={p.open} />
+                  <DepRows rows={deps.holds} names={names} roles={roles} open={p.open} />
                   {deps.more > 0 && <div className="k">+{deps.more} more</div>}
                 </>}
               </div>

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { LIFECYCLE_ROLES } from "../tests/lifecycleRoles";
 import { DemoServer } from "../demo/demo";
 import { applyDelta, foldRows, openStream } from "./stream";
 import { openLedger } from "./ledgerStream";
@@ -9,6 +10,7 @@ const board = (agents: RawTask[], extra: Partial<Snapshot> = {}): Snapshot => ({
   graphs: ["board", "runs"],
   dags: [],
   flows: [{ name: "board", machine: { states: [], transitions: [] } as never, agents }],
+  roles: LIFECYCLE_ROLES,
   settled: {},
   error: null,
   now: 1,

@@ -4,7 +4,7 @@ import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TaskView } from "./TaskView";
-import { props } from "./taskViewFixtures";
+import { props } from "../../tests/taskViewFixtures";
 
 describe("editing one section at a time", () => {
   const mounted: { root: ReturnType<typeof createRoot>; host: HTMLElement }[] = [];

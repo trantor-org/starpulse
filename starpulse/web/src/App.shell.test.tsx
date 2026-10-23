@@ -6,6 +6,7 @@ import { App } from "./App";
 import { BOARD_DRAWN } from "./shared/boardDrawn";
 import type { HudStore } from "./render/hud";
 import type { KanbanTask } from "./features/kanban/kanbanModel";
+import { LIFECYCLE_ROLES } from "./tests/lifecycleRoles";
 
 // the canvas renderer needs a browser's 2D context; this one only hands the test the store the page reads
 const held = vi.hoisted(() => ({ store: undefined as HudStore | undefined }));
@@ -87,6 +88,7 @@ describe("the page's first tree", () => {
     act(() => root.render(<App />));
     act(() => held.store!.set({
       tree: { states: ["ready"], subs: {}, children: {} },
+      roles: LIFECYCLE_ROLES,
       cards: [card("T-1", "ready", now), card("T-2", "done", now), card("T-3", "done", now - 3 * 86400), card("T-4", "done", now - 9 * 86400)],
     }));
     frame();

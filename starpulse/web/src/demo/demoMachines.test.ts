@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { padMachines, shapeBoard } from "./demoMachines";
 import { PAGE } from "../features/level/machineLanes";
 import type { FlowSnapshot, Machine, Snapshot } from "../api";
+import { LIFECYCLE_ROLES } from "../tests/lifecycleRoles";
 
 const DAY = 86400;
 const machine: Machine = {
@@ -13,7 +14,7 @@ const kid = (name: string, last: number): FlowSnapshot => ({
   agents: [{ id: `${name}-a`, title: name, task: "T-1", state: "done", model: "", steps: 1, trail: [{ state: "done", event: "GO", at: last - 60 }], active: last }],
 });
 const snap = (): Snapshot => ({
-  graphs: [], dags: [], settled: {}, error: null, now: 1_000_000,
+  graphs: [], dags: [], roles: LIFECYCLE_ROLES, settled: {}, error: null, now: 1_000_000,
   flows: [
     { name: "top", machine, agents: [], parent: null, depth: 0, chain: [], nested: ["a", "b"], ties: [], last: null, stuck: null },
     kid("a", 999_000), kid("b", 998_000),
@@ -58,6 +59,7 @@ describe("reshaping a demo's Board", () => {
   const ids = ["new", "ready", "waiting", "needs_attention", "in_progress", "review", "done", "archived"];
   const board = (): Snapshot => ({
     ...snap(),
+    roles: LIFECYCLE_ROLES,
     flows: [{
       name: "board", parent: null, depth: 0, chain: [], nested: [], ties: [], last: null, stuck: null,
       machine: {

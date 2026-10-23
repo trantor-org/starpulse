@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Kanban } from "./Kanban";
 import type { HudState } from "../../render/hud";
+import { LIFECYCLE_ROLES } from "../../tests/lifecycleRoles";
 import type { KanbanTask } from "./kanbanModel";
 import { MoveStore } from "./move";
 import { StartStore } from "./start";
@@ -12,7 +13,7 @@ const card = (id: string, title: string, assignee: string, labels: string[] = []
   id, title, lane: "ready", milestone: "", labels, assignee, dependencies: [], openDeps: 0, prs: [], description: "", live: null, released: false, moves: {}, entered: 0, created: null, workableSince: null, machines: [],
 });
 const cards = [card("TASK-1", "plain", "@agent-a"), card("TASK-2", "needle", "@agent-a", ["backup"]), card("TASK-3", "plain", "@agent-b")];
-const hud = { cards, names: {}, claims: {}, boardUrl: null } as unknown as HudState;
+const hud = { cards, names: {}, roles: LIFECYCLE_ROLES, claims: {}, boardUrl: null } as unknown as HudState;
 
 let host: HTMLDivElement, slot: HTMLDivElement, root: Root;
 let queries: string[];

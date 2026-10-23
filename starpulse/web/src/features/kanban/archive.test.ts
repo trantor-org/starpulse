@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { archiveDialogKey, archiveKey, archiveWarnings, postArchive, withoutArchived } from "./archive";
-import { COLUMNS, NO_PREFS, layout, type KanbanTask } from "./kanbanModel";
+import { LIFECYCLE_COLUMNS, LIFECYCLE_ROLES } from "../../tests/lifecycleRoles";
+import { NO_PREFS, layout, type KanbanTask } from "./kanbanModel";
 
 const task = (id: string, lane: string, over: Partial<KanbanTask> = {}): KanbanTask => ({
   id, title: id, lane, milestone: "m-89", labels: [], assignee: "", dependencies: [], openDeps: 0, prs: [], description: "", live: null,
@@ -40,7 +41,7 @@ describe("posting an archive", () => {
 
 describe("what leaves the board when a task is archived", () => {
   const cards = [task("TASK-1", "ready"), task("TASK-2", "ready"), task("TASK-3", "review")];
-  const count = (list: KanbanTask[], lane: string) => layout(list, {}, NO_PREFS, 0).columns.find((c) => c.id === lane)?.count;
+  const count = (list: KanbanTask[], lane: string) => layout(list, {}, LIFECYCLE_ROLES, NO_PREFS, 0).columns.find((c) => c.id === lane)?.count;
 
   it("takes the card out of its column and drops the column's count and the open total", () => {
     const after = withoutArchived(cards, new Set(["TASK-1"]));
@@ -48,7 +49,7 @@ describe("what leaves the board when a task is archived", () => {
     expect(after.map((t) => t.id)).toEqual(["TASK-2", "TASK-3"]);
     expect(count(cards, "ready")).toBe(2);
     expect(count(after, "ready")).toBe(1);
-    expect(layout(after, {}, NO_PREFS, 0).open).toBe(2);
+    expect(layout(after, {}, LIFECYCLE_ROLES, NO_PREFS, 0).open).toBe(2);
   });
 
   it("keeps every card when nothing was archived, as after a refusal", () => {
@@ -59,20 +60,20 @@ describe("what leaves the board when a task is archived", () => {
 
 describe("the archive confirm's warnings", () => {
   it("warns about an open pull request and ignores a merged one", () => {
-    expect(archiveWarnings(task("TASK-1", "review", { prs: [pull()] })).pull?.number).toBe(7);
-    expect(archiveWarnings(task("TASK-1", "review", { prs: [pull({ merged: true })] })).pull).toBeNull();
+    expect(archiveWarnings(task("TASK-1", "review", { prs: [pull()] }), LIFECYCLE_ROLES).pull?.number).toBe(7);
+    expect(archiveWarnings(task("TASK-1", "review", { prs: [pull({ merged: true })] }), LIFECYCLE_ROLES).pull).toBeNull();
   });
 
   it("warns about a live agent session only while the task is in progress on a machine", () => {
     const live = { machine: "in-progress", state: "implementing", at: 100 };
 
-    expect(archiveWarnings(task("TASK-1", "in_progress", { live })).session).toEqual(live);
-    expect(archiveWarnings(task("TASK-1", "ready", { live })).session).toBeNull();
-    expect(archiveWarnings(task("TASK-1", "in_progress")).session).toBeNull();
+    expect(archiveWarnings(task("TASK-1", "in_progress", { live }), LIFECYCLE_ROLES).session).toEqual(live);
+    expect(archiveWarnings(task("TASK-1", "ready", { live }), LIFECYCLE_ROLES).session).toBeNull();
+    expect(archiveWarnings(task("TASK-1", "in_progress"), LIFECYCLE_ROLES).session).toBeNull();
   });
 
   it("has no warning for a task with neither", () => {
-    for (const lane of COLUMNS) expect(archiveWarnings(task("TASK-1", lane))).toEqual({ pull: null, session: null });
+    for (const lane of LIFECYCLE_COLUMNS) expect(archiveWarnings(task("TASK-1", lane), LIFECYCLE_ROLES)).toEqual({ pull: null, session: null });
   });
 });
 
