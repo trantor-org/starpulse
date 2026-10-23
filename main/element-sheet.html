@@ -319,7 +319,7 @@ aside h3 { margin: 0 0 8px; font-size: calc(10px * var(--fs)); font-weight: 500;
 #kb .sk { display: inline-flex; align-items: center; gap: 3px; padding: 0 6px; border-radius: 9px; line-height: 15px; font-weight: 600; color: var(--hold-hi); background: color-mix(in srgb, var(--hold) 16%, transparent); border: 1px solid color-mix(in srgb, var(--hold) 45%, transparent); }
 #kb .sk svg { width: 1em; height: 1em; }
 
-#kb .col[data-lane="done"] .stack > .spine { background: linear-gradient(color-mix(in srgb, var(--ok) 65%, transparent), color-mix(in srgb, var(--ok) 15%, transparent)); }
+#kb .col[data-role=done] .stack > .spine { background: linear-gradient(color-mix(in srgb, var(--ok) 65%, transparent), color-mix(in srgb, var(--ok) 15%, transparent)); }
 #kb .sk.dn { color: var(--ok-text); background: color-mix(in srgb, var(--ok) 12%, transparent); border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
 #kb .card .uw.dn { color: var(--ok-text); }
 
@@ -364,8 +364,8 @@ aside h3 { margin: 0 0 8px; font-size: calc(10px * var(--fs)); font-weight: 500;
 #kbm .tvmeta .copybtn.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 50%, transparent); }
 #kbm .tvlane { --c: var(--slate); display: inline-flex; align-items: center; gap: 6px; padding: 1px 9px; border-radius: 999px; background: color-mix(in srgb, var(--c) 14%, transparent); color: var(--c); font-size: calc(11px * var(--fs)); white-space: nowrap; }
 #kbm .tvlane i { width: 6px; height: 6px; border-radius: 50%; background: var(--c); box-shadow: 0 0 6px var(--c); }
-#kbm .tvlane[data-lane=ready] { --c: var(--ready); } #kbm .tvlane[data-lane=waiting] { --c: var(--slate); } #kbm .tvlane[data-lane=in_progress] { --c: var(--run); }
-#kbm .tvlane[data-lane=review] { --c: var(--agent); } #kbm .tvlane[data-lane=needs_attention] { --c: var(--fail); } #kbm .tvlane[data-lane=done] { --c: var(--ok); }
+#kbm .tvlane[data-role=ready] { --c: var(--ready); } #kbm .tvlane[data-role=waiting] { --c: var(--slate); } #kbm .tvlane[data-role=working] { --c: var(--run); }
+#kbm .tvlane[data-role=review] { --c: var(--agent); } #kbm .tvlane[data-role=attention] { --c: var(--fail); } #kbm .tvlane[data-role=done] { --c: var(--ok); }
 #kbm .tvmeta > a { font-size: calc(11px * var(--fs)); white-space: nowrap; }
 #kbm .tv .acts { margin-left: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; }
 #kbm .tv .acts button { flex: none; white-space: nowrap; }
@@ -960,9 +960,9 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
   #kb .rt .shown { width: auto; }
   #kb .rt .nt { width: auto; margin-left: auto; }
   #kb #cols { grid-template-columns: minmax(0, 1fr); gap: 6px; padding-bottom: var(--pm); }
-  #kb :is(.lanes button, .col)[data-lane=ready] { --c: var(--ready); } #kb :is(.lanes button, .col)[data-lane=in_progress] { --c: var(--run); }
-  #kb :is(.lanes button, .col)[data-lane=review] { --c: var(--agent); } #kb :is(.lanes button, .col)[data-lane=needs_attention] { --c: var(--fail); }
-  #kb :is(.lanes button, .col)[data-lane=done] { --c: var(--ok); }
+  #kb :is(.lanes button, .col)[data-role=ready] { --c: var(--ready); } #kb :is(.lanes button, .col)[data-role=working] { --c: var(--run); }
+  #kb :is(.lanes button, .col)[data-role=review] { --c: var(--agent); } #kb :is(.lanes button, .col)[data-role=attention] { --c: var(--fail); }
+  #kb :is(.lanes button, .col)[data-role=done] { --c: var(--ok); }
   #kb .col h2 .g { border-color: var(--c, currentColor); }
 
   
