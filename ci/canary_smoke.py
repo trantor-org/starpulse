@@ -147,13 +147,17 @@ def step_board(url: str) -> str | None:
 
 
 def env(root: Path, config: str) -> dict[str, str]:
-    """The environment `serve` and reload run in: no secrets and nothing from the checkout.
+    """The environment `serve` and reload run in: no secrets and nothing from the checkout, bar `PYTHONPATH`.
+
+    `PYTHONPATH` is passed through because a config's hook modules (`validate = "pkg.module:fn"`) import from it, as they
+    do under the live service; the caller mounts that code read-only.
 
     Each variable the config names for a token is set to its own placeholder: `serve` refuses to start without them and
     refuses two producers sharing one, and the canary never calls a producer, so a placeholder authenticates nothing.
     """
     placeholders = {name: f"canary-placeholder-{name.lower()}" for name in ENV_NAME.findall(config)}
-    return {"PATH": os.environ["PATH"], "HOME": str(root), **placeholders}
+    path = {"PYTHONPATH": os.environ["PYTHONPATH"]} if "PYTHONPATH" in os.environ else {}
+    return {"PATH": os.environ["PATH"], "HOME": str(root), **path, **placeholders}
 
 
 def parser() -> argparse.ArgumentParser:

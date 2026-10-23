@@ -11,7 +11,8 @@
 #
 # Run it with `--network none`, the live config and machines read-only, and the store copy read-write as /work/history.sqlite.
 # Mount the config directory at the same depth under /live as under <live> (`<config-dir>` is `infrastructure/<host>`), since the
-# config reads its board and machines by relative path:
+# config reads its board and machines by relative path. A config whose hooks import code outside the wheel gets it the way
+# the live service does: mount that code read-only and pass `-e PYTHONPATH=...` (the canary forwards only that variable):
 #
 #     docker run --rm --network none -v <live>/<config-dir>:/live/<config-dir>:ro \
 #       -v <live>/.starpulse:/live/.starpulse:ro -v <copy>:/work/history.sqlite starpulse-canary \

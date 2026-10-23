@@ -103,3 +103,14 @@ def test_main_exits_nonzero_naming_migrate_before_serve(tmp_path: Path, capsys: 
 
     assert code != 0
     assert "migrate:" in capsys.readouterr().out
+
+
+def test_env_passes_pythonpath_and_no_other_host_variable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PYTHONPATH", "/live/lib")
+    monkeypatch.setenv("SECRET_TOKEN", "do-not-pass")
+
+    environ = canary_smoke.env(tmp_path, 'token_env = "STARPULSE_X"\n')
+
+    assert environ["PYTHONPATH"] == "/live/lib"
+    assert "SECRET_TOKEN" not in environ
+    assert environ["STARPULSE_X"].startswith("canary-placeholder-")
