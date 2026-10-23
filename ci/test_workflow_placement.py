@@ -17,7 +17,7 @@ HOSTED = "ubuntu-latest"
 #: The required checks a pull request and a merge candidate get from ci.yml.
 REQUIRED_CHECKS = ["python", "web", "static-checks", "build"]
 APP_CHECKS = REQUIRED_CHECKS
-CI_TEST_JOBS = ["select", "python-shard", "python", "build", "web", "static-checks", "fresh-serve", "latency-gate"]
+CI_TEST_JOBS = ["select", "python-shard", "python", "build", "web", "static-checks", "fresh-serve"]
 
 
 def job(workflow: str, name: str) -> dict:
@@ -194,7 +194,6 @@ TEST_JOBS = [
     "web",
     "static-checks",
     "fresh-serve",
-    "latency-gate",
 ]
 
 

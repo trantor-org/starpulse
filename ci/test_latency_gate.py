@@ -1,4 +1,4 @@
-"""The seeded server the latency gate measures. the nightly `latency-gate` job runs `bench/page_latency.py` against
+"""The seeded server the latency gate measures. The nightly latency gate (`ci/latency_gate.sh`) runs `bench/page_latency.py` against
 it; no pull request does. The harness's own rules are `ci/test_page_latency.py`."""
 
 from __future__ import annotations
