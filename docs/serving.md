@@ -296,3 +296,644 @@ type = "native"
 # holds = "my-holds {id}"    # prints a JSON array of reasons the task actor withholds the task's `deps_done` (see Task actor)
 # validate = "my_checks:task_write"  # may refuse a task write before it lands (see docs/adapters.md)
 # claim_ttl = 1800   # seconds a claim lives without an Event by its session or a machine event of its run (harness telemetry keyed by the session id); past it StarPulse appends `Released` (naming the last renewal) and the Task moves to Needs attention (the State waiting on a person), or to its Ready or initial State when the machine has none
+# types = ["spike", "bug"]  # the names a task's `type` may take; a write setting any other is refused with this list in its reason, so with no list any non-empty type is accepted and a board names none of its own
+# task_file_name = "title"   # the name a created task's file is written under: "title" is `task-1 - Draw-the-board.md`, "slug" is `task-1-draw-the-board.md`, lowercase, its slug capped at 19 characters
+
+# Task fields this deployment adds to StarPulse's own, checked on write and kept in the read model (see Task read model):
+# [board.fields]
+# area = { type = "string", queried = true }  # type: string, integer, number or boolean; queried gives an indexed generated column, so a read filters by this field without a scan
+
+# Rules every task write must satisfy, whoever makes it: the agent CLI, the page or a workflow (see Board guards in
+# docs/public-surface.md for every primitive). Each is judged on the task as it will be after the write, by the actor
+# that makes it, and the first one broken refuses the write with its `reason` (and `skill`), the same text to the CLI
+# and the page; nothing is written. A board with no rules accepts every write it accepted before.
+#   on       = { to = "Done" }                 a write that enters Done (`from = [...]` narrows it to those states)
+#            | { to = "Done", while = true }   ... and a write that leaves the task in Done
+#            | { write = true }                every write, whatever the task's state
+#   require  = one primitive: field, label, section, body, block, dependencies, checklist, or all_of, any_of, exactly_one,
+#              none_of over a list of them
+#   unless_actor = ["dagu/reconciler"]         actors the rule does not judge: operator, agent, <instance>/<workflow>
+# [[board.guards]]
+# on = { to = "Done" }
+# require = { field = { field = "references", matches = "/pull/\\d+$", min = 1 } }
+# reason = "Done needs a pull request in references"
+# skill = "completing-tasks"
+# unless_actor = ["dagu/reconciler"]
+
+# Optional: move a task on the facts its lane waits on (see Task actor). The table takes no keys; its presence turns the
+# actor on, and the board must edit tasks, else `serve` refuses to start. With it, the [release] polling pass does not run.
+# [board.actor]
+
+# To draw a Backlog.md project instead:
+# [board]
+# type = "upstream_backlog"
+# path = "backlog"       # the project's backlog/ directory, relative to this file
+# command = "backlog"    # the upstream Backlog.md CLI (`npm i -g backlog.md`) that writes a move (`backlog task edit <id> -s <status>`); a fork of it that lacks `backlog init` is not it
+# machine = "board.yaml" # as above
+# interval = 2           # seconds between the scans that find a changed task file
+
+# To draw only a project's machines, with no task source:
+# [board]
+# type = "machines"      # takes no other setting: it draws every file in `.starpulse/machines/` beside this file, the Board machine (`board.yaml`) among them, and follows no task source, reads no board directory and offers no write
+
+# To draw a Jira project instead (read-only; building the board reads the site once, to import the workflow):
+# [board]
+# type = "jira"
+# url = "https://example.atlassian.net"  # the site, http or https
+# project = "PAY"                        # the Jira project key, which is each task's team
+# workflow = "Payments Software Workflow" # the Jira workflow imported as the Board machine
+# token_env = "JIRA_TOKEN"               # the environment variable holding the token: Bearer, or with `user` the Basic password
+# user = "ada@example.com"               # Jira Cloud: the account the API token belongs to
+# interval = 30                          # seconds between polls
+
+# Draw each task's pull-request CI as a sub-flow of these Board states: StarPulse ships one `ci` machine, which GitHub
+# moves and StarPulse only observes (its `source` is GitHub). Each name is a Board state id; one the Board lacks is refused.
+# With `gh` available, each task with a PR is one agent in that flow, and its trail is the PR's pushes, check results,
+# re-runs, conflicts, rebases and merge, read from GitHub every minute and kept in the event log (`machine:events`).
+# [ci]
+# states = ["in_progress", "review"]
+
+# With `gh` on the PATH, `serve` keeps a pull request store, current from the lifecycle events, that `/api/pulls`, the `ci`
+# trail and `[release]` read. false never updates it: no event is applied, `POST /api/pulls/refresh` answers 404, tasks carry
+# no PR state, and `/api/pulls` answers only from rows the database already holds. Set it on a second instance beside one
+# that reads the same repositories, so one store is kept.
+# pull_requests = true
+
+# Whether something outside `serve` runs the Page API (the page and the HTTP API). False, the default: `serve` binds the
+# listening socket, keeps it, and supervises `starpulse worker api` as a child that serves from it. True: you run
+# `starpulse worker api --config <this file>` yourself, which binds `--host` and `--port` (or adopts the socket the service
+# manager passes in), and `serve` binds and supervises nothing for it.
+# api_worker = false
+
+# Whether something outside `serve` runs the Runs context (the run adapters no opt-in worker runs, and the pushed-runs follower). False, the default: `serve` supervises it as a child process, `starpulse worker runs`. True: you run
+# `starpulse worker runs --config <this file>` yourself and `serve` starts no child for it. Either way `serve` runs
+# none of them: it draws the workflows, pools and startable workflows the worker keeps in the event log
+# (`runs.projection`), and the page's Run now still starts a workflow through the adapter. Run-stream cursors stay in the
+# event log, so a restarted worker neither drops nor repeats a run entry. With the flag set and no worker running, no
+# run is followed.
+# runs_worker = false
+
+# Whether something outside `serve` runs the History context's writers (the machine-history recorder and the hourly
+# prune of the event log). False, the default: `serve` supervises them as one child process, `starpulse worker
+# flow-metrics`. True: you run `starpulse worker flow-metrics --config <this file>` yourself and `serve` starts neither thread.
+# They run together because both write the history database. The recorder's cursor is saved with the rows it covers, so
+# a restarted worker neither drops nor repeats a history row. With the flag set and no worker running, no machine event is recorded and the log is not pruned.
+# flow_metrics_worker = false
+
+# Whether something outside `serve` runs the Search context's embedding catch-up (the thread that fills vectors for the
+# indexed task text). False, the default: with `[search] embeddings_url` set, `serve` supervises it as a child process,
+# `starpulse worker search`. True: you run `starpulse worker search --config <this file>` yourself and `serve` starts
+# no thread and no child. Vectors are stored per batch in one transaction, keyed by the text's digest, so a restarted
+# worker neither drops nor repeats an embedding; `serve` rereads the vectors it ranks by every 30 s. With the flag set and no worker running, no vector is
+# written and search ranks by the vectors already stored, else lexically.
+# search_worker = false
+
+# Whether something outside `serve` runs the Board context's writer (the thread that dates when each Waiting task's
+# Start Criteria were met). False, the default: `serve` supervises it as a child process, `starpulse worker board`.
+# True: you run `starpulse worker board --config <this file>` yourself and `serve` starts no thread and no child. The
+# dates are saved in the history and read back at start, so a restarted worker does not re-date a task; `serve`
+# rereads the dates every 30 s. With the flag set and no worker running, no Start Criteria are
+# evaluated, so a Waiting task with them never becomes workable. The release of dependents belongs to the `pulls` worker.
+# The Board worker is also the only process that runs the board adapter's watchers: it publishes each changed task to
+# the `board:replica` stream of the event log and checkpoints the Board every minute, and `serve` and the other
+# workers read that replica (restoring the checkpoint, then tailing the stream) instead of running the adapter, so a
+# task it places reaches them within half a second. With
+# no Board worker running, `serve` and those workers stay not ready, with no Board once nothing is checkpointed.
+# board_worker = false
+
+# Let a producer that just saw a pull request close have its record read now instead of at the next minute's refresh:
+# `POST /api/pulls/refresh` with `{"repo": "<owner>/<name>", "number": 12}` and `Authorization: Bearer <token>`. The PR store's
+# thread reads that pull request alone (one single-PR GraphQL read, no listing) and publishes it as a refresh does; one
+# asked for during a refresh is read after the repository in hand, ahead of that refresh's projection. The
+# minute's refresh stays the fallback. 202 queued; 401 for a missing or wrong token; 403 for a repository this instance does not
+# track; 400 for any other body. The value is the name of an environment variable, never the token; unset, or with no `gh`
+# on the PATH, the route answers 404, and a named variable that is empty stops `serve`.
+# refresh_token_env = "STARPULSE_REFRESH_TOKEN"
+
+# One instance of a runs adapter, a module under `starpulse` or the dotted path of one an installed package provides
+# (it offers `start(url)` and `follow(url, runs, log)`, and optionally `rerun(url)` and `declared_params(url, workflow)`, the parameter names a workflow declares, which `doctor` reads); its workflows are drawn as `<name>/<workflow>`.
+[[runs]]
+name = "dagu"
+type = "dagu"
+url = "http://dagu.example.com:8080"     # the Dagu Adapter is an opt-in worker: you run `starpulse worker dagu --config <this file>` (`github-actions` and `systemd` likewise);
+                                         # `serve` starts it nowhere (not in the `runs` worker, not as a child) and, with it down or never
+                                         # started, the page shows this instance with the error "the dagu worker has not reported" or
+                                         # "last reported Ns ago" (its beat is older than 60s)
+run_safe = ["nightly"]                   # the workflows the page's Run now may start
+domains = { Data = ["nightly", "etl"] }  # how the page groups this instance's workflows
+
+# Optional: a producer that posts machine events as CloudEvents (see docs/sources.md, Post machine events as CloudEvents).
+# `POST /api/machine-events` and the gRPC `starpulse.v1.CloudEventsIngest` answer 404 until one is declared. A producer writes only the machines and actors listed here.
+[[producers]]
+name = "ci-bot"                          # the CloudEvents `source` its events carry; unique
+token_env = "CI_BOT_TOKEN"               # the environment variable holding its bearer token; never the token; no two producers share one
+machines = ["delivery"]                  # the drawn machines it may write; leave out with `actors` for a producer that only reports runs
+actors = ["ci"]                          # the actors it may write as
+
+# Optional: the run parameters that carry what a run applies, so the Ledger pairs a run with its merge for certain.
+# Each value names a parameter; a key left out is a parameter this instance has none of.
+[runs.commit]
+after = "AFTER"                          # the merge commit the run applies: pairs the run with that merge
+before = "BEFORE"                        # the commit before it
+force = "FORCE"                          # the parameter that marks a forced run
+task = "TASK"                            # the task a run is for: pairs a run with a task's entry into a lane (any Board event but MERGED)
+
+# Optional: a repository whose merges apply through the parent's pin bump rather than a run of their own. `name` is the
+# repository as its pull request links spell it, `path` where the parent holds it as a submodule.
+[[repos]]
+name = "skills"
+path = "skills"
+applied_by = "pin-bump"
+
+# Optional: the scheduler's policy. Every key is optional; with no [scheduler] table the defaults below apply.
+# [scheduler]
+# lane = "to_do"          # the lane whose tasks are eligible; unset: the board's initial lane
+# review_lane = "qa"     # the lane whose tasks' points are the review load; unset: the board's lane that waits on a pull request
+# unsized_points = 3      # the points a task with no `size-N` label counts as, a whole number of 1 or more
+# idle_minutes = 30       # minutes a started session may sit idle with its task still open before it is settled
+# state_dir = "state"     # where the older switch and run-ledger files are imported from, relative to this file; unset: beside it
+# [scheduler.tier_weights]  # what a point costs on each agent tier; a tier left out keeps its weight
+# fast = 1
+# standard = 2
+# deep = 4
+# [scheduler.priority_matrix]  # the Priority weight of an <impact>/<urgency> cell (low, medium or high each); a cell left out keeps its weight
+# "high/high" = 9
+# default = 4               # a task with no Impact or Urgency ranks with this weight
+# [scheduler.limits]        # each dimension's limit; a dimension left out keeps its limit
+# cpu = 80       # host CPU, percent
+# memory = 80    # host memory, percent
+# sessions = 2   # default harness sessions in flight (used when a harness has no session_limits row)
+# review = 20    # points of tasks in the review lane
+# [scheduler.session_limits]  # optional per-harness session caps; a harness left out uses limits.sessions
+# claude = 3
+# cursor = 2
+
+# Optional: release Waiting tasks natively. With the table present, `serve` moves a Waiting task to Ready once every task
+# it depends on is Done (see Release); with no [release] table it releases none. The board must edit tasks and draw
+# `waiting` and `ready` lanes, else `serve` refuses to start.
+# [release]
+# settle = "pin-bump"  # optional: a dependency citing a pull request in a [[repos]] repository settles only once the parent pins its merge commit
+# settle = "release"   # or: a dependency citing a pull request in `repo` settles only once the running build contains its merge commit
+# repo = "owner/name"  # settle = "release" only: the repository the running build is released from
+
+# Optional: what harness telemetry is read against for missed skill loads and trace clusters (see Find missed skill
+# loads and recurring work in docs/sources.md). Every key is optional; with no table nothing is declared, and no
+# path is an area.
+# [analytics]
+# roots = ["/srv/repo", "/srv/repo/.claude/worktrees/*"]  # absolute checkouts a path is cut to an area under; `*` is one component
+# stop_activities = ["Bash", "exec_command"]               # activities that say how a session ran, never a cluster's descriptors
+# lifecycle_skills = ["starting-tasks", "completing-tasks"] # skills every task loads, left out of a cluster's skills
+# [[analytics.skill_loads]]                                # what should load a skill: any of these
+# skill = "operating-nas"
+# activities = ["ssh root@nas-host"]                       # globs over an activity's name
+# [[analytics.skill_loads]]
+# skill = "verifying-claims"
+# title = "^(validate|verify|check)"                       # a regular expression over the task's title, case-insensitive
+# label = "validation"                                     # a label the task carries
+# injected_openings = ["<task-notification"]               # a prompt opening with one is labelled `injected`, any other `human`
+# [analytics.labeller]                                     # names a human prompt's intent at ingest; with none, no prompt is labelled
+# url = "http://127.0.0.1:8006/v1/systemone"               # a typed-decision endpoint, sent the prompt's text; only its label is kept
+# model = "intent"                                         # the checkpoint it asks
+# instructions = "Classify this message an operator sent an AI coding agent."
+# timeout = 2.0                                            # seconds it may take; slower, unreachable or no answer leaves the label empty
+# [analytics.labeller.criteria]                            # each label and its definition; an answer that is none of them is `unsure`
+# correction = "The agent did something wrong or must stop or undo it."
+# approval = "Proceed, yes, continue, or an answer to a question the agent asked."
+# operator_tools = ["AskUserQuestion", "ExitPlanMode"]    # tools whose result is the operator's answer: the silence before one is their wait
+# claims = ['\.venv/bin/backlog-task\s+start\s+(TASK-\d+)']        # group 1 is the task a command or `Skill` args claims
+# completion_skill = "completing-tasks"                    # with `completion_call`, marks a session's task complete
+# completion_call = '\.venv/bin/deliver\b'                 # a shell command run after that skill loaded
+# [[analytics.skill_machines]]                             # what a run under a skill reaches, in order, to conform (see Diff a fast run against a slow one in docs/sources.md)
+# skill = "developing-test-first"
+# stages = [
+#   { name = "RED", activities = ["pytest", "make test*"], ok = false },  # a failing call matching a glob of `activities`
+#   { name = "GREEN", activities = ["pytest", "make test*"], ok = true },
+# ]
+
+# Optional: rank search by meaning as well as by words (see `search` in docs/cli.md). `embeddings_url` is an
+# OpenAI-compatible embeddings endpoint, local or cloud; with it unset, search is lexical and nothing calls out.
+# [search]
+# embeddings_url = "http://localhost:8080/v1/embeddings"  # optional: POSTed `{model, input}`, answered with `data[].embedding`
+# model = "nomic-embed-text"                             # required with embeddings_url: the model the endpoint is asked for
+# token_env = "EMBEDDINGS_TOKEN"                         # optional: the environment variable holding the endpoint's bearer token
+
+# Optional: map the steps a shipped skill names to this project's own command lines (see `command run` in docs/cli.md).
+# Each name maps to an argv, run with no shell. Placeholders: {task}, {worktree}, {NAME} (from --arg NAME=VALUE), and the
+# whole element {args} (the arguments after `--`). `starpulse config check` refuses a malformed entry.
+# [project.commands]
+# deliver = ["./bin/ship", "{task}"]
+# test = ["make", "test", "{args}"]
+
+# Optional: hold Cursor task sessions to a context limit (see `python -m starpulse.cursor_context` in docs/sources.md).
+# [cursor_context]
+# limit_tokens = 150000    # a session past this many context tokens is asked to checkpoint, then restarted fresh
+# window_tokens = 200000   # the context window the pane footer's percent is read against; limit_tokens may not exceed it
+# wrapup_s = 600           # seconds an asked session has to checkpoint before it is restarted regardless
+```
+
+## Scheduler
+
+The scheduler is a switch, a capacity reading, an admission rule and a loop that acts on the rule. The switch is persisted in
+the `scheduler.enabled` row of the history store's `starpulse_settings` table, so it survives a restart, and it starts off. A missing row,
+an unreadable store or a malformed value reads as off. `[scheduler] state_dir` (relative to the config file; `serve` creates it) is where the older
+state files are looked for. The toggle file of that older name (`TOGGLE_FILE` in `_internal/scheduler/toggle.py`) beside the config or in `state_dir` is imported once on first read, keeping its modification
+time as the row's `updated_at`, then renamed to the same name plus `.imported`.
+
+`GET /api/scheduler` answers any address:
+
+```json
+{
+  "enabled": false,
+  "harness": "claude",
+  "quietHours": {"start": "22:00", "end": "07:00", "timezone": "America/Phoenix"},
+  "sampledAt": 1788307200.5,
+  "dimensions": [{"name": "cpu", "use": 35.0, "limit": 80.0}],
+  "inFlight": [{"task": "TASK-1", "title": "First", "model": "@agent-standard-high", "started": 1788307000.0, "url": "https://claude.ai/code/session_01"}],
+  "next": {"task": "TASK-2", "title": "Second", "verdict": "waits", "reason": "cpu", "priority": "high/low"},
+  "pauses": [{"harness": "claude", "until": 1788344400.0, "reason": "usage limit"}],
+  "sessionsByHarness": {"claude": {"use": 1.0, "limit": 3.0}, "cursor": {"use": 0.0, "limit": 2.0}}
+}
+```
+
+`harness` is the harness the loop starts sessions on (default `claude`); `PUT /api/scheduler` with `{"harness": "<name>"}` selects another.
+`quietHours` is the daily window in which the loop admits nothing, or `null` for none (see Quiet hours below).
+`dimensions` lists `cpu`, `memory`, `sessions` and `review` in that order, each as its use against its limit; the
+`sessions` meter follows the selected harness's cap from `[scheduler.session_limits]` (else `limits.sessions`).
+`sessionsByHarness` names every harness's in-flight count against its own cap. A credit or usage pause for one
+harness lands in `pauses` and blocks admission for that harness only.
+`sampledAt` is epoch seconds, and `dimensions` is empty with `sampledAt` null until the first sample.
+
+- `cpu` and `memory` are the host's busy share and used share, in percent, read from `/proc`.
+- `sessions` counts the tasks with an active harness session.
+- `review` sums the `size-N` labels of the tasks in `review_lane`; a task without one counts `unsized_points`.
+
+`inFlight`, `next` and `pauses` come from the dispatch loop, so a server that runs none leaves them out.
+
+- `inFlight` lists the sessions the loop started whose tasks are still running, oldest first, each with its task, title,
+  agent profile, start time in epoch seconds and session address (`url`); it is `[]` when none runs.
+- `next` is what the next pass would do, whatever the switch says: the task `decide` ranks first among those that fit, with
+  `verdict` `starting` and `reason` `goes next`; when none fits, the top-ranked task with `verdict` `waits` and the first
+  dimension it overfits as `reason`. Inside the quiet hours the top-ranked task `waits` with `reason` `quiet hours`,
+  whatever room the host has. While a harness usage pause holds, it `waits` with `reason` `<harness> usage limit`. It is
+  `null` before the first sample or with no workable task in the eligible lane. Reading it logs no decision. Its `priority`
+  names the Priority matrix cell the task ranked by (`high/low`, or `default`).
+- `pauses` lists each harness whose admission is paused until `until` (epoch seconds) after a usage or credit-limit
+  start, with `reason` `usage limit`. The key is absent when none are paused.
+
+`PUT /api/scheduler` with `{"enabled": true}` or `{"enabled": false}` sets the switch, and with
+`{"quietHours": {"start": "HH:MM", "end": "HH:MM", "timezone": "<IANA zone>"}}` or `{"quietHours": null}` sets or clears
+the quiet hours; a body may carry both. It answers the same body as the `GET`, and a body with anything wrong is a 400
+that changes nothing. It answers only loopback and private-network (RFC 1918) addresses, with 403 elsewhere, and like every write it needs
+`Content-Type: application/json`. A `serve` that runs no scheduler, an adapter-kit server, answers 404.
+
+The sampler reads every 60 seconds. The first sample is a baseline; after it, a dimension going from below its limit
+to at or over it, or back, logs one `StarPulse scheduler: <dimension> is full|free (<use> of <limit>)` line.
+
+StarPulse Admin's Scheduler card shows it: the switch with **On** or **Paused**, a meter per dimension (amber from
+80% of its limit, red past it, dimmed while the switch is off), the next pick as text (its task, title and `starting`
+in green or `waits: <reason>` in yellow, or **Nothing eligible**), the count of sessions in flight (the Sessions
+dimension's use, or the length of `inFlight` without it), and the quiet hours row. A click on the switch sends the
+`PUT` with no dialog, and a refusal shows its reason under the switch. The card reads `next` from the same body when it
+carries it, and shows no pick without it. It reads once when Admin opens and follows the `/api/events` `scheduler`
+event after. A server with no scheduler (404) shows the card with its reason and no controls. The Kanban draws no
+scheduler control.
+
+### Quiet hours
+
+The quiet hours are a daily window, from `start` up to but not including `end` on `timezone`'s wall clock, in which the
+loop admits nothing; an `end` before the `start` runs past midnight. Sessions already running continue, and the loop
+still finishes and settles them: only admission stops, as with the switch off. The window is the `scheduler.quiet_hours`
+row of `starpulse_settings`, so it survives a restart; no row, or one that cannot be read, is no window. Setting it wakes
+the loop, so a window that no longer covers now admits at once. There is no config key: the operator sets it from
+StarPulse Admin, whose Scheduler card has a **Quiet hours** row (a switch, start and end times, and Save) that
+sends the browser's own zone with the times.
+
+### Admission
+
+`scheduler.admission.decide` answers, for each workable task in the eligible lane, whether it fits and where it ranks. It is
+a pure function of the open tasks, the sampler's readings, the `[scheduler]` policy, the trajectory chain, each task's
+forecast P(goal), and the run ledger.
+
+- **Demand.** A task draws `size points x its tier's weight` percent of CPU and of memory, one session, and its points of
+  review. The tier is the middle word of its profile (`@agent-standard-high` is `standard`); a tier with no weight, or no
+  profile, prices at the dearest weight. Once 3 runs of the same tier and size are in the ledger, their mean peak replaces
+  that prior.
+- **Fit.** A task is admitted only if its demand is at most the headroom (limit less use) on every dimension; otherwise
+  the decision names the first dimension it overfits.
+- **Order.** The admitted tasks go in the order of Priority weight times critical-path depth (the task itself plus the
+  longest chain of open tasks waiting on it), the lowest id breaking a tie. The weight is the `[scheduler.priority_matrix]`
+  cell of the task's `<impact>/<urgency>` (`high/low`), 1 to 9 by default as the product of the two levels' places
+  (low 1, medium 2, high 3); a task missing either field ranks under `default`, 4. In shadow, the default, a second order
+  is only logged: `value / dominant share`, where value is weight times depth times P(goal) and dominant share is the largest `demand / limit` over the dimensions. P(goal) is the task's forecast
+  chance of the goal in the eligible lane (`trajectory_analytics(...)["forecast"]`), else the chain's `p_goal` for that
+  lane, and 1 when the lane has no history. The loop reads those ranks whenever `[level]` is set. An optional predictor, a
+  function from a task's title and description to a score, replaces P(goal) in that shadow value and is logged; a
+  predictor that raises leaves the score empty.
+- **Log.** Each decision logs one line:
+  `StarPulse scheduler: <task> admitted|refused (<dimension> full) p_goal=<p> predictor=<score> shadow_rank=<n> enforced_rank=<n>`.
+  Ranks number the admitted tasks from 1; a refused task has none.
+
+The run ledger is the history store's `starpulse_scheduler_runs` table (migration 0016, renamed by 0028), one row per finished run: its task, tier,
+points, outcome, duration in seconds, the peak demand it drew on each dimension and the epoch second it was recorded. Event-log pruning never deletes
+it, and the store's snapshot carries it. The ledger file of that older name (`LEDGER_FILE` in `_internal/scheduler/ledger.py`) in `state_dir` when set, else beside the config, is imported
+once into an empty table, each run stamped with the file's modification time, then renamed to the same name plus `.imported`. While
+the store cannot be read the ledger measures nothing, so admission prices every task at its declared demand.
+
+### Dispatch
+
+While the switch is on, the loop calls `decide` and starts the admitted tasks. It runs on events, never on a dispatch timer:
+
+- a task enters the eligible lane (or a task there becomes workable);
+- a harness session stops, or a started task changes;
+- the switch turns on;
+- the sampler's reading of a dimension crosses its limit;
+- the feed's `scheduler` status event of a new sample says the next pick would start: a task's demand can fit a
+  dimension's headroom without the dimension ever having reached its limit, so a crossing alone would leave it waiting.
+  The loop reads that event from the feed it already subscribes to (the stream `/api/events` serves), once per sample.
+
+Each pass starts the first admitted task, then decides again over readings that carry that task's demand, so two tasks that
+do not fit together are never both started in one pass. A run holds its capacity from its start until its task leaves
+`in_progress`; until the harness reports the session active the loop adds that demand to the sampler's readings itself.
+A start that fails (`StartFailedError`) is logged and skipped until the next pass, unless the refusal names a usage or
+credit limit: admission for that harness then pauses until the reset clock the message names (or five hours when it
+names none), `GET /api/scheduler` lists it under `pauses`, and the next pick `waits` with `reason` `<harness> usage
+limit`. A start that succeeds comments
+`Scheduler started <task>: <session address>` on the task; a board that refuses the comment leaves the session started.
+
+A session starts through `session_start_url` when the config sets it; the loop's request is
+`POST <url>/start/<task>?harness=<selected harness>&mode=interactive&by=scheduler`, so the service can brief an unattended session
+unlike one an operator opened (an operator's start has no `by`, and the page's `POST /api/start` body names `harness` with
+`mode` defaulting to `interactive`). With none, the built-in starter runs
+`tmux new-session -d -s starpulse-<task> -c <config directory> claude --remote-control <task> "Start <task>"` and needs
+`tmux` and `claude` on `PATH`, so a board with no `[scheduler]` table and no `session_start_url` starts a task out of the
+box. The built-in starter starts only Claude: with another harness selected it refuses the start, naming
+`session_start_url`, and ignores `mode`.
+
+When a run's task leaves the eligible lane and `in_progress`, the loop writes its outcome (the lane it went to), duration and
+peak to the ledger. When the harness session stops while the task is still in those lanes, the run is written as
+`session-ended` and the task is held out of admission until a person or the sweep moves it; a later tool or start on the
+same session revives that run instead of starting another. A started session that has been idle longer than
+`idle_minutes` (the harness's last active event, or its start before any) with its task still open is settled once: the
+task moves to `needs_attention` with a comment saying why, and is never started again. A board with no editor, or no `needs_attention` lane, refuses the move; the loop logs the
+refusal and retries on the next sampler period. The sampler period (60 seconds) is the only timer; it finishes and settles
+runs and never admits.
+
+The runs in flight, each task's last start time and the last capacity sample live in `starpulse_settings`
+(`scheduler.inflight`, `scheduler.starts`, `scheduler.sample`), so a restart restores them: `GET /api/scheduler` still
+lists the sessions, the loop still settles and records them, and a task it already started is not started again. A restart
+logs `StarPulse scheduler: restored N in-flight`. A start still inside 15 minutes (`START_COOLDOWN`) is not admitted
+even when the in-flight row is missing, so a restart that lost that row does not send a second `started`.
+Held `session-ended` tasks and harness pauses live in the history store, so a restart still keeps those tasks out of
+admission and keeps that harness paused.
+
+## Release
+
+With a `[release]` table, `serve` moves each Waiting task to Ready once all of its dependencies have settled, through the
+board's task editor, which records a comment on the task. It checks every 30 seconds after the Board replay, so a task is
+Ready within one poll of its last dependency settling. A board with no dependencies has nothing to release, and a config
+without the table releases nothing.
+
+A dependency settles when its task is Done: in the `done` lane, or completed. An archived dependency never settles, so its
+dependents stay Waiting. A task whose description declares Start Criteria is left to them, whatever its dependencies.
+
+`settle = "pin-bump"` is the stricter rule for a parent that applies a child repository by pin bump (`[[repos]]`; it is
+refused without one). A dependency task that cites a pull request in such a repository settles only when:
+
+- the pull request is merged and the PR store holds its merge commit;
+- a later merged pull request of the same owner, in a repository that is not pinned, changed the submodule's path and pins
+  a commit containing that merge commit (`pins.link`, the rule that sets a pull request's `applied_by`); or, for a pin
+  pushed with no pull request, the default branch of such a repository pins a commit containing it (`Pins.head`, its
+  head commit read again at most once a minute and never saved).
+
+A pull request the store does not hold, or holds open, holds the dependent, the fail-closed direction. A closed, unmerged
+one never reaches the pin and is ignored. The bump is looked for among the store's merged pull requests, so one no task
+cites still settles the dependency, while one older than the store's records is not found and holds it. The pointer and
+containment reads are the memoized `gh` calls the pull request projection makes; a path a merge does not pin (GitHub's
+404) is a remembered answer too, so only a read `gh` could not make is asked again.
+
+`settle = "release"` with `repo = "owner/name"` is the rule for a repository this process is itself released from, so a
+merge is live once the running build holds it, not once a parent pins it (it needs no `[[repos]]`, and `repo` is refused
+under any other rule). A dependency task that cites a pull request in `repo` settles only when:
+
+- the pull request is merged and the PR store holds its merge commit;
+- the running build's commit contains that merge commit (`Pins.reaches`, the GitHub `compare` the pin rule uses).
+
+The running build's commit is the `+g<sha>` of the PEP 440 local version of the installed `starpulse` distribution (a wheel
+tagged `<tag>.post<n>+g<sha>`), read once per process. A build with no such commit (a release tag, a source checkout)
+holds every such dependent, the fail-closed direction, as do a pull request the store does not hold or holds open; a
+closed, unmerged one is ignored. A dependency citing a pull request in any other repository settles on Done. The rule is
+re-derived each poll, so a restart onto the new build settles the dependents its merge is now live in.
+
+## Task actor
+
+With a `[board.actor]` table, `serve` runs the task actor: an in-process worker that moves a task out of a lane when a
+fact that lane's machine state waits on (`waits`, [Public surface](public-surface.md)) holds, through the board's task
+editor as actor `starpulse/task-actor`. The board must edit tasks, else `serve` refuses to start. The table takes no keys.
+
+The actor reads the `waits` of the Board machine and the transition each wait's event draws, so it moves only along a
+move the machine declares. For a task in a state with `waits`, the first fact that holds fires its event:
+
+- `pr_terminal`: every pull request the task cites is merged or closed in the PR store. A merged one is written with its
+  merge commit as the proof in the edit's comment.
+- `deps_done`: the task has dependencies, every one is Done, its description declares no Start Criteria, and, under
+  `[release] settle = "pin-bump"`, every dependency's pin bump has merged (the rule in Release).
+- `deps_unresolved`: a dependency is not Done.
+- `criteria_met`: the task's Start Criteria were last evaluated all `met`.
+- `criteria_unmet`: a Start Criterion was last evaluated `unmet` or `error`.
+
+The actor evaluates a task's Start Criteria with the board's evaluator (`[board] criteria`) on a thread of its own, when
+the task is in a lane that waits on a criteria fact and has no result or one older than the evaluator's cache (30 s), and
+re-derives the task when the result changes. A board with no `criteria` command fires neither criteria fact. A criterion
+the evaluator cannot evaluate is not retried before its result is stale.
+
+The board adapter may withhold `deps_done` with reasons (`Board.holds`; the native board's `[board] holds` command, run
+in the config's directory with `{id}` replaced, prints a JSON array of them, and output that is no such array holds the
+task). The actor writes the reasons once as a comment on the task, and re-derives every held task when a task is created.
+
+It keeps a `pull request -> tasks` and a `task -> dependents` index, built at start and kept current from lane writes. A
+change to a pull request in the store, a lane write or a merged pin bump re-derives only the tasks it reaches. The
+actor reads a store save as it happens, so a pull request's move does not wait for the pin walk of the projection that
+saved it; the tasks held for a pin bump are re-derived after that projection. At start
+it re-derives every open task once, so a pull request that merged while the server was down still moves its task. With
+the actor on, the 30-second pass of Release does not start; the actor settles and releases on the same rules, so
+`[release]` still names the settle rule.
+
+A write the board refuses is logged and counted, and is not retried until the task's facts change. `GET /metrics` carries:
+
+- `starpulse_task_actor_refusals_total`: refused writes.
+- `starpulse_task_actor_latency_seconds`: a histogram of the seconds from the fact being observed to the write landing.
+- `starpulse_task_actor_projection_seconds`: a histogram of the seconds each projection of the pull request store ran,
+  the pin walk included.
+- `starpulse_task_actor_handoff_seconds`: a histogram of the seconds from a store save to the actor reading it. The
+  bounds run to 600 s, so a handoff or projection past the 10 s bound shows.
+- `starpulse_task_actor_criteria_errors{task}`: the Start Criteria of a gated task that could not be evaluated; such a
+  gate never passes.
+- `starpulse_task_actor_pin_held`: a gauge of Waiting tasks whose dependencies are done but wait for a pin bump to
+  merge (`PinGate.unapplied`); one that stays above 0 is a pin that never merges.
+
+Each move the actor writes names `starpulse/task-actor` on its `board:lanes` entry: the Delivery worker records the lane
+change when it writes it, in the history and the log in one transaction, and the file scan that places the change
+later finds the lane recorded. The same holds for every write `serve` makes on the native board, under the request's
+actor. A change no such write recorded (a file edited by hand, a board adapter whose writer does not say the lane it
+set) is recorded at its placement as `external`. `GET /metrics` carries `starpulse_board_lane_unattributed_total`, a
+counter of the `board:lanes` entries any process appended since `serve` started that name no actor.
+
+
+## Conformance violations
+
+`serve` judges every move against the machine that draws it, as `starpulse conform` ([Replaying history against the
+machines](cli.md#replaying-history-against-the-machines)) does on the stored history, and `GET /metrics` carries two
+counters for each machine the feed draws:
+
+- `starpulse_machine_conformance_events_total{machine}`: the moves judged.
+- `starpulse_machine_conformance_violations_total{machine}`: the moves no transition declares.
+
+The `board` machine is judged on `board:lanes`, every other machine on `machine:events`. `serve` counts every entry
+the log still retains and follows new ones after, so a restart recounts the retained entries rather than starting at 0,
+and an entry pruned from the log leaves the count. The count of retained entries runs on a background thread, so the
+banner does not wait on it: until it finishes, a scrape shows the counts so far. Every machine has both series from the
+first scrape, at 0 until a move arrives. The first lane seen for a task is placed unjudged, because the log keeps no
+earlier history; the stored-history replay judges it from the initial state. Guards are not judged.
+
+## Event log archive
+
+Before `serve` deletes an event-log row it appends the row to a gzip JSONL file under `event_log_archive_dir`, one
+file per UTC day of the row's `at`, named `YYYY-MM-DD.jsonl.gz`. A later pass that prunes more of a day appends to that
+day's file, which is then several gzip members in a row; `gzip` and DuckDB read them as one stream. A pass writes and
+fsyncs a batch of rows, 1000 at most, before it deletes that batch, so a write that fails (disk full, directory not
+writable) deletes nothing and logs the failure, and the next hourly pass retries. A crash between the write and the
+delete archives those rows again, so a reader of the archive keys a row on `id`.
+
+Each line is one JSON object with every column of `starpulse_events`:
+
+```json
+{"id":1,"stream":"machine:events","event_id":"evt-1","fields":{"machine":"m","event":"A"},"at":1788307200.5}
+```
+
+`at` is seconds since the epoch. Read a day with DuckDB, or with the standard library:
+
+```sql
+SELECT id, stream, event_id, fields, to_timestamp("at") AS at FROM read_json('starpulse-archive/*.jsonl.gz');
+```
+
+```python
+import gzip, json
+
+with gzip.open("starpulse-archive/2026-09-01.jsonl.gz", "rt") as lines:
+    rows = [json.loads(line) for line in lines]
+```
+
+## The Ledger
+
+A Board event a machine's `cues` name or that a workflow writes (`writers`) is *tied* to that workflow. The snapshot's
+`ledgers` (and the `ledgers` event after it) list, per tied event, each occurrence newest first with the run of every
+tied workflow that answered it: `{key, at, tasks, runs}`, and for the `MERGED` event `sha` and `pr` (`{repo, number, url}`)
+too. A run is `{runId, status, startedAt, finishedAt, steps, step, inferred, ambiguous}`: its status, its status per
+step, and the step it is in.
+
+- `MERGED` occurrences are merged pull requests, which carry their tasks, from the last day. Any other event's are tasks
+  entering the lane the event reaches within the last day.
+- The snapshot holds no Ledger row. A page opening a Ledger reads `GET /api/ledger/<event>/events`: SSE whose first event,
+  `page`, is `{rows, more}` (the newest 20 rows, and whether older ones remain) and whose later `rows` events are
+  `{rows}`, the rows of that event that are new or differ, so a Ledger no page has open costs no frame. The page asks
+  `GET /api/ledger/<event>?before=<at>&limit=20` for each older page as `{rows, more}`, `before` being the `at` of the last
+  row held. Rows sharing the boundary second come together, so a page can run past `limit` and walking it neither repeats
+  nor skips a row; none is older than 24 hours; an event no workflow is tied to is 404. `mergeStrip` (snapshot, and in the
+  `ledgers` event, which carries nothing else; null with no workflow tied to `MERGED`) counts the whole day without the
+  rows: `{since, bucket, buckets}`, 96 buckets of 900 seconds from `since`, each
+  `{merges, failed, reruns}`: merges landed, those holding a failed run, and forced reruns started (a run whose
+  `[runs.commit]` `force` parameter is set and not `0` or `false`). `mergePins` (same two carriers) lists the pinned
+  merges of the last day that the newest page leaves out, so a failure waiting on its cue is never paged out of sight.
+- A run whose parameters name an occurrence under `[runs.commit]` (`after` for a merge's commit, a full or abbreviated
+  sha; `task` for a task) pairs with it and is not `inferred`. A run that names an occurrence StarPulse does not hold pairs
+  with nothing.
+- Any other run of a tied workflow pairs with the newest occurrence before it started and is `inferred`; its `ambiguous`
+  counts the older occurrences that landed since the workflow's previous run, any of which it may equally be for. Of several
+  inferred runs for one occurrence the earliest wins, and a keyed run outranks them.
+- A workflow's `recent` runs (`Dag.recent`, the last day's, with their parameters) are read from Dagu for tied workflows
+  only, and are left out of the `dags` the page draws.
+- A failed run of a cued workflow *pins* its occurrence: the row carries `fails` (`{<instance>/<workflow>: {runId, step,
+  startedAt, finishedAt, resolves, resolved}}`) and `pinned` while any failure is open. The cue's `resolves` decides the
+  clearing run, which must have started after the failure and succeeded: `next`, any such run of that workflow; `forced`,
+  one whose `[runs.commit]` `force` parameter is set (not empty, `0` or `false`) and which covers the failure, naming no
+  commit or task or an occurrence at least as new (a commit the Ledger does not hold covers nothing). A failure is
+  tracked apart from the run drawn for the occurrence, so a green plain retry of the same commit does not clear a
+  forced failure. A cue with no `resolves` rule, or an event no cue names, takes `next`. An instance with no `force`
+  key never clears a forced failure.
+- `POST /api/runs/<instance>/<workflow>/rerun` starts a run-safe workflow with `force` set to `1` and the `after`,
+  `before` and `task` parameters of its newest open failure, through the runs adapter's optional `rerun(url)` (the
+  Dagu adapter offers it). It answers `{runId}`; 409 when the instance declares no `force` or the workflow has no open
+  failure; 404 for a workflow outside `run_safe`; 403 off the LAN. A GET answers 405.
+- A pin lasts as long as StarPulse can still read the failed run: the last day of Dagu runs (`recent`) and the window of
+  merged pull requests and lane entries. An older failure drops out of the Ledger and cannot be rerun here.
+- A `[[repos]]` entry names a repository whose merges apply through the parent's pin bump. Its `MERGED` rows take no run
+  and carry `appliedBy`: the `key` of the first later merge in another repository whose submodule pointer at `path`
+  contains the merge's commit (read through `gh`), or `null` while no such merge exists. That merge's row lists what it
+  applies in `applies`. A pin bump appears only when a task cites its pull request.
+
+## Cold done tasks
+
+A task is hot for 24 h (`HOT_S`) after it enters `done`, then cold: the board feed holds only its `id`, `state` and
+`entered` time, and `GET /api/snapshot` omits it. A hot task keeps its record in `flows`; a lane change out of `done`
+(a reopen) reloads the cold task from its board file onto its new lane within that one change, and cooling itself
+publishes nothing, so a page keeps a card until it reloads. The page's snapshot (`/api/snapshot`) is slim:
+
+- `flows` carries open and hot done tasks, each without `description` and `criteria` (read them from
+  `GET /api/task/<id>`), and its `moves` as `move_set`, a key into the snapshot's `move_sets`;
+- `settled` keeps the tasks created or settled since the start of the day before local midnight, and `milestone_done` (`{milestone: count}`)
+  counts every settled completed task by milestone;
+- `/api/snapshot?view=full` is the whole document the CLI verbs read: full tasks, every `settled` entry and `cold_done`,
+  the ids of the cold done tasks.
+
+`GET /api/done[?before=<entered>][&limit=20]` returns `{tasks, more}`, the next page of cold done tasks, newest done
+first, each `{id, title, state, model, labels, milestone, type, entered}` read from the board on request. `before` is
+the `entered` of the last task held; `limit` is 1-100. A board that cannot read a task answers 404. A cold task has no
+`moves`, so moving it is a 409; `task show` and the held stream read it whole through its record.
+
+## Machine rows
+
+The machines entered from an open machine (the In Progress one at the top) are its rows, newest activity first: a row is
+as recent as the newest task of the machine and every machine nested below it, ties break by name, and a machine with no
+task comes last. The snapshot's `flows` carries every machine; `machinePage` (`{open, machines, more}`) names the In
+Progress machine's first 20 rows. `GET /api/machines?open=<machine>&before=<last>&limit=20` returns the next page of any
+level as `{open, machines, more}`, each machine whole as a `flows` entry with its derivation. `open` defaults to the In
+Progress machine, `before` is the `last` of the last row held (0 for a machine with no task), and `limit` runs 1 to 100.
+Rows sharing the boundary activity come together, so a page can run past `limit` and walking it neither repeats nor skips
+a machine. An unknown `open` is 404; a `before` that is not a finite number or a `limit` out of range is 400.
+
+`machineStrip` (`{entries}`) lists every machine entry of the 24 hours before the snapshot's `now`, without the rows, oldest first, as
+`{at, machine, row, from, dag}`: `row` is the machine on the In Progress level the entry lands on, so an entry into a
+nested machine counts on the row above it; `from` is the `{machine, state}` the task's session was entered from (null
+when no earlier session is known); `dag` is the workflow that launched a session with no task.
+
+The page scrolls the rows under the fixed top by the wheel, Page Up and Page Down, the arrow keys, Home and End and a
+draggable thumb, with `↑ back to newest` once scrolled; the rows are drawn only while in view. As the footer comes
+into view it loads the next 20 older machines from `/api/machines`. The 24 h strip under the rows draws a tick per
+entry, coloured by the state it was entered from (amber for a workflow launch), shades the rows in view as one
+stretch, and a click on a tick scrolls to its row. A click on a state of the top scrolls to the first machine it
+opens and picks it out; Escape steps back from the card, then the picked row, then the scroll to newest. A click on a task pins it and narrows the rows and the strip to
+the machines it holds a session in (`N machines holding <task>`); closing its card restores every row. A demo page (`?demo`) takes `&many=N` to grow the machines under
+the In Progress one to N, enough to scroll, and `&board=no-archived`, `no-attention`, `unlisted` or `fourteen` to reshape the Board for a Star Map
+review: a state taken out, a state no tier names, or fourteen states over thirty-three paths.
+
+## Connect a tracker
+
+`starpulse init [--dir DIR] [--harness claude-code]` scaffolds a first install: `starpulse.toml` (a native `[board]` with
+one `[[board.guards]]` rule, a `[scheduler]` table and a `[[producers]]` entry reading `STARPULSE_TOKEN`), `board.yaml`
+(four States, every role declared) and the harness's telemetry settings (`.claude/settings.json`). It never writes a
+token, and writes nothing, naming the file on stderr and exiting 1, when any of the files exists.
+
+`starpulse connect` checks that a tracker answers, then writes the `[board]` table of `starpulse.toml` for you, keeping
+every other table and comment. It prints one line saying what it read. A tracker that does not answer writes nothing,
+says why on stderr and exits 1; `--config` names another file, and `starpulse connect <tracker> --help` lists each
+tracker's flags.
+
+```sh
+starpulse connect native --path .starpulse/board --machine board.yaml   # StarPulse's own board; --path and --machine are optional
+starpulse connect backlog --path backlog                                # a Backlog.md project; --command names its CLI
+# ✓ Read 36 tasks in 5 lanes from backlog/ · wrote [board] to starpulse.toml
+
+export JIRA_TOKEN=<your API token>   # read from the environment, never an argument and never written to the file
+starpulse connect jira --url https://acme.atlassian.net --project PAY --workflow "Payments Software Workflow" --user ada@example.com
+# ✓ Imported Payments Software Workflow (7 states) · read 42 issues from PAY · wrote [board] to starpulse.toml
+```
