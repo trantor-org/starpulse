@@ -35,15 +35,16 @@ def _titled(name: str) -> str:
     return " ".join(word[:1].upper() + word[1:] for word in name.split(" "))
 
 
-def describe(machine: Any) -> dict:
+def describe(machine: Any, rests: Sequence[str] = ()) -> dict:
     """The machine's states and transitions, self-loops included, its `source` when a third party moves it, and its
-    YAML-declared writers. A transition its YAML cites carries the `cite`.
+    YAML-declared writers. A transition its YAML cites carries the `cite`. A state in `rests` is where the lifecycle
+    ends though an event leaves it, so it is served as the `final` type.
 
     A writer is a workflow when its actor is named `<instance>/<workflow>`; a machine that declares none carries no
     `writers`.
     """
     cited = getattr(machine, "citations", {})
-    roles = getattr(machine, "roles", {})
+    roles = {state: "final" if state in rests else role for state, role in getattr(machine, "roles", {}).items()}
     body: dict[str, Any] = {
         "states": [
             {"id": s.id, "name": _titled(s.name), "initial": s.initial, "final": s.final, "role": roles.get(s.id)}

@@ -48,6 +48,13 @@ class TestDescribe:
             "gone": "final",
         }
 
+    def test_a_state_the_machine_rests_in_is_served_as_the_final_type(self) -> None:
+        compiled = load_machine(FIXTURES / "renamed-board.yaml")
+
+        states = describe(compiled.machine, compiled.drawing["rests"])["states"]
+
+        assert {s["id"]: s["role"] for s in states}["shipped"] == "final"
+
     def test_a_served_state_validates_as_the_api_state_with_its_role(self) -> None:
         state = describe(load_machine(FIXTURES / "renamed-board.yaml").machine)["states"][1]
 
