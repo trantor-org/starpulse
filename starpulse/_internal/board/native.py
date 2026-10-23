@@ -30,7 +30,9 @@ from sqlalchemy import delete, func, insert, select
 from sqlalchemy.engine import Engine
 
 from starpulse._internal.board import native_docs, native_milestones, rules
+from starpulse._internal.board.claims import released
 from starpulse._internal.board.seam import (
+    ANONYMOUS,
     HELD,
     MERGE_EVIDENCE,
     OPERATOR,
@@ -43,6 +45,7 @@ from starpulse._internal.board.seam import (
     TaskCreator,
     TaskEditor,
     TaskReader,
+    TaskReleaser,
     TaskRestorer,
     TaskRetirer,
     Written,
@@ -939,6 +942,20 @@ def _writer(
     return write
 
 
+def _releaser(root: Path, statuses: tuple[str, ...], guard: _Guard = _Guard()) -> TaskReleaser:
+    """A board writer that ends a claim: the task takes `status` and its notes lose the `**Assignee:**` marker."""
+    spelled = {lane_id(status): status for status in statuses}
+
+    def release(task: str, status: str, /, actor: str = ANONYMOUS) -> Written:
+        def edit(frontmatter: dict, body: str) -> str:
+            frontmatter["status"] = spelled.get(lane_id(status), status)
+            return released(body)
+
+        return _moved(_update(root, task, edit, guard, actor), spelled.get(lane_id(status), status))
+
+    return release
+
+
 def _completer(root: Path, statuses: tuple[str, ...], roles: StateRoles) -> TaskCompleter:
     """A board writer that moves a Done task's file to `completed/`, where the reader and the projection still find it.
 
@@ -1133,6 +1150,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         base,
         lambda config, roles: {
             "writer": _writer(root, config.statuses, roles, guard, claims),
+            "release": _releaser(root, config.statuses, guard),
             "assign": assign,
             "create": _creator(root, config, retired, guard, file_name, link),
             "read": _reader(root, evaluate.latest if isinstance(evaluate, criteria.Evaluator) else evaluate),
@@ -1173,11 +1191,15 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
     def start(feed: BoardFeed, group: str, log: EventLog) -> None:
         attach(log)
         made.start(feed, group, log)
+        from starpulse._internal.board import claim_ttl  # noqa: PLC0415 — keeps the board's import light
+
+        claim_ttl.start(replace(made, **recorded), log, settings)
 
     read = made.read
     recorded = {
         "writer": history.recorded(made.writer, read, actor_at=1),
         "assign": history.recorded(made.assign, read),
+        "release": history.recorded(made.release, read, actor_at=1),
         "edit": history.recorded(made.edit, read),
         "archive": history.recorded(made.archive, read, reason_at=0),
         "restore": history.recorded(made.restore, read),
