@@ -37,7 +37,7 @@ TRANSITION_KEYS = ("now", "window_s", "transitions")
 
 
 CELL_KEYS = ("now", "window_s", "cells")
-SCORE_KEYS = ("now", "window_s", "scores")
+SCORE_KEYS = ("now", "window_s", "scores", "verdicts")
 
 
 GRAPH_KEYS = ("now", "window_s", "graph")
