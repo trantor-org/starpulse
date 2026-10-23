@@ -19,7 +19,7 @@ from starpulse._internal.kit.adapter_kit import next_event, serve, url
 from starpulse._internal.pulls.pulls import PullStore
 from starpulse._internal.server import asgi_app
 from starpulse._internal.server.page_server import PageServer
-from starpulse.tests.machines import MACHINES
+from starpulse.tests.machines import MACHINES, ROLES
 
 _STREAM = "/api/lanes"
 
@@ -30,7 +30,7 @@ def _small_pools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, requests: int,
     monkeypatch.setattr(asgi_app, "REQUEST_THREADS", requests)
     monkeypatch.setattr(asgi_app, "STREAM_LIMIT", streams)
     store = PullStore(create_engine(f"sqlite:///{tmp_path / 'pulls.sqlite'}"))
-    with serve(tmp_path, BoardFeed(machines=MACHINES), pulls=store, slow_read_s=0.0) as server:
+    with serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES), pulls=store, slow_read_s=0.0) as server:
         assert isinstance(server, PageServer)
         yield server
 

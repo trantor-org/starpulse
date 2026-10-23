@@ -19,7 +19,7 @@ from starpulse._internal.pulls.pulls import PullStore
 from starpulse._internal.pulls.task_actor import ACTOR, TaskActor
 from starpulse._internal.server import server
 from starpulse._internal.server.assembly import assemble
-from starpulse.tests.machines import MACHINES
+from starpulse.tests.machines import MACHINES, ROLES
 from starpulse.tests.task_actor_kit import (
     CHILD,
     CHILD_PR,
@@ -242,7 +242,7 @@ class _Sync:
 def test_a_store_save_moves_the_task_while_the_projection_is_still_blocked(
     store: PullStore, stop: threading.Event, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     board = Board(feed, task("TASK-1", "Review", references=(PR_ONE,)))
     store.save([pull(1, state="OPEN")])
     delivery = SimpleNamespace(edit=board.edit, waits=WAITS, evaluate=None, holds=None)

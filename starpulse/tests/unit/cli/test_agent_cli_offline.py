@@ -195,7 +195,7 @@ class TestConfigCheck:
             "ci": [],
             "autopilot": {
                 "lane": None,
-                "review_lane": "review",
+                "review_lane": None,
                 "unsized_points": 3,
                 "idle_minutes": 30,
                 "state_dir": None,

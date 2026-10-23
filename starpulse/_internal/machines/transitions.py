@@ -3,13 +3,11 @@
 from collections import defaultdict
 from collections.abc import Mapping
 
-__all__ = ["DEFAULT_STATUSES", "DONE", "Table", "WAITING", "board_machine", "lane_id", "tables"]
+__all__ = ["DEFAULT_STATUSES", "Table", "board_machine", "lane_id", "tables"]
 
 
 #: Upstream's own defaults, used for a project with no `config.yml`.
 DEFAULT_STATUSES = ("To Do", "In Progress", "Done")
-#: The lanes a task's workability reads: it can wait on Start Criteria in one, and a dependency is done in the other.
-WAITING, DONE = "waiting", "done"
 
 
 def lane_id(status: str) -> str:

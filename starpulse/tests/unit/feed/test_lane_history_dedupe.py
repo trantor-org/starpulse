@@ -10,7 +10,7 @@ from sqlalchemy import text
 from starpulse.contracts import BoardTask
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.eventlog.history import HistoryStore
-from starpulse.tests.machines import MACHINES
+from starpulse.tests.machines import MACHINES, ROLES
 from starpulse.tests.summaries import assert_matches_rebuild
 
 MOVE = ("T-1", 100.0)
@@ -40,7 +40,7 @@ def test_a_move_two_writers_record_under_two_spellings_is_one_row_in_the_lane_id
 
 
 def test_a_lane_move_read_live_is_dated_by_the_boards_time_not_the_feeds_clock(store: HistoryStore) -> None:
-    feed = BoardFeed(machines=MACHINES, clock=lambda: 580.0)  # the feed read the move eight minutes after it was made
+    feed = BoardFeed(roles=ROLES, machines=MACHINES, clock=lambda: 580.0)  # the feed read the move eight minutes after it was made
     feed.record_lanes(store)
 
     feed.put(BoardTask(id="T-1", team="demo", title="t", lane="in_progress", observed_at=100.0))

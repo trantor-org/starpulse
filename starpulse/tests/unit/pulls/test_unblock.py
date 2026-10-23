@@ -11,6 +11,7 @@ from sqlalchemy import create_engine
 from starpulse._internal.board.seam import Written
 from starpulse._internal.config.config import Repo
 from starpulse._internal.config.pins import LiveBuild
+from starpulse.tests.machines import ROLES
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.pulls.pulls import PullStore
@@ -86,7 +87,7 @@ def _pull(repo: str, number: int, *, state: str, sha: str | None, at: str | None
 
 
 def _board(*tasks: Any) -> BoardFeed:
-    feed = BoardFeed()
+    feed = BoardFeed(roles=ROLES)
     for each in tasks:
         feed.put(each)
     return feed

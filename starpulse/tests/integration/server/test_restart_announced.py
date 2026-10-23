@@ -7,7 +7,7 @@ from pathlib import Path
 
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import next_event, serve, task, url
-from starpulse.tests.machines import MACHINES
+from starpulse.tests.machines import MACHINES, ROLES
 
 
 def _open(server) -> HTTPResponse:
@@ -23,7 +23,7 @@ def _build_of(server) -> str:
 
 
 def test_each_stream_names_the_page_build_right_after_its_snapshot(tmp_path: Path) -> None:
-    with serve(tmp_path, BoardFeed(machines=MACHINES)) as server:
+    with serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES)) as server:
         first = _build_of(server)
         second = _build_of(server)
 
@@ -32,7 +32,7 @@ def test_each_stream_names_the_page_build_right_after_its_snapshot(tmp_path: Pat
 
 
 def test_a_rebuilt_page_is_named_by_a_different_build(tmp_path: Path) -> None:
-    with serve(tmp_path, BoardFeed(machines=MACHINES)) as server:
+    with serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES)) as server:
         before = _build_of(server)
         (tmp_path / "static" / "index.html").write_text(
             '<!doctype html><script src="/assets/index-def456.js"></script>'
@@ -43,7 +43,7 @@ def test_a_rebuilt_page_is_named_by_a_different_build(tmp_path: Path) -> None:
 
 
 def test_sigterm_tells_every_open_stream_the_server_is_restarting_before_the_process_exits(tmp_path: Path) -> None:
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.put(task("PROJ-1"))
     with serve(tmp_path, feed) as server, _open(server) as one, _open(server) as two:
         for resp in (one, two):

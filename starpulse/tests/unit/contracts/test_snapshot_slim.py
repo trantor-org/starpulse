@@ -7,7 +7,7 @@ from starpulse._internal.feed.board_feed import HOT_S, BoardFeed
 from starpulse._internal.kit.adapter_kit import task
 from starpulse.contracts.adapters import Move
 from starpulse._internal.server.encoding import encode, encode_snapshot, event, slim_snapshot
-from starpulse.tests.machines import MACHINES
+from starpulse.tests.machines import MACHINES, ROLES
 
 DAY = 86400.0
 NOW = 10_000_000.0
@@ -21,7 +21,7 @@ def _midnight() -> float:
 
 
 def _feed() -> BoardFeed:
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     for n in range(1, 4):
         feed.put(task(f"PROJ-{n}", "To Do", description=f"About PROJ-{n} " + "x" * 400, moves=OPEN))
     feed.put(task("PROJ-4", "To Do", description="Guarded", moves=GUARDED))
@@ -47,7 +47,7 @@ def test_snapshot_slim_leaves_a_flow_agents_description_and_criteria_to_the_task
 
 
 def test_snapshot_slim_carries_only_open_and_under_24h_done_tasks_and_never_the_cold_ids() -> None:
-    feed = BoardFeed(machines=MACHINES, clock=lambda: NOW)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES, clock=lambda: NOW)
     feed.expect("0-0")
     feed.put(task("PROJ-1", "To Do"))
     feed.put(task("PROJ-2", "Done", observed_at=NOW - 60))
@@ -111,7 +111,7 @@ def test_the_snapshot_and_the_pulls_event_omit_the_fields_of_a_pull_record_the_a
         "files": ["README.md"],
         "applied_by": "b" * 40,
     }
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     _, events = feed.subscribe()
     feed.set_pulls({"TASK-1": [record]})
 
@@ -138,7 +138,7 @@ def test_a_snapshot_event_omits_the_fields_of_a_pull_record_the_api_does_not_dec
         "files": ["README.md"],
         "applied_by": "b" * 40,
     }
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.set_pulls({"TASK-1": [record]})
 
     sent = json.loads(event("snapshot", feed.snapshot()))["pulls"]["TASK-1"][0]

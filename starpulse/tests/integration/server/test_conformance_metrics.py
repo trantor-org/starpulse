@@ -13,7 +13,7 @@ from starpulse._internal.eventlog.conformance_monitor import Conformance
 from starpulse._internal.eventlog.event_log import EventLog, Tail
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import serve, url
-from starpulse.tests.machines import MACHINES
+from starpulse.tests.machines import MACHINES, ROLES
 
 BOARD = {
     "states": [
@@ -42,7 +42,7 @@ JUDGED = "starpulse_machine_conformance_events_total"
 
 
 def _scrape(monitor: Conformance, tmp_path: Path) -> list[str]:
-    with serve(tmp_path, BoardFeed(machines=MACHINES), conformance_metrics=monitor.exposition) as server:
+    with serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES), conformance_metrics=monitor.exposition) as server:
         with urllib.request.urlopen(url(server, "/metrics"), timeout=5) as resp:
             return resp.read().decode().splitlines()
 

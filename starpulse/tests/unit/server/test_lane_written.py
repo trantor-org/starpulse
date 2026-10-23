@@ -12,7 +12,7 @@ from starpulse._internal.eventlog.history import HistoryStore
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.server.writes import _record_written, _Who
 from starpulse.contracts import BoardTask
-from starpulse.tests.machines import MACHINES
+from starpulse.tests.machines import MACHINES, ROLES
 
 
 def _task(lane: str, at: float) -> BoardTask:
@@ -21,7 +21,7 @@ def _task(lane: str, at: float) -> BoardTask:
 
 def _site(tmp_path: Path) -> tuple[BoardFeed, HistoryStore, EventLog]:
     url = f"sqlite:///{tmp_path / 'events.sqlite'}"
-    log, store, feed = EventLog(url), HistoryStore(url, MACHINES), BoardFeed(machines=MACHINES)
+    log, store, feed = EventLog(url), HistoryStore(url, MACHINES), BoardFeed(roles=ROLES, machines=MACHINES)
     feed.record_lanes(store, log)
     return feed, store, log
 

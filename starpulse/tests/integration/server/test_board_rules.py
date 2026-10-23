@@ -15,7 +15,7 @@ from starpulse._internal.cli import agent_cli as cli
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import serve, task, url
 from starpulse.contracts.adapters import Move
-from starpulse.tests.machines import MACHINES
+from starpulse.tests.machines import MACHINES, ROLES
 from starpulse.tests.unit.board.test_native import native_root, write_task
 
 NEEDS_PR = {
@@ -33,7 +33,7 @@ def _served(tmp_path: Path, rules: list[dict[str, Any]]) -> Iterator[str]:
     native.board({}, tmp_path)
     write_task(tmp_path, "task-1", "In Progress")
     built = native.board({"guards": rules}, tmp_path)
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.put(task("task-1", "In Progress", moves={"done": Move(allowed=True)}))
     with serve(tmp_path, feed, built) as server:
         yield url(server, "")

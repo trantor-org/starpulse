@@ -37,7 +37,8 @@ from starpulse._internal.machines.machine_ties import derive, entries
 from starpulse._internal.machines.machine_ties import page as machine_page
 from starpulse._internal.machines.snapshot import declared, qualifier
 from starpulse._internal.machines.stays import LaneRow
-from starpulse._internal.machines.transitions import DEFAULT_STATUSES, DONE, WAITING, board_machine, lane_id
+from starpulse._internal.machines.state_roles import StateRoles
+from starpulse._internal.machines.transitions import DEFAULT_STATUSES, board_machine, lane_id
 from starpulse.contracts.adapters import BoardTask, TaskKeys
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
@@ -88,9 +89,9 @@ def is_cold(agent: dict) -> bool:
     return "title" not in agent
 
 
-def cooled(agent: dict, clock: Callable[[], float]) -> dict:
-    """The agent, or its cold stub when it has been done for longer than `HOT_S` by `clock`."""
-    if agent["state"] == DONE and clock() - agent["entered"] > HOT_S:
+def cooled(agent: dict, clock: Callable[[], float], done: str | None) -> dict:
+    """The agent, or its cold stub when it has been in the `done` state for longer than `HOT_S` by `clock`."""
+    if agent["state"] == done and clock() - agent["entered"] > HOT_S:
         return {"id": agent["id"], "state": agent["state"], "entered": agent["entered"]}
     return agent
 
@@ -208,8 +209,11 @@ class BoardFeed:
         commit: Mapping[str, CommitKeys] | None = None,
         processes: Mapping[str, Sequence[tuple[str, Sequence[str]]]] | None = None,
         clock: Callable[[], float] = time.time,
+        roles: StateRoles | None = None,
     ) -> None:
         self._hint = hint
+        #: Which of the Board's States play which part (`Board.roles`); the default is Backlog.md's default statuses.
+        self._roles = roles or StateRoles.of_statuses(DEFAULT_STATUSES)
         self._clock = clock
         #: A task's lane changes as the history keeps them (`History.lane_path`), read while the feed replays.
         self._lane_path: Callable[[str], list[dict]] = lambda _task: []
@@ -328,6 +332,11 @@ class BoardFeed:
         )
 
     @property
+    def roles(self) -> StateRoles:
+        """Which of the Board's States play which part."""
+        return self._roles
+
+    @property
     def machines(self) -> Mapping[str, dict]:
         """The machines the page draws, the Board's as `board`."""
         return self._drawn
@@ -402,7 +411,7 @@ class BoardFeed:
             logger.warning("StarPulse: replaying: the saved Board cannot be read")
             return None
         # a task done while the feed was down is cold
-        open_ = {task: cooled(agent, self._clock) for task, agent in open_.items()}
+        open_ = {task: cooled(agent, self._clock, self._roles.done) for task, agent in open_.items()}
         with self._lock:
             self._open, self._settled, self._assignees, self._seen, self._saved = (
                 open_,
@@ -414,7 +423,7 @@ class BoardFeed:
             self._pulls, self._pull_answers = pulls, answers
             self._cited, self._kept, self._kept_saved = cited, source, source
             self._gated = {
-                t for t, agent in open_.items() if agent["state"] == WAITING and criteria.authored(agent["description"])
+                t for t, agent in open_.items() if agent["state"] == self._roles.waiting and criteria.authored(agent["description"])
             }
             self._dependents = {}  # the saved Board keeps no reverse links; `_link` needs them for the next change
             for task_id, agent in open_.items():
@@ -583,9 +592,9 @@ class BoardFeed:
             if agent:
                 agent["entered"] = self._entered(task, before)
                 agent["workable"], agent["workable_since"] = self._workable(agent)
-                agent = cooled(agent, self._clock)
+                agent = cooled(agent, self._clock, self._roles.done)
             self._gated.discard(task.id)
-            if agent and task.lane == WAITING and criteria.authored(task.description):
+            if agent and task.lane == self._roles.waiting and criteria.authored(task.description):
                 self._gated.add(task.id)
             if before == agent and self._settled.get(task.id) == settled:
                 return None  # an hourly reconcile republishes every task; only a change reaches the page
@@ -657,7 +666,7 @@ class BoardFeed:
         if (settled := self._settled.get(task_id)) is not None:
             return (settled["at"] or 0.0) if settled["state"] == "completed" else None
         agent = self._open.get(task_id)
-        return agent["entered"] if agent and agent["state"] == DONE else None
+        return agent["entered"] if agent and agent["state"] == self._roles.done else None
 
     def _unblocked(self, agent: dict) -> bool:
         return all(self._done_at(dependency) is not None for dependency in agent["dependencies"])
@@ -1255,6 +1264,7 @@ class BoardFeed:
                 "pulls": self._pulls,
                 **self._ledger_marks(self._ledger_full),
                 "claims": dict(self._claims),
+                "roles": self._roles.wire(),
                 "capabilities": dict(self._capabilities),
                 "settled": dict(self._settled),
                 "cold_done": sorted(task for task, agent in self._open.items() if is_cold(agent)),

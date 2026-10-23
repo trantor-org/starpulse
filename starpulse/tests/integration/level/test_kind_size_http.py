@@ -17,7 +17,7 @@ from starpulse._internal.harnesses.telemetry import TelemetryLog, signals
 from starpulse._internal.kit.adapter_kit import serve, url
 from starpulse._internal.server.page_server import PageServer
 from starpulse.contracts.adapters import TaskKeys
-from starpulse.tests.machines import MACHINES
+from starpulse.tests.machines import MACHINES, ROLES
 from starpulse.tests.unit.harnesses.test_telemetry import FIXTURES
 from starpulse.tests.unit.level.test_flow import EXECUTE_8, WORK_STEPS, completed
 
@@ -44,7 +44,7 @@ def server(tmp_path: Path) -> Iterator[PageServer]:
     for name in ("claude_code/otlp.ndjson", "codex/otlp.ndjson"):
         for line in (FIXTURES / name).read_text().splitlines():
             telemetry.publish(signals(json.loads(line)))
-    with serve(tmp_path, BoardFeed(machines=MACHINES, keys=KEYS), telemetry=telemetry, clock=lambda: NOW) as server:
+    with serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES, keys=KEYS), telemetry=telemetry, clock=lambda: NOW) as server:
         yield server
 
 
@@ -72,7 +72,7 @@ def test_a_window_past_the_history_or_that_is_no_positive_number_is_refused(serv
 
 @ROUTES
 def test_an_instance_that_receives_no_telemetry_cannot_report(tmp_path: Path, route: str) -> None:
-    with serve(tmp_path, BoardFeed(machines=MACHINES, keys=KEYS)) as server:
+    with serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES, keys=KEYS)) as server:
         status, body = _get(server, route)
 
     assert (status, "telemetry" in body["error"]) == (501, True)
@@ -83,7 +83,7 @@ def test_cost_to_go_is_served_per_state_with_the_times_the_state_was_left(tmp_pa
     runs = [("read", "edit", "test"), ("edit", "test"), ("edit", "edit", "test"), ("edit", "test", "read")]
     for n, calls in enumerate(runs, 1):
         telemetry.publish(completed(n, *calls))
-    feed = BoardFeed(machines=MACHINES, keys=KEYS)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES, keys=KEYS)
     feed.titled = lambda: {f"TASK-{n}": EXECUTE_8 for n in range(1, 5)}  # type: ignore[method-assign]
     analytics = Analytics(
         completion_skill="completing-tasks", stop_activities=frozenset({"Skill"}), skill_machines=(WORK_STEPS,)

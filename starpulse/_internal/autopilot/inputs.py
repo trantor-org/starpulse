@@ -19,8 +19,8 @@ def points(labels: Iterable[str], unsized: int) -> int:
     return next((int(match[1]) for label in labels if (match := _SIZE.fullmatch(label))), unsized)
 
 
-def review_points(tasks: Iterable[Mapping[str, Any]], lane: str, unsized: int) -> int:
-    """The points of the Board tasks in `lane`, an unsized one counting `unsized`."""
+def review_points(tasks: Iterable[Mapping[str, Any]], lane: str | None, unsized: int) -> int:
+    """The points of the Board tasks in `lane`, an unsized one counting `unsized`; no lane, no load."""
     return sum(points(task["labels"], unsized) for task in tasks if task["state"] == lane)
 
 

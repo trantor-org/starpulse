@@ -25,7 +25,7 @@ from starpulse._internal.server.server import _adapter, _config
 from starpulse._internal.server.write_routes import _no_writer
 from starpulse._internal.server.writes import move_task, rerun_dag, run_dag, start_task
 from starpulse.contracts.adapters import Move, StartFailedError
-from starpulse.tests.machines import MACHINES
+from starpulse.tests.machines import MACHINES, ROLES
 
 #: The workflows the config declares run-safe in these tests, and the domains it groups them in.
 RUN_SAFE = frozenset({"dagu/whole-repo-gate", "dagu/healthcheck"})
@@ -33,7 +33,7 @@ DOMAINS = {"Ops": ("dagu/whole-repo-gate", "dagu/healthcheck", "dagu/board-autop
 
 
 def _feed() -> BoardFeed:
-    feed = BoardFeed(machines=MACHINES, domains=DOMAINS, run_safe=RUN_SAFE)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES, domains=DOMAINS, run_safe=RUN_SAFE)
     feed.put(task("PROJ-3", "Ready", moves={"in_progress": Move(allowed=True)}))
     return feed
 
@@ -71,7 +71,7 @@ def test_a_config_with_two_runs_instances_draws_both_each_workflow_prefixed_with
     path = tmp_path / "starpulse.toml"
     path.write_text(_TWO_INSTANCES)
     config = load(path)
-    feed = BoardFeed(machines=MACHINES, domains=config.qualified_domains(), run_safe=config.qualified_run_safe())
+    feed = BoardFeed(roles=ROLES, machines=MACHINES, domains=config.qualified_domains(), run_safe=config.qualified_run_safe())
 
     feed.runs("prod").set_dags([{"name": "nightly"}, {"name": "backup"}], None)
     feed.runs("staging").set_dags([{"name": "nightly"}], None)
@@ -438,7 +438,7 @@ def _start(
 ):
     raw = body if isinstance(body, bytes) else json.dumps(body).encode()
     if feed is None:
-        feed = BoardFeed()
+        feed = BoardFeed(roles=ROLES)
         feed.put(task("PROJ-3", "Ready", profile="@agent-standard-high"))
     return start_task(
         source, raw, feed, assign or _Writer(), sessions, harnesses=harnesses, clock=lambda: STARTED_AT
@@ -588,7 +588,7 @@ def test_a_start_from_outside_the_lan_is_refused() -> None:
 
 
 def test_a_task_off_the_board_or_outside_ready_waiting_and_needs_attention_starts_nothing() -> None:
-    feed = BoardFeed()
+    feed = BoardFeed(roles=ROLES)
     feed.put(task("PROJ-5", "Review"))
     sessions = _Sessions()
 

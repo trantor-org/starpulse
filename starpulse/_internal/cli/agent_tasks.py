@@ -14,7 +14,7 @@ from typing import Any
 
 import yaml
 
-from starpulse._internal.board.view import AGENT, board_columns, board_flow, cold_agent, done_ids, task_view
+from starpulse._internal.board.view import AGENT, board_columns, board_flow, cold_agent, done_ids, roles_of, task_view
 from starpulse._internal.cli import agent_wire
 from starpulse._internal.cli.agent_keys import CLAIM_KEYS, LIFECYCLE_KEYS
 
@@ -62,9 +62,10 @@ def board(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any
         )
 
     board = board_columns(snapshot, kept, args.state)
-    if args.milestone and snapshot.get("cold_done") and args.state in (None, "done"):
+    finished = roles_of(snapshot).done
+    if args.milestone and snapshot.get("cold_done") and args.state in (None, finished):
         done = done_ids(snapshot)
-        column = next(column for column in board["columns"] if column["state"] == "done")
+        column = next(column for column in board["columns"] if column["state"] == finished)
         bare = {"milestone": "", "labels": [], "dependencies": [], "prs": [], "moves": {}}
         cards = [bare | card for card in _cold_done(agent_wire.server_url(args.server, environ))]
         column["tasks"] += [task_view(card, snapshot, done) for card in cards if kept(card)]
@@ -150,7 +151,7 @@ def _show_cold(base: str, task_id: str, snapshot: dict[str, Any]) -> dict[str, A
     status, document = agent_wire.get(base, f"/api/task/{urllib.parse.quote(task_id, safe='')}")
     if status != 200:
         raise agent_wire.CliError("unavailable", f"{base} answered {status} for the record of {task_id}")
-    agent = cold_agent(task_id, document["record"])
+    agent = cold_agent(task_id, document["record"], roles_of(snapshot).done)
     return _described(task_view(agent, snapshot), agent["description"], base)
 
 

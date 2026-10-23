@@ -26,7 +26,7 @@ _OPERATOR_ONLY = """\
 name: board
 states:
   to_do: {initial: true}
-  in_progress: {}
+  in_progress: {role: resting}
   done: {final: true}
 events:
   to_in_progress: [{from: to_do, to: in_progress}]
@@ -105,7 +105,7 @@ name: board
 states:
   new: {initial: true}
   to_do: {}
-  in_progress: {}
+  in_progress: {role: resting}
   done: {}
   archived: {final: true}
 events:

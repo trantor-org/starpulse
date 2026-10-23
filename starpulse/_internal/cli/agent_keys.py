@@ -15,6 +15,7 @@ SNAPSHOT_KEYS = (
     "claims",
     "settled",
     "cold_done",
+    "roles",
     "error",
     "cues",
     "domains",

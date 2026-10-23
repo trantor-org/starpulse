@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from starpulse._internal.board.view import task_view
+from starpulse.tests.machines import ROLES
 
 DONE_AT = 1792481914.0
 
@@ -33,6 +34,7 @@ def _snapshot() -> dict[str, Any]:
         ],
         "pulls": {},
         "settled": {},
+        "roles": ROLES.wire(),
     }
 
 

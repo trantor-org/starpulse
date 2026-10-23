@@ -22,18 +22,22 @@ LANES = ["Ready", "In Progress", "Waiting", "Needs attention", "Review", "Done"]
 MACHINE = """\
 name: board
 states:
-  ready: {initial: true}
-  in_progress: {}
-  waiting: {}
-  needs_attention: {}
-  review: {}
+  new: {initial: true}
+  ready: {role: waiting_on_fact, waits: {criteria_unmet: CRITERIA_UNMET}}
+  in_progress: {role: resting}
+  waiting: {role: waiting_on_fact, waits: {criteria_met: CRITERIA_MET}}
+  needs_attention: {role: waiting_on_person}
+  review: {role: waiting_on_fact, waits: {pr_terminal: FINISH}}
   done: {final: true}
 events:
+  TRIAGE: [{from: new, to: ready}]
   CLAIM: [{from: ready, to: in_progress}]
   PARK: [{from: in_progress, to: waiting}, {from: in_progress, to: needs_attention}]
   REVIEW: [{from: in_progress, to: review}]
   RESUME: [{from: waiting, to: in_progress}, {from: needs_attention, to: in_progress}]
   FINISH: [{from: review, to: done}]
+  CRITERIA_UNMET: [{from: ready, to: waiting}]
+  CRITERIA_MET: [{from: waiting, to: ready}]
 """
 REVIEW_NEEDS_PR: dict[str, Any] = {
     "on": {"to": "Review"},
@@ -56,7 +60,7 @@ def _lifecycle(
     for task, (status, fields) in tasks.items():
         write_task(base, task, status, **fields)
     built = board({"machine": "board.yaml", "guards": list(rules)}, base)
-    feed = BoardFeed(machines=built.machines(lambda name: name, ()), keys=built.keys)
+    feed = BoardFeed(machines=built.machines(lambda name: name, ()), keys=built.keys, roles=built.roles)
     built.start(feed, "test", EventLog(f"sqlite:///{base / 'events.sqlite'}"))
     return feed, built
 

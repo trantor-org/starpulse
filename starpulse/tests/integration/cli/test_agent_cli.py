@@ -39,7 +39,7 @@ from starpulse._internal.harnesses.telemetry import TelemetryLog, signals
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.tests.fake_board import bare_board
 from starpulse.tests.hosts import FakeHost
-from starpulse.tests.machines import MACHINES
+from starpulse.tests.machines import MACHINES, ROLES
 from starpulse.tests.unit.harnesses.test_telemetry import FIXTURES
 
 VALID_MACHINE = Path(__file__).parent.parent.parent.parent / "machines" / "harness.yaml"
@@ -83,7 +83,7 @@ def _run(
 @pytest.fixture
 def base(tmp_path: Path) -> Iterator[str]:
     """A server's address, its Board holding four open tasks and one completed."""
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.put(
         task(
             "PROJ-1",
@@ -190,7 +190,7 @@ def writer() -> _Writer:
 
 def _moving_board() -> BoardFeed:
     """One In Progress task: Ready is the operator's alone, Review anyone's, Waiting a guarded column."""
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.put(
         task(
             "PROJ-6",
@@ -221,7 +221,7 @@ COLD_RECORDS = {
 def cooled(tmp_path: Path) -> Iterator[str]:
     """A server whose board holds three done tasks past their hot day (two in `m-1`) and one hot done task in `m-1`."""
     now = 10_000_000.0
-    feed = BoardFeed(machines=MACHINES, clock=lambda: now)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES, clock=lambda: now)
     feed.expect("0-0")
     for n in (1, 2, 3):
         feed.put(task(f"PROJ-{n}", "Done", observed_at=now - 2 * HOT_S - n))
@@ -253,7 +253,7 @@ def stepped(tmp_path: Path) -> Iterator[str]:
     for line in (FIXTURES / "claude_code" / "otlp.ndjson").read_text().splitlines():
         telemetry.publish(signals(json.loads(line)))
     with _serve(
-        tmp_path, BoardFeed(machines=MACHINES, keys=keys), telemetry=telemetry, clock=lambda: STEPS_NOW
+        tmp_path, BoardFeed(roles=ROLES, machines=MACHINES, keys=keys), telemetry=telemetry, clock=lambda: STEPS_NOW
     ) as server:
         yield _url(server, "")
 
@@ -273,7 +273,7 @@ def milestoned(tmp_path: Path) -> Iterator[str]:
     source = Path(__file__).parent.parent.parent / "fixtures" / "native_board"
     for records in ("milestones", "docs"):
         shutil.copytree(source / records, tmp_path / ".starpulse" / "board" / records)
-    with _serve(tmp_path, BoardFeed(machines=MACHINES), board) as server:
+    with _serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES), board) as server:
         yield _url(server, "")
 
 
@@ -328,7 +328,7 @@ def _native_server(tmp_path: Path, *files: tuple[str, str]) -> Iterator[str]:
     root = tmp_path / ".starpulse" / "board"
     for name, text in (("task-1 - Draw the board.md", TASK_FILE), *files):
         (root / "tasks" / name).write_text(text)
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     UpstreamBacklog(root, feed.put).scan()
     with _serve(tmp_path, feed, board) as server:
         yield _url(server, "")
@@ -380,7 +380,7 @@ def shelved(tmp_path: Path) -> Iterator[str]:
     (root / "archive" / "docs").mkdir(parents=True)
     file = next((root / "docs").rglob("doc-84 - *.md"))
     file.replace(root / "archive" / "docs" / file.name)
-    with _serve(tmp_path, BoardFeed(machines=MACHINES), board) as server:
+    with _serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES), board) as server:
         yield _url(server, "")
 
 
@@ -400,7 +400,7 @@ def retiring(tmp_path: Path) -> Iterator[str]:
     root = tmp_path / ".starpulse" / "board"
     for name, text in (("task-1 - Draw the board.md", TASK_FILE), ("task-2 - Ship the board.md", SHIPPED_FILE)):
         (root / "tasks" / name).write_text(text)
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     board.start(feed, "test", EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}"))
     with _serve(tmp_path, feed, board) as server:
         yield _url(server, "")
@@ -413,7 +413,7 @@ def searchable(tmp_path: Path) -> Iterator[str]:
     assert index is not None
     index.index(task("PROJ-1", "To Do", title="Rotate the signing keys", description="Cycle the authority"))
     index.index(task("PROJ-2", "Ready", title="Drain the queue"))
-    with _serve(tmp_path, BoardFeed(machines=MACHINES), search=index) as server:
+    with _serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES), search=index) as server:
         yield _url(server, "")
 
 
@@ -679,7 +679,7 @@ def test_waiting_on_drops_a_dependency_in_the_done_lane_and_keeps_one_in_progres
         agent("PROJ-2", "done", []),
         agent("PROJ-3", "in_progress", []),
     ]
-    snapshot = {"pulls": {}, "settled": {}, "flows": [{"name": "board", "agents": board}]}
+    snapshot = {"pulls": {}, "settled": {}, "roles": ROLES.wire(), "flows": [{"name": "board", "agents": board}]}
 
     assert task_view(board[0], snapshot)["waiting_on"] == ["PROJ-3"]
 
@@ -741,7 +741,7 @@ def test_task_moves_lists_every_target_with_the_verdict_the_agent_meets(
 def test_a_move_whose_writers_leave_out_the_agent_is_refused_to_it_with_a_reason_even_when_unguarded(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.put(task("PROJ-7", "In Progress", moves={"ready": Move(allowed=True, writers=("operator",))}))
     with _serve(tmp_path, feed) as server:
         _, doc = _run(capsys, ["task", "moves", "PROJ-7", "--server", _url(server, "")])
@@ -1287,7 +1287,7 @@ def test_search_sends_each_label_and_the_finished_within_window(
     index.index(
         task("PROJ-3", "Done", title="Drain", labels=["disk", "unraid"], settled="completed", settled_at=month_ago)
     )
-    with _serve(tmp_path, BoardFeed(machines=MACHINES), search=index) as server:
+    with _serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES), search=index) as server:
         argv = ["search", "drain", "--label", "disk", "--label", "unraid", "--finished-within-days", "30"]
         code, doc = _run(capsys, [*argv, "--server", _url(server, "")])
 
@@ -1554,7 +1554,7 @@ def test_runs_list_names_each_workflow_by_instance_with_its_status_and_the_runs_
 @pytest.fixture
 def runnable(tmp_path: Path) -> Iterator[str]:
     """A server whose `prod` instance can start runs and holds `prod/nightly` run-safe; `staging` has no start."""
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.runs("prod").set_dags([_dag("nightly", "succeeded"), _dag("backup", "running")], None)
     feed.runs("staging").set_dags([_dag("nightly", "failed")], None)
     with _serve(
@@ -2296,7 +2296,7 @@ def test_task_show_reads_a_cold_done_task_whole_from_the_board_and_a_dependent_n
         "description": "Long ago.",
         "acceptanceCriteria": [{"n": 1, "text": "ships", "checked": True}],
     }
-    feed = BoardFeed(machines=MACHINES, clock=lambda: now)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES, clock=lambda: now)
     feed.expect("0-0")
     feed.put(task("PROJ-9", "Done", observed_at=now - 2 * HOT_S))
     feed.put(task("PROJ-1", "Ready", dependencies=("PROJ-9",)))

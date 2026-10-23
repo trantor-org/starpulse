@@ -23,7 +23,7 @@ from starpulse._internal.pulls.pull_events import RecordProjection
 from starpulse._internal.pulls.pulls import PullStore
 from starpulse.contracts.adapters import BoardTask
 from starpulse.tests.leak_gate import BUDGETS, check, measures_allocations
-from starpulse.tests.machines import MACHINES
+from starpulse.tests.machines import MACHINES, ROLES
 
 # Budget tests run in the nightly only: they measure a workload, so they cannot fit the gate's 5 s ceiling.
 pytestmark = [measures_allocations, pytest.mark.nightly]
@@ -57,7 +57,7 @@ def _autopilot_step(tmp_path: Path) -> tuple[Callable[[], None], list[int]]:
     starts = [0]
     limits = Autopilot().limits
     policy = Autopilot(lane="ready", limits=limits)
-    feed = BoardFeed(machines={**MACHINES, **HARNESS_MACHINES})
+    feed = BoardFeed(roles=ROLES, machines={**MACHINES, **HARNESS_MACHINES})
     sampler = Sampler(
         policy.limits,
         probe=lambda: {"cpu": 5.0, "memory": 5.0},

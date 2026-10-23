@@ -18,7 +18,7 @@ from starpulse._internal.harnesses.telemetry import TelemetryLog, signals
 from starpulse._internal.kit.adapter_kit import serve, url
 from starpulse._internal.server.page_server import PageServer
 from starpulse.contracts.adapters import BoardTask, TaskKeys
-from starpulse.tests.machines import MACHINES
+from starpulse.tests.machines import MACHINES, ROLES
 
 pytestmark = pytest.mark.usefixtures("sqlite_stores_from_template")
 
@@ -97,7 +97,7 @@ def server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[PageServer]:
     telemetry = TelemetryLog(EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}"))
     for payload in corpus():
         telemetry.publish(signals(payload))
-    feed = BoardFeed(machines=MACHINES, keys=KEYS)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES, keys=KEYS)
     feed.put(
         BoardTask(id="TASK-20", team="demo", title="Verify the thing", lane="done", labels=[], settled="completed")
     )
@@ -178,7 +178,7 @@ def test_a_number_out_of_range_is_refused(server: PageServer, query: str) -> Non
 
 @pytest.mark.parametrize("path", ["/api/analytics/missed-loads", "/api/analytics/trace-clusters"])
 def test_an_instance_that_receives_no_telemetry_cannot_report_them(tmp_path: Path, path: str) -> None:
-    with serve(tmp_path, BoardFeed(machines=MACHINES, keys=KEYS)) as server:
+    with serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES, keys=KEYS)) as server:
         status, body = _get(server, path)
 
     assert (status, "telemetry" in body["error"]) == (501, True)

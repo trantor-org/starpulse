@@ -30,7 +30,7 @@ from starpulse._internal.runs.cloudevents import SINGLE, CloudEventsIngest
 from starpulse._internal.runs.ingest import tokens as ingest_tokens
 from starpulse.tests.integration.runs.test_cloudevents_http import DELIVERY, PRODUCERS, TOKENS, cloudevent
 from starpulse.tests.integration.server.test_http2 import _h2_request
-from starpulse.tests.machines import MACHINES
+from starpulse.tests.machines import MACHINES, ROLES
 
 
 class _Answer:
@@ -114,7 +114,7 @@ def certificate(tmp_path: Path) -> tuple[Path, Path]:
 def test_a_quic_socket_on_the_servers_port_answers_an_http3_read(
     tmp_path: Path, certificate: tuple[Path, Path]
 ) -> None:
-    with serve(tmp_path, BoardFeed(machines=MACHINES), tls=certificate) as server:
+    with serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES), tls=certificate) as server:
         answer = _h3(certificate, server.server_port, "GET", "/api/history-window", {})
 
     assert answer.status == 200
@@ -155,7 +155,7 @@ def tls_context(certificate: tuple[Path, Path]) -> ssl.SSLContext:
 def test_http11_and_http2_answer_on_the_same_port_and_advertise_h3(
     tmp_path: Path, certificate: tuple[Path, Path], tls_context: ssl.SSLContext
 ) -> None:
-    with serve(tmp_path, BoardFeed(machines=MACHINES), tls=certificate) as server:
+    with serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES), tls=certificate) as server:
         port: Any = server.server_port
         tls_context.set_alpn_protocols(["http/1.1"])
         h11 = http.client.HTTPSConnection("127.0.0.1", port, timeout=5, context=tls_context)
@@ -175,7 +175,7 @@ def test_http11_and_http2_answer_on_the_same_port_and_advertise_h3(
 
 
 def test_an_idle_tls_server_stops_without_waiting_out_its_drain(tmp_path: Path, certificate: tuple[Path, Path]) -> None:
-    with serve(tmp_path, BoardFeed(machines=MACHINES), tls=certificate):
+    with serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES), tls=certificate):
         stopping = time.monotonic()
 
     assert time.monotonic() - stopping < 4  # its drain is 8 s

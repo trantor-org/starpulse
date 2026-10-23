@@ -11,7 +11,7 @@ from starpulse._internal.kit.adapter_kit import next_event as _next_event
 from starpulse._internal.kit.adapter_kit import serve as _serve
 from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.kit.adapter_kit import url as _url
-from starpulse.tests.machines import MACHINES
+from starpulse.tests.machines import MACHINES, ROLES
 
 
 def test_a_task_move_on_the_main_stream_does_not_call_board_columns(
@@ -24,7 +24,7 @@ def test_a_task_move_on_the_main_stream_does_not_call_board_columns(
         return board_columns(*args, **kwargs)
 
     monkeypatch.setattr("starpulse._internal.server.column_stream.board_columns", counted)
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.put(task("PROJ-1", "To Do"))
     feed.put(task("PROJ-2", "To Do"))
     with _serve(tmp_path, feed) as server:

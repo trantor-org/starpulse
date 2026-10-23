@@ -24,13 +24,13 @@ from starpulse._internal.server.page_server import PageServer
 from starpulse._internal.server.writes import autopilot
 from starpulse.contracts.adapters import BoardTask, MachineEvent
 from starpulse.contracts.api.dto.autopilot import AutopilotStatus
-from starpulse.tests.machines import MACHINES
+from starpulse.tests.machines import MACHINES, ROLES
 
 HOST = {"cpu": 35.0, "memory": 60.0}
 
 
 def _feed() -> BoardFeed:
-    feed = BoardFeed(machines={**MACHINES, **HARNESS_MACHINES})
+    feed = BoardFeed(roles=ROLES, machines={**MACHINES, **HARNESS_MACHINES})
     for task, lane, labels in (("T-1", "review", ["size-5"]), ("T-2", "review", []), ("T-3", "to_do", ["size-8"])):
         feed.put(BoardTask(id=task, team="demo", title=task, lane=lane, labels=labels))
     started = MachineEvent(machine="harness", event="SESSION_STARTED", task="T-3", time=time.time())
@@ -131,7 +131,7 @@ def test_an_instance_without_a_runtime_has_no_autopilot_route(tmp_path: Path) ->
 
 def _looping(tmp_path: Path) -> Runtime:
     """A runtime with a dispatch loop over one Ready task and a quiet host, already sampled."""
-    feed = BoardFeed(machines={**MACHINES, **HARNESS_MACHINES})
+    feed = BoardFeed(roles=ROLES, machines={**MACHINES, **HARNESS_MACHINES})
     feed.put(
         BoardTask(
             id="T-4", team="demo", title="Serve it", lane="ready", labels=["size-1"], profile="@agent-standard-high"
@@ -182,7 +182,7 @@ def test_a_get_with_a_loop_lists_each_started_session_and_no_pick_once_nothing_i
 def test_a_get_with_a_loop_names_a_harness_usage_pause(tmp_path: Path) -> None:
     from starpulse.contracts.adapters import StartFailedError
 
-    feed = BoardFeed(machines={**MACHINES, **HARNESS_MACHINES})
+    feed = BoardFeed(roles=ROLES, machines={**MACHINES, **HARNESS_MACHINES})
     feed.put(
         BoardTask(
             id="T-4", team="demo", title="Serve it", lane="ready", labels=["size-1"], profile="@agent-standard-high"

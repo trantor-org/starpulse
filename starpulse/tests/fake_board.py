@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from starpulse._internal.board.seam import Board, Written
+from starpulse._internal.machines.state_roles import StateRoles
 from starpulse.contracts.adapters import BoardTask, TaskKeys
 
 #: Each `(settings, base)` the view built this board from.
@@ -39,8 +40,13 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             "edit": lambda task, changes, comment: Written(True, ""),
             "archive": lambda task, reason: Written(True, ""),
         }
+    waits = {"ready": {"criteria_unmet": ""}, "waiting": {"criteria_met": ""}}
+    roles = StateRoles(
+        StateRoles.of_statuses(lanes).roles, {lane: facts for lane, facts in waits.items() if lane in lanes}
+    )
     return Board(
         machines=machines,
+        roles=roles,
         start=start,
         keys=TaskKeys(key=re.compile(r"FAKE-\d+"), branch=re.compile(r"(FAKE-\d+)")),
         cues=lambda qualify: [{"event": "SHUT", "dag": "q/nightly", "state": lanes[-1]}],

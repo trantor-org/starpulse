@@ -196,8 +196,6 @@ _TITLE_MAX = 300
 _EDIT_LOCK = threading.Lock()
 #: The verdicts a post-merge check takes, as a request spells them and as the comment records them.
 _VERDICTS = {"pass": "PASS", "miss": "MISS"}
-#: The lanes Start session moves a task out of: the spec's start question, never Review's send-back.
-_STARTABLE = frozenset({"ready", "waiting", "needs_attention"})
 #: How long a task write waits, in seconds, for a restarted instance's replay to place its task before it answers 503.
 REPLAY_WAIT_S = 5.0
 
@@ -424,9 +422,6 @@ def _move(
     return 200, {"task": task, "to": column, **({"advice": written.advice} if written.advice else {})}
 
 
-_IN_PROGRESS = "in_progress"
-
-
 @_write(_ClaimBody, "Claiming a task")
 def claim_task(request: _ClaimBody, feed: BoardFeed, writer: MoveWriter) -> tuple[int, dict[str, str]]:
     """Move the task `request` names to In Progress holding the session it names: the HTTP status and JSON body.
@@ -437,18 +432,19 @@ def claim_task(request: _ClaimBody, feed: BoardFeed, writer: MoveWriter) -> tupl
     task, who = request.task, _who(request)
     if (agent := _held(feed, task)) is None:
         return _not_held(feed, task)
-    held = {"task": task, "to": _IN_PROGRESS, "assignee": who.session}
-    if agent["state"] == _IN_PROGRESS:
+    working = feed.roles.working
+    held = {"task": task, "to": working, "assignee": who.session}
+    if agent["state"] == working:
         if agent.get("assignee") == who.session:
             return 200, held
         return 409, {"error": f"{task} is already In Progress, held by {agent.get('assignee') or 'no session'}"}
-    others = [a["id"] for a in feed.open_tasks() if a["state"] == _IN_PROGRESS and a.get("assignee") == who.session]
+    others = [a["id"] for a in feed.open_tasks() if a["state"] == working and a.get("assignee") == who.session]
     if others:
         return 409, {
             "error": f"this session already holds {others[0]} In Progress: park it, defer it or finish it before "
             f"claiming {task}"
         }
-    status, body = _move(feed, agent, task, _IN_PROGRESS, who, writer)
+    status, body = _move(feed, agent, task, working, who, writer)
     return (200, {**body, "assignee": who.session}) if status == 200 else (status, body)
 
 
@@ -548,7 +544,12 @@ _BAD_PARK = {
     "error": 'a park needs exactly one reason: "untilTask" (task ids that must reach Done), "until" (criteria, each an '
     'object with an "id" and a "kind") or "operator" (text)'
 }
-_PARK_LANES = {"untilTask": "waiting", "until": "waiting", "operator": "needs_attention"}
+_PARK_REASONS = ("untilTask", "until", "operator")
+
+
+def _park_lane(feed: BoardFeed, reason: str) -> str | None:
+    """The lane a park for `reason` moves to: where a task waits on a fact, or on the operator."""
+    return feed.roles.attention if reason == "operator" else feed.roles.waiting
 
 
 @_write(ParkRequest, "Parking a task")
@@ -562,17 +563,19 @@ def park_task(
     machine must offer the writer that lane, and the board's rules judge the record the edit makes.
     """
     task, comment, who = request.task, request.comment or "", _who(request)
-    reasons = [key for key in _PARK_LANES if key in request.model_fields_set]
+    reasons = [key for key in _PARK_REASONS if key in request.model_fields_set]
     if len(reasons) != 1:
         return 400, _BAD_PARK
     if read is None or edit is None:
         return 404, {"error": "this board does not edit tasks"}
     if (agent := _held(feed, task)) is None:
         return _not_held(feed, task)
-    if agent["state"] != _IN_PROGRESS:
+    if agent["state"] != feed.roles.working:
         return 409, {"error": f"only an In Progress task can be parked: {task} is {agent['state']}"}
     reason = reasons[0]
-    column, value = _PARK_LANES[reason], getattr(request, reason)
+    column, value = _park_lane(feed, reason), getattr(request, reason)
+    if column is None:
+        return 409, {"error": f"this board's machine has no lane to park {task} in for {reason}"}
     if (refused := _move_refusal(agent, task, column, who)) is not None:
         return refused
     plans = {
@@ -604,7 +607,10 @@ def review_task(
         return 404, {"error": "this board does not edit tasks"}
     if (agent := _held(feed, task)) is None:
         return _not_held(feed, task)
-    if (refused := _move_refusal(agent, task, "review", who)) is not None:
+    review = feed.roles.review
+    if review is None:
+        return 409, {"error": f"this board's machine has no lane to move {task} to for review"}
+    if (refused := _move_refusal(agent, task, review, who)) is not None:
         return refused
 
     def plan(current: dict[str, Any]) -> dict[str, Any]:
@@ -614,7 +620,7 @@ def review_task(
             **({"finalSummary": summary.strip()} if summary.strip() else {}),
         }
 
-    return _lifecycle_edit(feed, task, "review", who, comment, read, edit, plan)
+    return _lifecycle_edit(feed, task, review, who, comment, read, edit, plan)
 
 
 def task_record(feed: BoardFeed, read: TaskReader | None, task: str) -> tuple[int, dict[str, Any]]:
@@ -1097,10 +1103,11 @@ def start_task(
             return 409, {"error": chosen.reason or f"{harness} cannot start a session"}
     if (agent := _held(feed, task)) is None:
         return _not_held(feed, task)
-    if agent["state"] not in _STARTABLE:
-        return 409, {
-            "error": f"{task} is in {agent['state']}: a session starts only a ready, waiting or needs_attention task"
-        }
+    startable = feed.roles.startable
+    if agent["state"] not in startable:
+        listed = [state for state in feed.roles.roles if state in startable]
+        names = " or ".join(filter(None, [", ".join(listed[:-1]), *listed[-1:]]))
+        return 409, {"error": f"{task} is in {agent['state']}: a session starts only a {names} task"}
     at = clock()
     if profile != agent["model"] and not (written := assign(task, profile, **named)).ok:
         return 409, {"error": written.output, "skill": written.skill}

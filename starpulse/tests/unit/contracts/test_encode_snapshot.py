@@ -3,11 +3,11 @@
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.server.encoding import encode, encode_snapshot, slim_snapshot
-from starpulse.tests.machines import MACHINES
+from starpulse.tests.machines import MACHINES, ROLES
 
 
 def _feed(*tasks: tuple[str, str]) -> BoardFeed:
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     for task_id, lane in tasks:
         feed.put(task(task_id, lane, description=f"About {task_id}"))
     return feed

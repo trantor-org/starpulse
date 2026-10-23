@@ -23,14 +23,14 @@ from starpulse._internal.server import server as server_module
 from starpulse._internal.server.page_server import PageServer
 from starpulse.contracts.adapters import Move
 from starpulse.tests.fake_board import bare_board
-from starpulse.tests.machines import MACHINES
+from starpulse.tests.machines import MACHINES, ROLES
 
 RUN_SAFE = frozenset({"dagu/whole-repo-gate"})
 
 
 @pytest.fixture
 def server(tmp_path: Path) -> Iterator[PageServer]:
-    with _serve(tmp_path, BoardFeed(machines=MACHINES)) as server:
+    with _serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES)) as server:
         yield server
 
 
@@ -100,7 +100,7 @@ def test_a_script_is_text_javascript_on_a_host_whose_mime_table_says_otherwise(
 
 
 def test_the_snapshot_endpoint_is_the_document_the_event_stream_connects_with(tmp_path: Path) -> None:
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.put(task("PROJ-1", "To Do", milestone="m-76"))
     with _serve(tmp_path, feed) as server:
         with urllib.request.urlopen(_url(server, "/api/snapshot"), timeout=5) as resp:
@@ -137,7 +137,7 @@ def _machine_fields(task: str) -> dict:
 
 
 def test_the_event_stream_sends_a_snapshot_then_a_delta_per_change(tmp_path: Path) -> None:
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.put(task("PROJ-1", "To Do"))
     with _serve(tmp_path, feed) as server:
         with urllib.request.urlopen(_url(server, "/api/events"), timeout=5) as resp:
@@ -408,7 +408,7 @@ def test_a_start_posted_to_the_server_saves_the_assignee_starts_the_session_and_
         started.append((task, harness, mode))
         return "https://claude.ai/code/session_01"
 
-    feed = BoardFeed()
+    feed = BoardFeed(roles=ROLES)
     feed.put(task("PROJ-3", "Ready"))
     body = json.dumps({"task": "PROJ-3", "profile": "@agent-deep-high", "harness": "claude"}).encode()
     with _serve(tmp_path, feed, bare_board(assign=assign), start_session=start_session) as server:

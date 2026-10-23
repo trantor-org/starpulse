@@ -49,8 +49,6 @@ from starpulse.contracts.adapters import StartFailedError
 
 logger = logging.getLogger(__name__)
 
-IN_PROGRESS = "in_progress"
-NEEDS_ATTENTION = "needs_attention"
 SESSION_ENDED = "session-ended"
 HELD_KEY = "autopilot.held"
 PAUSES_KEY = "autopilot.harness_pauses"
@@ -301,7 +299,7 @@ class Loop:
         for task, run in list(self._running.items()):
             agent = self._feed.task(task)
             state = agent["state"] if agent else None
-            if state not in (self._lane, IN_PROGRESS):
+            if state not in (self._lane, self._feed.roles.working):
                 self._close(task, run, state or "closed", now)
                 continue
             seen = self._feed.machine_task(HARNESS.name, task)
@@ -337,7 +335,7 @@ class Loop:
                 f"{self._policy.idle_minutes:g}) with the task still open. It is not started again."
             )
             if (written := self._settle(task, reason)).ok:
-                self._close(task, run, NEEDS_ATTENTION, now)
+                self._close(task, run, self._feed.roles.attention or "settled", now)
             else:
                 logger.warning("StarPulse autopilot: cannot settle %s: %s", task, written.output)
 
@@ -495,7 +493,7 @@ class Loop:
         kept = set()
         for task in self._held:
             agent = self._feed.task(task)
-            if agent is not None and agent["state"] in (self._lane, IN_PROGRESS):
+            if agent is not None and agent["state"] in (self._lane, self._feed.roles.working):
                 kept.add(task)
         released = self._held - kept
         if not released:

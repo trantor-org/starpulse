@@ -8,7 +8,7 @@ from pathlib import Path
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import serve, url
 from starpulse._internal.server.page_server import PageServer
-from starpulse.tests.machines import MACHINES
+from starpulse.tests.machines import MACHINES, ROLES
 
 
 def _metrics(server: PageServer) -> list[str]:
@@ -26,7 +26,7 @@ def _build_event_id(server: PageServer) -> str:
 
 
 def test_metrics_lists_the_build_id_the_build_event_names(tmp_path: Path) -> None:
-    with serve(tmp_path, BoardFeed(machines=MACHINES)) as server:
+    with serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES)) as server:
         build = _build_event_id(server)
         lines = _metrics(server)
 
@@ -35,7 +35,7 @@ def test_metrics_lists_the_build_id_the_build_event_names(tmp_path: Path) -> Non
 
 
 def test_metrics_has_no_build_series_while_static_holds_no_build(tmp_path: Path) -> None:
-    with serve(tmp_path, BoardFeed(machines=MACHINES)) as server:
+    with serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES)) as server:
         (tmp_path / "static" / "index.html").unlink()
         lines = _metrics(server)
 
@@ -43,7 +43,7 @@ def test_metrics_has_no_build_series_while_static_holds_no_build(tmp_path: Path)
 
 
 def test_metrics_times_the_snapshot_builds(tmp_path: Path) -> None:
-    with serve(tmp_path, BoardFeed(machines=MACHINES)) as server:
+    with serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES)) as server:
         _build_event_id(server)  # a connect makes the cache build its first snapshot
         lines = _metrics(server)
 

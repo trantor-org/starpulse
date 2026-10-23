@@ -11,6 +11,7 @@ from sqlalchemy import text
 
 from starpulse._internal.config.config import CommitKeys
 from starpulse._internal.eventlog.history import HistoryStore
+from starpulse.tests.machines import ROLES
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.feed.machine_tasks import MachineTasks
 from starpulse.contracts.adapters import BoardTask, MachineEvent, TaskKeys
@@ -25,7 +26,7 @@ def _agents(feed: BoardFeed) -> list[dict]:
 
 
 def test_an_unsubscribed_page_gets_no_more_deltas() -> None:
-    feed = BoardFeed()
+    feed = BoardFeed(roles=ROLES)
     _, deltas = feed.subscribe()
 
     feed.unsubscribe(deltas)
@@ -35,7 +36,7 @@ def test_an_unsubscribed_page_gets_no_more_deltas() -> None:
 
 
 def test_an_instances_runs_arrive_as_a_delta_only_when_they_change() -> None:
-    feed = BoardFeed()
+    feed = BoardFeed(roles=ROLES)
     _, deltas = feed.subscribe()
 
     feed.set_dags("ci", [{"name": "d"}], None)
@@ -54,7 +55,7 @@ POOL = {"name": "deliver", "cap": 32, "running": 2, "queued": 1}
 
 
 def test_pools_are_drawn_under_the_instance_that_reported_them_and_so_is_the_pool_a_dag_names() -> None:
-    feed = BoardFeed()
+    feed = BoardFeed(roles=ROLES)
     _, deltas = feed.subscribe()
 
     feed.set_dags("prod", [{"name": "a", "pool": "deliver"}, {"name": "b", "pool": ""}, {"name": "c"}], None, [POOL])
@@ -71,7 +72,7 @@ def test_pools_are_drawn_under_the_instance_that_reported_them_and_so_is_the_poo
 
 
 def test_an_instance_that_reports_no_pools_has_none_drawn() -> None:
-    feed = BoardFeed()
+    feed = BoardFeed(roles=ROLES)
 
     feed.set_dags("ci", [{"name": "d"}], None)
 
@@ -80,7 +81,7 @@ def test_an_instance_that_reports_no_pools_has_none_drawn() -> None:
 
 
 def test_pools_stay_until_an_instance_reports_others_and_a_read_error_keeps_them() -> None:
-    feed = BoardFeed()
+    feed = BoardFeed(roles=ROLES)
     feed.set_dags("ci", [{"name": "d"}], None, [POOL])
 
     feed.set_dags("ci", [{"name": "d"}], None)  # nothing said about pools: they stay
@@ -92,7 +93,7 @@ def test_pools_stay_until_an_instance_reports_others_and_a_read_error_keeps_them
 
 
 def test_two_instances_draw_both_sets_each_workflow_prefixed_with_its_instance() -> None:
-    feed = BoardFeed()
+    feed = BoardFeed(roles=ROLES)
     feed.set_dags("prod", [{"name": "nightly"}, {"name": "backup"}], None)
     feed.set_dags("staging", [{"name": "etl"}], None)
 
@@ -100,7 +101,7 @@ def test_two_instances_draw_both_sets_each_workflow_prefixed_with_its_instance()
 
 
 def test_the_same_workflow_name_on_two_instances_is_two_distinct_workflows() -> None:
-    feed = BoardFeed()
+    feed = BoardFeed(roles=ROLES)
     feed.set_dags("prod", [{"name": "nightly", "status": "failed"}], None)
     feed.set_dags("staging", [{"name": "nightly", "status": "succeeded"}], None)
 
@@ -111,7 +112,7 @@ def test_the_same_workflow_name_on_two_instances_is_two_distinct_workflows() -> 
 
 
 def test_one_instance_failing_keeps_the_other_s_runs_and_names_the_failing_one() -> None:
-    feed = BoardFeed()
+    feed = BoardFeed(roles=ROLES)
     feed.set_dags("prod", [{"name": "nightly"}], None)
     feed.set_dags("staging", [{"name": "etl"}], None)
 
@@ -123,7 +124,7 @@ def test_one_instance_failing_keeps_the_other_s_runs_and_names_the_failing_one()
 
 
 def test_a_recovered_instance_clears_its_error_and_two_failures_are_both_named() -> None:
-    feed = BoardFeed()
+    feed = BoardFeed(roles=ROLES)
     feed.set_dags("prod", None, "refused")
     feed.set_dags("staging", None, "timed out")
     assert feed.snapshot()["error"] == "prod: refused; staging: timed out"
@@ -134,7 +135,7 @@ def test_a_recovered_instance_clears_its_error_and_two_failures_are_both_named()
 
 
 def test_an_instances_sink_publishes_under_its_own_name() -> None:
-    feed = BoardFeed()
+    feed = BoardFeed(roles=ROLES)
 
     feed.runs("ci").set_dags([{"name": "d"}], None)
 
@@ -156,7 +157,7 @@ def test_the_domains_and_run_safe_the_feed_is_given_are_what_the_snapshot_declar
 
 
 def test_the_feed_is_not_ready_until_the_stream_is_read_to_the_id_it_was_told_to_expect() -> None:
-    feed = BoardFeed()
+    feed = BoardFeed(roles=ROLES)
     feed.expect("5-0")
 
     feed.seen("4-9")
@@ -166,7 +167,7 @@ def test_the_feed_is_not_ready_until_the_stream_is_read_to_the_id_it_was_told_to
 
 
 def test_a_feed_told_to_expect_an_empty_stream_is_ready() -> None:
-    feed = BoardFeed()
+    feed = BoardFeed(roles=ROLES)
 
     feed.expect("0-0")
 
@@ -175,7 +176,7 @@ def test_a_feed_told_to_expect_an_empty_stream_is_ready() -> None:
 
 def test_a_feed_builds_when_no_finished_task_files_exist(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
-    feed = BoardFeed()
+    feed = BoardFeed(roles=ROLES)
 
     feed.expect("0-0")
 
@@ -185,7 +186,7 @@ def test_a_feed_builds_when_no_finished_task_files_exist(tmp_path, monkeypatch: 
 
 
 def test_entry_positions_compare_by_number_not_by_text() -> None:
-    feed = BoardFeed()
+    feed = BoardFeed(roles=ROLES)
     feed.expect("10-0")
 
     feed.seen("9-0")
@@ -202,7 +203,7 @@ def test_a_feed_still_connecting_to_the_stream_says_so() -> None:
 
 
 def test_a_feed_given_no_source_says_it_is_reading_the_board() -> None:
-    feed = BoardFeed()
+    feed = BoardFeed(roles=ROLES)
 
     feed.await_stream()
 
@@ -253,7 +254,7 @@ _REPLAY_DELTAS = (
 
 
 def test_a_replay_resends_only_the_snapshot_not_delta_kinds() -> None:
-    feed = BoardFeed()
+    feed = BoardFeed(roles=ROLES)
     feed.expect("1-0")
     _, changes = feed.subscribe()
     for kind in _REPLAY_DELTAS:
@@ -268,7 +269,7 @@ def test_a_replay_resends_only_the_snapshot_not_delta_kinds() -> None:
 
 @pytest.mark.parametrize("last_id", ["1-0", "1"])
 def test_a_feed_that_has_read_nothing_is_not_ready_for_the_first_entry_of_a_stream(last_id: str) -> None:
-    feed = BoardFeed()
+    feed = BoardFeed(roles=ROLES)
 
     feed.expect(last_id)
 
@@ -301,6 +302,7 @@ def test_the_board_snapshot_has_the_shape_the_page_reads() -> None:
         "pools",
         "pulls",
         "reading",
+        "roles",
         "settled",
     ]
     assert body["graphs"] == [*FLOWS, "runs"]
@@ -400,7 +402,7 @@ def test_a_board_task_an_adapter_wrote_is_an_agent_in_its_lane() -> None:
 
 
 def test_a_task_that_changed_lane_carries_the_lane_it_left_until_it_changes_again() -> None:
-    feed = BoardFeed()
+    feed = BoardFeed(roles=ROLES)
     waiting = BoardTask(id="PROJ-1", team="demo", title="t", lane="waiting")
     ready = BoardTask(id="PROJ-1", team="demo", title="t", lane="ready")
 
@@ -419,7 +421,7 @@ def test_a_task_that_changed_lane_carries_the_lane_it_left_until_it_changes_agai
 
 
 def test_a_settled_task_republished_unchanged_is_no_delta_and_a_reopened_one_is_no_longer_settled() -> None:
-    feed = BoardFeed()
+    feed = BoardFeed(roles=ROLES)
     done = BoardTask(id="PROJ-1", team="demo", title="t", lane="done", settled="completed")
     feed.put(done)
     _, changes = feed.subscribe()
@@ -491,7 +493,7 @@ def test_a_history_that_cannot_be_read_dates_a_replayed_lane_by_the_clock_and_st
 
 def test_a_task_carries_when_it_was_created_and_a_settled_one_when_as_whom_and_in_which_milestone_it_settled() -> None:
     # A settled task keeps its labels too: an analytic that asks what a finished task was for reads them here.
-    feed = BoardFeed()
+    feed = BoardFeed(roles=ROLES)
     feed.put(BoardTask(id="PROJ-1", team="demo", title="open one", lane="ready", created_at=100.0))
     _, changes = feed.subscribe()
 
@@ -525,7 +527,7 @@ def test_a_task_carries_when_it_was_created_and_a_settled_one_when_as_whom_and_i
 
 
 def test_a_retracted_task_leaves_the_board_and_publishes_once() -> None:
-    feed = BoardFeed()
+    feed = BoardFeed(roles=ROLES)
     feed.put(BoardTask(id="task-1", team="demo", title="T", lane="to_do"))
     _, events = feed.subscribe()
 
@@ -656,7 +658,7 @@ def test_the_workflow_listing_the_page_draws_leaves_the_recent_runs_to_the_ledge
 
 
 def test_a_feed_that_ties_no_workflow_to_an_event_has_no_ledgers() -> None:
-    feed = BoardFeed()
+    feed = BoardFeed(roles=ROLES)
     feed.set_pulls({"TASK-1": [MERGED_PR]})
 
     assert feed.ledger_rows("MERGED", None, 20) is None
@@ -785,7 +787,7 @@ def test_the_ledger_is_built_while_page_requests_still_take_the_board() -> None:
 
 
 def test_a_task_lookup_does_not_wait_for_the_board_lock() -> None:
-    feed = BoardFeed()
+    feed = BoardFeed(roles=ROLES)
     feed.put(BoardTask(id="PROJ-1", team="demo", title="t", lane="to_do"))
     answered = []
 
@@ -1101,13 +1103,13 @@ def test_a_pinned_merge_older_than_the_loaded_page_still_rides_the_snapshot_and_
 def test_a_lane_change_is_recorded_once_and_a_replay_of_its_event_id_adds_no_row(tmp_path) -> None:
     store = HistoryStore(f"sqlite:///{tmp_path / 'history.db'}", {})
     times = iter([100.0, 200.0, 300.0])
-    feed = BoardFeed(clock=lambda: next(times))
+    feed = BoardFeed(clock=lambda: next(times), roles=ROLES)
     feed.record_lanes(store)
 
     feed.put(BoardTask(id="PROJ-1", team="demo", title="t", lane="ready"))
     feed.put(BoardTask(id="PROJ-1", team="demo", title="t", lane="ready"))  # an hourly reconcile is no change
     feed.put(BoardTask(id="PROJ-1", team="demo", title="t", lane="in_progress"))
-    replay = BoardFeed(clock=iter([100.0, 200.0]).__next__)  # a restart replays the same changes with the same dates
+    replay = BoardFeed(clock=iter([100.0, 200.0]).__next__, roles=ROLES)  # a restart replays the same changes with the same dates
     replay.record_lanes(store)
     replay.put(BoardTask(id="PROJ-1", team="demo", title="t", lane="ready"))
     replay.put(BoardTask(id="PROJ-1", team="demo", title="t", lane="in_progress"))
@@ -1134,7 +1136,7 @@ def test_a_history_that_cannot_record_a_lane_change_still_places_the_task() -> N
 
 
 def test_the_open_tasks_and_a_machines_tasks_can_be_read_without_a_snapshot() -> None:
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.put(BoardTask(id="PROJ-1", team="demo", title="t", lane="review", labels=["size-3"]))
     feed.put(BoardTask(id="PROJ-2", team="demo", title="t", lane="to_do"))
     MachineTasks(feed).put(MachineEvent(machine="in-progress", event="WORKTREE_READY", task="PROJ-1", time=time.time()))
@@ -1149,7 +1151,7 @@ def test_the_open_tasks_and_a_machines_tasks_can_be_read_without_a_snapshot() ->
 
 
 def test_a_machines_tasks_leave_out_one_past_the_window_as_the_snapshot_does() -> None:
-    feed = BoardFeed(machines=MACHINES, window_s=3600)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES, window_s=3600)
     machine_tasks = MachineTasks(feed)
     now = time.time()
     machine_tasks.put(MachineEvent(machine="in-progress", event="WORKTREE_READY", task="PROJ-1", time=now - 7200))
@@ -1159,7 +1161,7 @@ def test_a_machines_tasks_leave_out_one_past_the_window_as_the_snapshot_does() -
 
 
 def test_every_task_open_or_settled_is_named_by_its_title_and_labels() -> None:
-    feed = BoardFeed()
+    feed = BoardFeed(roles=ROLES)
     feed.put(BoardTask(id="PROJ-1", team="demo", title="open one", lane="ready", labels=["a"]))
     feed.put(
         BoardTask(id="PROJ-2", team="demo", title="done one", lane="done", labels=["validation"], settled="completed")
@@ -1247,7 +1249,7 @@ def test_a_task_card_carries_the_dagu_runs_its_dag_run_ids_name() -> None:
         "startedAt": "t",
     }
     other = {"runId": "r1", "task": None, "url": "http://dagu/dag-runs/w/r1", "status": "succeeded", "startedAt": "t"}
-    feed = BoardFeed()
+    feed = BoardFeed(roles=ROLES)
     feed.put(BoardTask(id="TASK-7", team="demo", title="t", lane="in_progress"))
     _, deltas = feed.subscribe()
 

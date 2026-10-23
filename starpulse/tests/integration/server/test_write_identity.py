@@ -16,7 +16,7 @@ from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import serve, task, url
 from starpulse.contracts import LaneEvent
 from starpulse.contracts.adapters import Move
-from starpulse.tests.machines import MACHINES
+from starpulse.tests.machines import MACHINES, ROLES
 from starpulse.tests.unit.board.test_native import native_root, write_task
 
 WHO = {"session": "9c56ca8b", "harness": "cursor"}
@@ -31,7 +31,7 @@ def _served(tmp_path: Path) -> Iterator[tuple[str, BoardFeed, EventLog]]:
         write_task(tmp_path, key, "In Progress")
     built = native.board({}, tmp_path)
     log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
-    feed = BoardFeed(machines=MACHINES)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.record_lanes(HistoryStore(f"sqlite:///{tmp_path / 'events.sqlite'}", MACHINES), log)
     for key in keys:
         feed.put(task(key, "In Progress", moves={"done": Move(allowed=True)}))

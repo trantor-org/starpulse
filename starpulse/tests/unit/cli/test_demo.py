@@ -10,6 +10,7 @@ import jsonschema
 import pytest
 
 from starpulse._internal.cli.demo import (
+    SEED_ROLES,
     STATIC,
     TITLES,
     _iso,
@@ -65,6 +66,7 @@ def _live() -> dict:
         "settled": {"PROJ-2100": {"state": "completed", "at": None, "created": None, "title": SECRET, "model": ""}},
         "error": "ci: down",
         "now": 1.0,
+        "roles": SEED_ROLES.wire(),
     }
 
 
@@ -1074,6 +1076,7 @@ PASSED_THROUGH = {
     "mergeStrip",
     "capabilities",
     "reading",
+    "roles",
     "now",
 }
 

@@ -210,7 +210,7 @@ from starpulse._internal.pulls.pull_refresh import PullRefresh
 from starpulse._internal.pulls.pull_requests import PullRequests
 from starpulse._internal.pulls.pull_store import PullSync
 from starpulse._internal.pulls.task_actor import TaskActor, moves_of
-from starpulse._internal.pulls.unblock import READY, UNBLOCK_S, Unblocker
+from starpulse._internal.pulls.unblock import UNBLOCK_S, Unblocker
 from starpulse._internal.runs import opt_in
 from starpulse._internal.runs import projection as runs_projection
 from starpulse._internal.runs.cloudevents import CloudEventsIngest
@@ -488,7 +488,6 @@ def start_delivery(
     after each projection. Raises `ValueError` naming a table the board cannot serve.
     """
     from starpulse._internal.ci.ci_trail import CiTrail  # noqa: PLC0415 - the database stack loads when a store does
-    from starpulse._internal.feed.board_feed import WAITING  # noqa: PLC0415 - the database stack loads when a store does
 
     # without the GitHub CLI there is no source, and a task simply carries no PR state; a config can turn the store off
     release = config.release
@@ -527,8 +526,7 @@ def start_delivery(
         keep_beating(log, running, stop)
         threading.Thread(target=keep_polling, args=(sync, stop, running), name="pull-store", daemon=True).start()
     if config.release is not None:
-        lanes = {state["id"] for state in feed.machines["board"]["states"]}
-        if board.edit is None or not {WAITING, READY} <= lanes:
+        if board.edit is None or not (feed.roles.waiting and feed.roles.ready):
             raise ValueError("[release] needs a board that edits tasks and draws waiting and ready lanes")
         if actor is None:  # the actor merges and unblocks on the facts, so the polling pass would only repeat it
             unblocker = Unblocker(feed, pulls, board.edit, config.repos, config.release.settle, pins, live)

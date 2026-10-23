@@ -15,7 +15,7 @@ from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.harnesses.harness import HARNESS_MACHINES
 from starpulse._internal.server.server import autopilot_remote
-from starpulse.tests.machines import MACHINES
+from starpulse.tests.machines import MACHINES, ROLES
 
 DEADLINE_S = 5.0
 STATUS = {
@@ -47,7 +47,7 @@ def test_remote_settings_take_effect_in_the_store_and_over_the_workers_last_stat
     log: EventLog, tmp_path: Path
 ) -> None:
     remote = Remote(log, tmp_path)
-    publisher(log, BoardFeed(machines={**MACHINES, **HARNESS_MACHINES}))("autopilot", STATUS)
+    publisher(log, BoardFeed(roles=ROLES, machines={**MACHINES, **HARNESS_MACHINES}))("autopilot", STATUS)
 
     remote.set_enabled(True)
     remote.set_harness("cursor")
@@ -78,8 +78,8 @@ def test_a_change_through_remote_wakes_the_worker(log: EventLog, tmp_path: Path)
 
 
 def test_the_workers_status_reaches_the_serving_feed_as_an_autopilot_event(log: EventLog) -> None:
-    worker_feed = BoardFeed(machines={**MACHINES, **HARNESS_MACHINES})
-    serving = BoardFeed(machines={**MACHINES, **HARNESS_MACHINES})
+    worker_feed = BoardFeed(roles=ROLES, machines={**MACHINES, **HARNESS_MACHINES})
+    serving = BoardFeed(roles=ROLES, machines={**MACHINES, **HARNESS_MACHINES})
     stop = threading.Event()
     follow_status(log, serving, stop)
     _, changes = serving.subscribe()
@@ -99,7 +99,7 @@ def _next_autopilot(changes: queue.Queue) -> tuple[str, dict]:
 
 
 def test_a_served_autopilot_leaves_no_status_thread_once_its_stop_is_set(log: EventLog, tmp_path: Path) -> None:
-    feed = BoardFeed(machines={**MACHINES, **HARNESS_MACHINES})
+    feed = BoardFeed(roles=ROLES, machines={**MACHINES, **HARNESS_MACHINES})
     stop = threading.Event()
     (tmp_path / "starpulse.toml").write_text("")
     autopilot_remote(load(tmp_path / "starpulse.toml"), tmp_path, feed, log, stop)
