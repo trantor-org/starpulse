@@ -17,9 +17,16 @@ from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.harnesses.harness import HARNESS_MACHINES
 from starpulse._internal.machines.snapshot import qualifier
 from starpulse._internal.pulls.task_actor import ACTOR
+from starpulse._internal.readmodel.read_model import ReadModel
 
 
-def assemble(config: Config, base: Path, window_s: float | None, run_safe: Collection[str]) -> tuple[Board, BoardFeed]:
+def assemble(
+    config: Config,
+    base: Path,
+    window_s: float | None,
+    run_safe: Collection[str],
+    read_model: ReadModel | None = None,
+) -> tuple[Board, BoardFeed]:
     """The board the config's `[board]` adapter builds, and the feed that draws it; `base` is the config's directory.
 
     A task whose latest move on a machine is older than `window_s` seconds (None: never) is not drawn there, and Run
@@ -55,6 +62,7 @@ def assemble(config: Config, base: Path, window_s: float | None, run_safe: Colle
         },
         hint=found_backlog(config, base),
         commit={instance.name: instance.commit for instance in config.runs if instance.commit},
+        read_model=read_model,
     )
     return board, feed
 

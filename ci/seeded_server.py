@@ -37,10 +37,13 @@ from starpulse._internal.eventlog.history import HistoryStore
 from starpulse._internal.eventlog.lane_import import Change
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.feed.history_window import HistoryWindow
+from starpulse._internal.readmodel.projector import Projector
+from starpulse._internal.readmodel.read_model import ReadModel
 from starpulse._internal.server.asgi_app import page_app
 from starpulse._internal.server.assembly import assemble
 from starpulse._internal.server.page_server import PageServer
 from starpulse._internal.server.services import Services
+from starpulse._internal.store import EventStore, NewEvent
 from starpulse.contracts.adapters import BoardTask
 
 import starpulse
@@ -52,6 +55,8 @@ DAY = 86400.0
 OPEN = {"new": 4, "ready": 20, "waiting": 12, "in_progress": 18, "review": 16, "needs_attention": 4}
 #: How many tasks are in Done, which the level reads as ended runs.
 DONE = 90
+READ_MODEL_TASKS = 20_000  # D3's seeded board: this many Tasks, the first READ_MODEL_ARCHIVED of them archived
+READ_MODEL_ARCHIVED = 18_000
 #: How many open milestones and docs the native board holds, about half of what the live board keeps open: a doc read
 #: parses every doc file (about 0.4 ms each), so this leaves the route a margin under the budget on a loaded runner.
 MILESTONES = 16
@@ -153,6 +158,28 @@ def seed(feed: BoardFeed, store: HistoryStore, now: float) -> tuple[dict[str, di
     return records, placed
 
 
+def seed_read_model(directory: Path, total: int, archived: int) -> ReadModel:
+    """`total` Tasks in an event store under `directory`, the first `archived` of them archived, projected into the
+    read model the page then draws: the board of D3's 20,000-Task latency run, which holds none of them in memory."""
+    engine = EventLog(f"sqlite:///{directory / 'events.sqlite'}").engine
+    store = EventStore(engine)
+    open_lanes = list(OPEN)
+    for number in range(1, total + 1):
+        old = number <= archived
+        payload = {
+            "title": f"Task {number} does a piece of the work",
+            "description": "A paragraph of the kind of text a Task carries. " * 6,
+            "state": "done" if old else open_lanes[number % len(open_lanes)],
+            "labels": ["kind-execute", "size-3"],
+        }
+        events = [NewEvent(type="TaskCreated", payload=payload, actor="demo", writer="operator")]
+        if old:
+            events.append(NewEvent(type="Archived", payload={}, actor="demo", writer="operator"))
+        store.append("task", f"TASK-{number}", 0, events)
+    Projector(engine, store).catch_up()
+    return ReadModel(engine)
+
+
 def native_board(directory: Path) -> Board:
     """A native board under `directory` holding `MILESTONES` milestones and `DOCS` docs, filed through its own writers
     so the files are the ones a real board keeps and the routes read them from disk."""
@@ -175,7 +202,7 @@ def native_board(directory: Path) -> Board:
 
 def scheduler(directory: Path, log: EventLog, feed: BoardFeed, policy: Scheduler) -> Runtime:
     """The scheduler `GET /api/scheduler` reads, with its loop built over a starter that starts nothing, one capacity
-    sample taken and no thread running: the route reads the last sample and the loop's next pick, as a served one does."""
+    sample taken and no thread running: the route reads the status that sample pushed, as a served one does."""
     runtime = build_scheduler(
         policy,
         directory,
@@ -186,6 +213,7 @@ def scheduler(directory: Path, log: EventLog, feed: BoardFeed, policy: Scheduler
         settle=lambda task, reason: Written(True, ""),
         lane=policy.eligible_lane(next(s["id"] for s in feed.machines["board"]["states"] if s.get("initial"))),
     )
+    runtime.wire_status(feed.publish)
     runtime.sampler.sample()
     return runtime
 
@@ -196,16 +224,39 @@ def _without_sync(connection: object, _record: object) -> None:
         connection.execute("PRAGMA synchronous=OFF")
 
 
-def build(port: int, directory: Path, *, now: float | None = None) -> tuple[PageServer, BoardFeed, list[BoardTask]]:
-    """The seeded server bound to `port` (0: any free one), the feed it draws and the tasks seeded on it."""
+def row_record(model: ReadModel, task: str) -> dict | None:
+    """The modal's record of `task` as the read model holds it; None when it has none."""
+    row = model.task(task)
+    if row is None:
+        return None
+    return {
+        "title": row["title"],
+        "type": row["type"],
+        "status": row["state"],
+        "priority": row["priority"],
+        "labels": row["labels"],
+        "milestone": row["milestone"],
+        "dependencies": row["dependencies"],
+        "description": row["description"],
+    }
+
+
+def build(
+    port: int, directory: Path, *, now: float | None = None, read_model: tuple[int, int] | None = None
+) -> tuple[PageServer, BoardFeed, list[BoardTask]]:
+    """The seeded server bound to `port` (0: any free one), the feed it draws and the tasks seeded on it.
+
+    `read_model` is (Tasks, archived): the feed then draws that board from the read model and places no task itself.
+    """
     directory.mkdir(parents=True, exist_ok=True)
     if not event.contains(Engine, "connect", _without_sync):
         event.listen(Engine, "connect", _without_sync)
     config = load(PREVIEW)
-    _, feed = assemble(config, PREVIEW.parent, None, [])
+    model = seed_read_model(directory, *read_model) if read_model else None
+    _, feed = assemble(config, PREVIEW.parent, None, [], model)
     log = EventLog(f"sqlite:///{directory / 'history.sqlite'}")
     store = HistoryStore(log.url, feed.machines)
-    records, tasks = seed(feed, store, time.time() if now is None else now)
+    records, tasks = ({}, []) if model else seed(feed, store, time.time() if now is None else now)
     window = HistoryWindow(feed, 24 * 7, log, directory / "starpulse-settings.json")
     # The preview reads its seeded task records and the native milestones and docs, and refuses every task write.
     board = replace(
@@ -217,7 +268,7 @@ def build(port: int, directory: Path, *, now: float | None = None) -> tuple[Page
         restore=None,
         complete=None,
         create=None,
-        read=lambda task: records.get(task),
+        read=(lambda task: row_record(model, task)) if model else (lambda task: records.get(task)),
     )
     services = Services(scheduler=scheduler(directory, log, feed, config.scheduler))
     app = page_app(feed, STATIC, store, window, board, services)
@@ -264,8 +315,13 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no cover — process
         type=float,
         help="moves a second of seeded tasks between In Progress and Review, sent to every stream until the server stops",
     )
+    parser.add_argument(
+        "--read-model",
+        action="store_true",
+        help=f"draw {READ_MODEL_TASKS:,} Tasks, {READ_MODEL_ARCHIVED:,} archived, from the read model instead of the feed",
+    )
     args = parser.parse_args(argv)
-    server, feed, tasks = build(args.port, args.dir)
+    server, feed, tasks = build(args.port, args.dir, read_model=(READ_MODEL_TASKS, READ_MODEL_ARCHIVED) if args.read_model else None)
     print(f"seeded StarPulse on :{server.server_port}", flush=True)
     stop, sent = threading.Event(), []
     feeder = threading.Thread(target=lambda: sent.append(replay(feed, tasks, args.replay_rate, stop.wait)), daemon=True)

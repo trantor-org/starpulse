@@ -41,6 +41,7 @@ tasks = Table(
     Index("ix_starpulse_tasks_live_state", "state", "id", sqlite_where=text("archived = 0")),
     Index("ix_starpulse_tasks_live_milestone", "milestone", sqlite_where=text("archived = 0")),
     Index("ix_starpulse_tasks_live_assignee", "assignee", sqlite_where=text("archived = 0")),
+    Index("ix_starpulse_tasks_archived_updated", "updated_at", sqlite_where=text("archived = 1")),
 )
 
 #: One row per Acceptance Criterion or Definition of Done item, numbered from 1 within its kind.

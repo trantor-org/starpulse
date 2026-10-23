@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import Select, column, exists, false, func, or_, select
+from sqlalchemy import Select, column, exists, false, func, or_, select, true
 
 from starpulse._internal.readmodel.tables import tasks
 
@@ -28,9 +28,13 @@ SUMMARY = (
 )
 
 
+#: What a card on the page draws that a delta summary leaves out.
+CARD = (*SUMMARY, tasks.c.dependencies)
+
+
 def snapshot(state: str | None = None) -> Select[Any]:
     """The unarchived Tasks, in id order, narrowed to `state` when given."""
-    query = select(*SUMMARY).where(tasks.c.archived == false()).order_by(tasks.c.id)
+    query = select(*CARD).where(tasks.c.archived == false()).order_by(tasks.c.id)
     return query if state is None else query.where(tasks.c.state == state)
 
 
@@ -61,3 +65,14 @@ def ready(state: str, done: str) -> Select[Any]:
 def since(seq: int, limit: int) -> Select[Any]:
     """The Tasks changed after stream position `seq`, archived ones included, oldest change first."""
     return select(*SUMMARY).where(tasks.c.seq > seq).order_by(tasks.c.seq).limit(limit)
+
+
+def archived(before: float | None, limit: int) -> Select[Any]:
+    """The archived Tasks changed before `before` (None: any time), newest first: one range of the archive index."""
+    query = select(*SUMMARY).where(tasks.c.archived == true()).order_by(tasks.c.updated_at.desc(), tasks.c.id)
+    return (query if before is None else query.where(tasks.c.updated_at < before)).limit(limit)
+
+
+def position() -> Select[Any]:
+    """The stream position of the newest change: one seek on the `seq` index."""
+    return select(func.max(tasks.c.seq))
