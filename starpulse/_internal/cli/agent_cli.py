@@ -131,7 +131,8 @@ from starpulse._internal.cli.agent_keys import (
 )
 from starpulse._internal.github_api import GitHubError, connect, repo_of
 from starpulse._internal.level.cells import cell_of
-from starpulse._internal.level.scores import PullFacts, merged_pulls, pull_facts, score_cells
+from starpulse._internal.level.scores import PullFacts, cell_task_scores, merged_pulls, pull_facts, score_cells
+from starpulse._internal.level.verdicts import cell_verdicts
 from starpulse._internal.config.config import Config, ConfigError, load
 
 #: What each exit code means, as the manifest says it.
@@ -379,7 +380,8 @@ def _cells(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, An
 def _scores(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """The score of each kind x size cell and profile over `--hours` (`level.scores`): the completed slices of
     `/api/analytics/sessions`, the labels of the snapshot's settled tasks and, for each task's merged pull request in
-    `--repo`, the commits after it was ready and its time to merge from GitHub; refusals as `analytics transitions`."""
+    `--repo`, the commits after it was ready and its time to merge from GitHub; refusals as `analytics transitions`. `verdicts` judges each cell's other profiles against its busiest
+    (`level.verdicts`)."""
     window = _window_read(args, environ, "/api/analytics/sessions", ("now", "window_s", "slices"))
     settled = agent_wire.get_snapshot(agent_wire.server_url(args.server, environ))["settled"]
     tasks = {task: {"labels": found.get("labels", [])} for task, found in settled.items()}
@@ -395,7 +397,12 @@ def _scores(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, A
                 facts[task] = pull
     except GitHubError as exc:
         raise agent_wire.CliError("unavailable", str(exc)) from exc
-    return {"now": window["now"], "window_s": window["window_s"], "scores": score_cells(window["slices"], tasks, facts)}
+    return {
+        "now": window["now"],
+        "window_s": window["window_s"],
+        "scores": score_cells(window["slices"], tasks, facts),
+        "verdicts": cell_verdicts(cell_task_scores(window["slices"], tasks, facts)),
+    }
 
 
 def _graph(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:

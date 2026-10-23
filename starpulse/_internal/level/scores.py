@@ -23,7 +23,7 @@ from starpulse._internal.github_api import Transport, get
 from starpulse._internal.level.cells import cell_of
 from starpulse._internal.signals import CLAUDE_CODE
 
-__all__ = ["PullFacts", "merged_pulls", "pull_facts", "score_cells", "task_score"]
+__all__ = ["PullFacts", "cell_task_scores", "merged_pulls", "pull_facts", "score_cells", "task_score"]
 
 WEIGHTS = {"clean": 40, "prompts": 20, "commits_after_ready": 20, "rating": 15, "time_to_merge": 5}
 
@@ -56,13 +56,13 @@ def _profile(slice_: Mapping[str, Any]) -> str:
     return f"{models[0] if models else 'unknown'}-{efforts[0] if efforts else 'unknown'}"
 
 
-def score_cells(
+def cell_task_scores(
     slices: Iterable[Mapping[str, Any]],
     tasks: Mapping[str, Mapping[str, Any]],
     facts: Mapping[str, PullFacts],
-) -> list[dict[str, Any]]:
-    """One row per kind x size cell and profile of the completed Claude Code slices, `{kind, size, profile, n,
-    score}`, `score` the mean of the tasks' scores. `facts` maps a task to its merged pull request's facts."""
+) -> dict[tuple[str, int, str], list[float]]:
+    """The score of each completed Claude Code slice, by `(kind, size, profile)`. `facts` maps a task to its merged
+    pull request's facts."""
     scores: dict[tuple[str, int, str], list[float]] = defaultdict(list)
     for s in slices:
         cell = cell_of(tasks, s["task"])
@@ -71,9 +71,19 @@ def score_cells(
         score = task_score(_parts(s, facts.get(s["task"])))
         if score is not None:
             scores[*cell, _profile(s)].append(score)
+    return scores
+
+
+def score_cells(
+    slices: Iterable[Mapping[str, Any]],
+    tasks: Mapping[str, Mapping[str, Any]],
+    facts: Mapping[str, PullFacts],
+) -> list[dict[str, Any]]:
+    """One row per kind x size cell and profile of the completed Claude Code slices, `{kind, size, profile, n,
+    score}`, `score` the mean of the tasks' scores."""
     return [
         {"kind": kind, "size": size, "profile": profile, "n": len(held), "score": sum(held) / len(held)}
-        for (kind, size, profile), held in sorted(scores.items())
+        for (kind, size, profile), held in sorted(cell_task_scores(slices, tasks, facts).items())
     ]
 
 
