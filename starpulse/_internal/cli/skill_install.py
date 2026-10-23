@@ -2,14 +2,21 @@
 
 Each skill is a directory under `starpulse/skills`. An install writes `MARKER` beside a copy, holding the digest of what
 it wrote, so a later install can tell a copy the bundle has outgrown (`outdated`) from one someone edited (`modified`).
+
+A skill names its coupled phase machine with a `machine:` key in its front matter; the machine file sits in the skill
+directory, so the copy carries it and the plugin path finds it there too. An install refuses, before it writes
+anything, a named machine that is missing or a machine with a State that declares no role.
 """
 
 import hashlib
 import json
 import shutil
+from collections.abc import Callable
 from pathlib import Path
 
 import yaml
+
+from starpulse._internal.machines.machine_definition import Registry, load_machine, role_of
 
 SOURCE = Path(__file__).parents[2] / "skills"
 #: Each harness's documented discovery path, relative to a project or the home directory.
@@ -21,9 +28,43 @@ def names(source: Path = SOURCE) -> list[str]:
     return sorted(path.name for path in source.iterdir() if (path / "SKILL.md").is_file())
 
 
+def _front_matter(name: str, source: Path) -> dict:
+    return yaml.safe_load((source / name / "SKILL.md").read_text().split("---")[1])
+
+
 def description(name: str, source: Path = SOURCE) -> str:
-    front_matter = (source / name / "SKILL.md").read_text().split("---")[1]
-    return yaml.safe_load(front_matter)["description"]
+    return _front_matter(name, source)["description"]
+
+
+def machine_of(name: str, source: Path = SOURCE) -> str | None:
+    """The machine file the skill names beside it, or `None` when it names none."""
+    return _front_matter(name, source).get("machine")
+
+
+class _EveryNameRegistered(dict):
+    """Claims every guard and action name, so the check reads a machine's shape without the adapter's Python."""
+
+    def __contains__(self, name: object) -> bool:
+        return True
+
+    def __getitem__(self, name: str) -> Callable[..., None]:
+        return lambda *args, **kwargs: None
+
+
+def _check_machines(source: Path) -> None:
+    """Refuse the bundle when a skill names a missing machine or a machine has a State that declares no role."""
+    for name in names(source):
+        file = machine_of(name, source)
+        if file is None:
+            continue
+        path = source / name / file
+        if not path.is_file():
+            raise ValueError(f"{name} names machine {file}, which is missing")
+        registry = Registry(guards=_EveryNameRegistered(), actions=_EveryNameRegistered())
+        compiled = load_machine(path, registry)
+        for state in compiled.roles:
+            if role_of(compiled, state) is None:
+                raise ValueError(f"{path}: state {state} declares no role")
 
 
 def _digest(directory: Path) -> str:
@@ -54,9 +95,11 @@ def status(root: Path, harness: str, name: str, source: Path = SOURCE) -> str:
 def install(root: Path, harnesses: list[str], force: bool, source: Path = SOURCE) -> list[dict[str, str]]:
     """Copy every bundled skill under `root` for each harness; returns what each copy was before.
 
-    Raises `ValueError`, writing nothing, when a copy was modified since install and `force` is false.
+    Raises `ValueError`, writing nothing, when a skill's machine is missing or unsound, or when a copy was modified
+    since install and `force` is false.
     """
-    plan = [(h, n, status(root, h, n, source)) for h in harnesses for n in names(source)]
+    _check_machines(source)
+    plan =[(h, n, status(root, h, n, source)) for h in harnesses for n in names(source)]
     modified = [str(root / HARNESS_DIRS[h] / n) for h, n, was in plan if was == "modified"]
     if modified and not force:
         raise ValueError(f"modified since install: {', '.join(modified)}; rerun with --force to replace")

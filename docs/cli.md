@@ -248,9 +248,16 @@ to `~/.claude/skills` or `~/.agents/skills`. An install records what it wrote, s
 refused (exit 1) until you pass `--force`, while one the package has since updated is replaced; `skills list` reports
 which of the four each copy is.
 
+A skill that drives a phase machine names it with a `machine:` key in its front matter, and the machine file sits beside
+`SKILL.md` in the skill's directory. An install copies that file with the skill, so the copy carries its machine to the
+harness. Before it writes anything, an install refuses a skill whose named machine is missing, and a machine with a State
+that declares no `role`; a skill with no `machine:` key installs as before.
+
 Claude Code can load the same skills as a plugin instead of copies: the repository is a plugin marketplace
 (`.claude-plugin/`), so `/plugin marketplace add trantor-org/starpulse` then `/plugin install starpulse@starpulse`, or
-a `directory` marketplace pointing at a local checkout, serves them as `starpulse:<skill>`, read in place.
+a `directory` marketplace pointing at a local checkout, serves them as `starpulse:<skill>`, read in place. The plugin
+reads each skill's directory where it sits, so the machine beside `SKILL.md` is found at the same path with no install
+step.
 The `starpulse-board` mod ([trantor-org/starpulse-board](https://github.com/trantor-org/starpulse-board), `/plugin marketplace add trantor-org/starpulse-board`, then `/plugin install starpulse-board@starpulse-board`)
 runs `starpulse board --assignee <session id>` when a session starts, after each tool call and after each turn, so a
 task claimed mid-turn shows before the turn ends. It draws each task that session holds as one row above the prompt in
