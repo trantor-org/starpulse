@@ -33,7 +33,7 @@ def test_lane_history_imports_as_transitioned_events_and_replay_equals_the_file(
     engine.dispose()
 
 
-def test_a_lane_history_that_ends_elsewhere_than_the_file_is_imported_as_is_and_listed(tmp_path: Path) -> None:
+def test_a_gap_in_the_lane_history_is_imported_as_is_and_listed(tmp_path: Path) -> None:
     store, engine = _store(tmp_path)
 
     report = import_board(store, {"TASK-1": _RECORD}, _LANES[:2], [], RunStreams(store).record)
