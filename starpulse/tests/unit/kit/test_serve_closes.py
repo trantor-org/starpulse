@@ -5,6 +5,7 @@ sockets other tests left in a shared xdist worker would move the baseline.
 """
 
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -12,8 +13,8 @@ import time
 import urllib.request
 from pathlib import Path
 
-import pytest
-
+from starpulse._internal.eventlog.event_log import EventLog
+from starpulse._internal.eventlog.history import HistoryStore
 from starpulse._internal.kit.adapter_kit import serve, url
 
 
@@ -23,11 +24,17 @@ def _fds() -> int:
 
 def _check_twenty_serves(root: Path) -> None:
     def once(n: int) -> None:
-        with serve(root / str(n)) as server:
+        with serve(root / str(n), history=history) as server:
             urllib.request.urlopen(url(server, "/api/history-window")).close()
 
+    # the migration chain builds a store in ~0.5 s: build the settings store once and copy it into each serve's
+    # directory, and share one history store, since the count is of the socket, settings database and request worker
+    store = root / "migrated.sqlite"
+    EventLog(f"sqlite:///{store}").engine.dispose()
+    history = HistoryStore("sqlite://", {})
     for n in range(20):
         (root / str(n)).mkdir()
+        shutil.copyfile(store, root / str(n) / "settings.sqlite")
     once(0)  # warm one-time imports and pools
     time.sleep(0.2)
     fds, threads = _fds(), threading.active_count()
@@ -40,8 +47,6 @@ def _check_twenty_serves(root: Path) -> None:
     assert threading.active_count() <= threads
 
 
-# waits out a 5 s settle, so a loaded host takes it past the gate's bound
-@pytest.mark.slow
 def test_twenty_serves_leave_the_fd_and_thread_count_where_they_started(tmp_path: Path) -> None:
     run = subprocess.run([sys.executable, __file__, str(tmp_path)], capture_output=True, text=True, timeout=120)
     assert run.returncode == 0, run.stderr
