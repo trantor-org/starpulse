@@ -684,6 +684,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     store = history_store(config, base, feed.machines)
     feed.date_lanes(store.lane_path)
     feed.record_lanes(store)
+    feed.record_ratings(log)
     # `starpulse worker board` dates when each task's Start Criteria were met; this process rereads the dates it keeps.
     threading.Thread(
         target=feed.follow_criteria, args=(store, threading.Event()), name="criteria-follow", daemon=True

@@ -134,6 +134,7 @@ from starpulse._internal.board.seam import (
     Written,
 )
 from starpulse._internal.config.harnesses import Harnesses
+from starpulse._internal.eventlog import rating_events
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.feed.history_window import HistoryWindow
 from starpulse.contracts.adapters import Move, StartFailedError
@@ -159,6 +160,7 @@ from starpulse.contracts.api.dto.requests import (
     ParkRequest,
     RestoreRequest,
     RetiredImportRequest,
+    RatingRequest,
     RetireRequest,
     ReviewRequest,
     StartRequest,
@@ -733,6 +735,21 @@ def _unjudged(task: str, current: Mapping[str, Any], check: str) -> str | None:
 def _unnamed(request: VerdictRequest | MissRequest) -> bool:
     """Whether a verdict or miss request leaves its task or check blank."""
     return not (request.task.strip() and request.check.strip())
+
+
+@_write(RatingRequest, "Recording a rating")
+def record_rating(request: RatingRequest, feed: BoardFeed) -> tuple[int, dict[str, Any]]:
+    """Record `request`'s change of a task's pass/fail rating as one entry of the `task:ratings` stream, and answer the
+    task's rating now with its change count. A change the stream does not take is 503: the control shows
+    "Rating not saved.".
+    """
+    who = _who(request)
+    reason = (request.reason or "").strip()
+    fields = rating_events.change(request.task, request.verdict, reason, time.time(), *who)
+    rated = feed.rate(fields)
+    if rated is None:
+        return 503, {"error": "rating not saved"}
+    return 200, {"task": request.task, "verdict": request.verdict, "reason": rated["reason"], "changes": rated["changes"]}
 
 
 @_write(VerdictRequest, "Recording a verdict")

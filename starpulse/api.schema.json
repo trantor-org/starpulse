@@ -4248,6 +4248,125 @@
       "title": "QuietHours",
       "type": "object"
     },
+    "Rated": {
+      "additionalProperties": false,
+      "properties": {
+        "changes": {
+          "type": "integer"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "task": {
+          "type": "string"
+        },
+        "verdict": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "verdict",
+        "reason",
+        "changes"
+      ],
+      "title": "Rated",
+      "type": "object"
+    },
+    "Rating": {
+      "additionalProperties": false,
+      "description": "A task's latest pass/fail rating: its verdict, the reason it names (empty when none), when it was set (epoch\nseconds) and how many changes the task's rating has had.",
+      "properties": {
+        "at": {
+          "type": "number"
+        },
+        "changes": {
+          "type": "integer"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "verdict": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "verdict",
+        "reason",
+        "at",
+        "changes"
+      ],
+      "title": "Rating",
+      "type": "object"
+    },
+    "RatingRequest": {
+      "additionalProperties": false,
+      "description": "`POST /api/rating`: record one change of `task`'s pass/fail rating: `pass`, `fail` with an optional `reason`, or\n`cleared`. Every change is kept; the latest one is the task's rating.",
+      "properties": {
+        "actor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "harness": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "maxLength": 120,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "session": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "task": {
+          "type": "string"
+        },
+        "verdict": {
+          "enum": [
+            "pass",
+            "fail",
+            "cleared"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "verdict"
+      ],
+      "title": "RatingRequest",
+      "type": "object"
+    },
     "RawTask": {
       "additionalProperties": false,
       "description": "A Backlog task. On the board its state is its lane; on every other machine, the state its latest machine event left it in.",
@@ -6297,6 +6416,21 @@
           "default": null,
           "description": "Each open task's pull requests, by task id."
         },
+        "ratings": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/Rating"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Each rated task's latest pass/fail rating, by task id; a task never rated is absent."
+        },
         "reading": {
           "anyOf": [
             {
@@ -7602,6 +7736,9 @@
             "$ref": "#/$defs/Judged"
           },
           {
+            "$ref": "#/$defs/Rated"
+          },
+          {
             "$ref": "#/$defs/Restored"
           },
           {
@@ -7773,6 +7910,9 @@
           },
           {
             "$ref": "#/$defs/VerdictRequest"
+          },
+          {
+            "$ref": "#/$defs/RatingRequest"
           },
           {
             "$ref": "#/$defs/MissRequest"

@@ -69,6 +69,16 @@ class MachineStrip(_Api):
     entries: list[MachineEntry]
 
 
+class Rating(_Api):
+    """A task's latest pass/fail rating: its verdict, the reason it names (empty when none), when it was set (epoch
+    seconds) and how many changes the task's rating has had."""
+
+    verdict: str
+    reason: str
+    at: float
+    changes: int
+
+
 class Snapshot(_Api):
     graphs: list[str] = Field(description="Every lifecycle machine the server draws, and `runs`.")
     domains: list[Domain] | None = Field(default=None, description="The DAG domains.")
@@ -108,6 +118,9 @@ class Snapshot(_Api):
         default=None,
         description="The ids of the done tasks past 24 h that the board feed holds as a stub, left out of `flows`: "
         "the full view (`?view=full`) only, the page reads them from `/api/done` and `/api/task/<id>`.",
+    )
+    ratings: dict[str, Rating] | None = Field(
+        default=None, description="Each rated task's latest pass/fail rating, by task id; a task never rated is absent."
     )
     move_sets: dict[str, dict[str, Move]] | None = Field(
         default=None, description="Each distinct set of Board-column verdicts a task's `move_set` names, by key."

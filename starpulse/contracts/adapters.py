@@ -24,6 +24,7 @@ __all__ = [
     "BoardTask",
     "Dag",
     "LaneEvent",
+    "RatingEvent",
     "MachineEvent",
     "Move",
     "Pool",
@@ -351,12 +352,28 @@ class LaneEvent(_Contract):
     )
 
 
+class RatingEvent(_Contract):
+    """One change of a task's pass/fail rating; the `task:ratings` entry's fields. Every change is kept, and the latest
+    one for a task is its rating."""
+
+    task: str = Field(min_length=1, description="The task key whose rating changed.")
+    verdict: Literal["pass", "fail", "cleared"] = Field(description="The rating the change sets; `cleared` drops it.")
+    time: float = Field(ge=0, allow_inf_nan=False, description="When the change was made, in epoch seconds.")
+    reason: str = Field(default="", max_length=120, description="Why the task fails; empty when none was given.")
+    actor: str = Field(default="", description="Who made the change, as the write's actor names it; empty when none.")
+    session: str = Field(
+        default="", description="The harness session that made the change, as its write named it; empty when none."
+    )
+    harness: str = Field(default="", description="The harness of that session; empty when the write named none.")
+
+
 #: Each contract's model, by the name its checked-in schema file carries.
 CONTRACTS: dict[str, type[BaseModel]] = {
     "board": BoardTask,
     "machine-events": MachineEvent,
     "run-events": RunEvent,
     "lane-events": LaneEvent,
+    "rating-events": RatingEvent,
     "runs": Dag,
     "pools": Pool,
 }
@@ -367,6 +384,7 @@ EVENT_STREAMS: dict[str, str] = {
     "machine:events": "machine-events",
     "runs:events": "run-events",
     "board:lanes": "lane-events",
+    "task:ratings": "rating-events",
 }
 #: Each contract's JSON Schema, by the same names.
 SCHEMAS: dict[str, dict] = {name: model.model_json_schema() for name, model in CONTRACTS.items()}

@@ -90,5 +90,6 @@ def test_a_cold_done_task_is_done_to_a_dependent_and_a_verb_view_loads_its_full_
         "pause_reason": "",
         "prs": [],
         "moves": {},
+        "rating": None,
     }
     assert cold["description"] == "Long ago."

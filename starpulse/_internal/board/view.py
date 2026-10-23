@@ -108,6 +108,7 @@ def task_view(agent: dict[str, Any], snapshot: dict[str, Any], done: set[str] | 
         "pause_reason": agent.get("pause_reason", ""),
         "prs": [pulls.get(url, {"url": url}) for url in agent["prs"]],
         "moves": _agent_moves(agent),
+        "rating": snapshot.get("ratings", {}).get(agent["id"]),
     }
 
 

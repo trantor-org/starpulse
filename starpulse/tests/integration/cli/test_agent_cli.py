@@ -330,6 +330,7 @@ def _native_server(tmp_path: Path, *files: tuple[str, str]) -> Iterator[str]:
     for name, text in (("task-1 - Draw the board.md", TASK_FILE), *files):
         (root / "tasks" / name).write_text(text)
     feed = BoardFeed(roles=ROLES, machines=MACHINES)
+    feed.record_ratings(EventLog(f"sqlite:///{tmp_path / 'ratings.sqlite'}"))
     UpstreamBacklog(root, feed.put).scan()
     with _serve(tmp_path, feed, board) as server:
         yield _url(server, "")
@@ -562,6 +563,7 @@ def test_the_board_lists_each_column_with_its_tasks_dependencies_prs_and_moves(
             "in_progress": {"allowed": False, "reason": "claim it first", "skill": "starting-tasks"},
             "ready": {"allowed": True, "reason": "", "skill": ""},
         },
+        "rating": None,
     }
 
 
@@ -708,6 +710,7 @@ def test_task_show_reports_a_settled_task_by_where_it_settled(base: str, capsys:
         "prs": [],
         "moves": {},
         "description": "",
+        "rating": None,
     }
 
 
@@ -1338,6 +1341,7 @@ def test_the_manifest_describes_every_verb_and_each_of_its_arguments(capsys: pyt
         "task profile",
         "task archive",
         "task verdict",
+        "task rate",
         "task miss",
         "task restore",
         "task retire",
@@ -1922,6 +1926,10 @@ CASES = {
     ("task verdict", 2): ["task", "verdict", "task-1"],
     ("task verdict", 3): ["task", "verdict", "task-1", "live", "pass", "--server", "{down}"],
     ("task verdict", 4): ["task", "verdict", "task-99", "live", "pass", "--server", "{tasked}"],
+    ("task rate", 0): ["task", "rate", "task-1", "fail", "--reason", "Login flakes", "--server", "{checked}"],
+    ("task rate", 1): ["task", "rate", "task-1", "fail", "--reason", "x" * 121, "--server", "{checked}"],
+    ("task rate", 2): ["task", "rate", "task-1"],
+    ("task rate", 3): ["task", "rate", "task-1", "fail", "--server", "{down}"],
     ("task miss", 0): ["task", "miss", "task-1", "live", "--title", "Repair live", "--server", "{checked}"],
     ("task miss", 1): ["task", "miss", "task-1", "live", "--title", "Repair live", "--server", "{tasked}"],
     ("task miss", 2): ["task", "miss", "task-1", "live"],
@@ -2430,6 +2438,21 @@ def test_task_show_markdown_renders_the_task(tasked: str, capsys: pytest.Capture
     assert doc["task"] == "task-1"
     assert doc["markdown"].startswith("# ")
     assert "## Acceptance Criteria" in doc["markdown"]
+
+
+def test_task_rate_then_task_show_shows_the_rating(tasked: str, capsys: pytest.CaptureFixture[str]) -> None:
+    code, rated = _run(
+        capsys, ["task", "rate", "task-1", "fail", "--reason", "Login flakes", "--server", tasked]
+    )
+    _run(capsys, ["task", "rate", "task-1", "clear", "--server", tasked])
+    _, rated_again = _run(capsys, ["task", "rate", "task-1", "fail", "--reason", "Still", "--server", tasked])
+    _, shown = _run(capsys, ["task", "show", "task-1", "--server", tasked])
+
+    assert (code, rated["verdict"]) == (0, "fail")
+    assert rated_again["changes"] == 3
+    assert shown["rating"]["verdict"] == "fail"
+    assert shown["rating"]["reason"] == "Still"
+    assert shown["rating"]["changes"] == 3
 
 
 def test_task_edit_editor_imports_the_change(

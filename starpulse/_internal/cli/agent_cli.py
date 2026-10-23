@@ -902,6 +902,18 @@ def _parser() -> argparse.ArgumentParser:
     verdict.add_argument("verdict", choices=("pass", "miss"), help="`pass`, or `miss` with --fix")
     verdict.add_argument("--evidence", default="", help="what the criterion showed, recorded with the verdict")
     verdict.add_argument("--fix", help="the task already filed to fix a miss (`PROJ-46`); required for `miss`")
+    rate = leaf(
+        task_verbs,
+        "rate",
+        "set a task's pass/fail rating: each change is kept and the latest one counts",
+        agent_tasks.task_rate,
+        ("task", "verdict", "reason", "changes"),
+        (0, 1, 2, 3),
+    )
+    agent_tasks.writer_flags(rate)
+    rate.add_argument("task", help="the task's key (`PROJ-45`)")
+    rate.add_argument("verdict", choices=("pass", "fail", "clear"), help="`pass`, `fail`, or `clear` to drop the rating")
+    rate.add_argument("--reason", default="", help="why the task fails, up to 120 characters")
     miss = leaf(
         task_verbs,
         "miss",
