@@ -68,7 +68,7 @@ def _comments(record: Record) -> list[Mapping[str, Any]]:
     return list(record.get("comments") or [])
 
 
-def _seed(record: Record, at: float) -> dict[str, Any]:
+def seed(record: Record, at: float) -> dict[str, Any]:
     """What a Task's first Event holds: every column the record shows."""
     seed: dict[str, Any] = {}
     for key, name in _OWN.items():
@@ -179,7 +179,7 @@ class TaskHistory:
             written = create(title, details, actor=actor)
             record = read(written.output) if written.ok else None
             if record is not None and self._store is not None:
-                self._store.append(KIND, written.output, 0, [self._new("TaskCreated", _seed(record, 0.0), actor)])
+                self._store.append(KIND, written.output, 0, [self._new("TaskCreated", seed(record, 0.0), actor)])
             return written
 
         return run
@@ -191,7 +191,10 @@ class TaskHistory:
             return
         for task, text in rows:
             if store.head(KIND, task) == 0:
-                events = [self._new("TaskImported", _seed(parse(text), 0.0), OPERATOR), self._new("Archived", {}, OPERATOR)]
+                events = [
+                    self._new("TaskImported", seed(parse(text), 0.0), OPERATOR),
+                    self._new("Archived", {}, OPERATOR),
+                ]
                 store.append(KIND, task, 0, events)
 
     def _append(self, task: str, before: Record | None, after: Record | None, actor: str, note: str) -> None:
@@ -204,7 +207,7 @@ class TaskHistory:
             if after is None and head and store.read(KIND, task, head - 1)[-1].type == "Archived":
                 return  # retiring an archived task leaves the board no more than it already has
             base = before if before is not None else after
-            seeded = [("TaskImported", _seed(base, 0.0))] if head == 0 and base else []
+            seeded = [("TaskImported", seed(base, 0.0))] if head == 0 and base else []
             if not events and not seeded:
                 return
             try:
