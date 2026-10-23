@@ -26,7 +26,7 @@ def log(tmp_path: Path) -> EventLog:
 
 @pytest.fixture
 def legacy(tmp_path: Path) -> Path:
-    return tmp_path / "starpulse-autopilot-runs.jsonl"
+    return tmp_path / "starpulse-scheduler-runs.jsonl"
 
 
 def _write_legacy(legacy: Path, *runs: RunRecord) -> None:

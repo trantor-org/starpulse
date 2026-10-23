@@ -19,7 +19,7 @@ def log(tmp_path: Path) -> EventLog:
 
 @pytest.fixture
 def legacy(tmp_path: Path) -> Path:
-    return tmp_path / "starpulse-autopilot.json"
+    return tmp_path / "starpulse-scheduler.json"
 
 
 def test_a_setting_with_no_row_and_no_file_reads_as_unset(log: EventLog, legacy: Path) -> None:
