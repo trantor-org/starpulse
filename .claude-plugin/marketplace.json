@@ -8,7 +8,7 @@
     {
       "name": "starpulse",
       "source": "./",
-      "description": "Skills for setting up StarPulse, operating a board on it, authoring lifecycle machines and writing adapters."
+      "description": "Skills for setting up StarPulse, operating a board on it, authoring lifecycle machines, writing adapters and working a task through its phases."
     }
   ]
 }

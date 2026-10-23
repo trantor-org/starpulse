@@ -1,0 +1,63 @@
+# The deliver phase: final gates, commit, push, pull request and green checks to a ready PR, or the no-PR finalize
+# exit. Each transition cites the sentence of this skill that authorizes it, and `writers` names who fires each event.
+name: Deliver
+states:
+  start: {initial: true}
+  lint_green: {role: resting}
+  committed: {role: resting}
+  pushed: {role: resting}
+  pr_opened: {role: resting}
+  ci_green: {role: resting}
+  pr_ready: {final: true}
+  blocked: {final: true}
+  finalized: {final: true}
+events:
+  GREEN:
+    - {from: start, to: start, cite: {skill: deliver, quote: "Run the tests now even if an earlier run passed"}}
+  AC_CHECKPOINTED:
+    - {from: start, to: start, cite: {skill: deliver, quote: "Checkpoint every passed criterion that has no entry yet"}}
+  LINT_GREEN:
+    - {from: start, to: lint_green, cite: {skill: deliver, quote: "Done when the tests and checks pass on the final tree and every criterion has an entry."}}
+  LINT_RED:
+    - {from: start, to: start, cite: {skill: deliver, quote: "report and rerun until they pass."}}
+  FINALIZED:
+    - {from: [start, lint_green], to: finalized, cite: {skill: deliver, quote: "Done when `starpulse task show PROJ-45` shows the task finalized."}}
+  COMMITTED:
+    - {from: lint_green, to: committed, cite: {skill: deliver, quote: "It commits, pushes, opens the task's PR or updates the one already open"}}
+  PUSHED:
+    - {from: committed, to: pushed, cite: {skill: deliver, quote: "It commits, pushes, opens the task's PR or updates the one already open"}}
+  PR_OPENED:
+    - {from: pushed, to: pr_opened, cite: {skill: deliver, quote: "It commits, pushes, opens the task's PR or updates the one already open"}}
+  CI_GREEN:
+    - {from: pr_opened, to: ci_green, cite: {skill: deliver, quote: "green: the checks passed; go to step 5."}}
+  CI_RED:
+    - {from: pr_opened, to: pr_opened, cite: {skill: deliver, quote: "red: read the failing check, fix the cause in the worktree, rerun the final gates, and deliver again."}}
+  CI_BLOCKED:
+    - {from: pr_opened, to: blocked, cite: {skill: deliver, quote: "Comment what blocks on the task and stop here."}}
+  PR_READY:
+    - {from: ci_green, to: pr_ready, cite: {skill: deliver, quote: "Done when `starpulse command run pr-status --arg pr=<number>` reports the PR ready with green checks."}}
+writers:
+  GREEN:
+    - {actor: agent, trigger: "starpulse command run test"}
+  AC_CHECKPOINTED:
+    - {actor: agent, trigger: "starpulse task checkpoint-ac"}
+  LINT_GREEN:
+    - {actor: agent, trigger: "starpulse command run check"}
+  LINT_RED:
+    - {actor: agent, trigger: "starpulse command run check"}
+  FINALIZED:
+    - {actor: agent, trigger: "starpulse command run finalize"}
+  COMMITTED:
+    - {actor: agent, trigger: "starpulse command run deliver"}
+  PUSHED:
+    - {actor: agent, trigger: "starpulse command run deliver"}
+  PR_OPENED:
+    - {actor: agent, trigger: "starpulse command run deliver"}
+  CI_GREEN:
+    - {actor: agent, trigger: "starpulse command run deliver"}
+  CI_RED:
+    - {actor: agent, trigger: "starpulse command run deliver"}
+  CI_BLOCKED:
+    - {actor: agent, trigger: "starpulse command run deliver"}
+  PR_READY:
+    - {actor: agent, trigger: "starpulse command run pr-status"}
