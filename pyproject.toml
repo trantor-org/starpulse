@@ -119,6 +119,16 @@ source_modules = ["starpulse.*", "starpulse._internal.*"]
 forbidden_modules = ["starpulse._internal.store.tables"]
 allow_indirect_imports = true
 
+[[tool.importlinter.contracts]]
+id = "readmodel-table-private"
+name = "Only the read model package imports its tables"
+type = "forbidden"
+# A Task row is written by the projector alone and read through `ReadModel`: a module that imports the tables could
+# write a row no History folds into, or filter in Python what an index serves. The wildcards work as for the store.
+source_modules = ["starpulse.*", "starpulse._internal.*"]
+forbidden_modules = ["starpulse._internal.readmodel.tables"]
+allow_indirect_imports = true
+
 # Bounded contexts: one per StarPulse context, id `context-<glossary slug>`.
 # forbidden_modules is every other context's packages except the map's upstreams (direct imports; transitive stay
 # allowed). The shared kernel (`config`, `eventlog`, `machines`, `github_api`, `signals`, `contracts`) and the entrypoints
