@@ -18,6 +18,7 @@ from sqlalchemy import Connection, Engine, insert, select, update
 
 from starpulse._internal.machines.machine_definition import MachineDefinitionError, compile_document, validate
 from starpulse._internal.machines.machine_namespace import definition_of
+from starpulse._internal.machines.transitions import lane_id
 from starpulse._internal.store.event_store import EventStore, NewEvent, StoredEvent
 from starpulse._internal.store.tables import machine_active, machine_versions
 
@@ -29,7 +30,8 @@ _STATE_FIELD = {"TaskCreated": "state", "TaskImported": "state", "Transitioned":
 
 @dataclass(frozen=True)
 class LiveTask:
-    """A Task the change must carry across: its id, State and the stream head the caller read it at."""
+    """A Task the change must carry across: its id, State as the Task holds it (a State id or a Backlog display name,
+    such as `In Progress`) and the stream head the caller read it at."""
 
     id: str
     state: str
@@ -55,10 +57,11 @@ class MachineRegistry:
                 return digest
             _check_mapping(name, mapping, document["states"], live)
             for task in live:
-                if task.state in mapping and mapping[task.state] != task.state:
+                state = lane_id(task.state)
+                if state in mapping and mapping[state] != state:
                     remap = NewEvent(
                         "Remapped",
-                        {"mapping": {task.state: mapping[task.state]}},
+                        {"mapping": {task.state: mapping[state]}},
                         "starpulse",
                         "registry",
                         definition_hash=digest,
@@ -133,7 +136,8 @@ def _check_mapping(
         raise MachineDefinitionError(f"{machine}: migrations name States the version lacks: {', '.join(missing)}")
     stranded: dict[str, list[str]] = {}
     for task in live:
-        if task.state not in states and task.state not in mapping:
+        state = lane_id(task.state)
+        if state not in states and state not in mapping:
             stranded.setdefault(task.state, []).append(task.id)
     if stranded:
         held = "; ".join(f"{state} ({', '.join(ids)})" for state, ids in stranded.items())
