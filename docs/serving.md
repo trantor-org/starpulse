@@ -159,7 +159,8 @@ live; `restarting`, `retrying`, `offline` and `updating` hold one state.
 `starpulse/_internal/readmodel` folds the `task` streams into tables that answer reads by index, so no read loads every
 Task. A `Projector(engine, store)` folds events past its checkpoint (`read-model:tasks`, in `Checkpoints`); each batch of 500
 commits its rows and the checkpoint together. `rebuild()` empties the tables and replays from position 0; a replay and an
-incremental fold give the same rows.
+incremental fold give the same rows. Given a `SearchIndex` as `search`, the projector also writes each folded Task's search
+row in that transaction, in lane `archived` when the row is archived; no non-test code constructs it yet, so `serve` does not.
 
 - `starpulse_tasks` (migration 0029) has a typed column per StarPulse field, JSON `fields`, `meta` and `comments`, and
   `seq`, the position of the last event folded into the row. `starpulse_task_criteria` holds one row per Criterion.

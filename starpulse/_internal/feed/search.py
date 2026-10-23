@@ -28,7 +28,7 @@ import urllib.request
 from collections.abc import Sequence
 
 import numpy as np
-from sqlalchemy import Engine, bindparam, text
+from sqlalchemy import Connection, Engine, bindparam, text
 from sqlalchemy.exc import OperationalError, SQLAlchemyError
 
 from starpulse._internal.config.search import Search
@@ -241,31 +241,63 @@ class SearchIndex:
         task finished at its `settled_at` (0, older than any bound, when the board does not say) and any other is open."""
         if finished_at is None and task.settled:
             finished_at = task.settled_at or 0.0
-        facets = {"labels": "\n" + "".join(f"{label}\n" for label in task.labels), "finished_at": finished_at}
-        lane = task.settled or task.lane
+        self.index_fields(
+            task.id,
+            title=task.title,
+            description=task.description,
+            criteria=task.acceptance_criteria,
+            notes=task.notes,
+            lane=task.settled or task.lane,
+            labels=task.labels,
+            finished_at=finished_at,
+        )
+
+    def index_fields(
+        self,
+        task_id: str,
+        *,
+        title: str,
+        description: str,
+        criteria: Sequence[str],
+        notes: str,
+        lane: str,
+        labels: Sequence[str],
+        finished_at: float | None = None,
+        connection: Connection | None = None,
+    ) -> None:
+        """Make the index hold these fields of `task_id` as they are now, as `index` does for a task. With `connection`
+        the rows are written in its transaction, so a projector's rows and its index rows commit together."""
+        facets = {"labels": "\n" + "".join(f"{label}\n" for label in labels), "finished_at": finished_at}
         fields = {
-            "task": task.id,
-            "title": task.title,
-            "description": task.description,
-            "criteria": "\n".join(task.acceptance_criteria),
-            "notes": task.notes,
+            "task": task_id,
+            "title": title,
+            "description": description,
+            "criteria": "\n".join(criteria),
+            "notes": notes,
             "lane": lane,
         }
         digest = hashlib.sha256("\x1f".join(fields.values()).encode()).hexdigest()
-        row = _row(task.id)
-        with self._lock, self._engine.begin() as connection:
-            held = connection.execute(_HELD_FACETS, {"row": row}).one_or_none()
-            if held is not None and held.finished_at is not None and finished_at is not None:
-                # a finished task keeps its earliest finish: a restart dates a done-lane entry the history lacks now
-                facets["finished_at"] = min(held.finished_at, finished_at)
-            if held is None or tuple(held) != tuple(facets.values()):
-                connection.execute(_STORE_FACETS, {"row": row, **facets})
-            if connection.execute(_DIGEST, {"row": row}).scalar() == digest:
-                return
-            connection.execute(_DELETE, {"row": row})
-            connection.execute(_DROP_VECTORS, {"row": row})
-            connection.execute(_INSERT, {"row": row, "digest": digest, **fields})
-            self._dirty.add(row)
+        row = _row(task_id)
+        with self._lock:
+            if connection is not None:
+                self._write(connection, row, facets, fields, digest)
+            else:
+                with self._engine.begin() as own:
+                    self._write(own, row, facets, fields, digest)
+
+    def _write(self, connection: Connection, row: int, facets: dict, fields: dict, digest: str) -> None:
+        held = connection.execute(_HELD_FACETS, {"row": row}).one_or_none()
+        if held is not None and held.finished_at is not None and facets["finished_at"] is not None:
+            # a finished task keeps its earliest finish: a restart dates a done-lane entry the history lacks now
+            facets["finished_at"] = min(held.finished_at, facets["finished_at"])
+        if held is None or tuple(held) != tuple(facets.values()):
+            connection.execute(_STORE_FACETS, {"row": row, **facets})
+        if connection.execute(_DIGEST, {"row": row}).scalar() == digest:
+            return
+        connection.execute(_DELETE, {"row": row})
+        connection.execute(_DROP_VECTORS, {"row": row})
+        connection.execute(_INSERT, {"row": row, "digest": digest, **fields})
+        self._dirty.add(row)
 
     def remove(self, task_id: str) -> None:
         """Drop `task_id` from the index; a task the index does not hold is a no-op."""
