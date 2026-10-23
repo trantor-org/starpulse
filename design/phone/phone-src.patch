@@ -181,7 +181,7 @@ index 16eba12..22bd61f 100644
 +  html[data-phone]:is([data-pnav=drawer], [data-pnav=overlay]) #crumb { left: 58px; }
 +  html[data-phone]:is([data-pnav=drawer], [data-pnav=overlay]) #og .og-head { left: 58px; }
 +
-+  /* Kanban: one lane at a time. The toolbar's right-hand group takes its own lines; the autopilot strip wraps instead of holding one static width. */
++  /* Kanban: one lane at a time. The toolbar's right-hand group takes its own lines; the scheduler strip wraps instead of holding one static width. */
 +  html[data-phone] #kb .filters .rt { width: 100%; margin-left: 0; justify-content: flex-start; gap: 6px 12px; }
 +  html[data-phone] #kb .ap { width: 100%; flex-wrap: wrap; gap: 6px 12px; padding: 6px 0; border-inline: 0; border-block: 1px solid color-mix(in srgb, var(--slate) 12%, transparent); }
 +  html[data-phone] #kb .ap :is(.nx, .paused) { flex: 1 1 100%; }

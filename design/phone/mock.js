@@ -108,7 +108,7 @@
         <li><b>Switch views</b>: tap Star Map, Kanban, DAGs, Admin on the bar. With Navigator: drawer or full overlay, tap the ☰ button top left, then a view.</li>
         <li><b>The rest of the navigator</b>: tap More (or ☰). The sheet is the page's own navigator: status line, search, the view's outline or leaderboard. A view, a search hit, ✕, Escape or a tap outside closes it.</li>
         <li><b>Kanban lanes</b>: tap a ring-and-count tab; the lane showing keeps its header. With Kanban: stacked lanes, tap a lane's header. Scroll the lane; tap a card for the task, full screen.</li>
-        <li><b>Kanban toolbar</b>: the filter chips wrap; the autopilot strip takes its own lines.</li>
+        <li><b>Kanban toolbar</b>: the filter chips wrap; the scheduler strip takes its own lines.</li>
         <li><b>DAGs</b>: a row is the DAG and its last run over its steps, pool and board tie. Tap a row for the DAG, full screen; ▶ still runs it.</li>
         <li><b>Admin</b>: drag the font size slider; every control fits the width.</li>
         <li><b>Text size</b>: 100%, 125%, 150% above reloads both frames at that Admin text size.</li></ol>

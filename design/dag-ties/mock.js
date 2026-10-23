@@ -1,7 +1,7 @@
 // Design mockup layer (the DAGs tied to a state, back on the Star Map), never part of the page. The page above is a scrubbed capture of the
 // real StarPulse page, built from a source copy that draws a small DAGs hangar docked beside each state the tied DAGs act on, an orbiter per
 // DAG; a DAG that only launches work into a state stays off the map (dag-ties-src.patch). This layer adds the review bar,
-// the text size (?fs=100|125|150) and their runs, simulated on a loop shaped like the live day: autopilot claims, reconciliation releases, a
+// the text size (?fs=100|125|150) and their runs, simulated on a loop shaped like the live day: scheduler claims, reconciliation releases, a
 // merge cues apply-on-merge and graph-refresh, the sweep, a skill eval. ?sim=live (the loop, where a forced rerun clears apply-on-merge's
 // failure), rest (nothing running) or fail (apply-on-merge failed and left unresolved: the loop skips the rerun); ?at=<seconds> opens the loop
 // at that moment. ?place= picks where each hangar docks: edge (beside its busiest line, clear of it), line (on that line), side
@@ -21,7 +21,7 @@
   // The loop, in seconds from page load: [dag, start, duration, outcome, whether it writes its docked transition when it ends]
   const sim = q.get("sim") || "live", P = 40;
   const plan = [
-    ["dagu/board-autopilot", 1, 5, "ok", true],
+    ["dagu/board-scheduler", 1, 5, "ok", true],
     ["dagu/main-follow", 8, 3, "ok", true],
     ["dagu/apply-on-merge", 11.5, 6, "fail"],
     ["dagu/graph-refresh", 11.5, 4, "ok"],

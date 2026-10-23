@@ -218,7 +218,7 @@ window.SNAP = {
       "skill": "auditing-code",
       "flow": null
      },
-     "board-autopilot": {
+     "board-scheduler": {
       "skill": "starting-tasks",
       "flow": "in-progress"
      },
@@ -264,13 +264,13 @@ window.SNAP = {
        "trigger": "bin/backlog_task.py create"
       },
       {
-       "actor": "board-autopilot",
+       "actor": "board-scheduler",
        "trigger": "find_or_create_task"
       }
      ],
      "CLAIM": [
       {
-       "actor": "board-autopilot",
+       "actor": "board-scheduler",
        "trigger": "bin/backlog_task.py dispatch"
       },
       {
@@ -288,7 +288,7 @@ window.SNAP = {
        "trigger": "bin/backlog_task.py update --status Waiting"
       },
       {
-       "actor": "board-autopilot",
+       "actor": "board-scheduler",
        "trigger": "dependency sweep"
       }
      ],
@@ -358,7 +358,7 @@ window.SNAP = {
        "trigger": "bin/backlog_task.py park --operator"
       },
       {
-       "actor": "board-autopilot",
+       "actor": "board-scheduler",
        "trigger": "board_lanes.defer"
       }
      ],
@@ -401,7 +401,7 @@ window.SNAP = {
     },
     "dagActors": [
      "backlog-sweep",
-     "board-autopilot",
+     "board-scheduler",
      "board-dependency-reconciliation",
      "main-follow"
     ]
@@ -8052,14 +8052,14 @@ window.SNAP = {
    ]
   },
   {
-   "name": "board-autopilot",
+   "name": "board-scheduler",
    "status": "succeeded",
    "runId": "034OvpC17syE3rBt5DwRQz",
    "startedAt": "2026-09-15T01:20:19Z",
    "finishedAt": "2026-09-15T01:26:06Z",
    "steps": [
     {
-     "name": "board_autopilot",
+     "name": "board_scheduler",
      "depends": [],
      "status": "succeeded",
      "kind": null
@@ -8912,13 +8912,13 @@ window.SNAP = {
     "trigger": "bin/backlog_task.py create"
    },
    {
-    "actor": "board-autopilot",
+    "actor": "board-scheduler",
     "trigger": "find_or_create_task"
    }
   ],
   "CLAIM": [
    {
-    "actor": "board-autopilot",
+    "actor": "board-scheduler",
     "trigger": "bin/backlog_task.py dispatch"
    },
    {
@@ -8936,7 +8936,7 @@ window.SNAP = {
     "trigger": "bin/backlog_task.py update --status Waiting"
    },
    {
-    "actor": "board-autopilot",
+    "actor": "board-scheduler",
     "trigger": "dependency sweep"
    }
   ],
@@ -9006,7 +9006,7 @@ window.SNAP = {
     "trigger": "bin/backlog_task.py park --operator"
    },
    {
-    "actor": "board-autopilot",
+    "actor": "board-scheduler",
     "trigger": "board_lanes.defer"
    }
   ],
@@ -9059,7 +9059,7 @@ window.SNAP = {
    "flow": null
   },
   {
-   "dag": "board-autopilot",
+   "dag": "board-scheduler",
    "skill": "starting-tasks",
    "flow": "in-progress"
   },
@@ -9156,7 +9156,7 @@ window.SNAP = {
      "runSafe": false
     },
     {
-     "name": "board-autopilot",
+     "name": "board-scheduler",
      "runSafe": false
     },
     {
