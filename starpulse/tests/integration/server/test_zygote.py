@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import resource
 import socket
 import subprocess
 import sys
@@ -44,6 +45,32 @@ def forker() -> Iterator[Forker]:
     made = Forker([], entry=ENTRY)
     yield made
     made.close()
+
+
+@pytest.fixture
+def fds_past_select_limit() -> Iterator[None]:
+    """Hold every descriptor below 1100, as a long single-process run does, so the next one is past FD_SETSIZE."""
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    resource.setrlimit(resource.RLIMIT_NOFILE, (min(max(soft, 1200), hard), hard))
+    held: list[int] = []
+    try:
+        while (fd := os.dup(0)) < 1100:
+            held.append(fd)
+        held.append(fd)
+        yield
+    finally:
+        for fd in held:
+            os.close(fd)
+        resource.setrlimit(resource.RLIMIT_NOFILE, (soft, hard))
+
+
+def test_the_zygote_serves_a_fork_when_its_socket_is_past_the_select_limit(fds_past_select_limit: None) -> None:
+    made = Forker([], entry=ENTRY)
+    try:
+        child = made([*PREFIX, "hold"])
+        assert _parent(child.pid) != os.getpid()
+    finally:
+        made.close()
 
 
 def test_a_forked_child_is_not_a_child_of_serve_and_ends_when_it_is_terminated(forker: Forker) -> None:

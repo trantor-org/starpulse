@@ -310,7 +310,9 @@ class Supervisor:
             os.close(write_end)
             write_end = -1
             deadline = time.monotonic() + self._warm
-            while child.proc.poll() is None and not select.select([read_end], [], [], 0.1)[0]:
+            serving = select.poll()
+            serving.register(read_end, select.POLLIN)
+            while child.proc.poll() is None and not serving.poll(100):
                 if time.monotonic() >= deadline:
                     logger.warning("worker %s pid %s was not serving after %.0fs; ending the old one", name, child.proc.pid, self._warm)
                     break
