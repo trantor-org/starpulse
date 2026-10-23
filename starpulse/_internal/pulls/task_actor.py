@@ -8,6 +8,10 @@ The board's rules and the machine's guards judge the write like any other. A wri
 counted, and not tried again until the task's facts change. A start re-derives every open task once, which is the
 recovery for a change that happened while the server was down.
 
+A lifecycle machine whose phase state links a skill machine with `exits` (`submachines[].exits`) advances that phase
+too: when the skill machine reaches an exit state the actor calls `advance(machine, task, event)` with the exit's event,
+once per visit to the phase, and only for the skill machine the task's current phase links.
+
 A task whose lane waits on its Start Criteria is evaluated on a thread of its own when it has no result or its result is
 older than `fresh_s`, and re-derived when the result changes; a criterion that cannot be evaluated is exported, not
 retried before then. The board adapter may hold a task's `deps_done` with reasons, written once as a comment; a task
@@ -57,6 +61,12 @@ HANDOFF_METRIC = "starpulse_task_actor_handoff_seconds"
 SLOW_BUCKETS_S = (0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0)
 #: Seconds the event loop waits for a change before it looks at its stop flag.
 _POLL_S = 0.5
+
+
+def _exit_links(machines: Mapping[str, Mapping[str, Any]]) -> dict[str, list[Mapping[str, Any]]]:
+    """Each lifecycle machine's links that exit on a skill machine's state: `{machine: [link]}`, the Board's apart."""
+    found = {name: [link for link in drawn.get("submachines", ()) if link.get("exits")] for name, drawn in machines.items()}
+    return {name: links for name, links in found.items() if links and name != "board"}
 
 
 def moves_of(machine: Mapping[str, Any]) -> dict[tuple[str, str], str]:
@@ -121,7 +131,13 @@ class TaskActor:
         holds: Callable[[str], Sequence[str]] | None = None,
         fresh_s: float = criteria.CACHE_SECONDS,
         live: LiveBuild | None = None,
+        advance: Callable[[str, str, str], None] | None = None,
     ) -> None:
+        self._advance = advance
+        #: Each non-Board machine's links that exit on a skill machine's state, when there is somewhere to send the exit.
+        self._links = _exit_links(feed.machines) if advance else {}
+        #: The exit last sent for each `(machine, task)`, with the phase's step count, so one exit is sent once.
+        self._exited: dict[tuple[str, str], tuple[str, int, str]] = {}
         self._feed = feed
         self._store = store
         self._edit = edit
@@ -304,15 +320,19 @@ class TaskActor:
                 self._index(agent)
             self._read_pulls()
             self._derive_all([agent["id"] for agent in tasks], observed)
+            for parent in self._links:
+                for placed in self._feed.machine_tasks(parent):
+                    self._exit_phase(placed["id"])
         self.ready.set()
         while not stop.is_set():
             try:
                 kind, data = changes.get(timeout=_POLL_S)
             except queue.Empty:
                 continue
-            if kind == "task":
+            if kind in ("task", "move"):
+                handle = self._changed if kind == "task" else self._moved
                 try:
-                    self._changed(data)
+                    handle(data if kind == "task" else data["id"])
                 except Exception:  # one change must not end the actor
                     logger.exception("task actor: cannot handle the change of %s", data.get("id"))
 
@@ -346,6 +366,28 @@ class TaskActor:
                 self._tried.pop(name, None)
                 touched |= self._dependents(name)
             self._derive_all(touched, observed)
+
+    def _moved(self, task: str) -> None:
+        with self._lock:
+            self._exit_phase(task)
+
+    def _exit_phase(self, task: str) -> None:
+        """Send the exit event of the phase `task` is in when that phase's skill machine sits in the state its link exits
+        on. A skill machine the current phase does not link never counts, so a late final event of an earlier phase's
+        skill advances nothing."""
+        for parent, links in self._links.items():
+            phase = self._feed.machine_task(parent, task)
+            event = self._exit_event(links, phase["state"], task) if phase else None
+            if phase and event and self._exited.get((parent, task)) != (phase["state"], phase["steps"], event):
+                self._exited[parent, task] = (phase["state"], phase["steps"], event)
+                self._advance(parent, task, event)
+
+    def _exit_event(self, links: Sequence[Mapping[str, Any]], phase: str, task: str) -> str | None:
+        for link in links:
+            placed = self._feed.machine_task(link["machine"], task) if link["state"] == phase else None
+            if placed and link["exits"].get(placed["state"]):
+                return link["exits"][placed["state"]]
+        return None
 
     def _forget(self, name: str) -> None:
         for url in self._seen.pop(name, ("", (), ()))[2]:
