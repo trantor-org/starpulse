@@ -260,7 +260,11 @@ def open_event_log(path: Path | None = None) -> EventLog:
 
 def lane_changes(rows: list[tuple[float, str | None, str, str | None]]) -> list[dict]:
     """`{at, from, to}` for each `(at, old, new, actor)` row that changed lane, with `by` where a write named its actor."""
-    return [{"at": at, "from": old, "to": new, **({"by": actor} if actor else {})} for at, old, new, actor in rows if old != new]
+    return [
+        {"at": at, "from": old, "to": new, **({"by": actor} if actor else {})}
+        for at, old, new, actor in rows
+        if old != new
+    ]
 
 
 def machine_steps(machine: dict, rows: list[tuple[float, str]]) -> tuple[list[dict], int]:
@@ -406,7 +410,11 @@ class HistoryStore:
     def record_lane_entry(self, entry_id: str, fields: dict, *, cursor: int | None = None) -> bool:
         """Fold one `lane_events` entry (`fields`) into the lane history as `record_lane` does, under its log id."""
         return self.record_lane(
-            fields.get("event_id") or entry_id, fields["task"], fields["lane"], float(fields["time"]), cursor=cursor,
+            fields.get("event_id") or entry_id,
+            fields["task"],
+            fields["lane"],
+            float(fields["time"]),
+            cursor=cursor,
             actor=fields.get("actor"),
         )
 
@@ -805,6 +813,14 @@ class HistoryStore:
                 .order_by(*_STEP_ORDER)
             ).all()
         return machine_steps(self._machines[flow], [tuple(row) for row in rows])
+
+
+def last_run_event(engine: Engine, run: str) -> float | None:
+    """Epoch of the latest machine event of run `run` in the store on `engine`, None for a run with none: the harness
+    keys a session's telemetry by its session id, so this is when that session last acted."""
+    c = _machine_events.c
+    with engine.connect() as db:
+        return db.execute(select(func.max(c.occurred_at)).where(c.run == run)).scalar()
 
 
 def record_machine_events(
