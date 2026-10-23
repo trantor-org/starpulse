@@ -27,6 +27,7 @@ def run(tree: Path, *args: str, **env: str) -> subprocess.CompletedProcess[str]:
         env={
             **os.environ,
             "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+            "SLOW_TEST_LOAD_SCALE": "0",
             "PYTHONPATH": str(CI),
             "SLOW_TEST_SECONDS": "0.6",
             "SLOW_TEST_CPU_SECONDS": "0.3",
@@ -181,3 +182,14 @@ def test_a_run_with_test_cost_report_writes_each_flagged_test_with_its_wall_cpu_
     assert set(busy) == {"nodeid", "wall_s", "cpu_s", "peak_mb"}
     assert 0.4 <= busy["cpu_s"] <= busy["wall_s"] + 0.2 and busy["peak_mb"] >= 0
     assert flagged["test_x.py::test_slow"]["cpu_s"] < 0.3
+
+
+@pytest.mark.parametrize(
+    ("load1", "cpus", "bound"),
+    [(2.0, 4, 15.0), (4.0, 4, 15.0), (36.0, 36, 15.0), (167.0, 36, 15.0 * 167.0 / 36)],
+)
+def test_the_gate_bound_stretches_with_host_load_per_cpu_and_never_shrinks_below_the_base(load1, cpus, bound):
+    sys.path.insert(0, str(CI))
+    import slow_tests
+
+    assert slow_tests.gate_bound(15.0, load1, cpus) == pytest.approx(bound)
