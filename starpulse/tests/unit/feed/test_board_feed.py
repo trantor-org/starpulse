@@ -1263,3 +1263,20 @@ def test_a_task_card_carries_the_dagu_runs_its_dag_run_ids_name() -> None:
     assert [kind for kind, _ in (deltas.get_nowait(), deltas.get_nowait())] == ["dags", "task"]
     feed.put(BoardTask(id="TASK-7", team="demo", title="t", lane="review"))  # a reread keeps them
     assert len(_agents(feed)[0]["runs"]) == 1
+
+
+def test_stop_sets_the_event_a_spawned_thread_waits_on_and_waits_for_it() -> None:
+    feed = BoardFeed()
+    ended = threading.Event()
+
+    def wait(stop: threading.Event) -> None:
+        stop.wait()
+        ended.set()
+
+    feed.spawn(wait, "waiter")
+    assert not ended.is_set()
+
+    feed.stop()
+
+    assert ended.is_set()
+    assert feed.stopped.is_set()

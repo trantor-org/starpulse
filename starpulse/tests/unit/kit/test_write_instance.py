@@ -1,6 +1,7 @@
 """`write_instance` serves a config's board with its write routes, and a verb run through it writes a task file."""
 
 import json
+import threading
 from pathlib import Path
 
 from starpulse.adapter_kit import write_instance
@@ -26,3 +27,14 @@ def test_a_verb_the_board_refuses_exits_nonzero_with_the_reason(tmp_path: Path) 
         refused = instance.run("task", "edit", "task-99", "--title", "Nope")
     assert refused.returncode == 4
     assert "task-99" in refused.stdout + refused.stderr
+
+
+def test_no_board_thread_outlives_the_block(tmp_path: Path) -> None:
+    """Each instance once left its `board-state` and `claim-ttl` threads waiting forever, so a suite that opens one per
+    test ran out of threads."""
+    _board(tmp_path)
+    before = set(threading.enumerate())
+    with write_instance(tmp_path) as instance:
+        instance.run("task", "create", "First")
+    left = [thread.name for thread in threading.enumerate() if thread not in before and thread.is_alive()]
+    assert left == []

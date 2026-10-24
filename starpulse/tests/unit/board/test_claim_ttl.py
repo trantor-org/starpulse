@@ -1,6 +1,7 @@
 """A claim not renewed within the claim TTL is released: StarPulse appends Released, the Task keeps its State and may be
 claimed by another session, and the release names the last renewal (D6)."""
 
+import threading
 import time
 from functools import partial
 from pathlib import Path
@@ -180,3 +181,15 @@ def test_the_running_sweeper_judges_the_feed_when_no_read_model_folds(served, tm
         time.sleep(0.05)
 
     assert "Released" in [event.type for event in store.read("task", "task-5")]
+
+
+def test_stopping_the_feed_ends_the_running_sweeper(served) -> None:
+    built, feed, _store, log = served
+    before = set(threading.enumerate())
+    claim_ttl.start(built, feed, log, {"claim_ttl": 0.3})
+    sweeper = next(thread for thread in threading.enumerate() if thread.name == "claim-ttl" and thread not in before)
+
+    feed.stop()
+
+    sweeper.join(5)
+    assert not sweeper.is_alive()

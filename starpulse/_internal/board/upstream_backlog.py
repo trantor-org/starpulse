@@ -545,7 +545,7 @@ def project_board(
             refusal=refusal,
             roles=roles,
         ).start(interval, scanned=lambda: feed.expect("0-0"))
-        threading.Thread(target=feed.keep_saved, args=(threading.Event(),), name="board-state", daemon=True).start()
+        feed.spawn(feed.keep_saved, "board-state")
 
     return Board(
         machines=machines,

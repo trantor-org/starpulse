@@ -79,16 +79,15 @@ def sweep(
 
 def start(board: Board, feed: BoardFeed, log: EventLog, settings: Mapping[str, Any]) -> None:
     """Sweeps the feed's open tasks on a daemon thread every sixth of the TTL, at most every minute, for `[board]
-    claim_ttl` seconds. The feed holds the board's tasks whether or not a read model folds them."""
+    claim_ttl` seconds, until the feed stops. The feed holds the board's tasks whether or not a read model folds them."""
     from starpulse._internal.eventlog.history import last_run_event  # noqa: PLC0415 — keeps the board's import light
 
     ttl = float(settings.get("claim_ttl", DEFAULT_TTL))
     store = EventStore(log.engine)
     activity = partial(last_run_event, log.engine)
 
-    def run() -> None:
-        while True:
-            time.sleep(min(60.0, ttl / 6))
+    def run(stop: threading.Event) -> None:
+        while not stop.wait(min(60.0, ttl / 6)):
             sweep(board, store, feed.open_tasks(), ttl=ttl, activity=activity)
 
-    threading.Thread(target=run, name="claim-ttl", daemon=True).start()
+    feed.spawn(run, "claim-ttl")
