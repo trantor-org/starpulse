@@ -33,7 +33,7 @@ events:
   CI_RED:
     - {from: pr_opened, to: pr_opened, cite: {skill: deliver, quote: "red: read the failing check, fix the cause in the worktree, rerun the final gates, and deliver again."}}
   CI_BLOCKED:
-    - {from: pr_opened, to: blocked, cite: {skill: deliver, quote: "Comment what blocks on the task and stop here."}}
+    - {from: pr_opened, to: blocked, cite: {skill: deliver, quote: "comment what blocks on the task and stop here."}}
   PR_READY:
     - {from: ci_green, to: pr_ready, cite: {skill: deliver, quote: "Done when `starpulse command run pr-status --arg pr=<number>` reports the PR ready with green checks"}}
 writers:
