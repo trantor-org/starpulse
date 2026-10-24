@@ -26,7 +26,7 @@ from starpulse._internal.board.view import task_view
 from starpulse._internal.cli import agent_cli as cli
 from starpulse._internal.cli import agent_wire, doctor, skill_install
 from starpulse._internal.eventlog.history import HistoryStore
-from starpulse._internal.feed.board_feed import HOT_S, BoardFeed
+from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.feed.search import SearchIndex
 from starpulse._internal.harnesses.telemetry import TelemetryLog, signals
 from starpulse._internal.kit.adapter_kit import serve as _real_serve
@@ -40,6 +40,8 @@ from starpulse.tests.hosts import FakeHost
 from starpulse.tests.machines import MACHINES, ROLES
 from starpulse.tests.unit.board.test_native_lifecycle import PULL, REVIEW_NEEDS_PR, _lifecycle
 from starpulse.tests.unit.harnesses.test_telemetry import FIXTURES
+
+DAY_S = 86400.0
 
 VALID_MACHINE = Path(__file__).parent.parent.parent.parent / "machines" / "harness.yaml"
 STARTED = [0]  # server lifecycles begun in this process, so a test can prove which fixtures a case builds
@@ -223,7 +225,7 @@ def cooled(tmp_path: Path) -> Iterator[str]:
     feed = BoardFeed(roles=ROLES, machines=MACHINES, clock=lambda: now)
     feed.expect("0-0")
     for n in (1, 2, 3):
-        feed.put(task(f"PROJ-{n}", "Done", observed_at=now - 2 * HOT_S - n))
+        feed.put(task(f"PROJ-{n}", "Done", observed_at=now - 2 * DAY_S - n))
     feed.put(task("PROJ-4", "Done", observed_at=now - 60, milestone="m-1"))
     with _serve(tmp_path, feed, bare_board(read=COLD_RECORDS.get)) as server:
         yield _url(server, "")
@@ -2371,7 +2373,7 @@ def test_task_show_reads_a_cold_done_task_whole_from_the_board_and_a_dependent_n
     }
     feed = BoardFeed(roles=ROLES, machines=MACHINES, clock=lambda: now)
     feed.expect("0-0")
-    feed.put(task("PROJ-9", "Done", observed_at=now - 2 * HOT_S))
+    feed.put(task("PROJ-9", "Done", observed_at=now - 2 * DAY_S))
     feed.put(task("PROJ-1", "Ready", dependencies=("PROJ-9",)))
 
     with _serve(tmp_path, feed, bare_board(read={"PROJ-9": record}.get)) as server:

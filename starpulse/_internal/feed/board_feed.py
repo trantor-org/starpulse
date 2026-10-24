@@ -15,6 +15,7 @@ import threading
 import time
 from collections import deque
 from collections.abc import Callable, Collection, Mapping, Sequence
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from starpulse._internal.config.config import CommitKeys
@@ -76,8 +77,6 @@ SAVE_INTERVAL = 60.0
 CRITERIA_INTERVAL = criteria.CACHE_SECONDS
 #: How far back a task's entry into a lane is an occurrence a run can pair with, in seconds: as far as a tied workflow's recent runs reach.
 LEDGER_WINDOW = 86400.0
-#: How long a done task stays hot, in seconds: past it the feed holds only its id, state and entered time.
-HOT_S = 86400.0
 #: How many published changes the feed keeps for a page connecting on a snapshot older than the feed.
 _SENT_LOG = 512
 
@@ -87,14 +86,19 @@ def cited_pulls(task: BoardTask) -> list[str]:
     return [ref for ref in task.references if _PULL_REQUEST.fullmatch(ref)]
 
 
+def _midnight(at: float) -> float:
+    """The start of the local day `at` falls in, in epoch seconds."""
+    return datetime.fromtimestamp(at).astimezone().replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+
+
 def is_cold(agent: dict) -> bool:
     """Whether the agent is a cold done task: its id, state and entered time, with the record left on the Board."""
     return "title" not in agent
 
 
 def cooled(agent: dict, clock: Callable[[], float], done: str | None) -> dict:
-    """The agent, or its cold stub when it has been in the `done` state for longer than `HOT_S` by `clock`."""
-    if agent["state"] == done and clock() - agent["entered"] > HOT_S:
+    """The agent, or its cold stub when it entered the `done` state before local midnight by `clock`."""
+    if agent["state"] == done and agent["entered"] < _midnight(clock()):
         return {"id": agent["id"], "state": agent["state"], "entered": agent["entered"]}
     return agent
 
@@ -901,7 +905,7 @@ class BoardFeed:
         return len(changed)
 
     def held(self, task_id: str) -> dict | None:
-        """The open Board task as `task` has it, or its cold stub (`is_cold`) when it is done and past `HOT_S`."""
+        """The open Board task as `task` has it, or its cold stub (`is_cold`) when it is done and entered before local midnight."""
         if self._read_model is not None:
             return self._read_model_agent(task_id)
         return self._open.get(task_id) or self._open.get(self._keys.canonical(task_id) if self._keys else task_id)

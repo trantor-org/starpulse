@@ -3,11 +3,13 @@
 import json
 import time
 
-from starpulse._internal.feed.board_feed import HOT_S, BoardFeed
+from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.server.encoding import encode, encode_snapshot, event, slim_snapshot
 from starpulse.contracts.adapters import Move
 from starpulse.tests.machines import MACHINES, ROLES
+
+DAY_S = 86400.0
 
 DAY = 86400.0
 NOW = 10_000_000.0
@@ -51,7 +53,7 @@ def test_snapshot_slim_carries_only_open_and_under_24h_done_tasks_and_never_the_
     feed.expect("0-0")
     feed.put(task("PROJ-1", "To Do"))
     feed.put(task("PROJ-2", "Done", observed_at=NOW - 60))
-    feed.put(task("PROJ-3", "Done", observed_at=NOW - 2 * HOT_S))
+    feed.put(task("PROJ-3", "Done", observed_at=NOW - 2 * DAY_S))
 
     sent = _sent(feed)
 

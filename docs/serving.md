@@ -886,7 +886,7 @@ step, and the step it is in.
 
 ## Cold done tasks
 
-A task is hot for 24 h (`HOT_S`) after it enters `done`, then cold: the board feed holds only its `id`, `state` and
+A task is hot until local midnight after it enters `done`, then cold: the board feed holds only its `id`, `state` and
 `entered` time, and `GET /api/snapshot` omits it. A hot task keeps its record in `flows`; a lane change out of `done`
 (a reopen) reloads the cold task from its board file onto its new lane within that one change, and cooling itself
 publishes nothing, so a page keeps a card until it reloads. The page's snapshot (`/api/snapshot`) is slim:
