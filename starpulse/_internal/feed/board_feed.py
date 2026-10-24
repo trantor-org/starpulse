@@ -152,6 +152,7 @@ def summary_agent(summary: Mapping[str, Any], workable: bool = False, moves: Map
         "model": "",
         "profile": None,
         "assignee": summary["assignee"],
+        "released": summary["released"],
         "labels": list(summary["labels"]),
         "milestone": summary["milestone"],
         "type": summary["type"],

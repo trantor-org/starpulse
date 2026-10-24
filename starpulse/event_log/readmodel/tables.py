@@ -23,6 +23,7 @@ tasks = Table(
     Column("priority", String, nullable=False),
     Column("milestone", String, nullable=False),
     Column("assignee", String, nullable=False),
+    Column("released", JSON, nullable=True),
     Column("archived", Boolean, nullable=False),
     Column("description", Text, nullable=False),
     Column("plan", Text, nullable=False),

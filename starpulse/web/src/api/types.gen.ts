@@ -480,6 +480,10 @@ export interface RawTask {
    */
   prs?: string[] | null;
   /**
+   * The claim-TTL release a Board task's claim ended in; null when none ended it.
+   */
+  released?: ClaimRelease | null;
+  /**
    * A task's scheduler runs: those whose run id names it (`dag-run-task-<N>-<ts>`).
    */
   runs?: TaskRun[] | null;
@@ -539,6 +543,24 @@ export interface Move {
    * The actors the machine YAML declares for the event behind the move; empty when it declares none, and then any actor may make it.
    */
   writers?: string[];
+}
+/**
+ * The claim a Board task's claim-TTL sweep released: when, and the session, last renewal and TTL it released.
+ */
+export interface ClaimRelease {
+  /**
+   * When the release was recorded, epoch seconds.
+   */
+  at: number;
+  /**
+   * The session's last renewal before the release, epoch seconds.
+   */
+  last_renewal: number;
+  session: string;
+  /**
+   * The claim TTL, in seconds, the session missed.
+   */
+  ttl: number;
 }
 /**
  * One scheduler run a task's id names, linked to the run's own page.

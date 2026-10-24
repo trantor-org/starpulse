@@ -22,6 +22,7 @@ SUMMARY = (
     tasks.c.priority,
     tasks.c.milestone,
     tasks.c.assignee,
+    tasks.c.released,
     tasks.c.archived,
     tasks.c.labels,
     tasks.c.updated_at,
