@@ -26,15 +26,18 @@ ENV UV_PYTHON_INSTALL_DIR=/opt/python UV_LINK_MODE=copy UV_COMPILE_BYTECODE=1 UV
 ENV PATH=/opt/canary/bin:/usr/local/bin:/usr/bin:/bin
 RUN uv python install 3.14t
 WORKDIR /src
+# The locked dependencies and chromium install before the package source is copied, so a PR that changes only code
+# reuses this layer from the build cache; a change to pyproject.toml, uv.lock or vendor rebuilds it.
 COPY pyproject.toml uv.lock README.md LICENSE ./
-COPY starpulse starpulse
 COPY --from=vendor / /vendor
 RUN uv export --frozen --no-hashes --no-emit-project --no-default-groups --group bench --no-header -o locked.txt \
     && sed -i -e 's|^aioquic==.*|aioquic @ file:///vendor/aioquic|' -e 's|^pylsqpack==.*|pylsqpack @ file:///vendor/pylsqpack|' locked.txt \
     && grep -q '^aioquic @' locked.txt && grep -q '^pylsqpack @' locked.txt \
     && uv venv --python 3.14t /opt/canary \
-    && uv pip install --python /opt/canary/bin/python -r locked.txt . \
-    && /opt/canary/bin/python -m playwright install --with-deps chromium \
+    && uv pip install --python /opt/canary/bin/python -r locked.txt \
+    && /opt/canary/bin/python -m playwright install --with-deps chromium
+COPY starpulse starpulse
+RUN uv pip install --python /opt/canary/bin/python --no-deps . \
     && test -f /opt/canary/lib/python3.14t/site-packages/starpulse/static/index.html
 COPY ci/canary_smoke.py ci/fresh_serve.py /opt/canary/ci/
 WORKDIR /opt/canary/ci

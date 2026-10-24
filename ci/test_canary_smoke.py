@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import canary_smoke
@@ -114,3 +115,48 @@ def test_env_passes_pythonpath_and_no_other_host_variable(tmp_path: Path, monkey
     assert environ["PYTHONPATH"] == "/live/lib"
     assert "SECRET_TOKEN" not in environ
     assert environ["STARPULSE_X"].startswith("canary-placeholder-")
+
+
+class Serve:
+    """A `serve` process that stays up: `hold` reads only its pid and poll."""
+
+    pid = 1
+    returncode = None
+
+    def poll(self) -> int | None:
+        return None
+
+
+def test_hold_runs_the_board_check_inside_its_window(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(canary_smoke, "HOLD", 0.2)
+    monkeypatch.setattr(canary_smoke, "SAMPLE", 0.05)
+    monkeypatch.setattr(canary_smoke, "live_children", lambda parent, log: {"web": 10})
+    monkeypatch.setattr(canary_smoke, "check", lambda port, parent, expected, log: None)
+    start = time.monotonic()
+    ran: list[float] = []
+
+    problem = canary_smoke.hold(Serve(), 1, {"web"}, tmp_path / "log", during=lambda: ran.append(time.monotonic()))
+
+    assert problem is None
+    assert ran and ran[0] - start < 0.1
+    assert time.monotonic() - start < 0.4
+
+
+def test_hold_reports_a_restart_after_the_board_check(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    children = iter([{"web": 10}, {"web": 10}, {"web": 11}])
+    monkeypatch.setattr(canary_smoke, "HOLD", 0.3)
+    monkeypatch.setattr(canary_smoke, "SAMPLE", 0.05)
+    monkeypatch.setattr(canary_smoke, "live_children", lambda parent, log: next(children, {"web": 11}))
+    monkeypatch.setattr(canary_smoke, "check", lambda port, parent, expected, log: None)
+
+    problem = canary_smoke.hold(Serve(), 1, {"web"}, tmp_path / "log", during=lambda: None)
+
+    assert problem is not None and "restarted" in problem
+
+
+def test_hold_returns_the_board_problem(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(canary_smoke, "live_children", lambda parent, log: {"web": 10})
+
+    problem = canary_smoke.hold(Serve(), 1, {"web"}, tmp_path / "log", during=lambda: "board: no card")
+
+    assert problem == "board: no card"
