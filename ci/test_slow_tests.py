@@ -41,6 +41,9 @@ def run(tree: Path, *args: str, **env: str) -> subprocess.CompletedProcess[str]:
         capture_output=True,
         text=True,
         check=False,
+        # Under pyproject's 120 s pytest-timeout a stalled run would hit its SIGALRM inside the worker's stdout write and
+        # die with "reentrant call" (INTERNALERROR, TASK-7828). A bound here fails the test cleanly first.
+        timeout=60,
     )
 
 
