@@ -114,8 +114,6 @@ function PullRows({ pulls }: { pulls: Pull[] }) {
         <div key={`${p.repo}#${p.number}`} className="pull">
           <a href={p.url} target="_blank" rel="noopener">{p.repo}#{p.number} ↗</a>
           <span className={`chk ${checkClass(p)}`}><i />{p.merged ? "merged" : `checks ${p.checks}`}</span>
-          {!!p.threads && <span className="thr">{p.threads} open thread{p.threads === 1 ? "" : "s"}</span>}
-          {!p.merged && !!p.behind_main && <span className="thr">{p.behind_main} commit{p.behind_main === 1 ? "" : "s"} behind main</span>}
           {p.stale && <span className="thr">last read failed</span>}
         </div>
       ))}

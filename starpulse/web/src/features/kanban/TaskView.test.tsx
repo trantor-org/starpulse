@@ -214,25 +214,17 @@ describe("the task view's right rail", () => {
     });
   });
 
-  it("draws each pull request as a link with its checks, or merged, and its open review threads", () => {
-    const prs = [{ ...task.prs[0], threads: 2 }, { ...task.prs[0], number: 13, url: "http://pr/13", merged: true, checks: "pass" as const }];
+  it("draws each pull request as a link with its checks, or merged, and no thread or behind-main text", () => {
+    const prs = [{ ...task.prs[0], threads: 2, behind_main: 4 }, { ...task.prs[0], number: 13, url: "http://pr/13", merged: true, checks: "pass" as const }];
     const html = rows(draw({ task: { ...task, prs } }), "Pull requests");
 
     expect(html).toContain('<a href="http://pr/12" target="_blank" rel="noopener">o/r#12 ↗</a>');
     expect(html).toContain("checks pass");
-    expect(html).toContain("2 open threads");
+    expect(html).not.toContain("open thread");
+    expect(html).not.toContain("behind main");
     expect(html).toMatch(/<a href="http:\/\/pr\/13"[^>]*>o\/r#13 ↗<\/a><span class="chk merged"><i><\/i>merged<\/span>/);
     expect(html).not.toContain("no open threads");
     expect(rows(draw({ task: { ...task, prs: [] } }), "Pull requests")).toContain("None yet");
-  });
-
-  it("draws how far an open pull request is behind main, and nothing when it is level or has no head branch", () => {
-    const prs = [{ ...task.prs[0], behind_main: 4 }, { ...task.prs[0], number: 13, url: "http://pr/13", behind_main: 1 }, { ...task.prs[0], number: 14, url: "http://pr/14", behind_main: 0 }, { ...task.prs[0], number: 15, url: "http://pr/15" }];
-    const html = rows(draw({ task: { ...task, prs } }), "Pull requests");
-
-    expect(html).toContain("4 commits behind main");
-    expect(html).toContain("1 commit behind main");
-    expect(html.match(/behind main/g)).toHaveLength(2);
   });
 
   it("lists what the task depends on and what it holds, each row its id, title and lane", () => {
