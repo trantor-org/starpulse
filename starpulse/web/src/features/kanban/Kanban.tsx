@@ -914,7 +914,7 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
 }
 
 /** The `hud` fields the view draws. The rest of the HUD (the clock, the DAGs, the feed) changes on most stream events and none of it is on the Kanban. */
-const SHOWN = ["cards", "names", "claims", "milestoneDone", "capabilities", "hint"] as const;
+const SHOWN = ["cards", "names", "roles", "types", "claims", "milestoneDone", "capabilities", "hint"] as const;
 
 /** `KanbanView`, drawn again only when a field it shows or another prop changes, so an event that moves no card draws none. */
 export const Kanban = memo(KanbanView, ({ hud: before, ...a }, { hud: after, ...b }) =>

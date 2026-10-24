@@ -138,7 +138,7 @@ export function statusLine(row: LedgerRow, tie: Tie, run: LedgerRun | undefined,
   return { main, sub, state: run.status, mark };
 }
 
-const RANK: RunStatus[] = ["failed", "running", "queued", "succeeded"];
+const RANK: RunStatus[] = ["failed", "aborted", "running", "queued", "not_started", "succeeded", "skipped"];
 
 /** The state a merge row summarises to: its worst run; for another repository's merge, its pin bump's, and `waiting` until one applies it. */
 export function worst(row: LedgerRow, bump?: LedgerRow): RowState {

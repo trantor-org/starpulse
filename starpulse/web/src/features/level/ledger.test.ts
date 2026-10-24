@@ -184,6 +184,12 @@ describe("a row's worst state", () => {
     expect([["succeeded", "failed", "running"], ["succeeded", "running"], ["queued", "succeeded"], ["succeeded"]].map((s) => worst(merge({ runs: runs(...(s as LedgerRun["status"][])) })))).toEqual(["failed", "running", "queued", "succeeded"]);
   });
 
+  it("ranks aborted under failed, and reads a run that has not started or was skipped as itself, not as succeeded", () => {
+    const states = [["aborted"], ["succeeded", "aborted"], ["not_started"], ["skipped"], ["succeeded", "not_started"]] as LedgerRun["status"][][];
+
+    expect(states.map((s) => worst(merge({ runs: runs(...s) })))).toEqual(["aborted", "aborted", "not_started", "skipped", "not_started"]);
+  });
+
   it("is waiting for another repository's merge until a pin bump applies it, then what the bump's runs are", () => {
     const parent = merge({ key: "p", runs: runs("running") });
 

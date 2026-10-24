@@ -49,7 +49,8 @@ export function createHistory({ onChange, fetch: get = (u) => apiFetch(u), now =
     return e.value as Loaded<T>;
   }
   return {
-    lane: (task) => read(`/api/history?task=${task}`, (b) => b.path as LaneStep[]),
-    machine: (task, machine) => read(`/api/history?task=${task}&machine=${machine}`, (b) => ({ path: b.path as MachineStep[], steps: b.steps ?? 0 })),
+    lane: (task) => read(`/api/history?task=${encodeURIComponent(task)}`, (b) => b.path as LaneStep[]),
+    machine: (task, machine) =>
+      read(`/api/history?task=${encodeURIComponent(task)}&machine=${encodeURIComponent(machine)}`, (b) => ({ path: b.path as MachineStep[], steps: b.steps ?? 0 })),
   };
 }
