@@ -88,7 +88,7 @@ The modules an adapter may import, each exporting exactly the names in its `__al
 - `starpulse.board`: the board adapter seam (`Board`, `Written`, the writer, task, milestone and doc protocols, and the `UpstreamBacklog` reference adapter).
 - `starpulse.board_feed`: the feed a board adapter places tasks on (`BoardFeed`) and what following a stream needs of it.
 - `starpulse.contracts`: the board (a `BoardTask` carries `acceptance_criteria` with `acceptance_checked`, `pause_reason` and `notes` beside its `description`), machine-event, run-event (`RunEvent`), lane-event (`LaneEvent`), runs (`Dag`, `RecentRun`) records, their JSON Schemas, `EVENT_STREAMS` (the record of each event log stream), and `RunsSink`.
-- `starpulse.adapter_kit`: the test kit an adapter author runs against their work, and the helpers that serve it.
+- `starpulse.adapter_kit`: the test kit an adapter author runs against their work, and the helpers that serve it, and `write_instance(base)`, which serves the write routes over the board a config file names so a test writes tasks through StarPulse (`WriteInstance.run` calls a `starpulse` verb in-process).
 - `starpulse.machine_definition`: loading and validating a machine, and the `Registry` of guards and actions.
 - `starpulse.snapshot`: how a machine is described to the page, and how its workflows are named.
 - `starpulse.history`: the history a board adapter may keep itself, and placing a task's events on a machine.
