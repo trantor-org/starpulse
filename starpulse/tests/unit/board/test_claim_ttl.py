@@ -1,11 +1,13 @@
 """A claim not renewed within the claim TTL is released: StarPulse appends Released, the Task keeps its State and may be
 claimed by another session, and the release names the last renewal (D6)."""
 
+import time
 from functools import partial
 from pathlib import Path
 
 import pytest
 
+from starpulse._internal.board import claim_ttl
 from starpulse._internal.board.claim_ttl import sweep
 from starpulse._internal.board.seam import Board
 from starpulse._internal.board.upstream_backlog import UpstreamBacklog
@@ -57,6 +59,12 @@ def _claim(built: Board, store: EventStore) -> float:
 
 def _rows(built: Board) -> list[dict]:
     return [{"id": "task-5", "state": "In Progress", "assignee": "session-1"}]
+
+
+def _scanned(base: Path, feed: BoardFeed) -> list[dict]:
+    """The feed's open tasks once the poller has read the task files again."""
+    UpstreamBacklog(base / ".starpulse" / "board", feed.put).scan()
+    return feed.open_tasks()
 
 
 def _renew(store: EventStore, at: float) -> None:
@@ -120,3 +128,55 @@ def test_an_expired_claim_keeps_the_state_and_frees_the_task_for_another_session
     assert built.read("task-5")["status"] == "In Progress"
     assert [event.type for event in store.read("task", "task-5")].count("Transitioned") == 1
     assert built.writer("task-5", "In Progress", "agent", "session-2").ok
+
+
+def test_a_stale_row_never_moves_a_task_the_board_moved_on(served) -> None:
+    built, _, store, _ = served
+    claimed = _claim(built, store)
+    assert built.writer("task-5", "Done", "agent").ok
+
+    assert sweep(built, store, _rows(built), ttl=1800, now=claimed + 1801) == []
+
+    assert built.read("task-5")["status"] == "Done"
+    assert "Released" not in [event.type for event in store.read("task", "task-5")]
+
+
+def test_a_stale_row_never_releases_a_claim_twice(served) -> None:
+    built, _, store, _ = served
+    claimed = _claim(built, store)
+    assert sweep(built, store, _rows(built), ttl=1800, now=claimed + 1801) == ["task-5"]
+
+    assert sweep(built, store, _rows(built), ttl=1800, now=claimed + 3700) == []
+
+    assert [event.type for event in store.read("task", "task-5")].count("Released") == 1
+
+
+def test_the_feed_rows_show_a_task_the_board_moved_on_and_nothing_is_released(served, tmp_path: Path) -> None:
+    built, feed, store, _ = served
+    claimed = _claim(built, store)
+    assert built.writer("task-5", "Done", "agent").ok
+
+    assert sweep(built, store, _scanned(tmp_path, feed), ttl=1800, now=claimed + 1801) == []
+
+    assert built.read("task-5")["status"] == "Done"
+
+
+def test_the_feed_rows_carry_a_live_claim_the_sweep_releases(served, tmp_path: Path) -> None:
+    built, feed, store, _ = served
+    claimed = _claim(built, store)
+
+    assert sweep(built, store, _scanned(tmp_path, feed), ttl=1800, now=claimed + 1801) == ["task-5"]
+
+
+def test_the_running_sweeper_judges_the_feed_when_no_read_model_folds(served, tmp_path: Path) -> None:
+    """With `read_model = false` nothing folds the read model, so a sweeper reading it would never see this claim."""
+    built, feed, store, log = served
+    _claim(built, store)
+    _scanned(tmp_path, feed)
+
+    claim_ttl.start(built, feed, log, {"claim_ttl": 0.3})
+    deadline = time.monotonic() + 5
+    while "Released" not in [event.type for event in store.read("task", "task-5")] and time.monotonic() < deadline:
+        time.sleep(0.05)
+
+    assert "Released" in [event.type for event in store.read("task", "task-5")]
