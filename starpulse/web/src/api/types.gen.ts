@@ -1059,6 +1059,7 @@ export interface LaneHistory {
 }
 export interface LaneStep {
   at: number;
+  by?: string | null;
   from: string | null;
   to: string;
 }
