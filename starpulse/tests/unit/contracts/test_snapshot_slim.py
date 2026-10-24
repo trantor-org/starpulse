@@ -101,6 +101,7 @@ def test_snapshot_slim_is_under_a_quarter_of_the_unslimmed_encoding() -> None:
 def test_the_snapshot_and_the_pulls_event_omit_the_fields_of_a_pull_record_the_api_does_not_declare() -> None:
     record = {
         "number": 7,
+        "repo": "o/r",
         "url": "https://github.com/o/r/pull/7",
         "checks": "pass",
         "merged": True,
@@ -127,6 +128,7 @@ def test_the_snapshot_and_the_pulls_event_omit_the_fields_of_a_pull_record_the_a
 def test_a_snapshot_event_omits_the_fields_of_a_pull_record_the_api_does_not_declare() -> None:
     record = {
         "number": 7,
+        "repo": "o/r",
         "url": "https://github.com/o/r/pull/7",
         "checks": "pass",
         "merged": False,

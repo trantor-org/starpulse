@@ -309,7 +309,7 @@ export function whyHidden(tasks: KanbanTask[], names: Record<string, string>, ro
 /** Each pull request a task cites, as GitHub was last read for it; one not read yet is drawn unread (`stale`) rather than left off. */
 const cited = (urls: string[], read: Pull[]): Pull[] => {
   const unread = urls.filter((url) => !read.some((p) => p.url === url));
-  return [...read, ...unread.map((url) => ({ number: Number(/(\d+)\/?$/.exec(url)?.[1] ?? 0), url, checks: "none" as const, merged: false, merge_sha: null, merged_at: null, threads: 0, stale: true }))];
+  return [...read, ...unread.map((url) => ({ number: Number(/(\d+)\/?$/.exec(url)?.[1] ?? 0), repo: /github\.com\/([^/]+\/[^/]+)\/pull\//.exec(url)?.[1] ?? "", url, checks: "none" as const, merged: false, merge_sha: null, merged_at: null, threads: 0, stale: true }))];
 };
 
 /** The Board's tasks as cards: its own fields, the pull requests the server read for it and the machine that last placed it. */

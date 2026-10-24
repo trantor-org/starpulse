@@ -471,7 +471,7 @@ def scrub(live: dict) -> dict:
     ]
     demo_pulls = {
         names[t]: [
-            p | {"number": 1000 * j + 100 + int(names[t].removeprefix("DEMO-")) - 1, "url": "#", "stale": False}
+            p | {"number": 1000 * j + 100 + int(names[t].removeprefix("DEMO-")) - 1, "repo": "demo/repo", "url": "#", "stale": False}
             for j, p in enumerate(ps)
         ]
         for t, ps in pulls.items()
