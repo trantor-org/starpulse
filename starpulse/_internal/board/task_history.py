@@ -130,12 +130,21 @@ def _criteria_events(before: Record, after: Record) -> list[Event]:
     return events
 
 
+def _restored(record: Record) -> Event:
+    """A returning task's FieldsEdited: every column its file shows, so the fold's row is the file's, not the one it left with."""
+    columns = seed(record, 0.0)
+    columns.pop("comments")
+    columns.pop("meta")
+    meta = {key: record.get(key) or None for key in _META}
+    return ("FieldsEdited", {"changes": columns, "meta": meta})
+
+
 def _events(before: Record, after: Record | None, note: str) -> list[Event]:
     """The Events that take `before` to `after`; None is a task that left the board, `{}` one that was not on it."""
     if after is None:
         return ([("CommentAdded", {"text": note})] if note else []) + [("Archived", {})]
     if not before:
-        return [("Rehydrated", {})]
+        return [("Rehydrated", {}), _restored(after)]
     events: list[Event] = []
     edited: dict[str, Any] = {}
     changes, meta = _field_changes(before, after), _meta_changes(before, after)
