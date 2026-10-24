@@ -31,11 +31,13 @@ _STATE_FIELD = {"TaskCreated": "state", "TaskImported": "state", "Transitioned":
 @dataclass(frozen=True)
 class LiveTask:
     """A Task the change must carry across: its id, State as the Task holds it (a State id or a Backlog display name,
-    such as `In Progress`) and the stream head the caller read it at."""
+    such as `In Progress`) and the stream head the caller read it at. An archived Task keeps the definition version it
+    was archived under, so activation neither checks nor remaps it."""
 
     id: str
     state: str
     version: int
+    archived: bool = False
 
 
 class MachineRegistry:
@@ -52,6 +54,7 @@ class MachineRegistry:
         compile_document(dict(document), Path(name))
         digest = definition_of(document).digest
         mapping = document.get("migrations", {})
+        live = [task for task in live if not task.archived]
         with self._engine.begin() as db:
             if self._active(db, name) == digest:
                 return digest

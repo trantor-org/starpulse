@@ -192,3 +192,17 @@ def test_a_changed_definition_activates_over_live_tasks_held_in_display_names(
     assert [e.type for e in store.read("task", "TASK-1")] == ["TaskImported"]
     assert [e.type for e in store.read("task", "TASK-2")] == ["TaskImported", "Remapped"]
     assert replay(store.read("task", "TASK-2"))["state"] == "in_progress"
+
+
+def test_an_archived_task_in_a_dropped_state_neither_blocks_nor_is_remapped(
+    store: EventStore, registry: MachineRegistry
+) -> None:
+    registry.activate(BOARD, [])
+    held = _task(store, registry, "TASK-1", "doing")
+    archived = LiveTask(held.id, held.state, held.version, archived=True)
+    document = _renamed()
+
+    registry.activate(document, [archived])
+
+    assert registry.active_hash("board") is not None
+    assert [e.type for e in store.read("task", "TASK-1")] == ["TaskCreated"]

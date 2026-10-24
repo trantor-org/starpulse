@@ -437,3 +437,60 @@ def test_doc_create_task_files_the_doc_and_links_it_on_the_task_in_its_documenta
     assert json.loads(out.out) == {"doc": "doc-1", "task": "task-5", "changed": ["documentation"]}
     frontmatter, _ = _split(_file(base).read_text())
     assert frontmatter["documentation"] == [".starpulse/board/docs/doc-1 - TASK-5-working-notes.md"]
+
+
+_RESTORE_MACHINE = """\
+name: board
+states:
+  to_do: {initial: true}
+  in_progress: {}
+  done: {final: true}
+events:
+  CLAIM: [{from: to_do, to: in_progress}]
+  to_done: [{from: in_progress, to: done}]
+"""
+
+
+def _archived_in_blocked(base: Path, migrations: str) -> None:
+    """An archived `task-5` held in Blocked under a board machine that dropped that State."""
+    (base / "board.yaml").write_text(_RESTORE_MACHINE + migrations)
+    (base / "starpulse.toml").write_text('[board]\ntype = "native"\nmachine = "board.yaml"\n')
+    archive = base / ".starpulse" / "board" / "archive" / "tasks"
+    archive.mkdir(parents=True)
+    _tasks(base).mkdir(parents=True)
+    (archive.parents[1] / "config.yml").write_text(
+        "project_name: demo\nstatuses: [To Do, In Progress, Done]\ntask_prefix: task\n"
+    )
+    (archive / "task-5 - Draw.md").write_text(FILE.replace("In Progress", "Blocked"))
+
+
+def _restore_board(base: Path, monkeypatch: pytest.MonkeyPatch) -> Board:
+    monkeypatch.setattr(UpstreamBacklog, "start", lambda self, interval, scanned: (self.scan(), scanned()))
+    built, feed = assemble(load(base / "starpulse.toml"), base, None, ())
+    built.start(feed, "test", EventLog(f"sqlite:///{base / 'events.sqlite'}"))
+    return built
+
+
+def test_a_restore_into_a_dropped_state_lands_in_the_state_the_migrations_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _archived_in_blocked(tmp_path, "migrations: {blocked: to_do}\n")
+    built = _restore_board(tmp_path, monkeypatch)
+    assert built.restore is not None
+
+    assert built.restore("task-5").ok
+
+    assert "status: To Do" in _file(tmp_path).read_text()
+
+
+def test_a_restore_into_a_dropped_state_with_no_migration_is_refused_naming_the_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _archived_in_blocked(tmp_path, "")
+    built = _restore_board(tmp_path, monkeypatch)
+    assert built.restore is not None
+
+    refused = built.restore("task-5")
+
+    assert not refused.ok and "Blocked" in refused.output
+    assert not _file(tmp_path).exists()

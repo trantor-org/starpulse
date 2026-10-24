@@ -868,8 +868,13 @@ def _importer(root: Path, retired: _Retired) -> RetiredImporter:
     return import_retired
 
 
-def _restorer(root: Path, retired: _Retired) -> TaskRestorer:
-    """A board writer that returns an archived or retired task's file, unchanged, to `tasks/` under its own name.
+def _restorer(
+    root: Path, retired: _Retired, statuses: tuple[str, ...], migrations: Mapping[str, str], guard: _Guard
+) -> TaskRestorer:
+    """A board writer that returns an archived or retired task's file to `tasks/` under its own name.
+
+    An archived task keeps the State it was archived in. When the active definition lacks it, the file lands in the
+    State its `migrations` entry names, and a State with no entry refuses the restore.
 
     The task is refused while its number is open or completed, and when the name is taken: an archived file is linked
     into place and a retired one written only as a new file, so a file another writer put there first is never
@@ -882,6 +887,11 @@ def _restorer(root: Path, retired: _Retired) -> TaskRestorer:
             return retired.take(task, root / "tasks") or Written(
                 False, f"{task} has no archived task file in {root / 'archive' / 'tasks'} and is not retired"
             )
+        held = str(_split(path.read_text())[0].get("status") or "")
+        spelled = {lane_id(status): status for status in statuses}
+        landing = held if lane_id(held) in spelled else spelled.get(migrations.get(lane_id(held), ""))
+        if landing is None:
+            return Written(False, f"{task} was archived in {held}, which the active definition lacks and no migrations entry names")
         target = root / "tasks" / path.name
         try:
             os.link(path, target)
@@ -890,7 +900,14 @@ def _restorer(root: Path, retired: _Retired) -> TaskRestorer:
             return Written(False, f"{task}: {target} already exists")
         except OSError as error:
             return Written(False, f"{path}: {error}")
-        return Written(True, f"Restored task {task}")
+        if landing == held:
+            return Written(True, f"Restored task {task}")
+
+        def land(frontmatter: dict, body: str) -> str:
+            frontmatter["status"] = landing
+            return body
+
+        return _update(root, task, land, guard)
 
     return restore
 
@@ -1158,6 +1175,11 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
     _create(root, base.resolve().name)
     link = _doc_linker(root, base)
     evaluate = criteria.evaluator(settings.get("criteria"), base)
+    migrations: Mapping[str, str] = {}
+    if "machine" in settings:
+        from starpulse._internal.machines.machine_definition import _read  # noqa: PLC0415 - import cost, paid on first use
+
+        migrations = _read(base / str(settings["machine"])).get("migrations", {})
     retired = _Retired()
     claims = _Claims()
     guard = _Guard(
@@ -1186,7 +1208,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             "holds": _holds(settings.get("holds"), base),
             "edit": _editor(root, config.statuses, guard, link),
             "archive": _archiver(root, config.statuses, roles, guard),
-            "restore": _restorer(root, retired),
+            "restore": _restorer(root, retired, config.statuses, migrations, guard),
             "complete": _completer(root, config.statuses, roles),
             "retire": _retirer(root, retired, roles),
             "retired": _retired_reader(retired),

@@ -485,9 +485,33 @@ def _checked(path: Path) -> dict[str, Any]:
     return {"path": str(path), "ok": not errors, "errors": errors}
 
 
+def _dead_migrations(path: Path, held: set[str]) -> list[dict[str, Any]]:
+    """An error per `migrations` entry of `path` whose source State no live Task holds."""
+    from starpulse._internal.machines.machine_definition import _read  # noqa: PLC0415 - import cost, paid on first use
+
+    mapping = _read(path).get("migrations", {})
+    return [
+        {"file": str(path), "line": None, "message": f"migrations entry {source} -> {target}: no live Task holds {source}"}
+        for source, target in mapping.items()
+        if source not in held
+    ]
+
+
 def _validate(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    """Every machine file checked; `ok` is false, and the exit code 1, when any is refused."""
+    """Every machine file checked; `ok` is false, and the exit code 1, when any is refused.
+
+    With `--config`, a migrations entry no live Task of that config's event log holds is refused too.
+    """
+    from starpulse._internal.eventlog.history import open_event_log  # noqa: PLC0415 - import cost, paid on first use
+    from starpulse.event_log.readmodel.read_model import ReadModel  # noqa: PLC0415 - import cost, paid on first use
+
     machines = [_checked(path) for path in args.paths]
+    if args.config is not None:
+        held = {row["state"] for row in ReadModel(open_event_log(args.config).engine).snapshot()}
+        for machine in machines:
+            if machine["ok"]:
+                machine["errors"] = _dead_migrations(Path(machine["path"]), held)
+                machine["ok"] = not machine["errors"]
     return {"ok": all(machine["ok"] for machine in machines), "machines": machines}
 
 
@@ -1026,6 +1050,7 @@ def _parser() -> argparse.ArgumentParser:
         reads_server=False,
     )
     validate.add_argument("paths", nargs="+", type=Path, help="the machine YAML files")
+    validate.add_argument("--config", type=Path, help="also refuse a migrations entry no live Task in this config's event log holds")
     importer = machine_verbs.add_parser("import", description="draft a machine file", help="draft a machine file")
     import_verbs = importer.add_subparsers(dest="source_kind", required=True, metavar="format")
     mermaid = leaf(
