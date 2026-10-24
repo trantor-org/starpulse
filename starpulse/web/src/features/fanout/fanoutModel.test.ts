@@ -215,6 +215,10 @@ describe("the DAG glyph's fan-out badge", () => {
     expect(fanBadge(dag([run("a", "queued", "")]), pools(2, 2, 1))).toEqual({ text: "0/2 +1", full: true });
   });
 
+  it("is full only when its pool has a cap to fill", () => {
+    expect(fanBadge(dag([run("a", "running", "lint")]), pools(1, 0))).toEqual({ text: "1/0", full: false });
+  });
+
   it("is hidden while the DAG is idle", () => {
     expect(fanBadge(dag([]), pools(0))).toBeNull();
     expect(fanBadge({ pool: "deliver" }, pools(0))).toBeNull();

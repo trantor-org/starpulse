@@ -63,7 +63,7 @@ function aim(sc: Scroll, vp: Viewport, ty: number): Scroll {
 export function take(sc: Scroll, head: readonly LedgerRow[], vp: Viewport): Scroll {
   const have = new Set(head.map((r) => r.key)), first = sc.seen === null;
   const rows = [...head, ...sc.rows.filter((r) => !have.has(r.key))].sort(byTime);
-  const arrived = first ? 0 : head.filter((r) => !sc.seen!.has(r.key)).length;
+  const arrived = first ? 0 : head.filter((r) => !sc.seen!.has(r.key) && !sc.skip.has(r.key)).length;
   const next: Scroll = { ...sc, rows, more: first ? head.length >= PAGE : sc.more, seen: new Set(rows.map((r) => r.key)) };
   // a reader scrolled down keeps the rows in view where they are: the offset moves down by what arrived above them
   if (arrived && sc.ty > vp.rh / 2) {
