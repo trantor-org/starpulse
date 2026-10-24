@@ -113,7 +113,7 @@
   #kbm .tv .fv.chips { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; min-height: 30px; position: relative; }
   #kbm .tv .chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 10px; background: rgba(148,163,184,.12); color: #cbd5e1; font-size: 11.5px; }
   #kbm .tv.editing .chip { padding-right: 4px; }
-  #kbm .tv .chip.nh { background: rgba(251,191,36,.14); color: #fcd34d; } #kbm .tv .chip.new { box-shadow: 0 0 0 1px rgba(167,139,250,.6); }
+  #kbm .tv .chip.new { box-shadow: 0 0 0 1px rgba(167,139,250,.6); }
   #kbm .tv .chip button { all: unset; cursor: pointer; padding: 0 4px; color: #6b7a93; } #kbm .tv .chip button:hover, #kbm .tv .chip button:focus-visible { color: #f87171; }
   #kbm .tv .chips .ci { all: unset; flex: 1; min-width: 80px; font-size: 12px; color: var(--ink); padding: 1px 2px; }
   #kbm .tv .chips .none { color: #475569; }
@@ -396,7 +396,7 @@
         h("table", {}, h("tbody", {},
           row("assignee", "profile", select("assignee", profiles, "Profile")),
           row("priority", "priority", select("priority", PRIORITIES.map((p) => [p, p]), "Priority")),
-          row("labels", "labels", chips("labels", () => allLabels().map((l) => [l, `${agents().filter((a) => a.labels.includes(l)).length}`]), "add a label…", nh)),
+          row("labels", "labels", chips("labels", () => allLabels().map((l) => [l, `${agents().filter((a) => a.labels.includes(l)).length}`]), "add a label…")),
           row("milestone", "milestone", select("milestone", [["", "—"], ...milestones().map((m) => [m, m])], "Milestone")),
           row("deps", "depends on", chips("dependencies", () => agents().filter((a) => a.id !== id).map((a) => [a.id, a.title.length > 34 ? a.title.slice(0, 33) + "…" : a.title]), "add a task…")),
           reactRows.map((tr) => h("tr", { class: "ro" }, h("td", {}, tr.cells[0].textContent), h("td", { innerHTML: tr.cells[1].innerHTML }))))),
@@ -606,7 +606,7 @@
           v.edit();
           if (preset.evidence) { v.draft.ac[0].checked = true; v.markTried(); }
           if (preset.refuse) {
-            v.draft.labels = v.draft.labels.filter((l) => !RESOLUTION.includes(l));
+            v.draft.dependencies = [t.id];
             v.draft.priority = v.draft.priority === "High" ? "Medium" : "High";
             v.render();
             v.save();
