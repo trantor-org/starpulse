@@ -37,7 +37,9 @@ def sync_definitions(config: Config, base: Path) -> dict[str, str]:
     engine = EventLog(database_url(config.database_url, base)).engine
     store = EventStore(engine)
     Projector(engine, store).catch_up()
-    live = [LiveTask(row["id"], row["state"], row["version"]) for row in ReadModel(engine).since(0, EVERY_TASK)]
+    rows = ReadModel(engine).since(0, EVERY_TASK)
+    # A Task whose stream only ever held `Archived` (a retired file with no import) has no State to carry or strand.
+    live = [LiveTask(row["id"], row["state"], row["version"]) for row in rows if row["state"]]
     registry = MachineRegistry(engine, store)
     board = base / str(config.board["machine"]) if "machine" in config.board else None
     hashes: dict[str, str] = {}
