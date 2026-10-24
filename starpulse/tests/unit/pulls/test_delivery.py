@@ -14,7 +14,9 @@ from starpulse._internal.pulls.pulls import PullStore
 from starpulse._internal.server.reads import _PullReads
 from starpulse.event_log.event_log import EventLog
 
-PULLS = {"TASK-1": [{"number": 7, "url": "https://github.com/acme/widgets/pull/7", "checks": "pass"}]}
+PULLS = {
+    "TASK-1": [{"number": 7, "repo": "acme/widgets", "url": "https://github.com/acme/widgets/pull/7", "checks": "pass"}]
+}
 ANSWERS = {"records": {}, "pins": {}}
 WAIT_S = 5.0
 
@@ -77,6 +79,17 @@ def test_the_serving_feed_takes_the_projection_the_worker_kept(log: EventLog) ->
 
 
 def test_serving_with_no_projection_yet_leaves_the_feed_as_it_was(log: EventLog) -> None:
+    serving = Feed()
+
+    delivery.Projected(log, serving).apply()
+
+    assert serving.pulls() == {}
+
+
+def test_serving_leaves_the_feed_as_it_was_for_a_projection_kept_before_pulls_carried_repo(log: EventLog) -> None:
+    """A projection from before TASK-7845 has no `repo` on its pulls, which the snapshot contract refuses."""
+    before = {"TASK-1": [{"number": 7, "url": "https://github.com/acme/widgets/pull/7", "checks": "pass"}]}
+    log.set_setting(delivery.PROJECTION, {"pulls": before, "answers": ANSWERS})
     serving = Feed()
 
     delivery.Projected(log, serving).apply()
