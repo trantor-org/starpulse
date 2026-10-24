@@ -180,7 +180,8 @@ jobs:
       # grpcio has no 3.14t wheel, so this compiles it, one job per host core (36) by default: 14 cores and 17 GB, enough
       # for systemd-oomd to kill the build before uv caches the wheel, so every run rebuilt it. Six jobs finish and uv's
       # cache then keeps the wheel.
-      - run: uv sync --locked --python 3.14t --no-install-package aioquic --no-install-package pylsqpack
+      # temporalio has no 3.14t wheel either; its Rust source build needs protoc, and nothing in the repo imports it.
+      - run: uv sync --locked --python 3.14t --no-install-package aioquic --no-install-package pylsqpack --no-install-package temporalio
         env:
           GRPC_PYTHON_BUILD_EXT_COMPILER_JOBS: "6"
       # A dependency that re-enables the GIL on import leaves every test green on the build this job exists to test.
