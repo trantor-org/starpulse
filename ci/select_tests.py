@@ -366,11 +366,10 @@ def select(
         seen, stack = {name}, [name]
         while stack:
             module = stack.pop()
-            if test not in covering.get(path_of[module], (test,)):
-                continue
-            for dep in imports[module] - seen:
-                seen.add(dep)
-                stack.append(dep)
+            if test in covering.get(path_of[module], (test,)):
+                for dep in imports[module] - seen:
+                    seen.add(dep)
+                    stack.append(dep)
             if not stack and seen & set(NAMED_LOADERS):
                 named = set().union(*(names(m) for m in seen - {TYPE_TABLE})) - seen
                 seen |= named

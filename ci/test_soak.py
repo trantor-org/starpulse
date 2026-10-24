@@ -131,6 +131,11 @@ def test_a_one_hour_run_probes_every_interval_and_samples_between():
     assert report["failures"] == []
 
 
+def test_soak_final_sample_lands_at_duration_when_every_does_not_divide_it():
+    report = _run(FakeTarget(), duration=1000, interval=600, every=300)
+    assert [s["t"] for s in report["samples"]] == [0, 300, 600, 900, 1000]
+
+
 def test_a_probe_over_budget_is_recorded_as_a_failure():
     report = _run(FakeTarget(slow=True))
     assert len(report["failures"]) == 6

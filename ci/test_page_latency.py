@@ -44,6 +44,13 @@ def test_a_request_is_a_sample_of_its_route(url, route):
     assert pl.surface(url) == route
 
 
+def test_ledger_route_normalises_to_an_id_route():
+    """The ledger read is one sample of the row `READS` times for it, not an untimed surface that fails the run."""
+    surface = pl.surface("http://h:8766/api/ledger/MERGED?limit=20")
+    assert surface == "/api/ledger/<id>"
+    assert surface in pl.READS
+
+
 def test_a_page_request_no_row_times_is_untimed():
     requested = [
         "http://h/api/analytics/health",
