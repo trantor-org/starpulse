@@ -107,7 +107,8 @@ Do the steps above for every slice before proposing the cohort, then:
 2. A slice that sizes to 13 is split before any task exists. State its size and the drivers
    that reached 13, then cut it along a seam that leaves each part independently verifiable,
    re-size the parts, and repeat until none reaches 13. A size 13 is refused. A
-   mockup-interview task stays one size-8 slice. A slice forecast to compact is split the same
+   slice expected past the size-8 p90 is split before filing the same way, even at
+   size 8 or below. A mockup-interview task stays one size-8 slice. A slice forecast to compact is split the same
    way when a seam exists, else stepped up, except a planned mechanical migration.
    Size a mutation-kill slice by the source and test files it touches, not its survivor count,
    and cap it at about one module or ~15 functions.
