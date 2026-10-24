@@ -11,6 +11,9 @@ import pytest
 
 from starpulse._internal.cli import agent_cli as cli
 from starpulse._internal.cli import agent_wire
+from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.readmodel.projector import Projector
+from starpulse.event_log.store import EventStore, NewEvent
 
 VALID = Path(__file__).parent.parent.parent.parent / "machines" / "harness.yaml"
 
@@ -41,6 +44,27 @@ class TestMachineValidate:
         (error,) = checked["errors"]
         assert (error["file"], error["line"]) == (str(machine), 4)
         assert "states/done/final" in error["message"]
+
+    def test_a_migrations_entry_no_live_task_holds_is_refused_naming_it(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        events = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
+        store = EventStore(events.engine)
+        store.append("task", "TASK-1", 0, [NewEvent("TaskCreated", {"title": "t", "state": "doing"}, "adin", "operator")])
+        Projector(events.engine, store).catch_up()
+        (tmp_path / "starpulse.toml").write_text(f'database_url = "sqlite:///{tmp_path / "events.sqlite"}"\n')
+        machine = tmp_path / "board.yaml"
+        machine.write_text(
+            "name: board\nstates:\n  ready: {initial: true}\n  doing: {}\n  done: {final: true}\n"
+            "events:\n  go:\n    - {from: ready, to: doing}\n  finish:\n    - {from: doing, to: done}\n"
+            "migrations: {doing: doing, blocked: ready}\n"
+        )
+
+        code, document = _run(capsys, ["machine", "validate", "--config", str(tmp_path / "starpulse.toml"), str(machine)])
+
+        assert code == 1
+        (error,) = document["machines"][0]["errors"]
+        assert "blocked" in error["message"] and "doing" not in error["message"]
 
     def test_a_valid_machine_exits_0(self, capsys: pytest.CaptureFixture[str]) -> None:
         code, document = _run(capsys, ["machine", "validate", str(VALID)])
