@@ -30,7 +30,7 @@ from sqlalchemy import delete, func, insert, select
 from sqlalchemy.engine import Engine
 
 from starpulse._internal.board import native_docs, native_milestones, rules
-from starpulse._internal.board.claims import assignee_of, released
+from starpulse._internal.board.claims import assignee_of, released, unreleased
 from starpulse._internal.board.seam import (
     ANONYMOUS,
     HELD,
@@ -898,7 +898,7 @@ def _assign(body: str, session: str) -> str:
 
     A session the notes already name as assignee is not named again: a claim's edit may have recorded it before the move.
     """
-    return body if _assignee_of(body) == session else _append_notes(body, f"**Assignee:** {session}")
+    return body if _assignee_of(body) == session else _append_notes(unreleased(body), f"**Assignee:** {session}")
 
 
 class _Claims:
