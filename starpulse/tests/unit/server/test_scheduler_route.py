@@ -356,3 +356,12 @@ def test_the_server_refuses_a_put_that_is_not_json_or_comes_from_another_site(se
     foreign = {"Content-Type": "application/json", "Origin": "https://evil.example"}
     assert _send(server, "PUT", b'{"enabled": true}', **foreign)[0] == 403
     assert _send(server, "GET", None)[1]["enabled"] is False
+
+
+def test_scheduler_put_atomic_a_bad_harness_is_a_400_and_keeps_the_quiet_hours(tmp_path: Path) -> None:
+    runtime = _runtime(tmp_path)
+
+    status, body = _put(runtime, {"quietHours": {"start": "22:00", "end": "07:00", "timezone": "UTC"}, "harness": ""})
+
+    assert status == 400 and "harness" in body["error"]
+    assert runtime.quiet_hours.get() is None
