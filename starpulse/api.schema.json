@@ -2943,6 +2943,18 @@
           "default": null,
           "description": "Only the board machine: the state ids along its axis, in order (New to Done)."
         },
+        "next": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HeldNext"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The edge a finished skill hands to; null when the machine declares none."
+        },
         "source": {
           "anyOf": [
             {

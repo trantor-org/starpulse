@@ -1170,6 +1170,10 @@ export interface Machine {
    */
   mainLine?: string[] | null;
   /**
+   * The edge a finished skill hands to; null when the machine declares none.
+   */
+  next?: HeldNext | null;
+  /**
    * The third party whose events move this machine ("GitHub"); absent for a machine StarPulse's own actors move.
    */
   source?: string | null;

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-SCHEMA = Path(__file__).parents[2] / "api.schema.json"
+SCHEMA = Path(__file__).parents[3] / "api.schema.json"
 
 
 def test_the_raw_task_body_lists_the_skill_and_interactive_fields() -> None:

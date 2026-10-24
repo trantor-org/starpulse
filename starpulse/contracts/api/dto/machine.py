@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import Field
 
 from starpulse.contracts.api._base import _Api
@@ -59,6 +61,11 @@ class Launch(_Api):
     machine: str | None
 
 
+class HeldNext(_Api):
+    kind: Literal["skill", "operation"] = Field(description="Whether the next edge runs a skill or an operation.")
+    name: str = Field(description="The skill or operation the edge hands to.")
+
+
 class Machine(_Api):
     source: str | None = Field(
         default=None,
@@ -76,6 +83,9 @@ class Machine(_Api):
         default=None, description="Only the board machine: the skill machine each launching DAG starts."
     )
     writers: dict[str, list[Writer]] | None = Field(default=None, description="Its YAML-declared writers per event.")
+    next: HeldNext | None = Field(
+        default=None, description="The edge a finished skill hands to; null when the machine declares none."
+    )
     dagActors: list[str] | None = Field(
         default=None, description="Only the board machine: the writers that are runs workflows."
     )

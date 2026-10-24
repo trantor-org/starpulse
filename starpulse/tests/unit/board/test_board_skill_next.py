@@ -8,6 +8,7 @@ import pytest
 
 from starpulse._internal.board.project_machines import draw
 from starpulse._internal.machines.machine_definition import load_machine
+from starpulse.contracts.api.dto.machine import Machine
 
 FIXTURE = Path(__file__).parents[2] / "fixtures" / "machines" / "authoring-skills.yaml"
 
@@ -33,3 +34,9 @@ def test_a_machine_declaring_no_next_serves_null(tmp_path: Path) -> None:
 def test_a_next_of_an_unknown_kind_is_refused(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
         _drawn(tmp_path, "next:\n  kind: nowhere\n  name: x\n")
+
+
+@pytest.mark.parametrize("extra", ["", "next:\n  kind: skill\n  name: review-fix\n"])
+def test_the_api_machine_model_accepts_the_drawn_next_edge(tmp_path: Path, extra: str) -> None:
+    drawn = _drawn(tmp_path, extra)
+    assert Machine.model_validate(drawn).model_dump(by_alias=True, exclude_unset=True)["next"] == drawn["next"]
