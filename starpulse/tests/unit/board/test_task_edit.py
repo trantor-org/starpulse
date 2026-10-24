@@ -319,7 +319,9 @@ def test_a_source_outside_loopback_and_rfc_1918_cannot_archive(source: str) -> N
     [
         (b"", "Invalid JSON: EOF while parsing a value at line 1 column 0"),
         (b"[]", "Input should be an object"),
-        (b"{}", "task: Field required"),
+        (b"{}", "Value error, name exactly one of task and tasks"),
+        (b'{"task": "PROJ-3", "tasks": ["PROJ-3"]}', "Value error, name exactly one of task and tasks"),
+        (b'{"tasks": []}', "tasks: List should have at least 1 item after validation, not 0"),
         (b'{"task": 3}', "task: Input should be a valid string"),
         (b'{"task": "PROJ-3", "reason": 3}', "reason: Input should be a valid string"),
     ],
@@ -331,6 +333,17 @@ def test_an_archive_body_its_model_rejects_is_a_bad_request(raw: bytes, error: s
 
     assert (status, archive.sent) == (400, [])
     assert body == {"error": f"invalid request: {error}"}
+
+
+def test_a_batch_archives_each_held_task_and_answers_why_the_others_were_refused() -> None:
+    feed = _feed()
+    feed.put(task("PROJ-4", "In Progress"))
+    archive = _Archive()
+
+    status, body = _archive({"tasks": ["PROJ-3", "PROJ-99", "PROJ-4"], "reason": "obsolete"}, archive, feed=feed)
+
+    assert (status, body) == (200, {"archived": ["PROJ-3", "PROJ-4"], "refused": {"PROJ-99": "PROJ-99 is not on the board"}})
+    assert archive.sent == [("PROJ-3", "obsolete"), ("PROJ-4", "obsolete")]
 
 
 def test_a_task_the_board_does_not_hold_is_not_archived() -> None:

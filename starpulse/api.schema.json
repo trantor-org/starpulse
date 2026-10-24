@@ -130,7 +130,7 @@
     },
     "ArchiveRequest": {
       "additionalProperties": false,
-      "description": "`POST /api/archive`: archive `task`, recording `reason` when it is not blank.",
+      "description": "`POST /api/archive`: archive `task`, or each of `tasks` in one call, recording `reason` when it is not blank.",
       "properties": {
         "actor": {
           "anyOf": [
@@ -177,12 +177,32 @@
           "default": null
         },
         "task": {
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "tasks": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
-      "required": [
-        "task"
-      ],
       "title": "ArchiveRequest",
       "type": "object"
     },
