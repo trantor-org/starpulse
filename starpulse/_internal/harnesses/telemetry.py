@@ -46,13 +46,13 @@ log = logging.getLogger(__name__)
 #: Where Codex runs its main agent; a tool result from any other agent path is a subagent's.
 _MAIN_AGENT = {"", "/root"}
 #: `git switch` or `git checkout`, its flags, then the ref it names (never a `--` pathspec).
-_SWITCH = re.compile(r"\bgit\s+(?:-C\s+\S+\s+)?(?:switch|checkout)\s+((?:-[\w-]+\s+)*)([^\s;&|<>-][^\s;&|<>]*)")
+_SWITCH = re.compile(r"\bgit\s+(?:-C\s+\S+\s+)?(?:switch|checkout)\s+((?:-(?!-\s)[\w-]+\s+)*)([^\s;&|<>-][^\s;&|<>]*)")
 
 
 def _number(value: Any) -> int:
     try:
         return max(int(float(str(value))), 0)
-    except ValueError:
+    except (ValueError, OverflowError):
         return 0
 
 
