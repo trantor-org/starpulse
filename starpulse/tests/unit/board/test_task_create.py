@@ -1,9 +1,11 @@
 """Creating a task through the board: the optional create writer, `POST /api/tasks` and the snapshot's `create` flag."""
 
 import json
+import multiprocessing
 import shutil
 import urllib.error
 import urllib.request
+from multiprocessing.synchronize import Barrier as BarrierType
 from pathlib import Path
 
 import pytest
@@ -74,6 +76,30 @@ def test_a_create_in_a_board_that_already_holds_tasks_takes_the_next_id(
     assert built.create is not None
 
     assert create_task("127.0.0.1", _raw(title="New"), built.create) == (201, {"task": "task-8"})
+
+
+def _create_after(base: Path, start: BarrierType, writer: int, count: int) -> None:
+    """One process's own board on `base`: wait for every writer, then create `count` tasks."""
+    built, _ = assemble(load(None), base, None, ())
+    assert built.create is not None
+    start.wait()
+    for each in range(count):
+        assert built.create(f"Writer {writer} task {each}", {}).ok
+
+
+def test_creates_from_several_processes_on_one_board_never_share_an_id(tmp_path: Path) -> None:
+    spawn = multiprocessing.get_context("spawn")
+    start = spawn.Barrier(4)
+    writers = [spawn.Process(target=_create_after, args=(tmp_path, start, writer, 25)) for writer in range(4)]
+    for writer in writers:
+        writer.start()
+    for writer in writers:
+        writer.join(60)
+
+    assert [writer.exitcode for writer in writers] == [0, 0, 0, 0]
+    ids = [_split(path.read_text())[0]["id"] for path in _tasks(tmp_path).glob("*.md")]
+    assert len(ids) == 100
+    assert len(set(ids)) == 100
 
 
 def test_a_title_with_a_path_separator_still_makes_one_file_inside_tasks(

@@ -8,6 +8,7 @@ edits the files with no `backlog` CLI, and creates the board, empty, when its di
 
 from __future__ import annotations
 
+import fcntl
 import importlib
 import json
 import os
@@ -20,6 +21,7 @@ import threading
 import time
 import uuid
 from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -1069,6 +1071,18 @@ def _file_name(task: str, title: str, form: str) -> str:
     return f"{task} - {re.sub(r'[^\w-]+', '-', title).strip('-')[:60].strip('-') or 'Task'}.md"
 
 
+@contextmanager
+def _allocating(root: Path) -> Iterator[None]:
+    """Lock the board directory itself: a create in another process on the same board waits until this one has
+    written, and no lock file lands among the board's files."""
+    held = os.open(root, os.O_RDONLY)
+    try:
+        fcntl.flock(held, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(held)
+
+
 def _creator(
     root: Path,
     config: BacklogConfig,
@@ -1083,11 +1097,11 @@ def _creator(
     `documentation`, `definitionOfDone`, `plan`, `notes` or other field `edit` sets) is set as `edit` sets it, so a
     detail it cannot set refuses the create and nothing is written. A refused create leaves its id to the next one.
     """
-    lock = threading.Lock()  # two creates must not both read the same highest id
+    lock = threading.Lock()  # two creates, in this process or another, must not both read the same highest id
     spelled = {lane_id(status): status for status in config.statuses}
 
     def create(title: str, details: Mapping[str, Any], /, actor: str = OPERATOR) -> Written:
-        with lock:
+        with lock, _allocating(root):
             task = _next_id(root, config.prefix, retired)
             path = root / "tasks" / _file_name(task, title, file_name)
             frontmatter, body = _split(_new_task(task, title, config.statuses[0], details))
