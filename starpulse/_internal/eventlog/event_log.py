@@ -28,6 +28,7 @@ import sqlite3
 import threading
 import time
 import uuid
+import weakref
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
@@ -71,6 +72,33 @@ class Entry(NamedTuple):
     event_id: str
     fields: dict[str, Any]
     at: float
+
+
+def _watch_data_version(log: weakref.ref[EventLog], database: str, baseline: threading.Event) -> None:
+    """Wake waiters whenever another connection commits to `database`, setting `baseline` after the first read.
+    `PRAGMA data_version` changes only for commits made through other connections, and a connection without a
+    transaction holds no read lock, so this one never stalls a checkpoint.
+
+    The thread holds the log only through `log`, so a log its owner drops ends this thread within one interval; a
+    bound method as the target would keep the log alive for the life of the process."""
+    version = None
+    connection = None
+    while (owner := log()) is not None:
+        try:
+            if connection is None:
+                connection = sqlite3.connect(database, timeout=_SQLITE_BUSY_TIMEOUT, isolation_level=None)
+            current = connection.execute("PRAGMA data_version").fetchone()[0]
+            if version is not None and current != version:
+                owner._wake()
+            version = current
+        except sqlite3.Error as exc:  # the file is locked or gone; the interval still delivers
+            logger.debug("EventLog: data_version check failed: %s", exc)
+            connection, version = None, None
+        del owner
+        baseline.set()
+        time.sleep(_DATA_VERSION_INTERVAL)
+    if connection is not None:
+        connection.close()
 
 
 def _sqlite_pragmas(dbapi_connection: Any, _record: Any) -> None:  # pragma: no mutate block — sqlite3 tuning
@@ -210,32 +238,12 @@ class EventLog:
         if url.database not in (None, "", ":memory:"):
             baseline = threading.Event()
             threading.Thread(
-                target=self._watch_data_version,
-                args=(url.database, baseline),
+                target=_watch_data_version,
+                args=(weakref.ref(self), url.database, baseline),
                 name="eventlog-data-version",
                 daemon=True,
             ).start()
             baseline.wait(_SQLITE_BUSY_TIMEOUT)
-
-    def _watch_data_version(self, database: str, baseline: threading.Event) -> None:
-        """Wake waiters whenever another connection commits to `database`, setting `baseline` after the first read.
-        `PRAGMA data_version` changes only for commits made through other connections, and a connection without a
-        transaction holds no read lock, so this one never stalls a checkpoint."""
-        version = None
-        connection = None
-        while True:
-            try:
-                if connection is None:
-                    connection = sqlite3.connect(database, timeout=_SQLITE_BUSY_TIMEOUT, isolation_level=None)
-                current = connection.execute("PRAGMA data_version").fetchone()[0]
-                if version is not None and current != version:
-                    self._wake()
-                version = current
-            except sqlite3.Error as exc:  # the file is locked or gone; the interval still delivers
-                logger.debug("EventLog: data_version check failed: %s", exc)
-                connection, version = None, None
-            baseline.set()
-            time.sleep(_DATA_VERSION_INTERVAL)
 
     def prune(self, retention: float, now: float | None = None, *, archive_dir: Path) -> int:
         """Archive and then delete the rows older than `retention` seconds and return how many; raises when the
