@@ -1,6 +1,7 @@
 // The task view: every section reads in place and edits in place, one at a time, each Save a guarded write of that section's diff.
 import { Fragment, useCallback, useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 import { ago, fmtAt } from "../../shared/clock";
+import { RatingControl } from "./RatingControl";
 import { columnsOf, roleOf, type KanbanTask } from "./kanbanModel";
 import { startLane, startable } from "./start";
 import { StartCriteria } from "./StartCriteria";
@@ -468,6 +469,7 @@ export function TaskView(p: TaskViewProps) {
               <div className="row"><LanePill lane={p.task.lane} role={roleOf(roles, p.task.lane)} name={p.lane} small />{p.task.entered > 0 && <span className="k">{`for ${ago(p.now - p.task.entered)}`}</span>}</div>
               {p.stack && <table className="props"><tbody><tr className="ro"><td>{p.task.lane === roles.done ? "done chain" : "waiting stack"}</td><td className="stacklist">{p.stack}</td></tr></tbody></table>}
             </RailSection>
+            <RailSection name="Rating"><RatingControl key={p.task.id} task={p.task.id} rating={p.task.rating} now={p.now} /></RailSection>
             <RailSection name="Session"><SessionRows session={sessionOf(p.task, p.record, p.now, startLane(p.task, roles))} worked={p.task.lane === roles.working} startLane={startLane(p.task, roles)} /></RailSection>
             {criteria.length > 0 && <RailSection name="Start Criteria" count={`${metCount(criteria)}/${criteria.length} met`}><StartCriteria criteria={criteria} now={p.now} /></RailSection>}
             {!!p.task.runs?.length && (

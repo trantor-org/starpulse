@@ -38,6 +38,7 @@ def _rating(entry: Entry, changes: int) -> dict[str, Any]:
         "verdict": entry.fields["verdict"],
         "reason": entry.fields.get("reason", ""),
         "at": entry.fields["time"],
+        "actor": entry.fields.get("actor", ""),
         "changes": changes,
     }
 

@@ -2,7 +2,7 @@
 import { midnight, type Sky } from "../../render/sky";
 import type { TaskRecord } from "./taskViewModel";
 import type { Option } from "../../shared/ChoiceMenu";
-import type { Move, Pull, Roles, TrailStep } from "../../api";
+import type { Move, Pull, Rating, Roles, TrailStep } from "../../api";
 
 /** The States the machine gives a lifecycle role, keyed by role, in column order. The creation and final States have left the lanes. */
 const lifecycleStates = ({ ready, waiting, working, review, attention, done }: Roles) => ({ ready, waiting, working, review, attention, done });
@@ -38,6 +38,8 @@ export interface KanbanTask {
   description: string;
   /** The lifecycle machine that last placed the task, the state it left it in and when (epoch seconds). */
   live: { machine: string; state: string; at: number; source?: string | null } | null;
+  /** The pass/fail verdict on the task, drawn in the task view only; absent when it was never rated or the rating was cleared. */
+  rating?: Rating;
   /** Ready again after waiting: its last Board move was out of Waiting, so a machine state from before it no longer describes the card. */
   released: boolean;
   /** The verdict on each Board column the task may move to, by state id; a column absent here has no transition. */
@@ -332,6 +334,7 @@ export function kanbanTasks(sky: Sky): KanbanTask[] {
       live: latest ? { machine: latest.flow, state: latest.state, at: latest.at, source: sky.flows[latest.flow]?.machine.source } : null,
       released: a.state === roles.ready && a.previous === roles.waiting, moves: a.moves ?? (a.move_set ? sky.moveSets[a.move_set] : undefined) ?? {}, entered: a.entered ?? 0, created: a.created ?? null, workableSince: a.workable_since ?? null,
       machines: sessions.get(a.id) ?? [],
+      rating: sky.ratings?.[a.id],
     };
   });
 }

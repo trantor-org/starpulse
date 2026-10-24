@@ -164,7 +164,7 @@ describe("the task view's right rail", () => {
   it("draws Status, Pull requests, CI history, Dependencies, Machines and Details in that order, each heading with its count", () => {
     const html = draw({ tasks: many });
 
-    expect(headings(html)).toEqual(["Status", "Session", "Pull requests", "CI history", "Dependencies", "Machines", "Details"]);
+    expect(headings(html)).toEqual(["Status", "Rating", "Session", "Pull requests", "CI history", "Dependencies", "Machines", "Details"]);
     expect(rows(html, "Pull requests")).toContain('<span class="n">1</span>');
     expect(rows(html, "Dependencies")).toContain('<span class="n">9</span>');
     expect(rows(html, "Machines")).toContain('<span class="n">1</span>');
@@ -357,8 +357,8 @@ describe("the Start Criteria section", () => {
     expect(card).not.toContain("last ");
   });
 
-  it("sits in the right rail after Status and Session and is absent when the task has no criteria", () => {
-    expect(headings(withCriteria(criteria)).slice(0, 3)).toEqual(["Status", "Session", "Start Criteria"]);
+  it("sits in the right rail after Status, Rating and Session and is absent when the task has no criteria", () => {
+    expect(headings(withCriteria(criteria)).slice(0, 4)).toEqual(["Status", "Rating", "Session", "Start Criteria"]);
     expect(headings(withCriteria([]))).not.toContain("Start Criteria");
     expect(headings(withCriteria(undefined))).not.toContain("Start Criteria");
     expect(html(withCriteria(criteria)).left).not.toContain("Start Criteria</span>");

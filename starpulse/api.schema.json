@@ -4355,8 +4355,11 @@
     },
     "Rating": {
       "additionalProperties": false,
-      "description": "A task's latest pass/fail rating: its verdict, the reason it names (empty when none), when it was set (epoch\nseconds) and how many changes the task's rating has had.",
+      "description": "A task's latest pass/fail rating: its verdict, the reason it names (empty when none), when it was set (epoch\nseconds), who set it (`actor`, empty when the write named none) and how many changes the task's rating has had.",
       "properties": {
+        "actor": {
+          "type": "string"
+        },
         "at": {
           "type": "number"
         },
@@ -4374,6 +4377,7 @@
         "verdict",
         "reason",
         "at",
+        "actor",
         "changes"
       ],
       "title": "Rating",

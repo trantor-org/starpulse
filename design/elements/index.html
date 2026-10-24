@@ -206,6 +206,40 @@ iframe.phone { display: block; width: 390px; max-width: 100%; border: 0; border-
           </div>
         </div>
       </figure>
+      <figure>
+        <figcaption><b>Pass/fail toggle</b><code>#kbm .tvrail .rate .ratebtn</code>: two ghost buttons styled like <code>.hidebtn</code>, <code>aria-pressed</code> tints the active verdict with <code>--ok</code> or <code>--fail</code>; a pressed verdict clicked again clears the rating. Fail opens an optional reason field (120 characters, counter; Enter saves, Esc skips), a saved reason shows with an edit button, and a refused write is an <code>.editrefusal</code>. Shown unrated, passed, failed with a reason, failed without one, reason open, saving and refused.</figcaption>
+        <div class="tv"><div class="tvbody"><div class="tvcol tvrail">
+          <section class="sec rs"><div class="sh"><span class="t">Rating</span></div>
+            <div class="rate"><button class="ratebtn" data-verdict="pass" aria-pressed="false">Pass</button><button class="ratebtn" data-verdict="fail" aria-pressed="false">Fail</button></div>
+          </section>
+          <section class="sec rs"><div class="sh"><span class="t">Rating</span></div>
+            <div class="rate"><button class="ratebtn" data-verdict="pass" aria-pressed="true">Pass</button><button class="ratebtn" data-verdict="fail" aria-pressed="false">Fail</button></div>
+            <div class="ratemeta" title="2 changes: failed, then passed">Passed by operator · 4m ago · 2 changes</div>
+          </section>
+          <section class="sec rs"><div class="sh"><span class="t">Rating</span></div>
+            <div class="rate"><button class="ratebtn" data-verdict="pass" aria-pressed="false">Pass</button><button class="ratebtn" data-verdict="fail" aria-pressed="true">Fail</button></div>
+            <div class="ratewhy"><span>Snapshot refresh drops the lane filter</span><button>Edit</button></div>
+            <div class="ratemeta" title="1 change: failed">Failed by operator · 1m ago · 1 change</div>
+          </section>
+          <section class="sec rs"><div class="sh"><span class="t">Rating</span></div>
+            <div class="rate"><button class="ratebtn" data-verdict="pass" aria-pressed="false">Pass</button><button class="ratebtn" data-verdict="fail" aria-pressed="true">Fail</button></div>
+            <div class="ratewhy"><button>Add a reason</button></div>
+            <div class="ratemeta" title="1 change: failed">Failed by operator · 1m ago · 1 change</div>
+          </section>
+          <section class="sec rs"><div class="sh"><span class="t">Rating</span></div>
+            <div class="rate"><button class="ratebtn" data-verdict="pass" aria-pressed="false">Pass</button><button class="ratebtn" data-verdict="fail" aria-pressed="true">Fail</button></div>
+            <div class="ratewhy"><input class="fv live" maxlength="120" aria-label="Reason" placeholder="Why did it fail? (optional)" value="Snapshot refresh drops the"><span class="count">26/120</span><span class="k">Enter saves · Esc skips</span></div>
+          </section>
+          <section class="sec rs"><div class="sh"><span class="t">Rating</span></div>
+            <div class="rate"><button class="ratebtn" data-verdict="pass" aria-pressed="true" disabled>Pass</button><button class="ratebtn" data-verdict="fail" aria-pressed="false" disabled>Fail</button></div>
+            <div class="ratemeta">saving</div>
+          </section>
+          <section class="sec rs"><div class="sh"><span class="t">Rating</span></div>
+            <div class="rate"><button class="ratebtn" data-verdict="pass" aria-pressed="false">Pass</button><button class="ratebtn" data-verdict="fail" aria-pressed="false">Fail</button></div>
+            <div class="editrefusal" role="alert">Rating not saved.</div>
+          </section>
+        </div></div></div>
+      </figure>
     </div>
   </div>
   <div id="efa">
