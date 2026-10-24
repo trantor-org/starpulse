@@ -56,6 +56,8 @@ class LaneStep(_Api):
     # `from` is a Python keyword.
     origin: str | None = Field(alias="from")
     to: str
+    # Present only where the write named its actor.
+    by: str | None = None
 
 
 class MachineStep(_Api):

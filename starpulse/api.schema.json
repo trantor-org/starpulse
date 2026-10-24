@@ -2415,6 +2415,17 @@
         "at": {
           "type": "number"
         },
+        "by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "from": {
           "anyOf": [
             {
