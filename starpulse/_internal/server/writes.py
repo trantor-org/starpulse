@@ -398,8 +398,10 @@ def _status(column: str) -> str:
 
 def _move_refusal(agent: dict, task: str, column: str, who: _Who) -> tuple[int, dict[str, str]] | None:
     """The 409 for a move to `column` that the machine does not offer `who` from the task's state, else None."""
-    if column not in agent.get("moves", {}):  # a cold done task holds no moves
-        return 409, {"error": f"{task} cannot move from {agent['state']} to {column}"}
+    moves = agent.get("moves", {})
+    if column not in moves:  # a cold done task holds no moves
+        offered = f"its moves are {', '.join(sorted(moves))}" if moves else "it has no moves"
+        return 409, {"error": f"{task} cannot move from {agent['state']} to {column}: {offered}"}
     if not (move := Move.model_validate(agent["moves"][column])).permits(who.actor):
         return 409, {"error": move.for_actor(who.actor).reason, "skill": move.skill}
     return None
