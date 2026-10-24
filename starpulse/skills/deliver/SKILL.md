@@ -34,7 +34,7 @@ Done when `starpulse task show PROJ-45` shows the task finalized.
 
 1. Stage only the task's own paths. Leave every file another session changed as it is. A change that lives only in
    a submodule ships its PR from the submodule's own task worktree, in the submodule's repository; the parent ships
-   no PR and leaves the submodule pin as it is. Run steps 3 to 5 in that worktree.
+   no PR and leaves the submodule pin as it is. Run steps 3 to 5 in that child worktree.
 2. Write the commit message and the PR body to two files outside the tracked tree. The body names the task, what
    changed, and how each criterion was proven.
 
