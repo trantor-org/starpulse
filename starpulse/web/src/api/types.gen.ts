@@ -443,6 +443,10 @@ export interface RawTask {
    * A Board task's Impact (low, medium or high); empty or absent when it has none.
    */
   impact?: string | null;
+  /**
+   * Whether an accepted take-over made the task interactive; absent off the held view.
+   */
+  interactive?: boolean | null;
   labels?: string[] | null;
   /**
    * A Board task's milestone; empty or absent when it has none.
@@ -479,6 +483,10 @@ export interface RawTask {
    * A task's scheduler runs: those whose run id names it (`dag-run-task-<N>-<ts>`).
    */
   runs?: TaskRun[] | null;
+  /**
+   * The skill machine an In Progress task is held in; absent off the held view.
+   */
+  skill?: HeldSkill | null;
   state: string;
   steps?: number | null;
   /**
@@ -539,6 +547,34 @@ export interface TaskRun {
   startedAt: string;
   status: string;
   url: string;
+}
+export interface HeldSkill {
+  /**
+   * The state the task holds in the skill machine.
+   */
+  current?: string | null;
+  /**
+   * The skill machine the task is in.
+   */
+  name: string;
+  /**
+   * The edge the skill declares; null when none is declared.
+   */
+  next?: HeldNext | null;
+  /**
+   * The skill machine's state ids, in declared order.
+   */
+  states: string[];
+}
+export interface HeldNext {
+  /**
+   * Whether the next edge runs a skill or an operation.
+   */
+  kind: "skill" | "operation";
+  /**
+   * The skill or operation the edge hands to.
+   */
+  name: string;
 }
 export interface TrailStep {
   at: number;
@@ -1816,6 +1852,12 @@ export interface Snapshot {
    * A Backlog.md project found beside the config while the default board is shown, and how to switch to it.
    */
   hint?: string | null;
+  /**
+   * Each task an accepted take-over made interactive, by task id; a task never taken over is absent.
+   */
+  interactive?: {
+    [k: string]: boolean;
+  } | null;
   machinePage?: MachinePage | null;
   machineStrip?: MachineStrip | null;
   /**

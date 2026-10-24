@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
-from starpulse._internal.board.view import board_columns, board_flow
+from starpulse._internal.board.view import board_columns
 from starpulse._internal.server.snapshot_cache import Served
 
 
@@ -71,7 +71,7 @@ class ColumnViews:
             if served is self._served:
                 return self._columns  # a stream rereading the snapshot it read last allocates nothing
             snapshot = served.snapshot
-            inputs = (board_flow(snapshot), snapshot["settled"], snapshot["pulls"])
+            inputs = (snapshot["flows"], snapshot["settled"], snapshot["pulls"], snapshot.get("interactive"))
             self._served = served
             if inputs != self._inputs:
                 self._columns = board_columns(snapshot, lambda agent: True)["columns"]

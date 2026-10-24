@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import Any
 
-from starpulse._internal.board.view import board_columns, cold_agent, done_ids, task_view
+from starpulse._internal.board.view import board_columns, board_flow, cold_agent, done_ids, task_view
 from starpulse.tests.machines import ROLES
 
 
@@ -78,6 +78,8 @@ def test_a_cold_done_task_is_done_to_a_dependent_and_a_verb_view_loads_its_full_
         "lane": "done",
         "phase": None,
         "substate": None,
+        "skill": None,
+        "interactive": False,
         "done_at": None,
         "profile": "@agent-a",
         "assignee": "",
@@ -93,3 +95,33 @@ def test_a_cold_done_task_is_done_to_a_dependent_and_a_verb_view_loads_its_full_
         "rating": None,
     }
     assert cold["description"] == "Long ago."
+
+
+def _working_board(*, next_edge: dict[str, str] | None = None, interactive: bool = False) -> dict[str, Any]:
+    """A board with one In Progress task, T-1, in the `deliver` phase of `in-progress`, at `pushed` in the `deliver` skill."""
+    roles = ROLES.wire()
+    task = {"id": "T-1", "title": "task 1", "state": roles["working"], "model": "", "milestone": "", "labels": [], "dependencies": [], "prs": [], "moves": {}}
+    board = {"name": "board", "machine": {"states": [], "submachines": [{"state": roles["working"], "machine": "in-progress"}]}, "agents": [task]}
+    in_progress = {"name": "in-progress", "machine": {"states": [], "submachines": [{"state": "deliver", "machine": "deliver"}]}, "agents": [{"task": "T-1", "state": "deliver"}]}
+    states = [{"id": state} for state in ("committed", "pushed", "pr_opened")]
+    deliver = {"name": "deliver", "machine": {"states": states, "transitions": [], "next": next_edge}, "agents": [{"task": "T-1", "state": "pushed"}]}
+    return {"flows": [board, in_progress, deliver], "pulls": {}, "settled": {}, "roles": roles, "interactive": {"T-1": interactive}}
+
+
+def test_a_held_in_progress_task_serves_its_skill_and_its_interactive_flag() -> None:
+    snapshot = _working_board(next_edge={"kind": "skill", "name": "review-fix"}, interactive=True)
+    held = task_view(board_flow(snapshot)["agents"][0], snapshot)
+    assert held["skill"] == {
+        "name": "deliver",
+        "states": ["committed", "pushed", "pr_opened"],
+        "current": "pushed",
+        "next": {"kind": "skill", "name": "review-fix"},
+    }
+    assert held["interactive"] is True
+
+
+def test_a_task_outside_a_skill_serves_no_skill_and_is_not_interactive() -> None:
+    snapshot = _working_board()
+    ready = {**board_flow(snapshot)["agents"][0], "state": ROLES.wire()["waiting"]}
+    held = task_view(ready, snapshot)
+    assert (held["skill"], held["interactive"]) == (None, False)

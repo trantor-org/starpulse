@@ -138,7 +138,7 @@ class WriteRoutes:
             _RATING: (lambda client, raw: record_rating(client, raw, feed), "rating"),
             _MISS: (lambda client, raw: record_miss(client, raw, feed, read, edit, archive, create), "verdict"),
             _RESTORE: (lambda client, raw: restore_task(client, raw, feed, restore), "restore"),
-            _TAKE_OVER: (lambda client, raw: take_over_task(client, raw, services.take_over), "take_over"),
+            _TAKE_OVER: (lambda client, raw: take_over_task(client, raw, services.take_over, feed), "take_over"),
             _RETIRE: (lambda client, raw: retire_task(client, raw, milestones), "retire"),
             _RETIRED_IMPORT: (lambda client, raw: import_retired(client, raw, milestones), "retired_import"),
             _CLAIM: (lambda client, raw: claim_task(client, raw, feed, writer), "claim"),

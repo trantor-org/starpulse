@@ -125,6 +125,10 @@ class Snapshot(_Api):
     move_sets: dict[str, dict[str, Move]] | None = Field(
         default=None, description="Each distinct set of Board-column verdicts a task's `move_set` names, by key."
     )
+    interactive: dict[str, bool] | None = Field(
+        default=None,
+        description="Each task an accepted take-over made interactive, by task id; a task never taken over is absent.",
+    )
     error: str | None
     reading: bool | None = Field(
         default=None,

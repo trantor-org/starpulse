@@ -80,6 +80,16 @@
       "minItems": 1,
       "items": {"$ref": "#/$defs/submachine"}
     },
+    "next": {
+      "description": "The edge a finished skill hands to: the skill or operation that runs next. Absent means no edge is declared.",
+      "type": "object",
+      "properties": {
+        "kind": {"enum": ["skill", "operation"]},
+        "name": {"type": "string", "minLength": 1}
+      },
+      "required": ["kind", "name"],
+      "additionalProperties": false
+    },
     "launches": {
       "description": "Per launching workflow (its own name, or <instance>/<workflow>), the skill it starts and the sibling machine that skill draws.",
       "type": "object",
