@@ -32,7 +32,9 @@ Done when `starpulse task show PROJ-45` shows the task finalized.
 
 ## 3. Stage and describe the change
 
-1. Stage only the task's own paths. Leave every file another session changed as it is.
+1. Stage only the task's own paths. Leave every file another session changed as it is. A change that lives only in
+   a submodule ships its PR from the submodule's own task worktree, in the submodule's repository; the parent ships
+   no PR and leaves the submodule pin as it is. Run steps 3 to 5 in that worktree.
 2. Write the commit message and the PR body to two files outside the tracked tree. The body names the task, what
    changed, and how each criterion was proven.
 
@@ -56,7 +58,11 @@ Read the PR's state with `starpulse command run pr-status --arg pr=<number>`. Wh
 delivery marks it ready on its green verdict; when it is not, mark it ready the way the project's `AGENTS.md`
 says.
 
-Done when `starpulse command run pr-status --arg pr=<number>` reports the PR ready with green checks.
+Then move the task to review with `starpulse task move PROJ-45 review`: the move takes the column's lowercase id.
+A refusal names the ids the task can move to and, when a guard refused, the skill that satisfies it.
+
+Done when `starpulse command run pr-status --arg pr=<number>` reports the PR ready with green checks and
+`starpulse task show PROJ-45` shows the task in review.
 
 ## Decline shortcuts
 

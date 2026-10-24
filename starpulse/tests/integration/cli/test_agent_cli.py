@@ -833,7 +833,23 @@ def test_a_column_the_task_cannot_move_to_is_a_refusal_naming_it(
 ) -> None:
     code, doc = _run(capsys, ["task", "move", "PROJ-6", "done", "--server", movable])
 
-    assert (code, doc["ok"], doc["reason"]) == (1, False, "PROJ-6 cannot move from in_progress to done")
+    assert (code, doc["ok"], doc["reason"]) == (
+        1,
+        False,
+        "PROJ-6 cannot move from in_progress to done: its moves are ready, review, waiting",
+    )
+
+
+def test_an_unknown_state_id_is_a_refusal_naming_it_and_listing_the_tasks_move_ids(
+    movable: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["task", "move", "PROJ-6", "Review", "--server", movable])
+
+    assert (code, doc["ok"], doc["reason"]) == (
+        1,
+        False,
+        "PROJ-6 cannot move from in_progress to Review: its moves are ready, review, waiting",
+    )
 
 
 def test_task_move_on_a_board_with_no_writer_exits_3_and_says_so(bare: str, capsys: pytest.CaptureFixture[str]) -> None:

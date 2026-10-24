@@ -292,7 +292,7 @@ def test_a_column_the_board_machine_does_not_allow_from_the_tasks_state_is_refus
     status, body = _move({"task": "PROJ-3", "to": to}, writer)
 
     assert (status, writer.sent) == (409, [])
-    assert body == {"error": f"PROJ-3 cannot move from ready to {to}"}
+    assert body == {"error": f"PROJ-3 cannot move from ready to {to}: its moves are in_progress"}
 
 
 def test_a_move_the_writer_refuses_answers_409_with_its_reason_and_the_skill_that_satisfies_it() -> None:
