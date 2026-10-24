@@ -70,4 +70,13 @@ describe("the history cache", () => {
 
     expect(history.lane("PROJ-7")).toBe("unavailable");
   });
+
+  it("encodes the task and machine ids into the query string", async () => {
+    const { history, f } = rig(() => reply({ path: rows, steps: 0 }));
+    history.machine("A&B", "x y");
+    history.lane("C#1");
+    await settle();
+
+    expect(f.mock.calls.map(([url]) => url)).toEqual(["/api/history?task=A%26B&machine=x%20y", "/api/history?task=C%231"]);
+  });
 });

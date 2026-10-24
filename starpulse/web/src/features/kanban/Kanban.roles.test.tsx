@@ -58,6 +58,20 @@ describe("the Kanban page over renamed States", () => {
     expect(host.querySelector<HTMLElement>("#cols .col.on")?.dataset.lane).toBe("doing");
   });
 
+  it("draws a roles change again, so a session start the new roles drop goes", () => {
+    const enabled = () => [...host.querySelectorAll<HTMLButtonElement>("button.play")].filter((b) => !b.disabled).map((b) => b.getAttribute("aria-label")).sort();
+    const hud = board(cards), moves = new MoveStore((async () => ({ ok: true })) as never), starts = new StartStore((async () => ({})) as never, moves), constellation = () => {};
+    const draw = (h: HudState) => act(() => root.render(
+      <Kanban hud={h} moves={moves} starts={starts} compact={false} constellation={constellation} searchSlot={null} outlineSlot={null} />,
+    ));
+    draw(hud);
+    expect(enabled()).toEqual(["Start T-1", "Start T-2", "Start T-5"]);
+
+    draw({ ...hud, roles: { ...RENAMED_ROLES, startable: ["on_me", "todo"] } });
+
+    expect(enabled()).toEqual(["Start T-1", "Start T-5"]);
+  });
+
   it("offers a session start on the States the roles make startable, and on no other", () => {
     show(board(cards));
 

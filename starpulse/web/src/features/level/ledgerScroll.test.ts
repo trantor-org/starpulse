@@ -136,6 +136,14 @@ describe("loading older merges", () => {
 describe("a merge arriving", () => {
   const scrolled = () => at(opened(), 200);
 
+  it("does not move the view for a merge drawn elsewhere, which is not in the list the viewport scrolls", () => {
+    const before = { ...scrolled(), skip: new Set(["m-1"]) };
+    const after = take(before, [row(-1, 100_100), ...rows(0, PAGE - 1)], vp);
+
+    expect(after.ty).toBe(before.ty);
+    expect(after.fresh).toBe(0);
+  });
+
   it("keeps the rows in view where they are when the reader is scrolled down, and counts it on the chip", () => {
     const before = scrolled(), viewed = place(before, vp).map((p) => [p.row.key, p.y]);
     const after = take(before, [row(-1, 100_100), ...rows(0, PAGE - 1)], vp);

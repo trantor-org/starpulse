@@ -136,7 +136,7 @@ const held = (dag: Pick<Dag, "active">) => ({
 export function fanBadge(dag: Pick<Dag, "active" | "pool">, pools: Pool[] | undefined): { text: string; full: boolean } | null {
   const pool = pools?.find((p) => p.name === dag.pool), { running, queued } = held(dag);
   if (!pool || (!running.length && !queued)) return null;
-  return { text: `${running.length}/${pool.cap}${queued ? ` +${queued}` : ""}`, full: pool.running >= pool.cap };
+  return { text: `${running.length}/${pool.cap}${queued ? ` +${queued}` : ""}`, full: pool.cap > 0 && pool.running >= pool.cap };
 }
 
 /**
