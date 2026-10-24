@@ -2,10 +2,10 @@
 
 Usage: canary_smoke.py --url URL --config PATH --machines DIR --db PATH
 
-The steps run in order: migrate the store to the wheel's head, serve, `starpulse reload` exits 0, the workers hold
-for HOLD seconds without restarting, then the board renders and a task modal opens. --db is a copy (`VACUUM INTO` of
-the live store) that migrate writes in place; the live file is never passed. A failed step prints `<step>: <problem>`
-and exits 1.
+The steps run in order: migrate the store to the wheel's head, serve, `starpulse reload` exits 0, then the workers hold
+for HOLD seconds without restarting while, inside that window, the board renders and a task modal opens. --db is a
+copy (`VACUUM INTO` of the live store) that migrate writes in place; the live file is never passed. A failed step
+prints `<step>: <problem>` and exits 1.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -92,10 +93,17 @@ def wait_ready(serve: subprocess.Popen[bytes], port: int, expected: set[str], lo
     return f"serve: {problem}" if serve.poll() is None else f"serve: exited {serve.returncode}"
 
 
-def hold(serve: subprocess.Popen[bytes], port: int, expected: set[str], log: Path) -> str | None:
-    """None when the same workers stay alive and the page keeps answering for HOLD seconds."""
+def hold(
+    serve: subprocess.Popen[bytes], port: int, expected: set[str], log: Path, during: Callable[[], str | None]
+) -> str | None:
+    """None when `during` passes and the same workers stay alive and the page keeps answering for HOLD seconds.
+
+    `during` (the board check) runs at the window's start, so its time counts toward HOLD instead of adding to it.
+    """
     before = live_children(serve.pid, log)
     end = time.monotonic() + HOLD
+    if problem := during():
+        return problem
     while time.monotonic() < end:
         time.sleep(SAMPLE)
         if serve.poll() is not None:
@@ -201,10 +209,7 @@ def main(argv: list[str]) -> int:
             if problem := step_reload(python, root, config, environ):
                 print(problem)
                 return 1
-            if problem := hold(serve, url.port, expected, log):
-                print(problem)
-                return 1
-            if problem := step_board(args.url):
+            if problem := hold(serve, url.port, expected, log, lambda: step_board(args.url)):
                 print(problem)
                 return 1
         finally:
