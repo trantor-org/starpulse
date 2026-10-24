@@ -1458,7 +1458,7 @@ index ff9171d747..612309b8dc 100644
 +  const now = snap.now ?? Date.now() / 1000, models = ["@agent-deep-high", "@agent-standard-high", "@agent-standard-medium"];
 +  const spots: [string, string][] = [["build", "worktree_ready"], ["build", "red_proven"], ["deliver", "lint_green"], ["deliver", "ci_green"], ["review_fix", "start"], ["build", "green"], ["deliver", "pushed"], ["build", "criteria_checked"]];
 +  const extra = Array.from({ length: Number(q.get("extra") ?? 0) }, (_, i) => ({ id: `SIM-${i + 1}`, spot: spots[i % spots.length], model: models[i % models.length] }));
-+  const at: Record<string, [string, string]> = { "TASK-7605": ["build", "green"], "TASK-7639": ["deliver", "pr_opened"], ...Object.fromEntries(extra.map((e) => [e.id, e.spot])) };
++  const at: Record<string, [string, string]> = { "DEMO-901": ["build", "green"], "DEMO-902": ["deliver", "pr_opened"], ...Object.fromEntries(extra.map((e) => [e.id, e.spot])) };
 +  // `&sim=1`: each task takes the next step of one walk every SIM_PERIOD seconds, through Build, Deliver and Review Fix and out to a moon and
 +  // back, each task a few steps behind the one before
 +  // `&sim=2`: the two tasks alone walk one task's whole life, through six machines: Build, a skill it runs mid-build, Deliver, CI going red
@@ -1466,12 +1466,12 @@ index ff9171d747..612309b8dc 100644
 +  // `&sim=3`: both tasks open a PR in Deliver, then sit on the same step of the CI it opens, failing, so their dots stack on one station
 +  const sim = ["1", "2", "3"].includes(q.get("sim") ?? ""), walked: Record<string, number> = {};
 +  if (q.get("sim") === "3") {
-+    for (const id of ["TASK-7605", "TASK-7639"]) at[id] = performance.now() < SIM_PERIOD * 1000 ? ["deliver", "pr_opened"] : ["ci", "failing"];
++    for (const id of ["DEMO-901", "DEMO-902"]) at[id] = performance.now() < SIM_PERIOD * 1000 ? ["deliver", "pr_opened"] : ["ci", "failing"];
 +    Object.assign(walked, { ci: now, deliver: now - SIM_PERIOD, build: now - 2 * SIM_PERIOD });
 +  } else if (q.get("sim") === "2") {
 +    const walk = [["board", "ready"], ["build", "start"], ["build", "worktree_ready"], ["build", "red_proven"], ["graph-traversal", "oriented"], ["graph-traversal", "anchored"], ["graph-traversal", "expanded"], ["build", "green"], ["build", "criteria_checked"], ["deliver", "lint_green"], ["deliver", "committed"], ["deliver", "pushed"], ["deliver", "pr_opened"], ["ci", "running"], ["ci", "failing"], ["ci", "running"], ["ci", "passing"], ["triaging-cr-reviews", "audit_active"], ["triaging-cr-reviews", "fix_verified"], ["triaging-cr-reviews", "fix_replied"], ["deliver", "ci_green"], ["review_fix", "start"], ["board", "review"]] as [string, string][];
 +    const n = Math.floor(Date.now() / 1000 / SIM_PERIOD);
-+    ["TASK-7605", "TASK-7639"].forEach((id, i) => {
++    ["DEMO-901", "DEMO-902"].forEach((id, i) => {
 +      const k = (n + i * Math.floor(walk.length / 2)) % walk.length;
 +      at[id] = walk[k];
 +      // a machine's last activity is the newest step either task took in it, so the drill-down ranks the machines in use first
@@ -1536,7 +1536,7 @@ index ff9171d747..612309b8dc 100644
 +    const b = document.createElement("div");
 +    b.id = "mock-banner";
 +    b.textContent = "Simulated phases" + (extra.length ? ` · +${extra.length} tasks` : "") + (sim ? ` · ${q.get("sim") === "3" ? "2 tasks on one CI step" : `${q.get("sim") === "2" ? "2 tasks through 6 machines, " : ""}a step every ${SIM_PERIOD} s`}` : "");
-+    b.title = "TASK-7605 at build / green, TASK-7639 at deliver / PR opened; DAG writers deliver, ci-sp-retry, cr-sweep, auto-rebase, ci-validate-redispatch, nightly-audit, skill-eval";
++    b.title = "DEMO-901 at build / green, DEMO-902 at deliver / PR opened; DAG writers deliver, ci-sp-retry, cr-sweep, auto-rebase, ci-validate-redispatch, nightly-audit, skill-eval";
 +    b.style.cssText = "position:fixed;right:262px;top:10px;z-index:99;padding:2px 8px;border-radius:6px;font:12px Inter,system-ui,sans-serif;color:#fbbf24;background:rgba(6,10,20,0.85);border:1px solid rgba(251,191,36,0.4);pointer-events:none";
 +    document.body.appendChild(b);
 +  }

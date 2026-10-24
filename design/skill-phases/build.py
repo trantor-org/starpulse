@@ -36,8 +36,12 @@ else:
         a.fixture.write_text(json.dumps(snap))
 
 
+# One character of each name in a class, as ci/public_names.py writes them, so this file does not name a host.
+HOSTS = {r"ai-v[m]": "vm", r"unrai[d]": "nas", r"proxmo[x]": "hypervisor", r"\btowe[r]\b": "host"}
+
+
 def scrub_ledgers(snap: dict) -> dict:
-    """demo.scrub predates the Ledger (D9): rename the task ids, merge shas, run ids and pull requests it carries."""
+    """demo.scrub predates the Ledger (D9): rename the task ids, merge shas, run ids, pull requests and host names it carries."""
     for i, e in enumerate(e for es in snap.get("ledgers", {}).values() for e in es):
         if e.get("pr"):
             e["pr"] = {"repo": "demo", "number": 100 + i, "url": "#"}
@@ -45,6 +49,8 @@ def scrub_ledgers(snap: dict) -> dict:
     text = re.sub(r"TASK-\d+", lambda m: ids.setdefault(m[0], f"DEMO-{1000 + len(ids)}"), text)
     text = re.sub(r"\b[0-9a-f]{40}\b", lambda m: hashlib.sha1(m[0].encode()).hexdigest(), text)
     text = re.sub(r"-force-\d+", "-force-1", text)
+    for name, neutral in HOSTS.items():  # DAG names carry the operator's host names
+        text = re.sub(name, neutral, text, flags=re.IGNORECASE)
     return json.loads(text)
 
 
@@ -53,7 +59,7 @@ snap = scrub_ledgers(snap)
 board = next(f for f in snap["flows"] if f["name"] == "board")
 picked = [a["id"] for a in board["agents"] if a["state"] == "in_progress"][:2]
 text = json.dumps(snap)
-for old, new in zip(picked, ["TASK-7605", "TASK-7639"]):
+for old, new in zip(picked, ["DEMO-901", "DEMO-902"]):
     text = re.sub(rf'"{old}"', f'"{new}"', text)
 snap = json.loads(text)
 html = demo.page(demo.STATIC, snap)
