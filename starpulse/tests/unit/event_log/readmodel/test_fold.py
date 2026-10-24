@@ -76,6 +76,21 @@ def test_criteria_are_numbered_per_kind_and_checked_by_number():
     ]
 
 
+def test_a_check_of_a_criterion_the_history_never_added_is_skipped_with_a_warning(caplog):
+    row = replay(
+        _events(
+            CREATED,
+            ("CriterionAdded", {"kind": "ac", "text": "one"}),
+            ("CriterionChecked", {"kind": "ac", "n": 2, "checked": True, "evidence": "ok"}),
+            ("Transitioned", {"to": "Review"}),
+        )
+    )
+
+    assert row["criteria"] == [{"kind": "ac", "n": 1, "text": "one", "checked": False, "evidence": ""}]
+    assert (row["state"], row["version"]) == ("Review", 4)
+    assert "TASK-1: no ac criterion 2" in caplog.text
+
+
 def test_a_claim_a_transition_a_remap_and_the_archive_marker_set_their_columns():
     row = replay(
         _events(

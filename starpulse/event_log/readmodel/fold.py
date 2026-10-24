@@ -6,10 +6,13 @@ The row's keys are the read model's columns: StarPulse's own Task fields, the `f
 from __future__ import annotations
 
 import copy
+import logging
 from collections.abc import Callable, Iterable
 from typing import Any
 
 from starpulse.event_log.store import StoredEvent
+
+logger = logging.getLogger(__name__)
 
 Row = dict[str, Any]
 
@@ -75,7 +78,8 @@ def _criterion_checked(row: Row, event: StoredEvent) -> None:
         if (criterion["kind"], criterion["n"]) == (payload["kind"], payload["n"]):
             criterion |= {"checked": payload["checked"], "evidence": payload.get("evidence", "")}
             return
-    raise BrokenHistory(f"{row['id']}: no {payload['kind']} criterion {payload['n']}")
+    # One stray check must not stop every replay, and with it the board: skip it and say so.
+    logger.warning("%s: no %s criterion %s; skipping its check", row["id"], payload["kind"], payload["n"])
 
 
 def _remapped(row: Row, event: StoredEvent) -> None:
