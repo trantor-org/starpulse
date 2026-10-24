@@ -51,7 +51,7 @@ def render_config(config: str, db: Path) -> str:
 def anchor_paths(config: str, live: Path, scratch: Path) -> str:
     """The config with its relative paths resolved: reads against the live config dir, writes into the scratch tree.
 
-    `state_dir` holds the autopilot switch, so a canary that reads it could start sessions; it must never see live state.
+    `state_dir` holds the run switch, so a canary that reads it could start sessions; it must never see live state.
     Board commands are dropped, so the canary never runs a live script.
     """
     section = ""
