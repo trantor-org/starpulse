@@ -130,14 +130,15 @@ class MachineRegistry:
 def _check_mapping(
     machine: str, mapping: Mapping[str, str], states: Mapping[str, Any], live: Sequence[LiveTask]
 ) -> None:
-    """Refuse a mapping into a State the version lacks, then each dropped State a live Task holds that the mapping omits."""
+    """Refuse a mapping into a State the version lacks, then each dropped State a live Task holds that the mapping omits.
+    A Task with no State, such as an archived stub, holds none to drop."""
     missing = [f"{old} -> {new}" for old, new in mapping.items() if new not in states]
     if missing:
         raise MachineDefinitionError(f"{machine}: migrations name States the version lacks: {', '.join(missing)}")
     stranded: dict[str, list[str]] = {}
     for task in live:
         state = lane_id(task.state)
-        if state not in states and state not in mapping:
+        if state and state not in states and state not in mapping:
             stranded.setdefault(task.state, []).append(task.id)
     if stranded:
         held = "; ".join(f"{state} ({', '.join(ids)})" for state, ids in stranded.items())

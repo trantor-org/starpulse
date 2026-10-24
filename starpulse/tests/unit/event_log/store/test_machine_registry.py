@@ -192,3 +192,9 @@ def test_a_changed_definition_activates_over_live_tasks_held_in_display_names(
     assert [e.type for e in store.read("task", "TASK-1")] == ["TaskImported"]
     assert [e.type for e in store.read("task", "TASK-2")] == ["TaskImported", "Remapped"]
     assert replay(store.read("task", "TASK-2"))["state"] == "in_progress"
+
+
+def test_a_live_task_with_no_state_strands_nothing(registry: MachineRegistry) -> None:
+    registry.activate(BOARD, [])
+
+    assert registry.activate(_renamed(migrations={"doing": "in_progress"}), [LiveTask("TASK-1", "", 1)])
