@@ -8,7 +8,7 @@ from datetime import datetime, time
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from starpulse._internal.eventlog.event_log import EventLog
+from starpulse.event_log.event_log import EventLog
 
 logger = logging.getLogger(__name__)
 

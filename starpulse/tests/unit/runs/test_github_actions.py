@@ -14,6 +14,9 @@ from pathlib import Path
 import pytest
 import yaml
 
+from starpulse._internal.config.config import runs_adapter
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.kit.adapter_kit import RunsAdapterKit, serve, url
 from starpulse._internal.runs import run_events
 from starpulse._internal.runs.github_actions import (
     _CONCLUSION,
@@ -29,11 +32,8 @@ from starpulse._internal.runs.github_actions import (
     workflow_run_entry,
 )
 from starpulse._internal.runs.github_actions import follow as follow_repository
-from starpulse._internal.kit.adapter_kit import RunsAdapterKit, serve, url
 from starpulse.contracts.adapters import StartFailedError, TaskKeys
-from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.config.config import runs_adapter
-from starpulse._internal.eventlog.event_log import EventLog
+from starpulse.event_log.event_log import EventLog
 from starpulse.tests.github_stub import REPO, Recorded
 
 #: Every status and conclusion GitHub documents for a run, job or step, plus `startup_failure` its webhooks and API

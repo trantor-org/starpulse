@@ -37,7 +37,7 @@ from starpulse._internal.signals import CLAUDE_CODE, CODEX, Signal, claim_key, c
 from starpulse.contracts.adapters import TaskKeys
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
-    from starpulse._internal.eventlog.event_log import EventLog
+    from starpulse.event_log.event_log import EventLog
 
 __all__ = ["CLAUDE_CODE", "CODEX", "Signal", "TelemetryLog", "held", "redactor", "signals"]
 
@@ -376,7 +376,7 @@ class TelemetryLog:
     def __init__(self, log: EventLog, keep: float = 7 * 86400.0) -> None:
         self._log = log
 
-        from starpulse._internal.eventlog.event_log import Tail  # noqa: PLC0415 - the database stack loads when a log opens
+        from starpulse.event_log.event_log import Tail  # noqa: PLC0415 - the database stack loads when a log opens
         self._tail = Tail.replay(log, self.STREAM, batch=5000)
         self._keep = keep
         self._held: list[Signal] = []

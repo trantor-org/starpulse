@@ -6,12 +6,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from starpulse._internal.board.seam import Written
-from starpulse._internal.eventlog import lane_events
-from starpulse._internal.eventlog.event_log import EventLog, Tail
 from starpulse._internal.eventlog.history import HistoryStore
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.server.writes import _record_written, _Who
 from starpulse.contracts import BoardTask
+from starpulse.event_log import lane_events
+from starpulse.event_log.event_log import EventLog, Tail
 from starpulse.tests.machines import MACHINES, ROLES
 
 

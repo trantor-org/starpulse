@@ -19,10 +19,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from starpulse._internal.eventlog import events
+from starpulse.event_log import events
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
-    from starpulse._internal.eventlog.event_log import EventLog
+    from starpulse.event_log.event_log import EventLog
 
 logger = logging.getLogger(__name__)
 

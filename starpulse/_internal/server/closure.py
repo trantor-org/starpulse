@@ -171,10 +171,10 @@ def _blocks(name: str, config: Config) -> tuple[object, object]:
     re-reads on `SIGHUP`. `serve` itself has none."""
     from starpulse._internal.server import (  # noqa: PLC0415 - imported only when read
         api_worker,
-        scheduler_worker,
         board_worker,
         flow_metrics_worker,
         runs_worker,
+        scheduler_worker,
         search_worker,
         worker,
     )

@@ -134,16 +134,14 @@ from starpulse._internal.board.seam import (
     Written,
 )
 from starpulse._internal.config.harnesses import Harnesses
-from starpulse._internal.eventlog import rating_events
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.feed.history_window import HistoryWindow
 from starpulse.contracts.adapters import Move, StartFailedError
 from starpulse.contracts.api.dto.requests import (
-    ArchiveRequest,
-    SchedulerRequest,
-    ClaimRequest,
     CREATE_LISTS,
     CREATE_TEXT,
+    ArchiveRequest,
+    ClaimRequest,
     CompleteRequest,
     CreateRequest,
     DocArchiveRequest,
@@ -158,17 +156,19 @@ from starpulse.contracts.api.dto.requests import (
     MoveRequest,
     NonBlank,
     ParkRequest,
-    RestoreRequest,
-    TakeOverRequest,
-    RetiredImportRequest,
     RatingRequest,
+    RestoreRequest,
+    RetiredImportRequest,
     RetireRequest,
     ReviewRequest,
+    SchedulerRequest,
     StartRequest,
+    TakeOverRequest,
     VerdictRequest,
     WindowRequest,
     _Writer,
 )
+from starpulse.event_log import rating_events
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     from starpulse._internal.scheduler.remote import Remote

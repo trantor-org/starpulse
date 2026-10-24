@@ -30,6 +30,10 @@ from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, field, replace
 from typing import Any
 
+from starpulse._internal.board.seam import Written
+from starpulse._internal.config.scheduler import Scheduler
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.harnesses.harness import HARNESS
 from starpulse._internal.scheduler.admission import Decision, decide, demand, tier_of
 from starpulse._internal.scheduler.harness_setting import DEFAULT as DEFAULT_HARNESS
 from starpulse._internal.scheduler.harness_setting import HarnessSetting
@@ -40,12 +44,8 @@ from starpulse._internal.scheduler.sampler import PERIOD, Reading, Sampler
 from starpulse._internal.scheduler.state import START_COOLDOWN, SchedulerState
 from starpulse._internal.scheduler.toggle import Toggle
 from starpulse._internal.scheduler.usage_limit import until as usage_until
-from starpulse._internal.board.seam import Written
-from starpulse._internal.config.scheduler import Scheduler
-from starpulse._internal.eventlog.event_log import EventLog
-from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.harnesses.harness import HARNESS
 from starpulse.contracts.adapters import StartFailedError
+from starpulse.event_log.event_log import EventLog
 
 logger = logging.getLogger(__name__)
 

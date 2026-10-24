@@ -13,7 +13,7 @@ from typing import Any
 from sqlalchemy import Engine
 
 from starpulse._internal.board.seam import OPERATOR, Written
-from starpulse._internal.store import EventStore, NewEvent, StaleVersion
+from starpulse.event_log.store import EventStore, NewEvent, StaleVersion
 
 WRITER = "native-board"
 #: The writer of Events an editor import appends: the operator's break-glass edit, not a command of the board (D5).

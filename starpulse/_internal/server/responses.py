@@ -9,23 +9,23 @@ from collections import Counter
 from collections.abc import Callable, Collection, Mapping
 from typing import TYPE_CHECKING, Any
 
-
 from starpulse._internal.board.seam import (
     TaskReader,
 )
-from starpulse._internal.server.encoding import encode
+from starpulse._internal.config.analytics import Analytics
 from starpulse._internal.eventlog.level_metrics import WindowPastHistory
+from starpulse._internal.feed.ledger import PAGE
+from starpulse._internal.harnesses.telemetry import Signal, TelemetryLog
 from starpulse._internal.level import analytics
-from starpulse._internal.level.clusters import Cluster, cluster_key, dispersion, trace, trace_clusters
 from starpulse._internal.level.cells import cell_report, transition_cost
+from starpulse._internal.level.clusters import Cluster, cluster_key, dispersion, trace, trace_clusters
 from starpulse._internal.level.flow import cost_to_go, directly_follows, fast_slow_diff, sub_stages
 from starpulse._internal.level.sessions import session_health, slice_health
 from starpulse._internal.level.steps import session_steps
-from starpulse._internal.level.traces import Case, cases as trace_cases, missed_loads
+from starpulse._internal.level.traces import Case, missed_loads
+from starpulse._internal.level.traces import cases as trace_cases
+from starpulse._internal.server.encoding import encode
 from starpulse.contracts.adapters import TaskKeys
-from starpulse._internal.feed.ledger import PAGE
-from starpulse._internal.config.analytics import Analytics
-from starpulse._internal.harnesses.telemetry import Signal, TelemetryLog
 
 logger = logging.getLogger(__name__)
 

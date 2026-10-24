@@ -6,11 +6,11 @@ from typing import Any
 
 import pytest
 
+from starpulse._internal.config.scheduler import DIMENSIONS, Scheduler
 from starpulse._internal.scheduler.admission import MIN_RUNS, decide, demand, ranks_from_trajectories_body
 from starpulse._internal.scheduler.ledger import Ledger, RunRecord
 from starpulse._internal.scheduler.sampler import Reading
-from starpulse._internal.config.scheduler import DIMENSIONS, Scheduler
-from starpulse._internal.eventlog.event_log import EventLog
+from starpulse.event_log.event_log import EventLog
 
 POLICY = Scheduler(lane="ready")  # limits: cpu 80, memory 80, sessions 2, review 20; weights fast 1, standard 2, deep 4
 

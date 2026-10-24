@@ -9,8 +9,8 @@ from typing import Any
 
 from sqlalchemy import Engine, delete, insert, or_, select, tuple_
 
-from starpulse._internal.eventlog.event_log import create_tables
-from starpulse._internal.eventlog.tables import pull_requests
+from starpulse.event_log.event_log import create_tables
+from starpulse.event_log.tables import pull_requests
 
 #: The GraphQL names a record is served under, by column.
 _FIELDS = {

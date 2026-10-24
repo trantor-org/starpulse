@@ -8,12 +8,12 @@ from pathlib import Path
 
 import pytest
 
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.feed.history_window import HistoryWindow
+from starpulse._internal.feed.machine_tasks import MachineTasks
 from starpulse._internal.kit.adapter_kit import serve, url
 from starpulse._internal.server.writes import history_window
-from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.feed.machine_tasks import MachineTasks
-from starpulse._internal.feed.history_window import HistoryWindow
-from starpulse._internal.eventlog.event_log import EventLog
+from starpulse.event_log.event_log import EventLog
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.unit.feed.test_machine_tasks import _entry
 from starpulse.tests.unit.server.test_server import _ip

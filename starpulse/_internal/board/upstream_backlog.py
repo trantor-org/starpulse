@@ -38,11 +38,11 @@ from starpulse._internal.machines.transitions import DEFAULT_STATUSES, board_mac
 from starpulse.contracts.task_keys import TaskKeys
 
 if TYPE_CHECKING:
-    from starpulse._internal.eventlog.event_log import EventLog
     from starpulse._internal.feed.board_feed import BoardFeed
     from starpulse._internal.machines.machine_definition import Compiled, Writer
     from starpulse._internal.machines.snapshot import Qualify
     from starpulse.contracts.adapters import BoardTask, Move
+    from starpulse.event_log.event_log import EventLog
 
 logger = logging.getLogger(__name__)
 

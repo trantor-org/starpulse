@@ -29,13 +29,13 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from starpulse._internal.config.config import MAX_BATCH
-from starpulse._internal.eventlog.events import STREAM
 from starpulse._internal.runs import run_events
 from starpulse._internal.runs.ingest import run_event, token_owner
+from starpulse.event_log.events import STREAM
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     from starpulse._internal.config.config import Producer
-    from starpulse._internal.eventlog.event_log import EventLog
+    from starpulse.event_log.event_log import EventLog
 
 #: The structured and batch content types the route takes.
 SINGLE = "application/cloudevents+json"

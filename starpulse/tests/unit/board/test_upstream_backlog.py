@@ -28,14 +28,14 @@ from starpulse._internal.board.upstream_backlog import (
     upstream_keys,
 )
 from starpulse._internal.config.config import load
-from starpulse._internal.eventlog.event_log import EventLog, Tail
-from starpulse._internal.eventlog.tables import events
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import BoardAdapterKit
 from starpulse._internal.machines.machine_definition import Writer
 from starpulse._internal.machines.state_roles import StateRoles
 from starpulse._internal.server.writes import move_task
 from starpulse.contracts.adapters import BoardTask, Move
+from starpulse.event_log.event_log import EventLog, Tail
+from starpulse.event_log.tables import events
 
 STATUSES = ("To Do", "Doing", "Review", "Done")
 BOARD_ROLES = StateRoles(

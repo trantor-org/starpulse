@@ -18,10 +18,10 @@ import threading
 from pathlib import Path
 
 from starpulse._internal.config.config import Config, discover, load
-from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import database_url
 from starpulse._internal.feed.search import SearchIndex
 from starpulse._internal.server.hold import hold
+from starpulse.event_log.event_log import EventLog
 
 logger = logging.getLogger(__name__)
 

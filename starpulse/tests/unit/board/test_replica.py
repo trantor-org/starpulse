@@ -14,11 +14,11 @@ from sqlalchemy import delete
 from starpulse._internal.board import replica
 from starpulse._internal.board.seam import Board
 from starpulse._internal.config.config import load
-from starpulse._internal.eventlog.event_log import EventLog, Tail
-from starpulse._internal.eventlog.tables import events
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.feed.snapshot import BoardSnapshot
 from starpulse.contracts import BoardTask
+from starpulse.event_log.event_log import EventLog, Tail
+from starpulse.event_log.tables import events
 
 WAIT_S = 5.0
 KEY = "board:replica@test"

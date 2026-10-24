@@ -21,9 +21,9 @@ import threading
 import time
 from typing import TYPE_CHECKING, Any
 
-from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.feed.board_feed import BoardFeed, retained
 from starpulse.contracts import BoardTask
+from starpulse.event_log.event_log import EventLog
 
 if TYPE_CHECKING:
     from starpulse._internal.board.seam import Board

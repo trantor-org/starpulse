@@ -6,10 +6,10 @@ import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, TypeGuard
 
-from starpulse._internal.eventlog import operator_settings
+from starpulse.event_log import operator_settings
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
-    from starpulse._internal.eventlog.event_log import EventLog
+    from starpulse.event_log.event_log import EventLog
 
 #: The history window Admin may set, in hours.
 MIN_HOURS, MAX_HOURS = 1, 72

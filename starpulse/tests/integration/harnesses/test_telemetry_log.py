@@ -10,10 +10,10 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 from starpulse._internal.config.analytics import Analytics, Labeller
-from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.harnesses.claude_code import ClaudeCodeAdapter, handler, publisher
 from starpulse._internal.harnesses.telemetry import CLAUDE_CODE, Signal, TelemetryLog, signals
 from starpulse.contracts.adapters import TaskKeys
+from starpulse.event_log.event_log import EventLog
 from starpulse.tests.integration.harnesses.test_labeller import answer, stub
 from starpulse.tests.unit.harnesses.test_telemetry import claude, export
 

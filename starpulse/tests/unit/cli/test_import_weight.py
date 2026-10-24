@@ -10,7 +10,7 @@ HEAVY = (
     "jsonschema",
     "sqlalchemy",
     "starpulse._internal.server",
-    "starpulse._internal.eventlog.event_log",
+    "starpulse.event_log.event_log",
 )
 
 UNREACHABLE = "http://127.0.0.1:1"

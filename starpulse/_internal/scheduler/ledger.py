@@ -18,9 +18,9 @@ from pathlib import Path
 
 from sqlalchemy import insert, select
 
-from starpulse._internal.eventlog.event_log import EventLog
-from starpulse._internal.eventlog.operator_settings import RETIRED_SUFFIX
-from starpulse._internal.eventlog.tables import scheduler_runs
+from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.operator_settings import RETIRED_SUFFIX
+from starpulse.event_log.tables import scheduler_runs
 
 logger = logging.getLogger(__name__)
 

@@ -15,11 +15,11 @@ from typing import TYPE_CHECKING, Any
 
 from starpulse._internal.board.seam import Board
 from starpulse._internal.machines.transitions import lane_id
-from starpulse._internal.store import EventStore, NewEvent, StoredEvent
+from starpulse.event_log.store import EventStore, NewEvent, StoredEvent
 
 if TYPE_CHECKING:
-    from starpulse._internal.eventlog.event_log import EventLog
     from starpulse._internal.feed.board_feed import BoardFeed
+    from starpulse.event_log.event_log import EventLog
 
 __all__ = ["DEFAULT_TTL", "ACTOR", "last_renewal", "start", "sweep"]
 

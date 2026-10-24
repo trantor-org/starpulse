@@ -45,11 +45,6 @@ from sqlalchemy.exc import OperationalError
 
 from starpulse._internal.config.config import discover, load
 from starpulse._internal.config.level import Level
-from starpulse._internal.eventlog import events as machine_events
-from starpulse._internal.eventlog import lane_events, lane_repair
-from starpulse._internal.eventlog.checkpoints import Checkpoints
-from starpulse._internal.eventlog.event_log import DEFAULT_POLL_INTERVAL, EventLog, create_tables, insert_event
-from starpulse._internal.eventlog.lane_import import Change
 from starpulse._internal.eventlog.level_metrics import AGING_WINDOW_S, Run, RunWindow, state_roles
 from starpulse._internal.eventlog.summaries import (
     BOARD,
@@ -66,11 +61,17 @@ from starpulse._internal.eventlog.summaries import (
     write_lane,
     write_step,
 )
-from starpulse._internal.eventlog.tables import gaps as _gaps
-from starpulse._internal.eventlog.tables import metadata
 from starpulse._internal.machines.stays import Dwell, LaneStays, Stay
 from starpulse._internal.machines.transitions import Table as Transitions
 from starpulse._internal.machines.transitions import lane_id
+from starpulse.event_log import events as machine_events
+from starpulse.event_log import lane_events, lane_repair
+from starpulse.event_log.checkpoints import Checkpoints
+from starpulse.event_log.event_log import EventLog, create_tables, insert_event
+from starpulse.event_log.lane_import import Change
+from starpulse.event_log.polling import DEFAULT_POLL_INTERVAL
+from starpulse.event_log.tables import gaps as _gaps
+from starpulse.event_log.tables import metadata
 
 __all__ = ["History", "machine_steps"]
 

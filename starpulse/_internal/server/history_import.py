@@ -2,7 +2,7 @@
 
     starpulse import-history lanes.jsonl --config starpulse.toml
 
-`FILE` is JSON Lines (`starpulse._internal.eventlog.lane_import`): one `{event_id, task, lane, time}` change per line.
+`FILE` is JSON Lines (`starpulse.event_log.lane_import`): one `{event_id, task, lane, time}` change per line.
 The store is the one `serve` opens, so its board's machines place each change, and the store's lane history is repaired
 and its summaries rebuilt afterwards. It prints one JSON line: `source`, `store` (the database URL, password hidden),
 `read` and `imported` (the changes the store holds afterwards that it did not before: 0 on a second run). The exit
@@ -19,8 +19,8 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from starpulse._internal.config.config import ConfigError, discover, load
-from starpulse._internal.eventlog import lane_import
 from starpulse._internal.server.assembly import assemble, history_store
+from starpulse.event_log import lane_import
 
 __all__ = ["main"]
 

@@ -13,9 +13,9 @@ import time
 import urllib.request
 from pathlib import Path
 
-from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import HistoryStore
 from starpulse._internal.kit.adapter_kit import serve, url
+from starpulse.event_log.event_log import EventLog
 
 
 def _fds() -> int:

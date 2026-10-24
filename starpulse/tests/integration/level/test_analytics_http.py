@@ -12,12 +12,12 @@ from typing import Any
 import pytest
 
 from starpulse._internal.config.analytics import Analytics, SkillLoad
-from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.harnesses.telemetry import TelemetryLog, signals
 from starpulse._internal.kit.adapter_kit import serve, url
 from starpulse._internal.server.page_server import PageServer
 from starpulse.contracts.adapters import BoardTask, TaskKeys
+from starpulse.event_log.event_log import EventLog
 from starpulse.tests.machines import MACHINES, ROLES
 
 pytestmark = pytest.mark.usefixtures("sqlite_stores_from_template")

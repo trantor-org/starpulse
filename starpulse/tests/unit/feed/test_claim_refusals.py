@@ -9,9 +9,9 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.feed.board_feed import BoardFeed, follow
 from starpulse._internal.feed.claim_refusals import CLAIMS_STREAM, ClaimRefusals
+from starpulse.event_log.event_log import EventLog
 from starpulse.tests.machines import MACHINES
 
 

@@ -207,8 +207,8 @@ def test_the_board_feed_logs_under_its_public_path() -> None:
 
 
 #: Test directories under a tier that mirror no `_internal` package: the public `contracts` package and the public
-#: surface, and the `leaks` gate that measures memory across every feature.
-TEST_DIRECTORIES_OTHER = {"contracts", "leaks"}
+#: surface, the `event_log` kernel, and the `leaks` gate that measures memory across every feature.
+TEST_DIRECTORIES_OTHER = {"contracts", "event_log", "leaks"}
 
 
 def _misplaced_tests(tests: Path, features: set[str]) -> set[str]:

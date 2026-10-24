@@ -15,7 +15,6 @@ from typing import Any
 import pytest
 
 from starpulse._internal.config.config import Producer, load
-from starpulse._internal.eventlog.event_log import EventLog, Tail
 from starpulse._internal.feed.board_feed import BoardFeed, follow
 from starpulse._internal.kit.adapter_kit import serve, url
 from starpulse._internal.runs import run_events
@@ -24,6 +23,7 @@ from starpulse._internal.runs.ingest import MAX_BATCH_BODY
 from starpulse._internal.runs.ingest import tokens as ingest_tokens
 from starpulse._internal.runs.push_runs import PUSHED_INSTANCE, PushRuns
 from starpulse._internal.server.page_server import PageServer
+from starpulse.event_log.event_log import EventLog, Tail
 
 TOKENS = {"cron": "cron-secret", "rundeck": "rundeck-secret"}
 PRODUCERS = tuple(Producer(name, f"{name.upper()}_TOKEN", machines=(), actors=()) for name in TOKENS)

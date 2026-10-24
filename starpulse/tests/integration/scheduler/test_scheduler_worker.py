@@ -8,12 +8,12 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
+from starpulse._internal.config.config import load
 from starpulse._internal.scheduler.loop import PAUSES_KEY
 from starpulse._internal.scheduler.remote import Remote
-from starpulse._internal.config.config import load
-from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.server.assembly import assemble, history_store
 from starpulse._internal.server.scheduler_worker import Scheduler
+from starpulse.event_log.event_log import EventLog
 from starpulse.tests.integration.scheduler.test_scheduler_served import IDLE_HOST, _start_service, _task, _until
 
 

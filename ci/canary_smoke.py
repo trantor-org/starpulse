@@ -23,7 +23,7 @@ from urllib.parse import urlsplit
 
 from fresh_serve import LOG_TAIL, check, live_children, worker_contexts
 from sqlalchemy import create_engine
-from starpulse._internal.eventlog.migrate import migrate
+from starpulse.event_log.migrate import migrate
 
 DEADLINE = 60.0
 HOLD = 60.0

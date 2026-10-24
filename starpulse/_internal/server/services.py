@@ -9,8 +9,6 @@ from typing import TYPE_CHECKING, Any
 from starpulse._internal.config.config import SLOW_READ_S
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
-    from starpulse._internal.scheduler.remote import Remote
-    from starpulse._internal.scheduler.runtime import Runtime
     from starpulse._internal.config.analytics import Analytics
     from starpulse._internal.config.harnesses import Harnesses
     from starpulse._internal.feed.search import SearchIndex
@@ -18,6 +16,8 @@ if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler i
     from starpulse._internal.pulls.pull_refresh import PullRefresh
     from starpulse._internal.pulls.pulls import PullStore
     from starpulse._internal.runs.cloudevents import CloudEventsIngest
+    from starpulse._internal.scheduler.remote import Remote
+    from starpulse._internal.scheduler.runtime import Runtime
 
 
 @dataclass(frozen=True)

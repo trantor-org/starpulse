@@ -39,25 +39,25 @@ from starpulse._internal.server.responses import (
     transitions_response,
 )
 from starpulse._internal.server.routes import (
-    _SCHEDULER,
     _DOC_WRITES,
     _DOCS,
     _LEDGER,
     _MILESTONE_WRITES,
     _MILESTONES,
     _RETIRED,
+    _SCHEDULER,
     _SNAPSHOT_BODY,
     _TASK,
     _WINDOW,
 )
 from starpulse._internal.server.writes import (
-    scheduler,
     doc_record,
     docs_list,
     history_window,
     milestone_record,
     milestones_list,
     retired_list,
+    scheduler,
     task_record,
 )
 

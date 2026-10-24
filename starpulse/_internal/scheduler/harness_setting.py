@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from starpulse._internal.eventlog.event_log import EventLog
+from starpulse.event_log.event_log import EventLog
 
 logger = logging.getLogger(__name__)
 

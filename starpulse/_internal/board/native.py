@@ -72,14 +72,14 @@ from starpulse._internal.board.upstream_backlog import (
 from starpulse._internal.board.upstream_backlog import (
     _profile as _profile_of,
 )
-from starpulse._internal.eventlog.lane_events import ARCHIVED, COMPLETED
-from starpulse._internal.eventlog.tables import retired_tasks
 from starpulse._internal.feed import criteria
 from starpulse._internal.machines.state_roles import StateRoles
+from starpulse.event_log.lane_events import ARCHIVED, COMPLETED
+from starpulse.event_log.tables import retired_tasks
 
 if TYPE_CHECKING:
-    from starpulse._internal.eventlog.event_log import EventLog
     from starpulse._internal.feed.board_feed import BoardFeed
+    from starpulse.event_log.event_log import EventLog
 
 #: Where the board lives, relative to the config's directory (or the working directory without a config).
 DEFAULT_PATH = ".starpulse/board"

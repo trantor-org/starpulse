@@ -10,8 +10,8 @@ import pytest
 
 from starpulse._internal.board import jira
 from starpulse._internal.board.jira import JiraProject, board
-from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse.event_log.event_log import EventLog
 
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "jira"
 WORKFLOW = "Payments Software Workflow"

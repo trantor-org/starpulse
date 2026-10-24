@@ -10,10 +10,10 @@ import yaml
 from starpulse._internal.board.native import board
 from starpulse._internal.board.seam import Board
 from starpulse._internal.board.upstream_backlog import UpstreamBacklog
-from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.feed import criteria
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.server.writes import claim_task, park_task, review_task
+from starpulse.event_log.event_log import EventLog
 from starpulse.tests.unit.board.test_native import native_root, write_task
 
 LAN = "127.0.0.1"

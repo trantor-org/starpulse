@@ -10,13 +10,13 @@ from typing import Any
 import pytest
 
 from starpulse._internal.board.seam import Written
-from starpulse._internal.eventlog import lane_events
-from starpulse._internal.eventlog.event_log import EventLog, Tail
 from starpulse._internal.eventlog.history import HistoryStore
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.server.writes import archive_task, create_task, edit_task, start_task
 from starpulse.contracts.adapters import Move
+from starpulse.event_log import lane_events
+from starpulse.event_log.event_log import EventLog, Tail
 from starpulse.tests.machines import MACHINES, ROLES
 
 

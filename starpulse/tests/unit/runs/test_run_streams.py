@@ -8,12 +8,12 @@ from pathlib import Path
 import pytest
 
 from starpulse._internal.config.config import Producer
-from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.runs import run_events
 from starpulse._internal.runs.cloudevents import SINGLE, CloudEventsIngest
 from starpulse._internal.runs.ingest import tokens as ingest_tokens
 from starpulse._internal.runs.run_streams import RunStreams, record_run_streams
-from starpulse._internal.store import EventStore
+from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.store import EventStore
 
 PRODUCER = Producer("flow", "FLOW_TOKEN", machines=(), actors=())
 

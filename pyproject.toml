@@ -62,7 +62,7 @@ exclude = ["starpulse.tests", "starpulse.tests.*"]
 
 # The built page and the machine schema are read from beside the module through `__file__`.
 [tool.setuptools.package-data]
-starpulse = ["static/**/*", "schemas/*.json", "machine.schema.json", "machines/*.yaml", "skills/**/*", "_internal/eventlog/migrations/*.py", "_internal/eventlog/migrations/versions/*.py"]
+starpulse = ["static/**/*", "schemas/*.json", "machine.schema.json", "machines/*.yaml", "skills/**/*", "event_log/migrations/*.py", "event_log/migrations/versions/*.py"]
 
 # The tiers the package is organized in (docs: StarPulse Is Layered Around Its Event Log): a module imports from its own
 # tier or one below, never above.
@@ -90,8 +90,8 @@ layers = [
     "starpulse._internal.level",
     "starpulse._internal.feed | starpulse._internal.ci",
     # core
-    "starpulse._internal.store",
     "starpulse._internal.eventlog",
+    "starpulse.event_log",
     "starpulse._internal.config | starpulse._internal.machines | starpulse._internal.github_api | starpulse._internal.signals",
     "starpulse.contracts",
 ]
@@ -108,7 +108,7 @@ source_modules = [
     "starpulse._internal.board", "starpulse._internal.runs", "starpulse._internal.harnesses",
     "starpulse._internal.level",
     "starpulse._internal.feed", "starpulse._internal.ci",
-    "starpulse._internal.store", "starpulse._internal.eventlog",
+    "starpulse.event_log", "starpulse._internal.eventlog",
     "starpulse._internal.config", "starpulse._internal.machines", "starpulse._internal.github_api",
     "starpulse._internal.signals",
 ]
@@ -122,8 +122,8 @@ type = "forbidden"
 # stream trustworthy, so a module that imports the table could write around them.
 # The wildcards list every sibling of the store, tests included; a root or `_internal` source would contain the table
 # and be skipped, and the store package itself contains it, so it may import it.
-source_modules = ["starpulse.*", "starpulse._internal.*"]
-forbidden_modules = ["starpulse._internal.store.tables"]
+source_modules = ["starpulse.*", "starpulse._internal.*", "starpulse.event_log.*"]
+forbidden_modules = ["starpulse.event_log.store.tables"]
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
@@ -132,13 +132,30 @@ name = "Only the read model package imports its tables"
 type = "forbidden"
 # A Task row is written by the projector alone and read through `ReadModel`: a module that imports the tables could
 # write a row no History folds into, or filter in Python what an index serves. The wildcards work as for the store.
-source_modules = ["starpulse.*", "starpulse._internal.*"]
-forbidden_modules = ["starpulse._internal.readmodel.tables"]
+source_modules = ["starpulse.*", "starpulse._internal.*", "starpulse.event_log.*"]
+forbidden_modules = ["starpulse.event_log.readmodel.tables"]
 allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+id = "kernel-imports-no-context"
+name = "The event_log shared kernel imports no StarPulse context"
+type = "forbidden"
+# Any context may import the kernel and the kernel imports none (spec doc-966, D5): a table or fold only one context
+# reads belongs to that context, not here.
+allow_indirect_imports = true
+source_modules = ["starpulse.event_log"]
+forbidden_modules = [
+    "starpulse._internal.board", "starpulse._internal.feed",
+    "starpulse._internal.scheduler",
+    "starpulse._internal.level",
+    "starpulse._internal.harnesses",
+    "starpulse._internal.pulls", "starpulse._internal.ci",
+    "starpulse._internal.runs",
+]
 
 # Bounded contexts: one per StarPulse context, id `context-<glossary slug>`.
 # forbidden_modules is every other context's packages except the map's upstreams (direct imports; transitive stay
-# allowed). The shared kernel (`config`, `eventlog`, `machines`, `github_api`, `signals`, `contracts`) and the entrypoints
+# allowed). The shared kernel (`event_log`, `config`, `eventlog`, `machines`, `github_api`, `signals`, `contracts`) and the entrypoints
 # belong to no context.
 
 [[tool.importlinter.contracts]]

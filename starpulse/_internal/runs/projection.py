@@ -14,7 +14,7 @@ from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
-    from starpulse._internal.eventlog.event_log import EventLog
+    from starpulse.event_log.event_log import EventLog
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +126,7 @@ class Projected:
 
     def follow(self, stop: threading.Event) -> threading.Thread:
         """Apply the kept reports now, then each one announced after, on a thread until `stop`."""
-        from starpulse._internal.eventlog.event_log import Tail  # noqa: PLC0415 - the database stack loads when a log opens
+        from starpulse.event_log.event_log import Tail  # noqa: PLC0415 - the database stack loads when a log opens
         tail = Tail.live(self._log, PROJECTED_STREAM, interval=POLL_S)
         self.apply()
         if self._watched:

@@ -6,11 +6,11 @@ from typing import Any
 
 import pytest
 
-from starpulse.contracts.adapters import BoardTask
-from starpulse._internal.feed import criteria
-from starpulse.tests.machines import ROLES
-from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.eventlog.history import HistoryStore
+from starpulse._internal.feed import criteria
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse.contracts.adapters import BoardTask
+from starpulse.tests.machines import ROLES
 
 BLOCK = """## Start Criteria
 

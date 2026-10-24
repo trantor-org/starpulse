@@ -10,12 +10,12 @@ from sqlalchemy import create_engine
 from starpulse._internal.ci.ci_trail import parse
 from starpulse._internal.config.config import Repo
 from starpulse._internal.config.pins import GitHub
-from starpulse._internal.eventlog.event_log import Entry
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.pulls.pull_events import RecordProjection
 from starpulse._internal.pulls.pull_requests import GhUnavailableError, PullRequests, query_github
 from starpulse._internal.pulls.pulls import PullStore
+from starpulse.event_log.event_log import Entry
 
 REPO = "https://github.com/acme/widgets/pull"
 FIRST, SECOND = f"{REPO}/1750", f"{REPO}/1751"

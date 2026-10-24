@@ -22,8 +22,8 @@ import time
 from collections.abc import Callable, Iterable, Iterator
 from datetime import UTC, datetime
 
-from starpulse._internal.eventlog.event_log import EventLog
 from starpulse.contracts.adapters import RunsSink, RunStatus
+from starpulse.event_log.event_log import EventLog
 
 #: `systemctl`'s arguments (`--user` first for the user manager) to its standard output; a failing call raises `OSError`.
 Systemctl = Callable[[list[str]], str]

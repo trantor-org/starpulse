@@ -3,11 +3,11 @@
 import pytest
 from sqlalchemy import create_engine
 
-from starpulse._internal.eventlog.event_log import Entry
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.pulls.pull_events import RecordProjection
 from starpulse._internal.pulls.pulls import PullStore
+from starpulse.event_log.event_log import Entry
 
 URL = "https://github.com/acme/widgets/pull/7"
 PULL = ("acme/widgets", 7)

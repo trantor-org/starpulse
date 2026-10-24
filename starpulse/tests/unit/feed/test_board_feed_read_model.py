@@ -9,12 +9,12 @@ import pytest
 from sqlalchemy import Engine
 
 from starpulse._internal.board.view import board_columns
-from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.machines.transitions import board_machine
-from starpulse._internal.readmodel.projector import Projector
-from starpulse._internal.readmodel.read_model import ReadModel
-from starpulse._internal.store import EventStore, NewEvent
+from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.readmodel.projector import Projector
+from starpulse.event_log.readmodel.read_model import ReadModel
+from starpulse.event_log.store import EventStore, NewEvent
 
 
 @pytest.fixture
