@@ -684,13 +684,13 @@ class BoardFeed:
                 previous = before["state"] if before["state"] != agent["state"] else before.get("previous")
                 if previous:
                     agent["previous"] = previous
+            self._gated.discard(task.id)
+            if agent and task.lane == self._roles.waiting and criteria.authored(task.description):
+                self._gated.add(task.id)
             if agent:
                 agent["entered"] = self._entered(task, before)
                 agent["workable"], agent["workable_since"] = self._workable(agent)
                 agent = cooled(agent, self._clock, self._roles.done)
-            self._gated.discard(task.id)
-            if agent and task.lane == self._roles.waiting and criteria.authored(task.description):
-                self._gated.add(task.id)
             if before == agent and self._settled.get(task.id) == settled:
                 return None  # an hourly reconcile republishes every task; only a change reaches the page
             settling = (
