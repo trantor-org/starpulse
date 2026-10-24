@@ -30,7 +30,7 @@ from sqlalchemy import delete, func, insert, select
 from sqlalchemy.engine import Engine
 
 from starpulse._internal.board import native_docs, native_milestones, rules
-from starpulse._internal.board.claims import released
+from starpulse._internal.board.claims import assignee_of, released
 from starpulse._internal.board.seam import (
     ANONYMOUS,
     HELD,
@@ -946,16 +946,26 @@ def _writer(
     return write
 
 
-def _releaser(root: Path, statuses: tuple[str, ...], guard: _Guard = _Guard()) -> TaskReleaser:
-    """A board writer that ends a claim: the task takes `status` and its notes lose the `**Assignee:**` marker."""
-    spelled = {lane_id(status): status for status in statuses}
+class _Unheld(Exception):
+    """The task file no longer holds the claim a release judged."""
 
-    def release(task: str, status: str, /, actor: str = ANONYMOUS) -> Written:
+
+def _releaser(root: Path, guard: _Guard = _Guard()) -> TaskReleaser:
+    """A board writer that ends `session`'s claim on a task still in `status`: its notes lose the `**Assignee:**`
+    marker and its State stays. A file another writer moved off `status` or whose claim `session` no longer holds is
+    refused untouched, so a release judged from a stale row cannot undo a later move."""
+
+    def release(task: str, status: str, /, session: str, actor: str = ANONYMOUS) -> Written:
         def edit(frontmatter: dict, body: str) -> str:
-            frontmatter["status"] = spelled.get(lane_id(status), status)
+            held = str(frontmatter.get("status") or "")
+            if lane_id(held) != lane_id(status) or assignee_of(body) != session:
+                raise _Unheld(f"{task} is {held or 'without a status'} held by {assignee_of(body) or 'no session'}")
             return released(body)
 
-        return _moved(_update(root, task, edit, guard, actor), spelled.get(lane_id(status), status))
+        try:
+            return _update(root, task, edit, guard, actor)
+        except _Unheld as unheld:
+            return Written(False, str(unheld))
 
     return release
 
@@ -1154,7 +1164,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         base,
         lambda config, roles: {
             "writer": _writer(root, config.statuses, roles, guard, claims),
-            "release": _releaser(root, config.statuses, guard),
+            "release": _releaser(root, guard),
             "assign": assign,
             "create": _creator(root, config, retired, guard, file_name, link),
             "read": _reader(root, evaluate.latest if isinstance(evaluate, criteria.Evaluator) else evaluate),
@@ -1197,7 +1207,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         made.start(feed, group, log)
         from starpulse._internal.board import claim_ttl  # noqa: PLC0415 — keeps the board's import light
 
-        claim_ttl.start(replace(made, **recorded), log, settings)
+        claim_ttl.start(replace(made, **recorded), feed, log, settings)
 
     read = made.read
     recorded = {

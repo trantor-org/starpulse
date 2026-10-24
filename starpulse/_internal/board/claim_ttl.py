@@ -19,6 +19,7 @@ from starpulse._internal.store import EventStore, NewEvent, StoredEvent
 
 if TYPE_CHECKING:
     from starpulse._internal.eventlog.event_log import EventLog
+    from starpulse._internal.feed.board_feed import BoardFeed
 
 __all__ = ["DEFAULT_TTL", "ACTOR", "last_renewal", "start", "sweep"]
 
@@ -66,7 +67,7 @@ def sweep(
         renewed = max((at for at in renewals if at is not None), default=None)
         if renewed is None or now - renewed < ttl:
             continue
-        if board.release(row["id"], row["state"], actor=ACTOR).ok:
+        if board.release(row["id"], row["state"], session=session, actor=ACTOR).ok:
             events = [
                 NewEvent("Released", {"session": session, "last_renewal": renewed, "ttl": ttl}, ACTOR, WRITER),
                 NewEvent("CommentAdded", {"text": _note(session, renewed, ttl)}, ACTOR, WRITER),
@@ -76,18 +77,18 @@ def sweep(
     return released
 
 
-def start(board: Board, log: EventLog, settings: Mapping[str, Any]) -> None:
-    """Sweeps on a daemon thread every sixth of the TTL, at most every minute, for `[board] claim_ttl` seconds."""
+def start(board: Board, feed: BoardFeed, log: EventLog, settings: Mapping[str, Any]) -> None:
+    """Sweeps the feed's open tasks on a daemon thread every sixth of the TTL, at most every minute, for `[board]
+    claim_ttl` seconds. The feed holds the board's tasks whether or not a read model folds them."""
     from starpulse._internal.eventlog.history import last_run_event  # noqa: PLC0415 — keeps the board's import light
-    from starpulse._internal.readmodel.read_model import ReadModel  # noqa: PLC0415 — keeps the board's import light
 
     ttl = float(settings.get("claim_ttl", DEFAULT_TTL))
-    store, model = EventStore(log.engine), ReadModel(log.engine)
+    store = EventStore(log.engine)
     activity = partial(last_run_event, log.engine)
 
     def run() -> None:
         while True:
             time.sleep(min(60.0, ttl / 6))
-            sweep(board, store, model.snapshot(), ttl=ttl, activity=activity)
+            sweep(board, store, feed.open_tasks(), ttl=ttl, activity=activity)
 
     threading.Thread(target=run, name="claim-ttl", daemon=True).start()
