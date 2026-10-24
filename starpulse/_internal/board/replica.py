@@ -240,12 +240,7 @@ def publish(board: Board, feed: BoardFeed, group: str, log: EventLog, config: Co
     publisher = Publisher(feed, log, key(board, config))
     publisher.begin()
     board.start(publisher, group, log)
-    threading.Thread(
-        target=publisher.keep_saved,
-        args=(threading.Event(),),
-        name="board-state",
-        daemon=True,
-    ).start()
+    feed.spawn(publisher.keep_saved, "board-state")
     return publisher
 
 

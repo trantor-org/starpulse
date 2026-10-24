@@ -266,6 +266,9 @@ class BoardFeed:
         read_model: ReadModel | None = None,
     ) -> None:
         self._hint = hint
+        #: Set by `stop`: every thread an adapter runs for this feed (`spawn`) waits on it.
+        self.stopped = threading.Event()
+        self._threads: list[threading.Thread] = []
         #: When set, the Board's Tasks are read from it on each request and `_open` stays empty (D3: the feed holds no board).
         self._read_model = read_model
         self._hot_cache: tuple[int, list[dict]] | None = None
@@ -551,6 +554,19 @@ class BoardFeed:
         while not stop.wait(interval):
             self.save()
         self.save()
+
+    def spawn(self, target: Callable[[threading.Event], None], name: str) -> None:
+        """Run `target(stopped)` on a daemon thread that `stop` ends: `target` returns once `stopped` is set."""
+        thread = threading.Thread(target=target, args=(self.stopped,), name=name, daemon=True)
+        self._threads.append(thread)
+        thread.start()
+
+    def stop(self, timeout: float = 5.0) -> None:
+        """End every thread `spawn` began, and wait up to `timeout` seconds for each, so the feed saves its last
+        checkpoint before the log it saves to is closed."""
+        self.stopped.set()
+        for thread in self._threads:
+            thread.join(timeout)
 
     def date_lanes(self, lane_path: Callable[[str], list[dict]]) -> None:
         """Date a lane the feed replays by the history's last change into it (`History.lane_path`), not by the replay."""

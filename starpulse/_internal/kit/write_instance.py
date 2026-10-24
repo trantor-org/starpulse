@@ -104,4 +104,5 @@ def write_instance(base: Path, config_file: str = "starpulse.toml") -> Generator
             for backlog, thread in started.items():
                 backlog.stop()
                 thread.join(PLACED_WITHIN_S)
+            feed.stop(PLACED_WITHIN_S)
             log.close()
