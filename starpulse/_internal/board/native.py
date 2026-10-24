@@ -1054,8 +1054,8 @@ def _slug(title: str) -> str:
         slug = slug[: dated.start()]
     if len(slug) > _SLUG_MAX:
         head = slug[:_SLUG_MAX]
-        boundary = head.rfind("-")
-        words = (head[:boundary] if boundary > 0 else head).strip("-").split("-")
+        boundary = slug.rfind("-", 0, _SLUG_MAX + 1)
+        words = (slug[:boundary] if boundary > 0 else head).strip("-").split("-")
         while len(words) > 1 and words[-1] in _SLUG_STOPWORDS:
             words.pop()
         slug = "-".join(words)
