@@ -140,7 +140,7 @@ live; `restarting`, `retrying`, `offline` and `updating` hold one state.
 
 ## Event store
 
-`starpulse/_internal/store` keeps one append-only stream per subject, `(subject_kind, subject_id)`, in
+`starpulse/event_log/store` keeps one append-only stream per subject, `(subject_kind, subject_id)`, in
 `starpulse_stream_events` (migration 0027). A row is a typed envelope (`event_id`, `version`, `type`, `schema_version`,
 `at`, `actor`, `writer`, `definition_hash`, `causation_id`, `correlation_id`) and a JSON `payload`.
 
@@ -156,7 +156,7 @@ live; `restarting`, `retrying`, `offline` and `updating` hold one state.
 
 ## Machine registry
 
-`MachineRegistry` (`starpulse/_internal/store/machine_registry.py`, migration 0030) keeps every machine definition ever
+`MachineRegistry` (`starpulse/event_log/store/machine_registry.py`, migration 0030) keeps every machine definition ever
 activated in `starpulse_machine_versions`, keyed by the hash of the whole compiled definition (writers and `migrations`
 included), and one active hash per machine in `starpulse_machine_active`. Nothing prunes or rewrites either table.
 
@@ -180,7 +180,7 @@ nothing and the running workers stay on the active version.
 
 ## Task read model
 
-`starpulse/_internal/readmodel` folds the `task` streams into tables that answer reads by index, so no read loads every
+`starpulse/event_log/readmodel` folds the `task` streams into tables that answer reads by index, so no read loads every
 Task. A `Projector(engine, store)` folds events past its checkpoint (`read-model:tasks`, in `Checkpoints`); each batch of 500
 commits its rows and the checkpoint together. `rebuild()` empties the tables and replays from position 0; a replay and an
 incremental fold give the same rows. Given a `SearchIndex` as `search`, the projector also writes each folded Task's search

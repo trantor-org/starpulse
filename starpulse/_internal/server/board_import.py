@@ -26,12 +26,12 @@ from sqlalchemy import select
 
 from starpulse._internal.board.board_import import import_board
 from starpulse._internal.config.config import ConfigError, discover, load
-from starpulse._internal.eventlog.event_log import EventLog
-from starpulse._internal.eventlog.tables import events
 from starpulse._internal.runs.run_events import STREAM
 from starpulse._internal.runs.run_streams import RunStreams
 from starpulse._internal.server.assembly import assemble, history_store
-from starpulse._internal.store import EventStore
+from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.store import EventStore
+from starpulse.event_log.tables import events
 
 __all__ = ["main"]
 

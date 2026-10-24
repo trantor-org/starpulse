@@ -9,11 +9,11 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.feed.snapshot import BoardSnapshot
 from starpulse._internal.server.server import serve_until_stopped
 from starpulse.contracts.adapters import BoardTask
+from starpulse.event_log.event_log import EventLog
 
 STREAM = "board:tasks"
 

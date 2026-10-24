@@ -13,9 +13,10 @@ from typing import Any
 
 from sqlalchemy.exc import OperationalError
 
-from starpulse._internal.eventlog.event_log import DEFAULT_POLL_INTERVAL, Entry, EventLog, Tail
 from starpulse._internal.runs import run_events
-from starpulse._internal.store import EventStore, NewEvent, StaleVersion, StoredEvent
+from starpulse.event_log.event_log import Entry, EventLog, Tail
+from starpulse.event_log.polling import DEFAULT_POLL_INTERVAL
+from starpulse.event_log.store import EventStore, NewEvent, StaleVersion, StoredEvent
 
 SUBJECT = "run"
 #: The writer of an entry no producer posted: a run adapter's.

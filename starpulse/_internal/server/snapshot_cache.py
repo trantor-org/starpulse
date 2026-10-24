@@ -17,9 +17,9 @@ from collections import OrderedDict
 from collections.abc import Callable
 from typing import Any, NamedTuple
 
-from starpulse._internal.server.encoding import encode_snapshot
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.server.compression import Encoded
+from starpulse._internal.server.encoding import encode_snapshot
 
 logger = logging.getLogger(__name__)
 

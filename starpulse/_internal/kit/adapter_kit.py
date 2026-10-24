@@ -39,14 +39,13 @@ from starpulse._internal.board.seam import (
     Written,
 )
 from starpulse._internal.config.config import Config
-from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import History, HistoryStore
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.feed.history_window import HistoryWindow
 from starpulse._internal.feed.machine_tasks import MachineTasks
-from starpulse._internal.server.gate_request import GateRequest
 from starpulse._internal.server.asgi_app import page_app
 from starpulse._internal.server.assembly import assemble as _assemble
+from starpulse._internal.server.gate_request import GateRequest
 from starpulse._internal.server.page_server import PageServer
 from starpulse._internal.server.services import Services
 from starpulse._internal.server.writes import move_task
@@ -58,6 +57,7 @@ from starpulse.contracts.adapters import (
     Pool,
     TaskKeys,
 )
+from starpulse.event_log.event_log import EventLog
 
 __all__ = [
     "BoardAdapterKit",

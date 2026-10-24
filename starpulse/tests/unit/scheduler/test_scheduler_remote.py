@@ -9,12 +9,12 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.scheduler.remote import Remote, follow_status, follow_wakes, publisher
 from starpulse._internal.config.config import load
-from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.harnesses.harness import HARNESS_MACHINES
+from starpulse._internal.scheduler.remote import Remote, follow_status, follow_wakes, publisher
 from starpulse._internal.server.server import scheduler_remote
+from starpulse.event_log.event_log import EventLog
 from starpulse.tests.machines import MACHINES, ROLES
 
 DEADLINE_S = 5.0

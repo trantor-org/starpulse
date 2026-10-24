@@ -14,6 +14,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from starpulse._internal.board.seam import Written
+from starpulse._internal.config.scheduler import Scheduler
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.harnesses.harness import HARNESS
 from starpulse._internal.scheduler.harness_setting import HarnessSetting
 from starpulse._internal.scheduler.inputs import review_points, sessions_in_flight
 from starpulse._internal.scheduler.ledger import LEDGER_FILE, Ledger
@@ -23,11 +27,7 @@ from starpulse._internal.scheduler.quiet_hours import QuietHoursSetting
 from starpulse._internal.scheduler.sampler import Crossing, Reading, Sampler
 from starpulse._internal.scheduler.state import SchedulerState
 from starpulse._internal.scheduler.toggle import TOGGLE_FILE, Toggle
-from starpulse._internal.board.seam import Written
-from starpulse._internal.config.scheduler import Scheduler
-from starpulse._internal.eventlog.event_log import EventLog
-from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.harnesses.harness import HARNESS
+from starpulse.event_log.event_log import EventLog
 
 logger = logging.getLogger(__name__)
 

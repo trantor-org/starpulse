@@ -14,8 +14,8 @@ from typing import Any
 
 from starpulse._internal.board.seam import OPERATOR
 from starpulse._internal.board.task_history import KIND, WRITER, Record, seed
-from starpulse._internal.readmodel.fold import replay
-from starpulse._internal.store import EventStore, NewEvent
+from starpulse.event_log.readmodel.fold import replay
+from starpulse.event_log.store import EventStore, NewEvent
 
 __all__ = ["Report", "import_board"]
 

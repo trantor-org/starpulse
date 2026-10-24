@@ -9,6 +9,7 @@ from pathlib import Path
 import jsonschema
 import pytest
 
+from starpulse._internal.ci.ci import CI_MACHINES
 from starpulse._internal.cli.demo import (
     SEED_ROLES,
     STATIC,
@@ -26,7 +27,6 @@ from starpulse._internal.cli.demo import (
 )
 from starpulse.contracts.adapters import SCHEMAS, Dag, Pool
 from starpulse.contracts.api.dto.snapshot import Snapshot
-from starpulse._internal.ci.ci import CI_MACHINES
 
 SECRET = "Rotate the router admin password"
 

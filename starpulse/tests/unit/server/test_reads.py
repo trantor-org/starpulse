@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import HistoryStore
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.feed.history_window import HistoryWindow
@@ -15,6 +14,7 @@ from starpulse._internal.server.compression import Encoded
 from starpulse._internal.server.reads import Arrival, ReadRoutes, Request, Response
 from starpulse._internal.server.services import Services
 from starpulse._internal.server.snapshot_cache import SnapshotCache
+from starpulse.event_log.event_log import EventLog
 from starpulse.tests.fake_board import bare_board
 
 

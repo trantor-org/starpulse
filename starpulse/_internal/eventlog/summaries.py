@@ -50,8 +50,8 @@ from sqlalchemy import (
 )
 
 from starpulse._internal.eventlog.level_metrics import UNATTRIBUTED
-from starpulse._internal.eventlog.tables import metadata
 from starpulse._internal.machines.transitions import tables as transitions
+from starpulse.event_log.tables import metadata
 
 BOARD = "board"
 _CHUNK = 5000

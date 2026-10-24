@@ -11,13 +11,13 @@ from starpulse._internal.board.seam import Board
 from starpulse._internal.board.seam import load as load_board
 from starpulse._internal.ci.ci import attach
 from starpulse._internal.config.config import Config
-from starpulse._internal.eventlog.event_log import EventLog, prune_forever
 from starpulse._internal.eventlog.history import HistoryStore, database_url
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.harnesses.harness import HARNESS_MACHINES
 from starpulse._internal.machines.snapshot import qualifier
 from starpulse._internal.pulls.task_actor import ACTOR
-from starpulse._internal.readmodel.read_model import ReadModel
+from starpulse.event_log.event_log import EventLog, prune_forever
+from starpulse.event_log.readmodel.read_model import ReadModel
 
 
 def assemble(

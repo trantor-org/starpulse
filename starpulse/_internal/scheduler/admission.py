@@ -18,10 +18,10 @@ from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, replace
 from typing import Any
 
+from starpulse._internal.config.scheduler import DIMENSIONS, Scheduler
 from starpulse._internal.scheduler.inputs import points
 from starpulse._internal.scheduler.ledger import Ledger
 from starpulse._internal.scheduler.sampler import Reading
-from starpulse._internal.config.scheduler import DIMENSIONS, Scheduler
 
 #: Runs of one tier and size it takes before their measured demand replaces the prior.
 MIN_RUNS = 3

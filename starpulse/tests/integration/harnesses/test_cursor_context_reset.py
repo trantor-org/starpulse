@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.eventlog.event_log import EventLog, Tail
 from starpulse._internal.harnesses.cursor_context import CONTEXT_STREAM, reset_over_limit
 from starpulse.contracts.adapters import StartFailedError
+from starpulse.event_log.event_log import EventLog, Tail
 
 NOW = 1_800_000_000.0
 LIMIT, WINDOW, WRAPUP = 150_000, 200_000, "[context-reset] update the working doc, comment, commit WIP"

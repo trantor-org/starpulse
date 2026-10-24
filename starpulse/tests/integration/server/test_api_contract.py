@@ -10,16 +10,16 @@ import pytest
 from pydantic import TypeAdapter
 from sqlalchemy import create_engine
 
-from starpulse._internal.scheduler.runtime import build
 from starpulse._internal.config.scheduler import Scheduler
-from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import HistoryStore
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.feed.search import SearchIndex
 from starpulse._internal.harnesses.telemetry import Signal, TelemetryLog, signals
 from starpulse._internal.kit.adapter_kit import serve, task, url
+from starpulse._internal.scheduler.runtime import build
 from starpulse._internal.server.page_server import PageServer
 from starpulse.contracts.api.registry import BODIES, RESPONSES
+from starpulse.event_log.event_log import EventLog
 from starpulse.tests.fake_board import bare_board
 from starpulse.tests.machines import MACHINES, ROLES
 from starpulse.tests.unit.feed.test_board_feed import _paged_feed

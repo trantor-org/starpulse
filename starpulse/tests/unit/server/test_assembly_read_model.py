@@ -7,11 +7,11 @@ from pathlib import Path
 import pytest
 
 from starpulse._internal.config.config import load
-from starpulse._internal.eventlog.event_log import EventLog
-from starpulse._internal.readmodel.projector import Projector
-from starpulse._internal.readmodel.read_model import ReadModel
 from starpulse._internal.server import assembly
-from starpulse._internal.store import EventStore, NewEvent
+from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.readmodel.projector import Projector
+from starpulse.event_log.readmodel.read_model import ReadModel
+from starpulse.event_log.store import EventStore, NewEvent
 
 
 def test_the_assembled_feed_draws_and_reads_a_task_without_the_boards_file_reader(

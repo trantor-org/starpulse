@@ -11,11 +11,11 @@ from sqlalchemy import create_engine
 from starpulse._internal.board.seam import Written
 from starpulse._internal.config.config import Repo
 from starpulse._internal.config.pins import LiveBuild
-from starpulse.tests.machines import ROLES
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.pulls.pulls import PullStore
 from starpulse._internal.pulls.unblock import Unblocker
+from starpulse.tests.machines import ROLES
 
 CHILD, PARENT = "c" * 40, "p" * 40
 CHILD_PR = "https://github.com/acme/starpulse/pull/10"

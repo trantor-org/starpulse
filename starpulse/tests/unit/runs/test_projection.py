@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.runs import projection
+from starpulse.event_log.event_log import EventLog
 
 DAGS = [{"name": "ci", "status": "success", "runId": "1", "startedAt": "", "finishedAt": "", "steps": []}]
 POOLS = [{"name": "gpu", "limit": 1, "running": 0}]

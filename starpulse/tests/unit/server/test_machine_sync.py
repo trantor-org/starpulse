@@ -9,12 +9,12 @@ import pytest
 import yaml
 
 from starpulse._internal.config.config import Config
-from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.machines.machine_definition import MachineDefinitionError
-from starpulse._internal.readmodel.fold import replay
 from starpulse._internal.server.machine_sync import sync_definitions
-from starpulse._internal.store import EventStore, NewEvent
-from starpulse._internal.store.machine_registry import MachineRegistry
+from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.readmodel.fold import replay
+from starpulse.event_log.store import EventStore, NewEvent
+from starpulse.event_log.store.machine_registry import MachineRegistry
 
 BOARD = {
     "name": "board",

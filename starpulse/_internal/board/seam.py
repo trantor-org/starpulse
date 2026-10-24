@@ -22,9 +22,9 @@ from starpulse._internal.machines.transitions import DEFAULT_STATUSES
 
 if TYPE_CHECKING:
     from starpulse._internal.feed.board_feed import BoardFeed
-    from starpulse._internal.eventlog.event_log import EventLog
     from starpulse._internal.machines.snapshot import Qualify
     from starpulse.contracts.task_keys import TaskKeys
+    from starpulse.event_log.event_log import EventLog
 
 __all__ = [
     "AGENT",

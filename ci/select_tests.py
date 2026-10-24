@@ -64,7 +64,7 @@ READERS = {
     "starpulse/web/*": ("starpulse/tests/unit/contracts/test_neutrality.py", "ci/ui_preview.py"),
     "design/*": ("ci/ui_preview.py",),
     ".claude-plugin/*": ("starpulse/tests/integration/cli/test_agent_cli.py",),
-    "docs/consumers.md": ("starpulse/tests/unit/eventlog/test_consumer_pattern.py",),
+    "docs/consumers.md": ("starpulse/tests/unit/event_log/test_consumer_pattern.py",),
     "docs/serving.md": ("starpulse/tests/unit/config/test_builtin_types.py",),
     "docs/sources.md": ("starpulse/tests/unit/config/test_builtin_types.py",),
     "ci/preview.toml": ("ci/ui_preview.py", "ci/seeded_server.py"),
@@ -77,7 +77,7 @@ READERS = {
     "starpulse/machine.schema.json": (
         "starpulse/_internal/machines/machine_definition.py",
     ),
-    "starpulse/_internal/eventlog/migrations/*": ("starpulse/_internal/eventlog/event_log.py",),
+    "starpulse/event_log/migrations/*": ("starpulse/event_log/event_log.py",),
     "pyproject.toml": (),
     "ci/static_checks.sh": ("ci/test_workflow_placement.py",),
     "starpulse/machines/*": (

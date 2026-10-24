@@ -10,9 +10,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import serve, task, url
+from starpulse.event_log.event_log import EventLog
 from starpulse.tests.fake_board import bare_board
 from starpulse.tests.machines import MACHINES, ROLES
 

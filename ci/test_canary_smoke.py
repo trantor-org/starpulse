@@ -8,8 +8,8 @@ import canary_smoke
 import pytest
 from canary_smoke import anchor_paths, render_config, step_migrate
 from sqlalchemy import create_engine, text
-from starpulse._internal.eventlog.migrate import migrate
-from starpulse._internal.eventlog.tables import VERSION_TABLE
+from starpulse.event_log.migrate import migrate
+from starpulse.event_log.tables import VERSION_TABLE
 
 
 def history(path: Path) -> Path:

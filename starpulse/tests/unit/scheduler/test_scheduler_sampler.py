@@ -7,7 +7,7 @@ from pathlib import Path
 
 from starpulse._internal.scheduler.sampler import Crossing, Reading, Sampler
 from starpulse._internal.scheduler.state import SchedulerState
-from starpulse._internal.eventlog.event_log import EventLog
+from starpulse.event_log.event_log import EventLog
 
 LIMITS = {"cpu": 80.0, "memory": 80.0, "sessions": 2, "review": 20}
 

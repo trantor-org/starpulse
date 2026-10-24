@@ -11,7 +11,6 @@ import pytest
 from sqlalchemy import create_engine
 
 from starpulse._internal.config.config import load
-from starpulse._internal.eventlog.event_log import Entry
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.pulls.pull_events import RecordProjection
@@ -19,6 +18,7 @@ from starpulse._internal.pulls.pulls import PullStore
 from starpulse._internal.pulls.task_actor import ACTOR, TaskActor
 from starpulse._internal.server import server
 from starpulse._internal.server.assembly import assemble
+from starpulse.event_log.event_log import Entry
 from starpulse.tests.machines import MACHINES, ROLES
 from starpulse.tests.task_actor_kit import (
     CHILD,

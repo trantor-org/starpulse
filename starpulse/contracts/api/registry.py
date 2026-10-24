@@ -7,7 +7,6 @@ from typing import Any
 from pydantic import BaseModel
 
 from starpulse.contracts.api.dto.errors import ApiError, SkillRefusal, StaleEdit, WindowTooLong
-from starpulse.contracts.api.dto.scheduler import SchedulerStatus
 from starpulse.contracts.api.dto.harnesses import Harnesses, WindowState
 from starpulse.contracts.api.dto.health import Health, MachineHistory, Sessions, SessionSteps
 from starpulse.contracts.api.dto.milestones import Docs, DocShown, Milestones, MilestoneShown, RetiredTasks, TaskRecord
@@ -17,7 +16,6 @@ from starpulse.contracts.api.dto.pulls import Pulls
 from starpulse.contracts.api.dto.report import ContractReport
 from starpulse.contracts.api.dto.requests import (
     ArchiveRequest,
-    SchedulerRequest,
     ClaimRequest,
     CompleteRequest,
     CreateRequest,
@@ -32,13 +30,14 @@ from starpulse.contracts.api.dto.requests import (
     MissRequest,
     MoveRequest,
     ParkRequest,
+    RatingRequest,
     RestoreRequest,
     RetiredImportRequest,
     RetireRequest,
-    TakeOverRequest,
-    RatingRequest,
     ReviewRequest,
+    SchedulerRequest,
     StartRequest,
+    TakeOverRequest,
     VerdictRequest,
     WindowRequest,
 )
@@ -62,12 +61,13 @@ from starpulse.contracts.api.dto.results import (
     Rated,
     Restored,
     Retired,
-    TakenOver,
     RetiredImported,
     Reviewed,
     RunStarted,
     Started,
+    TakenOver,
 )
+from starpulse.contracts.api.dto.scheduler import SchedulerStatus
 from starpulse.contracts.api.dto.search import SearchResults
 from starpulse.contracts.api.dto.snapshot import (
     BuildEvent,

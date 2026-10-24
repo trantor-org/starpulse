@@ -15,9 +15,9 @@ from collections.abc import Mapping
 
 from pydantic import ValidationError
 
-from starpulse.contracts.adapters import MachineEvent, TaskKeys
-from starpulse._internal.machines.transitions import tables
 from starpulse._internal.feed.board_feed import BoardFeed, entry_position
+from starpulse._internal.machines.transitions import tables
+from starpulse.contracts.adapters import MachineEvent, TaskKeys
 
 #: How many of a task's latest steps travel with it, so a page that connected after several steps can still walk each one.
 TRAIL = 12

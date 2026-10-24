@@ -10,17 +10,18 @@ import pytest
 
 import starpulse
 from starpulse import contracts
-from starpulse._internal.eventlog import events, lane_events, rating_events
-from starpulse._internal.eventlog.event_log import EventLog, Tail
 from starpulse._internal.runs import run_events
+from starpulse.event_log import events, lane_events, rating_events
+from starpulse.event_log.event_log import EventLog, Tail
 
 STREAMS = contracts.EVENT_STREAMS
 
 
 def _declared_streams() -> set[str]:
-    """The stream names the package's producers declare: each module-level `STREAM = "..."` under `_internal`."""
+    """The stream names the package's producers declare: each module-level `STREAM = "..."` under `_internal` and `event_log`."""
     found: set[str] = set()
-    for path in (Path(starpulse.__file__).parent / "_internal").rglob("*.py"):
+    root = Path(starpulse.__file__).parent
+    for path in [*(root / "_internal").rglob("*.py"), *(root / "event_log").rglob("*.py")]:
         for node in ast.parse(path.read_text()).body:
             if (
                 isinstance(node, ast.Assign)

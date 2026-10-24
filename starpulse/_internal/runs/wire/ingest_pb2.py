@@ -9,6 +9,7 @@ from google.protobuf import descriptor_pool as _descriptor_pool
 from google.protobuf import runtime_version as _runtime_version
 from google.protobuf import symbol_database as _symbol_database
 from google.protobuf.internal import builder as _builder
+
 _runtime_version.ValidateProtobufRuntimeVersion(
     _runtime_version.Domain.PUBLIC,
     7,
@@ -23,8 +24,10 @@ _sym_db = _symbol_database.Default()
 
 
 from google.protobuf import empty_pb2 as google_dot_protobuf_dot_empty__pb2
-from starpulse._internal.runs.wire import cloudevents_pb2 as starpulse_dot___internal_dot_runs_dot_wire_dot_cloudevents__pb2
 
+from starpulse._internal.runs.wire import (
+  cloudevents_pb2 as starpulse_dot___internal_dot_runs_dot_wire_dot_cloudevents__pb2,
+)
 
 DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n*starpulse/_internal/runs/wire/ingest.proto\x12\x0cstarpulse.v1\x1a\x1bgoogle/protobuf/empty.proto\x1a/starpulse/_internal/runs/wire/cloudevents.proto2\xa1\x01\n\x11\x43loudEventsIngest\x12@\n\x07Publish\x12\x1d.io.cloudevents.v1.CloudEvent\x1a\x16.google.protobuf.Empty\x12J\n\x0cPublishBatch\x12\".io.cloudevents.v1.CloudEventBatch\x1a\x16.google.protobuf.Emptyb\x06proto3')
 

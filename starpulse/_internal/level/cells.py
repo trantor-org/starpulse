@@ -30,8 +30,8 @@ from statistics import median
 from typing import Any
 
 from starpulse._internal.config.analytics import Analytics
-from starpulse._internal.signals import CLAUDE_CODE, Signal
 from starpulse._internal.level.steps import owned_steps
+from starpulse._internal.signals import CLAUDE_CODE, Signal
 from starpulse.contracts.adapters import TaskKeys
 
 __all__ = ["MIN_N", "cell_of", "cell_report", "transition_cost"]

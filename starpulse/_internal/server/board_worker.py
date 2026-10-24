@@ -21,16 +21,16 @@ from pathlib import Path
 
 from starpulse._internal.board import replica
 from starpulse._internal.config.config import Config, discover, load
-from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import HistoryStore, database_url
 from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.readmodel.declared import declared_fields
-from starpulse._internal.readmodel.projector import Projector
-from starpulse._internal.readmodel.read_model import ReadModel
 from starpulse._internal.server import read_model_follow
 from starpulse._internal.server.assembly import assemble, history_store
 from starpulse._internal.server.hold import hold
-from starpulse._internal.store import EventStore
+from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.readmodel.declared import declared_fields
+from starpulse.event_log.readmodel.projector import Projector
+from starpulse.event_log.readmodel.read_model import ReadModel
+from starpulse.event_log.store import EventStore
 
 logger = logging.getLogger(__name__)
 

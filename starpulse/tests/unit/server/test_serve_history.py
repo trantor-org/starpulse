@@ -7,10 +7,10 @@ from pathlib import Path
 import pytest
 from sqlalchemy import text
 
-from starpulse._internal.server import board_worker, flow_metrics_worker, server, worker
-from starpulse._internal.eventlog import events
-from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import HistoryStore
+from starpulse._internal.server import board_worker, flow_metrics_worker, server, worker
+from starpulse.event_log import events
+from starpulse.event_log.event_log import EventLog
 from starpulse.tests import fake_board
 
 

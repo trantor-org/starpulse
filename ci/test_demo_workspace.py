@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
+import tomllib
 from pathlib import Path
 
 import demo_workspace
-import tomllib
-
 from starpulse._internal.cli.demo import scrub
 
 PREVIEW = Path(__file__).with_name("preview.toml")

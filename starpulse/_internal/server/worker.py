@@ -23,7 +23,6 @@ from pathlib import Path
 from starpulse._internal.board.seam import Board
 from starpulse._internal.config.config import Config, discover, load
 from starpulse._internal.config.pins import GitHub
-from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import database_url
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.pulls.delivery import (
@@ -39,6 +38,7 @@ from starpulse._internal.pulls.pulls import PullStore
 from starpulse._internal.server.assembly import history_store, worker_board
 from starpulse._internal.server.hold import hold
 from starpulse._internal.server.server import listen_options, start_delivery
+from starpulse.event_log.event_log import EventLog
 
 logger = logging.getLogger(__name__)
 

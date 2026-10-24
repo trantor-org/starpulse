@@ -19,7 +19,7 @@ SECONDS = {
     "starpulse/tests/integration/cli/test_agent_cli.py": 600,
     "starpulse/tests/integration/eventlog/test_history.py": 131,
     "starpulse/tests/integration/server/test_api_contract.py": 120,
-    "starpulse/tests/integration/eventlog/test_event_log.py": 59,
+    "starpulse/tests/integration/event_log/test_event_log.py": 59,
     "starpulse/tests/unit/eventlog/test_history_summaries.py": 55,
     "starpulse/tests/unit/runs/test_dagu_runs.py": 34,
     "starpulse/tests/integration/server/test_standalone.py": 33,

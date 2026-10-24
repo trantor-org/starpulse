@@ -5,8 +5,8 @@ import time
 
 from starpulse._internal.feed.board_feed import HOT_S, BoardFeed
 from starpulse._internal.kit.adapter_kit import task
-from starpulse.contracts.adapters import Move
 from starpulse._internal.server.encoding import encode, encode_snapshot, event, slim_snapshot
+from starpulse.contracts.adapters import Move
 from starpulse.tests.machines import MACHINES, ROLES
 
 DAY = 86400.0

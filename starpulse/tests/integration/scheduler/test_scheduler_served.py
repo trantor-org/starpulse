@@ -17,14 +17,14 @@ from pathlib import Path
 
 import pytest
 
+from starpulse._internal.config.config import load
+from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.scheduler.ledger import LEDGER_FILE, Ledger
 from starpulse._internal.scheduler.runtime import Runtime
 from starpulse._internal.scheduler.sampler import PERIOD
-from starpulse._internal.config.config import load
-from starpulse._internal.eventlog.event_log import EventLog
-from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.server.assembly import assemble, history_store
 from starpulse._internal.server.scheduler_service import start_scheduler
+from starpulse.event_log.event_log import EventLog
 
 #: How long a test waits for the loop: far under the sampler's period, which is the bound the spec names.
 DEADLINE_S = 10.0

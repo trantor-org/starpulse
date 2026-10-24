@@ -16,7 +16,6 @@ import threading
 from pathlib import Path
 
 from starpulse._internal.config.config import Config, discover, load
-from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import database_url
 from starpulse._internal.feed.board_feed import follow
 from starpulse._internal.runs import opt_in, run_events
@@ -26,7 +25,8 @@ from starpulse._internal.runs.run_streams import RunStreams, record_run_streams
 from starpulse._internal.server.assembly import history_store, worker_board
 from starpulse._internal.server.hold import hold
 from starpulse._internal.server.server import run_adapters
-from starpulse._internal.store import EventStore
+from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.store import EventStore
 
 logger = logging.getLogger(__name__)
 

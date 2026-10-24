@@ -9,15 +9,15 @@ import pytest
 from starpulse._internal.board.seam import Board
 from starpulse._internal.board.upstream_backlog import UpstreamBacklog
 from starpulse._internal.config.config import load
-from starpulse._internal.eventlog.event_log import EventLog
-from starpulse._internal.eventlog.tables import retired_tasks
 from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.readmodel.fold import replay
-from starpulse._internal.readmodel.projector import Projector
-from starpulse._internal.readmodel.read_model import ReadModel
 from starpulse._internal.server.assembly import assemble
 from starpulse._internal.server.writes import edit_task
-from starpulse._internal.store import EventStore
+from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.readmodel.fold import replay
+from starpulse.event_log.readmodel.projector import Projector
+from starpulse.event_log.readmodel.read_model import ReadModel
+from starpulse.event_log.store import EventStore
+from starpulse.event_log.tables import retired_tasks
 
 FILE = """---
 id: task-5

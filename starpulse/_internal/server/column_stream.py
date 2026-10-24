@@ -7,8 +7,8 @@ one build of the columns.
 
 import json
 import threading
-from concurrent.futures import ThreadPoolExecutor
 from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from starpulse._internal.board.view import board_columns, board_flow

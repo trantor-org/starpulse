@@ -14,10 +14,10 @@ from starpulse._internal.board.seam import Board
 from starpulse._internal.board.upstream_backlog import UpstreamBacklog
 from starpulse._internal.board.view import board_flow, task_view
 from starpulse._internal.config.config import load
-from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.server import writes
 from starpulse._internal.server.assembly import assemble
+from starpulse.event_log.event_log import EventLog
 from starpulse.tests.unit.board.test_native import native_root, write_task
 from starpulse.tests.unit.board.test_native_rules import done_needs
 

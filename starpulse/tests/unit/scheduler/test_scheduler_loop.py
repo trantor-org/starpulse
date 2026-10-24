@@ -9,19 +9,19 @@ from typing import Any
 import pytest
 from sqlalchemy.exc import OperationalError
 
+from starpulse._internal.board.seam import Written
+from starpulse._internal.config.scheduler import Scheduler
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.feed.machine_tasks import MachineTasks
+from starpulse._internal.harnesses.harness import HARNESS_MACHINES
 from starpulse._internal.scheduler.harness_setting import HarnessSetting
 from starpulse._internal.scheduler.ledger import Ledger
 from starpulse._internal.scheduler.loop import Loop
 from starpulse._internal.scheduler.quiet_hours import QuietHours
 from starpulse._internal.scheduler.sampler import Sampler
 from starpulse._internal.scheduler.toggle import Toggle
-from starpulse._internal.board.seam import Written
-from starpulse._internal.config.scheduler import Scheduler
-from starpulse._internal.eventlog.event_log import EventLog
-from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.feed.machine_tasks import MachineTasks
-from starpulse._internal.harnesses.harness import HARNESS_MACHINES
 from starpulse.contracts.adapters import BoardTask, MachineEvent, StartFailedError
+from starpulse.event_log.event_log import EventLog
 from starpulse.tests.machines import MACHINES, ROLES
 
 START = 10_000.0

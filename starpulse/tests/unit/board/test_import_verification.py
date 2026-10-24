@@ -6,9 +6,9 @@ from pathlib import Path
 
 from starpulse._internal.board.board_import import import_board
 from starpulse._internal.board.task_history import KIND
-from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.runs.run_streams import RunStreams
-from starpulse._internal.store import EventStore
+from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.store import EventStore
 
 _RECORD = {"title": "Cut over", "status": "Review", "labels": ["a"], "session": "s1"}
 _LANES = [("e1", "TASK-1", "Ready", 10.0), ("e2", "TASK-1", "In Progress", 20.0), ("e3", "TASK-1", "Review", 30.0)]

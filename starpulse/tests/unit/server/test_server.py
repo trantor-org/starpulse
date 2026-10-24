@@ -16,8 +16,6 @@ from sqlalchemy import update
 from starpulse._internal.board.seam import MoveWriter, Written
 from starpulse._internal.config.config import CommitKeys, Config, RunsInstance, load
 from starpulse._internal.config.harnesses import Harness, Harnesses, Tier, load_harnesses
-from starpulse._internal.eventlog.event_log import EventLog
-from starpulse._internal.eventlog.tables import events
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import serve, task, url
 from starpulse._internal.server.assembly import keep_event_log
@@ -25,6 +23,8 @@ from starpulse._internal.server.server import _adapter, _config
 from starpulse._internal.server.write_routes import _no_writer
 from starpulse._internal.server.writes import move_task, rerun_dag, run_dag, start_task
 from starpulse.contracts.adapters import Move, StartFailedError
+from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.tables import events
 from starpulse.tests.machines import MACHINES, ROLES
 
 #: The workflows the config declares run-safe in these tests, and the domains it groups them in.
