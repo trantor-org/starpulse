@@ -1195,11 +1195,11 @@ def _put_scheduler(request: SchedulerRequest, runtime: Runtime | Remote) -> tupl
     if not named or ("enabled" in named and request.enabled is None):
         return 400, {"error": _SCHEDULER_USAGE}
     try:
+        if "harness" in named:
+            runtime.set_harness(request.harness)
         if "quietHours" in named:
             quiet = request.quietHours
             runtime.set_quiet_hours(None if quiet is None else quiet.model_dump())
-        if "harness" in named:
-            runtime.set_harness(request.harness)
     except ValueError as exc:
         return 400, {"error": str(exc)}
     if request.enabled is not None:
