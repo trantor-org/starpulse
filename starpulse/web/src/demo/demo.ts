@@ -130,6 +130,7 @@ const HANDLERS: Record<string, Handler> = {
   "/api/edit": (server, _path, _query, init) => server.edit(String(init?.body ?? "{}")),
   "/api/archive": (server, _path, _query, init) => server.archive(String(init?.body ?? "{}")),
   "/api/tasks": (server, _path, _query, init) => server.create(String(init?.body ?? "{}")),
+  "/api/rating": (server, _path, _query, init) => server.rate(String(init?.body ?? "{}")),
   "/api/scheduler": (server, _path, _query, init) => server.scheduler(init?.method ?? "GET", String(init?.body ?? "")),
   "/api/harnesses": () => json(HARNESSES),
   "/api/doctor": (server) => json(demoContract(server.snapshot, scenarioOf(globalThis.location?.search ?? ""))),
@@ -183,7 +184,6 @@ export const ROUTES: Record<string, string | null> = {
   "/api/run": "This demo has no runs instance to start a run on.",
   "/api/start": "This demo has no session-start service to start a session with.",
   "/api/history-window": "This demo has no server to keep a shared history window.",
-  "/api/rating": "This demo has no server to keep a task's rating.",
 };
 
 /** The Board columns a card in `state` may be moved to: the machine's exits that are neither its creation nor a settled state. */
@@ -372,6 +372,22 @@ export class DemoServer {
       this.publish(next);
     }
     return json({ task, changed: fields });
+  }
+
+  /** Rate `task` as the served writer would: the verdict, its reason and a change count land on the snapshot, unless a review fixture makes the writer refuse. */
+  rate(raw: string): Response {
+    let sent: { task?: unknown; verdict?: unknown; reason?: unknown; actor?: unknown };
+    try { sent = JSON.parse(raw) as typeof sent; } catch { sent = {}; }
+    const { task, verdict } = sent;
+    if (typeof task !== "string" || (verdict !== "pass" && verdict !== "fail" && verdict !== "cleared")) return json({ error: "invalid rating" }, 400);
+    if (!this.snapshot.flows.find((f) => f.name === "board")?.agents.some((a) => a.id === task)) return json({ error: `${task} is not on the board` }, 404);
+    if (this.refuseEdits) return json({ error: "rating not saved" }, 503);
+    const reason = typeof sent.reason === "string" ? sent.reason : "";
+    const changes = (this.snapshot.ratings?.[task]?.changes ?? 0) + 1;
+    const next = structuredClone(this.snapshot);
+    next.ratings = { ...next.ratings, [task]: { verdict, reason, actor: typeof sent.actor === "string" ? sent.actor : "", at: this.clock(), changes } };
+    this.publish(next);
+    return json({ task, verdict, reason, changes });
   }
 
   /** Archive `task` as the served writer would: the card and its record leave the board, unless a review fixture makes the writer refuse. */

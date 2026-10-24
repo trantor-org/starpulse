@@ -292,6 +292,24 @@ describe("the demo server", () => {
     expect(reply.status).toBe(404);
   });
 
+  it("keeps a rating on the snapshot, counting each change, so the public preview can rate a card", async () => {
+    const s = new DemoServer(fixture());
+    const rate = (verdict: string, reason = "") => s.fetch("/api/rating", { method: "POST", body: JSON.stringify({ task: "DEMO-1", verdict, reason, actor: "operator" }) });
+
+    expect(await (await rate("pass")).json()).toEqual({ task: "DEMO-1", verdict: "pass", reason: "", changes: 1 });
+    expect(await (await rate("fail", "drops the lane filter")).json()).toMatchObject({ verdict: "fail", changes: 2 });
+    expect(s.snapshot.ratings?.["DEMO-1"]).toMatchObject({ verdict: "fail", reason: "drops the lane filter", actor: "operator", changes: 2 });
+  });
+
+  it("refuses a rating in the refusal fixture and for a task that is not on the board", async () => {
+    const send = (s: DemoServer, task: string) => s.fetch("/api/rating", { method: "POST", body: JSON.stringify({ task, verdict: "pass" }) });
+    const refusing = new DemoServer(fixture(), undefined, true);
+
+    expect((await send(refusing, "DEMO-1")).status).toBe(503);
+    expect(refusing.snapshot.ratings?.["DEMO-1"]).toBeUndefined();
+    expect((await send(new DemoServer(fixture()), "DEMO-9")).status).toBe(404);
+  });
+
   it("answers a task's lane path from the embedded history", async () => {
     const s = new DemoServer(fixture());
 
