@@ -63,23 +63,45 @@ def _state_in(snapshot: dict[str, Any], flow: str, task: str) -> str | None:
     return next((a["state"] for a in machine["agents"] if a.get("task") == task), None) if machine else None
 
 
-def _phase(agent: dict[str, Any], snapshot: dict[str, Any]) -> tuple[str | None, str | None]:
-    """An In Progress task's `(phase, substate)`: the state of the In Progress machine, and the state of the first
-    submachine that phase links which holds the task. Only the current phase's submachines count."""
+def _holding(snapshot: dict[str, Any], links: list[dict[str, Any]], task: str) -> tuple[dict[str, Any], str, dict[str, Any]] | None:
+    """The first of `links`' submachines that holds `task`: its link, the state `task` holds in it, and its flow."""
+    for link in links:
+        flow = next((f for f in snapshot["flows"] if f["name"] == link["machine"]), None)
+        if flow and (state := _state_in(snapshot, link["machine"], task)):
+            return link, state, flow
+    return None
+
+
+def _phase(agent: dict[str, Any], snapshot: dict[str, Any]) -> tuple[str | None, str | None, dict[str, Any] | None]:
+    """An In Progress task's `(phase, substate, flow)`: the state of the In Progress machine, the state of the first
+    submachine that phase links which holds the task, and that submachine's flow. Only the current phase's submachines
+    count."""
     if agent["state"] != roles_of(snapshot).working:
-        return None, None
+        return None, None, None
     inner = board_flow(snapshot)["machine"].get("submachines") or [{}]
     machine = next((f for f in snapshot["flows"] if f["name"] == inner[0].get("machine")), None)
     if machine is None:
-        return None, None
+        return None, None, None
     phase = _state_in(snapshot, machine["name"], agent["id"])
     links = machine["machine"].get("submachines", [])
     if phase is None:
         # the subflows hold the task while the In Progress machine has no state for it: the first to hold it names the phase
-        held = ((link["state"], _state_in(snapshot, link["machine"], agent["id"])) for link in links)
-        return next(((state, sub) for state, sub in held if sub), (None, None))
-    states = (_state_in(snapshot, link["machine"], agent["id"]) for link in links if link["state"] == phase)
-    return phase, next((state for state in states if state), None)
+        held = _holding(snapshot, links, agent["id"])
+        return (None, None, None) if held is None else (held[0]["state"], held[1], held[2])
+    held = _holding(snapshot, [link for link in links if link["state"] == phase], agent["id"])
+    return (phase, None, None) if held is None else (phase, held[1], held[2])
+
+
+def _skill(substate: str | None, flow: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The skill a held task is in: its machine's states in order, the state it holds, and the next edge its machine declares."""
+    if flow is None:
+        return None
+    return {
+        "name": flow["name"],
+        "states": [state["id"] for state in flow["machine"]["states"]],
+        "current": substate,
+        "next": flow["machine"].get("next"),
+    }
 
 
 def task_view(agent: dict[str, Any], snapshot: dict[str, Any], done: set[str] | None = None) -> dict[str, Any]:
@@ -88,7 +110,7 @@ def task_view(agent: dict[str, Any], snapshot: dict[str, Any], done: set[str] | 
     pulls = {pull["url"]: pull for pull in snapshot["pulls"].get(agent["id"], [])}
     if done is None:
         done = done_ids(snapshot)
-    phase, substate = _phase(agent, snapshot)
+    phase, substate, flow = _phase(agent, snapshot)
     entered = agent.get("entered")
     return {
         "id": agent["id"],
@@ -96,6 +118,8 @@ def task_view(agent: dict[str, Any], snapshot: dict[str, Any], done: set[str] | 
         "lane": agent["state"],
         "phase": phase,
         "substate": substate,
+        "skill": _skill(substate, flow),
+        "interactive": snapshot.get("interactive", {}).get(agent["id"], False),
         "done_at": datetime.fromtimestamp(entered, UTC).isoformat() if agent["state"] == roles_of(snapshot).done and entered else None,
         "profile": agent["model"],
         "assignee": agent.get("assignee", ""),

@@ -75,6 +75,7 @@ def draw(flows: Mapping[str, Compiled], qualify: Qualify, workflows: Collection[
                 qualify(dag): {"skill": launch["skill"], "machine": _machine(name, launch.get("machine"), drawn)}
                 for dag, launch in declared["launches"].items()
             }
+        body["next"] = declared.get("next")
         if name == "board":
             every = writers(compiled.machine)
             body["writers"] = every

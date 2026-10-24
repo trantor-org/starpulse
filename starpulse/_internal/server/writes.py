@@ -869,17 +869,20 @@ def restore_task(request: RestoreRequest, feed: BoardFeed, restore: TaskRestorer
 
 
 @_write(TakeOverRequest, "Taking a task over")
-def take_over_task(request: TakeOverRequest, take_over: Callable[[str], bool] | None) -> tuple[int, dict[str, Any]]:
+def take_over_task(
+    request: TakeOverRequest, take_over: Callable[[str], bool] | None, feed: BoardFeed
+) -> tuple[int, dict[str, Any]]:
     """Flip the unattended task `request` names to interactive through `take_over`: the HTTP status and JSON body.
 
     The Update carries no payload; the workflow only stops typing into the task's pane. A task with no workflow (an
-    attended one) answers 409.
+    attended one) answers 409. An accepted take-over shows as interactive in the feed's snapshots.
     """
     task = request.task
     if take_over is None:
         return 404, {"error": "this instance runs no task workflows"}
     if not take_over(task):
         return 409, {"error": f"{task} has no running workflow to take over"}
+    feed.record_take_over(task)
     return 200, {"task": task}
 
 

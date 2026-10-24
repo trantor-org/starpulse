@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import Field
 
 from starpulse.contracts.adapters import Move
@@ -27,6 +29,18 @@ class TaskRun(_Api):
     url: str
     status: str
     started_at: str = Field(alias="startedAt")
+
+
+class HeldNext(_Api):
+    kind: Literal["skill", "operation"] = Field(description="Whether the next edge runs a skill or an operation.")
+    name: str = Field(description="The skill or operation the edge hands to.")
+
+
+class HeldSkill(_Api):
+    name: str = Field(description="The skill machine the task is in.")
+    states: list[str] = Field(description="The skill machine's state ids, in declared order.")
+    current: str | None = Field(default=None, description="The state the task holds in the skill machine.")
+    next: HeldNext | None = Field(default=None, description="The edge the skill declares; null when none is declared.")
 
 
 class RawTask(_Api):
@@ -70,6 +84,12 @@ class RawTask(_Api):
     pause_reason: str | None = Field(
         default=None,
         description="Why a paused Board task waits for a person; empty when it is not paused, absent off the Board.",
+    )
+    skill: HeldSkill | None = Field(
+        default=None, description="The skill machine an In Progress task is held in; absent off the held view."
+    )
+    interactive: bool | None = Field(
+        default=None, description="Whether an accepted take-over made the task interactive; absent off the held view."
     )
     previous: str | None = Field(
         default=None, description="The Board lane the task left on its last move; absent before it has moved."

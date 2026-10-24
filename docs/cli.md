@@ -210,7 +210,7 @@ with the same writer check as the Board's (`refuse_unlisted` against the configu
 the page draws it: `tiers` (state ids per stage), `main_line` (the Board's axis; its lanes in order when absent) and
 `rests` (states drawn final though an event leaves them); `submachines` (`{state, machine, exits, when}`, `machine` a sibling's
 file stem and `exits` mapping each of its final states to the event of this machine that leaves `state`); and
-`launches` (per workflow, `{skill, machine}`, `machine` a sibling's stem or absent). The Board is also drawn with every
+`launches` (per workflow, `{skill, machine}`, `machine` a sibling's stem or absent); and `next` (`{kind, name}`, `kind` `skill` or `operation`, the edge a finished skill hands to, served as `null` when absent: no edge is inferred). The Board is also drawn with every
 writer and the `dagActors` among them. A state, event or flow a declaration names that does not exist is refused.
 
 A move may also name the mover's session: `POST /api/move` takes `{task, to, actor, session, harness}`, and
@@ -318,7 +318,7 @@ client, a toast names the `tmux attach` command). Go to session, on any other la
 session, or toasts that it has none. A `→ <lane>` button, coloured by the target lane, for each move the board lists posts `/api/move`; a refused move
 shows the server's reason as a toast and leaves the board as read. While the pane is open it follows `GET /api/lanes?state=<lane>…`
 (one `state` per open lane), an event stream like `/api/held`: the server sends the lanes as a `lanes` event on connect and again only
-when they change, and the pane redraws from it with no `starpulse` run and no timer. A held or lanes stream wakes only for a change to a task it shows, to a task one of those waits on, or to one that moves into its view, and the streams a change wakes read one build of the columns, so a change costs the board once, not once per open stream. A docked pane that `/kanban` did not open, such as
+when they change, and the pane redraws from it with no `starpulse` run and no timer. Each held task carries `skill` (`{name, states, current, next}`: the skill machine its phase holds it in, its state ids in order, the state it holds, and its `next` edge; `null` off the In Progress phases) and `interactive` (true once an accepted `POST /api/take-over` flipped it; `false` before). A held or lanes stream wakes only for a change to a task it shows, to a task one of those waits on, or to one that moves into its view, and the streams a change wakes read one build of the columns, so a change costs the board once, not once per open stream. A docked pane that `/kanban` did not open, such as
 one left in the dock across `/clear`, starts the stream when it draws. Closing the pane, or placing it inline, ends the
 stream; a stream that drops is retried with backoff while the pane stays open. The refresh button still rereads the board once.
 

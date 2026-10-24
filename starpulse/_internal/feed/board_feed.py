@@ -278,6 +278,8 @@ class BoardFeed:
         self._lane_log: EventLog | None = None
         #: The pass/fail ratings the `task:ratings` stream holds, shown in the snapshot; None shows none.
         self._ratings: rating_events.Ratings | None = None
+        #: The tasks an accepted take-over flipped to interactive, shown in the snapshot.
+        self._interactive: set[str] = set()
         self._live_lanes = True
         #: Each task placed or retracted is also kept in `_search`; None keeps none.
         self._search: TaskIndex | None = None
@@ -558,6 +560,11 @@ class BoardFeed:
         """Record a change of a task's rating (`rating_events.change`): the task's rating now with its change count,
         or None when the change is not recorded (no ratings log, or the append failed)."""
         return None if self._ratings is None else self._ratings.rate(fields)
+
+    def record_take_over(self, task_id: str) -> None:
+        """Show `task_id` as interactive in each snapshot from now on, and tell the streams it changed."""
+        self._interactive.add(task_id)
+        self._publish("task", {"id": task_id, "agent": self._open.get(task_id), "settled": None})
 
     def record_lanes(self, lanes: LaneRecorder, log: EventLog | None = None, *, live: bool = True) -> None:
         """Keep each lane change the feed applies in `lanes` (`HistoryStore.record_lane`), and with a `log`, append
@@ -1388,6 +1395,7 @@ class BoardFeed:
                 "settled": dict(self._settled),
                 "cold_done": [] if self._read_model else sorted(t for t, a in self._open.items() if is_cold(a)),
                 "ratings": {} if self._ratings is None else self._ratings.latest(),
+                "interactive": dict.fromkeys(self._interactive, True),
                 "error": self._error(),
                 "reading": self._replaying(),
                 **declared(self._domains, self._runnable(), self._cues, self._processes),
