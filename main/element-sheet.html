@@ -524,6 +524,21 @@ aside h3 { margin: 0 0 8px; font-size: calc(10px * var(--fs)); font-weight: 500;
 #kbm .tv .editrefusal code { color: var(--agent-text); }
 #kbm .tv .refusal { margin: 0; }
 
+#kbm .tvrail .rate { display: flex; gap: 6px; }
+#kbm .tvrail .ratebtn { all: unset; padding: 4px 14px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--slate) 25%, transparent); color: var(--slate); font-size: calc(11.5px * var(--fs)); }
+#kbm .tvrail .ratebtn:hover, #kbm .tvrail .ratebtn:focus-visible { color: var(--ink); border-color: color-mix(in srgb, var(--slate) 50%, transparent); }
+#kbm .tvrail .ratebtn:disabled { opacity: .5; }
+#kbm .tvrail .ratebtn[aria-pressed="true"][data-verdict="pass"] { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 55%, transparent); background: color-mix(in srgb, var(--ok) 10%, transparent); }
+#kbm .tvrail .ratebtn[aria-pressed="true"][data-verdict="fail"] { color: var(--fail); border-color: color-mix(in srgb, var(--fail) 55%, transparent); background: color-mix(in srgb, var(--fail) 10%, transparent); }
+#kbm .tvrail .ratemeta { margin-top: 6px; color: var(--muted); font-size: calc(11px * var(--fs)); }
+#kbm .tvrail .ratewhy { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; margin-top: 6px; color: var(--ink-2); }
+#kbm .tvrail .ratewhy .fv { width: 100%; margin: 0; }
+#kbm .tvrail .ratewhy .count { margin-left: auto; color: var(--faint); font-size: calc(10.5px * var(--fs)); }
+#kbm .tvrail .ratewhy .count.full { color: var(--fail); }
+#kbm .tvrail .ratewhy button { all: unset; color: var(--agent-text); font-size: calc(11px * var(--fs)); }
+#kbm .tvrail .ratewhy button:hover, #kbm .tvrail .ratewhy button:focus-visible { text-decoration: underline; }
+#kbm .tvrail .rs .editrefusal { margin-top: 6px; }
+
 #kbm .tvhead .mv { position: relative; }
 #kbm .tvhead .startbtn, #kbm .ask .startbtn { all: unset; padding: 4px 12px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--ok) 55%, transparent); background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok-text); font-size: calc(11.5px * var(--fs)); white-space: nowrap; }
 #kbm .tvhead .startbtn:hover, #kbm .tvhead .startbtn:focus-visible, #kbm .ask .startbtn:hover:not(:disabled), #kbm .ask .startbtn:focus-visible { background: color-mix(in srgb, var(--ok) 22%, transparent); }
@@ -1226,6 +1241,40 @@ iframe.phone { display: block; width: 390px; max-width: 100%; border: 0; border-
             </div>
           </div>
         </div>
+      </figure>
+      <figure>
+        <figcaption><b>Pass/fail toggle</b><code>#kbm .tvrail .rate .ratebtn</code>: two ghost buttons styled like <code>.hidebtn</code>, <code>aria-pressed</code> tints the active verdict with <code>--ok</code> or <code>--fail</code>; a pressed verdict clicked again clears the rating. Fail opens an optional reason field (120 characters, counter; Enter saves, Esc skips), a saved reason shows with an edit button, and a refused write is an <code>.editrefusal</code>. Shown unrated, passed, failed with a reason, failed without one, reason open, saving and refused.</figcaption>
+        <div class="tv"><div class="tvbody"><div class="tvcol tvrail">
+          <section class="sec rs"><div class="sh"><span class="t">Rating</span></div>
+            <div class="rate"><button class="ratebtn" data-verdict="pass" aria-pressed="false">Pass</button><button class="ratebtn" data-verdict="fail" aria-pressed="false">Fail</button></div>
+          </section>
+          <section class="sec rs"><div class="sh"><span class="t">Rating</span></div>
+            <div class="rate"><button class="ratebtn" data-verdict="pass" aria-pressed="true">Pass</button><button class="ratebtn" data-verdict="fail" aria-pressed="false">Fail</button></div>
+            <div class="ratemeta" title="2 changes: failed, then passed">Passed by operator · 4m ago · 2 changes</div>
+          </section>
+          <section class="sec rs"><div class="sh"><span class="t">Rating</span></div>
+            <div class="rate"><button class="ratebtn" data-verdict="pass" aria-pressed="false">Pass</button><button class="ratebtn" data-verdict="fail" aria-pressed="true">Fail</button></div>
+            <div class="ratewhy"><span>Snapshot refresh drops the lane filter</span><button>Edit</button></div>
+            <div class="ratemeta" title="1 change: failed">Failed by operator · 1m ago · 1 change</div>
+          </section>
+          <section class="sec rs"><div class="sh"><span class="t">Rating</span></div>
+            <div class="rate"><button class="ratebtn" data-verdict="pass" aria-pressed="false">Pass</button><button class="ratebtn" data-verdict="fail" aria-pressed="true">Fail</button></div>
+            <div class="ratewhy"><button>Add a reason</button></div>
+            <div class="ratemeta" title="1 change: failed">Failed by operator · 1m ago · 1 change</div>
+          </section>
+          <section class="sec rs"><div class="sh"><span class="t">Rating</span></div>
+            <div class="rate"><button class="ratebtn" data-verdict="pass" aria-pressed="false">Pass</button><button class="ratebtn" data-verdict="fail" aria-pressed="true">Fail</button></div>
+            <div class="ratewhy"><input class="fv live" maxlength="120" aria-label="Reason" placeholder="Why did it fail? (optional)" value="Snapshot refresh drops the"><span class="count">26/120</span><span class="k">Enter saves · Esc skips</span></div>
+          </section>
+          <section class="sec rs"><div class="sh"><span class="t">Rating</span></div>
+            <div class="rate"><button class="ratebtn" data-verdict="pass" aria-pressed="true" disabled>Pass</button><button class="ratebtn" data-verdict="fail" aria-pressed="false" disabled>Fail</button></div>
+            <div class="ratemeta">saving</div>
+          </section>
+          <section class="sec rs"><div class="sh"><span class="t">Rating</span></div>
+            <div class="rate"><button class="ratebtn" data-verdict="pass" aria-pressed="false">Pass</button><button class="ratebtn" data-verdict="fail" aria-pressed="false">Fail</button></div>
+            <div class="editrefusal" role="alert">Rating not saved.</div>
+          </section>
+        </div></div></div>
       </figure>
     </div>
   </div>
