@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Literal
-
 from pydantic import Field
 
 from starpulse.contracts.adapters import Move
 from starpulse.contracts.api._base import _Api
+from starpulse.contracts.api.dto.machine import HeldNext
 
 
 class TrailStep(_Api):
@@ -29,11 +28,6 @@ class TaskRun(_Api):
     url: str
     status: str
     started_at: str = Field(alias="startedAt")
-
-
-class HeldNext(_Api):
-    kind: Literal["skill", "operation"] = Field(description="Whether the next edge runs a skill or an operation.")
-    name: str = Field(description="The skill or operation the edge hands to.")
 
 
 class HeldSkill(_Api):
