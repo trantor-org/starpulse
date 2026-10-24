@@ -1043,7 +1043,7 @@ def test_task_archive_moves_the_task_out_of_its_lane_and_records_the_reason(
 ) -> None:
     code, doc = _run(capsys, ["task", "archive", "task-1", "--reason", "superseded", "--server", tasked])
 
-    assert (code, doc) == (0, {"task": "task-1"})
+    assert (code, doc) == (0, {"archived": ["task-1"]})
     board = tmp_path / ".starpulse" / "board"
     assert not list((board / "tasks").glob("task-1 - *.md"))
     assert "Archived: superseded" in next((board / "archive" / "tasks").glob("task-1 - *.md")).read_text()
@@ -1054,9 +1054,34 @@ def test_task_archive_without_a_reason_records_none(
 ) -> None:
     code, doc = _run(capsys, ["task", "archive", "task-1", "--server", tasked])
 
-    assert (code, doc) == (0, {"task": "task-1"})
+    assert (code, doc) == (0, {"archived": ["task-1"]})
     archived = next((tmp_path / ".starpulse" / "board" / "archive" / "tasks").glob("task-1 - *.md"))
     assert "Archived:" not in archived.read_text()
+
+
+def test_task_archive_of_several_keys_archives_each_in_one_call_and_reports_the_refused_one(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    second = ("task-2 - Draw it again.md", TASK_FILE.replace("id: task-1", "id: task-2"))
+    with _native_server(tmp_path, second) as server:
+        code, doc = _run(
+            capsys, ["task", "archive", "task-1", "task-9", "task-2", "--reason", "probe", "--server", server]
+        )
+
+    assert (code, doc["code"], doc["archived"], list(doc["refused"])) == (1, "refused", ["task-1", "task-2"], ["task-9"])
+    archive = tmp_path / ".starpulse" / "board" / "archive" / "tasks"
+    for key in ("task-1", "task-2"):
+        assert "Archived: probe" in next(archive.glob(f"{key} - *.md")).read_text()
+
+
+def test_task_archive_of_several_keys_all_archived_exits_zero(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    second = ("task-2 - Draw it again.md", TASK_FILE.replace("id: task-1", "id: task-2"))
+    with _native_server(tmp_path, second) as server:
+        code, doc = _run(capsys, ["task", "archive", "task-1", "task-2", "--server", server])
+
+    assert (code, doc) == (0, {"archived": ["task-1", "task-2"]})
 
 
 def test_task_restore_returns_the_archived_file_to_the_tasks_unchanged(
@@ -1087,7 +1112,7 @@ def test_task_restore_undoes_an_archive_and_a_second_restore_is_refused(
     back = _run(capsys, ["task", "restore", "task-1", "--server", tasked])
     again = _run(capsys, ["task", "restore", "task-1", "--server", tasked])
 
-    assert (gone, back) == ((0, {"task": "task-1"}), (0, {"task": "task-1"}))
+    assert (gone, back) == ((0, {"archived": ["task-1"]}), (0, {"task": "task-1"}))
     assert (again[0], again[1]["code"]) == (1, "refused")
     assert _task_file(tmp_path).is_file()
 

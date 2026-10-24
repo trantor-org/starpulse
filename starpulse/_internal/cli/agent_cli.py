@@ -880,13 +880,13 @@ def _parser() -> argparse.ArgumentParser:
     archive = leaf(
         task_verbs,
         "archive",
-        "move a task from any lane to the board's archive, recording the reason when given",
+        "move tasks from any lane to the board's archive in one write, recording the reason when given",
         agent_tasks.task_archive,
-        ("task",),
+        ("archived",),
         (0, 1, 2, 3, 4),
     )
     agent_tasks.writer_flags(archive)
-    archive.add_argument("task", help="the task's key (`PROJ-45`)")
+    archive.add_argument("task", nargs="+", help="each task's key (`PROJ-45`); several archive in one call")
     archive.add_argument("--reason", default="", help="why it is archived, recorded as a comment on the task")
     verdict = leaf(
         task_verbs,

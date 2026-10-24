@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from pydantic import AfterValidator, Field, ValidationInfo, field_validator
+from pydantic import AfterValidator, Field, ValidationInfo, field_validator, model_validator
 
 from starpulse.contracts.api._base import _Api
 from starpulse.contracts.api.dto.scheduler import QuietHours
@@ -70,10 +70,17 @@ class EditRequest(_Writer):
 
 
 class ArchiveRequest(_Writer):
-    """`POST /api/archive`: archive `task`, recording `reason` when it is not blank."""
+    """`POST /api/archive`: archive `task`, or each of `tasks` in one call, recording `reason` when it is not blank."""
 
-    task: str
+    task: str | None = None
+    tasks: list[NonBlank] | None = Field(None, min_length=1)
     reason: str | None = None
+
+    @model_validator(mode="after")
+    def _one_target(self) -> ArchiveRequest:
+        if (self.task is None) == (self.tasks is None):
+            raise ValueError("name exactly one of task and tasks")
+        return self
 
 
 class RestoreRequest(_Writer):

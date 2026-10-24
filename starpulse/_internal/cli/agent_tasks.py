@@ -534,9 +534,19 @@ def task_assign(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[st
 
 
 def task_archive(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """Archive one task, or several in one batch write: the keys archived, or a refusal naming them and each refused
+    key's reason when any key was refused."""
     base, path = agent_wire.server_url(args.server, environ), "/api/archive"
-    status, reply = agent_wire.post(base, path, {"task": args.task, "reason": args.reason, **_writer(args, environ)})
-    return {"task": _record_call(base, path, status, reply, missing=_TASK_MISSING)["task"]}
+    target = {"task": args.task[0]} if len(args.task) == 1 else {"tasks": args.task}
+    status, reply = agent_wire.post(base, path, {**target, "reason": args.reason, **_writer(args, environ)})
+    answer = _record_call(base, path, status, reply, missing=_TASK_MISSING)
+    if "task" in answer:
+        return {"archived": [answer["task"]]}
+    archived, refused = answer["archived"], answer["refused"]
+    if refused:
+        message = f"{len(refused)} of {len(args.task)} tasks refused: {', '.join(refused)}"
+        raise agent_wire.CliError("refused", message, archived=archived, refused=refused)
+    return {"archived": archived}
 
 
 def task_restore(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:

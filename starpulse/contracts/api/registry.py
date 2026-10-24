@@ -44,6 +44,7 @@ from starpulse.contracts.api.dto.requests import (
 from starpulse.contracts.api.dto.results import (
     Accepted,
     Archived,
+    ArchivedEach,
     Claimed,
     Completed,
     Created,
@@ -188,7 +189,7 @@ BODIES: dict[str, Any] = {
     "move": Moved | SkillRefusal | ApiError,
     "start": Started | SkillRefusal | ApiError,
     "edit": Edited | StaleEdit | SkillRefusal | ApiError,
-    "archive": Archived | SkillRefusal | ApiError,
+    "archive": Archived | ArchivedEach | SkillRefusal | ApiError,
     "verdict": Judged | SkillRefusal | ApiError,
     "rating": Rated | ApiError,
     "restore": Restored | SkillRefusal | ApiError,

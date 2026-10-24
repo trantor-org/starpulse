@@ -704,14 +704,30 @@ def edit_task(
 
 @_write(ArchiveRequest, "Archiving a task")
 def archive_task(request: ArchiveRequest, feed: BoardFeed, archive: TaskArchiver | None) -> tuple[int, dict[str, Any]]:
-    """Archive the task `request` names, from whichever column it is in, through `archive`: the HTTP status and JSON body.
+    """Archive the task `request` names, or each of its `tasks`, from whichever column it is in, through `archive`: the
+    HTTP status and JSON body. A batch answers 200 with the tasks archived and each refused one's error, so one refusal
+    leaves the others archived.
 
     A non-empty `reason` is the writer's to record on the task. The card leaves its column when the board adapter
     next reports the task archived, not on this answer.
     """
-    task, reason, who = request.task, request.reason or "", _who(request)
     if archive is None:
         return 404, {"error": "this board does not archive tasks"}
+    reason, who = request.reason or "", _who(request)
+    if request.task is not None:
+        return _archive_one(feed, archive, request.task, reason, who)
+    archived, refused = [], {}
+    for task in request.tasks or ():
+        status, body = _archive_one(feed, archive, task, reason, who)
+        if status == 200:
+            archived.append(task)
+        else:
+            refused[task] = body["error"]
+    return 200, {"archived": archived, "refused": refused}
+
+
+def _archive_one(feed: BoardFeed, archive: TaskArchiver, task: str, reason: str, who: _Who) -> tuple[int, dict[str, Any]]:
+    """Archive one `task` for `archive_task`: the HTTP status and JSON body a single-task request answers."""
     if _held(feed, task) is None:
         return _not_held(feed, task)
     written = _record_written(feed, task, who, lambda: archive(task, reason, actor=who.actor))

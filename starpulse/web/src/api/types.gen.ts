@@ -1417,14 +1417,15 @@ export interface EditRequest {
   task: string;
 }
 /**
- * `POST /api/archive`: archive `task`, recording `reason` when it is not blank.
+ * `POST /api/archive`: archive `task`, or each of `tasks` in one call, recording `reason` when it is not blank.
  */
 export interface ArchiveRequest {
   actor?: string | null;
   harness?: string | null;
   reason?: string | null;
   session?: string | null;
-  task: string;
+  task?: string | null;
+  tasks?: [string, ...string[]] | null;
 }
 /**
  * `POST /api/verdict`: record `verdict` (`pass` or `miss`) for `check` of `task`'s `## Post-merge Checks`.
