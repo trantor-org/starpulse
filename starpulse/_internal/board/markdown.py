@@ -114,12 +114,9 @@ def imported(text: str, record: Record) -> dict[str, Any]:
         value = lines.pop(label, None)
         if value is None:
             raise MarkdownRefusedError(f"the line '{label}' was removed; blank it instead of removing it")
-        after: Any = (
-            [part.strip() for part in value.split(",") if part.strip()]
-            if isinstance(record.get(field), list)
-            else value
-        )
-        if after != (record.get(field) if isinstance(record.get(field), list) else (record.get(field) or "")):
+        current = record.get(field)
+        after: Any = [part.strip() for part in value.split(",") if part.strip()] if isinstance(current, list) else value
+        if after != (current if isinstance(current, list) else _joined(current)):
             changes[field] = after
     if (status := lines.pop(_STATUS, None)) is None:
         raise MarkdownRefusedError(f"the line '{_STATUS}' was removed")

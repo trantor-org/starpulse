@@ -526,7 +526,7 @@ applied_by = "pin-bump"
 
 # Optional: map the steps a shipped skill names to this project's own command lines (see `command run` in docs/cli.md).
 # Each name maps to an argv, run with no shell. Placeholders: {task}, {worktree}, {NAME} (from --arg NAME=VALUE), and the
-# whole element {args} (the arguments after `--`). `starpulse config check` refuses a malformed entry.
+# whole element {args} (the arguments after `--`); write a literal brace as `{{` or `}}`. `starpulse config check` refuses a malformed entry.
 # [project.commands]
 # deliver = ["./bin/ship", "{task}"]
 # test = ["make", "test", "{args}"]

@@ -312,3 +312,9 @@ def test_the_first_sample_follows_the_first_probe_so_the_page_it_measures_has_vi
 
     _run(Logged())
     assert calls[:2] == ["probe", "sample"]
+
+
+def test_a_replay_with_no_task_to_move_sends_nothing():
+    hold = Hold(5.0)
+
+    assert seeded_server.replay(None, [], 8.0, hold.wait, lambda: hold.now) == 0
