@@ -12,11 +12,13 @@ PUBLIC: dict[str, set[str]] = {
         "BoardAdapterKit",
         "MachineEventsAdapterKit",
         "RunsAdapterKit",
+        "WriteInstance",
         "assembled",
         "next_event",
         "serve",
         "task",
         "url",
+        "write_instance",
     },
     "starpulse.board": {
         "DEFAULT_TYPE",
