@@ -63,7 +63,7 @@ for old, new in zip(picked, ["DEMO-901", "DEMO-902"]):
 snap = json.loads(text)
 html = demo.page(demo.STATIC, snap)
 head = (
-    "<!--\n  Design mockup of where an expired or unheld claim shows on the kanban (TASK-7787); not served by starpulse.\n"
+    "<!--\n  Design mockup of where an expired or unheld claim shows on the kanban; not served by starpulse.\n"
     "  The real page, built from source with skill-phases-src.patch and claim-expiry-src.patch, over a scrubbed capture.\n"
     "  States: ?view=kanban&concept=h&mock=1&sim=2|claim&claim=a|b|c|d|e[&few=1]  (a bare load opens claim=a)\n-->\n"
     '<script>if (!location.search) history.replaceState(null, "", "?view=kanban&concept=h&mock=1&sim=2&claim=a")</script>\n'
