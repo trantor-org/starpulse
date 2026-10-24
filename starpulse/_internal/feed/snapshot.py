@@ -8,7 +8,8 @@ from pydantic import BaseModel
 
 
 class BoardSnapshot(BaseModel):
-    SCHEMA_VERSION: ClassVar[int] = 1
+    # 2: a pull record carries `repo` (TASK-7845); a version-1 Board replays, as its pulls would fail the snapshot contract.
+    SCHEMA_VERSION: ClassVar[int] = 2
     open: dict[str, dict[str, Any]]
     settled: dict[str, dict[str, Any]]
     assignees: dict[str, Any]

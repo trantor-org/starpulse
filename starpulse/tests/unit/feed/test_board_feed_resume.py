@@ -264,6 +264,28 @@ def test_a_saved_board_of_another_schema_version_is_replayed(
     )
 
 
+def test_a_saved_board_whose_pulls_lack_repo_is_replayed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    checkpoints = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}").checkpoints
+    first = _feed_with_tasks()
+    first.resume(checkpoints, STREAM, lambda cursor: False)
+    first.set_pulls({"TASK-1": [{"number": 7, "url": "https://github.com/acme/widgets/pull/7", "stale": False}]})
+    with monkeypatch.context() as saved_by_the_old_build:
+        saved_by_the_old_build.setattr(BoardSnapshot, "SCHEMA_VERSION", 1)
+        first.save()
+    caplog.clear()
+
+    with caplog.at_level(logging.INFO, logger="starpulse.board_feed"):
+        feed, cursor = _resumed(checkpoints)
+
+    assert (cursor, feed.snapshot()["pulls"], _start_lines(caplog)) == (
+        None,
+        {},
+        ["StarPulse: replaying: the saved Board cannot be read"],
+    )
+
+
 class _Server:
     """A server that has served until it was stopped."""
 
