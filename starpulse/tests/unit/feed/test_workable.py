@@ -168,6 +168,25 @@ def test_a_task_with_criteria_and_no_evaluator_is_never_workable() -> None:
     assert _agent(feed, "PROJ-1")["workable"] is False
 
 
+def test_a_waiting_task_with_unmet_criteria_is_published_not_workable_the_moment_it_enters() -> None:
+    feed = _live([100.0])
+
+    feed.put(_task("PROJ-1", "waiting", description=BLOCK))
+
+    assert _agent(feed, "PROJ-1")["workable"] is False
+
+
+def test_a_task_leaving_the_waiting_lane_is_published_workable_at_once() -> None:
+    feed = _live([100.0])
+    feed.put(_task("PROJ-1", "waiting", description=BLOCK))
+    feed.track_criteria(Evaluator("unmet"), None)
+    feed.evaluate_criteria()
+
+    feed.put(_task("PROJ-1", "ready"))
+
+    assert _agent(feed, "PROJ-1")["workable"] is True
+
+
 def test_a_waiting_task_is_workable_since_the_first_pass_that_saw_every_criterion_met() -> None:
     now = [100.0]
     feed = _live(now)
