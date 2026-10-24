@@ -371,6 +371,7 @@ class UpstreamBacklog:
             settled=settled,
             created_at=_when(frontmatter.get("created_date")),
             settled_at=_when(frontmatter.get("updated_date")) if settled else None,
+            observed_at=_when(frontmatter.get("updated_date")) if lane == self._roles.done else None,
             profile=_profile(frontmatter),
             assignee=_assignee(body),
             labels=_strings(frontmatter.get("labels")),

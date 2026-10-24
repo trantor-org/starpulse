@@ -5,9 +5,11 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from starpulse._internal.feed.board_feed import HOT_S, BoardFeed
+from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import serve, task, url
 from starpulse.tests.fake_board import bare_board
+
+DAY_S = 86400.0
 
 NOW = 10_000_000.0
 RECORDS = {
@@ -27,7 +29,7 @@ def _get(server, query: str) -> tuple[int, dict]:
 def _feed() -> BoardFeed:
     feed = BoardFeed(clock=lambda: NOW)
     feed.expect("0-0")
-    for n, ago in ((1, 3 * HOT_S), (2, 2 * HOT_S), (3, 5 * HOT_S)):  # PROJ-2 is the newest of the cold ones
+    for n, ago in ((1, 3 * DAY_S), (2, 2 * DAY_S), (3, 5 * DAY_S)):  # PROJ-2 is the newest of the cold ones
         feed.put(task(f"PROJ-{n}", "Done", observed_at=NOW - ago))
     feed.put(task("PROJ-4", "Done", observed_at=NOW - 60))  # hot
     return feed
@@ -49,7 +51,7 @@ def test_done_page_lists_the_cold_done_tasks_newest_first_a_page_at_a_time(tmp_p
         "labels": ["a"],
         "milestone": "m-1",
         "type": "story",
-        "entered": NOW - 2 * HOT_S,
+        "entered": NOW - 2 * DAY_S,
     }
 
 

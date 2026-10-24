@@ -117,7 +117,7 @@ class Snapshot(_Api):
     )
     cold_done: list[str] | None = Field(
         default=None,
-        description="The ids of the done tasks past 24 h that the board feed holds as a stub, left out of `flows`: "
+        description="The ids of the done tasks from before local midnight that the board feed holds as a stub, left out of `flows`: "
         "the full view (`?view=full`) only, the page reads them from `/api/done` and `/api/task/<id>`.",
     )
     ratings: dict[str, Rating] | None = Field(

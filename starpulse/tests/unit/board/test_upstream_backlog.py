@@ -230,6 +230,15 @@ def test_a_task_carries_its_created_date_and_a_settled_one_its_last_update_as_wh
     assert (settled.created_at, settled.settled_at) == expected
 
 
+def test_a_done_task_still_in_tasks_is_dated_by_its_updated_date(tmp_path: Path) -> None:
+    write_config(tmp_path)
+    write_task(tmp_path, "tasks", "task-1", "Done", created_date="2026-10-06", updated_date="'2026-10-06 08:30'")
+
+    (done,) = scanned(tmp_path)
+
+    assert done.observed_at == 1791275400.0
+
+
 def _notes(*lines: str) -> str:
     return "<!-- SECTION:NOTES:BEGIN -->\n" + "\n".join(lines) + "\n<!-- SECTION:NOTES:END -->"
 

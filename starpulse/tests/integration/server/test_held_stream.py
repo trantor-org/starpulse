@@ -9,12 +9,14 @@ from pathlib import Path
 import pytest
 
 from starpulse._internal.board.view import board_columns
-from starpulse._internal.feed.board_feed import HOT_S, BoardFeed
+from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import next_event as _next_event
 from starpulse._internal.kit.adapter_kit import serve as _serve
 from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.kit.adapter_kit import url as _url
 from starpulse.tests.machines import MACHINES, ROLES
+
+DAY_S = 86400.0
 
 
 def _held(document: dict) -> list[tuple[str, str]]:
@@ -64,7 +66,7 @@ def test_a_held_task_does_not_wait_on_a_dependency_that_went_cold_in_done(tmp_pa
     now = time.time()
     feed = BoardFeed(roles=ROLES, machines=MACHINES, clock=lambda: now)
     feed.expect("0-0")
-    feed.put(task("PROJ-2", "Done", observed_at=now - 2 * HOT_S))
+    feed.put(task("PROJ-2", "Done", observed_at=now - 2 * DAY_S))
     feed.put(task("PROJ-1", "In Progress", assignee="session-1", dependencies=("PROJ-2",)))
     with _serve(tmp_path, feed) as server:
         with urllib.request.urlopen(_url(server, "/api/held?assignee=session-1"), timeout=5) as resp:
