@@ -1,5 +1,6 @@
 """The event log's rules on SQLite: fail-open append, replay and resume by cursor, retention and gaps."""
 
+import gc
 import gzip
 import json
 import os
@@ -293,6 +294,22 @@ def test_an_append_through_another_connection_reaches_a_waiting_tail_before_its_
         assert running.arrived.wait(timeout=2)
 
     assert [e.fields["n"] for e in running.entries] == ["elsewhere"]
+
+
+def test_a_log_dropped_by_its_owner_ends_the_commit_watch_it_started(tmp_path: Path) -> None:
+    before = set(threading.enumerate())
+    log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
+    log.appends  # starts the commit watch
+
+    watches = [t for t in threading.enumerate() if t not in before and t.name == "eventlog-data-version"]
+    assert watches
+
+    del log
+    gc.collect()
+    for watch in watches:
+        watch.join(timeout=2)
+
+    assert not any(watch.is_alive() for watch in watches)
 
 
 def test_a_commit_elsewhere_after_appends_is_read_ends_the_wait_that_follows(log: EventLog, tmp_path: Path) -> None:
