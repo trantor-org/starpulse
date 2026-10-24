@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from starpulse._internal.board.seam import Board
+from starpulse._internal.board.task_history import WRITER, _events
 from starpulse._internal.board.upstream_backlog import UpstreamBacklog
 from starpulse._internal.config.config import load
 from starpulse._internal.feed.board_feed import BoardFeed
@@ -16,7 +17,7 @@ from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.readmodel.fold import replay
 from starpulse.event_log.readmodel.projector import Projector
 from starpulse.event_log.readmodel.read_model import ReadModel
-from starpulse.event_log.store import EventStore
+from starpulse.event_log.store import EventStore, NewEvent
 from starpulse.event_log.tables import retired_tasks
 
 FILE = """---
@@ -95,7 +96,7 @@ def test_an_archive_and_a_restore_append_archived_and_rehydrated(served) -> None
     assert built.archive("task-5", "", actor="adin").ok
     assert built.restore("task-5").ok
 
-    assert _types(store, "task-5")[-2:] == ["Archived", "Rehydrated"]
+    assert _types(store, "task-5")[-3:] == ["Archived", "Rehydrated", "FieldsEdited"]
 
 
 def test_a_create_appends_task_created_with_the_files_fields(served) -> None:
@@ -159,8 +160,46 @@ def test_a_retire_and_a_restore_of_a_retired_task_keep_its_history_archived_then
     assert built.retire("task-5").ok
     assert built.restore("task-5").ok
 
-    assert _types(store, "task-5")[-2:] == ["Archived", "Rehydrated"]
+    assert _types(store, "task-5")[-3:] == ["Archived", "Rehydrated", "FieldsEdited"]
     assert _types(store, "task-5").count("Archived") == 1
+
+
+RETURNED = {
+    "title": "Draw it again",
+    "status": "To Do",
+    "priority": "high",
+    "description": "Draw it again.",
+    "labels": ["ui", "page"],
+    "acceptanceCriteria": [
+        {"n": 1, "text": "It draws", "checked": False},
+        {"n": 2, "text": "It scrolls", "checked": False},
+        {"n": 3, "text": "It zooms", "checked": False},
+    ],
+}
+
+
+def _appended(store: EventStore, task: str, events: list[tuple[str, dict]]) -> None:
+    store.append("task", task, store.head("task", task), [NewEvent(kind, payload, "adin", WRITER) for kind, payload in events])
+
+
+def test_a_returning_task_folds_to_the_fields_its_file_carries(served) -> None:
+    built, _, store, _ = served
+    assert built.archive("task-5", "", actor="adin").ok
+
+    _appended(store, "task-5", _events({}, RETURNED, ""))
+
+    row = replay(store.read("task", "task-5"))
+    assert (row["title"], row["labels"], row["archived"]) == ("Draw it again", ["ui", "page"], False)
+    assert [(item["n"], item["text"]) for item in row["criteria"]] == [(1, "It draws"), (2, "It scrolls"), (3, "It zooms")]
+
+
+def test_a_criterion_the_returning_file_added_folds_checked_when_its_check_is_recorded(served) -> None:
+    built, _, store, _ = served
+    assert built.archive("task-5", "", actor="adin").ok
+
+    _appended(store, "task-5", _events({}, RETURNED, "") + [("CriterionChecked", {"kind": "ac", "n": 3, "checked": True})])
+
+    assert replay(store.read("task", "task-5"))["criteria"][2]["checked"] is True
 
 
 def test_starting_the_board_gives_a_retired_row_without_history_its_imported_and_archived_events(
