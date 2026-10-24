@@ -88,6 +88,20 @@ def test_a_renamed_state_with_live_tasks_is_refused_naming_them(tmp_path: Path, 
     assert registry.active_hash("board") == first
 
 
+def test_a_task_that_only_archived_holds_no_state_and_does_not_block_a_dropped_state(
+    tmp_path: Path, config: Config
+) -> None:
+    _write(tmp_path, "board.yaml", BOARD)
+    sync_definitions(config, tmp_path)
+    registry, store = _registry(config)
+    store.append("task", "TASK-9", 0, [NewEvent("Archived", {}, "adin", "operator")])
+
+    _write(tmp_path, "board.yaml", RENAMED)
+    second = sync_definitions(config, tmp_path)["board"]
+
+    assert registry.active_hash("board") == second
+
+
 def test_a_renamed_state_with_a_mapping_remaps_the_live_tasks_on_reload(tmp_path: Path, config: Config) -> None:
     _write(tmp_path, "board.yaml", BOARD)
     sync_definitions(config, tmp_path)
