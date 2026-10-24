@@ -97,6 +97,14 @@ def test_an_adapter_selects_the_tests_of_the_loader_that_imports_it_by_name(repo
     assert "starpulse/tests/unit/board/test_board.py" in select(repo, ["starpulse/_internal/board/jira.py"]).tests
 
 
+def test_named_loaders_expand_when_the_last_module_popped_is_covered_only_by_other_tests(repo):
+    """The loader is the last module a test reaches and another test alone covers it: its adapter still counts."""
+    coverage = {"tests": {"starpulse/tests/unit/other/test_seam.py::test_seam": ["starpulse/_internal/board/seam.py"]}}
+    assert "starpulse/tests/unit/board/test_board.py" in select(
+        repo, ["starpulse/_internal/board/jira.py"], coverage
+    ).tests
+
+
 def test_a_package_init_selects_every_test_under_the_package(repo):
     assert select(repo, ["starpulse/__init__.py"]) == Selection(
         sorted(str(p.relative_to(repo)) for p in (repo / "starpulse/tests").rglob("test_*.py"))

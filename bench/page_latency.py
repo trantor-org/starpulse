@@ -75,7 +75,7 @@ STARVED = 2
 #: are filled from the server's own records.
 READS: dict[str, str] = {
     "/api/snapshot": "/api/snapshot",
-    "/api/ledger/": "/api/ledger/MERGED?limit=20",
+    "/api/ledger/<id>": "/api/ledger/MERGED?limit=20",
     "/api/pulls": "/api/pulls",
     "/api/doctor": "/api/doctor",
     "/api/machines": "/api/machines?limit=20",
@@ -93,7 +93,7 @@ READS: dict[str, str] = {
 }
 
 #: Where a path segment is a record's id, so `/api/task/TASK-9` and `/api/task/TASK-10` are one surface.
-_ID_ROUTES = ("/api/task/", "/api/milestones/", "/api/docs/", "/api/events/body/")
+_ID_ROUTES = ("/api/task/", "/api/milestones/", "/api/docs/", "/api/events/body/", "/api/ledger/")
 
 
 #: What a row times, for `--judge`: a read route (`request`), the event stream's connect to its first snapshot

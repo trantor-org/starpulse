@@ -312,7 +312,7 @@ def run(
         # its floor sits under every later one and reads as a rise
         for kind, due, call in (
             ("probe", t >= next_probe < duration, target.probe),
-            ("sample", t >= next_sample, target.sample),
+            ("sample", t >= next_sample or t >= duration, target.sample),
         ):
             if not due:
                 continue
