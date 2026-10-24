@@ -46,7 +46,7 @@ prints a verdict.
 
 - green: the checks passed; go to step 5.
 - red: read the failing check, fix the cause in the worktree, rerun the final gates, and deliver again.
-- blocked: the checks cannot finish without a person. Comment what blocks on the task and stop here.
+- blocked: the checks cannot finish without a person or another board task. When the blocker is a board task, park this task on it with `starpulse task park <task> --until-task <blocker>` and end the turn; a background watcher is for waits that are not tasks. Otherwise comment what blocks on the task and stop here.
 
 Done when the delivery prints green.
 
