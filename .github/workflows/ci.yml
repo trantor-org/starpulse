@@ -177,7 +177,12 @@ jobs:
           echo "UV_PYTHON_INSTALL_DIR=$RUNNER_TEMP/uv-python" >> "$GITHUB_ENV"
       # aioquic and pylsqpack have no 3.14t wheels and their sources do not build there; only the HTTP/3 tests need them
       # (see the importorskip in starpulse/tests/integration/server/test_http3.py).
+      # grpcio has no 3.14t wheel, so this compiles it, one job per host core (36) by default: 14 cores and 17 GB, enough
+      # for systemd-oomd to kill the build before uv caches the wheel, so every run rebuilt it. Six jobs finish and uv's
+      # cache then keeps the wheel.
       - run: uv sync --locked --python 3.14t --no-install-package aioquic --no-install-package pylsqpack
+        env:
+          GRPC_PYTHON_BUILD_EXT_COMPILER_JOBS: "6"
       # A dependency that re-enables the GIL on import leaves every test green on the build this job exists to test.
       - run: uv run --no-sync python -c "import sys, starpulse._internal.server.server; sys.exit(sys._is_gil_enabled())"
       - run: echo "PYTEST_ADDOPTS=-n $(uv run --no-sync python ci/xdist_workers.py) --dist worksteal" >> "$GITHUB_ENV"
