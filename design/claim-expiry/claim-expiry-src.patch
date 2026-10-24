@@ -1,6 +1,6 @@
 diff -ruN a/starpulse/web/src/features/kanban/claimMock.tsx b/starpulse/web/src/features/kanban/claimMock.tsx
 --- a/starpulse/web/src/features/kanban/claimMock.tsx	1969-12-31 17:00:00.000000000 -0700
-+++ b/starpulse/web/src/features/kanban/claimMock.tsx	2026-10-24 10:50:39.492705670 -0700
++++ b/starpulse/web/src/features/kanban/claimMock.tsx	2026-10-24 11:07:52.287013312 -0700
 @@ -0,0 +1,116 @@
 +/**
 + * Design mockup (TASK-7787): where an In Progress task's claim draws on the kanban. Not served by starpulse.
@@ -120,7 +120,7 @@ diff -ruN a/starpulse/web/src/features/kanban/claimMock.tsx b/starpulse/web/src/
 +}
 diff -ruN a/starpulse/web/src/features/kanban/Kanban.tsx b/starpulse/web/src/features/kanban/Kanban.tsx
 --- a/starpulse/web/src/features/kanban/Kanban.tsx	2026-10-24 10:40:34.197549812 -0700
-+++ b/starpulse/web/src/features/kanban/Kanban.tsx	2026-10-24 10:50:39.495881913 -0700
++++ b/starpulse/web/src/features/kanban/Kanban.tsx	2026-10-24 11:07:52.292368624 -0700
 @@ -9,6 +9,7 @@
  import { Viewport, ViewportRow } from "../../shared/ViewportRows";
  import { ago } from "../../shared/clock";
@@ -140,19 +140,24 @@ diff -ruN a/starpulse/web/src/features/kanban/Kanban.tsx b/starpulse/web/src/fea
  const checksClass = (p: Pull) => (p.merged ? "merged" : p.checks === "failing" ? "fail" : p.checks);
  
  function PullChip({ pulls }: { pulls: Pull[] }) {
-@@ -98,8 +99,8 @@
+@@ -97,29 +98,29 @@
+ /** Where a card sits in the hovered card's chain: the hovered card, a Waiting task it holds or an open task it waits on. */
  export type Chain = "self" | "holds" | "waits";
  
- /** A task card; compact keeps the id, pull request, title and machine line and drops the footer of labels, dependencies and profile. */
+-/** A task card; compact keeps the id, pull request, title and machine line and drops the footer of labels, dependencies and profile. */
 -export function Card({ task, holds = 0, chain, stacked = 0, under = false, links, cross, onCross, now, marks, names, compact = false, onOpen, onPress, onPlay, onHover, dismiss, dismissStart, style }: {
 -  task: KanbanTask; holds?: number; chain?: Chain;
++/** A task card; compact keeps the id, pull request, title and machine line and drops the footer of dependencies and profile. */
 +export function Card({ task, claimed, holds = 0, chain, stacked = 0, under = false, links, cross, onCross, now, marks, names, compact = false, onOpen, onPress, onPlay, onHover, dismiss, dismissStart, style }: {
 +  task: KanbanTask; claimed?: Claim | null; holds?: number; chain?: Chain;
    /** The tasks stacked under this one, on a stack's top card; whether this card sits under one, and while that stack is unstacked the open tasks it waits on, or the Done tasks it unblocked. */
    stacked?: number; under?: boolean; links?: string[];
    /** The Waiting blockers in other milestones, each drawn as a link badge in the footer that opens that task through `onCross`. */
-@@ -109,17 +110,17 @@
-   const labels = task.labels.filter((l) => !/^kind-/.test(l)).slice(0, 3);
+   cross?: KanbanTask[]; onCross?: (id: string) => void; now: number; marks: Marks; names: Record<string, string>; compact?: boolean; onOpen: () => void; onPress?: (e: React.PointerEvent<HTMLDivElement>) => void;
+   onPlay?: () => void; onHover?: (on: boolean) => void; dismiss: () => void; dismissStart?: () => void; style?: CSSProperties;
+ }) {
+-  const labels = task.labels.filter((l) => !/^kind-/.test(l)).slice(0, 3);
++  const size = task.labels.find((l) => /^size-/.test(l))?.slice(5);
    const live = task.live, claim = marks.claim;
    const playing = onPlay && !claim && startLane(task);
 -  const cls = ["card", chain && `chain-${chain}`, under && "under", compact && "compact", playing && "startable", marks.saving && "saving", (marks.refusal || marks.failed) && "bad", marks.lifted && "ghost", claim && "claiming"].filter(Boolean).join(" ");
@@ -168,11 +173,11 @@ diff -ruN a/starpulse/web/src/features/kanban/Kanban.tsx b/starpulse/web/src/fea
        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen())}>
        <div className="top">
 -        <span className="id">{task.id}</span><PullChip pulls={task.prs} />{compact && badge}
-+        <span className="id">{task.id}</span><PullChip pulls={task.prs} />{CLAIM === "b" && claimed && <TopBadge c={claimed} now={now} />}{compact && badge}
++        <span className="id">{task.id}</span><PullChip pulls={task.prs} />{CLAIM === "b" && claimed && <TopBadge c={claimed} now={now} />}{compact && badge}{size && <span className="lab sz" title={`size-${size}`}>{size}pt</span>}
        </div>
        {links && links.length > 0 && <div className={`uw${finished ? " dn" : ""}`}><span className="nw">{finished ? "✓ unblocked" : "⧗ waits on"}</span>{" "}{links.map((id, i) => <Fragment key={id}>{i > 0 && ", "}<span className="nw">{id}</span></Fragment>)}</div>}
        <div className="t">{task.title}</div>
-@@ -133,10 +134,10 @@
+@@ -133,17 +134,14 @@
            <span className="p" /><b>released</b>
          </div>
        ) : live && CONCEPT === "h" && task.lane === "in_progress" && task.track ? (
@@ -186,7 +191,14 @@ diff -ruN a/starpulse/web/src/features/kanban/Kanban.tsx b/starpulse/web/src/fea
          </div>
        )}
        {!compact && (
-@@ -155,9 +156,10 @@
+         <div className="foot">
+-          {labels.map((l) => (
+-            <span key={l} title={l} className={`lab${/^size-/.test(l) ? " sz" : ""}`}>{/^size-/.test(l) ? `${l.slice(5)}pt` : l}</span>
+-          ))}
+           {badge}
+           {holds > 0 && <span className="holds" title={`holds ${holds} Waiting task${holds === 1 ? "" : "s"}`}>⛓{holds}</span>}
+           {task.openDeps > 0 && <span className="dep" title="open dependencies">⧗{task.openDeps}</span>}
+@@ -155,9 +153,10 @@
                ↗ <span className="nw">{d.milestone || "no milestone"}</span> · <span className="nw">{d.id}</span>
              </button>
            ))}
@@ -198,7 +210,7 @@ diff -ruN a/starpulse/web/src/features/kanban/Kanban.tsx b/starpulse/web/src/fea
        {playing && (
          // a full-height strip on the card's right edge, so a near miss lands on the card and opens the task
          <button className="play edge" title={guard || "Start a session"} aria-label={`Start ${task.id}`} disabled={!startable(task)}
-@@ -177,7 +179,7 @@
+@@ -177,7 +176,7 @@
   * as black holes. The marker glides along the line to each new state, leaving a fading streak, and a new machine draws on from the left while
   * the one it replaces tears down under it.
   */
@@ -207,7 +219,7 @@ diff -ruN a/starpulse/web/src/features/kanban/Kanban.tsx b/starpulse/web/src/fea
    const machine = chain[chain.length - 1], phase = chain.length === 1, i = Math.max(0, states.findIndex((s) => s.id === state));
    const at = (k: number) => (states.length > 1 ? (k / (states.length - 1)) * 100 : 50);
    const was = useRef({ machine, phase, i, states }), [streak, setStreak] = useState<{ from: number; to: number; n: number } | null>(null);
-@@ -212,9 +214,9 @@
+@@ -212,9 +211,9 @@
      <div className="ph">
        <div className="chain">
          {chain.map((m, k) => <Fragment key={m}>{k > 0 && <span className="sep">›</span>}<b className={k === chain.length - 1 ? "cur" : undefined}>{m}</b></Fragment>)}
@@ -219,7 +231,7 @@ diff -ruN a/starpulse/web/src/features/kanban/Kanban.tsx b/starpulse/web/src/fea
          {leaving && line(`${leaving.machine}-out`, leaving.phase, leaving.i, leaving.states, "out")}
          {line(machine, phase, i, states, "on")}
        </div>
-@@ -589,7 +591,7 @@
+@@ -589,7 +588,7 @@
      if (!active) return;
      const tick = () => setNow(Date.now() / 1000);
      const catchUp = setTimeout(tick, 0); // the stamps stood still while the view was away
@@ -228,7 +240,7 @@ diff -ruN a/starpulse/web/src/features/kanban/Kanban.tsx b/starpulse/web/src/fea
      return () => { clearTimeout(catchUp); clearInterval(timer); };
    }, [active]);
    // a scrolling column stands its cards aside, so those passing under a still pointer neither light, read nor draw ahead
-@@ -634,10 +636,21 @@
+@@ -634,10 +633,21 @@
      document.body.classList.toggle("dragging", lift !== null);
      return () => document.body.classList.remove("dragging");
    }, [lift]);
@@ -251,7 +263,7 @@ diff -ruN a/starpulse/web/src/features/kanban/Kanban.tsx b/starpulse/web/src/fea
    const view = useMemo(() => layout(cards, hud.names, prefs, now), [cards, hud.names, prefs, now]);
    const holds = useMemo(() => holdCounts(cards), [cards]);
    const blockers = useMemo(() => holders(cards, holds), [cards, holds]);
-@@ -789,7 +802,7 @@
+@@ -789,7 +799,7 @@
    const heldTask = held ? cards.find((t) => t.id === held.id) : undefined;
    const openCard = (id: string) => () => !clickEnds.current && setOpen(id);
    const drawCard: DrawCard = (t, extra) => (
@@ -260,7 +272,7 @@ diff -ruN a/starpulse/web/src/features/kanban/Kanban.tsx b/starpulse/web/src/fea
        style={bounced === t.id ? { animation: "kb-shake .65s" } : undefined}
        onOpen={openCard(t.id)} onPress={canDrag(t.id, started) ? begin(t) : undefined} onPlay={() => starts.ask(t, "play")}
        onHover={(on) => { rest(t.id, on); setHovered((h) => (on ? t.id : h === t.id ? null : h)); }}
-@@ -801,6 +814,7 @@
+@@ -801,6 +811,7 @@
    const shownLane = view.columns.some((c) => c.id === phoneLane) ? phoneLane : view.columns[0]?.id;
    return (
      <main id="kb" className={compact ? "compact" : undefined}>
@@ -268,7 +280,7 @@ diff -ruN a/starpulse/web/src/features/kanban/Kanban.tsx b/starpulse/web/src/fea
        <header><span className="title">Kanban</span><span className="count">{view.open} open · {view.done} done</span></header>
        {active && searchSlot && createPortal(
          <div className="fw">
-@@ -871,6 +885,10 @@
+@@ -871,6 +882,10 @@
            return (
              <section key={col.id} className={colCls} data-lane={col.id}>
                <h2><span className="g" /><span className="nm" title={col.name}>{col.name}</span><span className="c">{col.count}</span>
@@ -281,7 +293,7 @@ diff -ruN a/starpulse/web/src/features/kanban/Kanban.tsx b/starpulse/web/src/fea
                    <span className="hint">{target.kind === "ok" ? "drop" : target.kind === "guard" ? `guarded · ${target.skill || "refused"}` : "no transition"}</span>
 diff -ruN a/starpulse/web/src/style.css b/starpulse/web/src/style.css
 --- a/starpulse/web/src/style.css	2026-10-24 10:40:34.205712688 -0700
-+++ b/starpulse/web/src/style.css	2026-10-24 10:50:39.501631523 -0700
++++ b/starpulse/web/src/style.css	2026-10-24 11:07:52.296094056 -0700
 @@ -1069,3 +1069,31 @@
    #admin .row.fw-block > * { min-width: 0; }
    #admin .fw-next li { overflow-wrap: anywhere; }
