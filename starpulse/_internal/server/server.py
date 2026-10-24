@@ -208,6 +208,7 @@ from starpulse._internal.pulls.delivery import (
     request_refresh,
 )
 from starpulse._internal.pulls.pull_refresh import PullRefresh
+from starpulse._internal.server.take_over import temporal_take_over
 from starpulse._internal.pulls.pull_requests import PullRequests
 from starpulse._internal.pulls.pull_store import PullSync
 from starpulse._internal.pulls.task_actor import ACTOR, TaskActor, moves_of
@@ -761,6 +762,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         search=search,
         analytics=config.analytics,
         pull_refresh=pull_refresh,
+        take_over=temporal_take_over(config.temporal_address) if config.temporal_address else None,
         slow_read_s=config.slow_read_seconds,
         actor_metrics=actor_metrics,
         lane_metrics=unattributed.exposition,

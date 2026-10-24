@@ -179,3 +179,33 @@ def test_an_unreadable_length_on_a_push_is_read_as_empty(feed: BoardFeed, tmp_pa
 )
 def test_post_only_names_the_paths_a_get_is_refused(routes: WriteRoutes, path: str, post_only: bool) -> None:
     assert routes.post_only(path) is post_only
+
+
+def test_a_take_over_post_sends_the_update_to_the_tasks_workflow(feed: BoardFeed, tmp_path: Path) -> None:
+    sent: list[str] = []
+
+    def take_over(task: str) -> bool:
+        sent.append(task)
+        return True
+
+    response = _write(_routes(feed, tmp_path, take_over=take_over), "POST", "/api/take-over", b'{"task": "TASK-7"}')
+
+    assert response is not None
+    assert (response.status, _json(response), sent) == (200, {"task": "TASK-7"}, ["TASK-7"])
+
+
+def test_a_take_over_for_a_task_with_no_workflow_is_a_409(feed: BoardFeed, tmp_path: Path) -> None:
+    routes = _routes(feed, tmp_path, take_over=lambda task: False)
+
+    response = _write(routes, "POST", "/api/take-over", b'{"task": "TASK-7"}')
+
+    assert response is not None
+    assert response.status == 409
+    assert "TASK-7" in _json(response)["error"]
+
+
+def test_a_take_over_on_a_board_without_workflows_is_a_404(feed: BoardFeed, tmp_path: Path) -> None:
+    response = _write(_routes(feed, tmp_path), "POST", "/api/take-over", b'{"task": "TASK-7"}')
+
+    assert response is not None
+    assert response.status == 404

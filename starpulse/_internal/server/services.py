@@ -41,6 +41,8 @@ class Services:
     search: SearchIndex | None = None
     analytics: Analytics | None = None
     pull_refresh: PullRefresh | None = None
+    #: Sends the take-over Update to a task's workflow: False when the task has none.
+    take_over: Callable[[str], bool] | None = None
     slow_read_s: float = SLOW_READ_S
     actor_metrics: Callable[[], str] | None = None
     lane_metrics: Callable[[], str] | None = None

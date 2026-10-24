@@ -12,6 +12,7 @@ export interface ApiContract {
     | Rated
     | Restored
     | Retired
+    | TakenOver
     | RetiredImported
     | Completed
     | Claimed
@@ -63,6 +64,7 @@ export interface ApiContract {
     | MissRequest
     | RestoreRequest
     | RetireRequest
+    | TakeOverRequest
     | RetiredImportRequest
     | CompleteRequest
     | ClaimRequest
@@ -121,6 +123,9 @@ export interface Restored {
   task: string;
 }
 export interface Retired {
+  task: string;
+}
+export interface TakenOver {
   task: string;
 }
 export interface RetiredImported {
@@ -1460,6 +1465,12 @@ export interface RestoreRequest {
  * `POST /api/retire`: take the finished task `task` off the board into the history store's retired tasks.
  */
 export interface RetireRequest {
+  task: string;
+}
+/**
+ * `POST /api/take-over`: flip the unattended task `task` to interactive; its workflow types nothing more.
+ */
+export interface TakeOverRequest {
   task: string;
 }
 /**
