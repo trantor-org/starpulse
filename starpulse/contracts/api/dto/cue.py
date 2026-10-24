@@ -32,6 +32,7 @@ class Pull(_Api):
     """One pull request a task cites, as GitHub last answered the server."""
 
     number: int
+    repo: str = Field(description="The `org/repo` the PR belongs to; a number alone repeats across repositories.")
     url: str
     checks: Literal["pass", "failing", "pending", "none"] = Field(description="The head commit's check rollup.")
     merged: bool

@@ -747,6 +747,10 @@ export interface Pull {
   merged_at: string | null;
   number: number;
   /**
+   * The `org/repo` the PR belongs to; a number alone repeats across repositories.
+   */
+  repo: string;
+  /**
    * Always false: nothing polls GitHub, so a record is current until a newer event lands.
    */
   stale: boolean;

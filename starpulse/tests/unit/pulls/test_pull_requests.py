@@ -108,6 +108,7 @@ def _record(
     """The per-task record the feed carries."""
     return {
         "number": number,
+        "repo": repo,
         "url": f"https://github.com/{repo}/pull/{number}",
         "checks": checks,
         "merged": merged,

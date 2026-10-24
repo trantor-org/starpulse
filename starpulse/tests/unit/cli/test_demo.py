@@ -524,7 +524,7 @@ def test_scrub_seeds_a_board_when_the_capture_has_none() -> None:
     }
     assert board[3]["dependencies"] == ["DEMO-1"] and board[3]["labels"] == ["size-5"]
     assert demo["pulls"]["DEMO-9"] == [
-        {"number": 108, "url": "#", "checks": "pass", "merged": False, "threads": 2, "behind_main": 6, "stale": False}
+        {"number": 108, "repo": "demo/repo", "url": "#", "checks": "pass", "merged": False, "threads": 2, "behind_main": 6, "stale": False}
     ]
     assert demo["pulls"]["DEMO-12"][0]["merged"] is True
     assert set(demo["pulls"]) <= {a["id"] for a in board}

@@ -23,7 +23,7 @@ GET /api/events    server-sent events: a `snapshot` on connect ({graphs, dags, p
                    ({id}: the first 12 hex digits of the SHA-256 of `static/index.html`) follows the `snapshot` on every
                    connect, so a page can tell it is not running the server's build; `restarting` ({at}) goes to every
                    open stream on `SIGTERM`, before the process exits.
-                   `pulls` maps each open task that cites a pull request to [{number, url, checks
+                   `pulls` maps each open task that cites a pull request to [{number, repo (org/repo), url, checks
                    (pass, failing, pending, none), merged, merge_sha, merged_at (null until merged), threads (unresolved), behind_main (commits main holds that the head lacks; null once the head branch is gone), stale}], read from
                    GitHub through `gh` once a minute and held between reads; a failed read keeps the
                    last value with `stale` true.

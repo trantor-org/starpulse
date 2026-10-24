@@ -111,6 +111,7 @@ class PullRequests:
         self._last = {
             url: {
                 "number": record["number"],
+                "repo": record["repo"],
                 "url": url,
                 "checks": record["checks"],
                 "merged": record["state"] == "MERGED",

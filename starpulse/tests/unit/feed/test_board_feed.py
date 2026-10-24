@@ -1014,6 +1014,7 @@ def _merged(n: int, minute: int, day: int = 7) -> tuple[str, list[dict]]:
     return f"TASK-{n}", [
         {
             "number": n,
+            "repo": "o/trantor",
             "url": f"https://github.com/o/trantor/pull/{n}",
             "checks": "pass",
             "merged": True,

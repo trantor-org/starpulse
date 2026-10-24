@@ -4096,6 +4096,10 @@
         "number": {
           "type": "integer"
         },
+        "repo": {
+          "description": "The `org/repo` the PR belongs to; a number alone repeats across repositories.",
+          "type": "string"
+        },
         "stale": {
           "description": "Always false: nothing polls GitHub, so a record is current until a newer event lands.",
           "type": "boolean"
@@ -4110,6 +4114,7 @@
       },
       "required": [
         "number",
+        "repo",
         "url",
         "checks",
         "merged",

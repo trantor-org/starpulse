@@ -218,11 +218,11 @@ describe("the task view's right rail", () => {
     const prs = [{ ...task.prs[0], threads: 2 }, { ...task.prs[0], number: 13, url: "http://pr/13", merged: true, checks: "pass" as const }];
     const html = rows(draw({ task: { ...task, prs } }), "Pull requests");
 
-    expect(html).toContain('<a href="http://pr/12" target="_blank" rel="noopener">#12 ↗</a>');
+    expect(html).toContain('<a href="http://pr/12" target="_blank" rel="noopener">o/r#12 ↗</a>');
     expect(html).toContain("checks pass");
     expect(html).toContain("2 open threads");
-    expect(html).toMatch(/<a href="http:\/\/pr\/13"[^>]*>#13 ↗<\/a><span class="chk merged"><i><\/i>merged<\/span>/);
-    expect(html).toContain("no open threads");
+    expect(html).toMatch(/<a href="http:\/\/pr\/13"[^>]*>o\/r#13 ↗<\/a><span class="chk merged"><i><\/i>merged<\/span>/);
+    expect(html).not.toContain("no open threads");
     expect(rows(draw({ task: { ...task, prs: [] } }), "Pull requests")).toContain("None yet");
   });
 
@@ -386,7 +386,7 @@ describe("the description's start_criteria block", () => {
 
 describe("the task view's CI history", () => {
   const step = (event: string, state: string, at: number) => ({ event, state, at });
-  const pull = (number: number) => ({ number, url: `http://pr/${number}`, checks: "pass" as const, merged: false, merge_sha: null, merged_at: null, threads: 0, stale: false });
+  const pull = (number: number) => ({ number, repo: "o/r", url: `http://pr/${number}`, checks: "pass" as const, merged: false, merge_sha: null, merged_at: null, threads: 0, stale: false });
   const trail = [
     step("PR_OPENED", "opened", 1), step("PUSHED", "running", 2), step("CHECKS_FAILED", "failing", 3), step("RERUN", "running", 4), step("CHECKS_PASSED", "passing", 5),
     step("CONFLICTED", "conflicting", 6), step("REBASED", "running", 7), step("CHECKS_PASSED", "passing", 8), step("MERGED", "merged", 9),

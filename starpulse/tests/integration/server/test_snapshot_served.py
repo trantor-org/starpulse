@@ -63,6 +63,7 @@ def test_the_full_view_sends_a_pull_request_without_the_fields_the_feed_keeps_fo
     feed.put(task("PROJ-1"))
     pull = {
         "number": 7,
+        "repo": "o/r",
         "url": "https://github.com/o/r/pull/7",
         "checks": "pass",
         "merged": False,
@@ -289,6 +290,7 @@ def test_a_snapshot_change_with_pull_files_is_sent_and_the_stream_stays_open(tmp
     feed.put(task("PROJ-1"))
     pull = {
         "number": 7,
+        "repo": "o/r",
         "url": "https://github.com/o/r/pull/7",
         "checks": "pass",
         "merged": False,
