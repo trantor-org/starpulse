@@ -154,13 +154,13 @@ def test_install_accepts_a_machine_whose_guard_the_adapter_registers_at_runtime(
     assert skills.status(tmp_path, "claude", "demo", source) == "installed"
 
 
-PHASE_SKILLS = ("starting-task", "tdd", "deliver", "review-fix")
+PHASE_SKILLS = ("starting-task", "tdd", "deliver", "review-fix", "mitigate")
 
 
 def test_the_bundled_task_phase_skills_install_with_their_machines(tmp_path: Path) -> None:
     skills.install(tmp_path, ["claude"], force=False)
 
-    assert [(tmp_path / f".claude/skills/{name}/machine.yaml").is_file() for name in PHASE_SKILLS] == [True] * 4
+    assert [(tmp_path / f".claude/skills/{name}/machine.yaml").is_file() for name in PHASE_SKILLS] == [True] * len(PHASE_SKILLS)
 
 
 @pytest.mark.parametrize("name", PHASE_SKILLS)
@@ -170,3 +170,9 @@ def test_every_transition_of_a_phase_machine_cites_a_sentence_of_its_own_skill(n
     cites = [transition["cite"] for transitions in events.values() for transition in transitions]
 
     assert [c["quote"] for c in cites if c["skill"] != name or c["quote"] not in skill] == []
+
+
+def test_the_mitigate_machine_reaches_diagnosis_only_once_health_is_green() -> None:
+    events = yaml.safe_load((skills.SOURCE / "mitigate" / "machine.yaml").read_text())["events"]
+
+    assert [transition["from"] for transition in events["DIAGNOSED"]] == ["healthy"]

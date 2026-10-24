@@ -249,16 +249,18 @@ server with no contract to read answers `{ok: true, checks: []}`.
 work next, why a task cannot move, moving it), `authoring-starpulse-machines` (machine YAML, writers, guards,
 submachines, `machine validate` and `machine import mermaid`), `writing-starpulse-adapters` (the board, machine-events
 and runs contracts, the adapter kit, the CloudEvents ingest) and `setting-up-starpulse` (starting the server, config,
-`doctor`). It also bundles four task phase skills, each with its phase machine: `starting-task` (find or file the task,
+`doctor`). It also bundles five task phase skills, each with its phase machine: `starting-task` (find or file the task,
 claim it, make its worktree), `tdd` (red, green and refactor cycles, criteria checkpoints, docs), `deliver` (final
-gates, commit, push, PR and green checks, or the no-PR finalize) and `review-fix` (review threads, conflicts and checks
-until the task moves to review). They reach a project's own behavior only through StarPulse verbs and
-`starpulse command run` with the `start`, `test`, `check`, `deliver`, `pr-status` and `finalize` commands; a command
+gates, commit, push, PR and green checks, or the no-PR finalize), `review-fix` (review threads, conflicts and checks
+until the task moves to review) and `mitigate` (stop a failing service's growing impact, recheck its health, and
+diagnose only once it is green). They reach a project's own behavior only through StarPulse verbs and
+`starpulse command run` with the `start`, `test`, `check`, `deliver`, `pr-status`, `finalize`, `health`, `snapshot` and
+`mitigate` commands; a command
 the project does not map exits 4, and the skill does that step as the project's `AGENTS.md` says. `skills install`
 copies them to `.claude/skills` (`--claude`) or `.agents/skills` (`--codex`) in the working directory, or with `--user`
 to `~/.claude/skills` or `~/.agents/skills`. An install records what it wrote, so a copy you edited afterwards is
 refused (exit 1) until you pass `--force`, while one the package has since updated is replaced; `skills list` reports
-which of the four each copy is.
+which state each copy is in.
 
 A skill that drives a phase machine names it with a `machine:` key in its front matter, and the machine file sits beside
 `SKILL.md` in the skill's directory. An install copies that file with the skill, so the copy carries its machine to the
