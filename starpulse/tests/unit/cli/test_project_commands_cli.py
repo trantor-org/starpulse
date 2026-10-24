@@ -85,3 +85,13 @@ def test_a_linked_config_in_the_working_directory_reads_its_files_beside_the_tar
     code = cli.main(["command", "run", "go"], {})
 
     assert (code, json.loads(capsys.readouterr().out)["exit"]) == (0, 0)
+
+
+def test_a_literal_brace_in_an_argv_element_exits_2_as_a_usage_error(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    code, document = _run(capsys, tmp_path, _table(["jq", "{.a}"]), ["go"])
+
+    assert code == 2
+    assert document["code"] == "usage"
+    assert "{{" in document["error"]

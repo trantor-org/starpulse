@@ -74,3 +74,9 @@ def test_an_edit_that_changes_the_status_is_refused(served) -> None:  # noqa: F8
 
     with pytest.raises(MarkdownRefusedError, match="Status"):
         imported(render(record).replace("- Status: To Do", "- Status: Done"), record)
+
+
+def test_an_untouched_rendering_of_an_int_priority_imports_as_no_change(served) -> None:  # noqa: F811
+    record = {**served[0].read("task-5"), "priority": 2}
+
+    assert imported(render(record), record) == {}

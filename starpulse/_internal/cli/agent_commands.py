@@ -30,10 +30,18 @@ class _Values(dict[str, str]):
         return self.setdefault(key, done.stdout.strip())
 
 
+def _fill(element: str, values: _Values) -> str:
+    try:
+        return element.format_map(values)
+    except (ValueError, IndexError, KeyError, AttributeError) as exc:
+        message = f"{element!r} has a brace that is not a placeholder; write a literal one as {{{{ or }}}}"
+        raise CliError("usage", message) from exc
+
+
 def _argv(template: tuple[str, ...], values: _Values, extra: list[str]) -> list[str]:
     argv: list[str] = []
     for element in template:
-        argv.extend(extra if element == "{args}" else [element.format_map(values)])
+        argv.extend(extra if element == "{args}" else [_fill(element, values)])
     return argv
 
 
