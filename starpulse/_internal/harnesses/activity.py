@@ -55,7 +55,7 @@ _PYTHON = re.compile(r"^python[\d.]*$")
 _NAME = re.compile(r"^[A-Za-z_][\w.:-]*$")
 _COMMAND = re.compile(r"^[A-Za-z][\w.+-]*$")
 _WRAPPERS = frozenset(
-    {"sudo", "doas", "command", "env", "time", "nice", "nohup", "exec", "bash", "sh"}
+    {"sudo", "doas", "command", "time", "nohup", "exec", "bash", "sh"}
     | {"do", "then", "else", "elif", "if", "while", "until", "!", "{"}
 )
 _NOT_WORK = frozenset(
@@ -73,6 +73,9 @@ _SEARCHES = frozenset({"grep", "egrep", "rg", "find", "fd", "ls", "tree"})
 _GH_LEAVES = frozenset({"api", "browse", "status"})
 # `uv run` flags whose next word is a directory, not the command.
 _UV_VALUE_FLAGS = frozenset({"--project", "--directory"})
+# Value flags of the wrappers `timeout`, `nice` and `env`; the word after one is its value, not the command.
+_TIMEOUT_VALUE_FLAGS = frozenset({"-s", "-k", "--signal", "--kill-after"})
+_NICE_ENV_VALUE_FLAGS = frozenset({"-n", "-u", "-C", "-S", "--unset", "--chdir"})
 # Flags that take the next word as their value, so it is not an operand.
 _VALUE_FLAGS = {
     "git": frozenset({"-C", "-c"}),
@@ -123,20 +126,23 @@ def _statements(command: str) -> Iterator[list[str]]:
     yield current
 
 
+def _skip_flags(argv: list[str], value_flags: frozenset[str]) -> list[str]:
+    while argv and argv[0].startswith("-"):
+        argv = argv[2:] if argv[0] in value_flags else argv[1:]
+    return argv
+
+
 def _unwrap(argv: list[str]) -> list[str]:
     while argv:
         head = argv[0].rpartition("/")[2]
         if _ASSIGNMENT.match(argv[0]) or head in _WRAPPERS or _PYTHON.match(head):
             argv = argv[1:]
         elif head == "timeout":
-            argv = argv[1:]
-            while argv and argv[0].startswith("-"):
-                argv = argv[1:]
-            argv = argv[1:]
+            argv = _skip_flags(argv[1:], _TIMEOUT_VALUE_FLAGS)[1:]
+        elif head in {"nice", "env"}:
+            argv = _skip_flags(argv[1:], _NICE_ENV_VALUE_FLAGS)
         elif head == "uv" and argv[1:2] == ["run"]:
-            argv = argv[2:]
-            while argv and argv[0].startswith("-"):
-                argv = argv[2:] if argv[0] in _UV_VALUE_FLAGS else argv[1:]
+            argv = _skip_flags(argv[2:], _UV_VALUE_FLAGS)
         else:
             return argv
     return argv

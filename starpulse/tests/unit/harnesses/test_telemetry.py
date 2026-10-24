@@ -16,7 +16,7 @@ from typing import Any
 import pytest
 
 from starpulse._internal.config.analytics import Analytics
-from starpulse._internal.harnesses.telemetry import CLAUDE_CODE, CODEX, Signal, redactor, signals
+from starpulse._internal.harnesses.telemetry import CLAUDE_CODE, CODEX, Signal, _number, redactor, signals
 from starpulse.contracts.adapters import TaskKeys
 
 FIXTURES = Path(__file__).parents[2] / "fixtures"
@@ -247,6 +247,25 @@ def test_a_codex_interrupted_turn_cost_is_an_interrupt() -> None:
     found = signals(export(codex("codex.turn_cost", **{"turn.interrupted": True, "reasoning_effort": "high"})))
 
     assert [(s.kind, s.effort) for s in found] == [("interrupt", "high")]
+
+
+def test_a_git_checkout_pathspec_after_double_dash_is_not_a_branch() -> None:
+    payload = export(
+        claude(
+            "tool_result",
+            7,
+            tool_name="Bash",
+            success="true",
+            tool_input=json.dumps({"command": "git checkout -- README.md"}),
+        ),
+    )
+
+    assert [s.branch for s in signals(payload) if s.branch] == []
+
+
+@pytest.mark.parametrize("value", ["inf", "1e999"])
+def test_a_non_finite_or_overflowing_number_is_zero(value: str) -> None:
+    assert _number(value) == 0
 
 
 def test_a_launch_branch_on_the_resource_is_every_signals_branch() -> None:
