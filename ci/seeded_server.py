@@ -294,6 +294,8 @@ def replay(
     task one way and the next sends it back. The pace is held against the clock, so a slow move is made up for.
     """
     held = [task for task in tasks if task.lane in FLIP]
+    if not held:
+        return 0
     interval = 1.0 / rate
     due, sent = clock(), 0
     while True:

@@ -101,3 +101,12 @@ def test_a_lost_step_end_shows_as_a_step_with_no_finish(
     _drain(log, streams)
 
     assert streams.unfinished("build", "r1") == ["test"]
+
+
+def test_a_step_event_with_no_subject_is_refused_even_when_its_data_names_a_run(ingest: CloudEventsIngest) -> None:
+    event = _cloudevent("e1", "StepStarted", "compile", run_id="r1")
+    del event["subject"]
+
+    status, _ = ingest.write("flow", [event])
+
+    assert status == 400

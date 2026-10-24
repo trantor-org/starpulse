@@ -145,7 +145,7 @@ class CloudEventsIngest:
             raise _Refused(400, "a run event carries data: workflow, status and, for a step, step and depends")
         if len(json.dumps(data)) > MAX_DATA:
             raise _Refused(413, f"data is at most {MAX_DATA} bytes")
-        wanted = {"event": event["type"], "run_id": event.get("subject"), **data}
+        wanted = {**data, "event": event["type"], "run_id": event.get("subject")}
         if isinstance(fault := run_event(wanted), str):
             raise _Refused(400, fault)
         return run_events.entry(
