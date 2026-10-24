@@ -58,6 +58,14 @@ def test_each_rating_change_is_an_event_and_the_snapshot_reports_the_latest_with
         assert (rating["verdict"], rating["reason"], rating["changes"]) == ("cleared", "", 3)
 
 
+def test_the_snapshot_rating_names_who_made_the_latest_change(tmp_path: Path) -> None:
+    with _served(tmp_path) as served:
+        served.post({"task": "task-1", "verdict": "fail", "actor": "operator"})
+        served.post({"task": "task-1", "verdict": "pass", "session": "s-1"})
+
+        assert served.snapshot()["ratings"]["task-1"]["actor"] == "agent"
+
+
 def test_a_task_never_rated_has_no_rating_in_the_snapshot(tmp_path: Path) -> None:
     with _served(tmp_path) as served:
         assert served.snapshot()["ratings"] == {}

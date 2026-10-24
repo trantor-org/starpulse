@@ -36,6 +36,15 @@ describe("a Kanban card's density", () => {
   });
 });
 
+describe("a Kanban card's rating", () => {
+  it("is never drawn, whatever the task's rating", () => {
+    const html = renderToStaticMarkup(<Card task={{ ...task, rating: { verdict: "fail", reason: "dropped the lane filter", at: 100, actor: "operator", changes: 2 } }} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} />);
+
+    expect(html).not.toMatch(/rating|dropped the lane filter|operator|\bfail/i);
+    expect(html).toBe(renderToStaticMarkup(<Card task={task} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} />));
+  });
+});
+
 describe("a Kanban card's machine line", () => {
   const line = (live: KanbanTask["live"]) => renderToStaticMarkup(<Card task={{ ...task, live }} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} />);
 

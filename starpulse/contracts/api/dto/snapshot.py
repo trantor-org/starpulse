@@ -71,11 +71,12 @@ class MachineStrip(_Api):
 
 class Rating(_Api):
     """A task's latest pass/fail rating: its verdict, the reason it names (empty when none), when it was set (epoch
-    seconds) and how many changes the task's rating has had."""
+    seconds), who set it (`actor`, empty when the write named none) and how many changes the task's rating has had."""
 
     verdict: str
     reason: str
     at: float
+    actor: str
     changes: int
 
 

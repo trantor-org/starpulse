@@ -518,6 +518,21 @@ aside h3 { margin: 0 0 8px; font-size: calc(10px * var(--fs)); font-weight: 500;
 #kbm .tv .editrefusal { border: 1px solid color-mix(in srgb, var(--fail) 40%, transparent); background: color-mix(in srgb, var(--fail-bg) 65%, transparent); color: var(--fail-hi); }
 #kbm .tv .editrefusal code { color: var(--agent-text); }
 #kbm .tv .refusal { margin: 0; }
+/* The Rating section (approved mockup, TASK-7544): Pass and Fail are ghost buttons like Hide task, tinted when pressed. */
+#kbm .tvrail .rate { display: flex; gap: 6px; }
+#kbm .tvrail .ratebtn { all: unset; padding: 4px 14px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--slate) 25%, transparent); color: var(--slate); font-size: calc(11.5px * var(--fs)); }
+#kbm .tvrail .ratebtn:hover, #kbm .tvrail .ratebtn:focus-visible { color: var(--ink); border-color: color-mix(in srgb, var(--slate) 50%, transparent); }
+#kbm .tvrail .ratebtn:disabled { opacity: .5; }
+#kbm .tvrail .ratebtn[aria-pressed="true"][data-verdict="pass"] { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 55%, transparent); background: color-mix(in srgb, var(--ok) 10%, transparent); }
+#kbm .tvrail .ratebtn[aria-pressed="true"][data-verdict="fail"] { color: var(--fail); border-color: color-mix(in srgb, var(--fail) 55%, transparent); background: color-mix(in srgb, var(--fail) 10%, transparent); }
+#kbm .tvrail .ratemeta { margin-top: 6px; color: var(--muted); font-size: calc(11px * var(--fs)); }
+#kbm .tvrail .ratewhy { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; margin-top: 6px; color: var(--ink-2); }
+#kbm .tvrail .ratewhy .fv { width: 100%; margin: 0; }
+#kbm .tvrail .ratewhy .count { margin-left: auto; color: var(--faint); font-size: calc(10.5px * var(--fs)); }
+#kbm .tvrail .ratewhy .count.full { color: var(--fail); }
+#kbm .tvrail .ratewhy button { all: unset; color: var(--agent-text); font-size: calc(11px * var(--fs)); }
+#kbm .tvrail .ratewhy button:hover, #kbm .tvrail .ratewhy button:focus-visible { text-decoration: underline; }
+#kbm .tvrail .rs .editrefusal { margin-top: 6px; }
 /* Move to opens downward, right-aligned under its button in the header. */
 #kbm .tvhead .mv { position: relative; }
 #kbm .tvhead .startbtn, #kbm .ask .startbtn { all: unset; padding: 4px 12px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--ok) 55%, transparent); background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok-text); font-size: calc(11.5px * var(--fs)); white-space: nowrap; }

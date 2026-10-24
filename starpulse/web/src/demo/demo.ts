@@ -183,6 +183,7 @@ export const ROUTES: Record<string, string | null> = {
   "/api/run": "This demo has no runs instance to start a run on.",
   "/api/start": "This demo has no session-start service to start a session with.",
   "/api/history-window": "This demo has no server to keep a shared history window.",
+  "/api/rating": "This demo has no server to keep a task's rating.",
 };
 
 /** The Board columns a card in `state` may be moved to: the machine's exits that are neither its creation nor a settled state. */

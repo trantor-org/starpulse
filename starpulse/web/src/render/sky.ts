@@ -3,7 +3,7 @@
 // plays each move once, when the stream first delivers it.
 import { stepRings, type StepRing } from "../features/fanout/fanoutModel";
 import { tree, type Tree } from "./levels";
-import type { Capabilities, Cue, Dag, FlowSnapshot, LedgerRow, MachineEntry, MachinePage, MergeStrip, Move as Verdict, Pool, Pull, RawTask, Roles, Settled, Snapshot, Writer } from "../api";
+import type { Capabilities, Cue, Dag, FlowSnapshot, LedgerRow, MachineEntry, MachinePage, MergeStrip, Move as Verdict, Pool, Pull, RawTask, Rating, Roles, Settled, Snapshot, Writer } from "../api";
 
 /** Seconds one move takes to cross its path, the arrival rings, and a finished DAG's flare. */
 export const TRAVEL = 3;
@@ -44,6 +44,8 @@ export interface Sky {
   dagGroup: Record<string, string>;
   runnable: Set<string>;
   boardUrl: string | null;
+  /** The operator's pass/fail verdict on each rated task, by task id; absent for a snapshot without any. */
+  ratings?: Record<string, Rating>;
   /** Which of the Board's States plays which part, as its machine declares them; empty before the snapshot carries any. */
   roles: Roles;
   /** What the board writes beyond moves; absent for a board that only reads. */
@@ -158,6 +160,7 @@ export function merge(snap: Snapshot, since = midnight()): Sky {
     dagGroup: Object.fromEntries(groups.flatMap((g) => g.dags.map((d) => [d, g.name]))),
     runnable: new Set((snap.domains ?? []).flatMap((d) => d.dags.filter((x) => x.runSafe).map((x) => x.name))),
     boardUrl: snap.boardUrl ?? null,
+    ratings: snap.ratings ?? {},
     roles: snap.roles ?? {},
     capabilities: snap.capabilities ?? undefined,
     hint: snap.hint ?? null,
