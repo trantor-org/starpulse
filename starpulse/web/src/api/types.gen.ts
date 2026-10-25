@@ -439,6 +439,10 @@ export interface RawTask {
    */
   assignee?: string | null;
   /**
+   * When a held Board task's claim expires, its last renewal plus the claim TTL, epoch seconds; null when unheld, not In Progress, or before the first sweep pass.
+   */
+  claim_expires_at?: number | null;
+  /**
    * When a Board task was created, in epoch seconds; null or absent when unknown.
    */
   created?: number | null;

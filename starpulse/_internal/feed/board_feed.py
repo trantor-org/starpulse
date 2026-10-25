@@ -370,6 +370,8 @@ class BoardFeed:
         self._pulls_unsaved = False
         #: Each task's latest refused claim (a board adapter's `refuse_claim` call): its reason and when the writer refused it.
         self._claims: dict[str, dict] = {}
+        #: Each held working task's claim expiry from the claim-TTL sweep's latest pass, served as `claim_expires_at`.
+        self._expiries: dict[str, float] = {}
         #: The Waiting tasks whose description declares Start Criteria, and for each task the open tasks that list it as a dependency.
         self._gated: set[str] = set()
         self._dependents: dict[str, set[str]] = {}
@@ -706,7 +708,7 @@ class BoardFeed:
             if agent:
                 agent["entered"] = self._entered(task, before)
                 agent["workable"], agent["workable_since"] = self._workable(agent)
-                agent = cooled(agent, self._clock, self._roles.done)
+                agent = self._expiring(cooled(agent, self._clock, self._roles.done))
             if before == agent and self._settled.get(task.id) == settled:
                 return None  # an hourly reconcile republishes every task; only a change reaches the page
             settling = (
@@ -901,6 +903,23 @@ class BoardFeed:
             if publish:
                 self._publish("claim", {"task": task, "reason": reason, "at": at})
 
+    def serve_expiries(self, expiries: Mapping[str, float]) -> None:
+        """Keep the claim-TTL sweep's latest pass: each held working task's claim expiry, and publish each open task whose changed."""
+        with self._lock:
+            changed = [task for task in self._expiries.keys() | expiries.keys() if self._expiries.get(task) != expiries.get(task)]
+            self._expiries = dict(expiries)
+            for task_id in changed:
+                if (agent := self._open.get(task_id)) is not None:
+                    self._open[task_id] = self._expiring(agent)
+                    self._publish("task", {"id": task_id, "agent": self._open[task_id], "settled": None})
+
+    def _expiring(self, agent: dict) -> dict:
+        """A copy of the agent with its task's claim expiry from the claim-TTL sweep's latest pass; no key when it has none."""
+        expiry = self._expiries.get(agent["id"])
+        if expiry is None and "claim_expires_at" not in agent:
+            return dict(agent)
+        return {**agent, "claim_expires_at": expiry}
+
     def task(self, task_id: str) -> dict | None:
         """The open Board task as the page draws it, or None when the Board holds no open task by that id, spelled as
         the board or its key scheme spells it.
@@ -923,7 +942,7 @@ class BoardFeed:
         if row is None or row["archived"]:
             return None
         ready = task_id in self._read_model.ready(row["state"], self._roles.done)  # type: ignore[union-attr]
-        return summary_agent(row, ready, self._read_model_moves(row)) | read_model_detail(row)
+        return self._expiring(summary_agent(row, ready, self._read_model_moves(row)) | read_model_detail(row))
 
     def follow_read_model(self, limit: int = 1000) -> int:
         """Publish a `task` delta for each Task the read model changed since the last call, an archived one as gone, and
@@ -1268,7 +1287,7 @@ class BoardFeed:
                 position,
                 [summary_agent(summary, summary["id"] in ready, self._read_model_moves(summary)) for summary in summaries],
             )
-        return [dict(agent) for agent in self._hot_cache[1]]
+        return [self._expiring(agent) for agent in self._hot_cache[1]]
 
     def _flows(self, now: float) -> tuple[list[dict], dict[str, dict]]:
         """Every flow with its tasks as the page draws them, and each machine's derivation (`machine_ties.derive`)."""

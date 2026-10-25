@@ -63,6 +63,11 @@ class RawTask(_Api):
     released: ClaimRelease | None = Field(
         default=None, description="The claim-TTL release a Board task's claim ended in; null when none ended it."
     )
+    claim_expires_at: float | None = Field(
+        default=None,
+        description="When a held Board task's claim expires, its last renewal plus the claim TTL, epoch seconds; null "
+        "when unheld, not In Progress, or before the first sweep pass.",
+    )
     labels: list[str] | None = None
     dependencies: list[str] | None = Field(default=None, description="A task's dependencies, as task ids.")
     prs: list[str] | None = Field(default=None, description="A task's pull requests: the PR URLs among its references.")
