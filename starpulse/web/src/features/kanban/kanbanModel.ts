@@ -355,7 +355,7 @@ export function kanbanTasks(sky: Sky): KanbanTask[] {
   return sky.board.agents.map((a) => {
     const latest = sky.latest[a.id], dependencies = a.dependencies ?? [];
     return {
-      id: a.id, title: a.title, lane: a.state, milestone: a.milestone ?? "", labels: a.labels ?? [], assignee: a.model, dependencies,
+      id: a.id, title: a.title, lane: a.state, milestone: a.milestone ?? "", labels: a.labels ?? [], assignee: a.assignee ?? "", dependencies,
       openDeps: dependencies.filter((d) => open.has(d)).length, prs: cited(a.prs ?? [], sky.pulls[a.id] ?? []), runs: a.runs ?? [], description: a.description ?? "",
       live: latest ? { machine: latest.flow, state: latest.state, at: latest.at, source: sky.flows[latest.flow]?.machine.source } : null,
       released: a.state === roles.ready && a.previous === roles.waiting, release: a.released ?? null, claimExpiresAt: a.claim_expires_at ?? null, moves: a.moves ?? (a.move_set ? sky.moveSets[a.move_set] : undefined) ?? {}, entered: a.entered ?? 0, created: a.created ?? null, workableSince: a.workable_since ?? null,

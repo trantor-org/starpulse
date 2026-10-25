@@ -374,7 +374,7 @@ def _seed(now: float, line: list[str] = ()) -> tuple[list[dict], dict, dict]:
     agents, pulls = [], {}
     for i, (state, milestone, labels, after, model, pull, created, *entered) in enumerate(rows):
         agents.append(
-            {"id": ids[i], "state": state, "model": model, "milestone": milestone, "labels": labels}
+            {"id": ids[i], "state": state, "model": model, "assignee": model, "milestone": milestone, "labels": labels}
             | ({"dependencies": [ids[after]]} if after is not None else {})
             | ({"created": created} if created is not None else {})
             | ({"entered": entered[0]} if entered else {})
@@ -710,7 +710,7 @@ def _history(flows: list[dict], now: float) -> dict[str, list[dict]]:
 
 
 def _task(i: int, a: dict) -> dict:
-    return {"id": f"DEMO-{i + 1}", "title": TITLES[i % len(TITLES)], "state": a["state"], "model": a.get("model", "")}
+    return {"id": f"DEMO-{i + 1}", "title": TITLES[i % len(TITLES)], "state": a["state"], "model": a.get("model", ""), "assignee": a.get("model", "")}
 
 
 def _renames(snap: dict) -> dict[str, str]:
