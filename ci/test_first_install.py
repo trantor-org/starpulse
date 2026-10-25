@@ -135,7 +135,10 @@ def test_a_first_install_links_the_session_that_claims_a_task_to_it(tmp_path: Pa
         assert created.returncode == 0, created.stdout + created.stderr
         task = json.loads(created.stdout)["task"]
         # The server reads the board on a refresh, so a task just created is not claimable for a moment.
-        _until(lambda: _starpulse("task", "claim", task, "--server", server, cwd=install, env=env).returncode == 0, "the claim")
+        # Poll over HTTP: each failed `claim` attempt would start a fresh interpreter.
+        _until(lambda: _get(f"{server}/api/task/{task}"), "the task on the board")
+        claimed = _starpulse("task", "claim", task, "--server", server, cwd=install, env=env)
+        assert claimed.returncode == 0, claimed.stdout + claimed.stderr
 
         # The analytics refuse a window past their history, which begins at the oldest signal: one export is older.
         for ago_s in (600, 0):
