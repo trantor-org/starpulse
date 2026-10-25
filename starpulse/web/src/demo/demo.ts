@@ -527,7 +527,7 @@ const startingLane = (machine: Machine, roles: Roles): string => {
 const DEMO_BODY = [
   "## Rollout",
   "| Stage | Hosts | Window |\n| --- | ---: | --- |\n| Canary | 1 | 10 min |\n| Fleet | 24 | 1 h |",
-  "```\nstarpulse task show DEMO-1\n```",
+  "```\nstarpulse task list --status ready\n```",
   "## Duplicate Search\n\nSearched the board for the same change: none.",
   "## Duplicate Resolution\n\nNew task.",
   "## ADR Needed\n\nNo.",

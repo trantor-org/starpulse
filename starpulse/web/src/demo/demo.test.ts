@@ -245,7 +245,7 @@ describe("the demo server", () => {
     const one = await read("DEMO-1");
 
     expect(one.description).toContain("| Stage | Hosts | Window |");
-    expect(one.description).toContain("```\nstarpulse task show DEMO-1\n```");
+    expect(one.description).toContain("```\nstarpulse task list --status ready\n```");
     for (const section of ["Duplicate Search", "Duplicate Resolution", "ADR Needed"]) expect(one.description).toContain(`## ${section}`);
     expect(one.notes).toMatch(/^\*\*Assignee:\*\* @agent-fast-low\n/);
     expect(one.plan).not.toBe("");
