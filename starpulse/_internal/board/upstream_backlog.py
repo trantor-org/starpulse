@@ -244,6 +244,7 @@ class UpstreamBacklog:
         self._ids: dict[str, str] = {}
         self._kept = kept
         self._stop = threading.Event()
+        self._scanning = threading.RLock()  # the poll thread and `settle()` both scan
         for name, (mtime_ns, size, task_id) in (files or {}).items():
             self._seen[str(root / name)] = (mtime_ns, size)
             if task_id:
@@ -259,7 +260,12 @@ class UpstreamBacklog:
     def scan(self) -> None:
         """Publish every task file that is new or changed since the last scan, and retract a task whose file is gone.
 
-        One `os.scandir` pass over the folders: a file whose time and size match the last scan is not read."""
+        One `os.scandir` pass over the folders: a file whose time and size match the last scan is not read.
+        Scans are serialized, so two callers never forget the same file twice."""
+        with self._scanning:
+            self._scan()
+
+    def _scan(self) -> None:
         present: set[str] = set()
         changed = False
         for folder, settled in _FOLDERS:
