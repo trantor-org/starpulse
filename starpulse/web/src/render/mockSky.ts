@@ -40,45 +40,17 @@ export function mocked(snap: Snapshot): Snapshot {
     const route = [["board", "ready"] as [string, string], ...steps("build"), ...steps("deliver"), ["ci", "running"] as [string, string], ["ci", "passing"] as [string, string], ...steps("review_fix"), ["board", "review"] as [string, string]], n = Math.floor(Date.now() / 1000 / SIM_PERIOD);
     Object.keys(at).forEach((id, i) => (at[id] = route[(n + i * 3) % route.length]));
   }
-  // the live snapshot names DAGs `pushed/<name>` and `pushed/dagu/<name>`; the map ties `dagu/<name>`, so fold both onto that, a running or failed run first
-  const rank = (st: string) => (st === "running" ? 0 : st === "failed" ? 1 : 2);
-  // a preview's Dagu adapter has no credentials and lists no DAG: every declared DAG stands in as idle
-  const iso = new Date(now * 1000).toISOString(), declared = [...new Set((snap.domains ?? []).flatMap((d) => d.dags.map((x) => x.name)))];
-  const listed = snap.dags.length ? snap.dags : declared.map((name) => ({ name, runId: "mock", status: name === "dagu/dependency-update-investigation" ? "running" : "succeeded", startedAt: iso, finishedAt: iso, steps: [] }) as unknown as Snapshot["dags"][number]);
-  const simBoard: Record<string, string[]> = { PR_OPENED: ["dagu/deliver"], SEND_BACK: ["dagu/auto-rebase"], RESUME: ["dagu/ci-validate-redispatch"] };
-  // under a sim, the DAG that drives a machine runs while a walking task is in it, so its hangar and orbiter show
-  const drives: Record<string, string> = { deliver: "dagu/deliver", ci: "dagu/ci-validate-redispatch", "graph-traversal": "dagu/graph-refresh", "triaging-cr-reviews": "dagu/auto-rebase", review_fix: "dagu/auto-rebase" };
-  // the Board's own DAGs take turns too, half of them running at a time for three steps each, so hangars draw on and tear down through a walk
-  const turn = Math.floor(Date.now() / 1000 / SIM_PERIOD / 3), board = Object.values(simBoard).flat().filter((_, i) => (turn + i) % 2 === 0);
-  const driving = new Set(sim ? [...Object.values(at).map(([flow]) => drives[flow]), ...board] : []);
-  const dags = [...listed].map((d) => ({ ...d, name: `dagu/${d.name.replace(/^pushed\//, "").replace(/^dagu\//, "")}` })).map((d) => (driving.has(d.name) ? { ...d, status: "running" as const } : d)).sort((a, b) => rank(a.status) - rank(b.status)).filter((d, i, all) => all.findIndex((x) => x.name === d.name) === i);
-  // simulated DAG writers: no live Board or phase event has a DAG writer yet, so these show how one would tie in
-  const W = (dag: string) => ({ actor: dag, trigger: "dagu (simulated)" });
-  const simFlow: Record<string, Record<string, string[]>> = {
-    deliver: { COMMITTED: ["dagu/deliver"], PUSHED: ["dagu/deliver"], PR_OPENED: ["dagu/deliver"], CI_RED: ["dagu/ci-sp-retry"], CI_GREEN: ["dagu/ci-sp-retry"] },
-    review_fix: { REVIEW_RECORDED: ["dagu/cr-sweep"] },
-    "auditing-infrastructure": { SCOPE_DELTA_SELECTED: ["dagu/nightly-audit"], REPORT_WRITTEN: ["dagu/nightly-audit"] },
-    "running-skill-evals": { REQUESTED: ["dagu/skill-eval"], OUTCOME_PASSED: ["dagu/skill-eval"], OUTCOME_FAILED: ["dagu/skill-eval"] },
-  };
   const simTies: Record<string, { kind: "observed"; machine: string; state: string; count: number }> = {
     "graph-traversal": { kind: "observed", machine: "build", state: "red_proven", count: 2 },
     ci: { kind: "observed", machine: "deliver", state: "pr_opened", count: 2 },
   };
-  const withSim = (ws: Record<string, { actor: string; trigger: string }[]> | null | undefined, sim: Record<string, string[]> = {}) => {
-    const out = { ...(ws ?? {}) };
-    for (const [ev, ds] of Object.entries(sim)) out[ev] = [...(out[ev] ?? []), ...ds.map(W)];
-    return out;
-  };
   const flows = snap.flows.map((f) => {
     if (f.name === "board") {
-      const m = f.machine as typeof f.machine & { dagActors?: string[]; launches?: Record<string, { skill: string; machine: string | null }> };
-      const machine = { ...m, writers: withSim(m.writers, simBoard), dagActors: [...(m.dagActors ?? []), ...Object.values(simBoard).flat()], launches: { ...(m.launches ?? {}), "dagu/deliver": { skill: "deliver", machine: "deliver" }, "dagu/ci-sp-retry": { skill: "deliver", machine: "deliver" }, "dagu/cr-sweep": { skill: "triaging-cr-reviews", machine: "review_fix" } } };
       // under `&sim=1` a walking task is on the Board's Ready or Review while the walk has it there, and In Progress while it is in a phase
       const board = (id: string, st: string) => (!sim || !at[id] ? st : at[id][0] === "board" ? at[id][1] : "in_progress");
       const agents = [...f.agents, ...extra.map((e) => ({ id: e.id, title: `Simulated task ${e.id}`, state: "in_progress", model: e.model, entered: now - 3600, created: now - 7200 }))];
-      return { ...f, machine, agents: agents.map((a) => ({ ...a, state: board(a.id, a.state) })) } as typeof f;
+      return { ...f, agents: agents.map((a) => ({ ...a, state: board(a.id, a.state) })) } as typeof f;
     }
-    if (simFlow[f.name]) f = { ...f, machine: { ...f.machine, writers: withSim(f.machine.writers, simFlow[f.name]) } } as typeof f;
     // the skills a phase runs mid-way are tied by observation in a live board; the preview's history is empty, so the walk's own ties stand in
     if (walked[f.name] !== undefined) f = { ...f, last: walked[f.name], ...(simTies[f.name] && !f.ties?.length && { ties: [simTies[f.name]] }) } as typeof f;
     const mine = Object.entries(at).filter(([, [flow]]) => flow === f.name);
@@ -90,9 +62,9 @@ export function mocked(snap: Snapshot): Snapshot {
     const b = document.createElement("div");
     b.id = "mock-banner";
     b.textContent = "Simulated phases" + (extra.length ? ` · +${extra.length} tasks` : "") + (sim ? ` · ${q.get("sim") === "3" ? "2 tasks on one CI step" : `${q.get("sim") === "2" ? "2 tasks through 6 machines, " : ""}a step every ${SIM_PERIOD} s`}` : "");
-    b.title = `${pair.join(" and ")} walk the phases; DAG writers deliver, ci-sp-retry, cr-sweep, auto-rebase, ci-validate-redispatch, nightly-audit, skill-eval`;
+    b.title = `${pair.join(" and ")} walk the phases`;
     b.style.cssText = "position:fixed;right:262px;top:10px;z-index:99;padding:2px 8px;border-radius:6px;font:12px Inter,system-ui,sans-serif;color:#fbbf24;background:rgba(6,10,20,0.85);border:1px solid rgba(251,191,36,0.4);pointer-events:none";
     document.body.appendChild(b);
   }
-  return { ...snap, flows, dags };
+  return { ...snap, flows };
 }
