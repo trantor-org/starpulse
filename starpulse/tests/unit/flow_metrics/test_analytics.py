@@ -1,6 +1,7 @@
 """Board health from lane changes: dwell, WIP and throughput equal hand-computed values, an open stay counts to now."""
 
-from starpulse.flow_metrics.analytics import board_health
+from starpulse._internal.machines.stays import lane_stays
+from starpulse.flow_metrics.analytics import stay_health
 from starpulse.tests.machines import MACHINES
 
 H = 3600.0
@@ -31,7 +32,8 @@ BOARD = MACHINES["board"]
 
 
 def _health(rows=ROWS, gaps=(), window_s=WINDOW, stuck_s=STUCK) -> dict:
-    return board_health(BOARD, rows, list(gaps), now=NOW, window_s=window_s, stuck_s=stuck_s)
+    held = lane_stays(rows, start=NOW - window_s, now=NOW, stuck_s=stuck_s)
+    return stay_health(BOARD, held, list(gaps), now=NOW, window_s=window_s, stuck_s=stuck_s)
 
 
 def _states(health: dict) -> dict:

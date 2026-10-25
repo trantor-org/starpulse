@@ -29,7 +29,6 @@ from starpulse._internal.runs.github_actions import (
     start,
     starter,
     status_of,
-    workflow_run_entry,
 )
 from starpulse._internal.runs.github_actions import follow as follow_repository
 from starpulse.contracts.adapters import StartFailedError, TaskKeys
@@ -376,42 +375,7 @@ def test_a_workflow_file_that_is_not_yaml_is_an_unreadable_response_not_a_crash(
     assert run.feed.snapshot()["error"].startswith("gh: unreadable response (")
 
 
-WEBHOOK = {
-    "action": "completed",
-    "workflow_run": {
-        "id": 37517391837,
-        "path": ".github/workflows/ci.yml",
-        "status": "completed",
-        "conclusion": "success",
-        "updated_at": "2026-07-01T12:00:00Z",
-    },
-}
 AT = datetime(2026, 7, 1, 12, tzinfo=UTC).timestamp()
-
-
-def hook(**run) -> dict:
-    return {**WEBHOOK, "workflow_run": {**WEBHOOK["workflow_run"], **run}}
-
-
-@pytest.mark.parametrize(
-    ("run", "expected"),
-    [
-        ({}, ("StepFinished", "succeeded")),
-        ({"status": "in_progress", "conclusion": None}, ("StepStarted", "running")),
-        ({"status": "queued", "conclusion": None}, ("StepStarted", "queued")),
-        ({"conclusion": "cancelled"}, ("StepFinished", "aborted")),
-        ({"path": ".github/workflows/ci.yml@refs/heads/main"}, ("StepFinished", "succeeded")),
-    ],
-)
-def test_a_workflow_run_webhook_becomes_the_stream_entry_for_its_workflow_file(run: dict, expected: tuple) -> None:
-    assert workflow_run_entry(hook(**run)) == run_events.entry(
-        expected[0], "ci.yml", "37517391837", expected[1], now=AT
-    )
-
-
-def test_a_workflow_run_webhook_with_a_status_the_mapping_lacks_is_refused() -> None:
-    with pytest.raises(ValueError, match="unmapped"):
-        workflow_run_entry(hook(status="paused", conclusion=None))
 
 
 def wait_until(condition, timeout: float = 5.0) -> None:

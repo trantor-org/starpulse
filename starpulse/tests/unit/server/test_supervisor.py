@@ -16,6 +16,7 @@ from starpulse._internal.config.config import MemoryLimit, load
 from starpulse._internal.config.search import Search
 from starpulse._internal.server.hold import LISTEN_FD_ENV
 from starpulse._internal.server.supervisor import Supervisor, spawn_child, worker_commands
+from starpulse.tests.supervised import running_pids
 
 STEP = 0.25
 SLEEP = [sys.executable, "-c", "import time; time.sleep(60)"]
@@ -142,10 +143,10 @@ def test_killing_a_child_yields_a_replacement_with_a_new_pid() -> None:
     supervisor = Supervisor({"pulls": SLEEP}, first_delay=0.05, poll=0.02)
     supervisor.start()
     try:
-        first = _wait_for(lambda: supervisor.pids().get("pulls"))
+        first = _wait_for(lambda: running_pids(supervisor).get("pulls"))
         subprocess.run(["kill", "-9", str(first)], check=True)
 
-        second = _wait_for(lambda: (pid := supervisor.pids().get("pulls")) not in (None, first) and pid)
+        second = _wait_for(lambda: (pid := running_pids(supervisor).get("pulls")) not in (None, first) and pid)
 
         assert second != first
         assert _alive(second)
@@ -156,7 +157,7 @@ def test_killing_a_child_yields_a_replacement_with_a_new_pid() -> None:
 def test_stopping_the_supervisor_leaves_no_child_running() -> None:
     supervisor = Supervisor({"pulls": SLEEP, "scheduler": SLEEP}, poll=0.02)
     supervisor.start()
-    pids = _wait_for(lambda: len(supervisor.pids()) == 2 and list(supervisor.pids().values()))
+    pids = _wait_for(lambda: len(running_pids(supervisor)) == 2 and list(running_pids(supervisor).values()))
 
     supervisor.stop()
 
@@ -210,7 +211,7 @@ def test_a_child_past_its_soft_limit_is_replaced_by_a_new_one_before_the_old_one
     old, new = Spawned.made
     assert old.terminated
     assert not new.terminated
-    assert supervisor.pids() == {"pulls": new.pid}
+    assert running_pids(supervisor) == {"pulls": new.pid}
     assert "worker pulls" in caplog.text
     assert "soft" in caplog.text
 
@@ -225,7 +226,7 @@ def test_a_child_past_its_hard_limit_is_killed_and_started_again(caplog) -> None
 
     old, new = Spawned.made
     assert old.killed
-    assert supervisor.pids() == {"pulls": new.pid}
+    assert running_pids(supervisor) == {"pulls": new.pid}
     assert "worker pulls" in caplog.text
     assert "hard" in caplog.text
 
@@ -237,7 +238,7 @@ def test_a_limited_child_that_exited_is_not_sampled_while_it_waits_to_start_agai
 
     supervisor.tick(1.5)  # exits, then waits out its restart delay with no process to sample
 
-    assert supervisor.pids() == {}
+    assert running_pids(supervisor) == {}
 
 
 def test_a_child_is_sampled_no_oftener_than_the_interval() -> None:
@@ -259,7 +260,7 @@ def test_a_limited_child_that_exits_at_startup_is_restarted_after_its_delay() ->
     supervisor.tick(2.0)  # noted dead, due at +5s, and sampled while it waits
     supervisor.tick(7.0)
 
-    assert supervisor.pids() == {"pulls": 1001}
+    assert running_pids(supervisor) == {"pulls": 1001}
 
 
 def test_without_a_memory_reader_one_warning_is_logged_and_children_run_unlimited(caplog) -> None:

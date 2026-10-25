@@ -442,8 +442,7 @@ run_safe = ["ui-preview.yml"]
 - **Events.** The repository is read every 60 s: the workflow list and the repository's latest runs, two calls however
   many workflows it has, and a workflow again only when it is new, its file or latest run changed, or its latest run has
   not ended (its jobs move without the run moving). A quiet repository costs about 120 calls an hour. A `workflow_run`
-  webhook, mapped with `starpulse._internal.runs.github_actions.workflow_run_entry` and sent to the ingest, reads that workflow again at once; the adapter does not receive webhooks itself, so a deployment
-  with no relay GitHub can reach shows a run within the 60 s.
+  the adapter does not receive webhooks itself, so a deployment with no relay GitHub can reach shows a run within the 60 s.
 
 ## systemd timers
 

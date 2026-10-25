@@ -1,6 +1,6 @@
 """Board health from a history's lane changes: dwell and WIP per state, throughput and stuck tasks over a window.
 
-`board_health` is a pure function of the lane changes the history keeps (`HealthHistory.lane_rows`), a lane named by
+`stay_health` is a pure function of the lane stays the history keeps (`lane_stays` over `HealthHistory.lane_rows`), a lane named by
 its state's name or id, so a fixture history gives numbers that can be worked out by hand. A task's stay in a state
 runs from the lane change into it to the next change; the stay of a task still in its state has no end, so it is
 counted to `now` and flagged (`open`, `counted_to_now`). History begins at a task's first recorded change: where the
@@ -10,21 +10,11 @@ task was before it is unknown, so that earlier stay is not counted.
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Iterable
 from typing import Any
 
-from starpulse._internal.machines.stays import Dwell, LaneRow, LaneStays, lane_stays
+from starpulse._internal.machines.stays import Dwell, LaneStays
 
 _DAY_S = 86400.0
-
-
-def board_health(
-    machine: dict, rows: Iterable[LaneRow], gaps: list[dict], *, now: float, window_s: float, stuck_s: float
-) -> dict[str, Any]:
-    """The Board `machine`'s health over the last `window_s` seconds up to `now`, from lane changes `rows`; see
-    `stay_health`."""
-    held = lane_stays(rows, start=now - window_s, now=now, stuck_s=stuck_s)
-    return stay_health(machine, held, gaps, now=now, window_s=window_s, stuck_s=stuck_s)
 
 
 def stay_health(

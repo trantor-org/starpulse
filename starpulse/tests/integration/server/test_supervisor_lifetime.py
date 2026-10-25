@@ -36,12 +36,13 @@ DRIVER = """
 import sys, time
 from starpulse._internal.server.supervisor import Supervisor, spawn_child
 from starpulse._internal.server.zygote import Forker
+from starpulse.tests.supervised import running_pids
 forker = Forker([], entry="starpulse.tests.zygote_entry:main")
 spawn = forker if sys.argv[1] == "forked" else spawn_child
 supervisor = Supervisor({"w": sys.argv[2:]}, spawn=spawn, poll=0.02)
 supervisor.start()
 try:
-    print(supervisor.pids()["w"], flush=True)
+    print(running_pids(supervisor)["w"], flush=True)
     time.sleep(60)
 except KeyboardInterrupt:
     pass

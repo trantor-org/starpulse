@@ -12,6 +12,7 @@ import pytest
 import starpulse._internal.server.supervisor as supervisor_module
 from starpulse._internal.server.closure import SELF, Reading, ReloadError
 from starpulse._internal.server.supervisor import Supervisor
+from starpulse.tests.supervised import running_pids
 
 NAMES = ("pulls", "scheduler")
 
@@ -89,12 +90,12 @@ def supervisor(install: Install, executed: list[bool]) -> Iterator[Supervisor]:
 def test_a_change_in_only_the_scheduler_closure_replaces_only_the_scheduler_child(
     supervisor: Supervisor, install: Install
 ) -> None:
-    before = supervisor.pids()
+    before = running_pids(supervisor)
     install.now["scheduler"] = reading(code="v2")
 
     report = supervisor.reload()
 
-    after = supervisor.pids()
+    after = running_pids(supervisor)
     assert report == {"supervisor": "kept", "children": {"pulls": "kept", "scheduler": "replaced"}}
     assert after["pulls"] == before["pulls"]
     assert after["scheduler"] != before["scheduler"]
@@ -105,14 +106,14 @@ def test_a_change_in_only_the_scheduler_closure_replaces_only_the_scheduler_chil
 def test_a_change_to_only_the_pulls_config_block_keeps_the_pid_and_asks_it_to_reload(
     supervisor: Supervisor, install: Install
 ) -> None:
-    before = supervisor.pids()
+    before = running_pids(supervisor)
     install.now["pulls"] = reading(live="new config")
 
     report = supervisor.reload()
 
     pulls, scheduler = Child.made
     assert report == {"supervisor": "kept", "children": {"pulls": "reloaded", "scheduler": "kept"}}
-    assert supervisor.pids() == before
+    assert running_pids(supervisor) == before
     assert (pulls.signals, scheduler.signals) == ([signal.SIGHUP], [])
     assert not pulls.ended
 
@@ -181,13 +182,13 @@ def test_a_child_waiting_to_restart_is_started_at_once_when_its_closure_changed(
     pulls, _ = Child.made
     pulls.ended = True
     supervisor.tick(1.0)  # notes the exit; the child is due again only at 2.0
-    assert "pulls" not in supervisor.pids()
+    assert "pulls" not in running_pids(supervisor)
     install.now["pulls"] = reading(code="v2")
 
     report = supervisor.reload()
 
     assert report["children"]["pulls"] == "replaced"
-    assert supervisor.pids()["pulls"] == Child.made[-1].pid
+    assert running_pids(supervisor)["pulls"] == Child.made[-1].pid
 
 
 def test_a_supervisor_whose_baseline_could_not_be_read_replaces_its_children_on_the_first_reload(
@@ -327,12 +328,12 @@ def test_a_reload_whose_definitions_are_refused_changes_nothing(install: Install
     running = Supervisor({name: [name] for name in NAMES}, spawn=Child, read=install, admit=refuse, poll=60.0)
     running.start()
     try:
-        before = running.pids()
+        before = running_pids(running)
         install.now["scheduler"] = reading(code="v2")
 
         with pytest.raises(ReloadError, match=r"doing \(TASK-1\)"):
             running.reload()
 
-        assert running.pids() == before
+        assert running_pids(running) == before
     finally:
         running.stop()
