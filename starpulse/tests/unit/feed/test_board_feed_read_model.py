@@ -305,3 +305,34 @@ def test_a_board_card_carries_the_description_and_criteria_the_modal_draws_first
     (card,) = _board(_feed(engine))["agents"]
 
     assert (card["description"], card["criteria"]) == ("Draw at once.", [{"text": "Tests pass", "checked": False}])
+
+
+def test_a_read_model_task_carries_the_profile_its_record_keeps_in_meta(engine: Engine) -> None:
+    """The session-start service routes a Task to its profile's model; an empty profile starts the harness default."""
+    meta = {"profile": "@agent-fast-high"}
+    created = _new("TaskCreated", title="Task 1", description="", state="Ready", labels=[], meta=meta)
+    EventStore(engine).append("task", "TASK-1", 0, [created])
+    _append(engine, 2, "Ready")
+    feed = _feed(engine)
+
+    task = feed.task("TASK-1")
+
+    assert task is not None
+    assert (task["profile"], task["model"]) == ("@agent-fast-high", "@agent-fast-high")
+    assert [(agent["id"], agent["profile"], agent["model"]) for agent in feed.open_tasks()] == [
+        ("TASK-1", "@agent-fast-high", "@agent-fast-high"),
+        ("TASK-2", None, ""),
+    ]
+
+
+def test_a_profile_edit_reaches_the_read_model_task(engine: Engine) -> None:
+    _append(engine, 1, "Ready")
+    feed = _feed(engine)
+
+    EventStore(engine).append("task", "TASK-1", 1, [_new("FieldsEdited", meta={"profile": "@agent-deep-low"})])
+    Projector(engine, EventStore(engine)).catch_up()
+
+    task = feed.task("TASK-1")
+    assert task is not None
+    assert task["profile"] == "@agent-deep-low"
+    assert [agent["profile"] for agent in feed.open_tasks()] == ["@agent-deep-low"]
