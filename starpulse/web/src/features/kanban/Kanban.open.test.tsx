@@ -61,6 +61,30 @@ afterEach(() => {
 });
 
 describe("opening a task's modal", () => {
+  it("reads the record when a card is pressed or focused, before the click lands", async () => {
+    act(() => void cardOf("TASK-1").dispatchEvent(new MouseEvent("pointerdown", { bubbles: true })));
+    await settle();
+    expect(fetched).toEqual(["/api/task/TASK-1"]);
+
+    act(() => cardOf("TASK-2").focus());
+    await settle();
+    expect(fetched).toEqual(["/api/task/TASK-1", "/api/task/TASK-2"]);
+  });
+
+  it("draws the held record's notes at once when it is past the fresh window, then reads it again", async () => {
+    hover(cardOf("TASK-1"));
+    await settle();
+    const fresh = vi.spyOn(RecordCache.prototype, "fresh").mockReturnValue(undefined);
+    try {
+      act(() => cardOf("TASK-1").click());
+      expect(dialog()?.textContent).toContain("the full record's notes");
+      await settle();
+      expect(fetched).toHaveLength(2);
+    } finally {
+      fresh.mockRestore();
+    }
+  });
+
   it("reads the record while the pointer rests on the card, so the click draws the full record without another request", async () => {
     hover(cardOf("TASK-1"));
     await settle();
