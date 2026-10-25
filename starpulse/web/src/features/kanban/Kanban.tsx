@@ -388,7 +388,7 @@ export function StartQuestion({ asking, harnesses, names, canStart, pick, start,
               <div className="row"><span className="lb">Runs</span><span className="runs">{runsOn(p, harnesses).replace(/^runs /, "")}</span></div>
               <div className="row">
                 <span className="lb">Assignee</span>
-                <span><code>{assignee}</code>{assignee !== task.assignee && <span className="was">was {task.assignee || "unassigned"} · saved on start</span>}</span>
+                <span><code>{assignee}</code>{assignee !== (task.profile ?? task.assignee) && <span className="was">was {(task.profile ?? task.assignee) || "unassigned"} · saved on start</span>}</span>
               </div>
             </>
           )}

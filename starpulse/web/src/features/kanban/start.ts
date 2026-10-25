@@ -84,7 +84,7 @@ export function choose(pick: Pick, h: Harnesses, change: Partial<Pick>): Pick {
   return { ...next, effort: efforts.includes(DEFAULT.effort) ? DEFAULT.effort : efforts[efforts.length - 1] };
 }
 
-/** The question's starting pick: the task's assignee when it names a tier the harness has, else `@agent-standard-high`. */
+/** The question's starting pick: the task's profile when it names a tier the harness has, else `@agent-standard-high`. */
 export function defaultPick(assignee: string, h: Harnesses): Pick {
   const harness = (h.harnesses.find((x) => x.sessions) ?? h.harnesses[0])?.name ?? "";
   const [, tier, effort = ""] = PROFILE.exec(assignee) ?? [];
@@ -150,7 +150,7 @@ export class StartStore {
   /** Ask how `task` starts; nothing for a task no session can start or one already waiting for its claim. */
   ask(task: KanbanTask, via: Via, roles: Roles) {
     if (!roles.working || !startable(task, roles) || this.state.claiming[task.id]) return;
-    this.set({ asking: { task, via, pick: defaultPick(task.assignee, this.state.harnesses), working: roles.working } });
+    this.set({ asking: { task, via, pick: defaultPick(task.profile ?? task.assignee, this.state.harnesses), working: roles.working } });
   }
 
   pick(change: Partial<Pick>) {
