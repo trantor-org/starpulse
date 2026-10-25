@@ -18,13 +18,13 @@ import subprocess
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Protocol
 
-from starpulse._internal.ci.ci_trail import PullHistory, parse
+from starpulse.pulls.ci_trail import PullHistory, parse
 from starpulse._internal.config.config import Repo
 from starpulse._internal.config.pins import GitHub, Pins, link
 from starpulse._internal.feed.board_feed import BoardFeed
 
 if TYPE_CHECKING:  # annotation only: the pull store opens the database stack
-    from starpulse._internal.pulls.pulls import PullStore
+    from starpulse.pulls.pulls import PullStore
 
 logger = logging.getLogger(__name__)
 

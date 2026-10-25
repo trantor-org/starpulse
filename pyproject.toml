@@ -84,11 +84,11 @@ layers = [
     "starpulse._internal.server",
     "starpulse._internal.cli",
     # producers
-    "starpulse._internal.pulls | starpulse._internal.scheduler",
-    "starpulse._internal.board | starpulse._internal.runs | starpulse._internal.harnesses",
+    "starpulse.pulls | starpulse._internal.scheduler",
+    "starpulse._internal.board | starpulse.runs | starpulse._internal.harnesses",
     # derived
     "starpulse.flow_metrics",
-    "starpulse._internal.feed | starpulse._internal.ci",
+    "starpulse._internal.feed",
     # core
     "starpulse.event_log",
     "starpulse._internal.config | starpulse.machine_engine | starpulse.github | starpulse._internal.signals",
@@ -103,10 +103,10 @@ type = "forbidden"
 # encodes them, and the kit drives a server. Every other tier reads `contracts.adapters` and the rest of `contracts`.
 source_modules = [
     "starpulse._internal.cli",
-    "starpulse._internal.pulls", "starpulse._internal.scheduler",
-    "starpulse._internal.board", "starpulse._internal.runs", "starpulse._internal.harnesses",
+    "starpulse.pulls", "starpulse._internal.scheduler",
+    "starpulse._internal.board", "starpulse.runs", "starpulse._internal.harnesses",
     "starpulse.flow_metrics",
-    "starpulse._internal.feed", "starpulse._internal.ci",
+    "starpulse._internal.feed",
     "starpulse.event_log",
     "starpulse._internal.config", "starpulse.machine_engine", "starpulse.github",
     "starpulse._internal.signals",
@@ -148,8 +148,8 @@ forbidden_modules = [
     "starpulse._internal.scheduler",
     "starpulse.flow_metrics",
     "starpulse._internal.harnesses",
-    "starpulse._internal.pulls", "starpulse._internal.ci",
-    "starpulse._internal.runs",
+    "starpulse.pulls",
+    "starpulse.runs",
 ]
 
 # Bounded contexts: one per StarPulse context, id `context-<glossary slug>`.
@@ -167,8 +167,8 @@ forbidden_modules = [
     "starpulse._internal.scheduler",
     "starpulse.flow_metrics",
     "starpulse._internal.harnesses",
-    "starpulse._internal.pulls", "starpulse._internal.ci",
-    "starpulse._internal.runs",
+    "starpulse.pulls",
+    "starpulse.runs",
 ]
 
 [[tool.importlinter.contracts]]
@@ -183,8 +183,8 @@ forbidden_modules = [
     "starpulse._internal.scheduler",
     "starpulse.flow_metrics",
     "starpulse._internal.harnesses",
-    "starpulse._internal.pulls", "starpulse._internal.ci",
-    "starpulse._internal.runs",
+    "starpulse.pulls",
+    "starpulse.runs",
 ]
 
 [[tool.importlinter.contracts]]
@@ -200,8 +200,8 @@ type = "forbidden"
 allow_indirect_imports = true
 source_modules = ["starpulse._internal.scheduler"]
 forbidden_modules = [
-    "starpulse._internal.pulls", "starpulse._internal.ci",
-    "starpulse._internal.runs",
+    "starpulse.pulls",
+    "starpulse.runs",
 ]
 
 [[tool.importlinter.contracts]]
@@ -213,7 +213,7 @@ source_modules = ["starpulse.flow_metrics"]
 forbidden_modules = [
     "starpulse._internal.scheduler",
     "starpulse._internal.harnesses",
-    "starpulse._internal.pulls", "starpulse._internal.ci",
+    "starpulse.pulls",
 ]
 
 [[tool.importlinter.contracts]]
@@ -226,21 +226,21 @@ forbidden_modules = [
     "starpulse._internal.board", "starpulse._internal.feed",
     "starpulse._internal.scheduler",
     "starpulse.flow_metrics",
-    "starpulse._internal.pulls", "starpulse._internal.ci",
-    "starpulse._internal.runs",
+    "starpulse.pulls",
+    "starpulse.runs",
 ]
 
 [[tool.importlinter.contracts]]
-id = "context-delivery"
-name = "Delivery imports only Board among StarPulse contexts"
+id = "context-pulls"
+name = "Pulls imports only Board among StarPulse contexts"
 type = "forbidden"
 allow_indirect_imports = true
-source_modules = ["starpulse._internal.pulls", "starpulse._internal.ci"]
+source_modules = ["starpulse.pulls"]
 forbidden_modules = [
     "starpulse._internal.scheduler",
     "starpulse.flow_metrics",
     "starpulse._internal.harnesses",
-    "starpulse._internal.runs",
+    "starpulse.runs",
 ]
 
 [[tool.importlinter.contracts]]
@@ -248,12 +248,12 @@ id = "context-runs"
 name = "Runs imports only Board among StarPulse contexts"
 type = "forbidden"
 allow_indirect_imports = true
-source_modules = ["starpulse._internal.runs"]
+source_modules = ["starpulse.runs"]
 forbidden_modules = [
     "starpulse._internal.scheduler",
     "starpulse.flow_metrics",
     "starpulse._internal.harnesses",
-    "starpulse._internal.pulls", "starpulse._internal.ci",
+    "starpulse.pulls",
 ]
 
 [tool.pytest.ini_options]

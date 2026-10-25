@@ -20,7 +20,7 @@ from urllib.parse import quote
 
 import yaml
 
-from starpulse._internal.runs import run_events
+from starpulse.runs import run_events
 from starpulse.contracts.adapters import RunsSink, RunStatus, StartFailedError
 from starpulse.event_log.event_log import EventLog, Tail
 from starpulse.event_log.polling import DEFAULT_POLL_INTERVAL
@@ -368,7 +368,7 @@ class GitHubRuns:
 #: Seconds between two readings of a followed repository; a workflow file added since the last one shows at the next.
 #: A reading of a repository where no run changed is two calls, so this is also GitHub's only cost while it is quiet.
 RECONCILE_INTERVAL = 60.0
-#: The opt-in worker that runs this adapter (`starpulse._internal.runs.opt_in`): `serve` runs none of it.
+#: The opt-in worker that runs this adapter (`starpulse.runs.opt_in`): `serve` runs none of it.
 WORKER = "github-actions"
 
 

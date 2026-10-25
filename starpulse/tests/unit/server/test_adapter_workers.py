@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from starpulse._internal.config.config import load
-from starpulse._internal.runs import dagu, github_actions, opt_in, projection, systemd
+from starpulse.runs import dagu, github_actions, opt_in, projection, systemd
 from starpulse._internal.server import adapter_worker, runs_worker, server, supervisor, worker
 from starpulse.event_log.event_log import EventLog
 from starpulse.tests import fake_board

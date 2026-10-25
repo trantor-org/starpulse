@@ -637,7 +637,7 @@ def test_an_instance_is_read_by_the_adapter_module_its_type_names() -> None:
 
     module = _adapter(parser, RunsInstance("ci", "dagu", "http://ci.test"))
 
-    assert module.__name__ == "starpulse._internal.runs.dagu"
+    assert module.__name__ == "starpulse.runs.dagu"
 
 
 def test_an_instance_type_that_is_not_a_runs_adapter_exits_naming_the_instance(

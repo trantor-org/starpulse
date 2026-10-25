@@ -15,8 +15,8 @@ from starpulse._internal.feed import board_feed
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.harnesses.harness import HARNESS_MACHINES
 from starpulse._internal.kit.adapter_kit import task
-from starpulse._internal.pulls.pull_events import RecordProjection
-from starpulse._internal.pulls.pulls import PullStore
+from starpulse.pulls.pull_events import RecordProjection
+from starpulse.pulls.pulls import PullStore
 from starpulse._internal.scheduler.ledger import Ledger
 from starpulse._internal.scheduler.loop import Loop
 from starpulse._internal.scheduler.sampler import Sampler

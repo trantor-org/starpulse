@@ -65,7 +65,7 @@ if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler i
     from starpulse._internal.board.seam import Board
     from starpulse._internal.feed.board_feed import BoardFeed
     from starpulse._internal.feed.history_window import HistoryWindow
-    from starpulse._internal.pulls.pulls import PullStore
+    from starpulse.pulls.pulls import PullStore
     from starpulse._internal.server.services import Services
     from starpulse._internal.server.snapshot_cache import SnapshotCache
     from starpulse.flow_metrics.history import History

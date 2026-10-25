@@ -15,9 +15,9 @@ from sqlalchemy import create_engine
 
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import serve, url
-from starpulse._internal.pulls.pull_refresh import PullRefresh
-from starpulse._internal.pulls.pull_store import PullSync, refresh_pull
-from starpulse._internal.pulls.pulls import PullStore
+from starpulse.pulls.pull_refresh import PullRefresh
+from starpulse.pulls.pull_store import PullSync, refresh_pull
+from starpulse.pulls.pulls import PullStore
 from starpulse._internal.server.page_server import PageServer
 from starpulse.tests.unit.pulls.test_pull_store import NEW, REPO, Github
 

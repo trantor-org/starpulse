@@ -477,11 +477,11 @@ url = "systemd-tmpfiles-clean, apt-daily.timer, user/claude-sessions-snapshot"
 
 ## Show pull requests and Copilot work
 
-`python -m starpulse._internal.pulls.github` reads a repository's 30 most recently updated pull requests every `--interval` seconds
+`python -m starpulse.pulls.github` reads a repository's 30 most recently updated pull requests every `--interval` seconds
 (300 by default) and appends their events to the event log, beside the server:
 
 ```sh
-uvx --from starpulse python -m starpulse._internal.pulls.github --repo trantor-org/starpulse
+uvx --from starpulse python -m starpulse.pulls.github --repo trantor-org/starpulse
 ```
 
 - **`github-pull-request` machine.** `PR_OPENED`, then `CHECKS_PASSED` or `CHECKS_FAILED` once every check run on the

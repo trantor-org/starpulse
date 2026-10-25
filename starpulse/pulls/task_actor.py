@@ -33,11 +33,11 @@ from starpulse._internal.config.config import Repo
 from starpulse._internal.config.pins import LiveBuild, Pins
 from starpulse._internal.feed import criteria
 from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.pulls.pull_requests import PULL_URL
-from starpulse._internal.pulls.unblock import PinGate
+from starpulse.pulls.pull_requests import PULL_URL
+from starpulse.pulls.unblock import PinGate
 
 if TYPE_CHECKING:  # annotation only: the pull store opens the database stack
-    from starpulse._internal.pulls.pulls import PullStore
+    from starpulse.pulls.pulls import PullStore
 
 logger = logging.getLogger(__name__)
 

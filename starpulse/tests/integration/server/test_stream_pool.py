@@ -16,7 +16,7 @@ from sqlalchemy import create_engine
 
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import next_event, serve, url
-from starpulse._internal.pulls.pulls import PullStore
+from starpulse.pulls.pulls import PullStore
 from starpulse._internal.server import asgi_app
 from starpulse._internal.server.page_server import PageServer
 from starpulse.tests.machines import MACHINES, ROLES

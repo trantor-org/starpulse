@@ -566,7 +566,7 @@ def _unlisted_writers(config: Config, base: Path) -> list[str]:
     Only the built-in boards draw `.starpulse/machines/`; Jira draws its own workflow and a dotted type is unknown here.
     """
     from starpulse._internal.board import project_machines  # noqa: PLC0415 - import cost, paid on first use
-    from starpulse._internal.pulls.task_actor import ACTOR  # noqa: PLC0415 - import cost, paid on first use
+    from starpulse.pulls.task_actor import ACTOR  # noqa: PLC0415 - import cost, paid on first use
     from starpulse.machine_engine.adapters.machine_loader import (  # noqa: PLC0415 - import cost, paid on first use
         load_machine,
     )

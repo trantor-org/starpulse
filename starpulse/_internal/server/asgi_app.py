@@ -33,8 +33,8 @@ from starlette.routing import Route
 from starpulse._internal.board.seam import Board
 from starpulse._internal.config.harnesses import Harnesses
 from starpulse._internal.feed.history_window import HistoryWindow
-from starpulse._internal.runs.cloudevents_grpc import PATH as CLOUDEVENTS_GRPC_PATH
-from starpulse._internal.runs.cloudevents_grpc import cloudevents_grpc
+from starpulse.runs.cloudevents_grpc import PATH as CLOUDEVENTS_GRPC_PATH
+from starpulse.runs.cloudevents_grpc import cloudevents_grpc
 from starpulse._internal.server.compression import LEVEL, Encoded, accepts_gzip, compressed, gzip_frames
 from starpulse._internal.server.encoding import encode, event
 from starpulse._internal.server.gate_request import GateRequest

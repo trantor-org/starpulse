@@ -10,8 +10,8 @@ from starpulse._internal.board.seam import Written
 from starpulse._internal.config.config import Repo
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.feed.criteria import authored
-from starpulse._internal.pulls.pulls import PullStore
-from starpulse._internal.pulls.task_actor import TaskActor
+from starpulse.pulls.pulls import PullStore
+from starpulse.pulls.task_actor import TaskActor
 from starpulse.contracts.adapters import BoardTask
 
 PR_ONE = "https://github.com/acme/trantor/pull/1"

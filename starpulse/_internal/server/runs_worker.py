@@ -2,7 +2,7 @@
 `serve`.
 
 It reads the config and the history database `serve` does and meets `serve` only in the event log: the workflows each
-adapter reports are kept there (`starpulse._internal.runs.projection`) for the page. What a restart must keep is in
+adapter reports are kept there (`starpulse.runs.projection`) for the page. What a restart must keep is in
 that log and the history store (the pushed runs, the learned step graphs), so a new process resumes where the last
 stopped and drops or repeats no run entry. `SIGTERM` stops it; `SIGHUP` re-reads the config and, as the adapters are
 built once, only says whether a restart is needed.
@@ -18,10 +18,10 @@ from pathlib import Path
 from starpulse._internal.server.blocks import runs_built_blocks
 from starpulse._internal.config.config import Config, discover, load
 from starpulse._internal.feed.board_feed import follow
-from starpulse._internal.runs import opt_in, run_events
-from starpulse._internal.runs.projection import Publisher
-from starpulse._internal.runs.push_runs import PUSHED_INSTANCE, PushRuns
-from starpulse._internal.runs.run_streams import RunStreams, record_run_streams
+from starpulse.runs import opt_in, run_events
+from starpulse.runs.projection import Publisher
+from starpulse.runs.push_runs import PUSHED_INSTANCE, PushRuns
+from starpulse.runs.run_streams import RunStreams, record_run_streams
 from starpulse._internal.server.assembly import history_store, worker_board
 from starpulse._internal.server.hold import hold
 from starpulse._internal.server.server import run_adapters

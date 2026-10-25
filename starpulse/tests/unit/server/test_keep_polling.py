@@ -9,8 +9,8 @@ from sqlalchemy import create_engine
 
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import task
-from starpulse._internal.pulls.pull_store import PullSync
-from starpulse._internal.pulls.pulls import PullStore
+from starpulse.pulls.pull_store import PullSync
+from starpulse.pulls.pulls import PullStore
 from starpulse._internal.server import server
 from starpulse.tests.unit.pulls.test_pull_store import Github
 

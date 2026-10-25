@@ -24,14 +24,14 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, get_args
 
-from starpulse._internal.runs import run_events
+from starpulse.runs import run_events
 from starpulse.contracts.adapters import RunsSink, RunStatus, StartFailedError
 from starpulse.event_log.event_log import EventLog, Tail
 from starpulse.event_log.polling import DEFAULT_POLL_INTERVAL
 
 #: Seconds between two listings of a followed Dagu instance.
 RECONCILE_INTERVAL = 30.0
-#: The opt-in worker that runs this adapter (`starpulse._internal.runs.opt_in`): `serve` runs none of it.
+#: The opt-in worker that runs this adapter (`starpulse.runs.opt_in`): `serve` runs none of it.
 WORKER = "dagu"
 
 #: Each status label Dagu reports (plus `skipped` for a step) and the status it becomes.

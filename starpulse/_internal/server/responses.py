@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     from starpulse._internal.feed.board_feed import BoardFeed
     from starpulse._internal.feed.search import SearchIndex
-    from starpulse._internal.pulls.pulls import PullStore
+    from starpulse.pulls.pulls import PullStore
     from starpulse.flow_metrics.history import History
 
 

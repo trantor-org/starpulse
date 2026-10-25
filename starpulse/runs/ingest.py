@@ -8,7 +8,7 @@ from collections.abc import Iterable, Mapping
 from typing import Any, get_args
 
 from starpulse._internal.config.config import Producer
-from starpulse._internal.runs import run_events
+from starpulse.runs import run_events
 from starpulse.contracts.adapters import RunStatus
 
 #: The largest event body accepted: a run event is a few hundred bytes, so this only stops a sender filling memory.
