@@ -193,15 +193,18 @@ def _writer(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, s
 
 
 def move(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    """Move the task as the agent: the server's verdict, or an error when no board writer can answer."""
+    """Move the task, or each of several tasks in one batch write, as the agent: the server's verdict, or an error when
+    no board writer can answer. A batch answers the tasks moved, or a refusal naming each refused task with its reason."""
     base = agent_wire.server_url(args.server, environ)
-    body = {"task": args.task, "to": args.to, **_writer(args, environ)}
+    if len(args.task) > 1:
+        return _move_each(args, environ, base)
+    body = {"task": args.task[0], "to": args.to, **_writer(args, environ)}
     status, reply = agent_wire.post(base, "/api/move", body)
     message = reply.get("error") or f"{base} answered {status} for /api/move"
     if status == 200:
         return {
             "ok": True,
-            "task": args.task,
+            "task": args.task[0],
             "to": args.to,
             "reason": "",
             "skill": "",
@@ -210,7 +213,7 @@ def move(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]
     if status == 409:
         return {
             "ok": False,
-            "task": args.task,
+            "task": args.task[0],
             "to": args.to,
             "reason": message,
             "skill": reply.get("skill", ""),
@@ -221,6 +224,18 @@ def move(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]
     if status in (400, 403):
         raise agent_wire.CliError("refused", message)
     raise agent_wire.CliError("unavailable", f"{base}: {message}")
+
+
+def _move_each(args: argparse.Namespace, environ: Mapping[str, str], base: str) -> dict[str, Any]:
+    """Move each of `args.task` to `args.to` in one request: the tasks moved, or a refusal naming each refused task."""
+    body = {"tasks": args.task, "to": args.to, **_writer(args, environ)}
+    status, reply = agent_wire.post(base, "/api/move", body)
+    answer = _record_call(base, "/api/move", status, reply, missing=_TASK_MISSING)
+    moved, refused = answer["moved"], answer["refused"]
+    if refused:
+        message = f"{len(refused)} of {len(args.task)} tasks refused: {', '.join(refused)}"
+        raise agent_wire.CliError("refused", message, moved=moved, refused=refused)
+    return {"moved": moved}
 
 
 def _lifecycle(

@@ -54,10 +54,40 @@ def _page_move(server: str) -> tuple[int, dict[str, Any]]:
         return error.code, json.loads(error.read())
 
 
+def _batch_move(server: str, tasks: list[str], to: str) -> tuple[int, dict[str, Any]]:
+    """The page's move of each of `tasks` to `to` in one request, the way the agent CLI names several."""
+    post = urllib.request.Request(
+        f"{server}/api/move",
+        data=json.dumps({"tasks": tasks, "to": to}).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(post, timeout=5) as response:
+            return response.status, json.loads(response.read())
+    except urllib.error.HTTPError as error:
+        return error.code, json.loads(error.read())
+
+
 def _cli_move(server: str, capsys: pytest.CaptureFixture[str]) -> tuple[int, dict[str, Any]]:
     """The agent CLI's move of task-1 to Done, which the server writes as the agent."""
     code = cli.main(["task", "move", "task-1", "done", "--server", server], {})
     return code, json.loads(capsys.readouterr().out)
+
+
+def test_a_batch_move_answers_each_task_with_its_own_verdict(tmp_path: Path) -> None:
+    native.board({}, tmp_path)
+    write_task(tmp_path, "task-1", "In Progress")
+    write_task(tmp_path, "task-2", "In Progress")
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
+    feed.put(task("task-1", "In Progress", moves={"done": Move(allowed=True)}))
+    feed.put(task("task-2", "In Progress", moves={}))
+    with serve(tmp_path, feed, native.board({}, tmp_path)) as server:
+        status, body = _batch_move(url(server, ""), ["task-1", "task-2"], "done")
+
+    assert status == 200
+    assert body["moved"] == ["task-1"]
+    assert list(body["refused"]) == ["task-2"]
 
 
 def test_a_configured_rule_refuses_the_same_move_from_the_cli_and_the_page_with_the_same_reason(

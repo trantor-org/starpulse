@@ -38,10 +38,17 @@ class _Writer(_Api):
 
 
 class MoveRequest(_Writer):
-    """`POST /api/move`: move `task` to the column `to`."""
+    """`POST /api/move`: move `task`, or each of `tasks` in one call, to the column `to`."""
 
-    task: str
+    task: str | None = None
+    tasks: list[NonBlank] | None = Field(None, min_length=1)
     to: str
+
+    @model_validator(mode="after")
+    def _one_target(self) -> MoveRequest:
+        if (self.task is None) == (self.tasks is None):
+            raise ValueError("name exactly one of task and tasks")
+        return self
 
 
 class StartRequest(_Api):

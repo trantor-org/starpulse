@@ -797,6 +797,22 @@ def test_task_move_writes_as_the_agent_and_reports_the_move(
     assert writer.sent == [("PROJ-6", "Review", "agent")]
 
 
+def test_task_move_of_several_ids_sends_one_request_and_reports_each_outcome(
+    tmp_path: Path, writer: _Writer, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    feed = _moving_board()
+    feed.put(task("PROJ-7", "In Progress", moves={"ready": Move(allowed=True, writers=("operator",))}))
+    posts: list[str] = []
+    post = agent_wire.post
+    monkeypatch.setattr(agent_wire, "post", lambda base, path, body: posts.append(path) or post(base, path, body))
+    with _serve(tmp_path, feed, bare_board(writer=writer)) as server:
+        code, doc = _run(capsys, ["task", "move", "PROJ-6", "PROJ-7", "review", "--server", _url(server, "")])
+
+    assert (code, doc["moved"], list(doc["refused"])) == (1, ["PROJ-6"], ["PROJ-7"])
+    assert posts == ["/api/move"]
+    assert writer.sent == [("PROJ-6", "Review", "agent")]
+
+
 def test_task_move_names_the_session_from_its_flag_or_the_environment_and_reports_the_advice(
     movable: str, writer: _Writer, capsys: pytest.CaptureFixture[str]
 ) -> None:

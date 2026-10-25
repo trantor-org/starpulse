@@ -747,12 +747,12 @@ def _parser() -> argparse.ArgumentParser:
     move = leaf(
         task_verbs,
         "move",
-        "move a task to a column as the agent; a refusal is the guard's verdict with its reason and skill",
+        "move a task to a column as the agent; a refusal is the guard's verdict with its reason and skill; several tasks move in one call",
         agent_tasks.move,
         MOVE_KEYS,
         (0, 1, 2, 3, 4),
     )
-    move.add_argument("task", help="the task's key (`PROJ-45`)")
+    move.add_argument("task", nargs="+", help="each task's key (`PROJ-45`); several move in one call")
     move.add_argument("to", help="the column's state id (`review`), as `task moves` lists")
     agent_tasks.writer_flags(move)
     claim = leaf(

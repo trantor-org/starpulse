@@ -3875,7 +3875,7 @@
     },
     "MoveRequest": {
       "additionalProperties": false,
-      "description": "`POST /api/move`: move `task` to the column `to`.",
+      "description": "`POST /api/move`: move `task`, or each of `tasks` in one call, to the column `to`.",
       "properties": {
         "actor": {
           "anyOf": [
@@ -3911,14 +3911,36 @@
           "default": null
         },
         "task": {
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "tasks": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "to": {
           "type": "string"
         }
       },
       "required": [
-        "task",
         "to"
       ],
       "title": "MoveRequest",
@@ -3950,6 +3972,30 @@
         "to"
       ],
       "title": "Moved",
+      "type": "object"
+    },
+    "MovedEach": {
+      "additionalProperties": false,
+      "description": "A batch move's answer: the tasks it moved, and each refused task with why.",
+      "properties": {
+        "moved": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "refused": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "moved",
+        "refused"
+      ],
+      "title": "MovedEach",
       "type": "object"
     },
     "Norm": {
@@ -8014,6 +8060,9 @@
         "anyOf": [
           {
             "$ref": "#/$defs/Moved"
+          },
+          {
+            "$ref": "#/$defs/MovedEach"
           },
           {
             "$ref": "#/$defs/Edited"

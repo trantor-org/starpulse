@@ -6,6 +6,7 @@
 export interface ApiContract {
   answers: (
     | Moved
+    | MovedEach
     | Edited
     | Archived
     | ArchivedEach
@@ -101,6 +102,15 @@ export interface Moved {
   advice?: string | null;
   task: string;
   to: string;
+}
+/**
+ * A batch move's answer: the tasks it moved, and each refused task with why.
+ */
+export interface MovedEach {
+  moved: string[];
+  refused: {
+    [k: string]: string;
+  };
 }
 export interface Edited {
   changed: string[];
@@ -1416,13 +1426,14 @@ export interface PullThread {
   id: string;
 }
 /**
- * `POST /api/move`: move `task` to the column `to`.
+ * `POST /api/move`: move `task`, or each of `tasks` in one call, to the column `to`.
  */
 export interface MoveRequest {
   actor?: string | null;
   harness?: string | null;
   session?: string | null;
-  task: string;
+  task?: string | null;
+  tasks?: [string, ...string[]] | null;
   to: string;
 }
 /**
