@@ -8,6 +8,7 @@ export interface ApiContract {
     | Moved
     | Edited
     | Archived
+    | ArchivedEach
     | Judged
     | Rated
     | Restored
@@ -41,6 +42,7 @@ export interface ApiContract {
   diff: RunDiffs;
   docShown: DocShown;
   docs: Docs;
+  donePage: DonePage;
   events: (TaskDelta | MoveDelta | DagsDelta | PullsDelta | ClaimDelta | LedgersDelta | SchedulerStatus)[];
   graph: FlowGraph;
   harnesses: Harnesses;
@@ -106,6 +108,15 @@ export interface Edited {
 }
 export interface Archived {
   task: string;
+}
+/**
+ * A batch archive's answer: the tasks it archived, and each refused task with why.
+ */
+export interface ArchivedEach {
+  archived: string[];
+  refused: {
+    [k: string]: string;
+  };
 }
 export interface Judged {
   check: string;
@@ -402,12 +413,11 @@ export interface DocSummary {
   updated_date: string;
 }
 /**
- * A Board task that moved (`agent` null once it left the lanes).
+ * `GET /api/done`: the next page of done tasks past their hot day, newest first, and whether older ones remain.
  */
-export interface TaskDelta {
-  agent: RawTask | null;
-  id: string;
-  settled: Settled | null;
+export interface DonePage {
+  more: boolean;
+  tasks: RawTask[];
 }
 /**
  * A Backlog task. On the board its state is its lane; on every other machine, the state its latest machine event left it in.
@@ -602,6 +612,14 @@ export interface TrailStep {
   at: number;
   event: string;
   state: string;
+}
+/**
+ * A Board task that moved (`agent` null once it left the lanes).
+ */
+export interface TaskDelta {
+  agent: RawTask | null;
+  id: string;
+  settled: Settled | null;
 }
 /**
  * A task that left the Board's lanes for good: where it settled, when, and the title, assignee, milestone and labels it settled with.

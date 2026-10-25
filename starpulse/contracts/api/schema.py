@@ -14,7 +14,7 @@ from starpulse.contracts.api.dto.harnesses import Harnesses, WindowState
 from starpulse.contracts.api.dto.health import Health, MachineHistory, Sessions, SessionSteps
 from starpulse.contracts.api.dto.milestones import Docs, DocShown, Milestones, MilestoneShown, RetiredTasks, TaskRecord
 from starpulse.contracts.api.dto.missed import MissedLoads, TraceClusters
-from starpulse.contracts.api.dto.pages import LaneHistory, LedgerChange, LedgerPage, Machines
+from starpulse.contracts.api.dto.pages import DonePage, LaneHistory, LedgerChange, LedgerPage, Machines
 from starpulse.contracts.api.dto.pulls import Pulls
 from starpulse.contracts.api.dto.report import ContractReport
 from starpulse.contracts.api.dto.requests import (
@@ -47,6 +47,7 @@ from starpulse.contracts.api.dto.requests import (
 from starpulse.contracts.api.dto.results import (
     Accepted,
     Archived,
+    ArchivedEach,
     Claimed,
     Completed,
     Created,
@@ -98,6 +99,7 @@ class ApiContract(_Api):
     restarting: RestartingEvent
     ledger: LedgerPage
     ledgerChange: LedgerChange
+    donePage: DonePage
     machines: Machines
     laneHistory: LaneHistory
     machineHistory: MachineHistory
@@ -156,6 +158,7 @@ class ApiContract(_Api):
         Moved
         | Edited
         | Archived
+        | ArchivedEach
         | Judged
         | Rated
         | Restored

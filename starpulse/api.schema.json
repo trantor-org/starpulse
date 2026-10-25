@@ -219,6 +219,30 @@
       "title": "Archived",
       "type": "object"
     },
+    "ArchivedEach": {
+      "additionalProperties": false,
+      "description": "A batch archive's answer: the tasks it archived, and each refused task with why.",
+      "properties": {
+        "archived": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "refused": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "archived",
+        "refused"
+      ],
+      "title": "ArchivedEach",
+      "type": "object"
+    },
     "Bottleneck": {
       "additionalProperties": false,
       "properties": {
@@ -1634,6 +1658,27 @@
         "dags"
       ],
       "title": "DomainProcess",
+      "type": "object"
+    },
+    "DonePage": {
+      "additionalProperties": false,
+      "description": "`GET /api/done`: the next page of done tasks past their hot day, newest first, and whether older ones remain.",
+      "properties": {
+        "more": {
+          "type": "boolean"
+        },
+        "tasks": {
+          "items": {
+            "$ref": "#/$defs/RawTask"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "tasks",
+        "more"
+      ],
+      "title": "DonePage",
       "type": "object"
     },
     "EditRequest": {
@@ -7977,6 +8022,9 @@
             "$ref": "#/$defs/Archived"
           },
           {
+            "$ref": "#/$defs/ArchivedEach"
+          },
+          {
             "$ref": "#/$defs/Judged"
           },
           {
@@ -8075,6 +8123,9 @@
     },
     "docs": {
       "$ref": "#/$defs/Docs"
+    },
+    "donePage": {
+      "$ref": "#/$defs/DonePage"
     },
     "events": {
       "items": {
@@ -8269,6 +8320,7 @@
     "restarting",
     "ledger",
     "ledgerChange",
+    "donePage",
     "machines",
     "laneHistory",
     "machineHistory",
