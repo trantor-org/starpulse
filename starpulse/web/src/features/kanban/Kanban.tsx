@@ -35,7 +35,8 @@ const milestoneName = (milestone: string) => milestone || "No milestone";
 const HOT_S = 120;
 
 const profileColor = (a: string) => (/deep/.test(a) ? "#a78bfa" : /standard/.test(a) ? "#67e8f9" : /fast/.test(a) ? "#fbbf24" : "#94a3b8");
-const shortProfile = (a: string) => a.replace(/^@agent-/, "").replace(/^@/, "");
+/** An assignee as a card draws it: a session URL is its first five hash characters, a profile name loses its `@agent-` prefix. */
+const shortProfile = (a: string) => a.replace(/^https?:\/\/\S*?\/session_(\w{5})\w*$/, "$1").replace(/^@agent-/, "").replace(/^@/, "");
 const checksClass = (p: Pull) => (p.merged ? "merged" : p.checks === "failing" ? "fail" : p.checks);
 
 function PullChip({ pulls }: { pulls: Pull[] }) {
