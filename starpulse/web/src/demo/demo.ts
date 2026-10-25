@@ -422,7 +422,7 @@ export class DemoServer {
     const id = `${prefix}${Math.max(0, ...ids.map((n) => Number(n.match(/\d+$/)?.[0] ?? 0))) + 1}`;
     const lane = startingLane(board.machine, this.snapshot.roles ?? {});
     const card: RawTask = {
-      id, title: title.trim(), state: lane, model: text("assignee"), labels: list("labels"), milestone: text("milestone"),
+      id, title: title.trim(), state: lane, model: text("assignee"), assignee: text("assignee"), labels: list("labels"), milestone: text("milestone"),
       dependencies: list("dependencies"), description: text("description"),
     };
     board.agents.push(card);
