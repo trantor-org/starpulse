@@ -26,6 +26,10 @@ def test_create_request_declares_the_keys_the_handler_parses() -> None:
     assert "harness" in fields
 
 
+def test_create_request_takes_a_source_and_trims_it() -> None:
+    assert CreateRequest(title="Draw the board", source="  scheduled:caller-a  ").source == "scheduled:caller-a"
+
+
 def test_start_request_declares_the_keys_the_handler_parses() -> None:
     fields = StartRequest.model_fields
     assert "task" in fields

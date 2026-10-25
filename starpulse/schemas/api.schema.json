@@ -1050,6 +1050,17 @@
           ],
           "default": null
         },
+        "source": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "status": {
           "anyOf": [
             {
@@ -1301,6 +1312,17 @@
           "default": null
         },
         "skill": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source": {
           "anyOf": [
             {
               "type": "string"

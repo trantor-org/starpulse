@@ -454,6 +454,7 @@ _SCALARS = {
     "impact": "impact",
     "urgency": "urgency",
     "milestone": "milestone",
+    "source": "source",
 }
 _LISTS = {
     "labels": "labels",
