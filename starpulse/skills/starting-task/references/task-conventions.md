@@ -433,8 +433,7 @@ such as `--until '{id: peak-day, kind: prom, expr: "max_over_time(node_load1[1d]
 
 **After two consecutive first-verdict misses on the same duration or latency Outcome target where
 a diagnosis has already named a path floor, the next slice is `kind-decide` (architecture change
-or Outcome revise), never another fix/check pair that re-measures the same target.** A single
-unreachable threshold parks its check `--operator`.
+or Outcome revise), never another fix/check pair that re-measures the same target.**
 
 Never gate on an incidental event, such as an unrelated commit touching a path, when a deliberate
 trigger exists: a live retention prune that a seeded test or one manual timer run shows the day
@@ -473,12 +472,12 @@ A check task on a scheduled applier gates on the run: a row, metric or step outp
 deployed step writes, never the merge or the schedule's trigger, unless the schedule itself
 changed.
 
-When no kind observes the awaited condition, make it observable; never park it with `--operator`.
-Create a delivery task that publishes the condition as a metric or a table row, and park the
-waiting task now with `--until` on the criterion that reads it: a metric series that does not
-exist yet does not pass, so the criterion can name it before the delivery merges. Example: a
-check waiting for 50 rows in a local JSONL ledger gets a task exporting the row count as a gauge,
-and parks with `--until '{id: rows-50, kind: prom, expr: <gauge>, at_least: 50}'`.
+When no kind observes the awaited condition, make it observable: create a delivery task that
+publishes the condition as a metric or a table row, then follow the check-task table below. A
+metric series that does not exist yet does not pass, so the criterion can name it before the
+delivery merges. Example: a check waiting for 50 rows in a local JSONL ledger gets a task
+exporting the row count as a gauge, and its criterion is
+`{id: rows-50, kind: prom, expr: <gauge>, at_least: 50}`.
 
 **Start Criteria gate only autopilot's claim.** An explicit operator start claims the task
 (`starpulse task claim`) whatever its criteria say. Whoever works it checks the real condition
@@ -489,15 +488,27 @@ Validate, Verify or Check, or labelled `validation`. When it measures its criter
 `Done` with that verdict, pass or miss, recorded with `starpulse task verdict TASK CHECK pass`
 or `miss --evidence ... --fix PROJ-M`:
 
-- A pass checks each criterion and closes through the project's `finalize` step.
 - A miss records what it measured and forks the fix as its own task. The miss quotes the failing
   unit's or step's own error line, from its journal or job log, and names a cause only from that
-  line, never from a fault seen nearby. `Done` needs every criterion checked, so the check then
-  parks `--operator` naming the miss and its fix, for the operator to close.
+  line, never from a fault seen nearby.
 - A fix task that declines its change re-scopes or archives its paired fresh check in the same
   step; left queued, that check misses by construction.
-- A check re-parks only when it could not measure, such as a window with no sample yet, and then
-  on a gate that counts the sample it needs, never on its fix. When the criterion passed without
-  the condition holding, tighten it before re-parking.
-- A check whose threshold a prior diagnosis showed unreachable on its path parks with
-  `--operator` naming the threshold decision instead of re-measuring it.
+- When the criterion passed without the condition holding, tighten it before parking.
+
+A check task looks up its next command in this table, taking the first row that matches; it never
+chooses one. This table is the whole park rule for a check task.
+
+| Verdict | Command |
+| --- | --- |
+| Every criterion checked | the project's `finalize` step |
+| Miss, no fix task filed | `starpulse task create` the fix, then the next row |
+| Miss, fix PROJ-M filed | `starpulse task park PROJ-45 --operator '<miss>; fix PROJ-M'` |
+| Threshold a prior diagnosis showed unreachable on its path | `starpulse task park PROJ-45 --operator '<threshold decision>'` |
+| Data not landed, a kind observes it | `starpulse task park PROJ-45 --until '<criterion>' --comment '<query>'` |
+| Data not landed, no kind observes it | create the task that publishes it (above), then the previous row |
+| Waits on a task that is not the miss's fix | `starpulse task park PROJ-45 --until-task PROJ-46` |
+| Only a person can act: a credential, an irreversible action, a decision | `starpulse task park PROJ-45 --operator '<what they do>'` |
+
+`Done` needs every criterion checked, so a miss parks `--operator` for the operator's close and
+never `--until-task` its fix: the fix's paired check carries the outcome. A wait for data, a run
+or time is never `--operator`.
