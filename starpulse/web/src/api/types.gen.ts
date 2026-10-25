@@ -1553,6 +1553,7 @@ export interface CreateSpec {
   references?: string[] | null;
   size?: string | null;
   skill?: string | null;
+  source?: string | null;
   status?: string | null;
   task?: string | null;
   title: string;
@@ -1657,6 +1658,7 @@ export interface CreateRequest {
   session?: string | null;
   size?: string | null;
   skill?: string | null;
+  source?: string | null;
   status?: string | null;
   task?: string | null;
   tasks?: [CreateSpec, ...CreateSpec[]] | null;
