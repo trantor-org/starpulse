@@ -129,7 +129,7 @@ describe("the cards drawn from a snapshot", () => {
     dags: [],
     flows: [
       { name: "board", machine, agents: [
-        agent("PROJ-1", "in_progress", { model: "@alice", milestone: "m-12", labels: ["size-8"], dependencies: ["PROJ-2", "PROJ-3", "PROJ-4"], prs: ["https://github.com/o/r/pull/7"] }),
+        agent("PROJ-1", "in_progress", { assignee: "@alice", milestone: "m-12", labels: ["size-8"], dependencies: ["PROJ-2", "PROJ-3", "PROJ-4"], prs: ["https://github.com/o/r/pull/7"] }),
         agent("PROJ-2", "review"), agent("PROJ-3", "done"),
       ] },
       { name: "in-progress", machine, agents: [agent("PROJ-1", "pr_opened", { task: "PROJ-1", active: 500 })] },
@@ -229,6 +229,7 @@ describe("the cards drawn from a snapshot", () => {
 
   it("carry every machine the task is in with its state, source, model, steps, when it last moved and its trail, and none for a task in no machine", () => {
     const snap = snapshot();
+    snap.flows[0].agents[0].model = "@alice";
     const trail = [{ state: "branch_pushed", event: "push", at: 400 }, { state: "pr_opened", event: "pr", at: 500 }];
     snap.flows[1].agents[0].trail = trail;
     snap.flows[1].agents[0].steps = 4;
