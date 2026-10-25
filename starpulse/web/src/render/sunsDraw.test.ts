@@ -57,6 +57,12 @@ describe("drawSuns", () => {
     expect(ringing).toBeGreaterThan(frame(0, 10 + TRAVEL + PULSE + 1, travel).calls.filter(([k]) => k === "arc").length);
   });
 
+  it("cuts the row line out behind each state label and round pill, so no text sits on a flow line", () => {
+    const cuts = frame(0, 5).calls.filter(([k]) => k === "clearRect").length;
+    const pills = board.rows.reduce((n, r) => n + r.pills.length, 0);
+    expect(cuts).toBe(board.rows.length + pills);
+  });
+
   it("uses the task's own colour and no amber or yellow in any state of the animation", () => {
     const travel: Travel = { from: board.dots[0], to: board.suns[5], at: 0 };
     for (const now of [0, TRAVEL / 2, TRAVEL + PULSE / 2, 60]) {

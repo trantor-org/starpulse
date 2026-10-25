@@ -21,7 +21,7 @@ export interface View {
   hit?: Hit | null;
 }
 
-const TEXT = "#cbd5e1", SOFT = "#94a3b8", FLOW = "#3b82f6", LENS_JOIN = "#14b8a6", PILL_W = 28, PILL_H = 16, DOT_R = 4, SIZE = 11.5, ARC_PULL = 0.15;
+const TEXT = "#cbd5e1", SOFT = "#94a3b8", FLOW = "#3b82f6", LENS_JOIN = "#14b8a6", PILL_W = 28, PILL_H = 16, CUT = 4, DOT_R = 4, SIZE = 11.5, ARC_PULL = 0.15;
 
 export function drawSuns(dc: DrawCtx, b: SunsBoard, view: View) {
   const { cx } = dc, d = drawing(dc), { color } = b.task;
@@ -88,8 +88,12 @@ export function drawSuns(dc: DrawCtx, b: SunsBoard, view: View) {
     d.dot(sun.x, sun.y, sun.r, rgba(sun.color, lit ? 0.55 : 0.28));
     d.circle(sun.x, sun.y, sun.r, rgba(sun.color, lit ? 1 : 0.85), lit ? 2 : 1.4);
     d.text(sun.label.text, sun.label.x, sun.label.y, SIZE, rgba(TEXT, lit ? 1 : 0.75), "center");
+    // The row line is cut out behind the state and each pill: text never sits on a flow line.
+    cx.font = `400 ${SIZE}px Inter, system-ui, sans-serif`;
+    cx.clearRect(r.stateX - CUT, r.y - PILL_H / 2, cx.measureText(r.state).width + 2 * CUT, PILL_H);
     d.text(r.state, r.stateX, r.y, SIZE, rgba(TEXT, 0.9), "left");
     r.pills.forEach((p, i) => {
+      cx.clearRect(p.x - PILL_W / 2 - CUT, p.y - PILL_H / 2, PILL_W + 2 * CUT, PILL_H);
       const on = p.current, h = hot("pill", r.id) && view.hit?.kind === "pill" && view.hit.round === i + 1;
       cx.fillStyle = rgba(sun.color, on ? 0.3 : 0.06);
       cx.strokeStyle = rgba(sun.color, h || on ? 0.9 : 0.4);

@@ -72,6 +72,11 @@ describe("SunsDrillIn", () => {
     expect(host.textContent).not.toMatch(/legend/i);
   });
 
+  it("keeps its canvas in the flow, not pinned over the panel by the page's fixed canvas rule", () => {
+    mount();
+    expect(host.querySelector("canvas")!.style.position).toBe("static");
+  });
+
   it("closes", () => {
     const close = vi.fn();
     mount(close);
