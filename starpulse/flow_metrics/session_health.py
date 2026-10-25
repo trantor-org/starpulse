@@ -230,75 +230,80 @@ def _asked_since(ordered: list[Signal], at: int) -> float:
     return ordered[before].time
 
 
+def session_rows(
+    ordered: list[Signal], keys: TaskKeys | None, analytics: Analytics | None = None
+) -> list[dict[str, Any]]:
+    """One row per task the session `ordered` (oldest first, as `grouped` gives it) worked, in the order it reached them."""
+    completion = analytics.completion_skill if analytics else ""
+    operator_tools = analytics.operator_tools if analytics else frozenset()
+    kind = session_kind(ordered)
+    ids = _turn_ids(ordered)
+    ends: dict[str, float] = {}
+    for turn, s in zip(ids, ordered, strict=True):
+        ends[turn] = max(ends.get(turn, s.time), s.time)
+    row: dict[str, Any] | None = None
+    by_task: dict[str | None, dict[str, Any]] = {}
+    last: dict[str, dict[str, str]] = defaultdict(dict)
+    armed: set[str | None] = set()  # tasks whose human prompts now count as the operator's steering
+    asked = False  # the last main-thread reply opened with a question no human prompt has answered yet
+    loaded: set[str | None] = set()  # tasks that loaded the completion skill
+    steps: dict[str | None, int] = defaultdict(int)  # requests before a task's first edit
+    open_turns: dict[str, dict[str, Any]] = {}  # a Claude Code turn's row until a reply closes it
+    prompts = 0
+    previous: str | None = None
+    for at, (task, s) in enumerate(attributed(ordered, keys)):
+        if row is None or row["task"] != task:
+            row = by_task.get(task) or by_task.setdefault(task, _empty(s, task, kind))
+        if s.kind in {"claim", "branch"} and task is not None and task != previous:
+            armed.add(task)
+        previous = task
+        if s.kind == "prompt":
+            prompts += 1
+            row["prompts"] += 1
+            injected = s.detail == "injected"
+            if prompts > 1:
+                gap = max(s.time - ends[ids[at - 1]], 0.0)
+                row["idle_s" if injected else "operator_wait_s"] += gap
+            if not injected and task in armed and not asked:
+                row["operator_prompts"] += 1
+                if s.label:
+                    _count(row, "prompt_labels", s.label)
+            asked = asked and injected
+            if prompts == 1:
+                armed.add(task)
+            if s.turn:
+                open_turns[s.turn] = row
+        elif s.kind == "reply":
+            open_turns.pop(s.turn, None)
+            if s.origin == "main":
+                asked = s.detail == "asks"
+        elif s.kind in {"request", "tool", "hook"}:
+            row["agent_s"] += s.seconds
+            if s.kind == "tool" and s.name in operator_tools and at:
+                row["operator_wait_s"] += max(s.time - s.seconds - _asked_since(ordered, at), 0.0)
+            if row["steps_before_edit"] is None:
+                if s.kind == "request" and s.origin in {"main", "side"}:
+                    steps[task] += 1
+                elif (
+                    s.kind == "tool" and s.ok and (s.name in _EDITS or s.shell_write)
+                ):
+                    row["steps_before_edit"] = steps[task]
+        elif s.kind == "skill" and completion and s.name == completion:
+            loaded.add(task)
+        elif s.kind == "deliver" and task in loaded:
+            row["complete"] = True
+        row["last_at"] = s.time
+        _note(row, s, last[task or ""])
+    for opened in open_turns.values():
+        opened["interrupts"] += 1
+    return list(by_task.values())
+
+
 def session_health(
     found: Iterable[Signal], keys: TaskKeys | None, analytics: Analytics | None = None
 ) -> list[dict[str, Any]]:
     """One row per (session, task) of the sessions `found` holds, oldest first; see the module docstring."""
-    completion = analytics.completion_skill if analytics else ""
-    operator_tools = analytics.operator_tools if analytics else frozenset()
-    rows: list[dict[str, Any]] = []
-    for ordered in grouped(found, keys, analytics):
-        kind = session_kind(ordered)
-        ids = _turn_ids(ordered)
-        ends: dict[str, float] = {}
-        for turn, s in zip(ids, ordered, strict=True):
-            ends[turn] = max(ends.get(turn, s.time), s.time)
-        row: dict[str, Any] | None = None
-        by_task: dict[str | None, dict[str, Any]] = {}
-        last: dict[str, dict[str, str]] = defaultdict(dict)
-        armed: set[str | None] = set()  # tasks whose human prompts now count as the operator's steering
-        asked = False  # the last main-thread reply opened with a question no human prompt has answered yet
-        loaded: set[str | None] = set()  # tasks that loaded the completion skill
-        steps: dict[str | None, int] = defaultdict(int)  # requests before a task's first edit
-        open_turns: dict[str, dict[str, Any]] = {}  # a Claude Code turn's row until a reply closes it
-        prompts = 0
-        previous: str | None = None
-        for at, (task, s) in enumerate(attributed(ordered, keys)):
-            if row is None or row["task"] != task:
-                row = by_task.get(task) or by_task.setdefault(task, _empty(s, task, kind))
-            if s.kind in {"claim", "branch"} and task is not None and task != previous:
-                armed.add(task)
-            previous = task
-            if s.kind == "prompt":
-                prompts += 1
-                row["prompts"] += 1
-                injected = s.detail == "injected"
-                if prompts > 1:
-                    gap = max(s.time - ends[ids[at - 1]], 0.0)
-                    row["idle_s" if injected else "operator_wait_s"] += gap
-                if not injected and task in armed and not asked:
-                    row["operator_prompts"] += 1
-                    if s.label:
-                        _count(row, "prompt_labels", s.label)
-                asked = asked and injected
-                if prompts == 1:
-                    armed.add(task)
-                if s.turn:
-                    open_turns[s.turn] = row
-            elif s.kind == "reply":
-                open_turns.pop(s.turn, None)
-                if s.origin == "main":
-                    asked = s.detail == "asks"
-            elif s.kind in {"request", "tool", "hook"}:
-                row["agent_s"] += s.seconds
-                if s.kind == "tool" and s.name in operator_tools and at:
-                    row["operator_wait_s"] += max(s.time - s.seconds - _asked_since(ordered, at), 0.0)
-                if row["steps_before_edit"] is None:
-                    if s.kind == "request" and s.origin in {"main", "side"}:
-                        steps[task] += 1
-                    elif (
-                        s.kind == "tool" and s.ok and (s.name in _EDITS or s.shell_write)
-                    ):
-                        row["steps_before_edit"] = steps[task]
-            elif s.kind == "skill" and completion and s.name == completion:
-                loaded.add(task)
-            elif s.kind == "deliver" and task in loaded:
-                row["complete"] = True
-            row["last_at"] = s.time
-            _note(row, s, last[task or ""])
-        for opened in open_turns.values():
-            opened["interrupts"] += 1
-        rows += by_task.values()
+    rows = [row for ordered in grouped(found, keys, analytics) for row in session_rows(ordered, keys, analytics)]
     return sorted(rows, key=lambda r: (r["first_at"], r["harness"], r["session"]))
 
 
