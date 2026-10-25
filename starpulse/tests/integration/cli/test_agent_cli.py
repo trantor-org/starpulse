@@ -568,6 +568,7 @@ def test_the_board_lists_each_column_with_its_tasks_dependencies_prs_and_moves(
             "ready": {"allowed": True, "reason": "", "skill": ""},
         },
         "rating": None,
+        "released": None,
     }
 
 
@@ -717,6 +718,7 @@ def test_task_show_reports_a_settled_task_by_where_it_settled(base: str, capsys:
         "moves": {},
         "description": "",
         "rating": None,
+        "released": None,
     }
 
 

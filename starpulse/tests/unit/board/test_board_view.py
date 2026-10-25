@@ -6,6 +6,7 @@ from collections.abc import Iterator
 from typing import Any
 
 from starpulse._internal.board.view import board_columns, board_flow, cold_agent, done_ids, task_view
+from starpulse._internal.cli.agent_keys import TASK_KEYS
 from starpulse.tests.machines import ROLES
 
 
@@ -93,8 +94,17 @@ def test_a_cold_done_task_is_done_to_a_dependent_and_a_verb_view_loads_its_full_
         "prs": [],
         "moves": {},
         "rating": None,
+        "released": None,
     }
     assert cold["description"] == "Long ago."
+
+
+def test_a_task_whose_claim_was_released_serves_the_release_and_the_cli_lists_it() -> None:
+    snapshot = _working_board()
+    release = {"at": "2026-10-24T13:00:00Z", "session": "s-1", "last_renewal": "2026-10-24T12:00:00Z", "ttl": 3600}
+    released = {**board_flow(snapshot)["agents"][0], "state": ROLES.wire()["waiting"], "released": release}
+    assert task_view(released, snapshot)["released"] == release
+    assert "released" in TASK_KEYS
 
 
 def _working_board(*, next_edge: dict[str, str] | None = None, interactive: bool = False) -> dict[str, Any]:
