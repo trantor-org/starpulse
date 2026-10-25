@@ -29,8 +29,8 @@ SUMMARY = (
 )
 
 
-#: What a card on the page draws that a delta summary leaves out.
-CARD = (*SUMMARY, tasks.c.description, tasks.c.dependencies, tasks.c.references)
+#: What a card on the page draws that a delta summary leaves out; `meta` carries the Task's profile.
+CARD = (*SUMMARY, tasks.c.description, tasks.c.dependencies, tasks.c.references, tasks.c.meta)
 
 
 def snapshot(state: str | None = None) -> Select[Any]:

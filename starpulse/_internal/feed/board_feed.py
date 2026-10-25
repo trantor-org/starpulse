@@ -148,14 +148,16 @@ def read_model_lane_moves(machine: dict) -> dict[str, dict[str, dict]]:
 def summary_agent(summary: Mapping[str, Any], workable: bool = False, moves: Mapping[str, Any] = {}) -> dict:
     """One read-model summary as an agent on the Board machine: what a card draws; the record is `/api/task/<id>`.
 
-    A workable Task is workable since it last changed: the read model keeps no finer date.
+    A workable Task is workable since it last changed: the read model keeps no finer date. Its profile is the one the
+    fold keeps in `meta`, as a held Task's is its own.
     """
+    profile = (summary.get("meta") or {}).get("profile") or None
     return {
         "id": summary["id"],
         "title": summary["title"],
         "state": lane_id(summary["state"]),
-        "model": "",
-        "profile": None,
+        "model": profile or "",
+        "profile": profile,
         "assignee": summary["assignee"],
         "released": summary["released"],
         "labels": list(summary["labels"]),
