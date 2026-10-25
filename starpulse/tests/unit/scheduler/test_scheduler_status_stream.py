@@ -8,11 +8,11 @@ from pathlib import Path
 
 from starpulse._internal.config.scheduler import Scheduler
 from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.harnesses.harness import HARNESS_MACHINES
 from starpulse._internal.scheduler.runtime import Runtime, build
 from starpulse._internal.server.writes import scheduler
 from starpulse.contracts.api.dto.scheduler import SchedulerStatus
 from starpulse.event_log.event_log import EventLog
+from starpulse.harness_telemetry.harness import SESSION_MACHINES
 from starpulse.tests.machines import MACHINES, ROLES
 from starpulse.tests.unit.server.test_scheduler_route import HOST, _feed
 
@@ -54,7 +54,7 @@ def test_a_sample_publishes_an_scheduler_event_matching_status(tmp_path: Path) -
 
 
 def test_a_put_publishes_an_scheduler_event_with_the_new_enabled(tmp_path: Path) -> None:
-    feed = BoardFeed(roles=ROLES, machines={**MACHINES, **HARNESS_MACHINES})
+    feed = BoardFeed(roles=ROLES, machines={**MACHINES, **SESSION_MACHINES})
     runtime = _runtime(tmp_path, feed)
     runtime.sampler.sample()
     _, changes = feed.subscribe()

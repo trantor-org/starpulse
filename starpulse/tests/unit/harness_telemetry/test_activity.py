@@ -2,7 +2,7 @@
 
 import pytest
 
-from starpulse._internal.harnesses.activity import activities, paths, writes_file
+from starpulse.harness_telemetry.activity import activities, paths, writes_file
 
 
 def shell(command: str) -> list[str]:

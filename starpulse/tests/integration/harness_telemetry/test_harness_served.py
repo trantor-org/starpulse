@@ -7,7 +7,7 @@ from pathlib import Path
 from starpulse._internal.config.config import load
 from starpulse._internal.kit.adapter_kit import assembled, serve, url
 from starpulse.flow_metrics.history import HistoryStore
-from starpulse.tests.unit.harnesses.test_claude_code import replay
+from starpulse.tests.unit.harness_telemetry.test_claude_code import replay
 
 
 def _get(server, path: str) -> dict:

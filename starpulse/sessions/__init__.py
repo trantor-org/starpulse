@@ -1,8 +1,8 @@
 """What an agent session did: the Activity of each tool call, and the Health of each session and of the sessions that
-worked one task; the implementation is in `starpulse._internal`.
+worked one task.
 
 `activities` is the classification every tool signal StarPulse stores carries
-(`starpulse._internal.harnesses.activity`): one tool call lifted to labels with no arguments, so the same work recurs
+(`starpulse.harness_telemetry.activity`): one tool call lifted to labels with no arguments, so the same work recurs
 across sessions. A non-shell tool is its bare name, `TOOL_OTHER` when its name is not one; each statement of a shell
 call (a tool in `SHELLS`) is its leading command, such as `bin/<script>`, `make <target>`, `git <subcommand>`,
 `gh <group> <verb>` or `ssh <host>`, with `SHELL_READ` and `SHELL_SEARCH` for a file read or a search and `SHELL_OTHER`
@@ -19,7 +19,9 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
-from starpulse._internal.harnesses.activity import (
+from starpulse.contracts.api.dto.health import SessionHealth, SliceHealth, TokenCounts
+from starpulse.flow_metrics import session_health as _sessions
+from starpulse.harness_telemetry.activity import (
     SHELL_OTHER,
     SHELL_READ,
     SHELL_SEARCH,
@@ -27,9 +29,7 @@ from starpulse._internal.harnesses.activity import (
     TOOL_OTHER,
     activities,
 )
-from starpulse._internal.harnesses.telemetry import held, signals
-from starpulse.contracts.api.dto.health import SessionHealth, SliceHealth, TokenCounts
-from starpulse.flow_metrics import session_health as _sessions
+from starpulse.harness_telemetry.telemetry import held, signals
 
 if TYPE_CHECKING:
     from starpulse._internal.config.config import Config

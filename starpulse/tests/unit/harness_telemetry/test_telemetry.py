@@ -16,8 +16,8 @@ from typing import Any
 import pytest
 
 from starpulse._internal.config.analytics import Analytics
-from starpulse._internal.harnesses.telemetry import CLAUDE_CODE, CODEX, Signal, _number, redactor, signals
 from starpulse.contracts.adapters import TaskKeys
+from starpulse.harness_telemetry.telemetry import CLAUDE_CODE, CODEX, Signal, _number, redactor, signals
 
 FIXTURES = Path(__file__).parents[2] / "fixtures"
 CLAUDE_SESSION = "11111111-1111-4111-8111-111111111111"

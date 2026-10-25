@@ -14,7 +14,6 @@ from starpulse._internal.board.seam import (
 )
 from starpulse._internal.config.analytics import Analytics
 from starpulse._internal.feed.ledger import PAGE
-from starpulse._internal.harnesses.telemetry import Signal, TelemetryLog
 from starpulse._internal.server.encoding import encode
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.flow_metrics import analytics
@@ -26,6 +25,7 @@ from starpulse.flow_metrics.session_health import session_health, slice_health
 from starpulse.flow_metrics.steps import session_steps
 from starpulse.flow_metrics.traces import Case, missed_loads
 from starpulse.flow_metrics.traces import cases as trace_cases
+from starpulse.harness_telemetry.telemetry import Signal, TelemetryLog
 from starpulse.machine_engine.model.stays import lane_stays
 
 logger = logging.getLogger(__name__)

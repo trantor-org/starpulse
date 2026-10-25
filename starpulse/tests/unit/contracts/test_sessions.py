@@ -9,11 +9,11 @@ import pytest
 from starpulse import sessions
 from starpulse._internal.config.analytics import Analytics, Labeller
 from starpulse._internal.config.config import Config
-from starpulse._internal.harnesses import activity, telemetry
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.contracts.api.dto.health import SessionHealth, SliceHealth
 from starpulse.flow_metrics import session_health as fold
-from starpulse.tests.unit.harnesses.test_telemetry import FIXTURES
+from starpulse.harness_telemetry import activity, telemetry
+from starpulse.tests.unit.harness_telemetry.test_telemetry import FIXTURES
 
 KEYS = TaskKeys(
     key=re.compile(r"TASK-\d+"),

@@ -1,4 +1,4 @@
-"""The prompt labeller: a configured typed-decision endpoint names a human prompt's intent, and any failure of it
+"""Intent classification: a configured typed-decision endpoint names a human prompt's intent, and any failure of it
 leaves the label empty."""
 
 import json
@@ -10,8 +10,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
 from starpulse._internal.config.analytics import Analytics, Labeller
-from starpulse._internal.harnesses.telemetry import signals
-from starpulse.tests.unit.harnesses.test_telemetry import claude, export
+from starpulse.harness_telemetry.telemetry import signals
+from starpulse.tests.unit.harness_telemetry.test_telemetry import claude, export
 
 CRITERIA = {"correction": "The agent erred.", "approval": "Proceed."}
 

@@ -9,18 +9,18 @@ from pathlib import Path
 from starpulse._internal.board import replica
 from starpulse._internal.board.seam import Board
 from starpulse._internal.board.seam import load as load_board
-from starpulse.pulls.ci import attach
 from starpulse._internal.config.config import Config
 from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.harnesses.harness import HARNESS_MACHINES
-from starpulse.pulls.task_actor import ACTOR
 from starpulse._internal.server import read_model_follow
 from starpulse.event_log.event_log import EventLog, prune_forever
 from starpulse.event_log.opening import database_url
 from starpulse.event_log.readmodel.declared import declared_fields
 from starpulse.event_log.readmodel.read_model import ReadModel
 from starpulse.flow_metrics.history import HistoryStore
+from starpulse.harness_telemetry.harness import SESSION_MACHINES
 from starpulse.machine_engine.model.snapshot import qualifier
+from starpulse.pulls.ci import attach
+from starpulse.pulls.task_actor import ACTOR
 
 
 def assemble(
@@ -42,7 +42,7 @@ def assemble(
     listed = [name for names in domains.values() for name in names]
     drawn = board.machines(qualify, [*listed, ACTOR] if config.task_actor else listed)
     # Every harness adapter writes this one machine, so the page draws it unless the board declares a machine of that name.
-    machines = {**drawn, **{name: m for name, m in HARNESS_MACHINES.items() if name not in drawn}}
+    machines = {**drawn, **{name: m for name, m in SESSION_MACHINES.items() if name not in drawn}}
     if config.ci:
         machines = attach(machines, config.ci)
     if config.level:

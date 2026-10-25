@@ -4,12 +4,12 @@ import json
 import re
 from pathlib import Path
 
-from starpulse._internal.harnesses.claude_code import ClaudeCodeAdapter, publisher
-from starpulse._internal.harnesses.harness import HARNESS_MACHINES
-from starpulse._internal.harnesses.otlp import BRANCH, LogEvent, parse
 from starpulse._internal.kit.adapter_kit import MachineEventsAdapterKit
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.event_log.event_log import EventLog, Tail
+from starpulse.harness_telemetry.claude_code import ClaudeCodeAdapter, publisher
+from starpulse.harness_telemetry.harness import SESSION_MACHINES
+from starpulse.harness_telemetry.otlp import BRANCH, LogEvent, parse
 from starpulse.machine_engine.model.transitions import Table
 from starpulse.tests.machines import MACHINES
 
@@ -75,7 +75,7 @@ def test_a_skill_tool_result_moves_nothing_since_its_activation_already_did() ->
 
 
 def test_activity_after_a_mid_turn_reply_draws_the_session_active_again() -> None:
-    table = Table(HARNESS_MACHINES["harness"])
+    table = Table(SESSION_MACHINES["harness"])
 
     assert [table.target("stopped", event) for event in ("TOOL_USED", "SKILL_USED", "SESSION_STARTED")] == [
         "active",
@@ -87,7 +87,7 @@ def test_activity_after_a_mid_turn_reply_draws_the_session_active_again() -> Non
 class TestClaudeCodeAdapter(MachineEventsAdapterKit):
     keys = PROJ
     branches = {"feature/PROJ-1-add-x": "PROJ-1", "refs/heads/feature/PROJ-2": "PROJ-2", "main": None}
-    machines = MACHINES | HARNESS_MACHINES
+    machines = MACHINES | SESSION_MACHINES
 
     def produce(self) -> list[dict]:
         return [*replay("feature/PROJ-1-add-x"), *replay()]

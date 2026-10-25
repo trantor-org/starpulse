@@ -1,6 +1,6 @@
-"""The Cursor transcript reader's entry point, `python -m starpulse.cursor`; the implementation is in `starpulse._internal.harnesses.cursor`."""
+"""The Cursor transcript reader's entry point, `python -m starpulse.cursor`; the implementation is in `starpulse.harness_telemetry.cursor`."""
 
-from starpulse._internal.harnesses.cursor import main
+from starpulse.harness_telemetry.cursor import main
 
 __all__ = ["main"]
 

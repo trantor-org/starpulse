@@ -12,12 +12,12 @@ if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler i
     from starpulse._internal.config.analytics import Analytics
     from starpulse._internal.config.harnesses import Harnesses
     from starpulse._internal.feed.search import SearchIndex
-    from starpulse._internal.harnesses.telemetry import TelemetryLog
+    from starpulse._internal.scheduler.remote import Remote
+    from starpulse._internal.scheduler.runtime import Runtime
+    from starpulse.harness_telemetry.telemetry import TelemetryLog
     from starpulse.pulls.pull_refresh import PullRefresh
     from starpulse.pulls.pulls import PullStore
     from starpulse.runs.cloudevents import CloudEventsIngest
-    from starpulse._internal.scheduler.remote import Remote
-    from starpulse._internal.scheduler.runtime import Runtime
 
 
 @dataclass(frozen=True)

@@ -30,11 +30,11 @@ from dataclasses import asdict, fields
 from typing import TYPE_CHECKING, Any
 
 from starpulse._internal.config.analytics import Analytics
-from starpulse._internal.harnesses.activity import SHELLS, activities, elide_heredocs, paths, writes_file
-from starpulse._internal.harnesses.labeller import intent_label
-from starpulse._internal.harnesses.otlp import BRANCH, _attributes, _epoch, _records
 from starpulse._internal.signals import CLAUDE_CODE, CODEX, Signal, claim_key, claimed, main_thread_source
 from starpulse.contracts.adapters import TaskKeys
+from starpulse.harness_telemetry.activity import SHELLS, activities, elide_heredocs, paths, writes_file
+from starpulse.harness_telemetry.intent_classification import intent_label
+from starpulse.harness_telemetry.otlp import BRANCH, _attributes, _epoch, _records
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     from starpulse.event_log.event_log import EventLog

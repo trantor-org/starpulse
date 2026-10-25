@@ -192,8 +192,23 @@ from starpulse._internal.config.level import Level
 from starpulse._internal.config.pins import GitHub, LiveBuild, running_commit
 from starpulse._internal.feed.claim_refusals import CLAIMS_STREAM
 from starpulse._internal.feed.history_window import SETTINGS_FILE, HistoryWindow
-from starpulse._internal.harnesses.session_start import starter
-from starpulse._internal.harnesses.telemetry import TelemetryLog
+from starpulse._internal.server.asgi_app import _CONTRACT_TTL_S, _cached, page_app
+from starpulse._internal.server.closure import ENTRIES, Reader
+from starpulse._internal.server.control import control_file
+from starpulse._internal.server.encoding import encode, event
+from starpulse._internal.server.hold import LISTEN_FD_ENV, STATIC_ENV, announce_ready
+from starpulse._internal.server.page_server import BACKLOG, DRAIN_S, PageServer
+from starpulse._internal.server.responses import _HEALTH_HOURS, _error, _hours, health_response, history_response  # noqa: F401 - the read routes stay importable from here
+from starpulse._internal.server.services import Services
+from starpulse._internal.server.supervisor import Supervisor, worker_commands
+from starpulse._internal.server.take_over import temporal_take_over
+from starpulse._internal.server.zygote import Forker
+from starpulse.event_log import events as machine_events
+from starpulse.event_log import lane_events
+from starpulse.event_log.conformance_monitor import Conformance
+from starpulse.flow_metrics.level_metrics import RunWindow, WindowPastHistory
+from starpulse.flow_metrics.trajectories import trajectory_analytics
+from starpulse.harness_telemetry.telemetry import TelemetryLog
 from starpulse.pulls.delivery import (
     Projected,
     follow_saves,
@@ -211,22 +226,7 @@ from starpulse.runs import opt_in
 from starpulse.runs import projection as runs_projection
 from starpulse.runs.cloudevents import CloudEventsIngest
 from starpulse.runs.ingest import tokens as ingest_tokens
-from starpulse._internal.server.asgi_app import _CONTRACT_TTL_S, _cached, page_app
-from starpulse._internal.server.closure import ENTRIES, Reader
-from starpulse._internal.server.control import control_file
-from starpulse._internal.server.encoding import encode, event
-from starpulse._internal.server.hold import LISTEN_FD_ENV, STATIC_ENV, announce_ready
-from starpulse._internal.server.page_server import BACKLOG, DRAIN_S, PageServer
-from starpulse._internal.server.responses import _HEALTH_HOURS, _error, _hours, health_response, history_response  # noqa: F401 - the read routes stay importable from here
-from starpulse._internal.server.services import Services
-from starpulse._internal.server.supervisor import Supervisor, worker_commands
-from starpulse._internal.server.take_over import temporal_take_over
-from starpulse._internal.server.zygote import Forker
-from starpulse.event_log import events as machine_events
-from starpulse.event_log import lane_events
-from starpulse.event_log.conformance_monitor import Conformance
-from starpulse.flow_metrics.level_metrics import RunWindow, WindowPastHistory
-from starpulse.flow_metrics.trajectories import trajectory_analytics
+from starpulse.sessions.session_start import starter
 
 logger = logging.getLogger(__name__)
 
@@ -240,10 +240,10 @@ _STATIC = _HERE / "static"
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     from starpulse._internal.feed.board_feed import BoardFeed
-    from starpulse.pulls.pulls import PullStore
     from starpulse._internal.scheduler.remote import Remote
     from starpulse.event_log.event_log import EventLog
     from starpulse.flow_metrics.history import History
+    from starpulse.pulls.pulls import PullStore
 
 
 def trajectories_response(

@@ -11,7 +11,7 @@ from starpulse.machine_engine.adapters.machine_loader import load_machine
 from starpulse.machine_engine.model.snapshot import describe
 
 #: The machine files beside the package: `adapters/harnesses/` is two levels below them.
-MACHINES = Path(__file__).parents[2] / "machines"
+MACHINES = Path(__file__).parents[1] / "machines"
 HARNESS = load_machine(MACHINES / "harness.yaml")
 #: The machine as the page draws it, keyed by name like a board adapter's machines.
-HARNESS_MACHINES = {HARNESS.name: describe(HARNESS.machine)}
+SESSION_MACHINES = {HARNESS.name: describe(HARNESS.machine)}
