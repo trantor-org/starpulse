@@ -32,11 +32,11 @@ from starpulse._internal.feed.claim_refusals import CLAIMS_STREAM
 from starpulse._internal.feed.history_window import HistoryWindow, SETTINGS_FILE
 from starpulse._internal.harnesses.session_start import starter
 from starpulse._internal.harnesses.telemetry import TelemetryLog
-from starpulse._internal.pulls.delivery import Projected, follow_saves, metrics_of, poller_problem, request_refresh
-from starpulse._internal.pulls.pull_refresh import PullRefresh
-from starpulse._internal.pulls.pull_store import PullSync
-from starpulse._internal.runs import opt_in, projection as runs_projection
-from starpulse._internal.runs.cloudevents import CloudEventsIngest
+from starpulse.pulls.delivery import Projected, follow_saves, metrics_of, poller_problem, request_refresh
+from starpulse.pulls.pull_refresh import PullRefresh
+from starpulse.pulls.pull_store import PullSync
+from starpulse.runs import opt_in, projection as runs_projection
+from starpulse.runs.cloudevents import CloudEventsIngest
 from starpulse._internal.server.asgi_app import _CONTRACT_TTL_S, _cached, page_app
 from starpulse._internal.server.hold import announce_ready
 from starpulse._internal.server.page_server import DRAIN_S, PageServer
@@ -75,7 +75,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     from starpulse._internal.feed.claim_refusals import ClaimRefusals  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse._internal.feed.machine_tasks import MachineTasks  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse._internal.feed.search import SearchIndex  # noqa: PLC0415 - the database stack loads after the config is accepted
-    from starpulse._internal.pulls.pulls import PullStore  # noqa: PLC0415 - the database stack loads after the config is accepted
+    from starpulse.pulls.pulls import PullStore  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse._internal.server import read_model_follow  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse._internal.server.assembly import assemble, history_store  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.event_log.event_log import EventLog  # noqa: PLC0415 - the database stack loads after the config is accepted
@@ -157,7 +157,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     announce(port, feed.snapshot()["hint"])
     scheduler_stop = threading.Event()
     scheduler_runtime = scheduler_remote(config, base, feed, log, scheduler_stop)
-    from starpulse._internal.pulls.github import GITHUB_MACHINES  # noqa: PLC0415 - the database stack loads after the config is accepted
+    from starpulse.pulls.github import GITHUB_MACHINES  # noqa: PLC0415 - the database stack loads after the config is accepted
 
     cloudevents = (
         CloudEventsIngest(

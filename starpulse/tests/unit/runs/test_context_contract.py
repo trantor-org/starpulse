@@ -18,14 +18,14 @@ def _lint(root: Path, runs_module: str) -> subprocess.CompletedProcess[str]:
     found = [contract for contract in contracts if contract["id"] == "context-runs"]
     assert found, "pyproject.toml declares no context-runs import contract"
     internal = root / "fixture" / "_internal"
-    for name in ("runs", "pulls", "board"):
-        (internal / name).mkdir(parents=True)
-        (internal / name / "__init__.py").write_text("")
+    for package in (root / "fixture" / "runs", root / "fixture" / "pulls", internal / "board"):
+        package.mkdir(parents=True)
+        (package / "__init__.py").write_text("")
     for init in (root / "fixture", internal):
         (init / "__init__.py").write_text("")
-    (internal / "pulls" / "github.py").write_text("token = object()\n")
+    (root / "fixture" / "pulls" / "github.py").write_text("token = object()\n")
     (internal / "board" / "seam.py").write_text("seam = object()\n")
-    (internal / "runs" / "ingest.py").write_text(runs_module)
+    (root / "fixture" / "runs" / "ingest.py").write_text(runs_module)
     contract = json.loads(json.dumps(found[0]).replace("starpulse", "fixture"))
     config = root / "contract.toml"
     config.write_text(
@@ -40,10 +40,10 @@ def _lint(root: Path, runs_module: str) -> subprocess.CompletedProcess[str]:
 
 
 def test_runs_importing_a_pulls_module_breaks_the_contract(tmp_path: Path) -> None:
-    result = _lint(tmp_path, "from fixture._internal.pulls.github import token\n")
+    result = _lint(tmp_path, "from fixture.pulls.github import token\n")
 
     assert result.returncode != 0
-    assert "fixture._internal.runs.ingest" in result.stdout
+    assert "fixture.runs.ingest" in result.stdout
 
 
 @pytest.mark.parametrize("runs_module", ["from fixture._internal.board.seam import seam\n", "x = 1\n"])

@@ -88,7 +88,7 @@ class _Sink:
 class Projected:
     """Applies the worker's kept reports to the serving feed.
 
-    `watched` maps an opt-in worker's instance to why that worker counts as down (`starpulse._internal.runs.opt_in`):
+    `watched` maps an opt-in worker's instance to why that worker counts as down (`starpulse.runs.opt_in`):
     the page shows it as the instance's error, also for an instance whose worker never reported.
     """
 

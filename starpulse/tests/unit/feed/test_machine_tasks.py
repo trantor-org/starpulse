@@ -10,7 +10,7 @@ from typing import Literal
 
 import pytest
 
-from starpulse._internal.ci.ci import CI_MACHINES
+from starpulse.pulls.ci import CI_MACHINES
 from starpulse._internal.feed.board_feed import BoardFeed, follow
 from starpulse._internal.feed.machine_tasks import MachineTasks
 from starpulse.contracts.adapters import BoardTask, TaskKeys

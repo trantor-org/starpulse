@@ -6,16 +6,16 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine
 
-from starpulse._internal.ci.ci import CI_MACHINES
-from starpulse._internal.ci.ci_trail import CiTrail, parse
+from starpulse.pulls.ci import CI_MACHINES
+from starpulse.pulls.ci_trail import CiTrail, parse
 from starpulse._internal.config.config import Producer
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.feed.machine_tasks import MachineTasks
 from starpulse._internal.kit.adapter_kit import task
-from starpulse._internal.pulls.github import GITHUB_MACHINES
-from starpulse._internal.pulls.pull_events import RecordProjection
-from starpulse._internal.pulls.pulls import PullStore
-from starpulse._internal.runs.cloudevents import CloudEventsIngest
+from starpulse.pulls.github import GITHUB_MACHINES
+from starpulse.pulls.pull_events import RecordProjection
+from starpulse.pulls.pulls import PullStore
+from starpulse.runs.cloudevents import CloudEventsIngest
 from starpulse.event_log import events
 from starpulse.event_log.event_log import Entry, EventLog, Tail
 from starpulse.tests.machines import MACHINES

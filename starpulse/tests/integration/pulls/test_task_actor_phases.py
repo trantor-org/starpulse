@@ -13,8 +13,8 @@ from sqlalchemy import create_engine
 from starpulse._internal.config.config import load
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import task
-from starpulse._internal.pulls.pulls import PullStore
-from starpulse._internal.pulls.task_actor import ACTOR
+from starpulse.pulls.pulls import PullStore
+from starpulse.pulls.task_actor import ACTOR
 from starpulse._internal.server import server
 from starpulse.machine_engine.model.transitions import board_machine
 from starpulse.tests.machines import STATUSES, flow

@@ -99,7 +99,7 @@ from connectrpc.protocol import ProtocolType
 from google.protobuf.empty_pb2 import Empty
 from pyqwest import HTTPVersion, SyncClient, SyncHTTPTransport
 
-from starpulse._internal.runs.wire.cloudevents_pb2 import CloudEvent
+from starpulse.runs.wire.cloudevents_pb2 import CloudEvent
 
 port, token, kind, run = sys.argv[1:]
 client = ConnectClientSync(

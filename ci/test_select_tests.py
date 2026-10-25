@@ -24,8 +24,8 @@ def repo(tmp_path: Path) -> Path:
         "starpulse/leaf.py": "X = 1\n",
         "starpulse/lone.py": "Y = 2\n",
         "starpulse/_internal/board/seam.py": "import importlib\nfrom starpulse._internal.config.adapter_types import module_name\n",
-        "starpulse/_internal/runs/dagu.py": "def start(): ...\ndef follow(): ...\n",
-        "starpulse/_internal/config/adapter_types.py": 'BUILT_IN = {"dagu": "starpulse._internal.runs.dagu", "jira": "x"}\n',
+        "starpulse/runs/dagu.py": "def start(): ...\ndef follow(): ...\n",
+        "starpulse/_internal/config/adapter_types.py": 'BUILT_IN = {"dagu": "starpulse.runs.dagu", "jira": "x"}\n',
         "starpulse/event_log/__init__.py": "",
         "starpulse/_internal/server/server.py": "",
         "starpulse/event_log/event_log.py": "from starpulse import leaf\n",
@@ -51,11 +51,11 @@ def repo(tmp_path: Path) -> Path:
         "starpulse/machine_engine/adapters/machine_loader.py": "",
         "starpulse/tests/unit/contracts/test_contracts.py": "from starpulse.contracts import adapters\nfrom starpulse.contracts.api import schema\n",
         "starpulse/tests/unit/machine_engine/test_machine_definition.py": "from starpulse.machine_engine.adapters import machine_loader\n",
-        "starpulse/_internal/ci/ci.py": "",
+        "starpulse/pulls/ci.py": "",
         "starpulse/_internal/harnesses/harness.py": "",
-        "starpulse/_internal/pulls/github.py": "",
+        "starpulse/pulls/github.py": "",
         "starpulse/_internal/cli/skill_install.py": "",
-        "starpulse/tests/unit/pulls/test_github.py": "from starpulse._internal.pulls import github\n",
+        "starpulse/tests/unit/pulls/test_github.py": "from starpulse.pulls import github\n",
         "starpulse/tests/unit/machine_engine/test_github_pull_request_machine.py": "",
         "starpulse/tests/integration/cli/test_agent_cli.py": "from starpulse._internal.cli import skill_install\n",
         "ci/sizer.py": "",
@@ -327,7 +327,7 @@ def test_the_shard_matrix_is_the_selections_and_a_shard_runs_the_targets_it_was_
 
 
 def test_an_adapter_no_test_names_is_not_selected_through_the_loader_even_though_the_type_table_lists_it(repo):
-    assert select(repo, ["starpulse/_internal/runs/dagu.py"]) == Selection([])
+    assert select(repo, ["starpulse/runs/dagu.py"]) == Selection([])
 
 
 def test_a_module_a_conftest_fixture_uses_selects_the_tests_that_request_the_fixture(repo):
@@ -443,7 +443,7 @@ def test_a_pyproject_with_no_earlier_version_to_compare_runs_the_full_suite(repo
 
 
 def test_a_non_python_file_selects_a_mapped_reader_by_the_map_not_the_import_graph(repo):
-    reader = "starpulse/_internal/pulls/github.py"
+    reader = "starpulse/pulls/github.py"
     ran = "starpulse/tests/unit/machine_engine/test_github_pull_request_machine.py"
     coverage = mapped(**{ran: [reader]})
     assert select(repo, ["starpulse/machines/copilot.yaml"], coverage) == Selection([ran])

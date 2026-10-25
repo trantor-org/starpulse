@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from starpulse._internal.config.config import load
-from starpulse._internal.pulls import delivery
+from starpulse.pulls import delivery
 from starpulse._internal.server import server, worker
 from starpulse.event_log.event_log import EventLog
 from starpulse.tests import fake_board

@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import Engine, create_engine, event
 
-from starpulse._internal.pulls.pulls import PullStore
+from starpulse.pulls.pulls import PullStore
 
 REPO = "acme/widgets"
 NOW = datetime.now(UTC)

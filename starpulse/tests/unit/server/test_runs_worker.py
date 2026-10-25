@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.runs import projection, run_events
-from starpulse._internal.runs.push_runs import PUSHED_INSTANCE
+from starpulse.runs import projection, run_events
+from starpulse.runs.push_runs import PUSHED_INSTANCE
 from starpulse._internal.server import runs_worker, server, worker
 from starpulse.event_log.event_log import EventLog
 from starpulse.tests import fake_board

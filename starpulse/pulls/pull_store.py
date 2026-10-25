@@ -1,6 +1,6 @@
 """The single-pull-request read behind `POST /api/pulls/refresh`, and the thread that serves it.
 
-The PR store is a projection of lifecycle events (`starpulse._internal.pulls.pull_events`); nothing here polls GitHub.
+The PR store is a projection of lifecycle events (`starpulse.pulls.pull_events`); nothing here polls GitHub.
 `refresh_pull` reads one pull request alone (its facts, required checks at the head commit and review threads, one
 `query_github`) and replaces its record, for the manual read of `pr_status --live` and for a pull request a close
 event relays (`PullSync.request`). `isRequired` takes the PR's number, so a required check can only be read through
@@ -18,10 +18,10 @@ from typing import TYPE_CHECKING, Any
 
 from starpulse._internal.config.config import Repo
 from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.pulls.pull_requests import PULL_URL, GhUnavailableError, query_github
+from starpulse.pulls.pull_requests import PULL_URL, GhUnavailableError, query_github
 
 if TYPE_CHECKING:  # annotation only: the pull store opens the database stack
-    from starpulse._internal.pulls.pulls import PullStore
+    from starpulse.pulls.pulls import PullStore
 
 logger = logging.getLogger(__name__)
 

@@ -8,8 +8,8 @@ from typing import TYPE_CHECKING, NamedTuple, Protocol
 from urllib.parse import unquote
 
 from starpulse._internal.board.seam import OPERATOR, Written
-from starpulse._internal.pulls.pull_refresh import MAX_BODY as MAX_REFRESH_BODY
-from starpulse._internal.runs.ingest import MAX_BATCH_BODY
+from starpulse.pulls.pull_refresh import MAX_BODY as MAX_REFRESH_BODY
+from starpulse.runs.ingest import MAX_BATCH_BODY
 from starpulse._internal.server.encoding import encode
 from starpulse._internal.server.reads import Response
 from starpulse._internal.server.routes import (

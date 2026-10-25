@@ -23,7 +23,7 @@ from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
-    from starpulse._internal.pulls.pulls import PullStore
+    from starpulse.pulls.pulls import PullStore
     from starpulse.event_log.event_log import Entry, EventLog
 
 logger = logging.getLogger(__name__)

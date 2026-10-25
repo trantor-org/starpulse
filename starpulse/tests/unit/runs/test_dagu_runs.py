@@ -16,8 +16,8 @@ import pytest
 
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import RunsAdapterKit
-from starpulse._internal.runs import run_events
-from starpulse._internal.runs.dagu import (
+from starpulse.runs import run_events
+from starpulse.runs.dagu import (
     _STATUS,
     GRAPH_TTL,
     DaguRuns,
@@ -32,7 +32,7 @@ from starpulse._internal.runs.dagu import (
     starter,
     status_of,
 )
-from starpulse._internal.runs.dagu import follow as dagu_follow
+from starpulse.runs.dagu import follow as dagu_follow
 from starpulse.contracts.adapters import StartFailedError, TaskKeys
 from starpulse.event_log.event_log import EventLog
 from starpulse.tests.dagu_stub import InFlight, Past, Queue, dagu, run_entry, step_entry
@@ -674,7 +674,7 @@ def test_the_adapters_start_capability_is_the_starter_over_the_instances_url(mon
     def connect(url: str) -> Transport:
         return lambda method, path, body: sent.append((url, path)) or (200, {"dagRunId": "run-9"})
 
-    monkeypatch.setattr("starpulse._internal.runs.dagu.connect", connect)
+    monkeypatch.setattr("starpulse.runs.dagu.connect", connect)
 
     assert start("http://dagu.test:8085")("healthcheck") == "run-9"
     assert {url for url, _ in sent} == {"http://dagu.test:8085"}
@@ -728,7 +728,7 @@ def test_following_an_instance_reads_its_listing_into_the_sink_on_daemon_threads
 def test_a_run_appended_to_the_log_moves_its_dag_and_the_end_reads_the_steps_again(
     log: EventLog, monkeypatch: pytest.MonkeyPatch, follow_instance
 ) -> None:
-    monkeypatch.setattr("starpulse._internal.runs.dagu._reconcile_forever", lambda runs, stop: None)  # only the entries move the DAG
+    monkeypatch.setattr("starpulse.runs.dagu._reconcile_forever", lambda runs, stop: None)  # only the entries move the DAG
     feed = BoardFeed()
     with dagu({"d1": ["a"]}) as (base_url, calls):
         follow_instance(base_url, feed.runs("ci"), log, interval=0.01)
@@ -745,7 +745,7 @@ def test_a_run_appended_to_the_log_moves_its_dag_and_the_end_reads_the_steps_aga
 def test_the_tail_starts_at_the_log_head_so_no_retained_entry_is_replayed_and_a_later_one_is_handled(
     log: EventLog, monkeypatch: pytest.MonkeyPatch, follow_instance
 ) -> None:
-    monkeypatch.setattr("starpulse._internal.runs.dagu._reconcile_forever", lambda runs, stop: None)
+    monkeypatch.setattr("starpulse.runs.dagu._reconcile_forever", lambda runs, stop: None)
     handled: list[str] = []
     real_handle = DaguRuns.handle_entry
     monkeypatch.setattr(DaguRuns, "handle_entry", lambda self, entry_id, fields: (handled.append(entry_id), real_handle(self, entry_id, fields))[1])
@@ -765,7 +765,7 @@ def test_the_tail_starts_at_the_log_head_so_no_retained_entry_is_replayed_and_a_
 def test_a_followed_instance_reads_only_the_named_dag_when_an_entry_names_a_new_one(
     log: EventLog, monkeypatch: pytest.MonkeyPatch, follow_instance
 ) -> None:
-    monkeypatch.setattr("starpulse._internal.runs.dagu._reconcile_forever", lambda runs, stop: None)  # its listings would skew the count
+    monkeypatch.setattr("starpulse.runs.dagu._reconcile_forever", lambda runs, stop: None)  # its listings would skew the count
     steps = {"d1": ["a"], "d2": ["b"]}
     feed = BoardFeed()
     with dagu(steps) as (base_url, calls):
@@ -962,7 +962,7 @@ def test_a_start_that_cannot_reach_dagu_raises_with_the_transports_reason() -> N
 def test_a_run_that_finishes_on_dagu_shows_within_one_reconcile_interval_with_no_log_entries(
     log: EventLog, monkeypatch: pytest.MonkeyPatch, follow_instance
 ) -> None:
-    monkeypatch.setattr("starpulse._internal.runs.dagu.RECONCILE_INTERVAL", 0.05)
+    monkeypatch.setattr("starpulse.runs.dagu.RECONCILE_INTERVAL", 0.05)
     feed = BoardFeed()
     latest = {"statusLabel": "running", "dagRunId": "r1"}
 
@@ -1564,7 +1564,7 @@ def test_a_dag_no_cue_ties_gets_no_recent_runs_from_a_reader_that_ties_none() ->
 def test_a_followed_instance_reads_the_recent_runs_of_the_workflows_its_sink_says_are_tied(
     log: EventLog, monkeypatch: pytest.MonkeyPatch, follow_instance
 ) -> None:
-    monkeypatch.setattr("starpulse._internal.runs.dagu._reconcile_forever", lambda runs, stop: None)
+    monkeypatch.setattr("starpulse.runs.dagu._reconcile_forever", lambda runs, stop: None)
     sink = _Sink()
     sink.tied = frozenset({"apply"})  # type: ignore[attr-defined]
     with dagu({**APPLY, "other": ["a"]}, history=(APPLIED,)) as (base_url, _):
@@ -1620,7 +1620,7 @@ def test_the_adapters_rerun_capability_is_the_rerunner_over_the_instances_url(mo
     def connect(url: str) -> Transport:
         return lambda method, path, body: sent.append((url, path, body)) or (200, {"dagRunId": "run-9"})
 
-    monkeypatch.setattr("starpulse._internal.runs.dagu.connect", connect)
+    monkeypatch.setattr("starpulse.runs.dagu.connect", connect)
 
     assert rerun("http://dagu.test:8085")("healthcheck", {"FORCE": "1"}) == "run-9"
     assert sent == [("http://dagu.test:8085", "/dags/healthcheck/start", {"params": "FORCE=1"})]

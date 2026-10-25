@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from starpulse._internal.pulls.pull_refresh import PullRefresh
+from starpulse.pulls.pull_refresh import PullRefresh
 
 TOKEN = "refresh-secret"
 TRACKED = {"acme/widgets"}

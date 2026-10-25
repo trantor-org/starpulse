@@ -9,7 +9,7 @@ from sqlalchemy import create_engine
 
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import task
-from starpulse._internal.pulls.pulls import PullStore
+from starpulse.pulls.pulls import PullStore
 from starpulse.tests.task_actor_kit import GATED, PR_ONE, Board, Criteria, pull, running, until
 
 

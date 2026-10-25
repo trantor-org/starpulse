@@ -79,9 +79,9 @@ READERS = {
     "pyproject.toml": (),
     "ci/static_checks.sh": ("ci/test_workflow_placement.py",),
     "starpulse/machines/*": (
-        "starpulse/_internal/ci/ci.py",
+        "starpulse/pulls/ci.py",
         "starpulse/_internal/harnesses/harness.py",
-        "starpulse/_internal/pulls/github.py",
+        "starpulse/pulls/github.py",
         "starpulse/tests/unit/machine_engine/test_github_pull_request_machine.py",
     ),
     "starpulse/skills/*": (

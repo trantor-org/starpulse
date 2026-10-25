@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from starpulse._internal.runs import run_events
+from starpulse.runs import run_events
 from starpulse.contracts import BoardTask
 from starpulse.event_log import events, lane_events
 from starpulse.event_log.event_log import EventLog

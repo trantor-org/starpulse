@@ -4,7 +4,7 @@ syntax = "proto3";
 package starpulse.v1;
 
 import "google/protobuf/empty.proto";
-import "starpulse/_internal/runs/wire/cloudevents.proto";
+import "starpulse/runs/wire/cloudevents.proto";
 
 service CloudEventsIngest {
   // One event; a refusal is a non-OK status carrying the reason.

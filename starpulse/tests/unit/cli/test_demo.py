@@ -9,7 +9,7 @@ from pathlib import Path
 import jsonschema
 import pytest
 
-from starpulse._internal.ci.ci import CI_MACHINES
+from starpulse.pulls.ci import CI_MACHINES
 from starpulse._internal.cli.demo import (
     SEED_ROLES,
     STATIC,

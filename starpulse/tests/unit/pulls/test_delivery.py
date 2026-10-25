@@ -9,8 +9,8 @@ from pathlib import Path
 import pytest
 
 from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.pulls import delivery
-from starpulse._internal.pulls.pulls import PullStore
+from starpulse.pulls import delivery
+from starpulse.pulls.pulls import PullStore
 from starpulse._internal.server.reads import _PullReads
 from starpulse.event_log.event_log import EventLog
 

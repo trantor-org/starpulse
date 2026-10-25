@@ -194,7 +194,7 @@ from starpulse._internal.feed.claim_refusals import CLAIMS_STREAM
 from starpulse._internal.feed.history_window import SETTINGS_FILE, HistoryWindow
 from starpulse._internal.harnesses.session_start import starter
 from starpulse._internal.harnesses.telemetry import TelemetryLog
-from starpulse._internal.pulls.delivery import (
+from starpulse.pulls.delivery import (
     Projected,
     follow_saves,
     keep_beating,
@@ -202,15 +202,15 @@ from starpulse._internal.pulls.delivery import (
     poller_problem,
     request_refresh,
 )
-from starpulse._internal.pulls.pull_refresh import PullRefresh
-from starpulse._internal.pulls.pull_requests import PullRequests
-from starpulse._internal.pulls.pull_store import PullSync
-from starpulse._internal.pulls.task_actor import ACTOR, TaskActor, moves_of
-from starpulse._internal.pulls.unblock import UNBLOCK_S, Unblocker
-from starpulse._internal.runs import opt_in
-from starpulse._internal.runs import projection as runs_projection
-from starpulse._internal.runs.cloudevents import CloudEventsIngest
-from starpulse._internal.runs.ingest import tokens as ingest_tokens
+from starpulse.pulls.pull_refresh import PullRefresh
+from starpulse.pulls.pull_requests import PullRequests
+from starpulse.pulls.pull_store import PullSync
+from starpulse.pulls.task_actor import ACTOR, TaskActor, moves_of
+from starpulse.pulls.unblock import UNBLOCK_S, Unblocker
+from starpulse.runs import opt_in
+from starpulse.runs import projection as runs_projection
+from starpulse.runs.cloudevents import CloudEventsIngest
+from starpulse.runs.ingest import tokens as ingest_tokens
 from starpulse._internal.server.asgi_app import _CONTRACT_TTL_S, _cached, page_app
 from starpulse._internal.server.closure import ENTRIES, Reader
 from starpulse._internal.server.control import control_file
@@ -240,7 +240,7 @@ _STATIC = _HERE / "static"
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     from starpulse._internal.feed.board_feed import BoardFeed
-    from starpulse._internal.pulls.pulls import PullStore
+    from starpulse.pulls.pulls import PullStore
     from starpulse._internal.scheduler.remote import Remote
     from starpulse.event_log.event_log import EventLog
     from starpulse.flow_metrics.history import History
@@ -456,7 +456,7 @@ def start_delivery(
     The actor records the lane of each write it makes on `feed` (`BoardFeed.record_written`); `after_project` runs
     after each projection. Raises `ValueError` naming a table the board cannot serve.
     """
-    from starpulse._internal.ci.ci_trail import CiTrail  # noqa: PLC0415 - the database stack loads when a store does
+    from starpulse.pulls.ci_trail import CiTrail  # noqa: PLC0415 - the database stack loads when a store does
 
     # without the GitHub CLI there is no source, and a task simply carries no PR state; a config can turn the store off
     release = config.release
@@ -532,7 +532,7 @@ class Prepared(NamedTuple):
     run_safe: list[str]
     producer_tokens: dict[str, str]
     opt_in_workers: list[str]
-    """The `[[runs]]` instances an opt-in worker runs (`starpulse._internal.runs.opt_in`): none of them runs in `serve`."""
+    """The `[[runs]]` instances an opt-in worker runs (`starpulse.runs.opt_in`): none of them runs in `serve`."""
 
 
 def prepare(parser: argparse.ArgumentParser, args: argparse.Namespace, config: Config) -> Prepared:
@@ -620,7 +620,7 @@ DATABASE_STACK = (
     "starpulse._internal.feed.claim_refusals",
     "starpulse._internal.feed.machine_tasks",
     "starpulse._internal.feed.search",
-    "starpulse._internal.pulls.pulls",
+    "starpulse.pulls.pulls",
     "starpulse._internal.server.assembly",
 )
 

@@ -21,12 +21,12 @@ from connectrpc.server import ConnectASGIApplication, Endpoint
 from google.protobuf.empty_pb2 import Empty
 
 from starpulse._internal.config.config import MAX_BATCH
-from starpulse._internal.runs.wire.cloudevents_pb2 import CloudEvent, CloudEventBatch
+from starpulse.runs.wire.cloudevents_pb2 import CloudEvent, CloudEventBatch
 
 if TYPE_CHECKING:
     from connectrpc.request import RequestContext
 
-    from starpulse._internal.runs.cloudevents import CloudEventsIngest
+    from starpulse.runs.cloudevents import CloudEventsIngest
 
 SERVICE = "starpulse.v1.CloudEventsIngest"
 #: The URL prefix every method of the service is served under.

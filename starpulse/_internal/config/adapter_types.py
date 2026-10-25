@@ -10,9 +10,9 @@ BUILT_IN = {
     "machines": "starpulse._internal.board.machines_only",
     "upstream_backlog": "starpulse._internal.board.upstream_backlog",
     "jira": "starpulse._internal.board.jira",
-    "dagu": "starpulse._internal.runs.dagu",
-    "github_actions": "starpulse._internal.runs.github_actions",
-    "systemd": "starpulse._internal.runs.systemd",
+    "dagu": "starpulse.runs.dagu",
+    "github_actions": "starpulse.runs.github_actions",
+    "systemd": "starpulse.runs.systemd",
 }
 
 

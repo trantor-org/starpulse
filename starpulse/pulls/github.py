@@ -1,6 +1,6 @@
 """The GitHub adapter: a repository's pull requests, checks and Copilot work become events on two machines.
 
-    python -m starpulse._internal.pulls.github --repo OWNER/NAME [--interval 300] [--config FILE] [--key RE --branch RE --key-format FMT]
+    python -m starpulse.pulls.github --repo OWNER/NAME [--interval 300] [--config FILE] [--key RE --branch RE --key-format FMT]
 
 Every `--interval` seconds it reads the repository's 30 most recently updated pull requests and appends their events
 to the event log in the database `--config` names (default `starpulse.toml` in the working directory), the store
@@ -41,7 +41,7 @@ from starpulse.machine_engine.adapters.machine_loader import load_machine
 from starpulse.machine_engine.model.snapshot import describe
 
 #: The machine files beside the package: `adapters/runs/` is two levels below them.
-MACHINES = Path(__file__).parents[2] / "machines"
+MACHINES = Path(__file__).parents[1] / "machines"
 PULL_REQUEST = load_machine(MACHINES / "github-pull-request.yaml")
 COPILOT = load_machine(MACHINES / "copilot.yaml")
 CI_JOB = load_machine(MACHINES / "ci-job.yaml")

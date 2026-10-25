@@ -8,7 +8,7 @@ Runs context, run by `starpulse._internal.server.runs_worker`; `dagu`, `github-a
 `starpulse._internal.server.search_worker`; `board` is the Board context's writer (the Start Criteria dating), run by `starpulse._internal.server.board_worker`.
 
 The `pulls` worker reads the config and the history database `serve` does and meets `serve` only in the event log
-(`starpulse._internal.pulls.delivery`): it keeps the pull request projection there, takes the refreshes a page asked and
+(`starpulse.pulls.delivery`): it keeps the pull request projection there, takes the refreshes a page asked and
 relays the actor's metrics. `SIGTERM` stops it; `SIGHUP` re-reads the config and, when a Delivery setting
 changed, rebuilds the loops in the same process.
 """
@@ -25,7 +25,7 @@ from starpulse._internal.board.seam import Board
 from starpulse._internal.config.config import Config, discover, load
 from starpulse._internal.config.pins import GitHub
 from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.pulls.delivery import (
+from starpulse.pulls.delivery import (
     Projected,
     Publisher,
     announce_saves,
@@ -33,8 +33,8 @@ from starpulse._internal.pulls.delivery import (
     follow_refreshes,
     keep_metrics,
 )
-from starpulse._internal.pulls.pull_events import JOBS_STREAM, MACHINE_STREAM, RecordProjection
-from starpulse._internal.pulls.pulls import PullStore
+from starpulse.pulls.pull_events import JOBS_STREAM, MACHINE_STREAM, RecordProjection
+from starpulse.pulls.pulls import PullStore
 from starpulse._internal.server.assembly import history_store, worker_board
 from starpulse._internal.server.hold import hold
 from starpulse._internal.server.server import listen_options, start_delivery

@@ -6,7 +6,7 @@ from pathlib import Path
 
 from starpulse._internal.board.board_import import import_board
 from starpulse._internal.board.task_history import KIND
-from starpulse._internal.runs.run_streams import RunStreams
+from starpulse.runs.run_streams import RunStreams
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.store import EventStore
 

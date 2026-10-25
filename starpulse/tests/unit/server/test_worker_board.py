@@ -8,7 +8,7 @@ from pathlib import Path
 from starpulse._internal.board.native import board
 from starpulse._internal.board.task_history import KIND
 from starpulse._internal.config.config import load
-from starpulse._internal.pulls.task_actor import ACTOR
+from starpulse.pulls.task_actor import ACTOR
 from starpulse._internal.server.assembly import worker_board
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.readmodel.projector import Projector
