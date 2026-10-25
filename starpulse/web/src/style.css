@@ -504,9 +504,9 @@ aside h3 { margin: 0 0 8px; font-size: calc(10px * var(--fs)); font-weight: 500;
 #kbm .tv .md h4 { margin: 16px 0 6px; font-size: calc(11px * var(--fs)); font-weight: 500; color: var(--slate); letter-spacing: .06em; text-transform: uppercase; }
 #kbm .tv .md pre { margin: 0 0 10px; padding: 8px 10px; border-radius: 6px; background: color-mix(in srgb, var(--code) 70%, transparent); white-space: pre-wrap; font-size: calc(11px * var(--fs)); }
 #kbm .tv .md a.tl { color: var(--agent-hi); text-decoration: none; border-bottom: 1px dotted currentColor; }
-#kbm .tv .md .tbl { overflow-x: auto; margin: 0 0 10px; }
-#kbm .tv .md .tbl table { border-collapse: collapse; font-size: calc(12px * var(--fs)); }
-#kbm .tv .md .tbl th, #kbm .tv .md .tbl td { padding: 4px 14px 4px 0; border-bottom: 1px solid color-mix(in srgb, var(--slate) 18%, transparent); text-align: left; vertical-align: top; }
+#kbm .tv .md .tbl { margin: 0 0 10px; }
+#kbm .tv .md .tbl table { width: 100%; border-collapse: collapse; font-size: calc(12px * var(--fs)); }
+#kbm .tv .md .tbl th, #kbm .tv .md .tbl td { padding: 4px 14px 4px 0; border-bottom: 1px solid color-mix(in srgb, var(--slate) 18%, transparent); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
 #kbm .tv .md .tbl th { color: var(--slate); font-weight: 500; }
 #kbm .tv .md .tbl .r { text-align: right; }
 #kbm .tv .addbtn { all: unset; margin: 4px 0 14px; color: var(--agent-hi); cursor: pointer; font-size: calc(12px * var(--fs)); }
