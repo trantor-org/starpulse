@@ -477,6 +477,8 @@ class TaskActor:
             record = self._record(url)
             if record is None or record["state"] not in _TERMINAL:
                 return None
+            if record["state"] == "MERGED" and not record["mergedAt"]:
+                return None  # merged on an event's word alone: the next read of GitHub settles it
             part = f"{record['repo']}#{record['number']} {record['state'].lower()}"
             if record["mergeSha"]:
                 part += f" as {record['mergeSha']}"
