@@ -277,3 +277,31 @@ def test_cited_reads_a_pull_request_added_to_the_task_after_the_feed_started(eng
     Projector(engine, EventStore(engine)).catch_up()
 
     assert feed.cited("TASK-1") == [PULL]
+
+
+def test_open_tasks_carry_a_pull_request_added_after_the_feed_started(engine: Engine) -> None:
+    _append(engine, 1, "Review")
+    feed = _feed(engine)
+    assert [agent["prs"] for agent in feed.open_tasks()] == [[]]
+
+    EventStore(engine).append("task", "TASK-1", 1, [_new("FieldsEdited", changes={"references": [PULL]})])
+    Projector(engine, EventStore(engine)).catch_up()
+
+    assert [agent["prs"] for agent in feed.open_tasks()] == [[PULL]]
+
+
+def test_a_board_card_carries_the_description_and_criteria_the_modal_draws_first(engine: Engine) -> None:
+    EventStore(engine).append(
+        "task",
+        "TASK-1",
+        0,
+        [
+            _new("TaskCreated", title="Task 1", description="Draw at once.", state="Review", labels=[]),
+            _new("CriterionAdded", kind="ac", text="Tests pass"),
+            _new("CriterionAdded", kind="dod", text="Docs"),
+        ],
+    )
+
+    (card,) = _board(_feed(engine))["agents"]
+
+    assert (card["description"], card["criteria"]) == ("Draw at once.", [{"text": "Tests pass", "checked": False}])

@@ -119,11 +119,12 @@ def test_deltas_since_a_cursor_come_in_change_order_with_archived_tasks_and_page
     [
         queries.snapshot(),
         queries.snapshot("Ready"),
+        queries.live_criteria(),
         queries.with_field("field_area", "ops"),
         queries.ready("Ready", "Done"),
         queries.since(10, 100),
     ],
-    ids=["snapshot", "snapshot-by-state", "by-field", "ready", "since"],
+    ids=["snapshot", "snapshot-by-state", "live-criteria", "by-field", "ready", "since"],
 )
 def test_every_query_reads_through_an_index_and_never_scans_the_table(board, statement: Select) -> None:
     engine, _, _ = board

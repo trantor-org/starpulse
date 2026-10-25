@@ -305,3 +305,32 @@ def test_a_merge_of_a_pr_added_after_startup_moves_the_task_to_done(
     still_projecting = projection.is_alive()
     _BlockedProjection.release.set()
     assert (moved, still_projecting) == (True, True)
+
+
+def test_a_read_model_task_whose_cited_pr_merged_before_startup_moves_to_done(
+    tmp_path: Path, store: PullStore, stop: threading.Event, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    engine = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}").engine
+    events = EventStore(engine)
+    created = NewEvent(
+        type="TaskCreated", payload={"title": "Task", "state": "Review"}, actor="adin", writer="operator"
+    )
+    referenced = NewEvent(
+        type="FieldsEdited", payload={"changes": {"references": [PR_ONE]}}, actor="adin", writer="operator"
+    )
+    events.append("task", "TASK-1", 0, [created, referenced])
+    Projector(engine, events).catch_up()
+    feed = BoardFeed(roles=ROLES, machines=MACHINES, read_model=ReadModel(engine))
+    board = Board(feed)
+    store.save([pull(1, state="MERGED")])
+    delivery = SimpleNamespace(edit=board.edit, waits=WAITS, evaluate=None, holds=None)
+    monkeypatch.setattr(server.shutil, "which", lambda name: name)
+    monkeypatch.setattr(server, "moves_of", lambda machine: MOVES)
+    monkeypatch.setattr(server, "PullRequests", _BlockedProjection)
+    monkeypatch.setattr(server, "PullSync", _Sync)
+    monkeypatch.setattr(_Sync, "projects", [])
+    monkeypatch.setattr(_BlockedProjection, "release", threading.Event())
+    _BlockedProjection.release.set()
+    server.start_delivery(replace(load(None), task_actor=True), delivery, feed, None, store, Pins(), stop)
+
+    assert until(lambda: board.moved() == [("TASK-1", "done")])

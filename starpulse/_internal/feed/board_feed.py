@@ -1285,7 +1285,11 @@ class BoardFeed:
             }
             self._hot_cache = (
                 position,
-                [summary_agent(summary, summary["id"] in ready, self._read_model_moves(summary)) for summary in summaries],
+                [
+                    summary_agent(summary, summary["id"] in ready, self._read_model_moves(summary))
+                    | read_model_detail(summary)
+                    for summary in summaries
+                ],
             )
         return [self._expiring(agent) for agent in self._hot_cache[1]]
 

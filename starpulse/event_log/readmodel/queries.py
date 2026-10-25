@@ -10,7 +10,7 @@ from typing import Any
 
 from sqlalchemy import Select, column, exists, false, func, or_, select, true
 
-from starpulse.event_log.readmodel.tables import tasks
+from starpulse.event_log.readmodel.tables import criteria, tasks
 
 SUMMARY = (
     tasks.c.id,
@@ -30,13 +30,23 @@ SUMMARY = (
 
 
 #: What a card on the page draws that a delta summary leaves out.
-CARD = (*SUMMARY, tasks.c.dependencies)
+CARD = (*SUMMARY, tasks.c.description, tasks.c.dependencies, tasks.c.references)
 
 
 def snapshot(state: str | None = None) -> Select[Any]:
     """The unarchived Tasks, in id order, narrowed to `state` when given."""
     query = select(*CARD).where(tasks.c.archived == false()).order_by(tasks.c.id)
     return query if state is None else query.where(tasks.c.state == state)
+
+
+def live_criteria() -> Select[Any]:
+    """The unarchived Tasks' Acceptance Criteria, in task and number order."""
+    return (
+        select(criteria.c.task_id, criteria.c.kind, criteria.c.text, criteria.c.checked)
+        .join(tasks, tasks.c.id == criteria.c.task_id)
+        .where(tasks.c.archived == false(), criteria.c.kind == "ac")
+        .order_by(criteria.c.task_id, criteria.c.n)
+    )
 
 
 def with_field(field_column: str, value: object) -> Select[Any]:
