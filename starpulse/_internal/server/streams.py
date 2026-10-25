@@ -5,15 +5,16 @@ from __future__ import annotations
 
 import logging
 import queue
+import threading
 import time
 from collections.abc import Callable, Generator, Sequence
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 from urllib.parse import parse_qs, unquote
 
 from pydantic import ValidationError
 
 from starpulse._internal.server.column_stream import ColumnViews, Interest
-from starpulse._internal.server.encoding import encode
+from starpulse._internal.server.encoding import encode, event
 from starpulse._internal.server.reads import Request, Response
 from starpulse._internal.server.responses import _error
 from starpulse._internal.server.routes import _HELD, _LANES, _LEDGER, _SNAPSHOT_BODY
@@ -31,6 +32,39 @@ _STREAM_RETRY_S = 5
 
 #: A comment frame, sent while a stream is idle: a closed page fails the write of it, which ends the stream.
 _PING = b": ping\n\n"
+
+
+#: Seconds an idle event stream waits before a keep-alive comment, which is how a closed page is noticed.
+_PING_S = 15.0
+
+
+#: Seconds a held-task stream lets a burst of changes settle before it rereads the holder's tasks.
+_HELD_SETTLE_S = 0.5
+
+
+class EventText:
+    """The JSON text of the events last sent, by the data each was made from.
+
+    Every page streaming `/api/events` is handed the same `data` object for a change, and encoding it holds the GIL
+    (the `ledgers` event is ~0.7 MB, ~45 ms), so the first page to reach a change encodes it under the lock and the
+    others take that text.
+    """
+
+    def __init__(self, keep: int = 8) -> None:
+        self._keep = keep
+        self._lock = threading.Lock()
+        self._made: dict[int, tuple[str, Any, str]] = {}
+
+    def __call__(self, name: str, data: Any) -> str:
+        with self._lock:
+            made = self._made.get(id(data))
+            if made is not None and made[0] == name and made[1] is data:
+                return made[2]
+            text = event(name, data)
+            self._made[id(data)] = (name, data, text)  # holds `data`, so its id is not reused while it is here
+            while len(self._made) > self._keep:
+                del self._made[next(iter(self._made))]
+            return text
 
 
 class Stream(NamedTuple):
@@ -56,15 +90,10 @@ class Streams:
         snapshots: SnapshotCache,
         build: Callable[[], str | None] = lambda: None,
     ) -> None:
-        from starpulse._internal.server import (
-            server as views,
-        )  # late: `server` imports the handler that imports this module, and keeps the stream timings its tests patch
-
-        self._views = views
         self._feed = feed
         self._snapshots = snapshots
         self._build = build
-        self._event_text = views.EventText()
+        self._event_text = EventText()
         self._column_views = ColumnViews()
 
     def __call__(self, request: Request, admit: Callable[[], bool]) -> Stream | Response | None:
@@ -109,7 +138,7 @@ class Streams:
                 yield self._event(*change)
             while True:
                 try:
-                    change = changes.get(timeout=self._views._PING_S)
+                    change = changes.get(timeout=_PING_S)
                 except queue.Empty:
                     yield _PING
                     continue
@@ -135,7 +164,7 @@ class Streams:
         yield _frame("page", encode("ledger", {"rows": rows, "more": more}).decode())
         while True:
             try:
-                yield _frame("rows", encode("ledger_rows", changes.get(timeout=self._views._PING_S)).decode())
+                yield _frame("rows", encode("ledger_rows", changes.get(timeout=_PING_S)).decode())
             except queue.Empty:
                 yield _PING
 
@@ -166,7 +195,7 @@ class Streams:
                 sent = view
                 interest = Interest(view, assignee, states)
             yield from self._wait_touched(changes, interest)
-            time.sleep(self._views._HELD_SETTLE_S)
+            time.sleep(_HELD_SETTLE_S)
             while not changes.empty():
                 changes.get_nowait()
                 changes.task_done()
@@ -176,7 +205,7 @@ class Streams:
         """Take changes off `changes` until one alters the view `interest` describes, pinging while none arrives."""
         while True:
             try:
-                change = changes.get(timeout=self._views._PING_S)
+                change = changes.get(timeout=_PING_S)
             except queue.Empty:
                 yield _PING
                 continue

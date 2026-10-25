@@ -21,6 +21,17 @@ from hashlib import sha256
 from pathlib import Path
 
 from starpulse._internal.config.config import Config, discover, load
+from starpulse._internal.server.blocks import (
+    api_built_blocks,
+    board_built_blocks,
+    flow_metrics_built_blocks,
+    pulls_delivery_blocks,
+    pulls_fixed_blocks,
+    runs_built_blocks,
+    scheduler_fixed_blocks,
+    scheduler_live_blocks,
+    search_built_blocks,
+)
 
 SELF = "serve"
 
@@ -169,30 +180,20 @@ def code_of(entry: str, package: str = "starpulse") -> frozenset[tuple[str, str]
 def _blocks(name: str, config: Config) -> tuple[object, object]:
     """The (restart, live) config blocks of `name`: the ones a running worker needs a new process for, and the ones it
     re-reads on `SIGHUP`. `serve` itself has none."""
-    from starpulse._internal.server import (  # noqa: PLC0415 - imported only when read
-        api_worker,
-        board_worker,
-        flow_metrics_worker,
-        runs_worker,
-        scheduler_worker,
-        search_worker,
-        worker,
-    )
-
     if name == "api":
-        return api_worker.built_blocks(config), ()
+        return api_built_blocks(config), ()
     if name == "pulls":
-        return worker.fixed_blocks(config), worker.delivery_blocks(config)
+        return pulls_fixed_blocks(config), pulls_delivery_blocks(config)
     if name == "scheduler":
-        return scheduler_worker.fixed_blocks(config), scheduler_worker.scheduler_blocks(config)
+        return scheduler_fixed_blocks(config), scheduler_live_blocks(config)
     if name == "runs":
-        return runs_worker.built_blocks(config), ()
+        return runs_built_blocks(config), ()
     if name == "flow-metrics":
-        return flow_metrics_worker.built_blocks(config), ()
+        return flow_metrics_built_blocks(config), ()
     if name == "search":
-        return search_worker.built_blocks(config), ()
+        return search_built_blocks(config), ()
     if name == "board":
-        return board_worker.built_blocks(config), ()
+        return board_built_blocks(config), ()
     return (), ()
 
 

@@ -7,7 +7,7 @@ import pytest
 
 from starpulse._internal.scheduler.remote import Remote
 from starpulse._internal.server import scheduler_service as service
-from starpulse._internal.server import server, worker
+from starpulse._internal.server import api_worker, server, worker
 from starpulse._internal.server.closure import ENTRIES, Reader
 from starpulse._internal.server.server import DATABASE_STACK
 from starpulse.tests import fake_board
@@ -30,12 +30,12 @@ def _serve(
             raise ending
 
     monkeypatch.setattr(server, "stay_until_stopped", end)
-    monkeypatch.setattr(server, "serve_until_stopped", lambda httpd, feed: None)
+    monkeypatch.setattr(api_worker, "serve_until_stopped", lambda httpd, feed: None)
     threads: list[str] = []
     monkeypatch.setattr(service, "start_scheduler", lambda *args, **kwargs: threads.append("scheduler"))
     monkeypatch.setattr(server, "start_delivery", lambda *args, **kwargs: threads.append("delivery") or (None, None))
     handled: dict[str, object] = {}
-    monkeypatch.setattr(server, "page_app", lambda *args, **kwargs: handled.update(kwargs, services=args[5]))
+    monkeypatch.setattr(api_worker, "page_app", lambda *args, **kwargs: handled.update(kwargs, services=args[5]))
     config = tmp_path / "starpulse.toml"
     config.write_text(settings + BOARD)
 

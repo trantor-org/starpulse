@@ -208,12 +208,7 @@ class ReadRoutes:
         clock: Callable[[], float] = time.time,
         page_gauge: Callable[[], str] | None = None,
     ) -> None:
-        from starpulse._internal.server import (
-            server as views,
-        )  # late: `server` imports the handler that imports this module, and keeps the views its tests patch
-
         read, search = board.read, services.search
-        self._views = views
         self._feed = feed
         self._history = history
         self._snapshots = snapshots

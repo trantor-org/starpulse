@@ -19,7 +19,7 @@ def _interactive(document: dict) -> dict[str, bool]:
 
 
 def test_a_held_task_is_interactive_only_after_its_take_over_is_accepted(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr("starpulse._internal.server.server._HELD_SETTLE_S", 0)
+    monkeypatch.setattr("starpulse._internal.server.streams._HELD_SETTLE_S", 0)
     feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.put(task("PROJ-1", "In Progress", assignee="session-1"))
     taken: list[str] = []

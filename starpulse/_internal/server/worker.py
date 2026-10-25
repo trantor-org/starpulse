@@ -20,6 +20,7 @@ import logging
 import threading
 from pathlib import Path
 
+from starpulse._internal.server.blocks import pulls_delivery_blocks, pulls_fixed_blocks
 from starpulse._internal.board.seam import Board
 from starpulse._internal.config.config import Config, discover, load
 from starpulse._internal.config.pins import GitHub
@@ -45,16 +46,6 @@ logger = logging.getLogger(__name__)
 #: The run Adapters that are opt-in workers (`starpulse._internal.server.adapter_worker`): `serve` supervises none.
 OPT_IN = ("dagu", "github-actions", "systemd")
 CONTEXTS = ("api", "pulls", "scheduler", "runs", "flow-metrics", "search", "board", *OPT_IN)
-
-
-def delivery_blocks(config: Config) -> tuple:
-    """What of `config` the Delivery loops are built from; a change to anything else needs no rebuild."""
-    return (config.task_actor, config.release, config.repos, config.pull_requests, config.ci)
-
-
-def fixed_blocks(config: Config) -> tuple:
-    """What of `config` the worker's board and history database were built from at start; a change needs a restart."""
-    return (config.database_url, config.board_type, config.board)
 
 
 class Delivery:
@@ -105,9 +96,9 @@ class Delivery:
         except (OSError, ValueError) as exc:
             logger.error("reload: %s: %s; keeping the running config", path, exc)
             return
-        if fixed_blocks(new) != fixed_blocks(self._config):
+        if pulls_fixed_blocks(new) != pulls_fixed_blocks(self._config):
             logger.warning("reload: the database or board changed; restart the worker to apply it")
-        if delivery_blocks(new) == delivery_blocks(self._config):
+        if pulls_delivery_blocks(new) == pulls_delivery_blocks(self._config):
             logger.info("reload: no Delivery setting changed")
             return
         logger.info("reload: a Delivery setting changed; rebuilding the loops")

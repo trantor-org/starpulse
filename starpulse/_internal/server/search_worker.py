@@ -17,6 +17,7 @@ import logging
 import threading
 from pathlib import Path
 
+from starpulse._internal.server.blocks import search_built_blocks
 from starpulse._internal.config.config import Config, discover, load
 from starpulse._internal.feed.search import SearchIndex
 from starpulse._internal.server.hold import hold
@@ -26,11 +27,6 @@ from starpulse.event_log.opening import database_url
 logger = logging.getLogger(__name__)
 
 
-def built_blocks(config: Config) -> tuple:
-    """What of `config` the worker's index and endpoint were built from at start; a change needs a restart."""
-    return (config.database_url, config.search)
-
-
 def reload(path: Path, config: Config) -> None:
     """Re-read `path`; an invalid config is logged, and a change to what the worker was built from asks for a restart."""
     try:
@@ -38,7 +34,7 @@ def reload(path: Path, config: Config) -> None:
     except (OSError, ValueError) as exc:
         logger.error("reload: %s: %s; keeping the running config", path, exc)
         return
-    if built_blocks(new) != built_blocks(config):
+    if search_built_blocks(new) != search_built_blocks(config):
         logger.warning("reload: a database or search setting changed; restart the worker to apply it")
     else:
         logger.info("reload: no Search setting changed")
