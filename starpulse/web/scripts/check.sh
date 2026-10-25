@@ -21,7 +21,7 @@ if [ "$mode" = changed ]; then
     case $file in
       starpulse/web/src/*) tests=related; related="$related ${file#starpulse/web/}" ;;
       starpulse/web/*) tests=all; break ;;
-      starpulse/api.schema.json) tests=all; break ;;
+      starpulse/schemas/api.schema.json) tests=all; break ;;
     esac
   done
 fi

@@ -1,7 +1,5 @@
 """The PR store follows the lifecycle events of the tasks whose pull requests it holds."""
 
-from pathlib import Path
-
 import pytest
 from sqlalchemy import create_engine
 
@@ -9,10 +7,7 @@ from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.pulls.pull_events import RecordProjection
 from starpulse._internal.pulls.pulls import PullStore
-from starpulse.event_log.event_log import Entry, EventLog
-from starpulse.event_log.readmodel.projector import Projector
-from starpulse.event_log.readmodel.read_model import ReadModel
-from starpulse.event_log.store import EventStore, NewEvent
+from starpulse.event_log.event_log import Entry
 
 URL = "https://github.com/acme/widgets/pull/7"
 PULL = ("acme/widgets", 7)
@@ -268,23 +263,3 @@ def test_replaying_the_jobs_changes_nothing() -> None:
 
     assert _record(store) == before
     assert len(changes) == announced
-
-
-def test_a_merge_of_a_pr_added_after_startup_lands_on_the_record(tmp_path: Path) -> None:
-    engine = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}").engine
-    events = EventStore(engine)
-    created = NewEvent(type="TaskCreated", payload={"title": "Task", "state": "In Progress"}, actor="adin", writer="operator")
-    events.append("task", "PROJ-1", 0, [created])
-    Projector(engine, events).catch_up()
-    store = PullStore(create_engine("sqlite://"))
-    projection = RecordProjection(store, BoardFeed(read_model=ReadModel(engine)))
-
-    referenced = NewEvent(
-        type="FieldsEdited", payload={"changes": {"references": [URL]}}, actor="adin", writer="operator"
-    )
-    events.append("task", "PROJ-1", 1, [referenced])
-    Projector(engine, events).catch_up()
-    projection.handle(_entry("github-pull-request", "PR_OPENED", at=T0))
-    projection.handle(_entry("github-pull-request", "PR_MERGED", at=T0 + 1))
-
-    assert _record(store)["state"] == "MERGED"

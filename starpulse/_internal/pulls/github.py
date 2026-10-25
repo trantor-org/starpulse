@@ -33,12 +33,12 @@ from pathlib import Path
 from urllib.parse import quote
 
 from starpulse._internal.eventlog.history import open_event_log
-from starpulse._internal.github_api import Transport, connect, get, repo_of
 from starpulse._internal.machines.machine_definition import load_machine
 from starpulse._internal.machines.snapshot import describe
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.event_log import events as machine_events
 from starpulse.event_log.event_log import EventLog
+from starpulse.github import Transport, connect, get, repo_of
 
 #: The machine files beside the package: `adapters/runs/` is two levels below them.
 MACHINES = Path(__file__).parents[2] / "machines"

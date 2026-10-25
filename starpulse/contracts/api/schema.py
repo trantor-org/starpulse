@@ -187,8 +187,8 @@ class ApiContract(_Api):
     ]
 
 
-#: Where the schema is written: beside `machine.schema.json`, not among the adapter contracts' `schemas/`, which ship.
-SCHEMA = Path(__file__).parents[2] / "api.schema.json"
+#: Where the schema is written: beside `machine.schema.json` in `schemas/`, with the adapter contracts, which ship.
+SCHEMA = Path(__file__).parents[2] / "schemas" / "api.schema.json"
 
 
 class _Generator(GenerateJsonSchema):

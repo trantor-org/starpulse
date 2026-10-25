@@ -91,7 +91,7 @@ pure model and colocated tests), `render/` (the canvas), `shared/` and `demo/`. 
 to `api/`, `render/`, `shared/` and its own folder, so a feature never reaches into another's.
 Every `/api` body is a pydantic model under `starpulse/contracts/api/dto/`, and the server builds each response through it (`starpulse/_internal/server/encoding.py`).
 The page's types are generated from those models: after changing one, run `uv run python -m starpulse.contracts.api`
-(writes `starpulse/api.schema.json`) and `pnpm --dir starpulse/web run gen:types` (writes `starpulse/web/src/api/types.gen.ts`),
+(writes `starpulse/schemas/api.schema.json`) and `pnpm --dir starpulse/web run gen:types` (writes `starpulse/web/src/api/types.gen.ts`),
 and commit both. CI's `static-checks` job regenerates them and fails on any difference.
 [`bench/`](../bench/README.md) holds the instance event-log and flow-read benchmarks, the page-latency harness that times every
 request and page surface against the 50 ms budget, and a Locust load test that holds that budget under many viewers.

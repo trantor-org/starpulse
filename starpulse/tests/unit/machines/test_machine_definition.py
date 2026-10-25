@@ -157,7 +157,7 @@ class TestTheSchema:
             validate(_doc(writers=writers))
 
     def test_the_published_schema_is_the_one_that_validates(self) -> None:
-        schema = Path(machine_definition.__file__).parents[2] / "machine.schema.json"
+        schema = Path(machine_definition.__file__).parents[2] / "schemas" / "machine.schema.json"
 
         assert json.loads(schema.read_text()) == machine_definition.SCHEMA
 
@@ -558,3 +558,10 @@ class TestRoles:
     def test_resolving_a_state_the_machine_lacks_is_an_error(self, tmp_path: Path) -> None:
         with pytest.raises(KeyError):
             role_of(load_machine(_written(tmp_path, _roled("resting"))), "nowhere")
+
+
+def test_the_machine_schema_lives_in_the_schemas_directory() -> None:
+    schema_path = Path(machine_definition.__file__).parents[2] / "schemas" / "machine.schema.json"
+    assert schema_path.is_file()
+    document = json.loads(schema_path.read_text())
+    assert document["title"] == "StarPulse machine definition"

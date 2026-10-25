@@ -259,7 +259,7 @@ def test_the_four_short_jobs_are_gone_and_static_checks_runs_every_check_they_ra
         "ci/public_names.py",
         "python -m starpulse.contracts.api",  # api-types: regenerate both outputs, fail on a diff
         "pnpm --dir starpulse/web run gen:types",
-        "git diff --exit-code -- starpulse/api.schema.json starpulse/web/src/api/types.gen.ts",
+        "git diff --exit-code -- starpulse/schemas/api.schema.json starpulse/web/src/api/types.gen.ts",
     ):
         assert command in script, command
 

@@ -62,7 +62,7 @@ exclude = ["starpulse.tests", "starpulse.tests.*"]
 
 # The built page and the machine schema are read from beside the module through `__file__`.
 [tool.setuptools.package-data]
-starpulse = ["static/**/*", "schemas/*.json", "machine.schema.json", "machines/*.yaml", "skills/**/*", "event_log/migrations/*.py", "event_log/migrations/versions/*.py"]
+starpulse = ["static/**/*", "schemas/*.json", "machines/*.yaml", "skills/**/*", "event_log/migrations/*.py", "event_log/migrations/versions/*.py"]
 
 # The tiers the package is organized in (docs: StarPulse Is Layered Around Its Event Log): a module imports from its own
 # tier or one below, never above.
@@ -92,7 +92,7 @@ layers = [
     # core
     "starpulse._internal.eventlog",
     "starpulse.event_log",
-    "starpulse._internal.config | starpulse._internal.machines | starpulse._internal.github_api | starpulse._internal.signals",
+    "starpulse._internal.config | starpulse._internal.machines | starpulse.github | starpulse._internal.signals",
     "starpulse.contracts",
 ]
 
@@ -109,7 +109,7 @@ source_modules = [
     "starpulse._internal.level",
     "starpulse._internal.feed", "starpulse._internal.ci",
     "starpulse.event_log", "starpulse._internal.eventlog",
-    "starpulse._internal.config", "starpulse._internal.machines", "starpulse._internal.github_api",
+    "starpulse._internal.config", "starpulse._internal.machines", "starpulse.github",
     "starpulse._internal.signals",
 ]
 forbidden_modules = ["starpulse.contracts.api"]
@@ -155,7 +155,7 @@ forbidden_modules = [
 
 # Bounded contexts: one per StarPulse context, id `context-<glossary slug>`.
 # forbidden_modules is every other context's packages except the map's upstreams (direct imports; transitive stay
-# allowed). The shared kernel (`event_log`, `config`, `eventlog`, `machines`, `github_api`, `signals`, `contracts`) and the entrypoints
+# allowed). The shared kernel (`event_log`, `config`, `eventlog`, `machines`, `github`, `signals`, `contracts`) and the entrypoints
 # belong to no context.
 
 [[tool.importlinter.contracts]]

@@ -351,7 +351,7 @@ def test_a_module_conftest_code_uses_outside_a_fixture_selects_every_test_the_co
     ("schema", "readers"),
     [
         (
-            "starpulse/api.schema.json",
+            "starpulse/schemas/api.schema.json",
             ["starpulse/contracts/api/schema.py", "starpulse/contracts/api/__main__.py"],
         ),
         (
@@ -359,7 +359,7 @@ def test_a_module_conftest_code_uses_outside_a_fixture_selects_every_test_the_co
             ["starpulse/contracts/adapters.py", "starpulse/contracts/__main__.py"],
         ),
         (
-            "starpulse/machine.schema.json",
+            "starpulse/schemas/machine.schema.json",
             ["starpulse/_internal/machines/machine_definition.py"],
         ),
     ],
@@ -492,3 +492,23 @@ def test_a_change_to_the_board_seam_selects_the_lane_written_test(repo, tmp_path
     selection = select(repo, ["starpulse/_internal/board/seam.py"], coverage)
 
     assert "starpulse/tests/unit/server/test_lane_written.py" in selection.tests
+
+
+def test_a_change_to_the_github_package_reaches_the_pulls_tests(repo: Path) -> None:
+    from select_tests import select
+
+    (repo / "starpulse/github").mkdir(parents=True)
+    (repo / "starpulse/github/__init__.py").write_text("def connect(): ...\n")
+    pulls_test = repo / "starpulse/tests/integration/pulls/test_github.py"
+    pulls_test.parent.mkdir(parents=True)
+    pulls_test.write_text("from starpulse.github import connect\n")
+    coverage = {
+        "tests": {
+            "starpulse/tests/integration/pulls/test_github.py::test_connect_reads_a_page": [
+                "starpulse/github/__init__.py"
+            ]
+        }
+    }
+    selection = select(repo, ["starpulse/github/__init__.py"], coverage)
+
+    assert "starpulse/tests/integration/pulls/test_github.py" in selection.tests

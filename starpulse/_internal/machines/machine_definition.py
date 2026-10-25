@@ -62,7 +62,7 @@ __all__ = [
 DRAWING = ("tiers", "main_line", "rests", "submachines", "launches", "next")
 #: The fact kinds a state's `waits` may name: what the task actor derives from a task's pull request, dependencies and criteria.
 WAIT_FACTS = ("pr_terminal", "deps_done", "deps_unresolved", "criteria_met", "criteria_unmet")
-SCHEMA = json.loads((Path(__file__).parents[2] / "machine.schema.json").read_text())
+SCHEMA = json.loads((Path(__file__).parents[2] / "schemas" / "machine.schema.json").read_text())
 _VALIDATOR = Draft202012Validator(SCHEMA)
 
 

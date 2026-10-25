@@ -27,4 +27,8 @@ def test_a_python_module_reaches_static_but_not_web():
 
 
 def test_the_api_schema_reaches_web():
-    assert reaches("web", ["starpulse/api.schema.json"])
+    assert reaches("web", ["starpulse/schemas/api.schema.json"])
+
+
+def test_a_change_to_the_github_package_reaches_static():
+    assert reaches("static", ["starpulse/github/__init__.py"])

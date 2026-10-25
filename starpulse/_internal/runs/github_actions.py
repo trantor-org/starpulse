@@ -15,7 +15,6 @@ import os
 import posixpath
 import threading
 import time
-import urllib.error
 from collections.abc import Callable, Collection
 from datetime import datetime
 from typing import Any, NamedTuple, get_args
@@ -23,11 +22,11 @@ from urllib.parse import quote
 
 import yaml
 
-from starpulse._internal.github_api import GitHubError, Transport, connect, get, repo_of
 from starpulse._internal.runs import run_events
 from starpulse.contracts.adapters import RunsSink, RunStatus, StartFailedError
 from starpulse.event_log.event_log import EventLog, Tail
 from starpulse.event_log.polling import DEFAULT_POLL_INTERVAL
+from starpulse.github import GitHubError, Transport, connect, get, repo_of
 
 #: Each status a run, job or step reports before it completes, and the status it becomes.
 #: A run held for a runner, an approval or a protection rule is `queued`; the label itself stays in `raw`.
