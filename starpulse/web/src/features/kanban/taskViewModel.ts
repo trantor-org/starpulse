@@ -267,7 +267,8 @@ export const onScrim = (target: unknown, scrim: unknown): boolean => target === 
 export const closesOnKey = (key: string, editing: boolean): boolean => key === "Escape" && !editing;
 
 export type Block =
-  | { kind: "p" | "h" | "pre" | "moved"; text: string }
+  | { kind: "p" | "h" | "moved"; text: string }
+  | { kind: "pre"; lang: string; text: string }
   | { kind: "table"; head: string[]; right: boolean[]; rows: string[][] };
 
 /** What the description's `start_criteria` block gives way to once the rail draws the criteria. */
@@ -284,8 +285,11 @@ export function markdown(text: string, drawn = false): Block[] {
   const lines = text.split("\n");
   let para: string[] = [];
   let fence = false;
+  let lang = "";
   const flush = (kind: "p" | "pre") => {
-    if (para.length || kind === "pre") blocks.push({ kind, text: para.join("\n") });
+    const text = para.join("\n");
+    if (kind === "pre") blocks.push({ kind, lang, text });
+    else if (para.length) blocks.push({ kind, text });
     para = [];
   };
   for (let at = 0; at < lines.length; at++) {
@@ -294,6 +298,7 @@ export function markdown(text: string, drawn = false): Block[] {
       flush(fence ? "pre" : "p");
       const last = blocks[blocks.length - 1];
       if (drawn && fence && last.kind === "pre" && /^start_criteria:/m.test(last.text)) blocks[blocks.length - 1] = { kind: "moved", text: CRITERIA_POINTER };
+      lang = line.slice(3).trim();
       fence = !fence;
     } else if (fence) para.push(line);
     else if (line.startsWith("## ")) {

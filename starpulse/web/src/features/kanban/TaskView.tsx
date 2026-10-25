@@ -190,7 +190,7 @@ function Md({ text, className = "md", drawn = false, open }: { text: string; cla
       </table></div>
     );
     if (b.kind === "h") return <h4 key={i}>{at(b.text)}</h4>;
-    if (b.kind === "pre") return <pre key={i}>{b.text}</pre>;
+    if (b.kind === "pre") return <figure key={i} className="fence"><span className="lang">{b.lang || "text"}</span><pre>{b.text}</pre></figure>;
     return <p key={i} className={b.kind === "moved" ? "moved" : undefined}>{at(b.text)}</p>;
   })}</div>;
 }

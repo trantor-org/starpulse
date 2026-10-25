@@ -197,12 +197,12 @@ describe("the Move to menu's keyboard", () => {
 describe("markdown", () => {
   it("keeps a fenced block whole across its blank lines and a paragraph's line breaks", () => {
     expect(markdown("one\ntwo\n\n## Head\n\n```yaml\na: 1\n\nb: 2\n```\nafter")).toEqual([
-      { kind: "p", text: "one\ntwo" }, { kind: "h", text: "Head" }, { kind: "pre", text: "a: 1\n\nb: 2" }, { kind: "p", text: "after" },
+      { kind: "p", text: "one\ntwo" }, { kind: "h", text: "Head" }, { kind: "pre", lang: "yaml", text: "a: 1\n\nb: 2" }, { kind: "p", text: "after" },
     ]);
   });
 
   it("closes an unterminated fence at the end and draws nothing for an empty description", () => {
-    expect(markdown("```\nopen")).toEqual([{ kind: "pre", text: "open" }]);
+    expect(markdown("```\nopen")).toEqual([{ kind: "pre", lang: "", text: "open" }]);
     expect(markdown("")).toEqual([]);
   });
 
