@@ -533,7 +533,7 @@ def test_scrub_seeds_a_board_when_the_capture_has_none() -> None:
         "state": "ready",
         "model": "@agent-fast-low",
         "profile": "@agent-fast-low",
-        "assignee": "demo-holder",
+        "assignee": "https://example.com/code/session_demo1",
         "milestone": "m-2",
         "labels": ["size-2", "kind-feature"],
         "dependencies": [],
@@ -1131,7 +1131,7 @@ def test_the_seeded_board_maps_profiles_to_tasks_and_a_session_holds_one_with_a_
     board = scrub(live)["flows"][0]["agents"]
 
     assert all(t["profile"] == t["model"] for t in board)
-    held = [t for t in board if t["assignee"].startswith("demo-holder")]
+    held = [t for t in board if t["state"] == "ready" and t["assignee"].startswith("https://example.com/code/")]
     assert held and all(t["profile"] not in ("", "@agent-standard-high") for t in held)
 
 
