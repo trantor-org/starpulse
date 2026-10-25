@@ -559,6 +559,24 @@ class TestRoles:
             role_of(load_machine(_written(tmp_path, _roled("resting"))), "nowhere")
 
 
+class TestStateLabel:
+    def test_a_state_label_is_exposed_and_defaults_to_the_state_id(self, tmp_path: Path) -> None:
+        document = _roled("resting")
+        document["states"]["parked"]["label"] = "Needs attention"
+
+        compiled = load_machine(_written(tmp_path, document))
+
+        assert compiled.labels == {"open": "open", "parked": "Needs attention", "shut": "shut"}
+
+    @pytest.mark.parametrize("label", [3, None, ["x"], ""])
+    def test_a_label_that_is_not_a_non_empty_string_is_rejected_by_the_schema(self, label: object) -> None:
+        document = _roled("resting")
+        document["states"]["parked"]["label"] = label
+
+        with pytest.raises(MachineDefinitionError):
+            validate(document)
+
+
 def test_the_machine_schema_lives_in_the_schemas_directory() -> None:
     schema_path = Path(machine_loader.__file__).parents[2] / "schemas" / "machine.schema.json"
     assert schema_path.is_file()

@@ -114,6 +114,7 @@ class Compiled:
     drawing: Mapping[str, Any] = field(default_factory=dict)
     waits: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
     roles: Mapping[str, str | None] = field(default_factory=dict)
+    labels: Mapping[str, str] = field(default_factory=dict)
 
 
 def writers_of(machine: type[StateChart]) -> Mapping[str, tuple[Writer, ...]]:
@@ -148,8 +149,9 @@ def compile_document(document: dict[str, Any], path: Path, registry: Registry = 
     setattr(machine, "source", document.get("source"))
     roles = {name: _role(state) for name, state in document["states"].items()}
     setattr(machine, "roles", roles)
+    labels = {name: state.get("label", name) for name, state in document["states"].items()}
     drawing = {key: document[key] for key in DRAWING if key in document}
-    return Compiled(document["name"], machine, bindings, writers, cues, drawing, waits, roles)
+    return Compiled(document["name"], machine, bindings, writers, cues, drawing, waits, roles, labels)
 
 
 def _compile(
