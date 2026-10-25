@@ -169,7 +169,7 @@ def test_a_change_is_encoded_once_however_many_pages_are_streaming(
 ) -> None:
     encoded: list[str] = []
     encode_event = server_module.event
-    monkeypatch.setattr(server_module, "event", lambda name, data: encoded.append(name) or encode_event(name, data))
+    monkeypatch.setattr("starpulse._internal.server.streams.event", lambda name, data: encoded.append(name) or encode_event(name, data))
     feed = BoardFeed()
     with _serve(tmp_path, feed) as server:
         with (
@@ -191,7 +191,7 @@ def test_a_change_is_encoded_once_however_many_pages_are_streaming(
 def test_an_idle_event_stream_sends_a_comment_so_a_dead_page_is_noticed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("starpulse._internal.server.server._PING_S", 0.05)
+    monkeypatch.setattr("starpulse._internal.server.streams._PING_S", 0.05)
     with _serve(tmp_path) as server:
         with urllib.request.urlopen(_url(server, "/api/events"), timeout=5) as resp:
             lines = [resp.readline() for _ in range(8)]  # the snapshot and the build take six
@@ -200,7 +200,7 @@ def test_an_idle_event_stream_sends_a_comment_so_a_dead_page_is_noticed(
 
 
 def test_a_page_that_goes_away_is_unsubscribed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("starpulse._internal.server.server._PING_S", 0.05)
+    monkeypatch.setattr("starpulse._internal.server.streams._PING_S", 0.05)
     feed = BoardFeed()
     with _serve(tmp_path, feed) as server:
         with urllib.request.urlopen(_url(server, "/api/events"), timeout=5) as resp:

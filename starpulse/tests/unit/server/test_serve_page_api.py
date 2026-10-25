@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from starpulse._internal.board import replica
-from starpulse._internal.server import assembly, server, worker
+from starpulse._internal.server import api_worker, assembly, server, worker
 from starpulse._internal.server.hold import STATIC_ENV
 from starpulse.tests import fake_board
 from starpulse.tests.conftest import FakeSupervisor
@@ -27,7 +27,7 @@ def config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (static / "index.html").write_text("<html></html>")
     monkeypatch.setattr(server, "_STATIC", static)
     monkeypatch.setattr(server, "stay_until_stopped", lambda: None)
-    monkeypatch.setattr(server, "serve_until_stopped", lambda httpd, feed: None)
+    monkeypatch.setattr(api_worker, "serve_until_stopped", lambda httpd, feed: None)
     path = tmp_path / "starpulse.toml"
     path.write_text(BOARD)
     return path
@@ -36,7 +36,7 @@ def config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def test_serve_binds_the_socket_and_hands_it_to_the_api_child_it_supervises(
     config: Path, monkeypatch: pytest.MonkeyPatch, supervisors: list[FakeSupervisor]
 ) -> None:
-    monkeypatch.setattr(server, "page_app", lambda *args, **kwargs: pytest.fail("serve builds no page"))
+    monkeypatch.setattr(api_worker, "page_app", lambda *args, **kwargs: pytest.fail("serve builds no page"))
 
     server.main(["--config", str(config), "--host", "127.0.0.1", "--port", "0", "--hours", "3"])
 
@@ -102,7 +102,7 @@ def test_serve_hands_the_api_child_the_page_build_it_checked_and_the_child_serve
     (elsewhere / "index.html").write_text("<html></html>")
     monkeypatch.setattr(server, "_STATIC", tmp_path / "unbuilt")  # the child's own checkout has no build
     monkeypatch.setenv(STATIC_ENV, str(elsewhere))
-    monkeypatch.setattr(server, "page_app", lambda *args, **kwargs: None)
+    monkeypatch.setattr(api_worker, "page_app", lambda *args, **kwargs: None)
 
     worker.main(["api", "--config", str(config), "--port", "0"])
 
@@ -115,7 +115,7 @@ def test_the_api_child_reads_the_board_from_the_replica_and_starts_no_adapter_wa
     read: list[dict] = []
     monkeypatch.setattr(replica, "read", lambda *args, **kwargs: read.append(kwargs))
     handled: dict[str, object] = {}
-    monkeypatch.setattr(server, "page_app", lambda *args, **kwargs: handled.update(kwargs, args=args))
+    monkeypatch.setattr(api_worker, "page_app", lambda *args, **kwargs: handled.update(kwargs, args=args))
 
     worker.main(["api", "--config", str(config), "--port", "0"])
 

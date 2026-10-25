@@ -16,6 +16,7 @@ import logging
 import threading
 from pathlib import Path
 
+from starpulse._internal.server.blocks import flow_metrics_built_blocks
 from starpulse._internal.config.config import Config, discover, load
 from starpulse._internal.server.assembly import assemble, history_store, keep_event_log
 from starpulse._internal.server.hold import hold
@@ -26,17 +27,6 @@ from starpulse.flow_metrics.history import record_machine_events
 logger = logging.getLogger(__name__)
 
 
-def built_blocks(config: Config) -> tuple:
-    """What of `config` the worker's machines, database and prune were built from at start; a change needs a restart."""
-    return (
-        config.database_url,
-        config.board_type,
-        config.board,
-        config.event_log_retention_days,
-        config.event_log_archive_dir,
-    )
-
-
 def reload(path: Path, config: Config) -> None:
     """Re-read `path`; an invalid config is logged, and a change to what the worker was built from asks for a restart."""
     try:
@@ -44,7 +34,7 @@ def reload(path: Path, config: Config) -> None:
     except (OSError, ValueError) as exc:
         logger.error("reload: %s: %s; keeping the running config", path, exc)
         return
-    if built_blocks(new) != built_blocks(config):
+    if flow_metrics_built_blocks(new) != flow_metrics_built_blocks(config):
         logger.warning("reload: a database, board or event log setting changed; restart the worker to apply it")
     else:
         logger.info("reload: no History setting changed")

@@ -14,7 +14,7 @@ from starpulse._internal.server.streams import Stream, Streams
 def streams(monkeypatch: pytest.MonkeyPatch) -> Streams:
     feed = BoardFeed()
     opened = Streams(feed, SnapshotCache(feed), lambda: "build-1")
-    monkeypatch.setattr(opened._views, "_PING_S", 0.01)
+    monkeypatch.setattr("starpulse._internal.server.streams._PING_S", 0.01)
     return opened
 
 

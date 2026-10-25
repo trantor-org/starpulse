@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import text
 
-from starpulse._internal.server import board_worker, flow_metrics_worker, server, worker
+from starpulse._internal.server import api_worker, board_worker, flow_metrics_worker, server, worker
 from starpulse.event_log import events
 from starpulse.event_log.event_log import EventLog
 from starpulse.flow_metrics.history import HistoryStore
@@ -34,7 +34,7 @@ def test_serve_and_the_flow_metrics_worker_record_run_and_task_machine_events(
     static.mkdir()
     (static / "index.html").write_text("<html></html>")
     monkeypatch.setattr(server, "_STATIC", static)
-    monkeypatch.setattr(server, "serve_until_stopped", lambda httpd, feed: None)
+    monkeypatch.setattr(api_worker, "serve_until_stopped", lambda httpd, feed: None)
     config = tmp_path / "starpulse.toml"
     config.write_text('[board]\ntype = "starpulse.tests.fake_board"\nlanes = ["open", "shut"]\n')
 

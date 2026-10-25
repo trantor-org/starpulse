@@ -15,6 +15,7 @@ import logging
 import threading
 from pathlib import Path
 
+from starpulse._internal.server.blocks import runs_built_blocks
 from starpulse._internal.config.config import Config, discover, load
 from starpulse._internal.feed.board_feed import follow
 from starpulse._internal.runs import opt_in, run_events
@@ -31,12 +32,6 @@ from starpulse.event_log.store import EventStore
 logger = logging.getLogger(__name__)
 
 
-def built_blocks(config: Config) -> tuple:
-    """What of `config` the worker's adapters, board and history database were built from at start; a
-    change needs a restart."""
-    return (config.runs, config.database_url, config.board_type, config.board)
-
-
 def reload(path: Path, config: Config) -> None:
     """Re-read `path`; an invalid config is logged, and a change to what the worker was built from asks for a restart."""
     try:
@@ -44,7 +39,7 @@ def reload(path: Path, config: Config) -> None:
     except (OSError, ValueError) as exc:
         logger.error("reload: %s: %s; keeping the running config", path, exc)
         return
-    if built_blocks(new) != built_blocks(config):
+    if runs_built_blocks(new) != runs_built_blocks(config):
         logger.warning("reload: a runs, database or board setting changed; restart the worker to apply it")
     else:
         logger.info("reload: no Runs setting changed")

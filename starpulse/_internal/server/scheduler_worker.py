@@ -16,6 +16,7 @@ import threading
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
+from starpulse._internal.server.blocks import scheduler_fixed_blocks, scheduler_live_blocks
 from starpulse._internal.board.seam import Board
 from starpulse._internal.config.config import Config, discover, load
 from starpulse._internal.feed.board_feed import BoardFeed, follow
@@ -31,16 +32,6 @@ from starpulse.event_log.opening import database_url
 from starpulse.flow_metrics.history import History
 
 logger = logging.getLogger(__name__)
-
-
-def scheduler_blocks(config: Config) -> tuple:
-    """What of `config` the runtime is built from; a change to anything else needs no rebuild."""
-    return (config.scheduler, config.level, config.session_start_url)
-
-
-def fixed_blocks(config: Config) -> tuple:
-    """What of `config` the worker's board and history database were built from at start; a change needs a restart."""
-    return (config.database_url, config.board_type, config.board)
 
 
 class Scheduler:
@@ -103,9 +94,9 @@ class Scheduler:
         except (OSError, ValueError) as exc:
             logger.error("reload: %s: %s; keeping the running config", path, exc)
             return
-        if fixed_blocks(new) != fixed_blocks(self._config):
+        if scheduler_fixed_blocks(new) != scheduler_fixed_blocks(self._config):
             logger.warning("reload: the database or board changed; restart the worker to apply it")
-        if scheduler_blocks(new) == scheduler_blocks(self._config):
+        if scheduler_live_blocks(new) == scheduler_live_blocks(self._config):
             logger.info("reload: no Scheduler setting changed")
             return
         logger.info("reload: a Scheduler setting changed; rebuilding the runtime")
