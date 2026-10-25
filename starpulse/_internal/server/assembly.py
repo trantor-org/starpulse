@@ -15,8 +15,10 @@ from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.harnesses.harness import HARNESS_MACHINES
 from starpulse._internal.machines.snapshot import qualifier
 from starpulse._internal.pulls.task_actor import ACTOR
+from starpulse._internal.server import read_model_follow
 from starpulse.event_log.event_log import EventLog, prune_forever
 from starpulse.event_log.opening import database_url
+from starpulse.event_log.readmodel.declared import declared_fields
 from starpulse.event_log.readmodel.read_model import ReadModel
 from starpulse.flow_metrics.history import HistoryStore
 
@@ -72,9 +74,15 @@ def worker_board(
     config: Config, base: Path, log: EventLog, group: str, stop: threading.Event
 ) -> tuple[Board, BoardFeed]:
     """The board and feed of a worker beside `serve`: the feed reads the replica the Board child publishes
-    (`replica.read`). Raises ValueError as `assemble` does."""
-    board, feed = assemble(config, base, None, [])
-    replica.read(board, feed, group, log, config, stop)
+    (`replica.read`), or under `read_model` the read model the Board child folds, since no replica is published then.
+    Raises ValueError as `assemble` does."""
+    if not config.read_model:
+        board, feed = assemble(config, base, None, [])
+        replica.read(board, feed, group, log, config, stop)
+        return board, feed
+    board, feed = assemble(config, base, None, [], ReadModel(log.engine, declared_fields(config.board)))
+    feed.ready.set()
+    read_model_follow.follow(None, feed, stop)
     return board, feed
 
 

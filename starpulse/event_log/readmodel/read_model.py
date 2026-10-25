@@ -22,8 +22,12 @@ class ReadModel:
             return rows.load(db, task_id)
 
     def snapshot(self, state: str | None = None) -> list[dict[str, Any]]:
-        """The unarchived Tasks as summaries, in id order."""
-        return self._summaries(queries.snapshot(state))
+        """The unarchived Tasks as summaries with their Acceptance Criteria, in id order."""
+        summaries = self._summaries(queries.snapshot(state))
+        by_task: dict[str, list[dict[str, Any]]] = {summary["id"]: [] for summary in summaries}
+        for item in self._summaries(queries.live_criteria()):
+            by_task.get(item.pop("task_id"), []).append(item)
+        return [summary | {"criteria": by_task[summary["id"]]} for summary in summaries]
 
     def archived(self, before: float | None, limit: int) -> list[dict[str, Any]]:
         """Up to `limit` archived Tasks changed before `before` (None: any time), newest first."""
