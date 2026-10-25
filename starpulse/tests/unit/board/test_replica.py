@@ -14,7 +14,7 @@ from sqlalchemy import delete
 from starpulse._internal.board import replica
 from starpulse._internal.board.seam import Board
 from starpulse._internal.config.config import load
-from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.feed.board_feed import BoardFeed, retained
 from starpulse._internal.feed.snapshot import BoardSnapshot
 from starpulse.contracts import BoardTask
 from starpulse.event_log.event_log import EventLog, Tail
@@ -283,6 +283,133 @@ def test_the_child_hands_the_adapter_the_source_it_kept_and_not_its_own_bookkeep
     restarted = _child(log)
 
     assert restarted.source() == {"files": {"a.md": "fp"}}
+
+
+def _moved_and_retracted(log: EventLog) -> replica.Publisher:
+    """A child that moved T-1 twice, retracted T-2 and turned ready twice (a restart): four superseded entries."""
+    log._append("board:claims", {"oldest": "1"})  # the log's oldest row is another stream's
+    child = _child(log)
+    child.put(_task("T-1", "to_do"))
+    child.put(_task("T-2", "to_do"))
+    child.expect("0-0")
+    child.put(_task("T-1", "in_progress"))
+    child.retract("T-2")
+    _child(log).expect("0-0")  # a restarted child marks ready again
+    child.put(_task("T-1", "review"))
+    return child
+
+
+def test_compaction_keeps_the_newest_entry_of_each_task_and_the_newest_ready_marker(log: EventLog) -> None:
+    _moved_and_retracted(log)
+    before = _published(log)
+
+    assert replica.compact(log) == 4
+
+    after = _published(log)
+    assert [entry for entry in before if entry in after] == after
+    assert [(entry.get("id"), entry.get("ready")) for entry in after] == [
+        ("T-2", None),
+        (None, "1"),
+        ("T-1", None),
+    ]
+    assert after[-1]["entry"] == before[-1]["entry"]  # the stream's head stays where it was
+    assert replica.compact(log) == 0
+
+
+def test_a_reader_with_no_checkpoint_replays_the_compacted_stream_to_the_same_board(
+    log: EventLog, stop: threading.Event
+) -> None:
+    _moved_and_retracted(log)
+    replica.compact(log)
+
+    reader = _reader(log, stop)
+
+    assert reader.ready.wait(WAIT_S)
+    assert _states(reader) == {"T-1": "review"}
+
+
+def test_a_reader_and_a_restarted_child_resume_an_old_checkpoint_across_a_compaction(
+    log: EventLog, stop: threading.Event
+) -> None:
+    child = _child(log)
+    child.put(_task("T-1", "to_do"))
+    child.put(_task("T-2", "to_do"))
+    child.expect("0-0")
+    child.save()  # the checkpoint holds T-2, whose retraction lands after it
+    child.put(_task("T-1", "in_progress"))
+    child.put(_task("T-1", "review"))
+    child.retract("T-2")
+    replica.compact(log)
+    published = _deltas(log)
+
+    reader = _reader(log, stop)
+    restarted = _child(log)
+    restarted.put(_task("T-1", "review"))
+    restarted.expect("0-0")
+
+    assert _eventually(lambda: _states(reader) == {"T-1": "review"})
+    assert _deltas(log) == published  # the restart knows what was published: it repeats nothing
+
+
+def test_compaction_never_deletes_the_oldest_row_of_the_log(log: EventLog) -> None:
+    child = _child(log)
+    child.put(_task("T-1", "to_do"))
+    oldest = log.oldest()
+    cursor = log.last(replica.REPLICA_STREAM)
+    child.put(_task("T-1", "review"))
+
+    assert replica.compact(log) == 0
+    assert log.oldest() == oldest
+    assert retained(log, replica.REPLICA_STREAM)(cursor)
+
+
+def test_compaction_deletes_in_batches(log: EventLog) -> None:
+    log._append("board:claims", {"oldest": "1"})
+    child = _child(log)
+    for lane in ("to_do", "in_progress", "review", "done", "to_do", "review", "done"):
+        child.put(_task("T-1", lane))
+
+    assert replica.compact(log, batch=2) == 6
+    assert [entry["id"] for entry in _published(log)] == ["T-1"]
+
+
+def test_the_child_compacts_the_stream_as_it_keeps_the_board_saved(log: EventLog, stop: threading.Event) -> None:
+    child = _moved_and_retracted(log)
+
+    thread = threading.Thread(target=child.keep_saved, args=(stop, 0.01), kwargs={"compact_every": 3600.0})
+    thread.start()
+    try:
+        assert _eventually(lambda: len(_published(log)) == 3)
+        child.put(_task("T-1", "done"))
+        time.sleep(0.1)  # saves meanwhile, but the next compaction is an hour away
+        assert len(_published(log)) == 4
+    finally:
+        stop.set()
+        thread.join(WAIT_S)
+
+
+def test_a_compaction_that_fails_does_not_stop_the_saves(
+    log: EventLog, stop: threading.Event, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    child = _child(log)
+    child.put(_task("T-1", "to_do"))
+    child.expect("0-0")
+    calls: list[EventLog] = []
+
+    def unreachable(target: EventLog) -> int:
+        calls.append(target)
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(replica, "compact", unreachable)
+
+    thread = threading.Thread(target=child.keep_saved, args=(stop, 0.01), kwargs={"compact_every": 0.0})
+    thread.start()
+    try:
+        assert _eventually(lambda: len(calls) >= 2)
+        assert log.checkpoints.load(KEY, BoardSnapshot)[0] is not None
+    finally:
+        stop.set()
+        thread.join(WAIT_S)
 
 
 class Lanes:

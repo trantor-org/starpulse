@@ -10,6 +10,10 @@ the reader's view is never emptied and the unchanged tasks of its first scan pub
 A stream entry is `{id, digest, task}`: the task as the adapter reported it (stamped with when the child first saw it,
 so every process dates a lane change alike), or an empty `task` for a retraction. `{ready: 1}` marks the child's first
 scan done: a reader is not ready before it, as the Board is not read before then.
+
+The stream is a changelog keyed by task, so the child compacts it (`compact`) hourly: an entry a later one of the same
+task supersedes, and every ready marker but the newest, is deleted. What is left is the latest entry of each task the
+retention still holds, so a reader that replays the stream, with or without a checkpoint, ends on the same Board.
 """
 
 from __future__ import annotations
@@ -21,9 +25,12 @@ import threading
 import time
 from typing import TYPE_CHECKING, Any
 
+from sqlalchemy import delete, func, select
+
 from starpulse._internal.feed.board_feed import BoardFeed, retained
 from starpulse.contracts import BoardTask
 from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.tables import events
 
 if TYPE_CHECKING:
     from starpulse._internal.board.seam import Board
@@ -34,6 +41,10 @@ logger = logging.getLogger(__name__)
 REPLICA_STREAM = "board:replica"
 #: The longest a reader waits for an entry the child appended; an append in this database wakes it sooner.
 POLL_S = 0.5
+#: How often the child compacts the stream: each changed task appends an entry, so without it the stream holds every
+#: lane move of the retention, and a reader with no checkpoint replays them all before it is ready.
+COMPACT_S = 3600.0
+_COMPACT_BATCH = 5000
 
 
 def _read(raw: str) -> BoardTask | None:
@@ -51,6 +62,39 @@ def key(board: Board, config: Config) -> str:
     rule there leaves the saved Board in place instead of replaying every task."""
     settings = json.dumps([board.state_key and board.state_key(), config.board_type], sort_keys=True)
     return f"{REPLICA_STREAM}@{hashlib.sha256(settings.encode()).hexdigest()[:12]}"
+
+
+def compact(log: EventLog, *, batch: int = _COMPACT_BATCH) -> int:
+    """Delete the stream's superseded entries and return how many; raises when the database does.
+
+    An entry is superseded when a later entry names the same task (a put or a retraction), and a ready marker when a
+    later one is kept. The newest entry of each task stays, so a reader that replays from any cursor ends on the same
+    Board; a retraction stays too, as a reader's checkpoint may still hold the task. The log's oldest row is never
+    deleted, whatever its stream: the retention alone moves it, so no reader's cursor reads as pruned (`retained`) and
+    no gap is recorded. Each batch is its own transaction, so an append waits on one batch at most."""
+    latest = (
+        select(func.max(events.c.id))
+        .where(events.c.stream == REPLICA_STREAM)
+        .group_by(func.json_extract(events.c.fields, "$.id"))  # ready markers name no task: one group, NULL
+    )
+    oldest = select(func.min(events.c.id)).scalar_subquery()
+    deleted = 0
+    while True:
+        with log.engine.begin() as db:
+            ids = (
+                db.execute(
+                    select(events.c.id)
+                    .where(events.c.stream == REPLICA_STREAM, events.c.id.not_in(latest), events.c.id != oldest)
+                    .order_by(events.c.id)
+                    .limit(batch)
+                )
+                .scalars()
+                .all()
+            )
+            if not ids:
+                return deleted
+            db.execute(delete(events).where(events.c.id.in_(ids)))
+        deleted += len(ids)
 
 
 def _digest(task: BoardTask) -> str:
@@ -172,10 +216,22 @@ class Publisher:
                 self._dirty = False
         self._feed.save()
 
-    def keep_saved(self, stop: threading.Event, interval: float | None = None) -> None:
+    def keep_saved(
+        self, stop: threading.Event, interval: float | None = None, *, compact_every: float = COMPACT_S
+    ) -> None:
+        """Save the Board every `interval` until `stop`, and compact the stream after the first save and then every
+        `compact_every`. A compaction that fails is logged and the next one retries."""
         interval = 60.0 if interval is None else interval
+        due = 0.0
         while not stop.wait(interval):
             self.save()
+            if (now := time.monotonic()) >= due:
+                due = now + compact_every
+                try:
+                    if deleted := compact(self._log):
+                        logger.info("StarPulse: compacted %d superseded entries of %s", deleted, REPLICA_STREAM)
+                except Exception as exc:  # the database is unreachable or locked; the next compaction retries
+                    logger.warning("StarPulse: cannot compact %s, retrying later: %s", REPLICA_STREAM, exc)
         self.save()
 
 
