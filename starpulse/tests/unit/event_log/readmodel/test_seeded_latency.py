@@ -106,6 +106,8 @@ def _surfaces(model: ReadModel, cursor: int) -> dict[str, Callable[[], object]]:
     }
 
 
+# Slow: the module `board` fixture seeds and projects 20,000 Tasks through the real store (~3 ms each, SQLAlchemy and SQLite
+# bound), and the first test to use it pays that; the scale is what the page budget is measured at, so it cannot shrink.
 def test_every_query_is_within_the_page_budget_on_twenty_thousand_tasks_with_eighteen_thousand_archived(board) -> None:
     model, _, cursor = board
     p95 = {name: _p95_ms(call) for name, call in _surfaces(model, cursor).items()}
