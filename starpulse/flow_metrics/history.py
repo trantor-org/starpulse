@@ -164,6 +164,8 @@ class History(Protocol):
 
     def machine_path(self, task: str, flow: str) -> tuple[list[dict], int]: ...
 
+    def task_events(self, task: str, since: float, now: float) -> list[dict]: ...
+
 
 @runtime_checkable
 class LaneHistory(History, Protocol):
@@ -264,13 +266,17 @@ def _sqlite_tune(dbapi_connection: Any, _record: Any) -> None:  # pragma: no mut
 class HistoryStore:
     """The history in one database; consumer threads write and request threads read, each through its own connection.
 
-    `machines` are the machines the page draws, which place a task's events on its path.
+    `machines` are the machines the page draws, which place a task's events on its path. `retention_days` is the age
+    past which `task_events` reads nothing, as the event log prunes (None: no cutoff).
     """
 
-    def __init__(self, url: str, machines: Mapping[str, dict], engine: Engine | None = None) -> None:
+    def __init__(
+        self, url: str, machines: Mapping[str, dict], engine: Engine | None = None, *, retention_days: int | None = None
+    ) -> None:
         self.engine = engine or create_engine(url, connect_args={"timeout": _SQLITE_BUSY_TIMEOUT})
         sa_event.listen(self.engine, "connect", _sqlite_tune)
         self._machines = machines
+        self._retention = None if retention_days is None else retention_days * 86400.0
         self._summariser = Summariser(machines)
         # the level windows read since the last summary write
         self._windows: dict[tuple[Level, float, float], RunWindow] = {}
@@ -781,6 +787,33 @@ class HistoryStore:
                 .order_by(*_STEP_ORDER)
             ).all()
         return machine_steps(self._machines[flow], [tuple(row) for row in rows])
+
+    def task_events(self, task: str, since: float, now: float) -> list[dict]:
+        """The task's events on every machine since epoch `since`, oldest first, as `{at, machine, event, from, to}`.
+
+        Each machine's states are placed from the oldest event kept, so an event's `from` is where the task stood
+        before it even when that came before `since`. Events older than the retention before `now` are not read.
+        """
+        c = _machine_events.c
+        floor = since if self._retention is None else max(since, now - self._retention)
+        query = (
+            select(c.machine, c.occurred_at, c.event)
+            .where(c.task == task, c.machine.in_(self._machines))
+            .order_by(*_STEP_ORDER)
+        )
+        if self._retention is not None:
+            query = query.where(c.occurred_at >= now - self._retention)
+        with self.engine.connect() as db:
+            rows = db.execute(query).all()
+        tables = {machine: Transitions(self._machines[machine]) for machine in {row[0] for row in rows}}
+        states = {machine: table.initial for machine, table in tables.items()}
+        events = []
+        for machine, at, event in rows:
+            before = states[machine]
+            states[machine] = tables[machine].target(before, event) or before
+            if at >= floor:
+                events.append({"at": at, "machine": machine, "event": event, "from": before, "to": states[machine]})
+        return events
 
 
 def record_machine_events(

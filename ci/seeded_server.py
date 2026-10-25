@@ -30,7 +30,7 @@ from collections.abc import Callable, Iterable, Iterator
 from dataclasses import replace
 from pathlib import Path
 
-from sqlalchemy import Engine, event
+from sqlalchemy import Engine, event, insert
 from starpulse.board.adapters import native
 from starpulse.board.model.seam import Board, Written
 from starpulse._internal.config.config import load
@@ -50,6 +50,7 @@ from starpulse.event_log.readmodel.declared import declared_fields, ensure_colum
 from starpulse.event_log.readmodel.projector import Projector
 from starpulse.event_log.readmodel.read_model import ReadModel
 from starpulse.event_log.store import EventStore, NewEvent
+from starpulse.event_log.tables import machine_events
 from starpulse.flow_metrics.history import HistoryStore
 
 import starpulse
@@ -95,6 +96,27 @@ DETOURS = {
 
 #: The two lanes the replay moves tasks between; the Board machine allows the move to Review and the send-back.
 FLIP = {"in_progress": "review", "review": "in_progress"}
+
+
+#: The most machine events one task has in a day (measured on the live board), which every seeded task is given so the
+#: gate times the drill-in read on the busiest history whichever task it picks; the board creates the task in progress, then
+#: sends it to review and back.
+BUSIEST_DAY_EVENTS = 116
+BOARD_MOVES = ("CREATE_IN_PROGRESS", "PR_READY", "SEND_BACK")
+
+
+def day_of_events(task_id: str, now: float) -> list[dict]:
+    """`BUSIEST_DAY_EVENTS` board events of `task_id`, one a minute and the last at `now`, as `starpulse_machine_events` rows."""
+    return [
+        {
+            "event_id": f"{task_id}/{n}",
+            "task": task_id,
+            "machine": "board",
+            "event": BOARD_MOVES[min(n, 2 - n % 2)],
+            "occurred_at": now - 60.0 * (BUSIEST_DAY_EVENTS - 1 - n),
+        }
+        for n in range(BUSIEST_DAY_EVENTS)
+    ]
 
 
 def lanes() -> Iterator[str]:
@@ -152,6 +174,8 @@ def seed(feed: BoardFeed, store: HistoryStore, now: float) -> tuple[dict[str, di
     store.import_lanes(
         Change(f"{task_id}@{lane}@{at}", task_id, lane, at) for task_id, (_, path) in paths.items() for lane, at in path
     )
+    with store.engine.begin() as db:
+        db.execute(insert(machine_events), [row for task_id in paths for row in day_of_events(task_id, now)])
     records: dict[str, dict] = {}
     placed: list[BoardTask] = []
     for index, (task_id, (final, path)) in enumerate(paths.items()):
