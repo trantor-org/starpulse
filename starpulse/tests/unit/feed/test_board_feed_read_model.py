@@ -240,3 +240,40 @@ def test_a_done_task_offers_no_moves(engine: Engine) -> None:
 
     assert task is not None
     assert task["moves"] == {}
+
+
+PULL = "https://github.com/acme/widgets/pull/7"
+
+
+def test_a_read_model_agent_carries_the_task_prs_criteria_and_description(engine: Engine) -> None:
+    EventStore(engine).append(
+        "task",
+        "TASK-1",
+        0,
+        [
+            _new("TaskCreated", title="Task 1", description="Carry the record.", state="Review", labels=[]),
+            _new("CriterionAdded", kind="ac", text="Tests pass"),
+            _new("CriterionChecked", kind="ac", n=1, checked=True),
+            _new("FieldsEdited", changes={"references": [PULL, "https://example.com/spec"]}),
+        ],
+    )
+
+    task = _feed(engine).task("TASK-1")
+
+    assert task is not None
+    assert (task["prs"], task["description"], task["criteria"]) == (
+        [PULL],
+        "Carry the record.",
+        [{"text": "Tests pass", "checked": True}],
+    )
+
+
+def test_cited_reads_a_pull_request_added_to_the_task_after_the_feed_started(engine: Engine) -> None:
+    _append(engine, 1, "In Progress")
+    feed = _feed(engine)
+    assert feed.cited("TASK-1") == []
+
+    EventStore(engine).append("task", "TASK-1", 1, [_new("FieldsEdited", changes={"references": [PULL]})])
+    Projector(engine, EventStore(engine)).catch_up()
+
+    assert feed.cited("TASK-1") == [PULL]

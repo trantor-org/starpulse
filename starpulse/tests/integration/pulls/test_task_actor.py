@@ -18,7 +18,10 @@ from starpulse._internal.pulls.pulls import PullStore
 from starpulse._internal.pulls.task_actor import ACTOR, TaskActor
 from starpulse._internal.server import server
 from starpulse._internal.server.assembly import assemble
-from starpulse.event_log.event_log import Entry
+from starpulse.event_log.event_log import Entry, EventLog
+from starpulse.event_log.readmodel.projector import Projector
+from starpulse.event_log.readmodel.read_model import ReadModel
+from starpulse.event_log.store import EventStore, NewEvent
 from starpulse.tests.machines import MACHINES, ROLES
 from starpulse.tests.task_actor_kit import (
     CHILD,
@@ -257,6 +260,45 @@ def test_a_store_save_moves_the_task_while_the_projection_is_still_blocked(
     projection = threading.Thread(target=_Sync.projects[0], daemon=True)
     projection.start()
 
+    store.save([pull(1, state="MERGED")])
+
+    moved = until(lambda: board.moved() == [("TASK-1", "done")])
+    still_projecting = projection.is_alive()
+    _BlockedProjection.release.set()
+    assert (moved, still_projecting) == (True, True)
+
+
+def test_a_merge_of_a_pr_added_after_startup_moves_the_task_to_done(
+    tmp_path: Path, store: PullStore, stop: threading.Event, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    engine = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}").engine
+    events = EventStore(engine)
+    created = NewEvent(
+        type="TaskCreated", payload={"title": "Task", "state": "Review"}, actor="adin", writer="operator"
+    )
+    events.append("task", "TASK-1", 0, [created])
+    Projector(engine, events).catch_up()
+    feed = BoardFeed(roles=ROLES, machines=MACHINES, read_model=ReadModel(engine))
+    board = Board(feed)
+    store.save([pull(1, state="OPEN")])
+    delivery = SimpleNamespace(edit=board.edit, waits=WAITS, evaluate=None, holds=None)
+    monkeypatch.setattr(server.shutil, "which", lambda name: name)
+    monkeypatch.setattr(server, "moves_of", lambda machine: MOVES)
+    monkeypatch.setattr(server, "PullRequests", _BlockedProjection)
+    monkeypatch.setattr(server, "PullSync", _Sync)
+    monkeypatch.setattr(_Sync, "projects", [])
+    monkeypatch.setattr(_BlockedProjection, "release", threading.Event())
+    actor, _ = server.start_delivery(replace(load(None), task_actor=True), delivery, feed, None, store, Pins(), stop)
+    assert actor.ready.wait(WITHIN_S)
+    projection = threading.Thread(target=_Sync.projects[0], daemon=True)
+    projection.start()
+
+    referenced = NewEvent(
+        type="FieldsEdited", payload={"changes": {"references": [PR_ONE]}}, actor="adin", writer="operator"
+    )
+    events.append("task", "TASK-1", 1, [referenced])
+    Projector(engine, events).catch_up()
+    feed.follow_read_model()  # the page's follow publishes the changed task to the actor, as the server does
     store.save([pull(1, state="MERGED")])
 
     moved = until(lambda: board.moved() == [("TASK-1", "done")])
