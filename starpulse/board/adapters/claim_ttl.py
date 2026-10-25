@@ -84,9 +84,16 @@ def sweep(
     return released
 
 
-def start(board: Board, feed: BoardFeed, log: EventLog, settings: Mapping[str, Any]) -> None:
+def start(
+    board: Board,
+    feed: BoardFeed,
+    log: EventLog,
+    settings: Mapping[str, Any],
+    persist: Callable[[dict[str, float]], None] = lambda _expiries: None,
+) -> None:
     """Sweeps the feed's open tasks on a daemon thread every sixth of the TTL, at most every minute, for `[board]
-    claim_ttl` seconds, until the feed stops. The feed holds the board's tasks whether or not a read model folds them."""
+    claim_ttl` seconds, until the feed stops. The feed holds the board's tasks whether or not a read model folds them.
+    `persist` keeps each pass's expiries where the serving process reads them."""
     from starpulse.event_log.opening import last_run_event  # noqa: PLC0415 — keeps the board's import light
 
     ttl = float(settings.get("claim_ttl", DEFAULT_TTL))
@@ -97,6 +104,7 @@ def start(board: Board, feed: BoardFeed, log: EventLog, settings: Mapping[str, A
         while not stop.wait(min(60.0, ttl / 6)):
             expiries: dict[str, float] = {}
             sweep(board, store, feed.open_tasks(), ttl=ttl, activity=activity, expiries=expiries)
+            persist(expiries)
             feed.serve_expiries(expiries)
 
     feed.spawn(run, "claim-ttl")

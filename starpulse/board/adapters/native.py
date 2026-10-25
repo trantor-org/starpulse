@@ -1246,9 +1246,9 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
     def start(feed: BoardFeed, group: str, log: EventLog) -> None:
         attach(log)
         made.start(feed, group, log)
-        sweep(feed, log)
+        sweep(feed, log, lambda _expiries: None)  # this process serves its own sweep's expiries
 
-    def sweep(feed: BoardFeed, log: EventLog) -> None:
+    def sweep(feed: BoardFeed, log: EventLog, persist: Callable[[dict[str, float]], None]) -> None:
         from starpulse.board.adapters import claim_ttl  # noqa: PLC0415 — keeps the board's import light
 
         claim_ttl.start(replace(made, **recorded), feed, log, settings)
