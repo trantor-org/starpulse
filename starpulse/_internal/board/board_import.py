@@ -14,7 +14,7 @@ from typing import Any
 
 from starpulse._internal.board.seam import OPERATOR
 from starpulse._internal.board.task_history import KIND, WRITER, Record, seed
-from starpulse.event_log.readmodel.fold import replay
+from starpulse.event_log.readmodel.fold import BrokenHistory, replay
 from starpulse.event_log.store import EventStore, NewEvent
 
 __all__ = ["Report", "import_board"]
@@ -27,20 +27,21 @@ Run = tuple[str, dict[str, Any]]
 
 @dataclass
 class Report:
-    """What the import did and whether every Task replays to its record."""
+    """What the import did and whether every Task replays to its record; `broken` lists a Task whose History cannot replay."""
 
     tasks: int = 0
     imported: int = 0
     equal: int = 0
     differing: dict[str, list[str]] = field(default_factory=dict)
     gaps: list[str] = field(default_factory=list)
+    broken: list[str] = field(default_factory=list)
     reconciled: list[str] = field(default_factory=list)
     runs: int = 0
     runs_imported: int = 0
 
     @property
     def ok(self) -> bool:
-        return not self.differing
+        return not (self.differing or self.broken)
 
 
 def _lane_id(name: object) -> str:
@@ -112,8 +113,13 @@ def import_board(
         by_task[lane[1]].append(lane)
     report = Report(tasks=len(records))
     for task, record in records.items():
-        _import_task(store, task, record, by_task.get(task, []), report)
-        if differing := _differing(store, task, record):
+        try:
+            _import_task(store, task, record, by_task.get(task, []), report)
+            differing = _differing(store, task, record)
+        except BrokenHistory:
+            report.broken.append(task)
+            continue
+        if differing:
             report.differing[task] = differing
         else:
             report.equal += 1
