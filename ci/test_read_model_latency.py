@@ -4,10 +4,6 @@ server's start is budget-sized; `bench/page_latency.py --read-model` is the same
 
 A surface is judged on its fastest sample here: the work the server does for it. The slower samples carry the
 keep-alive round trip every surface pays alike, which is the harness's to judge (`ci/test_page_latency.py`).
-
-The ~60 s is the module fixture, not the reads: 20,000 Task streams appended through `EventStore` and folded by the
-`Projector` cost ~140,000 SQLAlchemy statements, about 30 s apiece. Appending them in one transaction measured no
-faster, and the board must come through the real store and projector for the budget to mean anything.
 """
 
 from __future__ import annotations
