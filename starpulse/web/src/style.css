@@ -17,6 +17,7 @@
   /* Status. Each hue has a base, a lighter -hi for hover and emphasis, and a -text for type on its own tint. */
   --ok: #34d399; --ok-hi: #6ee7b7; --ok-text: #a7f3d0; --ok-ink: #052e1f;               /* checks pass, done, start, saved */
   --run: #fbbf24; --run-text: #fcd34d;                                                  /* pending, running, in progress, a guard */
+  --phase: #38bdf8; --submachine: #2dd4bf;                                                /* the Star Map's phase-machine branches and their sub-machine rays (transit.ts PHASE, SUBMACHINE) */
   --fail: #fb7185; --fail-text: #fda4af; --fail-hi: #fecdd3; --fail-bg: #3c0e1c;        /* failing, needs attention, a refusal */
   --danger: #f87171; --danger-text: #fca5a5; --danger-hi: #fecaca;                      /* a destructive action: archive */
   --agent: #a78bfa; --agent-text: #c4b5fd; --agent-hi: #ede9fe; --agent-deep: #7c3aed; --agent-soft: #ddd6fe;  /* merged, agent, review, links, focus */

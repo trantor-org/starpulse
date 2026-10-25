@@ -28,6 +28,7 @@ import { spotIn, type Target } from "../features/level/search";
 import {
   RAMP, TAU, bez, build, curveDist, curveOf, edgePaths, nearestWithin, stateR, turnPage, type BEdge, type Body, type Curve, type GNode, type Hop, type Planet, type Pt, type Scene, type Pager, type Star,
 } from "./scene";
+import { drawBranches, placeBranches, wantsOf, type Branch, type Hub } from "./transit";
 import { Moves, PULSE, TRAVEL, hosted, merge, stateCount, withLedgers, type Move, type Sky } from "./sky";
 import type { KanbanTask } from "../features/kanban/kanbanModel";
 import { foldRows, openStream, type Link } from "../api/stream";
@@ -1158,6 +1159,17 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   }
   let rowsHeld = false;
   const overRows = () => !!(mouse && scene?.top && mouse.oy > scene.top.laneTop && mouse.oy < scene.top.laneBottom);
+  /** The Board's phase branches, laid once per scene and snapshot: placing them walks every free spot round a state. */
+  let branched: { sc: Scene; sky: Sky; hubs: Hub[]; list: Branch[] } | null = null;
+  function drawPhases() {
+    if (!scene || !S || scene.machine) return;
+    if (branched?.sc !== scene || branched.sky !== S) {
+      const hubs = Object.values(scene.galaxies).map((g) => ({ id: g.id, x: g.x, y: g.y, edge: g.edge }));
+      const curves = scene.bEdges.flatMap((e) => (e.p0 && e.c && e.p1 ? [{ p0: e.p0, c: e.c, p1: e.p1 }] : []));
+      branched = { sc: scene, sky: S, hubs, list: placeBranches(hubs, wantsOf(S), { curves, names: scene.names }, branched?.list) };
+    }
+    drawBranches(dc, branched.hubs, branched.list);
+  }
   function drawScene(k: number, x: number, y: number) {
     const dpr = devicePixelRatio || 1;
     cx.setTransform(k * dpr, 0, 0, k * dpr, x * dpr, y * dpr);
@@ -1172,6 +1184,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     boardDrawing.drawStateLinks();
     boardDrawing.drawSun();
     boardDrawing.drawPlanets();
+    drawPhases();
     boardDrawing.drawTasks();
     boardDrawing.drawMachineEdges(scene!.mEdges);
     boardDrawing.drawStates(scene!.mStates, true);

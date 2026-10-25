@@ -113,6 +113,27 @@ function boardStates(board: FlowSnapshot): Map<string, string> {
   return state;
 }
 
+/** One phase-flow agent joined to its Board task: the Board state (`sun`) it hangs off, and the flow and state it sits in. */
+export interface PhaseRun {
+  task: string;
+  sun: string;
+  flow: string;
+  state: string;
+  agent: RawTask;
+}
+
+/** Every phase-flow agent whose `task` names a Board task, with the Board state that task sits in; an agent naming no Board task is left out. */
+export function mergePhases(sky: Pick<Sky, "flows" | "board">): PhaseRun[] {
+  const sun = boardStates(sky.board);
+  return Object.entries(sky.flows).flatMap(([flow, { agents }]) =>
+    agents.flatMap((agent) => {
+      const task = agent.task ?? "";
+      const at = sun.get(task);
+      return at === undefined ? [] : [{ task, sun: at, flow, state: agent.state, agent }];
+    }),
+  );
+}
+
 /** Local midnight today, in epoch seconds. */
 export const midnight = (now = new Date()) => new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() / 1000;
 
