@@ -197,6 +197,7 @@ def test_scrub_keeps_the_structure_and_replaces_every_task() -> None:
         "title": TITLES[0],
         "state": "in_progress",
         "model": "claude-opus",
+        "profile": "claude-opus",
         "assignee": "https://example.com/code/session_demo1",
         "milestone": "",
         "labels": ["kind-execute"],
@@ -208,6 +209,7 @@ def test_scrub_keeps_the_structure_and_replaces_every_task() -> None:
         "title": TITLES[8],
         "state": "ready",
         "model": "",
+        "profile": "",
         "assignee": "",
         "milestone": "",
         "labels": [],
@@ -530,7 +532,8 @@ def test_scrub_seeds_a_board_when_the_capture_has_none() -> None:
         "title": TITLES[0],
         "state": "ready",
         "model": "@agent-fast-low",
-        "assignee": "@agent-fast-low",
+        "profile": "@agent-fast-low",
+        "assignee": "https://claude.ai/code/session_demo",
         "milestone": "m-2",
         "labels": ["size-2", "kind-feature"],
         "dependencies": [],
@@ -1118,3 +1121,14 @@ def test_scrub_walks_an_earlier_unmerged_pull_as_merged_so_the_ci_machine_reopen
 
     ci = next(a for f in flows if f["name"] == "ci" for a in f["agents"] if a["task"] == "DEMO-1")
     assert [s["event"] for s in ci["trail"]].count("PR_OPENED") == 2 and ci["state"] == "running"
+
+
+def test_the_seeded_board_maps_profiles_to_tasks_and_a_session_holds_one_with_a_non_default_profile() -> None:
+    live = _live()
+    live["flows"][0]["agents"] = []
+
+    board = scrub(live)["flows"][0]["agents"]
+
+    assert all(t["profile"] == t["model"] for t in board)
+    held = [t for t in board if t["assignee"].startswith("https://")]
+    assert held and all(t["profile"] not in ("", "@agent-standard-high") for t in held)

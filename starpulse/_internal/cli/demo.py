@@ -34,6 +34,8 @@ LABELS = re.compile(r"^(kind-[a-z]+|size-\d+|adr-needed|bug|feature)$")
 MOCKUP_KEYS = {"now", "dags", "writers", "launches", "cues", "domains", "descriptions", "flows"}
 #: The saved Board keys `scrub_board` knows how to clean, refused the same way.
 BOARD_KEYS = {"now", "names", "tasks"}
+#: Demo tasks a session holds: the Start dialog still opens on the task's profile, not on this holder.
+HELD = {"DEMO-1": "https://claude.ai/code/session_demo"}
 #: An agent profile assignee, the only kind a demo keeps.
 PROFILE = re.compile(r"^@agent-[a-z-]+$")
 TITLES = [
@@ -449,6 +451,8 @@ def scrub(live: dict) -> dict:
                 demo
                 | {
                     "milestone": milestones.get(a.get("milestone"), ""),
+                    "profile": demo["model"],
+                    "assignee": HELD.get(name, demo["assignee"]),
                     "labels": [x for x in a.get("labels", []) if LABELS.match(x)],
                     "dependencies": [names[d] for d in a.get("dependencies", []) if d in names],
                     "description": f"Synthetic demo task: {demo['title'].lower()}.",
