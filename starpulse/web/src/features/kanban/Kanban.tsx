@@ -98,13 +98,13 @@ function StartNote({ id, failed, names, dismiss }: { id: string; failed: Failed;
 export type Chain = "self" | "holds" | "waits";
 
 /** A task card; compact keeps the id, pull request, title and machine line and drops the footer of labels, dependencies and profile. */
-export function Card({ task, holds = 0, chain, stacked = 0, under = false, links, cross, onCross, now, marks, names, roles, compact = false, onOpen, onPress, onPlay, onHover, dismiss, dismissStart, style }: {
+export function Card({ task, holds = 0, chain, stacked = 0, under = false, links, cross, onCross, now, marks, names, roles, compact = false, onOpen, onPress, onPlay, onHover, onAhead, dismiss, dismissStart, style }: {
   task: KanbanTask; holds?: number; chain?: Chain;
   /** The tasks stacked under this one, on a stack's top card; whether this card sits under one, and while that stack is unstacked the open tasks it waits on, or the Done tasks it unblocked. */
   stacked?: number; under?: boolean; links?: string[];
   /** The Waiting blockers in other milestones, each drawn as a link badge in the footer that opens that task through `onCross`. */
   cross?: KanbanTask[]; onCross?: (id: string) => void; now: number; marks: Marks; names: Record<string, string>; roles: Roles; compact?: boolean; onOpen: () => void; onPress?: (e: React.PointerEvent<HTMLDivElement>) => void;
-  onPlay?: () => void; onHover?: (on: boolean) => void; dismiss: () => void; dismissStart?: () => void; style?: CSSProperties;
+  onPlay?: () => void; onHover?: (on: boolean) => void; onAhead?: () => void; dismiss: () => void; dismissStart?: () => void; style?: CSSProperties;
 }) {
   const live = task.live, claim = marks.claim;
   const playing = onPlay && !claim && startLane(task, roles);
@@ -116,7 +116,7 @@ export function Card({ task, holds = 0, chain, stacked = 0, under = false, links
   const working = roles.working ? task.moves[roles.working] : undefined;
   const guard = working?.allowed === false ? working.reason : "";
   return (
-    <div className={cls} role="button" tabIndex={0} data-id={task.id} style={style} onClick={onOpen} onPointerDown={onPress}
+    <div className={cls} role="button" tabIndex={0} data-id={task.id} style={style} onClick={onOpen} onPointerDown={(e) => { onAhead?.(); onPress?.(e); }} onFocus={onAhead}
       onPointerEnter={onHover && (() => onHover(true))} onPointerLeave={onHover && (() => onHover(false))}
       onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen())}>
       <div className="top">
@@ -193,7 +193,7 @@ function StackBadge({ count }: { count: number }) {
 }
 
 /** How a stack's cards are drawn: the card for a task, with what the stack adds to it. */
-const HANDLERS = new Set(["onCross", "onOpen", "onPress", "onPlay", "onHover", "dismiss", "dismissStart"]);
+const HANDLERS = new Set(["onCross", "onOpen", "onPress", "onPlay", "onHover", "onAhead", "dismiss", "dismissStart"]);
 const same = (a: unknown, b: unknown) => {
   if (a === b) return true;
   if (Array.isArray(a) && Array.isArray(b)) return a.length === b.length && a.every((x, i) => x === b[i]);
@@ -303,7 +303,7 @@ function Modal({ task, tasks, records, stack, names, roles, marks, now, profiles
   // the snapshot's entry lacks the plan, notes and checks: a record read while the pointer rested on the card draws at once;
   // otherwise it is read when the task opens, and the entry draws meanwhile
   const [held] = useState(() => records.fresh(task.id));
-  const [record, setRecord] = useState<TaskRecord | null>(held?.got ?? null);
+  const [record, setRecord] = useState<TaskRecord | null>(() => (held ?? records.last(task.id))?.got ?? null);
   // a read that fails is shown, with a retry, rather than leaving the modal busy for good
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -778,7 +778,7 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
   const drawCard: DrawCard = (t, extra) => (
     <BoardCard key={t.id} task={t} holds={holds.get(t.id)} chain={chain?.(t.id)} cross={view.cross.get(t.id)} onCross={setOpen} {...extra} now={now} names={hud.names} roles={roles} compact={compact} marks={{ ...marksOf(t.id), lifted: lift?.id === t.id || held?.id === t.id }}
       style={bounced === t.id ? { animation: "kb-shake .65s" } : undefined}
-      onOpen={openCard(t.id)} onPress={canDrag(t.id, started) ? begin(t) : undefined} onPlay={() => starts.ask(t, "play", roles)}
+      onOpen={openCard(t.id)} onPress={canDrag(t.id, started) ? begin(t) : undefined} onPlay={() => starts.ask(t, "play", roles)} onAhead={() => records.readAhead(t.id)}
       onHover={(on) => { rest(t.id, on); setHovered((h) => (on ? t.id : h === t.id ? null : h)); }}
       dismiss={() => moves.dismiss(t.id)} dismissStart={() => starts.dismiss(t.id)} />
   );

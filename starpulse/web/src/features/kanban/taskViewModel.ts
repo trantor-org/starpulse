@@ -193,6 +193,11 @@ export class RecordCache {
     return held && this.clock() - held.at < READ_AHEAD_MS ? held : undefined;
   }
 
+  /** The read held for `id` however old, to seed a modal that reads the record again anyway. */
+  last(id: string): HeldRecord | undefined {
+    return this.held.get(id);
+  }
+
   /** Drop `id`'s read, once a save has made it stale. */
   forget(id: string): void {
     this.held.delete(id);
