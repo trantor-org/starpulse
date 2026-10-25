@@ -102,7 +102,7 @@ class RowScan:
     """A history of the lane changes and nothing else: the reads fold every one, as before the summaries."""
 
     def __init__(self, store: HistoryStore) -> None:
-        self.lane_path, self.machine_path = store.lane_path, store.machine_path
+        self.lane_path, self.machine_path, self.task_events = store.lane_path, store.machine_path, store.task_events
         self.lane_rows, self.gaps, self.level_runs = store.lane_rows, store.gaps, store.level_runs
 
 
