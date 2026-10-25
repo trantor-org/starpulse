@@ -130,10 +130,10 @@ from starpulse._internal.cli.agent_keys import (
     TRANSITION_KEYS,
 )
 from starpulse._internal.config.config import Config, ConfigError, discover, load
-from starpulse._internal.github_api import GitHubError, connect, repo_of
 from starpulse._internal.level.cells import cell_of
 from starpulse._internal.level.scores import PullFacts, cell_task_scores, merged_pulls, pull_facts, score_cells
 from starpulse._internal.level.verdicts import cell_verdicts
+from starpulse.github import GitHubError, connect, repo_of
 
 #: What each exit code means, as the manifest says it.
 EXIT_CODES = {0: "ok", 1: "refused or invalid", 2: "usage", 3: "unavailable", 4: "not found"}

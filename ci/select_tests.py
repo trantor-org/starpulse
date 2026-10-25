@@ -68,14 +68,12 @@ READERS = {
     "docs/serving.md": ("starpulse/tests/unit/config/test_builtin_types.py",),
     "docs/sources.md": ("starpulse/tests/unit/config/test_builtin_types.py",),
     "ci/preview.toml": ("ci/ui_preview.py", "ci/seeded_server.py"),
-    "starpulse/api.schema.json": ("starpulse/contracts/api/schema.py", "starpulse/contracts/api/__main__.py"),
+    "starpulse/schemas/api.schema.json": ("starpulse/contracts/api/schema.py", "starpulse/contracts/api/__main__.py"),
+    "starpulse/schemas/machine.schema.json": ("starpulse/_internal/machines/machine_definition.py",),
     "starpulse/schemas/*": (
         "starpulse/contracts/adapters.py",
         "starpulse/contracts/__main__.py",
         "starpulse/tests/unit/contracts/test_contracts.py",
-    ),
-    "starpulse/machine.schema.json": (
-        "starpulse/_internal/machines/machine_definition.py",
     ),
     "starpulse/event_log/migrations/*": ("starpulse/event_log/event_log.py",),
     "pyproject.toml": (),

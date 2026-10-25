@@ -5,7 +5,7 @@ from pathlib import Path
 
 import starpulse
 
-SCHEMA = Path(starpulse.__file__).parent / "api.schema.json"
+SCHEMA = Path(starpulse.__file__).parent / "schemas" / "api.schema.json"
 
 
 def _defs() -> set[str]:

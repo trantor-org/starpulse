@@ -17,7 +17,7 @@ api_types() {
   pnpm --dir starpulse/web install --frozen-lockfile &&
     uv run --no-sync python -m starpulse.contracts.api &&
     pnpm --dir starpulse/web run gen:types &&
-    git diff --exit-code -- starpulse/api.schema.json starpulse/web/src/api/types.gen.ts
+    git diff --exit-code -- starpulse/schemas/api.schema.json starpulse/web/src/api/types.gen.ts
 }
 
 # `uv sync` creates .venv, which the checks below read: it runs once here, before any of them starts, so no two uv

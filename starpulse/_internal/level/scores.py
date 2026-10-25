@@ -23,9 +23,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from starpulse._internal.github_api import Transport, get
 from starpulse._internal.level.cells import cell_of
 from starpulse._internal.signals import CLAUDE_CODE
+from starpulse.github import Transport, get
 
 __all__ = ["PullFacts", "cell_task_scores", "merged_pulls", "pull_facts", "score_cells", "task_score"]
 
