@@ -19,6 +19,23 @@ class MachineHistory(_Api):
     steps: int
 
 
+class MachineEvent(_Api):
+    at: float
+    machine: str
+    event: str
+    # `from` is a Python keyword.
+    origin: str = Field(alias="from")
+    to: str
+
+
+class TaskEventHistory(_Api):
+    """`GET /api/history?task=&hours=`: every machine event of a task in the window, oldest first."""
+
+    task: str
+    hours: float
+    events: list[MachineEvent]
+
+
 class HealthState(_Api):
     id: str
     name: str

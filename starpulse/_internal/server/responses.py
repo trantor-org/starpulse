@@ -100,9 +100,14 @@ def _done_card(stub: dict, record: Mapping[str, Any]) -> dict:
 
 
 def history_response(
-    history: History, query: dict[str, list[str]], flows: Collection[str], keys: TaskKeys | None = None
+    history: History,
+    query: dict[str, list[str]],
+    flows: Collection[str],
+    keys: TaskKeys | None = None,
+    now: Callable[[], float] = time.time,
 ) -> tuple[bytes, int]:
-    """The body and status for `/api/history`: a task's lane path, or with `machine` its path on that machine.
+    """The body and status for `/api/history`: a task's lane path, with `machine` its path on that machine, or with
+    `hours` every machine event of the task in that window, oldest first, as `{at, machine, event, from, to}`.
 
     `flows` are the machines the page draws; a task is looked up under the spelling `keys` gives it."""
     task, flow = (query.get(key, [""])[0] for key in ("task", "machine"))
@@ -115,6 +120,12 @@ def history_response(
     if flow:
         body |= {"machine": flow}
         body["path"], body["steps"] = history.machine_path(task, flow)
+    elif "hours" in query:
+        hours = _hours(query, "hours", 0.0)
+        if hours is None:
+            return _error("hours must be a positive number"), 400
+        at = now()
+        body |= {"hours": hours, "events": history.task_events(task, at - hours * 3600, at)}
     else:
         body["path"] = history.lane_path(task)
     return encode("history", body), 200

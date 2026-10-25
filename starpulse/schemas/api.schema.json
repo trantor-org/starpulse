@@ -3491,6 +3491,35 @@
       "title": "MachineEntryFrom",
       "type": "object"
     },
+    "MachineEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "type": "number"
+        },
+        "event": {
+          "type": "string"
+        },
+        "from": {
+          "type": "string"
+        },
+        "machine": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "at",
+        "machine",
+        "event",
+        "from",
+        "to"
+      ],
+      "title": "MachineEvent",
+      "type": "object"
+    },
     "MachineHistory": {
       "additionalProperties": false,
       "description": "`GET /api/history?task=&machine=`: a task's path on one machine, and how many steps it has taken.",
@@ -7569,6 +7598,31 @@
       "title": "TaskDelta",
       "type": "object"
     },
+    "TaskEventHistory": {
+      "additionalProperties": false,
+      "description": "`GET /api/history?task=&hours=`: every machine event of a task in the window, oldest first.",
+      "properties": {
+        "events": {
+          "items": {
+            "$ref": "#/$defs/MachineEvent"
+          },
+          "type": "array"
+        },
+        "hours": {
+          "type": "number"
+        },
+        "task": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "hours",
+        "events"
+      ],
+      "title": "TaskEventHistory",
+      "type": "object"
+    },
     "TaskRecord": {
       "additionalProperties": false,
       "description": "`GET /api/task/<id>`: the full record of a task from the board's reader, keyed by its editable fields.",
@@ -8660,6 +8714,9 @@
     "stages": {
       "$ref": "#/$defs/SubStages"
     },
+    "taskEventHistory": {
+      "$ref": "#/$defs/TaskEventHistory"
+    },
     "taskRecord": {
       "$ref": "#/$defs/TaskRecord"
     },
@@ -8687,6 +8744,7 @@
     "machines",
     "laneHistory",
     "machineHistory",
+    "taskEventHistory",
     "pulls",
     "searchResults",
     "health",

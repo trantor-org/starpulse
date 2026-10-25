@@ -232,7 +232,7 @@ class ReadRoutes:
             "/api/doctor": self._doctor,
             "/api/machines": lambda request, query: Response(*machines_response(feed, query)),
             "/api/done": lambda request, query: Response(*done_response(feed, read, query)),
-            "/api/history": lambda request, query: Response(*history_response(history, query, flows, feed.keys)),
+            "/api/history": lambda request, query: Response(*history_response(history, query, flows, feed.keys, clock)),
             "/api/pulls": self._pulls,
             "/api/search": lambda request, query: Response(*search_response(search, query)),
             "/metrics": self._prometheus,

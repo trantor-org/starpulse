@@ -93,6 +93,7 @@ export interface ApiContract {
   sessions: Sessions;
   snapshot: Snapshot;
   stages: SubStages;
+  taskEventHistory: TaskEventHistory;
   taskRecord: TaskRecord;
   traceClusters: TraceClusters;
   trajectories: Trajectories;
@@ -2181,6 +2182,21 @@ export interface SubStage {
    * The cut that opens the stage, `[start]` for the first.
    */
   stage: string;
+}
+/**
+ * `GET /api/history?task=&hours=`: every machine event of a task in the window, oldest first.
+ */
+export interface TaskEventHistory {
+  events: MachineEvent[];
+  hours: number;
+  task: string;
+}
+export interface MachineEvent {
+  at: number;
+  event: string;
+  from: string;
+  machine: string;
+  to: string;
 }
 /**
  * `GET /api/task/<id>`: the full record of a task from the board's reader, keyed by its editable fields.

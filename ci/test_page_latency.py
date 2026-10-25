@@ -100,7 +100,7 @@ def test_every_read_route_the_server_answers_is_timed():
     package = Path(__file__).resolve().parents[1] / "starpulse" / "_internal" / "server"
     server = "".join(module.read_text() for module in package.glob("*.py"))
     for route in pl.READS:
-        assert route.removesuffix("/<id>") in server, route
+        assert route.split("?")[0].removesuffix("/<id>") in server, route
 
 
 def test_a_local_build_answers_every_page_url_but_its_assets_with_its_index(tmp_path):

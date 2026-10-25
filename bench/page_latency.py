@@ -80,6 +80,7 @@ READS: dict[str, str] = {
     "/api/doctor": "/api/doctor",
     "/api/machines": "/api/machines?limit=20",
     "/api/history": "/api/history?task={task}",
+    "/api/history?hours": "/api/history?task={task}&hours=24",
     "/api/analytics/health": "/api/analytics/health",
     "/api/harnesses": "/api/harnesses",
     "/api/task/<id>": "/api/task/{task}",

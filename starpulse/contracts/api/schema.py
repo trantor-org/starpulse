@@ -11,7 +11,7 @@ from pydantic.json_schema import GenerateJsonSchema
 from starpulse.contracts.api._base import _Api
 from starpulse.contracts.api.dto.errors import ApiError, SkillRefusal, StaleEdit, WindowTooLong
 from starpulse.contracts.api.dto.harnesses import Harnesses, WindowState
-from starpulse.contracts.api.dto.health import Health, MachineHistory, Sessions, SessionSteps
+from starpulse.contracts.api.dto.health import Health, MachineHistory, Sessions, SessionSteps, TaskEventHistory
 from starpulse.contracts.api.dto.milestones import Docs, DocShown, Milestones, MilestoneShown, RetiredTasks, TaskRecord
 from starpulse.contracts.api.dto.missed import MissedLoads, TraceClusters
 from starpulse.contracts.api.dto.pages import DonePage, LaneHistory, LedgerChange, LedgerPage, Machines
@@ -105,6 +105,7 @@ class ApiContract(_Api):
     machines: Machines
     laneHistory: LaneHistory
     machineHistory: MachineHistory
+    taskEventHistory: TaskEventHistory
     pulls: Pulls
     searchResults: SearchResults
     health: Health

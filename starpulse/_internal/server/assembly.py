@@ -109,7 +109,9 @@ def history_store(config: Config, base: Path, machines: Mapping[str, dict]) -> H
 
     Opening it puts every StarPulse table, the event log's included, on that database.
     """
-    return HistoryStore(database_url(config.database_url, base), machines)
+    return HistoryStore(
+        database_url(config.database_url, base), machines, retention_days=config.event_log_retention_days
+    )
 
 
 def keep_event_log(log: EventLog, config: Config, base: Path, *, stop: threading.Event) -> threading.Thread:

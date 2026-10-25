@@ -237,6 +237,9 @@ def test_a_history_with_lane_rows_and_no_gaps_can_feed_the_ledger_but_not_answer
         def machine_path(self, task: str, flow: str) -> tuple[list[dict], int]:
             return [], 0
 
+        def task_events(self, task: str, since: float, now: float) -> list[dict]:
+            return []
+
         def lane_rows(self, since: float | None = None) -> list[tuple[str, float, str | None, str]]:
             return []
 
