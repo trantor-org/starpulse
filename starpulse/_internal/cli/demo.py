@@ -35,7 +35,7 @@ MOCKUP_KEYS = {"now", "dags", "writers", "launches", "cues", "domains", "descrip
 #: The saved Board keys `scrub_board` knows how to clean, refused the same way.
 BOARD_KEYS = {"now", "names", "tasks"}
 #: Demo tasks a session holds: the Start dialog still opens on the task's profile, not on this holder.
-HELD = {"DEMO-1": "https://claude.ai/code/session_demo"}
+HELD = {"DEMO-1": "https://example.com/code/session_demo1"}
 #: An agent profile assignee, the only kind a demo keeps.
 PROFILE = re.compile(r"^@agent-[a-z-]+$")
 TITLES = [
