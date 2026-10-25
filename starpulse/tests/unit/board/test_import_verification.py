@@ -8,7 +8,9 @@ from starpulse._internal.board.board_import import import_board
 from starpulse._internal.board.task_history import KIND
 from starpulse.runs.run_streams import RunStreams
 from starpulse.event_log.event_log import EventLog
-from starpulse.event_log.store import EventStore
+from starpulse._internal.board.seam import OPERATOR
+from starpulse._internal.board.task_history import WRITER
+from starpulse.event_log.store import EventStore, NewEvent
 
 _RECORD = {"title": "Cut over", "status": "Review", "labels": ["a"], "session": "s1"}
 _LANES = [("e1", "TASK-1", "Ready", 10.0), ("e2", "TASK-1", "In Progress", 20.0), ("e3", "TASK-1", "Review", 30.0)]
@@ -77,4 +79,20 @@ def test_lane_ids_match_the_records_display_status_and_leave_no_gap(tmp_path: Pa
 
     assert (report.gaps, report.equal) == ([], 1)
     assert [event.payload["to"] for event in store.read(KIND, "TASK-1")[1:]] == ["ready", "In Progress"]
+    engine.dispose()
+
+
+def test_a_task_whose_history_cannot_replay_is_listed_and_the_tasks_after_it_still_reconcile(tmp_path: Path) -> None:
+    store, engine = _store(tmp_path)
+    records = {"TASK-1": _RECORD, "TASK-2": {**_RECORD, "title": "Next"}}
+    import_board(store, records, [], [], RunStreams(store).record)
+    checked = NewEvent("CriterionChecked", {"kind": "ac", "n": 2, "checked": True}, OPERATOR, WRITER)
+    store.append(KIND, "TASK-1", len(store.read(KIND, "TASK-1")), [checked])
+    moved = {**records, "TASK-2": {**_RECORD, "title": "Renamed"}}
+
+    report = import_board(store, moved, [], [], RunStreams(store).record)
+
+    assert report.broken == ["TASK-1"]
+    assert report.reconciled == ["TASK-2"]
+    assert report.ok is False
     engine.dispose()
