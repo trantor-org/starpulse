@@ -1135,7 +1135,7 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
   #kbm .compose textarea { align-self: stretch; min-height: calc(34px * var(--fs)); resize: vertical; box-sizing: border-box; padding: 6px 9px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--slate) 18%, transparent);
     background: var(--field); color: var(--ink); font: inherit; font-size: calc(12px * var(--fs)); }
   #kbm .compose button, #kbm .btn2 { all: unset; cursor: pointer; align-self: flex-end; padding: 5px 12px; border-radius: 6px; font-size: calc(11.5px * var(--fs)); color: var(--ink); border: 1px solid color-mix(in srgb, var(--agent) 45%, transparent); background: color-mix(in srgb, var(--agent) 12%, transparent); }
-  #kbm .compose button { align-self: flex-start; }
+  #kbm .compose button { align-self: flex-end; } /* N23 supersedes N14 left-align */
   #kbm .compose button:disabled { opacity: .4; cursor: default; }
 
   /* N10: bounded rail lists */
