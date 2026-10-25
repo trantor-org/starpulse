@@ -13,6 +13,8 @@ from starpulse.machine_engine.model.state_roles import StateRoles
 BUILT: list[tuple[dict, Path]] = []
 #: The workflows each draw of its machines was given.
 DRAWN: list[list[str]] = []
+#: Each feed the board's claim sweep was started on.
+SWEPT: list[Any] = []
 
 
 def board(settings: Mapping[str, Any], base: Path) -> Board:
@@ -48,6 +50,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         machines=machines,
         roles=roles,
         start=start,
+        sweep=lambda feed, log: SWEPT.append(feed),
         keys=TaskKeys(key=re.compile(r"FAKE-\d+"), branch=re.compile(r"(FAKE-\d+)")),
         cues=lambda qualify: [{"event": "SHUT", "dag": "q/nightly", "state": lanes[-1]}],
         **writers,

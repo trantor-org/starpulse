@@ -171,6 +171,10 @@ class Board:
     """Begin placing the Board's tasks on the feed, on threads of the adapter's own; the text is a name unique to this
     running view, and the log is the event log of the view's database, which an adapter that reads another system's
     events appends them to (`board_feed.follow` reads a stream of it into the feed)."""
+    sweep: Callable[[BoardFeed, EventLog], None] | None = None
+    """Begin releasing the claims that outlive their TTL on the feed's tasks, on a thread of the adapter's own; `start`
+    begins it too, and a view that reads the Task read model instead of starting the adapter calls it alone; None
+    sweeps nothing."""
     keys: TaskKeys | None = None
     """The tracker's task key scheme; None places any key."""
     cues: Callable[[Qualify], Sequence[dict]] = _no_cues

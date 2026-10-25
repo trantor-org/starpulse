@@ -126,3 +126,16 @@ def test_the_board_worker_builds_the_board_starts_the_writers_and_holds(
     assert len(fake_board.BUILT) == 1
     assert "board-criteria" in {t.name for t in set(threading.enumerate()) - before}
     held[0].set()
+
+
+def test_the_board_worker_under_the_read_model_starts_the_claim_sweep(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, held: list[threading.Event]
+) -> None:
+    monkeypatch.setattr(fake_board, "SWEPT", [])
+    config = tmp_path / "starpulse.toml"
+    config.write_text("read_model = true\n" + BOARD)
+
+    worker.main(["board", "--config", str(config)])
+
+    assert len(fake_board.SWEPT) == 1  # the read model skips board.start, which is where the sweep began
+    held[0].set()

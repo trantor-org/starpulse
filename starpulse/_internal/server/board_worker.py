@@ -96,5 +96,9 @@ def main(argv: list[str] | None, parser: argparse.ArgumentParser) -> None:
         # the read model replaces the task files as the board's reader: nothing publishes a replica of them
         feed.ready.set()
         start_writers(feed, store, board.evaluate, stop, live=False)
+        if board.attach is not None:
+            board.attach(log)  # the sweep's releases append the History events the read model folds
+        if board.sweep is not None:
+            board.sweep(feed, log)
         read_model_follow.follow(Projector(log.engine, EventStore(log.engine)), feed, stop)
     hold(stop, lambda: reload(path, config))
