@@ -58,6 +58,29 @@ describe("placeBranches", () => {
       }
   });
 
+  // the demo's In Progress: three phases, and five sub-machines, three of them opened off one CI station, the longest thirteen steps
+  it.each([[1920, 1080], [1420, 860]])("gives sub-machines opened off one station their own lanes or sides on a %ix%i canvas, never one arc", (W, H) => {
+    vi.stubGlobal("location", { search: "?mock=1&extra=8&sim=3" });
+    const scene = sc.build({ S: sky.merge(live()), moves: new sky.Moves(), W, H, T: 0, scale: 100 }, { kind: "board" });
+    const sun = (scene.tasks.find((k) => k.h)!.host as Galaxy).id, mine = scene.tasks.filter((k) => (k.host as Galaxy).id === sun);
+    for (const k of scene.tasks) k.h = undefined;
+    const steps = (n: number) => Array.from({ length: n }, (_, i) => `s${i}`), phases: [string, number][] = [["ci", 6], ["dependency-review", 5], ["review-triage", 5]];
+    const subs: [string, number, string, number][] = [["harness", 3, "review-triage", 2], ["harness", 3, "dependency-review", 3], ["harness", 3, "ci", 1], ["docs-audit", 5, "ci", 1], ["delivery", 13, "ci", 1]];
+    phases.forEach(([m, n], i) => (mine[i].h = { machine: m, steps: steps(n), j: 1, ring1: true }));
+    subs.forEach(([m, n, p, j], i) => (mine[3 + i].h = { machine: m, steps: steps(n), j: 0, ring1: false, side: { machine: p, steps: steps(phases.find((f) => f[0] === p)![1]), j } }));
+    run(scene, 0, 8);
+    const lines = T.branchLines();
+    expect(lines.filter((l) => l.parent === `${sun}|ci`)).toHaveLength(3);
+    // siblings share the ray out from their station, so their own runs are measured from the turn onto their lanes
+    const run_ = (l: (typeof lines)[number]) => l.pts.filter((p) => !/:(s\d+|r)$/.test(p.k));
+    for (const a of lines)
+      for (const b of lines) {
+        if (a.key >= b.key || a.parent === b.key || b.parent === a.key) continue;
+        const sib = a.parent && a.parent === b.parent && a.pj === b.pj, [pa, pb] = sib ? [run_(a), run_(b)] : [a.pts, b.pts];
+        expect(Math.min(...pa.flatMap((p) => pb.map((q) => dist(p, q)))), `${a.key} ~ ${b.key}`).toBeGreaterThan(8);
+      }
+  });
+
   it("runs a sub-machine's ray straight out from its parent's station, square to the parent's line", () => {
     const scene = mock(), lines = T.branchLines(), subs = lines.filter((l) => l.ring === 2);
     expect(subs.length).toBeGreaterThan(0);
@@ -196,6 +219,16 @@ describe("placeBranches", () => {
     text.mockClear();
     T.drawBranches(dc(null), d, scene, stationsOf(sub)[0]);
     expect(printed()).toContain(machine);
+    // once no task is on it the branch retracts, and the pointer still on its line prints nothing
+    for (const t of scene.tasks) if (t.h?.machine === machine) t.h = undefined;
+    const ext = () => T.branchLines(0).find((l) => l.key === sub.key)?.ext ?? 0;
+    for (let t = 9.1; t < 14 && ext() === 1; t += 1 / 60) T.placeBranches(scene, t);
+    expect(ext()).toBeGreaterThan(0);
+    expect(ext()).toBeLessThan(1);
+    text.mockClear();
+    T.drawBranches(dc(null), d, scene, stationsOf(sub)[0]);
+    T.drawBranches(dc({ kind: "task", o: k }), d, scene, null);
+    expect(printed()).toEqual([]);
   });
 
   it("traces a dot on a sub-machine back along the line it rode: hub, its phase's stations, then the sub-machine's", () => {

@@ -14,8 +14,8 @@ export interface HPlace {
   side?: { machine: string; steps: string[]; j: number };
 }
 type Node = Pt & { k: string };
-/** How much a branch's place gives up to fit: nothing (0), a station on a Board curve (1), its line over a name (2), an arc shared with another branch (3), a station on a name (4). */
-type Loose = 0 | 1 | 2 | 3 | 4;
+/** How much a branch's place gives up to fit: nothing (0), a station on a Board curve (1), its line over a name (2), a station on a name (3). */
+type Loose = 0 | 1 | 2 | 3;
 interface Branch {
   key: string;
   sun: string;
@@ -120,7 +120,20 @@ function fitter(b: Branch, sc: Scene) {
   const sample = (e: BEdge, n = 64) => Array.from({ length: n + 1 }, (_, i) => bez(e.p0!, e.c!, e.p1!, i / n)).filter((q) => Math.hypot(q.x - g.x, q.y - g.y) < reach);
   const drawn = sc.bEdges.filter((e) => e.p0 && e.c && e.p1), all = drawn.flatMap((e) => sample(e));
   const docked = drawn.filter((e) => e.source === b.sun || e.target === b.sun).flatMap((e) => sample(e));
-  const close = (p: Pt, qs: Pt[]) => qs.some((q) => Math.hypot(p.x - q.x, p.y - q.y) < CLEAR);
+  // the samples binned CLEAR square, so a spot is checked against the nine bins round it rather than every sample
+  const bins = (qs: Pt[]) => {
+    const m = new Map<string, Pt[]>();
+    for (const q of qs) {
+      const k = `${Math.floor(q.x / CLEAR)},${Math.floor(q.y / CLEAR)}`;
+      m.set(k, m.get(k) ?? []).get(k)!.push(q);
+    }
+    return m;
+  };
+  const near = new Map([all, docked].map((qs) => [qs, bins(qs)]));
+  const close = (p: Pt, qs: Pt[]) => {
+    const [i, j] = [Math.floor(p.x / CLEAR), Math.floor(p.y / CLEAR)];
+    return [-1, 0, 1].some((u) => [-1, 0, 1].some((v) => near.get(qs)!.get(`${i + u},${j + v}`)?.some((q) => Math.hypot(p.x - q.x, p.y - q.y) < CLEAR)));
+  };
   // a spoke crossing a curve is near it for a few samples; one running along it, or leaving the hub on top of it, is near for most
   // the sky the fitted view shows: the scene keeps the canvas's shape, so fitting it to its own size frames what the canvas does
   const v = fitLevel(sc, sc.w, sc.h), view: Box = { x0: -v.x / v.k + BOX, y0: -v.y / v.k + BOX, x1: (sc.w - v.x) / v.k - BOX, y1: (sc.h - v.y) / v.k - BOX };
@@ -133,9 +146,10 @@ function fitter(b: Branch, sc: Scene) {
     const m = Math.max(Math.ceil((Math.abs(d) * r) / 4), 1);
     return [...Array.from({ length: m + 1 }, (_, i) => at(g, r, a0 + (d * i) / m, "")), ...spoke];
   };
-  const others = [...branches.values()]
-    .filter((o) => o !== b && o.sun === b.sun && !Number.isNaN(o.th) && o.key !== b.parent && o.parent !== b.key)
-    .flatMap((o) => claims(o, o.th, o.lane, o.dir, o.at));
+  // siblings opened off one station share the ray out from it, so only their own lanes' runs are kept apart: each takes a lane of its own
+  const kin = [...branches.values()].filter((o) => o !== b && o.sun === b.sun && !Number.isNaN(o.th) && o.key !== b.parent && o.parent !== b.key);
+  const sib = (o: Branch) => b.ring === 2 && o.parent === b.parent && o.pj === b.pj;
+  const others = kin.filter((o) => !sib(o)).flatMap((o) => claims(o, o.th, o.lane, o.dir, o.at)), sibs = kin.filter(sib).map((o) => claims(o, o.th, o.lane, o.dir, o.at)[0]);
   // the next station steps on round its lane until it clears every curve, by at most another step: a curve may pass between two stations
   const walk = (th: number, lane: number, dir: 1 | -1) => {
     const r = rad(g, lane), step = stepAt(g, lane), angs = [th];
@@ -146,32 +160,43 @@ function fitter(b: Branch, sc: Scene) {
     }
     return angs;
   };
-  /** The station angles a place at `th` gives, or null when it does not fit; a `loose` place may sit on a Board curve (1), and failing that run its
-   *  line over a name (2) and then share a lane's arc with another branch (3) and set a station on a name (4), never any of it off the fitted view. */
-  const fits = (th: number, lane: number, dir: 1 | -1, loose: Loose = 0): number[] | null => {
-    const angs = walk(th, lane, dir), sp = spots(b, g, th, lane, angs);
+  /** The station angles a place at `th` gives and the least it gives up to fit there: it may sit on a Board curve (1), and failing that run its
+   *  line over a name (2) and then set a station on a name (3); null where its arc meets another branch's, any of it leaves the fitted view, or it
+   *  gives up more than `most`. */
+  const place = (th: number, lane: number, dir: 1 | -1, most: Loose = 3): { angs: number[]; loose: Loose } | null => {
+    const angs = walk(th, lane, dir), sp = spots(b, g, th, lane, angs), mine = claims(b, th, lane, dir, angs);
     // a sub-machine stays out past its parent's lane, which may have moved since it was placed
     const line = track(sp, lane);
-    return lane >= base && (loose > 2 || !hit(claims(b, th, lane, dir, angs), others)) && !off([...sp.st, ...line]) && !(loose ? false : onCurve(sp)) && (loose > 3 || !sp.st.some(named)) && (loose > 1 || !line.some(named)) ? angs : null;
+    if (lane < base || hit(mine, others) || hit(mine.slice(0, 1), sibs) || off([...sp.st, ...line])) return null;
+    // the costliest give first, so a place that gives up more than `most` is dropped at the first check it fails
+    for (const [i, gives] of [() => sp.st.some(named), () => line.some(named), () => onCurve(sp)].entries()) {
+      const loose = (3 - i) as Loose;
+      if (gives()) return loose > most ? null : { angs, loose };
+    }
+    return { angs, loose: 0 as Loose };
   };
-  return { base, fits, walk };
+  const fits = (th: number, lane: number, dir: 1 | -1, loose: Loose = 0) => {
+    return place(th, lane, dir, loose)?.angs ?? null;
+  };
+  return { base, place, fits, walk };
 }
 /** A ring-2 branch looks no further round than this from its parent's station: past it the next lane out is nearer than the arc there. */
 const NEAR = 0.6;
-/** A branch takes one of this many lanes from its first: rather than go further out it crosses a Board curve, then a name, then shares an arc. */
-const LANES = 3;
+/** A branch takes one of this many lanes from its first: rather than go further out it crosses a Board curve, then a name; only where none of
+ *  them is clear of the sun's other branches does it look up to MORE lanes further out. */
+const LANES = 3, MORE = 3;
 /** Places `b` once, as near `prefer` as it fits on its lanes; where nothing fits it takes its first lane at `prefer`, so a branch always has a place to grow from. */
 function allocate(b: Branch, sc: Scene, prefer: number) {
-  const { base, fits, walk } = fitter(b, sc), n = b.ring === 2 ? 2 * Math.round(NEAR / 0.05) + 1 : 2 * Math.ceil(Math.PI / 0.05);
-  for (const loose of [0, 1, 2, 3, 4] as const)
-    for (let lane = base; lane < base + LANES; lane++)
-      for (let i = 0; i <= n; i++) {
-        const dir: 1 | -1 = b.ring === 2 && i % 2 ? -1 : 1, k = b.ring === 2 ? Math.floor(i / 2) : Math.ceil(i / 2);
-        const th = b.ring === 2 ? prefer + dir * k * 0.05 : prefer + (i % 2 ? 1 : -1) * k * 0.05;
-        const angs = fits(th, lane, dir, loose);
-        if (angs) return Object.assign(b, { th, lane, dir, at: angs, loose });
-      }
-  Object.assign(b, { th: prefer, lane: base, dir: 1, at: walk(prefer, base, 1), loose: 4 });
+  const { base, place, walk } = fitter(b, sc), n = b.ring === 2 ? 2 * Math.round(NEAR / 0.05) + 1 : 2 * Math.ceil(Math.PI / 0.05);
+  let best: { th: number; lane: number; dir: 1 | -1; at: number[]; loose: Loose } | undefined;
+  for (let lane = base; lane < base + LANES + MORE && !(best && lane >= base + LANES); lane++)
+    for (let i = 0; i <= n; i++) {
+      const dir: 1 | -1 = b.ring === 2 && i % 2 ? -1 : 1, k = b.ring === 2 ? Math.floor(i / 2) : Math.ceil(i / 2);
+      const th = b.ring === 2 ? prefer + dir * k * 0.05 : prefer + (i % 2 ? 1 : -1) * k * 0.05, p = place(th, lane, dir, best ? ((best.loose - 1) as Loose) : 3);
+      if (p) best = { th, lane, dir, at: p.angs, loose: p.loose };
+      if (best && !best.loose) return Object.assign(b, best);
+    }
+  Object.assign(b, best ?? { th: prefer, lane: base, dir: 1, at: walk(prefer, base, 1), loose: 3 });
 }
 function ensure(key: string, sun: string, ring: 1 | 2, machine: string, steps: string[], parent?: string, pj = 0): Branch {
   let b = branches.get(key);
@@ -423,6 +448,13 @@ export function placeBranches(sc: Scene, now: number): boolean {
       route = [at(g, g.edge, angle(g, k), `orbit:${sun}:h`), { k: `orbit:${sun}:${k.id}`, x: k.x, y: k.y }];
       node = `orbit:${sun}`;
       bks = [];
+      // a dot settled on its orbit sits where the Board puts it: only its way in from the hub follows it round, and nothing else is worked out
+      const s = mems.get(k.id);
+      if (s?.node === node && !s.fade && s.gone >= s.cum.at(-1)!) {
+        Object.assign(s, { route, path: [route[1]], cum: [0], gone: 0, x: k.x, y: k.y });
+        Object.assign(k, { hop: undefined, moving: false, alpha: 1, arrive: null });
+        continue;
+      }
     }
     let m = mems.get(k.id);
     // a dot first seen on a branch still growing rides out with its tip
@@ -474,7 +506,8 @@ export function placeBranches(sc: Scene, now: number): boolean {
     k.alpha = i >= 3 && done ? 0 : alpha;
     k.arrive = w && age >= 0 && age < 1 && now - m.t0 < 9 ? { x: q.x, y: q.y, r: 6, col: "#c084fc", age, grow: 18 } : null;
   }
-  for (const id of [...mems.keys()]) if (!tasks.some((k) => k.id === id)) mems.delete(id);
+  const ids = new Set(tasks.map((k) => k.id));
+  for (const id of [...mems.keys()]) if (!ids.has(id)) mems.delete(id);
   return busy;
 }
 
@@ -500,7 +533,8 @@ export function drawBranches(dc: DrawCtx, d: Drawing, sc: Scene, at: Pt | null) 
     cx.beginPath();
     line.forEach((p, i) => (i ? cx.lineTo(p.x, p.y) : cx.moveTo(p.x, p.y)));
     cx.stroke();
-    const hot = hover?.includes(b.key) || (at && line.some((p, i) => i && seg(at, line[i - 1], p) <= reach));
+    // a branch names itself only while it is out in full and wanted: one retracting drops its names with its line
+    const hot = b.alive && b.ext >= 1 && (hover?.includes(b.key) || (at && line.some((p, i) => i && seg(at, line[i - 1], p) <= reach)));
     b.steps.forEach((name, s) => {
       const p = b.route[b.st[s]], n = occ.get(`${b.key}#${s}`) ?? 0;
       if (cum[b.st[s] - b.own] > tip + 0.01) return;
