@@ -428,7 +428,7 @@ export class DemoServer {
     board.agents.push(card);
     this.created.add(id);
     this.records[id] = {
-      ...demoRecord(card, this.snapshot.roles ?? {}, this.clock(), this.failingEvaluator), priority: text("priority"), plan: "", notes: "", definitionOfDone: [],
+      ...demoRecord(card, this.snapshot.roles ?? {}, this.clock(), this.failingEvaluator), description: card.description ?? "", priority: text("priority"), plan: "", notes: "", definitionOfDone: [],
       acceptanceCriteria: list("acceptanceCriteria").map((item, i) => ({ n: i + 1, text: item, checked: false })),
     };
     this.publish(next, new Set([id]));
@@ -523,6 +523,16 @@ const startingLane = (machine: Machine, roles: Roles): string => {
   return lanes.includes(initial) ? initial : lanes[0];
 };
 
+/** The Markdown every demo description carries: a table and a fenced block the dialog draws, and the creation sections it hides. */
+const DEMO_BODY = [
+  "## Rollout",
+  "| Stage | Hosts | Window |\n| --- | ---: | --- |\n| Canary | 1 | 10 min |\n| Fleet | 24 | 1 h |",
+  "```\nstarpulse task show DEMO-1\n```",
+  "## Duplicate Search\n\nSearched the board for the same change: none.",
+  "## Duplicate Resolution\n\nNew task.",
+  "## ADR Needed\n\nNo.",
+].join("\n\n");
+
 const demoRecord = (card: RawTask, roles: Roles, now: number, failing = false): TaskRecord => {
   const criteria = plays(card.state, roles.waiting) ? demoCriteria(now, failing) : undefined;
   return {
@@ -532,10 +542,11 @@ const demoRecord = (card: RawTask, roles: Roles, now: number, failing = false): 
     labels: card.labels ?? ["demo"],
     milestone: card.milestone ?? "",
     dependencies: card.dependencies ?? [],
-    description: [card.description ?? "A synthetic task used by the public StarPulse preview.", criteria && criteriaBlock(criteria)].filter(Boolean).join("\n\n"),
+    description: [card.description ?? "A synthetic task used by the public StarPulse preview.", DEMO_BODY, criteria && criteriaBlock(criteria)].filter(Boolean).join("\n\n"),
     ...(criteria && { start_criteria: criteria }),
-    plan: "1. Inspect the task\n2. Make the smallest safe change\n3. Verify the result",
-    notes: "This record contains no real board data.",
+    // an unassigned task has no plan yet, so the dialog offers `+ Add plan`
+    plan: card.model ? "1. Inspect the task\n2. Make the smallest safe change\n3. Verify the result" : "",
+    notes: `**Assignee:** ${card.model || "nobody"}\nThis record contains no real board data.`,
     acceptanceCriteria: [
       { n: 1, text: "The public preview can edit every field", checked: false },
       { n: 2, text: "The saved card refreshes immediately", checked: false },

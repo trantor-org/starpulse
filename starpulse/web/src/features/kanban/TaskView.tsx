@@ -172,7 +172,6 @@ function MachineRows({ machines, now }: { machines: KanbanTask["machines"]; now:
   ) : <span className="none">In no machine right now</span>;
 }
 
-/** A section's description, plan or notes as Markdown blocks. */
 /** Text with each TASK-N id drawn as a link that opens that task in this dialog. */
 function Linked({ text, open }: { text: string; open: (id: string) => void }) {
   return <>{text.split(/(TASK-\d+)/).map((part, i) => i % 2 ? (
@@ -180,6 +179,7 @@ function Linked({ text, open }: { text: string; open: (id: string) => void }) {
   ) : part)}</>;
 }
 
+/** A section's description, plan or notes as Markdown blocks. */
 function Md({ text, className = "md", drawn = false, open }: { text: string; className?: string; drawn?: boolean; open: (id: string) => void }) {
   const at = (t: string) => <Linked text={t} open={open} />;
   return <div className={className}>{markdown(text, drawn).map((b, i) => {

@@ -88,14 +88,16 @@ def test_touches_tells_a_runner_whether_a_change_reaches_a_ui_path(
 
 KANBAN = "starpulse/web/src/features/kanban/Kanban.tsx"
 DAGS = "starpulse/web/src/features/dags/Dags.tsx"
+#: The Kanban folder draws the board and the task dialog over it.
+KANBAN_PAGES = ["starpulse-kanban", "starpulse-task", "starpulse-task-unplanned"]
 
 
 @pytest.mark.parametrize(
     ("changed", "expected"),
     [
-        ([KANBAN], ["starpulse-kanban"]),
+        ([KANBAN], KANBAN_PAGES),
         ([DAGS], ["starpulse-dags"]),
-        ([DAGS, KANBAN, "README.md", "design/data.js"], ["starpulse-kanban", "starpulse-dags"]),
+        ([DAGS, KANBAN, "README.md", "design/data.js"], [*KANBAN_PAGES, "starpulse-dags"]),
         # anything the view folders do not own may draw on every view
         ([KANBAN, "starpulse/web/src/App.tsx"], list(PAGES[STARPULSE])),
         ([KANBAN, "starpulse/web/src/features/level/ledger.ts"], list(PAGES[STARPULSE])),
@@ -108,7 +110,8 @@ def test_starpulse_shoots_only_the_views_whose_folder_holds_every_changed_page_p
 
 
 def test_a_view_keeps_the_query_it_opens_with_and_other_surfaces_keep_every_page() -> None:
-    assert pages(STARPULSE, [KANBAN]) == {"starpulse-kanban": "?view=kanban"}
+    assert pages(STARPULSE, [DAGS]) == {"starpulse-dags": "?view=dags"}
+    assert pages(STARPULSE, [KANBAN])["starpulse-task"] == "?view=kanban&task=DEMO-1"
     assert pages(MOCKUP, [KANBAN]) == PAGES[MOCKUP]
 
 
