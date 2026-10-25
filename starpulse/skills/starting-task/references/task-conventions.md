@@ -37,7 +37,7 @@ the names the project's `starpulse.toml` declares, and enforces each contract as
 | `bug` | A pull request that repairs a fault, with the test that reproduces it. |
 | `chore` | A pull request that changes no behavior: a dependency bump, a rename, a cleanup. |
 | `incident` | A live-state response; a pull request only when the fix is tracked state. |
-| `check` | A validation verdict, before or after a merge; closes on its first verdict. |
+| `check` | A validation verdict, before or after a merge; closes on a pass; a miss waits on its fix and measures again. |
 | `retro` | No pull request: a milestone retro's verdict and the tasks it files. |
 
 A `story`, `bug` or `chore` reaches `Review` only with its pull request recorded
@@ -340,9 +340,8 @@ and `Needs attention` (human).
 
 Add `--comment` for what is outstanding. A task filed to clear a parked task's `--operator`
 blocker re-parks that task `--until-task` the fix in the same turn, so it leaves `Needs
-attention` and the fix's `Done` releases it. A check task is the exception: one that measured a
-miss parks `--operator` for the operator's close (Validation, below), and the fix carries the
-outcome.
+attention` and the fix's `Done` releases it. A check task that measured a miss does the same:
+it parks `--until-task` its fix (Validation, below).
 
 A task whose pull request already merged is never parked, for any reason: it closes with
 `starpulse task review`, which needs no deliver run then. A wait you can verify now, such as a
@@ -431,7 +430,7 @@ to wait 14 days. Only a check whose data does not exist yet parks, on the event 
 such as `--until '{id: peak-day, kind: prom, expr: "max_over_time(node_load1[1d])", at_most:
 150}'` with a comment naming the query and the baseline.
 
-**After two consecutive first-verdict misses on the same duration or latency Outcome target where
+**After two consecutive misses on the same duration or latency Outcome target where
 a diagnosis has already named a path floor, the next slice is `kind-decide` (architecture change
 or Outcome revise), never another fix/check pair that re-measures the same target.**
 
@@ -483,16 +482,18 @@ exporting the row count as a gauge, and its criterion is
 (`starpulse task claim`) whatever its criteria say. Whoever works it checks the real condition
 live and closes the task when it holds. No automated evaluator closes one.
 
-**A check task closes on its first verdict.** A check task is one typed `check`, titled
-Validate, Verify or Check, or labelled `validation`. When it measures its criterion, it closes
-`Done` with that verdict, pass or miss, recorded with `starpulse task verdict TASK CHECK pass`
-or `miss --evidence ... --fix PROJ-M`:
+**A check task closes on a pass and waits on the fix of a miss.** A check task is one typed
+`check`, titled Validate, Verify or Check, or labelled `validation`. When it measures its
+criterion, it records the verdict with `starpulse task verdict TASK CHECK pass` or
+`miss --evidence ... --fix PROJ-M`. A pass closes it; a miss parks it on its fix, whose `Done`
+returns it to `Ready` to measure again:
 
 - A miss records what it measured and forks the fix as its own task. The miss quotes the failing
   unit's or step's own error line, from its journal or job log, and names a cause only from that
   line, never from a fault seen nearby.
-- A fix task that declines its change re-scopes or archives its paired fresh check in the same
-  step; left queued, that check misses by construction.
+- The fix files no second check for the same criterion: the parked check measures it.
+- A fix task that declines its change re-scopes or archives the check waiting on it in the same
+  step; left waiting, that check never releases.
 - When the criterion passed without the condition holding, tighten it before parking.
 
 A check task looks up its next command in this table, taking the first row that matches; it never
@@ -502,13 +503,12 @@ chooses one. This table is the whole park rule for a check task.
 | --- | --- |
 | Every criterion checked | the project's `finalize` step |
 | Miss, no fix task filed | `starpulse task create` the fix, then the next row |
-| Miss, fix PROJ-M filed | `starpulse task park PROJ-45 --operator '<miss>; fix PROJ-M'` |
+| Miss, fix PROJ-M filed | `starpulse task park PROJ-45 --until-task PROJ-M --comment '<miss>'` |
 | Threshold a prior diagnosis showed unreachable on its path | `starpulse task park PROJ-45 --operator '<threshold decision>'` |
 | Data not landed, a kind observes it | `starpulse task park PROJ-45 --until '<criterion>' --comment '<query>'` |
 | Data not landed, no kind observes it | create the task that publishes it (above), then the previous row |
-| Waits on a task that is not the miss's fix | `starpulse task park PROJ-45 --until-task PROJ-46` |
+| Waits on another task | `starpulse task park PROJ-45 --until-task PROJ-46` |
 | Only a person can act: a credential, an irreversible action, a decision | `starpulse task park PROJ-45 --operator '<what they do>'` |
 
-`Done` needs every criterion checked, so a miss parks `--operator` for the operator's close and
-never `--until-task` its fix: the fix's paired check carries the outcome. A wait for data, a run
-or time is never `--operator`.
+A miss never parks `--operator`: the fix's `Done` releases the check, and a person is needed
+only when a row above names one. A wait for data, a run or time is never `--operator`.
