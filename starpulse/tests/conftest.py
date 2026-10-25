@@ -81,12 +81,19 @@ def database_url(tmp_path: Path) -> str:
     return f"sqlite:///{tmp_path / 'events.sqlite'}"
 
 
+def stop_upstream_backlogs(timeout: float = 5.0) -> None:
+    """Stop every running upstream Backlog adapter thread and wait for each to end."""
+    for backlog, thread in list(upstream_backlog._live.items()):
+        backlog.stop()
+        thread.join(timeout)
+
+
 @pytest.fixture(autouse=True)
 def _no_upstream_backlog_thread_outlives_its_test() -> Iterator[None]:
     """A server started over an upstream Backlog project polls it on a thread with no owner; end each one the test
     left, so it cannot allocate during a later test on the same worker."""
     yield
-    upstream_backlog.stop_all()
+    stop_upstream_backlogs()
     leaked = [t for t in threading.enumerate() if t.name == "upstream-backlog"]
     assert not leaked, "an upstream-backlog thread outlived its test"
 

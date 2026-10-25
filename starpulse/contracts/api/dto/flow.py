@@ -47,23 +47,6 @@ class Stuck(_Api):
     since: float = Field(description="When the task last moved, epoch seconds.")
 
 
-class MachineTies(_Api):
-    """What the server derives for a lifecycle machine other than the Board, from every machine's tasks."""
-
-    ties: list[Tie] = Field(description="Leading tie first (declared, then most observed), then DAG launches.")
-    parent: str | None = Field(
-        description="The machine its leading tie enters it from, else the In Progress machine; null for the In "
-        "Progress machine."
-    )
-    depth: int = Field(description="0 for the In Progress machine, 1 for a machine entered from it, and so on.")
-    chain: list[str] = Field(description="The machines above it, outermost first, the In Progress machine left out.")
-    nested: list[str] = Field(description="Every machine nested below it.")
-    last: float | None = Field(
-        description="When a task of this machine or one nested below it last moved, epoch seconds; null with no tasks."
-    )
-    stuck: Stuck | None
-
-
 class FlowSnapshot(_Api):
     name: str
     machine: Machine
