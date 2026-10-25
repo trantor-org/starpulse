@@ -58,6 +58,12 @@ def _seed(store: EventStore) -> None:
         store.append("task", f"TASK-{number}", 0, events)
 
 
+def _timed_ms(call: Callable[[], object]) -> float:
+    started = time.perf_counter()
+    call()
+    return (time.perf_counter() - started) * 1000
+
+
 def _round_p95_ms(call: Callable[[], object]) -> float:
     samples = []
     for _ in range(_RUNS):
@@ -123,4 +129,5 @@ def test_loading_every_task_to_filter_in_python_is_over_the_budget_so_this_run_c
         return [item for item in model.since(0, _TOTAL) if not item["archived"]]
 
     assert len(load_everything_and_filter()) == _TOTAL - _ARCHIVED
-    assert _p95_ms(load_everything_and_filter) > _BUDGET_MS
+    # One load costs ~5x the budget: the fastest of three is enough, where the p95 rounds above re-ran it ~100 times.
+    assert min(_timed_ms(load_everything_and_filter) for _ in range(3)) > _BUDGET_MS
