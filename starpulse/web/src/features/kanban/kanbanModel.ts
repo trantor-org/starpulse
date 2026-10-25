@@ -2,7 +2,8 @@
 import { midnight, type Sky } from "../../render/sky";
 import type { TaskRecord } from "./taskViewModel";
 import type { Option } from "../../shared/ChoiceMenu";
-import type { Move, Pull, Rating, Roles, TrailStep } from "../../api";
+import type { ClaimRelease, Move, Pull, Rating, Roles, TrailStep } from "../../api";
+import { ago } from "../../shared/clock";
 
 /** The States the machine gives a lifecycle role, keyed by role, in column order. The creation and final States have left the lanes. */
 const lifecycleStates = ({ ready, waiting, working, review, attention, done }: Roles) => ({ ready, waiting, working, review, attention, done });
@@ -42,6 +43,10 @@ export interface KanbanTask {
   rating?: Rating;
   /** Ready again after waiting: its last Board move was out of Waiting, so a machine state from before it no longer describes the card. */
   released: boolean;
+  /** The claim the sweeper released from the task, which left it unheld; absent or null when none ended the claim. */
+  release?: ClaimRelease | null;
+  /** When a held task's claim expires, epoch seconds; absent or null when the task is unheld, not working or before the first sweep pass. */
+  claimExpiresAt?: number | null;
   /** The verdict on each Board column the task may move to, by state id; a column absent here has no transition. */
   moves: Record<string, Move>;
   /** When the task entered its column, epoch seconds; 0 when the server gave no time. */
@@ -208,6 +213,27 @@ const milestoneNumber = (milestone: string) => (milestone ? Number(/^m-(\d+)/.ex
 const filtered = (t: KanbanTask, prefs: Prefs) =>
   matches(t, prefs.query) && (prefs.assignee === null || t.assignee === prefs.assignee) && (prefs.milestone === null || t.milestone === prefs.milestone);
 
+/** A task in the working lane that no session holds, whatever released it. */
+export const unheld = (t: KanbanTask, roles: Roles) => t.lane === roles.working && t.assignee === "";
+
+/** The working lane's unheld tasks that the bar, profile and milestone filters and the hidden folds leave on the board. */
+export const unheldShown = (tasks: KanbanTask[], roles: Roles, prefs: Prefs) =>
+  tasks.filter((t) => unheld(t, roles) && !prefs.hiddenTasks.has(t.id) && !prefs.hiddenMilestones.has(t.milestone) && filtered(t, prefs));
+
+/** A held claim this close to its expiry draws its minutes left, in seconds. */
+const NEAR = 600;
+
+/** What the footer chip says of a working card's claim: the session the sweeper expired and since when, or a held session's minutes left. */
+export type ClaimChip = { kind: "expired"; session: string; age: string } | { kind: "near"; session: string; minutes: number };
+
+/** The claim state a working card's footer chip adds to its assignee; null draws the chip as it is for any other card. */
+export function claimChip(t: KanbanTask, roles: Roles, now: number): ClaimChip | null {
+  if (t.lane !== roles.working) return null;
+  if (unheld(t, roles)) return t.release ? { kind: "expired", session: t.release.session, age: ago(now - t.release.at) } : null;
+  const left = t.claimExpiresAt == null ? Infinity : t.claimExpiresAt - now;
+  return left < NEAR ? { kind: "near", session: t.assignee, minutes: Math.max(0, Math.ceil(left / 60)) } : null;
+}
+
 const byId = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true });
 
 /** Whether the lane's tasks fold into stacks: the Waiting and Done lanes. */
@@ -332,7 +358,7 @@ export function kanbanTasks(sky: Sky): KanbanTask[] {
       id: a.id, title: a.title, lane: a.state, milestone: a.milestone ?? "", labels: a.labels ?? [], assignee: a.model, dependencies,
       openDeps: dependencies.filter((d) => open.has(d)).length, prs: cited(a.prs ?? [], sky.pulls[a.id] ?? []), runs: a.runs ?? [], description: a.description ?? "",
       live: latest ? { machine: latest.flow, state: latest.state, at: latest.at, source: sky.flows[latest.flow]?.machine.source } : null,
-      released: a.state === roles.ready && a.previous === roles.waiting, moves: a.moves ?? (a.move_set ? sky.moveSets[a.move_set] : undefined) ?? {}, entered: a.entered ?? 0, created: a.created ?? null, workableSince: a.workable_since ?? null,
+      released: a.state === roles.ready && a.previous === roles.waiting, release: a.released ?? null, claimExpiresAt: a.claim_expires_at ?? null, moves: a.moves ?? (a.move_set ? sky.moveSets[a.move_set] : undefined) ?? {}, entered: a.entered ?? 0, created: a.created ?? null, workableSince: a.workable_since ?? null,
       machines: sessions.get(a.id) ?? [],
       rating: sky.ratings?.[a.id],
     };

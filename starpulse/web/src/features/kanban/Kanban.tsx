@@ -10,9 +10,9 @@ import { Viewport, ViewportRow } from "../../shared/ViewportRows";
 import { ago } from "../../shared/clock";
 import type { HudState } from "../../render/hud";
 import {
-  CLOSED, applySuggestion, applyTaskRecord, assigneeOptions, chainOf, clearFilters, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, labelSuggestions, layout, milestoneOptions, milestoneOutline, recent, show, showAll,
-  stacked as stacksState, stackOf, stackStep, toggleFold, unstacked, whyHidden,
-  type KanbanTask, type Prefs, type Stack, type StackEvent, type StackOpen,
+  CLOSED, applySuggestion, applyTaskRecord, assigneeOptions, chainOf, claimChip, clearFilters, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, labelSuggestions, layout, milestoneOptions, milestoneOutline, recent, show, showAll,
+  stacked as stacksState, stackOf, stackStep, toggleFold, unheld, unheldShown, unstacked, whyHidden,
+  type ClaimChip, type KanbanTask, type Prefs, type Stack, type StackEvent, type StackOpen,
 } from "./kanbanModel";
 import { linkedTask, loadPrefs, savePrefs, withoutFilters } from "./kanbanPrefs";
 import { codeParts, place, targets, type MoveStore, type Refusal, type Target } from "./move";
@@ -110,6 +110,7 @@ export function Card({ task, holds = 0, chain, stacked = 0, under = false, links
   const playing = onPlay && !claim && startLane(task, roles);
   const cls = ["card", chain && `chain-${chain}`, under && "under", compact && "compact", playing && "startable", marks.saving && "saving", (marks.refusal || marks.failed) && "bad", marks.lifted && "ghost", claim && "claiming"].filter(Boolean).join(" ");
   const finished = task.lane === roles.done;
+  const chip = claimChip(task, roles, now);
   // a Waiting stack's ⛓ already counts what it holds; only a Done chain adds the green count
   const badge = stacked > 0 && finished && <StackBadge count={stacked} />;
   const working = roles.working ? task.moves[roles.working] : undefined;
@@ -150,7 +151,7 @@ export function Card({ task, holds = 0, chain, stacked = 0, under = false, links
               ↗ <span className="nw">{d.milestone || "no milestone"}</span> · <span className="nw">{d.id}</span>
             </button>
           ))}
-          {task.assignee ? <span className="who"><i style={{ background: profileColor(task.assignee) }} />{shortProfile(task.assignee)}</span> : <span className="who">unassigned</span>}
+          {chip ? <ClaimWho chip={chip} /> : task.assignee ? <span className="who"><i style={{ background: profileColor(task.assignee) }} />{shortProfile(task.assignee)}</span> : <span className="who">unassigned</span>}
         </div>
       )}
       {playing && (
@@ -163,6 +164,22 @@ export function Card({ task, holds = 0, chain, stacked = 0, under = false, links
       {marks.refusal && <RefusalNote refusal={marks.refusal} names={names} dismiss={dismiss} />}
       {marks.failed && <StartNote id={task.id} failed={marks.failed} names={names} dismiss={dismissStart ?? dismiss} />}
     </div>
+  );
+}
+
+/** The footer chip of a working card whose claim lapsed or is about to: the expired session struck through, or the held one's minutes left. */
+function ClaimWho({ chip }: { chip: ClaimChip }) {
+  const session = shortProfile(chip.session);
+  if (chip.kind === "near")
+    return (
+      <span className="who near" title={`Held by ${session}: the claim expires in ${chip.minutes}m unless the session acts.`}>
+        <i style={{ background: profileColor(chip.session) }} />{session}<span className="tl">· {chip.minutes}m left</span>
+      </span>
+    );
+  return (
+    <span className="who unheld" title={`Unheld: ${session}'s claim expired ${chip.age} ago. Any session may claim it.`}>
+      <i className="o" style={{ borderColor: profileColor(chip.session) }} /><s>{session}</s><span className="tl">· expired {chip.age}</span>
+    </span>
   );
 }
 
@@ -186,14 +203,15 @@ const same = (a: unknown, b: unknown) => {
   }
   return false;
 };
-/** The clock only reaches a card through its machine line: whether it is hot and its age text. */
-const stamp = (t: KanbanTask, now: number) => (t.live ? `${now - t.live.at < HOT_S} ${ago(now - t.live.at)}` : "");
+/** The clock only reaches a card through its machine line and its claim chip: whether the line is hot, its age text and the chip's. */
+const stamp = (t: KanbanTask, roles: Roles, now: number) =>
+  `${t.live ? `${now - t.live.at < HOT_S} ${ago(now - t.live.at)}` : ""} ${JSON.stringify(claimChip(t, roles, now))}`;
 /**
  * A card redraws when something it shows changes. Its handlers are rebuilt on every board render yet act on the same task through stable stores,
  * so only whether one is set counts, and a tick of the clock redraws only the cards whose stamp text moved.
  */
 const BoardCard = memo(Card, (before, after) =>
-  stamp(before.task, before.now) === stamp(after.task, after.now) &&
+  stamp(before.task, before.roles, before.now) === stamp(after.task, after.roles, after.now) &&
   Object.keys({ ...before, ...after }).every((k) => {
     const key = k as keyof typeof before;
     if (key === "now") return true;
@@ -602,7 +620,12 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
     const saved = edited[card.id];
     return saved?.source === hud.cards ? applyTaskRecord(card, saved.record) : card;
   }), gone), [edited, gone, hud.cards, moved, started, roles]);
-  const view = useMemo(() => layout(cards, hud.names, roles, prefs, now), [cards, hud.names, roles, prefs, now]);
+  const unheldCount = unheldShown(cards, roles, prefs).length;
+  const [unheldOnly, setUnheldOnly] = useState(false);
+  // the filter ends with the last unheld task, so the next one to lapse does not arrive on a board already filtered
+  if (unheldOnly && unheldCount === 0) setUnheldOnly(false);
+  const lane = useMemo(() => (unheldOnly ? cards.filter((t) => t.lane !== roles.working || unheld(t, roles)) : cards), [cards, roles, unheldOnly]);
+  const view = useMemo(() => layout(lane, hud.names, roles, prefs, now), [lane, hud.names, roles, prefs, now]);
   const holds = useMemo(() => holdCounts(cards, roles), [cards, roles]);
   const blockers = useMemo(() => holders(cards, roles, holds), [cards, roles, holds]);
   const [pointed, setHovered] = useState<string | null>(null);
@@ -836,6 +859,10 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
           return (
             <section key={col.id} className={colCls} data-lane={col.id} data-role={col.role}>
               <h2><TypeGlyph type={hud.types?.[col.id]} /><span className="nm" title={col.name}>{col.name}</span><span className="c">{col.count}</span>
+                {col.id === roles.working && unheldCount > 0 && (
+                  <button className={`uh${unheldOnly ? " on" : ""}`} aria-pressed={unheldOnly} title={unheldOnly ? "Show every In Progress task" : "Show only the In Progress tasks no session holds"}
+                    onClick={() => setUnheldOnly((v) => !v)}>{unheldCount} unheld</button>
+                )}
                 {inChain > 0 && <span className="cc" title={`${inChain} of this column's tasks are in the hovered task's chain`}>⛓{inChain}</span>}
                 {target && target.kind !== "here" && (
                   <span className="hint">{target.kind === "ok" ? "drop" : target.kind === "guard" ? `guarded · ${target.skill || "refused"}` : "no transition"}</span>

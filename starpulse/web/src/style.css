@@ -1055,3 +1055,13 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
   #admin .row.fw-block > * { min-width: 0; }
   #admin .fw-next li { overflow-wrap: anywhere; }
 }
+
+/* An In Progress card's claim: the footer chip, and the lane header's unheld count (doc-973 D3, D4). */
+#kb .who.near, #kb .who.unheld { flex-wrap: wrap; justify-content: flex-end; column-gap: 4px; row-gap: 0; max-width: 100%; }
+#kb .who s, #kb .who .tl { white-space: nowrap; }
+#kb .who.near, #kb .who .tl { color: var(--run-text); }
+#kb .who.unheld { color: var(--fail-text); } #kb .who.unheld s { color: var(--muted); } #kb .who.unheld .tl { color: inherit; }
+#kb .who i.o { box-sizing: border-box; background: none; border: 1.5px solid var(--muted); }
+#kb h2 .uh { margin-left: 6px; padding: 0 6px; border-radius: 9px; border: 1px solid color-mix(in srgb, var(--fail) 40%, transparent); background: color-mix(in srgb, var(--fail) 10%, transparent); color: var(--fail-text); font: inherit; font-size: calc(10.5px * var(--fs)); cursor: pointer; }
+#kb h2 .uh.on { background: color-mix(in srgb, var(--fail) 30%, transparent); color: var(--fail-hi); }
+#kb h2 .uh:focus-visible { outline: 1px solid var(--agent); }
