@@ -334,3 +334,26 @@ def test_a_read_model_task_whose_cited_pr_merged_before_startup_moves_to_done(
     server.start_delivery(replace(load(None), task_actor=True), delivery, feed, None, store, Pins(), stop)
 
     assert until(lambda: board.moved() == [("TASK-1", "done")])
+
+
+def test_a_review_task_with_an_open_child_pr_stays_open_when_its_other_pr_merged(
+    store: PullStore, stop: threading.Event
+) -> None:
+    board = Board(BoardFeed(), task("TASK-1", "Review", references=(PR_ONE, CHILD_PR)))
+    store.save([pull(1, state="MERGED"), pull(10, state="OPEN", repo="acme/starpulse")])
+
+    actor = running(board, store, stop)
+    actor.pulls_changed()
+
+    assert not until(lambda: board.moved() != [], within=0.3)
+
+
+def test_a_review_task_whose_pr_is_merged_with_no_merge_time_stays_open(store: PullStore, stop: threading.Event) -> None:
+    board = Board(BoardFeed(), task("TASK-1", "Review", references=(PR_ONE,)))
+    unproven = pull(1, state="MERGED") | {"mergedAt": None, "mergeSha": None}
+    store.save([unproven])
+
+    actor = running(board, store, stop)
+    actor.pulls_changed()
+
+    assert not until(lambda: board.moved() != [], within=0.3)
