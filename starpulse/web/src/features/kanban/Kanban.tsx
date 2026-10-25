@@ -14,6 +14,7 @@ import {
   stacked as stacksState, stackOf, stackStep, toggleFold, unheld, unheldShown, unstacked, whyHidden,
   type ClaimChip, type KanbanTask, type Prefs, type Stack, type StackEvent, type StackOpen,
 } from "./kanbanModel";
+import { sessionNickname } from "./nickname";
 import { linkedTask, loadPrefs, savePrefs, withoutFilters } from "./kanbanPrefs";
 import { codeParts, place, targets, type MoveStore, type Refusal, type Target } from "./move";
 import { browserStorage } from "../../shared/nav";
@@ -35,8 +36,8 @@ const milestoneName = (milestone: string) => milestone || "No milestone";
 const HOT_S = 120;
 
 const profileColor = (a: string) => (/deep/.test(a) ? "#a78bfa" : /standard/.test(a) ? "#67e8f9" : /fast/.test(a) ? "#fbbf24" : "#94a3b8");
-/** An assignee as a card draws it: a session URL is its first five hash characters, a profile name loses its `@agent-` prefix. */
-const shortProfile = (a: string) => a.replace(/^https?:\/\/\S*?\/session_(\w{5})\w*$/, "$1").replace(/^@agent-/, "").replace(/^@/, "");
+/** An assignee as a card draws it: a session URL is its nickname, a profile name loses its `@agent-` prefix. */
+const shortProfile = (a: string) => sessionNickname(a) ?? a.replace(/^@agent-/, "").replace(/^@/, "");
 const checksClass = (p: Pull) => (p.merged ? "merged" : p.checks === "failing" ? "fail" : p.checks);
 
 function PullChip({ pulls }: { pulls: Pull[] }) {

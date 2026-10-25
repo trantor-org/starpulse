@@ -4,6 +4,7 @@ import type { TaskRecord } from "./taskViewModel";
 import type { Option } from "../../shared/ChoiceMenu";
 import type { ClaimRelease, Move, Pull, Rating, Roles, TrailStep } from "../../api";
 import { ago } from "../../shared/clock";
+import { sessionNickname } from "./nickname";
 
 /** The States the machine gives a lifecycle role, keyed by role, in column order. The creation and final States have left the lanes. */
 const lifecycleStates = ({ ready, waiting, working, review, attention, done }: Roles) => ({ ready, waiting, working, review, attention, done });
@@ -111,10 +112,10 @@ export const clearFilters = (p: Prefs): Prefs => ({ ...p, query: "", assignee: n
 const LABEL = "label:";
 const words = (query: string) => query.toLowerCase().split(/\s+/).filter(Boolean);
 
-/** Whether a task answers every word of the bar: a plain word is a substring of its id, title or a label, a `label:` word of a label alone. */
+/** Whether a task answers every word of the bar: a plain word is a substring of its id, title, a label or its holder's nickname, a `label:` word of a label alone. */
 const matches = (t: KanbanTask, query: string) =>
   words(query).every((w) => {
-    if (!w.startsWith(LABEL)) return [t.id, t.title, ...t.labels].some((f) => f.toLowerCase().includes(w));
+    if (!w.startsWith(LABEL)) return [t.id, t.title, ...t.labels, sessionNickname(t.assignee) ?? ""].some((f) => f.toLowerCase().includes(w));
     const name = w.slice(LABEL.length);
     return t.labels.some((l) => l.toLowerCase().includes(name));
   });
