@@ -2,9 +2,9 @@
 <html lang="en">
 <head>
 <!--
-  DEMO-8683 mockup: the Kanban task detail dialog reworked from the operator's 12 notes (N1-N13).
+  DEMO-8683 mockup: the Kanban task detail dialog reworked from the operator's notes (N1-N17).
   States (?s=<state>): default, pr-unread, deps-long, deviated, empty, edit. ?fs=100|125|150 sets text size, ?bare hides the reviewer bar.
-  Colors come only from the live stylesheet's :root tokens.
+  Colors come only from style.css :root tokens.
 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -1077,6 +1077,7 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
 #kb h2 .uh.on { background: color-mix(in srgb, var(--fail) 30%, transparent); color: var(--fail-hi); }
 #kb h2 .uh:focus-visible { outline: 1px solid var(--agent); }
 </style>
+
 <style>
   body { margin: 0; min-height: 100vh; background: var(--bg0); color: var(--ink); font-family: Inter, system-ui, sans-serif; }
   /* reviewer bar: not part of the design */
@@ -1093,6 +1094,22 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
   #kbm .md2 h4 { margin: 12px 0 4px; font-size: calc(11px * var(--fs)); font-weight: 500; letter-spacing: .14em; text-transform: uppercase; color: var(--slate); }
   #kbm .md2 ul, #kbm .md2 ol { margin: 0 0 8px; padding-left: 20px; } #kbm .md2 li { margin: 1px 0; }
   #kbm .md2 code { padding: 1px 5px; border-radius: 4px; background: color-mix(in srgb, var(--slate) 10%, transparent); color: var(--ink-hi); font: calc(11px * var(--fs)) "JetBrains Mono", ui-monospace, monospace; }
+    /* N17: tables, code fences and a mermaid fence */
+  #kbm .md2 .tbl { overflow-x: auto; margin: 0 0 10px; }
+  #kbm .md2 table { border-collapse: collapse; font-size: calc(12px * var(--fs)); }
+  #kbm .md2 th, #kbm .md2 td { padding: 4px 10px; border: 1px solid color-mix(in srgb, var(--slate) 16%, transparent); text-align: left; vertical-align: top; }
+  #kbm .md2 th { font-weight: 500; color: var(--ink-hi); background: color-mix(in srgb, var(--slate) 7%, transparent); }
+  #kbm .md2 .r { text-align: right; font-variant-numeric: tabular-nums; }
+  #kbm .md2 .fence { position: relative; margin: 0 0 10px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--slate) 14%, transparent); background: var(--code); }
+  #kbm .md2 .fence .lang { position: absolute; top: 4px; right: 8px; font-size: calc(10px * var(--fs)); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  #kbm .md2 pre { margin: 0; padding: 10px 12px; overflow-x: auto; }
+  #kbm .md2 pre code { padding: 0; background: none; color: var(--ink-2); font: calc(11.5px * var(--fs))/1.55 "JetBrains Mono", ui-monospace, monospace; }
+  #kbm .md2 .fence.mm { padding: 22px 12px 12px; overflow-x: auto; }
+  #kbm .mmd { display: block; width: 100%; height: auto; margin: 0 auto; }
+  #kbm .mmd rect { fill: var(--stack); stroke: var(--agent); stroke-width: 1; }
+  #kbm .mmd text { fill: var(--ink-2); font: 12px Inter, sans-serif; text-anchor: middle; dominant-baseline: central; }
+  #kbm .mmd .ed path { fill: none; stroke: var(--slate-4); stroke-width: 1.2; marker-end: url(#ah); }
+  #kbm .mmd marker path { fill: var(--slate-4); stroke: none; }
   #kbm .md2 strong { color: var(--ink-hi); font-weight: 500; }
   #kbm a.tl, #kbm .md2 a { color: var(--agent); text-decoration: none; } #kbm a.tl:hover, #kbm .md2 a:hover { text-decoration: underline; }
   #kbm a.tl { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: .92em; }
@@ -1103,10 +1120,6 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
   #kbm .ritem.flash, #kbm .ev.flash { background: color-mix(in srgb, var(--agent) 14%, transparent); transition: background .6s; }
 
   /* N8: activity timeline */
-  #kbm .tabs { display: inline-flex; gap: 2px; margin-left: auto; padding: 2px; border-radius: 7px; background: color-mix(in srgb, var(--slate) 6%, transparent); }
-  #kbm .tabs button { all: unset; cursor: pointer; padding: 2px 9px; border-radius: 5px; font-size: calc(11px * var(--fs)); color: var(--muted); }
-  #kbm .tabs button[aria-pressed="true"] { background: color-mix(in srgb, var(--slate) 16%, transparent); color: var(--ink); }
-  #kbm .tabs button:focus-visible { box-shadow: 0 0 0 1px var(--agent); }
   #kbm .acts2 { display: flex; flex-direction: column; }
   #kbm .ev { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 2px 10px; padding: 6px 6px 8px; margin: 0 -6px; border-radius: 6px; position: relative; }
   #kbm .ev::before { content: ""; position: absolute; left: 12px; top: 18px; bottom: -6px; width: 1px; background: color-mix(in srgb, var(--slate) 14%, transparent); }
@@ -1119,10 +1132,11 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
   #kbm .ev .hd .who { color: var(--ink-3); font-weight: 500; }
   #kbm .ev .tag { padding: 0 6px; border-radius: 999px; font-size: calc(10.5px * var(--fs)); background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok-text); text-decoration: none; }
   #kbm .ev .bd { grid-column: 2; font-size: calc(12px * var(--fs)); }
-  #kbm .compose { display: flex; gap: 8px; margin-top: 8px; }
-  #kbm .compose textarea { flex: 1; min-height: calc(34px * var(--fs)); resize: vertical; box-sizing: border-box; padding: 6px 9px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--slate) 18%, transparent);
+  #kbm .compose { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin-top: 8px; } /* N14 */
+  #kbm .compose textarea { align-self: stretch; min-height: calc(34px * var(--fs)); resize: vertical; box-sizing: border-box; padding: 6px 9px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--slate) 18%, transparent);
     background: var(--field); color: var(--ink); font: inherit; font-size: calc(12px * var(--fs)); }
   #kbm .compose button, #kbm .btn2 { all: unset; cursor: pointer; align-self: flex-end; padding: 5px 12px; border-radius: 6px; font-size: calc(11.5px * var(--fs)); color: var(--ink); border: 1px solid color-mix(in srgb, var(--agent) 45%, transparent); background: color-mix(in srgb, var(--agent) 12%, transparent); }
+  #kbm .compose button { align-self: flex-start; }
   #kbm .compose button:disabled { opacity: .4; cursor: default; }
 
   /* N10: bounded rail lists */
@@ -1152,6 +1166,7 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
 
   /* N11: rating only on a deviated sample */
   #kbm .tvrail .why { font-size: calc(11px * var(--fs)); color: var(--slate); margin-bottom: 6px; }
+  #kbm .tvrail .who2.dev { margin-bottom: 6px; } #kbm .tvrail .tier { font-size: calc(10.5px * var(--fs)); color: var(--run-text); }
   #kbm .tvrail .why code { font: calc(10.5px * var(--fs)) "JetBrains Mono", ui-monospace, monospace; color: var(--fail); }
   #kbm .tvrail .reason { display: flex; gap: 6px; margin-top: 6px; }
   #kbm .tvrail .reason input { flex: 1; min-width: 0; padding: 4px 8px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--slate) 18%, transparent); background: var(--field); color: var(--ink); font-size: calc(11.5px * var(--fs)); }
@@ -1198,13 +1213,55 @@ const inline = (s) => taskLinks(esc(s)
   .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
   .replace(/\[([^\]]+)\]\((https?:[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1 ↗</a>'))
   .replace(/<code>([^<]*)<a class="tl"[^>]*>(DEMO-\d+)<\/a>([^<]*)<\/code>/g, "<code>$1$2$3</code>");
-// N1: a small CommonMark subset: headings, lists, paragraphs, inline code, bold, links
+// N1 + N17: a CommonMark subset (headings, lists, paragraphs, inline code, bold, links) plus GFM tables and fenced code;
+// a mermaid fence draws its flowchart. The real page bundles a renderer (spec decision); this one reads `A[label] --> B[label]` only.
+function mermaid(src) {
+  const lines = src.split("\n").map((l) => l.trim()).filter(Boolean);
+  const dir = (lines[0].match(/^(?:flowchart|graph)\s+(LR|TD|TB)/) || [, "TD"])[1];
+  const nodes = new Map(), edges = [];
+  const node = (tok) => { const m = tok.trim().match(/^(\w+)(?:\[(.+)\])?$/); if (!nodes.has(m[1]) || m[2]) nodes.set(m[1], m[2] || nodes.get(m[1]) || m[1]); return m[1]; };
+  for (const l of lines.slice(1)) { const parts = l.split("-->"); for (let i = 1; i < parts.length; i++) edges.push([node(parts[i - 1]), node(parts[i])]); if (parts.length === 1) node(parts[0]); }
+  const rank = new Map([...nodes.keys()].map((k) => [k, 0]));
+  for (let pass = 0; pass < nodes.size; pass++) for (const [a, b] of edges) rank.set(b, Math.max(rank.get(b), rank.get(a) + 1));
+  const cols = []; for (const [k, r] of rank) (cols[r] ||= []).push(k);
+  const W = Math.max(...[...nodes.values()].map((t) => t.length)) * 7 + 24, H = 30, gx = dir === "LR" ? 36 : 20, gy = dir === "LR" ? 14 : 28;
+  const pos = new Map();
+  cols.forEach((c, r) => c.forEach((k, i) => pos.set(k, dir === "LR" ? [r * (W + gx), i * (H + gy)] : [i * (W + gx), r * (H + gy)])));
+  const vw = Math.max(...[...pos.values()].map(([x]) => x)) + W, vh = Math.max(...[...pos.values()].map(([, y]) => y)) + H;
+  const arrows = edges.map(([a, b]) => { const [ax, ay] = pos.get(a), [bx, by] = pos.get(b);
+    return dir === "LR" ? `<path d="M${ax + W} ${ay + H / 2} C${ax + W + gx / 2} ${ay + H / 2} ${bx - gx / 2} ${by + H / 2} ${bx - 2} ${by + H / 2}"/>`
+      : `<path d="M${ax + W / 2} ${ay + H} C${ax + W / 2} ${ay + H + gy / 2} ${bx + W / 2} ${by - gy / 2} ${bx + W / 2} ${by - 2}"/>`; }).join("");
+  const boxes = [...pos].map(([k, [x, y]]) => `<g><rect x="${x}" y="${y}" width="${W}" height="${H}" rx="6"/><text x="${x + W / 2}" y="${y + H / 2}">${esc(nodes.get(k))}</text></g>`).join("");
+  return `<svg class="mmd" viewBox="-1 -1 ${vw + 2} ${vh + 2}" style="max-width:${vw + 2}px" role="img" aria-label="Flowchart: ${esc([...nodes.values()].join(", "))}"><defs><marker id="ah" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L8 4L0 8z"/></marker></defs><g class="ed">${arrows}</g>${boxes}</svg>`;
+}
 function md(src) {
-  const out = []; let list = null, para = [];
-  const flush = () => { if (para.length) out.push(`<p>${inline(para.join(" "))}</p>`); para = []; if (list) { out.push(`<${list.t}>${list.items.map((i) => `<li>${inline(i)}</li>`).join("")}</${list.t}>`); list = null; } };
-  for (const line of src.split("\n")) {
-    let m;
+  const out = []; let list = null, para = [], fence = null, table = null;
+  const cells = (l) => l.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
+  const flush = () => {
+    if (para.length) out.push(`<p>${inline(para.join(" "))}</p>`); para = [];
+    if (list) { out.push(`<${list.t}>${list.items.map((i) => `<li>${inline(i)}</li>`).join("")}</${list.t}>`); list = null; }
+    if (table) { out.push(`<div class="tbl"><table><thead><tr>${table.head.map((c, i) => `<th${table.al[i]}>${inline(c)}</th>`).join("")}</tr></thead><tbody>${table.rows.map((r) => `<tr>${r.map((c, i) => `<td${table.al[i] || ""}>${inline(c)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`); table = null; }
+  };
+  const rows = src.split("\n");
+  for (let i = 0; i < rows.length; i++) {
+    const line = rows[i]; let m;
+    if (fence) {
+      if (/^```\s*$/.test(line)) {
+        const body = fence.lines.join("\n");
+        out.push(fence.lang === "mermaid" ? `<figure class="fence mm"><span class="lang">mermaid</span>${mermaid(body)}</figure>`
+          : `<figure class="fence"><span class="lang">${esc(fence.lang || "text")}</span><pre><code>${esc(body)}</code></pre></figure>`);
+        fence = null;
+      } else fence.lines.push(line);
+      continue;
+    }
+    if ((m = line.match(/^```\s*([\w-]*)/))) { flush(); fence = { lang: m[1], lines: [] }; continue; }
+    if (table && /^\s*\|/.test(line)) { table.rows.push(cells(line)); continue; }
+    if (/^\s*\|/.test(line) && /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/.test(rows[i + 1] || "")) {
+      flush(); const al = cells(rows[i + 1]).map((c) => (c.endsWith(":") ? ' class="r"' : ""));
+      table = { head: cells(line), al, rows: [] }; i++; continue;
+    }
     if (!line.trim()) { flush(); continue; }
+    if (table) flush();
     if ((m = line.match(/^#{1,4}\s+(.*)/))) { flush(); out.push(`<h4>${inline(m[1])}</h4>`); continue; }
     if ((m = line.match(/^\s*([-*]|\d+\.)\s+(.*)/))) { if (para.length) { out.push(`<p>${inline(para.join(" "))}</p>`); para = []; } const t = /\d/.test(m[1]) ? "ol" : "ul"; if (!list || list.t !== t) { if (list) flush(); list = { t, items: [] }; } list.items.push(m[2]); continue; }
     if (list) flush();
@@ -1216,6 +1273,32 @@ function md(src) {
 
 // ---- data shaped like the live snapshot plus the fields the notes ask for ----
 const now = Date.parse("2026-10-25T11:10:00-07:00");
+// N17: the description carries a table, a code fence and a mermaid fence
+const FENCE = "```";
+const extraMd = `
+
+## Helpers
+
+| Helper | Replaces | Lines |
+| --- | --- | ---: |
+| \`_next_reviewable\` | planning and skip | 18 |
+| \`_review_slice\` | review and re-cut | 31 |
+| \`_version_for\` | 3 \`next_version\` calls | 4 |
+| \`_gh\` | 2 subprocess shapes | 9 |
+
+${FENCE}python
+def _version_for(previous: str, sl: Slice, repo: Path) -> str:
+    return next_version(previous, bump_kind(sl.commits, repo=repo))
+${FENCE}
+
+${FENCE}mermaid
+flowchart TD
+  S[cmd_sweep] --> P[_next_reviewable]
+  P --> G[gate and dry-run]
+  G --> R[_review_slice]
+  R --> V[_version_for]
+  R --> H[_gh]
+${FENCE}`;
 const machines8624 = [
   ["build", "start", "12m ago", [["LINT_RED", "start", "10:50"], ["GREEN", "start", "10:50"], ["LINT_GREEN", "start", "10:52"], ["GREEN", "start", "10:53"], ["LINT_GREEN", "start", "10:55"]]],
   ["deliver", "pr ready", "10m ago", [["COMMITTED", "committed", "10:55"], ["PUSHED", "pushed", "10:55"], ["PR_OPENED", "pr opened", "10:55"], ["CI_GREEN", "ci green", "10:56"], ["PR_READY", "pr ready", "10:56"]]],
@@ -1238,7 +1321,7 @@ Keep \`cmd_sweep\` as the entry point and extract, per the audit's decomposition
 - a \`_gh\` subprocess wrapper
 - issue filing and triage helpers
 
-Behavior-preserving: exit codes 0/1/2/75 and output text unchanged. Same shape as DEMO-8606.`,
+Behavior-preserving: exit codes 0/1/2/75 and output text unchanged. Same shape as DEMO-8606.` + extraMd,
   ac: [["uv run agent-cmd run-tests delivery/release_workflow/tests passes with no edits to existing test assertions", true, "c2"],
        ["cmd_sweep body is under 60 lines and ruff C901 reports no function in delivery/release_workflow/cli.py above complexity 10", true, "c4"],
        ["next_version(previous, bump_kind(...)) appears once in cli.py and the gh issue create/close calls share one wrapper (verified with rg -c)", true, "c3"]],
@@ -1309,7 +1392,8 @@ function taskFor(s) {
   }
   if (s === "deviated") {
     t.lane = ["Done", "done"]; t.forAge = "2h";
-    t.sample = { machine: "deliver", event: "CI_GREEN", state: "committed", at: "10:55" };
+    t.sample = { matrix: "@agent-fast-high", drew: "@agent-fast-medium", tier: "lower", cell: "execute · size 3" };
+    t.session.profile = "@agent-fast-medium"; t.fields.profile = "@agent-fast-medium";
   }
   return t;
 }
@@ -1321,7 +1405,7 @@ const sec = (title, body, { n, pen, extra, rail, id } = {}) =>
 const checklist = (rows, label, act) => `<div class="rlist">${rows.map(([tx, done, ck], i) =>
   `<label class="ritem${done ? " done" : ""}" id="${label === "ac" ? `ac${i + 1}` : ""}"><input aria-label="${label} #${i + 1} done" type="checkbox"${done ? " checked" : ""}><span class="nn">#${i + 1}</span><span class="tx">${inline(tx)}${ck && act ? ` <a class="ck" href="#${ck}" data-jump="${ck}">✓ verified ${esc(act.find((e) => e.id === ck)?.at || "")}</a>` : ""}</span></label>`).join("")}</div>`;
 
-let filter = "all", editing = qs.get("s") === "edit" ? new Set(["description", "details"]) : new Set(), extra = [], verdict = null, reasonOpen = false, tagErr = "";
+let editing = qs.get("s") === "edit" ? new Set(["description", "details"]) : new Set(), extra = [], verdict = null, reasonOpen = false, tagErr = "";
 
 function left(t) {
   const out = [];
@@ -1336,24 +1420,23 @@ function left(t) {
   // N2: notes are prose only; the assignee moved to Session
   if (t.notes) out.push(sec("Notes", `<div class="md2">${md(t.notes)}</div>`, { pen: "notes" }));
   else if (editing.size) out.push(`<button class="addplan" data-addnotes>＋ Add notes</button>`);
-  // N8: activity
+  // N8: activity; N15: every kind always shows, no filter
   const all = [...t.activity, ...extra];
-  const shown = all.filter((e) => filter === "all" || e.kind === filter);
-  const counts = { all: all.length, checkpoint: all.filter((e) => e.kind === "checkpoint").length, comment: all.filter((e) => e.kind === "comment").length, system: all.filter((e) => e.kind === "system").length };
-  const tabs = `<div class="tabs" role="group" aria-label="Filter activity">${[["all", "All"], ["checkpoint", "Checkpoints"], ["comment", "Comments"], ["system", "Events"]].map(([k, l]) => `<button aria-pressed="${filter === k}" data-filter="${k}">${l} ${counts[k]}</button>`).join("")}</div>`;
-  const evs = shown.length ? `<div class="acts2">${shown.map((e) => `<div class="ev" id="${e.id}" data-kind="${e.kind}"><span class="dot"></span><div class="hd"><span class="who">${esc(e.who)}</span><span>${esc(e.at)}</span>${e.ac ? `<a class="tag" href="#ac${e.ac}" data-jump="ac${e.ac}">AC #${e.ac}</a>` : ""}${e.kind === "system" ? "<span>event</span>" : ""}</div><div class="bd md2">${inline(e.body)}</div></div>`).join("")}</div>`
-    : `<span class="none">${all.length ? "Nothing of this kind yet" : "No activity yet"}</span>`;
-  out.push(sec("Activity", evs + `<div class="compose"><textarea aria-label="Add a comment" placeholder="Comment, or 'AC #2: …' to checkpoint a criterion"></textarea><button data-post disabled>Comment</button></div>`, { extra: tabs, id: "activity" }));
+  const evs = all.length ? `<div class="acts2">${all.map((e) => `<div class="ev" id="${e.id}" data-kind="${e.kind}"><span class="dot"></span><div class="hd"><span class="who">${esc(e.who)}</span><span>${esc(e.at)}</span>${e.ac ? `<a class="tag" href="#ac${e.ac}" data-jump="ac${e.ac}">AC #${e.ac}</a>` : ""}${e.kind === "system" ? "<span>event</span>" : ""}</div><div class="bd md2">${inline(e.body)}</div></div>`).join("")}</div>`
+    : `<span class="none">No activity yet</span>`;
+  out.push(sec("Activity", evs + `<div class="compose"><textarea aria-label="Add a comment" placeholder="Comment, or 'AC #2: …' to checkpoint a criterion"></textarea><button data-post disabled>Comment</button></div>`, { id: "activity" }));
   return out.join("");
 }
 
 function rail(t) {
   const out = [];
   out.push(sec("Status", `<div class="row">${pill(t.lane[0], t.lane[1], true)}<span class="k">for ${t.forAge}</span></div>`, { rail: true }));
-  // N11: rating shows only on a deviated sample
+  // N11 + N16: rating shows only on a deviated sample, a run whose randomized profile is a tier off the matrix's
   if (t.sample) {
     const r = t.sample;
-    out.push(sec("Rating", `<div class="why">Sampled: <b>${r.machine}</b> took <code>${r.event}</code> from <i>${r.state}</i> at ${r.at}, an illegal move. Was the work still right?</div>
+    out.push(sec("Rating", `<div class="why">Deviated sample: this run drew a <b>${r.tier}</b> tier than the matrix assigns, to test whether ${r.cell} can run there.</div>
+      <dl class="who2 dev"><dt>Matrix</dt><dd>${esc(r.matrix)}</dd><dt>Drew</dt><dd>${esc(r.drew)} <span class="tier">${r.tier === "lower" ? "↓" : "↑"} ${r.tier}</span></dd></dl>
+      <div class="why">Did the work hold up?</div>
       <div class="rate"><button type="button" class="ratebtn" data-verdict="pass" aria-pressed="${verdict === "pass"}">Pass</button><button type="button" class="ratebtn" data-verdict="fail" aria-pressed="${verdict === "fail"}">Fail</button></div>
       ${reasonOpen ? `<div class="reason"><input maxlength="140" placeholder="Why, in one line (optional)" aria-label="Fail reason"><button class="btn2" data-reason>Save</button></div>` : ""}`, { rail: true }));
   }
@@ -1424,8 +1507,7 @@ document.addEventListener("click", (e) => {
   if (!el) return;
   const d = el.dataset;
   if (d.task) { e.preventDefault(); return go("empty", d.task); }
-  if (d.jump) { e.preventDefault(); if (d.jump.startsWith("c") || d.jump.startsWith("d") || d.jump.startsWith("x")) { filter = "all"; render(true); } return flash(document.getElementById(d.jump)); }
-  if (d.filter) { filter = d.filter; return render(true); }
+  if (d.jump) { e.preventDefault(); return flash(document.getElementById(d.jump)); }
   if (d.edit) { editing.add(d.edit); return render(true); }
   if (d.cancel) { editing.delete(d.cancel); tagErr = ""; return render(true); }
   if (d.save === "description") { T.description = document.querySelector(".mdsrc").value; editing.delete("description"); return render(true); }
