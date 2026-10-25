@@ -390,6 +390,8 @@ def move_task(request: MoveRequest, feed: BoardFeed, writer: MoveWriter) -> tupl
     who = _who(request)
     if request.task is not None:
         return _move_one(feed, request.task, request.to, who, writer)
+    if request.tasks is None:
+        return 400, {"error": "invalid request: task: Field required"}
     moved, refused = [], {}
     for task in request.tasks or ():
         status, body = _move_one(feed, task, request.to, who, writer)

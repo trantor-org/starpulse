@@ -45,9 +45,9 @@ class MoveRequest(_Writer):
     to: str
 
     @model_validator(mode="after")
-    def _one_target(self) -> MoveRequest:
-        if (self.task is None) == (self.tasks is None):
-            raise ValueError("name exactly one of task and tasks")
+    def _not_both(self) -> MoveRequest:
+        if self.task is not None and self.tasks is not None:
+            raise ValueError("name task or tasks, not both")
         return self
 
 
