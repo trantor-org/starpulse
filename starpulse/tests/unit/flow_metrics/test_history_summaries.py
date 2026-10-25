@@ -7,10 +7,10 @@ from pathlib import Path
 import pytest
 from sqlalchemy import text
 
-from starpulse._internal.eventlog import history
-from starpulse._internal.eventlog.history import HistoryStore
-from starpulse._internal.eventlog.summaries import Summariser
 from starpulse.event_log.checkpoints import Checkpoints
+from starpulse.flow_metrics import history
+from starpulse.flow_metrics.history import HistoryStore
+from starpulse.flow_metrics.summaries import Summariser
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.summaries import assert_matches_rebuild
 

@@ -169,9 +169,12 @@ def test_each_public_module_exports_exactly_its_pinned_names(module: str) -> Non
     assert [name for name in PUBLIC[module] if not hasattr(imported, name)] == []
 
 
-#: Root entries that are not a listed public module: the entry points, the internal code, the generic GitHub transport
-#: and the packages that ship data.
-ROOT_OTHER = {"__init__", "__main__", "claude_code", "cursor", "cursor_context", "_internal", "github", "tests"}
+#: The bounded contexts that are top-level packages (doc-966): each sits at the root and its tests in its own directory.
+CONTEXTS = {"flow_metrics"}
+
+#: Root entries that are not a listed public module: the entry points, the internal code, the generic GitHub transport,
+#: the packages that ship data and the bounded contexts.
+ROOT_OTHER = {"__init__", "__main__", "claude_code", "cursor", "cursor_context", "_internal", "github", "tests"} | CONTEXTS
 
 
 def _unlisted_at_root(package: Path) -> set[str]:
@@ -210,8 +213,8 @@ def test_the_board_feed_logs_under_its_public_path() -> None:
 
 
 #: Test directories under a tier that mirror no `_internal` package: the public `contracts` package and the public
-#: surface, the `event_log` kernel, and the `leaks` gate that measures memory across every feature.
-TEST_DIRECTORIES_OTHER = {"contracts", "event_log", "leaks"}
+#: surface, the `event_log` kernel, the `leaks` gate that measures memory across every feature, and the bounded contexts.
+TEST_DIRECTORIES_OTHER = {"contracts", "event_log", "leaks"} | CONTEXTS
 
 
 def _misplaced_tests(tests: Path, features: set[str]) -> set[str]:

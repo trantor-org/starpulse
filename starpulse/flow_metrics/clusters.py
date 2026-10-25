@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from itertools import groupby
 from statistics import median
 
-from starpulse._internal.level.traces import Case
+from starpulse.flow_metrics.traces import Case
 
 __all__ = [
     "Cluster",

@@ -13,11 +13,12 @@ from starpulse._internal.board.claim_ttl import sweep
 from starpulse._internal.board.seam import Board
 from starpulse._internal.board.upstream_backlog import UpstreamBacklog
 from starpulse._internal.config.config import load
-from starpulse._internal.eventlog.history import HistoryStore, last_run_event
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.server.assembly import assemble
 from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.opening import last_run_event
 from starpulse.event_log.store import EventStore, NewEvent
+from starpulse.flow_metrics.history import HistoryStore
 
 FILE = """---
 id: task-5

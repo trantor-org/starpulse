@@ -8,10 +8,10 @@ from pathlib import Path
 import pytest
 from sqlalchemy import select
 
-from starpulse._internal.eventlog.history import HistoryStore, _machine_events
 from starpulse._internal.server import assembly, flow_metrics_worker, worker
 from starpulse.event_log import events
 from starpulse.event_log.event_log import EventLog
+from starpulse.flow_metrics.history import HistoryStore, _machine_events
 from starpulse.tests import fake_board
 
 BOARD = '[board]\ntype = "starpulse.tests.fake_board"\nlanes = ["waiting", "ready", "done"]\nwrites = true\n'

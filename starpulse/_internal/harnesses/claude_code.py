@@ -39,13 +39,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from starpulse._internal.config.config import discover, load
-from starpulse._internal.eventlog.history import open_event_log
 from starpulse._internal.harnesses.harness import HARNESS
 from starpulse._internal.harnesses.otlp import TOOL_RESULT, LogEvent, receiver
 from starpulse._internal.harnesses.telemetry import TelemetryLog, redactor, signals
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.event_log import events as machine_events
 from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.opening import open_event_log
 
 ACTOR = "claude-code"
 DEFAULT_PORT = 4318

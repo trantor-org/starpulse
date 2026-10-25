@@ -3,8 +3,8 @@
 import re
 
 from starpulse._internal.config.analytics import SkillLoad
-from starpulse._internal.level.traces import Case, Missed, cases, missed_loads
-from starpulse.tests.unit.level.test_sessions import KEYS, START_CLAIMS, T0, sig
+from starpulse.flow_metrics.traces import Case, Missed, cases, missed_loads
+from starpulse.tests.unit.flow_metrics.test_session_health import KEYS, START_CLAIMS, T0, sig
 
 ROOTS = ["/r", "/r/.claude/worktrees/*"]
 

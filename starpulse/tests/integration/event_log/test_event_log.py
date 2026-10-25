@@ -132,7 +132,7 @@ _FORMER_TAIL_CALLERS = (
     "event_log/lane_events.py",
     "event_log/conformance_monitor.py",
     "_internal/runs/projection.py",
-    "_internal/eventlog/history.py",
+    "flow_metrics/history.py",
 )
 
 

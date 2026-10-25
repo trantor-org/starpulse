@@ -14,9 +14,9 @@ from pathlib import Path
 
 from starpulse._internal.board.project_machines import DIRECTORY
 from starpulse._internal.config.config import Config, discover, load
-from starpulse._internal.eventlog.history import database_url
 from starpulse._internal.machines.machine_definition import MachineDefinitionError, _read
 from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.opening import database_url
 from starpulse.event_log.readmodel.projector import Projector
 from starpulse.event_log.readmodel.read_model import ReadModel
 from starpulse.event_log.store import EventStore

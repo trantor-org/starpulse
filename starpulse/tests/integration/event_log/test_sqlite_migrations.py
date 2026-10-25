@@ -10,14 +10,14 @@ from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
 from sqlalchemy import Engine, create_engine, inspect, text
 
-from starpulse._internal.eventlog import history
-from starpulse._internal.eventlog.history import HistoryStore
 from starpulse.event_log import migrate
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.migrate import alembic_config
 from starpulse.event_log.readmodel import metadata as readmodel_metadata
 from starpulse.event_log.store import metadata as store_metadata
 from starpulse.event_log.tables import VERSION_TABLE, checkpoints, day_rollups, metadata
+from starpulse.flow_metrics import history
+from starpulse.flow_metrics.history import HistoryStore
 from starpulse.tests.machines import MACHINES
 
 _MIGRATIONS = Path(migrate.__file__).parent / "migrations"

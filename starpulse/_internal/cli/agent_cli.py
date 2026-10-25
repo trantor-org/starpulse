@@ -130,9 +130,9 @@ from starpulse._internal.cli.agent_keys import (
     TRANSITION_KEYS,
 )
 from starpulse._internal.config.config import Config, ConfigError, discover, load
-from starpulse._internal.level.cells import cell_of
-from starpulse._internal.level.scores import PullFacts, cell_task_scores, merged_pulls, pull_facts, score_cells
-from starpulse._internal.level.verdicts import cell_verdicts
+from starpulse.flow_metrics.cells import cell_of
+from starpulse.flow_metrics.scores import PullFacts, cell_task_scores, merged_pulls, pull_facts, score_cells
+from starpulse.flow_metrics.verdicts import cell_verdicts
 from starpulse.github import GitHubError, connect, repo_of
 
 #: What each exit code means, as the manifest says it.
@@ -502,7 +502,7 @@ def _validate(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str,
 
     With `--config`, a migrations entry no live Task of that config's event log holds is refused too.
     """
-    from starpulse._internal.eventlog.history import open_event_log  # noqa: PLC0415 - import cost, paid on first use
+    from starpulse.event_log.opening import open_event_log  # noqa: PLC0415 - import cost, paid on first use
     from starpulse.event_log.readmodel.read_model import ReadModel  # noqa: PLC0415 - import cost, paid on first use
 
     machines = [_checked(path) for path in args.paths]

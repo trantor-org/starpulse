@@ -13,8 +13,8 @@ from pathlib import Path
 import demo_workspace
 import pytest
 import seeded_server
-from starpulse._internal.eventlog.history import HistoryStore
 from starpulse._internal.server.page_server import PageServer
+from starpulse.flow_metrics.history import HistoryStore
 from starpulse.tests.summaries import assert_matches_rebuild
 
 # Each test starts the seeded server, a budget-sized start; they run in the nightly only.

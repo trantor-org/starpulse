@@ -27,7 +27,7 @@ from collections.abc import Collection, Iterable, Mapping, Sequence
 from typing import Any
 
 from starpulse._internal.config.level import Level
-from starpulse._internal.eventlog.level_metrics import Run, WindowPastHistory, held_steps
+from starpulse.flow_metrics.level_metrics import Run, WindowPastHistory, held_steps
 
 __all__ = ["absorb", "betweenness", "trajectory_analytics"]
 

@@ -28,12 +28,12 @@ from typing import Any
 
 from starpulse._internal.config.analytics import Analytics
 from starpulse._internal.config.config import discover, load
-from starpulse._internal.eventlog.history import open_event_log
 from starpulse._internal.harnesses.activity import SHELLS, activities, elide_heredocs, paths
 from starpulse._internal.harnesses.labeller import intent_label
 from starpulse._internal.harnesses.telemetry import _SWITCH, TelemetryLog, redactor
 from starpulse._internal.signals import CURSOR, Signal, claim_key, claimed
 from starpulse.contracts.adapters import TaskKeys
+from starpulse.event_log.opening import open_event_log
 
 __all__ = ["CURSOR", "ingest", "main", "transcript_signals"]
 

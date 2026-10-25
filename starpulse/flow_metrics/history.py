@@ -17,7 +17,6 @@ import threading
 import time
 from collections import OrderedDict
 from collections.abc import Callable, Hashable, Iterable, Iterator, Mapping
-from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from sqlalchemy import (
@@ -43,10 +42,21 @@ from sqlalchemy import event as sa_event
 from sqlalchemy.dialects import sqlite
 from sqlalchemy.exc import OperationalError
 
-from starpulse._internal.config.config import discover, load
 from starpulse._internal.config.level import Level
-from starpulse._internal.eventlog.level_metrics import AGING_WINDOW_S, Run, RunWindow, state_roles
-from starpulse._internal.eventlog.summaries import (
+from starpulse._internal.machines.stays import Dwell, LaneStays, Stay
+from starpulse._internal.machines.transitions import Table as Transitions
+from starpulse._internal.machines.transitions import lane_id
+from starpulse.event_log import events as machine_events
+from starpulse.event_log import lane_events, lane_repair
+from starpulse.event_log.checkpoints import Checkpoints
+from starpulse.event_log.event_log import EventLog, create_tables, insert_event
+from starpulse.event_log.lane_import import Change
+from starpulse.event_log.polling import DEFAULT_POLL_INTERVAL
+from starpulse.event_log.tables import gaps as _gaps
+from starpulse.event_log.tables import machine_events as _machine_events
+from starpulse.event_log.tables import metadata
+from starpulse.flow_metrics.level_metrics import AGING_WINDOW_S, Run, RunWindow, state_roles
+from starpulse.flow_metrics.summaries import (
     BOARD,
     SUMMARY_TABLES,
     Fold,
@@ -61,17 +71,6 @@ from starpulse._internal.eventlog.summaries import (
     write_lane,
     write_step,
 )
-from starpulse._internal.machines.stays import Dwell, LaneStays, Stay
-from starpulse._internal.machines.transitions import Table as Transitions
-from starpulse._internal.machines.transitions import lane_id
-from starpulse.event_log import events as machine_events
-from starpulse.event_log import lane_events, lane_repair
-from starpulse.event_log.checkpoints import Checkpoints
-from starpulse.event_log.event_log import EventLog, create_tables, insert_event
-from starpulse.event_log.lane_import import Change
-from starpulse.event_log.polling import DEFAULT_POLL_INTERVAL
-from starpulse.event_log.tables import gaps as _gaps
-from starpulse.event_log.tables import metadata
 
 __all__ = ["History", "machine_steps"]
 
@@ -91,9 +90,6 @@ _ANSWER_BUCKET_S = 5.0
 _ANSWERS_KEPT = 32
 _Answer = tuple[bytes, int]
 
-#: The file a config without `database_url` keeps its history in, beside the config.
-DEFAULT_FILE = "starpulse-history.sqlite"
-
 #: The most the -wal file keeps after a checkpoint resets it. SQLite keeps the file at its high-water mark otherwise,
 #: so one burst left a 462 MB file holding a few hundred frames.
 _WAL_SIZE_LIMIT = 64 * 1024 * 1024
@@ -102,20 +98,6 @@ _WAL_SIZE_LIMIT = 64 * 1024 * 1024
 #: and one rebuilding the summaries of a large history holds the lock for seconds.
 _SQLITE_BUSY_TIMEOUT = 60.0
 
-_machine_events = Table(
-    "starpulse_machine_events",
-    metadata,
-    Column("id", Integer, primary_key=True, autoincrement=True),
-    Column("event_id", String, nullable=False, unique=True),
-    Column("task", String),
-    Column("run", String),
-    Column("machine", String, nullable=False),
-    Column("event", String, nullable=False),
-    Column("actor", String),
-    Column("occurred_at", Float, nullable=False),
-    Index("ix_starpulse_machine_events_task", "task", "machine", "occurred_at"),
-    Index("ix_starpulse_machine_events_run", "run", "machine", "occurred_at"),
-)
 _lane_changes = Table(
     "starpulse_lane_changes",
     metadata,
@@ -242,21 +224,6 @@ def _held_ids(db: Connection, event_ids: list[str]) -> set[str]:
             db.execute(select(c.event_id).where(c.event_id.in_(event_ids[start : start + _TASKS_PER_QUERY]))).scalars()
         )
     return held
-
-
-def database_url(configured: str | None, directory: Path) -> str:
-    """The configured URL, else a SQLite file `DEFAULT_FILE` in `directory`."""
-    return configured or f"sqlite:///{(directory / DEFAULT_FILE).resolve()}"
-
-
-def open_event_log(path: Path | None = None) -> EventLog:
-    """The event log in the store `serve --config path` keeps its history in, so a producer and the view share it.
-
-    A producer runs from no fixed directory, so it names the config as `serve` does: `path`, else `starpulse.toml`
-    in the working directory, else the defaults. Raises `OSError` or `ValueError` for a config that cannot be read.
-    """
-    path = discover(path)
-    return EventLog(database_url(load(path).database_url, path.parent if path else Path.cwd()))
 
 
 def lane_changes(rows: list[tuple[float, str | None, str, str | None]]) -> list[dict]:
@@ -814,14 +781,6 @@ class HistoryStore:
                 .order_by(*_STEP_ORDER)
             ).all()
         return machine_steps(self._machines[flow], [tuple(row) for row in rows])
-
-
-def last_run_event(engine: Engine, run: str) -> float | None:
-    """Epoch of the latest machine event of run `run` in the store on `engine`, None for a run with none: the harness
-    keys a session's telemetry by its session id, so this is when that session last acted."""
-    c = _machine_events.c
-    with engine.connect() as db:
-        return db.execute(select(func.max(c.occurred_at)).where(c.run == run)).scalar()
 
 
 def record_machine_events(

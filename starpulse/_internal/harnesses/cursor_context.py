@@ -12,10 +12,10 @@ from pathlib import Path
 from typing import Protocol
 
 from starpulse._internal.config.config import discover, load
-from starpulse._internal.eventlog.history import open_event_log
 from starpulse._internal.harnesses.session_start import starter
 from starpulse.contracts.adapters import StartFailedError
 from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.opening import open_event_log
 
 #: The context percent the footer ends on (`Auto  60.3%`); a percent mid-line is output, not the footer.
 _FOOTER = re.compile(r"\b(\d{1,3}(?:\.\d+)?)%\s*$")

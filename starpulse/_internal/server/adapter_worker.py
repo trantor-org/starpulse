@@ -15,7 +15,6 @@ import threading
 from pathlib import Path
 
 from starpulse._internal.config.config import discover, load
-from starpulse._internal.eventlog.history import database_url
 from starpulse._internal.runs import opt_in
 from starpulse._internal.runs.projection import Publisher
 from starpulse._internal.server.assembly import worker_board
@@ -23,6 +22,7 @@ from starpulse._internal.server.hold import hold
 from starpulse._internal.server.runs_worker import reload
 from starpulse._internal.server.server import run_adapters
 from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.opening import database_url
 
 
 def main(argv: list[str] | None, parser: argparse.ArgumentParser, context: str) -> None:

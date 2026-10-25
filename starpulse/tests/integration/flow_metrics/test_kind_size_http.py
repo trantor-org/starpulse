@@ -18,8 +18,8 @@ from starpulse._internal.server.page_server import PageServer
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.event_log.event_log import EventLog
 from starpulse.tests.machines import MACHINES, ROLES
+from starpulse.tests.unit.flow_metrics.test_flow import EXECUTE_8, WORK_STEPS, completed
 from starpulse.tests.unit.harnesses.test_telemetry import FIXTURES
-from starpulse.tests.unit.level.test_flow import EXECUTE_8, WORK_STEPS, completed
 
 KEYS = TaskKeys(
     key=re.compile(r"TASK-\d+"),

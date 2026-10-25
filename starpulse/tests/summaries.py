@@ -2,8 +2,8 @@
 
 from sqlalchemy import select
 
-from starpulse._internal.eventlog.history import HistoryStore
-from starpulse._internal.eventlog.summaries import SUMMARY_TABLES
+from starpulse.flow_metrics.history import HistoryStore
+from starpulse.flow_metrics.summaries import SUMMARY_TABLES
 
 
 def summary_rows(store: HistoryStore) -> dict[str, list[tuple]]:

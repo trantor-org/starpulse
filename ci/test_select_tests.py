@@ -238,7 +238,7 @@ def test_a_diff_touching_a_python_source_file_selects_a_target_and_so_launches_a
         (
             [
                 "starpulse/tests/integration/cli/test_agent_cli.py",
-                "starpulse/tests/integration/eventlog/test_history.py",
+                "starpulse/tests/integration/flow_metrics/test_history.py",
             ],
             [1, 2],
         ),

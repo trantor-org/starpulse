@@ -10,8 +10,8 @@ from pathlib import Path
 
 from starpulse._internal.config.analytics import Analytics
 from starpulse._internal.harnesses.cursor import CURSOR, transcript_signals
-from starpulse._internal.level.sessions import session_health
 from starpulse.contracts.adapters import TaskKeys
+from starpulse.flow_metrics.session_health import session_health
 
 SESSION = "33333333-3333-4333-8333-333333333333"
 TRANSCRIPT = Path(__file__).parents[2] / "fixtures/cursor/agent-transcripts" / SESSION / f"{SESSION}.jsonl"
