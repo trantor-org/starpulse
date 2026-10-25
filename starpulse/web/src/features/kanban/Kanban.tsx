@@ -105,7 +105,6 @@ export function Card({ task, holds = 0, chain, stacked = 0, under = false, links
   cross?: KanbanTask[]; onCross?: (id: string) => void; now: number; marks: Marks; names: Record<string, string>; roles: Roles; compact?: boolean; onOpen: () => void; onPress?: (e: React.PointerEvent<HTMLDivElement>) => void;
   onPlay?: () => void; onHover?: (on: boolean) => void; dismiss: () => void; dismissStart?: () => void; style?: CSSProperties;
 }) {
-  const size = task.labels.find((l) => /^size-/.test(l))?.slice(5);
   const live = task.live, claim = marks.claim;
   const playing = onPlay && !claim && startLane(task, roles);
   const cls = ["card", chain && `chain-${chain}`, under && "under", compact && "compact", playing && "startable", marks.saving && "saving", (marks.refusal || marks.failed) && "bad", marks.lifted && "ghost", claim && "claiming"].filter(Boolean).join(" ");
@@ -120,7 +119,7 @@ export function Card({ task, holds = 0, chain, stacked = 0, under = false, links
       onPointerEnter={onHover && (() => onHover(true))} onPointerLeave={onHover && (() => onHover(false))}
       onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen())}>
       <div className="top">
-        <span className="id">{task.id}</span><PullChip pulls={task.prs} />{compact && badge}{size && <span className="lab sz" title={`size-${size}`}>{size}pt</span>}
+        <span className="id">{task.id}</span><PullChip pulls={task.prs} />{compact && badge}
       </div>
       {links && links.length > 0 && <div className={`uw${finished ? " dn" : ""}`}><span className="nw">{finished ? "✓ unblocked" : "⧗ waits on"}</span>{" "}{links.map((id, i) => <Fragment key={id}>{i > 0 && ", "}<span className="nw">{id}</span></Fragment>)}</div>}
       <div className="t">{task.title}</div>

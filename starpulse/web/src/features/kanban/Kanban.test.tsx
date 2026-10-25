@@ -39,20 +39,14 @@ describe("a Kanban card's density", () => {
 describe("a Kanban card's size estimate", () => {
   const drawLabelled = (labels: string[], compact = false) => renderToStaticMarkup(<Card task={{ ...task, labels }} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} compact={compact} />);
 
-  it("draws size-N as Npt, the last element of the top row, and no label in the footer", () => {
-    const html = drawLabelled(["kind-feature", "size-5", "area-starpulse"]);
+  it("is never drawn on a card, which shows no label at all", () => {
+    for (const compact of [false, true]) {
+      const html = drawLabelled(["kind-feature", "size-5", "area-starpulse"], compact);
 
-    expect(html).toMatch(/<div class="top">.*<span class="lab sz" title="size-5">5pt<\/span><\/div>/);
-    expect(html).not.toContain('class="lab"');
-    expect(html).not.toContain("area-starpulse");
-  });
-
-  it("draws the chip on a compact card too", () => {
-    expect(drawLabelled(["size-5"], true)).toMatch(/<div class="top">.*<span class="lab sz" title="size-5">5pt<\/span><\/div>/);
-  });
-
-  it("draws no size chip without a size-* label", () => {
-    expect(drawLabelled(["area-starpulse"])).not.toContain("lab sz");
+      expect(html).not.toContain("5pt");
+      expect(html).not.toContain("size-5");
+      expect(html).not.toContain("area-starpulse");
+    }
   });
 });
 
