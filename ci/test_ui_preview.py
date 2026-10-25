@@ -416,6 +416,37 @@ def test_publish_replaces_a_demo_another_writer_landed_after_the_tree_was_read(t
     ]
 
 
+class ConflictedGh(DemoGh):
+    """A demo repository whose Pages branch moves under the first writes: GitHub answers them 409."""
+
+    def __init__(self, tree: dict[str, str], conflicts: int) -> None:
+        super().__init__(tree)
+        self.conflicts = conflicts
+
+    def __call__(self, *args: str) -> str:
+        if args[:2] == ("api", "--method") and self.conflicts:
+            self.conflicts -= 1
+            raise RuntimeError("gh: is at ec0bde28 but expected b75928fa (HTTP 409)")
+        return super().__call__(*args)
+
+
+def test_unpublish_retries_a_delete_another_writer_raced_on_the_branch(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("ui_preview.time.sleep", lambda _: None)
+    gh = ConflictedGh({"pr-7/a.html": "a"}, conflicts=2)
+
+    unpublish_demos(gh, "pr-7")
+
+    assert [(method, path) for method, path, _ in gh.writes] == [("DELETE", "pr-7/a.html")]
+
+
+def test_unpublish_gives_up_on_a_branch_that_never_settles(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("ui_preview.time.sleep", lambda _: None)
+    gh = ConflictedGh({"pr-7/a.html": "a"}, conflicts=99)
+
+    with pytest.raises(RuntimeError, match="HTTP 409"):
+        unpublish_demos(gh, "pr-7")
+
+
 def test_unpublish_deletes_only_this_prs_folder() -> None:
     gh = DemoGh({"pr-7/a.html": "a", "pr-70/a.html": "b", "main/a.html": "m"})
 
