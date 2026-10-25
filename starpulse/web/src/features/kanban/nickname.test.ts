@@ -17,6 +17,11 @@ describe("sessionNickname", () => {
     expect(names.size).toBeGreaterThan(35);
   });
 
+  it("gives sessions that differ only in their last character different animals", () => {
+    const animals = new Set(Array.from({ length: 10 }, (_, i) => sessionNickname(url(`demo15${i}`))?.split("-")[1]));
+    expect(animals.size).toBeGreaterThan(6);
+  });
+
   it("names nothing that is not a session URL", () => {
     expect(sessionNickname("@agent-deep-high")).toBeNull();
     expect(sessionNickname("local")).toBeNull();

@@ -21,11 +21,14 @@ const ANIMALS = [
 
 const SESSION = /^https?:\/\/\S*?\/session_(\w+)$/;
 
-/** 32-bit FNV-1a: a cheap, stable spread of the id's characters. */
+/** 32-bit FNV-1a: a cheap, stable spread of the id's characters, finished with murmur3's fmix32 so a change in the
+ * last character reaches the high bits the animal is picked from. */
 function fnv1a(s: string) {
   let h = 0x811c9dc5;
   for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193);
-  return h >>> 0;
+  h = Math.imul(h ^ (h >>> 16), 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+  return (h ^ (h >>> 16)) >>> 0;
 }
 
 /** The nickname of a session URL's holder, or null when the assignee is not a session URL (a profile, `local`, unheld). */
