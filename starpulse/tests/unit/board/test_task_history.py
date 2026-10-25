@@ -6,13 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from starpulse.board.model.seam import Board
-from starpulse.board.adapters.task_history import WRITER, _events
-from starpulse.board.adapters.upstream_backlog import UpstreamBacklog
 from starpulse._internal.config.config import load
-from starpulse.board.board_feed import BoardFeed
 from starpulse._internal.server.assembly import assemble
 from starpulse._internal.server.writes import edit_task
+from starpulse.board.adapters.task_history import WRITER, _events
+from starpulse.board.adapters.upstream_backlog import UpstreamBacklog
+from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.seam import Board
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.readmodel.fold import replay
 from starpulse.event_log.readmodel.projector import Projector
@@ -77,6 +77,37 @@ def test_a_move_appends_a_transition_naming_both_states(served) -> None:
 
     moved = store.read("task", "task-5")[-1]
     assert (moved.type, moved.payload["from"], moved.payload["to"]) == ("Transitioned", "To Do", "In Progress")
+
+
+def test_rewriting_a_status_whose_append_was_lost_transitions_from_the_historys_state(
+    served, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    built, _, store, _ = served
+    assert built.edit("task-5", {"title": "Draw it"}, [], actor="adin").ok
+    append = EventStore.append
+
+    def lost(self, *args, **kwargs):
+        monkeypatch.setattr(EventStore, "append", append)
+        raise OSError("unable to open database file")
+
+    monkeypatch.setattr(EventStore, "append", lost)
+    with pytest.raises(OSError):
+        built.writer("task-5", "In Progress", "actor")
+
+    assert built.writer("task-5", "In Progress", "actor").ok
+
+    moved = store.read("task", "task-5")[-1]
+    assert (moved.type, moved.payload["from"], moved.payload["to"]) == ("Transitioned", "To Do", "In Progress")
+    assert replay(store.read("task", "task-5"))["state"] == "In Progress"
+
+
+def test_rewriting_a_status_the_history_already_holds_appends_no_transition(served) -> None:
+    built, _, store, _ = served
+    assert built.writer("task-5", "In Progress", "adin").ok
+
+    assert built.edit("task-5", {"status": "In Progress"}, "again", actor="adin").ok
+
+    assert _types(store, "task-5")[-2:] == ["Transitioned", "CommentAdded"]
 
 
 def test_a_checked_criterion_is_a_criterion_event_not_a_field_edit(served) -> None:
@@ -179,7 +210,9 @@ RETURNED = {
 
 
 def _appended(store: EventStore, task: str, events: list[tuple[str, dict]]) -> None:
-    store.append("task", task, store.head("task", task), [NewEvent(kind, payload, "adin", WRITER) for kind, payload in events])
+    store.append(
+        "task", task, store.head("task", task), [NewEvent(kind, payload, "adin", WRITER) for kind, payload in events]
+    )
 
 
 def test_a_returning_task_folds_to_the_fields_its_file_carries(served) -> None:
@@ -190,14 +223,20 @@ def test_a_returning_task_folds_to_the_fields_its_file_carries(served) -> None:
 
     row = replay(store.read("task", "task-5"))
     assert (row["title"], row["labels"], row["archived"]) == ("Draw it again", ["ui", "page"], False)
-    assert [(item["n"], item["text"]) for item in row["criteria"]] == [(1, "It draws"), (2, "It scrolls"), (3, "It zooms")]
+    assert [(item["n"], item["text"]) for item in row["criteria"]] == [
+        (1, "It draws"),
+        (2, "It scrolls"),
+        (3, "It zooms"),
+    ]
 
 
 def test_a_criterion_the_returning_file_added_folds_checked_when_its_check_is_recorded(served) -> None:
     built, _, store, _ = served
     assert built.archive("task-5", "", actor="adin").ok
 
-    _appended(store, "task-5", _events({}, RETURNED, "") + [("CriterionChecked", {"kind": "ac", "n": 3, "checked": True})])
+    _appended(
+        store, "task-5", _events({}, RETURNED, "") + [("CriterionChecked", {"kind": "ac", "n": 3, "checked": True})]
+    )
 
     assert replay(store.read("task", "task-5"))["criteria"][2]["checked"] is True
 
@@ -210,7 +249,9 @@ def test_starting_the_board_gives_a_retired_row_without_history_its_imported_and
     log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
     with log.engine.begin() as db:
         db.execute(
-            retired_tasks.insert().values(task="TASK-9", name="task-9 - Old.md", text=FILE.replace("task-5", "TASK-9"), retired_at=0.0)
+            retired_tasks.insert().values(
+                task="TASK-9", name="task-9 - Old.md", text=FILE.replace("task-5", "TASK-9"), retired_at=0.0
+            )
         )
 
     built.start(feed, "test", log)
