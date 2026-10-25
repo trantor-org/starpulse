@@ -19,9 +19,9 @@ from typing import Any
 
 import yaml
 
-from starpulse._internal.board.markdown import MarkdownRefusedError, imported, render
-from starpulse._internal.board.seam import OPERATOR
-from starpulse._internal.board.view import AGENT, board_columns, board_flow, cold_agent, done_ids, roles_of, task_view
+from starpulse.board.model.markdown import MarkdownRefusedError, imported, render
+from starpulse.board.model.seam import OPERATOR
+from starpulse.board.model.view import AGENT, board_columns, board_flow, cold_agent, done_ids, roles_of, task_view
 from starpulse._internal.cli import agent_wire
 from starpulse._internal.cli.agent_keys import CLAIM_KEYS, LIFECYCLE_KEYS
 

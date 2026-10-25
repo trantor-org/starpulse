@@ -9,9 +9,9 @@ from typing import Any
 import pytest
 import yaml
 
-from starpulse._internal.board import native
-from starpulse._internal.board.seam import Board
-from starpulse._internal.board.upstream_backlog import _split
+from starpulse.board.adapters import native
+from starpulse.board.model.seam import Board
+from starpulse.board.adapters.upstream_backlog import _split
 
 FIXTURE = Path(__file__).resolve().parent.parent.parent / "fixtures" / "native_board"
 STATUSES = ["Ready", "In Progress", "Waiting", "Needs attention", "Review", "Done"]

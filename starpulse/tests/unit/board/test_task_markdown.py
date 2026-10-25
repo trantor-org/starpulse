@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from starpulse._internal.board.markdown import MarkdownRefusedError, imported, render
+from starpulse.board.model.markdown import MarkdownRefusedError, imported, render
 from starpulse._internal.server.writes import edit_task
 from starpulse.tests.unit.board.test_task_history import served  # noqa: F401  (the fixture)
 

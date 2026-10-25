@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse.board.board_feed import BoardFeed
 from starpulse.runs import projection
 from starpulse.event_log.event_log import EventLog
 

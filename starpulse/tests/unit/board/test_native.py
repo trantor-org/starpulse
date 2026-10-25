@@ -8,11 +8,11 @@ from pathlib import Path
 import pytest
 import yaml
 
-from starpulse._internal.board.native import board
-from starpulse._internal.board.seam import Board
-from starpulse._internal.board.upstream_backlog import UpstreamBacklog, board_moves, upstream_keys
+from starpulse.board.adapters.native import board
+from starpulse.board.model.seam import Board
+from starpulse.board.adapters.upstream_backlog import UpstreamBacklog, board_moves, upstream_keys
 from starpulse._internal.config.config import load
-from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse.board.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import BoardAdapterKit
 from starpulse._internal.server.assembly import assemble
 from starpulse._internal.server.server import announce
@@ -399,8 +399,8 @@ def test_a_machine_naming_the_task_actor_is_refused_when_the_board_runs_none(tmp
 def test_a_native_write_records_the_lane_and_the_moment_it_was_written(tmp_path: Path) -> None:
     """A native write that moves a task sets Written.lane and Written.at, so the server records the change with the
     request's actor at write time."""
-    from starpulse._internal.board.native import board as native_board
-    from starpulse._internal.board.seam import Written
+    from starpulse.board.adapters.native import board as native_board
+    from starpulse.board.model.seam import Written
 
     native_board({}, tmp_path)
     write_task(tmp_path, "task-1", "To Do")

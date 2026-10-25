@@ -25,13 +25,13 @@ SECONDS = {
     "starpulse/tests/integration/server/test_standalone.py": 33,
     "ci/test_soak.py": 25,
     "starpulse/tests/integration/server/test_write_guard.py": 23,
-    "starpulse/tests/integration/feed/test_board_resume.py": 21,
+    "starpulse/tests/integration/board/test_board_resume.py": 21,
     "starpulse/tests/integration/flow_metrics/test_history_http.py": 20,
     "starpulse/tests/unit/server/test_flow_reads.py": 16,
     "starpulse/tests/integration/server/test_http.py": 13,
     "ci/test_latency_gate.py": 13,
     "starpulse/tests/integration/scheduler/test_scheduler_served.py": 11,
-    "starpulse/tests/unit/feed/test_lane_history_dedupe.py": 11,
+    "starpulse/tests/unit/board/test_lane_history_dedupe.py": 11,
 }
 UNMEASURED = 0.3
 

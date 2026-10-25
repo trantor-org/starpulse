@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse.board.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import serve, task
 from starpulse.tests.machines import MACHINES, ROLES
 

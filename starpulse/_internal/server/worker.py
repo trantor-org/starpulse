@@ -21,10 +21,10 @@ import threading
 from pathlib import Path
 
 from starpulse._internal.server.blocks import pulls_delivery_blocks, pulls_fixed_blocks
-from starpulse._internal.board.seam import Board
+from starpulse.board.model.seam import Board
 from starpulse._internal.config.config import Config, discover, load
 from starpulse._internal.config.pins import GitHub
-from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse.board.board_feed import BoardFeed
 from starpulse.pulls.delivery import (
     Projected,
     Publisher,

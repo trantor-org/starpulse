@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Protocol
 from starpulse.pulls.ci_trail import PullHistory, parse
 from starpulse._internal.config.config import Repo
 from starpulse._internal.config.pins import GitHub, Pins, link
-from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse.board.board_feed import BoardFeed
 
 if TYPE_CHECKING:  # annotation only: the pull store opens the database stack
     from starpulse.pulls.pulls import PullStore

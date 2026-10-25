@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from starpulse._internal.board.board_import import import_board
-from starpulse._internal.board.task_history import KIND
+from starpulse.board.adapters.board_import import import_board
+from starpulse.board.adapters.task_history import KIND
 from starpulse.runs.run_streams import RunStreams
 from starpulse.event_log.event_log import EventLog
-from starpulse._internal.board.seam import OPERATOR
-from starpulse._internal.board.task_history import WRITER
+from starpulse.board.model.seam import OPERATOR
+from starpulse.board.adapters.task_history import WRITER
 from starpulse.event_log.store import EventStore, NewEvent
 
 _RECORD = {"title": "Cut over", "status": "Review", "labels": ["a"], "session": "s1"}

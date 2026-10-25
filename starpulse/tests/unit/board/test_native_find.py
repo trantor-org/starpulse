@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.board import native
-from starpulse._internal.board.seam import Board
+from starpulse.board.adapters import native
+from starpulse.board.model.seam import Board
 
 TASKS = 60
 

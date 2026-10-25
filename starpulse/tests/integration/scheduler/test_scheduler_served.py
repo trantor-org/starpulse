@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 
 from starpulse._internal.config.config import load
-from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse.board.board_feed import BoardFeed
 from starpulse._internal.scheduler.ledger import LEDGER_FILE, Ledger
 from starpulse._internal.scheduler.runtime import Runtime
 from starpulse._internal.scheduler.sampler import PERIOD

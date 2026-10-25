@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse.board.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import serve, url
 from starpulse._internal.server.page_server import PageServer
 
@@ -51,7 +51,7 @@ def _get(server: PageServer, query: str) -> tuple[int, dict]:
 @pytest.fixture
 def server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[PageServer]:
     """Five machines entered from `delivery`, `m1` the newest and `m4` and `m5` tied, and `inner` entered from `m1`."""
-    monkeypatch.setattr("starpulse._internal.feed.board_feed.time.time", lambda: NOW)
+    monkeypatch.setattr("starpulse.board.board_feed.time.time", lambda: NOW)
     link = {"state": "s", "machine": IP, "exits": {}, "parent": "board", "when": ""}
     machines = {
         "board": _machine("new", "in_progress", "done", submachines=[link | {"state": "in_progress"}]),

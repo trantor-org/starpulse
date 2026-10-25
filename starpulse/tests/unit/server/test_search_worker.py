@@ -9,8 +9,8 @@ import pytest
 from sqlalchemy import create_engine, text
 
 from starpulse._internal.config.search import Search
-from starpulse._internal.feed import search as search_module
-from starpulse._internal.feed.search import SearchIndex
+from starpulse.board.adapters import search as search_module
+from starpulse.board.adapters.search import SearchIndex
 from starpulse._internal.server import search_worker, worker
 from starpulse.contracts.adapters import BoardTask
 from starpulse.tests import fake_board

@@ -9,8 +9,8 @@ from typing import Any
 
 import pytest
 
-from starpulse._internal.board.seam import Written
-from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse.board.model.seam import Written
+from starpulse.board.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.server.writes import archive_task, create_task, edit_task, start_task
 from starpulse.contracts.adapters import Move

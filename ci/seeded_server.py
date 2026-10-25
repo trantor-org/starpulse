@@ -31,12 +31,12 @@ from dataclasses import replace
 from pathlib import Path
 
 from sqlalchemy import Engine, event
-from starpulse._internal.board import native
-from starpulse._internal.board.seam import Board, Written
+from starpulse.board.adapters import native
+from starpulse.board.model.seam import Board, Written
 from starpulse._internal.config.config import load
 from starpulse._internal.config.scheduler import Scheduler
-from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.feed.history_window import HistoryWindow
+from starpulse.board.board_feed import BoardFeed
+from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse._internal.scheduler.runtime import Runtime
 from starpulse._internal.scheduler.runtime import build as build_scheduler
 from starpulse._internal.server.asgi_app import page_app

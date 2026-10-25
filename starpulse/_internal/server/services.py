@@ -11,7 +11,7 @@ from starpulse._internal.config.config import SLOW_READ_S
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     from starpulse._internal.config.analytics import Analytics
     from starpulse._internal.config.harnesses import Harnesses
-    from starpulse._internal.feed.search import SearchIndex
+    from starpulse.board.adapters.search import SearchIndex
     from starpulse._internal.scheduler.remote import Remote
     from starpulse._internal.scheduler.runtime import Runtime
     from starpulse.harness_telemetry.telemetry import TelemetryLog

@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 
 from starpulse._internal.config.config import Producer, load
-from starpulse._internal.feed.board_feed import BoardFeed, follow
+from starpulse.board.board_feed import BoardFeed, follow
 from starpulse._internal.kit.adapter_kit import serve, url
 from starpulse.runs import run_events
 from starpulse.runs.cloudevents import SINGLE, CloudEventsIngest

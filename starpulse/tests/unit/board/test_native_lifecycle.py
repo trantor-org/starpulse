@@ -7,11 +7,11 @@ from typing import Any
 import pytest
 import yaml
 
-from starpulse._internal.board.native import board
-from starpulse._internal.board.seam import Board
-from starpulse._internal.board.upstream_backlog import UpstreamBacklog
-from starpulse._internal.feed import criteria
-from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse.board.adapters.native import board
+from starpulse.board.model.seam import Board
+from starpulse.board.adapters.upstream_backlog import UpstreamBacklog
+from starpulse.board import criteria
+from starpulse.board.board_feed import BoardFeed
 from starpulse._internal.server.writes import claim_task, park_task, review_task
 from starpulse.event_log.event_log import EventLog
 from starpulse.tests.unit.board.test_native import native_root, write_task

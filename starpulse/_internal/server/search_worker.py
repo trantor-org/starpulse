@@ -3,7 +3,7 @@ index holds text of) as its own process, beside `serve`.
 
 It reads the config and the database `serve` does and meets `serve` only in the index tables there: `serve` writes the
 index rows (`feed.index_tasks`) and this worker writes the vectors, and a search in `serve` rereads the vectors on a
-timer (`starpulse._internal.feed.search`). The catch-up is resumable by construction: `SearchIndex.embed_pending` embeds
+timer (`starpulse.board.adapters.search`). The catch-up is resumable by construction: `SearchIndex.embed_pending` embeds
 what holds no vector of the configured model and stores each batch in one transaction, keyed by the text's digest, so a
 new process embeds exactly what the last one left and neither drops nor repeats an embedding. With no `embeddings_url`
 there is nothing to embed, and the worker holds idle rather than exit under the supervisor that would restart it.
@@ -19,7 +19,7 @@ from pathlib import Path
 
 from starpulse._internal.server.blocks import search_built_blocks
 from starpulse._internal.config.config import Config, discover, load
-from starpulse._internal.feed.search import SearchIndex
+from starpulse.board.adapters.search import SearchIndex
 from starpulse._internal.server.hold import hold
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url

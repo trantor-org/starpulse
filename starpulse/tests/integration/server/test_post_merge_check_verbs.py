@@ -11,10 +11,10 @@ from typing import Any
 
 import pytest
 
-from starpulse._internal.board import native
-from starpulse._internal.board.seam import Board, Written
+from starpulse.board.adapters import native
+from starpulse.board.model.seam import Board, Written
 from starpulse._internal.cli import agent_cli as cli
-from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse.board.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import serve, task, url
 from starpulse.tests.fake_board import bare_board
 from starpulse.tests.machines import MACHINES, ROLES

@@ -20,8 +20,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from starpulse._internal.board.replica import publish
-from starpulse._internal.board.upstream_backlog import _live
+from starpulse.board.adapters.replica import publish
+from starpulse.board.adapters.upstream_backlog import _live
 from starpulse._internal.cli import agent_cli
 from starpulse._internal.config.config import load
 from starpulse._internal.kit.adapter_kit import assembled, serve, url

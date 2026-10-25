@@ -62,9 +62,9 @@ from starpulse._internal.server.writes import (
 )
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
-    from starpulse._internal.board.seam import Board
-    from starpulse._internal.feed.board_feed import BoardFeed
-    from starpulse._internal.feed.history_window import HistoryWindow
+    from starpulse.board.model.seam import Board
+    from starpulse.board.board_feed import BoardFeed
+    from starpulse.board.adapters.history_window import HistoryWindow
     from starpulse.pulls.pulls import PullStore
     from starpulse._internal.server.services import Services
     from starpulse._internal.server.snapshot_cache import SnapshotCache

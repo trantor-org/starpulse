@@ -119,10 +119,10 @@ INERT = (
 #: The board seam and `config.py` import an adapter by the name configuration gives (`importlib.import_module`), so a
 #: test reaching either reaches each adapter whose name appears in a module it reaches: a configured `kind = "dagu"` in
 #: the test or a helper, or the loader's own default (`config.DEFAULT_TYPE`).
-NAMED_LOADERS = ("starpulse._internal.board.seam", "starpulse._internal.config.config")
+NAMED_LOADERS = ("starpulse.board.model.seam", "starpulse._internal.config.config")
 
 #: The feature packages that hold adapters; a module directly in one of them may be an adapter.
-ADAPTER_PACKAGES = (*(f"starpulse._internal.{package}." for package in ("board", "runs", "pulls")), "starpulse.harness_telemetry.")
+ADAPTER_PACKAGES = ("starpulse.board.adapters.", *(f"starpulse._internal.{package}." for package in ("runs", "pulls")), "starpulse.harness_telemetry.")
 
 #: The module that lists every built-in adapter's name. Every loader reaches it, so its text names no adapter a test
 #: names: it would otherwise select every adapter's tests for a change to any loader.

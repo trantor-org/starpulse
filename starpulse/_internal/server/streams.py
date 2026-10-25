@@ -20,7 +20,7 @@ from starpulse._internal.server.responses import _error
 from starpulse._internal.server.routes import _HELD, _LANES, _LEDGER, _SNAPSHOT_BODY
 
 if TYPE_CHECKING:  # annotation only: `snapshot_cache` and the feed are built by the caller
-    from starpulse._internal.feed.board_feed import BoardFeed
+    from starpulse.board.board_feed import BoardFeed
     from starpulse._internal.server.snapshot_cache import SnapshotCache
 
 logger = logging.getLogger(__name__)

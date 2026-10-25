@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from starpulse._internal.board.view import task_view
+from starpulse.board.model.view import task_view
 from starpulse.tests.machines import ROLES
 
 DONE_AT = 1792481914.0

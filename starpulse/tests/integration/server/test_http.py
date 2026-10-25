@@ -11,10 +11,10 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.board.seam import Board, Written
+from starpulse.board.model.seam import Board, Written
 from starpulse._internal.config.config import CommitKeys
-from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.feed.machine_tasks import MachineTasks
+from starpulse.board.board_feed import BoardFeed
+from starpulse.board.machine_tasks import MachineTasks
 from starpulse._internal.kit.adapter_kit import next_event as _next_event
 from starpulse._internal.kit.adapter_kit import serve as _serve
 from starpulse._internal.kit.adapter_kit import task

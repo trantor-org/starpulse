@@ -4,7 +4,7 @@ import re
 
 import pytest
 
-from starpulse._internal.board.native import _SLUG_MAX, _slug
+from starpulse.board.adapters.native import _SLUG_MAX, _slug
 
 _VALID = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
 

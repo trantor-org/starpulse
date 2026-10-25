@@ -5,8 +5,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from starpulse._internal.board.seam import Written
-from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse.board.model.seam import Written
+from starpulse.board.board_feed import BoardFeed
 from starpulse._internal.server.writes import _record_written, _Who
 from starpulse.contracts import BoardTask
 from starpulse.event_log import lane_events

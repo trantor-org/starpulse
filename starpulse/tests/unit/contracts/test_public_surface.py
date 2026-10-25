@@ -170,7 +170,7 @@ def test_each_public_module_exports_exactly_its_pinned_names(module: str) -> Non
 
 
 #: The bounded contexts that are top-level packages (doc-966): each sits at the root and its tests in its own directory.
-CONTEXTS = {"flow_metrics", "harness_telemetry", "machine_engine", "pulls", "runs", "sessions"}
+CONTEXTS = {"board", "flow_metrics", "harness_telemetry", "machine_engine", "pulls", "runs", "sessions"}
 
 #: Root entries that are not a listed public module: the entry points, the internal code, the generic GitHub transport,
 #: the packages that ship data and the bounded contexts.
@@ -209,7 +209,7 @@ def test_an_unlisted_root_module_or_package_is_found(tmp_path: Path, stray: str)
 
 
 def test_the_board_feed_logs_under_its_public_path() -> None:
-    assert importlib.import_module("starpulse._internal.feed.board_feed").logger.name == "starpulse.board_feed"
+    assert importlib.import_module("starpulse.board.board_feed").logger.name == "starpulse.board_feed"
 
 
 #: Test directories under a tier that mirror no `_internal` package: the public `contracts` package and the public

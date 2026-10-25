@@ -4,8 +4,8 @@ from pathlib import Path
 
 import yaml
 
-from starpulse._internal.board.native import board
-from starpulse._internal.board.upstream_backlog import _split
+from starpulse.board.adapters.native import board
+from starpulse.board.adapters.upstream_backlog import _split
 from starpulse.tests.unit.board.test_native import native_root, write_task
 
 LANES = ["Waiting", "Ready", "In Progress", "Done"]

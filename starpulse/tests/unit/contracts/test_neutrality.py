@@ -3,7 +3,7 @@
 import re
 from pathlib import Path
 
-PACKAGE = next(root for root in Path(__file__).resolve().parents if (root / "board.py").is_file())
+PACKAGE = next(root for root in Path(__file__).resolve().parents if (root / "board" / "model").is_dir())
 RUNNER = re.compile(r"\bdagu\b", re.IGNORECASE)
 ADAPTER = {"dagu.py", "adapter_worker.py"}
 #: The adapter table and the worker dispatcher, which names the `dagu` context it launches.

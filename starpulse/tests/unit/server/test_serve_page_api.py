@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.board import replica
+from starpulse.board.adapters import replica
 from starpulse._internal.server import api_worker, assembly, server, worker
 from starpulse._internal.server.hold import STATIC_ENV
 from starpulse.tests import fake_board

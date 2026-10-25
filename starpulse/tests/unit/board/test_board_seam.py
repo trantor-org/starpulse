@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.board.seam import Board
-from starpulse._internal.board.seam import load as load_board
+from starpulse.board.model.seam import Board
+from starpulse.board.model.seam import load as load_board
 from starpulse._internal.config.config import ConfigError, load
 from starpulse._internal.server.assembly import assemble, history_store
 from starpulse.event_log.event_log import EventLog
@@ -132,19 +132,19 @@ def test_a_board_type_whose_module_builds_no_board_is_refused_by_name(tmp_path: 
 
 
 SEAM_FILES = (
-    "board/seam.py",
-    "kit/adapter_kit.py",
-    "server/asgi_app.py",
-    "server/reads.py",
-    "server/write_routes.py",
-    "server/services.py",
+    "board/model/seam.py",
+    "_internal/kit/adapter_kit.py",
+    "_internal/server/asgi_app.py",
+    "_internal/server/reads.py",
+    "_internal/server/write_routes.py",
+    "_internal/server/services.py",
 )
 MOST_PARAMETERS = 12
 
 
 def _seam_functions() -> list[tuple[str, int]]:
     """Every function the Board seam and its server side define, with the number of parameters it takes."""
-    root = Path(__file__).parents[3] / "_internal"
+    root = Path(__file__).parents[3]
     rows = []
     for name in SEAM_FILES:
         for node in ast.walk(ast.parse((root / name).read_text())):
@@ -162,7 +162,7 @@ def test_no_seam_function_takes_more_than_a_dozen_parameters() -> None:
 
 
 def test_the_seam_declares_no_one_method_protocols() -> None:
-    source = (Path(__file__).parents[3] / "_internal" / "board" / "seam.py").read_text()
+    source = (Path(__file__).parents[3] / "board" / "model" / "seam.py").read_text()
     protocols = [
         node.name
         for node in ast.walk(ast.parse(source))
@@ -175,7 +175,7 @@ def test_the_seam_declares_no_one_method_protocols() -> None:
 def test_written_carries_the_lane_and_the_moment_it_was_written() -> None:
     """A write that moves a task records the lane it moved to and the moment it was written, so the server can
     record the change with the request's actor at write time."""
-    from starpulse._internal.board.seam import Written
+    from starpulse.board.model.seam import Written
 
     written = Written(ok=True, lane="in_progress", at=100.0)
 
@@ -184,7 +184,7 @@ def test_written_carries_the_lane_and_the_moment_it_was_written() -> None:
 
 def test_a_write_that_moves_no_lane_leaves_the_lane_unset() -> None:
     """A write that changes no lane (a note, a refusal) records no lane, so the server records nothing for it."""
-    from starpulse._internal.board.seam import Written
+    from starpulse.board.model.seam import Written
 
     written = Written(ok=True)
 

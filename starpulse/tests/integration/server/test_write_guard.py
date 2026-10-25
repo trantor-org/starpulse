@@ -10,9 +10,9 @@ from typing import Any
 
 import pytest
 
-from starpulse._internal.board.seam import Board, Written
-from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.feed.history_window import HistoryWindow
+from starpulse.board.model.seam import Board, Written
+from starpulse.board.board_feed import BoardFeed
+from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse._internal.kit.adapter_kit import serve as _serve
 from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.kit.adapter_kit import url as _url

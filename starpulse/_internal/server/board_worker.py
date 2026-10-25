@@ -20,9 +20,9 @@ from collections.abc import Callable
 from pathlib import Path
 
 from starpulse._internal.server.blocks import board_built_blocks
-from starpulse._internal.board import replica
+from starpulse.board.adapters import replica
 from starpulse._internal.config.config import Config, discover, load
-from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse.board.board_feed import BoardFeed
 from starpulse._internal.server import read_model_follow
 from starpulse._internal.server.assembly import assemble, history_store
 from starpulse._internal.server.hold import hold

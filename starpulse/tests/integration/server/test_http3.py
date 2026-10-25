@@ -24,8 +24,8 @@ from aioquic.h3.events import DataReceived, H3Event, HeadersReceived
 from aioquic.quic.configuration import QuicConfiguration
 from aioquic.quic.events import QuicEvent
 
-from starpulse._internal.feed.board_feed import BoardFeed, follow
-from starpulse._internal.feed.machine_tasks import MachineTasks
+from starpulse.board.board_feed import BoardFeed, follow
+from starpulse.board.machine_tasks import MachineTasks
 from starpulse._internal.kit.adapter_kit import serve
 from starpulse.runs.cloudevents import SINGLE, CloudEventsIngest
 from starpulse.runs.ingest import tokens as ingest_tokens

@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-from starpulse._internal.board import native
-from starpulse._internal.board.native import _comment, _update
+from starpulse.board.adapters import native
+from starpulse.board.adapters.native import _comment, _update
 
 
 def test_edit_keeps_a_status_another_writer_set_after_its_read(tmp_path: Path) -> None:

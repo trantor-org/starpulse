@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from starpulse._internal.board.native import board
+from starpulse.board.adapters.native import board
 from starpulse.machine_engine.model.machine_definition import MachineDefinitionError
 
 BOARD = """\

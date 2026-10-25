@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from starpulse._internal.config.config import load
-from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse.board.board_feed import BoardFeed
 from starpulse._internal.scheduler.remote import Remote, follow_status, follow_wakes, publisher
 from starpulse._internal.server.server import scheduler_remote
 from starpulse.event_log.event_log import EventLog

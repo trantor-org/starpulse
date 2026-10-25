@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse.board.board_feed import BoardFeed
 from starpulse.pulls import delivery
 from starpulse.pulls.pulls import PullStore
 from starpulse._internal.server.reads import _PullReads

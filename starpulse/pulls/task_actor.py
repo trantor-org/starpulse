@@ -28,11 +28,11 @@ from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
-from starpulse._internal.board.seam import HELD, MERGE_EVIDENCE, TaskEditor, Written
+from starpulse.board.model.seam import HELD, MERGE_EVIDENCE, TaskEditor, Written
 from starpulse._internal.config.config import Repo
 from starpulse._internal.config.pins import LiveBuild, Pins
-from starpulse._internal.feed import criteria
-from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse.board import criteria
+from starpulse.board.board_feed import BoardFeed
 from starpulse.pulls.pull_requests import PULL_URL
 from starpulse.pulls.unblock import PinGate
 

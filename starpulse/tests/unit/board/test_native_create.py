@@ -6,7 +6,7 @@ from pathlib import Path
 
 import yaml
 
-from starpulse._internal.board.native import _create
+from starpulse.board.adapters.native import _create
 
 CALLERS = 8
 ROUNDS = 25

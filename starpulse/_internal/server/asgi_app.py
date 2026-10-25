@@ -30,9 +30,9 @@ from starlette.responses import FileResponse, PlainTextResponse, StreamingRespon
 from starlette.responses import Response as Reply
 from starlette.routing import Route
 
-from starpulse._internal.board.seam import Board
+from starpulse.board.model.seam import Board
 from starpulse._internal.config.harnesses import Harnesses
-from starpulse._internal.feed.history_window import HistoryWindow
+from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.runs.cloudevents_grpc import PATH as CLOUDEVENTS_GRPC_PATH
 from starpulse.runs.cloudevents_grpc import cloudevents_grpc
 from starpulse._internal.server.compression import LEVEL, Encoded, accepts_gzip, compressed, gzip_frames
@@ -48,7 +48,7 @@ from starpulse._internal.server.write_routes import WriteRequest, WriteRoutes
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     from starlette.types import ASGIApp
 
-    from starpulse._internal.feed.board_feed import BoardFeed
+    from starpulse.board.board_feed import BoardFeed
     from starpulse.flow_metrics.history import History
 
 

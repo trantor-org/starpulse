@@ -23,21 +23,21 @@ def repo(tmp_path: Path) -> Path:
         "starpulse/__init__.py": "",
         "starpulse/leaf.py": "X = 1\n",
         "starpulse/lone.py": "Y = 2\n",
-        "starpulse/_internal/board/seam.py": "import importlib\nfrom starpulse._internal.config.adapter_types import module_name\n",
+        "starpulse/board/model/seam.py": "import importlib\nfrom starpulse._internal.config.adapter_types import module_name\n",
         "starpulse/runs/dagu.py": "def start(): ...\ndef follow(): ...\n",
         "starpulse/_internal/config/adapter_types.py": 'BUILT_IN = {"dagu": "starpulse.runs.dagu", "jira": "x"}\n',
         "starpulse/event_log/__init__.py": "",
         "starpulse/_internal/server/server.py": "",
         "starpulse/event_log/event_log.py": "from starpulse import leaf\n",
         "starpulse/event_log/migrations/versions/0001_initial.py": "",
-        "starpulse/_internal/board/jira.py": "def board(settings, base):\n    return None\n",
+        "starpulse/board/adapters/jira.py": "def board(settings, base):\n    return None\n",
         "starpulse/tests/__init__.py": "",
         "starpulse/tests/conftest.py": "",
         "starpulse/tests/helpers.py": "from starpulse import lone\n",
         "starpulse/tests/unit/feed/test_leaf.py": "from starpulse.leaf import X\n",
         "starpulse/tests/unit/event_log/test_event_log.py": "from starpulse.event_log import event_log\n",
         "starpulse/tests/unit/feed/test_lone.py": "from starpulse.tests.helpers import lone\n",
-        "starpulse/tests/unit/board/test_board.py": 'from starpulse._internal.board import seam\n\nKIND = "jira"\n',
+        "starpulse/tests/unit/board/test_board.py": 'from starpulse.board.model import seam\n\nKIND = "jira"\n',
         "starpulse/tests/unit/contracts/test_public_surface.py": "",
         "starpulse/tests/unit/contracts/test_neutrality.py": "",
         "starpulse/tests/unit/event_log/test_consumer_pattern.py": "",
@@ -94,14 +94,14 @@ def test_a_ci_script_selects_the_ci_test_that_imports_it_by_its_bare_name(repo):
 
 
 def test_an_adapter_selects_the_tests_of_the_loader_that_imports_it_by_name(repo):
-    assert "starpulse/tests/unit/board/test_board.py" in select(repo, ["starpulse/_internal/board/jira.py"]).tests
+    assert "starpulse/tests/unit/board/test_board.py" in select(repo, ["starpulse/board/adapters/jira.py"]).tests
 
 
 def test_named_loaders_expand_when_the_last_module_popped_is_covered_only_by_other_tests(repo):
     """The loader is the last module a test reaches and another test alone covers it: its adapter still counts."""
-    coverage = {"tests": {"starpulse/tests/unit/other/test_seam.py::test_seam": ["starpulse/_internal/board/seam.py"]}}
+    coverage = {"tests": {"starpulse/tests/unit/other/test_seam.py::test_seam": ["starpulse/board/model/seam.py"]}}
     assert "starpulse/tests/unit/board/test_board.py" in select(
-        repo, ["starpulse/_internal/board/jira.py"], coverage
+        repo, ["starpulse/board/adapters/jira.py"], coverage
     ).tests
 
 
@@ -207,7 +207,7 @@ def test_a_module_replaced_by_a_package_selects_the_tests_that_import_the_packag
 
 
 def test_an_adapter_selects_a_subset_and_not_the_ci_tests(repo):
-    selected = select(repo, ["starpulse/_internal/board/jira.py"]).tests
+    selected = select(repo, ["starpulse/board/adapters/jira.py"]).tests
     assert "starpulse/tests/unit/board/test_board.py" in selected
     assert "ci/test_sizer.py" not in selected
 
@@ -471,7 +471,7 @@ def test_a_change_to_the_board_seam_selects_the_lane_written_test(repo, tmp_path
     watch placement yields one history row and one board:lanes entry carrying the request's actor."""
     from select_tests import select
 
-    (repo / "starpulse/_internal/board/seam.py").write_text(
+    (repo / "starpulse/board/model/seam.py").write_text(
         "from dataclasses import dataclass\n\n"
         "@dataclass\n"
         "class Written:\n"
@@ -481,15 +481,15 @@ def test_a_change_to_the_board_seam_selects_the_lane_written_test(repo, tmp_path
     )
     written_test = repo / "starpulse/tests/unit/server/test_lane_written.py"
     written_test.parent.mkdir(parents=True)
-    written_test.write_text("from starpulse._internal.board.seam import Written\n")
+    written_test.write_text("from starpulse.board.model.seam import Written\n")
     coverage = {
         "tests": {
             "starpulse/tests/unit/server/test_lane_written.py::test_a_write_then_its_placement": [
-                "starpulse/_internal/board/seam.py"
+                "starpulse/board/model/seam.py"
             ]
         }
     }
-    selection = select(repo, ["starpulse/_internal/board/seam.py"], coverage)
+    selection = select(repo, ["starpulse/board/model/seam.py"], coverage)
 
     assert "starpulse/tests/unit/server/test_lane_written.py" in selection.tests
 

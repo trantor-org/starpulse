@@ -33,15 +33,15 @@ from typing import Any, ClassVar
 import jsonschema
 from pydantic import BaseModel
 
-from starpulse._internal.board.seam import (
+from starpulse.board.model.seam import (
     Board,
     MoveWriter,
     Written,
 )
 from starpulse._internal.config.config import Config
-from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.feed.history_window import HistoryWindow
-from starpulse._internal.feed.machine_tasks import MachineTasks
+from starpulse.board.board_feed import BoardFeed
+from starpulse.board.adapters.history_window import HistoryWindow
+from starpulse.board.machine_tasks import MachineTasks
 from starpulse._internal.server.asgi_app import page_app
 from starpulse._internal.server.assembly import assemble as _assemble
 from starpulse._internal.server.gate_request import GateRequest
@@ -110,7 +110,7 @@ class BoardAdapterKit(_AdapterKit):
 
     _name = "board"
     _model = BoardTask
-    #: The machines the page draws, the Board's as `board`, as the adapter's `starpulse._internal.board.seam.Board` draws them.
+    #: The machines the page draws, the Board's as `board`, as the adapter's `starpulse.board.model.seam.Board` draws them.
     machines: ClassVar[Mapping[str, dict]]
     #: The team key the adapter derives for each task `produce` returns, by task key: the Backlog.md project, Jira
     #: project or board, or GitHub repository its tracker places the task in. The kit holds each record to it.

@@ -121,8 +121,8 @@ from urllib.parse import urlsplit
 import yaml
 from pydantic import BaseModel, ValidationError
 
-from starpulse._internal.board import post_merge_checks
-from starpulse._internal.board.seam import (
+from starpulse.board.model import post_merge_checks
+from starpulse.board.model.seam import (
     AGENT,
     ANONYMOUS,
     AssigneeWriter,
@@ -137,8 +137,8 @@ from starpulse._internal.board.seam import (
     Written,
 )
 from starpulse._internal.config.harnesses import Harnesses
-from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.feed.history_window import HistoryWindow
+from starpulse.board.board_feed import BoardFeed
+from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.contracts.adapters import Move, StartFailedError
 from starpulse.contracts.api.dto.requests import (
     CREATE_LISTS,
@@ -715,7 +715,7 @@ def edit_task(
             todo[_APPEND_NOTES] = changes[_APPEND_NOTES]
         if not todo and not comment.strip():
             return 200, {"task": task, "changed": []}
-        from starpulse._internal.board.task_history import break_glass  # noqa: PLC0415 - the database stack loads when a store does
+        from starpulse.board.adapters.task_history import break_glass  # noqa: PLC0415 - the database stack loads when a store does
 
         with break_glass() if request.break_glass else contextlib.nullcontext():
             written = _record_written(feed, task, who, lambda: edit(task, todo, comment, actor=who.actor))

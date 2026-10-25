@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 
 from starpulse._internal.config.analytics import Analytics, SkillLoad
-from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse.board.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import serve, url
 from starpulse._internal.server.page_server import PageServer
 from starpulse.contracts.adapters import BoardTask, TaskKeys

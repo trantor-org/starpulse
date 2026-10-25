@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.board import native
-from starpulse._internal.board.native import board
-from starpulse._internal.board.seam import Written
-from starpulse._internal.board.upstream_backlog import _split
+from starpulse.board.adapters import native
+from starpulse.board.adapters.native import board
+from starpulse.board.model.seam import Written
+from starpulse.board.adapters.upstream_backlog import _split
 
 #: The hook's calls, as `(file name, before, after)`; the hook refuses any write whose text holds `REFUSE`.
 CALLS: list[tuple[str, str | None, str]] = []

@@ -12,11 +12,12 @@ import pytest
 import yaml
 from pydantic import TypeAdapter
 
-from starpulse._internal.board import native, native_docs
-from starpulse._internal.board.seam import Board
-from starpulse._internal.board.upstream_backlog import _split
+from starpulse.board.adapters import native
+from starpulse.board.adapters import native_docs
+from starpulse.board.model.seam import Board
+from starpulse.board.adapters.upstream_backlog import _split
 from starpulse._internal.cli import agent_cli as cli
-from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse.board.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import serve, url
 from starpulse._internal.server.page_server import PageServer
 from starpulse._internal.server.writes import create_doc

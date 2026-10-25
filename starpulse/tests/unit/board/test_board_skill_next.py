@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.board.project_machines import draw
+from starpulse.board.adapters.project_machines import draw
 from starpulse.contracts.api.dto.machine import Machine
 from starpulse.machine_engine.adapters.machine_loader import load_machine
 

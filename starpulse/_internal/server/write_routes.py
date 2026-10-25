@@ -7,7 +7,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, NamedTuple, Protocol
 from urllib.parse import unquote
 
-from starpulse._internal.board.seam import OPERATOR, Written
+from starpulse.board.model.seam import OPERATOR, Written
 from starpulse.pulls.pull_refresh import MAX_BODY as MAX_REFRESH_BODY
 from starpulse.runs.ingest import MAX_BATCH_BODY
 from starpulse._internal.server.encoding import encode
@@ -77,9 +77,9 @@ from starpulse._internal.server.writes import (
 )
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
-    from starpulse._internal.board.seam import Board
-    from starpulse._internal.feed.board_feed import BoardFeed
-    from starpulse._internal.feed.history_window import HistoryWindow
+    from starpulse.board.model.seam import Board
+    from starpulse.board.board_feed import BoardFeed
+    from starpulse.board.adapters.history_window import HistoryWindow
     from starpulse._internal.server.services import Services
 
 

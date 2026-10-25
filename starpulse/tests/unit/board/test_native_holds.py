@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.board import native
+from starpulse.board.adapters import native
 
 
 def _holds(tmp_path: Path, body: str):

@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
-from starpulse._internal.board.view import board_columns
+from starpulse.board.model.view import board_columns
 from starpulse._internal.server.snapshot_cache import Served
 
 

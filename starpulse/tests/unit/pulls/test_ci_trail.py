@@ -9,8 +9,8 @@ from sqlalchemy import create_engine
 from starpulse.pulls.ci import CI_MACHINES
 from starpulse.pulls.ci_trail import CiTrail, parse
 from starpulse._internal.config.config import Producer
-from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.feed.machine_tasks import MachineTasks
+from starpulse.board.board_feed import BoardFeed
+from starpulse.board.machine_tasks import MachineTasks
 from starpulse._internal.kit.adapter_kit import task
 from starpulse.pulls.github import GITHUB_MACHINES
 from starpulse.pulls.pull_events import RecordProjection

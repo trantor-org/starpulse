@@ -3,8 +3,8 @@
 import threading
 from pathlib import Path
 
-from starpulse._internal.board import native
-from starpulse._internal.board.native import OPERATOR, _Guard, _land
+from starpulse.board.adapters import native
+from starpulse.board.adapters.native import OPERATOR, _Guard, _land
 
 
 def test_two_concurrent_writes_of_one_task_file_both_land(tmp_path: Path, monkeypatch) -> None:

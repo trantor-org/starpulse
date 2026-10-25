@@ -15,7 +15,7 @@ from h2.connection import H2Connection
 from h2.events import DataReceived, ResponseReceived, StreamEnded
 from h2.exceptions import ProtocolError
 
-from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse.board.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import serve
 from starpulse.tests.machines import MACHINES, ROLES
 

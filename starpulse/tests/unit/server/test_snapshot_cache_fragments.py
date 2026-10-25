@@ -1,6 +1,6 @@
 """A BoardFeed.put for one task re-encodes only that task's snapshot fragment."""
 
-from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse.board.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.server.snapshot_cache import SnapshotCache
 from starpulse.tests.machines import MACHINES, ROLES

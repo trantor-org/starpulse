@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from starpulse._internal.board import native
+from starpulse.board.adapters import native
 from starpulse.pulls.task_actor import moves_of
 
 MACHINE = """\

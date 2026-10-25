@@ -9,7 +9,7 @@ from pathlib import Path
 
 from sqlalchemy import Engine
 
-from starpulse._internal.feed.search import SearchIndex
+from starpulse.board.adapters.search import SearchIndex
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.readmodel.projector import Projector
 from starpulse.event_log.readmodel.rows import load

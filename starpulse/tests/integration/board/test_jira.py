@@ -12,7 +12,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
-from starpulse._internal.board.jira import JiraProject, board, http_fetch, import_workflow, jira_keys
+from starpulse.board.adapters.jira import JiraProject, board, http_fetch, import_workflow, jira_keys
 from starpulse._internal.kit.adapter_kit import BoardAdapterKit
 from starpulse.contracts.adapters import BoardTask
 
@@ -231,7 +231,7 @@ def test_an_issue_whose_status_is_not_in_the_workflow_is_skipped_and_logged_once
 ) -> None:
     site = recorded_site()
     site.pages[""]["issues"][0]["fields"]["status"]["name"] = "Triage"
-    with serve(site) as url, caplog.at_level(logging.WARNING, logger="starpulse._internal.board.jira"):
+    with serve(site) as url, caplog.at_level(logging.WARNING, logger="starpulse.board.adapters.jira"):
         jira = project(url)
         assert [t.id for t in scanned(jira)] == ["PAY-2", "PAY-3", "PAY-4"]
         scanned(jira)

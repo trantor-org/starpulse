@@ -3,7 +3,7 @@
     starpulse import-board --config starpulse.toml
 
 Each Task the store's lane history names becomes `TaskImported` of the board's record, its lane changes imported
-`Transitioned` Events; each recorded run entry becomes an Event of its run's stream (`starpulse._internal.board.board_import`).
+`Transitioned` Events; each recorded run entry becomes an Event of its run's stream (`starpulse.board.adapters.board_import`).
 It prints one JSON line, the verification report: `tasks`, `imported`, `equal`, `differing` (task to the fields whose
 replay differs), `gaps` (tasks whose lane history ends elsewhere than the board does, imported as the board shows them),
 `reconciled` (tasks whose History fell behind their file, given one `FieldsEdited` that catches it up),
@@ -24,7 +24,7 @@ from pathlib import Path
 
 from sqlalchemy import select
 
-from starpulse._internal.board.board_import import import_board
+from starpulse.board.adapters.board_import import import_board
 from starpulse._internal.config.config import ConfigError, discover, load
 from starpulse.runs.run_events import STREAM
 from starpulse.runs.run_streams import RunStreams

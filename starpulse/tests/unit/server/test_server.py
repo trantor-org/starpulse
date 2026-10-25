@@ -13,10 +13,10 @@ from pathlib import Path
 import pytest
 from sqlalchemy import update
 
-from starpulse._internal.board.seam import MoveWriter, Written
+from starpulse.board.model.seam import MoveWriter, Written
 from starpulse._internal.config.config import CommitKeys, Config, RunsInstance, load
 from starpulse._internal.config.harnesses import Harness, Harnesses, Tier, load_harnesses
-from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse.board.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import serve, task, url
 from starpulse._internal.server.assembly import keep_event_log
 from starpulse._internal.server.server import _adapter, _config
