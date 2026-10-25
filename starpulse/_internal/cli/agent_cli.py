@@ -830,7 +830,13 @@ def _parser() -> argparse.ArgumentParser:
         (0, 1, 2, 3),
     )
     agent_tasks.writer_flags(create)
-    create.add_argument("title", help="the task's title")
+    create.add_argument("title", nargs="?", help="the task's title; omit with --batch")
+    create.add_argument(
+        "--batch",
+        metavar="FILE",
+        help="a JSON list of task specs (`title`, details, optional `ref`) to create in one write, `-` for stdin; "
+        "a dependency `ref:<label>` names the earlier spec with that `ref`",
+    )
     agent_tasks.create_flags(create)
     edit = leaf(
         task_verbs,

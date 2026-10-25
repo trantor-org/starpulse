@@ -51,6 +51,7 @@ from starpulse.contracts.api.dto.results import (
     Claimed,
     Completed,
     Created,
+    CreatedEach,
     DocArchived,
     DocCreated,
     DocEdited,
@@ -172,6 +173,7 @@ class ApiContract(_Api):
         | Parked
         | Reviewed
         | Created
+        | CreatedEach
         | MilestoneCreated
         | MilestoneEdited
         | MilestoneArchived

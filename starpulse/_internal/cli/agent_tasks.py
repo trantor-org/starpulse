@@ -8,6 +8,7 @@ import os
 import re
 import shlex
 import subprocess
+import sys
 import tempfile
 import urllib.error
 import urllib.parse
@@ -381,9 +382,31 @@ def _created_task(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def task_create(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """Create the task the command line names, or each spec of the JSON list in `--batch` in one write: the new key, or
+    the keys created as a list under `task`, or a refusal naming them and each refused spec's position and reason when any was refused."""
     base, path = agent_wire.server_url(args.server, environ), "/api/tasks"
+    if args.batch:
+        return _create_batch(args, environ, base, path)
+    if args.title is None:
+        raise agent_wire.CliError("usage", "name the task's title, or --batch FILE for several")
     status, reply = agent_wire.post(base, path, {**_created_task(args), **_writer(args, environ)})
     return {"task": _record_call(base, path, status, reply, ok=(201,))["task"]}
+
+
+def _create_batch(args: argparse.Namespace, environ: Mapping[str, str], base: str, path: str) -> dict[str, Any]:
+    """The batch create of the JSON list `args.batch` names (`-` for stdin) for `task_create`."""
+    text = sys.stdin.read() if args.batch == "-" else Path(args.batch).read_text()
+    specs = json.loads(text)
+    status, reply = agent_wire.post(base, path, {"tasks": specs, **_writer(args, environ)})
+    results = _record_call(base, path, status, reply)["results"]
+    created = [result["task"] for result in results if "task" in result]
+    refused = {str(position): result["error"] for position, result in enumerate(results, 1) if "error" in result}
+    if refused:
+        message = f"{len(refused)} of {len(specs)} tasks refused: " + "; ".join(
+            f"#{position} {error}" for position, error in refused.items()
+        )
+        raise agent_wire.CliError("refused", message, created=created, refused=refused)
+    return {"task": created}
 
 
 def task_verdict(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
