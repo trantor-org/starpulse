@@ -14,7 +14,7 @@ import re
 import threading
 import time
 from collections import deque
-from collections.abc import Callable, Collection, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
@@ -81,9 +81,14 @@ LEDGER_WINDOW = 86400.0
 _SENT_LOG = 512
 
 
+def pull_links(references: Iterable[str]) -> list[str]:
+    """The pull request links among `references`."""
+    return [ref for ref in references if _PULL_REQUEST.fullmatch(ref)]
+
+
 def cited_pulls(task: BoardTask) -> list[str]:
     """The pull request links among the task's references."""
-    return [ref for ref in task.references if _PULL_REQUEST.fullmatch(ref)]
+    return pull_links(task.references)
 
 
 def _midnight(at: float) -> float:
@@ -167,6 +172,16 @@ def summary_agent(summary: Mapping[str, Any], workable: bool = False, moves: Map
         "entered": summary["updated_at"],
         "workable": workable,
         "workable_since": summary["updated_at"] if workable else None,
+    }
+
+
+def read_model_detail(row: Mapping[str, Any]) -> dict:
+    """The fields a summary leaves out that a Task's record draws: its pull requests, description and criteria."""
+    acceptance = [item for item in row["criteria"] if item["kind"] == "ac"]
+    return {
+        "prs": pull_links(row["references"]),
+        "description": row["description"],
+        "criteria": [{"text": item["text"], "checked": item["checked"]} for item in acceptance],
     }
 
 
@@ -908,7 +923,7 @@ class BoardFeed:
         if row is None or row["archived"]:
             return None
         ready = task_id in self._read_model.ready(row["state"], self._roles.done)  # type: ignore[union-attr]
-        return summary_agent(row, ready, self._read_model_moves(row))
+        return summary_agent(row, ready, self._read_model_moves(row)) | read_model_detail(row)
 
     def follow_read_model(self, limit: int = 1000) -> int:
         """Publish a `task` delta for each Task the read model changed since the last call, an archived one as gone, and
@@ -929,6 +944,9 @@ class BoardFeed:
 
     def cited(self, task_id: str) -> list[str]:
         """The pull request links the task cites, open or settled; none for a task the Board does not hold."""
+        if self._read_model is not None:
+            row = self._read_model.task(task_id)
+            return [] if row is None else pull_links(row["references"])
         with self._lock:
             return list(self._cited.get(task_id, ()))
 
