@@ -173,7 +173,6 @@ export function drawing(dc: DrawCtx) {
     cx.strokeStyle = g;
     cx.lineWidth = (1 + heat * 1.5) / Math.min(1, dc.K) ** 0.5 / Math.max(1, dc.ZS);
     cx.setLineDash(dash.map((d) => (d / dc.K) * 1.2));
-    cx.lineDashOffset = ((-dc.clock * 12) / dc.K) * 1.2;
   }
   /** `s` cut to `max` px at `size`, ending in an ellipsis when it was cut. */
   function fitText(s: string, max: number, size: number) {
