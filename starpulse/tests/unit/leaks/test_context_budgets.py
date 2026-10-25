@@ -13,7 +13,6 @@ from starpulse._internal.board.seam import Written
 from starpulse._internal.config.scheduler import Scheduler
 from starpulse._internal.feed import board_feed
 from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.harnesses.harness import HARNESS_MACHINES
 from starpulse._internal.kit.adapter_kit import task
 from starpulse.pulls.pull_events import RecordProjection
 from starpulse.pulls.pulls import PullStore
@@ -23,6 +22,7 @@ from starpulse._internal.scheduler.sampler import Sampler
 from starpulse._internal.scheduler.toggle import Toggle
 from starpulse.contracts.adapters import BoardTask
 from starpulse.event_log.event_log import Entry, EventLog
+from starpulse.harness_telemetry.harness import SESSION_MACHINES
 from starpulse.tests.leak_gate import BUDGETS, check, measures_allocations
 from starpulse.tests.machines import MACHINES, ROLES
 
@@ -58,7 +58,7 @@ def _scheduler_step(tmp_path: Path) -> tuple[Callable[[], None], list[int]]:
     starts = [0]
     limits = Scheduler().limits
     policy = Scheduler(lane="ready", limits=limits)
-    feed = BoardFeed(roles=ROLES, machines={**MACHINES, **HARNESS_MACHINES})
+    feed = BoardFeed(roles=ROLES, machines={**MACHINES, **SESSION_MACHINES})
     sampler = Sampler(
         policy.limits,
         probe=lambda: {"cpu": 5.0, "memory": 5.0},

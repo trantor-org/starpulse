@@ -12,9 +12,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from starpulse._internal.harnesses import session_start
-from starpulse._internal.harnesses.session_start import starter
 from starpulse.contracts.adapters import StartFailedError
+from starpulse.sessions import session_start
+from starpulse.sessions.session_start import starter
 
 
 @contextmanager

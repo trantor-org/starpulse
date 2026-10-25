@@ -33,7 +33,6 @@ from typing import Any
 from starpulse._internal.board.seam import Written
 from starpulse._internal.config.scheduler import Scheduler
 from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.harnesses.harness import HARNESS
 from starpulse._internal.scheduler.admission import Decision, decide, demand, tier_of
 from starpulse._internal.scheduler.harness_setting import DEFAULT as DEFAULT_HARNESS
 from starpulse._internal.scheduler.harness_setting import HarnessSetting
@@ -46,6 +45,7 @@ from starpulse._internal.scheduler.toggle import Toggle
 from starpulse._internal.scheduler.usage_limit import until as usage_until
 from starpulse.contracts.adapters import StartFailedError
 from starpulse.event_log.event_log import EventLog
+from starpulse.harness_telemetry.harness import HARNESS
 
 logger = logging.getLogger(__name__)
 

@@ -1,6 +1,6 @@
 """The record session and slice health fold: one thing a harness session did, read from its telemetry export.
 
-`starpulse._internal.harnesses.telemetry` reads the exports into these; `starpulse.flow_metrics.session_health` folds them.
+`starpulse.harness_telemetry.telemetry` reads the exports into these; `starpulse.flow_metrics.session_health` folds them.
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ class Signal:
     `main`, `side` (a subagent) or `auxiliary` (a compaction's own call). `key` is unique to the record, so a
     replayed export gives the same signals. A `tool` signal carries the `activities` the call performed, in order, as
     a closed vocabulary with no arguments, and the `reads` and `writes` it named, as the export gave them. `shell_write` is
-    True for a shell command that writes a file, which names no path (`starpulse._internal.harnesses.activity.writes_file`,
+    True for a shell command that writes a file, which names no path (`starpulse.harness_telemetry.activity.writes_file`,
     set when the stored signal is read). `agent` is
     the subagent that made a `request` or `tool` step, empty for the main thread. `captured` is False for a harness the
     steps-per-completion ledger does not cover yet (Codex, Cursor): its rows are kept and left out of every ranking.

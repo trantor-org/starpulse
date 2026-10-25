@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Protocol
 
 from starpulse._internal.config.config import discover, load
-from starpulse._internal.harnesses.session_start import starter
 from starpulse.contracts.adapters import StartFailedError
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import open_event_log
@@ -168,7 +167,11 @@ def _run(command: list[str]) -> str:  # pragma: no mutate block — process boun
     return done.stdout if done.returncode == 0 else ""
 
 
-def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — process boundary
+def main(
+    starter: Callable[[str | None], Callable[..., str] | None], argv: list[str] | None = None
+) -> None:  # pragma: no mutate block — process boundary
+    """Reset the sessions over the limit; `starter` builds the session starter from the config's `session_start_url`,
+    so Harness Telemetry imports no Sessions code."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
     parser.add_argument("--config", type=Path, help="the TOML config naming the event log, limit and session starter")
     args = parser.parse_args(argv)

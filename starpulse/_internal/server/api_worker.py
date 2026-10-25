@@ -13,38 +13,44 @@ the process, as the page is built from the whole config once.
 from __future__ import annotations
 
 import argparse
-import os
-from pathlib import Path
-
-from starpulse._internal.config.config import Config
-from starpulse._internal.server import server
-from starpulse._internal.server.hold import LISTEN_FD_ENV, STATIC_ENV
-import argparse
 import dataclasses
 import os
 import socket
 import threading
 import time
 from pathlib import Path
+
 from starpulse._internal.cli import doctor
 from starpulse._internal.config.config import Config
 from starpulse._internal.feed.claim_refusals import CLAIMS_STREAM
-from starpulse._internal.feed.history_window import HistoryWindow, SETTINGS_FILE
-from starpulse._internal.harnesses.session_start import starter
-from starpulse._internal.harnesses.telemetry import TelemetryLog
+from starpulse._internal.feed.history_window import SETTINGS_FILE, HistoryWindow
+from starpulse._internal.server import server
+from starpulse._internal.server.asgi_app import _CONTRACT_TTL_S, _cached, page_app
+from starpulse._internal.server.hold import LISTEN_FD_ENV, STATIC_ENV, announce_ready
+from starpulse._internal.server.page_server import DRAIN_S, PageServer
+from starpulse._internal.server.server import (
+    Prepared,
+    _config,
+    announce,
+    inherited_socket,
+    listen,
+    prepare,
+    scheduler_remote,
+    serve_until_stopped,
+)
+from starpulse._internal.server.services import Services
+from starpulse._internal.server.take_over import temporal_take_over
+from starpulse.event_log import events as machine_events
+from starpulse.event_log import lane_events
+from starpulse.event_log.conformance_monitor import Conformance
+from starpulse.harness_telemetry.telemetry import TelemetryLog
 from starpulse.pulls.delivery import Projected, follow_saves, metrics_of, poller_problem, request_refresh
 from starpulse.pulls.pull_refresh import PullRefresh
 from starpulse.pulls.pull_store import PullSync
-from starpulse.runs import opt_in, projection as runs_projection
+from starpulse.runs import opt_in
+from starpulse.runs import projection as runs_projection
 from starpulse.runs.cloudevents import CloudEventsIngest
-from starpulse._internal.server.asgi_app import _CONTRACT_TTL_S, _cached, page_app
-from starpulse._internal.server.hold import announce_ready
-from starpulse._internal.server.page_server import DRAIN_S, PageServer
-from starpulse._internal.server.services import Services
-from starpulse._internal.server.take_over import temporal_take_over
-from starpulse.event_log import events as machine_events, lane_events
-from starpulse.event_log.conformance_monitor import Conformance
-from starpulse._internal.server.server import Prepared, _config, announce, inherited_socket, listen, prepare, scheduler_remote, serve_until_stopped
+from starpulse.sessions.session_start import starter
 
 
 def main(argv: list[str] | None, parser: argparse.ArgumentParser) -> None:
@@ -75,7 +81,6 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     from starpulse._internal.feed.claim_refusals import ClaimRefusals  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse._internal.feed.machine_tasks import MachineTasks  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse._internal.feed.search import SearchIndex  # noqa: PLC0415 - the database stack loads after the config is accepted
-    from starpulse.pulls.pulls import PullStore  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse._internal.server import read_model_follow  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse._internal.server.assembly import assemble, history_store  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.event_log.event_log import EventLog  # noqa: PLC0415 - the database stack loads after the config is accepted
@@ -84,6 +89,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     from starpulse.event_log.readmodel.projector import Projector  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.event_log.readmodel.read_model import ReadModel  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.event_log.store import EventStore  # noqa: PLC0415 - the database stack loads after the config is accepted
+    from starpulse.pulls.pulls import PullStore  # noqa: PLC0415 - the database stack loads after the config is accepted
 
     refresh_token, starts, reruns, run_safe, producer_tokens, opted_in = ready
     base = args.config.parent if args.config else Path.cwd()

@@ -6,11 +6,11 @@ import urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-from starpulse._internal.harnesses.claude_code import handler
-from starpulse._internal.harnesses.telemetry import CLAUDE_CODE, CODEX, TelemetryLog, signals
 from starpulse.event_log.event_log import EventLog
-from starpulse.tests.unit.harnesses.test_claude_code import adapter, exports, replay
-from starpulse.tests.unit.harnesses.test_telemetry import FIXTURES
+from starpulse.harness_telemetry.claude_code import handler
+from starpulse.harness_telemetry.telemetry import CLAUDE_CODE, CODEX, TelemetryLog, signals
+from starpulse.tests.unit.harness_telemetry.test_claude_code import adapter, exports, replay
+from starpulse.tests.unit.harness_telemetry.test_telemetry import FIXTURES
 
 
 def test_the_receiver_publishes_the_events_each_export_maps_to() -> None:

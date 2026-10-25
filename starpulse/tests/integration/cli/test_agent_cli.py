@@ -27,7 +27,6 @@ from starpulse._internal.cli import agent_cli as cli
 from starpulse._internal.cli import agent_wire, doctor, skill_install
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.feed.search import SearchIndex
-from starpulse._internal.harnesses.telemetry import TelemetryLog, signals
 from starpulse._internal.kit.adapter_kit import serve as _real_serve
 from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.kit.adapter_kit import url as _url
@@ -35,11 +34,12 @@ from starpulse._internal.server.write_routes import _no_writer
 from starpulse.contracts.adapters import Move, TaskKeys
 from starpulse.event_log.event_log import EventLog
 from starpulse.flow_metrics.history import HistoryStore
+from starpulse.harness_telemetry.telemetry import TelemetryLog, signals
 from starpulse.tests.fake_board import bare_board
 from starpulse.tests.hosts import FakeHost
 from starpulse.tests.machines import MACHINES, ROLES
 from starpulse.tests.unit.board.test_native_lifecycle import PULL, REVIEW_NEEDS_PR, _lifecycle
-from starpulse.tests.unit.harnesses.test_telemetry import FIXTURES
+from starpulse.tests.unit.harness_telemetry.test_telemetry import FIXTURES
 
 DAY_S = 86400.0
 

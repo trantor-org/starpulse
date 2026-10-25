@@ -13,10 +13,10 @@ import pytest
 from starpulse._internal.board.seam import Written
 from starpulse._internal.config.scheduler import Scheduler
 from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.harnesses.harness import HARNESS_MACHINES
 from starpulse._internal.scheduler.runtime import build
 from starpulse.contracts.adapters import BoardTask
 from starpulse.event_log.event_log import EventLog
+from starpulse.harness_telemetry.harness import SESSION_MACHINES
 from starpulse.tests.machines import MACHINES, ROLES
 
 DEADLINE_S = 10.0
@@ -32,7 +32,7 @@ def _until(condition: Callable[[], object], what: str) -> None:
 
 def test_a_task_refused_for_headroom_starts_when_a_sample_leaves_room_with_nothing_in_progress(tmp_path: Path) -> None:
     # A size-8 standard task prices 16 percent of CPU: at 70 of 80 it is refused though CPU is not full, and at 10 it fits.
-    feed = BoardFeed(roles=ROLES, machines={**MACHINES, **HARNESS_MACHINES})
+    feed = BoardFeed(roles=ROLES, machines={**MACHINES, **SESSION_MACHINES})
     feed.put(
         BoardTask(id="T-1", team="demo", title="T-1", lane="ready", labels=["size-8"], profile="@agent-standard-high")
     )

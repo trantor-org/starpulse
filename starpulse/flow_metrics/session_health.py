@@ -1,6 +1,6 @@
 """Session health and slice health: what one agent session did, and what the sessions that worked one task did together.
 
-`session_health` is a pure fold of the `Signal`s the harness exports carry (`starpulse._internal.harnesses.telemetry`),
+`session_health` is a pure fold of the `Signal`s the harness exports carry (`starpulse.harness_telemetry.telemetry`),
 so a recorded export gives numbers that can be worked out by hand. A session is one harness's session id; it yields one
 row per task it worked, in the order it reached them.
 

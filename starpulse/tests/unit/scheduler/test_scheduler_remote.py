@@ -11,10 +11,10 @@ import pytest
 
 from starpulse._internal.config.config import load
 from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.harnesses.harness import HARNESS_MACHINES
 from starpulse._internal.scheduler.remote import Remote, follow_status, follow_wakes, publisher
 from starpulse._internal.server.server import scheduler_remote
 from starpulse.event_log.event_log import EventLog
+from starpulse.harness_telemetry.harness import SESSION_MACHINES
 from starpulse.tests.machines import MACHINES, ROLES
 
 DEADLINE_S = 5.0
@@ -47,7 +47,7 @@ def test_remote_settings_take_effect_in_the_store_and_over_the_workers_last_stat
     log: EventLog, tmp_path: Path
 ) -> None:
     remote = Remote(log, tmp_path)
-    publisher(log, BoardFeed(roles=ROLES, machines={**MACHINES, **HARNESS_MACHINES}))("scheduler", STATUS)
+    publisher(log, BoardFeed(roles=ROLES, machines={**MACHINES, **SESSION_MACHINES}))("scheduler", STATUS)
 
     remote.set_enabled(True)
     remote.set_harness("cursor")
@@ -78,8 +78,8 @@ def test_a_change_through_remote_wakes_the_worker(log: EventLog, tmp_path: Path)
 
 
 def test_the_workers_status_reaches_the_serving_feed_as_an_scheduler_event(log: EventLog) -> None:
-    worker_feed = BoardFeed(roles=ROLES, machines={**MACHINES, **HARNESS_MACHINES})
-    serving = BoardFeed(roles=ROLES, machines={**MACHINES, **HARNESS_MACHINES})
+    worker_feed = BoardFeed(roles=ROLES, machines={**MACHINES, **SESSION_MACHINES})
+    serving = BoardFeed(roles=ROLES, machines={**MACHINES, **SESSION_MACHINES})
     stop = threading.Event()
     follow_status(log, serving, stop)
     _, changes = serving.subscribe()
@@ -99,7 +99,7 @@ def _next_scheduler(changes: queue.Queue) -> tuple[str, dict]:
 
 
 def test_a_served_scheduler_leaves_no_status_thread_once_its_stop_is_set(log: EventLog, tmp_path: Path) -> None:
-    feed = BoardFeed(roles=ROLES, machines={**MACHINES, **HARNESS_MACHINES})
+    feed = BoardFeed(roles=ROLES, machines={**MACHINES, **SESSION_MACHINES})
     stop = threading.Event()
     (tmp_path / "starpulse.toml").write_text("")
     scheduler_remote(load(tmp_path / "starpulse.toml"), tmp_path, feed, log, stop)

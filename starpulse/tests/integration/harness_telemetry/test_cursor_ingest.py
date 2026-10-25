@@ -5,10 +5,10 @@ import shutil
 from pathlib import Path
 
 from starpulse._internal.config.analytics import Analytics
-from starpulse._internal.harnesses.cursor import ingest
-from starpulse._internal.harnesses.telemetry import TelemetryLog
 from starpulse.event_log.event_log import EventLog
-from starpulse.tests.unit.harnesses.test_cursor import ANALYTICS, KEYS, SESSION, TRANSCRIPT
+from starpulse.harness_telemetry.cursor import ingest
+from starpulse.harness_telemetry.telemetry import TelemetryLog
+from starpulse.tests.unit.harness_telemetry.test_cursor import ANALYTICS, KEYS, SESSION, TRANSCRIPT
 
 NOW = 1_800_000_000.0
 

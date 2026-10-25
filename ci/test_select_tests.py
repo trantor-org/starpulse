@@ -52,7 +52,7 @@ def repo(tmp_path: Path) -> Path:
         "starpulse/tests/unit/contracts/test_contracts.py": "from starpulse.contracts import adapters\nfrom starpulse.contracts.api import schema\n",
         "starpulse/tests/unit/machine_engine/test_machine_definition.py": "from starpulse.machine_engine.adapters import machine_loader\n",
         "starpulse/pulls/ci.py": "",
-        "starpulse/_internal/harnesses/harness.py": "",
+        "starpulse/harness_telemetry/harness.py": "",
         "starpulse/pulls/github.py": "",
         "starpulse/_internal/cli/skill_install.py": "",
         "starpulse/tests/unit/pulls/test_github.py": "from starpulse.pulls import github\n",

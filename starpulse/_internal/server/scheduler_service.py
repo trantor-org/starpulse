@@ -17,7 +17,6 @@ from starpulse._internal.board.seam import Board, Written
 from starpulse._internal.config.config import Config
 from starpulse._internal.config.level import Level
 from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.harnesses.session_start import starter
 from starpulse._internal.scheduler.admission import ranks_from_trajectories_body
 from starpulse._internal.scheduler.runtime import Runtime
 from starpulse._internal.scheduler.runtime import build as build_scheduler
@@ -25,6 +24,7 @@ from starpulse._internal.scheduler.starter import builtin_starter
 from starpulse._internal.server.server import _cached, trajectories_response
 from starpulse.event_log.event_log import EventLog
 from starpulse.flow_metrics.history import History
+from starpulse.sessions.session_start import starter
 
 #: How long the dispatch loop holds the trajectory chain it ranks on: the analytics read the whole history.
 _CHAIN_TTL_S = 300

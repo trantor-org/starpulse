@@ -4,10 +4,10 @@ import json
 import re
 
 from starpulse._internal.config.analytics import Analytics
-from starpulse._internal.harnesses.telemetry import signals
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.flow_metrics.steps import session_steps
-from starpulse.tests.unit.harnesses.test_telemetry import claude, codex, export
+from starpulse.harness_telemetry.telemetry import signals
+from starpulse.tests.unit.harness_telemetry.test_telemetry import claude, codex, export
 
 KEYS = TaskKeys(
     key=re.compile(r"TASK-\d+"),

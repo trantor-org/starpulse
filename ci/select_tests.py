@@ -80,7 +80,7 @@ READERS = {
     "ci/static_checks.sh": ("ci/test_workflow_placement.py",),
     "starpulse/machines/*": (
         "starpulse/pulls/ci.py",
-        "starpulse/_internal/harnesses/harness.py",
+        "starpulse/harness_telemetry/harness.py",
         "starpulse/pulls/github.py",
         "starpulse/tests/unit/machine_engine/test_github_pull_request_machine.py",
     ),
@@ -122,7 +122,7 @@ INERT = (
 NAMED_LOADERS = ("starpulse._internal.board.seam", "starpulse._internal.config.config")
 
 #: The feature packages that hold adapters; a module directly in one of them may be an adapter.
-ADAPTER_PACKAGES = tuple(f"starpulse._internal.{package}." for package in ("board", "runs", "pulls", "harnesses"))
+ADAPTER_PACKAGES = (*(f"starpulse._internal.{package}." for package in ("board", "runs", "pulls")), "starpulse.harness_telemetry.")
 
 #: The module that lists every built-in adapter's name. Every loader reaches it, so its text names no adapter a test
 #: names: it would otherwise select every adapter's tests for a change to any loader.
@@ -346,7 +346,7 @@ def select(
     adapters = {
         name: name.rpartition(".")[2]
         for name, path in modules.items()
-        if name.startswith(ADAPTER_PACKAGES) and name.count(".") == 3 and _is_adapter(path)
+        if name.startswith(ADAPTER_PACKAGES) and name.count(".") in (2, 3) and _is_adapter(path)
     }
 
     @cache
