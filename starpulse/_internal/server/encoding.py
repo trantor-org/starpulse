@@ -52,6 +52,8 @@ def _dump_all(
 
 #: The fields of a Board task the page reads from `/api/task/<id>` when it opens one, so a snapshot leaves them out.
 _TASK_DETAIL = ("description", "criteria", "moves")
+#: What an In Progress task's card keeps: its live description and criteria, which the page shows without a fetch.
+_LIVE_DETAIL = ("moves",)
 
 
 def _move_set_key(moves: dict[str, Any]) -> str:
@@ -60,8 +62,10 @@ def _move_set_key(moves: dict[str, Any]) -> str:
 
 
 def _slim_task(task: dict[str, Any]) -> dict[str, Any]:
-    """A Board task without its detail, naming its moves' set in `move_set`."""
-    slim = {key: value for key, value in task.items() if key not in _TASK_DETAIL}
+    """A Board task without its detail, naming its moves' set in `move_set`; an In Progress task keeps its description
+    and criteria."""
+    left_out = _LIVE_DETAIL if task.get("state") == "in_progress" else _TASK_DETAIL
+    slim = {key: value for key, value in task.items() if key not in left_out}
     if task.get("moves"):
         slim["move_set"] = _move_set_key(task["moves"])
     return slim
@@ -108,7 +112,8 @@ def full_snapshot(data: Any) -> Any:
 
 def slim_snapshot(data: Any) -> Any:
     """`data` as the page is sent it: each Board task without its description, criteria and moves (it reads them
-    from `/api/task/<id>` on open, and the moves through the `move_sets` table), only the recent settled tasks, and
+    from `/api/task/<id>` on open, and the moves through the `move_sets` table; an In Progress task keeps its
+    description and criteria), only the recent settled tasks, and
     each milestone's completed count. A verb or a held stream reads the whole of `data`, never this."""
     flows = data["flows"]
     board = flows[0] if flows and flows[0]["name"] == "board" else None

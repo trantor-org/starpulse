@@ -1,5 +1,7 @@
 """The snapshot encoded with each open task's JSON kept between builds."""
 
+import json
+
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.server.encoding import encode, encode_snapshot, slim_snapshot
@@ -11,6 +13,35 @@ def _feed(*tasks: tuple[str, str]) -> BoardFeed:
     for task_id, lane in tasks:
         feed.put(task(task_id, lane, description=f"About {task_id}"))
     return feed
+
+
+def test_an_in_progress_card_keeps_its_description_and_criteria_and_another_card_leaves_them_out() -> None:
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
+    feed.put(
+        task(
+            "PROJ-1",
+            "In Progress",
+            description="About PROJ-1",
+            acceptance_criteria=("Checks it",),
+            acceptance_checked=(False,),
+        )
+    )
+    feed.put(
+        task(
+            "PROJ-2",
+            "To Do",
+            description="About PROJ-2",
+            acceptance_criteria=("Checks it",),
+            acceptance_checked=(False,),
+        )
+    )
+
+    body = json.loads(encode_snapshot(feed.snapshot(), {}))
+    cards = {card["id"]: card for card in body["flows"][0]["agents"]}
+
+    assert cards["PROJ-1"]["description"] == "About PROJ-1"
+    assert cards["PROJ-1"]["criteria"] == [{"text": "Checks it", "checked": False}]
+    assert "description" not in cards["PROJ-2"] and "criteria" not in cards["PROJ-2"]
 
 
 def test_the_snapshot_encodes_to_the_bytes_the_slimmed_encode_makes() -> None:

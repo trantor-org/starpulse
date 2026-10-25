@@ -893,7 +893,8 @@ A task is hot until local midnight after it enters `done`, then cold: the board 
 publishes nothing, so a page keeps a card until it reloads. The page's snapshot (`/api/snapshot`) is slim:
 
 - `flows` carries open and hot done tasks, each without `description` and `criteria` (read them from
-  `GET /api/task/<id>`), and its `moves` as `move_set`, a key into the snapshot's `move_sets`;
+  `GET /api/task/<id>`) except an In Progress task, which keeps both live; each has its `moves` as `move_set`, a key into
+  the snapshot's `move_sets`;
 - `settled` keeps the tasks created or settled since the start of the day before local midnight, and `milestone_done` (`{milestone: count}`)
   counts every settled completed task by milestone;
 - `/api/snapshot?view=full` is the whole document the CLI verbs read: full tasks, every `settled` entry and `cold_done`,
