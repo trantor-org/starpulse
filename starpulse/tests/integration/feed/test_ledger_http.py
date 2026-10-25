@@ -29,6 +29,7 @@ def _pull(number: int, merged_at: str) -> list[dict]:
     return [
         {
             "number": number,
+            "repo": "o/trantor",
             "url": f"https://github.com/o/trantor/pull/{number}",
             "checks": "pass",
             "threads": 0,
