@@ -240,7 +240,7 @@ _STATIC = _HERE / "static"
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     from starpulse.board.board_feed import BoardFeed
-    from starpulse._internal.scheduler.remote import Remote
+    from starpulse.scheduler.adapters.remote import Remote
     from starpulse.event_log.event_log import EventLog
     from starpulse.flow_metrics.history import History
     from starpulse.pulls.pulls import PullStore
@@ -336,7 +336,7 @@ def scheduler_remote(config: Config, base: Path, feed: BoardFeed, log: EventLog,
 
     The scheduler modules are imported here, not at the top, so `starpulse worker pulls` does not load them.
     """
-    from starpulse._internal.scheduler.remote import Remote, follow_status
+    from starpulse.scheduler.adapters.remote import Remote, follow_status
 
     follow_status(log, feed, stop)
     return Remote(log, base / (config.scheduler.state_dir or ""))

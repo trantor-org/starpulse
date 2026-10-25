@@ -14,7 +14,7 @@ from starpulse._internal.config.scheduler import Scheduler
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.adapters.search import SearchIndex
 from starpulse._internal.kit.adapter_kit import serve, task, url
-from starpulse._internal.scheduler.runtime import build
+from starpulse.scheduler.adapters.runtime import build
 from starpulse._internal.server.page_server import PageServer
 from starpulse.contracts.api.registry import BODIES, RESPONSES
 from starpulse.event_log.event_log import EventLog

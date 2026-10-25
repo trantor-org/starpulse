@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.scheduler.remote import Remote
+from starpulse.scheduler.adapters.remote import Remote
 from starpulse._internal.server import scheduler_service as service
 from starpulse._internal.server import api_worker, server, worker
 from starpulse._internal.server.closure import ENTRIES, Reader

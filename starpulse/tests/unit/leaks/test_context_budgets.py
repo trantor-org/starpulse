@@ -16,10 +16,10 @@ from starpulse.board.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import task
 from starpulse.pulls.pull_events import RecordProjection
 from starpulse.pulls.pulls import PullStore
-from starpulse._internal.scheduler.ledger import Ledger
-from starpulse._internal.scheduler.loop import Loop
-from starpulse._internal.scheduler.sampler import Sampler
-from starpulse._internal.scheduler.toggle import Toggle
+from starpulse.scheduler.model.ledger import Ledger
+from starpulse.scheduler.adapters.loop import Loop
+from starpulse.scheduler.model.sampler import Sampler
+from starpulse.scheduler.model.toggle import Toggle
 from starpulse.contracts.adapters import BoardTask
 from starpulse.event_log.event_log import Entry, EventLog
 from starpulse.harness_telemetry.harness import SESSION_MACHINES

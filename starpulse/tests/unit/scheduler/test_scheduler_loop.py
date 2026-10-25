@@ -13,12 +13,12 @@ from starpulse.board.model.seam import Written
 from starpulse._internal.config.scheduler import Scheduler
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.machine_tasks import MachineTasks
-from starpulse._internal.scheduler.harness_setting import HarnessSetting
-from starpulse._internal.scheduler.ledger import Ledger
-from starpulse._internal.scheduler.loop import Loop
-from starpulse._internal.scheduler.quiet_hours import QuietHours
-from starpulse._internal.scheduler.sampler import Sampler
-from starpulse._internal.scheduler.toggle import Toggle
+from starpulse.scheduler.model.harness_setting import HarnessSetting
+from starpulse.scheduler.model.ledger import Ledger
+from starpulse.scheduler.adapters.loop import Loop
+from starpulse.scheduler.model.quiet_hours import QuietHours
+from starpulse.scheduler.model.sampler import Sampler
+from starpulse.scheduler.model.toggle import Toggle
 from starpulse.contracts.adapters import BoardTask, MachineEvent, StartFailedError
 from starpulse.event_log.event_log import EventLog
 from starpulse.harness_telemetry.harness import SESSION_MACHINES

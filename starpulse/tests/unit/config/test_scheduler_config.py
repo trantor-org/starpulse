@@ -6,7 +6,7 @@ import pytest
 
 from starpulse._internal.config.config import ConfigError, load
 from starpulse._internal.config.scheduler import DIMENSIONS, Scheduler
-from starpulse._internal.scheduler.probe import LocalProbe
+from starpulse.scheduler.adapters.probe import LocalProbe
 
 
 def _write(tmp_path: Path, text: str) -> Path:

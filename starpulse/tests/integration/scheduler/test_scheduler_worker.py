@@ -9,8 +9,8 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from starpulse._internal.config.config import load
-from starpulse._internal.scheduler.loop import PAUSES_KEY
-from starpulse._internal.scheduler.remote import Remote
+from starpulse.scheduler.adapters.loop import PAUSES_KEY
+from starpulse.scheduler.adapters.remote import Remote
 from starpulse._internal.server.assembly import assemble, history_store
 from starpulse._internal.server.scheduler_worker import Scheduler
 from starpulse.event_log.event_log import EventLog

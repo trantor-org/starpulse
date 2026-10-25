@@ -175,8 +175,8 @@ from starpulse.contracts.api.dto.requests import (
 from starpulse.event_log import rating_events
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
-    from starpulse._internal.scheduler.remote import Remote
-    from starpulse._internal.scheduler.runtime import Runtime
+    from starpulse.scheduler.adapters.remote import Remote
+    from starpulse.scheduler.adapters.runtime import Runtime
 
 logger = logging.getLogger(__name__)
 

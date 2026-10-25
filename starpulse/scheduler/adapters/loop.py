@@ -33,16 +33,16 @@ from typing import Any
 from starpulse.board.model.seam import Written
 from starpulse._internal.config.scheduler import Scheduler
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.scheduler.admission import Decision, decide, demand, tier_of
-from starpulse._internal.scheduler.harness_setting import DEFAULT as DEFAULT_HARNESS
-from starpulse._internal.scheduler.harness_setting import HarnessSetting
-from starpulse._internal.scheduler.inputs import points
-from starpulse._internal.scheduler.ledger import Ledger, RunRecord
-from starpulse._internal.scheduler.quiet_hours import QuietHours
-from starpulse._internal.scheduler.sampler import PERIOD, Reading, Sampler
-from starpulse._internal.scheduler.state import START_COOLDOWN, SchedulerState
-from starpulse._internal.scheduler.toggle import Toggle
-from starpulse._internal.scheduler.usage_limit import until as usage_until
+from starpulse.scheduler.model.admission import Decision, decide, demand, tier_of
+from starpulse.scheduler.model.harness_setting import DEFAULT as DEFAULT_HARNESS
+from starpulse.scheduler.model.harness_setting import HarnessSetting
+from starpulse.scheduler.model.inputs import points
+from starpulse.scheduler.model.ledger import Ledger, RunRecord
+from starpulse.scheduler.model.quiet_hours import QuietHours
+from starpulse.scheduler.model.sampler import PERIOD, Reading, Sampler
+from starpulse.scheduler.model.state import START_COOLDOWN, SchedulerState
+from starpulse.scheduler.model.toggle import Toggle
+from starpulse.scheduler.model.usage_limit import until as usage_until
 from starpulse.contracts.adapters import StartFailedError
 from starpulse.event_log.event_log import EventLog
 from starpulse.harness_telemetry.harness import HARNESS

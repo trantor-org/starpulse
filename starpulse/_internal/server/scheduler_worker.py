@@ -2,7 +2,7 @@
 beside `serve`.
 
 It reads the config and the history database `serve` does and meets `serve` only in the event log
-(`starpulse._internal.scheduler.remote`): it publishes the status the page strip draws and wakes on the settings `serve`
+(`starpulse.scheduler.adapters.remote`): it publishes the status the page strip draws and wakes on the settings `serve`
 writes. What a restart must keep (a task's one start, a harness's pause, the switch) is in that log, so a new process
 resumes where the last stopped. `SIGTERM` stops it; `SIGHUP` re-reads the config and rebuilds the runtime in the same
 process when a Scheduler setting changed.
@@ -21,8 +21,8 @@ from starpulse.board.model.seam import Board
 from starpulse._internal.config.config import Config, discover, load
 from starpulse.board.board_feed import BoardFeed, follow
 from starpulse.board.machine_tasks import MachineTasks
-from starpulse._internal.scheduler.remote import follow_wakes, publisher
-from starpulse._internal.scheduler.runtime import Runtime
+from starpulse.scheduler.adapters.remote import follow_wakes, publisher
+from starpulse.scheduler.adapters.runtime import Runtime
 from starpulse._internal.server.assembly import history_store, worker_board
 from starpulse._internal.server.hold import hold
 from starpulse._internal.server.scheduler_service import start_scheduler

@@ -1,6 +1,6 @@
 """The two capacity dimensions the board and the harness events feed: review load and sessions in flight."""
 
-from starpulse._internal.scheduler.inputs import review_points, sessions_in_flight
+from starpulse.scheduler.model.inputs import review_points, sessions_in_flight
 
 
 def _task(lane: str, *labels: str) -> dict:

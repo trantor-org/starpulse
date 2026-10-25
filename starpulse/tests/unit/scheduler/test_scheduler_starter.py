@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from starpulse._internal.scheduler.starter import builtin_starter
+from starpulse.scheduler.adapters.starter import builtin_starter
 from starpulse.contracts.adapters import StartFailedError
 
 

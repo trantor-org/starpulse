@@ -7,9 +7,9 @@ from typing import Any
 import pytest
 
 from starpulse._internal.config.scheduler import DIMENSIONS, Scheduler
-from starpulse._internal.scheduler.admission import MIN_RUNS, decide, demand, ranks_from_trajectories_body
-from starpulse._internal.scheduler.ledger import Ledger, RunRecord
-from starpulse._internal.scheduler.sampler import Reading
+from starpulse.scheduler.model.admission import MIN_RUNS, decide, demand, ranks_from_trajectories_body
+from starpulse.scheduler.model.ledger import Ledger, RunRecord
+from starpulse.scheduler.model.sampler import Reading
 from starpulse.event_log.event_log import EventLog
 
 POLICY = Scheduler(lane="ready")  # limits: cpu 80, memory 80, sessions 2, review 20; weights fast 1, standard 2, deep 4
@@ -192,7 +192,7 @@ def test_a_refused_task_has_no_rank_and_follows_the_admitted(ledger: Ledger) -> 
 def test_each_decision_is_logged_with_its_p_goal_and_both_ranks(
     ledger: Ledger, caplog: pytest.LogCaptureFixture
 ) -> None:
-    with caplog.at_level(logging.INFO, logger="starpulse._internal.scheduler.admission"):
+    with caplog.at_level(logging.INFO, logger="starpulse.scheduler.model.admission"):
         _decide([_task("T-9")], ledger, {"ready": {"p_goal": 0.5}})
 
     [line] = [r.getMessage() for r in caplog.records]

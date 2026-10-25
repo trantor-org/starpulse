@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.scheduler.probe import LocalProbe
+from starpulse.scheduler.adapters.probe import LocalProbe
 
 
 def _proc(tmp_path: Path, *, idle: int, busy: int, available_kb: int, total_kb: int = 1000) -> Path:

@@ -85,7 +85,7 @@ layers = [
     "starpulse._internal.server",
     "starpulse._internal.cli",
     # producers
-    "starpulse.pulls | starpulse._internal.scheduler | starpulse.sessions",
+    "starpulse.pulls | starpulse.scheduler | starpulse.sessions",
     "starpulse.runs | starpulse.harness_telemetry",
     # derived
     "starpulse.flow_metrics",
@@ -104,7 +104,7 @@ type = "forbidden"
 # encodes them, and the kit drives a server. Every other tier reads `contracts.adapters` and the rest of `contracts`.
 source_modules = [
     "starpulse._internal.cli",
-    "starpulse.pulls", "starpulse._internal.scheduler",
+    "starpulse.pulls", "starpulse.scheduler",
     "starpulse.board", "starpulse.runs", "starpulse.harness_telemetry",
     "starpulse.flow_metrics",
     "starpulse.event_log",
@@ -145,7 +145,7 @@ allow_indirect_imports = true
 source_modules = ["starpulse.event_log"]
 forbidden_modules = [
     "starpulse.board",
-    "starpulse._internal.scheduler",
+    "starpulse.scheduler",
     "starpulse.flow_metrics",
     "starpulse.harness_telemetry", "starpulse.sessions",
     "starpulse.pulls",
@@ -164,7 +164,7 @@ type = "forbidden"
 allow_indirect_imports = true
 source_modules = ["starpulse.board"]
 forbidden_modules = [
-    "starpulse._internal.scheduler",
+    "starpulse.scheduler",
     "starpulse.flow_metrics",
     "starpulse.harness_telemetry", "starpulse.sessions",
     "starpulse.pulls",
@@ -186,7 +186,7 @@ allow_indirect_imports = true
 source_modules = ["starpulse.machine_engine"]
 forbidden_modules = [
     "starpulse.board",
-    "starpulse._internal.scheduler",
+    "starpulse.scheduler",
     "starpulse.flow_metrics",
     "starpulse.harness_telemetry", "starpulse.sessions",
     "starpulse.pulls",
@@ -200,11 +200,17 @@ type = "layers"
 layers = ["starpulse.machine_engine.adapters", "starpulse.machine_engine.model"]
 
 [[tool.importlinter.contracts]]
+id = "scheduler-layers"
+name = "Scheduler's model imports no adapter"
+type = "layers"
+layers = ["starpulse.scheduler.adapters", "starpulse.scheduler.model"]
+
+[[tool.importlinter.contracts]]
 id = "context-scheduler"
 name = "Scheduler imports only Board, Harness Telemetry and Flow Metrics among StarPulse contexts"
 type = "forbidden"
 allow_indirect_imports = true
-source_modules = ["starpulse._internal.scheduler"]
+source_modules = ["starpulse.scheduler"]
 forbidden_modules = [
     "starpulse.sessions",
     "starpulse.pulls",
@@ -218,7 +224,7 @@ type = "forbidden"
 allow_indirect_imports = true
 source_modules = ["starpulse.flow_metrics"]
 forbidden_modules = [
-    "starpulse._internal.scheduler",
+    "starpulse.scheduler",
     "starpulse.harness_telemetry", "starpulse.sessions",
     "starpulse.pulls",
 ]
@@ -231,7 +237,7 @@ allow_indirect_imports = true
 source_modules = ["starpulse.harness_telemetry"]
 forbidden_modules = [
     "starpulse.board",
-    "starpulse._internal.scheduler",
+    "starpulse.scheduler",
     "starpulse.flow_metrics",
     "starpulse.sessions",
     "starpulse.pulls",
@@ -245,7 +251,7 @@ type = "forbidden"
 allow_indirect_imports = true
 source_modules = ["starpulse.pulls"]
 forbidden_modules = [
-    "starpulse._internal.scheduler",
+    "starpulse.scheduler",
     "starpulse.flow_metrics",
     "starpulse.harness_telemetry", "starpulse.sessions",
     "starpulse.runs",
@@ -258,7 +264,7 @@ type = "forbidden"
 allow_indirect_imports = true
 source_modules = ["starpulse.runs"]
 forbidden_modules = [
-    "starpulse._internal.scheduler",
+    "starpulse.scheduler",
     "starpulse.flow_metrics",
     "starpulse.harness_telemetry", "starpulse.sessions",
     "starpulse.pulls",
@@ -272,7 +278,7 @@ allow_indirect_imports = true
 source_modules = ["starpulse.sessions"]
 forbidden_modules = [
     "starpulse.board",
-    "starpulse._internal.scheduler",
+    "starpulse.scheduler",
     "starpulse.pulls",
     "starpulse.runs",
 ]
