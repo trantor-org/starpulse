@@ -60,14 +60,20 @@ PAGES = {
     STARPULSE: {
         "starpulse-star-map": "",
         "starpulse-kanban": "?view=kanban",
+        # the task dialog over the Kanban: an assigned task with its plan, and an unassigned one with none
+        "starpulse-task": "?view=kanban&task=DEMO-1",
+        "starpulse-task-unplanned": "?view=kanban&task=DEMO-2",
         "starpulse-dags": "?view=dags",
     },
     MOCKUP: {"design-mockup": ""},
     ELEMENTS: {"element-sheet": ""},
 }
 _FEATURES = ("starpulse", "web", "src", "features")
-#: The feature folder that draws one starpulse page alone: a feature imports shared code and its own folder, never another's.
-VIEW_DIRS = {"kanban": "starpulse-kanban", "dags": "starpulse-dags"}
+#: The feature folder that draws only its own starpulse pages: a feature imports shared code and its own folder, never another's.
+VIEW_DIRS = {
+    "kanban": ("starpulse-kanban", "starpulse-task", "starpulse-task-unplanned"),
+    "dags": ("starpulse-dags",),
+}
 
 
 def _matches(path: str, glob: str) -> bool:
@@ -89,7 +95,7 @@ def pages(surface: str, changed: Iterable[str]) -> dict[str, str]:
     for parts in (PurePosixPath(f).parts for f in changed if any(_matches(f, g) for g in SURFACE_GLOBS[STARPULSE])):
         if parts[:4] != _FEATURES or len(parts) < 6 or parts[4] not in VIEW_DIRS:
             return PAGES[STARPULSE]
-        views.add(VIEW_DIRS[parts[4]])
+        views.update(VIEW_DIRS[parts[4]])
     return {name: query for name, query in PAGES[STARPULSE].items() if name in views}
 
 

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { KanbanTask } from "./kanbanModel";
-import { changedFields, ciHistory, editKey, fetchRecord, markdown, menuKey, saveSection, saveTask, SECTION_FIELDS, toggleItem, type MenuState, type TaskRecord } from "./taskViewModel";
+import { changedFields, ciHistory, editKey, fetchRecord, markdown, menuKey, saveSection, saveTask, SECTION_FIELDS, taskBody, toggleItem, type MenuState, type TaskRecord } from "./taskViewModel";
 
 const record = {
   title: "T", profile: "@agent-standard-high", priority: "High", labels: ["needs-review"], milestone: "m-89", dependencies: ["TASK-1"],
@@ -197,13 +197,33 @@ describe("the Move to menu's keyboard", () => {
 describe("markdown", () => {
   it("keeps a fenced block whole across its blank lines and a paragraph's line breaks", () => {
     expect(markdown("one\ntwo\n\n## Head\n\n```yaml\na: 1\n\nb: 2\n```\nafter")).toEqual([
-      { kind: "p", text: "one\ntwo" }, { kind: "h", text: "Head" }, { kind: "pre", text: "a: 1\n\nb: 2" }, { kind: "p", text: "after" },
+      { kind: "p", text: "one\ntwo" }, { kind: "h", text: "Head" }, { kind: "pre", lang: "yaml", text: "a: 1\n\nb: 2" }, { kind: "p", text: "after" },
     ]);
   });
 
   it("closes an unterminated fence at the end and draws nothing for an empty description", () => {
-    expect(markdown("```\nopen")).toEqual([{ kind: "pre", text: "open" }]);
+    expect(markdown("```\nopen")).toEqual([{ kind: "pre", lang: "", text: "open" }]);
     expect(markdown("")).toEqual([]);
+  });
+
+  it("reads a GFM table's header, alignment and rows, and ends it at the first line without a pipe", () => {
+    expect(markdown("| a | b |\n|:-- | --: |\n| 1 | 2 |\n| 3 | 4 |\nafter")).toEqual([
+      { kind: "table", head: ["a", "b"], right: [false, true], rows: [["1", "2"], ["3", "4"]] },
+      { kind: "p", text: "after" },
+    ]);
+  });
+});
+
+describe("taskBody", () => {
+  it("removes the creation sections and the Assignee line, and keeps a fenced heading", () => {
+    const body = taskBody({
+      ...(record as TaskRecord),
+      description: "Intro.\n\n## Duplicate Search\n\nnone\n\n## Scope\n\nDo it.\n\n```md\n## ADR Needed\n```\n\n## ADR Needed\n\nNo",
+      notes: "**Assignee:** abc\nKept note",
+    });
+
+    expect(body.description).toBe("Intro.\n\n## Scope\n\nDo it.\n\n```md\n## ADR Needed\n```");
+    expect(body.notes).toBe("Kept note");
   });
 });
 

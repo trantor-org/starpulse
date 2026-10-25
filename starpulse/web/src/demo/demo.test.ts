@@ -238,6 +238,20 @@ describe("the demo server", () => {
     expect(s.snapshot.flows[0].agents[0].title).toBe("Edited in the demo");
   });
 
+  it("gives a seeded task a Markdown body the dialog draws or hides, and an unassigned one no plan", async () => {
+    const seeded = { ...fixture(), flows: [{ name: "board", machine: BOARD, agents: [{ ...card("DEMO-1", "ready"), model: "@agent-fast-low" }, card("DEMO-2", "new")] }] };
+    const s = new DemoServer(seeded);
+    const read = async (id: string) => (await body(s.fetch(`/api/task/${id}`))).record as TaskRecord;
+    const one = await read("DEMO-1");
+
+    expect(one.description).toContain("| Stage | Hosts | Window |");
+    expect(one.description).toContain("```\nstarpulse task list --status ready\n```");
+    for (const section of ["Duplicate Search", "Duplicate Resolution", "ADR Needed"]) expect(one.description).toContain(`## ${section}`);
+    expect(one.notes).toMatch(/^\*\*Assignee:\*\* @agent-fast-low\n/);
+    expect(one.plan).not.toBe("");
+    expect((await read("DEMO-2")).plan).toBe("");
+  });
+
   it("gives a Waiting task Start Criteria, and with a failing evaluator one it could not read", async () => {
     const waiting = { ...fixture(), flows: [{ name: "board", machine: BOARD, agents: [card("DEMO-4", "waiting"), card("DEMO-2", "ready")] }] };
     const read = async (s: DemoServer, id: string) => (await body(s.fetch(`/api/task/${id}`))).record as TaskRecord;

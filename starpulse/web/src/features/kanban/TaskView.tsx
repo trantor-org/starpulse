@@ -7,7 +7,7 @@ import { startLane, startable } from "./start";
 import { StartCriteria } from "./StartCriteria";
 import type { Capabilities, Pull, Roles } from "../../api";
 import {
-  PRIORITIES, SECTION_NAMES, ciHistory, closesOnKey, copyText, copyToClipboard, dependencyRows, editKey, fetchRecord, markdown, menuKey, metCount, onScrim, saveSection, sessionOf, toggleItem,
+  PRIORITIES, SECTION_NAMES, ciHistory, closesOnKey, copyText, copyToClipboard, dependencyRows, editKey, fetchRecord, markdown, menuKey, metCount, onScrim, saveSection, sessionOf, taskBody, toggleItem,
   type CiPull, type DepRow, type Item, type MenuState, type Section, type TaskField, type TaskRecord,
 } from "./taskViewModel";
 
@@ -172,19 +172,37 @@ function MachineRows({ machines, now }: { machines: KanbanTask["machines"]; now:
   ) : <span className="none">In no machine right now</span>;
 }
 
+/** Text with each TASK-N id drawn as a link that opens that task in this dialog. */
+function Linked({ text, open }: { text: string; open: (id: string) => void }) {
+  return <>{text.split(/(TASK-\d+)/).map((part, i) => i % 2 ? (
+    <a key={i} className="tl" href={`?view=kanban&task=${part}`} onClick={(e) => { e.preventDefault(); open(part); }}>{part}</a>
+  ) : part)}</>;
+}
+
 /** A section's description, plan or notes as Markdown blocks. */
-function Md({ text, className = "md", drawn = false }: { text: string; className?: string; drawn?: boolean }) {
-  return <div className={className}>{markdown(text, drawn).map((b, i) => b.kind === "h" ? <h4 key={i}>{b.text}</h4> : b.kind === "pre" ? <pre key={i}>{b.text}</pre> : <p key={i} className={b.kind === "moved" ? "moved" : undefined}>{b.text}</p>)}</div>;
+function Md({ text, className = "md", drawn = false, open }: { text: string; className?: string; drawn?: boolean; open: (id: string) => void }) {
+  const at = (t: string) => <Linked text={t} open={open} />;
+  return <div className={className}>{markdown(text, drawn).map((b, i) => {
+    if (b.kind === "table") return (
+      <div key={i} className="tbl"><table>
+        <thead><tr>{b.head.map((c, j) => <th key={j} className={b.right[j] ? "r" : undefined}>{at(c)}</th>)}</tr></thead>
+        <tbody>{b.rows.map((row, j) => <tr key={j}>{row.map((c, k) => <td key={k} className={b.right[k] ? "r" : undefined}>{at(c)}</td>)}</tr>)}</tbody>
+      </table></div>
+    );
+    if (b.kind === "h") return <h4 key={i}>{at(b.text)}</h4>;
+    if (b.kind === "pre") return <figure key={i} className="fence"><span className="lang">{b.lang || "text"}</span><pre>{b.text}</pre></figure>;
+    return <p key={i} className={b.kind === "moved" ? "moved" : undefined}>{at(b.text)}</p>;
+  })}</div>;
 }
 
 interface ChecksProps {
   name: string; field: "acceptanceCriteria" | "definitionOfDone"; items: Item[]; editing: boolean; canToggle: boolean; bad: boolean;
   evidenceFor: number | null; evidence: Record<number, string>; tried: Set<number>;
-  change: (items: Item[]) => void; toggle: (n: number, checked: boolean) => void; setEvidence: (n: number, value: string) => void;
+  change: (items: Item[]) => void; toggle: (n: number, checked: boolean) => void; setEvidence: (n: number, value: string) => void; open: (id: string) => void;
 }
 
 /** A checklist: rows with a direct checkbox, or in its editor a growing text field and a ✕ per row. */
-function Checks({ name, field, items, editing, canToggle, bad, evidenceFor, evidence, tried, change, toggle, setEvidence }: ChecksProps) {
+function Checks({ name, field, items, editing, canToggle, bad, evidenceFor, evidence, tried, change, toggle, setEvidence, open }: ChecksProps) {
   const word = field === "acceptanceCriteria" ? "criterion" : "item";
   if (!editing) {
     return (
@@ -194,7 +212,7 @@ function Checks({ name, field, items, editing, canToggle, bad, evidenceFor, evid
             <label className={`ritem${item.checked ? " done" : ""}`}>
               <input type="checkbox" checked={item.checked} disabled={!canToggle} aria-label={`${name} #${item.n} done`}
                 onChange={(e) => toggle(item.n, e.currentTarget.checked)} />
-              <span className="nn">#{item.n}</span><span className="tx">{item.text}</span>
+              <span className="nn">#{item.n}</span><span className="tx"><Linked text={item.text} open={open} /></span>
             </label>
             {evidenceFor === item.n && <label className={`evidence${tried.has(item.n) && !evidence[item.n]?.trim() ? " missing" : ""}`}>
               Evidence for #{item.n}<textarea autoFocus value={evidence[item.n] ?? ""} onChange={(e) => setEvidence(item.n, e.currentTarget.value)} />
@@ -412,11 +430,16 @@ export function TaskView(p: TaskViewProps) {
     const items = draft[section];
     return sec(section, name, <Checks name={name} field={section} items={items} editing={editing === section && evidenceFor === null} canToggle={canEdit && !writing} bad={invalid.has(section)}
       evidenceFor={editing === section ? evidenceFor : null} evidence={evidence} tried={tried} change={(value) => change(section, value)} toggle={toggle(section)}
-      setEvidence={(n, value) => setEvidence((all) => ({ ...all, [n]: value }))} />, `${items.filter((i) => i.checked).length}/${items.length}`);
+      setEvidence={(n, value) => setEvidence((all) => ({ ...all, [n]: value }))} open={p.open} />,`${items.filter((i) => i.checked).length}/${items.length}`);
   };
-  const prose = (section: "plan" | "notes", name: string) => sec(section, name, editing === section
-    ? <Txt {...fp(section)} value={draft[section]} label={name} long focus onChange={(value) => change(section, value)} />
-    : draft[section] ? <div className="md pre">{draft[section]}</div> : <span className="none">—</span>);
+  const prose = (section: "plan" | "notes", name: string) => {
+    const shown = section === "notes" ? taskBody(draft).notes : draft.plan;
+    // An empty plan has no section to show: only an entry point to write one.
+    if (section === "plan" && editing !== section && !shown.trim()) return canEdit ? <button className="addbtn" onClick={() => edit(section)}>+ Add plan</button> : null;
+    return sec(section, name, editing === section
+      ? <Txt {...fp(section)} value={draft[section]} label={name} long focus onChange={(value) => change(section, value)} />
+      : shown.trim() ? <Md text={shown} open={p.open} /> : <span className="none">—</span>);
+  };
   const tab = (on: boolean, text: string) => <button role="tab" aria-selected={preview === on} className={preview === on ? "on" : ""} onClick={() => setPreview(on)}>{text}</button>;
 
   return (
@@ -453,8 +476,8 @@ export function TaskView(p: TaskViewProps) {
             {writeRefusal && <div className="editrefusal"><b>Save refused.</b> {writeRefusal.reason}{writeRefusal.skill && <div>Required skill: <code>{writeRefusal.skill}</code></div>}</div>}
             {sec("description", "Description", editing === "description" ? <>
               <div className="tabs" role="tablist">{tab(false, "Write")}{tab(true, "Preview")}<span className="k">Markdown</span></div>
-              {preview ? <Md text={draft.description} className="md prev" drawn={criteria.length > 0} /> : <Txt {...fp("description")} value={draft.description} label="Description" long focus onChange={(value) => change("description", value)} />}
-            </> : <Md text={draft.description} drawn={criteria.length > 0} />)}
+              {preview ? <Md text={draft.description} className="md prev" drawn={criteria.length > 0} open={p.open} /> : <Txt {...fp("description")} value={draft.description} label="Description" long focus onChange={(value) => change("description", value)} />}
+            </> : <Md text={taskBody(draft).description} drawn={criteria.length > 0} open={p.open} />)}
             {p.record && checks("acceptanceCriteria", "Acceptance criteria")}
             {p.record && checks("definitionOfDone", "Definition of done")}
             {p.record && prose("plan", "Implementation plan")}
