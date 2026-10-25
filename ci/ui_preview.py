@@ -244,6 +244,9 @@ MAIN_FOLDER = "main"
 NO_UI = 3
 #: The hosts a public demo may link to: XML namespaces, the mockup's web font and React's error decoder.
 DEMO_URL_HOSTS = frozenset({"www.w3.org", "fonts.googleapis.com", "fonts.gstatic.com", "react.dev", "example.com"})
+#: Single URLs a bundled library prints on another host, allowed without allowing the host: the Kanban nickname
+#: library's migration-guide link in its error text.
+DEMO_URLS = ("https://github.com/andreasonny83/unique-names-generator",)
 #: Identifiers the scrub must have removed, by the name a refusal gives them. The scrub's own synthetic UUIDs
 #: (`starpulse._internal.cli.demo`) are `<n>-0000-4000-8000-000000000000`, so only those pass.
 LEAK_PATTERNS = {
@@ -297,7 +300,8 @@ class DemoLeakError(RuntimeError):
 def leaks(text: str) -> list[str]:
     """Each distinct real identifier in a demo, as `<kind>: <match>`; empty when the scrub held."""
     hits = {f"{kind}: {m.group()}" for kind, pattern in LEAK_PATTERNS.items() for m in pattern.finditer(text)}
-    hits |= {f"url: {m.group()}" for m in _URL_HOST.finditer(text) if m.group(1) not in DEMO_URL_HOSTS}
+    urls = [m for m in _URL_HOST.finditer(text) if m.group(1) not in DEMO_URL_HOSTS]
+    hits |= {f"url: {m.group()}" for m in urls if not text.startswith(DEMO_URLS, m.start())}
     return sorted(hits)
 
 

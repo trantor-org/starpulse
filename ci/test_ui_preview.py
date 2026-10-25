@@ -522,6 +522,7 @@ def test_a_scrubbed_demo_carries_no_leak() -> None:
         '{"id": "0000002a-0000-4000-8000-000000000000", "task": "DEMO-115"}'
         '<svg xmlns="http://www.w3.org/2000/svg"></svg>'
         '<link href="https://fonts.googleapis.com/css2?family=Inter"> "https://react.dev/errors/"'
+        " here: https://github.com/andreasonny83/unique-names-generator#migration-guide"
     )
     assert leaks(text) == []
 
