@@ -22,6 +22,10 @@ describe("sessionNickname", () => {
     expect(animals.size).toBeGreaterThan(6);
   });
 
+  it("tells apart sessions whose ids are anagrams", () => {
+    expect(sessionNickname(url("01AbCdEfGh"))).not.toBe(sessionNickname(url("10AbCdEfGh")));
+  });
+
   it("names nothing that is not a session URL", () => {
     expect(sessionNickname("@agent-deep-high")).toBeNull();
     expect(sessionNickname("local")).toBeNull();
