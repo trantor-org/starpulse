@@ -645,12 +645,33 @@ def _archive_dir(value: object) -> str:
 def load(path: Path | None) -> Config:
     """The config in `path`, or the defaults when there is none."""
     raw = tomllib.loads(path.read_text()) if path else {}
+    _check_keys(raw)
+    mode = _mode(raw)
+    runs = _runs(raw)
+    session_start_url = _text(raw, "session_start_url")
+    log_retention = _retention(raw.get("event_log_retention_days", 7), "event_log_retention_days")
+    harnesses = _harnesses(raw, path)
+    tls = _tls(raw, path)
+    kind, board, task_actor = _board(raw)
+    url = _text(raw, "database_url")
+    repos = _repos(raw.get("repos", []))
+    return _config(raw, mode, runs, harnesses, kind, board, url, session_start_url, log_retention, tls, task_actor, repos)
+
+
+def _check_keys(raw: dict) -> None:
     if "triggers" in raw:
         raise ConfigError("[[triggers]] removed in 0.4: start runs from your orchestrator", ["triggers"])
     if unknown := sorted(raw.keys() - _KEYS):
         raise ConfigError(f"unknown config key(s) {', '.join(unknown)}; known: {', '.join(sorted(_KEYS))}", unknown)
+
+
+def _mode(raw: dict) -> str:
     if (mode := raw.get("mode", "ic")) != "ic":
         raise ConfigError(f'mode {mode!r} is not a config setting; use mode = "ic"')
+    return mode
+
+
+def _runs(raw: dict) -> tuple[RunsInstance, ...]:
     runs_raw = raw.get("runs", [])
     if not isinstance(runs_raw, list):
         raise ConfigError("runs must be a list of [[runs]] tables")
@@ -658,15 +679,25 @@ def load(path: Path | None) -> Config:
     for at, instance in enumerate(runs):
         if any(instance.name == earlier.name for earlier in runs[:at]):
             raise ConfigError(f"runs instance {instance.name} is configured twice")
-    if not isinstance(session_start_url := raw.get("session_start_url"), str | None):
-        raise ConfigError("session_start_url must be text")
-    log_retention = _retention(raw.get("event_log_retention_days", 7), "event_log_retention_days")
-    harnesses = None
+    return runs
+
+
+def _text(raw: dict, key: str) -> str | None:
+    if not isinstance(value := raw.get(key), str | None):
+        raise ConfigError(f"{key} must be text")
+    return value
+
+
+def _harnesses(raw: dict, path: Path | None) -> Harnesses | None:
     if path and (name := raw.get("harnesses_file")):
         if not (file := path.parent / name).is_file():
             raise ConfigError(f"harnesses_file {file} does not exist")
-        harnesses = load_harnesses(file)
-    tls = _tls(raw, path)
+        return load_harnesses(file)
+    return None
+
+
+def _board(raw: dict) -> tuple[str, dict, bool]:
+    """The board adapter's type, its table without `[board.actor]`, and whether `[board.actor]` is present."""
     board = raw.get("board", {})
     if not isinstance(board, dict):
         raise ConfigError("board must be a [board] table")
@@ -686,10 +717,24 @@ def load(path: Path | None) -> Config:
         found = None
     if found is None:
         raise ConfigError(f"no board adapter of type {kind}")
-    url = raw.get("database_url")
-    if url is not None and not isinstance(url, str):
-        raise ConfigError("database_url must be text")
-    repos = _repos(raw.get("repos", []))
+    return kind, board, actor is not None
+
+
+def _config(
+    raw: dict,
+    mode: str,
+    runs: tuple[RunsInstance, ...],
+    harnesses: Harnesses | None,
+    kind: str,
+    board: dict,
+    url: str | None,
+    session_start_url: str | None,
+    log_retention: int,
+    tls: tuple[Path, Path] | None,
+    task_actor: bool,
+    repos: tuple[Repo, ...],
+) -> Config:
+    """The `Config` of the validated parts of `raw`, with the rest read from it as it is."""
     return Config(
         raw.get("tracker_url"),
         mode,
@@ -708,7 +753,7 @@ def load(path: Path | None) -> Config:
         scheduler=_scheduler(raw.get("scheduler")),
         analytics=_analytics(raw.get("analytics")),
         release=_release(raw, repos),
-        task_actor=actor is not None,
+        task_actor=task_actor,
         search=_search(raw.get("search")),
         project=_project(raw.get("project")),
         cursor_context=_cursor_context(raw.get("cursor_context")),

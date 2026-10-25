@@ -556,61 +556,96 @@ class DaguRuns:
             return
         dag = self._dags.get(run.dag)
         if dag is None:  # a DAG file added since the listing
-            listed_at = self._clock()
-            dag = self._listed(run.dag)
-            if dag is None:
+            if not self._adopt_unlisted(run):
                 return
-            self._dags[run.dag] = dag
-            if run.at < listed_at:  # the entry is already in what Dagu just listed
-                self._sink.set_dags(list(self._dags.values()), None)
-                return
-        others = [a for a in dag.get("active", []) if a["runId"] != run.run_id]
+            dag = self._dags[run.dag]
         tied = run.dag in self._tied()
-        known = any(r["runId"] == run.run_id for r in dag.get("recent", []))
-        fresh = None  # the recent runs as Dagu lists them, when this entry made a listing necessary
-        if run.step:
-            moved = _stepped(dag, run) or (dag if tied and known else None)
-            if moved is None:
-                return  # a step of a run that is neither in flight nor the one drawn
-        elif run.event == "StepStarted":
-            if tied and (listed := self._listed(run.dag)):
-                fresh = listed.get("recent")
-            begun = {
-                "runId": run.run_id,
-                "status": "running",
-                "startedAt": _iso(run.at),
-                "step": "",
-                "stepStartedAt": "",
-                "steps": {step["name"]: "not_started" for step in dag["steps"]},
-            }
-            moved = _restated(dag, "running") | {
-                "runId": run.run_id,
-                "startedAt": _iso(run.at),
-                "finishedAt": "",
-                "steps": [_restated(step, "not_started") for step in dag["steps"]],
-                "active": [*others, begun],
-            }
-        elif run.run_id == dag["runId"]:
-            # Dagu is still inside the run's exit handler, so only its steps are final: read them now.
-            listed = self._listed(run.dag)
-            fresh = listed.get("recent") if listed else None
-            moved = _restated(dag, run.status) | {
-                "finishedAt": _iso(run.at),
-                "steps": listed["steps"] if listed else dag["steps"],
-                "active": others,
-            }
-        elif len(others) < len(dag.get("active", [])):
-            moved = {**dag, "active": others}  # the end of a run no longer the one drawn, still listed as active
-        elif tied and known:
-            moved = dag  # no longer the one drawn, and not active, but a run the ledger still holds
-        else:
-            return  # the end of a run that is no longer the one drawn
+        if (move := self._move(dag, run, tied)) is None:
+            return
+        moved, fresh = move
         if tied:
             recent = fresh if fresh is not None else _patched(dag.get("recent", []), run)
             moved = {**moved, "recent": _begun(recent, run) if run.event == "StepStarted" and not run.step else recent}
         self._dags[run.dag] = moved
         self._streamed[run.dag] = run.at
         self._sink.set_dags(list(self._dags.values()), None)
+
+    def _adopt_unlisted(self, run: _Run) -> bool:
+        """Read the DAG of an entry the last listing lacks; False when Dagu lacks it too or the listing read holds the entry."""
+        listed_at = self._clock()
+        dag = self._listed(run.dag)
+        if dag is None:
+            return False
+        self._dags[run.dag] = dag
+        if run.at < listed_at:  # the entry is already in what Dagu just listed
+            self._sink.set_dags(list(self._dags.values()), None)
+            return False
+        return True
+
+    def _move(self, dag: dict, run: _Run, tied: bool) -> tuple[dict, list | None] | None:
+        """The DAG after `run`, with the recent runs Dagu listed when the entry needed one; None when the entry moves nothing."""
+        others = [a for a in dag.get("active", []) if a["runId"] != run.run_id]
+        known = any(r["runId"] == run.run_id for r in dag.get("recent", []))
+        current = "step" if run.step else "drawn" if run.run_id == dag["runId"] else "other"
+        move = _MOVES.get((current, run.event)) or _MOVES[(current, "")]
+        return move(self, dag, run, others, tied, known)
+
+
+def _step_move(reader: DaguRuns, dag: dict, run: _Run, others: list, tied: bool, known: bool) -> tuple[dict, None] | None:
+    moved = _stepped(dag, run) or (dag if tied and known else None)
+    return None if moved is None else (moved, None)
+
+
+def _begin_move(reader: DaguRuns, dag: dict, run: _Run, others: list, tied: bool, known: bool) -> tuple[dict, list | None]:
+    fresh = None
+    if tied and (listed := reader._listed(run.dag)):
+        fresh = listed.get("recent")
+    begun = {
+        "runId": run.run_id,
+        "status": "running",
+        "startedAt": _iso(run.at),
+        "step": "",
+        "stepStartedAt": "",
+        "steps": {step["name"]: "not_started" for step in dag["steps"]},
+    }
+    moved = _restated(dag, "running") | {
+        "runId": run.run_id,
+        "startedAt": _iso(run.at),
+        "finishedAt": "",
+        "steps": [_restated(step, "not_started") for step in dag["steps"]],
+        "active": [*others, begun],
+    }
+    return moved, fresh
+
+
+def _finish_move(reader: DaguRuns, dag: dict, run: _Run, others: list, tied: bool, known: bool) -> tuple[dict, list | None]:
+    # Dagu is still inside the run's exit handler, so only its steps are final: read them now.
+    listed = reader._listed(run.dag)
+    fresh = listed.get("recent") if listed else None
+    moved = _restated(dag, run.status) | {
+        "finishedAt": _iso(run.at),
+        "steps": listed["steps"] if listed else dag["steps"],
+        "active": others,
+    }
+    return moved, fresh
+
+
+def _other_move(reader: DaguRuns, dag: dict, run: _Run, others: list, tied: bool, known: bool) -> tuple[dict, None] | None:
+    if len(others) < len(dag.get("active", [])):
+        return {**dag, "active": others}, None  # the end of a run no longer the one drawn, still listed as active
+    if tied and known:
+        return dag, None  # no longer the one drawn, and not active, but a run the ledger still holds
+    return None  # the end of a run that is no longer the one drawn
+
+
+#: How an entry moves its DAG, keyed by its run's place in the DAG as drawn (`step`, `drawn` or `other`) and its event.
+_MOVES = {
+    ("step", ""): _step_move,
+    ("drawn", "StepStarted"): _begin_move,
+    ("drawn", ""): _finish_move,
+    ("other", "StepStarted"): _begin_move,
+    ("other", ""): _other_move,
+}
 
 
 def start(url: str) -> Callable[[str], str]:
