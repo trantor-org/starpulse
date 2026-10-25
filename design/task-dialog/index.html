@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <!--
-  TASK-8683 mockup: the Kanban task detail dialog reworked from the operator's 12 notes (N1-N13).
+  DEMO-8683 mockup: the Kanban task detail dialog reworked from the operator's 12 notes (N1-N13).
   States (?s=<state>): default, pr-unread, deps-long, deviated, empty, edit. ?fs=100|125|150 sets text size, ?bare hides the reviewer bar.
   Colors come only from the live stylesheet's :root tokens.
 -->
@@ -529,7 +529,7 @@ aside h3 { margin: 0 0 8px; font-size: calc(10px * var(--fs)); font-weight: 500;
 #kbm .tv .editrefusal { border: 1px solid color-mix(in srgb, var(--fail) 40%, transparent); background: color-mix(in srgb, var(--fail-bg) 65%, transparent); color: var(--fail-hi); }
 #kbm .tv .editrefusal code { color: var(--agent-text); }
 #kbm .tv .refusal { margin: 0; }
-/* The Rating section (approved mockup, TASK-7544): Pass and Fail are ghost buttons like Hide task, tinted when pressed. */
+/* The Rating section (approved mockup, DEMO-7544): Pass and Fail are ghost buttons like Hide task, tinted when pressed. */
 #kbm .tvrail .rate { display: flex; gap: 6px; }
 #kbm .tvrail .ratebtn { all: unset; padding: 4px 14px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--slate) 25%, transparent); color: var(--slate); font-size: calc(11.5px * var(--fs)); }
 #kbm .tvrail .ratebtn:hover, #kbm .tvrail .ratebtn:focus-visible { color: var(--ink); border-color: color-mix(in srgb, var(--slate) 50%, transparent); }
@@ -606,7 +606,7 @@ body.dragging, body.dragging * { user-select: none; }
 @keyframes kb-shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
 @media (prefers-reduced-motion: reduce) { #kb .card.saving::after, #kb .card.bad { animation: none; } }
 
-/* Starting a session, from the approved mockups: ▶ as a full-height strip on a startable card's right edge (TASK-3016),
+/* Starting a session, from the approved mockups: ▶ as a full-height strip on a startable card's right edge (DEMO-3016),
    the start question, and the card that waits in In progress on a dashed amber edge until its agent claims it. */
 #kb .card.startable, #kb.compact .card.startable { padding-right: calc(max(30px, 30px * var(--fs)) + 9px); }
 :is(#kb, #dg) .play.edge { all: unset; position: absolute; top: 0; right: 0; bottom: 0; width: max(30px, calc(30px * var(--fs))); display: flex; align-items: center; justify-content: center;
@@ -1191,13 +1191,13 @@ new MutationObserver(() => { requestAnimationFrame(sizeTitle); const f = documen
   .observe(document.documentElement, { attributes: true, attributeFilter: ["style"] });
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-// N9: every TASK-N in text links to that task
-const taskLinks = (h) => h.replace(/\bTASK-(\d+)\b/g, '<a class="tl" href="?s=empty&amp;task=TASK-$1" data-task="TASK-$1">TASK-$1</a>');
+// N9: every DEMO-N in text links to that task
+const taskLinks = (h) => h.replace(/\bDEMO-(\d+)\b/g, '<a class="tl" href="?s=empty&amp;task=DEMO-$1" data-task="DEMO-$1">DEMO-$1</a>');
 const inline = (s) => taskLinks(esc(s)
   .replace(/`([^`]+)`/g, (_, c) => `<code>${c}</code>`)
   .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
   .replace(/\[([^\]]+)\]\((https?:[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1 ↗</a>'))
-  .replace(/<code>([^<]*)<a class="tl"[^>]*>(TASK-\d+)<\/a>([^<]*)<\/code>/g, "<code>$1$2$3</code>");
+  .replace(/<code>([^<]*)<a class="tl"[^>]*>(DEMO-\d+)<\/a>([^<]*)<\/code>/g, "<code>$1$2$3</code>");
 // N1: a small CommonMark subset: headings, lists, paragraphs, inline code, bold, links
 function md(src) {
   const out = []; let list = null, para = [];
@@ -1223,7 +1223,7 @@ const machines8624 = [
   ["review_fix", "start", "13m ago", [["GREEN", "start", "10:27"], ["GREEN", "start", "10:48"], ["GREEN", "start", "10:49"], ["GREEN", "start", "10:50"], ["GREEN", "start", "10:53"]]],
 ];
 const T8624 = {
-  id: "TASK-8624", title: "Decompose release_workflow cmd_sweep into testable helpers", lane: ["Review", "review"], forAge: "14m",
+  id: "DEMO-8624", title: "Decompose release_workflow cmd_sweep into testable helpers", lane: ["Review", "review"], forAge: "14m",
   description: `\`delivery/release_workflow/cli.py:574\` \`cmd_sweep\` is ~157 lines (C901 15) and mixes slice planning, the threshold gate, dry-run printing, the cap re-cut loop, \`gh issue create/close\` subprocesses and triage-task opening.
 
 \`next_version(previous, bump_kind(sl.commits, repo=repo))\` is repeated 3 times (636, 653, 660) and the gh subprocess call shape twice (682, 705). The function carries a **no mutate block** pragma, so mutation testing does not guard it.
@@ -1238,7 +1238,7 @@ Keep \`cmd_sweep\` as the entry point and extract, per the audit's decomposition
 - a \`_gh\` subprocess wrapper
 - issue filing and triage helpers
 
-Behavior-preserving: exit codes 0/1/2/75 and output text unchanged. Same shape as TASK-8606.`,
+Behavior-preserving: exit codes 0/1/2/75 and output text unchanged. Same shape as DEMO-8606.`,
   ac: [["uv run agent-cmd run-tests delivery/release_workflow/tests passes with no edits to existing test assertions", true, "c2"],
        ["cmd_sweep body is under 60 lines and ruff C901 reports no function in delivery/release_workflow/cli.py above complexity 10", true, "c4"],
        ["next_version(previous, bump_kind(...)) appears once in cli.py and the gh issue create/close calls share one wrapper (verified with rg -c)", true, "c3"]],
@@ -1252,10 +1252,10 @@ Behavior-preserving: exit codes 0/1/2/75 and output text unchanged. Same shape a
     { id: "c3", kind: "checkpoint", who: "agent", at: "10:28", ac: 3, body: "`rg -c 'next_version(previous, bump_kind' cli.py` = 1; gh create and close both route through `_gh` (cli.py:605)" },
     { id: "c5", kind: "comment", who: "Adin", at: "10:41", body: "Drop AC #4, there is no mutation root for release_workflow. Note it and move on." },
     { id: "c4", kind: "checkpoint", who: "agent", at: "10:53", ac: 2, body: "`cmd_sweep` body 54 lines (ast, excl. def+docstring), ruff C901 max-complexity=10 clean; `cmd_bump` split into `_close_superseded` / `_already_cut` / `_bump_steps`" },
-    { id: "c6", kind: "system", who: "starpulse", at: "10:56", body: "PR [trantor-org/trantor#6039](https://github.com/trantor-org/trantor/pull/6039) ready, CI green" },
+    { id: "c6", kind: "system", who: "starpulse", at: "10:56", body: "PR [trantor-org/trantor#6039](#) ready, CI green" },
   ],
-  session: { profile: "@agent-fast-high", id: "30d68222-7bca-406b-92ea-d3876c865d83", url: "https://claude.ai/code/session_01CuPckhWhgHpUKspwDVb9rH", line: "deliver · 12m ago · 5 steps" },
-  prs: [{ ref: "trantor-org/trantor#6039", url: "https://github.com/trantor-org/trantor/pull/6039", read: "pass", checks: "checks pass", at: "read 1m ago" }],
+  session: { profile: "@agent-fast-high", id: "30d68222-0000-4000-8000-000000000000", url: "#", line: "deliver · 12m ago · 5 steps" },
+  prs: [{ ref: "trantor-org/trantor#6039", url: "#", read: "pass", checks: "checks pass", at: "read 1m ago" }],
   ci: null,
   deps: [], blocks: [],
   docs: [["Milestone", "m-321", "Weekly code audit, 2026-10-25", "#"], ["Source", "audit", "Weekly code audit report, 2026-10-25", "#"]],
@@ -1264,14 +1264,14 @@ Behavior-preserving: exit codes 0/1/2/75 and output text unchanged. Same shape a
   tags: ["release", "refactor"], meta: [["source", "weekly-code-audit/2026-10-25"]],
   created: "Oct 25, 10:14",
 };
-const titles = { "TASK-8559": "Count unheld In Progress tasks in the lane header", "TASK-8561": "Strike a TTL-released card's session and read 'expired <age>'", "TASK-8562": "Read '<m>m left' on a held card near expiry",
-  "TASK-8563": "Draw the size estimate top-right; drop card labels", "TASK-8600": "Age every card from a stored datapoint", "TASK-8571": "Store the claim's TTL with the claim", "TASK-8572": "Serve held/unheld on /api/snapshot",
-  "TASK-8574": "Filter the lane to unheld tasks from its header", "TASK-8577": "Keyboard focus order for the lane filter", "TASK-8580": "Doc: the kanban's held and unheld cards", "TASK-8583": "Check: no card draws a label after the release",
-  "TASK-8585": "Snapshot test for an expired claim", "TASK-8588": "Reconcile TTL release with the reaper", "TASK-8591": "Kanban perf at 700 tasks with ages" };
-const lanes = { "TASK-8559": "done", "TASK-8561": "done", "TASK-8562": "done", "TASK-8563": "review", "TASK-8600": "working", "TASK-8571": "done", "TASK-8572": "done", "TASK-8574": "review", "TASK-8577": "ready", "TASK-8580": "ready", "TASK-8583": "waiting", "TASK-8585": "done", "TASK-8588": "working", "TASK-8591": "ready" };
+const titles = { "DEMO-8559": "Count unheld In Progress tasks in the lane header", "DEMO-8561": "Strike a TTL-released card's session and read 'expired <age>'", "DEMO-8562": "Read '<m>m left' on a held card near expiry",
+  "DEMO-8563": "Draw the size estimate top-right; drop card labels", "DEMO-8600": "Age every card from a stored datapoint", "DEMO-8571": "Store the claim's TTL with the claim", "DEMO-8572": "Serve held/unheld on /api/snapshot",
+  "DEMO-8574": "Filter the lane to unheld tasks from its header", "DEMO-8577": "Keyboard focus order for the lane filter", "DEMO-8580": "Doc: the kanban's held and unheld cards", "DEMO-8583": "Check: no card draws a label after the release",
+  "DEMO-8585": "Snapshot test for an expired claim", "DEMO-8588": "Reconcile TTL release with the reaper", "DEMO-8591": "Kanban perf at 700 tasks with ages" };
+const lanes = { "DEMO-8559": "done", "DEMO-8561": "done", "DEMO-8562": "done", "DEMO-8563": "review", "DEMO-8600": "working", "DEMO-8571": "done", "DEMO-8572": "done", "DEMO-8574": "review", "DEMO-8577": "ready", "DEMO-8580": "ready", "DEMO-8583": "waiting", "DEMO-8585": "done", "DEMO-8588": "working", "DEMO-8591": "ready" };
 const laneName = { done: "Done", review: "Review", working: "In Progress", ready: "Ready", waiting: "Waiting" };
 const T8560 = {
-  id: "TASK-8560", title: "Retro m-318 and settle whether Kanban marks unheld In Progress tasks has reached its end state", lane: ["Waiting", "waiting"], forAge: "17h",
+  id: "DEMO-8560", title: "Retro m-318 and settle whether Kanban marks unheld In Progress tasks has reached its end state", lane: ["Waiting", "waiting"], forAge: "17h",
   description: `The closing step of milestone m-318, run through the running-milestone-retros skill once every task in it is Done: review the whole cohort and its findings at a high level, recommend an answer for every gap, then review the package with the operator once to settle whether the current state is the milestone's end state.
 
 ## Outcome
@@ -1279,10 +1279,10 @@ const T8560 = {
 On the StarPulse kanban, the In Progress lane header counts and filters unheld tasks, a TTL-released card reads its struck session and \`expired <age>\`, a held card near expiry reads \`<m>m left\`, every age from a stored datapoint; board cards draw no labels and show the size estimate top-right.`,
   ac: [["Every task in m-318 is Done and its findings are reviewed", false], ["Each gap has a recommended answer the operator settled", false], ["The milestone's end state is recorded against its outcome and spec decisions", false]],
   dod: [["Task-specific completion outcomes are met.", false], ["The starpulse:deliver skill was invoked before task closure.", false]],
-  plan: "1. Wait on TASK-8600 and TASK-8588.\n2. Read each slice's ledger and the spec's decisions.\n3. Draft one recommendation per gap.", notes: "",
+  plan: "1. Wait on DEMO-8600 and DEMO-8588.\n2. Read each slice's ledger and the spec's decisions.\n3. Draft one recommendation per gap.", notes: "",
   activity: [{ id: "d1", kind: "system", who: "starpulse", at: "Oct 24, 18:19", body: "Filed as the retro of m-318; waits on every open task in it" }],
   session: null, prs: [], ci: null,
-  deps: Object.keys(titles), blocks: ["TASK-8610"],
+  deps: Object.keys(titles), blocks: ["DEMO-8610"],
   docs: [["Spec", "doc-973", "The kanban tells an unheld In Progress task from a held one at a glance", "#"], ["Milestone", "m-318", "Kanban marks unheld In Progress tasks", "#"],
          ["ADR", "", "Board cards carry no labels", "#"]],
   machines: [],
@@ -1290,7 +1290,7 @@ On the StarPulse kanban, the In Progress lane header counts and filters unheld t
   tags: ["kanban"], meta: [["retro", "m-318"], ["trial", "decide-2"]],
   created: "Oct 24, 18:19",
 };
-titles["TASK-8610"] = "Kanban: card density pass"; lanes["TASK-8610"] = "ready";
+titles["DEMO-8610"] = "Kanban: card density pass"; lanes["DEMO-8610"] = "ready";
 const stub = (id) => ({
   id, title: titles[id] || "Add a retry to the board projection reader", lane: [laneName[lanes[id] || "ready"], lanes[id] || "ready"], forAge: "3h",
   description: "The projection reader gives up on the first `backlog:projection` miss. Retry once after 250 ms before reporting the board unreadable.",
@@ -1300,11 +1300,11 @@ const stub = (id) => ({
 });
 
 function taskFor(s) {
-  const t = structuredClone(s === "deps-long" ? T8560 : s === "empty" ? stub(qs.get("task") || "TASK-8692") : T8624);
+  const t = structuredClone(s === "deps-long" ? T8560 : s === "empty" ? stub(qs.get("task") || "DEMO-8692") : T8624);
   if (s === "pr-unread") {
     t.lane = ["In Progress", "working"]; t.forAge = "31m";
-    t.prs = [{ ref: "trantor-org/trantor#6039", url: "https://github.com/trantor-org/trantor/pull/6039", read: "unread", checks: "not read yet", at: "opened 40s ago · next read in 20s" },
-             { ref: "trantor-org/starpulse#412", url: "https://github.com/trantor-org/starpulse/pull/412", read: "failed", checks: "checks pass", at: "as of 9m ago · last 3 reads failed (rate limited)" }];
+    t.prs = [{ ref: "trantor-org/trantor#6039", url: "#", read: "unread", checks: "not read yet", at: "opened 40s ago · next read in 20s" },
+             { ref: "trantor-org/starpulse#412", url: "#", read: "failed", checks: "checks pass", at: "as of 9m ago · last 3 reads failed (rate limited)" }];
     t.activity = t.activity.slice(0, 4);
   }
   if (s === "deviated") {
@@ -1326,7 +1326,7 @@ let filter = "all", editing = qs.get("s") === "edit" ? new Set(["description", "
 function left(t) {
   const out = [];
   out.push(sec("Description", editing.has("description")
-    ? `<textarea class="mdsrc" aria-label="Description (markdown)">${esc(t.description)}</textarea><div class="edbar"><span class="k" style="margin-right:auto">Markdown · TASK-N links itself</span><button class="btn2 q" data-cancel="description">Cancel</button><button class="btn2" data-save="description">Save</button></div>`
+    ? `<textarea class="mdsrc" aria-label="Description (markdown)">${esc(t.description)}</textarea><div class="edbar"><span class="k" style="margin-right:auto">Markdown · DEMO-N links itself</span><button class="btn2 q" data-cancel="description">Cancel</button><button class="btn2" data-save="description">Save</button></div>`
     : `<div class="md2">${md(t.description)}</div>`, { pen: editing.has("description") ? null : "description" }));
   if (t.ac.length) out.push(sec("Acceptance criteria", checklist(t.ac, "ac", t.activity), { n: `${t.ac.filter((a) => a[1]).length}/${t.ac.length}`, pen: "ac" }));
   if (t.dod.length) out.push(sec("Definition of done", checklist(t.dod, "dod"), { n: `${t.dod.filter((a) => a[1]).length}/${t.dod.length}`, pen: "dod" }));
