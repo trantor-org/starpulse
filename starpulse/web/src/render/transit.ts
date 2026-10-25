@@ -3,6 +3,7 @@
 import { bez, textW, type BEdge, type Galaxy, type Pt, type Scene } from "./scene";
 import { LABEL, MUTED, PHASE, SUBM, rgba, tierColor, type DrawCtx, type Drawing } from "./draw";
 import { glideTime } from "./sky";
+import { fitLevel } from "./zoom";
 
 /** Where a task sits on its sun's phase branches: a step of a machine, on the first ring (a phase) or the second (a machine one of those opened). */
 export interface HPlace {
@@ -13,6 +14,8 @@ export interface HPlace {
   side?: { machine: string; steps: string[]; j: number };
 }
 type Node = Pt & { k: string };
+/** How much a branch's place gives up to fit: nothing (0), a station on a Board curve (1), its line over a name (2), an arc shared with another branch (3), a station on a name (4). */
+type Loose = 0 | 1 | 2 | 3 | 4;
 interface Branch {
   key: string;
   sun: string;
@@ -35,7 +38,7 @@ interface Branch {
   /** Each station's angle: a step apart, or further where the next spot would sit on a Board curve. */
   at: number[];
   /** Placed where no lane in reach was clear of the Board's curves, so its stations may sit on one. */
-  loose?: 0 | 1 | 2;
+  loose?: Loose;
   /** The sun's geometry and the Board's curves and names the branch's place was last checked against. */
   ok?: string;
 }
@@ -119,10 +122,9 @@ function fitter(b: Branch, sc: Scene) {
   const docked = drawn.filter((e) => e.source === b.sun || e.target === b.sun).flatMap((e) => sample(e));
   const close = (p: Pt, qs: Pt[]) => qs.some((q) => Math.hypot(p.x - q.x, p.y - q.y) < CLEAR);
   // a spoke crossing a curve is near it for a few samples; one running along it, or leaving the hub on top of it, is near for most
-  // the fitted view frames the suns, so a station outside their box would open off screen
-  const gs = Object.values(sc.galaxies), x0 = Math.min(...gs.map((o) => o.x - o.R)) - BOX, x1 = Math.max(...gs.map((o) => o.x + o.R)) + BOX;
-  const y0 = Math.min(...gs.map((o) => o.y - o.R)) - BOX, y1 = Math.max(...gs.map((o) => o.y + o.R)) + BOX;
-  const off = (st: Pt[]) => st.some((p) => p.x < x0 || p.x > x1 || p.y < y0 || p.y > y1);
+  // the sky the fitted view shows: the scene keeps the canvas's shape, so fitting it to its own size frames what the canvas does
+  const v = fitLevel(sc, sc.w, sc.h), view: Box = { x0: -v.x / v.k + BOX, y0: -v.y / v.k + BOX, x1: (sc.w - v.x) / v.k - BOX, y1: (sc.h - v.y) / v.k - BOX };
+  const off = (ps: Pt[]) => ps.some((p) => !inBox(p, view, 0));
   const onCurve = ({ st, spoke }: { st: Pt[]; spoke: Pt[] }) => st.some((p) => close(p, all)) || (b.ring === 1 && close(spoke[0], docked)) || spoke.filter((p) => close(p, docked)).length * 4 > 3 * CLEAR;
   const texts = [...sc.names, ...(sc.hangars ?? [])], named = (p: Pt) => texts.some((n) => inBox(p, n, OFF));
   // the arc between its stations and the spoke out to them stay off every printed name too
@@ -144,31 +146,32 @@ function fitter(b: Branch, sc: Scene) {
     }
     return angs;
   };
-  /** The station angles a place at `th` gives, or null when it does not fit; a `loose` place may sit on a Board curve (1), and failing that run its line over a name (2), never a station on a name. */
-  const fits = (th: number, lane: number, dir: 1 | -1, loose: 0 | 1 | 2 = 0): number[] | null => {
+  /** The station angles a place at `th` gives, or null when it does not fit; a `loose` place may sit on a Board curve (1), and failing that run its
+   *  line over a name (2) and then share a lane's arc with another branch (3) and set a station on a name (4), never any of it off the fitted view. */
+  const fits = (th: number, lane: number, dir: 1 | -1, loose: Loose = 0): number[] | null => {
     const angs = walk(th, lane, dir), sp = spots(b, g, th, lane, angs);
     // a sub-machine stays out past its parent's lane, which may have moved since it was placed
-    return lane >= base && !hit(claims(b, th, lane, dir, angs), others) && !off(sp.st) && !(loose ? false : onCurve(sp)) && !sp.st.some(named) && (loose > 1 || !track(sp, lane).some(named)) ? angs : null;
+    const line = track(sp, lane);
+    return lane >= base && (loose > 2 || !hit(claims(b, th, lane, dir, angs), others)) && !off([...sp.st, ...line]) && !(loose ? false : onCurve(sp)) && (loose > 3 || !sp.st.some(named)) && (loose > 1 || !line.some(named)) ? angs : null;
   };
   return { base, fits, walk };
 }
 /** A ring-2 branch looks no further round than this from its parent's station: past it the next lane out is nearer than the arc there. */
 const NEAR = 0.6;
-/** A branch grows at most this many lanes past its first: rather than go further out it crosses a Board curve, and only to clear a name does it take more. */
+/** A branch takes one of this many lanes from its first: rather than go further out it crosses a Board curve, then a name, then shares an arc. */
 const LANES = 3;
-/** Places `b` once, as near `prefer` as it fits; where nothing fits it takes the lane past every other, so a branch always has a place to grow from. */
+/** Places `b` once, as near `prefer` as it fits on its lanes; where nothing fits it takes its first lane at `prefer`, so a branch always has a place to grow from. */
 function allocate(b: Branch, sc: Scene, prefer: number) {
   const { base, fits, walk } = fitter(b, sc), n = b.ring === 2 ? 2 * Math.round(NEAR / 0.05) + 1 : 2 * Math.ceil(Math.PI / 0.05);
-  for (const loose of [0, 1, 2] as const)
-    for (let lane = base; lane < base + LANES + loose; lane++)
+  for (const loose of [0, 1, 2, 3, 4] as const)
+    for (let lane = base; lane < base + LANES; lane++)
       for (let i = 0; i <= n; i++) {
         const dir: 1 | -1 = b.ring === 2 && i % 2 ? -1 : 1, k = b.ring === 2 ? Math.floor(i / 2) : Math.ceil(i / 2);
         const th = b.ring === 2 ? prefer + dir * k * 0.05 : prefer + (i % 2 ? 1 : -1) * k * 0.05;
         const angs = fits(th, lane, dir, loose);
         if (angs) return Object.assign(b, { th, lane, dir, at: angs, loose });
       }
-  const lane = Math.max(base, ...[...branches.values()].filter((o) => o.sun === b.sun && !Number.isNaN(o.th)).map((o) => o.lane + 1));
-  Object.assign(b, { th: prefer, lane, dir: 1, at: walk(prefer, lane, 1), loose: 2 });
+  Object.assign(b, { th: prefer, lane: base, dir: 1, at: walk(prefer, base, 1), loose: 4 });
 }
 function ensure(key: string, sun: string, ring: 1 | 2, machine: string, steps: string[], parent?: string, pj = 0): Branch {
   let b = branches.get(key);

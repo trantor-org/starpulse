@@ -3,6 +3,7 @@ import capture from "./fixtures/events-snapshot.json";
 import type { Snapshot } from "../api";
 import type { Galaxy, Pt, Scene } from "./scene";
 import type { Drawing, Hover } from "./draw";
+import { fitLevel } from "./zoom";
 
 // transit.ts keeps its branches and dots between frames, so each case loads it afresh
 let T: typeof import("./transit"), sc: typeof import("./scene"), sky: typeof import("./sky");
@@ -75,6 +76,52 @@ describe("placeBranches", () => {
     const curves = scene.bEdges.filter((e) => e.p0 && e.c && e.p1).flatMap((e) => Array.from({ length: 65 }, (_, i) => sc.bez(e.p0!, e.c!, e.p1!, i / 64)));
     for (const l of T.branchLines().filter((x) => !x.loose))
       for (const p of stationsOf(l)) expect(Math.min(...curves.map((q) => dist(p, q))), p.k).toBeGreaterThanOrEqual(12);
+  });
+
+  // the demo's In Progress opens seven sub-machines off one phase at once
+  it.each([[1920, 1080], [1420, 860]])("keeps a crowd of sub-machines within a few lanes of the hub and on the fitted %ix%i canvas", (W, H) => {
+    vi.stubGlobal("location", { search: "?mock=1&extra=8&sim=3" });
+    const scene = sc.build({ S: sky.merge(live()), moves: new sky.Moves(), W, H, T: 0, scale: 100 }, { kind: "board" });
+    run(scene, 0, 3);
+    const deliver = scene.tasks.find((k) => k.h?.ring1 && k.h.machine === "deliver")!.h!, sun = (scene.tasks.find((k) => k.h)!.host as Galaxy).id;
+    scene.tasks
+      .filter((k) => (k.host as Galaxy).id === sun)
+      .slice(0, 14)
+      .forEach((k, i) => (k.h = { machine: `sub${i % 7}`, steps: ["queued", "running", "failing", "passing"], j: i % 4, ring1: false, side: { machine: "deliver", steps: deliver.steps, j: i % deliver.steps.length } }));
+    run(scene, 3, 6);
+    const v = fitLevel(scene, W, H), lines = T.branchLines();
+    expect(lines.filter((l) => l.ring === 2).length).toBeGreaterThanOrEqual(7);
+    for (const l of lines)
+      for (const p of l.pts) {
+        const g = scene.galaxies[l.sun];
+        const s = { x: p.x * v.k + v.x, y: p.y * v.k + v.y };
+        expect(s.x > 0 && s.x < W && s.y > 0 && s.y < H, `${p.k} at ${Math.round(s.x)},${Math.round(s.y)}`).toBe(true);
+        // ring-2 lanes start one past their parent's, which takes one of the first three
+        expect(dist(p, g) - g.edge, p.k).toBeLessThanOrEqual(20 + 5 * 28 + 0.5);
+      }
+  });
+
+  // a window made shorter keeps the suns where they were on the sky but shows less of it
+  it("re-places a branch the window's new shape would leave off the canvas", () => {
+    vi.stubGlobal("location", { search: "?mock=1&extra=8&sim=3" });
+    const lay = (H: number, from: number) => {
+      const scene = sc.build({ S: sky.merge(live()), moves: new sky.Moves(), W: 1420, H, T: 0, scale: 100 }, { kind: "board" });
+      run(scene, from, 3);
+      const deliver = scene.tasks.find((k) => k.h?.ring1 && k.h.machine === "deliver")!.h!, sun = (scene.tasks.find((k) => k.h)!.host as Galaxy).id;
+      scene.tasks
+        .filter((k) => (k.host as Galaxy).id === sun)
+        .slice(0, 14)
+        .forEach((k, i) => (k.h = { machine: `sub${i % 7}`, steps: ["queued", "running", "failing", "passing"], j: i % 4, ring1: false, side: { machine: "deliver", steps: deliver.steps, j: i % deliver.steps.length } }));
+      run(scene, from + 3, 6);
+      return scene;
+    };
+    lay(1080, 0);
+    const scene = lay(640, 9), v = fitLevel(scene, 1420, 640);
+    for (const l of T.branchLines())
+      for (const p of l.pts) {
+        const s = { x: p.x * v.k + v.x, y: p.y * v.k + v.y };
+        expect(s.x > 0 && s.x < 1420 && s.y > 0 && s.y < 640, `${p.k} at ${Math.round(s.x)},${Math.round(s.y)}`).toBe(true);
+      }
   });
 
   it("grows a new branch out over two seconds", () => {
