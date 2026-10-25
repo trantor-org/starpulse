@@ -74,13 +74,17 @@ def worker_board(
     config: Config, base: Path, log: EventLog, group: str, stop: threading.Event
 ) -> tuple[Board, BoardFeed]:
     """The board and feed of a worker beside `serve`: the feed reads the replica the Board child publishes
-    (`replica.read`), or under `read_model` the read model the Board child folds, since no replica is published then.
+    (`replica.read`), or under `read_model` the read model the Board child folds, since no replica is published then;
+    the board is then attached to `log`, so its writes append the History events that read model folds.
     Raises ValueError as `assemble` does."""
     if not config.read_model:
         board, feed = assemble(config, base, None, [])
         replica.read(board, feed, group, log, config, stop)
         return board, feed
     board, feed = assemble(config, base, None, [], ReadModel(log.engine, declared_fields(config.board)))
+    # The read model folds only History events, so this worker's writes (the task actor's moves) must append them.
+    if board.attach is not None:
+        board.attach(log)
     feed.ready.set()
     read_model_follow.follow(None, feed, stop)
     return board, feed
