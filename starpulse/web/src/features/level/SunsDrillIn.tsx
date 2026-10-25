@@ -96,9 +96,9 @@ export function SunsDrillIn({ tasks, roles, task, onClose, clock = () => Date.no
         <h2 style={{ margin: "0 0 8px", font: "600 15px system-ui" }}>{id}{pick ? ` · ${pick.title}` : ""}</h2>
         <canvas ref={canvas} aria-label={`${id} machines`} style={{ position: "static", maxWidth: "100%", cursor: hit ? "pointer" : "default" }}
           onMouseMove={(e) => { const [h, d] = at(e); setHit(h); setTip(d); }} onMouseLeave={() => { setHit(null); setTip(null); }} onClick={(e) => setData(at(e)[1])} />
-        {tip && <aside role="tooltip" style={{ position: "absolute", top: 12, right: 12, background: "#111827", border: "1px solid #334155", padding: 8, maxWidth: 260 }}>
+        {tip && <div role="tooltip" style={{ position: "absolute", top: 12, right: 12, background: "#111827", border: "1px solid #334155", padding: 8, maxWidth: 260 }}>
           <strong>{tip.title}</strong>{tip.lines.map((l) => <div key={l}>{l}</div>)}{tip.trace.map((l, i) => <div key={i} style={{ opacity: 0.7 }}>{l}</div>)}
-        </aside>}
+        </div>}
         {data && <section aria-label="Data" style={{ marginTop: 8 }}>
           <strong>{data.title}</strong>{data.lines.map((l) => <div key={l}>{l}</div>)}{data.trace.map((l, i) => <div key={i} style={{ opacity: 0.7 }}>{l}</div>)}
         </section>}

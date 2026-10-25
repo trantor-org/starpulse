@@ -66,6 +66,7 @@ describe("SunsDrillIn", () => {
     const mouse = (type: string) => new MouseEvent(type, { bubbles: true, clientX: sun.x, clientY: sun.y });
     act(() => void canvas.dispatchEvent(mouse("mousemove")));
     expect(host.querySelector('[role="tooltip"]')?.textContent).toContain("Build");
+    expect(host.querySelector("aside")).toBeNull(); // the page's aside rule would stretch the tooltip over the viewport
     expect(host.querySelector('[aria-label="Data"]')).toBeNull();
     act(() => void canvas.dispatchEvent(mouse("click")));
     expect(host.querySelector('[aria-label="Data"]')?.textContent).toContain("round 1 of 1");
