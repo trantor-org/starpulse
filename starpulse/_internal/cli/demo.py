@@ -347,7 +347,7 @@ def _fill(line: list[str], start: int, now: float) -> list[tuple]:
                 after = k - 1 if j % 4 == 3 else first.get("ready", 0) + j % max(FILL.get("ready", 1), 1)
             labels = [SIZES[k % len(SIZES)], KINDS[k % len(KINDS)]]
             pull = (*FILL_PULLS[lane], j % 3) if lane in FILL_PULLS else None
-            model = "" if lane == "new" else PROFILES[k % len(PROFILES)]
+            model = PROFILES[k % len(PROFILES)]
             created = now - 500 * (j + 1) if lane == "new" else None
             entered = now - 2100 * (j + 1) - (DAY_S if j % DONE_STALE_EVERY == DONE_STALE_EVERY - 1 else 0)
             rows.append(
