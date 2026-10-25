@@ -196,6 +196,30 @@ describe("a starting or terminal Board state", () => {
   });
 });
 
+describe("a Board state's task rings", () => {
+  const withDone = (n: number) => {
+    const sky = boardSky();
+    sky.S.flows.board.machine.states.find((s) => s.id === "done")!.final = true;
+    sky.S.today = { done: Array.from({ length: n }, (_, i) => ({ id: `PROJ-${i}`, title: "t", state: "done", model: "", today: true })) };
+    return build(sky, { kind: "board" });
+  };
+  it("spreads a crowded state's tasks over a wider band, so no two dots or rings sit closer than a pointer can tell apart (TASK-8741)", () => {
+    const scene = withDone(376), done = scene.tasks.filter((k) => k.host === scene.galaxies.done), radii = scene.galaxies.done.rings!;
+    const perRing = radii.map((R) => done.filter((k) => k.R === R).length);
+
+    expect(done).toHaveLength(376);
+    radii.slice(1).forEach((R, i) => expect(R - radii[i]).toBeGreaterThanOrEqual(8));
+    radii.forEach((R, i) => expect((2 * Math.PI * R) / perRing[i]).toBeGreaterThanOrEqual(8));
+  });
+  it("keeps a quiet state's footprint, its tasks on the one ring nearest the sun", () => {
+    const quiet = withDone(5), busy = withDone(376);
+
+    expect(quiet.galaxies.done.rings).toEqual([SUN_R + 14]);
+    expect(quiet.galaxies.done.R).toBe(SUN_R + 44);
+    expect(busy.galaxies.done.R).toBeGreaterThan(SUN_R + 44);
+  });
+});
+
 describe("a Board state's sun", () => {
   it("carries the state's final flag, so a terminal state's level draws a black hole rather than a sun", () => {
     const sky = boardSky();

@@ -710,16 +710,23 @@ export function rings(n: number, r0: number, gap: number, ringGap: number) {
  * `moon`, a sub-state and its tasks `sub`. Every state takes the same one, busy or empty; MOONS moons sit on its ring where machines map.
  */
 const FOOT = { task0: SUN_R + 14, task1: SUN_R + 38, moon: 18, sub: 16 };
+/** The least dot and ring gap a Board state's tasks keep, so a pointer can pick one: a state too full for its band at this gap widens it. */
+const ROOM = 8;
+/** How far past task1 a Board state's band widens to hold `n` tasks ROOM apart; none while they fit. */
+const widen = (n: number) => Math.max(0, rings(n, FOOT.task0, ROOM, ROOM).outer - FOOT.task1);
 /** The machines a Board state's ring holds before the rest page: its primary and the MOONS - 1 on the page. */
 export const MOONS = 8;
 /** The Board's greatest zoom: the sun is today's size, so a Board of a few states grows to fill the canvas only this far. */
 const ZOOM_MAX = 16;
-/** The dot and ring gaps that hold `n` bodies in rings from r0 out to r1: a fuller body adds rings inside its band, closer together, never past it. */
-function pack(n: number, r0: number, r1: number, gap: number, ringGap: number) {
+/**
+ * The dot and ring gaps that hold `n` bodies in rings from r0 out to r1: a fuller body adds rings inside its band, closer together, never past it,
+ * and never closer than `least`.
+ */
+function pack(n: number, r0: number, r1: number, gap: number, ringGap: number, least = 2.5) {
   for (let g = gap; g >= 3; g -= 0.5)
     for (let m = 1; m < 64; m++) {
       const rg = m > 1 ? Math.min(ringGap, (r1 - r0) / (m - 1)) : ringGap;
-      if (rg < 2.5) break;
+      if (rg < least - 0.01) break;
       if (rings(n, r0, g, rg).outer <= r1 + 0.01) return { gap: g, ringGap: rg };
     }
   return { gap: 3, ringGap: 2.5 };
@@ -827,22 +834,23 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     };
     // One sky unit is `1 / k` screen pixels at the Board's zoom k, so a name printed at a screen size takes F sky units a pixel.
     let F = 1;
-    // A state's footprint is fixed, whatever it holds: the sun, its tasks in rings packed into the band round it and, where machines map, a ring
-    // of MOONS moons with a sub-state and a name cut to NAME_MAX each. A fuller state packs its rings tighter, never wider; more than MOONS
-    // machines page.
-    const footprint = (moons: boolean) => {
+    // A state's footprint: the sun, its `n` tasks in rings packed into the band round it and, where machines map, a ring of MOONS moons with a
+    // sub-state and a name cut to NAME_MAX each. Every state takes the same one until its tasks would sit closer than ROOM; a fuller one widens
+    // its band, and its moon ring with it, by just enough. More than MOONS machines page.
+    const footprint = (moons: boolean, n: number) => {
+      const more = widen(n);
       if (!moons) {
-        const band = FOOT.task1, R = band + 6;
+        const band = FOOT.task1 + more, R = band + 6;
         return { moonR: band, R, reach: [R, R] as [number, number], band };
       }
-      const rowH = Math.max(12 * F, 2 * FOOT.moon + 6), moonR = Math.max(FOOT.task1 + 10 + FOOT.moon, (rowH * (MOONS / 2 + 1)) / 2);
+      const rowH = Math.max(12 * F, 2 * FOOT.moon + 6), moonR = Math.max(FOOT.task1 + more + 10 + FOOT.moon, (rowH * (MOONS / 2 + 1)) / 2);
       const side = moonR + FOOT.moon + 8 + 2 * FOOT.sub + 10 + textW("x".repeat(NAME_MAX), 10.5) * F;
       return { moonR, R: moonR + 8 + FOOT.moon, reach: [side, side] as [number, number], band: moonR - FOOT.moon - 10 };
     };
     const radius = (st: (typeof states)[number]) => {
-      const all = byState[st.id] || [], at = new Map(all.map((a) => [a, deepest(a)])), fs = flowsOf(st.id), foot = footprint(fs.length > 0);
+      const all = byState[st.id] || [], at = new Map(all.map((a) => [a, deepest(a)])), fs = flowsOf(st.id);
       const on = (f: string, state?: string) => all.filter((a) => at.get(a)?.flow === f && at.get(a)?.state === state);
-      const here = all.filter((a) => !at.get(a));
+      const here = all.filter((a) => !at.get(a)), foot = footprint(fs.length > 0, here.length);
       const machine = (f: string) => {
         const ss = subStatesOf(f).map((q) => ({ ...q, name: q.name.replace(/^Pr /, "PR ") }));
         return { f, ss, label: `${f}${ss.length ? ` › ${ss.map((q) => q.name).join(" · ")}` : ""}` };
@@ -1027,7 +1035,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     for (const st of states) {
       const p = ps.find((q) => q.id === st.id)!, { x, y } = p, { rows, ms, pg, here, on, at, band: outer } = sized[st.id], r = ease(`${st.id}.r`, sized[st.id].r), R = ease(`${st.id}.R`, sized[st.id].R);
       const g: Galaxy = { id: st.id, name: st.name, x, y, r, n: stateCount(S, st.id), color: BOARD_COLOR[st.id] ?? "#94a3b8", final: st.final, today: daily(st) ? (S.today[st.id] ?? []).length : undefined, subs: SUBS[st.id] || [], R, moonR: 0, visR: 0, edge: R, lab: { x, y }, reach: [R, R], loops: [] };
-      const fit = pack(here.length, FOOT.task0, outer, 11, 12), ring = here.length ? attach(here, g, FOOT.task0, fit.gap, fit.ringGap, false) : sized[st.id].r;
+      const fit = pack(here.length, FOOT.task0, outer, 11, 12, ROOM), ring = here.length ? attach(here, g, FOOT.task0, fit.gap, fit.ringGap, false) : sized[st.id].r;
       g.moonR = ease(`${st.id}.moonR`, rows ? rows.moonR : outer + 16);
       if (rows) g.reach = rows.reach;
       g.edge = ease(`${st.id}.edge`, rows ? rows.moonR + 4 : ring + 10);
