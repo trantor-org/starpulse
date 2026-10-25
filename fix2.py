@@ -1,7 +1,7 @@
 import re,subprocess,collections
 out=subprocess.run(["npx","tsc","--noEmit","-p","."],capture_output=True,text=True).stdout
 locs=collections.defaultdict(set)
-for m in re.finditer(r"^(\S+)\((\d+),(\d+)\): error TS(?:2741|2322|2345): .*?(?:Property 'machine' is missing|flow)",out,re.M):
+for m in re.finditer(r"^(\S+)\((\d+),(\d+)\): error TS(?:2741|2322|2345): .*?(?:Property 'machine' is missing|flow)",out,re.MULTILINE):
     locs[m[1]].add(int(m[2]))
 n=0
 for f,lines in locs.items():
