@@ -26,6 +26,8 @@ _MIGRATIONS = Path(migrate.__file__).parent / "migrations"
 _SQLITE_ONLY_INDEX = "ix_starpulse_lane_changes_observed"
 #: The index revision 0020 added to the declared schema, so the release before the chain had none.
 _RETIRED_AT_INDEX = "ix_starpulse_retired_tasks_retired_at"
+#: The table revision 0034 added, so the release before the chain had none.
+_CLAIM_EXPIRIES = "starpulse_claim_expiries"
 _DIALECT_ONLY = {day_rollups.name, _SQLITE_ONLY_INDEX}
 
 
@@ -48,7 +50,11 @@ def _indexes(engine: Engine, table: str) -> set[str]:
 def _a_pre_alembic_store(path: Path) -> Engine:
     """A store as the release before the chain left it: every table but the rollups, no version table."""
     engine = create_engine(f"sqlite:///{path}")
-    tables = [table for table in metadata.sorted_tables if table not in (day_rollups, checkpoints)]
+    tables = [
+        table
+        for table in metadata.sorted_tables
+        if table not in (day_rollups, checkpoints) and table.name != _CLAIM_EXPIRIES
+    ]
     metadata.create_all(engine, tables=tables)
     with engine.begin() as db:
         db.execute(text("CREATE TABLE starpulse_cursors (stream VARCHAR PRIMARY KEY, after_id INTEGER NOT NULL)"))
@@ -64,7 +70,7 @@ def _a_pre_alembic_store(path: Path) -> Engine:
 
 
 def test_the_chain_has_one_head() -> None:
-    assert ScriptDirectory(str(_MIGRATIONS)).get_heads() == ["0033"]
+    assert ScriptDirectory(str(_MIGRATIONS)).get_heads() == ["0034"]
 
 
 def test_a_fresh_store_is_built_by_the_chain_and_matches_the_declared_schema(tmp_path: Path) -> None:

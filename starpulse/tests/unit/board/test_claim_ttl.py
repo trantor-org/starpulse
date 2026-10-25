@@ -224,6 +224,21 @@ def test_the_running_sweeper_judges_the_feed_when_no_read_model_folds(served, tm
     assert "Released" in [event.type for event in store.read("task", "task-5")]
 
 
+def test_serve_follows_the_claim_expiry_the_sweep_pass_saved(served, tmp_path: Path) -> None:
+    built, feed, store, _ = served
+    claimed = _claim(built, store)
+    expiries: dict[str, float] = {}
+    assert sweep(built, store, _scanned(tmp_path, feed), ttl=1800, now=claimed + 1, expiries=expiries) == []
+    history = HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", {})
+    history.save_claim_expiries(expiries)
+    stopped = threading.Event()
+    stopped.set()  # one pass, then it ends
+
+    feed.follow_expiries(history, stopped)
+
+    assert feed.task("task-5")["claim_expires_at"] == claimed + 1800
+
+
 def test_stopping_the_feed_ends_the_running_sweeper(served) -> None:
     built, feed, _store, log = served
     before = set(threading.enumerate())

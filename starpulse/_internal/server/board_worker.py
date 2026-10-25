@@ -99,6 +99,6 @@ def main(argv: list[str] | None, parser: argparse.ArgumentParser) -> None:
         if board.attach is not None:
             board.attach(log)  # the sweep's releases append the History events the read model folds
         if board.sweep is not None:
-            board.sweep(feed, log)
+            board.sweep(feed, log, store.save_claim_expiries)
         read_model_follow.follow(Projector(log.engine, EventStore(log.engine)), feed, stop)
     hold(stop, lambda: reload(path, config))

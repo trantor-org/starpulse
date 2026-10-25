@@ -114,6 +114,10 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     threading.Thread(
         target=feed.follow_criteria, args=(store, threading.Event()), name="criteria-follow", daemon=True
     ).start()
+    if model is not None:  # under `read_model` the board worker sweeps and saves each pass's expiries; serve follows them
+        threading.Thread(
+            target=feed.follow_expiries, args=(store, threading.Event()), name="expiries-follow", daemon=True
+        ).start()
     feed.read_lanes(store.lane_rows)
     # the instance indexes its board for search
     search = SearchIndex.open(log.engine, config.search)

@@ -246,6 +246,14 @@ class CriteriaStore(Protocol):
     def save_criteria_met(self, met: dict[str, float]) -> None: ...
 
 
+class ExpiriesStore(Protocol):
+    """Where the claim-TTL sweep keeps each held working task's claim expiry from its latest pass (`HistoryStore`)."""
+
+    def claim_expiries(self) -> dict[str, float]: ...
+
+    def save_claim_expiries(self, expiries: dict[str, float]) -> None: ...
+
+
 class BoardFeed:
     """Each task's latest projected state, as the page's Board snapshot and the deltas after it.
 
@@ -876,6 +884,17 @@ class BoardFeed:
                 if first or self._met != previous:
                     self._reassess(list(self._open) if first else previous.keys() | self._met.keys())
             first = False
+            if stop.wait(interval):
+                return
+
+    def follow_expiries(self, store: ExpiriesStore, stop: threading.Event, interval: float = CRITERIA_INTERVAL) -> None:
+        """Adopt, every `interval` seconds until `stop` is set, the claim expiries the board worker's sweep saved, as
+        `follow_criteria` adopts the dates. A store that cannot be read leaves what the feed held."""
+        while True:
+            try:
+                self.serve_expiries(store.claim_expiries())
+            except Exception as exc:  # the store is down; the next pass reads it again
+                logger.warning("StarPulse: cannot read the claim expiries: %s", exc)
             if stop.wait(interval):
                 return
 

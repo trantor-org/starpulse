@@ -117,6 +117,13 @@ _criteria_met = Table(
     Column("task", String, primary_key=True),
     Column("met_at", Float, nullable=False),
 )
+#: When each held working task's claim lapses unless renewed, as the claim-TTL sweep's latest pass saw it: one row per task.
+_claim_expiries = Table(
+    "starpulse_claim_expiries",
+    metadata,
+    Column("task", String, primary_key=True),
+    Column("expires_at", Float, nullable=False),
+)
 _learned_steps = Table(
     "starpulse_learned_steps",
     metadata,
@@ -506,6 +513,20 @@ class HistoryStore:
             db.execute(_criteria_met.delete())
             if met:
                 db.execute(self._insert(_criteria_met), [{"task": task, "met_at": at} for task, at in met.items()])
+
+    def claim_expiries(self) -> dict[str, float]:
+        """When each held working task's claim lapses, as the claim-TTL sweep last saw it, by task."""
+        with self.engine.connect() as db:
+            return dict(db.execute(select(_claim_expiries.c.task, _claim_expiries.c.expires_at)).all())
+
+    def save_claim_expiries(self, expiries: dict[str, float]) -> None:
+        """Keep `expiries` as the whole set: a task it leaves out has no claim expiry, as a released or done task has none."""
+        with self.engine.begin() as db:
+            db.execute(_claim_expiries.delete())
+            if expiries:
+                db.execute(
+                    self._insert(_claim_expiries), [{"task": task, "expires_at": at} for task, at in expiries.items()]
+                )
 
     def record_gap(self, stream: str, after_id: str, before_id: str, lost: int) -> None:
         """Note that `lost` entries of `stream` between `after_id` and `before_id` were trimmed unread."""
