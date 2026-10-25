@@ -1477,7 +1477,7 @@ function left(t) {
   // N21: a linked doc opens in place of the task body; the rail stays
   if (reading != null) {
     const [k, id, title] = t.docs[reading];
-    return `<div class="docbar"><button class="cancelbtn" data-back>← Back to task</button><span class="kd">${k}</span>${id ? `<b>${id}</b>` : ""}<a href="#">Open in Star Map ↗</a></div>
+    return `<div class="docbar"><button class="cancelbtn" data-back>← Back to task</button><span class="kd">${k}</span>${id ? `<b>${id}</b>` : ""}</div>
       <div class="doctitle">${esc(title)}</div><div class="md2">${md(DOCS[id || title] || "")}</div>`;
   }
   const out = [], de = editing.has("description");
