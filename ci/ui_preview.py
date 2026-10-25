@@ -363,7 +363,15 @@ def publish_demos(gh: Callable[..., str], folder: str, files: Sequence[Path], sc
             body["sha"] = old[path]
         request = scratch / f"{f.name}.json"
         request.write_text(json.dumps(body))
-        gh("api", "--method", "PUT", f"repos/{DEMO_REPO}/contents/{path}", "--input", request.as_posix())
+        try:
+            gh("api", "--method", "PUT", f"repos/{DEMO_REPO}/contents/{path}", "--input", request.as_posix())
+        except RuntimeError as error:
+            if "wasn't supplied" not in str(error):
+                raise
+            # Another writer landed the file after the tree was read: replace what is there now.
+            body["sha"] = gh("api", f"repos/{DEMO_REPO}/contents/{path}?ref={DEMO_BRANCH}", "--jq", ".sha").strip()
+            request.write_text(json.dumps(body))
+            gh("api", "--method", "PUT", f"repos/{DEMO_REPO}/contents/{path}", "--input", request.as_posix())
         paths.append(path)
     for path in sorted(old.keys() - set(paths)):
         _delete(gh, path, old[path])

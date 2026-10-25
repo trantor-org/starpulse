@@ -76,21 +76,6 @@ def test_criteria_are_numbered_per_kind_and_checked_by_number():
     ]
 
 
-def test_a_check_of_a_criterion_the_history_never_added_is_skipped_with_a_warning(caplog):
-    row = replay(
-        _events(
-            CREATED,
-            ("CriterionAdded", {"kind": "ac", "text": "one"}),
-            ("CriterionChecked", {"kind": "ac", "n": 2, "checked": True, "evidence": "ok"}),
-            ("Transitioned", {"to": "Review"}),
-        )
-    )
-
-    assert row["criteria"] == [{"kind": "ac", "n": 1, "text": "one", "checked": False, "evidence": ""}]
-    assert (row["state"], row["version"]) == ("Review", 4)
-    assert "TASK-1: no ac criterion 2" in caplog.text
-
-
 def test_a_claim_a_transition_a_remap_and_the_archive_marker_set_their_columns():
     row = replay(
         _events(
@@ -112,6 +97,22 @@ def test_a_released_task_has_no_assignee_and_a_refused_claim_changes_nothing_but
 
     assert row["assignee"] == ""
     assert row["version"] == 4
+
+
+def test_a_ttl_release_serves_its_record_until_a_claim_clears_it():
+    released = ("Released", {"session": "s-1", "last_renewal": 100.5, "ttl": 300})
+
+    row = replay(_events(CREATED, ("Claimed", {"assignee": "s-1"}), released))
+    assert row["released"] == {"at": 103.0, "session": "s-1", "last_renewal": 100.5, "ttl": 300}
+
+    row = replay(_events(CREATED, ("Claimed", {"assignee": "s-1"}), released, ("Claimed", {"assignee": "s-2"})))
+    assert (row["released"], row["assignee"]) == (None, "s-2")
+
+
+def test_a_release_without_a_payload_serves_no_released_record():
+    row = replay(_events(CREATED, ("Claimed", {"assignee": "s-1"}), ("Released", {})))
+
+    assert row["released"] is None
 
 
 def test_a_comment_is_appended_and_an_import_sets_the_whole_task():

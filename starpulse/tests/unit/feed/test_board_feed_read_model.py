@@ -95,6 +95,28 @@ def test_a_task_is_read_from_the_read_model_not_held(engine: Engine) -> None:
     assert feed.task("TASK-9") is None
 
 
+def test_a_claim_ttl_release_is_served_on_the_task_until_a_claim_clears_it(engine: Engine) -> None:
+    store = EventStore(engine)
+    created = _new("TaskCreated", title="Task 1", description="", state="Ready", labels=["kind-execute"])
+    store.append(
+        "task",
+        "TASK-1",
+        0,
+        [created, _new("Claimed", assignee="s-1"), _new("Released", session="s-1", last_renewal=100.5, ttl=300)],
+    )
+
+    released = _feed(engine).task("TASK-1")["released"]
+    snapshot_released = _board(_feed(engine))["agents"][0]["released"]
+
+    assert released == {"at": released["at"], "session": "s-1", "last_renewal": 100.5, "ttl": 300}
+    assert isinstance(released["at"], float)
+    assert snapshot_released == released
+
+    store.append("task", "TASK-1", 3, [_new("Claimed", assignee="s-2")])
+
+    assert _feed(engine).task("TASK-1")["released"] is None
+
+
 def _depending(engine: Engine, number: int, state: str, on: str) -> None:
     created = _new("TaskCreated", title=f"Task {number}", description="", state=state, labels=[], dependencies=[on])
     EventStore(engine).append("task", f"TASK-{number}", 0, [created])

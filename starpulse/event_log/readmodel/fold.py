@@ -6,13 +6,10 @@ The row's keys are the read model's columns: StarPulse's own Task fields, the `f
 from __future__ import annotations
 
 import copy
-import logging
 from collections.abc import Callable, Iterable
 from typing import Any
 
 from starpulse.event_log.store import StoredEvent
-
-logger = logging.getLogger(__name__)
 
 Row = dict[str, Any]
 
@@ -33,7 +30,15 @@ def _blank(event: StoredEvent) -> Row:
     row: Row = {"id": event.subject_id, "version": 0, "created_at": event.at, "updated_at": event.at}
     row |= dict.fromkeys(TEXT_FIELDS, "")
     row |= {name: [] for name in LIST_FIELDS}
-    return row | {"assignee": "", "archived": False, "fields": {}, "meta": {}, "criteria": [], "comments": []}
+    return row | {
+        "assignee": "",
+        "released": None,
+        "archived": False,
+        "fields": {},
+        "meta": {},
+        "criteria": [],
+        "comments": [],
+    }
 
 
 def _set(row: Row, values: dict[str, Any]) -> None:
@@ -78,8 +83,7 @@ def _criterion_checked(row: Row, event: StoredEvent) -> None:
         if (criterion["kind"], criterion["n"]) == (payload["kind"], payload["n"]):
             criterion |= {"checked": payload["checked"], "evidence": payload.get("evidence", "")}
             return
-    # One stray check must not stop every replay, and with it the board: skip it and say so.
-    logger.warning("%s: no %s criterion %s; skipping its check", row["id"], payload["kind"], payload["n"])
+    raise BrokenHistory(f"{row['id']}: no {payload['kind']} criterion {payload['n']}")
 
 
 def _remapped(row: Row, event: StoredEvent) -> None:
@@ -88,6 +92,23 @@ def _remapped(row: Row, event: StoredEvent) -> None:
 
 def _comment(row: Row, event: StoredEvent) -> None:
     row["comments"].append({"at": event.at, "actor": event.actor, "text": event.payload["text"]})
+
+
+def _claimed(row: Row, event: StoredEvent) -> None:
+    row.update(assignee=event.payload["assignee"], released=None)
+
+
+def _released(row: Row, event: StoredEvent) -> None:
+    payload = event.payload
+    row["assignee"] = ""
+    row["released"] = None
+    if "ttl" in payload:
+        row["released"] = {
+            "at": event.at,
+            "session": payload["session"],
+            "last_renewal": payload["last_renewal"],
+            "ttl": payload["ttl"],
+        }
 
 
 def _nothing(row: Row, event: StoredEvent) -> None:
@@ -101,8 +122,8 @@ _RULES: dict[str, Callable[[Row, StoredEvent], None]] = {
     "CriterionAdded": _criterion_added,
     "CriterionChecked": _criterion_checked,
     "CommentAdded": _comment,
-    "Claimed": lambda row, event: row.update(assignee=event.payload["assignee"]),
-    "Released": lambda row, event: row.update(assignee=""),
+    "Claimed": _claimed,
+    "Released": _released,
     "ClaimRefused": _nothing,
     "Transitioned": lambda row, event: row.update(state=event.payload["to"]),
     "Remapped": _remapped,

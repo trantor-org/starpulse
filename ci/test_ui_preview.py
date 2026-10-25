@@ -392,6 +392,30 @@ def test_publish_writes_each_demo_and_drops_one_the_pr_no_longer_builds(tmp_path
     ]
 
 
+class RacedGh(DemoGh):
+    """`DemoGh` where another writer lands `pr-7/starpulse.html` after the tree was read."""
+
+    def __call__(self, *args: str) -> str:
+        route = args[1].removeprefix(f"repos/{DEMO_REPO}/contents/")
+        if args[0] == "api" and args[1] != route:
+            return "landed\n"
+        if args[2:3] == ("PUT",) and "sha" not in json.loads(Path(args[5]).read_text()):
+            raise RuntimeError("`gh api --method PUT` exited 1: gh: Invalid request.\n\"sha\" wasn't supplied. (HTTP 422)")
+        return super().__call__(*args)
+
+
+def test_publish_replaces_a_demo_another_writer_landed_after_the_tree_was_read(tmp_path: Path) -> None:
+    built = tmp_path / "starpulse.html"
+    built.write_text("<html>")
+    gh = RacedGh({})
+
+    publish_demos(gh, "pr-7", [built], tmp_path / "scratch")
+
+    assert [(method, path, body.get("sha")) for method, path, body in gh.writes] == [
+        ("PUT", "pr-7/starpulse.html", "landed")
+    ]
+
+
 def test_unpublish_deletes_only_this_prs_folder() -> None:
     gh = DemoGh({"pr-7/a.html": "a", "pr-70/a.html": "b", "main/a.html": "m"})
 

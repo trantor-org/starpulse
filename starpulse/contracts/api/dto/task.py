@@ -37,6 +37,15 @@ class HeldSkill(_Api):
     next: HeldNext | None = Field(default=None, description="The edge the skill declares; null when none is declared.")
 
 
+class ClaimRelease(_Api):
+    """The claim a Board task's claim-TTL sweep released: when, and the session, last renewal and TTL it released."""
+
+    at: float = Field(description="When the release was recorded, epoch seconds.")
+    session: str
+    last_renewal: float = Field(description="The session's last renewal before the release, epoch seconds.")
+    ttl: float = Field(description="The claim TTL, in seconds, the session missed.")
+
+
 class RawTask(_Api):
     """A Backlog task. On the board its state is its lane; on every other machine, the state its latest machine event left it in."""
 
@@ -50,6 +59,9 @@ class RawTask(_Api):
     assignee: str | None = Field(
         default=None,
         description="The session that last claimed a Board task; empty when none has, absent off the Board.",
+    )
+    released: ClaimRelease | None = Field(
+        default=None, description="The claim-TTL release a Board task's claim ended in; null when none ended it."
     )
     labels: list[str] | None = None
     dependencies: list[str] | None = Field(default=None, description="A task's dependencies, as task ids.")

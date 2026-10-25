@@ -513,6 +513,35 @@
       "title": "ClaimDelta",
       "type": "object"
     },
+    "ClaimRelease": {
+      "additionalProperties": false,
+      "description": "The claim a Board task's claim-TTL sweep released: when, and the session, last renewal and TTL it released.",
+      "properties": {
+        "at": {
+          "description": "When the release was recorded, epoch seconds.",
+          "type": "number"
+        },
+        "last_renewal": {
+          "description": "The session's last renewal before the release, epoch seconds.",
+          "type": "number"
+        },
+        "session": {
+          "type": "string"
+        },
+        "ttl": {
+          "description": "The claim TTL, in seconds, the session missed.",
+          "type": "number"
+        }
+      },
+      "required": [
+        "at",
+        "session",
+        "last_renewal",
+        "ttl"
+      ],
+      "title": "ClaimRelease",
+      "type": "object"
+    },
     "ClaimRequest": {
       "additionalProperties": false,
       "description": "`POST /api/claim`: move `task` to In Progress and record `session` as its assignee, an opaque string; the same\nassignee claiming again changes nothing, and an assignee already on another open claim is refused.",
@@ -4714,6 +4743,18 @@
           ],
           "default": null,
           "description": "A task's pull requests: the PR URLs among its references."
+        },
+        "released": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ClaimRelease"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The claim-TTL release a Board task's claim ended in; null when none ended it."
         },
         "runs": {
           "anyOf": [
