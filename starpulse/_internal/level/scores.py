@@ -6,6 +6,10 @@ renormalize, and cost is excluded. Each part is 0-100: clean completion is 100 o
 are `100 / (1 + count)`, time-to-merge halves each day (`100 * 0.5 ** (hours / 24)`). The rating arrives with its own
 slice, so it is missing here, as is any GitHub part of a task with no merged pull request.
 
+Until then the rating is implicit in a mid-task model or effort change: a raise is a fail (0) and a lowering scores
+`LOWERED_RATING`. An operator rating given for the task overrides both. A task whose session changed setting mid-task
+counts as off-arm in its cell row.
+
 `pull_facts` reads the GitHub half: the commits a pull request took after it was marked ready for review, and the hours
 from ready to merge.
 """
@@ -13,8 +17,8 @@ from ready to merge.
 from __future__ import annotations
 
 import re
-from collections import defaultdict
-from collections.abc import Iterable, Mapping
+from collections import Counter, defaultdict
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -26,6 +30,8 @@ from starpulse._internal.signals import CLAUDE_CODE
 __all__ = ["PullFacts", "cell_task_scores", "merged_pulls", "pull_facts", "score_cells", "task_score"]
 
 WEIGHTS = {"clean": 40, "prompts": 20, "commits_after_ready": 20, "rating": 15, "time_to_merge": 5}
+#: The implicit rating of a session that lowered its model or effort mid-task: half a pass.
+LOWERED_RATING = 50.0
 
 
 @dataclass(frozen=True)
@@ -41,12 +47,21 @@ def task_score(parts: Mapping[str, float | None]) -> float | None:
     return sum(WEIGHTS[name] * value for name, value in held.items()) / total if total else None
 
 
-def _parts(slice_: Mapping[str, Any], facts: PullFacts | None) -> dict[str, float | None]:
+def _rating(slice_: Mapping[str, Any], ratings: Mapping[str, float]) -> float | None:
+    """The operator's rating of the task when given, else the implicit one a mid-task change gives."""
+    if slice_["task"] in ratings:
+        return ratings[slice_["task"]]
+    if slice_["raises"]:
+        return 0.0
+    return LOWERED_RATING if slice_["lowers"] else None
+
+
+def _parts(slice_: Mapping[str, Any], facts: PullFacts | None, ratings: Mapping[str, float]) -> dict[str, float | None]:
     return {
         "clean": 100.0 if slice_["clean"] else 0.0,
         "prompts": 100 / (1 + slice_["operator_prompts"]),
         "commits_after_ready": None if facts is None else 100 / (1 + facts.commits_after_ready),
-        "rating": None,
+        "rating": _rating(slice_, ratings),
         "time_to_merge": None if facts is None else 100 * 0.5 ** (facts.hours_to_merge / 24),
     }
 
@@ -56,21 +71,29 @@ def _profile(slice_: Mapping[str, Any]) -> str:
     return f"{models[0] if models else 'unknown'}-{efforts[0] if efforts else 'unknown'}"
 
 
+def _counted(
+    slices: Iterable[Mapping[str, Any]], tasks: Mapping[str, Mapping[str, Any]]
+) -> Iterator[tuple[tuple[str, int, str], Mapping[str, Any]]]:
+    """Each completed Claude Code slice in a kind x size cell, with its `(kind, size, profile)`."""
+    for s in slices:
+        cell = cell_of(tasks, s["task"])
+        if s["complete"] and cell is not None and set(s["harnesses"]) == {CLAUDE_CODE}:
+            yield (*cell, _profile(s)), s
+
+
 def cell_task_scores(
     slices: Iterable[Mapping[str, Any]],
     tasks: Mapping[str, Mapping[str, Any]],
     facts: Mapping[str, PullFacts],
+    ratings: Mapping[str, float] | None = None,
 ) -> dict[tuple[str, int, str], list[float]]:
     """The score of each completed Claude Code slice, by `(kind, size, profile)`. `facts` maps a task to its merged
-    pull request's facts."""
+    pull request's facts; `ratings` maps a task to its operator's rating, which overrides the implicit one."""
     scores: dict[tuple[str, int, str], list[float]] = defaultdict(list)
-    for s in slices:
-        cell = cell_of(tasks, s["task"])
-        if not s["complete"] or cell is None or set(s["harnesses"]) != {CLAUDE_CODE}:
-            continue
-        score = task_score(_parts(s, facts.get(s["task"])))
+    for key, s in _counted(slices, tasks):
+        score = task_score(_parts(s, facts.get(s["task"]), ratings or {}))
         if score is not None:
-            scores[*cell, _profile(s)].append(score)
+            scores[key].append(score)
     return scores
 
 
@@ -78,12 +101,22 @@ def score_cells(
     slices: Iterable[Mapping[str, Any]],
     tasks: Mapping[str, Mapping[str, Any]],
     facts: Mapping[str, PullFacts],
+    ratings: Mapping[str, float] | None = None,
 ) -> list[dict[str, Any]]:
-    """One row per kind x size cell and profile of the completed Claude Code slices, `{kind, size, profile, n,
-    score}`, `score` the mean of the tasks' scores."""
+    """One row per kind x size cell and profile of the completed Claude Code slices, `{kind, size, profile, n, score,
+    off_arm}`: `score` the mean of the tasks' scores, `off_arm` how many of them changed model or effort mid-task."""
+    slices = list(slices)
+    off_arm = Counter(key for key, s in _counted(slices, tasks) if s["raises"] or s["lowers"])
     return [
-        {"kind": kind, "size": size, "profile": profile, "n": len(held), "score": sum(held) / len(held)}
-        for (kind, size, profile), held in sorted(cell_task_scores(slices, tasks, facts).items())
+        {
+            "kind": kind,
+            "size": size,
+            "profile": profile,
+            "n": len(held),
+            "score": sum(held) / len(held),
+            "off_arm": off_arm[(kind, size, profile)],
+        }
+        for (kind, size, profile), held in sorted(cell_task_scores(slices, tasks, facts, ratings).items())
     ]
 
 

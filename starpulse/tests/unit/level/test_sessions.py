@@ -346,6 +346,20 @@ def test_a_slice_whose_model_changed_in_one_session_is_escalated() -> None:
     assert (found_slice["escalated"], found_slice["clean"]) == (True, False)
 
 
+def test_a_mid_session_move_up_the_ladder_is_a_raise_and_a_move_down_a_lowering() -> None:
+    found = [
+        sig("prompt", 0, branch="claude/task-4-x"),
+        sig("request", 1, model="claude-sonnet-5", effort="high"),
+        sig("request", 2, model="claude-opus-5", effort="low"),
+        sig("request", 3, model="claude-haiku-5", effort="low"),
+        sig("request", 4, model="claude-haiku-5", effort="medium"),
+    ]
+
+    (found_slice,) = slice_health(session_health(found, KEYS))
+
+    assert (found_slice["raises"], found_slice["lowers"]) == (2, 1)
+
+
 def by_task(rows: list[dict], field: str) -> dict[tuple[str, str | None], object]:
     return {(r["session"], r["task"]): r[field] for r in rows}
 
@@ -531,7 +545,7 @@ def test_a_codex_prompt_with_no_reply_is_not_an_interrupt() -> None:
 
 def test_human_prompts_after_a_claim_and_the_steps_before_the_first_edit_are_counted() -> None:
     found = [
-        sig("prompt", 0, turn="p1", detail="human"),  # "start TASK-9": before the claim
+        sig("prompt", 0, turn="p1", detail="human"),  # the start prompt, before the claim
         sig("claim", 3, name="TASK-9", turn="p1"),
         sig("request", 4, model="m", turn="p1"),
         sig("request", 5, model="m", origin="side", agent="Explore", turn="p1"),

@@ -110,7 +110,7 @@ lists exactly the verbs there are.
 | `analytics steps` | `--hours` | `now`, `window_s` and `steps`, each `{harness, session, task, at, model, origin, skill, activities, keys, tokens, captured}`, below; a window that is no positive number or is longer than the telemetry history exits 1 and a server that receives no telemetry exits 3 |
 | `analytics transitions` | `--hours` | `now`, `window_s` and `transitions`, each `{kind, size, skill, tasks, steps, side_steps, wasted_steps, wasted_rate, agent_s, peak_context}`, below; refusals as `analytics steps` |
 | `analytics cells` | `--hours` | `now`, `window_s` and `cells`, each `{kind, size, n, completions, clean_rate, holdout, median_steps, median_operator_prompts, median_steps_before_edit}`, below; refusals as `analytics steps` |
-| `analytics scores` | `--hours`, `--repo` (required) | `now`, `window_s`, `scores`, each `{kind, size, profile, n, score}`, and `verdicts`, each `{kind, size, baseline, profile, n, baseline_n, verdict, p_non_inferior, p_worse}`; exit 3 when GitHub is unreachable, refusals as `analytics steps` |
+| `analytics scores` | `--hours`, `--repo` (required) | `now`, `window_s`, `scores`, each `{kind, size, profile, n, score, off_arm}`, and `verdicts`, each `{kind, size, baseline, profile, n, baseline_n, verdict, p_non_inferior, p_worse}`; exit 3 when GitHub is unreachable, refusals as `analytics steps` |
 | `analytics graph` | `--hours` | `now`, `window_s` and `graph`, each edge `{kind, size, skill, source, target, runs, count, share, cut}`, below; refusals as `analytics steps` |
 | `analytics stages` | `--hours` | `now`, `window_s` and `stages`, each `{kind, size, stage, runs, median_activities, previous_runs, previous_median_activities, stability}`, below; the history must hold twice the window, else refusals as `analytics steps` |
 | `analytics diff` | `--hours` | `now`, `window_s` and `diff`, each `{kind, size, skill, runs, conformant, reference, slow, slow_only, reference_only}`, below; refusals as `analytics steps` |
@@ -179,7 +179,9 @@ board labels `kind-<kind>` and `size-<n>`; a task missing either is in neither r
 `analytics scores` reads `GET /api/analytics/sessions[?hours=N]` and joins each completed Claude Code task to its merged pull request on `--repo`
 (found by `TASK-N` in the title among the 500 most recently updated closed pulls; token from `GITHUB_TOKEN` or `GH_TOKEN`). A task scores
 40 clean completion, 20 mid-task operator prompts, 20 commits after the PR was ready, 15 operator rating and 5 time-to-merge; a part that
-is missing (no merged PR, no rating yet) drops out and the rest renormalize. `profile` is the first model and effort of the slice.
+is missing (no merged PR) drops out and the rest renormalize. Until an operator rating exists, a task that raised its model or effort mid-task
+rates 0 and one that lowered it rates 50; an operator rating overrides both. `profile` is the first model and effort of the slice. `off_arm` counts
+the row's tasks whose session changed model or effort mid-task.
 `verdicts` takes each cell's busiest profile as the baseline and judges every other profile against it: `win` at >=90% posterior probability that its
 mean score is within 10 points of the baseline's, `lose` at >=90% that it is lower, else `continue` (also under two tasks on either side, with null
 probabilities). The posterior is a normal on the difference of means (Welch standard error); a win outranks a loss.

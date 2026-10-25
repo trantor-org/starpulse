@@ -1780,6 +1780,7 @@ export interface SessionHealth {
   interrupts: number;
   kind: "headless" | "interactive" | "unknown";
   last_at: number;
+  lowers: number;
   main_effort: string | null;
   main_model: string | null;
   model_changes: number;
@@ -1790,6 +1791,7 @@ export interface SessionHealth {
     [k: string]: number;
   };
   prompts: number;
+  raises: number;
   rejections: {
     [k: string]: number;
   };
@@ -1826,12 +1828,14 @@ export interface SliceHealth {
   interrupts: number;
   interventions: number;
   last_at: number;
+  lowers: number;
   models: string[];
   operator_prompts: number;
   operator_wait_s: number;
   prompt_labels: {
     [k: string]: number;
   };
+  raises: number;
   rejections: number;
   sessions: number;
   side_steps: number;

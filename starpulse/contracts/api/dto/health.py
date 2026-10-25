@@ -115,6 +115,8 @@ class SessionHealth(_Api):
     main_effort: str | None
     model_changes: int
     effort_changes: int
+    raises: int
+    lowers: int
     tokens: TokenCounts
     cost_usd: float | None
     agent_s: float
@@ -145,6 +147,8 @@ class SliceHealth(_Api):
     interventions: int
     compactions: int
     skills: dict[str, int]
+    raises: int
+    lowers: int
     escalated: bool
     clean: bool
     tokens: TokenCounts

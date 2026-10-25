@@ -6,12 +6,11 @@ row per task it worked, in the order it reached them.
 
 The task a signal belongs to is the one the export's launch branch names under the board's `TaskKeys`, until a `claim`
 signal (a command or a `Skill` call the `[analytics]` `claims` patterns matched) or a `branch` signal (a shell's `git
-switch` or `git checkout`) names another task. A launch branch that names no task leaves the session's first signals
-with none to hold, so they belong to the first task a claim or a branch signal names: a session's work before its claim
-is that task's work, as the transcript-mined `session_signals` count it, and no `task` None row precedes it. A switch to
-a ref that names no task leaves the task as it was, so `git checkout -- file` or a trip back to `main` does not drop a
-session's work from its slice. A session that no branch or claim ties to a task is a row with `task` None, counted in
-session health and in no slice.
+switch` or `git checkout`) names another. A launch branch that names no task leaves the session's first signals with none
+to hold, so they belong to the first task a claim or branch signal names: a session's work before its claim is that
+task's work, as the transcript-mined `session_signals` count it. A switch to a ref that names no task leaves the task as it
+was, so `git checkout -- file` or a trip back to `main` does not drop a session's work from its slice. A session that no
+branch or claim ties to a task is a row with `task` None, counted in session health and in no slice.
 
 A shell command's claim is read twice, so a change to `claims` reaches rows stored before it: the export is matched at
 ingest, which stores a `claim` signal, and `grouped` matches each stored shell command against the current patterns,
@@ -19,31 +18,8 @@ adding the claim a stored command names when the same tool result has no stored 
 A `Skill` call's claim is ingest-only: its arguments are never stored, so a claim pattern added later reaches only the
 calls exported after it, and a stored command is matched as stored, after redaction.
 
-A turn is every signal that shares a `prompt.id`; its end is its last signal, whichever order the exports arrived in.
-A signal with no id (Codex, rows stored before ids were kept) belongs to the turn of the prompt before it. Time is read
-from the events' own durations and from the turns' edges, never from the gaps between signals:
-
-- `agent_s`: the summed `seconds` of the session's model requests (subagents' included), tool results and the hooks that ran inside a turn.
-- `operator_wait_s`: from the end of the turn before to a human prompt other than the session's first; a prompt typed
-  while the turn before still worked waits for nothing.
-  An `[analytics]` `operator_tools` result (a question the operator answers, a plan they approve) is no prompt but
-  is the same wait: the span from the last signal before it, other than its own tool decision, to the tool's start.
-- `idle_s`: the same span before an `injected` prompt, a wait for something other than the operator (a background
-  task, a scheduler).
-
-A prompt is `injected` when its label says so and `human` otherwise, so a Codex prompt, which is unlabelled, is human.
-`operator_prompts` are the human prompts after a task's claim: after the claim signal that brought the session to the
-task, or after the session's first prompt for the task it launched on or, on a task-less launch branch, claimed first.
-The first human prompt after a main-thread `reply` whose `detail` is `asks` (it opens with a question) answers it
-and is no operator prompt, still a prompt and a wait.
-`prompt_labels` counts those the instance's labeller named, by intent, and `user_rejects` the rejected tool decisions
-whose source is `user_reject` or `user_abort`; neither changes `operator_prompts` or `interventions`. `interrupts` are
-the turns Claude Code started and never closed with a reply (one still running counts until its reply lands) and the interrupted turns Codex
-exports. `steps_before_edit` is the model requests before the task's first successful file write (an edit tool, or a shell
-command that `Signal.shell_write` marks), None until it has one. `complete` is a session that loaded the `[analytics]` `completion_skill` and then ran the completion call for the
-task. `interventions` of a slice are its operator prompts plus interrupts, and it is `escalated` when a model or effort
-changed between a session's main-thread requests. A slice is `clean` when one session did its work with no
-intervention and no escalation; whether it settled in Review or Done is the board's fact, which the reader joins.
+The time, prompt, intervention and cleanliness metrics (`agent_s`, `operator_wait_s`, `idle_s`, `operator_prompts`,
+`interrupts`, `steps_before_edit`, `escalated`, `clean`) are defined in `docs/sources.md`.
 """
 
 from __future__ import annotations
@@ -64,6 +40,9 @@ _EDITS = {"Edit", "Write", "MultiEdit", "NotebookEdit", "StrReplace"}
 #: The sources of a rejected tool decision that the operator made: a refusal, or an abort of the turn.
 _USER_REJECTS = {"user_reject", "user_abort"}
 _TOKENS = ("input", "output", "cache_read", "cache_write", "reasoning")
+# The trial ladder, cheapest first, mirrored from backlog_workflow.trials; a move up it is a raise.
+_LADDER = ("haiku-low", "haiku-medium", "haiku-high", "sonnet-high", "opus-low", "opus-medium", "opus-high")
+_FAMILIES = ("haiku", "sonnet", "opus")
 #: `originator` values of Codex's interactive front ends; `codex_exec` is its headless one.
 _CODEX_INTERACTIVE = {"codex-tui", "codex_cli_rs"}
 
@@ -113,6 +92,8 @@ def _empty(s: Signal, task: str | None, kind: str) -> dict[str, Any]:
         "main_effort": None,
         "model_changes": 0,
         "effort_changes": 0,
+        "raises": 0,
+        "lowers": 0,
         "tokens": dict.fromkeys(_TOKENS, 0),
         "cost_usd": None,
         "agent_s": 0.0,
@@ -127,6 +108,20 @@ def _count(row: dict[str, Any], key: str, name: str) -> None:
     row[key][name] = row[key].get(name, 0) + 1
 
 
+def _rank(model: str | None, effort: str | None) -> int | None:
+    family = next((name for name in _FAMILIES if model and name in model), None)
+    key = f"{family}-{effort}"
+    return _LADDER.index(key) if key in _LADDER else None
+
+
+def _direction(before: tuple[str | None, str | None], after: tuple[str | None, str | None]) -> int:
+    """1 when the profile moved up the trial ladder, -1 when down, 0 on a tie or an unranked profile."""
+    before_rank, after_rank = _rank(*before), _rank(*after)
+    if before_rank is None or after_rank is None:
+        return 0
+    return (after_rank > before_rank) - (after_rank < before_rank)
+
+
 def _note_request(row: dict[str, Any], s: Signal, last: dict[str, str]) -> None:
     if s.origin in {"main", "side"}:
         row["requests" if s.origin == "main" else "side_requests"] += 1
@@ -134,6 +129,10 @@ def _note_request(row: dict[str, Any], s: Signal, last: dict[str, str]) -> None:
         if value and value not in row[name]:
             row[name].append(value)
     if s.origin == "main":
+        before = (last.get("model"), last.get("effort"))
+        step = _direction(before, (s.model or before[0], s.effort or before[1]))
+        row["raises"] += step > 0
+        row["lowers"] += step < 0
         for field, change in (("model", "model_changes"), ("effort", "effort_changes")):
             value = getattr(s, field)
             if value and row[f"main_{field}"] is None:
@@ -349,6 +348,8 @@ def slice_health(sessions: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
                     (r["steps_before_edit"] for r in sorted(rows, key=lambda r: r["first_at"]) if r["steps_before_edit"] is not None),
                     None,
                 ),
+                "raises": sum(row["raises"] for row in rows),
+                "lowers": sum(row["lowers"] for row in rows),
                 "escalated": changes > 0,
                 "clean": count == 1 and operator_prompts + interrupts == 0 and changes == 0,
                 "tokens": {name: tokens[name] for name in _TOKENS},
