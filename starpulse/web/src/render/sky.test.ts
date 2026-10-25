@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { countText, hosted, merge, mergePhases, Moves, RING, stateCount, TRAVEL, withLedgers } from "./sky";
+import { countText, hosted, merge, Moves, RING, stateCount, TRAVEL, withLedgers } from "./sky";
 import type { ActiveRun, Dag, Machine, RawTask, Snapshot } from "../api";
 
 const machine = (ids: string[], extra: Partial<Machine> = {}): Machine => ({
@@ -319,15 +319,5 @@ describe("a Ledger delta's sky", () => {
     const after = withLedgers(before, snap(1000, [], []));
 
     expect([after.mergeStrip, after.mergePins]).toEqual([null, []]);
-  });
-});
-
-describe("mergePhases", () => {
-  it("joins each phase-flow agent to the Board task it names, by agent.task, and so to that task's Board state", () => {
-    const board = [task("TASK-1", "in_progress"), task("TASK-2", "review")];
-    const sky = merge(snap(5000, board, [placed("TASK-1", [["worktree_ready", "START", 4000]]), placed("TASK-9", [["worktree_ready", "START", 4000]])]));
-
-    expect(mergePhases(sky).map(({ task: t, sun, flow, state }) => ({ t, sun, flow, state })))
-      .toEqual([{ t: "TASK-1", sun: "in_progress", flow: "in-progress", state: "worktree_ready" }]);
   });
 });

@@ -2,6 +2,7 @@
 // (the design mockup): the Board's states as galaxies with the
 // DAGs as step-graph glyphs beside them, a state's lifecycle system as planets
 // round its machine, one machine's states, the DAGs level, and a fold of DAGs over the Board path they write.
+import type { HPlace } from "./transit";
 import { topOf, type Fold, type Level } from "./levels";
 import { ledgerTop, sizes as ledgerSizes, type LedgerTop } from "../features/level/machineLedger";
 import { nestsOf } from "../features/level/machineChain";
@@ -215,6 +216,8 @@ export interface Arrive extends Pt {
   r?: number;
   col: string;
   age: number;
+  /** How far its rings spread, in screen px: a step's arrival stays small. */
+  grow?: number;
 }
 /** A task orbiting its host; update() places it each frame. */
 export interface Body extends RawTask {
@@ -223,6 +226,8 @@ export interface Body extends RawTask {
   a0: number;
   w: number;
   big: boolean;
+  /** The dot's size against the usual one, smaller where a crowded cell packs it. */
+  s?: number;
   x: number;
   y: number;
   ang: number;
@@ -232,6 +237,10 @@ export interface Body extends RawTask {
   via: string | null;
   hop?: { c: Curve; u: number };
   bev: Move[];
+  /** The phase-machine step it rides, which transit.ts places and draws. */
+  h?: HPlace;
+  /** Its dot's opacity while it fades between suns no curve joins. */
+  alpha?: number;
 }
 /** A task a lifecycle machine placed, drawn on the state its latest event left it in. */
 export interface MachineTask extends RawTask {
@@ -318,10 +327,14 @@ export interface Scene {
   clipped?: boolean;
   /** The Board's type scale against its 13 px state names: 0.45 of the sun's screen radius, 12 to 20 px. The page's text size multiplies it. */
   labelScale?: number;
+  /** One screen pixel of type in sky units at the fitted zoom, the page's text size included: what a label's box is sized by before it draws. */
+  px?: number;
   galaxies: Record<string, Galaxy>;
   bEdges: BEdge[];
   /** The Board's names, each in its box. */
   names: NameBox[];
+  /** Every tied-DAG hangar's name and orbiters, each in its box, which the phase machines keep off. */
+  hangars?: NameBox[];
   tasks: Body[];
   machineTasks: MachineTask[];
   mStates: Record<string, MState>;
@@ -834,36 +847,40 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     };
     // One sky unit is `1 / k` screen pixels at the Board's zoom k, so a name printed at a screen size takes F sky units a pixel.
     let F = 1;
-    // A state's footprint: the sun, its `n` tasks in rings packed into the band round it and, where machines map, a ring of MOONS moons with a
-    // sub-state and a name cut to NAME_MAX each. Every state takes the same one until its tasks would sit closer than ROOM; a fuller one widens
-    // its band, and its moon ring with it, by just enough. More than MOONS machines page.
+    // A state's footprint is fixed until its tasks would sit closer than ROOM, when its band widens by just enough: the sun and its `n` tasks in
+    // rings packed into the band round it. Its machines are drawn only while they run, as branches off it (transit.ts), so they reserve no ring of
+    // their own.
+    const FREE = SUN_R + 7, MOON_RING = 104;
     const footprint = (moons: boolean, n: number) => {
       const more = widen(n);
       if (!moons) {
         const band = FOOT.task1 + more, R = band + 6;
         return { moonR: band, R, reach: [R, R] as [number, number], band };
       }
-      const rowH = Math.max(12 * F, 2 * FOOT.moon + 6), moonR = Math.max(FOOT.task1 + more + 10 + FOOT.moon, (rowH * (MOONS / 2 + 1)) / 2);
-      const side = moonR + FOOT.moon + 8 + 2 * FOOT.sub + 10 + textW("x".repeat(NAME_MAX), 10.5) * F;
-      return { moonR, R: moonR + 8 + FOOT.moon, reach: [side, side] as [number, number], band: moonR - FOOT.moon - 10 };
+      const side = MOON_RING + more + 12 + textW("x".repeat(NAME_MAX), 9.5) * F;
+      return { moonR: MOON_RING + more, R: MOON_RING + more + 22, reach: [side, side] as [number, number], band: FOOT.task1 + more };
+    };
+    // A state's primary machine whose states open child machines is drawn as its phases: each phase's steps are its child's states.
+    const phasesOf = (sid: string) => {
+      const f = flowsOf(sid)[0];
+      if (!f) return [];
+      // a phase opening several machines (Deliver opens deliver and triaging-cr-reviews) steps through the one named for it; the others are side machines
+      return subStatesOf(f).map((q) => {
+        const kids = (S.tree.children[f] ?? []).filter((c) => c.state === q.id), main = kids.find((c) => c.machine === q.id) ?? kids[0];
+        return { q, child: { machine: main.machine, when: main.when && `while ${main.when}` }, side: kids.filter((c) => c !== main).map((c) => c.machine), steps: S.flows[main.machine]?.machine.states ?? [] };
+      }).filter((p) => p.steps.length);
+    };
+    const phased = (sid: string, ps: ReturnType<typeof phasesOf>, a: RawTask) => {
+      const q = S.latest[a.id], f = flowsOf(sid)[0];
+      return !!q && !a.today && ps.some((p) => (q.flow === f && p.q.id === q.state) || p.child.machine === q.flow);
     };
     const radius = (st: (typeof states)[number]) => {
-      const all = byState[st.id] || [], at = new Map(all.map((a) => [a, deepest(a)])), fs = flowsOf(st.id);
-      const on = (f: string, state?: string) => all.filter((a) => at.get(a)?.flow === f && at.get(a)?.state === state);
-      const here = all.filter((a) => !at.get(a)), foot = footprint(fs.length > 0, here.length);
-      const machine = (f: string) => {
-        const ss = subStatesOf(f).map((q) => ({ ...q, name: q.name.replace(/^Pr /, "PR ") }));
-        return { f, ss, label: `${f}${ss.length ? ` › ${ss.map((q) => q.name).join(" · ")}` : ""}` };
-      };
-      const primary = fs.length ? machine(fs[0]) : null, rest = fs.slice(1), pg = paged(st.id, rest, ctx.pages?.[st.id] ?? 0, MOONS - 1);
-      const ms = primary ? [primary, ...pg.shown.map(machine)] : [];
-      // the machines sit on the ring in rows of MOONS / 2 down each side, the primary first
-      const offset = (i: number) => {
-        const sd = i % 2, j = Math.floor(i / 2), dy = -foot.moonR + ((j + 1) * 2 * foot.moonR) / (MOONS / 2 + 1);
-        return { dx: (sd ? -1 : 1) * Math.sqrt(foot.moonR ** 2 - dy ** 2), dy };
-      };
-      const rows = { moonR: foot.moonR, R: foot.R, reach: foot.reach, pagerAt: pagerDx(foot.moonR, pg.pagers.length ? FOOT.moon : 0), at: ms.map((_, i) => offset(i)) };
-      return { r: SUN_R, R: foot.R, band: foot.band, rows: fs.length ? rows : null, ms, pg, here, on, at };
+      const all = byState[st.id] || [], fs = flowsOf(st.id), ps = phasesOf(st.id), sides = ps.flatMap((p) => p.side);
+      // the sun's own tasks: none in a phase, a side machine or a lifecycle's sub-state
+      const here = all.filter((a) => !sides.includes(S.latest[a.id]?.flow ?? "") && !phased(st.id, ps, a) && !deepest(a)), foot = footprint(false, here.length);
+      // the sky is laid out from the footprint the machines' moons once reserved, so the suns keep the places the Board has always given them
+      const was = footprint(fs.length > 0, here.length), lay = { R: was.R, reach: fs.length ? was.reach : null };
+      return { r: SUN_R, R: foot.R, band: foot.band, lay, ps, here };
     };
     // The grid: the Board's tiers are its cells, in order, in `rows` lines of them wrapping left to right, a tier's states stacked top to
     // bottom in its cell. The tiers are the board machine's configured `tiers` (the states drawn at each stage, left to right); with none
@@ -989,11 +1006,11 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
       const sized = Object.fromEntries(states.map((st) => [st.id, radius(st)])), sw = (0.94 * W) / k, sh = (0.94 * H) / k, gap = 16 / k;
       // a state reaches at least half its name's width either side, so two names at one height never run together
       const es = states.map((st) => {
-        const s = sized[st.id], half = textW(stateName(st.id), 13 * F) / 2;
-        return { l: Math.max(half, s.rows?.reach[1] ?? s.R), r: Math.max(half, s.rows?.reach[0] ?? s.R), t: s.R + NAME_ROOM * F, b: s.R };
+        const s = sized[st.id].lay, half = textW(stateName(st.id), 13 * F) / 2;
+        return { l: Math.max(half, s.reach?.[1] ?? s.R), r: Math.max(half, s.reach?.[0] ?? s.R), t: s.R + NAME_ROOM * F, b: s.R };
       });
       const g = gridLay(grid, es, rows, sw, sh, gap);
-      const ps = states.map((st, i) => ({ id: st.id, R: sized[st.id].R, x: g.xs[i], y: g.ys[i] }));
+      const ps = states.map((st, i) => ({ id: st.id, R: sized[st.id].lay.R, x: g.xs[i], y: g.ys[i] }));
       const box = (i: number) => [ps[i].x - es[i].l - gap / 2, ps[i].y - es[i].t - gap / 2, ps[i].x + es[i].r + gap / 2, ps[i].y + es[i].b + gap / 2];
       // every state, its name above and its rings and moons round it lie inside the sky, as well as clear of each other
       let ok = g.ok && ps.every((q, i) => q.x - es[i].l >= 0 && q.x + es[i].r <= sw && q.y - es[i].t >= 0 && q.y + es[i].b <= sh);
@@ -1031,64 +1048,36 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     scene.h = Math.round(w / (W / H));
     scene.clipped = true;
     scene.labelScale = L.ls;
+    scene.px = (ctx.scale ?? 100) / 100 / best.k;
     const sized = L.sized, ps = L.ps, hb = scene.h - 40;
     for (const st of states) {
-      const p = ps.find((q) => q.id === st.id)!, { x, y } = p, { rows, ms, pg, here, on, at, band: outer } = sized[st.id], r = ease(`${st.id}.r`, sized[st.id].r), R = ease(`${st.id}.R`, sized[st.id].R);
+      const p = ps.find((q) => q.id === st.id)!, { x, y } = p, { ps: phs, here, band: outer } = sized[st.id], r = ease(`${st.id}.r`, sized[st.id].r), R = ease(`${st.id}.R`, sized[st.id].R);
       const g: Galaxy = { id: st.id, name: st.name, x, y, r, n: stateCount(S, st.id), color: BOARD_COLOR[st.id] ?? "#94a3b8", final: st.final, today: daily(st) ? (S.today[st.id] ?? []).length : undefined, subs: SUBS[st.id] || [], R, moonR: 0, visR: 0, edge: R, lab: { x, y }, reach: [R, R], loops: [] };
-      const fit = pack(here.length, FOOT.task0, outer, 11, 12, ROOM), ring = here.length ? attach(here, g, FOOT.task0, fit.gap, fit.ringGap, false) : sized[st.id].r;
-      g.moonR = ease(`${st.id}.moonR`, rows ? rows.moonR : outer + 16);
-      if (rows) g.reach = rows.reach;
-      g.edge = ease(`${st.id}.edge`, rows ? rows.moonR + 4 : ring + 10);
+      const r0 = phs.length ? FREE : FOOT.task0, r1 = phs.length ? SUN_R + 12 : outer;
+      // a task on a machine step rides that machine's branch (transit.ts places it); only the rest orbit the sun
+      const hOf = new Map<RawTask, HPlace>(), f0 = flowsOf(st.id)[0];
+      if (f0)
+        for (const a of byState[st.id] || []) {
+          const q = S.latest[a.id];
+          if (!q || a.today) continue;
+          const ph = phs.find((p) => q.flow === f0 && p.q.id === q.state), sd = phs.find((p) => p.side.includes(q.flow)), m = S.flows[q.flow]?.machine.states.map((x) => x.id);
+          if (ph) hOf.set(a, { machine: ph.child.machine, steps: ph.steps.map((x) => x.id), j: 0, ring1: true });
+          else if (m) hOf.set(a, { machine: q.flow, steps: m, j: Math.max(0, m.indexOf(q.state)), ring1: !phs.length || phs.some((p) => p.child.machine === q.flow), side: sd && { machine: sd.child.machine, steps: sd.steps.map((x) => x.id), j: Math.max(0, sd.steps.findIndex((x) => x.id === "pr_opened")) } });
+        }
+      const free = (byState[st.id] || []).filter((a) => !hOf.has(a) && (!a.today || here.includes(a)));
+      const fit = pack(free.length, r0, r1, 11, 12, ROOM), ring = free.length ? attach(free, g, r0, fit.gap, fit.ringGap, false) : sized[st.id].r;
+      g.moonR = ease(`${st.id}.moonR`, outer + 16);
+      g.edge = ease(`${st.id}.edge`, f0 ? Math.max(52, ring + 10) : ring + 10);
       g.visR = outer + 7; // a task hopping in orbits on the outer edge
       scene.galaxies[st.id] = g;
-      // the machines are moons on the dashed ring, each with the tasks working it outside its sub-states; its sub-states run outward in its
-      // row as a chain of small bodies, each with the tasks whose session holds it
-      ms.forEach((m, i) => {
-        const dx = ease(`${st.id}/${m.f}.dx`, rows!.at[i].dx), dy = ease(`${st.id}/${m.f}.dy`, rows!.at[i].dy), mx = x + dx, my = y + dy, sg = dx >= 0 ? 1 : -1, tasks = on(m.f);
-        const moon: Moon = { name: m.f, label: m.label, parent: g, x: mx, y: my, r: 9, R: FOOT.moon, n: tasks.length, nStates: S.flows[m.f].machine.states.length, ext: 0, chain: [] };
-        if (tasks.length) {
-          const fit = pack(tasks.length, 13, FOOT.moon, 9, 8);
-          attach(tasks, moon, 13, fit.gap, fit.ringGap, false);
-        }
-        let c = moon.R, prev: Host = moon;
-        for (const q of m.ss) {
-          const ts = on(m.f, q.id), link = S.child[m.f][q.id], R = FOOT.sub;
-          c += 8;
-          const b: SubState = { name: q.name, parent: g, machine: m.f, state: q.id, child: link.machine, when: link.when, n: ts.length, x: mx + sg * (c + R), y: my, r: 6, R, color: "#e879f9", prev };
-          if (ts.length) {
-            const fit = pack(ts.length, 11, FOOT.sub, 9, 8);
-            attach(ts, b, 11, fit.gap, fit.ringGap, false);
-          }
-          c += 2 * R;
-          prev = b;
-          moon.chain.push(b);
-          scene.subStates.push(b);
-        }
-        moon.ext = c - moon.R;
-        scene.moons.push(moon);
-      });
-      for (const pager of pg.pagers) {
-        const tasks = (byState[st.id] || []).filter((a) => pager.hidden.includes(at.get(a)?.flow ?? "")), dx = pager.d * rows!.pagerAt;
-        const moon: Moon = { name: pager.title, label: pager.title, pager, parent: g, x: x + dx, y: y + Math.sqrt(g.moonR ** 2 - dx ** 2), r: 9, R: 9, n: tasks.length, nStates: 0, ext: 0, chain: [] };
-        if (tasks.length) {
-          const fit = pack(tasks.length, 13, FOOT.moon, 9, 8);
-          attach(tasks, moon, 13, fit.gap, fit.ringGap, false);
-          moon.R = FOOT.moon;
-        }
-        scene.moons.push(moon);
-      }
+      for (const [a, h] of hOf) scene.tasks.push({ ...a, host: g, R: 0, a0: 0, w: 0, big: false, s: 1, x, y, ang: 0, moving: false, arrive: null, gone: false, via: null, bev: [], h });
     }
-    // a state's name goes above its footprint, in the room its cell keeps for it, its count under it; a machine's row runs from its moon out
-    // to where its state's names end
+    // a state's name goes above its footprint, in the room its cell keeps for it, its count under it
     const gs = Object.values(scene.galaxies);
     for (const g of gs) {
       g.lab = { x: g.x, y: g.y - g.R - 14 - 38 * F + 12 };
       const half = Math.max(textW(g.name, 13 * F), textW(`${countText(g.n, g.today)}${g.subs.length ? ` · ${g.subs.length} lifecycles` : ""}`, 11 * F)) / 2;
       scene.names.push({ of: g.id, x0: g.x - half, y0: g.lab.y - 7 * F, x1: g.x + half, y1: g.lab.y + 20 * F });
-    }
-    for (const m of scene.moons) {
-      const g = m.parent, left = m.x < g.x - 1, tall = Math.max(m.R, 6 * F);
-      scene.names.push({ of: `${g.id}/${m.name}`, x0: left ? g.x - g.reach[1] : m.x - m.r!, y0: m.y - tall, x1: left ? m.x + m.r! : g.x + g.reach[0], y1: m.y + tall });
     }
     // One path per ordered pair of states, carrying every event between them. A pair joined both ways bows to one side, its two paths drawn
     // as one, and a one-way path runs straight. A final state reached from several states (Archived) gathers its one-way paths into one

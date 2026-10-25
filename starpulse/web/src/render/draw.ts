@@ -15,6 +15,8 @@ export const ACT = "#fbbf24";
 export const TRACE = "#fbbf24", OFF = "#fb7185";
 /** A mapped machine (machine.source: a third party moves it) is drawn like a local one, in a colour of its own: blue, never purple. */
 export const EXT = "#60a5fa";
+/** A phase machine is blue-500 by convention (--phase); a sub-machine a phase opens is teal-500 (--submachine). */
+export const PHASE = "#3b82f6", SUBM = "#14b8a6", PHASE_TEXT = "#93c5fd", SUBM_TEXT = "#5eead4";
 /** An agent is coloured by the tier its profile names (`@agent-<tier>-<effort>`); a person or fast is the other colour. */
 export const tierColor = (profile = "") =>
   profile.startsWith("@agent-deep") ? "#c4b5fd" : profile.startsWith("@agent-standard") ? "#67e8f9" : "#fde68a";

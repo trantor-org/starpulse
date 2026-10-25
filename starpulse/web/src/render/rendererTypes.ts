@@ -19,7 +19,15 @@ export interface Probe {
   /** The level's fit zoom. */
   fit: number;
   /** Board only: each state's screen disc. */
-  states: { id: string; x: number; y: number; r: number; sun?: number }[];
+  states: { id: string; x: number; y: number; r: number; sun?: number; edge?: number }[];
+  /** The Board's drawn curves on screen, sampled from source to target. */
+  edges?: { s: string; t: string; pts: { x: number; y: number }[] }[];
+  /** Each task dot's screen position, to hover one. */
+  tasks?: { id: string; x: number; y: number }[];
+  /** Each drawn phase branch's own line on screen, for the overlap check. */
+  branches?: { key: string; sun: string; ring: number; parent?: string; th?: number; lane?: number; dir?: number; n?: number; pj?: number; pts: { x: number; y: number }[] }[];
+  /** Each printed name meeting another name or a station, as `a~b` or `name@branch`. */
+  texts?: string[];
 }
 
 export interface Renderer {

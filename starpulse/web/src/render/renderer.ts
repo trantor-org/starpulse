@@ -28,8 +28,9 @@ import { spotIn, type Target } from "../features/level/search";
 import {
   RAMP, TAU, bez, build, curveDist, curveOf, edgePaths, nearestWithin, stateR, turnPage, type BEdge, type Body, type Curve, type GNode, type Hop, type Planet, type Pt, type Scene, type Pager, type Star,
 } from "./scene";
-import { drawBranches, placeBranches, wantsOf, type Branch, type Hub } from "./transit";
+import { SIM_PERIOD } from "./mockSky";
 import { Moves, PULSE, TRAVEL, hosted, merge, stateCount, withLedgers, type Move, type Sky } from "./sky";
+import { branchLines, drawBranches, placeBranches, textHits } from "./transit";
 import type { KanbanTask } from "../features/kanban/kanbanModel";
 import { foldRows, openStream, type Link } from "../api/stream";
 import { openLedger, type LedgerHead } from "../api/ledgerStream";
@@ -415,7 +416,20 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     if (kind === "ledgers" && S) return void applyLedgers(next);
     apply(next);
     if (first && demo && !stopped) timer = window.setTimeout(demoTick, 1200);
+    if (first && SIM && !stopped) simTick();
   }
+  // Preview only: `&sim=1`, `&sim=2` or `&sim=3` re-reads the snapshot each time the mock's step clock ticks, so every simulated task takes its next step
+  const SIM = ["1", "2", "3"].includes(new URLSearchParams(location.search).get("sim") ?? "");
+  let simAt = -1;
+  const simTick = () => {
+    if (stopped) return;
+    const n = Math.floor(Date.now() / 1000 / SIM_PERIOD);
+    if (snap && n !== simAt) {
+      simAt = n;
+      apply(snap);
+    }
+    window.setTimeout(simTick, 250);
+  };
   function onLive(on: boolean) {
     if (!on) moves.resync(Date.now() / 1000); // the reconnect's snapshot places what the drop missed, as a returning tab's does
   }
@@ -569,33 +583,6 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       k.arrive = null;
       k.gone = false;
       k.via = null;
-      if (!k.host.states && board && !k.today) {
-        // Board: a task sits on the state it held at this moment and hops along the transition's curve
-        const bev = EVENTS().filter((e) => e.machine === "board" && e.task === k.id);
-        if (!bev.length) continue;
-        let st = bev[0].from ?? bev[0].to, ev: Move | null = null;
-        for (const e of bev) if (e.at <= T) [st, ev] = [e.to, e];
-        const g = sc.galaxies[st];
-        if (!g) continue;
-        if (g !== (k.host.parent ?? k.host)) {
-          const va = k.a0 * 1.7 + k.w * t;
-          k.x = g.x + Math.cos(va) * g.visR;
-          k.y = g.y + Math.sin(va) * g.visR;
-        }
-        if (!ev || T - ev.at >= TRAVEL + PULSE) continue;
-        const u = (T - ev.at) / TRAVEL, e = sc.bEdges.find((b) => b.source === ev.from && b.target === ev.to);
-        if (!e) continue;
-        if (u >= 1) {
-          k.arrive = { x: g.x, y: g.y, r: g.r, col: g.color, age: (T - ev.at - TRAVEL) / PULSE };
-          continue;
-        }
-        const q = bez(e.p0!, e.c!, e.p1!, easeO(u));
-        k.x = q.x;
-        k.y = q.y;
-        k.moving = true;
-        k.hop = { c: { p0: e.p0!, c: e.c!, p1: e.p1! }, u: easeO(u) };
-        continue;
-      }
       if (level().kind === "state" && !k.today && stateHop(k, t)) continue;
       // a task whose machine is changing its state leaves its orbit, rides the machine's chord like the current board's hop (ease-out, comet tail),
       // rings the state it lands on, then drops back into orbit
@@ -612,8 +599,14 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       k.moving = true;
       k.hop = { c, u: easeO(u) };
     }
+    // the phase machines keep off every hangar's name and orbiters, drawn or not, so a DAG starting never moves a machine
+    const orb = 7 / fit.k;
+    if (board) sc.hangars = (ties()?.pivots ?? []).flatMap((h) => [{ of: `hangar:${h.state}`, x0: h.box[0], y0: h.box[1], x1: h.box[2], y1: h.box[3] }, ...h.orbs.map((o) => ({ of: `hangar:${o.dag}`, x0: o.x - orb, y0: o.y - orb, x1: o.x + orb, y1: o.y + orb }))]);
+    gliding = board && placeBranches(sc, performance.now() / 1000);
     liveTasks = new Set(EVENTS().filter((e) => e.task && e.at <= T && T - e.at < TRAVEL).map((e) => e.task!));
   }
+  /** A phase branch is still growing, retracting or gliding a dot, so the next frame is needed. */
+  let gliding = false;
 
   // where an orbiting task was at page time tt
   const orbitAt = (k: Body, tt: number): Pt => {
@@ -730,7 +723,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     if (sc.sun && near(sc.sun, sc.sun.r + 8)) return { kind: "sun", o: sc.sun };
     for (const b of sc.subStates) if (near(b, Math.max(b.R, px(8)))) return { kind: "sat", o: b };
     for (const m of sc.moons) if (near(m, Math.max(m.R + 4, px(10)))) return { kind: "moon", o: m };
-    for (const g of Object.values(sc.galaxies)) if (near(g, g.R)) return { kind: "galaxy", o: g };
+    for (const g of Object.values(sc.galaxies)) if (near(g, g.edge)) return { kind: "galaxy", o: g };
     // nearest line within the band wins, so parallel edges pick the one under the cursor
     const lines: { h: Hover; d: number }[] = [];
     for (const e of sc.mEdges) if (e.a && e.b && e.a !== e.b) lines.push({ h: { kind: "medge", o: e }, d: curveDist(curveOf(e.a, e.b), x, y) });
@@ -1159,17 +1152,6 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   }
   let rowsHeld = false;
   const overRows = () => !!(mouse && scene?.top && mouse.oy > scene.top.laneTop && mouse.oy < scene.top.laneBottom);
-  /** The Board's phase branches, laid once per scene and snapshot: placing them walks every free spot round a state. */
-  let branched: { sc: Scene; sky: Sky; hubs: Hub[]; list: Branch[] } | null = null;
-  function drawPhases() {
-    if (!scene || !S || scene.machine) return;
-    if (branched?.sc !== scene || branched.sky !== S) {
-      const hubs = Object.values(scene.galaxies).map((g) => ({ id: g.id, x: g.x, y: g.y, edge: g.edge }));
-      const curves = scene.bEdges.flatMap((e) => (e.p0 && e.c && e.p1 ? [{ p0: e.p0, c: e.c, p1: e.p1 }] : []));
-      branched = { sc: scene, sky: S, hubs, list: placeBranches(hubs, wantsOf(S), { curves, names: scene.names }, branched?.list) };
-    }
-    drawBranches(dc, branched.hubs, branched.list);
-  }
   function drawScene(k: number, x: number, y: number) {
     const dpr = devicePixelRatio || 1;
     cx.setTransform(k * dpr, 0, 0, k * dpr, x * dpr, y * dpr);
@@ -1180,11 +1162,11 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     boardDrawing.drawGalaxies();
     boardDrawing.drawMoons();
     boardDrawing.drawBoardEdges();
+    drawBranches(dc, pen, scene!);
     boardDrawing.drawTies();
     boardDrawing.drawStateLinks();
     boardDrawing.drawSun();
     boardDrawing.drawPlanets();
-    drawPhases();
     boardDrawing.drawTasks();
     boardDrawing.drawMachineEdges(scene!.mEdges);
     boardDrawing.drawStates(scene!.mStates, true);
@@ -1270,7 +1252,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     }
   };
   /** Something still needs the next frame: a move or DAG run in flight, a fly-to, a level transition, or a body easing to a new size. */
-  const busy = () => !away && !!S && (animating({ now: T, moves: EVENTS(), dags: S.dags, flying: !!anim, transitioning: !!trans }) || grown.growing() || !!mled?.sliding || !!foldDrawing?.scrolling() || railMoving);
+  const busy = () => !away && !!S && (animating({ now: T, moves: EVENTS(), dags: S.dags, flying: !!anim, transitioning: !!trans }) || grown.growing() || !!mled?.sliding || !!foldDrawing?.scrolling() || railMoving || gliding || SIM);
   /** The loop settled: the feed and moving list get their last write, and the next wake starts the ambient clock afresh. */
   const settle = () => {
     last = 0;
@@ -1306,8 +1288,9 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
           ...(l.kind === "machine" ? sc.machineTasks.filter((t) => t._x !== undefined).map((t) => at(t.id, { x: t._x!, y: t._y! }, "panel")) : []),
         ];
     const board = l.kind === "board";
-    const states = board ? Object.values(sc.galaxies).map((g) => ({ id: g.id, ...toScreen(view, g), r: g.R * view.k, sun: g.r * view.k })) : [];
-    return { path: pathKey(path), ready: !trans && !anim, canvas, panel: open, centre: toScreen(view, { x: (x0 + x1) / 2, y: (y0 + y1) / 2 }), zoomed: zoomedIn(view, fit), targets, fit: fit.k, states };
+    const states = board ? Object.values(sc.galaxies).map((g) => ({ id: g.id, ...toScreen(view, g), r: g.R * view.k, sun: g.r * view.k, edge: g.edge * view.k })) : [];
+    const edges = board ? sc.bEdges.filter((e) => e.p0 && e.c && e.p1).map((e) => ({ s: e.source, t: e.target, pts: Array.from({ length: 21 }, (_, i) => toScreen(view, bez(e.p0!, e.c!, e.p1!, i / 20))) })) : [];
+    return { path: pathKey(path), ready: !trans && !anim, canvas, panel: open, centre: toScreen(view, { x: (x0 + x1) / 2, y: (y0 + y1) / 2 }), zoomed: zoomedIn(view, fit), targets, fit: fit.k, states, edges, branches: board ? branchLines().map((b) => ({ ...b, pts: b.pts.map((p) => toScreen(view, p)) })) : [], tasks: sc.tasks.filter((t) => !t.gone).map((t) => ({ id: t.id, ...toScreen(view, t) })), texts: board ? textHits(sc) : [] };
   };
 
   return {

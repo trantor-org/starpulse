@@ -3,12 +3,16 @@
 // plays each move once, when the stream first delivers it.
 import { stepRings, type StepRing } from "../features/fanout/fanoutModel";
 import { tree, type Tree } from "./levels";
+import { mocked } from "./mockSky";
 import type { Capabilities, Cue, Dag, FlowSnapshot, LedgerRow, MachineEntry, MachinePage, MergeStrip, Move as Verdict, Pool, Pull, RawTask, Rating, Roles, Settled, Snapshot, Writer } from "../api";
 
 /** Seconds one move takes to cross its path, the arrival rings, and a finished DAG's flare. */
 export const TRAVEL = 3;
 export const PULSE = 1.8;
 export const FLARE = 4;
+/** Pixels a second every gliding dot covers, at constant velocity from start to stop: a long path takes longer, never runs faster. */
+export const SPEED = 98;
+export const glideTime = (len: number, k = 1) => Math.max(1e-3, len / (SPEED * k));
 /** Seconds a step's ring takes to fade. */
 export const RING = 1.1;
 /** Moves older than this are forgotten. */
@@ -113,27 +117,6 @@ function boardStates(board: FlowSnapshot): Map<string, string> {
   return state;
 }
 
-/** One phase-flow agent joined to its Board task: the Board state (`sun`) it hangs off, and the flow and state it sits in. */
-export interface PhaseRun {
-  task: string;
-  sun: string;
-  flow: string;
-  state: string;
-  agent: RawTask;
-}
-
-/** Every phase-flow agent whose `task` names a Board task, with the Board state that task sits in; an agent naming no Board task is left out. */
-export function mergePhases(sky: Pick<Sky, "flows" | "board">): PhaseRun[] {
-  const sun = boardStates(sky.board);
-  return Object.entries(sky.flows).flatMap(([flow, { agents }]) =>
-    agents.flatMap((agent) => {
-      const task = agent.task ?? "";
-      const at = sun.get(task);
-      return at === undefined ? [] : [{ task, sun: at, flow, state: agent.state, agent }];
-    }),
-  );
-}
-
 /** Local midnight today, in epoch seconds. */
 export const midnight = (now = new Date()) => new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() / 1000;
 
@@ -155,7 +138,8 @@ function arrivals(board: FlowSnapshot, settled: Record<string, Settled>, since: 
   return out;
 }
 
-export function merge(snap: Snapshot, since = midnight()): Sky {
+export function merge(raw: Snapshot, since = midnight()): Sky {
+  const snap = mocked(raw);
   const boardTasks = new Map((snap.flows.find((f) => f.name === "board")?.agents ?? []).map((a) => [a.id, a]));
   const flows = Object.fromEntries(snap.flows.map((f) => [f.name, f.name === "board" ? f : { ...f, agents: f.agents.map((a) => joined(a, boardTasks)) }]));
   const board = flows.board ?? EMPTY, t = tree(snap), groups = (snap.domains ?? []).map((d): Group => ({ name: d.name, dags: d.dags.map((x) => x.name), ...(d.processes && { processes: d.processes.map((p) => ({ name: p.name, dags: p.dags.map((x) => x.name) })) }) }));

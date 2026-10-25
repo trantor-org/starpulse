@@ -1,69 +1,90 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import capture from "./fixtures/events-snapshot.json";
-import { merge, mergePhases } from "./sky";
-import { CLEAR, placeBranches, STEP, wantsOf } from "./transit";
-import type { Hub, Want } from "./transit";
-import type { Curve, NameBox, Pt } from "./scene";
 import type { Snapshot } from "../api";
+import type { Galaxy, Pt, Scene } from "./scene";
 
-const hub: Hub = { id: "in_progress", x: 400, y: 300, edge: 40 };
-const want = (task: string, stations = 4, subs: Want["subs"] = []): Want => ({ task, sun: hub.id, stations, subs });
-const dist = (a: Pt, b: Pt) => Math.hypot(a.x - b.x, a.y - b.y);
-const along = ({ p0, c, p1 }: Curve, n = 60): Pt[] =>
-  Array.from({ length: n + 1 }, (_, i) => {
-    const t = i / n, u = 1 - t;
-    return { x: u * u * p0.x + 2 * u * t * c.x + t * t * p1.x, y: u * u * p0.y + 2 * u * t * c.y + t * t * p1.y };
-  });
-const inBox = (p: Pt, b: NameBox, pad: number) => p.x > b.x0 - pad && p.x < b.x1 + pad && p.y > b.y0 - pad && p.y < b.y1 + pad;
-const curve: Curve = { p0: { x: 400, y: 340 }, c: { x: 460, y: 420 }, p1: { x: 520, y: 380 } };
-const name: NameBox = { of: "in_progress", x0: 360, y0: 230, x1: 440, y1: 250 };
-
-describe("placeBranches", () => {
-  it("keeps every station of one branch a station-step from every other branch's", () => {
-    const branches = placeBranches([hub], ["TASK-1", "TASK-2", "TASK-3", "TASK-4"].map((t) => want(t, 5, [{ at: 2, stations: 2 }])));
-
-    const stations = branches.map((b) => b.stations);
-    const gaps = stations.flatMap((a, i) => stations.slice(i + 1).flatMap((b) => a.flatMap((p) => b.map((q) => dist(p, q)))));
-    expect([branches.length, Math.min(...gaps) >= STEP]).toEqual([4, true]);
-  });
-
-  it("leaves a submachine's ray from its parent's station at 90 degrees to the parent's line", () => {
-    const [b] = placeBranches([hub], [want("TASK-1", 5, [{ at: 2, stations: 3 }])]);
-
-    const ray = b.rays[0];
-    const [prev, here, next] = [b.stations[1], b.stations[2], b.stations[3]];
-    const line = { x: next.x - prev.x, y: next.y - prev.y };
-    const out = { x: ray.stations[0].x - here.x, y: ray.stations[0].y - here.y };
-    const cos = (line.x * out.x + line.y * out.y) / (Math.hypot(line.x, line.y) * Math.hypot(out.x, out.y));
-    expect(Math.abs(cos)).toBeLessThan(0.1);
-  });
-
-  it("clears the Board's curves and names, rays included", () => {
-    const branches = placeBranches([hub], ["TASK-1", "TASK-2", "TASK-3"].map((t) => want(t, 5, [{ at: 1, stations: 2 }])), { curves: [curve], names: [name] });
-
-    const stations = branches.flatMap((b) => [...b.stations, ...b.rays.flatMap((r) => r.stations)]);
-    const onCurve = stations.filter((p) => along(curve).some((q) => dist(p, q) < CLEAR));
-    const onName = stations.filter((p) => inBox(p, name, CLEAR));
-    expect([stations.length > 0, onCurve, onName]).toEqual([true, [], []]);
-  });
-
-  it("removes a branch whose task is gone and keeps the others where they were", () => {
-    const first = placeBranches([hub], [want("TASK-1"), want("TASK-2")]);
-
-    const next = placeBranches([hub], [want("TASK-2")], { curves: [], names: [] }, first);
-    expect(next.map((b) => [b.task, b.stations])).toEqual([["TASK-2", first[1].stations]]);
-  });
+// transit.ts keeps its branches and dots between frames, so each case loads it afresh
+let T: typeof import("./transit"), sc: typeof import("./scene"), sky: typeof import("./sky");
+beforeEach(async () => {
+  vi.resetModules();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+  [T, sc, sky] = await Promise.all([import("./transit"), import("./scene"), import("./sky")]);
 });
 
-describe("a live snapshot", () => {
-  it("draws a branch off the Board state of every task-joined agent in a phase flow", () => {
-    const sky = merge(capture as unknown as Snapshot);
-    const hubs: Hub[] = sky.board.machine.states.map((s, i) => ({ id: s.id, x: 600 * (i % 4), y: 600 * Math.floor(i / 4), edge: 40 }));
+/** The Board level the renderer lays out for `snap` at `scale`% text size, with its branches grown for `secs` seconds of frames. */
+function board(snap: Snapshot, { scale = 100, secs = 3, from = 0 } = {}): Scene {
+  const S = sky.merge(snap), moves = new sky.Moves();
+  moves.observe(S, snap.now ?? 0);
+  const scene = sc.build({ S, moves, W: 1920, H: 1080, T: snap.now ?? 0, scale }, { kind: "board" });
+  run(scene, from, secs);
+  return scene;
+}
+const run = (scene: Scene, from: number, secs: number) => {
+  for (let t = from; t <= from + secs; t += 1 / 60) T.placeBranches(scene, t);
+};
+const live = () => structuredClone(capture) as unknown as Snapshot;
+/** The preview's `?mock=1&extra=8&sim=3` at `scale`%: phase tasks on build, deliver and review_fix, and the pair walked from Deliver into the
+ *  CI it opens, which branches off Deliver's station. */
+function mock(scale = 100): Scene {
+  vi.stubGlobal("location", { search: "?mock=1&extra=8&sim=3" });
+  const clock = vi.spyOn(performance, "now").mockReturnValue(0);
+  board(live(), { scale });
+  clock.mockReturnValue(60_000);
+  return board(live(), { scale, from: 3, secs: 6 });
+}
+const dist = (a: Pt, b: Pt) => Math.hypot(a.x - b.x, a.y - b.y);
+const stationsOf = (l: ReturnType<typeof T.branchLines>[number]) => l.pts.filter((p) => new RegExp(`^${l.key.replace(/[|]/g, "\\|")}:\\d+$`).test(p.k));
 
-    const wants = wantsOf(sky);
-    const branches = placeBranches(hubs, wants);
+describe("placeBranches", () => {
+  it("draws a branch on its sun for every phase machine a live task is in, and only those", () => {
+    const scene = board(live()), lines = T.branchLines();
+    const phased = scene.tasks.filter((k) => k.h).map((k) => `${(k.host as Galaxy).id}|${k.h!.machine}`);
+    expect(phased.length).toBeGreaterThan(0);
+    expect(new Set(lines.filter((l) => l.ring === 1).map((l) => `${l.sun}|${l.key.split("|")[1]}`))).toEqual(new Set(phased));
+  });
 
-    const joined = mergePhases(sky).filter((run) => sky.board.machine.submachines?.some((m) => m.state === run.sun && m.machine === run.flow));
-    expect([joined.length > 0, branches.map((b) => [b.task, b.sun]).sort()]).toEqual([true, joined.map((r) => [r.task, r.sun]).sort()]);
+  it("keeps every branch's line clear of every other branch's on its sun", () => {
+    mock();
+    const lines = T.branchLines();
+    expect(lines.some((l) => l.ring === 2)).toBe(true);
+    for (const a of lines)
+      for (const b of lines) {
+        if (a.key >= b.key || a.sun !== b.sun || a.parent === b.key || b.parent === a.key) continue;
+        const gap = Math.min(...a.pts.flatMap((p) => b.pts.map((q) => dist(p, q))));
+        expect(gap, `${a.key} ~ ${b.key}`).toBeGreaterThan(8);
+      }
+  });
+
+  it("runs a sub-machine's ray straight out from its parent's station, square to the parent's line", () => {
+    const scene = mock(), lines = T.branchLines(), subs = lines.filter((l) => l.ring === 2);
+    expect(subs.length).toBeGreaterThan(0);
+    for (const s of subs) {
+      const g = scene.galaxies[s.sun], parent = lines.find((l) => l.key === s.parent)!, from = stationsOf(parent)[s.pj], ray = s.pts[0];
+      const out = { x: from.x - g.x, y: from.y - g.y }, step = { x: ray.x - from.x, y: ray.y - from.y };
+      const sin = (out.x * step.y - out.y * step.x) / (Math.hypot(out.x, out.y) * Math.hypot(step.x, step.y));
+      expect(Math.abs(sin), s.key).toBeLessThan(0.02);
+      expect(out.x * step.x + out.y * step.y, s.key).toBeGreaterThan(0);
+    }
+  });
+
+  it.each([100, 125, 150])("keeps stations off the Board's curves and every name clear at %i percent text", (scale) => {
+    const scene = mock(scale);
+    const curves = scene.bEdges.filter((e) => e.p0 && e.c && e.p1).flatMap((e) => Array.from({ length: 65 }, (_, i) => sc.bez(e.p0!, e.c!, e.p1!, i / 64)));
+    for (const l of T.branchLines().filter((x) => !x.loose))
+      for (const p of stationsOf(l)) expect(Math.min(...curves.map((q) => dist(p, q))), p.k).toBeGreaterThanOrEqual(12);
+    expect(T.textHits(scene)).toEqual([]);
+  });
+
+  it("retracts a branch once no task is on its machine, and removes it", () => {
+    const snap = live(), scene = board(snap), lines = T.branchLines();
+    const key = lines.find((l) => l.ring === 1)!.key, [sun, machine] = key.split("|");
+    for (const k of scene.tasks) if (k.h?.machine === machine && (k.host as Galaxy).id === sun) k.h = undefined;
+    run(scene, 3, 1);
+    expect(T.branchLines().map((l) => l.key)).toContain(key);
+    run(scene, 4, 8);
+    const left = T.branchLines().map((l) => l.key);
+    expect(left).not.toContain(key);
+    expect(left).toEqual(lines.map((l) => l.key).filter((k) => k !== key));
   });
 });

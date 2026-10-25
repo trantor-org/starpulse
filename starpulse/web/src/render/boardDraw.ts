@@ -263,9 +263,9 @@ export function boardDraw(dc: DrawCtx, d: Drawing, io: BoardIO) {
   }
   function drawTasks() {
     for (const t of io.scene!.tasks) {
-      if (t.gone) continue;
-      const hot = isHot("task", t), r = t.big ? 4.2 : 2.6, lit = io.liveTasks.has(t.id);
-      if (t.arrive) pulse(t.arrive.x, t.arrive.y, t.arrive.r || 10, t.arrive.age, t.arrive.col);
+      if (t.gone || t.alpha === 0) continue;
+      const hot = isHot("task", t), r = (t.big ? 4.2 : 2.6) * (t.s ?? 1), lit = io.liveTasks.has(t.id);
+      if (t.arrive) pulse(t.arrive.x, t.arrive.y, t.arrive.r || 10, t.arrive.age, t.arrive.col, t.arrive.grow);
       if (t.moving && t.hop) {
         const c = t.hop.c;
         comet(c.p0, c.c, c.p1, t.hop.u, 3.2, tierColor(t.model)); // the head is drawn by the comet
@@ -284,7 +284,7 @@ export function boardDraw(dc: DrawCtx, d: Drawing, io: BoardIO) {
           cx.arc(t.host.x, t.host.y, t.R, Math.min(a0, a1), Math.max(a0, a1));
           cx.stroke();
         }
-      dot(t.x, t.y, hot ? r * 1.7 : r, rgba(tierColor(t.model), hot || lit ? 1 : 0.8));
+      dot(t.x, t.y, hot ? r * 1.7 : r, rgba(tierColor(t.model), (hot || lit ? 1 : 0.8) * (t.alpha ?? 1)));
     }
   }
   // state level: each planet runs its own machine; every move is a comet along its chord and the planet's rim glows while it moves
