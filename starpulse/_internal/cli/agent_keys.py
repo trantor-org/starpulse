@@ -72,6 +72,7 @@ TASK_KEYS = (
     "prs",
     "moves",
     "rating",
+    "released",
     "description",
 )
 
