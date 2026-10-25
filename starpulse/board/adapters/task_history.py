@@ -13,6 +13,7 @@ from typing import Any
 from sqlalchemy import Engine
 
 from starpulse.board.model.seam import OPERATOR, Written
+from starpulse.event_log.readmodel.fold import replay
 from starpulse.event_log.store import EventStore, NewEvent, StaleVersion
 
 WRITER = "native-board"
@@ -227,12 +228,14 @@ class TaskHistory:
         store = self._store
         if store is None:
             return
-        events = _events(before or {}, after, note)
         for _ in range(2):
             head = store.head(KIND, task)
             if after is None and head and store.read(KIND, task, head - 1)[-1].type == "Archived":
                 return  # retiring an archived task leaves the board no more than it already has
             base = before if before is not None else after
+            # a status is diffed from the History's state, so a write whose earlier append was lost still records its move
+            held = {**before, "status": replay(store.read(KIND, task))["state"]} if head and before else before
+            events = _events(held or {}, after, note)
             seeded = [("TaskImported", seed(base, 0.0))] if head == 0 and base else []
             if not events and not seeded:
                 return
