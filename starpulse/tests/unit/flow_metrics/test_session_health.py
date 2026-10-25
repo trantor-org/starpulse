@@ -12,7 +12,7 @@ from starpulse._internal.config.analytics import Analytics
 from starpulse._internal.harnesses.telemetry import CLAUDE_CODE, CODEX, Signal, signals
 from starpulse._internal.signals import claim_key
 from starpulse.contracts.adapters import TaskKeys
-from starpulse.flow_metrics.session_health import grouped, session_health, slice_health
+from starpulse.flow_metrics.session_health import grouped, session_health, session_rows, slice_health
 from starpulse.tests.unit.harnesses.test_telemetry import FIXTURES, claude, export, recorded
 
 KEYS = TaskKeys(
@@ -590,6 +590,25 @@ def test_a_failed_shell_write_is_not_the_first_edit() -> None:
     ]
 
     assert only(session_health(found, KEYS))["steps_before_edit"] is None
+
+
+def test_one_session_folds_to_one_row_per_task_it_worked_in_the_order_it_reached_them() -> None:
+    ordered = [
+        sig("prompt", 0, branch="claude/task-1-a"),
+        sig("request", 10, model="m", effort="low", input=3, seconds=10),
+        sig("branch", 20, name="claude/task-2-b"),
+        sig("request", 30, model="m", effort="low", input=4, seconds=5),
+    ]
+
+    rows = session_rows(ordered, KEYS, None)
+
+    assert [(r["task"], r["requests"], r["tokens"]["input"]) for r in rows] == [("TASK-1", 1, 3), ("TASK-2", 1, 4)]
+
+
+def test_session_rows_of_one_session_is_what_session_health_gives_for_it() -> None:
+    found = [sig("prompt", 0, branch="claude/task-1-a"), sig("request", 5, model="m", seconds=5)]
+
+    assert session_rows(grouped(found)[0], KEYS, None) == session_health(found, KEYS)
 
 
 def test_no_doc_lists_starpulse_insights() -> None:
