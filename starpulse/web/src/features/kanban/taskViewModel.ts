@@ -266,34 +266,68 @@ export const onScrim = (target: unknown, scrim: unknown): boolean => target === 
 /** Escape closes the modal, except in the edit form, whose own shortcuts own it. */
 export const closesOnKey = (key: string, editing: boolean): boolean => key === "Escape" && !editing;
 
-export interface Block { kind: "p" | "h" | "pre" | "moved"; text: string }
+export type Block =
+  | { kind: "p" | "h" | "pre" | "moved"; text: string }
+  | { kind: "table"; head: string[]; right: boolean[]; rows: string[][] };
 
 /** What the description's `start_criteria` block gives way to once the rail draws the criteria. */
 export const CRITERIA_POINTER = "Start Criteria are drawn in the side panel, each with its result →";
 
-/** A task description's Markdown as the blocks the read view draws: paragraphs, `##` headings and fenced code; with `drawn`, the `start_criteria` block is a pointer to the rail. */
+/** A GFM table's delimiter row: `|---|:---:|--:|`, with or without outer pipes. */
+const DELIMITER = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
+/** The cells of one table row, its outer pipes dropped. */
+const cells = (line: string): string[] => line.trim().replace(/^\||\|$/g, "").split("|").map((cell) => cell.trim());
+
+/** A task description's Markdown as the blocks the read view draws: paragraphs, `##` headings, fenced code and GFM tables; with `drawn`, the `start_criteria` block is a pointer to the rail. */
 export function markdown(text: string, drawn = false): Block[] {
   const blocks: Block[] = [];
-  let lines: string[] = [];
+  const lines = text.split("\n");
+  let para: string[] = [];
   let fence = false;
-  const flush = (kind: Block["kind"]) => {
-    if (lines.length || kind === "pre") blocks.push({ kind, text: lines.join("\n") });
-    lines = [];
+  const flush = (kind: "p" | "pre") => {
+    if (para.length || kind === "pre") blocks.push({ kind, text: para.join("\n") });
+    para = [];
   };
-  for (const line of text.split("\n")) {
+  for (let at = 0; at < lines.length; at++) {
+    const line = lines[at];
     if (line.startsWith("```")) {
       flush(fence ? "pre" : "p");
-      if (drawn && fence && /^start_criteria:/m.test(blocks[blocks.length - 1].text)) blocks[blocks.length - 1] = { kind: "moved", text: CRITERIA_POINTER };
+      const last = blocks[blocks.length - 1];
+      if (drawn && fence && last.kind === "pre" && /^start_criteria:/m.test(last.text)) blocks[blocks.length - 1] = { kind: "moved", text: CRITERIA_POINTER };
       fence = !fence;
-    } else if (fence) lines.push(line);
+    } else if (fence) para.push(line);
     else if (line.startsWith("## ")) {
       flush("p");
       blocks.push({ kind: "h", text: line.slice(3) });
-    } else if (line.trim()) lines.push(line);
+    } else if (/^\s*\|/.test(line) && DELIMITER.test(lines[at + 1] ?? "")) {
+      flush("p");
+      const right = cells(lines[at + 1]).map((c) => c.endsWith(":"));
+      const rows: string[][] = [];
+      for (at += 2; at < lines.length && /^\s*\|/.test(lines[at]); at++) rows.push(cells(lines[at]));
+      at--;
+      blocks.push({ kind: "table", head: cells(line), right, rows });
+    } else if (line.trim()) para.push(line);
     else flush("p");
   }
   flush(fence ? "pre" : "p");
   return blocks;
+}
+
+/** The `## ` sections a task's creation writes as its own bookkeeping; the dialog does not draw them. */
+const CREATION_SECTIONS = ["Duplicate Search", "Duplicate Resolution", "ADR Needed"];
+
+/** The body sections the dialog draws for a record: the description without its creation sections, and the notes without the claim marker. */
+export function taskBody(record: TaskRecord): Pick<TaskRecord, "description" | "notes"> {
+  let skip = false;
+  let fence = false;
+  const description: string[] = [];
+  for (const line of record.description.split("\n")) {
+    if (line.startsWith("```")) fence = !fence;
+    else if (!fence && line.startsWith("## ")) skip = CREATION_SECTIONS.includes(line.slice(3).trim());
+    if (!skip) description.push(line);
+  }
+  const notes = record.notes.split("\n").filter((line) => !line.startsWith("**Assignee:**")).join("\n");
+  return { description: description.join("\n").trim(), notes: notes.trim() };
 }
 
 /** How many of the tasks a task holds the rail lists before it counts the rest. */
