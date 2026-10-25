@@ -365,6 +365,36 @@ def test_a_task_whose_file_is_deleted_between_scans_is_retracted(tmp_path: Path)
     assert gone == ["task-1"]
 
 
+def test_two_concurrent_scans_over_a_deleted_file_forget_it_once(tmp_path: Path) -> None:
+    write_config(tmp_path)
+    path = write_task(tmp_path, "tasks", "task-1", "To Do")
+    gone: list[str] = []
+    errors: list[BaseException] = []
+
+    def slow_retract(task_id: str) -> None:
+        time.sleep(0.2)
+        gone.append(task_id)
+
+    backlog = UpstreamBacklog(tmp_path, lambda task: None, retract=slow_retract)
+    backlog.scan()
+    path.unlink()
+
+    def scan() -> None:
+        try:
+            backlog.scan()
+        except BaseException as error:
+            errors.append(error)
+
+    threads = [threading.Thread(target=scan) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert errors == []
+    assert gone == ["task-1"]
+
+
 def test_a_task_file_moved_to_the_archive_is_settled_not_retracted(tmp_path: Path) -> None:
     write_config(tmp_path)
     path = write_task(tmp_path, "tasks", "task-1", "To Do")
