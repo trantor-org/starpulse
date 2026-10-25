@@ -322,6 +322,14 @@ describe("a Waiting card linked to a blocker in another milestone", () => {
   const badge = (el: El) => walk(el).find((k) => /\bxm\b/.test(k.props.className ?? ""));
   const ev = () => ({ stopPropagation: vi.fn(), key: "Enter", preventDefault: vi.fn() });
 
+  it("draws a held session's URL as its first five hash characters", () => {
+    const held: KanbanTask = { ...task, assignee: "https://claude.ai/code/session_01AbCdEfGh" };
+    const html = renderToStaticMarkup(<Card task={held} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} />);
+
+    expect(html).toContain("01AbC");
+    expect(html).not.toContain("claude.ai");
+  });
+
   it("draws a badge in the footer naming the blocker's milestone and id, and none on a card with no blocker elsewhere", () => {
     const html = renderToStaticMarkup(card());
 
