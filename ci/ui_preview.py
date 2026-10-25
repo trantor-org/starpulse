@@ -313,10 +313,27 @@ def _published(gh: Callable[..., str], folder: str) -> dict[str, str]:
     return {t["path"]: t["sha"] for t in tree if t["path"].startswith(f"{folder}/")}
 
 
+#: Concurrent runs commit to the one Pages branch; GitHub answers the loser `is at X but expected Y (HTTP 409)`.
+_CONFLICT_ATTEMPTS = 4
+
+
+def _retry_conflict(write: Callable[[], str]) -> None:
+    """Run a Pages-branch write, repeating it while another run's commit keeps moving the branch."""
+    for attempt in range(1, _CONFLICT_ATTEMPTS + 1):
+        try:
+            write()
+        except RuntimeError as error:
+            if "HTTP 409" not in str(error) or attempt == _CONFLICT_ATTEMPTS:
+                raise
+            time.sleep(attempt)
+        else:
+            return
+
+
 def _delete(gh: Callable[..., str], path: str, sha: str) -> None:
     route = f"repos/{DEMO_REPO}/contents/{path}"
     fields = (f"message=Unpublish {path}", f"sha={sha}", f"branch={DEMO_BRANCH}")
-    gh("api", "--method", "DELETE", route, *(arg for field in fields for arg in ("-f", field)))
+    _retry_conflict(lambda: gh("api", "--method", "DELETE", route, *(arg for field in fields for arg in ("-f", field))))
 
 
 def _branch_exists(gh: Callable[..., str]) -> bool:
