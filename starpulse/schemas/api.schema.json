@@ -4635,6 +4635,18 @@
           "default": null,
           "description": "The session that last claimed a Board task; empty when none has, absent off the Board."
         },
+        "claim_expires_at": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "When a held Board task's claim expires, its last renewal plus the claim TTL, epoch seconds; null when unheld, not In Progress, or before the first sweep pass."
+        },
         "created": {
           "anyOf": [
             {

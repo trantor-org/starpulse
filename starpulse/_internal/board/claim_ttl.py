@@ -48,13 +48,16 @@ def sweep(
     ttl: float = DEFAULT_TTL,
     now: float | None = None,
     activity: Callable[[str], float | None] = lambda _session: None,
+    expiries: dict[str, float] | None = None,
 ) -> list[str]:
     """Releases each working Task in `rows` whose Assignee renewed nothing for `ttl`; the ids released.
 
     `activity` is when a session last acted outside the Task's stream, such as a harness event of its run: a session
-    working in its worktree renews its claim that way without a Task Event.
+    working in its worktree renews its claim that way without a Task Event. `expiries`, when given, is filled with each
+    held working Task's claim expiry, its renewal plus `ttl`; a Task this pass releases has none.
     """
     now = time.time() if now is None else now
+    expiries = {} if expiries is None else expiries
     working = board.roles.working
     if board.release is None or not working:
         return []
@@ -65,7 +68,10 @@ def sweep(
             continue
         renewals = (last_renewal(store.read("task", row["id"]), session), activity(session))
         renewed = max((at for at in renewals if at is not None), default=None)
-        if renewed is None or now - renewed < ttl:
+        if renewed is None:
+            continue
+        expiries[row["id"]] = renewed + ttl
+        if now - renewed < ttl:
             continue
         if board.release(row["id"], row["state"], session=session, actor=ACTOR).ok:
             events = [
@@ -74,6 +80,7 @@ def sweep(
             ]
             store.append("task", row["id"], store.head("task", row["id"]), events, at=now)
             released.append(row["id"])
+            del expiries[row["id"]]
     return released
 
 
@@ -88,6 +95,8 @@ def start(board: Board, feed: BoardFeed, log: EventLog, settings: Mapping[str, A
 
     def run(stop: threading.Event) -> None:
         while not stop.wait(min(60.0, ttl / 6)):
-            sweep(board, store, feed.open_tasks(), ttl=ttl, activity=activity)
+            expiries: dict[str, float] = {}
+            sweep(board, store, feed.open_tasks(), ttl=ttl, activity=activity, expiries=expiries)
+            feed.serve_expiries(expiries)
 
     feed.spawn(run, "claim-ttl")

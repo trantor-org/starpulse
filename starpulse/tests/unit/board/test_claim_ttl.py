@@ -95,6 +95,46 @@ def test_an_event_by_the_assignee_renews_the_claim(served) -> None:
     assert sweep(built, store, _rows(built), ttl=1800, now=claimed + 2801) == ["task-5"]
 
 
+def test_a_held_task_serves_renewal_plus_ttl_as_its_claim_expiry(served) -> None:
+    built, _, store, _ = served
+    claimed = _claim(built, store)
+    _renew(store, claimed + 1000)
+    expiries: dict[str, float] = {}
+
+    assert sweep(built, store, _rows(built), ttl=1800, now=claimed + 2500, expiries=expiries) == []
+    assert expiries == {"task-5": claimed + 1000 + 1800}
+
+
+def test_an_unheld_task_serves_no_claim_expiry(served) -> None:
+    built, _, store, _ = served
+    _claim(built, store)
+    rows = [{"id": "task-5", "state": "In Progress", "assignee": ""}]
+    expiries: dict[str, float] = {}
+
+    sweep(built, store, rows, ttl=1800, now=time.time(), expiries=expiries)
+
+    assert expiries.get("task-5") is None
+
+
+def test_a_task_released_on_the_pass_serves_no_claim_expiry(served) -> None:
+    built, _, store, _ = served
+    claimed = _claim(built, store)
+    expiries: dict[str, float] = {}
+
+    assert sweep(built, store, _rows(built), ttl=1800, now=claimed + 1801, expiries=expiries) == ["task-5"]
+    assert expiries.get("task-5") is None
+
+
+def test_the_feed_serves_the_latest_pass_expiry_on_the_task(served, tmp_path: Path) -> None:
+    built, feed, store, _ = served
+    claimed = _claim(built, store)
+    _scanned(tmp_path, feed)
+    feed.serve_expiries({"task-5": claimed + 1800})
+
+    task = next(row for row in _scanned(tmp_path, feed) if row["id"] == "task-5")
+    assert task["claim_expires_at"] == claimed + 1800
+
+
 def test_the_release_names_the_last_renewal_of_a_silent_session(served) -> None:
     built, _, store, _ = served
     claimed = _claim(built, store)
