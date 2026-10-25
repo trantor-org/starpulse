@@ -13,12 +13,12 @@ from starpulse._internal.ci.ci import attach
 from starpulse._internal.config.config import Config
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.harnesses.harness import HARNESS_MACHINES
-from starpulse._internal.machines.snapshot import qualifier
 from starpulse._internal.pulls.task_actor import ACTOR
 from starpulse.event_log.event_log import EventLog, prune_forever
 from starpulse.event_log.opening import database_url
 from starpulse.event_log.readmodel.read_model import ReadModel
 from starpulse.flow_metrics.history import HistoryStore
+from starpulse.machine_engine.model.snapshot import qualifier
 
 
 def assemble(

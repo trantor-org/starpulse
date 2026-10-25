@@ -9,19 +9,18 @@ import pytest
 import yaml
 from statemachine import StateChart
 
-from starpulse._internal.machines import machine_definition
-from starpulse._internal.machines.machine_definition import (
+from starpulse.machine_engine.adapters import machine_loader
+from starpulse.machine_engine.adapters.machine_loader import load_machine, validate
+from starpulse.machine_engine.model.machine_definition import (
     Cue,
     MachineDefinitionError,
     Registry,
     Writer,
-    load_machine,
     refuse_unlisted,
     role_of,
-    validate,
     writers_of,
 )
-from starpulse._internal.machines.snapshot import describe
+from starpulse.machine_engine.model.snapshot import describe
 
 MACHINES = Path(__file__).parent.parent.parent / "fixtures" / "machines"
 
@@ -157,9 +156,9 @@ class TestTheSchema:
             validate(_doc(writers=writers))
 
     def test_the_published_schema_is_the_one_that_validates(self) -> None:
-        schema = Path(machine_definition.__file__).parents[2] / "schemas" / "machine.schema.json"
+        schema = Path(machine_loader.__file__).parents[2] / "schemas" / "machine.schema.json"
 
-        assert json.loads(schema.read_text()) == machine_definition.SCHEMA
+        assert json.loads(schema.read_text()) == machine_loader.SCHEMA
 
 
 def _review(waits: dict[str, Any]) -> dict[str, Any]:
@@ -561,7 +560,7 @@ class TestRoles:
 
 
 def test_the_machine_schema_lives_in_the_schemas_directory() -> None:
-    schema_path = Path(machine_definition.__file__).parents[2] / "schemas" / "machine.schema.json"
+    schema_path = Path(machine_loader.__file__).parents[2] / "schemas" / "machine.schema.json"
     assert schema_path.is_file()
     document = json.loads(schema_path.read_text())
     assert document["title"] == "StarPulse machine definition"

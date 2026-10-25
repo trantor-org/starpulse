@@ -9,11 +9,11 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine
 
-from starpulse._internal.machines.machine_definition import MachineDefinitionError
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.readmodel.fold import replay
 from starpulse.event_log.store import EventStore, NewEvent, StaleVersion
 from starpulse.event_log.store.machine_registry import LiveTask, MachineRegistry
+from starpulse.machine_engine.model.machine_definition import MachineDefinitionError
 
 BOARD: dict[str, Any] = {
     "name": "board",

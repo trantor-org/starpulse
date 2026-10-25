@@ -9,7 +9,7 @@ from starpulse._internal.board import rules
 from starpulse._internal.board.native import board
 from starpulse._internal.board.seam import Board, Written
 from starpulse._internal.config.config import load
-from starpulse._internal.machines.transitions import DEFAULT_STATUSES
+from starpulse.machine_engine.model.transitions import DEFAULT_STATUSES
 from starpulse.tests.unit.board.test_native import native_root, write_task
 
 PULL = "https://github.com/acme/app/pull/5"

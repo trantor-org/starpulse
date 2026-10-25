@@ -14,9 +14,9 @@ from collections import defaultdict
 from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
-from starpulse._internal.machines.replay import EventJudge, lane_moves
-from starpulse._internal.machines.transitions import tables
 from starpulse.event_log import events, lane_events
+from starpulse.machine_engine.model.replay import EventJudge, lane_moves
+from starpulse.machine_engine.model.transitions import tables
 
 if TYPE_CHECKING:
     from starpulse.event_log.event_log import Entry, EventLog

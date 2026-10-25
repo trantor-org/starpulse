@@ -75,9 +75,9 @@ from starpulse._internal.board.upstream_backlog import (
     _profile as _profile_of,
 )
 from starpulse._internal.feed import criteria
-from starpulse._internal.machines.state_roles import StateRoles
 from starpulse.event_log.lane_events import ARCHIVED, COMPLETED
 from starpulse.event_log.tables import retired_tasks
+from starpulse.machine_engine.model.state_roles import StateRoles
 
 if TYPE_CHECKING:
     from starpulse._internal.feed.board_feed import BoardFeed
@@ -1177,7 +1177,9 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
     evaluate = criteria.evaluator(settings.get("criteria"), base)
     migrations: Mapping[str, str] = {}
     if "machine" in settings:
-        from starpulse._internal.machines.machine_definition import _read  # noqa: PLC0415 - import cost, paid on first use
+        from starpulse.machine_engine.adapters.machine_loader import (  # noqa: PLC0415 - import cost, paid on first use
+            _read,
+        )
 
         migrations = _read(base / str(settings["machine"])).get("migrations", {})
     retired = _Retired()

@@ -23,8 +23,8 @@ import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
 
-from starpulse._internal.machines.state_roles import StateRoles
-from starpulse._internal.machines.transitions import board_machine
+from starpulse.machine_engine.model.state_roles import StateRoles
+from starpulse.machine_engine.model.transitions import board_machine
 
 #: The page built as one script (`vite build --mode one-file`): a demo is one file, with no server to fetch a lazy chunk from.
 STATIC = Path(__file__).parents[2] / "static" / "one-file"

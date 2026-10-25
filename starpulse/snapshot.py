@@ -1,12 +1,6 @@
-"""How a machine is described to the page; the implementation is in `starpulse._internal.machines.snapshot`."""
+"""How a machine is described to the page; the implementation is in `starpulse.machine_engine.model.snapshot`."""
 
-from starpulse._internal.machines.snapshot import (
-    Qualify,
-    describe,
-    is_workflow,
-    qualifier,
-    writers,
-)
+from starpulse.machine_engine.model.snapshot import Qualify, describe, is_workflow, qualifier, writers
 
 __all__ = [
     "Qualify",

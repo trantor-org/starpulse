@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Iterable
 
-from starpulse._internal.machines.transitions import lane_id
+from starpulse.machine_engine.model.transitions import lane_id
 
 #: How long after the board made a move the lane stream may have read it and still be taken for the same move.
 TWIN_WINDOW_S = 3600.0

@@ -8,8 +8,8 @@ import yaml
 
 from starpulse._internal.cli import init
 from starpulse._internal.config.config import load
-from starpulse._internal.machines.machine_definition import load_machine
-from starpulse._internal.machines.transitions import lane_id
+from starpulse.machine_engine.adapters.machine_loader import load_machine
+from starpulse.machine_engine.model.transitions import lane_id
 
 
 def test_init_writes_a_config_the_server_loads(tmp_path: Path) -> None:

@@ -1,15 +1,14 @@
-"""Loading and validating a machine; the implementation is in `starpulse._internal.machines.machine_definition`."""
+"""Loading and validating a machine; the implementation is in `starpulse.machine_engine`."""
 
-from starpulse._internal.machines.machine_definition import (
+from starpulse.machine_engine.adapters.machine_loader import load_machine, validate
+from starpulse.machine_engine.model.machine_definition import (
     Compiled,
     Cue,
     MachineDefinitionError,
     Registry,
     Writer,
-    load_machine,
     refuse_unlisted,
     role_of,
-    validate,
     writers_of,
 )
 

@@ -48,15 +48,15 @@ def repo(tmp_path: Path) -> Path:
         "starpulse/contracts/api/__main__.py": "",
         "starpulse/contracts/__main__.py": "",
         "starpulse/contracts/adapters.py": "",
-        "starpulse/_internal/machines/machine_definition.py": "",
+        "starpulse/machine_engine/adapters/machine_loader.py": "",
         "starpulse/tests/unit/contracts/test_contracts.py": "from starpulse.contracts import adapters\nfrom starpulse.contracts.api import schema\n",
-        "starpulse/tests/unit/machines/test_machine_definition.py": "from starpulse._internal.machines import machine_definition\n",
+        "starpulse/tests/unit/machine_engine/test_machine_definition.py": "from starpulse.machine_engine.adapters import machine_loader\n",
         "starpulse/_internal/ci/ci.py": "",
         "starpulse/_internal/harnesses/harness.py": "",
         "starpulse/_internal/pulls/github.py": "",
         "starpulse/_internal/cli/skill_install.py": "",
         "starpulse/tests/unit/pulls/test_github.py": "from starpulse._internal.pulls import github\n",
-        "starpulse/tests/unit/machines/test_github_pull_request_machine.py": "",
+        "starpulse/tests/unit/machine_engine/test_github_pull_request_machine.py": "",
         "starpulse/tests/integration/cli/test_agent_cli.py": "from starpulse._internal.cli import skill_install\n",
         "ci/sizer.py": "",
         "ci/test_sizer.py": "from sizer import X\n",
@@ -159,7 +159,7 @@ def test_a_change_whose_readers_the_graph_cannot_name_runs_the_full_suite(repo, 
         (
             "starpulse/machines/copilot.yaml",
             [
-                "starpulse/tests/unit/machines/test_github_pull_request_machine.py",
+                "starpulse/tests/unit/machine_engine/test_github_pull_request_machine.py",
                 "starpulse/tests/unit/pulls/test_github.py",
             ],
         ),
@@ -360,7 +360,7 @@ def test_a_module_conftest_code_uses_outside_a_fixture_selects_every_test_the_co
         ),
         (
             "starpulse/schemas/machine.schema.json",
-            ["starpulse/_internal/machines/machine_definition.py"],
+            ["starpulse/machine_engine/adapters/machine_loader.py"],
         ),
     ],
 )
@@ -444,7 +444,7 @@ def test_a_pyproject_with_no_earlier_version_to_compare_runs_the_full_suite(repo
 
 def test_a_non_python_file_selects_a_mapped_reader_by_the_map_not_the_import_graph(repo):
     reader = "starpulse/_internal/pulls/github.py"
-    ran = "starpulse/tests/unit/machines/test_github_pull_request_machine.py"
+    ran = "starpulse/tests/unit/machine_engine/test_github_pull_request_machine.py"
     coverage = mapped(**{ran: [reader]})
     assert select(repo, ["starpulse/machines/copilot.yaml"], coverage) == Selection([ran])
 

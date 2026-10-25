@@ -14,9 +14,9 @@ from starpulse._internal.board import project_machines
 from starpulse._internal.board.seam import Board
 
 if TYPE_CHECKING:
-    from starpulse._internal.machines.snapshot import Qualify
     from starpulse.board_feed import BoardFeed
     from starpulse.event_log import EventLog
+    from starpulse.machine_engine.model.snapshot import Qualify
 
 
 def _start(feed: BoardFeed, group: str, log: EventLog) -> None:

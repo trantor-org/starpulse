@@ -2,10 +2,10 @@
 
 from pathlib import Path
 
-from starpulse._internal.machines.machine_definition import load_machine
-from starpulse._internal.machines.snapshot import describe
-from starpulse._internal.machines.state_roles import StateRoles
-from starpulse._internal.machines.transitions import board_machine
+from starpulse.machine_engine.adapters.machine_loader import load_machine
+from starpulse.machine_engine.model.snapshot import describe
+from starpulse.machine_engine.model.state_roles import StateRoles
+from starpulse.machine_engine.model.transitions import board_machine
 
 FIXTURES = Path(__file__).parent / "fixtures" / "machines"
 #: The Board's statuses, in the order its lanes are drawn.

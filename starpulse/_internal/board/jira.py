@@ -26,11 +26,12 @@ from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 
 from starpulse._internal.board.seam import Board
-from starpulse._internal.machines.machine_definition import MachineDefinitionError, compile_document, validate
-from starpulse._internal.machines.snapshot import Qualify, describe
-from starpulse._internal.machines.state_roles import StateRoles
-from starpulse._internal.machines.transitions import board_moves, lane_id
 from starpulse.contracts.adapters import BoardTask, TaskKeys
+from starpulse.machine_engine.adapters.machine_loader import validate
+from starpulse.machine_engine.model.machine_definition import MachineDefinitionError, compile_document
+from starpulse.machine_engine.model.snapshot import Qualify, describe
+from starpulse.machine_engine.model.state_roles import StateRoles
+from starpulse.machine_engine.model.transitions import board_moves, lane_id
 
 if TYPE_CHECKING:
     from starpulse._internal.feed.board_feed import BoardFeed

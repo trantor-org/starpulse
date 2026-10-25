@@ -14,8 +14,9 @@ from pathlib import Path
 from typing import Any
 
 from starpulse._internal.board.seam import Board
-from starpulse._internal.machines.machine_definition import load_machine, refuse_unlisted
-from starpulse._internal.machines.snapshot import Qualify, describe
+from starpulse.machine_engine.adapters.machine_loader import load_machine
+from starpulse.machine_engine.model.machine_definition import refuse_unlisted
+from starpulse.machine_engine.model.snapshot import Qualify, describe
 
 WORKSPACE = Path(__file__).with_name("workspace")
 #: The Board's main line, the lanes drawn on its axis; Waiting, Needs Attention and the final states sit off it.

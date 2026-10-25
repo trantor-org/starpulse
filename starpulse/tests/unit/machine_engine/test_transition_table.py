@@ -2,11 +2,11 @@
 
 from pathlib import Path
 
-from starpulse._internal.machines.graph import Violation, conform, replay
-from starpulse._internal.machines.machine_definition import compile_document
-from starpulse._internal.machines.snapshot import describe
-from starpulse._internal.machines.transitions import Table
-from starpulse.tests.unit.machines.test_graph import FLOW
+from starpulse.machine_engine.model.graph import Violation, conform, replay
+from starpulse.machine_engine.model.machine_definition import compile_document
+from starpulse.machine_engine.model.snapshot import describe
+from starpulse.machine_engine.model.transitions import Table
+from starpulse.tests.unit.machine_engine.test_graph import FLOW
 
 #: Done is final, so the last SUBMIT begins again from `start`, which no SUBMIT leaves.
 TRACE = ["OPEN", "SUBMIT", "APPROVE", "SUBMIT"]

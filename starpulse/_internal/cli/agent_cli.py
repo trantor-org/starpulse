@@ -216,7 +216,7 @@ def _machine(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, 
         **{key: machine[key] for key in ("submachines", "launches", "writers") if key in machine},
     }
     if args.format == "dot":
-        from starpulse._internal.machines.diagram import dot  # noqa: PLC0415 - import cost, paid on first use
+        from starpulse.machine_engine.model.diagram import dot  # noqa: PLC0415 - import cost, paid on first use
 
         document |= {"format": "dot", "diagram": dot(flow["name"], machine)}
     return document
@@ -474,7 +474,13 @@ def _skills_install(args: argparse.Namespace, environ: Mapping[str, str]) -> dic
 
 def _checked(path: Path) -> dict[str, Any]:
     """One machine file's verdict: compiling it is what refuses a schema or a compile error."""
-    from starpulse._internal.machines.machine_definition import MachineDefinitionError, Registry, load_machine  # noqa: PLC0415 - import cost, paid on first use
+    from starpulse.machine_engine.adapters.machine_loader import (  # noqa: PLC0415 - import cost, paid on first use
+        load_machine,
+    )
+    from starpulse.machine_engine.model.machine_definition import (  # noqa: PLC0415 - import cost, paid on first use
+        MachineDefinitionError,
+        Registry,
+    )
 
     try:
         load_machine(path, Registry(guards=_AnyName(), actions=_AnyName()))
@@ -487,7 +493,7 @@ def _checked(path: Path) -> dict[str, Any]:
 
 def _dead_migrations(path: Path, held: set[str]) -> list[dict[str, Any]]:
     """An error per `migrations` entry of `path` whose source State no live Task holds."""
-    from starpulse._internal.machines.machine_definition import _read  # noqa: PLC0415 - import cost, paid on first use
+    from starpulse.machine_engine.adapters.machine_loader import _read  # noqa: PLC0415 - import cost, paid on first use
 
     mapping = _read(path).get("migrations", {})
     return [
@@ -516,8 +522,10 @@ def _validate(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str,
 
 
 def _import_mermaid(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    from starpulse._internal.machines import mermaid_import  # noqa: PLC0415 - import cost, paid on first use
-    from starpulse._internal.machines.machine_definition import MachineDefinitionError  # noqa: PLC0415 - import cost, paid on first use
+    from starpulse.machine_engine.adapters import mermaid_import  # noqa: PLC0415 - import cost, paid on first use
+    from starpulse.machine_engine.model.machine_definition import (  # noqa: PLC0415 - import cost, paid on first use
+        MachineDefinitionError,
+    )
 
     if not args.source.is_file():
         raise agent_wire.CliError("not_found", f"{args.source} is not a file")
@@ -558,12 +566,14 @@ def _unlisted_writers(config: Config, base: Path) -> list[str]:
     Only the built-in boards draw `.starpulse/machines/`; Jira draws its own workflow and a dotted type is unknown here.
     """
     from starpulse._internal.board import project_machines  # noqa: PLC0415 - import cost, paid on first use
-    from starpulse._internal.machines.machine_definition import (  # noqa: PLC0415 - import cost, paid on first use
-        MachineDefinitionError,
+    from starpulse._internal.pulls.task_actor import ACTOR  # noqa: PLC0415 - import cost, paid on first use
+    from starpulse.machine_engine.adapters.machine_loader import (  # noqa: PLC0415 - import cost, paid on first use
         load_machine,
+    )
+    from starpulse.machine_engine.model.machine_definition import (  # noqa: PLC0415 - import cost, paid on first use
+        MachineDefinitionError,
         refuse_unlisted,
     )
-    from starpulse._internal.pulls.task_actor import ACTOR  # noqa: PLC0415 - import cost, paid on first use
 
     listed = [name for names in config.qualified_domains().values() for name in names]
     if not listed or config.board_type not in {"native", "upstream_backlog", "machines"}:

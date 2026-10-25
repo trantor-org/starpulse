@@ -1,6 +1,6 @@
-"""Replaying history and traces against a declared machine; the implementation is in `starpulse._internal.machines`."""
+"""Replaying history and traces against a declared machine; the implementation is in `starpulse.machine_engine`."""
 
-from starpulse._internal.machines.graph import (
+from starpulse.machine_engine.model.graph import (
     Accepted,
     Bypass,
     Incomplete,
@@ -17,8 +17,8 @@ from starpulse._internal.machines.graph import (
     shortest_paths,
     simple_paths,
 )
-from starpulse._internal.machines.graph import Violation as TraceViolation
-from starpulse._internal.machines.replay import Report, Violation, check_events, check_lanes
+from starpulse.machine_engine.model.graph import Violation as TraceViolation
+from starpulse.machine_engine.model.replay import Report, Violation, check_events, check_lanes
 
 __all__ = [
     "Accepted",

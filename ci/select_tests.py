@@ -69,7 +69,7 @@ READERS = {
     "docs/sources.md": ("starpulse/tests/unit/config/test_builtin_types.py",),
     "ci/preview.toml": ("ci/ui_preview.py", "ci/seeded_server.py"),
     "starpulse/schemas/api.schema.json": ("starpulse/contracts/api/schema.py", "starpulse/contracts/api/__main__.py"),
-    "starpulse/schemas/machine.schema.json": ("starpulse/_internal/machines/machine_definition.py",),
+    "starpulse/schemas/machine.schema.json": ("starpulse/machine_engine/adapters/machine_loader.py",),
     "starpulse/schemas/*": (
         "starpulse/contracts/adapters.py",
         "starpulse/contracts/__main__.py",
@@ -82,7 +82,7 @@ READERS = {
         "starpulse/_internal/ci/ci.py",
         "starpulse/_internal/harnesses/harness.py",
         "starpulse/_internal/pulls/github.py",
-        "starpulse/tests/unit/machines/test_github_pull_request_machine.py",
+        "starpulse/tests/unit/machine_engine/test_github_pull_request_machine.py",
     ),
     "starpulse/skills/*": (
         "starpulse/_internal/cli/skill_install.py",

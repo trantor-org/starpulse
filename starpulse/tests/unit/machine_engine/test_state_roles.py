@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.machines.machine_definition import load_machine
-from starpulse._internal.machines.state_roles import StateRoles
+from starpulse.machine_engine.adapters.machine_loader import load_machine
+from starpulse.machine_engine.model.state_roles import StateRoles
 
 FIXTURES = Path(__file__).parents[2] / "fixtures" / "machines"
 

@@ -29,16 +29,12 @@ The compiled class is an ordinary `StateChart`, so `board_client`'s paths,
 conformance and guard replay run on it unchanged.
 """
 
-import json
-from collections.abc import Callable, Collection, Iterable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, field
 from functools import wraps
 from pathlib import Path
 from typing import Any
 
-import yaml
-from jsonschema import Draft202012Validator
-from jsonschema.exceptions import ValidationError, best_match
 from statemachine import StateChart
 from statemachine.exceptions import InvalidDefinition
 from statemachine.io import create_machine_class_from_definition
@@ -50,11 +46,9 @@ __all__ = [
     "Registry",
     "Writer",
     "field_matches",
-    "load_machine",
     "opened_by",
     "refuse_unlisted",
     "role_of",
-    "validate",
     "writers_of",
 ]
 
@@ -62,8 +56,6 @@ __all__ = [
 DRAWING = ("tiers", "main_line", "rests", "submachines", "launches", "next")
 #: The fact kinds a state's `waits` may name: what the task actor derives from a task's pull request, dependencies and criteria.
 WAIT_FACTS = ("pr_terminal", "deps_done", "deps_unresolved", "criteria_met", "criteria_unmet")
-SCHEMA = json.loads((Path(__file__).parents[2] / "schemas" / "machine.schema.json").read_text())
-_VALIDATOR = Draft202012Validator(SCHEMA)
 
 
 class MachineDefinitionError(ValueError):
@@ -136,42 +128,6 @@ def role_of(compiled: Compiled, state: str) -> str | None:
     return compiled.roles[state]
 
 
-def _schema_error(document: Any) -> ValidationError | None:
-    return best_match(_VALIDATOR.iter_errors(document))
-
-
-def _describe(error: ValidationError) -> str:
-    where = "/".join(str(part) for part in error.absolute_path) or "<root>"
-    return f"{where}: {error.message}"
-
-
-def validate(document: Any) -> None:
-    """Refuse a document the published schema rejects."""
-    if (error := _schema_error(document)) is not None:
-        raise MachineDefinitionError(_describe(error))
-
-
-def _line_of(text: str, parts: Iterable[str | int]) -> int:
-    """The 1-based line of the YAML value at `parts`, or of the deepest enclosing node that exists."""
-    node = yaml.compose(text)
-    for part in parts:
-        if isinstance(node, yaml.MappingNode):
-            child = next((value for key, value in node.value if key.value == part), None)
-        elif isinstance(node, yaml.SequenceNode) and isinstance(part, int):
-            child = node.value[part]
-        else:
-            child = None
-        if child is None:
-            break
-        node = child
-    return node.start_mark.line + 1
-
-
-def load_machine(path: Path, registry: Registry = Registry()) -> Compiled:
-    """Compile the machine file at `path`."""
-    return compile_document(_read(path), path, registry)
-
-
 def compile_document(document: dict[str, Any], path: Path, registry: Registry = Registry()) -> Compiled:
     """Compile a machine `document` the schema has accepted; `path` names it in errors."""
     states, bindings, waits = _compile(document, path, registry)
@@ -194,31 +150,6 @@ def compile_document(document: dict[str, Any], path: Path, registry: Registry = 
     setattr(machine, "roles", roles)
     drawing = {key: document[key] for key in DRAWING if key in document}
     return Compiled(document["name"], machine, bindings, writers, cues, drawing, waits, roles)
-
-
-def _read(path: Path) -> dict[str, Any]:
-    try:
-        text = path.read_text()
-        document = yaml.safe_load(text)
-    except (OSError, yaml.YAMLError) as error:
-        mark = getattr(error, "problem_mark", None)
-        raise MachineDefinitionError(f"{path}: {error}", path, mark.line + 1 if mark else None) from error
-    _spell_on(document)
-    if isinstance(document, dict) and "subflows" in document:
-        raise MachineDefinitionError(
-            f"{path}: `subflows:` is now `submachines:`; rename the key", path, _line_of(text, ["subflows"])
-        )
-    if (error := _schema_error(document)) is not None:
-        raise MachineDefinitionError(f"{path}: {_describe(error)}", path, _line_of(text, error.absolute_path))
-    return document
-
-
-def _spell_on(document: Any) -> None:
-    """Read a cue's bare `on:` key as the word it is: YAML 1.1 loads it as the boolean `True`."""
-    cues = document.get("cues") if isinstance(document, dict) else None
-    for cue in cues if isinstance(cues, list) else ():
-        if isinstance(cue, dict) and True in cue:
-            cue["on"] = cue.pop(True)
 
 
 def _compile(

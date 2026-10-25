@@ -6,10 +6,10 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from starpulse._internal.machines.transitions import lane_id
+from starpulse.machine_engine.model.transitions import lane_id
 
 if TYPE_CHECKING:
-    from starpulse._internal.machines.machine_definition import Compiled
+    from starpulse.machine_engine.model.machine_definition import Compiled
 
 __all__ = ["StateRoles"]
 

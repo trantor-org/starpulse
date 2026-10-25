@@ -10,11 +10,11 @@ from sqlalchemy import Engine
 
 from starpulse._internal.board.view import board_columns
 from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.machines.transitions import board_machine
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.readmodel.projector import Projector
 from starpulse.event_log.readmodel.read_model import ReadModel
 from starpulse.event_log.store import EventStore, NewEvent
+from starpulse.machine_engine.model.transitions import board_machine
 
 
 @pytest.fixture

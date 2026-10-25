@@ -11,12 +11,9 @@ import json
 from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
-from starpulse._internal.machines.machine_definition import _read
-
-__all__ = ["Definition", "Drift", "Merged", "Source", "definition", "definition_of", "merge"]
+__all__ = ["Definition", "Drift", "Merged", "Source", "definition_of", "merge"]
 
 
 @dataclass(frozen=True)
@@ -26,11 +23,6 @@ class Definition:
     name: str
     digest: str
     facts: frozenset[str]
-
-
-def definition(path: Path) -> Definition:
-    """The definition of the machine file at `path`."""
-    return definition_of(_read(path))
 
 
 def definition_of(document: Mapping[str, Any]) -> Definition:

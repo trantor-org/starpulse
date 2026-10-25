@@ -18,14 +18,14 @@ from starpulse._internal.config.config import Producer
 from starpulse._internal.feed.board_feed import BoardFeed, follow
 from starpulse._internal.feed.machine_tasks import MachineTasks
 from starpulse._internal.kit.adapter_kit import next_event, serve, url
-from starpulse._internal.machines.machine_definition import load_machine
-from starpulse._internal.machines.snapshot import describe
-from starpulse._internal.machines.transitions import board_machine
 from starpulse._internal.runs.cloudevents import BATCH, MAX_DATA, SINGLE, CloudEventsIngest
 from starpulse._internal.runs.ingest import MAX_BATCH_BODY
 from starpulse._internal.runs.ingest import tokens as ingest_tokens
 from starpulse._internal.server.page_server import PageServer
 from starpulse.event_log.event_log import EventLog, Tail
+from starpulse.machine_engine.adapters.machine_loader import load_machine
+from starpulse.machine_engine.model.snapshot import describe
+from starpulse.machine_engine.model.transitions import board_machine
 
 DELIVERY = """\
 name: delivery

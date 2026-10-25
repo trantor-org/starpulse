@@ -8,7 +8,7 @@ import pytest
 import yaml
 
 from starpulse._internal.board.native import board
-from starpulse._internal.machines.machine_definition import MachineDefinitionError
+from starpulse.machine_engine.model.machine_definition import MachineDefinitionError
 
 BOARD = """\
 name: Board

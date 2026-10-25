@@ -7,8 +7,8 @@ from collections.abc import Collection, Mapping
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # annotation only: the machine definition imports this module
-    from starpulse._internal.machines.machine_definition import Writer
     from starpulse.contracts.adapters import Move
+    from starpulse.machine_engine.model.machine_definition import Writer
 
 __all__ = ["DEFAULT_STATUSES", "Table", "board_machine", "board_moves", "lane_id", "tables"]
 

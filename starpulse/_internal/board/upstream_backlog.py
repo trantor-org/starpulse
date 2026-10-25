@@ -33,16 +33,16 @@ except ImportError:
 
 from starpulse._internal.board import project_machines
 from starpulse._internal.board.seam import Board, MoveWriter, Written
-from starpulse._internal.machines.state_roles import StateRoles
-from starpulse._internal.machines.transitions import DEFAULT_STATUSES, board_machine, board_moves, lane_id
 from starpulse.contracts.task_keys import TaskKeys
+from starpulse.machine_engine.model.state_roles import StateRoles
+from starpulse.machine_engine.model.transitions import DEFAULT_STATUSES, board_machine, board_moves, lane_id
 
 if TYPE_CHECKING:
     from starpulse._internal.feed.board_feed import BoardFeed
-    from starpulse._internal.machines.machine_definition import Compiled, Writer
-    from starpulse._internal.machines.snapshot import Qualify
     from starpulse.contracts.adapters import BoardTask, Move
     from starpulse.event_log.event_log import EventLog
+    from starpulse.machine_engine.model.machine_definition import Compiled, Writer
+    from starpulse.machine_engine.model.snapshot import Qualify
 
 logger = logging.getLogger(__name__)
 
@@ -461,8 +461,10 @@ def cli_writer(root: Path, statuses: tuple[str, ...], roles: StateRoles, command
 def _machine(path: Path, config: BacklogConfig) -> tuple[Compiled, dict, list[dict]]:
     """The Board machine a file declares, compiled and drawn, with its cues, each beside the lane its event reaches;
     refused unless every lane is a state, every other state is initial or final, and each cued event reaches a lane."""
-    from starpulse._internal.machines.machine_definition import load_machine  # noqa: PLC0415 - import cost, paid on first use
-    from starpulse._internal.machines.snapshot import describe  # noqa: PLC0415 - import cost, paid on first use
+    from starpulse.machine_engine.adapters.machine_loader import (  # noqa: PLC0415 - import cost, paid on first use
+        load_machine,
+    )
+    from starpulse.machine_engine.model.snapshot import describe  # noqa: PLC0415 - import cost, paid on first use
 
     compiled = load_machine(path)
     drawn = describe(compiled.machine)

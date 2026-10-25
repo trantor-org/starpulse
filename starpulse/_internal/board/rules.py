@@ -19,7 +19,7 @@ from typing import Any
 
 from starpulse._internal.board import post_merge_checks
 from starpulse._internal.board.sections import fenced_list, under
-from starpulse._internal.machines.transitions import lane_id
+from starpulse.machine_engine.model.transitions import lane_id
 
 __all__ = ["Record", "Rule", "load", "refusal", "standing_refusal"]
 

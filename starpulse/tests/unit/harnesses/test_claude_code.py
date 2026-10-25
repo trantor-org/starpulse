@@ -8,9 +8,9 @@ from starpulse._internal.harnesses.claude_code import ClaudeCodeAdapter, publish
 from starpulse._internal.harnesses.harness import HARNESS_MACHINES
 from starpulse._internal.harnesses.otlp import BRANCH, LogEvent, parse
 from starpulse._internal.kit.adapter_kit import MachineEventsAdapterKit
-from starpulse._internal.machines.transitions import Table
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.event_log.event_log import EventLog, Tail
+from starpulse.machine_engine.model.transitions import Table
 from starpulse.tests.machines import MACHINES
 
 #: A two-turn session exported with `OTEL_LOG_TOOL_DETAILS=1`, scrubbed of account ids, prompt and reply text.

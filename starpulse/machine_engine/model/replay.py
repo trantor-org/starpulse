@@ -11,7 +11,7 @@ from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from starpulse._internal.machines.transitions import Table
+from starpulse.machine_engine.model.transitions import Table
 
 #: How many example tasks a violation names.
 EXAMPLES = 5
