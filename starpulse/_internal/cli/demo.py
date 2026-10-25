@@ -710,7 +710,9 @@ def _history(flows: list[dict], now: float) -> dict[str, list[dict]]:
 
 
 def _task(i: int, a: dict) -> dict:
-    return {"id": f"DEMO-{i + 1}", "title": TITLES[i % len(TITLES)], "state": a["state"], "model": a.get("model", ""), "assignee": a.get("model", "")}
+    # a held task is held by a synthetic session, too short for the leak scan, so the kanban draws its nickname
+    holder = f"https://example.com/code/session_demo{i + 1}" if a["state"] == "in_progress" else a.get("model", "")
+    return {"id": f"DEMO-{i + 1}", "title": TITLES[i % len(TITLES)], "state": a["state"], "model": a.get("model", ""), "assignee": holder}
 
 
 def _renames(snap: dict) -> dict[str, str]:

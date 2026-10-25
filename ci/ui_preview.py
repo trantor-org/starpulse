@@ -243,7 +243,7 @@ MAIN_FOLDER = "main"
 #: `--touches` exit status for a change that reaches no UI path; any other non-zero status is an error.
 NO_UI = 3
 #: The hosts a public demo may link to: XML namespaces, the mockup's web font and React's error decoder.
-DEMO_URL_HOSTS = frozenset({"www.w3.org", "fonts.googleapis.com", "fonts.gstatic.com", "react.dev"})
+DEMO_URL_HOSTS = frozenset({"www.w3.org", "fonts.googleapis.com", "fonts.gstatic.com", "react.dev", "example.com"})
 #: Identifiers the scrub must have removed, by the name a refusal gives them. The scrub's own synthetic UUIDs
 #: (`starpulse._internal.cli.demo`) are `<n>-0000-4000-8000-000000000000`, so only those pass.
 LEAK_PATTERNS = {

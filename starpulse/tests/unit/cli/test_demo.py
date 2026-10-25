@@ -197,7 +197,7 @@ def test_scrub_keeps_the_structure_and_replaces_every_task() -> None:
         "title": TITLES[0],
         "state": "in_progress",
         "model": "claude-opus",
-        "assignee": "claude-opus",
+        "assignee": "https://example.com/code/session_demo1",
         "milestone": "",
         "labels": ["kind-execute"],
         "dependencies": [],
@@ -402,6 +402,17 @@ def test_the_seeded_board_says_since_when_each_open_task_has_been_workable_so_th
     assert all(a["workable_since"] is None for a in board if a["dependencies"] and a["state"] not in ("done", "waiting"))
     assert any(a["workable_since"] is None for a in board if a["state"] == "waiting")
     assert all("workable_since" not in a for a in board if a["state"] in ("new", "done"))
+
+
+def test_the_seeded_board_holds_its_in_progress_cards_by_session_so_the_kanban_draws_their_nicknames() -> None:
+    live = _live()
+    live["flows"][0]["agents"] = []
+
+    board = scrub(live)["flows"][0]["agents"]
+
+    held = [a for a in board if a["state"] == "in_progress"]
+    assert held and all(re.fullmatch(r"https://example\.com/code/session_demo\d+", a["assignee"]) for a in held)
+    assert all(a["model"].startswith("@agent-") for a in held)
 
 
 def test_the_seeded_board_has_a_waiting_chain_for_the_kanban_stack() -> None:
@@ -692,7 +703,7 @@ def test_scrub_mockup_replaces_identities_and_keeps_links() -> None:
         "title": TITLES[0],
         "state": "in_progress",
         "model": "claude-opus",
-        "assignee": "claude-opus",
+        "assignee": "https://example.com/code/session_demo1",
         "labels": ["kind-execute"],
         "dependencies": [],
         "prs": [],
