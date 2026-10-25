@@ -36,6 +36,7 @@ from starpulse._internal.server.writes import move_task
 from starpulse.contracts.adapters import BoardTask, Move
 from starpulse.event_log.event_log import EventLog, Tail
 from starpulse.event_log.tables import events
+from starpulse.tests.conftest import stop_upstream_backlogs
 
 STATUSES = ("To Do", "Doing", "Review", "Done")
 BOARD_ROLES = StateRoles(
@@ -634,7 +635,7 @@ def test_the_first_scan_is_the_feeds_replay_and_the_feed_is_ready_once_it_has_pl
             assert not thread.is_alive(), "the polling thread outlived its test"
 
 
-def test_stop_all_ends_a_board_waiting_out_a_long_interval(tmp_path: Path) -> None:
+def test_stop_upstream_backlogs_ends_a_board_waiting_out_a_long_interval(tmp_path: Path) -> None:
     write_config(tmp_path / "backlog")
     write_task(tmp_path / "backlog", "tasks", "task-1", "To Do")
     feed = BoardFeed()
@@ -642,7 +643,7 @@ def test_stop_all_ends_a_board_waiting_out_a_long_interval(tmp_path: Path) -> No
     assert feed.ready.wait(timeout=5)
     assert any(t.name == "upstream-backlog" for t in threading.enumerate())
 
-    upstream_backlog.stop_all()
+    stop_upstream_backlogs()
 
     assert not any(t.name == "upstream-backlog" for t in threading.enumerate())
 

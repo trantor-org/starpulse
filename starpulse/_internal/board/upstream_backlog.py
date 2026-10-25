@@ -197,15 +197,8 @@ def _split(text: str) -> tuple[Any, str]:
         return None, ""
 
 
-#: Each adapter whose thread is running, with that thread, so `stop_all` can end what a test started.
+#: Each adapter whose thread is running, with that thread, so a caller can end what it started.
 _live: dict[UpstreamBacklog, threading.Thread] = {}
-
-
-def stop_all(timeout: float = 5.0) -> None:
-    """Stop every running adapter thread and wait for each to end; the server never calls it, a test's teardown does."""
-    for backlog, thread in list(_live.items()):
-        backlog.stop()
-        thread.join(timeout)
 
 
 class UpstreamBacklog:
