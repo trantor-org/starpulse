@@ -161,8 +161,8 @@ def failures(probes: Sequence[dict], found: Sequence[Trend]) -> list[str]:
 def process_stats(pid: int) -> dict[str, int]:
     """A process's resident bytes, thread count and open file descriptors, read from /proc."""
     status = Path(f"/proc/{pid}/status").read_text()
-    rss_kb = int(re.search(r"^VmRSS:\s+(\d+) kB", status, re.M)[1])  # type: ignore[index]
-    threads = int(re.search(r"^Threads:\s+(\d+)", status, re.M)[1])  # type: ignore[index]
+    rss_kb = int(re.search(r"^VmRSS:\s+(\d+) kB", status, re.MULTILINE)[1])  # type: ignore[index]
+    threads = int(re.search(r"^Threads:\s+(\d+)", status, re.MULTILINE)[1])  # type: ignore[index]
     return {"rss": rss_kb * 1024, "threads": threads, "fds": len(os.listdir(f"/proc/{pid}/fd"))}
 
 
@@ -334,7 +334,7 @@ def run(
         if t >= duration:
             break
         sleep(
-            max(0.0, min(next_sample, next_probe if next_probe < duration else duration, duration) - (clock() - start))
+            max(0.0, min(next_sample, min(duration, next_probe), duration) - (clock() - start))
         )
     found = trends(samples)
     return {
