@@ -3,6 +3,7 @@ import { NO_PREFS, applySuggestion, applyTaskRecord, assigneeOptions, chainOf, c
 import { merge, midnight } from "../../render/sky";
 import { LIFECYCLE_COLUMNS, LIFECYCLE_ROLES } from "../../tests/lifecycleRoles";
 import type { TaskRecord } from "./taskViewModel";
+import { sessionNickname } from "./nickname";
 import type { Pull, RawTask, Snapshot } from "../../api";
 
 const NAMES = { ready: "Ready", waiting: "Waiting", in_progress: "In progress", review: "Review", needs_attention: "Needs attention", done: "Done" };
@@ -294,6 +295,13 @@ describe("the filters", () => {
     expect(ids({ query: "proj-10" })).toEqual(["PROJ-10"]);
     expect(ids({ query: "GUARD" })).toEqual(["PROJ-2483"]);
     expect(ids({ query: "size-3" })).toEqual(["PROJ-10", "PROJ-2482"]);
+  });
+
+  it("match a held session's nickname", () => {
+    const session = "https://claude.ai/code/session_01AbCdEfGh";
+    const held = [...tasks, card("PROJ-11", "Held chore", { assignee: session })];
+    const shown = view(held, { ...NO_PREFS, query: sessionNickname(session)! }).columns.flatMap((c) => c.buckets.flatMap((b) => b.tasks.map((t) => t.id)));
+    expect(shown).toEqual(["PROJ-11"]);
   });
 
   it("limit a label: word to labels, so a title that says the same word does not match", () => {

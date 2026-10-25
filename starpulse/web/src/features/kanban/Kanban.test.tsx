@@ -6,6 +6,7 @@ import { CLOSED, NO_PREFS, layout, stackOf, stackStep, stacksOf, type KanbanTask
 import { place } from "./move";
 import { LIFECYCLE_ROLES } from "../../tests/lifecycleRoles";
 import { TaskView } from "./TaskView";
+import { sessionNickname } from "./nickname";
 
 const task: KanbanTask = {
   id: "PROJ-1", title: "A title long enough to need two lines in a comfortable card", lane: "in_progress", milestone: "m-1", labels: ["feature", "needs-review"], assignee: "@agent-standard-high",
@@ -322,11 +323,12 @@ describe("a Waiting card linked to a blocker in another milestone", () => {
   const badge = (el: El) => walk(el).find((k) => /\bxm\b/.test(k.props.className ?? ""));
   const ev = () => ({ stopPropagation: vi.fn(), key: "Enter", preventDefault: vi.fn() });
 
-  it("draws a held session's URL as its first five hash characters", () => {
+  it("draws a held session's URL as its nickname", () => {
     const held: KanbanTask = { ...task, assignee: "https://claude.ai/code/session_01AbCdEfGh" };
     const html = renderToStaticMarkup(<Card task={held} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} />);
 
-    expect(html).toContain("01AbC");
+    expect(html).toContain(sessionNickname(held.assignee)!);
+    expect(html).not.toContain("01AbC");
     expect(html).not.toContain("claude.ai");
   });
 
