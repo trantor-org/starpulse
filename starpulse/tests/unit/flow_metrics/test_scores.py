@@ -2,7 +2,7 @@
 
 import pytest
 
-from starpulse._internal.level.scores import PullFacts, merged_pulls, pull_facts, score_cells, task_score
+from starpulse.flow_metrics.scores import PullFacts, merged_pulls, pull_facts, score_cells, task_score
 
 LABELS = {"labels": ["kind-execute", "size-5"]}
 

@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.eventlog.history import HistoryStore
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.server import board_worker, worker
 from starpulse.contracts import BoardTask
+from starpulse.flow_metrics.history import HistoryStore
 from starpulse.tests import fake_board
 from starpulse.tests.machines import MACHINES, ROLES
 

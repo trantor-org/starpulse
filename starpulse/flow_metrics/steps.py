@@ -23,9 +23,9 @@ from collections.abc import Iterable
 from typing import Any, NamedTuple
 
 from starpulse._internal.config.analytics import Analytics
-from starpulse._internal.level.sessions import attributed, grouped
 from starpulse._internal.signals import Signal
 from starpulse.contracts.adapters import TaskKeys
+from starpulse.flow_metrics.session_health import attributed, grouped
 
 __all__ = ["NO_SKILL", "Owned", "owned_steps", "session_steps"]
 

@@ -9,14 +9,14 @@ import pytest
 from sqlalchemy import create_engine, event, text
 
 from starpulse._internal.config.level import Level, Orbit, Terminal
-from starpulse._internal.eventlog import history
-from starpulse._internal.eventlog.history import HistoryStore
 from starpulse._internal.server import server
 from starpulse._internal.server.server import health_response, trajectories_response
+from starpulse.flow_metrics import history
+from starpulse.flow_metrics.history import HistoryStore
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.rows import rows_fetched
 from starpulse.tests.summaries import assert_matches_rebuild
-from starpulse.tests.unit.level.test_analytics import NOW, ROWS, H
+from starpulse.tests.unit.flow_metrics.test_analytics import NOW, ROWS, H
 
 LEVEL = Level(
     "board",

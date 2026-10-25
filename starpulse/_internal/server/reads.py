@@ -63,12 +63,12 @@ from starpulse._internal.server.writes import (
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     from starpulse._internal.board.seam import Board
-    from starpulse._internal.eventlog.history import History
     from starpulse._internal.feed.board_feed import BoardFeed
     from starpulse._internal.feed.history_window import HistoryWindow
     from starpulse._internal.pulls.pulls import PullStore
     from starpulse._internal.server.services import Services
     from starpulse._internal.server.snapshot_cache import SnapshotCache
+    from starpulse.flow_metrics.history import History
 
 logger = logging.getLogger(__name__)
 

@@ -30,7 +30,6 @@ from starpulse._internal.board import native
 from starpulse._internal.board.seam import Board, Written
 from starpulse._internal.config.config import load
 from starpulse._internal.config.scheduler import Scheduler
-from starpulse._internal.eventlog.history import HistoryStore
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.feed.history_window import HistoryWindow
 from starpulse._internal.scheduler.runtime import Runtime
@@ -45,6 +44,7 @@ from starpulse.event_log.lane_import import Change
 from starpulse.event_log.readmodel.projector import Projector
 from starpulse.event_log.readmodel.read_model import ReadModel
 from starpulse.event_log.store import EventStore, NewEvent
+from starpulse.flow_metrics.history import HistoryStore
 
 import starpulse
 

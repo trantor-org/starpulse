@@ -9,7 +9,7 @@ call (a tool in `SHELLS`) is its leading command, such as `bin/<script>`, `make 
 for a command that is not a name.
 
 `session_health` and `slice_health` are the folds `GET /api/analytics/sessions` serves
-(`starpulse._internal.level.sessions` documents every number), returned as the DTOs that route encodes, so a reader that
+(`starpulse.flow_metrics.session_health` documents every number), returned as the DTOs that route encodes, so a reader that
 imports them and one that reads the route get the same rows from the same exports.
 """
 
@@ -28,8 +28,8 @@ from starpulse._internal.harnesses.activity import (
     activities,
 )
 from starpulse._internal.harnesses.telemetry import held, signals
-from starpulse._internal.level import sessions as _sessions
 from starpulse.contracts.api.dto.health import SessionHealth, SliceHealth, TokenCounts
+from starpulse.flow_metrics import session_health as _sessions
 
 if TYPE_CHECKING:
     from starpulse._internal.config.config import Config

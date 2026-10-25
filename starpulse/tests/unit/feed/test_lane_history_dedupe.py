@@ -7,9 +7,9 @@ from pathlib import Path
 import pytest
 from sqlalchemy import text
 
-from starpulse._internal.eventlog.history import HistoryStore
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse.contracts import BoardTask
+from starpulse.flow_metrics.history import HistoryStore
 from starpulse.tests.machines import MACHINES, ROLES
 from starpulse.tests.summaries import assert_matches_rebuild
 

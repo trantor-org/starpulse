@@ -5,11 +5,11 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 
-from starpulse._internal.eventlog.history import HistoryStore
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse.contracts import BoardTask
 from starpulse.event_log import lane_events
 from starpulse.event_log.event_log import EventLog, Tail
+from starpulse.flow_metrics.history import HistoryStore
 from starpulse.tests.machines import MACHINES, ROLES
 
 GOOD = {"task": "T-1", "lane": "in_progress", "time": 5.0}

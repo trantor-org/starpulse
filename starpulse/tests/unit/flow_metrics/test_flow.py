@@ -7,8 +7,8 @@ import pytest
 
 from starpulse._internal.config.analytics import Analytics, MachineStage, SkillMachine
 from starpulse._internal.harnesses.telemetry import CLAUDE_CODE, Signal
-from starpulse._internal.level.flow import cost_to_go, directly_follows, fast_slow_diff, sub_stages
 from starpulse.contracts.adapters import TaskKeys
+from starpulse.flow_metrics.flow import cost_to_go, directly_follows, fast_slow_diff, sub_stages
 
 KEYS = TaskKeys(
     key=re.compile(r"TASK-\d+"),

@@ -6,7 +6,7 @@ from pathlib import Path
 
 from sqlalchemy import text
 
-from starpulse._internal.eventlog.history import HistoryStore
+from starpulse.flow_metrics.history import HistoryStore
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.summaries import assert_matches_rebuild
 

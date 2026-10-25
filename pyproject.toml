@@ -77,7 +77,7 @@ type = "layers"
 # of its own marks a named edge (the ADR "StarPulse Is Layered Around Its Event Log"): `kit` drives a `server`,
 # `server` serves the doctor's checks from `cli`, `pulls` reads GitHub Actions runs from `runs`,
 # `scheduler` samples the board feed and the harness machine, and the
-# history store in `eventlog` reads `config` and `machines`.
+# history store in `flow_metrics` reads `config` and `machines`.
 layers = [
     # entrypoints
     "starpulse._internal.kit",
@@ -87,10 +87,9 @@ layers = [
     "starpulse._internal.pulls | starpulse._internal.scheduler",
     "starpulse._internal.board | starpulse._internal.runs | starpulse._internal.harnesses",
     # derived
-    "starpulse._internal.level",
+    "starpulse.flow_metrics",
     "starpulse._internal.feed | starpulse._internal.ci",
     # core
-    "starpulse._internal.eventlog",
     "starpulse.event_log",
     "starpulse._internal.config | starpulse._internal.machines | starpulse.github | starpulse._internal.signals",
     "starpulse.contracts",
@@ -106,9 +105,9 @@ source_modules = [
     "starpulse._internal.cli",
     "starpulse._internal.pulls", "starpulse._internal.scheduler",
     "starpulse._internal.board", "starpulse._internal.runs", "starpulse._internal.harnesses",
-    "starpulse._internal.level",
+    "starpulse.flow_metrics",
     "starpulse._internal.feed", "starpulse._internal.ci",
-    "starpulse.event_log", "starpulse._internal.eventlog",
+    "starpulse.event_log",
     "starpulse._internal.config", "starpulse._internal.machines", "starpulse.github",
     "starpulse._internal.signals",
 ]
@@ -147,7 +146,7 @@ source_modules = ["starpulse.event_log"]
 forbidden_modules = [
     "starpulse._internal.board", "starpulse._internal.feed",
     "starpulse._internal.scheduler",
-    "starpulse._internal.level",
+    "starpulse.flow_metrics",
     "starpulse._internal.harnesses",
     "starpulse._internal.pulls", "starpulse._internal.ci",
     "starpulse._internal.runs",
@@ -155,7 +154,7 @@ forbidden_modules = [
 
 # Bounded contexts: one per StarPulse context, id `context-<glossary slug>`.
 # forbidden_modules is every other context's packages except the map's upstreams (direct imports; transitive stay
-# allowed). The shared kernel (`event_log`, `config`, `eventlog`, `machines`, `github`, `signals`, `contracts`) and the entrypoints
+# allowed). The shared kernel (`event_log`, `config`, `machines`, `github`, `signals`, `contracts`) and the entrypoints
 # belong to no context.
 
 [[tool.importlinter.contracts]]
@@ -166,7 +165,7 @@ allow_indirect_imports = true
 source_modules = ["starpulse._internal.board", "starpulse._internal.feed"]
 forbidden_modules = [
     "starpulse._internal.scheduler",
-    "starpulse._internal.level",
+    "starpulse.flow_metrics",
     "starpulse._internal.harnesses",
     "starpulse._internal.pulls", "starpulse._internal.ci",
     "starpulse._internal.runs",
@@ -188,7 +187,7 @@ id = "context-flow-metrics"
 name = "Flow Metrics imports only Board and Runs among StarPulse contexts"
 type = "forbidden"
 allow_indirect_imports = true
-source_modules = ["starpulse._internal.level"]
+source_modules = ["starpulse.flow_metrics"]
 forbidden_modules = [
     "starpulse._internal.scheduler",
     "starpulse._internal.harnesses",
@@ -204,7 +203,7 @@ source_modules = ["starpulse._internal.harnesses"]
 forbidden_modules = [
     "starpulse._internal.board", "starpulse._internal.feed",
     "starpulse._internal.scheduler",
-    "starpulse._internal.level",
+    "starpulse.flow_metrics",
     "starpulse._internal.pulls", "starpulse._internal.ci",
     "starpulse._internal.runs",
 ]
@@ -217,7 +216,7 @@ allow_indirect_imports = true
 source_modules = ["starpulse._internal.pulls", "starpulse._internal.ci"]
 forbidden_modules = [
     "starpulse._internal.scheduler",
-    "starpulse._internal.level",
+    "starpulse.flow_metrics",
     "starpulse._internal.harnesses",
     "starpulse._internal.runs",
 ]
@@ -230,7 +229,7 @@ allow_indirect_imports = true
 source_modules = ["starpulse._internal.runs"]
 forbidden_modules = [
     "starpulse._internal.scheduler",
-    "starpulse._internal.level",
+    "starpulse.flow_metrics",
     "starpulse._internal.harnesses",
     "starpulse._internal.pulls", "starpulse._internal.ci",
 ]

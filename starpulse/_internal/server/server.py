@@ -190,12 +190,10 @@ from starpulse._internal.cli import doctor
 from starpulse._internal.config.config import Config, ConfigError, RunsInstance, discover, load, runs_adapter
 from starpulse._internal.config.level import Level
 from starpulse._internal.config.pins import GitHub, LiveBuild, running_commit
-from starpulse._internal.eventlog.level_metrics import RunWindow, WindowPastHistory
 from starpulse._internal.feed.claim_refusals import CLAIMS_STREAM
 from starpulse._internal.feed.history_window import SETTINGS_FILE, HistoryWindow
 from starpulse._internal.harnesses.session_start import starter
 from starpulse._internal.harnesses.telemetry import TelemetryLog
-from starpulse._internal.level.trajectories import trajectory_analytics
 from starpulse._internal.pulls.delivery import (
     Projected,
     follow_saves,
@@ -227,6 +225,8 @@ from starpulse._internal.server.zygote import Forker
 from starpulse.event_log import events as machine_events
 from starpulse.event_log import lane_events
 from starpulse.event_log.conformance_monitor import Conformance
+from starpulse.flow_metrics.level_metrics import RunWindow, WindowPastHistory
+from starpulse.flow_metrics.trajectories import trajectory_analytics
 
 logger = logging.getLogger(__name__)
 
@@ -247,11 +247,11 @@ _HELD_SETTLE_S = 0.5
 
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
-    from starpulse._internal.eventlog.history import History
     from starpulse._internal.feed.board_feed import BoardFeed
     from starpulse._internal.pulls.pulls import PullStore
     from starpulse._internal.scheduler.remote import Remote
     from starpulse.event_log.event_log import EventLog
+    from starpulse.flow_metrics.history import History
 
 
 def trajectories_response(
@@ -259,7 +259,7 @@ def trajectories_response(
 ) -> tuple[bytes, int]:
     """The body and status of the trajectory analytics of the runs that ended in the last `hours` as of `now`, which
     the scheduler ranks tasks by; refused when `hours` is no positive number."""
-    from starpulse._internal.eventlog.history import LevelHistory, SummarisedLevel  # noqa: PLC0415 - the database stack loads when a store does
+    from starpulse.flow_metrics.history import LevelHistory, SummarisedLevel  # noqa: PLC0415 - the database stack loads when a store does
 
     window = _hours(query, "hours", _HEALTH_HOURS)
     if window is None:
@@ -653,7 +653,6 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     """Build the Page API and serve it on `listening` until stopped: in the `starpulse worker api` child."""
 
     from starpulse._internal.board import replica  # noqa: PLC0415 - the database stack loads after the config is accepted
-    from starpulse._internal.eventlog.history import database_url  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse._internal.feed.board_feed import follow  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse._internal.feed.claim_refusals import ClaimRefusals  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse._internal.feed.machine_tasks import MachineTasks  # noqa: PLC0415 - the database stack loads after the config is accepted
@@ -662,6 +661,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     from starpulse._internal.server import read_model_follow  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse._internal.server.assembly import assemble, history_store  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.event_log.event_log import EventLog  # noqa: PLC0415 - the database stack loads after the config is accepted
+    from starpulse.event_log.opening import database_url  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.event_log.readmodel.declared import declared_fields  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.event_log.readmodel.projector import Projector  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.event_log.readmodel.read_model import ReadModel  # noqa: PLC0415 - the database stack loads after the config is accepted
@@ -791,7 +791,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
 DATABASE_STACK = (
     "starpulse._internal.board.replica",
     "starpulse.event_log.event_log",
-    "starpulse._internal.eventlog.history",
+    "starpulse.flow_metrics.history",
     "starpulse._internal.feed.board_feed",
     "starpulse._internal.feed.claim_refusals",
     "starpulse._internal.feed.machine_tasks",

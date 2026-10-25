@@ -13,27 +13,27 @@ from starpulse._internal.board.seam import (
     TaskReader,
 )
 from starpulse._internal.config.analytics import Analytics
-from starpulse._internal.eventlog.level_metrics import WindowPastHistory
 from starpulse._internal.feed.ledger import PAGE
 from starpulse._internal.harnesses.telemetry import Signal, TelemetryLog
-from starpulse._internal.level import analytics
-from starpulse._internal.level.cells import cell_report, transition_cost
-from starpulse._internal.level.clusters import Cluster, cluster_key, dispersion, trace, trace_clusters
-from starpulse._internal.level.flow import cost_to_go, directly_follows, fast_slow_diff, sub_stages
-from starpulse._internal.level.sessions import session_health, slice_health
-from starpulse._internal.level.steps import session_steps
-from starpulse._internal.level.traces import Case, missed_loads
-from starpulse._internal.level.traces import cases as trace_cases
 from starpulse._internal.server.encoding import encode
 from starpulse.contracts.adapters import TaskKeys
+from starpulse.flow_metrics import analytics
+from starpulse.flow_metrics.cells import cell_report, transition_cost
+from starpulse.flow_metrics.clusters import Cluster, cluster_key, dispersion, trace, trace_clusters
+from starpulse.flow_metrics.flow import cost_to_go, directly_follows, fast_slow_diff, sub_stages
+from starpulse.flow_metrics.level_metrics import WindowPastHistory
+from starpulse.flow_metrics.session_health import session_health, slice_health
+from starpulse.flow_metrics.steps import session_steps
+from starpulse.flow_metrics.traces import Case, missed_loads
+from starpulse.flow_metrics.traces import cases as trace_cases
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
-    from starpulse._internal.eventlog.history import History
     from starpulse._internal.feed.board_feed import BoardFeed
     from starpulse._internal.feed.search import SearchIndex
     from starpulse._internal.pulls.pulls import PullStore
+    from starpulse.flow_metrics.history import History
 
 
 #: The most rows `/api/ledger/<event>` and `/api/machines` serve at once.
@@ -192,7 +192,7 @@ def health_response(
     history: History, query: dict[str, list[str]], machines: Mapping[str, dict], now: float
 ) -> tuple[bytes, int]:
     """The body and status for `/api/analytics/health`: the Board's flow health over the last `hours` as of `now`."""
-    from starpulse._internal.eventlog.history import HealthHistory, SummarisedHealth  # noqa: PLC0415 - the database stack loads when a store does
+    from starpulse.flow_metrics.history import HealthHistory, SummarisedHealth  # noqa: PLC0415 - the database stack loads when a store does
     window = _hours(query, "hours", _HEALTH_HOURS)
     stuck = _hours(query, "stuck_hours", _STUCK_HOURS)
     if window is None or stuck is None:

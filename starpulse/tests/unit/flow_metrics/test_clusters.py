@@ -6,8 +6,8 @@ import random
 
 import pytest
 
-from starpulse._internal.level.clusters import Cluster, cluster_key, dispersion, lcs_length, partition, trace_clusters
-from starpulse._internal.level.traces import Case
+from starpulse.flow_metrics.clusters import Cluster, cluster_key, dispersion, lcs_length, partition, trace_clusters
+from starpulse.flow_metrics.traces import Case
 
 NOISE = ("git status", "gh pr view", "Read", "Edit")
 

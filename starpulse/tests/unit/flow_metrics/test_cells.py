@@ -7,9 +7,9 @@ import pytest
 
 from starpulse._internal.config.analytics import Analytics
 from starpulse._internal.harnesses.telemetry import CLAUDE_CODE, CODEX, Signal
-from starpulse._internal.level.cells import cell_report, transition_cost
-from starpulse._internal.level.sessions import session_health, slice_health
 from starpulse.contracts.adapters import TaskKeys
+from starpulse.flow_metrics.cells import cell_report, transition_cost
+from starpulse.flow_metrics.session_health import session_health, slice_health
 
 KEYS = TaskKeys(
     key=re.compile(r"TASK-\d+"),

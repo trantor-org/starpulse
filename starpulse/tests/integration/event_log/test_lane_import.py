@@ -8,9 +8,9 @@ from pathlib import Path
 import pytest
 from sqlalchemy import text
 
-from starpulse._internal.eventlog.history import HistoryStore
 from starpulse._internal.server import history_import
 from starpulse.event_log import lane_import
+from starpulse.flow_metrics.history import HistoryStore
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.summaries import assert_matches_rebuild
 

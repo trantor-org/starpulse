@@ -5,8 +5,8 @@ import re
 
 from starpulse._internal.config.analytics import Analytics
 from starpulse._internal.harnesses.telemetry import signals
-from starpulse._internal.level.steps import session_steps
 from starpulse.contracts.adapters import TaskKeys
+from starpulse.flow_metrics.steps import session_steps
 from starpulse.tests.unit.harnesses.test_telemetry import claude, codex, export
 
 KEYS = TaskKeys(

@@ -164,3 +164,18 @@ pull_requests = Table(
     PrimaryKeyConstraint("repo", "number"),
     Index("ix_starpulse_pull_requests_state", "state", "repo"),
 )
+
+machine_events = Table(
+    "starpulse_machine_events",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("event_id", String, nullable=False, unique=True),
+    Column("task", String),
+    Column("run", String),
+    Column("machine", String, nullable=False),
+    Column("event", String, nullable=False),
+    Column("actor", String),
+    Column("occurred_at", Float, nullable=False),
+    Index("ix_starpulse_machine_events_task", "task", "machine", "occurred_at"),
+    Index("ix_starpulse_machine_events_run", "run", "machine", "occurred_at"),
+)

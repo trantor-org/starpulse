@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from starpulse._internal.eventlog.history import HistoryStore
 from starpulse.event_log import lane_events
 from starpulse.event_log.event_log import EventLog, Tail
+from starpulse.flow_metrics.history import HistoryStore
 from starpulse.tests.machines import MACHINES
 
 ID = "T-1@ready@100.0"

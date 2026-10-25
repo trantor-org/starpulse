@@ -16,8 +16,9 @@ from typing import NamedTuple
 
 import pytest
 
-from starpulse._internal.eventlog.history import DEFAULT_FILE, HistoryStore
 from starpulse._internal.server import server
+from starpulse.event_log.opening import DEFAULT_FILE
+from starpulse.flow_metrics.history import HistoryStore
 from starpulse.tests.page_stub import held
 
 _CLIENT_MODULE = "re" + "dis"

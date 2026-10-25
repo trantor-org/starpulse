@@ -10,8 +10,8 @@ from random import Random
 import pytest
 
 from starpulse._internal.config.level import Level, Terminal
-from starpulse._internal.eventlog.level_metrics import Run, WindowPastHistory
-from starpulse._internal.level.trajectories import (
+from starpulse.flow_metrics.level_metrics import Run, WindowPastHistory
+from starpulse.flow_metrics.trajectories import (
     _loops_so_far,
     _rework,
     betweenness,

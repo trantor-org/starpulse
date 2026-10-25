@@ -1,6 +1,6 @@
 """The event_log shared kernel: the event store, the event log and the read-model framework every context may import.
 
-It imports no context. The history store, summaries and level metrics kept in the log stay in `starpulse._internal.eventlog`.
+It imports no context. The history store, summaries and level metrics kept in the log stay in `starpulse.flow_metrics`.
 The names load on first use, so importing a light module of the package loads no database stack.
 """
 

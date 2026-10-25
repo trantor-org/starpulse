@@ -39,7 +39,6 @@ from starpulse._internal.board.seam import (
     Written,
 )
 from starpulse._internal.config.config import Config
-from starpulse._internal.eventlog.history import History, HistoryStore
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.feed.history_window import HistoryWindow
 from starpulse._internal.feed.machine_tasks import MachineTasks
@@ -58,6 +57,7 @@ from starpulse.contracts.adapters import (
     TaskKeys,
 )
 from starpulse.event_log.event_log import EventLog
+from starpulse.flow_metrics.history import History, HistoryStore
 
 __all__ = [
     "BoardAdapterKit",

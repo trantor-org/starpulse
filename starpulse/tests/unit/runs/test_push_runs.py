@@ -9,12 +9,12 @@ from typing import Any
 
 import pytest
 
-from starpulse._internal.eventlog.history import HistoryStore
 from starpulse._internal.feed.board_feed import BoardFeed, follow
 from starpulse._internal.runs import run_events
 from starpulse._internal.runs.push_runs import PUSHED_INSTANCE, PushedRunsSnapshot, PushRuns
 from starpulse.contracts.adapters import Dag
 from starpulse.event_log.event_log import EventLog
+from starpulse.flow_metrics.history import HistoryStore
 
 START = 1_700_000_000.0
 

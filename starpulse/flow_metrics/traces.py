@@ -1,6 +1,6 @@
 """Missed skill loads and trace clusters: what a session's tool calls say about the work it did.
 
-A case is one session's work on one task (`starpulse._internal.level.sessions.attributed` names the task), read from
+A case is one session's work on one task (`starpulse.flow_metrics.session_health.attributed` names the task), read from
 the `tool` and `skill` signals of its telemetry export: its `activities` in order, the `skills` it activated, and the
 repository areas it `reads` and `writes`. A tool signal stored before activities were kept is its tool name.
 
@@ -19,9 +19,9 @@ from fnmatch import fnmatchcase
 from typing import Any
 
 from starpulse._internal.config.analytics import Analytics, SkillLoad
-from starpulse._internal.level.sessions import attributed, grouped, session_kind
 from starpulse._internal.signals import Signal
 from starpulse.contracts.adapters import TaskKeys
+from starpulse.flow_metrics.session_health import attributed, grouped, session_kind
 
 __all__ = ["Case", "Missed", "cases", "missed_loads"]
 
