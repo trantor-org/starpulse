@@ -18,10 +18,15 @@ A server on this data is smaller than the live board: a cost that grows with the
 from __future__ import annotations
 
 import argparse
+import hashlib
+import inspect
+import os
+import shutil
 import sqlite3
+import tempfile
 import threading
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import replace
 from pathlib import Path
 
@@ -41,6 +46,7 @@ from starpulse._internal.server.services import Services
 from starpulse.contracts.adapters import BoardTask
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.lane_import import Change
+from starpulse.event_log.readmodel.declared import declared_fields, ensure_columns
 from starpulse.event_log.readmodel.projector import Projector
 from starpulse.event_log.readmodel.read_model import ReadModel
 from starpulse.event_log.store import EventStore, NewEvent
@@ -57,6 +63,12 @@ OPEN = {"new": 4, "ready": 20, "waiting": 12, "in_progress": 18, "review": 16, "
 DONE = 90
 READ_MODEL_TASKS = 20_000  # D3's seeded board: this many Tasks, the first READ_MODEL_ARCHIVED of them archived
 READ_MODEL_ARCHIVED = 18_000
+#: The one read-model recipe every run seeds, the tests and the bench alike: the declared field and the states it cycles.
+READ_MODEL_DECLARED = declared_fields({"fields": {"area": {"type": "string", "queried": True}}})
+READ_MODEL_STATES = ("Ready", "In Progress", "Review")
+#: Where seeded event stores are kept between runs: outside `.tmp/`, which the daily purge empties.
+SEED_CACHE = Path(os.environ.get("STARPULSE_SEED_CACHE", Path.home() / ".cache" / "starpulse" / "seeded-read-model"))
+EVENT_LOG = Path(starpulse.__file__).parent / "event_log"
 #: How many open milestones and docs the native board holds, about half of what the live board keeps open: a doc read
 #: parses every doc file (about 0.4 ms each), so this leaves the route a margin under the budget on a loaded runner.
 MILESTONES = 16
@@ -158,26 +170,73 @@ def seed(feed: BoardFeed, store: HistoryStore, now: float) -> tuple[dict[str, di
     return records, placed
 
 
-def seed_read_model(directory: Path, total: int, archived: int) -> ReadModel:
-    """`total` Tasks in an event store under `directory`, the first `archived` of them archived, projected into the
-    read model the page then draws: the board of D3's 20,000-Task latency run, which holds none of them in memory."""
+def cache_key(recipe: str, sources: Iterable[Path]) -> str:
+    """A key over the seeding recipe and the bytes of every source that shapes a stored row: a change to either seeds again."""
+    digest = hashlib.sha256(recipe.encode())
+    for source in sorted(sources):
+        digest.update(f"{source.name}\0".encode() + source.read_bytes())
+    return digest.hexdigest()[:24]
+
+
+def event_log_sources() -> list[Path]:
+    """Every module of the event log: the store, the fold, the projector and the read-model schema a seeded row depends on."""
+    return sorted(EVENT_LOG.rglob("*.py"))
+
+
+def seeded_database(directory: Path, key: str, seed: Callable[[Path], None], root: Path = SEED_CACHE) -> Path:
+    """`directory/events.sqlite` as `seed` leaves it under `key`: copied from the cache when present, else seeded once in a
+    staging directory and published to the cache whole, so a reader never sees a part-written store."""
+    cached = root / f"{key}.sqlite"
+    if not cached.exists():
+        root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=root) as staging:
+            seed(Path(staging))
+            os.replace(Path(staging, "events.sqlite"), cached)
+    directory.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(cached, directory / "events.sqlite")
+    return directory / "events.sqlite"
+
+
+def _read_model_event(type: str, **payload: object) -> NewEvent:
+    return NewEvent(type=type, payload=payload, actor="adin", writer="operator")
+
+
+def _append_read_model(directory: Path, total: int, archived: int) -> None:
+    """Appends `total` Task streams, the first `archived` of them archived, through `EventStore` and folds them with the
+    `Projector`: the stored rows and projected tables `seed_read_model` caches."""
     engine = EventLog(f"sqlite:///{directory / 'events.sqlite'}").engine
+    ensure_columns(engine, READ_MODEL_DECLARED)
     store = EventStore(engine)
-    open_lanes = list(OPEN)
     for number in range(1, total + 1):
         old = number <= archived
-        payload = {
-            "title": f"Task {number} does a piece of the work",
-            "description": "A paragraph of the kind of text a Task carries. " * 6,
-            "state": "done" if old else open_lanes[number % len(open_lanes)],
-            "labels": ["kind-execute", "size-3"],
-        }
-        events = [NewEvent(type="TaskCreated", payload=payload, actor="demo", writer="operator")]
+        events = [
+            _read_model_event(
+                "TaskCreated",
+                title=f"Task {number} does a piece of the work",
+                description="A paragraph of the kind of text a Task carries. " * 6,
+                state="Done" if old else READ_MODEL_STATES[number % len(READ_MODEL_STATES)],
+                labels=["kind-execute", "size-3"],
+                dependencies=[f"TASK-{number - 1}"] if number % 10 == 0 else [],
+                fields={"area": f"area-{number % 20}"},
+            )
+        ]
         if old:
-            events.append(NewEvent(type="Archived", payload={}, actor="demo", writer="operator"))
+            events.append(_read_model_event("Archived"))
+        else:
+            events += [_read_model_event("CriterionAdded", kind="ac", text=f"criterion {n}") for n in range(2)]
         store.append("task", f"TASK-{number}", 0, events)
     Projector(engine, store).catch_up()
-    return ReadModel(engine)
+    engine.dispose()
+
+
+def seed_read_model(directory: Path, total: int, archived: int) -> ReadModel:
+    """`total` Tasks in an event store under `directory`, the first `archived` of them archived, projected into the read
+    model the page then draws: the board of D3's 20,000-Task latency run. Seeded once per recipe and source, then copied."""
+    recipe = inspect.getsource(_read_model_event) + inspect.getsource(_append_read_model)
+    recipe += repr((total, archived, READ_MODEL_STATES, READ_MODEL_DECLARED))
+    key = cache_key(recipe, event_log_sources())
+    path = seeded_database(directory, key, lambda staging: _append_read_model(staging, total, archived))
+    return ReadModel(EventLog(f"sqlite:///{path}").engine, READ_MODEL_DECLARED)
 
 
 def native_board(directory: Path) -> Board:
@@ -323,7 +382,9 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no cover — process
         help=f"draw {READ_MODEL_TASKS:,} Tasks, {READ_MODEL_ARCHIVED:,} archived, from the read model instead of the feed",
     )
     args = parser.parse_args(argv)
-    server, feed, tasks = build(args.port, args.dir, read_model=(READ_MODEL_TASKS, READ_MODEL_ARCHIVED) if args.read_model else None)
+    server, feed, tasks = build(
+        args.port, args.dir, read_model=(READ_MODEL_TASKS, READ_MODEL_ARCHIVED) if args.read_model else None
+    )
     print(f"seeded StarPulse on :{server.server_port}", flush=True)
     stop, sent = threading.Event(), []
     feeder = threading.Thread(target=lambda: sent.append(replay(feed, tasks, args.replay_rate, stop.wait)), daemon=True)

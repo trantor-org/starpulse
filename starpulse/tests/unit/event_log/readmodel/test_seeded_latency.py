@@ -2,18 +2,14 @@
 soft limit, and the shape the read model replaces (load every Task, filter in Python) does not."""
 
 import statistics
-import tempfile
 import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
+import seeded_server
 
-from starpulse.event_log.event_log import EventLog
-from starpulse.event_log.readmodel.declared import declared_fields, ensure_columns
-from starpulse.event_log.readmodel.projector import Projector
 from starpulse.event_log.readmodel.read_model import ReadModel
-from starpulse.event_log.store import EventStore, NewEvent
 
 pytestmark = [pytest.mark.nightly, pytest.mark.slow]
 
@@ -22,8 +18,6 @@ _ARCHIVED = 18_000
 _BUDGET_MS = 50.0  # the page latency budget: bench/page_latency.py BUDGET_MS
 _RSS_SOFT_LIMIT = 256 * 1024 * 1024  # growth the board context may add over a seeded board and every query below
 _RUNS = 30
-_DECLARED = declared_fields({"fields": {"area": {"type": "string", "queried": True}}})
-_STATES = ("Ready", "In Progress", "Review")
 
 
 def _rss() -> int:
@@ -31,31 +25,6 @@ def _rss() -> int:
         if line.startswith("VmRSS:"):
             return int(line.split()[1]) * 1024
     raise AssertionError("no VmRSS")
-
-
-def _new(type: str, **payload: object) -> NewEvent:
-    return NewEvent(type=type, payload=payload, actor="adin", writer="operator")
-
-
-def _seed(store: EventStore) -> None:
-    for number in range(1, _TOTAL + 1):
-        archived = number <= _ARCHIVED
-        events = [
-            _new(
-                "TaskCreated",
-                title=f"Task {number} does a piece of the work",
-                description="A paragraph of the kind of text a Task carries. " * 6,
-                state="Done" if archived else _STATES[number % len(_STATES)],
-                labels=["kind-execute", "size-3"],
-                dependencies=[f"TASK-{number - 1}"] if number % 10 == 0 else [],
-                fields={"area": f"area-{number % 20}"},
-            )
-        ]
-        if archived:
-            events.append(_new("Archived"))
-        else:
-            events += [_new("CriterionAdded", kind="ac", text=f"criterion {n}") for n in range(2)]
-        store.append("task", f"TASK-{number}", 0, events)
 
 
 def _timed_ms(call: Callable[[], object]) -> float:
@@ -81,17 +50,10 @@ def _p95_ms(call: Callable[[], object]) -> float:
 
 
 @pytest.fixture(scope="module")
-def board() -> Iterator[tuple[ReadModel, int, int]]:
+def board(tmp_path_factory: pytest.TempPathFactory) -> Iterator[tuple[ReadModel, int, int]]:
     rss_before = _rss()
-    with tempfile.TemporaryDirectory() as directory:
-        engine = EventLog(f"sqlite:///{Path(directory) / 'events.sqlite'}").engine
-        ensure_columns(engine, _DECLARED)
-        store = EventStore(engine)
-        _seed(store)
-        Projector(engine, store).catch_up()
-        model = ReadModel(engine, _DECLARED)
-        yield model, rss_before, model.since(0, _TOTAL)[-500]["seq"]
-        engine.dispose()
+    model = seeded_server.seed_read_model(tmp_path_factory.mktemp("board"), _TOTAL, _ARCHIVED)
+    yield model, rss_before, model.since(0, _TOTAL)[-500]["seq"]
 
 
 def _surfaces(model: ReadModel, cursor: int) -> dict[str, Callable[[], object]]:
@@ -106,8 +68,6 @@ def _surfaces(model: ReadModel, cursor: int) -> dict[str, Callable[[], object]]:
     }
 
 
-# Slow: the module `board` fixture seeds and projects 20,000 Tasks through the real store (~3 ms each, SQLAlchemy and SQLite
-# bound), and the first test to use it pays that; the scale is what the page budget is measured at, so it cannot shrink.
 def test_every_query_is_within_the_page_budget_on_twenty_thousand_tasks_with_eighteen_thousand_archived(board) -> None:
     model, _, cursor = board
     p95 = {name: _p95_ms(call) for name, call in _surfaces(model, cursor).items()}
