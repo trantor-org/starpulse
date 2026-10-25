@@ -3,9 +3,8 @@
 `listing` reads one repository (`owner/name`) into those records: a workflow per active workflow file, its jobs (and, for
 a job the latest run took once, that job's steps) as the step graph. `start` and `follow` are what a runs adapter module
 offers the server for one configured instance. `start` dispatches a workflow that declares `workflow_dispatch` and needs
-`GITHUB_TOKEN` or `GH_TOKEN`. `follow` lists the repository, then lists a workflow again for each run entry on the runs
-stream (`workflow_run_entry` maps a `workflow_run` webhook to one), and every `RECONCILE_INTERVAL` seconds reads the
-repository again: two calls, plus those of a workflow whose latest run changed or has not ended (`Repository`).
+`GITHUB_TOKEN` or `GH_TOKEN`. `follow` lists the repository, and every `RECONCILE_INTERVAL` seconds reads it again: two calls, plus those of a workflow
+whose latest run changed or has not ended (`Repository`).
 """
 
 from __future__ import annotations
@@ -16,7 +15,6 @@ import posixpath
 import threading
 import time
 from collections.abc import Callable, Collection
-from datetime import datetime
 from typing import Any, NamedTuple, get_args
 from urllib.parse import quote
 
@@ -336,7 +334,12 @@ class GitHubRuns:
         except OSError as exc:
             self._sink.set_dags(None, str(exc))
             return
-        except (ValueError, KeyError, TypeError, yaml.YAMLError) as exc:  # an answer or a file not in the shape `listing` reads
+        except (
+            ValueError,
+            KeyError,
+            TypeError,
+            yaml.YAMLError,
+        ) as exc:  # an answer or a file not in the shape `listing` reads
             self._sink.set_dags(None, f"unreadable response ({type(exc).__name__}: {exc})")
             return
         with self._lock:
@@ -360,16 +363,6 @@ class GitHubRuns:
             self._dags = {n: next((d for d in dags if d["name"] == n), d) for n, d in self._dags.items()}
             self._startable = (self._startable - {name}) | set(startable)
             self._sink.set_dags(list(self._dags.values()), None, startable=sorted(self._startable))
-
-
-def workflow_run_entry(payload: dict) -> dict:
-    """The runs-stream entry a GitHub `workflow_run` webhook payload reports: the workflow file's run, started or ended."""
-    run = payload["workflow_run"]
-    status = status_of(run["status"], run.get("conclusion"))
-    at = datetime.fromisoformat(run["updated_at"]).timestamp()
-    workflow = posixpath.basename(run["path"].split("@")[0])
-    event = "StepFinished" if run["status"] == "completed" else "StepStarted"
-    return run_events.entry(event, workflow, str(run["id"]), status, now=at)
 
 
 #: Seconds between two readings of a followed repository; a workflow file added since the last one shows at the next.

@@ -15,6 +15,7 @@ import pytest
 from starpulse._internal.server.closure import SELF, Reading
 from starpulse._internal.server.supervisor import Supervisor
 from starpulse.tests.integration.server.test_standalone import _env, build  # noqa: F401 - `build` is a fixture
+from starpulse.tests.supervised import running_pids
 
 
 def _snapshot(port: int) -> None:
@@ -82,14 +83,14 @@ def test_the_swapped_api_child_answers_every_request_made_across_the_swap(
                 except OSError:
                     assert time.monotonic() < deadline, "the first API child never answered"
                     time.sleep(0.05)
-            first = supervisor.pids()["api"]
+            first = running_pids(supervisor)["api"]
             clients = [threading.Thread(target=ask, args=(port,), daemon=True) for _ in range(4)]
             for client in clients:
                 client.start()
             answered_by(8, "the first API child never answered the clients")
             version[0] = 1
             assert supervisor.reload()["children"] == {"api": "replaced"}
-            second = supervisor.pids()["api"]
+            second = running_pids(supervisor)["api"]
             answered_by(len(answered) + 8, "the replacement never answered")  # what queued while it started
         finally:
             halt.set()

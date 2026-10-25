@@ -91,7 +91,7 @@ GET /api/history?task=TASK-N[&machine=NAME]
                    the config), so the path outlives the stream's trim, unless the board adapter keeps
                    its own history. A trim past entries the copy never read is recorded as a gap
 GET /api/analytics/health[?hours=N][&stuck_hours=N]
-                   the Board's flow health from the history's lane changes (`analytics.board_health`): `states`
+                   the Board's flow health from the history's lane changes (`analytics.stay_health`): `states`
                    (each with `wip` now and, for a state that is not final, the `visits`, `mean_s` and `max_s` of
                    its stays over the last `hours`, default 168, `open` of them still going and counted to now),
                    `throughput` {count, per_day} into a final state, `stuck` (tasks in a middle state for

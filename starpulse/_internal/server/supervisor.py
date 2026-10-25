@@ -223,11 +223,6 @@ class Supervisor:
             self._launch(name, child, now)
             self._end([old])
 
-    def pids(self) -> dict[str, int]:
-        """The pid of each child running now."""
-        with self._lock:
-            return {n: c.proc.pid for n, c in self._children.items() if c.proc is not None and c.proc.poll() is None}
-
     def start(self) -> None:
         """Start every child and keep them running on a background thread until `stop`."""
         if self._read:

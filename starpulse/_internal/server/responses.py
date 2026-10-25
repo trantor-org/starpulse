@@ -15,6 +15,7 @@ from starpulse._internal.board.seam import (
 from starpulse._internal.config.analytics import Analytics
 from starpulse._internal.feed.ledger import PAGE
 from starpulse._internal.harnesses.telemetry import Signal, TelemetryLog
+from starpulse._internal.machines.stays import lane_stays
 from starpulse._internal.server.encoding import encode
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.flow_metrics import analytics
@@ -203,7 +204,7 @@ def health_response(
     if isinstance(history, SummarisedHealth):
         held = history.health_stays(machines["board"], start=start, now=now, stuck_s=stuck * 3600)
     else:
-        held = analytics.lane_stays(history.lane_rows(), start=start, now=now, stuck_s=stuck * 3600)
+        held = lane_stays(history.lane_rows(), start=start, now=now, stuck_s=stuck * 3600)
     health = analytics.stay_health(
         machines["board"], held, history.gaps(), now=now, window_s=window * 3600, stuck_s=stuck * 3600
     )
