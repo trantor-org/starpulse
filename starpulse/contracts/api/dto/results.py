@@ -11,6 +11,13 @@ class Moved(_Api):
     advice: str | None = None
 
 
+class MovedEach(_Api):
+    """A batch move's answer: the tasks it moved, and each refused task with why."""
+
+    moved: list[str]
+    refused: dict[str, str]
+
+
 class Edited(_Api):
     task: str
     changed: list[str]

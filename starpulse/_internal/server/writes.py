@@ -379,13 +379,31 @@ def _record_written(feed: BoardFeed | None, task: str | None, who: _Who, write: 
 
 
 @_write(MoveRequest, "Moving a task")
-def move_task(request: MoveRequest, feed: BoardFeed, writer: MoveWriter) -> tuple[int, dict[str, str]]:
-    """Move the task `request` names to the column it names, through `writer`: the HTTP status and JSON body.
+def move_task(request: MoveRequest, feed: BoardFeed, writer: MoveWriter) -> tuple[int, dict[str, Any]]:
+    """Move the task `request` names, or each of its `tasks`, to the column it names, through `writer`: the HTTP status
+    and JSON body. A batch answers 200 with the tasks moved and each refused one's error, so one refusal leaves the
+    others moved.
 
     The board machine's exits from the task's state decide which columns are offered; the writer decides which
     it accepts, so a guard that changed since the snapshot still refuses.
     """
-    task, column, who = request.task, request.to, _who(request)
+    who = _who(request)
+    if request.task is not None:
+        return _move_one(feed, request.task, request.to, who, writer)
+    if request.tasks is None:
+        return 400, {"error": "invalid request: task: Field required"}
+    moved, refused = [], {}
+    for task in request.tasks or ():
+        status, body = _move_one(feed, task, request.to, who, writer)
+        if status == 200:
+            moved.append(task)
+        else:
+            refused[task] = body["error"]
+    return 200, {"moved": moved, "refused": refused}
+
+
+def _move_one(feed: BoardFeed, task: str, column: str, who: _Who, writer: MoveWriter) -> tuple[int, dict[str, Any]]:
+    """Move the `task` the board holds to `column` as `who` for `move_task`: the HTTP status and JSON body."""
     if (agent := _held(feed, task)) is None:
         return _not_held(feed, task)
     return _move(feed, agent, task, column, who, writer)

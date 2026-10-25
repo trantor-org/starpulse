@@ -61,6 +61,7 @@ from starpulse.contracts.api.dto.results import (
     MilestoneCreated,
     MilestoneEdited,
     Moved,
+    MovedEach,
     Parked,
     Rated,
     Restored,
@@ -156,6 +157,7 @@ class ApiContract(_Api):
     ]
     answers: list[
         Moved
+        | MovedEach
         | Edited
         | Archived
         | ArchivedEach
