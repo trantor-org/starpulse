@@ -19,9 +19,9 @@ import pytest
 
 from starpulse._internal.config.config import load
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.scheduler.ledger import LEDGER_FILE, Ledger
-from starpulse._internal.scheduler.runtime import Runtime
-from starpulse._internal.scheduler.sampler import PERIOD
+from starpulse.scheduler.model.ledger import LEDGER_FILE, Ledger
+from starpulse.scheduler.adapters.runtime import Runtime
+from starpulse.scheduler.model.sampler import PERIOD
 from starpulse._internal.server.assembly import assemble, history_store
 from starpulse._internal.server.scheduler_service import start_scheduler
 from starpulse.event_log.event_log import EventLog

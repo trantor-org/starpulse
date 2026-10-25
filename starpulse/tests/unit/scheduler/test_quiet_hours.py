@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime, timedelta, timezone
 
-from starpulse._internal.scheduler.quiet_hours import QuietHours
+from starpulse.scheduler.model.quiet_hours import QuietHours
 
 
 def _phoenix(hour: int, minute: int) -> float:

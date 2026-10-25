@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.scheduler.toggle import TOGGLE_FILE, Toggle
+from starpulse.scheduler.model.toggle import TOGGLE_FILE, Toggle
 from starpulse.event_log.event_log import EventLog
 
 

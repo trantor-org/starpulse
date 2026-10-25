@@ -16,8 +16,8 @@ from starpulse._internal.config.scheduler import Scheduler
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.machine_tasks import MachineTasks
 from starpulse._internal.kit.adapter_kit import serve, url
-from starpulse._internal.scheduler.runtime import Runtime, build
-from starpulse._internal.scheduler.sampler import Crossing
+from starpulse.scheduler.adapters.runtime import Runtime, build
+from starpulse.scheduler.model.sampler import Crossing
 from starpulse._internal.server.page_server import PageServer
 from starpulse._internal.server.writes import scheduler
 from starpulse.contracts.adapters import BoardTask, MachineEvent

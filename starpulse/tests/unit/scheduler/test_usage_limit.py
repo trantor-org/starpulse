@@ -1,6 +1,6 @@
 """Parse a harness usage or credit limit and the wall clock at which it resets."""
 
-from starpulse._internal.scheduler.usage_limit import until
+from starpulse.scheduler.model.usage_limit import until
 
 # 10_000 s is 02:46:40 UTC on 1 January 1970; 21:00 UTC that day is 75_600 s.
 NOW = 10_000.0

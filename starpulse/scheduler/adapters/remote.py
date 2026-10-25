@@ -21,9 +21,9 @@ from pathlib import Path
 from typing import Any
 
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.scheduler.harness_setting import HarnessSetting
-from starpulse._internal.scheduler.quiet_hours import QuietHoursSetting
-from starpulse._internal.scheduler.toggle import TOGGLE_FILE, Toggle
+from starpulse.scheduler.model.harness_setting import HarnessSetting
+from starpulse.scheduler.model.quiet_hours import QuietHoursSetting
+from starpulse.scheduler.model.toggle import TOGGLE_FILE, Toggle
 from starpulse.event_log.event_log import Entry, EventLog, Tail
 
 logger = logging.getLogger(__name__)

@@ -8,7 +8,7 @@ from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from sqlalchemy import create_engine, inspect, select, text
 
-from starpulse._internal.scheduler.ledger import Ledger, RunRecord
+from starpulse.scheduler.model.ledger import Ledger, RunRecord
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.tables import scheduler_runs
 

@@ -17,15 +17,15 @@ from typing import Any
 from starpulse.board.model.seam import Written
 from starpulse._internal.config.scheduler import Scheduler
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.scheduler.harness_setting import HarnessSetting
-from starpulse._internal.scheduler.inputs import review_points, sessions_in_flight
-from starpulse._internal.scheduler.ledger import LEDGER_FILE, Ledger
-from starpulse._internal.scheduler.loop import Loop
-from starpulse._internal.scheduler.probe import LocalProbe
-from starpulse._internal.scheduler.quiet_hours import QuietHoursSetting
-from starpulse._internal.scheduler.sampler import Crossing, Reading, Sampler
-from starpulse._internal.scheduler.state import SchedulerState
-from starpulse._internal.scheduler.toggle import TOGGLE_FILE, Toggle
+from starpulse.scheduler.model.harness_setting import HarnessSetting
+from starpulse.scheduler.model.inputs import review_points, sessions_in_flight
+from starpulse.scheduler.model.ledger import LEDGER_FILE, Ledger
+from starpulse.scheduler.adapters.loop import Loop
+from starpulse.scheduler.adapters.probe import LocalProbe
+from starpulse.scheduler.model.quiet_hours import QuietHoursSetting
+from starpulse.scheduler.model.sampler import Crossing, Reading, Sampler
+from starpulse.scheduler.model.state import SchedulerState
+from starpulse.scheduler.model.toggle import TOGGLE_FILE, Toggle
 from starpulse.event_log.event_log import EventLog
 from starpulse.harness_telemetry.harness import HARNESS
 

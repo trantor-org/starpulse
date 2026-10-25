@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.scheduler.ledger import Ledger, RunRecord
+from starpulse.scheduler.model.ledger import Ledger, RunRecord
 from starpulse.event_log.event_log import EventLog
 
 

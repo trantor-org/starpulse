@@ -543,7 +543,7 @@ applied_by = "pin-bump"
 The scheduler is a switch, a capacity reading, an admission rule and a loop that acts on the rule. The switch is persisted in
 the `scheduler.enabled` row of the history store's `starpulse_settings` table, so it survives a restart, and it starts off. A missing row,
 an unreadable store or a malformed value reads as off. `[scheduler] state_dir` (relative to the config file; `serve` creates it) is where the older
-state files are looked for. The toggle file of that older name (`TOGGLE_FILE` in `_internal/scheduler/toggle.py`) beside the config or in `state_dir` is imported once on first read, keeping its modification
+state files are looked for. The toggle file of that older name (`TOGGLE_FILE` in `scheduler/model/toggle.py`) beside the config or in `state_dir` is imported once on first read, keeping its modification
 time as the row's `updated_at`, then renamed to the same name plus `.imported`.
 
 `GET /api/scheduler` answers any address:
@@ -642,7 +642,7 @@ forecast P(goal), and the run ledger.
 
 The run ledger is the history store's `starpulse_scheduler_runs` table (migration 0016, renamed by 0028), one row per finished run: its task, tier,
 points, outcome, duration in seconds, the peak demand it drew on each dimension and the epoch second it was recorded. Event-log pruning never deletes
-it, and the store's snapshot carries it. The ledger file of that older name (`LEDGER_FILE` in `_internal/scheduler/ledger.py`) in `state_dir` when set, else beside the config, is imported
+it, and the store's snapshot carries it. The ledger file of that older name (`LEDGER_FILE` in `scheduler/model/ledger.py`) in `state_dir` when set, else beside the config, is imported
 once into an empty table, each run stamped with the file's modification time, then renamed to the same name plus `.imported`. While
 the store cannot be read the ledger measures nothing, so admission prices every task at its declared demand.
 

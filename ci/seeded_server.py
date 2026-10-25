@@ -37,8 +37,8 @@ from starpulse._internal.config.config import load
 from starpulse._internal.config.scheduler import Scheduler
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.adapters.history_window import HistoryWindow
-from starpulse._internal.scheduler.runtime import Runtime
-from starpulse._internal.scheduler.runtime import build as build_scheduler
+from starpulse.scheduler.adapters.runtime import Runtime
+from starpulse.scheduler.adapters.runtime import build as build_scheduler
 from starpulse._internal.server.asgi_app import page_app
 from starpulse._internal.server.assembly import assemble
 from starpulse._internal.server.page_server import PageServer

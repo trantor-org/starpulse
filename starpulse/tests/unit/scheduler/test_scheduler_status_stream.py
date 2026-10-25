@@ -8,7 +8,7 @@ from pathlib import Path
 
 from starpulse._internal.config.scheduler import Scheduler
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.scheduler.runtime import Runtime, build
+from starpulse.scheduler.adapters.runtime import Runtime, build
 from starpulse._internal.server.writes import scheduler
 from starpulse.contracts.api.dto.scheduler import SchedulerStatus
 from starpulse.event_log.event_log import EventLog

@@ -17,10 +17,10 @@ from starpulse.board.model.seam import Board, Written
 from starpulse._internal.config.config import Config
 from starpulse._internal.config.level import Level
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.scheduler.admission import ranks_from_trajectories_body
-from starpulse._internal.scheduler.runtime import Runtime
-from starpulse._internal.scheduler.runtime import build as build_scheduler
-from starpulse._internal.scheduler.starter import builtin_starter
+from starpulse.scheduler.model.admission import ranks_from_trajectories_body
+from starpulse.scheduler.adapters.runtime import Runtime
+from starpulse.scheduler.adapters.runtime import build as build_scheduler
+from starpulse.scheduler.adapters.starter import builtin_starter
 from starpulse._internal.server.server import _cached, trajectories_response
 from starpulse.event_log.event_log import EventLog
 from starpulse.flow_metrics.history import History
