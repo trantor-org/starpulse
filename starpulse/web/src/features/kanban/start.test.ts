@@ -62,6 +62,14 @@ describe("the start question", () => {
     expect(starts.get().asking).toMatchObject({ task: { id: "TASK-D1" }, via, pick: { harness: "claude", tier: "deep", effort: "medium" } });
   });
 
+  it("opens on the task's profile when a session holds it", () => {
+    const { starts } = stores();
+
+    starts.ask({ ...task("TASK-D1", "ready", "https://claude.ai/code/session_x"), profile: "@agent-deep-medium" }, "play", LIFECYCLE_ROLES);
+
+    expect(starts.get().asking).toMatchObject({ pick: { harness: "claude", tier: "deep", effort: "medium" } });
+  });
+
   it("key 1 starts a session on the picked profile and key 2 moves the task without one", async () => {
     const { starts, post, moves, writer } = stores();
     starts.ask(task("TASK-D1", "ready"), "play", LIFECYCLE_ROLES);

@@ -29,8 +29,10 @@ export interface KanbanTask {
   /** The milestone key the snapshot carries (`m-76`); empty when the task has none. */
   milestone: string;
   labels: string[];
-  /** The agent profile that holds the task; empty when unassigned. */
+  /** The session that holds the task; empty when unheld. */
   assignee: string;
+  /** The agent profile the task is routed to (`@agent-standard-high`); empty when it has none. */
+  profile?: string;
   dependencies: string[];
   /** Dependencies still on the Board and not Done. */
   openDeps: number;
@@ -65,6 +67,7 @@ export const applyTaskRecord = (task: KanbanTask, record: TaskRecord): KanbanTas
   ...task,
   title: record.title,
   assignee: record.profile,
+  profile: record.profile,
   labels: record.labels,
   milestone: record.milestone,
   dependencies: record.dependencies,
@@ -356,7 +359,7 @@ export function kanbanTasks(sky: Sky): KanbanTask[] {
   return sky.board.agents.map((a) => {
     const latest = sky.latest[a.id], dependencies = a.dependencies ?? [];
     return {
-      id: a.id, title: a.title, lane: a.state, milestone: a.milestone ?? "", labels: a.labels ?? [], assignee: a.assignee ?? "", dependencies,
+      id: a.id, title: a.title, lane: a.state, milestone: a.milestone ?? "", labels: a.labels ?? [], assignee: a.assignee ?? "", profile: a.profile ?? "", dependencies,
       openDeps: dependencies.filter((d) => open.has(d)).length, prs: cited(a.prs ?? [], sky.pulls[a.id] ?? []), runs: a.runs ?? [], description: a.description ?? "",
       live: latest ? { machine: latest.flow, state: latest.state, at: latest.at, source: sky.flows[latest.flow]?.machine.source } : null,
       released: a.state === roles.ready && a.previous === roles.waiting, release: a.released ?? null, claimExpiresAt: a.claim_expires_at ?? null, moves: a.moves ?? (a.move_set ? sky.moveSets[a.move_set] : undefined) ?? {}, entered: a.entered ?? 0, created: a.created ?? null, workableSince: a.workable_since ?? null,

@@ -34,6 +34,8 @@ LABELS = re.compile(r"^(kind-[a-z]+|size-\d+|adr-needed|bug|feature)$")
 MOCKUP_KEYS = {"now", "dags", "writers", "launches", "cues", "domains", "descriptions", "flows"}
 #: The saved Board keys `scrub_board` knows how to clean, refused the same way.
 BOARD_KEYS = {"now", "names", "tasks"}
+#: Demo tasks a session holds: the Start dialog still opens on the task's profile, not on this holder.
+HELD = {"DEMO-1": "https://example.com/code/session_demo1"}
 #: An agent profile assignee, the only kind a demo keeps.
 PROFILE = re.compile(r"^@agent-[a-z-]+$")
 TITLES = [
@@ -289,10 +291,11 @@ SEED = [
 #: The lanes `SEED` fills, as the Board machine a capture with no board of its own is drawn on: CI's native board has
 #: three lanes, which the Kanban would draw as three columns and leave every other seeded card without one.
 SEED_LANES = ("Ready", "Waiting", "In Progress", "Review", "Needs attention", "Done")
-#: The roles the seeded lanes play, as a deployment's machine would declare them.
+#: The roles the seeded lanes play, as a deployment's machine would declare them: a session starts a Ready task.
 SEED_ROLES = StateRoles(
     {
-        "ready": "initial",
+        "new": "initial",
+        "ready": "waiting_on_fact",
         "waiting": "waiting_on_fact",
         "in_progress": "resting",
         "review": "waiting_on_fact",
@@ -345,7 +348,7 @@ def _fill(line: list[str], start: int, now: float) -> list[tuple]:
                 after = k - 1 if j % 4 == 3 else first.get("ready", 0) + j % max(FILL.get("ready", 1), 1)
             labels = [SIZES[k % len(SIZES)], KINDS[k % len(KINDS)]]
             pull = (*FILL_PULLS[lane], j % 3) if lane in FILL_PULLS else None
-            model = "" if lane == "new" else PROFILES[k % len(PROFILES)]
+            model = PROFILES[k % len(PROFILES)]
             created = now - 500 * (j + 1) if lane == "new" else None
             entered = now - 2100 * (j + 1) - (DAY_S if j % DONE_STALE_EVERY == DONE_STALE_EVERY - 1 else 0)
             rows.append(
@@ -379,6 +382,7 @@ def _seed(now: float, line: list[str] = ()) -> tuple[list[dict], dict, dict]:
             | ({"created": created} if created is not None else {})
             | ({"entered": entered[0]} if entered else {})
             | _workable(i, state, after, now)
+            | ({"moves": {SEED_ROLES.working: {"allowed": True}}} if state in SEED_ROLES.startable else {})
         )
         if pull:
             pulls[ids[i]] = [
@@ -427,6 +431,7 @@ def scrub(live: dict) -> dict:
         line = [s["id"] for s in machine.get("states", [])] if machine.get("mainLine") else []
         keep = {row[0] for row in SEED} <= set(line)
         board, pulls, settled = _seed(live["now"], line if keep else [])
+        live = {**live, "roles": SEED_ROLES.wire()}  # a native capture's roles name none of the seeded lanes
         if not keep:
             live = {
                 **live,
@@ -434,7 +439,6 @@ def scrub(live: dict) -> dict:
                     {**f, "machine": {**board_machine(SEED_LANES), "tiers": SEED_TIERS}} if f["name"] == "board" else f
                     for f in live["flows"]
                 ],
-                "roles": SEED_ROLES.wire(),
             }
     for a in board:  # the Board's tasks are DEMO-1.. in Board order, whichever flow comes first
         names.setdefault(a["id"], f"DEMO-{len(names) + 1}")
@@ -449,11 +453,14 @@ def scrub(live: dict) -> dict:
                 demo
                 | {
                     "milestone": milestones.get(a.get("milestone"), ""),
+                    "profile": demo["model"],
+                    "assignee": HELD.get(name, demo["assignee"]),
                     "labels": [x for x in a.get("labels", []) if LABELS.match(x)],
                     "dependencies": [names[d] for d in a.get("dependencies", []) if d in names],
                     "description": f"Synthetic demo task: {demo['title'].lower()}.",
                     **({"entered": a["entered"]} if "entered" in a else {}),
                     **({"workable_since": a["workable_since"]} if "workable_since" in a else {}),
+                    **({"moves": a["moves"]} if "moves" in a else {}),
                 }
                 | ({"created": a["created"]} if a.get("created") is not None else {})
             )
