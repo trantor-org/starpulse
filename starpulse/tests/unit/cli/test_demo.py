@@ -540,6 +540,7 @@ def test_scrub_seeds_a_board_when_the_capture_has_none() -> None:
         "description": f"Synthetic demo task: {TITLES[0].lower()}.",
         "created": live["now"] - 900,
         "workable_since": live["now"] - 900,
+        "moves": {"in_progress": {"allowed": True}},
     }
     assert board[3]["dependencies"] == ["DEMO-1"] and board[3]["labels"] == ["size-5"]
     assert demo["pulls"]["DEMO-9"] == [
@@ -1132,3 +1133,12 @@ def test_the_seeded_board_maps_profiles_to_tasks_and_a_session_holds_one_with_a_
     assert all(t["profile"] == t["model"] for t in board)
     held = [t for t in board if t["assignee"].startswith("demo-holder")]
     assert held and all(t["profile"] not in ("", "@agent-standard-high") for t in held)
+
+
+def test_the_seeded_board_offers_start_on_its_ready_tasks() -> None:
+    live = _live()
+    live["flows"][0]["agents"] = []
+    demo = scrub(live)
+    held = next(t for t in demo["flows"][0]["agents"] if t["id"] == "DEMO-1")
+    assert "ready" in demo["roles"]["startable"]
+    assert held["moves"] == {demo["roles"]["working"]: {"allowed": True}}
