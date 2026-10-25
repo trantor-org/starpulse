@@ -350,7 +350,9 @@ def test_scrub_replaces_each_pull_request_with_a_synthetic_one_on_the_task_demo_
     demo = scrub(live)
 
     assert demo["pulls"] == {
-        "DEMO-1": [{"number": 100, "url": "#", "checks": "failing", "merged": False, "threads": 2, "stale": False}]
+        "DEMO-1": [
+            {"number": 100, "repo": "demo/repo", "url": "#", "checks": "failing", "merged": False, "threads": 2, "stale": False}
+        ]
     }
     assert "github.com" not in json.dumps(demo)
 

@@ -96,6 +96,7 @@ jobs:
       # A selected run can leave a shard no test file: pytest exits 5 for it, which is a pass only while targets were selected.
       # The full log is kept: an xdist worker crash (INTERNALERROR) prints its traceback only into this output.
       - run: |
+          set -o pipefail  # the default step shell has none: without it tee's 0 hides a red pytest
           status=0
           uv run pytest $PYTEST_TARGETS 2>&1 | tee pytest-shard.log || status=$?
           [ "$status" -eq 0 ] || { [ "$status" -eq 5 ] && [ -n "$PYTEST_TARGETS" ]; }

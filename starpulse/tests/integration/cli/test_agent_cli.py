@@ -130,6 +130,7 @@ def base(tmp_path: Path) -> Iterator[str]:
     feed.put(task("PROJ-5", "Ready"))
     pull = {
         "number": 5,
+        "repo": "org/repo",
         "url": PULL,
         "checks": "pass",
         "merged": False,
@@ -537,6 +538,8 @@ def test_the_board_lists_each_column_with_its_tasks_dependencies_prs_and_moves(
         "lane": "to_do",
         "phase": None,
         "substate": None,
+        "skill": None,
+        "interactive": False,
         "done_at": None,
         "profile": "@agent-a",
         "assignee": "",
@@ -550,6 +553,7 @@ def test_the_board_lists_each_column_with_its_tasks_dependencies_prs_and_moves(
         "prs": [
             {
                 "number": 5,
+                "repo": "org/repo",
                 "url": PULL,
                 "checks": "pass",
                 "merged": False,
@@ -697,6 +701,8 @@ def test_task_show_reports_a_settled_task_by_where_it_settled(base: str, capsys:
         "lane": "completed",
         "phase": None,
         "substate": None,
+        "skill": None,
+        "interactive": False,
         "done_at": None,
         "profile": "",
         "assignee": "",
@@ -2217,6 +2223,7 @@ def test_a_manifest_verb_writes_one_json_document_and_exits_as_declared(
 SKILLS = [
     "authoring-starpulse-machines",
     "deliver",
+    "mitigate",
     "operating-starpulse-board",
     "review-fix",
     "setting-up-starpulse",

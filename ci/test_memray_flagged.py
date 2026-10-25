@@ -53,7 +53,8 @@ def test_the_shard_job_turns_the_screen_on_only_for_the_nightly_and_a_dispatch_a
         for event in ("pull_request", "merge_group", "push", "schedule", "workflow_dispatch")
         if event in SHARD["env"]["TEST_COST_REPORT"]
     }
-    upload = next(step for step in SHARD["steps"] if step.get("uses", "").startswith("actions/upload-artifact@"))
+    uploads = [step for step in SHARD["steps"] if step.get("uses", "").startswith("actions/upload-artifact@")]
+    upload = next(step for step in uploads if step["with"]["name"].startswith("test-cost-"))
 
     assert events == {"schedule", "workflow_dispatch"}
     assert upload["with"]["name"] == "test-cost-${{ matrix.shard }}"

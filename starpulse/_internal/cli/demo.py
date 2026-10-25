@@ -521,6 +521,7 @@ def scrub(live: dict) -> dict:
         "move_sets": {},  # the demo's tasks carry no moves
         "cold_done": [],  # the demo holds no done task from before local midnight
         "ratings": {},  # the demo rates no task: a live rating names a real one
+        "interactive": {},  # the demo holds no interactive session: a live flag names a real task
         "error": None,
         "history": history,
     }
