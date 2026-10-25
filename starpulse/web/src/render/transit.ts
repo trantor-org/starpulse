@@ -14,8 +14,9 @@ export interface HPlace {
   side?: { machine: string; steps: string[]; j: number };
 }
 type Node = Pt & { k: string };
-/** How much a branch's place gives up to fit: nothing (0), a station on a Board curve (1), its line over a name (2), a station on a name (3). */
-type Loose = 0 | 1 | 2 | 3;
+/** How much a branch's place gives up to fit: nothing (0), a station on a Board curve (1), its line over a name (2), a station on a name (3), a
+ *  station or line off the fitted view (4). */
+type Loose = 0 | 1 | 2 | 3 | 4;
 interface Branch {
   key: string;
   sun: string;
@@ -41,6 +42,10 @@ interface Branch {
   loose?: Loose;
   /** The sun's geometry and the Board's curves and names the branch's place was last checked against. */
   ok?: string;
+  /** Uprooted once to make room for another branch, so it is never uprooted again: two branches cannot keep uprooting each other. */
+  moved?: boolean;
+  /** The sky it last found no room in: it stays unplaced, its dots on their orbits, until a branch on its sun or the Board moves. */
+  boxed?: string;
 }
 interface Mem {
   node: string;
@@ -114,7 +119,7 @@ function spots(b: Branch, g: Galaxy, th: number, lane: number, angs: number[]): 
 /** Where `b` may be placed: the lowest lane whose stations stay CLEAR of the Board's curves, whose spoke runs along none leaving this sun, whose
  *  line stays off every printed state and hangar name, and whose arc is clear of the sun's other branches. A ring-1 branch stays as near its
  *  preferred angle as it can; a ring-2 branch runs straight out from its parent's station and turns square onto its lane, either way round. */
-function fitter(b: Branch, sc: Scene) {
+function fitter(b: Branch, sc: Scene, spare: (o: Branch) => boolean = () => false) {
   const g = sc.galaxies[b.sun];
   const base = b.ring === 1 ? 0 : branches.get(b.parent!)!.lane + 1, reach = rad(g, base + LANES + 1) + CLEAR;
   const sample = (e: BEdge, n = 64) => Array.from({ length: n + 1 }, (_, i) => bez(e.p0!, e.c!, e.p1!, i / n)).filter((q) => Math.hypot(q.x - g.x, q.y - g.y) < reach);
@@ -147,7 +152,7 @@ function fitter(b: Branch, sc: Scene) {
     return [...Array.from({ length: m + 1 }, (_, i) => at(g, r, a0 + (d * i) / m, "")), ...spoke];
   };
   // siblings opened off one station share the ray out from it, so only their own lanes' runs are kept apart: each takes a lane of its own
-  const kin = [...branches.values()].filter((o) => o !== b && o.sun === b.sun && !Number.isNaN(o.th) && o.key !== b.parent && o.parent !== b.key);
+  const kin = [...branches.values()].filter((o) => o !== b && o.sun === b.sun && !Number.isNaN(o.th) && o.key !== b.parent && o.parent !== b.key && !spare(o));
   const sib = (o: Branch) => b.ring === 2 && o.parent === b.parent && o.pj === b.pj;
   const others = kin.filter((o) => !sib(o)).flatMap((o) => claims(o, o.th, o.lane, o.dir, o.at)), sibs = kin.filter(sib).map((o) => claims(o, o.th, o.lane, o.dir, o.at)[0]);
   // the next station steps on round its lane until it clears every curve, by at most another step: a curve may pass between two stations
@@ -161,16 +166,16 @@ function fitter(b: Branch, sc: Scene) {
     return angs;
   };
   /** The station angles a place at `th` gives and the least it gives up to fit there: it may sit on a Board curve (1), and failing that run its
-   *  line over a name (2) and then set a station on a name (3); null where its arc meets another branch's, any of it leaves the fitted view, or it
-   *  gives up more than `most`. */
-  const place = (th: number, lane: number, dir: 1 | -1, most: Loose = 3): { angs: number[]; loose: Loose } | null => {
+   *  line over a name (2), set a station on a name (3) and then leave the fitted view (4); null where its arc meets another branch's, or it gives
+   *  up more than `most`. */
+  const place = (th: number, lane: number, dir: 1 | -1, most: Loose = 4): { angs: number[]; loose: Loose } | null => {
     const angs = walk(th, lane, dir), sp = spots(b, g, th, lane, angs), mine = claims(b, th, lane, dir, angs);
     // a sub-machine stays out past its parent's lane, which may have moved since it was placed
     const line = track(sp, lane);
-    if (lane < base || hit(mine, others) || hit(mine.slice(0, 1), sibs) || off([...sp.st, ...line])) return null;
+    if (lane < base || hit(mine, others) || hit(mine.slice(0, 1), sibs)) return null;
     // the costliest give first, so a place that gives up more than `most` is dropped at the first check it fails
-    for (const [i, gives] of [() => sp.st.some(named), () => line.some(named), () => onCurve(sp)].entries()) {
-      const loose = (3 - i) as Loose;
+    for (const [i, gives] of [() => off([...sp.st, ...line]), () => sp.st.some(named), () => line.some(named), () => onCurve(sp)].entries()) {
+      const loose = (4 - i) as Loose;
       if (gives()) return loose > most ? null : { angs, loose };
     }
     return { angs, loose: 0 as Loose };
@@ -178,25 +183,53 @@ function fitter(b: Branch, sc: Scene) {
   const fits = (th: number, lane: number, dir: 1 | -1, loose: Loose = 0) => {
     return place(th, lane, dir, loose)?.angs ?? null;
   };
-  return { base, place, fits, walk };
+  return { base, place, fits };
 }
 /** A ring-2 branch looks no further round than this from its parent's station: past it the next lane out is nearer than the arc there. */
 const NEAR = 0.6;
 /** A branch takes one of this many lanes from its first: rather than go further out it crosses a Board curve, then a name; only where none of
  *  them is clear of the sun's other branches does it look up to MORE lanes further out. */
 const LANES = 3, MORE = 3;
-/** Places `b` once, as near `prefer` as it fits on its lanes; where nothing fits it takes its first lane at `prefer`, so a branch always has a place to grow from. */
-function allocate(b: Branch, sc: Scene, prefer: number) {
-  const { base, place, walk } = fitter(b, sc), n = b.ring === 2 ? 2 * Math.round(NEAR / 0.05) + 1 : 2 * Math.ceil(Math.PI / 0.05);
-  let best: { th: number; lane: number; dir: 1 | -1; at: number[]; loose: Loose } | undefined;
+type Place = { th: number; lane: number; dir: 1 | -1; at: number[]; loose: Loose };
+/** The place nearest `prefer` on `b`'s lanes that gives up least, clear of the sun's branches but those `spare` names. */
+function search(b: Branch, sc: Scene, prefer: number, spare?: (o: Branch) => boolean) {
+  const { base, place } = fitter(b, sc, spare), n = b.ring === 2 ? 2 * Math.round(NEAR / 0.05) + 1 : 2 * Math.ceil(Math.PI / 0.05);
+  let best: Place | undefined;
   for (let lane = base; lane < base + LANES + MORE && !(best && lane >= base + LANES); lane++)
     for (let i = 0; i <= n; i++) {
       const dir: 1 | -1 = b.ring === 2 && i % 2 ? -1 : 1, k = b.ring === 2 ? Math.floor(i / 2) : Math.ceil(i / 2);
-      const th = b.ring === 2 ? prefer + dir * k * 0.05 : prefer + (i % 2 ? 1 : -1) * k * 0.05, p = place(th, lane, dir, best ? ((best.loose - 1) as Loose) : 3);
+      const th = b.ring === 2 ? prefer + dir * k * 0.05 : prefer + (i % 2 ? 1 : -1) * k * 0.05, p = place(th, lane, dir, best ? ((best.loose - 1) as Loose) : 4);
       if (p) best = { th, lane, dir, at: p.angs, loose: p.loose };
-      if (best && !best.loose) return Object.assign(b, best);
+      if (best && !best.loose) return best;
     }
-  Object.assign(b, best ?? { th: prefer, lane: base, dir: 1, at: walk(prefer, base, 1), loose: 3 });
+  return best;
+}
+/** Takes `b` and its sub-machines off the sky, to be placed afresh and grow out again from the hub, their dots with them. */
+function uproot(b: Branch) {
+  const fam = [b, ...[...branches.values()].filter((o) => o.parent === b.key)];
+  for (const o of fam) Object.assign(o, { th: NaN, ext: 0, ok: undefined });
+  for (const [id, m] of mems) if (fam.some((o) => m.node.startsWith(`${o.key}#`))) mems.delete(id);
+  return b;
+}
+/** Places `b` once, as near `prefer` as it fits on its lanes. A branch boxed in by the sun's other branches takes the place it would have
+ *  without the sub-machines, and a phase failing that without the other phases too, and the branches in its way are uprooted and placed
+ *  afresh round it; where nothing fits it stays unplaced rather than cross another branch. */
+function allocate(b: Branch, sc: Scene, prefer: number) {
+  let best = search(b, sc, prefer);
+  for (let ring = 2; ring >= b.ring; ring--) {
+    // a phase may uproot any sub-machine, so none can box it in; a branch is uprooted by its own ring only once
+    const spare = (o: Branch) => o.ring >= ring && (o.ring > b.ring || !o.moved);
+    if (best || !(best = search(b, sc, prefer, spare))) continue;
+    const mine = claims(b, best.th, best.lane, best.dir, best.at);
+    for (const o of branches.values()) {
+      if (o.sun !== b.sun || o === b || o.key === b.parent || Number.isNaN(o.th) || !spare(o)) continue;
+      // a sibling shares the ray out from its station, so only its own lane's run is in the way
+      const theirs = claims(o, o.th, o.lane, o.dir, o.at), sib = o.parent === b.parent && o.pj === b.pj;
+      if (sib ? hit(mine.slice(0, 1), theirs.slice(0, 1)) : hit(mine, theirs)) Object.assign(uproot(o), { moved: true });
+    }
+  }
+  if (best) Object.assign(b, best, { boxed: undefined });
+  else b.boxed = room(sc, b.sun);
 }
 function ensure(key: string, sun: string, ring: 1 | 2, machine: string, steps: string[], parent?: string, pj = 0): Branch {
   let b = branches.get(key);
@@ -350,6 +383,11 @@ function layout(sc: Scene, sun: string) {
   const g = sc.galaxies[sun];
   return [sc.bEdges.length, sc.names.length, sc.hangars?.length ?? 0, Math.round(g.x), Math.round(g.y), Math.round(g.edge)].join();
 }
+/** The sky a branch on `sun` is placed in: the sun and the Board round it, and where the sun's other branches sit. */
+function room(sc: Scene, sun: string) {
+  const placed = [...branches.values()].filter((o) => o.sun === sun && !Number.isNaN(o.th));
+  return [layout(sc, sun), ...placed.map((o) => `${o.key}@${o.th.toFixed(2)}:${o.lane}`)].join();
+}
 /** Places every Board task with a phase place for this frame and grows or retracts the branches; true while anything still animates. */
 export function placeBranches(sc: Scene, now: number): boolean {
   const dt = Math.min(0.1, Math.max(0, now - lastNow)), tasks = sc.tasks.filter((k) => !k.today && sc.galaxies[(k.host as Galaxy).id] === k.host);
@@ -387,13 +425,11 @@ export function placeBranches(sc: Scene, now: number): boolean {
         b.at = angs;
         continue;
       }
-      const fam = [b, ...[...branches.values()].filter((o) => o.parent === b.key)];
-      for (const o of fam) Object.assign(o, { th: NaN, ext: 0, ok: undefined });
-      for (const [id, m] of mems) if (fam.some((o) => m.node.startsWith(`${o.key}#`))) mems.delete(id);
+      uproot(b);
     }
     for (const b of branches.values()) {
       if (b.ring !== ring || !Number.isNaN(b.th) || !sc.galaxies[b.sun]) continue;
-      if (b.parent && (!branches.has(b.parent) || Number.isNaN(branches.get(b.parent)!.th))) continue;
+      if ((b.parent && (!branches.has(b.parent) || Number.isNaN(branches.get(b.parent)!.th))) || b.boxed === room(sc, b.sun)) continue;
       const k = tasks.find((t) => want.get(t.id)?.b === b), m = k && mems.get(k.id), g = sc.galaxies[b.sun];
       const at = ring === 2 ? phiOf(b) : m ? angle(g, m) : NaN;
       allocate(b, sc, Number.isFinite(at) ? at : -Math.PI / 2);
@@ -428,8 +464,9 @@ export function placeBranches(sc: Scene, now: number): boolean {
   for (const k of tasks) {
     const sun = (k.host as Galaxy).id, g = sc.galaxies[sun];
     let w = want.get(k.id), route: Node[], node: string, bks: string[];
-    // a dot whose place is being placed afresh holds where it is until the place has one
-    if (w && !(Number.isFinite(w.b.th) && (!w.b.parent || Number.isFinite(branches.get(w.b.parent)?.th ?? NaN)))) {
+    // a dot whose place is being placed afresh holds where it is until the place has one; one with no room rides its orbit
+    if (w && (w.b.boxed || (w.b.parent && branches.get(w.b.parent)?.boxed))) w = undefined;
+    else if (w && !(Number.isFinite(w.b.th) && (!w.b.parent || Number.isFinite(branches.get(w.b.parent)?.th ?? NaN)))) {
       const held = mems.get(k.id);
       if (held) {
         [k.x, k.y, k.moving] = [held.x, held.y, false];

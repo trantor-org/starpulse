@@ -101,8 +101,8 @@ describe("placeBranches", () => {
       for (const p of stationsOf(l)) expect(Math.min(...curves.map((q) => dist(p, q))), p.k).toBeGreaterThanOrEqual(12);
   });
 
-  // the demo's In Progress opens seven sub-machines off one phase at once
-  it.each([[1920, 1080], [1420, 860]])("keeps a crowd of sub-machines within a few lanes of the hub and on the fitted %ix%i canvas", (W, H) => {
+  // the demo's In Progress opens seven sub-machines off one phase at once: more than its lanes hold, so those with no room wait on their orbits
+  it.each([[1920, 1080], [1420, 860]])("keeps a crowd of sub-machines within a few lanes of the hub, on the fitted %ix%i canvas and clear of each other", (W, H) => {
     vi.stubGlobal("location", { search: "?mock=1&extra=8&sim=3" });
     const scene = sc.build({ S: sky.merge(live()), moves: new sky.Moves(), W, H, T: 0, scale: 100 }, { kind: "board" });
     run(scene, 0, 3);
@@ -113,7 +113,14 @@ describe("placeBranches", () => {
       .forEach((k, i) => (k.h = { machine: `sub${i % 7}`, steps: ["queued", "running", "failing", "passing"], j: i % 4, ring1: false, side: { machine: "deliver", steps: deliver.steps, j: i % deliver.steps.length } }));
     run(scene, 3, 6);
     const v = fitLevel(scene, W, H), lines = T.branchLines();
-    expect(lines.filter((l) => l.ring === 2).length).toBeGreaterThanOrEqual(7);
+    expect(lines.filter((l) => l.ring === 2).length).toBeGreaterThanOrEqual(5);
+    const run_ = (l: (typeof lines)[number]) => l.pts.filter((p) => !/:(s\d+|r)$/.test(p.k));
+    for (const a of lines)
+      for (const b of lines) {
+        if (a.key >= b.key || a.sun !== b.sun || a.parent === b.key || b.parent === a.key) continue;
+        const sib = a.parent && a.parent === b.parent && a.pj === b.pj, [pa, pb] = sib ? [run_(a), run_(b)] : [a.pts, b.pts];
+        expect(Math.min(...pa.flatMap((p) => pb.map((q) => dist(p, q)))), `${a.key} ~ ${b.key}`).toBeGreaterThan(8);
+      }
     for (const l of lines)
       for (const p of l.pts) {
         const g = scene.galaxies[l.sun];
