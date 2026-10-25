@@ -278,7 +278,7 @@ aside h3 { margin: 0 0 8px; font-size: calc(10px * var(--fs)); font-weight: 500;
 @media (prefers-reduced-motion: reduce) { #kb .mach.hot .p::after { animation: none; } }
 #kb .foot { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; font-size: calc(10px * var(--fs)); color: var(--muted); }
 #kb .lab { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 5px; border-radius: 3px; background: color-mix(in srgb, var(--slate) 10%, transparent); color: var(--slate); line-height: 15px; }
-#kb .lab.nh { background: color-mix(in srgb, var(--fail) 14%, transparent); color: var(--fail-text); } #kb .lab.sz { background: color-mix(in srgb, var(--waits) 10%, transparent); color: var(--waits-text); }
+#kb .lab.nh { background: color-mix(in srgb, var(--fail) 14%, transparent); color: var(--fail-text); } #kb .lab.sz { margin-left: auto; background: color-mix(in srgb, var(--waits) 10%, transparent); color: var(--waits-text); }
 #kb .who { margin-left: auto; display: flex; align-items: center; gap: 4px; } #kb .who i { width: 6px; height: 6px; border-radius: 50%; }
 #kb .dep { color: var(--run); }
 #kb .holds { color: var(--hold); font-weight: 600; }

@@ -14,11 +14,11 @@ const task: KanbanTask = {
 const draw = (compact: boolean) => renderToStaticMarkup(<Card task={task} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} compact={compact} />);
 
 describe("a Kanban card's density", () => {
-  it("keeps the footer of labels, dependencies and profile when comfortable", () => {
+  it("keeps the footer of dependencies and profile, and no labels, when comfortable", () => {
     const html = draw(false);
 
     expect(html).toContain('class="foot"');
-    expect(html).toContain("needs-review");
+    expect(html).not.toContain("needs-review");
     expect(html).toContain("standard-high");
     expect(html).not.toContain("compact");
   });
@@ -33,6 +33,26 @@ describe("a Kanban card's density", () => {
     expect(html).toContain("A title long enough");
     expect(html).toContain("red proven");
     expect(html).toContain("1m");
+  });
+});
+
+describe("a Kanban card's size estimate", () => {
+  const drawLabelled = (labels: string[], compact = false) => renderToStaticMarkup(<Card task={{ ...task, labels }} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} compact={compact} />);
+
+  it("draws size-N as Npt, the last element of the top row, and no label in the footer", () => {
+    const html = drawLabelled(["kind-feature", "size-5", "area-starpulse"]);
+
+    expect(html).toMatch(/<div class="top">.*<span class="lab sz" title="size-5">5pt<\/span><\/div>/);
+    expect(html).not.toContain('class="lab"');
+    expect(html).not.toContain("area-starpulse");
+  });
+
+  it("draws the chip on a compact card too", () => {
+    expect(drawLabelled(["size-5"], true)).toMatch(/<div class="top">.*<span class="lab sz" title="size-5">5pt<\/span><\/div>/);
+  });
+
+  it("draws no size chip without a size-* label", () => {
+    expect(drawLabelled(["area-starpulse"])).not.toContain("lab sz");
   });
 });
 
