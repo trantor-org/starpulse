@@ -27,6 +27,8 @@ from starpulse.scheduler.model.sampler import Reading
 MIN_RUNS = 3
 #: Percent of CPU and of memory one point at tier weight 1 is priced at, until runs measure it.
 PERCENT_PER_UNIT = 1.0
+#: Why a task whose profile names no tier the policy weighs is refused: a session needs a profile to run on.
+NO_PROFILE = "no agent profile"
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +123,11 @@ def _score(predictor: Callable[[str], float] | None, task: Mapping[str, Any]) ->
         return None
 
 
+def _why(blocked_by: str | None) -> str:
+    """The refusal a log line gives: the dimension that is full, or the missing profile."""
+    return blocked_by if blocked_by == NO_PROFILE else f"{blocked_by} full"
+
+
 def decide(
     tasks: Collection[Mapping[str, Any]],
     lane: str,
@@ -135,6 +142,8 @@ def decide(
     p_goals: Mapping[str, float] | None = None,
 ) -> list[Decision]:
     """A decision for each workable task of `tasks` in `lane`, the admitted first in enforced order, then the refused.
+
+    A task whose profile names no tier in the policy's weights is refused `NO_PROFILE`, whatever room is left.
 
     `tasks` are all the open tasks, because a task's depth counts the ones waiting on it in other lanes. `chain` is the
     trajectory analytics' chain (`trajectory_analytics(...)["chain"]`); `p_goals` is each task's forecast chance of the
@@ -152,7 +161,10 @@ def decide(
         if task["state"] != lane or not task["workable"]:
             continue
         need = demand(task, policy, ledger)
-        blocked_by = next((name for name in DIMENSIONS if need[name] > headroom[name]), None)
+        if tier_of(task) not in policy.tier_weights:
+            blocked_by: str | None = NO_PROFILE
+        else:
+            blocked_by = next((name for name in DIMENSIONS if need[name] > headroom[name]), None)
         score = _score(predictor, task)
         p_goal = chances.get(task["id"], lane_p_goal)
         priority, weight = policy.priority_of(task)
@@ -174,7 +186,7 @@ def decide(
         logger.info(
             "StarPulse scheduler: %s %s p_goal=%.2f predictor=%s shadow_rank=%s enforced_rank=%s",
             decision.task,
-            "admitted" if decision.admitted else f"refused ({decision.blocked_by} full)",
+            "admitted" if decision.admitted else f"refused ({_why(decision.blocked_by)})",
             decision.p_goal,
             decision.predictor,
             decision.shadow_rank,

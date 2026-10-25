@@ -625,8 +625,9 @@ forecast P(goal), and the run ledger.
   review. The tier is the middle word of its profile (`@agent-standard-high` is `standard`); a tier with no weight, or no
   profile, prices at the dearest weight. Once 3 runs of the same tier and size are in the ledger, their mean peak replaces
   that prior.
-- **Fit.** A task is admitted only if its demand is at most the headroom (limit less use) on every dimension; otherwise
-  the decision names the first dimension it overfits.
+- **Fit.** A task whose profile names no tier with a weight is refused as `no agent profile`, since its session would
+  run on whatever model the harness defaults to. Any other task is admitted only if its demand is at most the headroom
+  (limit less use) on every dimension; otherwise the decision names the first dimension it overfits.
 - **Order.** The admitted tasks go in the order of Priority weight times critical-path depth (the task itself plus the
   longest chain of open tasks waiting on it), the lowest id breaking a tie. The weight is the `[scheduler.priority_matrix]`
   cell of the task's `<impact>/<urgency>` (`high/low`), 1 to 9 by default as the product of the two levels' places
@@ -637,7 +638,7 @@ forecast P(goal), and the run ledger.
   function from a task's title and description to a score, replaces P(goal) in that shadow value and is logged; a
   predictor that raises leaves the score empty.
 - **Log.** Each decision logs one line:
-  `StarPulse scheduler: <task> admitted|refused (<dimension> full) p_goal=<p> predictor=<score> shadow_rank=<n> enforced_rank=<n>`.
+  `StarPulse scheduler: <task> admitted|refused (<dimension> full|no agent profile) p_goal=<p> predictor=<score> shadow_rank=<n> enforced_rank=<n>`.
   Ranks number the admitted tasks from 1; a refused task has none.
 
 The run ledger is the history store's `starpulse_scheduler_runs` table (migration 0016, renamed by 0028), one row per finished run: its task, tier,
