@@ -79,4 +79,15 @@ describe("the history cache", () => {
 
     expect(f.mock.calls.map(([url]) => url)).toEqual(["/api/history?task=A%26B&machine=x%20y", "/api/history?task=C%231"]);
   });
+
+  it("reads a task's last 24h of machine events for the drill-in replay", async () => {
+    const events = [{ at: 5, machine: "build", event: "BUILD_DONE", from: "running", to: "done" }];
+    const { history, f } = rig(() => reply({ task: "PROJ-7", hours: 24, events }));
+
+    expect(history.replay("PROJ-7")).toBe("loading");
+    await settle();
+
+    expect(f).toHaveBeenCalledWith("/api/history?task=PROJ-7&hours=24");
+    expect(history.replay("PROJ-7")).toEqual(events);
+  });
 });

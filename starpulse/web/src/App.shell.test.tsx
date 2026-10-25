@@ -55,6 +55,17 @@ describe("the page's first tree", () => {
     expect(hint).toContain("New task");
   });
 
+  it("opens the In Progress drill-in over the page for ?drill=TASK-N, and closing it drops the address's drill", async () => {
+    history.replaceState(null, "", "/?view=constellation&drill=TASK-1");
+    act(() => root.render(<App />));
+    act(() => held.store!.set({ tree: { states: ["In Progress"], subs: {}, children: {} }, roles: { working: "In Progress" }, cards: [{ id: "TASK-1", title: "T", lane: "In Progress" } as unknown as KanbanTask] }));
+    await act(async () => void (await import("./features/level/SunsDrillIn")));
+    expect(host.querySelector('[aria-label="In Progress drill-in"] nav h3')?.textContent).toBe("Tasks");
+    act(() => [...host.querySelectorAll("button")].find((b) => b.textContent === "Close")!.click());
+    expect(mounted('[aria-label="In Progress drill-in"]')).toBe(false);
+    expect(location.search).not.toContain("drill");
+  });
+
   it("offers no create command on an empty board that cannot create a task", () => {
     act(() => root.render(<App />));
     // a Backlog.md or Jira board: `task create` is refused and the Kanban draws no New task

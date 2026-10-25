@@ -1,6 +1,7 @@
 // The fetch cache behind the hover back-trace: one /api/history read per task (and flow), shared by the card and the panel.
 import { apiFetch } from "./apiFetch";
 import type { LaneStep, MachineStep } from "../features/level/trace";
+import type { MachineEvent } from "./types.gen";
 
 export type Loaded<T> = T | "loading" | "unavailable";
 export interface MachineHistory {
@@ -11,6 +12,8 @@ export interface MachineHistory {
 export interface History {
   lane(task: string): Loaded<LaneStep[]>;
   machine(task: string, machine: string): Loaded<MachineHistory>;
+  /** Every machine event of the task in the last 24 hours, oldest first: the drill-in's replay. */
+  replay(task: string): Loaded<MachineEvent[]>;
 }
 
 export interface HistoryOptions {
@@ -30,6 +33,7 @@ interface Entry {
 interface Body {
   path: unknown;
   steps?: number;
+  events?: unknown;
 }
 
 export function createHistory({ onChange, fetch: get = (u) => apiFetch(u), now = () => Date.now() / 1000, ttl = 30 }: HistoryOptions): History {
@@ -52,5 +56,6 @@ export function createHistory({ onChange, fetch: get = (u) => apiFetch(u), now =
     lane: (task) => read(`/api/history?task=${encodeURIComponent(task)}`, (b) => b.path as LaneStep[]),
     machine: (task, machine) =>
       read(`/api/history?task=${encodeURIComponent(task)}&machine=${encodeURIComponent(machine)}`, (b) => ({ path: b.path as MachineStep[], steps: b.steps ?? 0 })),
+    replay: (task) => read(`/api/history?task=${encodeURIComponent(task)}&hours=24`, (b) => b.events as MachineEvent[]),
   };
 }
