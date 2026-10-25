@@ -36,11 +36,7 @@ interface Branch {
   at: number[];
   /** Placed where no lane in reach was clear of the Board's curves, so its stations may sit on one. */
   loose?: 0 | 1 | 2;
-  /** The sub-machines it was placed afresh for, once each, so their spokes clear a name. */
-  bumped?: string[];
-  /** The placed branches and curves a failed `allocate` was tried against. */
-  tried?: string;
-  /** The sun's geometry and placed neighbours the branch's place was last checked against. */
+  /** The sun's geometry and the Board's curves and names the branch's place was last checked against. */
   ok?: string;
 }
 interface Mem {
@@ -63,8 +59,6 @@ interface Mem {
 const STEP1 = 0.236, D1 = 20, LANE = 28, PAD = 0.06, TAIL = 0.25, GAP = 0.12, CLEAR = 12, OFF = 5, FADE = 0.35, RING = 0.6, BOX = 16, NUDGE = 0.02;
 /** Seconds a branch takes to grow out in full, and to retract. */
 const GROW = 2, SHRINK = 1.5;
-/** How far, in screen pixels, a step's name may print from its station. */
-const BESIDE = 24;
 const TAU = Math.PI * 2;
 /** A ring-1 branch is a phase machine, drawn blue; a ring-2 branch is a sub-machine, drawn teal. */
 const kind = (b: Branch) => (b.ring === 1 ? PHASE : SUBM);
@@ -83,9 +77,8 @@ function phiOf(b: Branch) {
   return branches.get(b.parent!)!.at[b.pj];
 }
 type Claim = { lane: number; a0: number; a1: number };
-/** The arcs a branch at `th` on `lane` holds: its own run (landing, stations, name) and the lanes its spoke or landing crosses on the way out;
- *  `room` adds the lane outside its run, where the names of the steps it holds reach. */
-function claims(b: Branch, th: number, lane: number, dir: 1 | -1, room: boolean, angs: number[]): Claim[] {
+/** The arcs a branch at `th` on `lane` holds: its own run (landing, stations, name) and the lanes its spoke or landing crosses on the way out. */
+function claims(b: Branch, th: number, lane: number, dir: 1 | -1, angs: number[]): Claim[] {
   const far = angs[angs.length - 1], out: Claim[] = [];
   let from = th - dir * PAD, cross: [number, number] = [th, th], lo = 0;
   if (b.ring === 2) {
@@ -94,69 +87,18 @@ function claims(b: Branch, th: number, lane: number, dir: 1 | -1, room: boolean,
   }
   const [a0, a1] = [Math.min(from, far + dir * TAIL), Math.max(from, far + dir * TAIL)];
   out.push({ lane, a0, a1 });
-  if (room) out.push({ lane: lane + 1, a0, a1 });
   for (let l = lo; l < lane; l++) out.push({ lane: l, a0: Math.min(...cross) - PAD, a1: Math.max(...cross) + PAD });
   return out;
 }
 const hit = (A: Claim[], B: Claim[]) => A.some((p) => B.some((q) => p.lane === q.lane && clash(p.a0, p.a1, q.a0, q.a1, GAP)));
 type Box = { x0: number; y0: number; x1: number; y1: number };
-/** The box a branch's machine name takes, drawn past its last station as `drawBranches` draws it, at `px` sky units to the screen pixel. */
-function nameBox(b: Branch, g: Galaxy, lane: number, dir: 1 | -1, angs: number[], px: number): Box {
-  const size = 9.5 * px, a = angs[angs.length - 1] + dir * 0.12, c = Math.cos(a), R = rad(g, lane) + (Math.abs(c) <= 0.2 ? size : 0);
-  const x = g.x + Math.cos(a) * R, y = g.y + Math.sin(a) * R, w = textW(b.machine, size), x0 = c > 0.2 ? x : c < -0.2 ? x - w : x - w / 2;
-  return { x0, y0: y - 0.6 * size, x1: x0 + w, y1: y + 0.6 * size };
+type Spot = { x: number; y: number; align: CanvasTextAlign };
+/** Where a step's name prints `R` out from `g` along angle `a`, set to the side the cosine gives. */
+function stepSpot(g: Pt, a: number, R: number): Spot {
+  const c = Math.cos(a);
+  return { x: g.x + Math.cos(a) * R, y: g.y + Math.sin(a) * R, align: c > 0.2 ? "left" : c < -0.2 ? "right" : "center" };
 }
-type Spot = { x: number; y: number; align: CanvasTextAlign; box: Box };
-/** Where a step's name prints `R` out from sun `g` along angle `a` (`dy` below it), set to the `side` the cosine gives, at `size` sky units. */
-function stepSpot(g: Galaxy, a: number, name: string, R: number, side: number, size: number, dy = 0): Spot {
-  const x = g.x + Math.cos(a) * R, y = g.y + Math.sin(a) * R + dy, align = side > 0.2 ? "left" : side < -0.2 ? "right" : "center", w = textW(name.replace(/_/g, " "), size);
-  const x0 = align === "left" ? x : align === "right" ? x - w : x - w / 2;
-  return { x, y, align, box: { x0, y0: y - 0.6 * size, x1: x0 + w, y1: y + 0.6 * size } };
-}
-/** A step name's two places beside a station `r` out at angle `a`: past it, and in from it towards the sun. */
-const besides = (g: Galaxy, a: number, r: number, name: string, size: number, lift = 0) => {
-  const c = Math.cos(a), mid = Math.abs(c) <= 0.2 ? size : 0;
-  return [stepSpot(g, a, name, r + 8 + lift + mid, c, size), stepSpot(g, a, name, r - 8 - mid, -c, size)];
-};
-/** Whether a name's box reaches in on any sun's hub. */
-const onHub = (sc: Scene, n: Box) => Object.values(sc.galaxies).some((o) => gap(o, n) < o.edge);
-/** Where each held step's name prints, at `px` sky units to the screen pixel: out past its station, a line further out, inside it
- *  towards the sun, (above or below the sun) beside it, or up to four lines further out, whichever first clears every printed name, every other station, every branch's line and Board curve, and the step names placed before it; else the one that meets fewest. */
-function stepSpots(sc: Scene, px: number, held: (node: string) => number): Map<string, Spot> {
-  const size = 9 * px, out = new Map<string, Spot>(), bs = [...branches.values()].filter((b) => sc.galaxies[b.sun]);
-  const fixed = [...sc.names, ...(sc.hangars ?? []), ...bs.filter((b) => !Number.isNaN(b.th)).map((b) => nameBox(b, sc.galaxies[b.sun], b.lane, b.dir, b.at, px))];
-  const stations = bs.flatMap((b) => b.st.flatMap((i) => (b.route[i] ? [b.route[i]] : [])));
-  const curves = sc.bEdges.filter((e) => e.p0 && e.c && e.p1).flatMap((e) => Array.from({ length: 129 }, (_, i) => bez(e.p0!, e.c!, e.p1!, i / 128)));
-  const lines = bs.flatMap((b) => dense(b.route.slice(b.own + (b.parent ? 1 : 0))));
-  for (const b of bs) {
-    const g = sc.galaxies[b.sun];
-    b.steps.forEach((name, s) => {
-      const n = held(`${b.key}#${s}`), self = b.route[b.st[s]];
-      if (!n || !self) return;
-      const a = angle(g, self), r = Math.hypot(self.x - g.x, self.y - g.y);
-      const c = Math.cos(a), mid = Math.abs(c) <= 0.2, spot = (R: number, side: number, dy = 0) => stepSpot(g, a, name, R, side, size, dy);
-      const [out1, in1] = besides(g, a, r, name, size, OFF * (Math.min(n, 3) - 1)), R = Math.hypot(out1.x - g.x, out1.y - g.y), taken = [...fixed, ...[...out.values()].map((o) => o.box)];
-      // a name or station it prints over costs more than any line it crosses, and a line more than reaching further from its station
-      const hits = (t: Spot) => 8 * (taken.filter((o) => meet(t.box, o, 0)).length + stations.filter((p) => Math.hypot(p.x - self.x, p.y - self.y) > 0.5 && inBox(p, t.box, 0)).length) + 4 * (+lines.some((p) => inBox(p, t.box, 0)) + +curves.some((p) => inBox(p, t.box, 0)));
-      // in on a sun's hub is never taken, and a name out of reach of its station only to clear a name or station
-      const cost = (t: Spot) => hits(t) + (onHub(sc, t.box) ? 32 : 0) + (gap(self, t.box) > BESIDE * px ? 3 : 0);
-      const tries = [out1, spot(R + 1.4 * size, c), in1, ...(mid ? [spot(R - size, 1), spot(R - size, -1)] : []), ...[1, -1].flatMap((v) => [spot(R, c, 1.2 * v * size), spot(r - 8, -c, 1.2 * v * size)]), ...[2, 3, 4].map((k) => spot(R + 1.4 * k * size, c))];
-      out.set(`${b.key}#${s}`, tries.reduce((x, y) => (cost(y) < cost(x) ? y : x)));
-    });
-  }
-  return out;
-}
-/** The line through `p` sampled at most `d` apart, so a box between two of its nodes still meets it. */
-const dense = (p: Pt[], d = 2) =>
-  p.flatMap((q, i) => {
-    if (!i) return [q];
-    const o = p[i - 1], n = Math.ceil(Math.hypot(q.x - o.x, q.y - o.y) / d) || 1;
-    return Array.from({ length: n }, (_, j) => ({ x: o.x + ((q.x - o.x) * (j + 1)) / n, y: o.y + ((q.y - o.y) * (j + 1)) / n }));
-  });
 const inBox = (p: Pt, n: Box, m: number) => p.x > n.x0 - m && p.x < n.x1 + m && p.y > n.y0 - m && p.y < n.y1 + m;
-/** How far `p` lies from the nearest point of box `n`; zero inside it. */
-const gap = (p: Pt, n: Box) => Math.hypot(Math.max(n.x0 - p.x, 0, p.x - n.x1), Math.max(n.y0 - p.y, 0, p.y - n.y1));
-const meet = (a: Box, n: Box, m: number) => a.x0 < n.x1 + m && n.x0 < a.x1 + m && a.y0 < n.y1 + m && n.y0 < a.y1 + m;
 /** Where a branch at `th` on `lane` sits on the sky: its stations, then its spoke out from the hub (a ring-2 branch's, from its parent's
  *  station). A station may not sit on a Board curve, nor a spoke leave the hub on or run along one leaving this sun; arcs and spokes may cross them. */
 function spots(b: Branch, g: Galaxy, th: number, lane: number, angs: number[]): { st: Pt[]; spoke: Pt[] } {
@@ -166,16 +108,15 @@ function spots(b: Branch, g: Galaxy, th: number, lane: number, angs: number[]): 
   for (let i = 0; i <= m; i++) spoke.push({ x: p.x + ((q.x - p.x) * i) / m, y: p.y + ((q.y - p.y) * i) / m });
   return { st, spoke };
 }
-/** The nearest free place for a new branch: the lowest lane whose stations stay CLEAR of the Board's curves, whose spoke runs along none
- *  leaving this sun, and whose arc is clear of the sun's other branches, the names of their held steps included where there is room. A ring-1 branch stays as near its preferred angle as it can; a
- *  ring-2 branch runs straight out from its parent's station and turns square onto its lane, either way round, its first station on the turn where it fits. */
-/** Where `b` may be placed; `extra` is the line a sub-machine being placed would draw, which its step names must keep a side clear of too. */
-function fitter(b: Branch, sc: Scene, extra: Pt[] = []) {
+/** Where `b` may be placed: the lowest lane whose stations stay CLEAR of the Board's curves, whose spoke runs along none leaving this sun, whose
+ *  line stays off every printed state and hangar name, and whose arc is clear of the sun's other branches. A ring-1 branch stays as near its
+ *  preferred angle as it can; a ring-2 branch runs straight out from its parent's station and turns square onto its lane, either way round. */
+function fitter(b: Branch, sc: Scene) {
   const g = sc.galaxies[b.sun];
   const base = b.ring === 1 ? 0 : branches.get(b.parent!)!.lane + 1, reach = rad(g, base + LANES + 1) + CLEAR;
   const sample = (e: BEdge, n = 64) => Array.from({ length: n + 1 }, (_, i) => bez(e.p0!, e.c!, e.p1!, i / n)).filter((q) => Math.hypot(q.x - g.x, q.y - g.y) < reach);
-  const drawn = sc.bEdges.filter((e) => e.p0 && e.c && e.p1), all = drawn.flatMap((e) => sample(e)), fine = drawn.flatMap((e) => sample(e, 128));
-  const docked = drawn.filter((e) => e.source === b.sun || e.target === b.sun).flatMap(sample);
+  const drawn = sc.bEdges.filter((e) => e.p0 && e.c && e.p1), all = drawn.flatMap((e) => sample(e));
+  const docked = drawn.filter((e) => e.source === b.sun || e.target === b.sun).flatMap((e) => sample(e));
   const close = (p: Pt, qs: Pt[]) => qs.some((q) => Math.hypot(p.x - q.x, p.y - q.y) < CLEAR);
   // a spoke crossing a curve is near it for a few samples; one running along it, or leaving the hub on top of it, is near for most
   // the fitted view frames the suns, so a station outside their box would open off screen
@@ -183,51 +124,16 @@ function fitter(b: Branch, sc: Scene, extra: Pt[] = []) {
   const y0 = Math.min(...gs.map((o) => o.y - o.R)) - BOX, y1 = Math.max(...gs.map((o) => o.y + o.R)) + BOX;
   const off = (st: Pt[]) => st.some((p) => p.x < x0 || p.x > x1 || p.y < y0 || p.y > y1);
   const onCurve = ({ st, spoke }: { st: Pt[]; spoke: Pt[] }) => st.some((p) => close(p, all)) || (b.ring === 1 && close(spoke[0], docked)) || spoke.filter((p) => close(p, docked)).length * 4 > 3 * CLEAR;
-  // a station may not sit on a printed name: a state's label, another level's or another branch's machine name; nor may this branch's
-  // machine name print over a station or a name. Step names find their own clear side as they print (stepSpots)
-  const px = sc.px ?? 1, placed = [...branches.values()].filter((o) => o !== b && !Number.isNaN(o.th) && sc.galaxies[o.sun]);
-  const labels = placed.map((o) => nameBox(o, sc.galaxies[o.sun], o.lane, o.dir, o.at, px));
-  // nor over the name of a step another branch holds a dot on, where that name prints now
-  const held = (node: string) => [...mems.values()].filter((m) => m.node === node).length;
-  const steps = [...stepSpots(sc, px, held)].filter(([node]) => !node.startsWith(`${b.key}#`)).map(([, s]) => s.box);
-  const texts = [...sc.names, ...(sc.hangars ?? []), ...labels, ...steps];
-  const stations = placed.flatMap((o) => o.at.map((a) => at(sc.galaxies[o.sun], rad(sc.galaxies[o.sun], o.lane), a, "")));
-  const named = (p: Pt) => texts.some((n) => inBox(p, n, OFF));
+  const texts = [...sc.names, ...(sc.hangars ?? [])], named = (p: Pt) => texts.some((n) => inBox(p, n, OFF));
   // the arc between its stations and the spoke out to them stay off every printed name too
   const track = ({ st, spoke }: { st: Pt[]; spoke: Pt[] }, lane: number) => {
     const r = rad(g, lane), a0 = b.ring === 1 ? angle(g, st[0]) : angle(g, spoke[spoke.length - 1]), a1 = angle(g, st[st.length - 1]), d = Math.atan2(Math.sin(a1 - a0), Math.cos(a1 - a0));
     const m = Math.max(Math.ceil((Math.abs(d) * r) / 4), 1);
     return [...Array.from({ length: m + 1 }, (_, i) => at(g, r, a0 + (d * i) / m, "")), ...spoke];
   };
-  const lined = (sp: { st: Pt[]; spoke: Pt[] }, lane: number) => track(sp, lane).some(named);
-  const lines = placed.filter((o) => o.sun === b.sun && o.parent !== b.key).flatMap((o) => dense(o.route.slice(o.own + (o.parent ? 1 : 0))));
-  // a ring-1 place leaves the spoke each sub-machine runs straight out from its station clear of names too, out to the sub-machine's first
-  // lane, or out to the furthest lane it may take once it was placed afresh for it
-  const kids = [...branches.values()].filter((o) => o.parent === b.key);
-  const ray = (c: Branch) => (b.bumped?.includes(c.key) ? LANES + 1 : 1) * LANE;
-  const rays = (lane: number, angs: number[]) => kids.flatMap((c) => Array.from({ length: Math.ceil(ray(c) / 4) + 1 }, (_, i) => at(g, rad(g, lane) + i * 4, angs[c.pj], "")));
-  // its own name prints off every line on this sun, its own and its sub-machines' rays included, and short of the last resort clear of the Board's curves
-  const labelled = (n: Box, sp: { st: Pt[]; spoke: Pt[] }, lane: number, angs: number[], loose: number) =>
-    texts.some((o) => meet(n, o, OFF)) || [...stations, ...sp.st].some((p) => inBox(p, n, OFF)) || [...track(sp, lane), ...rays(lane, angs), ...lines].some((p) => inBox(p, n, 0)) || (loose < 2 && fine.some((p) => inBox(p, n, 0)));
-  // and short of a loose place, each step's name has a side beside its station clear of every name, every line and station, the Board's
-  // curves and every hub
-  const roomy = (sp: { st: Pt[]; spoke: Pt[] }, lane: number) => {
-    const own = [...track(sp, lane), ...lines, ...placed.filter((o) => o.parent === b.key && o.loose !== 2).flatMap((o) => dense(o.route.slice(o.own + 1))), ...fine, ...extra];
-    const clear = (t: Spot, p: Pt) => !onHub(sc, t.box) && !texts.some((o) => meet(t.box, o, 0)) && !own.some((q) => inBox(q, t.box, 0)) && ![...stations, ...sp.st].some((q) => q !== p && inBox(q, t.box, 0));
-    return sp.st.every((p, s) => besides(g, angle(g, p), Math.hypot(p.x - g.x, p.y - g.y), b.steps[s], 9 * px).some((t) => clear(t, p)));
-  };
-  // a sub-machine's stations and name leave each of its parent's step names a clear side, as the parent's own place was checked to
-  const par = b.parent ? branches.get(b.parent) : undefined;
-  const roomFor = (sp: { st: Pt[]; spoke: Pt[] }, th: number, lane: number, dir: 1 | -1, angs: number[]): boolean => {
-    if (!par || Number.isNaN(par.th)) return true;
-    const was = { th: b.th, lane: b.lane, dir: b.dir, at: b.at, route: b.route };
-    Object.assign(b, { th, lane, dir, at: angs, route: [] });
-    const ok = !!fitter(par, sc, dense([...track(sp, lane), ...sp.st])).fits(par.th, par.lane, par.dir, false, par.loose);
-    Object.assign(b, was);
-    return ok;
-  };
-  const live = placed.filter((o) => o.sun === b.sun && o.key !== b.parent && o.parent !== b.key);
-  const others = [true, false].map((room) => live.flatMap((o) => claims(o, o.th, o.lane, o.dir, room, o.at)));
+  const others = [...branches.values()]
+    .filter((o) => o !== b && o.sun === b.sun && !Number.isNaN(o.th) && o.key !== b.parent && o.parent !== b.key)
+    .flatMap((o) => claims(o, o.th, o.lane, o.dir, o.at));
   // the next station steps on round its lane until it clears every curve, by at most another step: a curve may pass between two stations
   const walk = (th: number, lane: number, dir: 1 | -1) => {
     const r = rad(g, lane), step = stepAt(g, lane), angs = [th];
@@ -238,29 +144,31 @@ function fitter(b: Branch, sc: Scene, extra: Pt[] = []) {
     }
     return angs;
   };
-  /** The station angles a place at `th` gives, or null when it does not fit; a `loose` place may sit on a Board curve (1), and failing that run its line over a name (2), never a station on a name, nor its own name on a station. */
-  const fits = (th: number, lane: number, dir: 1 | -1, room: boolean, loose: 0 | 1 | 2 = 0): number[] | null => {
+  /** The station angles a place at `th` gives, or null when it does not fit; a `loose` place may sit on a Board curve (1), and failing that run its line over a name (2), never a station on a name. */
+  const fits = (th: number, lane: number, dir: 1 | -1, loose: 0 | 1 | 2 = 0): number[] | null => {
     const angs = walk(th, lane, dir), sp = spots(b, g, th, lane, angs);
     // a sub-machine stays out past its parent's lane, which may have moved since it was placed
-    return lane >= base && !hit(claims(b, th, lane, dir, room, angs), others[room ? 0 : 1]) && !off(sp.st) && !(loose ? false : onCurve(sp)) && !sp.st.some(named) && !(loose > 1 ? false : !roomy(sp, lane) || lined(sp, lane) || rays(lane, angs).some(named)) && !labelled(nameBox(b, g, lane, dir, angs, px), sp, lane, angs, loose) && (loose > 1 || roomFor(sp, th, lane, dir, angs)) ? angs : null;
+    return lane >= base && !hit(claims(b, th, lane, dir, angs), others) && !off(sp.st) && !(loose ? false : onCurve(sp)) && !sp.st.some(named) && (loose > 1 || !track(sp, lane).some(named)) ? angs : null;
   };
-  return { g, base, fits };
+  return { base, fits, walk };
 }
 /** A ring-2 branch looks no further round than this from its parent's station: past it the next lane out is nearer than the arc there. */
 const NEAR = 0.6;
-/** A branch grows at most this many lanes past its first: rather than go further out it crosses a Board curve, and only to clear a name does it take one lane more. */
+/** A branch grows at most this many lanes past its first: rather than go further out it crosses a Board curve, and only to clear a name does it take more. */
 const LANES = 3;
+/** Places `b` once, as near `prefer` as it fits; where nothing fits it takes the lane past every other, so a branch always has a place to grow from. */
 function allocate(b: Branch, sc: Scene, prefer: number) {
-  const { base, fits } = fitter(b, sc), n = b.ring === 2 ? 2 * Math.round(NEAR / 0.05) + 1 : 2 * Math.ceil(Math.PI / 0.05);
+  const { base, fits, walk } = fitter(b, sc), n = b.ring === 2 ? 2 * Math.round(NEAR / 0.05) + 1 : 2 * Math.ceil(Math.PI / 0.05);
   for (const loose of [0, 1, 2] as const)
-  for (let lane = base; lane < base + LANES + (loose ? 1 : 0); lane++)
-    for (const room of [true, false])
+    for (let lane = base; lane < base + LANES + loose; lane++)
       for (let i = 0; i <= n; i++) {
         const dir: 1 | -1 = b.ring === 2 && i % 2 ? -1 : 1, k = b.ring === 2 ? Math.floor(i / 2) : Math.ceil(i / 2);
         const th = b.ring === 2 ? prefer + dir * k * 0.05 : prefer + (i % 2 ? 1 : -1) * k * 0.05;
-        const angs = fits(th, lane, dir, room, loose);
+        const angs = fits(th, lane, dir, loose);
         if (angs) return Object.assign(b, { th, lane, dir, at: angs, loose });
       }
+  const lane = Math.max(base, ...[...branches.values()].filter((o) => o.sun === b.sun && !Number.isNaN(o.th)).map((o) => o.lane + 1));
+  Object.assign(b, { th: prefer, lane, dir: 1, at: walk(prefer, lane, 1), loose: 2 });
 }
 function ensure(key: string, sun: string, ring: 1 | 2, machine: string, steps: string[], parent?: string, pj = 0): Branch {
   let b = branches.get(key);
@@ -335,36 +243,28 @@ function spot(sc: Scene, nodes: Map<string, Node>, k: string): Node | undefined 
   return { k, x: s.x + ((s.x - g.x) / l) * OFF * +i, y: s.y + ((s.y - g.y) / l) * OFF * +i };
 }
 
-/** Each fully drawn branch's own line, from its landing (or the hub) to its last station: what the overlap check measures. Siblings share the
- *  station they open from, so a ring-2 line starts past it. */
-export const branchLines = () =>
-  [...branches.values()].filter((b) => b.ext >= 1 && b.route.length).map((b) => ({ key: b.key, sun: b.sun, ring: b.ring, parent: b.parent, th: +b.th.toFixed(3), lane: b.lane, dir: b.dir, n: b.steps.length, pj: b.pj, loose: b.loose, pts: b.route.slice(b.own + (b.parent ? 1 : 0)) }));
-/** Every printed name that meets another name or a station it does not label, on fully drawn branches: what the text check counts. */
-export function textHits(sc: Scene): string[] {
-  const px = sc.px ?? 1, bs = [...branches.values()].filter((b) => b.ext >= 1 && b.route.length && sc.galaxies[b.sun]), out: string[] = [];
-  const spots = stepSpots(sc, px, (node) => [...mems.values()].filter((m) => m.node === node).length);
-  const texts = [
-    ...[...sc.names, ...(sc.hangars ?? [])].map((n) => ({ of: `name:${n.of}`, n, mine: [] as Pt[], own: undefined as Pt | undefined })),
-    ...bs.flatMap((b) => {
-      const g = sc.galaxies[b.sun], st = b.at.map((a) => at(g, rad(g, b.lane), a, ""));
-      return [{ of: `${b.key}:machine`, n: nameBox(b, g, b.lane, b.dir, b.at, px), mine: [] as Pt[], own: undefined as Pt | undefined }, ...b.steps.flatMap((_, i) => { const t = spots.get(`${b.key}#${i}`); return t ? [{ of: `${b.key}:step${i}`, n: t.box, mine: st, own: st[i] }] : []; })];
-    }),
-  ];
-  const stations = bs.flatMap((b) => b.at.map((a) => ({ of: b.key, p: at(sc.galaxies[b.sun], rad(sc.galaxies[b.sun], b.lane), a, "") })));
-  const curves = sc.bEdges.filter((e) => e.p0 && e.c && e.p1).flatMap((e) => Array.from({ length: 129 }, (_, i) => bez(e.p0!, e.c!, e.p1!, i / 128)));
-  texts.forEach((t, i) => {
-    texts.slice(i + 1).forEach((u) => meet(t.n, u.n, 0) && !(t.of.startsWith("name:") && u.of.startsWith("name:")) && out.push(`${t.of}~${u.of}`));
-    stations.forEach((s) => !t.mine.includes(s.p) && !(t.of.startsWith(`${s.of}:step`)) && inBox(s.p, t.n, 0) && out.push(`${t.of}@${s.of}`));
-    bs.forEach((b) => dense(b.route.slice(b.own + (b.parent ? 1 : 0))).some((p) => inBox(p, t.n, 0)) && out.push(`${t.of}/${b.key}:line`));
-    if (!t.of.startsWith("name:") && curves.some((p) => inBox(p, t.n, 0))) out.push(`${t.of}/curve`);
-    // a step's name sits beside its own station, never out over the sky or in on a sun's hub
-    if (t.own && gap(t.own, t.n) > BESIDE * px) out.push(`${t.of}/far`);
-    if (t.own && onHub(sc, t.n)) out.push(`${t.of}/sun`);
-  });
-  return out;
+/** Each branch drawn at least `min` of the way out (by default in full), with its own line from its landing (or the hub) to its last station:
+ *  what the overlap check measures. Siblings share the station they open from, so a ring-2 line starts past it. */
+export const branchLines = (min = 1) =>
+  [...branches.values()].filter((b) => b.ext >= min && b.route.length).map((b) => ({ key: b.key, sun: b.sun, ring: b.ring, parent: b.parent, th: +b.th.toFixed(3), lane: b.lane, dir: b.dir, n: b.steps.length, pj: b.pj, loose: b.loose, ext: b.ext, pts: b.route.slice(b.own + (b.parent ? 1 : 0)) }));
+/** How far `p` sits from the segment a–b. */
+function seg(p: Pt, a: Pt, b: Pt) {
+  const dx = b.x - a.x, dy = b.y - a.y, l = dx * dx + dy * dy, u = l ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l)) : 0;
+  return Math.hypot(a.x + dx * u - p.x, a.y + dy * u - p.y);
 }
-/** Each dot on a branch or on its way, bar one stacked out from its station, that sits further than `tol` off every line drawn this frame (a
- *  branch's grown line, a hub ring, a Board curve), as `id@node`: what the ride check counts. */
+/** The stretch of a way from `d0` to `d1` along it, every corner between included: a comet's tail bends with the line it rides. */
+function stretch(p: Pt[], cum: number[], d0: number, d1: number): Pt[] {
+  return [along(p, cum, d0), ...p.filter((_, i) => cum[i] > d0 && cum[i] < d1), along(p, cum, d1)];
+}
+/** How far back along its way a moving dot's comet tail reaches. */
+const tailOf = (m: Mem) => Math.min(60, 0.27 * m.cum.at(-1)!) * Math.min(1, m.gone / m.cum.at(-1)! + 0.05);
+/** Whether `b`'s line has grown out past its station `s`. */
+function reached(b: Branch, s: number) {
+  const own = b.route.slice(b.own), cum = lengths(own);
+  return own.length > 1 && b.ext * cum.at(-1)! >= cum[b.st[s] - b.own] - 0.01;
+}
+/** Each dot on a branch or on its way, bar one stacked out from its station, that sits, or whose comet tail runs, further than `tol` off every
+ *  line drawn this frame (a branch's grown line, a hub ring, a Board curve), as `id@node`: what the ride check counts. */
 export function offLine(sc: Scene, tol = 2): string[] {
   const lines = [...branches.values()].flatMap((b) => {
     const own = b.route.slice(b.own), cum = lengths(own), reach = b.ext * (cum.at(-1) ?? 0), n = cum.filter((c) => c <= reach).length;
@@ -372,17 +272,16 @@ export function offLine(sc: Scene, tol = 2): string[] {
   });
   const curves = sc.bEdges.filter((e) => e.p0 && e.c && e.p1).map((e) => Array.from({ length: 129 }, (_, i) => bez(e.p0!, e.c!, e.p1!, i / 128)));
   const rings = [...new Set([...branches.values()].map((b) => b.sun))].flatMap((s) => (sc.galaxies[s] ? [sc.galaxies[s]] : []));
-  const seg = (p: Pt, a: Pt, b: Pt) => {
-    const dx = b.x - a.x, dy = b.y - a.y, l = dx * dx + dy * dy, u = l ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l)) : 0;
-    return Math.hypot(a.x + dx * u - p.x, a.y + dy * u - p.y);
-  };
   // the spur a stacked dot steps out along from its station (stacking is its own design) counts as on the line
   const stations = [...branches.values()].flatMap((b) => b.st.map((i) => b.route[i])), spur = (p: Pt) => stations.some((s) => Math.hypot(p.x - s.x, p.y - s.y) <= 2 * OFF + tol);
   const near = (p: Pt) => spur(p) || [...lines, ...curves].some((l) => l.some((q, i) => i > 0 && seg(p, l[i - 1], q) <= tol)) || rings.some((g) => Math.abs(Math.hypot(p.x - g.x, p.y - g.y) - g.edge) <= tol);
   return sc.tasks.flatMap((k) => {
     const m = mems.get(k.id);
     const stacked = !k.moving && m?.route.at(-1)!.k.includes("+");
-    return m && (k.moving || m.node.includes("#")) && !m.fade && !stacked && !near(k) ? [`${k.id}@${m.node}`] : [];
+    if (!m || !(k.moving || m.node.includes("#")) || m.fade || stacked) return [];
+    const tail = k.moving && m.path.length > 1 ? stretch(m.path, m.cum, Math.max(0, m.gone - tailOf(m)), m.gone) : [];
+    const mids = tail.slice(1).map((q, i) => ({ x: (q.x + tail[i].x) / 2, y: (q.y + tail[i].y) / 2 }));
+    return [k, ...mids].every(near) ? [] : [`${k.id}@${m.node}`];
   });
 }
 /** The line a dot on a branch rode out to where it is now, from its sun's hub ring through each station it passed, each stretch in its
@@ -418,6 +317,11 @@ const mix = (a: string, b: string, t: number) => {
   const ch = (s: number) => Math.round(((x >> s) & 255) * (1 - u) + ((y >> s) & 255) * u);
   return `#${((ch(16) << 16) | (ch(8) << 8) | ch(0)).toString(16).padStart(6, "0")}`;
 };
+/** The sun's place and size and the Board's curves and names, which a branch's place was checked against. */
+function layout(sc: Scene, sun: string) {
+  const g = sc.galaxies[sun];
+  return [sc.bEdges.length, sc.names.length, sc.hangars?.length ?? 0, Math.round(g.x), Math.round(g.y), Math.round(g.edge)].join();
+}
 /** Places every Board task with a phase place for this frame and grows or retracts the branches; true while anything still animates. */
 export function placeBranches(sc: Scene, now: number): boolean {
   const dt = Math.min(0.1, Math.max(0, now - lastNow)), tasks = sc.tasks.filter((k) => !k.today && sc.galaxies[(k.host as Galaxy).id] === k.host);
@@ -443,42 +347,29 @@ export function placeBranches(sc: Scene, now: number): boolean {
   for (const m of mems.values()) for (const key of m.hold) wake(key);
   for (const b of branches.values()) if (b.parent && b.alive) wake(b.parent);
   for (const ring of [1, 2]) {
-    // a place is kept only while it still fits: once the sun moves or grows, a curve or name moves onto it, or a neighbour is placed, it is
-    // checked again, and a branch that no longer fits is placed afresh (its dots glide to the new place)
+    // a place is kept while it still fits: only once the sun moves or grows, or a curve or name moves onto it, is it checked again, and a branch
+    // that no longer fits is placed afresh and grows out again from the hub, its sub-machines and dots with it
     for (const b of branches.values()) {
       if (b.ring !== ring || Number.isNaN(b.th) || !sc.galaxies[b.sun] || (b.parent && !branches.has(b.parent))) continue;
-      const g = sc.galaxies[b.sun], near = [...branches.values()].filter((o) => o !== b && o.sun === b.sun && !Number.isNaN(o.th));
-      const ok = [sc.bEdges.length, sc.names.length, sc.hangars?.length ?? 0, Math.round(g.x), Math.round(g.y), Math.round(g.edge), ...near.map((o) => `${o.key}@${o.lane}@${o.th.toFixed(2)}`)].join();
+      const ok = layout(sc, b.sun);
       if (b.ok === ok) continue;
       b.ok = ok;
-      const angs = b.parent && Number.isNaN(branches.get(b.parent)!.th) ? null : fitter(b, sc).fits(b.th, b.lane, b.dir, false, b.loose);
+      const angs = fitter(b, sc).fits(b.th, b.lane, b.dir, b.loose);
       if (angs) {
         b.at = angs;
         continue;
       }
-      b.th = NaN;
-      b.tried = b.ok = undefined;
-      for (const m of mems.values()) if (m.node.startsWith(`${b.key}#`)) m.node = `${b.sun}|moved`;
+      const fam = [b, ...[...branches.values()].filter((o) => o.parent === b.key)];
+      for (const o of fam) Object.assign(o, { th: NaN, ext: 0, ok: undefined });
+      for (const [id, m] of mems) if (fam.some((o) => m.node.startsWith(`${o.key}#`))) mems.delete(id);
     }
     for (const b of branches.values()) {
-      if (b.ring !== ring || !Number.isNaN(b.th)) continue;
+      if (b.ring !== ring || !Number.isNaN(b.th) || !sc.galaxies[b.sun]) continue;
       if (b.parent && (!branches.has(b.parent) || Number.isNaN(branches.get(b.parent)!.th))) continue;
       const k = tasks.find((t) => want.get(t.id)?.b === b), m = k && mems.get(k.id), g = sc.galaxies[b.sun];
-      // a branch with no free place waits for one; it is tried again only once its sun's placed branches or the Board's curves change
-      const sig = [sc.bEdges.length, ...[...branches.values()].filter((o) => o.sun === b.sun && !Number.isNaN(o.th)).map((o) => `${o.key}@${o.lane}`)].join();
-      if (b.tried === sig) continue;
       const at = ring === 2 ? phiOf(b) : m ? angle(g, m) : NaN;
       allocate(b, sc, Number.isFinite(at) ? at : -Math.PI / 2);
-      b.tried = sig;
-      // a sub-machine that fits only with its line over a name places its parent afresh, once for each such sub-machine, clear of their spokes
-      const par = b.parent ? branches.get(b.parent)! : undefined;
-      if (par && !par.bumped?.includes(b.key) && (Number.isNaN(b.th) || b.loose === 2)) {
-        Object.assign(par, { th: NaN, tried: undefined, ok: undefined, bumped: [...(par.bumped ?? []), b.key] });
-        // every sub-machine of it runs out from its stations, so each is placed afresh after it
-        const fam = [par, ...[...branches.values()].filter((o) => o.parent === par.key)];
-        for (const o of fam.slice(1)) Object.assign(o, { th: NaN, tried: undefined, ok: undefined });
-        for (const m of mems.values()) if (fam.some((o) => m.node.startsWith(`${o.key}#`))) m.node = `${b.sun}|moved`;
-      }
+      b.ok = layout(sc, b.sun);
     }
   }
   const kids = new Set([...branches.values()].flatMap((b) => (b.parent ? [b.parent] : [])));
@@ -487,7 +378,9 @@ export function placeBranches(sc: Scene, now: number): boolean {
       branches.delete(b.key);
       continue;
     }
-    if (b.alive) b.ext = Math.min(1, b.ext + dt / GROW);
+    // a branch grows once it is placed, a sub-machine once its parent's line has reached the station it opens from
+    const par = b.parent ? branches.get(b.parent)! : undefined;
+    if (b.alive && !Number.isNaN(b.th) && (!par || reached(par, b.pj))) b.ext = Math.min(1, b.ext + dt / GROW);
     else if (!kids.has(b.key)) b.ext -= dt / SHRINK;
     // a branch opened on a frame no time has passed since is still wanted, not retracted
     if (b.ext <= 0 && !b.alive) branches.delete(b.key);
@@ -570,8 +463,10 @@ export function placeBranches(sc: Scene, now: number): boolean {
     [m.x, m.y] = [q.x, q.y];
     if (w && !w.b.parent) m.last = { sun, machine: w.b.machine, steps: w.b.steps, j: w.j };
     const i = w ? stacks.get(`${w.b.key}#${w.j}`)!.indexOf(k.id) : 0, age = (now - m.t0 - m.dur) / RING;
+    // the dot rides the branch's lines, never the Board hop's curve the frame set up for it
     k.x = q.x;
     k.y = q.y;
+    k.hop = undefined;
     k.moving = !done && !m.fade;
     k.alpha = i >= 3 && done ? 0 : alpha;
     k.arrive = w && age >= 0 && age < 1 && now - m.t0 < 9 ? { x: q.x, y: q.y, r: 6, col: "#c084fc", age, grow: 18 } : null;
@@ -580,8 +475,9 @@ export function placeBranches(sc: Scene, now: number): boolean {
   return busy;
 }
 
-/** The live branches, their stations and the names of the steps a dot sits on, then the movers' comet tails; drawTasks draws the heads. */
-export function drawBranches(dc: DrawCtx, d: Drawing, sc: Scene) {
+/** The live branches and their stations, the step and machine names of each the pointer (`at`) or a hovered dot is on, then the movers' comet
+ *  tails, each bending with its line; drawTasks draws the heads. */
+export function drawBranches(dc: DrawCtx, d: Drawing, sc: Scene, at: Pt | null) {
   const { cx } = dc, lw = 1.1 / Math.max(1, dc.ZS * 0.8), suns = new Map<string, number>();
   for (const b of branches.values()) suns.set(b.sun, Math.max(suns.get(b.sun) ?? 0, b.ext));
   for (const [sun, e] of suns) {
@@ -590,45 +486,55 @@ export function drawBranches(dc: DrawCtx, d: Drawing, sc: Scene) {
   }
   const occ = new Map<string, number>();
   for (const m of mems.values()) if (m.node.includes("#")) occ.set(m.node, (occ.get(m.node) ?? 0) + 1);
-  const spots = stepSpots(sc, d.labPx(1), (node) => occ.get(node) ?? 0);
+  const hover = dc.hover?.kind === "task" ? mems.get(dc.hover.o.id)?.bks : undefined, reach = 10 / dc.K;
+  const labs: { s: string; t: Spot; px: number; rank: number; n: number; a: number; e: number }[] = [], pins: Pt[] = [];
   for (const b of branches.values()) {
-    const g = sc.galaxies[b.sun], own = b.route.slice(b.own), cum = lengths(own), reach = b.ext * cum.at(-1)!;
+    const g = sc.galaxies[b.sun], own = b.route.slice(b.own), cum = lengths(own), tip = b.ext * cum.at(-1)!;
     if (!g || own.length < 2) continue;
+    const line = stretch(own, cum, 0, tip);
     cx.strokeStyle = rgba(kind(b), 0.45 * Math.min(1, b.ext * 2));
     cx.lineWidth = lw;
     cx.beginPath();
-    cx.moveTo(own[0].x, own[0].y);
-    for (let i = 1; i < own.length && cum[i - 1] < reach; i++) {
-      const p = cum[i] <= reach ? own[i] : along(own, cum, reach);
-      cx.lineTo(p.x, p.y);
-    }
+    line.forEach((p, i) => (i ? cx.lineTo(p.x, p.y) : cx.moveTo(p.x, p.y)));
     cx.stroke();
+    const hot = hover?.includes(b.key) || (at && line.some((p, i) => i && seg(at, line[i - 1], p) <= reach));
     b.steps.forEach((name, s) => {
       const p = b.route[b.st[s]], n = occ.get(`${b.key}#${s}`) ?? 0;
-      if (cum[b.st[s] - b.own] > reach + 0.01) return;
+      if (cum[b.st[s] - b.own] > tip + 0.01) return;
       if (s <= b.seen) d.dot(p.x, p.y, 2.2 / Math.max(1, dc.ZS * 0.5), rgba(kind(b), 0.85));
       else d.circle(p.x, p.y, 2.2 / Math.max(1, dc.ZS * 0.5), rgba(kind(b), 0.55), lw);
-      if (!n) return;
-      const t = spots.get(`${b.key}#${s}`), a = angle(g, p);
-      if (!t) return;
-      d.text(name.replace(/_/g, " "), t.x, t.y, d.labPx(9), rgba("#d8c8f5", 0.72 * b.ext), t.align, 300);
-      if (n > 3) d.text(`+${n - 3}`, t.x + Math.cos(a) * d.labPx(9) * 4, t.y + Math.sin(a) * d.labPx(9) * 4, d.labPx(8), rgba("#d8c8f5", 0.6 * b.ext));
+      if (!hot) return;
+      pins.push(p);
+      // a step's name prints square off its line: outward from an arc, to the branch's side of a ray
+      const i = b.st[s], u = b.route[Math.min(i + 1, b.route.length - 1)], v = b.route[Math.max(i - 1, b.own)], r = angle(g, p);
+      const a = Math.abs(Math.sin(Math.atan2(u.y - v.y, u.x - v.x) - r)) > 0.7 ? r : r + (b.dir * Math.PI) / 2;
+      labs.push({ s: name.replace(/_/g, " "), t: stepSpot(p, a, d.labPx(5)), px: 9, rank: n ? 1 : 2, n, a, e: b.ext });
     });
+    if (!hot) continue;
     // a name centred above or below the sun would sit on its own arc, so it moves a line further out
-    const end = b.route.at(-1)!, a = angle(g, end) + b.dir * 0.12, c = Math.cos(a), R = Math.hypot(end.x - g.x, end.y - g.y) + (Math.abs(c) <= 0.2 ? d.labPx(9.5) : 0);
-    d.text(b.machine, g.x + Math.cos(a) * R, g.y + Math.sin(a) * R, d.labPx(9.5), rgba(LABEL, 0.85 * b.ext), c > 0.2 ? "left" : c < -0.2 ? "right" : "center", 300);
+    const end = b.route.at(-1)!, a = angle(g, end) + b.dir * 0.12, R = Math.hypot(end.x - g.x, end.y - g.y) + (Math.abs(Math.cos(a)) <= 0.2 ? d.labPx(9.5) : 0);
+    labs.push({ s: b.machine, t: stepSpot(g, a, R), px: 9.5, rank: 0, n: 0, a, e: b.ext });
+  }
+  // names print machine first, then occupied steps, each only where it clears every name and station already down
+  const taken: Box[] = [];
+  for (const l of labs.sort((x, y) => x.rank - y.rank)) {
+    const h = d.labPx(l.px), w = (textW(l.s, l.px) * h) / l.px, x0 = l.t.align === "left" ? l.t.x : l.t.align === "right" ? l.t.x - w : l.t.x - w / 2;
+    const box = { x0, y0: l.t.y - h / 2, x1: x0 + w, y1: l.t.y + h / 2 };
+    if (taken.some((o) => box.x0 < o.x1 && o.x0 < box.x1 && box.y0 < o.y1 && o.y0 < box.y1) || pins.some((p) => inBox(p, box, h / 4))) continue;
+    taken.push(box);
+    d.text(l.s, l.t.x, l.t.y, h, rgba(LABEL, 0.85 * l.e), l.t.align, 300);
+    if (l.n > 3) d.text(`+${l.n - 3}`, l.t.x + Math.cos(l.a) * h * 4, l.t.y + Math.sin(l.a) * h * 4, d.labPx(8), rgba(LABEL, 0.6 * l.e));
   }
   for (const k of sc.tasks) {
     const m = mems.get(k.id);
     if (!k.moving || !m || m.path.length < 2) continue;
-    const L = m.cum.at(-1)!, head = m.gone, tail = Math.min(60, 0.27 * L) * Math.min(1, head / L + 0.05), col = tierColor(k.model);
+    const head = m.gone, tail = tailOf(m), col = tierColor(k.model);
     for (let i = 1; i <= 14; i++) {
-      const p = along(m.path, m.cum, Math.max(0, head - tail * (1 - (i - 1) / 14))), q = along(m.path, m.cum, Math.max(0, head - tail * (1 - i / 14)));
+      const piece = stretch(m.path, m.cum, Math.max(0, head - tail * (1 - (i - 1) / 14)), Math.max(0, head - tail * (1 - i / 14)));
       cx.strokeStyle = rgba(col, (i / 14) * 0.6);
       cx.lineWidth = ((i / 14) * 2.6) / Math.max(1, dc.ZS * 0.8);
       cx.beginPath();
-      cx.moveTo(p.x, p.y);
-      cx.lineTo(q.x, q.y);
+      piece.forEach((p, j) => (j ? cx.lineTo(p.x, p.y) : cx.moveTo(p.x, p.y)));
       cx.stroke();
     }
     const gr = 14 / dc.ZS, gl = cx.createRadialGradient(k.x, k.y, 0, k.x, k.y, gr);
@@ -642,4 +548,3 @@ export function drawBranches(dc: DrawCtx, d: Drawing, sc: Scene) {
     cx.globalCompositeOperation = "source-over";
   }
 }
-

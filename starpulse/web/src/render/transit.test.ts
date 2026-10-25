@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import capture from "./fixtures/events-snapshot.json";
 import type { Snapshot } from "../api";
 import type { Galaxy, Pt, Scene } from "./scene";
+import type { Drawing, Hover } from "./draw";
 
 // transit.ts keeps its branches and dots between frames, so each case loads it afresh
 let T: typeof import("./transit"), sc: typeof import("./scene"), sky: typeof import("./sky");
@@ -69,12 +70,11 @@ describe("placeBranches", () => {
   });
 
   // a 1920 window leaves the canvas 1420 wide beside the rail
-  it.each([100, 125, 150].flatMap((s) => [1920, 1420].map((w) => [s, w])))("keeps stations off the Board's curves and every name clear at %i percent text on a %i canvas", (scale, W) => {
+  it.each([100, 125, 150].flatMap((s) => [1920, 1420].map((w) => [s, w])))("keeps stations off the Board's curves at %i percent text on a %i canvas", (scale, W) => {
     const scene = mock(scale, W);
     const curves = scene.bEdges.filter((e) => e.p0 && e.c && e.p1).flatMap((e) => Array.from({ length: 65 }, (_, i) => sc.bez(e.p0!, e.c!, e.p1!, i / 64)));
     for (const l of T.branchLines().filter((x) => !x.loose))
       for (const p of stationsOf(l)) expect(Math.min(...curves.map((q) => dist(p, q))), p.k).toBeGreaterThanOrEqual(12);
-    expect(T.textHits(scene)).toEqual([]);
   });
 
   it("grows a new branch out over two seconds", () => {
@@ -92,10 +92,63 @@ describe("placeBranches", () => {
     const scene = board(live(), { secs: 0, from: 4 }), off = new Set<string>();
     for (let t = 4; t <= 10; t += 1 / 60) {
       T.placeBranches(scene, t);
-      for (const h of T.offLine(scene)) off.add(h);
+      for (const h of T.offLine(scene, 0.5)) off.add(h);
     }
     expect(scene.tasks.some((k) => T.branchLines().some((l) => l.ring === 2 && k.h?.machine === l.key.split("|")[2]))).toBe(true);
     expect([...off]).toEqual([]);
+  });
+
+  it("places a branch once and grows it out square from where its parent's tip has reached", () => {
+    vi.stubGlobal("location", { search: "?mock=1&extra=8&sim=3" });
+    const clock = vi.spyOn(performance, "now").mockReturnValue(0);
+    let scene = board(live(), { secs: 0 });
+    const first = new Map<string, string>(), bad = new Set<string>();
+    const frame = (t: number) => {
+      T.placeBranches(scene, t);
+      const lines = T.branchLines(0);
+      for (const l of lines) {
+        const g = scene.galaxies[l.sun], was = first.get(l.key) ?? `${l.th}@${l.lane}@${l.dir}`;
+        first.set(l.key, was);
+        if (!Number.isFinite(l.th) || was !== `${l.th}@${l.lane}@${l.dir}`) bad.add(`${l.key} moved`);
+        // each stretch of a line runs straight out from the sun or round it, never slantwise
+        l.pts.forEach((q, i) => {
+          if (!i) return;
+          const p = l.pts[i - 1], da = Math.atan2(q.y - g.y, q.x - g.x) - Math.atan2(p.y - g.y, p.x - g.x);
+          if (Math.abs(Math.atan2(Math.sin(da), Math.cos(da))) > 1e-6 && Math.abs(dist(q, g) - dist(p, g)) > 1e-6) bad.add(`${l.key} slant at ${q.k}`);
+        });
+        const par = lines.find((o) => o.key === l.parent);
+        if (!par || !l.ext) continue;
+        const cum = par.pts.reduce<number[]>((c, q, i) => [...c, i ? c[i - 1] + dist(q, par.pts[i - 1]) : 0], []), at = par.pts.findIndex((q) => q.k === `${par.key}:${l.pj}`);
+        if (par.ext * cum.at(-1)! < cum[at] - 0.01) bad.add(`${l.key} ahead of ${par.key}`);
+      }
+    };
+    for (let t = 0; t <= 4; t += 1 / 60) frame(t);
+    clock.mockReturnValue(60_000);
+    scene = board(live(), { secs: 0, from: 4 });
+    for (let t = 4; t <= 12; t += 1 / 60) frame(t);
+    expect(T.branchLines().some((l) => l.ring === 2)).toBe(true);
+    expect([...bad]).toEqual([]);
+  });
+
+  it("prints a branch's machine name and its riders' steps only while the pointer is on it or on a dot riding it, never one name over another", () => {
+    const scene = mock(), text = vi.fn(), noop = () => {};
+    const cx = new Proxy({}, { get: (_, p) => (p === "createRadialGradient" ? () => ({ addColorStop: noop }) : noop), set: () => true }) as unknown as CanvasRenderingContext2D;
+    const d = { circle: noop, dot: noop, text, labPx: (n: number) => n } as unknown as Drawing;
+    const dc = (hover: Hover | null) => ({ cx, K: 1, ZS: 1, clock: 0, scale: 100, hover });
+    const printed = () => text.mock.calls.map((c) => c[0] as string);
+    T.drawBranches(dc(null), d, scene, null);
+    expect(printed()).toEqual([]);
+    const sub = T.branchLines().find((l) => l.ring === 2)!, [, phase, machine] = sub.key.split("|"), k = scene.tasks.find((t) => t.h?.machine === machine)!;
+    T.drawBranches(dc({ kind: "task", o: k }), d, scene, null);
+    expect(printed()).toEqual(expect.arrayContaining([phase, machine, k.h!.steps[k.h!.j].replace(/_/g, " ")]));
+    const boxes = text.mock.calls.map((c) => {
+      const [s, x, y, h, , align] = c as [string, number, number, number, string, CanvasTextAlign], w = (sc.textW(s, 9) * h) / 9, x0 = align === "left" ? x : align === "right" ? x - w : x - w / 2;
+      return { s, x0, x1: x0 + w, y0: y - h / 2, y1: y + h / 2 };
+    });
+    for (const a of boxes) for (const b of boxes) if (a !== b) expect(a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1, `${a.s} on ${b.s}`).toBe(false);
+    text.mockClear();
+    T.drawBranches(dc(null), d, scene, stationsOf(sub)[0]);
+    expect(printed()).toContain(machine);
   });
 
   it("traces a dot on a sub-machine back along the line it rode: hub, its phase's stations, then the sub-machine's", () => {

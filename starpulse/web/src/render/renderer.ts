@@ -30,7 +30,7 @@ import {
 } from "./scene";
 import { SIM_PERIOD } from "./mockSky";
 import { Moves, PULSE, TRAVEL, hosted, merge, stateCount, withLedgers, type Move, type Sky } from "./sky";
-import { branchLines, drawBranches, placeBranches, textHits } from "./transit";
+import { branchLines, drawBranches, placeBranches } from "./transit";
 import type { KanbanTask } from "../features/kanban/kanbanModel";
 import { foldRows, openStream, type Link } from "../api/stream";
 import { openLedger, type LedgerHead } from "../api/ledgerStream";
@@ -583,6 +583,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       k.arrive = null;
       k.gone = false;
       k.via = null;
+      k.hop = undefined;
       if (level().kind === "state" && !k.today && stateHop(k, t)) continue;
       // a task whose machine is changing its state leaves its orbit, rides the machine's chord like the current board's hop (ease-out, comet tail),
       // rings the state it lands on, then drops back into orbit
@@ -1162,7 +1163,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     boardDrawing.drawGalaxies();
     boardDrawing.drawMoons();
     boardDrawing.drawBoardEdges();
-    drawBranches(dc, pen, scene!);
+    drawBranches(dc, pen, scene!, mouse ? { x: (mouse.ox - view.x) / view.k, y: (mouse.oy - view.y) / view.k } : null);
     boardDrawing.drawTies();
     boardDrawing.drawStateLinks();
     boardDrawing.drawSun();
@@ -1290,7 +1291,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     const board = l.kind === "board";
     const states = board ? Object.values(sc.galaxies).map((g) => ({ id: g.id, ...toScreen(view, g), r: g.R * view.k, sun: g.r * view.k, edge: g.edge * view.k })) : [];
     const edges = board ? sc.bEdges.filter((e) => e.p0 && e.c && e.p1).map((e) => ({ s: e.source, t: e.target, pts: Array.from({ length: 21 }, (_, i) => toScreen(view, bez(e.p0!, e.c!, e.p1!, i / 20))) })) : [];
-    return { path: pathKey(path), ready: !trans && !anim, canvas, panel: open, centre: toScreen(view, { x: (x0 + x1) / 2, y: (y0 + y1) / 2 }), zoomed: zoomedIn(view, fit), targets, fit: fit.k, states, edges, branches: board ? branchLines().map((b) => ({ ...b, pts: b.pts.map((p) => toScreen(view, p)) })) : [], tasks: sc.tasks.filter((t) => !t.gone).map((t) => ({ id: t.id, ...toScreen(view, t) })), texts: board ? textHits(sc) : [] };
+    return { path: pathKey(path), ready: !trans && !anim, canvas, panel: open, centre: toScreen(view, { x: (x0 + x1) / 2, y: (y0 + y1) / 2 }), zoomed: zoomedIn(view, fit), targets, fit: fit.k, states, edges, branches: board ? branchLines().map((b) => ({ ...b, pts: b.pts.map((p) => toScreen(view, p)) })) : [], tasks: sc.tasks.filter((t) => !t.gone).map((t) => ({ id: t.id, ...toScreen(view, t) })) };
   };
 
   return {
