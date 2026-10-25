@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Any
 
-from starpulse._internal.machines.graph import (
+from starpulse.machine_engine.model.graph import (
     Accepted,
     Bypass,
     Incomplete,
@@ -19,7 +19,7 @@ from starpulse._internal.machines.graph import (
     shortest_paths,
     simple_paths,
 )
-from starpulse._internal.machines.machine_definition import compile_document
+from starpulse.machine_engine.model.machine_definition import compile_document
 
 #: start -OPEN-> draft -SUBMIT-> review -APPROVE-> done; review -REJECT-> draft; draft <-SHELVE/RESUME-> shelved.
 FLOW: dict[str, Any] = {

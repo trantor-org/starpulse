@@ -16,11 +16,12 @@ from typing import Any
 
 from sqlalchemy import Connection, Engine, insert, select, update
 
-from starpulse._internal.machines.machine_definition import MachineDefinitionError, compile_document, validate
-from starpulse._internal.machines.machine_namespace import definition_of
-from starpulse._internal.machines.transitions import lane_id
 from starpulse.event_log.store.event_store import EventStore, NewEvent, StoredEvent
 from starpulse.event_log.store.tables import machine_active, machine_versions
+from starpulse.machine_engine.adapters.machine_loader import validate
+from starpulse.machine_engine.model.machine_definition import MachineDefinitionError, compile_document
+from starpulse.machine_engine.model.machine_namespace import definition_of
+from starpulse.machine_engine.model.transitions import lane_id
 
 #: The machine that moves Tasks; the one a Task stream is validated and stamped under.
 TASK_MACHINE = "board"

@@ -5,9 +5,10 @@ from pathlib import Path
 import pytest
 import yaml
 
-from starpulse._internal.machines import mermaid_import
-from starpulse._internal.machines.machine_definition import MachineDefinitionError, validate
-from starpulse._internal.machines.mermaid_import import Diagram, draft_machine, parse
+from starpulse.machine_engine.adapters import mermaid_import
+from starpulse.machine_engine.adapters.machine_loader import validate
+from starpulse.machine_engine.adapters.mermaid_import import Diagram, draft_machine, parse
+from starpulse.machine_engine.model.machine_definition import MachineDefinitionError
 
 SAMPLE = """\
 %% comment

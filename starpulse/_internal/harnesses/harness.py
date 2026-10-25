@@ -7,8 +7,8 @@ events a harness fires (`SessionStart`, `PostToolUse`, `Stop`) that move it.
 
 from pathlib import Path
 
-from starpulse._internal.machines.machine_definition import load_machine
-from starpulse._internal.machines.snapshot import describe
+from starpulse.machine_engine.adapters.machine_loader import load_machine
+from starpulse.machine_engine.model.snapshot import describe
 
 #: The machine files beside the package: `adapters/harnesses/` is two levels below them.
 MACHINES = Path(__file__).parents[2] / "machines"

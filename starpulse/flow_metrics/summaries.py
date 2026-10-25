@@ -49,9 +49,9 @@ from sqlalchemy import (
     update,
 )
 
-from starpulse._internal.machines.transitions import tables as transitions
 from starpulse.event_log.tables import metadata
 from starpulse.flow_metrics.level_metrics import UNATTRIBUTED
+from starpulse.machine_engine.model.transitions import tables as transitions
 
 BOARD = "board"
 _CHUNK = 5000

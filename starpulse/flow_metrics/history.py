@@ -43,9 +43,6 @@ from sqlalchemy.dialects import sqlite
 from sqlalchemy.exc import OperationalError
 
 from starpulse._internal.config.level import Level
-from starpulse._internal.machines.stays import Dwell, LaneStays, Stay
-from starpulse._internal.machines.transitions import Table as Transitions
-from starpulse._internal.machines.transitions import lane_id
 from starpulse.event_log import events as machine_events
 from starpulse.event_log import lane_events, lane_repair
 from starpulse.event_log.checkpoints import Checkpoints
@@ -71,6 +68,9 @@ from starpulse.flow_metrics.summaries import (
     write_lane,
     write_step,
 )
+from starpulse.machine_engine.model.stays import Dwell, LaneStays, Stay
+from starpulse.machine_engine.model.transitions import Table as Transitions
+from starpulse.machine_engine.model.transitions import lane_id
 
 __all__ = ["History", "machine_steps"]
 

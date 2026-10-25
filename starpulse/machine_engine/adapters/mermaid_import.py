@@ -8,8 +8,8 @@ leaves a trailing `[guard]` in the label out, and imports no guard or action:
 the author adds those.
 
 Usage:
-    python -m starpulse._internal.machines.mermaid_import flow.mmd
-    python -m starpulse._internal.machines.mermaid_import flow.mmd --out flow.yaml
+    python -m starpulse.machine_engine.adapters.mermaid_import flow.mmd
+    python -m starpulse.machine_engine.adapters.mermaid_import flow.mmd --out flow.yaml
 
 An existing file is never overwritten.
 """
@@ -22,7 +22,8 @@ from typing import Any
 
 import yaml
 
-from starpulse._internal.machines.machine_definition import MachineDefinitionError, validate
+from starpulse.machine_engine.adapters.machine_loader import validate
+from starpulse.machine_engine.model.machine_definition import MachineDefinitionError
 
 __all__ = ["Diagram", "Edge", "draft_machine", "dump", "parse"]
 

@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 
 from starpulse._internal.board.project_machines import draw
-from starpulse._internal.machines.machine_definition import load_machine
 from starpulse.contracts.api.dto.machine import Machine
+from starpulse.machine_engine.adapters.machine_loader import load_machine
 
 FIXTURE = Path(__file__).parents[2] / "fixtures" / "machines" / "authoring-skills.yaml"
 

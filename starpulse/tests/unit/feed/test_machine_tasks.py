@@ -13,10 +13,10 @@ import pytest
 from starpulse._internal.ci.ci import CI_MACHINES
 from starpulse._internal.feed.board_feed import BoardFeed, follow
 from starpulse._internal.feed.machine_tasks import MachineTasks
-from starpulse._internal.machines.transitions import Table
 from starpulse.contracts.adapters import BoardTask, TaskKeys
 from starpulse.event_log import events as machine_events
 from starpulse.event_log.event_log import EventLog
+from starpulse.machine_engine.model.transitions import Table
 from starpulse.tests.machines import FLOWS, MACHINES, ROLES
 
 _ids = itertools.count(1)

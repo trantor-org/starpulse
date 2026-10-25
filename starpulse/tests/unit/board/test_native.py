@@ -14,12 +14,12 @@ from starpulse._internal.board.upstream_backlog import UpstreamBacklog, board_mo
 from starpulse._internal.config.config import load
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import BoardAdapterKit
-from starpulse._internal.machines.machine_definition import Writer
 from starpulse._internal.server.assembly import assemble
 from starpulse._internal.server.server import announce
 from starpulse._internal.server.writes import move_task
 from starpulse.contracts.adapters import BoardTask
 from starpulse.event_log.event_log import EventLog
+from starpulse.machine_engine.model.machine_definition import Writer
 
 LANES = ["To Do", "In Progress", "Done"]
 _OPERATOR_ONLY = """\

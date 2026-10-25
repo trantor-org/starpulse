@@ -3,7 +3,7 @@
     starpulse conform --config starpulse.toml [--since WHEN] [--machine NAME ...]
 
 The board's lane changes are replayed on its `board` machine and every other machine's recorded events on the machine
-of that name, each task or run from the initial state (`starpulse._internal.machines.replay`). A guard that reads a
+of that name, each task or run from the initial state (`starpulse.machine_engine.model.replay`). A guard that reads a
 task's facts is not judged: the history keeps none. It prints one JSON document: `machines` (each `machine`, the
 `replayed` moves and its `violations`, each a `source`, the `move` made from it, a `count` and example `tasks`),
 `replayed` and `violations` in total. The exit code is 0 for a history the machines allow, 1 when a move is a violation
@@ -21,9 +21,9 @@ from datetime import datetime
 from pathlib import Path
 
 from starpulse._internal.config.config import ConfigError, discover, load
-from starpulse._internal.machines import replay
 from starpulse._internal.server.assembly import assemble, history_store
 from starpulse.flow_metrics.history import HistoryStore
+from starpulse.machine_engine.model import replay
 
 __all__ = ["main"]
 

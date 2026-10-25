@@ -6,10 +6,11 @@ import pytest
 import yaml
 from statemachine import State, StateChart
 
-from starpulse._internal.machines import snapshot
-from starpulse._internal.machines.machine_definition import MachineDefinitionError, load_machine
-from starpulse._internal.machines.snapshot import describe
 from starpulse.contracts.api.dto.machine import Cite, MachineState, Transition
+from starpulse.machine_engine.adapters.machine_loader import load_machine
+from starpulse.machine_engine.model import snapshot
+from starpulse.machine_engine.model.machine_definition import MachineDefinitionError
+from starpulse.machine_engine.model.snapshot import describe
 from starpulse.tests.machines import FIXTURES
 
 

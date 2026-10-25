@@ -13,8 +13,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from starpulse._internal.machines.machine_definition import Compiled
-    from starpulse._internal.machines.snapshot import Qualify
+    from starpulse.machine_engine.model.machine_definition import Compiled
+    from starpulse.machine_engine.model.snapshot import Qualify
 
 __all__ = ["DIRECTORY", "draw", "load"]
 
@@ -23,7 +23,7 @@ DIRECTORY = Path(".starpulse") / "machines"
 
 def load(base: Path, board_file: Path | None) -> dict[str, Compiled]:
     """Each machine file under `base`'s machines directory except the Board's, compiled, by file stem."""
-    from starpulse._internal.machines.machine_definition import (  # noqa: PLC0415 - import cost, paid on first use
+    from starpulse.machine_engine.adapters.machine_loader import (  # noqa: PLC0415 - import cost, paid on first use
         load_machine,
     )
 
@@ -38,10 +38,8 @@ def draw(flows: Mapping[str, Compiled], qualify: Qualify, workflows: Collection[
     `qualify` names the launching workflows as the page does. With `workflows` listed, a machine whose writers name
     another is refused by that name.
     """
-    from starpulse._internal.machines.machine_definition import (
-        refuse_unlisted,  # noqa: PLC0415 - import cost, paid on first use
-    )
-    from starpulse._internal.machines.snapshot import (  # noqa: PLC0415 - import cost, paid on first use
+    from starpulse.machine_engine.model.machine_definition import refuse_unlisted
+    from starpulse.machine_engine.model.snapshot import (  # noqa: PLC0415 - import cost, paid on first use
         describe,
         is_workflow,
         writers,

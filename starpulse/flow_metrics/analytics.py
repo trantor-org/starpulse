@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any
 
-from starpulse._internal.machines.stays import Dwell, LaneStays
+from starpulse.machine_engine.model.stays import Dwell, LaneStays
 
 _DAY_S = 86400.0
 

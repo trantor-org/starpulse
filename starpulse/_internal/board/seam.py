@@ -17,14 +17,14 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 
 from starpulse._internal.config.adapter_types import module_name
 from starpulse._internal.config.config import DEFAULT_TYPE
-from starpulse._internal.machines.state_roles import StateRoles
-from starpulse._internal.machines.transitions import DEFAULT_STATUSES
+from starpulse.machine_engine.model.state_roles import StateRoles
+from starpulse.machine_engine.model.transitions import DEFAULT_STATUSES
 
 if TYPE_CHECKING:
     from starpulse._internal.feed.board_feed import BoardFeed
-    from starpulse._internal.machines.snapshot import Qualify
     from starpulse.contracts.task_keys import TaskKeys
     from starpulse.event_log.event_log import EventLog
+    from starpulse.machine_engine.model.snapshot import Qualify
 
 __all__ = [
     "AGENT",

@@ -1,6 +1,6 @@
 """A task's recorded moves are judged against the machine they were made on: a move no transition declares is a violation."""
 
-from starpulse._internal.machines.replay import check_events, check_lanes
+from starpulse.machine_engine.model.replay import check_events, check_lanes
 
 #: new -> todo -> doing -> done, with `doing -> todo` as the only way back.
 MACHINE = {

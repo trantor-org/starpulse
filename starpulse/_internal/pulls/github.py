@@ -32,13 +32,13 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
 
-from starpulse._internal.machines.machine_definition import load_machine
-from starpulse._internal.machines.snapshot import describe
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.event_log import events as machine_events
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import open_event_log
 from starpulse.github import Transport, connect, get, repo_of
+from starpulse.machine_engine.adapters.machine_loader import load_machine
+from starpulse.machine_engine.model.snapshot import describe
 
 #: The machine files beside the package: `adapters/runs/` is two levels below them.
 MACHINES = Path(__file__).parents[2] / "machines"

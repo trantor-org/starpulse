@@ -33,16 +33,16 @@ from starpulse._internal.feed.ledger import (
     strip,
 )
 from starpulse._internal.feed.snapshot import BoardSnapshot
-from starpulse._internal.machines.machine_definition import Writer
-from starpulse._internal.machines.machine_ties import derive, entries
-from starpulse._internal.machines.machine_ties import page as machine_page
-from starpulse._internal.machines.snapshot import declared, qualifier
-from starpulse._internal.machines.state_roles import StateRoles
-from starpulse._internal.machines.stays import LaneRow
-from starpulse._internal.machines.transitions import DEFAULT_STATUSES, board_machine, board_moves, lane_id
 from starpulse.contracts.adapters import BoardTask, TaskKeys
 from starpulse.event_log import lane_events, rating_events
 from starpulse.event_log.polling import DEFAULT_POLL_INTERVAL
+from starpulse.machine_engine.model.machine_definition import Writer
+from starpulse.machine_engine.model.machine_ties import derive, entries
+from starpulse.machine_engine.model.machine_ties import page as machine_page
+from starpulse.machine_engine.model.snapshot import declared, qualifier
+from starpulse.machine_engine.model.state_roles import StateRoles
+from starpulse.machine_engine.model.stays import LaneRow
+from starpulse.machine_engine.model.transitions import DEFAULT_STATUSES, board_machine, board_moves, lane_id
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     from pydantic import BaseModel

@@ -3,7 +3,8 @@
 from pathlib import Path
 
 import starpulse
-from starpulse._internal.machines.machine_definition import Writer, load_machine, writers_of
+from starpulse.machine_engine.adapters.machine_loader import load_machine
+from starpulse.machine_engine.model.machine_definition import Writer, writers_of
 
 BUNDLED = Path(starpulse.__file__).parent / "machines" / "github-pull-request.yaml"
 

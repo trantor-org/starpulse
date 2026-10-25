@@ -1,6 +1,6 @@
 """The static diagram a machine exports: Graphviz DOT a client renders without drawing the machine itself."""
 
-from starpulse._internal.machines.diagram import dot
+from starpulse.machine_engine.model.diagram import dot
 
 MACHINE = {
     "states": [

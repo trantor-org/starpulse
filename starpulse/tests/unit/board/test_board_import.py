@@ -12,7 +12,7 @@ _PACKAGE_ROOT = Path(starpulse.__file__).resolve().parent.parent
 
 # `statemachine` and `jsonschema` are what compiling a machine definition costs; `pydantic` is the adapter models'.
 _HEAVY = (
-    "starpulse._internal.machines.machine_definition",
+    "starpulse.machine_engine.model.machine_definition",
     "starpulse.contracts.adapters",
     "statemachine",
     "jsonschema",

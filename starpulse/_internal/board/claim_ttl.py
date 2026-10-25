@@ -14,8 +14,8 @@ from functools import partial
 from typing import TYPE_CHECKING, Any
 
 from starpulse._internal.board.seam import Board
-from starpulse._internal.machines.transitions import lane_id
 from starpulse.event_log.store import EventStore, NewEvent, StoredEvent
+from starpulse.machine_engine.model.transitions import lane_id
 
 if TYPE_CHECKING:
     from starpulse._internal.feed.board_feed import BoardFeed

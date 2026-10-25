@@ -8,8 +8,8 @@ from collections.abc import Collection, Mapping
 from pathlib import Path
 
 from starpulse._internal.config.config import ConfigError
-from starpulse._internal.machines.machine_definition import load_machine
-from starpulse._internal.machines.snapshot import describe
+from starpulse.machine_engine.adapters.machine_loader import load_machine
+from starpulse.machine_engine.model.snapshot import describe
 
 CI = load_machine(Path(__file__).parents[2] / "machines" / "ci.yaml")
 #: The machine as the page draws it, keyed by name like a board adapter's machines.
