@@ -832,7 +832,7 @@
     },
     "CreateRequest": {
       "additionalProperties": false,
-      "description": "`POST /api/tasks`: create a task in the lane `status` names or else the board's starting lane, stamped\n`created_by: <harness>:<session>`.\n\nText is trimmed; list items are trimmed and blank ones dropped, or refused where the list must hold only text.\n`task`, `size` and `skill` are read and left unused by a create.",
+      "description": "`POST /api/tasks`: create a task in the lane `status` names or else the board's starting lane, stamped\n`created_by: <harness>:<session>`, or each of `tasks` in one call, each with its own title and details.",
       "properties": {
         "acceptanceCriteria": {
           "anyOf": [
@@ -992,6 +992,17 @@
           ],
           "default": null
         },
+        "ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "references": {
           "anyOf": [
             {
@@ -1010,6 +1021,267 @@
           "anyOf": [
             {
               "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "size": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "skill": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "task": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "tasks": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/CreateSpec"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "urgency": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "CreateRequest",
+      "type": "object"
+    },
+    "CreateSpec": {
+      "additionalProperties": false,
+      "description": "One task a create files: its `title` and details, and an optional `ref` that a sibling in the same batch names\nas `ref:<label>` in its `dependencies`.\n\nText is trimmed; list items are trimmed and blank ones dropped, or refused where the list must hold only text.\n`task`, `size` and `skill` are read and left unused by a create.",
+      "properties": {
+        "acceptanceCriteria": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "assignee": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "definitionOfDone": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "dependencies": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "documentation": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "impact": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "labels": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "milestone": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "priority": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "profile": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "references": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             },
             {
               "type": "null"
@@ -1090,7 +1362,7 @@
       "required": [
         "title"
       ],
-      "title": "CreateRequest",
+      "title": "CreateSpec",
       "type": "object"
     },
     "Created": {
@@ -1104,6 +1376,33 @@
         "task"
       ],
       "title": "Created",
+      "type": "object"
+    },
+    "CreatedEach": {
+      "additionalProperties": false,
+      "description": "A batch create's answer: each spec's new task, or why it was refused, in the order the specs came.",
+      "properties": {
+        "results": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Created"
+              },
+              {
+                "$ref": "#/$defs/SkillRefusal"
+              },
+              {
+                "$ref": "#/$defs/ApiError"
+              }
+            ]
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "results"
+      ],
+      "title": "CreatedEach",
       "type": "object"
     },
     "Cue": {
@@ -3716,7 +4015,7 @@
           "default": null
         },
         "fix": {
-          "$ref": "#/$defs/CreateRequest"
+          "$ref": "#/$defs/CreateSpec"
         },
         "harness": {
           "anyOf": [
@@ -8117,6 +8416,9 @@
           },
           {
             "$ref": "#/$defs/Created"
+          },
+          {
+            "$ref": "#/$defs/CreatedEach"
           },
           {
             "$ref": "#/$defs/MilestoneCreated"

@@ -21,6 +21,7 @@ export interface ApiContract {
     | Parked
     | Reviewed
     | Created
+    | CreatedEach
     | MilestoneCreated
     | MilestoneEdited
     | MilestoneArchived
@@ -171,6 +172,25 @@ export interface Reviewed {
 export interface Created {
   task: string;
 }
+/**
+ * A batch create's answer: each spec's new task, or why it was refused, in the order the specs came.
+ */
+export interface CreatedEach {
+  results: (Created | SkillRefusal | ApiError)[];
+}
+/**
+ * A refusal a skill satisfies: the skill that produces what the guard needs.
+ */
+export interface SkillRefusal {
+  error: string;
+  skill: string;
+}
+/**
+ * Every refusal: what went wrong.
+ */
+export interface ApiError {
+  error: string;
+}
 export interface MilestoneCreated {
   milestone: string;
 }
@@ -205,19 +225,6 @@ export interface RunStarted {
 export interface Accepted {
   accepted: boolean;
   deprecated?: string | null;
-}
-/**
- * Every refusal: what went wrong.
- */
-export interface ApiError {
-  error: string;
-}
-/**
- * A refusal a skill satisfies: the skill that produces what the guard needs.
- */
-export interface SkillRefusal {
-  error: string;
-  skill: string;
 }
 /**
  * An edit refused because a field changed since the page read it: those fields with their current values.
@@ -1516,35 +1523,33 @@ export interface MissRequest {
   actor?: string | null;
   check: string;
   evidence?: string | null;
-  fix: CreateRequest;
+  fix: CreateSpec;
   harness?: string | null;
   reason?: string | null;
   session?: string | null;
   task: string;
 }
 /**
- * `POST /api/tasks`: create a task in the lane `status` names or else the board's starting lane, stamped
- * `created_by: <harness>:<session>`.
+ * One task a create files: its `title` and details, and an optional `ref` that a sibling in the same batch names
+ * as `ref:<label>` in its `dependencies`.
  *
  * Text is trimmed; list items are trimmed and blank ones dropped, or refused where the list must hold only text.
  * `task`, `size` and `skill` are read and left unused by a create.
  */
-export interface CreateRequest {
+export interface CreateSpec {
   acceptanceCriteria?: string[] | null;
-  actor?: string | null;
   assignee?: string | null;
   definitionOfDone?: string[] | null;
   dependencies?: string[] | null;
   description?: string | null;
   documentation?: string[] | null;
-  harness?: string | null;
   impact?: string | null;
   labels?: string[] | null;
   milestone?: string | null;
   priority?: string | null;
   profile?: string | null;
+  ref?: string | null;
   references?: string[] | null;
-  session?: string | null;
   size?: string | null;
   skill?: string | null;
   status?: string | null;
@@ -1627,6 +1632,36 @@ export interface ReviewRequest {
   session?: string | null;
   summary?: string | null;
   task: string;
+}
+/**
+ * `POST /api/tasks`: create a task in the lane `status` names or else the board's starting lane, stamped
+ * `created_by: <harness>:<session>`, or each of `tasks` in one call, each with its own title and details.
+ */
+export interface CreateRequest {
+  acceptanceCriteria?: string[] | null;
+  actor?: string | null;
+  assignee?: string | null;
+  definitionOfDone?: string[] | null;
+  dependencies?: string[] | null;
+  description?: string | null;
+  documentation?: string[] | null;
+  harness?: string | null;
+  impact?: string | null;
+  labels?: string[] | null;
+  milestone?: string | null;
+  priority?: string | null;
+  profile?: string | null;
+  ref?: string | null;
+  references?: string[] | null;
+  session?: string | null;
+  size?: string | null;
+  skill?: string | null;
+  status?: string | null;
+  task?: string | null;
+  tasks?: [CreateSpec, ...CreateSpec[]] | null;
+  title?: string | null;
+  type?: string | null;
+  urgency?: string | null;
 }
 /**
  * `POST /api/milestones`: open a milestone; only the title is required.
