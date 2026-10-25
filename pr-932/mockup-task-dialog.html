@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
 <!--
-  DEMO-8683 mockup: the Kanban task detail dialog reworked from the operator's notes (N1-N17).
-  States (?s=<state>): default, pr-unread, deps-long, deviated, empty, edit. ?fs=100|125|150 sets text size, ?bare hides the reviewer bar.
+  DEMO-8683 mockup: the Kanban task detail dialog reworked from the operator's notes (N1-N21).
+  States (?s=<state>): default, pr-unread, deps-long, deviated, empty, edit, label-refused, doc. ?fs=100|125|150 sets text size, ?bare hides the reviewer bar.
   Colors come only from style.css :root tokens.
 -->
 <meta charset="utf-8">
@@ -1077,7 +1077,6 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
 #kb h2 .uh.on { background: color-mix(in srgb, var(--fail) 30%, transparent); color: var(--fail-hi); }
 #kb h2 .uh:focus-visible { outline: 1px solid var(--agent); }
 </style>
-
 <style>
   body { margin: 0; min-height: 100vh; background: var(--bg0); color: var(--ink); font-family: Inter, system-ui, sans-serif; }
   /* reviewer bar: not part of the design */
@@ -1171,20 +1170,22 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
   #kbm .tvrail .reason { display: flex; gap: 6px; margin-top: 6px; }
   #kbm .tvrail .reason input { flex: 1; min-width: 0; padding: 4px 8px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--slate) 18%, transparent); background: var(--field); color: var(--ink); font-size: calc(11.5px * var(--fs)); }
 
-  /* N3/N12/N13: typed fields */
-  #kbm .tvrail .flds { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; font-size: calc(12px * var(--fs)); align-items: center; }
-  #kbm .tvrail .flds dt { color: var(--muted); font-size: calc(11px * var(--fs)); }
-  #kbm .tvrail .flds dd { margin: 0; min-width: 0; color: var(--ink-2); }
-  #kbm .tvrail .flds .meta { font: calc(11px * var(--fs)) "JetBrains Mono", ui-monospace, monospace; color: var(--ink-3); overflow-wrap: anywhere; }
-  #kbm .tvrail .flds select, #kbm .tvrail .flds input { width: 100%; box-sizing: border-box; padding: 3px 6px; border-radius: 5px; border: 1px solid color-mix(in srgb, var(--slate) 18%, transparent); background: var(--field); color: var(--ink); font-size: calc(11.5px * var(--fs)); }
-  #kbm .tvrail .flds .bad { border-color: var(--fail); }
-  #kbm .tvrail .flds .err { grid-column: 2; font-size: calc(10.5px * var(--fs)); color: var(--fail); }
+  /* N3/N12/N13/N19: first-class fields in the live props table */
+  #kbm .tvrail .props .meta { font: calc(11px * var(--fs)) "JetBrains Mono", ui-monospace, monospace; color: var(--ink-3); overflow-wrap: anywhere; }
+  #kbm .tvrail .props .sep td { padding-top: 8px; }
   #kbm .tvrail .sz { display: inline-grid; place-items: center; min-width: calc(18px * var(--fs)); padding: 0 5px; border-radius: 5px; background: color-mix(in srgb, var(--slate) 12%, transparent); font-variant-numeric: tabular-nums; }
-  #kbm .src { display: inline-flex; gap: 6px; align-items: baseline; }
-  #kbm .mdsrc { width: 100%; box-sizing: border-box; min-height: calc(180px * var(--fs)); padding: 8px 10px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--agent) 40%, transparent);
-    background: var(--field); color: var(--ink); font: calc(11.5px * var(--fs)) "JetBrains Mono", ui-monospace, monospace; line-height: 1.6; resize: vertical; }
-  #kbm .edbar { display: flex; gap: 8px; justify-content: flex-end; margin-top: 6px; }
-  #kbm .btn2.q { border-color: color-mix(in srgb, var(--slate) 25%, transparent); background: none; color: var(--slate); }
+  /* N20: free-form labels, short by rule */
+  #kbm .tv .chip .x { all: unset; cursor: pointer; margin-left: 5px; color: var(--muted); } #kbm .tv .chip .x:hover { color: var(--ink); }
+  #kbm .tv .fv.chips .chipinput { flex: 1 0 calc(80px * var(--fs)); width: auto; }
+  #kbm .tvrail .rule { margin-top: 3px; font-size: calc(10.5px * var(--fs)); color: var(--muted); }
+  #kbm .tvrail .rule.err { color: var(--fail); }
+  /* N21: in-dialog doc reader */
+  #kbm .docbar { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; padding-bottom: 10px; margin-bottom: 4px; border-bottom: 1px solid color-mix(in srgb, var(--slate) 12%, transparent); }
+  #kbm .docbar .kd { font-size: calc(11px * var(--fs)); color: var(--muted); }
+  #kbm .docbar b { color: var(--agent); font-weight: 400; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: calc(11.5px * var(--fs)); }
+  #kbm .docbar a { margin-left: auto; font-size: calc(11.5px * var(--fs)); color: var(--muted); text-decoration: none; } #kbm .docbar a:hover { color: var(--ink); }
+  #kbm .doctitle { margin: 8px 0 2px; font-size: calc(16px * var(--fs)); font-weight: 500; color: var(--ink-hi); }
+  #kbm .tvrail .doc[aria-current] { background: color-mix(in srgb, var(--agent) 12%, transparent); }
   #kbm .sh .seg { margin-left: auto; }
 </style>
 </head>
@@ -1194,7 +1195,7 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
 <script>
 (() => {
 const qs = new URLSearchParams(location.search);
-const STATES = ["default", "pr-unread", "deps-long", "deviated", "empty", "edit"];
+const STATES = ["default", "pr-unread", "deps-long", "deviated", "empty", "edit", "label-refused", "doc"];
 let state = STATES.includes(qs.get("s")) ? qs.get("s") : "default";
 const FS = { "100": "", "125": "125%", "150": "150%" };
 const setFs = (v) => { document.documentElement.style.fontSize = FS[v] || ""; document.documentElement.style.setProperty("--fs", v === "125" ? "1.25" : v === "150" ? "1.5" : "1"); };
@@ -1305,6 +1306,52 @@ const machines8624 = [
   ["in-progress", "deliver", "12m ago", [["LINT_GREEN", "deliver", "10:26"], ["LINT_GREEN", "deliver", "10:28"], ["LINT_GREEN", "deliver", "10:29"], ["LINT_GREEN", "deliver", "10:52"], ["LINT_GREEN", "deliver", "10:55"]]],
   ["review_fix", "start", "13m ago", [["GREEN", "start", "10:27"], ["GREEN", "start", "10:48"], ["GREEN", "start", "10:49"], ["GREEN", "start", "10:50"], ["GREEN", "start", "10:53"]]],
 ];
+// N21: linked docs render in the dialog with the same markdown as the task body
+const DOCS = {
+  "doc-973": `## Outcome
+
+On the StarPulse kanban, the In Progress lane header counts and filters unheld tasks, a TTL-released card reads its struck session and \`expired <age>\`, a held card near expiry reads \`<m>m left\`, and every age comes from a stored datapoint.
+
+## Decisions
+
+| # | Decision | Measure |
+|---|---|---|
+| D1 | A claim stores its TTL | \`/api/snapshot\` serves \`held\` and \`expires_at\` per task |
+| D2 | The lane header counts unheld tasks | count equals unheld cards in the lane |
+| D3 | Cards draw no labels | no \`.chip\` inside \`.card\` |
+
+${FENCE}mermaid
+flowchart TD
+  C[claim] --> H[held]
+  H --> T[TTL passes]
+  T --> U[unheld]
+  U --> R[reclaim]
+${FENCE}
+
+## Exclusions
+
+- Reassigning a task from the card.
+- Any change to the reaper's schedule.`,
+  "m-318": `## Kanban marks unheld In Progress tasks
+
+15 tasks, 9 Done. Spec doc-973. Retro DEMO-8560 waits on DEMO-8600 and DEMO-8588.`,
+  "Board cards carry no labels": `## Status
+
+Accepted, Oct 18.
+
+## Decision
+
+A board card draws its id, title, size and age. Labels and fields show in the task dialog only, where they have room.`,
+  "m-321": `## Weekly code audit, 2026-10-25
+
+6 follow-up tasks from the audit's top findings, each sized and behavior-preserving.`,
+  "Weekly code audit report, 2026-10-25": `## Top findings
+
+| File | Function | C901 |
+|---|---|---|
+| \`delivery/release_workflow/cli.py\` | \`cmd_sweep\` | 15 |
+| \`delivery/release_workflow/cli.py\` | \`cmd_bump\` | 15 |`,
+};
 const T8624 = {
   id: "DEMO-8624", title: "Decompose release_workflow cmd_sweep into testable helpers", lane: ["Review", "review"], forAge: "14m",
   description: `\`delivery/release_workflow/cli.py:574\` \`cmd_sweep\` is ~157 lines (C901 15) and mixes slice planning, the threshold gate, dry-run printing, the cap re-cut loop, \`gh issue create/close\` subprocesses and triage-task opening.
@@ -1344,7 +1391,7 @@ Behavior-preserving: exit codes 0/1/2/75 and output text unchanged. Same shape a
   docs: [["Milestone", "m-321", "Weekly code audit, 2026-10-25", "#"], ["Source", "audit", "Weekly code audit report, 2026-10-25", "#"]],
   machines: machines8624,
   fields: { kind: "execute", size: 3, area: "delivery", mode: "attended", priority: "Medium", profile: "@agent-fast-high", type: "story" },
-  tags: ["release", "refactor"], meta: [["source", "weekly-code-audit/2026-10-25"]],
+  tags: ["audit-follow-up", "release", "refactor"], meta: [["source", "weekly-code-audit/2026-10-25"]],
   created: "Oct 25, 10:14",
 };
 const titles = { "DEMO-8559": "Count unheld In Progress tasks in the lane header", "DEMO-8561": "Strike a TTL-released card's session and read 'expired <age>'", "DEMO-8562": "Read '<m>m left' on a held card near expiry",
@@ -1383,7 +1430,7 @@ const stub = (id) => ({
 });
 
 function taskFor(s) {
-  const t = structuredClone(s === "deps-long" ? T8560 : s === "empty" ? stub(qs.get("task") || "DEMO-8692") : T8624);
+  const t = structuredClone(s === "deps-long" || s === "doc" ? T8560 : s === "empty" ? stub(qs.get("task") || "DEMO-8692") : T8624);
   if (s === "pr-unread") {
     t.lane = ["In Progress", "working"]; t.forAge = "31m";
     t.prs = [{ ref: "trantor-org/trantor#6039", url: "#", read: "unread", checks: "not read yet", at: "opened 40s ago · next read in 20s" },
@@ -1400,18 +1447,43 @@ function taskFor(s) {
 
 // ---- drawing ----
 const pill = (name, role, sm) => `<span class="tvlane${sm ? " sm" : ""}" data-lane="${role}" data-role="${role}"><i></i>${esc(name)}</span>`;
-const sec = (title, body, { n, pen, extra, rail, id } = {}) =>
-  `<section class="sec${rail ? " rs" : ""}"${id ? ` id="${id}"` : ""}><div class="sh"><span class="t">${title}</span>${n != null ? `<span class="n">${n}</span>` : ""}${extra || ""}${pen ? `<button class="pen" data-edit="${pen}" title="Edit ${title.toLowerCase()}" aria-label="Edit ${title.toLowerCase()}">✎ Edit</button>` : ""}</div>${body}</section>`;
+const sec = (title, body, { n, pen, extra, rail, id, on } = {}) =>
+  `<section class="sec${rail ? " rs" : ""}${on ? " on" : ""}"${id ? ` id="${id}"` : ""}><div class="sh"><span class="t">${title}</span>${n != null ? `<span class="n">${n}</span>` : ""}${extra || ""}${pen ? `<button class="pen" data-edit="${pen}" title="Edit ${title.toLowerCase()}" aria-label="Edit ${title.toLowerCase()}">✎ Edit</button>` : ""}</div>${body}</section>`;
 const checklist = (rows, label, act) => `<div class="rlist">${rows.map(([tx, done, ck], i) =>
   `<label class="ritem${done ? " done" : ""}" id="${label === "ac" ? `ac${i + 1}` : ""}"><input aria-label="${label} #${i + 1} done" type="checkbox"${done ? " checked" : ""}><span class="nn">#${i + 1}</span><span class="tx">${inline(tx)}${ck && act ? ` <a class="ck" href="#${ck}" data-jump="${ck}">✓ verified ${esc(act.find((e) => e.id === ck)?.at || "")}</a>` : ""}</span></label>`).join("")}</div>`;
 
-let editing = qs.get("s") === "edit" ? new Set(["description", "details"]) : new Set(), extra = [], verdict = null, reasonOpen = false, tagErr = "";
+// N20: free-form labels are short words; fields, dates and ids live elsewhere
+const RESERVED = ["kind-", "size-", "area-", "mode-"];
+function checkLabel(g) {
+  const p = RESERVED.find((r) => g.startsWith(r));
+  if (p) return `${p} is a field; set ${p.slice(0, -1)} above.`;
+  const words = g.split("-").length, dated = /\d{3,}/.test(g) ? " Dates and ids go in meta." : "";
+  if (g.length > 24 || words > 3) return `"${g}" is ${g.length} chars, ${words} words; labels are 3 words, 24 chars at most.${dated}`;
+  if (dated) return `"${g}" carries a date or id.${dated}`;
+  if (!/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/.test(g)) return `"${g}" is not kebab-case: lowercase words joined by hyphens.`;
+  return "";
+}
+const RULE = "kebab-case · 3 words · 24 chars · no dates or ids";
+let editing, extra, verdict, reasonOpen, draft, pending, labelErr, reading;
+function reset(s) {
+  editing = new Set(s === "edit" ? ["description", "details"] : s === "label-refused" ? ["details"] : []);
+  extra = []; verdict = null; reasonOpen = false; draft = null; reading = s === "doc" ? 0 : null;
+  pending = s === "label-refused" ? "weekly-code-audit-2026-10-25-follow-up" : ""; labelErr = pending ? checkLabel(pending) : "";
+}
+reset(state);
+const edbar = (what, hint) => `<div class="edbar"><span class="k">${hint ? hint + " · " : ""}Ctrl+Enter saves · Esc cancels</span><button class="cancelbtn" data-cancel="${what}">Cancel</button><button class="savebtn" data-save="${what}">Save</button></div>`;
 
 function left(t) {
-  const out = [];
-  out.push(sec("Description", editing.has("description")
-    ? `<textarea class="mdsrc" aria-label="Description (markdown)">${esc(t.description)}</textarea><div class="edbar"><span class="k" style="margin-right:auto">Markdown · DEMO-N links itself</span><button class="btn2 q" data-cancel="description">Cancel</button><button class="btn2" data-save="description">Save</button></div>`
-    : `<div class="md2">${md(t.description)}</div>`, { pen: editing.has("description") ? null : "description" }));
+  // N21: a linked doc opens in place of the task body; the rail stays
+  if (reading != null) {
+    const [k, id, title] = t.docs[reading];
+    return `<div class="docbar"><button class="cancelbtn" data-back>← Back to task</button><span class="kd">${k}</span>${id ? `<b>${id}</b>` : ""}<a href="#">Open in Star Map ↗</a></div>
+      <div class="doctitle">${esc(title)}</div><div class="md2">${md(DOCS[id || title] || "")}</div>`;
+  }
+  const out = [], de = editing.has("description");
+  out.push(sec("Description", de
+    ? `<textarea class="fv live long" data-desc aria-label="Description (markdown)">${esc(t.description)}</textarea>${edbar("description", "Markdown")}`
+    : `<div class="md2">${md(t.description)}</div>`, { pen: de ? null : "description", on: de }));
   if (t.ac.length) out.push(sec("Acceptance criteria", checklist(t.ac, "ac", t.activity), { n: `${t.ac.filter((a) => a[1]).length}/${t.ac.length}`, pen: "ac" }));
   if (t.dod.length) out.push(sec("Definition of done", checklist(t.dod, "dod"), { n: `${t.dod.filter((a) => a[1]).length}/${t.dod.length}`, pen: "dod" }));
   // N7: an empty plan draws nothing but an add affordance
@@ -1420,11 +1492,11 @@ function left(t) {
   // N2: notes are prose only; the assignee moved to Session
   if (t.notes) out.push(sec("Notes", `<div class="md2">${md(t.notes)}</div>`, { pen: "notes" }));
   else if (editing.size) out.push(`<button class="addplan" data-addnotes>＋ Add notes</button>`);
-  // N8: activity; N15: every kind always shows, no filter
-  const all = [...t.activity, ...extra];
-  const evs = all.length ? `<div class="acts2">${all.map((e) => `<div class="ev" id="${e.id}" data-kind="${e.kind}"><span class="dot"></span><div class="hd"><span class="who">${esc(e.who)}</span><span>${esc(e.at)}</span>${e.ac ? `<a class="tag" href="#ac${e.ac}" data-jump="ac${e.ac}">AC #${e.ac}</a>` : ""}${e.kind === "system" ? "<span>event</span>" : ""}</div><div class="bd md2">${inline(e.body)}</div></div>`).join("")}</div>`
-    : `<span class="none">No activity yet</span>`;
-  out.push(sec("Activity", evs + `<div class="compose"><textarea aria-label="Add a comment" placeholder="Comment, or 'AC #2: …' to checkpoint a criterion"></textarea><button data-post disabled>Comment</button></div>`, { id: "activity" }));
+  // N8/N15: activity is the read-only record (events, checkpoints); N18: comments are their own section, and a comment never checkpoints
+  const ev = (e) => `<div class="ev" id="${e.id}" data-kind="${e.kind}"><span class="dot"></span><div class="hd"><span class="who">${esc(e.who)}</span><span>${esc(e.at)}</span>${e.ac ? `<a class="tag" href="#ac${e.ac}" data-jump="ac${e.ac}">AC #${e.ac}</a>` : ""}${e.kind === "system" ? "<span>event</span>" : ""}</div><div class="bd md2">${inline(e.body)}</div></div>`;
+  const acts = t.activity.filter((e) => e.kind !== "comment"), cms = [...t.activity.filter((e) => e.kind === "comment"), ...extra];
+  out.push(sec("Activity", acts.length ? `<div class="acts2">${acts.map(ev).join("")}</div>` : `<span class="none">No activity yet</span>`, { id: "activity", n: acts.length || null }));
+  out.push(sec("Comments", (cms.length ? `<div class="acts2">${cms.map(ev).join("")}</div>` : "") + `<div class="compose"><textarea aria-label="Add a comment" placeholder="Add a comment"></textarea><button data-post disabled>Comment</button></div>`, { id: "comments", n: cms.length || null }));
   return out.join("");
 }
 
@@ -1453,27 +1525,28 @@ function rail(t) {
     out.push(sec("Dependencies", `<div class="deps">${t.deps.length ? `<div class="lb">Depends on · ${open} open of ${t.deps.length}</div><div class="box" data-box>${t.deps.map(row).join("")}</div>` : ""}${t.blocks.length ? `<div class="lb">Blocks</div><div class="box" data-box>${t.blocks.map(row).join("")}</div>` : ""}</div>`, { rail: true, n: t.deps.length + t.blocks.length }));
   }
   // N5: linked spec and docs
-  if (t.docs.length) out.push(sec("Docs", `<div class="docs">${t.docs.map(([k, id, title, href]) => `<a class="doc" href="${href}"><span class="kd">${k}</span><span class="tt" title="${esc(title)}">${id ? `<b>${id}</b>` : ""}${esc(title)}</span></a>`).join("")}</div>`, { rail: true, n: t.docs.length, pen: "docs" }));
+  if (t.docs.length) out.push(sec("Docs", `<div class="docs">${t.docs.map(([k, id, title, href], i) => `<a class="doc" href="${href}" data-doc="${i}"${reading === i ? " aria-current" : ""}><span class="kd">${k}</span><span class="tt" title="${esc(title)}">${id ? `<b>${id}</b>` : ""}${esc(title)}</span></a>`).join("")}</div>`, { rail: true, n: t.docs.length, pen: "docs" }));
   if (t.machines.length) out.push(sec("Machines", `<div class="machs box" data-box>${t.machines.map(([m, s, ago, trail]) => `<details class="m"><summary><span class="p"></span><b>${m}</b><span class="s">${s}</span><span class="k">${ago}</span></summary><ol>${trail.map(([e, st, at]) => `<li><code>${e}</code> → ${st}<span class="k"> Oct 25, ${at}</span></li>`).join("")}</ol></details>`).join("")}</div>`, { rail: true, n: t.machines.length }));
-  // N3, N12, N13: first-class fields; tags are short; provenance is meta
+  // N3, N12, N13, N19, N20: first-class fields, then short free-form labels, then provenance meta, in the live props table
   const f = t.fields, ed = editing.has("details");
-  const opt = (name, vals, cur) => `<select aria-label="${name}">${vals.map((v) => `<option${String(v) === String(cur) ? " selected" : ""}>${v}</option>`).join("")}</select>`;
-  const flds = ed ? `<dl class="flds">
-      <dt>Kind</dt><dd>${opt("Kind", ["execute", "decide", "investigate", "verify"], f.kind)}</dd>
-      <dt>Size</dt><dd>${opt("Size", [1, 2, 3, 5, 8], f.size)}</dd>
-      <dt>Area</dt><dd>${opt("Area", ["delivery", "starpulse", "observability", "docs", "infra"], f.area)}</dd>
-      <dt>Mode</dt><dd>${opt("Mode", ["", "attended", "unattended"], f.mode)}</dd>
-      <dt>Priority</dt><dd>${opt("Priority", ["High", "Medium", "Low"], f.priority)}</dd>
-      <dt>Tags</dt><dd><input data-tags value="${esc(t.tags.join(", "))}" aria-label="Tags" class="${tagErr ? "bad" : ""}"></dd>${tagErr ? `<dd class="err">${esc(tagErr)}</dd>` : ""}
-      <dt>Milestone</dt><dd>${opt("Milestone", ["m-321", "m-318", "—"], t.docs.find((d) => d[0] === "Milestone")?.[1] || "—")}</dd>
-    </dl><div class="edbar"><button class="btn2 q" data-cancel="details">Cancel</button><button class="btn2" data-save="details">Save</button></div>`
-    : `<dl class="flds">
-      <dt>Kind</dt><dd>${f.kind}</dd><dt>Size</dt><dd><span class="sz">${f.size}</span></dd><dt>Area</dt><dd>${f.area}</dd>${f.mode ? `<dt>Mode</dt><dd>${f.mode}</dd>` : ""}
-      <dt>Priority</dt><dd>${f.priority}</dd><dt>Profile</dt><dd>${f.profile}</dd><dt>Type</dt><dd>${f.type}</dd>
-      ${t.tags.length ? `<dt>Tags</dt><dd><span class="chips">${t.tags.map((g) => `<span class="chip">${g}</span>`).join("")}</span></dd>` : ""}
-      ${t.meta.map(([k, v]) => `<dt>${k}</dt><dd class="meta">${esc(v)}</dd>`).join("")}
-      <dt>Created</dt><dd class="k">${t.created}</dd></dl>`;
-  out.push(sec("Details", flds, { rail: true, pen: ed ? null : "details" }));
+  if (ed && !draft) draft = [...t.tags];
+  const row = (k, v, cls) => `<tr${cls ? ` class="${cls}"` : ""}><td>${k}</td><td>${v}</td></tr>`;
+  const opt = (name, vals, cur) => `<select class="fv live" data-f="${name}" aria-label="${name}">${vals.map((v) => `<option${String(v) === String(cur) ? " selected" : ""}>${v}</option>`).join("")}</select>`;
+  const chips = (gs, x) => gs.map((g) => `<span class="chip">${esc(g)}${x ? `<button class="x" data-unlabel="${esc(g)}" aria-label="Remove ${esc(g)}">×</button>` : ""}</span>`).join("");
+  const flds = ed ? `<table class="props"><tbody>
+      ${row("kind", opt("kind", ["execute", "decide", "investigate", "verify"], f.kind))}${row("size", opt("size", [1, 2, 3, 5, 8], f.size))}
+      ${row("area", opt("area", ["delivery", "starpulse", "observability", "docs", "infra"], f.area))}${row("mode", opt("mode", ["", "attended", "unattended"], f.mode))}
+      ${row("priority", opt("priority", ["High", "Medium", "Low"], f.priority))}
+      ${row("labels", `<div class="fv live chips${labelErr ? " bad" : ""}">${chips(draft, true)}<input class="chipinput" data-chipin placeholder="add label" aria-label="Add label" value="${esc(pending)}"></div><div class="rule${labelErr ? " err" : ""}" role="status">${esc(labelErr || RULE)}</div>`)}
+      ${row("milestone", opt("milestone", ["m-321", "m-318", "—"], t.docs.find((d) => d[0] === "Milestone")?.[1] || "—"))}
+    </tbody></table>${edbar("details")}`
+    : `<table class="props"><tbody>
+      ${row("kind", f.kind)}${row("size", `<span class="sz">${f.size}</span>`)}${row("area", f.area)}${f.mode ? row("mode", f.mode) : ""}
+      ${row("priority", f.priority)}${row("profile", f.profile)}${row("type", f.type)}
+      ${row("labels", t.tags.length ? `<span class="chips">${chips(t.tags)}</span>` : `<span class="k">—</span>`, "sep")}
+      ${t.meta.map(([k, v]) => row(k, `<span class="meta">${esc(v)}</span>`)).join("")}
+      ${row("created", `<span class="k">${t.created}</span>`)}</tbody></table>`;
+  out.push(sec("Details", flds, { rail: true, pen: ed ? null : "details", on: ed }));
   return out.join("");
 }
 
@@ -1494,8 +1567,7 @@ const fade = (b) => b.classList.toggle("end", b.scrollTop + b.clientHeight >= b.
 const flash = (el) => { if (!el) return; el.scrollIntoView({ block: "center", behavior: "smooth" }); el.classList.add("flash"); setTimeout(() => el.classList.remove("flash"), 1400); };
 
 function go(s, task) {
-  state = s; extra = []; filter = "all"; verdict = null; reasonOpen = false; tagErr = "";
-  editing = s === "edit" ? new Set(["description", "details"]) : new Set();
+  state = s; reset(s);
   const p = new URLSearchParams(location.search); p.set("s", s); task ? p.set("task", task) : p.delete("task");
   history.replaceState(null, "", "?" + p.toString());
   if (task) qs.set("task", task); else qs.delete("task");
@@ -1509,32 +1581,48 @@ document.addEventListener("click", (e) => {
   if (d.task) { e.preventDefault(); return go("empty", d.task); }
   if (d.jump) { e.preventDefault(); return flash(document.getElementById(d.jump)); }
   if (d.edit) { editing.add(d.edit); return render(true); }
-  if (d.cancel) { editing.delete(d.cancel); tagErr = ""; return render(true); }
-  if (d.save === "description") { T.description = document.querySelector(".mdsrc").value; editing.delete("description"); return render(true); }
+  if (d.cancel) { editing.delete(d.cancel); if (d.cancel === "details") { draft = null; pending = ""; labelErr = ""; } return render(true); }
+  if (d.save === "description") { T.description = document.querySelector("[data-desc]").value; editing.delete("description"); return render(true); }
+  if (d.unlabel) { draft = draft.filter((g) => g !== d.unlabel); return render(true); }
   if (d.save === "details") {
-    // N12: the server validates every field on write; a tag outside the pattern is refused, not stored
-    const raw = document.querySelector("[data-tags]").value.split(",").map((s) => s.trim()).filter(Boolean);
-    const bad = raw.find((g) => !/^[a-z][a-z0-9]*(-[a-z0-9]+)?$/.test(g) || g.length > 16);
-    const sel = [...document.querySelectorAll(".flds select")].map((x) => x.value);
-    if (bad) { tagErr = `Refused: "${bad}" is not a tag (lowercase, one hyphen at most, 16 chars). Provenance goes in meta.`; T.tags = raw; return render(true); }
-    [T.fields.kind, T.fields.size, T.fields.area, T.fields.mode, T.fields.priority] = sel; T.tags = raw; tagErr = ""; editing.delete("details"); return render(true);
+    // N12/N20: the server validates every field on write; a label outside the convention is refused, not stored
+    if (pending.trim() && !addLabel()) return;
+    const v = Object.fromEntries([...document.querySelectorAll("[data-f]")].map((x) => [x.dataset.f, x.value]));
+    Object.assign(T.fields, { kind: v.kind, size: +v.size, area: v.area, mode: v.mode, priority: v.priority });
+    T.tags = draft; draft = null; editing.delete("details"); return render(true);
   }
+  if (d.doc) { e.preventDefault(); reading = +d.doc; render(true); document.querySelector(".tvleft").scrollTop = 0; return; }
+  if ("back" in d) { reading = null; return render(true); }
   if ("addplan" in d) { T.plan = "1. "; editing.add("plan"); return render(true); }
   if (d.verdict) { verdict = verdict === d.verdict ? null : d.verdict; reasonOpen = verdict === "fail"; return render(true); }
   if ("reason" in d) { reasonOpen = false; return render(true); }
   if ("post" in d) {
     const box = document.querySelector(".compose textarea"); const v = box.value.trim(); if (!v) return;
-    const m = v.match(/^AC #(\d+):\s*(.*)/i);
     const id = "x" + (extra.length + 1);
-    extra.push(m ? { id, kind: "checkpoint", who: "Adin", at: "11:10", ac: +m[1], body: m[2] } : { id, kind: "comment", who: "Adin", at: "11:10", body: v });
-    if (m && T.ac[+m[1] - 1]) { T.ac[+m[1] - 1][1] = true; T.ac[+m[1] - 1][2] = id; }
+    extra.push({ id, kind: "comment", who: "Adin", at: "11:10", body: v });
     render(true); return flash(document.getElementById(id));
   }
   if (d.copy) { navigator.clipboard?.writeText(d.copy).catch(() => {}); const o = el.innerHTML; el.textContent = "Copied"; setTimeout(() => (el.innerHTML = o), 900); return; }
   if (el.matches("label.ritem")) { const i = el.querySelector("input"); setTimeout(() => el.classList.toggle("done", i.checked)); }
 });
-document.addEventListener("input", (e) => { if (e.target.matches(".compose textarea")) document.querySelector("[data-post]").disabled = !e.target.value.trim(); });
-document.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && e.target.matches(".compose textarea")) document.querySelector("[data-post]").click(); });
+function addLabel() {
+  const g = pending.trim(); labelErr = checkLabel(g) || (draft.includes(g) ? `"${g}" is already on this task.` : "");
+  if (!labelErr) { draft.push(g); pending = ""; }
+  render(true); const i = document.querySelector("[data-chipin]"); i?.focus(); i?.setSelectionRange(i.value.length, i.value.length);
+  return !labelErr;
+}
+document.addEventListener("input", (e) => {
+  if (e.target.matches(".compose textarea")) document.querySelector("[data-post]").disabled = !e.target.value.trim();
+  if (e.target.matches("[data-chipin]")) { pending = e.target.value; if (labelErr) { labelErr = ""; e.target.parentElement.classList.remove("bad"); const r = document.querySelector(".rule"); r.classList.remove("err"); r.textContent = RULE; } }
+});
+document.addEventListener("keydown", (e) => {
+  const mod = e.metaKey || e.ctrlKey, on = e.target.closest?.(".sec.on");
+  if (e.key === "Enter" && mod && e.target.matches(".compose textarea")) return document.querySelector("[data-post]").click();
+  if (on && e.key === "Enter" && mod) { e.preventDefault(); return on.querySelector("[data-save]").click(); }
+  if (on && e.key === "Escape") { e.preventDefault(); return on.querySelector("[data-cancel]").click(); }
+  if (e.key === "Enter" && e.target.matches("[data-chipin]") && pending.trim()) { e.preventDefault(); return addLabel(); }
+  if (e.key === "Escape" && reading != null) { reading = null; render(true); }
+});
 document.addEventListener("scroll", (e) => { if (e.target.matches?.("[data-box]")) fade(e.target); }, true);
 
 function bar() {
@@ -1545,6 +1633,7 @@ function bar() {
   rv.querySelectorAll("a[href^='?s=']").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); go(a.getAttribute("href").slice(3)); }));
 }
 T = taskFor(state); render(); bar();
+if (state === "label-refused") document.querySelector(".tvrail .sec.on")?.scrollIntoView({ block: "end" });
 })();
 </script>
 </body>
