@@ -5,9 +5,9 @@ from typing import Any
 
 import pytest
 
-from starpulse._internal.board.seam import Board
-from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.feed.claim_refusals import CLAIMS_STREAM, ClaimRefusals
+from starpulse.board.model.seam import Board
+from starpulse.board.board_feed import BoardFeed
+from starpulse.board.claim_refusals import CLAIMS_STREAM, ClaimRefusals
 from starpulse.event_log.event_log import EventLog, Tail
 from starpulse.tests.unit.board.test_native_rules import DONE_NEEDS_PR, ruled
 

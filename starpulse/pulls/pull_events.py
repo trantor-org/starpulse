@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Any
 from starpulse.pulls.pull_requests import PULL_URL
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
-    from starpulse._internal.feed.board_feed import BoardFeed
+    from starpulse.board.board_feed import BoardFeed
     from starpulse.pulls.pulls import PullStore
     from starpulse.event_log.event_log import Entry
 

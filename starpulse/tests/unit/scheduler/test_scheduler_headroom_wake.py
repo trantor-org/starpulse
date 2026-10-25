@@ -10,9 +10,9 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.board.seam import Written
+from starpulse.board.model.seam import Written
 from starpulse._internal.config.scheduler import Scheduler
-from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse.board.board_feed import BoardFeed
 from starpulse._internal.scheduler.runtime import build
 from starpulse.contracts.adapters import BoardTask
 from starpulse.event_log.event_log import EventLog

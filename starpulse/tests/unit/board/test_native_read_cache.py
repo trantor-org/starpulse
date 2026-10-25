@@ -5,7 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.board import native, native_docs, native_milestones
+from starpulse.board.adapters import native
+from starpulse.board.adapters import native_docs
+from starpulse.board.adapters import native_milestones
 
 FIXTURES = Path(__file__).resolve().parent.parent.parent / "fixtures" / "native_board"
 

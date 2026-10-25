@@ -17,10 +17,10 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from starpulse._internal.server.blocks import scheduler_fixed_blocks, scheduler_live_blocks
-from starpulse._internal.board.seam import Board
+from starpulse.board.model.seam import Board
 from starpulse._internal.config.config import Config, discover, load
-from starpulse._internal.feed.board_feed import BoardFeed, follow
-from starpulse._internal.feed.machine_tasks import MachineTasks
+from starpulse.board.board_feed import BoardFeed, follow
+from starpulse.board.machine_tasks import MachineTasks
 from starpulse._internal.scheduler.remote import follow_wakes, publisher
 from starpulse._internal.scheduler.runtime import Runtime
 from starpulse._internal.server.assembly import history_store, worker_board

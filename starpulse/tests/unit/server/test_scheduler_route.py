@@ -11,10 +11,10 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.board.seam import Written
+from starpulse.board.model.seam import Written
 from starpulse._internal.config.scheduler import Scheduler
-from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.feed.machine_tasks import MachineTasks
+from starpulse.board.board_feed import BoardFeed
+from starpulse.board.machine_tasks import MachineTasks
 from starpulse._internal.kit.adapter_kit import serve, url
 from starpulse._internal.scheduler.runtime import Runtime, build
 from starpulse._internal.scheduler.sampler import Crossing

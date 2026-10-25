@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.board.native import board
-from starpulse._internal.board.seam import Board
+from starpulse.board.adapters.native import board
+from starpulse.board.model.seam import Board
 
 
 def _created(tmp_path: Path, title: str, **settings: str) -> str:

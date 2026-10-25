@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.board import native
+from starpulse.board.adapters import native
 
 
 @pytest.fixture

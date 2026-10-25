@@ -9,11 +9,11 @@ from collections import Counter
 from collections.abc import Callable, Collection, Mapping
 from typing import TYPE_CHECKING, Any
 
-from starpulse._internal.board.seam import (
+from starpulse.board.model.seam import (
     TaskReader,
 )
 from starpulse._internal.config.analytics import Analytics
-from starpulse._internal.feed.ledger import PAGE
+from starpulse.board.ledger import PAGE
 from starpulse._internal.server.encoding import encode
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.flow_metrics import analytics
@@ -31,8 +31,8 @@ from starpulse.machine_engine.model.stays import lane_stays
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
-    from starpulse._internal.feed.board_feed import BoardFeed
-    from starpulse._internal.feed.search import SearchIndex
+    from starpulse.board.board_feed import BoardFeed
+    from starpulse.board.adapters.search import SearchIndex
     from starpulse.pulls.pulls import PullStore
     from starpulse.flow_metrics.history import History
 

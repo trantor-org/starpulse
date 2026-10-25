@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.feed.history_window import HistoryWindow
+from starpulse.board.board_feed import BoardFeed
+from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse._internal.server.compression import Encoded
 from starpulse._internal.server.reads import Arrival, ReadRoutes, Request, Response
 from starpulse._internal.server.services import Services

@@ -3,7 +3,7 @@
 import json
 import time
 
-from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse.board.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.server.encoding import encode, encode_snapshot, event, slim_snapshot
 from starpulse.contracts.adapters import Move

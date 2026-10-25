@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from starpulse._internal.board.task_history import KIND, TaskHistory
+from starpulse.board.adapters.task_history import KIND, TaskHistory
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.readmodel.projector import Projector
 from starpulse.event_log.readmodel.rows import load

@@ -22,8 +22,8 @@ from pathlib import Path
 
 from starpulse._internal.cli import doctor
 from starpulse._internal.config.config import Config
-from starpulse._internal.feed.claim_refusals import CLAIMS_STREAM
-from starpulse._internal.feed.history_window import SETTINGS_FILE, HistoryWindow
+from starpulse.board.claim_refusals import CLAIMS_STREAM
+from starpulse.board.adapters.history_window import SETTINGS_FILE, HistoryWindow
 from starpulse._internal.server import server
 from starpulse._internal.server.asgi_app import _CONTRACT_TTL_S, _cached, page_app
 from starpulse._internal.server.hold import LISTEN_FD_ENV, STATIC_ENV, announce_ready
@@ -76,11 +76,11 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
 ) -> None:
     """Build the Page API and serve it on `listening` until stopped: in the `starpulse worker api` child."""
 
-    from starpulse._internal.board import replica  # noqa: PLC0415 - the database stack loads after the config is accepted
-    from starpulse._internal.feed.board_feed import follow  # noqa: PLC0415 - the database stack loads after the config is accepted
-    from starpulse._internal.feed.claim_refusals import ClaimRefusals  # noqa: PLC0415 - the database stack loads after the config is accepted
-    from starpulse._internal.feed.machine_tasks import MachineTasks  # noqa: PLC0415 - the database stack loads after the config is accepted
-    from starpulse._internal.feed.search import SearchIndex  # noqa: PLC0415 - the database stack loads after the config is accepted
+    from starpulse.board.adapters import replica  # noqa: PLC0415 - the database stack loads after the config is accepted
+    from starpulse.board.board_feed import follow  # noqa: PLC0415 - the database stack loads after the config is accepted
+    from starpulse.board.claim_refusals import ClaimRefusals  # noqa: PLC0415 - the database stack loads after the config is accepted
+    from starpulse.board.machine_tasks import MachineTasks  # noqa: PLC0415 - the database stack loads after the config is accepted
+    from starpulse.board.adapters.search import SearchIndex  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse._internal.server import read_model_follow  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse._internal.server.assembly import assemble, history_store  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.event_log.event_log import EventLog  # noqa: PLC0415 - the database stack loads after the config is accepted

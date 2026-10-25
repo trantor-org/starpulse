@@ -16,8 +16,9 @@ import pytest
 import yaml
 from sqlalchemy import delete
 
-from starpulse._internal.board import replica, upstream_backlog
-from starpulse._internal.board.upstream_backlog import (
+from starpulse.board.adapters import replica
+from starpulse.board.adapters import upstream_backlog
+from starpulse.board.adapters.upstream_backlog import (
     BacklogConfig,
     UpstreamBacklog,
     _split,
@@ -28,7 +29,7 @@ from starpulse._internal.board.upstream_backlog import (
     upstream_keys,
 )
 from starpulse._internal.config.config import load
-from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse.board.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import BoardAdapterKit
 from starpulse._internal.server.writes import move_task
 from starpulse.contracts.adapters import BoardTask, Move
@@ -597,7 +598,7 @@ def test_the_adapter_runs_with_no_network_transport_and_no_backlog_server(
 def test_the_adapter_module_pulls_in_neither_the_legacy_client_nor_the_projection_contract() -> None:
     client = "re" + "dis"
     code = (
-        "import sys, starpulse._internal.board.upstream_backlog;"
+        "import sys, starpulse.board.adapters.upstream_backlog;"
         f"bad = [m for m in ({client!r}, 'event_stream', 'backlog_projection', 'board_client') if m in sys.modules];"
         "sys.exit(','.join(bad) or 0)"
     )

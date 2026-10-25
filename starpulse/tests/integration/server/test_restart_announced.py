@@ -5,7 +5,7 @@ import urllib.request
 from http.client import HTTPResponse
 from pathlib import Path
 
-from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse.board.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import next_event, serve, task, url
 from starpulse.tests.machines import MACHINES, ROLES
 

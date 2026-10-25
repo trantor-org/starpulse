@@ -7,10 +7,11 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine, event
 
-from starpulse._internal.board import native, upstream_backlog
-from starpulse._internal.board.upstream_backlog import UpstreamBacklog
-from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.feed.search import SearchIndex
+from starpulse.board.adapters import native
+from starpulse.board.adapters import upstream_backlog
+from starpulse.board.adapters.upstream_backlog import UpstreamBacklog
+from starpulse.board.board_feed import BoardFeed
+from starpulse.board.adapters.search import SearchIndex
 from starpulse.tests.integration.board.test_jira import project, recorded_site, serve
 
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "native_board"

@@ -76,7 +76,8 @@ type = "layers"
 # Four tiers, each importing only the tiers below it and `contracts`. Features on one `|` line are independent; a line
 # of its own marks a named edge (the ADR "StarPulse Is Layered Around Its Event Log"): `kit` drives a `server`,
 # `server` serves the doctor's checks from `cli`, `pulls` reads GitHub Actions runs from `runs`,
-# `scheduler` samples the board feed and the harness machine, and the
+# `scheduler` samples the board feed and the harness machine, the Board (model, adapters and feed) sits under the
+# features that read it, and the
 # history store in `flow_metrics` reads `config` and `machine_engine`.
 layers = [
     # entrypoints
@@ -85,10 +86,10 @@ layers = [
     "starpulse._internal.cli",
     # producers
     "starpulse.pulls | starpulse._internal.scheduler | starpulse.sessions",
-    "starpulse._internal.board | starpulse.runs | starpulse.harness_telemetry",
+    "starpulse.runs | starpulse.harness_telemetry",
     # derived
     "starpulse.flow_metrics",
-    "starpulse._internal.feed",
+    "starpulse.board",
     # core
     "starpulse.event_log",
     "starpulse._internal.config | starpulse.machine_engine | starpulse.github | starpulse._internal.signals",
@@ -104,9 +105,8 @@ type = "forbidden"
 source_modules = [
     "starpulse._internal.cli",
     "starpulse.pulls", "starpulse._internal.scheduler",
-    "starpulse._internal.board", "starpulse.runs", "starpulse.harness_telemetry",
+    "starpulse.board", "starpulse.runs", "starpulse.harness_telemetry",
     "starpulse.flow_metrics",
-    "starpulse._internal.feed",
     "starpulse.event_log",
     "starpulse._internal.config", "starpulse.machine_engine", "starpulse.github",
     "starpulse._internal.signals",
@@ -144,7 +144,7 @@ type = "forbidden"
 allow_indirect_imports = true
 source_modules = ["starpulse.event_log"]
 forbidden_modules = [
-    "starpulse._internal.board", "starpulse._internal.feed",
+    "starpulse.board",
     "starpulse._internal.scheduler",
     "starpulse.flow_metrics",
     "starpulse.harness_telemetry", "starpulse.sessions",
@@ -162,7 +162,7 @@ id = "context-board"
 name = "Board imports no other StarPulse context"
 type = "forbidden"
 allow_indirect_imports = true
-source_modules = ["starpulse._internal.board", "starpulse._internal.feed"]
+source_modules = ["starpulse.board"]
 forbidden_modules = [
     "starpulse._internal.scheduler",
     "starpulse.flow_metrics",
@@ -172,6 +172,12 @@ forbidden_modules = [
 ]
 
 [[tool.importlinter.contracts]]
+id = "board-layers"
+name = "Board's model imports no adapter"
+type = "layers"
+layers = ["starpulse.board.adapters", "starpulse.board.model"]
+
+[[tool.importlinter.contracts]]
 id = "context-machine-engine"
 name = "Machine engine imports no other StarPulse context"
 type = "forbidden"
@@ -179,7 +185,7 @@ type = "forbidden"
 allow_indirect_imports = true
 source_modules = ["starpulse.machine_engine"]
 forbidden_modules = [
-    "starpulse._internal.board", "starpulse._internal.feed",
+    "starpulse.board",
     "starpulse._internal.scheduler",
     "starpulse.flow_metrics",
     "starpulse.harness_telemetry", "starpulse.sessions",
@@ -224,7 +230,7 @@ type = "forbidden"
 allow_indirect_imports = true
 source_modules = ["starpulse.harness_telemetry"]
 forbidden_modules = [
-    "starpulse._internal.board", "starpulse._internal.feed",
+    "starpulse.board",
     "starpulse._internal.scheduler",
     "starpulse.flow_metrics",
     "starpulse.sessions",
@@ -265,7 +271,7 @@ type = "forbidden"
 allow_indirect_imports = true
 source_modules = ["starpulse.sessions"]
 forbidden_modules = [
-    "starpulse._internal.board", "starpulse._internal.feed",
+    "starpulse.board",
     "starpulse._internal.scheduler",
     "starpulse.pulls",
     "starpulse.runs",

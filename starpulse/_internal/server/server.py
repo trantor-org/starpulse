@@ -183,15 +183,15 @@ from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING, Any, NamedTuple
 
-from starpulse._internal.board.seam import (
+from starpulse.board.model.seam import (
     Board,
 )
 from starpulse._internal.cli import doctor
 from starpulse._internal.config.config import Config, ConfigError, RunsInstance, discover, load, runs_adapter
 from starpulse._internal.config.level import Level
 from starpulse._internal.config.pins import GitHub, LiveBuild, running_commit
-from starpulse._internal.feed.claim_refusals import CLAIMS_STREAM
-from starpulse._internal.feed.history_window import SETTINGS_FILE, HistoryWindow
+from starpulse.board.claim_refusals import CLAIMS_STREAM
+from starpulse.board.adapters.history_window import SETTINGS_FILE, HistoryWindow
 from starpulse._internal.server.asgi_app import _CONTRACT_TTL_S, _cached, page_app
 from starpulse._internal.server.closure import ENTRIES, Reader
 from starpulse._internal.server.control import control_file
@@ -239,7 +239,7 @@ _STATIC = _HERE / "static"
 
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
-    from starpulse._internal.feed.board_feed import BoardFeed
+    from starpulse.board.board_feed import BoardFeed
     from starpulse._internal.scheduler.remote import Remote
     from starpulse.event_log.event_log import EventLog
     from starpulse.flow_metrics.history import History
@@ -613,13 +613,13 @@ def stay_until_stopped() -> None:  # pragma: no mutate block — process boundar
 #: What `api_worker.serve_page` imports once the config is accepted; the preloaded process imports it too, so the Page API child
 #: forks with it loaded.
 DATABASE_STACK = (
-    "starpulse._internal.board.replica",
+    "starpulse.board.adapters.replica",
     "starpulse.event_log.event_log",
     "starpulse.flow_metrics.history",
-    "starpulse._internal.feed.board_feed",
-    "starpulse._internal.feed.claim_refusals",
-    "starpulse._internal.feed.machine_tasks",
-    "starpulse._internal.feed.search",
+    "starpulse.board.board_feed",
+    "starpulse.board.claim_refusals",
+    "starpulse.board.machine_tasks",
+    "starpulse.board.adapters.search",
     "starpulse.pulls.pulls",
     "starpulse._internal.server.assembly",
 )

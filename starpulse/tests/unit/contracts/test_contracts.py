@@ -7,8 +7,8 @@ import jsonschema
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.feed.machine_tasks import MachineTasks
+from starpulse.board.board_feed import BoardFeed
+from starpulse.board.machine_tasks import MachineTasks
 from starpulse.contracts import adapters as contracts
 from starpulse.contracts.adapters import (
     CONTRACTS,
@@ -26,7 +26,7 @@ from starpulse.contracts.adapters import (
 )
 from starpulse.contracts.api.registry import REQUESTS
 from starpulse.tests.machines import MACHINES, ROLES
-from starpulse.tests.unit.feed.test_machine_tasks import _agents, _entry
+from starpulse.tests.unit.board.test_machine_tasks import _agents, _entry
 
 PROJ = TaskKeys(key=re.compile(r"PROJ-\d+"), branch=re.compile(r"(?:refs/heads/)?feature/(PROJ-\d+)(?:-|$)"))
 NUMBERED = TaskKeys(key=re.compile(r"OPS-\d+"), branch=re.compile(r"agent/task-(\d+)(?:-|$)"), key_format="OPS-{}")

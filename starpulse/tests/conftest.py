@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, create_engine, event
 
-from starpulse._internal.board import upstream_backlog
+from starpulse.board.adapters import upstream_backlog
 from starpulse.event_log import event_log
 from starpulse.flow_metrics.history import HistoryStore
 from starpulse.tests.machines import MACHINES

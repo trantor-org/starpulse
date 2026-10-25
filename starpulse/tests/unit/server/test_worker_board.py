@@ -5,8 +5,8 @@ import threading
 from dataclasses import replace
 from pathlib import Path
 
-from starpulse._internal.board.native import board
-from starpulse._internal.board.task_history import KIND
+from starpulse.board.adapters.native import board
+from starpulse.board.adapters.task_history import KIND
 from starpulse._internal.config.config import load
 from starpulse.pulls.task_actor import ACTOR
 from starpulse._internal.server.assembly import worker_board

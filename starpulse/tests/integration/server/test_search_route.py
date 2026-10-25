@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine
 
-from starpulse._internal.feed.search import SearchIndex
+from starpulse.board.adapters.search import SearchIndex
 from starpulse._internal.kit.adapter_kit import serve, task, url
 from starpulse._internal.server.page_server import PageServer
 

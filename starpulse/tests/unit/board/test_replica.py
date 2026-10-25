@@ -11,11 +11,11 @@ from pathlib import Path
 import pytest
 from sqlalchemy import delete
 
-from starpulse._internal.board import replica
-from starpulse._internal.board.seam import Board
+from starpulse.board.adapters import replica
+from starpulse.board.model.seam import Board
 from starpulse._internal.config.config import load
-from starpulse._internal.feed.board_feed import BoardFeed, retained
-from starpulse._internal.feed.snapshot import BoardSnapshot
+from starpulse.board.board_feed import BoardFeed, retained
+from starpulse.board.snapshot import BoardSnapshot
 from starpulse.contracts import BoardTask
 from starpulse.event_log.event_log import EventLog, Tail
 from starpulse.event_log.tables import events

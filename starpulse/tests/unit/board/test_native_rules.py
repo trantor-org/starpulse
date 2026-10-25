@@ -5,9 +5,9 @@ from typing import Any
 
 import pytest
 
-from starpulse._internal.board import rules
-from starpulse._internal.board.native import board
-from starpulse._internal.board.seam import Board, Written
+from starpulse.board.model import rules
+from starpulse.board.adapters.native import board
+from starpulse.board.model.seam import Board, Written
 from starpulse._internal.config.config import load
 from starpulse.machine_engine.model.transitions import DEFAULT_STATUSES
 from starpulse.tests.unit.board.test_native import native_root, write_task

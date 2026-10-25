@@ -15,8 +15,8 @@ from typing import Any
 import pytest
 
 from starpulse._internal.config.config import Producer
-from starpulse._internal.feed.board_feed import BoardFeed, follow
-from starpulse._internal.feed.machine_tasks import MachineTasks
+from starpulse.board.board_feed import BoardFeed, follow
+from starpulse.board.machine_tasks import MachineTasks
 from starpulse._internal.kit.adapter_kit import next_event, serve, url
 from starpulse.runs.cloudevents import BATCH, MAX_DATA, SINGLE, CloudEventsIngest
 from starpulse.runs.ingest import MAX_BATCH_BODY

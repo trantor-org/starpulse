@@ -10,7 +10,7 @@ from sqlalchemy import create_engine
 from starpulse.pulls.ci_trail import parse
 from starpulse._internal.config.config import Repo
 from starpulse._internal.config.pins import GitHub
-from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse.board.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import task
 from starpulse.pulls.pull_events import RecordProjection
 from starpulse.pulls.pull_requests import GhUnavailableError, PullRequests, query_github

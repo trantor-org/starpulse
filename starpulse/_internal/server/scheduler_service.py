@@ -13,10 +13,10 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
-from starpulse._internal.board.seam import Board, Written
+from starpulse.board.model.seam import Board, Written
 from starpulse._internal.config.config import Config
 from starpulse._internal.config.level import Level
-from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse.board.board_feed import BoardFeed
 from starpulse._internal.scheduler.admission import ranks_from_trajectories_body
 from starpulse._internal.scheduler.runtime import Runtime
 from starpulse._internal.scheduler.runtime import build as build_scheduler

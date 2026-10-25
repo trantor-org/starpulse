@@ -2,7 +2,7 @@
 
 import pytest
 
-from starpulse._internal.board.post_merge_checks import MARKER, parse, verdict_comment, verdict_of
+from starpulse.board.model.post_merge_checks import MARKER, parse, verdict_comment, verdict_of
 
 PASS = "{kind: gh, query: merged}"
 

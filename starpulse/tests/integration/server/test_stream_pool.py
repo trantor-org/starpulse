@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine
 
-from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse.board.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import next_event, serve, url
 from starpulse.pulls.pulls import PullStore
 from starpulse._internal.server import asgi_app

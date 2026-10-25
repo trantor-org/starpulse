@@ -20,7 +20,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse.board.board_feed import BoardFeed
 from starpulse._internal.scheduler.harness_setting import HarnessSetting
 from starpulse._internal.scheduler.quiet_hours import QuietHoursSetting
 from starpulse._internal.scheduler.toggle import TOGGLE_FILE, Toggle

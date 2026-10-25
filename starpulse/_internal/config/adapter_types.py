@@ -6,10 +6,10 @@ because an engine's name belongs only inside an adapter's own module and the con
 
 #: Built-in type -> module. A dotted type is a module path an installed package provides and is not listed.
 BUILT_IN = {
-    "native": "starpulse._internal.board.native",
-    "machines": "starpulse._internal.board.machines_only",
-    "upstream_backlog": "starpulse._internal.board.upstream_backlog",
-    "jira": "starpulse._internal.board.jira",
+    "native": "starpulse.board.adapters.native",
+    "machines": "starpulse.board.adapters.machines_only",
+    "upstream_backlog": "starpulse.board.adapters.upstream_backlog",
+    "jira": "starpulse.board.adapters.jira",
     "dagu": "starpulse.runs.dagu",
     "github_actions": "starpulse.runs.github_actions",
     "systemd": "starpulse.runs.systemd",

@@ -2,7 +2,7 @@
 
 import pytest
 
-from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse.board.board_feed import BoardFeed
 from starpulse.machine_engine.model.machine_ties import STUCK_S, derive, entries, page, rows
 
 NOW = 1_000_000.0
@@ -12,7 +12,7 @@ IP = "delivery"
 
 @pytest.fixture(autouse=True)
 def _now(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("starpulse._internal.feed.board_feed.time.time", lambda: NOW)
+    monkeypatch.setattr("starpulse.board.board_feed.time.time", lambda: NOW)
 
 
 def _machine(*states: str, submachines: list[dict] | None = None, **extra: object) -> dict:

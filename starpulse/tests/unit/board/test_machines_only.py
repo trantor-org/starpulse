@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from starpulse._internal.board.machines_only import board
+from starpulse.board.adapters.machines_only import board
 from starpulse._internal.config.adapter_types import module_name
 
 BOARD = """\
@@ -62,4 +62,4 @@ def test_it_takes_no_settings_beyond_its_type(tmp_path: Path) -> None:
 
 
 def test_the_bare_type_machines_resolves_to_this_module() -> None:
-    assert module_name("machines") == "starpulse._internal.board.machines_only"
+    assert module_name("machines") == "starpulse.board.adapters.machines_only"

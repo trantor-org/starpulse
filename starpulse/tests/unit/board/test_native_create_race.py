@@ -5,7 +5,7 @@ from pathlib import Path
 
 import yaml
 
-from starpulse._internal.board.native import _create
+from starpulse.board.adapters.native import _create
 
 OPENERS = 8
 

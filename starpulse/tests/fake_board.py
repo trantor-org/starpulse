@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from starpulse._internal.board.seam import Board, Written
+from starpulse.board.model.seam import Board, Written
 from starpulse.contracts.adapters import BoardTask, TaskKeys
 from starpulse.machine_engine.model.state_roles import StateRoles
 

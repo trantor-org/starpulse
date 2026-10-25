@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse.board.board_feed import BoardFeed
 from starpulse._internal.server.reads import Request, Response
 from starpulse._internal.server.snapshot_cache import SnapshotCache
 from starpulse._internal.server.streams import Stream, Streams

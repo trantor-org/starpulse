@@ -17,7 +17,7 @@ from collections.abc import Callable, Iterable, Sequence
 from typing import TYPE_CHECKING, Any
 
 from starpulse._internal.config.config import Repo
-from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse.board.board_feed import BoardFeed
 from starpulse.pulls.pull_requests import PULL_URL, GhUnavailableError, query_github
 
 if TYPE_CHECKING:  # annotation only: the pull store opens the database stack

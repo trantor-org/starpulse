@@ -19,14 +19,14 @@ from typing import Any
 import pytest
 from sqlalchemy import create_engine
 
-from starpulse._internal.board import native
-from starpulse._internal.board.seam import Written
-from starpulse._internal.board.upstream_backlog import UpstreamBacklog
-from starpulse._internal.board.view import task_view
+from starpulse.board.adapters import native
+from starpulse.board.model.seam import Written
+from starpulse.board.adapters.upstream_backlog import UpstreamBacklog
+from starpulse.board.model.view import task_view
 from starpulse._internal.cli import agent_cli as cli
 from starpulse._internal.cli import agent_wire, doctor, skill_install
-from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.feed.search import SearchIndex
+from starpulse.board.board_feed import BoardFeed
+from starpulse.board.adapters.search import SearchIndex
 from starpulse._internal.kit.adapter_kit import serve as _real_serve
 from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.kit.adapter_kit import url as _url

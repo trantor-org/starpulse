@@ -30,9 +30,9 @@ from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, field, replace
 from typing import Any
 
-from starpulse._internal.board.seam import Written
+from starpulse.board.model.seam import Written
 from starpulse._internal.config.scheduler import Scheduler
-from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse.board.board_feed import BoardFeed
 from starpulse._internal.scheduler.admission import Decision, decide, demand, tier_of
 from starpulse._internal.scheduler.harness_setting import DEFAULT as DEFAULT_HARNESS
 from starpulse._internal.scheduler.harness_setting import HarnessSetting

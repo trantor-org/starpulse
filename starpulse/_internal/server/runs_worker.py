@@ -17,7 +17,7 @@ from pathlib import Path
 
 from starpulse._internal.server.blocks import runs_built_blocks
 from starpulse._internal.config.config import Config, discover, load
-from starpulse._internal.feed.board_feed import follow
+from starpulse.board.board_feed import follow
 from starpulse.runs import opt_in, run_events
 from starpulse.runs.projection import Publisher
 from starpulse.runs.push_runs import PUSHED_INSTANCE, PushRuns

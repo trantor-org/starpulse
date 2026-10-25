@@ -9,10 +9,10 @@ from typing import Any
 import pytest
 from sqlalchemy.exc import OperationalError
 
-from starpulse._internal.board.seam import Written
+from starpulse.board.model.seam import Written
 from starpulse._internal.config.scheduler import Scheduler
-from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.feed.machine_tasks import MachineTasks
+from starpulse.board.board_feed import BoardFeed
+from starpulse.board.machine_tasks import MachineTasks
 from starpulse._internal.scheduler.harness_setting import HarnessSetting
 from starpulse._internal.scheduler.ledger import Ledger
 from starpulse._internal.scheduler.loop import Loop

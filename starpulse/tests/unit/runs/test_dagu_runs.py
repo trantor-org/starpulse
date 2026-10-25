@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse.board.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import RunsAdapterKit
 from starpulse.runs import run_events
 from starpulse.runs.dagu import (

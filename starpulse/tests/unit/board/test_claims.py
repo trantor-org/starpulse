@@ -1,6 +1,6 @@
 """A release ends a claim but remembers the session it ended; the next claim forgets it."""
 
-from starpulse._internal.board.claims import assignee_of, released, released_from, unreleased
+from starpulse.board.model.claims import assignee_of, released, released_from, unreleased
 
 _BODY = "## Implementation Notes\n\n<!-- SECTION:NOTES:BEGIN -->\n{notes}\n<!-- SECTION:NOTES:END -->\n"
 

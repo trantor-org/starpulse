@@ -8,8 +8,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.feed.history_window import HistoryWindow
+from starpulse.board.board_feed import BoardFeed
+from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse._internal.server.reads import Response
 from starpulse._internal.server.services import Services
 from starpulse._internal.server.write_routes import WriteRequest, WriteRoutes

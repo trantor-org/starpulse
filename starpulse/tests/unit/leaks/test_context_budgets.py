@@ -9,10 +9,10 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine
 
-from starpulse._internal.board.seam import Written
+from starpulse.board.model.seam import Written
 from starpulse._internal.config.scheduler import Scheduler
-from starpulse._internal.feed import board_feed
-from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse.board import board_feed
+from starpulse.board.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import task
 from starpulse.pulls.pull_events import RecordProjection
 from starpulse.pulls.pulls import PullStore

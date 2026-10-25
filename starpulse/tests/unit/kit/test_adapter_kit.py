@@ -6,7 +6,7 @@ from collections.abc import Callable
 import pytest
 from pydantic import ValidationError
 
-from starpulse._internal.board.seam import Written
+from starpulse.board.model.seam import Written
 from starpulse._internal.kit.adapter_kit import BoardAdapterKit, MachineEventsAdapterKit, RunsAdapterKit, _AdapterKit
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.tests.machines import MACHINES

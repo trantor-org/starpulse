@@ -6,10 +6,10 @@ from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
-from starpulse._internal.board.seam import Written
+from starpulse.board.model.seam import Written
 from starpulse._internal.config.config import Repo
-from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.feed.criteria import authored
+from starpulse.board.board_feed import BoardFeed
+from starpulse.board.criteria import authored
 from starpulse.pulls.pulls import PullStore
 from starpulse.pulls.task_actor import TaskActor
 from starpulse.contracts.adapters import BoardTask

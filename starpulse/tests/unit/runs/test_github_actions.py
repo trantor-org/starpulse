@@ -15,7 +15,7 @@ import pytest
 import yaml
 
 from starpulse._internal.config.config import runs_adapter
-from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse.board.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import RunsAdapterKit, serve, url
 from starpulse.runs import run_events
 from starpulse.runs.github_actions import (

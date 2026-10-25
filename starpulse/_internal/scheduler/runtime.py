@@ -14,9 +14,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from starpulse._internal.board.seam import Written
+from starpulse.board.model.seam import Written
 from starpulse._internal.config.scheduler import Scheduler
-from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse.board.board_feed import BoardFeed
 from starpulse._internal.scheduler.harness_setting import HarnessSetting
 from starpulse._internal.scheduler.inputs import review_points, sessions_in_flight
 from starpulse._internal.scheduler.ledger import LEDGER_FILE, Ledger

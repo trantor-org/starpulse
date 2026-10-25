@@ -5,10 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.board import native
-from starpulse._internal.board.native import _Retired
-from starpulse._internal.board.seam import Board
-from starpulse._internal.board.upstream_backlog import UpstreamBacklog
+from starpulse.board.adapters import native
+from starpulse.board.adapters.native import _Retired
+from starpulse.board.model.seam import Board
+from starpulse.board.adapters.upstream_backlog import UpstreamBacklog
 from starpulse._internal.config.config import load
 from starpulse._internal.server.assembly import assemble
 from starpulse.event_log.event_log import EventLog

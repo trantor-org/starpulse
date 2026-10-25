@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import Any
 
-from starpulse._internal.board.view import board_columns, board_flow, cold_agent, done_ids, task_view
+from starpulse.board.model.view import board_columns, board_flow, cold_agent, done_ids, task_view
 from starpulse._internal.cli.agent_keys import TASK_KEYS
 from starpulse.tests.machines import ROLES
 

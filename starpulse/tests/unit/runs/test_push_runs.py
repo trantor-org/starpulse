@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from starpulse._internal.feed.board_feed import BoardFeed, follow
+from starpulse.board.board_feed import BoardFeed, follow
 from starpulse.runs import run_events
 from starpulse.runs.push_runs import PUSHED_INSTANCE, PushedRunsSnapshot, PushRuns
 from starpulse.contracts.adapters import Dag
