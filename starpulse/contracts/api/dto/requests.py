@@ -149,14 +149,15 @@ class ReviewRequest(_Writer):
     comment: str | None = None
 
 
-class CreateRequest(_Writer):
-    """`POST /api/tasks`: create a task in the lane `status` names or else the board's starting lane, stamped
-    `created_by: <harness>:<session>`.
+class CreateSpec(_Api):
+    """One task a create files: its `title` and details, and an optional `ref` that a sibling in the same batch names
+    as `ref:<label>` in its `dependencies`.
 
     Text is trimmed; list items are trimmed and blank ones dropped, or refused where the list must hold only text.
     `task`, `size` and `skill` are read and left unused by a create.
     """
 
+    ref: str | None = None
     title: str
     description: str | None = None
     priority: str | None = None
@@ -200,6 +201,21 @@ class CreateRequest(_Writer):
         return kept
 
 
+class CreateRequest(_Writer, CreateSpec):
+    """`POST /api/tasks`: create a task in the lane `status` names or else the board's starting lane, stamped
+    `created_by: <harness>:<session>`, or each of `tasks` in one call, each with its own title and details.
+    """
+
+    title: str | None = None
+    tasks: list[CreateSpec] | None = Field(None, min_length=1)
+
+    @model_validator(mode="after")
+    def _one_target(self) -> CreateRequest:
+        if (self.title is None) == (self.tasks is None):
+            raise ValueError("name exactly one of title and tasks")
+        return self
+
+
 class VerdictRequest(_Writer):
     """`POST /api/verdict`: record `verdict` (`pass` or `miss`) for `check` of `task`'s `## Post-merge Checks`.
 
@@ -228,7 +244,7 @@ class MissRequest(_Writer):
 
     task: str
     check: str
-    fix: CreateRequest
+    fix: CreateSpec
     evidence: str | None = None
     reason: str | None = None
 

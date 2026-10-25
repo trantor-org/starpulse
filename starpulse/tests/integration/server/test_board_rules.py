@@ -117,3 +117,73 @@ def test_the_actor_a_move_carries_decides_whether_a_rule_exempts_it(
     assert (status, refused) == (409, REFUSED)
     assert (code, via_cli["ok"]) == (0, True)
     assert "status: Done\n" in next(native_root(tmp_path).glob("tasks/*.md")).read_text()
+
+
+def _batch_create(server: str, specs: list[dict[str, Any]]) -> tuple[int, dict[str, Any]]:
+    """The agent CLI's create of each of `specs` in one request."""
+    post = urllib.request.Request(
+        f"{server}/api/tasks",
+        data=json.dumps({"tasks": specs}).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(post, timeout=5) as response:
+            return response.status, json.loads(response.read())
+    except urllib.error.HTTPError as error:
+        return error.code, json.loads(error.read())
+
+
+def _serve_creates(tmp_path: Path, settings: dict[str, Any]) -> Any:
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
+    return serve(tmp_path, feed, native.board(settings, tmp_path))
+
+
+def _task_texts(tmp_path: Path) -> list[str]:
+    return [path.read_text() for path in sorted((native_root(tmp_path) / "tasks").glob("*.md"))]
+
+
+def test_a_batch_create_makes_every_accepted_task_in_one_request(tmp_path: Path) -> None:
+    with _serve_creates(tmp_path, {}) as server:
+        status, body = _batch_create(url(server, ""), [{"title": "One"}, {"title": "Two"}, {"title": "Three"}])
+
+    assert status == 200
+    assert [result["task"] for result in body["results"]] == [f"task-{n}" for n in (1, 2, 3)]
+    assert len(_task_texts(tmp_path)) == 3
+
+
+def test_a_refused_spec_in_a_batch_create_leaves_the_others_created(tmp_path: Path) -> None:
+    with _serve_creates(tmp_path, {"types": ["bug"]}) as server:
+        specs = [{"title": "One", "type": "bug"}, {"title": "Two", "type": "nope"}, {"title": "Three", "type": "bug"}]
+        status, body = _batch_create(url(server, ""), specs)
+
+    assert status == 200
+    one, two, three = body["results"]
+    assert "task" in one
+    assert "nope" in two["error"]
+    assert "task" in three
+    assert len(_task_texts(tmp_path)) == 2
+
+
+def test_a_batch_create_resolves_a_dependency_on_a_sibling_to_its_new_id(tmp_path: Path) -> None:
+    with _serve_creates(tmp_path, {}) as server:
+        specs = [{"title": "First", "ref": "a"}, {"title": "Second", "dependencies": ["ref:a"]}]
+        status, body = _batch_create(url(server, ""), specs)
+
+    assert status == 200
+    first, second = (result["task"] for result in body["results"])
+    assert f"- {first}\n" in _task_texts(tmp_path)[1]
+
+
+def test_the_cli_batch_create_names_each_refused_spec_and_exits_non_zero(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    specs = tmp_path / "specs.json"
+    specs.write_text(json.dumps([{"title": "One", "type": "bug"}, {"title": "Two", "type": "nope"}]))
+    with _serve_creates(tmp_path, {"types": ["bug"]}) as server:
+        code = cli.main(["task", "create", "--batch", str(specs), "--server", url(server, "")], {})
+
+    out = json.loads(capsys.readouterr().out)
+    assert code != 0
+    assert out["created"] == ["task-1"]
+    assert list(out["refused"]) == ["2"]

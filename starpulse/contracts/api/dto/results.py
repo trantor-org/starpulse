@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from starpulse.contracts.api._base import _Api
+from starpulse.contracts.api.dto.errors import ApiError, SkillRefusal
 
 
 class Moved(_Api):
@@ -86,6 +87,12 @@ class Reviewed(_Api):
 
 class Created(_Api):
     task: str
+
+
+class CreatedEach(_Api):
+    """A batch create's answer: each spec's new task, or why it was refused, in the order the specs came."""
+
+    results: list[Created | SkillRefusal | ApiError]
 
 
 class MilestoneCreated(_Api):

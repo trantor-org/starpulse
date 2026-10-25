@@ -73,7 +73,10 @@ POST /api/tasks    {title, description, priority, impact, urgency, labels, miles
                    a task in the board's starting lane through the board's `create`, and answer 201 {task}
                    with its id; only the title is required. 400 for a missing, blank or over-long title or a detail of
                    the wrong kind, 403 outside loopback and RFC 1918, 404 when the board
-                   does not create (the snapshot's `capabilities.create` says which). A GET answers 405
+                   does not create (the snapshot's `capabilities.create` says which). `{tasks: [{title, ..., ref}]}`
+                   in place of the title creates each spec and answers 200 {results: [{task} or {error[, skill]}]} in
+                   order; one refused spec leaves the others created, and a `ref:<label>` dependency is the new id
+                   of the earlier spec with that `ref`. A GET answers 405
 GET /api/milestones, /api/milestones/<id>
                    {milestones} or {milestone}: the board's open milestones, each {id, title, outcome, specs, adrs, retro,
                    description}; 404 for a board that keeps none or for a milestone that is not open
@@ -144,6 +147,7 @@ from starpulse.contracts.api.dto.requests import (
     ClaimRequest,
     CompleteRequest,
     CreateRequest,
+    CreateSpec,
     DocArchiveRequest,
     DocCreateRequest,
     DocEditRequest,
@@ -195,6 +199,7 @@ _LAN = (
 )
 #: The longest title a create accepts; a title is one line on a card, not a description.
 _TITLE_MAX = 300
+_REF = "ref:"  # a dependency naming a sibling in the same batch create by its `ref`
 #: Saves hold this from reading a task's current record to writing, so two browsers saving one task cannot both pass the stale check.
 _EDIT_LOCK = threading.Lock()
 #: The verdicts a post-merge check takes, as a request spells them and as the comment records them.
@@ -852,10 +857,7 @@ def record_miss(
             return 404, {"error": f"{task} has no record to read"}
         if refusal := _unjudged(task, current, check):
             return 409, {"error": refusal}
-        named = {
-            key: getattr(request, key) for key in ("actor", "session", "harness") if key in request.model_fields_set
-        }
-        status, body = _create(request.fix.model_copy(update=named), create, feed)
+        status, body = _create(request.fix, who, create, feed, {})
         if status != 201:
             return status, body
         comment = post_merge_checks.verdict_comment(check, "MISS", evidence, body["task"])
@@ -959,7 +961,7 @@ def import_retired(request: RetiredImportRequest, board: Board | None) -> tuple[
     return 200, {"task": written.output}
 
 
-def _create_details(request: CreateRequest) -> dict[str, Any]:
+def _create_details(request: CreateSpec) -> dict[str, Any]:
     """The filled details of a create, as the board's writer takes them."""
     fields = {field: getattr(request, field) for field in (*CREATE_TEXT, *CREATE_LISTS)}
     details = {field: value for field, value in fields.items() if value}
@@ -968,15 +970,25 @@ def _create_details(request: CreateRequest) -> dict[str, Any]:
     return details
 
 
-def _create(request: CreateRequest, create: TaskCreator | None, feed: BoardFeed | None) -> tuple[int, dict[str, Any]]:
-    """Create the task `request` names through `create`, in the lane its `status` names or else the board's starting
-    lane."""
-    title = request.title.strip()
+def _create(
+    spec: CreateSpec, who: _Who, create: TaskCreator | None, feed: BoardFeed | None, siblings: Mapping[str, str]
+) -> tuple[int, dict[str, Any]]:
+    """Create the task `spec` names through `create`, in the lane its `status` names or else the board's starting
+    lane, with each `ref:<label>` dependency replaced by the id `siblings` holds for the label."""
+    title = (spec.title or "").strip()
     if not title or len(title) > _TITLE_MAX:
         return 400, {"error": f'a create needs {{"title": "<1 to {_TITLE_MAX} characters>"}}'}
     if create is None:
         return 404, {"error": "this board does not create tasks"}
-    who, details = _who(request), _create_details(request)
+    details = _create_details(spec)
+    if "dependencies" in details:
+        dependencies = [
+            siblings.get(item.removeprefix(_REF), item) if item.startswith(_REF) else item
+            for item in details["dependencies"]
+        ]
+        if unresolved := [item for item in dependencies if item.startswith(_REF)]:
+            return 409, {"error": f"depends on {', '.join(unresolved)}, which no earlier task in the batch created"}
+        details["dependencies"] = dependencies
     # the id is the writer's to choose, so the lane is recorded under the id the write returns
     written = _record_written(
         feed, None, who, lambda: create(title, {**details, "created_by": who.created_by}, actor=who.actor)
@@ -990,11 +1002,26 @@ def _create(request: CreateRequest, create: TaskCreator | None, feed: BoardFeed 
 def create_task(
     request: CreateRequest, create: TaskCreator | None, feed: BoardFeed | None = None
 ) -> tuple[int, dict[str, Any]]:
-    """Create the task `request` names: the HTTP status and JSON body, which holds the new task's id.
+    """Create the task `request` names, or each of its `tasks`: the HTTP status and JSON body, which holds the new
+    task's id.
+
+    A batch answers 200 with a result per spec, in order: the new `task` id or the `error` that refused it. One
+    refusal leaves the others created; a spec naming a `ref:<label>` dependency on an earlier spec's `ref` gets that
+    spec's new id, and is refused when that spec was.
 
     The card appears in its column when the board adapter next reports the task, not on this answer.
     """
-    return _create(request, create, feed)
+    who = _who(request)
+    if request.tasks is None:
+        return _create(request, who, create, feed, {})
+    siblings: dict[str, str] = {}
+    results = []
+    for spec in request.tasks:
+        status, body = _create(spec, who, create, feed, siblings)
+        if status == 201 and spec.ref:
+            siblings[spec.ref] = body["task"]
+        results.append(body)
+    return 200, {"results": results}
 
 
 def milestones_list(board: Board | None) -> tuple[int, dict[str, Any]]:
