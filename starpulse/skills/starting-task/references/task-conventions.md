@@ -13,6 +13,7 @@ project's agent instructions name the fallback.
 - Classification
 - No resolution label
 - Kind and size
+- Free-form labels
 - Execution-ready
 - Structured fields
 - Milestones: Writing the spec, Slicing a spec, Capturing a design interview
@@ -98,6 +99,14 @@ starpulse task edit PROJ-91 --label kind-diagnose --label size-5
 
 `task edit --label` takes the labels to set; remove the old kind or size in the same call so a
 task never carries two.
+
+## Free-form labels
+
+A free-form label is kebab-case, at most three words and 24 characters, with no date, id or
+hash: `follow-up`, not `weekly-code-audit-2026-10-25-follow-up`. The `kind-`, `size-`, `area-`,
+`mode-` and `trial-` labels store first-class fields and are exempt. A scheduled caller's
+idempotency key goes in the task's `source` field, never a label. A board may refuse a label
+that breaks the rule; its refusal names the rule.
 
 ## Execution-ready
 
