@@ -9,6 +9,7 @@ project's agent instructions name the fallback.
 
 ## Contents
 
+- Command syntax
 - Classification
 - No resolution label
 - Kind and size
@@ -20,6 +21,28 @@ project's agent instructions name the fallback.
 - Pausing: name the reason, `park` picks the lane
 - Evidence only the merge produces
 - Validation: Start Criteria and check tasks
+
+## Command syntax
+
+The four task writes and the flags each takes; `--help` adds only `--server`, `--session` and
+`--harness`, which come from the environment.
+
+```bash
+starpulse task create "<title>" --priority medium --type story --label kind-execute --label size-3 \
+  --description "<text>" --ac "<criterion>" --dod "<item>" [--milestone m-<N>] \
+  [--dependency PROJ-<N>] [--reference <url>] [--documentation doc-<N>] [--profile <profile>] [--status <lane>]
+starpulse task edit PROJ-45 [--plan "<text>"] [--append-notes "<line>"] [--comment "<text>"] \
+  [--ac "<criterion>"] [--reword-ac "2:<wording>"] [--remove-ac 3] [--check-ac 1] \
+  [--dod "<item>"] [--check-dod 2] [--modified-file <path>] [--final-summary "<text>"]
+starpulse task checkpoint-ac PROJ-45 2 "<command>: <result>"
+starpulse task review PROJ-45 --ref <pr-url> --summary "<outcome>" --comment "<evidence>"
+```
+
+- A repeatable flag repeats once per value: `--label a --label b`, `--check-ac 1 --check-ac 2`.
+- On `edit`, `--label`, `--dependency`, `--reference`, `--documentation` and `--modified-file`
+  replace the whole list; `--ac`, `--dod` and `--append-notes` add; `--description`, `--plan`,
+  `--notes` and `--final-summary` replace their section.
+- `checkpoint-ac` takes no flags: the criterion's number, then one quoted evidence string.
 
 ## Classification
 
