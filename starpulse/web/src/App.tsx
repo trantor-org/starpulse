@@ -219,8 +219,8 @@ function Navigator({ shell, ...props }: { shell: boolean } & Parameters<typeof N
     return () => watch.disconnect();
   }, []);
   const { view, activeView, choose, open } = props;
-  const tab = (v: ViewName, label: string, glyph: ReactNode) => (
-    <button className={view === v ? "on" : undefined} aria-current={view === v ? "page" : undefined} title={label}
+  const tab = (v: ViewName, label: string, glyph: ReactNode, off = false) => (
+    <button className={view === v ? "on" : undefined} aria-current={view === v ? "page" : undefined} title={off ? `${label} is desktop-only` : label} disabled={off}
       onClick={() => (v === "constellation" && activeView.current === v ? open(BOARD) : choose(v))}>{glyph}<span>{label}</span></button>
   );
   return (
@@ -232,7 +232,7 @@ function Navigator({ shell, ...props }: { shell: boolean } & Parameters<typeof N
       {sheet && <div id="pn-scrim" onClick={() => setSheet(false)} />}
       {/* phone width: the bar along the bottom edge is the view switcher, since the navigator is hidden there */}
       <nav id="pnav" ref={bar} aria-label="Views">
-        {!props.phone && tab("constellation", "Star Map", <svg className="g" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="12" cy="12" r="5" fill="currentColor" stroke="none" /><ellipse cx="12" cy="12" rx="10.6" ry="3.9" transform="rotate(-28 12 12)" strokeWidth="1.5" /><circle cx="20.6" cy="3.6" r="1.1" fill="currentColor" stroke="none" /></svg>)}
+        {tab("constellation", "Star Map", <svg className="g" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="12" cy="12" r="5" fill="currentColor" stroke="none" /><ellipse cx="12" cy="12" rx="10.6" ry="3.9" transform="rotate(-28 12 12)" strokeWidth="1.5" /><circle cx="20.6" cy="3.6" r="1.1" fill="currentColor" stroke="none" /></svg>, props.phone)}
         {tab("kanban", "Kanban", <svg className="g kb" width="14" height="14" viewBox="0 0 12 12" aria-hidden="true"><rect x="1" y="1" width="2.5" height="10" rx=".6" /><rect x="4.75" y="1" width="2.5" height="7" rx=".6" /><rect x="8.5" y="1" width="2.5" height="4.5" rx=".6" /></svg>)}
         {tab("dags", "DAGs", <svg className="g dg" width="14" height="14" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 9.5 5 3.2 8.6 5.4 10.4 2" /><circle cx="2" cy="9.5" r="1.3" /><circle cx="5" cy="3.2" r="1.3" /><circle cx="8.6" cy="5.4" r="1.1" /><circle cx="10.4" cy="2" r=".9" /></svg>)}
         {tab("admin", "Admin", <svg className="g" width="14" height="14" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="1.8" /><path d="M6 .9v1.6M6 9.5v1.6M.9 6h1.6M9.5 6h1.6M2.4 2.4l1.1 1.1M8.5 8.5l1.1 1.1M2.4 9.6l1.1-1.1M8.5 3.5l1.1-1.1" /></svg>)}
@@ -293,19 +293,17 @@ function NavigatorBody({ hud, view, phone, activeView, slot, outlineSlot, choose
       </section>
       <section className="views">
         <h3>Views</h3>
-        {!phone && (
-          <button className={`node${view === "constellation" ? " on here" : ""}`} title="Star Map" onClick={() => (activeView.current === "constellation" ? open(BOARD) : choose("constellation"))}>
-            <i className="g orbit">
-              <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
-                <circle cx="12" cy="12" r="5" fill="currentColor" />
-                <ellipse cx="12" cy="12" rx="10.6" ry="3.9" transform="rotate(-28 12 12)" fill="none" stroke="currentColor" strokeWidth="1.5" />
-                <circle cx="20.6" cy="3.6" r="1.1" fill="currentColor" />
-              </svg>
-            </i>
-            <span className="t">Star Map</span>
-            <span className="n" />
-          </button>
-        )}
+        <button className={`node${view === "constellation" ? " on here" : ""}`} title={phone ? "Star Map is desktop-only" : "Star Map"} disabled={phone} onClick={() => (activeView.current === "constellation" ? open(BOARD) : choose("constellation"))}>
+          <i className="g orbit">
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+              <circle cx="12" cy="12" r="5" fill="currentColor" />
+              <ellipse cx="12" cy="12" rx="10.6" ry="3.9" transform="rotate(-28 12 12)" fill="none" stroke="currentColor" strokeWidth="1.5" />
+              <circle cx="20.6" cy="3.6" r="1.1" fill="currentColor" />
+            </svg>
+          </i>
+          <span className="t">Star Map</span>
+          <span className="n" />
+        </button>
         <button className={`node${view === "kanban" ? " on here" : ""}`} title="Kanban" onClick={() => choose("kanban")}>
           <svg className="g kb-glyph" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><rect x="1" y="1" width="2.5" height="10" rx=".6" /><rect x="4.75" y="1" width="2.5" height="7" rx=".6" /><rect x="8.5" y="1" width="2.5" height="4.5" rx=".6" /></svg>
           <span className="t">Kanban</span>

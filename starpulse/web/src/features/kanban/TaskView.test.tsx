@@ -70,13 +70,16 @@ describe("the task view in read mode", () => {
 });
 
 describe("the task view's header", () => {
-  it("offers no way into the Star Map at phone width", () => {
+  it("lists the Star Map greyed out, not as a link, at phone width", () => {
     vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(max-width: 900px)", addEventListener() {}, removeEventListener() {} }));
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     const host = document.body.appendChild(document.createElement("div")), root = createRoot(host);
     try {
       act(() => root.render(<TaskView {...props()} />));
-      expect(host.querySelector(".tvhead")!.textContent).not.toContain("Open in Star Map");
+      const entry = [...host.querySelectorAll(".tvhead *")].find((e) => e.textContent === "Open in Star Map ↗")!;
+      expect(entry.tagName).toBe("SPAN");
+      expect(entry.getAttribute("aria-disabled")).toBe("true");
+      expect(host.querySelector('.tvhead a[href="/"]')).toBeNull();
     } finally {
       act(() => root.unmount());
       host.remove();

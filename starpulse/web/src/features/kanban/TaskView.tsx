@@ -538,7 +538,7 @@ export function TaskView(p: TaskViewProps) {
             </button>
             <LanePill lane={p.task.lane} role={roleOf(roles, p.task.lane)} name={p.lane} />
             {p.saving && <span className="k">saving</span>}
-            {!phone && <a href="/" onClick={(e) => { e.preventDefault(); p.constellation(); }}>Open in Star Map ↗</a>}
+            {phone ? <span className="off" aria-disabled="true" title="Star Map is desktop-only">Open in Star Map ↗</span> : <a href="/" onClick={(e) => { e.preventDefault(); p.constellation(); }}>Open in Star Map ↗</a>}
             <div className="acts">
               {startVisible && <button className="startbtn" disabled={!startable(p.task, roles) || unavailable}
                 title={startable(p.task, roles) ? undefined : working?.reason}

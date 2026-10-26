@@ -85,11 +85,27 @@ afterEach(() => {
 });
 
 describe("the phone-width view bar", () => {
-  it("draws a button per view but the Star Map, and then More, in the navigator's order", async () => {
+  it("draws a button per view and then More, in the navigator's order, with the Star Map greyed out", async () => {
     await viewport.resize(true);
     await mount();
 
-    expect(buttons().map((b) => b.textContent)).toEqual(["Kanban", "DAGs", "Admin", "More"]);
+    expect(buttons().map((b) => b.textContent)).toEqual(["Star Map", "Kanban", "DAGs", "Admin", "More"]);
+    expect(button("Star Map").disabled).toBe(true);
+    expect(buttons().filter((b) => b.disabled)).toHaveLength(1);
+  });
+
+  it("does nothing on a tap on the greyed-out Star Map, in the bar or the sheet", async () => {
+    await viewport.resize(true);
+    await mount();
+
+    tap("Star Map");
+    tap("More");
+    const entry = host.querySelector<HTMLButtonElement>('#nav section.views .node[title^="Star Map"]')!;
+    expect(entry.disabled).toBe(true);
+    act(() => entry.click());
+
+    expect(button("Kanban").getAttribute("aria-current")).toBe("page");
+    expect(location.search).toBe("?view=constellation");
   });
 
   it("marks the view showing, and a tap on another button opens that view", async () => {
@@ -121,12 +137,12 @@ describe("the phone-width view bar", () => {
   });
 });
 
-describe("phone width retires the Star Map", () => {
+describe("phone width disables the Star Map", () => {
   it.each([
     ["an address naming it", () => history.replaceState(null, "", "/?view=constellation")],
     ["a saved Opens on", () => { history.replaceState(null, "", "/"); localStorage.setItem("fv.admin.prefs", JSON.stringify({ view: "constellation" })); }],
     ["a retired per-graph address", () => history.replaceState(null, "", "/board")],
-  ])("opens the Kanban for %s and never shows the Star Map", async (_name, address) => {
+  ])("opens the Kanban for %s and never shows the Star Map view", async (_name, address) => {
     address();
     await viewport.resize(true);
     await mount();
@@ -150,7 +166,7 @@ describe("phone width retires the Star Map", () => {
     await viewport.resize(true);
     await frames();
 
-    expect(buttons().map((b) => b.textContent)).not.toContain("Star Map");
+    expect(button("Star Map").disabled).toBe(true);
     expect(button("Kanban").getAttribute("aria-current")).toBe("page");
   });
 
