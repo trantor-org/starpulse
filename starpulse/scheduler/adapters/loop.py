@@ -335,7 +335,7 @@ class Loop:
                 continue
             reason = (
                 f"Scheduler settled {task}: its session was idle for {idle / 60:.0f} minutes (limit "
-                f"{self._policy.idle_minutes:g}) with the task still open. It is not started again."
+                f"{self._policy.idle_minutes:g}) with the task still open. It is not started again. Should it return to Ready for a new session?"
             )
             if (written := self._settle(task, reason)).ok:
                 self._close(task, run, self._feed.roles.attention or "settled", now)

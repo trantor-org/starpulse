@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 from sqlalchemy.exc import OperationalError
 
+from starpulse.board.model import rules
 from starpulse.board.model.seam import Written
 from starpulse._internal.config.scheduler import Scheduler
 from starpulse.board.board_feed import BoardFeed
@@ -301,6 +302,38 @@ def test_a_session_idle_past_the_limit_with_its_task_open_is_settled_once_with_a
     assert "31 minutes" in reason and "T-1" in reason
     assert rig.started == ["T-1"]  # never requeued: the settled task is not started again
     assert [run.outcome for run in rig.ledger.runs("T-1")] == ["needs_attention"]
+
+
+#: The guards trantor declares on a move to Needs attention: a reason that names another task, and one with no question.
+ATTENTION_GUARDS = rules.load(
+    [
+        {
+            "on": {"to": "needs_attention"},
+            "require": {"section": {"heading": "Needs attention", "not_matching": r"\bTASK-\d+\b", "except_self": True}},
+            "reason": "names another task",
+        },
+        {
+            "on": {"to": "needs_attention"},
+            "require": {"none_of": [{"section": {"heading": "Needs attention", "not_matching": r"\?"}}]},
+            "reason": "states no operator question",
+        },
+    ]
+)
+
+
+def test_the_settle_reason_passes_the_guards_on_a_move_to_needs_attention(rig: Rig) -> None:
+    rig.put("TASK-1")
+    rig.loop.tick()
+    rig.put("TASK-1", lane="in_progress")
+    rig.session("TASK-1")
+    rig.after(31)
+
+    rig.loop.tick()
+
+    [(task, reason)] = rig.settled
+    front = {"id": task, "status": "in_progress"}
+    refused = rules.standing_refusal(ATTENTION_GUARDS, front, f"## Needs attention\n{reason}\n", "needs_attention")
+    assert refused is None, refused.reason
 
 
 def test_a_session_that_keeps_working_is_not_settled(rig: Rig) -> None:
