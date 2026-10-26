@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { boardTies, hangarLevel, nameLines, nameOf, obstacles, over, tieLedger, touches, type Pivot, type Orbiter } from "./dagTies";
+import { activeDag, boardTies, dagTurn, turnDags, hangarLevel, nameLines, nameOf, obstacles, over, tieLedger, touches, TURN, type Pivot, type Orbiter } from "./dagTies";
 import { BOARD, startPath, tree } from "./levels";
 import { crumbs } from "../features/level/Crumb";
 import { backStep } from "../shared/nav";
@@ -252,5 +252,30 @@ describe("what a click on a hangar or an orbiter opens", () => {
     expect(backStep({ panel: false, focus: null, scrolled: false, depth: path.length })).toBe("up");
     expect(path.slice(0, -1)).toEqual(BOARD);
     expect(startPath("/", "", path, tree({ graphs: ["board"], flows: [{ name: "board", agents: [], machine }] }))).toEqual(path);
+  });
+});
+
+describe("each Board DAG's turn on the map", () => {
+  const dags = ["a", "b", "c"];
+  it("rotates every 12 s over every DAG, round and round", () => {
+    expect(TURN).toBe(12);
+    const at = (t: number) => dagTurn(dags, t)!.dag;
+    expect([0, 6, 12, 18, 24, 30, 36, 42, 71].map(at)).toEqual(["a", "a", "b", "b", "c", "c", "a", "a", "c"]);
+    expect(dagTurn([], 5)).toBeNull();
+  });
+  it("fades a DAG in and out at its window's edges and holds it between", () => {
+    const alpha = (t: number) => dagTurn(dags, t)!.alpha;
+    expect(alpha(12)).toBe(0);
+    expect(alpha(12.3)).toBeCloseTo(0.5);
+    expect(alpha(18)).toBe(1);
+    expect(alpha(23.7)).toBeCloseTo(0.5);
+    expect(alpha(24)).toBe(0);
+  });
+  it("gives every idle hangar DAG a window and leaves an active one out, which shows out of turn", () => {
+    const ctx = liveSky({ "dagu/main-follow": "running", "dagu/healthcheck": "failed" }), sc = build(ctx, { kind: "board" }), ties = boardTies(sc, ctx.S, unitOf(sc));
+    const list = turnDags(ties, (d) => activeDag(ctx.S.dagBy[d]?.status));
+    const hangared = ties.pivots.flatMap((h) => h.orbs.map((o) => o.dag));
+    expect(list).toEqual(hangared.filter((d) => d !== "dagu/main-follow" && d !== "dagu/healthcheck"));
+    expect(new Set(list.map((_, i) => dagTurn(list, i * TURN)!.dag))).toEqual(new Set(list));
   });
 });

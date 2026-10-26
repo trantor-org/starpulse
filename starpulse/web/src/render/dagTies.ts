@@ -132,6 +132,24 @@ export function boardTies(sc: Scene, sky: Sky, u: number, ts = 1): Ties {
   return { pivots, u, ts };
 }
 
+/** Seconds each idle tied DAG holds the map in its turn, seconds its edges fade over, and how faint an idle orbiter stays between its turns. */
+export const TURN = 12;
+export const TURN_FADE = 0.6;
+export const IDLE = 0.3;
+
+/** A DAG that is running, queued or failed: it shows in full, out of turn. */
+export const activeDag = (status?: string | null) => ["running", "queued", "failed"].includes(status ?? "");
+
+/** The DAGs that take a turn: the idle ones tied to a Board state, in hangar order. An active DAG needs no turn, and one with no hangar has nowhere to show. */
+export const turnDags = ({ pivots }: Ties, active: (dag: string) => boolean): string[] => pivots.flatMap((h) => h.orbs.map((o) => o.dag)).filter((d) => !active(d));
+
+/** The DAG whose turn it is at `now` seconds, round the DAGs in order, and how visible it is: fading in and out over TURN_FADE at its window's edges. */
+export function dagTurn(dags: readonly string[], now: number): { dag: string; alpha: number } | null {
+  if (!dags.length) return null;
+  const t = (((now / TURN) % dags.length) + dags.length) % dags.length, i = Math.floor(t), into = (t - i) * TURN;
+  return { dag: dags[i], alpha: Math.max(0, Math.min(1, into / TURN_FADE, (TURN - into) / TURN_FADE)) };
+}
+
 /** The Ledger a hangar opens: that of the first transition its DAGs dock by that has one, else the fold of its DAGs. */
 export function hangarLevel(src: Source, orbs: Pick<Orbiter, "dag" | "primary">[]): { kind: "fold" } & Fold {
   const led = pathLedger(src, orbs.flatMap((o) => (o.primary ? [o.primary.event] : [])));
