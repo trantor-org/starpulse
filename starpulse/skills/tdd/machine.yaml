@@ -27,6 +27,7 @@ events:
     - {from: green, to: green, cite: {skill: tdd, quote: "Run the project's checks on the changed files"}}
     - {from: criteria_checked, to: criteria_checked, cite: {skill: tdd, quote: "Run the project's checks on the changed files"}}
   LINT_RED:
+    - {from: green, to: green, cite: {skill: tdd, quote: "fix what they report."}}
     - {from: criteria_checked, to: criteria_checked, cite: {skill: tdd, quote: "fix what they report."}}
 writers:
   RED_PROVEN:
