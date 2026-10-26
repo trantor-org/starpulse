@@ -7,7 +7,7 @@ import { startLane, startable } from "./start";
 import { StartCriteria } from "./StartCriteria";
 import type { Capabilities, Pull, Roles } from "../../api";
 import {
-  PRIORITIES, SECTION_NAMES, ciHistory, closesOnKey, copyText, copyToClipboard, dependencyRows, editKey, fetchRecord, markdown, menuKey, metCount, onScrim, saveSection, sessionOf, taskBody, toggleItem,
+  PRIORITIES, SECTION_NAMES, activityEvents, ciHistory, closesOnKey, copyText, copyToClipboard, dependencyRows, editKey, fetchRecord, markdown, menuKey, metCount, onScrim, postComment, saveSection, sessionOf, taskBody, toggleItem,
   type CiPull, type DepRow, type Item, type MenuState, type Section, type TaskField, type TaskRecord,
 } from "./taskViewModel";
 
@@ -291,6 +291,8 @@ export function TaskView(p: TaskViewProps) {
   const [writing, setWriting] = useState(false);
   const [writeRefusal, setWriteRefusal] = useState<{ reason: string; skill: string } | null>(null);
   const [toast, setToast] = useState("");
+  const [comment, setComment] = useState("");
+  const [posting, setPosting] = useState(false);
   const names = p.names ?? {};
   const { roles } = p;
   const canEdit = Boolean(p.capabilities?.edit && p.record);
@@ -352,6 +354,18 @@ export function TaskView(p: TaskViewProps) {
     }
   }, [base, clear, p, writing]);
   const save = useCallback(() => { if (editing) void commit(editing, draft, evidence); }, [commit, draft, editing, evidence]);
+  /** A comment is its own write: it changes no field, lands in Comments and never checkpoints or moves the task. */
+  const post = async () => {
+    if (!comment.trim() || posting) return;
+    setPosting(true);
+    const ok = await postComment(p.task.id, base, comment);
+    setPosting(false);
+    if (!ok) return setToast("Comment not posted");
+    setComment("");
+    const fresh = await fetchRecord(p.task.id);
+    if (fresh) p.onSaved?.(fresh, []);
+    setToast("✓ Comment posted");
+  };
   /** A checkbox writes at once, except a newly checked criterion, which first asks for its evidence under the item. */
   const toggle = (field: typeof CHECKLIST_FIELDS[number]) => (n: number, checked: boolean) => {
     const next = toggleItem(base, field, n, checked);
@@ -387,6 +401,8 @@ export function TaskView(p: TaskViewProps) {
   }, [toast]);
 
   const criteria = base.start_criteria ?? [];
+  const comments = base.comments ?? [];
+  const events = activityEvents(p.task);
   const deps = dependencyRows(p.tasks, p.task);
   const offered = columnsOf(names, roles).filter((c) => c in p.task.moves).map((c) => ({
     to: c, text: names[c] ?? c, allowed: p.task.moves[c].allowed, reason: p.task.moves[c].reason ?? "",
@@ -482,6 +498,34 @@ export function TaskView(p: TaskViewProps) {
             {p.record && checks("definitionOfDone", "Definition of done")}
             {p.record && prose("plan", "Implementation plan")}
             {p.record && prose("notes", "Notes")}
+            <section className="sec" id="activity">
+              <div className="sh"><span className="t">Activity</span>{events.length > 0 && <span className="n">{events.length}</span>}</div>
+              {events.length > 0
+                ? <div className="acts2">{events.map((e) => (
+                  <div key={`${e.at} ${e.machine} ${e.event}`} className="ev" data-kind={/CHECKPOINT/.test(e.event) ? "checkpoint" : "transition"}>
+                    <span className="dot" />
+                    <div className="hd"><span className="who">{e.machine}</span><code>{e.event}</code><span>→ {e.state.replace(/_/g, " ")}</span><span className="k">{fmtAt(e.at)}</span></div>
+                  </div>
+                ))}</div>
+                : <span className="none">No activity yet</span>}
+            </section>
+            <section className="sec" id="comments">
+              <div className="sh"><span className="t">Comments</span>{comments.length > 0 && <span className="n">{comments.length}</span>}</div>
+              {comments.length > 0 && <div className="acts2">{comments.map((c) => (
+                <div key={`${c.created} ${c.text}`} className="ev" data-kind="comment">
+                  <span className="dot" />
+                  <div className="hd"><span className="who">{c.author ?? "agent"}</span><span>{c.created}</span></div>
+                  <div className="bd">{c.text}</div>
+                </div>
+              ))}</div>}
+              {canEdit && (
+                <div className="compose">
+                  <textarea aria-label="Add a comment" placeholder="Add a comment" value={comment} onChange={(e) => setComment(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void post(); } }} />
+                  <button disabled={!comment.trim() || posting} onClick={() => void post()}>Comment</button>
+                </div>
+              )}
+            </section>
           </div>
           <div className="tvcol tvrail">
             {p.refusal}

@@ -35,9 +35,13 @@ export interface TaskRecord {
   start_criteria?: StartCriterion[];
   /** The link of the claiming session's latest Session Link line, empty when the board records none. Read-only: an edit never carries it. */
   session?: string;
+  /** The task's comments, oldest first. Read-only: a comment is posted through `postComment`, never an edit's changes. */
+  comments?: TaskComment[];
 }
 
-export type TaskField = Exclude<keyof TaskRecord, "session">;
+export interface TaskComment { created: string; text: string; author?: string }
+
+export type TaskField = Exclude<keyof TaskRecord, "session" | "comments">;
 export interface TaskDiff {
   fields: TaskField[];
   base: Partial<TaskRecord>;
@@ -72,6 +76,30 @@ const CHECKLISTS: TaskField[] = ["acceptanceCriteria", "definitionOfDone"];
 /** A checklist item added in the editor carries n 0 until the board numbers it; the writer takes an item without a number as new. */
 const withoutNew = (changes: Partial<TaskRecord>): Partial<TaskRecord> => Object.fromEntries(Object.entries(changes).map(([field, value]) =>
   [field, CHECKLISTS.includes(field as TaskField) ? (value as Item[]).map(({ n, ...rest }) => n ? { n, ...rest } : rest) : value]));
+
+/** One step a lifecycle machine recorded for the task: the machine, its event, the state it reached and when (epoch seconds). */
+export interface ActivityEvent { at: number; machine: string; event: string; state: string }
+
+/** Every step the task's machines recorded in its snapshot, oldest first: the Activity section's read-only list. */
+export function activityEvents(task: KanbanTask): ActivityEvent[] {
+  return task.machines
+    .flatMap((m) => m.trail.map((step) => ({ at: step.at, machine: m.machine, event: step.event, state: step.state })))
+    .sort((a, b) => a.at - b.at);
+}
+
+/** Post a comment through the edit endpoint. A comment writes no field, so the request names the title as it stands and changes nothing. */
+export async function postComment(task: string, base: TaskRecord, text: string, fetcher: typeof apiFetch = apiFetch): Promise<boolean> {
+  try {
+    const response = await fetcher("/api/edit", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ task, base: { title: base.title }, changes: { title: base.title }, comment: text.trim(), actor: PAGE_ACTOR }),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
 
 /** Save one task diff. Validation happens before the sole request, and a refusal returns the caller's draft intact. */
 export async function saveTask(
