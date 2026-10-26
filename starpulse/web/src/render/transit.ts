@@ -359,9 +359,9 @@ export function offLine(sc: Scene, tol = 2): string[] {
     return [k, ...mids].every(near) ? [] : [`${k.id}@${m.node}`];
   });
 }
-/** The line a dot on a branch rode out to where it is now, from its sun's hub ring through each station it passed, each stretch in its
- *  branch's colour, blended across a change of branch; null for a dot in orbit. */
-export function trailOf(id: string, sc: Scene): { pts: (Pt & { c: string; k?: string })[]; stations: (Node & { c: string })[] } | null {
+/** The line a dot on a branch rode out to where it is now: from its sun's hub ring through each station it passed, up its own branch from the
+ *  station it forked from, each stretch in its branch's colour and tagged with the machine it rides; null for a dot in orbit. */
+export function routeOf(id: string, sc: Scene): RouteOf | null {
   const m = mems.get(id);
   if (!m || m.node.startsWith("orbit:") || m.route.length < 2) return null;
   // the dot sits on the route's nearest stretch, or past its end while it is still gliding in
@@ -371,23 +371,24 @@ export function trailOf(id: string, sc: Scene): { pts: (Pt & { c: string; k?: st
     const u = l ? Math.max(0, Math.min(1, ((m.x - a.x) * dx + (m.y - a.y) * dy) / l)) : 0, q = { x: a.x + dx * u, y: a.y + dy * u }, d = Math.hypot(q.x - m.x, q.y - m.y);
     if (d < best - 0.5) [best, cut, end] = [d, i - 1, q];
   }
-  let c = MUTED;
+  let c = MUTED, machine = "";
   const run = m.route.slice(0, cut + 1).map((n) => {
     const b = branches.get(n.k.slice(0, n.k.lastIndexOf(":")));
-    if (b) c = n.k.endsWith(":h") ? (sc.galaxies[b.sun]?.color ?? c) : kind(b);
-    return { ...n, c };
+    if (b) {
+      c = n.k.endsWith(":h") ? (sc.galaxies[b.sun]?.color ?? c) : kind(b);
+      if (!n.k.endsWith(":h")) machine = b.machine;
+    }
+    const s = /:(\d+)$/.exec(n.k);
+    return { ...n, c, machine, step: b && s ? b.steps[+s[1]] : undefined };
   });
-  const pts: (Pt & { c: string; k?: string })[] = [...run, { ...end, c }], cum = lengths(pts), station = (p: { k?: string }) => /:\d+$/.test(p.k ?? "");
-  // where the colour changes, it blends over the stretch between the stations either side
-  const blended = [...pts];
-  for (let j = 1; j < pts.length; j++) {
-    if (pts[j].c === pts[j - 1].c) continue;
-    const from = Math.max(0, pts.slice(0, j).findLastIndex(station)), next = pts.findIndex((p, i) => i >= j && station(p)), to = next < 0 ? pts.length - 1 : next;
-    for (let i = from + 1; i < to; i++) blended[i] = { ...pts[i], c: mix(pts[from].c, pts[to].c, (cum[i] - cum[from]) / (cum[to] - cum[from] || 1)) };
-  }
-  return { pts: blended, stations: run.filter(station) };
+  return { run, end: { ...end, c, machine } };
 }
-const mix = (a: string, b: string, t: number) => {
+/** A dot's route: the nodes it passed, each in its branch's colour and machine, and the point it has reached. */
+export interface RouteOf {
+  run: (Node & { c: string; machine: string; step?: string })[];
+  end: Pt & { c: string; machine: string };
+}
+export const mix = (a: string, b: string, t: number) => {
   const [x, y] = [a, b].map((h) => parseInt(h.slice(1), 16)), u = Math.max(0, Math.min(1, t));
   const ch = (s: number) => Math.round(((x >> s) & 255) * (1 - u) + ((y >> s) & 255) * u);
   return `#${((ch(16) << 16) | (ch(8) << 8) | ch(0)).toString(16).padStart(6, "0")}`;

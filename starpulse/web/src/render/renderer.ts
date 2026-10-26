@@ -778,6 +778,10 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     const rows = hist.machine(s.id, s.flow), m = S!.flows[s.flow]?.machine;
     return typeof rows === "string" ? rows : m ? machineRun(rows.path, m, rows.steps, T) : "unavailable";
   }
+  const walked = (task: string, machines: string[]) => Object.fromEntries(machines.flatMap((m) => {
+    const rows = hist.machine(task, m);
+    return typeof rows === "string" ? [] : [[m, rows.path]];
+  }));
   const hist = createHistory({
     onChange: () => {
       if (hover) retip(hover);
@@ -1085,7 +1089,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   };
   const { drawTrace, drawSource, planetName } = traceDraw(dc, pen, {
     get S() { return S; }, get scene() { return scene; }, get hover() { return hover; }, get pin() { return pin; }, get mouse() { return mouse; },
-    get spotted() { return spotted; }, get W() { return W; }, get H() { return H; }, level, pinnable, runFor, sourceOf,
+    get spotted() { return spotted; }, get W() { return W; }, get H() { return H; }, level, pinnable, runFor, sourceOf, walked,
   });
   // ---- the machine ledger's scroll, the footer that loads older machines, and the 24 h strip along the bottom ----
   let railHover: Rail | null = null, railMoving = false;

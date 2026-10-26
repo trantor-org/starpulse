@@ -246,11 +246,11 @@ describe("placeBranches", () => {
 
   it("traces a dot on a sub-machine back along the line it rode: hub, its phase's stations, then the sub-machine's", () => {
     const scene = mock(), sub = T.branchLines().find((l) => l.ring === 2)!, parent = sub.parent!;
-    const k = scene.tasks.find((t) => t.h?.machine === sub.key.split("|")[2])!, trail = T.trailOf(k.id, scene)!;
-    expect(trail.pts[0].k).toBe(`${parent}:h`);
-    expect(trail.stations.map((s) => s.k)).toContain(`${parent}:${sub.pj}`);
-    expect(trail.stations.at(-1)!.k.startsWith(`${sub.key}:`)).toBe(true);
-    expect(dist(trail.pts.at(-1)!, k)).toBeLessThan(0.5);
+    const k = scene.tasks.find((t) => t.h?.machine === sub.key.split("|")[2])!, route = T.routeOf(k.id, scene)!;
+    expect(route.run[0].k).toBe(`${parent}:h`);
+    expect(route.run.map((n) => n.k)).toContain(`${parent}:${sub.pj}`);
+    expect(route.run.filter((n) => n.step).at(-1)!.k.startsWith(`${sub.key}:`)).toBe(true);
+    expect(dist(route.end, k)).toBeLessThan(0.5);
   });
 
   it("tears a branch down over 0.6 s on an ease once no task is on its machine, and removes it", () => {
