@@ -77,6 +77,7 @@ class Signal:
     writes: tuple[str, ...] = ()
     turn: str = ""
     label: str = ""
+    eval: str = ""
 
 
 def claim_key(tool_key: str) -> str:

@@ -6284,6 +6284,9 @@
           },
           "type": "array"
         },
+        "eval": {
+          "type": "string"
+        },
         "first_at": {
           "type": "number"
         },
@@ -6428,6 +6431,7 @@
         "session",
         "task",
         "kind",
+        "eval",
         "first_at",
         "last_at",
         "prompts",
@@ -6482,6 +6486,10 @@
           "description": "False for a harness the steps-per-completion ledger does not cover (Codex).",
           "type": "boolean"
         },
+        "eval": {
+          "description": "The purpose an eval run stamped with `trantor.eval`; empty for any other request.",
+          "type": "string"
+        },
         "harness": {
           "type": "string"
         },
@@ -6535,7 +6543,8 @@
         "activities",
         "keys",
         "tokens",
-        "captured"
+        "captured",
+        "eval"
       ],
       "title": "SessionStep",
       "type": "object"

@@ -70,6 +70,7 @@ def _empty(s: Signal, task: str | None, kind: str) -> dict[str, Any]:
         "session": s.session,
         "task": task,
         "kind": kind,
+        "eval": s.eval,
         "first_at": s.time,
         "last_at": s.time,
         "prompts": 0,

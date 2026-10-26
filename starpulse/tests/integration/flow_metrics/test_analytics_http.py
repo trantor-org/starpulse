@@ -143,6 +143,21 @@ def test_recurring_work_is_a_trace_cluster_with_its_skills_and_what_it_missed(se
     assert obs["medoid"] is None and unraid["outliers"] == []
 
 
+def test_a_session_an_eval_run_stamped_is_left_out_of_the_recurring_work(tmp_path: Path) -> None:
+    payloads = corpus()
+    for payload in payloads[:6]:
+        payload["resourceLogs"][0]["resource"]["attributes"] += _attributes(**{"trantor.eval": "memory-search-judge"})
+    telemetry = TelemetryLog(EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}"))
+    for payload in payloads:
+        telemetry.publish(signals(payload))
+    feed = BoardFeed(roles=ROLES, machines=MACHINES, keys=KEYS)
+    with serve(tmp_path, feed, telemetry=telemetry, clock=lambda: NOW, analytics=ANALYTICS) as server:
+        _, body = _get(server, "/api/analytics/trace-clusters?hours=1&min_sessions=5")
+
+    obs = [c for c in body["clusters"] if "a:bin/obs.py" in c["descriptors"]]
+    assert (body["cases"], obs) == (54, [])
+
+
 def test_outliers_name_the_medoid_and_each_cases_edits_from_it(server: PageServer) -> None:
     _, body = _get(server, "/api/analytics/trace-clusters?outliers=2&hours=1")
 

@@ -18,6 +18,10 @@ claude --settings '{"env": {
   "OTEL_RESOURCE_ATTRIBUTES": "vcs.ref.head.name='"$(git branch --show-current)"'"}}'
 ```
 
+An eval or judge run that is not work names itself by appending `trantor.eval=<purpose>` to `OTEL_RESOURCE_ATTRIBUTES`.
+StarPulse copies the purpose onto each signal and into the `eval` field of session and step rows, and the trace-cluster
+view leaves those sessions out.
+
 Pass the variables through `--settings`, not the shell: an `env` block in your user-level `settings.json` overrides
 `OTEL_*` variables set in the shell, so a shell export can leave a session exporting somewhere else. The session
 moves the task its branch names (`TASK-<n>` in the branch), so start Claude Code on that branch.

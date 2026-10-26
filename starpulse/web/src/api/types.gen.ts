@@ -1799,6 +1799,10 @@ export interface SessionStep {
    * False for a harness the steps-per-completion ledger does not cover (Codex).
    */
   captured: boolean;
+  /**
+   * The purpose an eval run stamped with `trantor.eval`; empty for any other request.
+   */
+  eval: string;
   harness: string;
   /**
    * One per call: the shell command the instance's redactor left, else the tool's name.
@@ -1842,6 +1846,7 @@ export interface SessionHealth {
   cost_usd: number | null;
   effort_changes: number;
   efforts: string[];
+  eval: string;
   first_at: number;
   gates: {
     [k: string]: number;
