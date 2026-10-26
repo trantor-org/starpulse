@@ -105,6 +105,8 @@ def test_a_claim_moves_a_task_into_the_working_state_and_records_the_session(
 
 def test_a_claim_of_a_task_still_being_worked_is_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     feed, built = _renamed(tmp_path, monkeypatch, {"task-1": ("Doing", {})})
+    assert _claim(feed, built, task="task-1", session="s-0")[0] == 200
+    _scan(tmp_path, feed)
 
     status, _ = _claim(feed, built, task="task-1", session="s-1")
 
