@@ -34,6 +34,7 @@ COMMANDS: dict[str, Callable[[list[str]], int | None]] = {
     "import-board": _lazy("starpulse.runtime.board_import"),
     "conform": _lazy("starpulse.runtime.conform"),
     "reload": _lazy("starpulse.runtime.control"),
+    "backup": _lazy("starpulse.runtime.backup"),
 }
 
 

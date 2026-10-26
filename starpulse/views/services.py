@@ -47,3 +47,4 @@ class Services:
     actor_metrics: Callable[[], str] | None = None
     lane_metrics: Callable[[], str] | None = None
     conformance_metrics: Callable[[], str] | None = None
+    autopilot_metrics: Callable[[], str] | None = None

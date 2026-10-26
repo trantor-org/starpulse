@@ -84,6 +84,10 @@ when the fact holds; `Board.holds` withholds `deps_done` with reasons. The actor
 `starpulse_task_actor_refusals_total`, `starpulse_task_actor_latency_seconds`, `starpulse_task_actor_projection_seconds`,
 `starpulse_task_actor_handoff_seconds`, `starpulse_task_actor_criteria_errors` and `starpulse_task_actor_pin_held`.
 `starpulse_board_lane_unattributed_total` counts the `board:lanes` entries appended since `serve` started that name no actor.
+`starpulse_autopilot_enabled` (0/1), `starpulse_autopilot_switch_changed_timestamp_seconds` (when the `scheduler.enabled`
+switch was last written), `starpulse_autopilot_ledger_runs` (rows in the run ledger) and
+`starpulse_autopilot_decisions_total{verdict="admitted|refused"}` (verdicts the loop has logged, kept in the store) read
+the store on each scrape.
 
 The modules an adapter may import, each exporting exactly the names in its `__all__`:
 

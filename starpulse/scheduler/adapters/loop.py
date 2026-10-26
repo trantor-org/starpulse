@@ -26,6 +26,7 @@ import logging
 import queue
 import threading
 import time
+from collections import Counter
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, field, replace
 from typing import Any
@@ -53,6 +54,8 @@ SESSION_ENDED = "session-ended"
 SETTLE_REFUSED = "settle-refused"
 HELD_KEY = "scheduler.held"
 PAUSES_KEY = "scheduler.harness_pauses"
+#: Admission verdicts counted so far, `{"admitted": n, "refused": n}`, kept in the store for the server's `/metrics`.
+TALLY_KEY = "scheduler.decisions"
 #: The dimensions a host reading measures, so a run's peak is how far they rose while it ran.
 _HOST = ("cpu", "memory")
 
@@ -391,9 +394,20 @@ class Loop:
         cooling = {task for task in self._starts if self._cooling(task, now)}
         held = set(self._running) | skipped | cooling | self._held
         tasks = [{**agent, "workable": False} if agent["id"] in held else agent for agent in self._feed.open_tasks()]
-        return tasks, decide(
+        decisions = decide(
             tasks, self._lane, readings, self._policy, self._chain(), self._ledger, log=log, p_goals=self._p_goals()
         )
+        if log:
+            self._count(decisions)
+        return tasks, decisions
+
+    def _count(self, decisions: list[Decision]) -> None:
+        """Add this pass's verdicts to the store's tally, which the server's `/metrics` reads."""
+        counts = Counter("admitted" if decision.admitted else "refused" for decision in decisions)
+        if counts:
+            tally = Counter(self._setting(TALLY_KEY) or {})
+            tally.update(counts)
+            self._put_setting(TALLY_KEY, dict(tally))
 
     def next_pick(self) -> dict[str, Any] | None:
         """The task the next pass would start, or, when none fits, the top-ranked one and the dimension it waits on.

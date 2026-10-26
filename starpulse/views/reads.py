@@ -221,7 +221,14 @@ class ReadRoutes:
         self._contract = services.contract
         self._milestones = board
         self._scheduler = services.scheduler
-        metrics = (services.actor_metrics, services.lane_metrics, services.conformance_metrics, snapshots.metrics, page_gauge)
+        metrics = (
+            services.actor_metrics,
+            services.lane_metrics,
+            services.conformance_metrics,
+            services.autopilot_metrics,
+            snapshots.metrics,
+            page_gauge,
+        )
         self._metrics = tuple(m for m in metrics if m)
         self._harnesses = encode("harnesses", (services.harnesses or Harnesses((), {})).as_json())
         self._pull_reads = _PullReads(services.pulls)
