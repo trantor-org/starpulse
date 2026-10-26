@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 import time
 from collections import Counter
 from collections.abc import Callable, Collection, Mapping
@@ -148,6 +149,23 @@ def pulls_response(pulls: PullStore | None, query: dict[str, list[str]]) -> tupl
         else []
     )
     return encode("pulls", {"pulls": found}), 200
+
+
+#: A GitHub pull request URL, which a task cites in its references: its `owner/repo` and number.
+_PULL_URL = re.compile(r"https://github\.com/([^/\s]+/[^/\s]+)/pull/(\d+)/?")
+
+
+def cited_pulls(pulls: PullStore | None, references: list[str]) -> list[dict[str, Any]]:
+    """The stored pull requests `references` cite, without their bodies: each one's state and checks, so a task
+    record shows them as the pull requests page does."""
+    if not pulls:
+        return []
+    cited = [match for ref in references if (match := _PULL_URL.fullmatch(ref))]
+    return [
+        {key: value for key, value in record.items() if key != "body"}
+        for match in cited
+        for record in pulls.find(match[1], int(match[2]))
+    ]
 
 
 #: `/api/search`'s default and largest number of hits.
