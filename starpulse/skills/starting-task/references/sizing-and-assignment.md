@@ -89,7 +89,9 @@ repository is size 3.
    recording the evidence and the reason. A fast-tier profile goes only to unattended
    `kind-execute` or `kind-mechanical` work: an `attended` mode, a type that waits on the
    operator or judges live evidence, or an operator criterion lifts it to the standard tier at
-   the same effort.
+   the same effort. A check or validate task's verdict is a judgement over live evidence,
+   never a fast-tier call: where the table lifts that type off its fastest tier, the lifted
+   profile is the default.
 4. Create or update the task with its labels:
 
    ```bash
