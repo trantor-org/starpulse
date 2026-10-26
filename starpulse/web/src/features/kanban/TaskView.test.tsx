@@ -130,7 +130,7 @@ describe("the task view's body", () => {
     const rail = html.slice(html.indexOf('class="tvcol tvrail"'));
 
     for (const text of ["Description", "Acceptance criteria", "1/2", "Definition of done", "0/1", "Implementation plan", "1. Write the test", "Notes", "Checked against the live config"]) expect(left, text).toContain(text);
-    for (const text of ["Pull requests", "Machines", "priority"]) expect(rail, text).toContain(text);
+    for (const text of ["Pull requests", "priority"]) expect(rail, text).toContain(text);
     expect(left).not.toContain("Pull requests");
   });
 
@@ -161,13 +161,12 @@ describe("the task view's right rail", () => {
   const trail = Array.from({ length: 7 }, (_, i) => ({ state: `step_${i}`, event: `event_${i}`, at: 800 + i }));
   const rows = (html: string, section: string) => railOf(html).split('<section').find((x) => x.includes(`<span class="t">${section}</span>`)) ?? "";
 
-  it("draws Status, Pull requests, CI history, Dependencies, Machines and Details in that order, each heading with its count", () => {
+  it("draws Status, Pull requests, CI history, Dependencies and Details in that order, each heading with its count", () => {
     const html = draw({ tasks: many });
 
-    expect(headings(html)).toEqual(["Status", "Rating", "Session", "Pull requests", "CI history", "Dependencies", "Machines", "Details"]);
+    expect(headings(html)).toEqual(["Status", "Rating", "Session", "Pull requests", "CI history", "Dependencies", "Details"]);
     expect(rows(html, "Pull requests")).toContain('<span class="n">1</span>');
     expect(rows(html, "Dependencies")).toContain('<span class="n">9</span>');
-    expect(rows(html, "Machines")).toContain('<span class="n">1</span>');
     expect(rows(html, "Status")).not.toContain('class="n"');
     expect(styles).toMatch(/#kbm \.tvrail \.sec \+ \.sec \{[^}]*border-top: 1px solid/);
     expect(styles).toMatch(/#kbm \.tvrail \.props td:first-child \{[^}]*width: calc\(74px \* var\(--fs\)\)/);
@@ -262,20 +261,13 @@ describe("the task view's right rail", () => {
     expect(open.mock.calls).toEqual([["TASK-1"], ["TASK-103"]]);
   });
 
-  it("draws each machine the task is in, collapsed to its last five transitions", () => {
-    const machines = [{ machine: "in-progress", state: "pr_opened", at: 900, trail }, { machine: "ci", state: "running", at: 950, source: "GitHub", trail: [] }];
-    const html = rows(draw({ task: { ...task, machines } }), "Machines");
+  it("leaves the machines' transitions to Activity and draws no Machines rail section", () => {
+    const machines = [{ machine: "in-progress", state: "pr_opened", at: 900, trail }];
+    const html = draw({ task: { ...task, machines } });
 
-    expect(html.match(/<details class="m">/g)).toHaveLength(2);
-    expect(html).not.toMatch(/<details[^>]*open/);
-    expect(html).toContain("<b>in-progress</b>");
-    expect(html).toContain("pr opened");
-    expect(html).toContain("<b>ci</b>");
-    expect(html.match(/<li>/g)).toHaveLength(5);
+    expect(railOf(html)).not.toContain("Machines");
+    expect(railOf(html)).not.toContain('class="machs"');
     expect(html).toContain("event_6");
-    expect(html).toContain("event_2");
-    expect(html).not.toContain("event_1<");
-    expect(rows(draw({ task: { ...task, machines: [] } }), "Machines")).toContain("In no machine right now");
   });
 
   it("draws the details as a read table, and when the task was created", () => {

@@ -157,21 +157,6 @@ function DepRows({ rows, names, roles, open }: { rows: DepRow[]; names: Record<s
   ));
 }
 
-/** Each machine the task is in, closed to its state and open to its last five transitions. */
-function MachineRows({ machines, now }: { machines: KanbanTask["machines"]; now: number }) {
-  return machines.length ? (
-    <div className="machs">
-      {machines.map((m) => (
-        <details key={m.machine} className="m">
-          <summary><span className={m.source ? "p mapped" : "p"} title={m.source ? `mapped from ${m.source}` : undefined} /><b>{m.machine}</b><span className="s">{m.state.replace(/_/g, " ")}</span>
-            <span className="k">{m.at ? `${ago(now - m.at)} ago` : ""}</span></summary>
-          {m.trail.length > 0 && <ol>{m.trail.slice(-5).map((t, i) => <li key={i}><code>{t.event}</code> → {t.state.replace(/_/g, " ")}<span className="k"> {fmtAt(t.at)}</span></li>)}</ol>}
-        </details>
-      ))}
-    </div>
-  ) : <span className="none">In no machine right now</span>;
-}
-
 /** Text with each TASK-N id drawn as a link that opens that task in this dialog. */
 function Linked({ text, open }: { text: string; open: (id: string) => void }) {
   return <>{text.split(/(TASK-\d+)/).map((part, i) => i % 2 ? (
@@ -571,7 +556,6 @@ export function TaskView(p: TaskViewProps) {
                 </>}
               </div>
             </RailSection>
-            <RailSection name="Machines" count={p.task.machines.length}><MachineRows machines={p.task.machines} now={p.now} /></RailSection>
             {sec("details", "Details", (
               <table className="props"><tbody>
                 <tr><td>profile</td><td>{editing === "details" ? <Select {...fp("profile", "details")} label="Profile" value={draft.profile} options={[["", "unassigned"], ...p.profiles.map((v): [string, string] => [v, v])]} onChange={(value) => change("profile", value)} /> : draft.profile || "—"}</td></tr>
