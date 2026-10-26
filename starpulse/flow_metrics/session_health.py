@@ -29,7 +29,7 @@ from collections import Counter, defaultdict
 from collections.abc import Iterable, Iterator, Sequence
 from typing import Any
 
-from starpulse._internal.config.analytics import Analytics
+from starpulse._internal.analytics import Analytics
 from starpulse._internal.signals import CODEX, Signal, claim_key, claimed, main_thread_source
 from starpulse.contracts.adapters import TaskKeys
 

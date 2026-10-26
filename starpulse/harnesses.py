@@ -1,12 +1,6 @@
-"""The harness tiers; the implementation is in `starpulse._internal.config.harnesses`."""
+"""The harness tiers; the implementation is in `starpulse.harness_telemetry.harnesses`."""
 
-from starpulse._internal.config.harnesses import (
-    Harness,
-    HarnessError,
-    Harnesses,
-    Tier,
-    load_harnesses,
-)
+from starpulse.harness_telemetry.harnesses import Harness, HarnessError, Harnesses, Tier, load_harnesses
 
 __all__ = [
     "Harness",

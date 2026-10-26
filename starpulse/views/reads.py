@@ -13,8 +13,8 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, NamedTuple
 from urllib.parse import parse_qs, unquote
 
-from starpulse._internal.config.analytics import Analytics
-from starpulse._internal.config.harnesses import Harnesses
+from starpulse._internal.analytics import Analytics
+from starpulse.harness_telemetry.harnesses import Harnesses
 from starpulse.views.compression import Encoded
 from starpulse.views.encoding import encode, full_snapshot
 from starpulse.views.process_metrics import process_gauges

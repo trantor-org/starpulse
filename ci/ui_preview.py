@@ -3,7 +3,7 @@
 `.github/workflows/ui-preview.yml` runs this on every pull request that touches the page (`starpulse/web/**`), the
 design mockup and element sheet (`design/**`) or this preview. A push that changed no such path since the commit the
 comment was rendered from leaves the comment and demos as they are. It builds each changed surface's scrubbed
-one-file demo with `starpulse._internal.cli.demo`, and each changed sub-mockup (`design/<dir>/index.html`) as `mockup-<dir>.html` with its scripts
+one-file demo with `starpulse.cli.demo`, and each changed sub-mockup (`design/<dir>/index.html`) as `mockup-<dir>.html` with its scripts
 inlined, screenshots the demos (of StarPulse, only the views the change can reach), publishes them to the `gh-pages` branch GitHub Pages serves
 for this public repository while the pull request is open, and leaves one comment holding the screenshots and the demo links. A push to `main` that
 touches the same paths runs it with `--main`, which republishes every demo as `main/`, the live demo and the screenshots the README
@@ -42,7 +42,7 @@ SURFACE_GLOBS = {
     # the demo's scrub decides what StarPulse's demo can draw
     STARPULSE: (
         "starpulse/web/**",
-        "starpulse/_internal/cli/demo.py",
+        "starpulse/cli/demo.py",
         # of ci/, only what shapes the render: this script and the demo config, adapter and workspace it draws
         "ci/ui_preview.py",
         "ci/preview.toml",
@@ -122,7 +122,7 @@ _LOCAL_SCRIPT = re.compile(r'<script src="([\w.-]+\.js)"></script>')
 def sub_mockup(directory: Path) -> str:
     """A sub-mockup's `index.html` with each local script inlined, so the one file is the whole demo.
 
-    A sub-mockup is a scrubbed capture of the page (`starpulse._internal.cli.demo --server`) with its own layer over it, so it is
+    A sub-mockup is a scrubbed capture of the page (`starpulse.cli.demo --server`) with its own layer over it, so it is
     published as it is; the leak scan still reads every byte before anything goes out.
     """
 
@@ -136,12 +136,12 @@ MARKER = "<!-- starpulse:ui-preview -->"
 
 _CAVEATS = {
     STARPULSE: (
-        "Rendered from the scrubbed demo `starpulse._internal.cli.demo` builds off a server running `ci/preview.toml`: "
+        "Rendered from the scrubbed demo `starpulse.cli.demo` builds off a server running `ci/preview.toml`: "
         "the synthetic workspace in `ci/workspace` (an eight-lane board, its lifecycle machines and five DAG domains) "
         "filled with synthetic tasks, sessions and runs, and no real board or runs adapter behind it."
     ),
-    MOCKUP: "Rendered from the scrubbed demo `starpulse._internal.cli.demo --mockup design` builds from the saved mockup data.",
-    ELEMENTS: "Rendered from `starpulse._internal.cli.demo --elements design/elements`: the palette tokens and each element, drawn by the real stylesheet.",
+    MOCKUP: "Rendered from the scrubbed demo `starpulse.cli.demo --mockup design` builds from the saved mockup data.",
+    ELEMENTS: "Rendered from `starpulse.cli.demo --elements design/elements`: the palette tokens and each element, drawn by the real stylesheet.",
 }
 
 
@@ -256,7 +256,7 @@ DEMO_URL_HOSTS = frozenset({"www.w3.org", "fonts.googleapis.com", "fonts.gstatic
 #: library's migration-guide link in its error text.
 DEMO_URLS = ("https://github.com/andreasonny83/unique-names-generator",)
 #: Identifiers the scrub must have removed, by the name a refusal gives them. The scrub's own synthetic UUIDs
-#: (`starpulse._internal.cli.demo`) are `<n>-0000-4000-8000-000000000000`, so only those pass.
+#: (`starpulse.cli.demo`) are `<n>-0000-4000-8000-000000000000`, so only those pass.
 LEAK_PATTERNS = {
     "task id": re.compile(r"\bTASK-\d+"),
     "private address": re.compile(r"\b(?:(?:10|127)\.\d{1,3}|192\.168|172\.(?:1[6-9]|2\d|3[01]))\.\d{1,3}\.\d{1,3}\b"),
@@ -514,15 +514,17 @@ def _build_demos(names: Sequence[str], out: Path) -> list[Path]:  # pragma: no c
     if demo_name(STARPULSE) in names:
         with _starpulse() as port:
             target = out / demo_name(STARPULSE)
-            _run(sys.executable, "-m", "starpulse._internal.cli.demo", "--server", f"http://127.0.0.1:{port}", "--out", str(target))
+            _run(
+                sys.executable, "-m", "starpulse.cli.demo", "--server", f"http://127.0.0.1:{port}", "--out", str(target)
+            )
             built.append(target)
     if demo_name(MOCKUP) in names:
         target = out / demo_name(MOCKUP)
-        _run(sys.executable, "-m", "starpulse._internal.cli.demo", "--mockup", DESIGN, "--out", str(target))
+        _run(sys.executable, "-m", "starpulse.cli.demo", "--mockup", DESIGN, "--out", str(target))
         built.append(target)
     if demo_name(ELEMENTS) in names:
         target = out / demo_name(ELEMENTS)
-        _run(sys.executable, "-m", "starpulse._internal.cli.demo", "--elements", f"{DESIGN}/{ELEMENTS_DIR}", "--out", str(target))
+        _run(sys.executable, "-m", "starpulse.cli.demo", "--elements", f"{DESIGN}/{ELEMENTS_DIR}", "--out", str(target))
         built.append(target)
     return built
 

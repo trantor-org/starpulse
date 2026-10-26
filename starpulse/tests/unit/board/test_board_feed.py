@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 import pytest
 from sqlalchemy import text
 
-from starpulse._internal.config.config import CommitKeys
+from starpulse.board.model.commit_keys import CommitKeys
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.machine_tasks import MachineTasks
 from starpulse.contracts.adapters import BoardTask, MachineEvent, TaskKeys

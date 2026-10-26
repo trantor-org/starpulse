@@ -27,7 +27,7 @@ from typing import Any
 from starpulse.board.adapters import jira
 from starpulse.board.adapters import native
 from starpulse.board.adapters import upstream_backlog
-from starpulse._internal.config.config import ConfigError, load
+from starpulse.runtime.config import ConfigError, load
 from starpulse.contracts.adapters import BoardTask
 
 __all__ = ["main"]

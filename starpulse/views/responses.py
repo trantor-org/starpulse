@@ -10,7 +10,7 @@ from collections import Counter
 from collections.abc import Callable, Collection, Mapping
 from typing import TYPE_CHECKING, Any
 
-from starpulse._internal.config.analytics import Analytics
+from starpulse._internal.analytics import Analytics
 from starpulse.board.ledger import PAGE
 from starpulse.board.model.seam import (
     TaskReader,

@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 from sqlalchemy import create_engine
 
-from starpulse._internal.config.config import load
+from starpulse.runtime.config import load
 from starpulse.board.board_feed import BoardFeed
 from starpulse.machine_engine.model.transitions import board_machine
 from starpulse.pulls.pulls import PullStore

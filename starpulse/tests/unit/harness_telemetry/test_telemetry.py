@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 
-from starpulse._internal.config.analytics import Analytics
+from starpulse._internal.analytics import Analytics
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.harness_telemetry.telemetry import CLAUDE_CODE, CODEX, Signal, _number, redactor, signals
 

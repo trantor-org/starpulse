@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.config.config import load
+from starpulse.runtime.config import load
 from starpulse.event_log.event_log import EventLog
 from starpulse.runs import dagu, github_actions, opt_in, projection, systemd
 from starpulse.runtime import server, supervisor, worker

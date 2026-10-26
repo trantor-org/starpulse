@@ -6,7 +6,7 @@ from collections.abc import Iterator
 from typing import Any
 
 from starpulse.board.model.view import board_columns, board_flow, cold_agent, done_ids, task_view
-from starpulse._internal.cli.agent_keys import TASK_KEYS
+from starpulse.cli.agent_keys import TASK_KEYS
 from starpulse.tests.machines import ROLES
 
 

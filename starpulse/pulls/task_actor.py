@@ -29,8 +29,7 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 from starpulse.board.model.seam import HELD, MERGE_EVIDENCE, TaskEditor, Written
-from starpulse._internal.config.config import Repo
-from starpulse._internal.config.pins import LiveBuild, Pins
+from starpulse.pulls.pins import LiveBuild, Pins, Repo
 from starpulse.board import criteria
 from starpulse.board.board_feed import BoardFeed
 from starpulse.pulls.pull_requests import PULL_URL

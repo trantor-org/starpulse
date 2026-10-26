@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.config.config import ConfigError, load
-from starpulse._internal.config.cursor_context import CursorContext
+from starpulse.runtime.config import ConfigError, load
+from starpulse.harness_telemetry.cursor_context_config import CursorContext
 
 
 def _write(tmp_path: Path, text: str) -> Path:

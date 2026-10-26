@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.config.config import ConfigError, load
+from starpulse.runtime.config import ConfigError, load
 
 
 def _write(tmp_path: Path, text: str) -> Path:

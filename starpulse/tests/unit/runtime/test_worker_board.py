@@ -5,7 +5,7 @@ import threading
 from dataclasses import replace
 from pathlib import Path
 
-from starpulse._internal.config.config import load
+from starpulse.runtime.config import load
 from starpulse.board.adapters.native import board
 from starpulse.board.adapters.task_history import KIND
 from starpulse.event_log.event_log import EventLog

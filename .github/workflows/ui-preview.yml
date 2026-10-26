@@ -10,7 +10,7 @@ on:
     types: [opened, synchronize, reopened, closed]
     paths:
       - starpulse/web/**
-      - starpulse/_internal/cli/demo.py
+      - starpulse/cli/demo.py
       - ci/ui_preview.py
       - ci/preview.toml
       - ci/demo_workspace.py
@@ -23,7 +23,7 @@ on:
     branches: [main]
     paths:
       - starpulse/web/**
-      - starpulse/_internal/cli/demo.py
+      - starpulse/cli/demo.py
       - ci/ui_preview.py
       - ci/preview.toml
       - ci/demo_workspace.py

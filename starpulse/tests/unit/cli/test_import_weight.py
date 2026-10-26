@@ -14,6 +14,10 @@ HEAVY = (
     "starpulse.event_log.event_log",
 )
 
+#: The root config loader, which `runtime` owns (spec doc-966, D6), and the stdlib-only Page API defaults it reads, light
+#: enough for a read verb.
+CONFIG = ("starpulse.runtime", "starpulse.runtime.config", "starpulse.views", "starpulse.views.services")
+
 UNREACHABLE = "http://127.0.0.1:1"
 
 
@@ -23,8 +27,9 @@ def test_a_read_verb_leaves_the_server_and_database_layer_unimported(verb: list[
         "import sys\n"
         "from starpulse.__main__ import main\n"
         f"main({[*verb, '--server', UNREACHABLE]!r})\n"
-        f"heavy = {HEAVY!r}\n"
-        "print(sorted(name for name in sys.modules if any(name == h or name.startswith(h + '.') for h in heavy)))\n"
+        f"heavy, config = {HEAVY!r}, {CONFIG!r}\n"
+        "print(sorted(name for name in sys.modules if name not in config\n"
+        "             and any(name == h or name.startswith(h + '.') for h in heavy)))\n"
     )
 
     done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)

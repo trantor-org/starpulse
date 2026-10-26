@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.config.config import Producer
+from starpulse.runs.config import Producer
 from starpulse.runs import run_events
 from starpulse.runs.cloudevents import SINGLE, CloudEventsIngest
 from starpulse.runs.ingest import tokens as ingest_tokens

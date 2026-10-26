@@ -37,8 +37,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Any
 
-from starpulse._internal.config.config import discover, load
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.event_log import events as machine_events
 from starpulse.event_log.event_log import EventLog
@@ -109,7 +109,13 @@ def publisher(log: EventLog) -> Callable[[dict], int | None]:
     return publish
 
 
-def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — serve_forever process boundary
+def main(
+    argv: list[str] | None = None,
+    *,
+    discover: Callable[[Path | None], Path | None],
+    load: Callable[[Path | None], Any],
+) -> None:  # pragma: no mutate block — serve_forever process boundary
+    """Serve the receiver; `discover` and `load` read the root config, which the runtime owns and passes in."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
@@ -128,8 +134,10 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     keys = TaskKeys(key=re.compile(args.key), branch=re.compile(args.branch), key_format=args.key_format)
 
     try:
-        log = open_event_log(args.config)
-        analytics = load(discover(args.config)).analytics
+        path = discover(args.config)
+        config = load(path)
+        log = open_event_log(config.database_url, path)
+        analytics = config.analytics
     except (OSError, ValueError) as exc:
         parser.error(f"{args.config or 'starpulse.toml'}: {exc}")
 
@@ -148,7 +156,3 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
             lambda payload: telemetry.publish(signals(payload, redact, analytics=analytics, keys=keys)),
         ),
     ).serve_forever()
-
-
-if __name__ == "__main__":
-    main()

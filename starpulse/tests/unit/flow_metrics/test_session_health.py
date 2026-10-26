@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.config.analytics import Analytics
+from starpulse._internal.analytics import Analytics
 from starpulse._internal.signals import claim_key
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.flow_metrics.session_health import grouped, session_health, session_rows, slice_health

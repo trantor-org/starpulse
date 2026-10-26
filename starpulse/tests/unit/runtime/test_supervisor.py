@@ -12,8 +12,8 @@ from pathlib import Path
 
 import starpulse.runtime.memory as memory_module
 import starpulse.runtime.supervisor as supervisor_module
-from starpulse._internal.config.config import MemoryLimit, load
-from starpulse._internal.config.search import Search
+from starpulse.runtime.config import MemoryLimit, load
+from starpulse.board.model.search_config import Search
 from starpulse.runtime.hold import LISTEN_FD_ENV
 from starpulse.runtime.supervisor import Supervisor, spawn_child, worker_commands
 from starpulse.tests.supervised import running_pids

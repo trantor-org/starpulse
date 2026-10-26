@@ -16,7 +16,7 @@ import pytest
 import yaml
 from sqlalchemy import delete
 
-from starpulse._internal.config.config import load
+from starpulse.runtime.config import load
 from starpulse.board.adapters import replica, upstream_backlog
 from starpulse.board.adapters.upstream_backlog import (
     BacklogConfig,

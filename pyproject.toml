@@ -78,12 +78,12 @@ type = "layers"
 # builds every context and starts its `bin` workers, `views` draws the contexts for people, `pulls` reads GitHub Actions runs from `runs`,
 # `scheduler` samples the board feed and the harness machine, the Board (model, adapters and feed) sits under the
 # features that read it, and the
-# history store in `flow_metrics` reads `config` and `machine_engine`.
+# history store in `flow_metrics` reads `machine_engine`.
 layers = [
     # entrypoints
     "starpulse.runtime",
     "starpulse.views",
-    "starpulse._internal.cli",
+    "starpulse.cli",
     # producers
     "starpulse.pulls | starpulse.scheduler | starpulse.sessions",
     "starpulse.runs | starpulse.harness_telemetry",
@@ -92,9 +92,11 @@ layers = [
     "starpulse.board",
     # core
     "starpulse.event_log",
-    "starpulse._internal.config | starpulse.machine_engine | starpulse.github | starpulse._internal.signals",
+    "starpulse._internal.analytics | starpulse.machine_engine | starpulse.github | starpulse._internal.signals",
     "starpulse.contracts",
 ]
+# The two composition roots share one root config loader, which sits in `runtime` (spec doc-966, D6).
+ignore_imports = ["starpulse.cli.** -> starpulse.runtime.config"]
 
 [[tool.importlinter.contracts]]
 id = "composition-roots"
@@ -109,7 +111,7 @@ source_modules = [
     "starpulse.pulls", "starpulse.runs", "starpulse.views",
     "starpulse.machine_engine", "starpulse.event_log",
 ]
-forbidden_modules = ["starpulse.runtime", "starpulse._internal.cli"]
+forbidden_modules = ["starpulse.runtime", "starpulse.cli"]
 
 [[tool.importlinter.contracts]]
 id = "page-contract"
@@ -118,12 +120,12 @@ type = "forbidden"
 # The wire DTOs in `contracts.api` are the inbound adapter's published language: views maps features onto them and
 # encodes them, and the runtime drives them. Every other tier reads `contracts.adapters` and the rest of `contracts`.
 source_modules = [
-    "starpulse._internal.cli",
+    "starpulse.cli",
     "starpulse.pulls", "starpulse.scheduler",
     "starpulse.board", "starpulse.runs", "starpulse.harness_telemetry",
     "starpulse.flow_metrics",
     "starpulse.event_log",
-    "starpulse._internal.config", "starpulse.machine_engine", "starpulse.github",
+    "starpulse._internal.analytics", "starpulse.machine_engine", "starpulse.github",
     "starpulse._internal.signals",
 ]
 forbidden_modules = ["starpulse.contracts.api"]
@@ -169,7 +171,7 @@ forbidden_modules = [
 
 # Bounded contexts: one per StarPulse context, id `context-<glossary slug>`.
 # forbidden_modules is every other context's packages except the map's upstreams (direct imports; transitive stay
-# allowed). The shared kernel (`event_log`, `config`, `github`, `signals`, `contracts`) and the entrypoints
+# allowed). The shared kernel (`event_log`, `analytics`, `github`, `signals`, `contracts`) and the entrypoints
 # belong to no context.
 
 [[tool.importlinter.contracts]]

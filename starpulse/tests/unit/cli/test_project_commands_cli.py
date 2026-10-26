@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from starpulse._internal.cli import agent_cli as cli
+from starpulse.cli import agent_cli as cli
 
 
 def _run(capsys: pytest.CaptureFixture[str], tmp_path: Path, toml: str, argv: Sequence[str]) -> tuple[int, Any]:

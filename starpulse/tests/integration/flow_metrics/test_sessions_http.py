@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from starpulse import sessions
-from starpulse._internal.config.analytics import Analytics
+from starpulse._internal.analytics import Analytics
 from starpulse.board.board_feed import BoardFeed
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.event_log.event_log import EventLog

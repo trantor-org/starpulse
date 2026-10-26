@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.config.config import load
+from starpulse.runtime.config import load
 from starpulse.board.adapters.task_history import WRITER, _events
 from starpulse.board.adapters.upstream_backlog import UpstreamBacklog
 from starpulse.board.board_feed import BoardFeed

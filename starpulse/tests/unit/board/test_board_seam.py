@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.config.config import ConfigError, load
+from starpulse.runtime.config import ConfigError, load
 from starpulse.board.model.seam import Board
 from starpulse.board.model.seam import load as load_board
 from starpulse.event_log.event_log import EventLog

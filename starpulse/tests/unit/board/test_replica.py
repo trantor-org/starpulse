@@ -13,7 +13,7 @@ from sqlalchemy import delete
 
 from starpulse.board.adapters import replica
 from starpulse.board.model.seam import Board
-from starpulse._internal.config.config import load
+from starpulse.runtime.config import load
 from starpulse.board.board_feed import BoardFeed, retained
 from starpulse.board.snapshot import BoardSnapshot
 from starpulse.contracts import BoardTask

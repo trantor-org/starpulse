@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.config.harnesses import HarnessError, load_harnesses
+from starpulse.harness_telemetry.harnesses import HarnessError, load_harnesses
 from starpulse.contracts.api.dto.harnesses import Harnesses
 
 _CLAUDE = """

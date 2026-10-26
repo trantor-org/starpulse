@@ -19,8 +19,8 @@ from typing import Any
 import pytest
 from sqlalchemy import create_engine
 
-from starpulse._internal.cli import agent_cli as cli
-from starpulse._internal.cli import agent_wire, doctor, skill_install
+from starpulse.cli import agent_cli as cli
+from starpulse.cli import agent_wire, doctor, skill_install
 from starpulse.board.adapters import native
 from starpulse.board.adapters.search import SearchIndex
 from starpulse.board.adapters.upstream_backlog import UpstreamBacklog

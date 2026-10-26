@@ -7,7 +7,7 @@ from dataclasses import replace
 
 import pytest
 
-from starpulse._internal.config.config import _KEYS, Config, load
+from starpulse.runtime.config import _KEYS, Config, load
 from starpulse.runtime import closure
 from starpulse.runtime.closure import CONFIG_OWNERS, SELF, _blocks, restarts_serve
 from starpulse.runtime.supervisor import WORKER_FLAGS, Supervisor, worker_commands

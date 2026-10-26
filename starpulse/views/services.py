@@ -6,18 +6,21 @@ from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from starpulse._internal.config.config import SLOW_READ_S
+
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
-    from starpulse._internal.config.analytics import Analytics
-    from starpulse._internal.config.harnesses import Harnesses
+    from starpulse._internal.analytics import Analytics
     from starpulse.board.adapters.search import SearchIndex
+    from starpulse.harness_telemetry.harnesses import Harnesses
     from starpulse.harness_telemetry.telemetry import TelemetryLog
     from starpulse.pulls.pull_refresh import PullRefresh
     from starpulse.pulls.pulls import PullStore
     from starpulse.runs.cloudevents import CloudEventsIngest
     from starpulse.scheduler.adapters.remote import Remote
     from starpulse.scheduler.adapters.runtime import Runtime
+
+#: The default of `slow_read_seconds`.
+SLOW_READ_S = 1.0
 
 
 @dataclass(frozen=True)

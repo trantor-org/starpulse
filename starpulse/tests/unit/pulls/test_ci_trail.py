@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine
 
-from starpulse._internal.config.config import Producer
+from starpulse.runs.config import Producer
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.machine_tasks import MachineTasks
 from starpulse.event_log import events

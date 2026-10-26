@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from starpulse._internal.config.config import load
+from starpulse.runtime.config import load
 from starpulse.board.adapters.native import board
 from starpulse.board.adapters.upstream_backlog import UpstreamBacklog, board_moves, upstream_keys
 from starpulse.board.board_feed import BoardFeed

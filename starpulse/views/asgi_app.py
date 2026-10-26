@@ -30,7 +30,7 @@ from starlette.responses import FileResponse, PlainTextResponse, StreamingRespon
 from starlette.responses import Response as Reply
 from starlette.routing import Route
 
-from starpulse._internal.config.harnesses import Harnesses
+from starpulse.harness_telemetry.harnesses import Harnesses
 from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.model.seam import Board
 from starpulse.runs.cloudevents_grpc import PATH as CLOUDEVENTS_GRPC_PATH

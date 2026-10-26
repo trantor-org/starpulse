@@ -23,7 +23,7 @@ import json
 import logging
 import threading
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 from sqlalchemy import delete, func, select
 
@@ -34,9 +34,15 @@ from starpulse.event_log.tables import events
 
 if TYPE_CHECKING:
     from starpulse.board.model.seam import Board
-    from starpulse._internal.config.config import Config
 
 logger = logging.getLogger(__name__)
+
+
+class ReplicaConfig(Protocol):
+    """What the replica's key reads of the root config, which `runtime` loads and hands in."""
+
+    board_type: str
+
 
 REPLICA_STREAM = "board:replica"
 #: The longest a reader waits for an entry the child appended; an append in this database wakes it sooner.
@@ -56,7 +62,7 @@ def _read(raw: str) -> BoardTask | None:
         return None
 
 
-def key(board: Board, config: Config) -> str:
+def key(board: Board, config: ReplicaConfig) -> str:
     """Where the Board's checkpoint is kept: it changes with what the adapter's `state_key` names and the board type,
     so a checkpoint of another project is never resumed. The `[board]` table is not in it: an edit to a command or a
     rule there leaves the saved Board in place instead of replaying every task."""
@@ -290,7 +296,7 @@ def follow(
     return thread
 
 
-def publish(board: Board, feed: BoardFeed, group: str, log: EventLog, config: Config) -> Publisher:
+def publish(board: Board, feed: BoardFeed, group: str, log: EventLog, config: ReplicaConfig) -> Publisher:
     """Start the board adapter for the Board child: on a `Publisher` that has restored its checkpoint, with the
     checkpoint saved every minute on a daemon thread."""
     publisher = Publisher(feed, log, key(board, config))
@@ -305,7 +311,7 @@ def read(
     feed: BoardFeed,
     group: str,
     log: EventLog,
-    config: Config,
+    config: ReplicaConfig,
     stop: threading.Event,
 ) -> None:
     """Give a context its Board: the replica the Board child publishes."""

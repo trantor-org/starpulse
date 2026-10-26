@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.config.config import CommitKeys
+from starpulse.board.model.commit_keys import CommitKeys
 from starpulse.board.board_feed import BoardFeed
 from starpulse.runtime.adapter_kit import next_event, serve, url
 from starpulse.views.page_server import PageServer

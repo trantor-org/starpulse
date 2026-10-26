@@ -29,7 +29,7 @@ from collections.abc import Callable, Iterable, Iterator
 from dataclasses import asdict, fields
 from typing import TYPE_CHECKING, Any
 
-from starpulse._internal.config.analytics import Analytics
+from starpulse._internal.analytics import Analytics
 from starpulse._internal.signals import CLAUDE_CODE, CODEX, Signal, claim_key, claimed, main_thread_source
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.harness_telemetry.activity import SHELLS, activities, elide_heredocs, paths, writes_file

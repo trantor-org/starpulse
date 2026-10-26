@@ -16,7 +16,7 @@ import time
 from collections.abc import Callable, Iterable, Sequence
 from typing import TYPE_CHECKING, Any
 
-from starpulse._internal.config.config import Repo
+from starpulse.pulls.pins import Repo
 from starpulse.board.board_feed import BoardFeed
 from starpulse.pulls.pull_requests import PULL_URL, GhUnavailableError, query_github
 

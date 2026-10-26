@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine, event
 
-from starpulse._internal.config.config import Repo
+from starpulse.pulls.pins import Repo
 from starpulse.board.board_feed import BoardFeed
 from starpulse.pulls.pull_requests import query_github
 from starpulse.pulls.pull_store import PullSync, refresh_pull

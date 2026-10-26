@@ -18,7 +18,7 @@ from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-from starpulse._internal.config.config import CommitKeys
+from starpulse.board.model.commit_keys import CommitKeys
 from starpulse.board import criteria
 from starpulse.board.ledger import (
     MERGE_EVENT,

@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from starpulse._internal.cli import init
-from starpulse._internal.config.config import load
+from starpulse.cli import init
+from starpulse.runtime.config import load
 from starpulse.machine_engine.adapters.machine_loader import load_machine
 from starpulse.machine_engine.model.transitions import lane_id
 

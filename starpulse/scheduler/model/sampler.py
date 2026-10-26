@@ -12,7 +12,7 @@ import threading
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
-from starpulse._internal.config.scheduler import DIMENSIONS
+from starpulse.scheduler.model.config import DIMENSIONS
 
 logger = logging.getLogger(__name__)
 

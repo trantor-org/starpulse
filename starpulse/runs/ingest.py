@@ -7,7 +7,7 @@ import math
 from collections.abc import Iterable, Mapping
 from typing import Any, get_args
 
-from starpulse._internal.config.config import Producer
+from starpulse.runs.config import Producer
 from starpulse.runs import run_events
 from starpulse.contracts.adapters import RunStatus
 

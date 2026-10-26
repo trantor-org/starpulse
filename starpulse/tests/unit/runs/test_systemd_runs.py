@@ -10,7 +10,7 @@ import time
 
 import pytest
 
-from starpulse._internal.config.adapter_types import BUILT_IN, module_name
+from starpulse.board.model.adapter_types import BUILT_IN, module_name
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.runs import systemd
 from starpulse.runtime.adapter_kit import RunsAdapterKit

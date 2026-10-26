@@ -16,13 +16,12 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
-from starpulse._internal.config.config import Config, discover, load
-from starpulse._internal.config.pins import GitHub
+from starpulse.pulls.pins import GitHub
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model.seam import Board
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url
-from starpulse.pulls.bin.blocks import pulls_delivery_blocks, pulls_fixed_blocks
+from starpulse.pulls.bin.blocks import PullsConfig, pulls_delivery_blocks, pulls_fixed_blocks
 from starpulse.pulls.delivery import (
     Projected,
     Publisher,
@@ -42,7 +41,7 @@ class Delivery:
 
     def __init__(
         self,
-        config: Config,
+        config: PullsConfig,
         board: Board,
         feed: BoardFeed,
         log: EventLog,
@@ -84,7 +83,7 @@ class Delivery:
     def stop(self) -> None:
         self._stop.set()
 
-    def reload(self, path: Path) -> None:
+    def reload(self, path: Path, load: Callable[[Path | None], PullsConfig]) -> None:
         """Re-read `path`. An invalid config is logged and the running loops kept; a changed Delivery block takes them
         down and builds them again from the new config, and one the new config cannot build leaves the old config's
         loops running again."""
@@ -114,8 +113,10 @@ def main(
     argv: list[str] | None,
     parser: argparse.ArgumentParser,
     *,
+    discover: Callable[[Path | None], Path | None],
+    load: Callable[[Path | None], PullsConfig],
     worker_board: Callable[..., tuple[Board, BoardFeed]],
-    history_store: Callable[[Config, Path, Mapping[str, dict]], Any],
+    history_store: Callable[[PullsConfig, Path, Mapping[str, dict]], Any],
     start_delivery: Callable[..., tuple[Any, Any]],
     hold: Callable[[threading.Event, Callable[[], None]], None],
 ) -> None:
@@ -144,4 +145,4 @@ def main(
         delivery.start()
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")
-    hold(stop, lambda: delivery.reload(path))
+    hold(stop, lambda: delivery.reload(path, load))

@@ -25,7 +25,7 @@ from typing import NamedTuple
 
 from sqlalchemy import event
 
-from starpulse._internal.config.level import Level, Orbit, Terminal
+from starpulse.flow_metrics.level import Level, Orbit, Terminal
 from starpulse.flow_metrics.history import HistoryStore
 from starpulse.machine_engine.model.transitions import board_machine
 from starpulse.runtime.server import health_response, trajectories_response

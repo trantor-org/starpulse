@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.config.config import ConfigError, load
-from starpulse._internal.config.search import Search
+from starpulse.runtime.config import ConfigError, load
+from starpulse.board.model.search_config import Search
 
 
 def _write(tmp_path: Path, text: str) -> Path:

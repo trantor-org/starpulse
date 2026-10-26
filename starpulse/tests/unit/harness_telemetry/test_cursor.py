@@ -8,7 +8,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from starpulse._internal.config.analytics import Analytics
+from starpulse._internal.analytics import Analytics
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.flow_metrics.session_health import session_health
 from starpulse.harness_telemetry.cursor import CURSOR, transcript_signals

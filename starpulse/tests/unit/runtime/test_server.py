@@ -12,9 +12,11 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import update
+from starpulse.board.model.commit_keys import CommitKeys
+from starpulse.runs.config import RunsInstance
 
-from starpulse._internal.config.config import CommitKeys, Config, RunsInstance, load
-from starpulse._internal.config.harnesses import Harness, Harnesses, Tier, load_harnesses
+from starpulse.runtime.config import Config, load
+from starpulse.harness_telemetry.harnesses import Harness, Harnesses, Tier, load_harnesses
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model.seam import MoveWriter, Written
 from starpulse.contracts.adapters import Move, StartFailedError

@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from starpulse._internal.config.analytics import Analytics, SkillLoad
+from starpulse._internal.analytics import Analytics, SkillLoad
 from starpulse.board.board_feed import BoardFeed
 from starpulse.contracts.adapters import BoardTask, TaskKeys
 from starpulse.event_log.event_log import EventLog

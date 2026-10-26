@@ -183,10 +183,11 @@ from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING, Any, NamedTuple
 
-from starpulse._internal.cli import doctor
-from starpulse._internal.config.config import Config, ConfigError, RunsInstance, discover, load, runs_adapter
-from starpulse._internal.config.level import Level
-from starpulse._internal.config.pins import GitHub, LiveBuild, running_commit
+from starpulse.cli import doctor
+from starpulse.runtime.config import Config, ConfigError, discover, load, runs_adapter
+from starpulse.runs.config import RunsInstance
+from starpulse.flow_metrics.level import Level
+from starpulse.pulls.pins import GitHub, LiveBuild, running_commit
 from starpulse.board.adapters.history_window import SETTINGS_FILE, HistoryWindow
 from starpulse.board.claim_refusals import CLAIMS_STREAM
 from starpulse.board.model.seam import (

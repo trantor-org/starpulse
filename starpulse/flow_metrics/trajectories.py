@@ -26,7 +26,7 @@ from collections import Counter, defaultdict, deque
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from typing import Any
 
-from starpulse._internal.config.level import Level
+from starpulse.flow_metrics.level import Level
 from starpulse.flow_metrics.level_metrics import Run, WindowPastHistory, held_steps
 
 __all__ = ["absorb", "betweenness", "trajectory_analytics"]

@@ -75,7 +75,7 @@ def check(port: int, parent: int, expected: set[str], log: Path) -> str | None:
 def worker_contexts(python: str, cwd: str) -> set[str]:
     """The contexts `serve` supervises under the default config, which has no embeddings URL."""
     code = (
-        "import json; from starpulse._internal.config.config import discover, load;"
+        "import json; from starpulse.runtime.config import discover, load;"
         " from starpulse.runtime.supervisor import worker_commands;"
         " print(json.dumps(sorted(worker_commands(load(discover(None)), None))))"
     )

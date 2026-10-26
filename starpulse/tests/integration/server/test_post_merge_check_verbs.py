@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from starpulse._internal.cli import agent_cli as cli
+from starpulse.cli import agent_cli as cli
 from starpulse.board.adapters import native
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model.seam import Board, Written

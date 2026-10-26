@@ -13,7 +13,7 @@ import urllib.error
 import urllib.request
 from typing import Any
 
-from starpulse._internal.config.analytics import Labeller
+from starpulse._internal.analytics import Labeller
 
 __all__ = ["UNSURE", "intent_label"]
 

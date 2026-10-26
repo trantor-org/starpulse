@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 from sqlalchemy import create_engine
 
-from starpulse._internal.config.config import load
+from starpulse.runtime.config import load
 from starpulse.board.board_feed import BoardFeed
 from starpulse.event_log.event_log import Entry, EventLog
 from starpulse.event_log.readmodel.projector import Projector

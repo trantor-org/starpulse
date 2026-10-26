@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from starpulse._internal.cli.agent_tasks import linkify
+from starpulse.cli.agent_tasks import linkify
 
 BASE = "http://board:8766/"
 PULLS = [{"url": "https://github.com/acme/app/pull/123"}]

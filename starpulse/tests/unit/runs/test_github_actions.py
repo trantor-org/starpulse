@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from starpulse._internal.config.config import runs_adapter
+from starpulse.runtime.config import runs_adapter
 from starpulse.board.board_feed import BoardFeed
 from starpulse.contracts.adapters import StartFailedError, TaskKeys
 from starpulse.event_log.event_log import EventLog

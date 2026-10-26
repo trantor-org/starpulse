@@ -8,8 +8,7 @@ from typing import Any
 import pytest
 from sqlalchemy import create_engine
 
-from starpulse._internal.config.config import Repo
-from starpulse._internal.config.pins import LiveBuild
+from starpulse.pulls.pins import LiveBuild, Repo
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model.seam import Written
 from starpulse.pulls.pulls import PullStore
