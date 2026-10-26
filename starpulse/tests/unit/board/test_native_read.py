@@ -175,6 +175,12 @@ SESSION_COMMENTS = (
     "created: 2026-10-06 22:30\n---\n**Session Link:** https://claude.ai/code/session_new — resumed\n---\n"
     "<!-- COMMENTS:END -->\n"
 )
+LOCAL_COMMENTS = (
+    "<!-- COMMENTS:BEGIN -->\n"
+    "created: 2026-10-26 10:00\n---\n**Session Link:** https://claude.ai/code/session_old\n---\n\n"
+    "created: 2026-10-26 10:30\n---\n**Session Link:** local Claude session `d4f1c2` — no web view, reopen with `claude --resume d4f1c2`\n---\n"
+    "<!-- COMMENTS:END -->\n"
+)
 
 
 @pytest.mark.parametrize(
@@ -183,9 +189,10 @@ SESSION_COMMENTS = (
         (SESSION_NOTES, "", "https://claude.ai/code/session_notes"),
         ("kept", SESSION_COMMENTS, "https://claude.ai/code/session_new"),
         (SESSION_NOTES, SESSION_COMMENTS, "https://claude.ai/code/session_new"),
+        ("kept", LOCAL_COMMENTS, "d4f1c2"),
         ("kept", "", ""),
     ],
-    ids=["notes", "latest-comment", "comment-after-notes", "none"],
+    ids=["notes", "latest-comment", "comment-after-notes", "local-session-comment", "none"],
 )
 def test_a_task_reads_its_latest_session_link_from_its_notes_or_comments(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, notes: str, comments: str, session: str

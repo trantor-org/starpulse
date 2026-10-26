@@ -116,7 +116,7 @@ _DONE = re.compile(r"<!-- DOD:BEGIN -->(.*?)<!-- DOD:END -->", re.S)
 _FINAL_SUMMARY = re.compile(r"<!-- SECTION:FINAL_SUMMARY:BEGIN -->(.*?)<!-- SECTION:FINAL_SUMMARY:END -->", re.S)
 _COMMENTS_SECTION = re.compile(r"<!-- COMMENTS:BEGIN -->(.*?)<!-- COMMENTS:END -->", re.S)
 _COMMENT_HEAD = re.compile(r"^created: (\S+ \S+)\n(?:author: (\S+)\n)?---\n", re.M)
-_SESSION_LINK = re.compile(r"^\*\*Session Link:\*\* (\S+)", re.M)
+_SESSION_LINK = re.compile(r"^\*\*Session Link:\*\* (?:local \w+ session `([^`]+)`|(\S+))", re.M)
 _NOTES_SECTION = "\n## Implementation Notes\n\n<!-- SECTION:NOTES:BEGIN -->\n{}\n<!-- SECTION:NOTES:END -->\n"
 
 
@@ -382,9 +382,12 @@ def _recorded(text: str, comments: list[dict[str, str]]) -> bool:
 
 
 def _session(notes: str, comments: list[dict[str, str]]) -> str:
-    """The link of the latest `**Session Link:**` line: the newest comment that has one, else the notes', else empty."""
+    """The link of the latest `**Session Link:**` line: the newest comment that has one, else the notes', else empty.
+
+    A local-session line names its session UUID, not the word `local` that opens it.
+    """
     texts = [notes, *(comment["text"] for comment in comments)]
-    links = [link for text in texts for link in _SESSION_LINK.findall(text)]
+    links = [local or link for text in texts for local, link in _SESSION_LINK.findall(text)]
     return links[-1] if links else ""
 
 
