@@ -211,6 +211,16 @@ def test_a_workflow_an_adapter_lists_is_drawn_once_whichever_reads_the_stream_fi
     assert sorted(dag["name"] for dag in feed.snapshot()["dags"]) == ["ci/nightly", f"{PUSHED_INSTANCE}/other"]
 
 
+def test_a_workflow_an_adapter_lists_is_drawn_once_when_its_instance_pushes_it_too() -> None:
+    feed = BoardFeed()
+    runs = PushRuns(feed.runs(PUSHED_INSTANCE), None)
+    feed.set_dags("dagu", [_listed("nightly")], None)
+
+    runs.handle_entry("1-0", fields("StepStarted", "running", instance="dagu"))
+
+    assert [dag["name"] for dag in feed.snapshot()["dags"]] == ["dagu/nightly"]
+
+
 def test_a_step_reported_again_is_published_to_a_subscriber_that_saw_the_earlier_status() -> None:
     feed = BoardFeed()
     runs = PushRuns(feed.runs(PUSHED_INSTANCE), HistoryStore("sqlite://", {}))

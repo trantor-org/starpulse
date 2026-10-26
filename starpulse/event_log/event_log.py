@@ -170,6 +170,17 @@ class EventLog:
                 upsert.on_conflict_do_update(index_elements=[settings.c.key], set_={"value": value, "updated_at": now})
             )
 
+    def set_setting_entry(self, key: str, entry: str, value: Any) -> None:
+        """Keep `value` under `entry` of the object kept under `key`, leaving its other entries as they are, in one
+        statement so writers in separate processes never drop each other's entries. Raises on a database error."""
+        now = time.time()
+        upsert = sqlite.insert(settings).values(key=key, value={entry: value}, updated_at=now)
+        merged = func.json_set(settings.c.value, f'$."{entry}"', func.json(json.dumps(value)))
+        with self.engine.begin() as db:
+            db.execute(
+                upsert.on_conflict_do_update(index_elements=[settings.c.key], set_={"value": merged, "updated_at": now})
+            )
+
     def setting_updated_at(self, key: str) -> float | None:
         """The epoch second `key` was last written, or None when no row holds it. Raises on a database error."""
         with self.engine.connect() as db:

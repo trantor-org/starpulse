@@ -1,9 +1,10 @@
 """The Runs context's seam with `serve`: the workflows each run adapter instance reports, kept in the event log.
 
 `starpulse worker runs` runs the adapters, so `serve` never sees what they report directly. A `Publisher` stands in the
-adapters' sink: it keeps what each instance last reported as one log setting and announces each change on a stream, and
-`serve` applies that setting to its feed (`Projected`) as the page's workflows, pools and startable workflows. A new
-`serve` or worker process reads the setting, so neither restart blanks the page.
+adapters' sink: it keeps what each instance last reported as its own entry of one log setting, which another process's
+`Publisher` never overwrites, and announces each change on a stream, and `serve` applies that setting to its feed
+(`Projected`) as the page's workflows, pools and startable workflows. A new `serve` or worker process reads the setting,
+so neither restart blanks the page.
 """
 
 from __future__ import annotations
@@ -53,9 +54,8 @@ class Publisher:
             }
             if kept == last:
                 return
-            body = {**self._kept, instance: kept}
             try:
-                self._log.set_setting(PROJECTION, body)
+                self._log.set_setting_entry(PROJECTION, instance, kept)
             except Exception:
                 logger.warning("runs: the projection was not kept", exc_info=True)
                 return
@@ -92,9 +92,7 @@ class Projected:
     the page shows it as the instance's error, also for an instance whose worker never reported.
     """
 
-    def __init__(
-        self, log: EventLog, feed: Any, watched: Mapping[str, Callable[[], str | None]] | None = None
-    ) -> None:
+    def __init__(self, log: EventLog, feed: Any, watched: Mapping[str, Callable[[], str | None]] | None = None) -> None:
         self._log = log
         self._feed = feed
         self._watched = dict(watched or {})
@@ -127,6 +125,7 @@ class Projected:
     def follow(self, stop: threading.Event) -> threading.Thread:
         """Apply the kept reports now, then each one announced after, on a thread until `stop`."""
         from starpulse.event_log.event_log import Tail  # noqa: PLC0415 - the database stack loads when a log opens
+
         tail = Tail.live(self._log, PROJECTED_STREAM, interval=POLL_S)
         self.apply()
         if self._watched:
