@@ -464,7 +464,9 @@ it merges needs no 23-day wait.
 A criterion's `kind` is one of the closed set the board's configuration supports (typically a
 SQL or metric query compared against `at_least`, `at_most` or `equals`, a log-metric query, a
 workflow-run status, and git kinds for a path changed or unchanged since a date, or a submodule
-pin reaching a commit). A date-only `since` counts from 00:00 UTC; an ISO-8601 timestamp counts
+pin reaching a commit). The project's park and create commands list the exact kind names in their
+`--help`; a wait on a merge is the git path-changed kind on a path the change touches, `since`
+the instant the wait began. A date-only `since` counts from 00:00 UTC; an ISO-8601 timestamp counts
 from that instant, so a wait on a path already touched that day sets it to the time the wait
 began.
 
