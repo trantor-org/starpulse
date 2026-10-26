@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { KanbanTask } from "./kanbanModel";
-import { activityEvents, changedFields, ciHistory, editKey, fetchRecord, markdown, menuKey, postComment, saveSection, saveTask, SECTION_FIELDS, taskBody, toggleItem, type MenuState, type TaskRecord } from "./taskViewModel";
+import { changedFields, ciHistory, editKey, fetchRecord, markdown, menuKey, postComment, saveSection, saveTask, SECTION_FIELDS, taskActivity, taskBody, toggleItem, type MenuState, type TaskRecord } from "./taskViewModel";
 
 const record = {
   title: "T", profile: "@agent-standard-high", priority: "High", labels: ["needs-review"], milestone: "m-89", dependencies: ["TASK-1"],
@@ -8,23 +8,61 @@ const record = {
 };
 const reply = (status: number, body: unknown) => async () => new Response(JSON.stringify(body), { status });
 
-describe("activityEvents", () => {
+describe("taskActivity", () => {
   const step = (event: string, state: string, at: number) => ({ event, state, at });
   const machineTask = (machines: KanbanTask["machines"]) => ({ id: "TASK-1", machines }) as KanbanTask;
-  it("lists every machine step oldest first, across machines", () => {
-    const events = activityEvents(machineTask([
-      { machine: "in-progress", state: "pr_opened", at: 300, trail: [step("AC_CHECKPOINTED", "in_progress", 200), step("PR_OPENED", "pr_opened", 300)] },
-      { machine: "ci", state: "green", at: 250, trail: [step("CI_PASSED", "green", 250)] },
-    ]));
-    expect(events.map((e) => [e.at, e.machine, e.event])).toEqual([
-      [200, "in-progress", "AC_CHECKPOINTED"],
-      [250, "ci", "CI_PASSED"],
-      [300, "in-progress", "PR_OPENED"],
+  const at = (created: string) => Date.parse(created.replace(" ", "T")) / 1000;
+
+  it("draws checkpoint evidence, the claim and the board's own notes as activity, and keeps the rest as comments", () => {
+    const { activity, comments } = taskActivity(machineTask([]), [
+      { created: "2026-10-26 10:20", author: "agent", text: "**Session Link:** https://claude.ai/code/session_01SDztUtQe9r — local" },
+      { created: "2026-10-26 10:28", author: "agent", text: "Verified AC #2: `pnpm test` GREEN" },
+      { created: "2026-10-26 10:41", author: "Adin", text: "Drop AC #4." },
+      { created: "2026-10-26 10:56", author: "starpulse/task-actor", text: "Every dependency has merged." },
+    ]);
+
+    expect(activity.map(({ kind, who, ac, body }) => ({ kind, who, ac, body }))).toEqual([
+      { kind: "system", who: "agent", ac: undefined, body: "Claimed by session [`01SDztUt`](https://claude.ai/code/session_01SDztUtQe9r)" },
+      { kind: "checkpoint", who: "agent", ac: 2, body: "`pnpm test` GREEN" },
+      { kind: "system", who: "starpulse", ac: undefined, body: "Every dependency has merged." },
+    ]);
+    expect(activity[1].at).toBe(at("2026-10-26 10:28"));
+    expect(comments.map(({ kind, who, body }) => ({ kind, who, body }))).toEqual([{ kind: "comment", who: "Adin", body: "Drop AC #4." }]);
+  });
+
+  it("interleaves the machines' lifecycle steps oldest first, without the harness's tool calls or a checkpoint's echo", () => {
+    const evidence = at("2026-10-26 10:28");
+    const { activity } = taskActivity(machineTask([
+      { machine: "deliver", state: "pr_ready", at: evidence + 60, trail: [step("AC_CHECKPOINTED", "start", evidence), step("PR_READY", "pr_ready", evidence + 60)] },
+      { machine: "build", state: "worktree_ready", at: evidence - 60, trail: [step("WORKTREE_READY", "worktree_ready", evidence - 60)] },
+      { machine: "harness", state: "active", at: evidence + 1, trail: [step("TOOL_USED", "active", evidence + 1)] },
+    ]), [{ created: "2026-10-26 10:28", text: "Verified AC #1: green" }]);
+
+    expect(activity.map(({ kind, who, body }) => [kind, who, body])).toEqual([
+      ["system", "build", "`WORKTREE_READY` → worktree ready"],
+      ["checkpoint", "agent", "green"],
+      ["system", "deliver", "`PR_READY` → pr ready"],
     ]);
   });
 
-  it("is empty for a task whose machines have no steps", () => {
-    expect(activityEvents(machineTask([{ machine: "in-progress", state: "ready", at: 0, trail: [] }]))).toEqual([]);
+  it("keeps a checkpoint's command line as its body and its fenced output tail apart as detail", () => {
+    const { activity } = taskActivity(machineTask([]), [
+      { created: "2026-10-26 09:11", text: "Verified AC #1: `pnpm exec vitest run` exited 0\n\n```\n\n Test Files  1 passed (1)\n```" },
+    ]);
+
+    expect(activity.map(({ body, detail }) => ({ body, detail }))).toEqual([{ body: "`pnpm exec vitest run` exited 0", detail: "Test Files  1 passed (1)" }]);
+  });
+
+  it("keeps a failed checkpoint's fenced output apart as detail under Comments", () => {
+    const { comments } = taskActivity(machineTask([]), [
+      { created: "2026-10-26 09:11", text: "AC #1 not verified: `vitest` exited 1\n\n```\nError: no such file\n```" },
+    ]);
+
+    expect(comments.map(({ body, detail }) => ({ body, detail }))).toEqual([{ body: "AC #1 not verified: `vitest` exited 1", detail: "Error: no such file" }]);
+  });
+
+  it("is empty for a task with no steps and no comments", () => {
+    expect(taskActivity(machineTask([{ machine: "in-progress", state: "ready", at: 0, trail: [] }]), [])).toEqual({ activity: [], comments: [] });
   });
 });
 

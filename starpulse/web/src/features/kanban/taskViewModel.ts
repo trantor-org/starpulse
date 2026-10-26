@@ -77,14 +77,42 @@ const CHECKLISTS: TaskField[] = ["acceptanceCriteria", "definitionOfDone"];
 const withoutNew = (changes: Partial<TaskRecord>): Partial<TaskRecord> => Object.fromEntries(Object.entries(changes).map(([field, value]) =>
   [field, CHECKLISTS.includes(field as TaskField) ? (value as Item[]).map(({ n, ...rest }) => n ? { n, ...rest } : rest) : value]));
 
-/** One step a lifecycle machine recorded for the task: the machine, its event, the state it reached and when (epoch seconds). */
-export interface ActivityEvent { at: number; machine: string; event: string; state: string }
+/** One row of Activity or Comments: who wrote it, when (epoch seconds), its Markdown body, and for a checkpoint the criterion it verified and the command output it recorded. */
+export interface ActivityEvent { key: string; at: number; kind: "checkpoint" | "system" | "comment"; who: string; body: string; ac?: number; detail?: string }
 
-/** Every step the task's machines recorded in its snapshot, oldest first: the Activity section's read-only list. */
-export function activityEvents(task: KanbanTask): ActivityEvent[] {
-  return task.machines
-    .flatMap((m) => m.trail.map((step) => ({ at: step.at, machine: m.machine, event: step.event, state: step.state })))
-    .sort((a, b) => a.at - b.at);
+const VERIFIED = /^Verified AC #(\d+):\s*/;
+/** `checkpoint-ac --run` evidence, passed or not, is its command line, a blank line, then the output tail in a fence. */
+const OUTPUT_FENCE = /^```\w*\n?|\n?```$/g;
+const fold = (text: string) => {
+  const cut = text.indexOf("\n\n```");
+  const detail = cut < 0 ? "" : text.slice(cut + 2).trim().replace(OUTPUT_FENCE, "").trim();
+  return { body: cut < 0 ? text : text.slice(0, cut), ...(detail && { detail }) };
+};
+const SESSION_LINK = /^\*\*Session Link:\*\* (\S+)/;
+/** The harness logs every tool call a session makes, and a checkpoint step only echoes the comment that carries its evidence. */
+const QUIET_MACHINE = "harness";
+const QUIET_EVENT = "AC_CHECKPOINTED";
+
+/** A comment as a row: `task checkpoint-ac` evidence, a session's claim and the board's own notes are activity; the rest is conversation. */
+function commentRow(c: TaskComment, i: number): ActivityEvent {
+  const row = { key: `c${i}`, at: Date.parse(c.created.replace(" ", "T")) / 1000 || 0, who: c.author ?? "agent", body: c.text };
+  const verified = VERIFIED.exec(c.text);
+  if (verified) return { ...row, kind: "checkpoint", ac: Number(verified[1]), ...fold(c.text.slice(verified[0].length)) };
+  const link = SESSION_LINK.exec(c.text)?.[1];
+  if (link) return { ...row, kind: "system", body: `Claimed by session [\`${link.split("/").pop()!.replace(/^session_/, "").slice(0, 8)}\`](${link})` };
+  if (row.who.startsWith("starpulse/")) return { ...row, kind: "system", who: "starpulse" };
+  return { ...row, kind: "comment", ...fold(c.text) };
+}
+
+/** D4: Activity is the read-only record, oldest first (checkpoints, the claim, lifecycle steps); Comments is everything people wrote. */
+export function taskActivity(task: KanbanTask, comments: TaskComment[]): { activity: ActivityEvent[]; comments: ActivityEvent[] } {
+  const rows = comments.map(commentRow);
+  const steps = task.machines.filter((m) => m.machine !== QUIET_MACHINE).flatMap((m) => m.trail.filter((s) => s.event !== QUIET_EVENT).map((s, i): ActivityEvent => (
+    { key: `${m.machine}${i}`, at: s.at, kind: "system", who: m.machine, body: `\`${s.event}\` → ${s.state.replace(/_/g, " ")}` })));
+  return {
+    activity: [...rows.filter((r) => r.kind !== "comment"), ...steps].sort((a, b) => a.at - b.at),
+    comments: rows.filter((r) => r.kind === "comment"),
+  };
 }
 
 /** Post a comment through the edit endpoint. A comment writes no field, so the request names the title as it stands and changes nothing. */

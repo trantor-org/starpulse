@@ -1,5 +1,5 @@
 // The task view: every section reads in place and edits in place, one at a time, each Save a guarded write of that section's diff.
-import { Fragment, useCallback, useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useEffectEvent, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { ago, fmtAt } from "../../shared/clock";
 import { RatingControl } from "./RatingControl";
 import { columnsOf, roleOf, type KanbanTask } from "./kanbanModel";
@@ -7,8 +7,8 @@ import { startLane, startable } from "./start";
 import { StartCriteria } from "./StartCriteria";
 import type { Capabilities, Pull, Roles } from "../../api";
 import {
-  PRIORITIES, SECTION_NAMES, activityEvents, ciHistory, closesOnKey, copyText, copyToClipboard, dependencyRows, editKey, fetchRecord, markdown, menuKey, metCount, onScrim, postComment, saveSection, sessionOf, taskBody, toggleItem,
-  type CiPull, type DepRow, type Item, type MenuState, type Section, type TaskField, type TaskRecord,
+  PRIORITIES, SECTION_NAMES, ciHistory, closesOnKey, copyText, copyToClipboard, dependencyRows, editKey, fetchRecord, markdown, menuKey, metCount, onScrim, postComment, saveSection, sessionOf, taskActivity, taskBody, toggleItem,
+  type ActivityEvent, type CiPull, type DepRow, type Item, type MenuState, type Section, type TaskField, type TaskRecord,
 } from "./taskViewModel";
 
 export interface TaskViewProps {
@@ -157,26 +157,22 @@ function DepRows({ rows, names, roles, open }: { rows: DepRow[]; names: Record<s
   ));
 }
 
-/** Each machine the task is in, closed to its state and open to its last five transitions. */
-function MachineRows({ machines, now }: { machines: KanbanTask["machines"]; now: number }) {
-  return machines.length ? (
-    <div className="machs">
-      {machines.map((m) => (
-        <details key={m.machine} className="m">
-          <summary><span className={m.source ? "p mapped" : "p"} title={m.source ? `mapped from ${m.source}` : undefined} /><b>{m.machine}</b><span className="s">{m.state.replace(/_/g, " ")}</span>
-            <span className="k">{m.at ? `${ago(now - m.at)} ago` : ""}</span></summary>
-          {m.trail.length > 0 && <ol>{m.trail.slice(-5).map((t, i) => <li key={i}><code>{t.event}</code> → {t.state.replace(/_/g, " ")}<span className="k"> {fmtAt(t.at)}</span></li>)}</ol>}
-        </details>
-      ))}
-    </div>
-  ) : <span className="none">In no machine right now</span>;
-}
-
 /** Text with each TASK-N id drawn as a link that opens that task in this dialog. */
 function Linked({ text, open }: { text: string; open: (id: string) => void }) {
   return <>{text.split(/(TASK-\d+)/).map((part, i) => i % 2 ? (
     <a key={i} className="tl" href={`?view=kanban&task=${part}`} onClick={(e) => { e.preventDefault(); open(part); }}>{part}</a>
   ) : part)}</>;
+}
+
+/** An Activity or Comments row's body with the mockup's inline Markdown: `code`, **bold**, [links](url) and TASK-N ids. */
+function Inline({ text, open }: { text: string; open: (id: string) => void }) {
+  return <>{text.split(/(`[^`]+`|\*\*[^*]+\*\*|\[[^\]]+\]\(https?:[^)]+\))/).map((part, i) => {
+    if (i % 2 === 0) return <Linked key={i} text={part} open={open} />;
+    if (part.startsWith("`")) return <code key={i}>{part.slice(1, -1)}</code>;
+    if (part.startsWith("**")) return <strong key={i}><Linked text={part.slice(2, -2)} open={open} /></strong>;
+    const [, label, href] = /^\[(.+)\]\((.+)\)$/.exec(part)!;
+    return <a key={i} href={href} target="_blank" rel="noopener"><Inline text={label} open={open} /> ↗</a>;
+  })}</>;
 }
 
 /** A section's description, plan or notes as Markdown blocks. */
@@ -209,7 +205,7 @@ function Checks({ name, field, items, editing, canToggle, bad, evidenceFor, evid
       <div className="rlist">
         {items.length ? items.map((item) => (
           <Fragment key={item.n}>
-            <label className={`ritem${item.checked ? " done" : ""}`}>
+            <label className={`ritem${item.checked ? " done" : ""}`} id={field === "acceptanceCriteria" ? `ac${item.n}` : undefined}>
               <input type="checkbox" checked={item.checked} disabled={!canToggle} aria-label={`${name} #${item.n} done`}
                 onChange={(e) => toggle(item.n, e.currentTarget.checked)} />
               <span className="nn">#{item.n}</span><span className="tx"><Linked text={item.text} open={open} /></span>
@@ -401,8 +397,26 @@ export function TaskView(p: TaskViewProps) {
   }, [toast]);
 
   const criteria = base.start_criteria ?? [];
-  const comments = base.comments ?? [];
-  const events = activityEvents(p.task);
+  const { activity, comments } = taskActivity(p.task, base.comments ?? []);
+  /** A checkpoint's AC tag brings its criterion into view and flashes it, as the approved mockup does. */
+  const jump = (event: MouseEvent<HTMLAnchorElement>, n: number) => {
+    event.preventDefault();
+    const row = event.currentTarget.closest(".modal")?.querySelector(`#ac${n}`);
+    if (!row) return;
+    row.scrollIntoView({ block: "center", behavior: "smooth" });
+    row.classList.add("flash");
+    setTimeout(() => row.classList.remove("flash"), 1400);
+  };
+  const ev = (e: ActivityEvent) => (
+    <div key={e.key} className="ev" data-kind={e.kind}>
+      <span className="dot" />
+      <div className="hd"><span className="who">{e.who}</span><span>{fmtAt(e.at)}</span>
+        {e.ac !== undefined && <a className="tag" href={`#ac${e.ac}`} onClick={(event) => jump(event, e.ac!)}>AC #{e.ac}</a>}
+        {e.kind === "system" && <span>event</span>}</div>
+      <div className="bd"><Inline text={e.body} open={p.open} /></div>
+      {e.detail && <details className="out"><summary>output</summary><pre>{e.detail}</pre></details>}
+    </div>
+  );
   const deps = dependencyRows(p.tasks, p.task);
   const offered = columnsOf(names, roles).filter((c) => c in p.task.moves).map((c) => ({
     to: c, text: names[c] ?? c, allowed: p.task.moves[c].allowed, reason: p.task.moves[c].reason ?? "",
@@ -499,25 +513,12 @@ export function TaskView(p: TaskViewProps) {
             {p.record && prose("plan", "Implementation plan")}
             {p.record && prose("notes", "Notes")}
             <section className="sec" id="activity">
-              <div className="sh"><span className="t">Activity</span>{events.length > 0 && <span className="n">{events.length}</span>}</div>
-              {events.length > 0
-                ? <div className="acts2">{events.map((e) => (
-                  <div key={`${e.at} ${e.machine} ${e.event}`} className="ev" data-kind={/CHECKPOINT/.test(e.event) ? "checkpoint" : "transition"}>
-                    <span className="dot" />
-                    <div className="hd"><span className="who">{e.machine}</span><code>{e.event}</code><span>→ {e.state.replace(/_/g, " ")}</span><span className="k">{fmtAt(e.at)}</span></div>
-                  </div>
-                ))}</div>
-                : <span className="none">No activity yet</span>}
+              <div className="sh"><span className="t">Activity</span>{activity.length > 0 && <span className="n">{activity.length}</span>}</div>
+              {activity.length > 0 ? <div className="acts2">{activity.map(ev)}</div> : <span className="none">No activity yet</span>}
             </section>
             <section className="sec" id="comments">
               <div className="sh"><span className="t">Comments</span>{comments.length > 0 && <span className="n">{comments.length}</span>}</div>
-              {comments.length > 0 && <div className="acts2">{comments.map((c) => (
-                <div key={`${c.created} ${c.text}`} className="ev" data-kind="comment">
-                  <span className="dot" />
-                  <div className="hd"><span className="who">{c.author ?? "agent"}</span><span>{c.created}</span></div>
-                  <div className="bd">{c.text}</div>
-                </div>
-              ))}</div>}
+              {comments.length > 0 && <div className="acts2">{comments.map(ev)}</div>}
               {canEdit && (
                 <div className="compose">
                   <textarea aria-label="Add a comment" placeholder="Add a comment" value={comment} onChange={(e) => setComment(e.target.value)}
@@ -555,7 +556,6 @@ export function TaskView(p: TaskViewProps) {
                 </>}
               </div>
             </RailSection>
-            <RailSection name="Machines" count={p.task.machines.length}><MachineRows machines={p.task.machines} now={p.now} /></RailSection>
             {sec("details", "Details", (
               <table className="props"><tbody>
                 <tr><td>profile</td><td>{editing === "details" ? <Select {...fp("profile", "details")} label="Profile" value={draft.profile} options={[["", "unassigned"], ...p.profiles.map((v): [string, string] => [v, v])]} onChange={(value) => change("profile", value)} /> : draft.profile || "—"}</td></tr>
