@@ -35,6 +35,12 @@ function mock(scale = 100, W = 1920, H = 1080): Scene {
   clock.mockReturnValue(60_000);
   return board(live(), { scale, W, H, from: 3, secs: 6 });
 }
+/** The share of phase branch `l`'s line, from the hub, out to its station `s`. */
+// a sub-machine's points leave out the parent station it forks from, so it passes that station as `fork`
+const upTo = (l: ReturnType<typeof T.branchLines>[number], s: number, fork?: (typeof l.pts)[number]) => {
+  const pts = fork ? [fork, ...l.pts] : l.pts, cum = pts.map((_, i) => pts.slice(1, i + 1).reduce((a, p, k) => a + dist(pts[k], p), 0));
+  return cum[pts.findIndex((p) => p.k === `${l.key}:${s}`)] / cum.at(-1)!;
+};
 const dist = (a: Pt, b: Pt) => Math.hypot(a.x - b.x, a.y - b.y);
 const stationsOf = (l: ReturnType<typeof T.branchLines>[number]) => l.pts.filter((p) => new RegExp(`^${l.key.replace(/[|]/g, "\\|")}:\\d+$`).test(p.k));
 
@@ -127,7 +133,7 @@ describe("placeBranches", () => {
         const s = { x: p.x * v.k + v.x, y: p.y * v.k + v.y };
         expect(s.x > 0 && s.x < W && s.y > 0 && s.y < H, `${p.k} at ${Math.round(s.x)},${Math.round(s.y)}`).toBe(true);
         // ring-2 lanes start one past their parent's, which takes one of the first three
-        expect(dist(p, g) - g.edge, p.k).toBeLessThanOrEqual(20 + 5 * 28 + 0.5);
+        expect(dist(p, g) - g.edge, p.k).toBeLessThanOrEqual(10 + 5 * 14 + 0.5);
       }
   });
 
@@ -167,16 +173,21 @@ describe("placeBranches", () => {
     }
   });
 
-  it("opens a branch after the page has loaded over 0.6 s on an ease, slow at both ends", () => {
+  it("opens a branch after the page has loaded over 0.6 s on an ease, slow at both ends, out to the station its dot is on", () => {
     const scene = sc.build({ S: sky.merge(live()), moves: new sky.Moves(), W: 1920, H: 1080, T: 0, scale: 100 }, { kind: "board" }), ext: number[] = [];
     const held = scene.tasks.filter((k) => k.h).map((k) => [k, k.h] as const);
     for (const [k] of held) k.h = undefined;
     T.placeBranches(scene, 0);
     for (const [k, h] of held) k.h = h;
+    const one = () => T.branchLines(0).filter((l) => l.ring === 1).sort((a, b) => (a.key < b.key ? -1 : 1))[0];
     for (let i = 1; i <= 45; i++) {
       T.placeBranches(scene, i / 60);
-      ext.push(Math.max(0, ...T.branchLines(0).filter((l) => l.ring === 1).map((l) => l.ext)));
+      ext.push(one()?.ext ?? 0);
     }
+    // a phase branch's dots sit short of its last station, so it opens part way: each frame is measured as a share of where it stops
+    const end = ext.at(-1)!;
+    expect(end).toBeLessThan(1);
+    ext.forEach((e, i) => (ext[i] = e / end));
     expect(ext[5], "0.1 s").toBeLessThan(0.1);
     expect(ext[17], "0.3 s").toBeGreaterThan(0.45);
     expect(ext[17], "0.3 s").toBeLessThan(0.55);
@@ -184,17 +195,36 @@ describe("placeBranches", () => {
     expect(ext[36], "0.6 s").toBe(1);
   });
 
-  it("draws every branch, sub-machines too, fully grown on the first frame after the page loads", () => {
+  it("draws every branch, sub-machines too, out to the furthest station a dot or a sub-machine on it has reached on the first frame after the page loads", () => {
     const scene = sc.build({ S: sky.merge(live()), moves: new sky.Moves(), W: 1920, H: 1080, T: 0, scale: 100 }, { kind: "board" });
     const sun = (scene.tasks.find((k) => k.h)!.host as Galaxy).id, mine = scene.tasks.filter((k) => (k.host as Galaxy).id === sun);
     const steps = (n: number) => Array.from({ length: n }, (_, i) => `s${i}`);
-    mine[0].h = { machine: "deliver", steps: steps(5), j: 3, ring1: true };
+    mine[0].h = { machine: "deliver", steps: steps(5), j: 1, ring1: true };
     mine[1].h = { machine: "ci", steps: steps(4), j: 1, ring1: false, side: { machine: "deliver", steps: steps(5), j: 3 } };
     T.placeBranches(scene, 0);
-    const lines = T.branchLines(0);
-    expect(lines.map((l) => [l.key, l.ext])).toEqual(expect.arrayContaining([[`${sun}|deliver`, 1], [`${sun}|deliver|ci`, 1]]));
-    expect(lines.filter((l) => l.ext < 1).map((l) => l.key)).toEqual([]);
+    const lines = T.branchLines(0), at = (key: string) => lines.find((l) => l.key === key)!;
+    expect(at(`${sun}|deliver`).ext).toBeCloseTo(upTo(at(`${sun}|deliver`), 3), 6);
+    const fork = at(`${sun}|deliver`).pts.find((p) => p.k === `${sun}|deliver:3`)!;
+    expect(at(`${sun}|deliver|ci`).ext).toBeCloseTo(upTo(at(`${sun}|deliver|ci`), 1, fork), 6);
+    expect(at(`${sun}|deliver|ci`).ext).toBeLessThan(1);
     expect(T.offLine(scene, 0.5)).toEqual([]);
+  });
+
+  it("grows a branch out to the next station only as its dot moves there, over 0.6 s", () => {
+    const scene = sc.build({ S: sky.merge(live()), moves: new sky.Moves(), W: 1920, H: 1080, T: 0, scale: 100 }, { kind: "board" });
+    const sun = (scene.tasks.find((k) => k.h)!.host as Galaxy).id, mine = scene.tasks.filter((k) => (k.host as Galaxy).id === sun);
+    const steps = Array.from({ length: 5 }, (_, i) => `s${i}`);
+    mine[0].h = { machine: "deliver", steps, j: 0, ring1: true };
+    run(scene, 0, 2);
+    const line = () => T.branchLines(0).find((l) => l.key === `${sun}|deliver`)!;
+    const first = line().ext;
+    expect(first).toBeCloseTo(upTo(line(), 0), 6);
+    mine[0].h = { machine: "deliver", steps, j: 2, ring1: true };
+    run(scene, 2 + 1 / 60, 0.25);
+    expect(line().ext).toBeGreaterThan(first);
+    expect(line().ext).toBeLessThan(upTo(line(), 2));
+    run(scene, 2.3, 1);
+    expect(line().ext).toBeCloseTo(upTo(line(), 2), 6);
   });
 
   it("keeps a dot on the lines drawn under it as it rides out onto a sub-machine that is still growing", () => {
@@ -265,9 +295,9 @@ describe("placeBranches", () => {
     // once no task is on it the branch retracts, and the pointer still on its line prints nothing
     for (const t of scene.tasks) if (t.h?.machine === machine) t.h = undefined;
     const ext = () => T.branchLines(0).find((l) => l.key === sub.key)?.ext ?? 0;
-    for (let t = 9.1; t < 14 && ext() === 1; t += 1 / 60) T.placeBranches(scene, t);
+    for (let t = 9.1; t < 14 && ext() === sub.ext; t += 1 / 60) T.placeBranches(scene, t);
     expect(ext()).toBeGreaterThan(0);
-    expect(ext()).toBeLessThan(1);
+    expect(ext()).toBeLessThan(sub.ext);
     text.mockClear();
     T.drawBranches(dc(null), d, scene, stationsOf(sub)[0]);
     T.drawBranches(dc({ kind: "task", o: k }), d, scene, null);
@@ -285,12 +315,12 @@ describe("placeBranches", () => {
 
   it("tears a branch down over 0.6 s on an ease once no task is on its machine, and removes it", () => {
     const snap = live(), scene = board(snap), lines = T.branchLines();
-    const key = lines.find((l) => l.ring === 1)!.key, [sun, machine] = key.split("|"), ext: number[] = [];
+    const { key, ext: top } = lines.find((l) => l.ring === 1)!, [sun, machine] = key.split("|"), ext: number[] = [];
     for (const k of scene.tasks) if (k.h?.machine === machine && (k.host as Galaxy).id === sun) k.h = undefined;
     // the dots that rode it glide off first, each keeping the branch up until it is clear
     for (let i = 0; i < 720; i++) {
       T.placeBranches(scene, 3 + i / 60);
-      ext.push(T.branchLines(0).find((l) => l.key === key)?.ext ?? 0);
+      ext.push((T.branchLines(0).find((l) => l.key === key)?.ext ?? 0) / top);
     }
     const start = ext.findIndex((e) => e < 1);
     expect(ext[0]).toBe(1);
@@ -347,7 +377,8 @@ describe("placeBranches", () => {
       last = d;
     }
     const moving = step.filter((d) => d > 0.01);
-    expect(moving.length).toBeGreaterThan(20);
+    // two stations on a lane 14 px out is about 30 px: some 18 frames at 98 px/s
+    expect(moving.length).toBeGreaterThan(12);
     // constant speed, never slower on a longer way and never faster on a shorter
     for (const d of moving.slice(1, -1)) expect(d).toBeCloseTo(98 / 60, 1);
   });
@@ -380,7 +411,7 @@ describe("placeBranches", () => {
     // the old line stays drawn, whole, while its dots glide back off it, then tears down and grows out again in the new place
     const fall = ext.findIndex((e, i) => i && e < ext[i - 1]);
     expect(fall, "the line tears down").toBeGreaterThan(0);
-    expect(ext[fall - 1], "whole until its dots have left").toBe(1);
+    expect(ext[fall - 1], "whole until its dots have left").toBe(line.ext);
     expect(gliding[fall] || onLine[fall], "a dot still on it when it tears down").toBe(false);
     expect(ext.slice(fall).findIndex((e) => e === 0), "an ease over 0.6 s, not a cut").toBeGreaterThanOrEqual(0.6 * 60 - 2);
     expect(ext.slice(fall).some((e) => e === 0), "gone before it regrows").toBe(true);
