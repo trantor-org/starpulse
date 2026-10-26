@@ -86,7 +86,7 @@ const kind = (b: Branch) => (b.ring === 1 ? PHASE : SUBM);
 const branches = new Map<string, Branch>(), mems = new Map<string, Mem>();
 /** The dots beyond a task's first, drawn this frame: each a copy of its task's body, its own position and id `<task>~<n>`. */
 let twins: Body[] = [];
-let lastNow = 0;
+let lastNow = 0, loaded = false;
 
 const at = (g: Pt, r: number, a: number, k: string): Node => ({ k, x: g.x + Math.cos(a) * r, y: g.y + Math.sin(a) * r });
 const angle = (g: Pt, p: Pt) => Math.atan2(p.y - g.y, p.x - g.x);
@@ -466,6 +466,9 @@ export function placeBranches(sc: Scene, now: number): boolean {
   const kids = new Set([...branches.values()].flatMap((b) => (b.parent && !Number.isNaN(b.th) ? [b.parent] : [])));
   // the branches a dot is on, or still gliding off: a line leaving the sky waits for them to clear
   const ridden = new Set([...mems.values()].flatMap((m) => [...m.hold, ...m.bks]));
+  // the first frame with tasks on it is the page coming up on work already under way: its branches show as they stand, not grown afresh
+  const born = !loaded && tasks.length > 0;
+  loaded ||= born;
   for (const b of [...branches.values()]) {
     if (!sc.galaxies[b.sun] || (b.parent && !branches.has(b.parent))) {
       branches.delete(b.key);
@@ -473,7 +476,7 @@ export function placeBranches(sc: Scene, now: number): boolean {
     }
     // a branch grows once it is placed, a sub-machine once its parent's line has reached the station it opens from
     const par = b.parent ? branches.get(b.parent)! : undefined;
-    if (b.alive && !b.leaving && !Number.isNaN(b.th) && (!par || reached(par, b.pj))) b.p = Math.min(1, b.p + dt / OPEN);
+    if (b.alive && !b.leaving && !Number.isNaN(b.th) && (born || !par || reached(par, b.pj))) b.p = born ? 1 : Math.min(1, b.p + dt / OPEN);
     else if (!kids.has(b.key) && !(b.leaving && ridden.has(b.key))) b.p -= dt / OPEN;
     b.ext = ease(Math.max(0, b.p));
     if (b.leaving && b.p <= 0) Object.assign(b, { leaving: false, th: NaN, ext: 0, p: 0, ok: undefined });

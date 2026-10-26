@@ -167,8 +167,12 @@ describe("placeBranches", () => {
     }
   });
 
-  it("opens a new branch over 0.6 s on an ease, slow at both ends", () => {
-    const scene = board(live(), { secs: 0 }), ext: number[] = [];
+  it("opens a branch after the page has loaded over 0.6 s on an ease, slow at both ends", () => {
+    const scene = sc.build({ S: sky.merge(live()), moves: new sky.Moves(), W: 1920, H: 1080, T: 0, scale: 100 }, { kind: "board" }), ext: number[] = [];
+    const held = scene.tasks.filter((k) => k.h).map((k) => [k, k.h] as const);
+    for (const [k] of held) k.h = undefined;
+    T.placeBranches(scene, 0);
+    for (const [k, h] of held) k.h = h;
     for (let i = 1; i <= 45; i++) {
       T.placeBranches(scene, i / 60);
       ext.push(Math.max(0, ...T.branchLines(0).filter((l) => l.ring === 1).map((l) => l.ext)));
@@ -178,6 +182,19 @@ describe("placeBranches", () => {
     expect(ext[17], "0.3 s").toBeLessThan(0.55);
     expect(ext[29], "0.5 s").toBeGreaterThan(0.9);
     expect(ext[36], "0.6 s").toBe(1);
+  });
+
+  it("draws every branch, sub-machines too, fully grown on the first frame after the page loads", () => {
+    const scene = sc.build({ S: sky.merge(live()), moves: new sky.Moves(), W: 1920, H: 1080, T: 0, scale: 100 }, { kind: "board" });
+    const sun = (scene.tasks.find((k) => k.h)!.host as Galaxy).id, mine = scene.tasks.filter((k) => (k.host as Galaxy).id === sun);
+    const steps = (n: number) => Array.from({ length: n }, (_, i) => `s${i}`);
+    mine[0].h = { machine: "deliver", steps: steps(5), j: 3, ring1: true };
+    mine[1].h = { machine: "ci", steps: steps(4), j: 1, ring1: false, side: { machine: "deliver", steps: steps(5), j: 3 } };
+    T.placeBranches(scene, 0);
+    const lines = T.branchLines(0);
+    expect(lines.map((l) => [l.key, l.ext])).toEqual(expect.arrayContaining([[`${sun}|deliver`, 1], [`${sun}|deliver|ci`, 1]]));
+    expect(lines.filter((l) => l.ext < 1).map((l) => l.key)).toEqual([]);
+    expect(T.offLine(scene, 0.5)).toEqual([]);
   });
 
   it("keeps a dot on the lines drawn under it as it rides out onto a sub-machine that is still growing", () => {

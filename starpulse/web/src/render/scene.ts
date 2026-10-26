@@ -868,10 +868,17 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
       const q = S.latest[a.id], f = flowsOf(sid)[0];
       return !!q && !a.today && ps.some((p) => (q.flow === f && p.q.id === q.state) || p.child.machine === q.flow);
     };
+    // a state's tasks split the same at every zoom, so the zoom search below sizes each state from one split
+    const held = new Map(
+      states.map((st) => {
+        const all = byState[st.id] || [], fs = flowsOf(st.id), ps = phasesOf(st.id), sides = ps.flatMap((p) => p.side);
+        // the sun's own tasks: none in a phase, a side machine or a lifecycle's sub-state
+        const here = all.filter((a) => !sides.includes(S.latest[a.id]?.flow ?? "") && !phased(st.id, ps, a) && !deepest(a));
+        return [st.id, { fs, ps, here }];
+      }),
+    );
     const radius = (st: (typeof states)[number], sunR: number) => {
-      const all = byState[st.id] || [], fs = flowsOf(st.id), ps = phasesOf(st.id), sides = ps.flatMap((p) => p.side);
-      // the sun's own tasks: none in a phase, a side machine or a lifecycle's sub-state
-      const here = all.filter((a) => !sides.includes(S.latest[a.id]?.flow ?? "") && !phased(st.id, ps, a) && !deepest(a)), foot = footprint(false, here.length, sunR - SUN_R);
+      const { fs, ps, here } = held.get(st.id)!, foot = footprint(false, here.length, sunR - SUN_R);
       // the sky is laid out from the footprint the machines' moons once reserved, so the suns keep the places the Board has always given them
       const was = footprint(fs.length > 0, here.length, sunR - SUN_R), lay = { R: was.R, reach: fs.length ? was.reach : null };
       return { r: sunR, R: foot.R, band: foot.band, lay, ps, here };
