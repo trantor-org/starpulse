@@ -436,6 +436,11 @@ def _move(
     """Move the held task `agent` to `column` as `who` through `writer`: the HTTP status and JSON body of the move."""
     if (refused := _move_refusal(agent, task, column, who)) is not None:
         return refused
+    return _write_move(feed, task, column, who, writer)
+
+
+def _write_move(feed: BoardFeed, task: str, column: str, who: _Who, writer: MoveWriter) -> tuple[int, dict[str, str]]:
+    """Write `task` into `column` as `who` through `writer`, unjudged by the machine: the HTTP status and JSON body."""
     status = _status(column)
     written = _record_written(
         feed,
@@ -456,23 +461,28 @@ def claim_task(request: _ClaimBody, feed: BoardFeed, writer: MoveWriter) -> tupl
 
     The holder is an opaque string. A task already In Progress under that holder answers 200 without a write; under
     another, or when the holder already has another task In Progress, it is refused 409 naming the holder or the task.
+    A task In Progress held by no session is adopted: the holder is recorded without a move.
     """
     task, who = request.task, _who(request)
     if (agent := _held(feed, task)) is None:
         return _not_held(feed, task)
     working = feed.roles.working
     held = {"task": task, "to": working, "assignee": who.session}
-    if agent["state"] == working:
+    adopt = agent["state"] == working and not agent.get("assignee")
+    if agent["state"] == working and not adopt:
         if agent.get("assignee") == who.session:
             return 200, held
-        return 409, {"error": f"{task} is already In Progress, held by {agent.get('assignee') or 'no session'}"}
+        return 409, {"error": f"{task} is already In Progress, held by {agent['assignee']}"}
     others = [a["id"] for a in feed.open_tasks() if a["state"] == working and a.get("assignee") == who.session]
     if others:
         return 409, {
             "error": f"this session already holds {others[0]} In Progress: park it, defer it or finish it before "
             f"claiming {task}"
         }
-    status, body = _move(feed, agent, task, working, who, writer)
+    if adopt:
+        status, body = _write_move(feed, task, working, who, writer)
+    else:
+        status, body = _move(feed, agent, task, working, who, writer)
     return (200, {**body, "assignee": who.session}) if status == 200 else (status, body)
 
 

@@ -138,6 +138,20 @@ def test_a_session_that_claims_the_task_it_holds_again_is_told_so_and_writes_not
     assert _text(tmp_path, "task-1") == before
 
 
+def test_a_claim_of_a_task_in_progress_held_by_no_session_adopts_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    feed, built = _lifecycle(tmp_path, monkeypatch, {"task-1": ("In Progress", {})})
+
+    assert _claim(feed, built, task="task-1", session="s-1") == (
+        200,
+        {"task": "task-1", "to": "in_progress", "assignee": "s-1"},
+    )
+
+    _scan(tmp_path, feed)
+    assert [(agent["state"], agent["assignee"]) for agent in feed.open_tasks()] == [("in_progress", "s-1")]
+
+
 def test_a_session_holding_a_task_in_progress_may_not_claim_a_second(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

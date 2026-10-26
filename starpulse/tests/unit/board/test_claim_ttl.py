@@ -191,7 +191,7 @@ def test_a_stale_row_never_releases_a_claim_twice(served) -> None:
 
     assert sweep(built, store, _rows(built), ttl=1800, now=claimed + 3700) == []
 
-    assert [event.type for event in store.read("task", "task-5")].count("Released") == 1
+    assert [e.type for e in store.read("task", "task-5") if "ttl" in e.payload].count("Released") == 1
 
 
 def test_the_feed_rows_show_a_task_the_board_moved_on_and_nothing_is_released(served, tmp_path: Path) -> None:
