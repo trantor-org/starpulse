@@ -53,8 +53,9 @@ _DATA_VERSION_INTERVAL = 0.25
 #: The longest a waiting tail sleeps before it looks at its stop event again, in seconds.
 _STOP_SLICE = 0.5
 
-#: How long SQLite waits on another process's write lock before an append gives up and fails open, in seconds.
-_SQLITE_BUSY_TIMEOUT = 5.0
+#: How long SQLite waits on another process's write lock before an append gives up and fails open, in seconds. It
+#: outlasts the multi-second disk stalls of the host's weekly snapshot backup, which held writes past a 5 s wait.
+_SQLITE_BUSY_TIMEOUT = 30.0
 
 #: How many times a new SQLite connection tries to switch to WAL, which fails at once, without waiting on the busy
 #: timeout, while another connection opens or closes the database.
