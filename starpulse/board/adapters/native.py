@@ -441,6 +441,7 @@ _TEXT_SECTIONS = {
     "plan": ("PLAN", "Implementation Plan"),
     "notes": ("NOTES", "Implementation Notes"),
     "finalSummary": ("FINAL_SUMMARY", "Final Summary"),
+    "needsAttention": ("NEEDS_ATTENTION", "Needs attention"),
 }
 #: The checklists an edit rewrites: the field's name, the markers' name, the heading a new section gets and its pattern.
 _CHECKLISTS = {
@@ -620,21 +621,34 @@ def _doc_linker(root: Path, base: Path) -> _Linker:
     return link
 
 
-def _editor(root: Path, statuses: tuple[str, ...], guard: _Guard = _Guard(), link: _Linker = _unlinked) -> TaskEditor:
+def _editor(
+    root: Path,
+    statuses: tuple[str, ...],
+    guard: _Guard = _Guard(),
+    link: _Linker = _unlinked,
+    attention: str | None = None,
+) -> TaskEditor:
     """A board writer that applies every change to a task's file in one write, or refuses the whole edit.
 
     `changes` holds the new value of each field `read` names except `comments`, which `comment` appends to: one text, or a
     list appended in order, each blank one skipped; `appendNotes` is one more, text added to the end of the notes. An
     empty priority, milestone, profile or type and an empty references, documentation or modified-files list removes its
     key, a status is spelled as its lane is, a checklist item without a number is new, and `link` reads a doc id in the
-    documentation list as its file.
+    documentation list as its file. A move to the `attention` lane with comment text also writes that text as the task's
+    `## Needs attention` section, the reason the lane's guard reads.
     """
     spelled = {lane_id(status): status for status in statuses}
 
     def edit(task: str, changes: Mapping[str, Any], comment: str | Sequence[str], /, actor: str = OPERATOR) -> Written:
+        texts = [comment] if isinstance(comment, str) else comment
+        status = str(changes.get("status") or "")
+        reason = "\n".join(text.strip() for text in texts if text.strip())
+        if attention and reason and lane_id(status) == lane_id(attention):
+            changes = {**changes, "needsAttention": reason}
+
         def apply(frontmatter: dict, body: str) -> str:
             body = _apply(task, frontmatter, body, link(changes), spelled)
-            for text in [comment] if isinstance(comment, str) else comment:
+            for text in texts:
                 recorded = _recorded(text, _comments(body))
                 body = _comment(body, text, actor) if text.strip() and not recorded else body
             return body
@@ -643,7 +657,6 @@ def _editor(root: Path, statuses: tuple[str, ...], guard: _Guard = _Guard(), lin
             written = _update(root, task, apply, guard, actor)
         except ValueError as refusal:  # raised before the file is written, so a refusal writes nothing
             return Written(False, f"{task}: {refusal}")
-        status = str(changes.get("status") or "")
         return _moved(written, spelled.get(lane_id(status), status)) if status else written
 
     return edit
@@ -1211,7 +1224,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             "read": _reader(root, evaluate.latest if isinstance(evaluate, criteria.Evaluator) else evaluate),
             "evaluate": evaluate,
             "holds": _holds(settings.get("holds"), base),
-            "edit": _editor(root, config.statuses, guard, link),
+            "edit": _editor(root, config.statuses, guard, link, roles.attention),
             "archive": _archiver(root, config.statuses, roles, guard),
             "restore": _restorer(root, retired, config.statuses, migrations, guard),
             "complete": _completer(root, config.statuses, roles),

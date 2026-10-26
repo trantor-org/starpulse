@@ -15,7 +15,7 @@ from starpulse.board.board_feed import BoardFeed
 from starpulse.board.machine_tasks import MachineTasks
 from starpulse.scheduler.model.harness_setting import HarnessSetting
 from starpulse.scheduler.model.ledger import Ledger
-from starpulse.scheduler.adapters.loop import Loop
+from starpulse.scheduler.adapters.loop import SETTLE_REFUSED, Loop
 from starpulse.scheduler.model.quiet_hours import QuietHours
 from starpulse.scheduler.model.sampler import Sampler
 from starpulse.scheduler.model.toggle import Toggle
@@ -59,6 +59,7 @@ class Rig:
         self.started: list[str] = []
         self.started_harness: list[str] = []
         self.settled: list[tuple[str, str]] = []
+        self.refuse_settle = False
         self.failing: set[str] = set()
         self.limit: str | None = None
         self.claims: list[tuple[str, str]] = []
@@ -112,6 +113,8 @@ class Rig:
 
     def _settle(self, task: str, reason: str) -> Written:
         self.settled.append((task, reason))
+        if self.refuse_settle:
+            return Written(False, f"{task}: Needs attention needs a non-empty ## Needs attention reason in the description")
         self.put(task, "needs_attention")
         return Written(True, task)
 
@@ -668,3 +671,20 @@ def test_each_harness_has_its_own_session_cap(rig: Rig) -> None:
     rig.harness_setting.set("cursor")
     assert rig.loop.tick() == ["T-2"]
     assert rig.started_harness == ["claude", "cursor"]
+
+
+def test_refused_settle_releases_run_from_inflight_set(rig: Rig) -> None:
+    """A run whose settle is refused leaves the in-flight set and frees its session and demand, and is not retried."""
+    rig.refuse_settle = True
+    rig.put("T-1")
+    rig.loop.tick()
+    rig.put("T-1", lane="in_progress")
+    rig.session("T-1")
+    rig.after(31)  # past the 30 minute default
+
+    rig.loop.tick()
+    rig.loop.tick()
+
+    assert [task for task, _ in rig.settled] == ["T-1"]  # refused once, not retried each tick
+    assert "T-1" not in rig.loop._running
+    assert [run.outcome for run in rig.ledger.runs("T-1")] == [SETTLE_REFUSED]

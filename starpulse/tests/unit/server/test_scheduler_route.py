@@ -365,3 +365,26 @@ def test_scheduler_put_atomic_a_bad_harness_is_a_400_and_keeps_the_quiet_hours(t
 
     assert status == 400 and "harness" in body["error"]
     assert runtime.quiet_hours.get() is None
+
+
+def test_scheduler_settle_writes_needs_attention_section_and_moves_task(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The scheduler's settle is the board's edit to its attention lane with the run's reason: the reason lands in the
+    task's `## Needs attention` section, so the lane's guard passes and the task moves."""
+    from starpulse.tests.unit.board.test_native_lifecycle import _in_progress, _text
+
+    guard = {
+        "on": {"to": "Needs attention"},
+        "require": {"section": {"heading": "Needs attention", "nonempty": True}},
+        "reason": "Needs attention needs a non-empty ## Needs attention reason in the description",
+    }
+    _, built = _in_progress(tmp_path, monkeypatch, rules=[guard])
+    reason = "Scheduler settled task-1: its session was idle for 31 minutes."
+
+    written = built.edit("task-1", {"status": built.roles.attention}, reason)
+
+    assert written.ok, written.output
+    task_text = _text(tmp_path, "task-1")
+    assert "status: Needs attention\n" in task_text
+    assert f"## Needs attention\n\n<!-- SECTION:NEEDS_ATTENTION:BEGIN -->\n{reason}\n" in task_text
