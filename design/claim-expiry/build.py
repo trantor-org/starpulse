@@ -1,7 +1,6 @@
-"""Build the claim-expiry mockup: the skill-phases page with `claim-expiry-src.patch` on top, over a scrubbed capture.
+"""Build the claim-expiry mockup: the served skill-phases kanban with `claim-expiry-src.patch` on top, over a scrubbed capture.
 
-usage: git checkout bac04795b3a6 -- starpulse/web/src   # the patches' base
-       git apply design/skill-phases/skill-phases-src.patch design/claim-expiry/claim-expiry-src.patch
+usage: git apply design/claim-expiry/claim-expiry-src.patch   # on the served kanban source
        pnpm --dir starpulse/web --ignore-workspace exec vite build --mode one-file
        PYTHONPATH=. python design/claim-expiry/build.py [--fixture PATH] [--server URL]
        git checkout HEAD -- starpulse/web/src
