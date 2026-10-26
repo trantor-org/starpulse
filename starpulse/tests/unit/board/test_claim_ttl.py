@@ -239,6 +239,25 @@ def test_serve_follows_the_claim_expiry_the_sweep_pass_saved(served, tmp_path: P
     assert feed.task("task-5")["claim_expires_at"] == claimed + 1800
 
 
+def test_the_board_worker_sweep_saves_each_pass_expiries(
+    served, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`serve` follows only what the sweep persists, so the board's `sweep` must hand its passes to `persist`."""
+    built, feed, store, log = served
+    claimed = _claim(built, store)
+    _scanned(tmp_path, feed)
+    monkeypatch.setattr(claim_ttl, "DEFAULT_TTL", 0.3)
+    saved: list[dict[str, float]] = []
+
+    built.sweep(feed, log, saved.append)
+    deadline = time.monotonic() + 5
+    while not any(saved) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    feed.stop()
+
+    assert any(passed.get("task-5") == claimed + 0.3 for passed in saved)
+
+
 def test_stopping_the_feed_ends_the_running_sweeper(served) -> None:
     built, feed, _store, log = served
     before = set(threading.enumerate())
