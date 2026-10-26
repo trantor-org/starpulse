@@ -26,7 +26,14 @@ describe("sessionNickname", () => {
     expect(sessionNickname(url("01AbCdEfGh"))).not.toBe(sessionNickname(url("10AbCdEfGh")));
   });
 
-  it("names nothing that is not a session URL", () => {
+  it("names a local session by its bare UUID, the same name every time", () => {
+    const uuid = "1491aced-f6da-42b1-9303-9c19adfcc87d";
+    expect(sessionNickname(uuid)).toMatch(/^[a-z]+-[a-z]+$/);
+    expect(sessionNickname(uuid)).toBe(sessionNickname(uuid));
+    expect(sessionNickname(uuid)).not.toBe(sessionNickname("1491aced-f6da-42b1-9303-9c19adfcc87e"));
+  });
+
+  it("names nothing that is not a session URL or UUID", () => {
     expect(sessionNickname("@agent-deep-high")).toBeNull();
     expect(sessionNickname("local")).toBeNull();
     expect(sessionNickname("")).toBeNull();

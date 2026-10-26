@@ -10,6 +10,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { KanbanTask } from "./kanbanModel";
 import type { Pull } from "../../api";
 import { TaskView } from "./TaskView";
+import { sessionNickname } from "./nickname";
 import { board, card, props, record, task } from "../../tests/taskViewFixtures";
 import { closesOnKey, copyText, copyToClipboard, menuKey, onScrim, type StartCriterion } from "./taskViewModel";
 
@@ -207,6 +208,15 @@ describe("the task view's right rail", () => {
       expect(html).toContain(`<a href="${link}" target="_blank" rel="noopener" class="big"><span class="p"></span>Open the claiming session ↗</a>`);
       expect(html).toContain('<div class="k">opus · pr opened · 2m ago · 7 steps</div>');
       expect(html).not.toContain("No session");
+    });
+
+    it("names a session holder by its nickname under Assignee, not its raw UUID or URL", () => {
+      const uuid = "1491aced-f6da-42b1-9303-9c19adfcc87d";
+      const byUuid = session({ task: { ...working, assignee: uuid }, lane: "In progress" });
+      const byUrl = session({ task: { ...working, assignee: link }, lane: "In progress" });
+
+      expect(byUuid).toContain(`<dt>Assignee</dt><dd>${sessionNickname(uuid)}</dd>`);
+      expect(byUrl).toContain(`<dt>Assignee</dt><dd>${sessionNickname(link)}</dd>`);
     });
 
     it("links the session alone when no machine is working the task", () => {

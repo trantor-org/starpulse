@@ -298,8 +298,7 @@ describe("the filters", () => {
     expect(ids({ query: "size-3" })).toEqual(["PROJ-10", "PROJ-2482"]);
   });
 
-  it("match a held session's nickname", () => {
-    const session = "https://claude.ai/code/session_01AbCdEfGh";
+  it.each(["https://claude.ai/code/session_01AbCdEfGh", "1491aced-f6da-42b1-9303-9c19adfcc87d"])("match a held session's nickname: %s", (session) => {
     const held = [...tasks, card("PROJ-11", "Held chore", { assignee: session })];
     const shown = view(held, { ...NO_PREFS, query: sessionNickname(session)! }).columns.flatMap((c) => c.buckets.flatMap((b) => b.tasks.map((t) => t.id)));
     expect(shown).toEqual(["PROJ-11"]);

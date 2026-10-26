@@ -8,6 +8,7 @@ import { startLane, startable } from "./start";
 import { StartCriteria } from "./StartCriteria";
 import { DocReader, DocRows, useDocs } from "./DocReader";
 import { Linked, Md } from "./Markdown";
+import { sessionNickname } from "./nickname";
 import type { Capabilities, Pull, Roles } from "../../api";
 import {
   LABEL_FIELDS, LABEL_RULE, PRIORITIES, SECTION_NAMES, ciHistory, closesOnKey, copyText, copyToClipboard, dependencyRows, detailFields, editKey, fetchRecord, labelRuleError, menuKey, metCount, onScrim, postComment, saveSection, sessionOf, setDetailField, taskActivity, taskBody, toggleItem,
@@ -100,7 +101,7 @@ function SessionRows({ session, assignee, worked, startLane }: { session: Return
       <div className="session">
         <a href={session.url} target="_blank" rel="noopener" className="big"><span className="p" />Open the claiming session ↗</a>
         <dl className="who2">
-          {assignee && <><dt>Assignee</dt><dd>{assignee}</dd></>}
+          {assignee && <><dt>Assignee</dt><dd>{sessionNickname(assignee) ?? assignee}</dd></>}
           <dt>Session</dt>
           <dd><code>{session.id.slice(0, 8)}</code><button type="button" className="mini" title="Copy the resume command" onClick={() => void copyToClipboard(`claude --resume ${session.id}`)}>⧉ resume</button></dd>
         </dl>
