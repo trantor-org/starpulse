@@ -46,7 +46,7 @@ function useBody(link: DocLink, milestone: MilestoneDoc | null): string | null {
 
 /** A doc in the dialog's place, drawn by the same Markdown as a task's body with its mermaid fences as diagrams; Back returns to the task. */
 export function DocReader({ link, milestone, back, open }: { link: DocLink; milestone: MilestoneDoc | null; back: () => void; open: (id: string) => void }) {
-  const body = useBody(link, milestone);
+  const body = useBody(link, milestone)?.replace(/^# .*\n+/, ""); // the title bar already names the doc
   return (
     <>
       <div className="docbar"><button className="cancelbtn" onClick={back}>← Back to task</button><span className="kd">{link.kind}</span><b>{link.id}</b></div>

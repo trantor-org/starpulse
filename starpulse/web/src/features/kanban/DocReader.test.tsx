@@ -9,7 +9,7 @@ const render = vi.fn(async (id: string) => ({ svg: `<svg data-id="${id}"></svg>`
 vi.mock("mermaid", () => ({ default: { initialize: vi.fn(), render } }));
 
 const bodies: Record<string, string> = {
-  "doc-993": "## Decisions\n\nD9 opens docs.\n\n```mermaid\nflowchart LR\n  A --> B\n```",
+  "doc-993": "# Task dialog redesign\n\n## Decisions\n\nD9 opens docs.\n\n```mermaid\nflowchart LR\n  A --> B\n```",
   "doc-12": "## Notes\n\nPlain notes.",
 };
 const served: Record<string, unknown> = {
@@ -56,6 +56,7 @@ describe("the task view's Docs", () => {
     expect(host.querySelector(".docbar button")?.textContent).toContain("Back to task");
     expect(host.querySelector(".doctitle")?.textContent).toBe("Task dialog redesign");
     expect(host.querySelector(".tvleft h4")?.textContent).toBe("Decisions");
+    expect(host.querySelector(".tvleft")?.textContent).not.toContain("# Task dialog redesign"); // the title bar already names it
     expect(host.querySelector(".tvleft .mmd svg")).not.toBeNull();
     expect(render).toHaveBeenCalledWith(expect.stringMatching(/^mmd-/), "flowchart LR\n  A --> B");
     expect(rows(host)[1]!.getAttribute("aria-current")).toBe("true");
