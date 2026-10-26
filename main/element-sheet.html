@@ -955,6 +955,8 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
 
 
 #pnav, #pn-scrim, #nav .pn-x, #kb .lanes { display: none; }
+
+@property --pnav { syntax: "<length>"; inherits: true; initial-value: 0px; }
 @media (max-width: 900px) {
   :root { --pm: 12px; --pnav: calc(38px + 16px * var(--fs)); }
   :is(#kb, #dg, #admin) { left: var(--pm); right: var(--pm); bottom: var(--pnav); }
