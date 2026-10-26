@@ -47,7 +47,7 @@ export function boardDraw(dc: DrawCtx, d: Drawing, io: BoardIO) {
       const hot = isHot("galaxy", g);
       body(g, hot);
       drawTrackRings(g, g.color);
-      label(g.name, g.lab.x, g.lab.y, hot, tally(g), 13);
+      label(g.name, g.lab.x, g.lab.y, hot, tally(g), 13, terminal(g));
     }
   }
   // lifecycle moons: still, named bodies on their state's dashed outer ring, brighter while they have sessions, ringed in amber while one moves.

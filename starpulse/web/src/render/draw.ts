@@ -95,11 +95,12 @@ export function drawing(dc: DrawCtx) {
   }
   const labPx = (n: number) => labelPx(n, dc.K, dc.scale);
   // names sit outside their node in a light, translucent face (the same see-through weight as the flow lines); a hovered node's name firms up
-  function label(name: string, x: number, y: number, hot: boolean, sub?: string | null, size = 12.5) {
+  // `lift` firms the name and count up as a hot one is, for text set on a black hole's shadow, where the grey face barely shows
+  function label(name: string, x: number, y: number, hot: boolean, sub?: string | null, size = 12.5, lift = false) {
     size = labelPx(size, dc.K, dc.scale); // type is a fixed size on screen: readable at fit, never balloons when zoomed in; the Admin font size scales it
     cx.letterSpacing = `${0.6 / dc.K}px`;
-    text(name, x, y, size, rgba(LABEL, hot ? 0.95 : 0.58), "center", 300);
-    if (sub) text(sub, x, y + size + 3 / dc.K, size - labelPx(2, dc.K, dc.scale), rgba(MUTED, hot ? 0.8 : 0.42), "center", 300);
+    text(name, x, y, size, rgba(LABEL, hot || lift ? 0.95 : 0.58), "center", 300);
+    if (sub) text(sub, x, y + size + 3 / dc.K, size - labelPx(2, dc.K, dc.scale), lift ? rgba(LABEL, 0.85) : rgba(MUTED, hot ? 0.8 : 0.42), "center", 300);
     cx.letterSpacing = "0px";
   }
   function circle(x: number, y: number, r: number, stroke: string, w = 1, dash?: number[] | null) {
