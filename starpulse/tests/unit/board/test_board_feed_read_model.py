@@ -336,3 +336,12 @@ def test_a_profile_edit_reaches_the_read_model_task(engine: Engine) -> None:
     assert task is not None
     assert task["profile"] == "@agent-deep-low"
     assert [agent["profile"] for agent in feed.open_tasks()] == ["@agent-deep-low"]
+
+
+def test_the_pull_requests_to_read_are_the_live_tasks_citations(engine: Engine) -> None:
+    pull = "https://github.com/o/r/pull/7"
+    EventStore(engine).append("task", "TASK-1", 0, [_new("TaskCreated", title="Cites", description="", state="In Progress", labels=[], references=[pull, "https://example.com"])])
+    _append(engine, 2, "Ready")
+    _append(engine, 3, "Done", archived=True)
+
+    assert _feed(engine).pull_requests() == {"TASK-1": [pull]}

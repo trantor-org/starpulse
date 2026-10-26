@@ -2,7 +2,7 @@
 import { Fragment, useCallback, useEffect, useEffectEvent, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { ago, fmtAt } from "../../shared/clock";
 import { RatingControl } from "./RatingControl";
-import { columnsOf, roleOf, type KanbanTask } from "./kanbanModel";
+import { columnsOf, prReadState, roleOf, type KanbanTask } from "./kanbanModel";
 import { startLane, startable } from "./start";
 import { StartCriteria } from "./StartCriteria";
 import type { Capabilities, Pull, Roles } from "../../api";
@@ -90,11 +90,16 @@ function RailSection({ name, count, children }: { name: string; count?: number |
 }
 
 /** The session that holds the task as a link that opens it in a new tab, or why none does. */
-function SessionRows({ session, worked, startLane }: { session: ReturnType<typeof sessionOf>; worked: boolean; startLane: boolean }) {
+function SessionRows({ session, assignee, worked, startLane }: { session: ReturnType<typeof sessionOf>; assignee: string; worked: boolean; startLane: boolean }) {
   if (session) {
     return (
       <div className="session">
         <a href={session.url} target="_blank" rel="noopener" className="big"><span className="p" />Open the claiming session ↗</a>
+        <dl className="who2">
+          {assignee && <><dt>Assignee</dt><dd>{assignee}</dd></>}
+          <dt>Session</dt>
+          <dd><code>{session.id.slice(0, 8)}</code><button type="button" className="mini" title="Copy the resume command" onClick={() => void copyToClipboard(`claude --resume ${session.id}`)}>⧉ resume</button></dd>
+        </dl>
         {session.line && <div className="k">{session.line}</div>}
       </div>
     );
@@ -105,19 +110,46 @@ function SessionRows({ session, worked, startLane }: { session: ReturnType<typeo
 /** A run's ISO start in Arizona time, or a dash when the scheduler gave none it can parse. */
 const runStart = (iso: string) => (Number.isNaN(Date.parse(iso)) ? "—" : fmtAt(Date.parse(iso) / 1000));
 
+/** A task carrying a label with this prefix is a deviated sample: its run drew a profile off the matrix, so the operator rates it. */
+const TRIAL = "trial-";
+
 const checkClass = (p: Pull) => (p.merged ? "merged" : p.checks === "failing" ? "fail" : p.checks);
+
+/** One pull request's row: its state, check result and unread review count, or "not read yet" with the reason. */
+function PullRow({ p }: { p: Pull }) {
+  const read = prReadState(p);
+  return (
+    <div className="pull">
+      <a href={p.url} target="_blank" rel="noopener">{p.repo}#{p.number} ↗</a>
+      {read.read ? (
+        <>
+          <span className={`chk ${checkClass(p)}`}><i />{read.state === "merged" ? "merged" : `checks ${read.checks}`}</span>
+          {read.unreviewed > 0 && <span className="rd">{plural(read.unreviewed, "unread review")}</span>}
+        </>
+      ) : (
+        <>
+          <span className="chk unread"><i />{read.label}</span>
+          <span className="rd">{read.reason}</span>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** A rail list that scrolls inside a capped height, fading its lower edge until the last row is in view. */
+function Box({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const fade = useCallback(() => {
+    const box = ref.current;
+    if (box) box.classList.toggle("end", box.scrollTop + box.clientHeight >= box.scrollHeight - 2);
+  }, []);
+  useEffect(fade);
+  return <div ref={ref} className="box" onScroll={fade}>{children}</div>;
+}
 
 function PullRows({ pulls }: { pulls: Pull[] }) {
   return pulls.length ? (
-    <div className="prs">
-      {pulls.map((p) => (
-        <div key={`${p.repo}#${p.number}`} className="pull">
-          <a href={p.url} target="_blank" rel="noopener">{p.repo}#{p.number} ↗</a>
-          <span className={`chk ${checkClass(p)}`}><i />{p.merged ? "merged" : `checks ${p.checks}`}</span>
-          {p.stale && <span className="thr">last read failed</span>}
-        </div>
-      ))}
-    </div>
+    <Box><div className="prs">{pulls.map((p) => <PullRow key={`${p.repo}#${p.number}`} p={p} />)}</div></Box>
   ) : <span className="none">None yet</span>;
 }
 
@@ -535,8 +567,8 @@ export function TaskView(p: TaskViewProps) {
               <div className="row"><LanePill lane={p.task.lane} role={roleOf(roles, p.task.lane)} name={p.lane} small />{p.task.entered > 0 && <span className="k">{`for ${ago(p.now - p.task.entered)}`}</span>}</div>
               {p.stack && <table className="props"><tbody><tr className="ro"><td>{p.task.lane === roles.done ? "done chain" : "waiting stack"}</td><td className="stacklist">{p.stack}</td></tr></tbody></table>}
             </RailSection>
-            <RailSection name="Rating"><RatingControl key={p.task.id} task={p.task.id} rating={p.task.rating} now={p.now} /></RailSection>
-            <RailSection name="Session"><SessionRows session={sessionOf(p.task, p.record, p.now, startLane(p.task, roles))} worked={p.task.lane === roles.working} startLane={startLane(p.task, roles)} /></RailSection>
+            {p.task.labels.some((l) => l.startsWith(TRIAL)) && <RailSection name="Rating"><RatingControl key={p.task.id} task={p.task.id} rating={p.task.rating} now={p.now} trial={p.task.labels.find((l) => l.startsWith(TRIAL)) ?? ""} drew={p.task.profile ?? ""} /></RailSection>}
+            <RailSection name="Session"><SessionRows session={sessionOf(p.task, p.record, p.now, startLane(p.task, roles))} assignee={p.task.assignee} worked={p.task.lane === roles.working} startLane={startLane(p.task, roles)} /></RailSection>
             {criteria.length > 0 && <RailSection name="Start Criteria" count={`${metCount(criteria)}/${criteria.length} met`}><StartCriteria criteria={criteria} now={p.now} /></RailSection>}
             {!!p.task.runs?.length && (
               <RailSection name="Runs" count={p.task.runs.length}>
@@ -548,10 +580,10 @@ export function TaskView(p: TaskViewProps) {
             <RailSection name="Dependencies" count={deps.dependsOn.length + deps.holds.length + deps.more}>
               <div className="deps">
                 <div className="lb">Depends on</div>
-                {deps.dependsOn.length ? <DepRows rows={deps.dependsOn} names={names} roles={roles} open={p.open} /> : <span className="none">—</span>}
+                {deps.dependsOn.length ? <Box><DepRows rows={deps.dependsOn} names={names} roles={roles} open={p.open} /></Box> : <span className="none">—</span>}
                 {deps.holds.length > 0 && <>
                   <div className="lb">Holds</div>
-                  <DepRows rows={deps.holds} names={names} roles={roles} open={p.open} />
+                  <Box><DepRows rows={deps.holds} names={names} roles={roles} open={p.open} /></Box>
                   {deps.more > 0 && <div className="k">+{deps.more} more</div>}
                 </>}
               </div>

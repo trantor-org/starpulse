@@ -901,7 +901,10 @@ class BoardFeed:
     def pull_requests(self) -> dict[str, list[str]]:
         """Each open task's pull request links, for the tasks that cite any."""
         with self._lock:
-            prs = {task: agent["prs"] if not is_cold(agent) else self._cited.get(task) for task, agent in self._open.items()}
+            if self._read_model is not None:  # `_open` stays empty under the read model
+                prs = {agent["id"]: agent["prs"] for agent in self._read_model_hot()}
+            else:
+                prs = {task: agent["prs"] if not is_cold(agent) else self._cited.get(task) for task, agent in self._open.items()}
             return {task: list(links) for task, links in prs.items() if links}
 
     def set_pulls(self, pulls: dict[str, list[dict]], answers: dict | None = None) -> None:

@@ -1,4 +1,4 @@
-// The Rating section's body in the task view: Pass and Fail toggle the task's verdict, Fail asks for an optional one-line reason.
+// The Rating section's body in the task view, drawn on a deviated sample (a `trial-<kind>-<size>` task): what was sampled, then Pass and Fail toggle the task's verdict, Fail asks for a one-line reason.
 import { useState, type KeyboardEvent } from "react";
 import { PAGE_ACTOR } from "../../api/apiFetch";
 import type { Rating } from "../../api";
@@ -9,7 +9,13 @@ import { postRating, ratingHistory, ratingMeta, REASON_MAX, verdictOf, type Verd
 interface Mine { base: Rating | undefined; rating: Rating }
 const sameRating = (a: Rating | undefined, b: Rating | undefined) => a?.changes === b?.changes && a?.at === b?.at;
 
-export function RatingControl({ task, rating, now }: { task: string; rating: Rating | undefined; now: number }) {
+/** `trial-decide-5` names the cell a step-down trial samples: its kind and size. */
+const trialCell = (trial: string) => {
+  const cell = /^trial-(.+)-(\d+)$/.exec(trial);
+  return cell ? `${cell[1]} work at size ${cell[2]}` : "this kind of work";
+};
+
+export function RatingControl({ task, rating, now, trial, drew }: { task: string; rating: Rating | undefined; now: number; trial: string; drew: string }) {
   const [mine, setMine] = useState<Mine | null>(null);
   const [busy, setBusy] = useState(false);
   const [refused, setRefused] = useState(false);
@@ -46,12 +52,15 @@ export function RatingControl({ task, rating, now }: { task: string; rating: Rat
 
   return (
     <>
+      <div className="why">Deviated sample: this run drew a <b>lower</b> tier than the matrix assigns, to test whether {trialCell(trial)} can run there.</div>
+      {drew && <dl className="who2 dev"><dt>Drew</dt><dd>{drew} <span className="tier">↓ lower</span></dd></dl>}
+      <div className="why">Did the work hold up?</div>
       <div className="rate">{verdictButton("pass")}{verdictButton("fail")}</div>
       {verdict === "fail" && shown && (
         <div className="ratewhy">
           {draft !== null ? (
             <>
-              <input className="fv live" autoFocus maxLength={REASON_MAX} aria-label="Reason" placeholder="Why did it fail? (optional)" value={draft} disabled={busy} onChange={(e) => setDraft(e.target.value)} onKeyDown={onKeyDown} />
+              <input className="fv live" autoFocus maxLength={REASON_MAX} aria-label="Reason" placeholder="Why, in one line (optional)" value={draft} disabled={busy} onChange={(e) => setDraft(e.target.value)} onKeyDown={onKeyDown} />
               <span className={`count${draft.length >= REASON_MAX ? " full" : ""}`}>{draft.length}/{REASON_MAX}</span>
               <span className="k">Enter saves · Esc skips</span>
             </>

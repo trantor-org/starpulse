@@ -8,6 +8,7 @@ import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { KanbanTask } from "./kanbanModel";
+import type { Pull } from "../../api";
 import { TaskView } from "./TaskView";
 import { board, card, props, record, task } from "../../tests/taskViewFixtures";
 import { closesOnKey, copyText, copyToClipboard, menuKey, onScrim, type StartCriterion } from "./taskViewModel";
@@ -164,7 +165,7 @@ describe("the task view's right rail", () => {
   it("draws Status, Pull requests, CI history, Dependencies and Details in that order, each heading with its count", () => {
     const html = draw({ tasks: many });
 
-    expect(headings(html)).toEqual(["Status", "Rating", "Session", "Pull requests", "CI history", "Dependencies", "Details"]);
+    expect(headings(html)).toEqual(["Status", "Session", "Pull requests", "CI history", "Dependencies", "Details"]);
     expect(rows(html, "Pull requests")).toContain('<span class="n">1</span>');
     expect(rows(html, "Dependencies")).toContain('<span class="n">9</span>');
     expect(rows(html, "Status")).not.toContain('class="n"');
@@ -341,8 +342,8 @@ describe("the Start Criteria section", () => {
     expect(card).not.toContain("last ");
   });
 
-  it("sits in the right rail after Status, Rating and Session and is absent when the task has no criteria", () => {
-    expect(headings(withCriteria(criteria)).slice(0, 4)).toEqual(["Status", "Rating", "Session", "Start Criteria"]);
+  it("sits in the right rail after Status and Session and is absent when the task has no criteria", () => {
+    expect(headings(withCriteria(criteria)).slice(0, 3)).toEqual(["Status", "Session", "Start Criteria"]);
     expect(headings(withCriteria([]))).not.toContain("Start Criteria");
     expect(headings(withCriteria(undefined))).not.toContain("Start Criteria");
     expect(html(withCriteria(criteria)).left).not.toContain("Start Criteria</span>");
@@ -473,5 +474,29 @@ describe("the task view's workflow runs", () => {
     const html = draw({ task: { ...task, runs } });
     expect(html).toContain("Oct 17, 08:00 ↗");
     expect(html).toContain("— ↗");
+  });
+});
+
+describe("the task view's Pull requests rail", () => {
+  const pull = (number: number, over: Partial<Pull> = {}): Pull => ({ number, repo: "o/r", url: `http://pr/${number}`, checks: "pass", merged: false, merge_sha: null, merged_at: null, threads: 0, stale: false, ...over });
+  const section = (html: string) => railOf(html).split('<section class="sec rs">').find((s) => s.includes(">Pull requests<")) ?? "";
+
+  it("draws an unread citation as not read yet with its reason, never last read failed or checks none", () => {
+    const html = section(draw({ task: { ...task, prs: [pull(7, { stale: true, checks: "none" })] } }));
+
+    expect(html).toContain('<span class="chk unread"><i></i>not read yet</span>');
+    expect(html).toContain('<span class="rd">no read since it was cited</span>');
+    expect(html).not.toMatch(/last read failed|checks none/);
+  });
+
+  it("draws a read pull request's check result and its unread reviews", () => {
+    const html = section(draw({ task: { ...task, prs: [pull(8, { checks: "failing", threads: 2 })] } }));
+
+    expect(html).toContain('<span class="chk fail"><i></i>checks failing</span>');
+    expect(html).toContain('<span class="rd">2 unread reviews</span>');
+  });
+
+  it("scrolls the list inside a box so the rail keeps every row visible", () => {
+    expect(section(draw({ task: { ...task, prs: [pull(8)] } }))).toContain('class="box"');
   });
 });
