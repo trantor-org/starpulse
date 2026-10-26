@@ -36,6 +36,7 @@ _TASK_EDIT_FIELDS = {
     "impact": "impact",
     "urgency": "urgency",
     "milestone": "milestone",
+    "source": "source",
     "label": "labels",
     "dependency": "dependencies",
     "reference": "references",
@@ -343,6 +344,7 @@ def create_flags(sub: argparse.ArgumentParser) -> None:
     sub.add_argument("--impact", help="how much the work matters: `high`, `medium` or `low`")
     sub.add_argument("--urgency", help="how soon the work matters: `high`, `medium` or `low`")
     sub.add_argument("--milestone", help="the milestone's id (`m-106`)")
+    sub.add_argument("--source", help="the key a producer files its task under, so a rerun finds it again")
     sub.add_argument(
         "--profile", "--assignee", dest="profile", help="the agent profile it is routed to (`@agent-standard-high`)"
     )
@@ -368,6 +370,7 @@ def _created_task(args: argparse.Namespace) -> dict[str, Any]:
         "impact": args.impact,
         "urgency": args.urgency,
         "milestone": args.milestone,
+        "source": args.source,
         "profile": args.profile,
         "labels": args.label,
         "dependencies": args.dependency,

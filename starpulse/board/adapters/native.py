@@ -419,6 +419,7 @@ def _record_of(text: str, task: str, evaluate: Callable[[str, str], list[dict[st
         "urgency": str(frontmatter.get("urgency") or ""),
         "labels": list(_strings(frontmatter.get("labels"))),
         "milestone": str(frontmatter.get("milestone") or ""),
+        "source": str(frontmatter.get("source") or ""),
         "dependencies": list(_strings(frontmatter.get("dependencies"))),
         "references": list(_strings(frontmatter.get("references"))),
         "documentation": list(_strings(frontmatter.get("documentation"))),
