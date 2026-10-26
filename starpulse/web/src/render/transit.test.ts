@@ -15,10 +15,10 @@ beforeEach(async () => {
 });
 
 /** The Board level the renderer lays out for `snap` at `scale`% text size, with its branches grown for `secs` seconds of frames. */
-function board(snap: Snapshot, { scale = 100, secs = 3, from = 0, W = 1920 } = {}): Scene {
+function board(snap: Snapshot, { scale = 100, secs = 3, from = 0, W = 1920, H = 1080 } = {}): Scene {
   const S = sky.merge(snap), moves = new sky.Moves();
   moves.observe(S, snap.now ?? 0);
-  const scene = sc.build({ S, moves, W, H: 1080, T: snap.now ?? 0, scale }, { kind: "board" });
+  const scene = sc.build({ S, moves, W, H, T: snap.now ?? 0, scale }, { kind: "board" });
   run(scene, from, secs);
   return scene;
 }
@@ -28,12 +28,12 @@ const run = (scene: Scene, from: number, secs: number) => {
 const live = () => structuredClone(capture) as unknown as Snapshot;
 /** The preview's `?mock=1&extra=8&sim=3` at `scale`% on a `W`-wide canvas: phase tasks on build, deliver and review_fix, and the pair walked from Deliver into the
  *  CI it opens, which branches off Deliver's station. */
-function mock(scale = 100, W = 1920): Scene {
+function mock(scale = 100, W = 1920, H = 1080): Scene {
   vi.stubGlobal("location", { search: "?mock=1&extra=8&sim=3" });
   const clock = vi.spyOn(performance, "now").mockReturnValue(0);
-  board(live(), { scale, W });
+  board(live(), { scale, W, H });
   clock.mockReturnValue(60_000);
-  return board(live(), { scale, W, from: 3, secs: 6 });
+  return board(live(), { scale, W, H, from: 3, secs: 6 });
 }
 const dist = (a: Pt, b: Pt) => Math.hypot(a.x - b.x, a.y - b.y);
 const stationsOf = (l: ReturnType<typeof T.branchLines>[number]) => l.pts.filter((p) => new RegExp(`^${l.key.replace(/[|]/g, "\\|")}:\\d+$`).test(p.k));
@@ -152,6 +152,19 @@ describe("placeBranches", () => {
         const s = { x: p.x * v.k + v.x, y: p.y * v.k + v.y };
         expect(s.x > 0 && s.x < 1420 && s.y > 0 && s.y < 640, `${p.k} at ${Math.round(s.x)},${Math.round(s.y)}`).toBe(true);
       }
+  });
+
+  it.each([[1070, 830, 100], [1070, 830, 125], [1070, 830, 150], [1318, 830, 100], [1318, 830, 150]])("keeps every branch, and every sun its branches stand on, on screen at fit on a %i x %i canvas at %i% text", (W, H, scale) => {
+    const scene = mock(scale, W, H), v = fitLevel(scene, W, H);
+    const on = (p: Pt) => {
+      const s = { x: p.x * v.k + v.x, y: p.y * v.k + v.y };
+      return s.x > 0 && s.x < W && s.y > 0 && s.y < H;
+    };
+    for (const l of T.branchLines()) {
+      const g = scene.galaxies[l.sun];
+      expect(on({ x: g.x - g.r, y: g.y - g.r }) && on({ x: g.x + g.r, y: g.y + g.r }), `${l.sun}'s sun`).toBe(true);
+      for (const p of l.pts) expect(on(p), `${p.k}`).toBe(true);
+    }
   });
 
   it("opens a new branch over 0.6 s on an ease, slow at both ends", () => {
@@ -326,8 +339,8 @@ describe("placeBranches", () => {
     const scene = mock(), line = T.branchLines().find((l) => l.ring === 1)!, st = stationsOf(line)[0];
     const riders = scene.tasks.filter((k) => k.h?.ring1 && `${(k.host as Galaxy).id}|${k.h.machine}` === line.key);
     expect(riders.length).toBeGreaterThan(0);
-    // a name printed over a station leaves the branch no place that fits, so it is placed afresh
-    (scene.names as unknown[]).push({ x0: st.x - 4, y0: st.y - 4, x1: st.x + 4, y1: st.y + 4, of: `${line.sun}/name` });
+    // a hangar name printed over a station leaves the branch no place that fits, so it is placed afresh
+    (scene.hangars ??= []).push({ x0: st.x - 4, y0: st.y - 4, x1: st.x + 4, y1: st.y + 4, of: `${line.sun}/name` });
     const prev = riders.map((k) => T.dotsOf(k.id)[0]), jumps: number[] = [], ext: number[] = [], gliding: boolean[] = [], onLine: boolean[] = [], old = stationsOf(line);
     // the app rebuilds the scene each frame, so each task starts it back at its Board place
     const home = scene.tasks.map((k) => ({ x: k.x, y: k.y }));

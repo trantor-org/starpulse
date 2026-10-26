@@ -84,7 +84,8 @@ export interface Galaxy extends Host {
   visR: number;
   /** Where its paths end: just outside what it draws, which is its sun, its outermost ring of tasks or, where machines map, its moons' orbits. */
   edge: number;
-  lab: Pt;
+  /** The lines of its name and count, stacked about its centre inside its sun. */
+  text: SunLine[];
   /** The events that take the state back to itself: drawn nowhere, listed in the state's tooltip, as a machine level lists them. */
   loops: string[];
   /** How far the state's moon names reach right and left of its centre. */
@@ -461,8 +462,37 @@ const loopsOf = (flow: { machine: { transitions: Transition[] } }, id: string) =
  * it is the least: the suns grow together, in sky units, to hold the longest name and count at the type size the zoom gives.
  */
 export const SUN_R = 34;
-/** Half the height, in `F` units, of a Board state's name and count lines about the sun's centre, and the margin a sun keeps round them. */
-const LINES = 14, SUN_PAD = 4;
+/** The share of a sun's radius its text may fill, which is where a terminal state's black-hole shadow ends, and the margin a sun keeps round its text. */
+export const SUN_FIT = 0.8;
+const SUN_PAD = 4, LINE_GAP = 3;
+/** One line of a Board state's text in its sun: `sub` for the count, its size and its centre's offset from the sun's, in `F` units. */
+export interface SunLine { text: string; size: number; y: number; sub: boolean }
+/** Every way to break `parts` into consecutive lines joined by `sep`, the fewest lines first. */
+const breaks = (parts: string[], sep: string): string[][] => {
+  if (parts.length < 2 || parts.length > 6) return [[parts.join(sep)]];
+  const cuts = Array.from({ length: 2 ** (parts.length - 1) }, (_, m) => parts.slice(1).reduce((ls, part, i) => ((m >> i) & 1 ? [...ls, part] : [...ls.slice(0, -1), `${ls[ls.length - 1]}${sep}${part}`]), [parts[0]]));
+  return cuts.sort((a, b) => a.length - b.length);
+};
+/**
+ * The ways a Board state's name and count break into lines, fewest lines first, each stacked about the sun's centre with the radius (at `F` 1) whose
+ * black-hole shadow holds its farthest corner. A name breaks between words and a count at its dots, so a long one wraps; a word that will not
+ * break is as wide as it is, and the sun grows to hold it.
+ */
+export const sunTexts = (name: string, count: string): { lines: SunLine[]; r: number }[] =>
+  breaks(name.split(" "), " ")
+    .flatMap((n) => breaks(count.split(" \u00b7 "), " \u00b7 ").map((c) => [...n.map((text) => ({ text, size: 13, sub: false })), ...c.map((text) => ({ text, size: 11, sub: true }))]))
+    .map((rows) => {
+      const height = rows.reduce((sum, l) => sum + l.size + LINE_GAP, -LINE_GAP);
+      let top = -height / 2;
+      const lines = rows.map((l) => {
+        const y = top + l.size / 2;
+        top += l.size + LINE_GAP;
+        return { ...l, y };
+      });
+      const reach = Math.max(...lines.map((l) => Math.hypot(textW(l.text, l.size) / 2, Math.abs(l.y) + l.size / 2)));
+      return { lines, r: reach / SUN_FIT + SUN_PAD };
+    })
+    .sort((a, b) => a.lines.length - b.lines.length);
 /** A Board state's count line: its tasks, and its lifecycles when it holds any. */
 export const tally = (g: { n: number; today?: number; subs: unknown[] }) => `${countText(g.n, g.today)}${g.subs.length ? ` · ${g.subs.length} lifecycles` : ""}`;
 /**
@@ -691,6 +721,8 @@ const widen = (n: number, d: number) => Math.max(0, rings(n, FOOT.task0 + d, ROO
 /** The machines a Board state's ring holds before the rest page: its primary and the MOONS - 1 on the page. */
 export const MOONS = 8;
 /** The Board's greatest zoom: the sun is today's size, so a Board of a few states grows to fill the canvas only this far. */
+/** The least share of the fixed-size suns' zoom the Board's zoom may fall to for the suns to grow round their text. */
+const GROW_KEEP = 0.5;
 const ZOOM_MAX = 16;
 const ZOOM_MIN = 0.05;
 /**
@@ -961,19 +993,17 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     // The Board laid out at zoom `k` in `rows` lines: the sky is the canvas over `k`, and the layout holds when no two cells meet and every
     // line fits
     let grow = true;
+    const texts = Object.fromEntries(states.map((st) => [st.id, sunTexts(st.name, tally({ n: stateCount(S, st.id), today: daily(st) ? (S.today[st.id] ?? []).length : undefined, subs: SUBS[st.id] || [] }))]));
     const lay = (grid: Grid, k: number, rows: number) => {
       const ls = labelScale(k);
       F = (ls * ((ctx.scale ?? 100) / 100)) / k;
-      /** The radius a sun needs to hold `st`'s name and count, two lines about its centre: each line's farthest corner inside the disc. */
-      const need = (st: (typeof states)[number]) => {
-        const lines: [string, number][] = [[st.name, 13], [tally({ n: stateCount(S, st.id), today: daily(st) ? (S.today[st.id] ?? []).length : undefined, subs: SUBS[st.id] || [] }), 11]];
-        return Math.max(...lines.map(([text, size]) => Math.hypot(textW(text, size * F) / 2, LINES * F) + SUN_PAD * F));
-      };
-      // every sun grows together, to the one that holds the longest name and count at this type size (until `grow` is off)
-      const sunR = grow ? Math.max(SUN_R, ...states.map(need)) : SUN_R, sized = Object.fromEntries(states.map((st) => [st.id, radius(st, sunR)])), sw = (0.94 * W) / k, sh = (0.94 * H) / k, gap = 16 / k;
+      // every sun grows together, to the one that holds its text in the least room at this type size (until `grow` is off), and each prints the
+      // fewest lines that fit that size
+      const sunR = grow ? Math.max(SUN_R, ...states.map((st) => F * Math.min(...texts[st.id].map((t) => t.r)))) : SUN_R, sized = Object.fromEntries(states.map((st) => [st.id, radius(st, sunR)])), sw = (0.94 * W) / k, sh = (0.94 * H) / k, gap = 16 / k;
+      const picks = Object.fromEntries(states.map((st) => [st.id, texts[st.id].find((t) => t.r * F <= sunR + 1e-6)?.lines ?? texts[st.id].reduce((a, b) => (b.r < a.r ? b : a)).lines]));
       // a state reaches at least half its name's width either side, so two names at one height never run together
       const es = states.map((st) => {
-        const s = sized[st.id].lay, half = textW(stateName(st.id), 13 * F) / 2;
+        const s = sized[st.id].lay, half = Math.max(...picks[st.id].map((l) => textW(l.text, l.size * F))) / 2;
         return { l: Math.max(half, s.reach?.[1] ?? s.R), r: Math.max(half, s.reach?.[0] ?? s.R), t: s.R, b: s.R };
       });
       const g = gridLay(grid, es, rows, sw, sh, gap);
@@ -986,7 +1016,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
           const a = box(i), b = box(j);
           if (a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]) ok = false;
         }
-      return { ok, sized, ps, sw, sh, ls };
+      return { ok, sized, picks, ps, sw, sh, ls };
     };
     // the largest zoom, up to ZOOM_MAX, at which `rows` lines hold the Board
     const zoom = (grid: Grid, rows: number) => {
@@ -1005,11 +1035,16 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
         return { g, rows, k: zooms[rows - 1] };
       })
       .reduce((a, b) => (b.k > a.k + 1e-9 ? b : a));
+    // the suns' growth is kept only while it costs the Board little of its zoom: a Board whose names would swell the suns, and with them every ring
+    // and branch, to shrink the rest to specks keeps the suns at their fixed size, the names spilling past them
     let best = choose();
-    // a Board too crowded to hold its names at any zoom keeps the suns at their fixed size, the names spilling past them, rather than zooming out to nothing
-    if (best.k <= ZOOM_MIN) {
-      grow = false;
-      best = choose();
+    const grown = best.k;
+    grow = false;
+    const fixed = choose();
+    if (grown >= GROW_KEEP * fixed.k && grown > ZOOM_MIN) {
+      grow = true;
+    } else {
+      best = fixed;
     }
     const rows = best.rows, L = lay(best.g, best.k, rows);
     // each state's place and the sky's width ease toward the layout's targets, so a state changing size moves its neighbours and the fit smoothly
@@ -1023,10 +1058,10 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     scene.clipped = true;
     scene.labelScale = L.ls;
     scene.px = (ctx.scale ?? 100) / 100 / best.k;
-    const sized = L.sized, ps = L.ps, hb = scene.h - 40;
+    const sized = L.sized, picks = L.picks, ps = L.ps, hb = scene.h - 40;
     for (const st of states) {
       const p = ps.find((q) => q.id === st.id)!, { x, y } = p, { ps: phs, here, band: outer } = sized[st.id], r = ease(`${st.id}.r`, sized[st.id].r), R = ease(`${st.id}.R`, sized[st.id].R);
-      const g: Galaxy = { id: st.id, name: st.name, x, y, r, n: stateCount(S, st.id), color: BOARD_COLOR[st.id] ?? "#94a3b8", final: st.final, today: daily(st) ? (S.today[st.id] ?? []).length : undefined, subs: SUBS[st.id] || [], R, moonR: 0, visR: 0, edge: R, lab: { x, y }, reach: [R, R], loops: [] };
+      const g: Galaxy = { id: st.id, name: st.name, x, y, r, n: stateCount(S, st.id), color: BOARD_COLOR[st.id] ?? "#94a3b8", final: st.final, today: daily(st) ? (S.today[st.id] ?? []).length : undefined, subs: SUBS[st.id] || [], R, moonR: 0, visR: 0, edge: R, text: picks[st.id], reach: [R, R], loops: [] };
       const d = sized[st.id].r - SUN_R, r0 = phs.length ? FREE + d : FOOT.task0 + d, r1 = phs.length ? SUN_R + d + 12 : outer;
       // a task on a machine step rides that machine's branch (transit.ts places it); only the rest orbit the sun
       const hOf = new Map<RawTask, HPlace>(), f0 = flowsOf(st.id)[0];
@@ -1046,9 +1081,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
       scene.galaxies[st.id] = g;
       for (const [a, h] of hOf) scene.tasks.push({ ...a, host: g, R: 0, a0: 0, w: 0, big: false, s: 1, x, y, ang: 0, moving: false, arrive: null, gone: false, via: null, bev: [], h });
     }
-    // a state's name and count print inside its sun, the two lines centred on it
     const gs = Object.values(scene.galaxies);
-    for (const g of gs) g.lab = { x: g.x, y: g.y - 7.5 * F };
     // One path per ordered pair of states, carrying every event between them. A pair joined both ways bows to one side, its two paths drawn
     // as one, and a one-way path runs straight. A final state reached from several states (Archived) gathers its one-way paths into one
     // stream along its side of the Board; a pair joined both ways into it keeps its shared line. Then any path that would pass another state or cross a name bends away until it clears (routed).

@@ -9,11 +9,11 @@ function alphas(lift: boolean) {
     get: (t, p: string) => (p in t ? t[p] : p === "fillText" ? () => seen.push(Number(String(t.fillStyle).match(/[\d.]+(?=\)$)/)?.[0])) : () => ({ width: 40 })),
     set: (t, p: string, v) => ((t[p] = v), true),
   }) as unknown as CanvasRenderingContext2D;
-  drawing({ cx, K: 1, ZS: 1, clock: 0, scale: 100, hover: null }).label("Done", 0, 0, false, "21 · 16 today", 13, lift);
+  drawing({ cx, K: 1, ZS: 1, clock: 0, scale: 100, hover: null }).sunLabel([{ text: "Done", size: 13, y: -8, sub: false }, { text: "21 · 16 today", size: 11, y: 8, sub: true }], 0, 0, false, lift);
   return seen;
 }
 
-describe("label", () => {
+describe("sunLabel", () => {
   it("firms a lifted name and count up to a hot one's weight, for text on a black hole's shadow", () => {
     const [name, count] = alphas(true), [plainName, plainCount] = alphas(false);
     expect(name).toBeGreaterThanOrEqual(0.95);

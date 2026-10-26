@@ -7,7 +7,7 @@ import { stepStates } from "../features/level/stepStates";
 import { ACT, DAG_COLOR, EXT, easeO, rgba, tierColor, type Drawing, type DrawCtx } from "./draw";
 import { activeDag, dagTurn, IDLE, nameLines, touches, turnDags, type Pivot, type Ties } from "./dagTies";
 import {
-  BOARD_COLOR, SUN_R, TAU, bez, clip, curveOf, stateR, taskSlot, tally, terminal, textW,
+  BOARD_COLOR, SUN_R, TAU, bez, clip, curveOf, stateR, taskSlot, terminal, textW,
   type BEdge, type Curve, type GNode, type MEdge, type MState, type Planet, type Scene,
 } from "./scene";
 import { FLARE, PULSE, RING, TRAVEL, hosted, type Move, type Moves, type Sky } from "./sky";
@@ -41,13 +41,13 @@ export interface BoardIO {
 
 export function boardDraw(dc: DrawCtx, d: Drawing, io: BoardIO) {
   const { cx } = dc;
-  const { text, labPx, label, circle, dot, isHot, disc, hole, comet, pulse, flowLine, body, drawTrackRings, machine, machineName } = d;
+  const { text, labPx, label, sunLabel, circle, dot, isHot, disc, hole, comet, pulse, flowLine, body, drawTrackRings, machine, machineName } = d;
   function drawGalaxies() {
     for (const g of Object.values(io.scene!.galaxies)) {
       const hot = isHot("galaxy", g);
       body(g, hot);
       drawTrackRings(g, g.color);
-      label(g.name, g.lab.x, g.lab.y, hot, tally(g), 13, terminal(g));
+      sunLabel(g.text, g.x, g.y, hot, terminal(g));
     }
   }
   // lifecycle moons: still, named bodies on their state's dashed outer ring, brighter while they have sessions, ringed in amber while one moves.

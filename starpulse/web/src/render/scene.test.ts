@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { build, Drawn, pickRows, SUN_R, routed, curveDist, glyph, nearestWithin, paged, rings, sample, stateR, terminal, textW, turnPage, type Curve, type Galaxy, type MState, type Pt, type Scene } from "./scene";
+import { build, Drawn, pickRows, SUN_FIT, SUN_R, sunTexts, tally, routed, curveDist, glyph, nearestWithin, paged, rings, sample, stateR, terminal, textW, turnPage, type Curve, type Galaxy, type MState, type Pt, type Scene } from "./scene";
 import { ledgerLevel, type Level } from "./levels";
-import { countText, merge, midnight, Moves } from "./sky";
+import { merge, midnight, Moves } from "./sky";
 import { emptyNote } from "../features/level/machineRows";
 import type { Cue, LedgerRow, Machine, Snapshot } from "../api";
 import { dag, machine, SAVED_STATES, savedBoardSky } from "../tests/sceneFixtures";
@@ -391,116 +391,116 @@ describe("a Board path's route", () => {
       expect(routes).toMatchInlineSnapshot(`
         {
           "1280x720": [
-            "new>ready 186.17635,390.919926",
-            "new>blocked 313.374451,304.566921",
-            "new>waiting 330,410",
-            "new>in_progress 450,250",
-            "ready>in_progress 650,490",
-            "ready>blocked 353.355039,449.289348",
-            "ready>waiting 362.853869,634.786019",
-            "ready>archived 290,90",
-            "blocked>ready 353.355039,449.289348",
-            "blocked>in_progress 645.746563,332.550504",
-            "blocked>archived 690,330",
-            "waiting>ready 362.853869,634.786019",
-            "waiting>in_progress 690,490",
-            "waiting>archived 650,730",
-            "in_progress>blocked 645.746563,332.550504",
-            "in_progress>review 774.92993,403.89514",
-            "in_progress>done 881.145106,218.213917",
-            "in_progress>needs_attention 636.247733,147.053833",
-            "in_progress>archived 930,490",
-            "review>done 940.123355,390.919926",
-            "review>in_progress 774.92993,403.89514",
-            "review>archived 970,570",
-            "needs_attention>ready 370,330",
-            "needs_attention>in_progress 636.247733,147.053833",
-            "needs_attention>archived 690,450",
-            "done>completed 1135.54131,218.213917",
+            "new>ready 235.164384,493.781533",
+            "new>blocked 395.831746,384.706717",
+            "new>waiting 395.831746,548.318941",
+            "new>in_progress 570,330",
+            "ready>in_progress 850,610",
+            "ready>blocked 446.332308,567.509529",
+            "ready>waiting 458.330537,801.815392",
+            "ready>archived 1050,490",
+            "blocked>ready 446.332308,567.509529",
+            "blocked>in_progress 815.659952,420.053537",
+            "blocked>archived 930,450",
+            "waiting>ready 458.330537,801.815392",
+            "waiting>in_progress 810,530",
+            "waiting>archived 970,370",
+            "in_progress>blocked 815.659952,420.053537",
+            "in_progress>review 978.834957,510.170877",
+            "in_progress>done 1112.998219,275.631901",
+            "in_progress>needs_attention 803.661723,185.747673",
+            "in_progress>archived 1170,610",
+            "review>done 1187.49524,493.781533",
+            "review>in_progress 978.834957,510.170877",
+            "review>archived 1210,730",
+            "needs_attention>ready 450,450",
+            "needs_attention>in_progress 803.661723,185.747673",
+            "needs_attention>archived 730,410",
+            "done>completed 1434.332946,275.631901",
           ],
           "1280x720 crowded": [
-            "new>ready 186.17635,390.919926",
-            "new>blocked 313.374451,304.566921",
-            "new>waiting 330,410",
-            "new>in_progress 450,250",
-            "ready>in_progress 370,290",
-            "ready>blocked 353.355039,449.289348",
-            "ready>waiting 362.853869,634.786019",
-            "ready>archived 1010,330",
-            "blocked>ready 353.355039,449.289348",
-            "blocked>in_progress 645.746563,332.550504",
-            "blocked>archived 730,330",
-            "waiting>ready 362.853869,634.786019",
-            "waiting>in_progress 650,450",
-            "waiting>archived 690,290",
-            "in_progress>blocked 645.746563,332.550504",
-            "in_progress>review 774.92993,403.89514",
-            "in_progress>done 881.145106,218.213917",
-            "in_progress>needs_attention 636.247733,147.053833",
-            "in_progress>archived 930,490",
-            "review>done 940.123355,390.919926",
-            "review>in_progress 774.92993,403.89514",
-            "review>archived 970,570",
-            "needs_attention>ready 330,290",
-            "needs_attention>in_progress 636.247733,147.053833",
-            "needs_attention>archived 650,410",
-            "done>completed 1135.54131,218.213917",
+            "new>ready 235.164384,493.781533",
+            "new>blocked 395.831746,384.706717",
+            "new>waiting 395.831746,548.318941",
+            "new>in_progress 570,330",
+            "ready>in_progress 810,610",
+            "ready>blocked 446.332308,567.509529",
+            "ready>waiting 458.330537,801.815392",
+            "ready>archived 370,90",
+            "blocked>ready 446.332308,567.509529",
+            "blocked>in_progress 815.659952,420.053537",
+            "blocked>archived 930,450",
+            "waiting>ready 458.330537,801.815392",
+            "waiting>in_progress 810,530",
+            "waiting>archived 850,370",
+            "in_progress>blocked 815.659952,420.053537",
+            "in_progress>review 978.834957,510.170877",
+            "in_progress>done 1112.998219,275.631901",
+            "in_progress>needs_attention 803.661723,185.747673",
+            "in_progress>archived 1090,570",
+            "review>done 1187.49524,493.781533",
+            "review>in_progress 978.834957,510.170877",
+            "review>archived 1210,730",
+            "needs_attention>ready 450,450",
+            "needs_attention>in_progress 803.661723,185.747673",
+            "needs_attention>archived 730,410",
+            "done>completed 1434.332946,275.631901",
           ],
           "1920x1080": [
-            "new>ready 178.457252,372.47081",
-            "new>blocked 299.385521,290.23763",
-            "new>waiting 330,410",
-            "new>in_progress 410,250",
-            "ready>in_progress 650,450",
-            "ready>blocked 338.823204,428.09977",
-            "ready>waiting 347.868853,604.657978",
-            "ready>archived 730,370",
-            "blocked>ready 338.823204,428.09977",
-            "blocked>in_progress 616.862341,316.841849",
-            "blocked>archived 730,330",
-            "waiting>ready 347.868853,604.657978",
-            "waiting>in_progress 610,450",
-            "waiting>archived 650,690",
-            "in_progress>blocked 616.862341,316.841849",
-            "in_progress>review 741.045694,385.127186",
-            "in_progress>done 840.62758,208.00445",
-            "in_progress>needs_attention 607.816691,140.283641",
-            "in_progress>archived 890,370",
-            "review>done 898.156562,372.47081",
-            "review>in_progress 741.045694,385.127186",
-            "review>archived 890,570",
-            "needs_attention>ready 330,330",
-            "needs_attention>in_progress 607.816691,140.283641",
-            "needs_attention>archived 650,410",
-            "done>completed 1082.484118,208.00445",
+            "new>ready 210.539314,439.431562",
+            "new>blocked 353.207402,342.414954",
+            "new>waiting 370,490",
+            "new>in_progress 490,290",
+            "ready>in_progress 770,530",
+            "ready>blocked 399.734975,505.061191",
+            "ready>waiting 410.406802,713.360062",
+            "ready>archived 370,90",
+            "blocked>ready 399.734975,505.061191",
+            "blocked>in_progress 727.758458,373.801933",
+            "blocked>archived 810,370",
+            "waiting>ready 410.406802,713.360062",
+            "waiting>in_progress 730,490",
+            "waiting>archived 890,330",
+            "in_progress>blocked 727.758458,373.801933",
+            "in_progress>review 874.266811,454.363232",
+            "in_progress>done 991.750981,245.398346",
+            "in_progress>needs_attention 717.086632,165.503062",
+            "in_progress>archived 970,490",
+            "review>done 1059.622208,439.431562",
+            "review>in_progress 874.266811,454.363232",
+            "review>archived 1090,650",
+            "needs_attention>ready 410,370",
+            "needs_attention>in_progress 717.086632,165.503062",
+            "needs_attention>archived 770,490",
+            "done>completed 1277.087157,245.398346",
           ],
           "1920x1080 crowded": [
-            "new>ready 178.457252,372.47081",
-            "new>blocked 299.385521,290.23763",
-            "new>waiting 330,410",
-            "new>in_progress 410,250",
-            "ready>in_progress 330,290",
-            "ready>blocked 338.823204,428.09977",
-            "ready>waiting 347.868853,604.657978",
+            "new>ready 210.539314,439.431562",
+            "new>blocked 353.207402,342.414954",
+            "new>waiting 370,490",
+            "new>in_progress 490,290",
+            "ready>in_progress 770,530",
+            "ready>blocked 399.734975,505.061191",
+            "ready>waiting 410.406802,713.360062",
             "ready>archived 290,90",
-            "blocked>ready 338.823204,428.09977",
-            "blocked>in_progress 616.862341,316.841849",
-            "blocked>archived 730,330",
-            "waiting>ready 347.868853,604.657978",
-            "waiting>in_progress 610,450",
-            "waiting>archived 770,250",
-            "in_progress>blocked 616.862341,316.841849",
-            "in_progress>review 741.045694,385.127186",
-            "in_progress>done 840.62758,208.00445",
-            "in_progress>needs_attention 607.816691,140.283641",
-            "in_progress>archived 890,450",
-            "review>done 898.156562,372.47081",
-            "review>in_progress 741.045694,385.127186",
-            "review>archived 930,530",
-            "needs_attention>ready 290,330",
-            "needs_attention>in_progress 607.816691,140.283641",
-            "needs_attention>archived 610,370",
-            "done>completed 1082.484118,208.00445",
+            "blocked>ready 399.734975,505.061191",
+            "blocked>in_progress 727.758458,373.801933",
+            "blocked>archived 770,370",
+            "waiting>ready 410.406802,713.360062",
+            "waiting>in_progress 730,490",
+            "waiting>archived 890,330",
+            "in_progress>blocked 727.758458,373.801933",
+            "in_progress>review 874.266811,454.363232",
+            "in_progress>done 991.750981,245.398346",
+            "in_progress>needs_attention 717.086632,165.503062",
+            "in_progress>archived 1050,530",
+            "review>done 1059.622208,439.431562",
+            "review>in_progress 874.266811,454.363232",
+            "review>archived 1090,650",
+            "needs_attention>ready 410,370",
+            "needs_attention>in_progress 717.086632,165.503062",
+            "needs_attention>archived 730,450",
+            "done>completed 1277.087157,245.398346",
           ],
         }
       `);
@@ -624,6 +624,13 @@ describe("the Board's tiers", () => {
   };
   /** The zoom the Board is drawn at: the canvas over the sky's width, less the 6% margin. */
   const zoom = (s: Scene, W: number) => (0.94 * W) / s.w;
+  /** Whether every sun's wrapped lines sit inside its black hole's shadow, in the type the canvas draws; the suns that cannot grow stay at SUN_R. */
+  const holdsOrFixed = (s: Scene) => {
+    const F = s.labelScale! * s.px!, gs = Object.values(s.galaxies);
+    const holds = gs.every((g) => g.text.every((l) => Math.hypot(textW(l.text, l.size * F) / 2, Math.abs(l.y * F) + (l.size * F) / 2) <= g.r * SUN_FIT + 1e-6));
+
+    return holds || gs.every((g) => g.r === SUN_R);
+  };
 
   it("lays the states out left to right in tier order, a tier's states stacked in one cell", () => {
     const g = tiered(1920, 1080).galaxies;
@@ -803,7 +810,7 @@ describe("the Board's tiers", () => {
     [1920, 1080],
     [2560, 1440],
     [3440, 1440],
-  ] as const)("draws the demo's eight states' suns wide enough for their longest name, at 100, 125 and 150% text, at %i x %i", (W, H) => {
+  ] as const)("draws the demo's eight states' names inside their suns, or leaves the suns at their fixed size where growing them would cost the zoom, at 100, 125 and 150% text, at %i x %i", (W, H) => {
     const eight = (snap: Snapshot) => {
       const m = snap.flows[0].machine, gone = ["blocked", "completed"];
       m.states = m.states.filter((q) => !gone.includes(q.id));
@@ -811,9 +818,7 @@ describe("the Board's tiers", () => {
     };
 
     for (const scale of [100, 125, 150]) {
-      const s = tiered(W, H, DEFAULT_TIERS, eight, scale), k = zoom(s, W), type = (s.labelScale! * 13 * scale) / 100;
-
-      for (const g of Object.values(s.galaxies)) expect(g.r * k, `${g.id} at ${scale}%`).toBeGreaterThanOrEqual(textW(g.name, type) / 2);
+      expect(holdsOrFixed(tiered(W, H, DEFAULT_TIERS, eight, scale)), `${scale}%`).toBe(true);
     }
   });
 
@@ -857,22 +862,11 @@ describe("the Board's tiers", () => {
       expect(b).toBeGreaterThanOrEqual(c);
     });
 
-    it("draws the eight states' suns wide enough for their longest name, round the room their machines' branches take, at 100 and 125% text, and at 150% where no zoom holds them, the suns stay at their fixed size", () => {
-      const at = (scale: number) => tiered(866, 768, DEFAULT_TIERS, (snap) => { eight(snap); rings(snap); }, scale);
-
-      for (const g of Object.values(at(150).galaxies)) expect(g.r).toBe(SUN_R);
-      for (const scale of [100, 125]) {
-        const s = tiered(866, 768, DEFAULT_TIERS, (snap) => { eight(snap); rings(snap); }, scale), k = zoom(s, 866), type = (s.labelScale! * 13 * scale) / 100;
-
-        for (const g of Object.values(s.galaxies)) expect(g.r * k, `${g.id} at ${scale}%`).toBeGreaterThanOrEqual(textW(g.name, type) / 2);
+    it("draws the eight states' names inside their suns, round the room their machines' branches take, or leaves the suns at their fixed size where growing them would cost the zoom", () => {
+      for (const scale of [100, 125, 150]) {
+        expect(holdsOrFixed(tiered(866, 768, DEFAULT_TIERS, (snap) => { eight(snap); rings(snap); }, scale)), `${scale}%`).toBe(true);
       }
     });
-  });
-
-  it("makes room for larger names at a larger Admin text size, never shrinking the sun's footprint", () => {
-    const at = (scale: number) => tiered(1366, 768, DEFAULT_TIERS, () => {}, scale);
-
-    expect(zoom(at(150), 1366)).toBeLessThanOrEqual(zoom(at(100), 1366) + 1e-9);
   });
 });
 
@@ -964,8 +958,8 @@ describe("Board paths", () => {
       ready>waiting waiting>ready ready>blocked blocked>ready in_progress>waiting waiting>in_progress in_progress>needs_attention needs_attention>ready
       needs_attention>in_progress qa>in_progress review>in_progress staging>qa review>done review>archived done>archived ready>archived new>ready
       new>in_progress triage>blocked blocked>needs_attention approved>archived qa>needs_attention waiting>archived completed>archived`.split(/\s+/).map((p) => p.split(">"));
-    const board = (scale: number) => {
-      const sky = savedBoardSky(1920, 1080, (snap) => {
+    const board = (scale: number, W = 1920, H = 1080) => {
+      const sky = savedBoardSky(W, H, (snap) => {
         const m = snap.flows[0].machine;
         m.states = TIERS.flat().map((id, i) => ({ id, name: id, initial: i === 0, final: ["archived", "completed"].includes(id) }));
         m.transitions = PATHS.map(([source, target]) => ({ source, target, event: `${source}_${target}` }));
@@ -975,22 +969,51 @@ describe("Board paths", () => {
       return build({ ...sky, scale }, { kind: "board" });
     };
 
-    it.each([100, 125, 150])("draw each state's name and count inside its sun at %i% text", (scale) => {
-      const scene = board(scale), F = scene.labelScale! * scene.px!, out: string[] = [];
+    // a crowded canvas at a large text size cannot grow its suns without shrinking the Board past use, so the suns hold their radius and the
+    // names spill past them: the Board never runs away to the minimum zoom
+    it.each([[1070, 830, 150], [1318, 830, 150], [1070, 830, 125]])("keeps the suns bounded on a %i x %i canvas at %i% text", (W, H, scale) => {
+      const g = Object.values(board(scale, W, H).galaxies);
 
-      // the name and count are two lines centred on `lab` in the type the canvas draws them in: a line's farthest corner is within the disc
-      for (const g of Object.values(scene.galaxies)) {
-        const lines = [
-          { text: g.name, size: 13 * F, y: g.lab.y },
-          { text: `${countText(g.n, g.today)}${g.subs.length ? ` \u00b7 ${g.subs.length} lifecycles` : ""}`, size: 11 * F, y: g.lab.y + 16 * F },
-        ];
-        for (const l of lines) {
-          const reach = Math.hypot(textW(l.text, l.size) / 2, Math.abs(l.y - g.y) + l.size / 2);
-          if (reach > g.r) out.push(`${g.id} ${l.text}: ${reach.toFixed(1)} > ${g.r.toFixed(1)}`);
-        }
-        expect(g.lab.x).toBe(g.x);
+      expect(Math.max(...g.map((x) => x.r))).toBeLessThan(SUN_R * 4);
+    });
+  });
+
+  it.each([100, 125, 150])("draw each state's name and count inside its sun at %i% text", (scale) => {
+    const names = (snap: Snapshot) => { for (const st of snap.flows[0].machine.states) st.name = st.id.split("_").map((w) => w[0].toUpperCase() + w.slice(1)).join(" "); };
+    const scene = build({ ...savedBoardSky(1920, 1080, names), scale }, { kind: "board" }), F = scene.labelScale! * scene.px!, out: string[] = [];
+
+    // the name and count lines are stacked about the sun's centre in the type the canvas draws them in: a line's farthest corner is within the
+    // black hole's shadow, which ends at SUN_FIT of the sun's radius
+    for (const g of Object.values(scene.galaxies)) {
+      for (const l of g.text) {
+        const reach = Math.hypot(textW(l.text, l.size * F) / 2, Math.abs(l.y * F) + (l.size * F) / 2);
+        if (reach > g.r * SUN_FIT) out.push(`${g.id} ${l.text}: ${reach.toFixed(1)} > ${(g.r * SUN_FIT).toFixed(1)}`);
       }
-      expect(out).toEqual([]);
+      // wrapping drops no word: the lines hold the name and count as they read on one line
+      expect(g.text.map((l) => l.text).join(" ")).toBe(`${g.name} ${tally(g)}`.replaceAll(" \u00b7 ", " "));
+    }
+    expect(out).toEqual([]);
+  });
+
+  describe("sunTexts", () => {
+    const rOf = (name: string, count: string) => sunTexts(name, count)[0].r;
+
+    it("offers the fewest lines first, and a wrapped name needs a smaller sun than one long line", () => {
+      const cands = sunTexts("Needs Attention Today", "3 \u00b7 2 today");
+
+      expect(cands[0].lines.length).toBeLessThanOrEqual(cands[cands.length - 1].lines.length);
+      expect(Math.min(...cands.map((c) => c.r))).toBeLessThan(cands[0].r);
+    });
+
+    it("breaks the count at its separator and the name at its spaces, dropping no word", () => {
+      const cands = sunTexts("In Progress", "21 \u00b7 16 today");
+
+      for (const c of cands) expect(c.lines.map((l) => l.text).join(" ").replaceAll(" \u00b7 ", " ")).toBe("In Progress 21 16 today");
+      expect(cands.some((c) => c.lines.length === 4)).toBe(true);
+    });
+
+    it("grows the sun for a word that cannot wrap", () => {
+      expect(rOf("Internationalisation", "1")).toBeGreaterThan(rOf("Done", "1"));
     });
   });
 
