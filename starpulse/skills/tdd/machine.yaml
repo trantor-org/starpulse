@@ -39,7 +39,7 @@ writers:
   AC_CHECKPOINTED:
     - {actor: agent, trigger: "starpulse task checkpoint-ac"}
   DOCS_RECONCILED:
-    - {actor: agent, trigger: "the docs step's task comment"}
+    - {actor: agent, trigger: "starpulse task edit --comment"}
   LINT_GREEN:
     - {actor: agent, trigger: "starpulse command run check"}
   LINT_RED:

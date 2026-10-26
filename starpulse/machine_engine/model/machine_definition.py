@@ -23,12 +23,15 @@ compiled class keeps it by `(source, event, target)` in `citations`, and the pag
 A top-level `writers:` block names, per event, who fires it: each entry is an
 `actor` (`agent`, `operator`, or a workflow as `<instance>/<workflow>`) and
 the `trigger` it fires through. `refuse_unlisted` refuses a workflow no
-configured adapter lists.
+configured adapter lists, and the compiler refuses an `agent` writer of an event
+into a final state whose trigger is prose rather than a command or tool a
+session's transcript shows.
 
 The compiled class is an ordinary `StateChart`, so `board_client`'s paths,
 conformance and guard replay run on it unchanged.
 """
 
+import re
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, field
 from functools import wraps
@@ -56,6 +59,10 @@ __all__ = [
 DRAWING = ("tiers", "main_line", "rests", "submachines", "launches", "next")
 #: The fact kinds a state's `waits` may name: what the task actor derives from a task's pull request, dependencies and criteria.
 WAIT_FACTS = ("pr_terminal", "deps_done", "deps_unresolved", "criteria_met", "criteria_unmet")
+#: Words that open a sentence, never a command: an agent trigger of a final event opening with one is prose no mapper matches.
+PROSE_HEADS = frozenset(
+    {"a", "an", "the", "each", "every", "any", "its", "their", "this", "that", "after", "before", "when", "once", "on"}
+)
 
 
 class MachineDefinitionError(ValueError):
@@ -137,6 +144,10 @@ def compile_document(document: dict[str, Any], path: Path, registry: Registry = 
     }
     if unknown := sorted(writers.keys() - document["events"].keys()):
         raise MachineDefinitionError(f"{path}: writers name events the machine lacks: {unknown}", path)
+    if prose := _prose_exits(document, writers):
+        raise MachineDefinitionError(
+            f"{path}: agent writers of final events must name a command or tool, not prose: {prose}", path
+        )
     cues = tuple(Cue(**cue) for cue in document.get("cues", ()))
     if unknown := sorted({cue.event for cue in cues} - document["events"].keys()):
         raise MachineDefinitionError(f"{path}: cues name events the machine lacks: {unknown}", path)
@@ -197,6 +208,22 @@ def _citations(events: Mapping[str, Any]) -> dict[tuple[str, str, str], Mapping[
         if "cite" in transition
         for source in _sources(transition)
     }
+
+
+def _prose_exits(document: Mapping[str, Any], writers: Mapping[str, tuple[Writer, ...]]) -> dict[str, list[str]]:
+    """Each event into a final state whose `agent` writer's trigger opens with a word of prose, not a command or tool."""
+    finals = {name for name, state in document["states"].items() if state.get("final")}
+    exits = {event for event, transitions in document["events"].items() if any(t["to"] in finals for t in transitions)}
+    prose = {
+        event: [w.trigger for w in writers.get(event, ()) if w.actor == "agent" and _is_prose(w.trigger)]
+        for event in sorted(exits)
+    }
+    return {event: triggers for event, triggers in prose.items() if triggers}
+
+
+def _is_prose(trigger: str) -> bool:
+    head = trigger.split(maxsplit=1)[0] if trigger.strip() else ""
+    return head.lower() in PROSE_HEADS or not re.fullmatch(r"[\w./-]+", head)
 
 
 def _sources(transition: Mapping[str, Any]) -> list[str]:

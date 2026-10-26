@@ -50,7 +50,7 @@ Done when every criterion this phase can prove has an entry and the checks pass.
 
 Update each doc the change makes wrong, in place, and add one only where a reader would otherwise miss the change.
 Run the project's doc checks on what you edited. Record the docs touched, or that none needed a change, in a task
-comment.
+comment: `starpulse task edit PROJ-45 --comment '<docs touched>'`.
 
 Done when the docs match the change and a task comment says which ones changed.
 
