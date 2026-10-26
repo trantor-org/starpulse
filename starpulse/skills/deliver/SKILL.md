@@ -49,7 +49,7 @@ prints a verdict.
 
 - green: the checks passed; go to step 5.
 - red: read the failing check, fix the cause in the worktree, rerun the final gates, and deliver again.
-- blocked: the checks cannot finish without a person or another board task. When the blocker is a board task, park this task on it with `starpulse task park <task> --until-task <blocker>` and end the turn; a background watcher is for waits that are not tasks. Otherwise comment what blocks on the task and stop here.
+- blocked: the checks cannot finish without a person or another board task. When the blocker is a board task, park this task on it with `starpulse task park <task> --until-task <blocker>` and end the turn; a background watcher is for waits that are not tasks. Otherwise park it on the person with `starpulse task park <task> --operator '<what blocks, ending with the question>'`, ask that question in the reply, and end the turn; a task waiting on a person is never left In Progress.
 - merge-only evidence: a criterion only the merge or its deploy can prove never blocks the delivery and never earns a question to a person. File it as a check task, `starpulse task create '<check>'`, and park that task on the merged change with `starpulse task park <check> --until '{id: merged, kind: <git path-changed kind>, path: <changed path>, since: <ISO-8601 now>}'`, using the kind name the project's board lists for a path changed since an instant. Check this task's other criteria, take the green delivery through step 5 to review, and end the turn.
 
 Done when the delivery prints green.
