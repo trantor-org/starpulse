@@ -1143,8 +1143,10 @@ class BoardFeed:
         return out
 
     def _workflows(self) -> list[dict]:
-        """Every instance's workflows, each named `<instance>/<workflow>`; a pushed one an adapter lists is drawn by that adapter."""
-        listed = {dag["name"] for instance, dags in self._dags.items() if instance != PUSHED_INSTANCE for dag in dags}
+        """Every instance's workflows, each named `<instance>/<workflow>`; a pushed one an adapter lists, by its bare name
+        or as the `<instance>/<workflow>` an ingested one is named, is drawn by that adapter."""
+        adapters = [(i, dag["name"]) for i, dags in self._dags.items() if i != PUSHED_INSTANCE for dag in dags]
+        listed = {name for _, name in adapters} | {f"{i}/{name}" for i, name in adapters}
         return [
             {**{key: value for key, value in dag.items() if key != "recent"}, "name": f"{instance}/{dag['name']}"}
             | ({"pool": f"{instance}/{dag['pool']}"} if dag.get("pool") else {})

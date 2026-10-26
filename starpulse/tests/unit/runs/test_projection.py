@@ -78,6 +78,14 @@ def test_instances_are_kept_side_by_side(log: EventLog) -> None:
     assert set(log.setting(projection.PROJECTION)) == {"dagu", "pushed"}
 
 
+def test_publishers_in_separate_processes_keep_each_others_instances(log: EventLog) -> None:
+    projection.Publisher(log).runs("dagu", Inner()).set_dags(DAGS, None)
+    projection.Publisher(log).runs("timers", Inner()).set_dags([], None)
+    projection.Publisher(log).runs("dagu", Inner()).set_dags([], None)
+
+    assert set(log.setting(projection.PROJECTION)) == {"dagu", "timers"}
+
+
 def test_a_report_the_log_already_holds_is_not_announced_again(log: EventLog) -> None:
     sink = projection.Publisher(log).runs("dagu", Inner())
     sink.set_dags(DAGS, None)
