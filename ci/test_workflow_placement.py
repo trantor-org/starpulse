@@ -407,11 +407,11 @@ def test_release_runs_only_the_push_and_dispatch_events():
 
 
 def test_a_merge_to_main_that_changes_the_wheel_triggers_a_release_run():
-    """The wheel is the `starpulse` package without its tests, plus the project file that names its dependencies and version."""
+    """The wheel is the `starpulse` package (the tests live beside it, not in it), plus the project file that names its dependencies and version."""
     push = yaml.safe_load((WORKFLOWS / "release.yml").read_text())[True]["push"]
     assert push["tags"] == ["v*"]
     assert push["branches"] == ["main"]
-    assert push["paths"] == ["starpulse/**", "!tests/**", "pyproject.toml"]
+    assert push["paths"] == ["starpulse/**", "pyproject.toml"]
 
 
 def test_a_merge_to_main_publishes_a_beta_version_that_only_the_runner_holds():

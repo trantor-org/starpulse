@@ -161,7 +161,7 @@ def shards_for(selection: Selection) -> list[int]:
 def _modules(root: Path) -> dict[str, Path]:
     """Importable module name -> file; `ci/` scripts are imported by bare name (`pythonpath = ["ci"]`)."""
     found = {}
-    for path in (root / "starpulse").rglob("*.py"):
+    for path in (*(root / "starpulse").rglob("*.py"), *(root / "tests").rglob("*.py")):
         rel = path.relative_to(root)
         if {"web", "__pycache__", "node_modules"} & set(rel.parts):
             continue
