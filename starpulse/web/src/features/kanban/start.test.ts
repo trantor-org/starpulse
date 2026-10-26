@@ -122,15 +122,16 @@ describe("the start question", () => {
     expect([starts.get().harnesses, starts.canStart()]).toEqual([HARNESSES, true]);
   });
 
-  it("key 3 opens a Claude Desktop SSH session on the served host and folder, prefilled to start the task, and posts no start", () => {
+  it("key 3 opens a Claude Desktop SSH session on the served host and folder, prefilled with the pick's model and effort and the task start, and posts no start", () => {
     const { writer, moves, post } = stores();
     const open = vi.fn<(url: string) => void>();
     const starts = new StartStore(post, moves, DESKTOP, open);
     starts.ask(task("TASK-D1", "ready"), "play", LIFECYCLE_ROLES);
+    starts.pick({ tier: "deep", effort: "high" });
 
     expect(starts.canDesktop()).toBe(true);
     expect(starts.key("3")).toBe(true);
-    expect(open).toHaveBeenCalledWith("claude://code/new?ssh_host=adinb%40192.0.2.7&ssh_folder=%2Fhome%2Fadinb%2Ftrantor&q=Start%20TASK-D1");
+    expect(open).toHaveBeenCalledWith("claude://code/new?ssh_host=adinb%40192.0.2.7&ssh_folder=%2Fhome%2Fadinb%2Ftrantor&q=%2Fmodel%20opus%0A%2Feffort%20high%0AStart%20TASK-D1");
     expect(post).not.toHaveBeenCalled();
     expect(writer).not.toHaveBeenCalled();
     expect([starts.get().asking, starts.get().claiming]).toEqual([null, {}]);
