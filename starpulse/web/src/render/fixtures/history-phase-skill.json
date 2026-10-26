@@ -1,0 +1,143 @@
+{
+ "build": [
+  {
+   "at": 1793031059.706654,
+   "event": "RED_WRONG",
+   "state": "start"
+  },
+  {
+   "at": 1793031807.575859,
+   "event": "AC_CHECKPOINTED",
+   "state": "criteria_checked"
+  },
+  {
+   "at": 1793031809.907834,
+   "event": "AC_CHECKPOINTED",
+   "state": "criteria_checked"
+  },
+  {
+   "at": 1793031814.501657,
+   "event": "AC_CHECKPOINTED",
+   "state": "criteria_checked"
+  },
+  {
+   "at": 1793040212.119839,
+   "event": "AC_CHECKPOINTED",
+   "state": "criteria_checked"
+  }
+ ],
+ "deliver": [
+  {
+   "at": 1793031059.749871,
+   "event": "RED_WRONG",
+   "state": "start"
+  },
+  {
+   "at": 1793031807.615813,
+   "event": "AC_CHECKPOINTED",
+   "state": "start"
+  },
+  {
+   "at": 1793031809.955983,
+   "event": "AC_CHECKPOINTED",
+   "state": "start"
+  },
+  {
+   "at": 1793031814.60892,
+   "event": "AC_CHECKPOINTED",
+   "state": "start"
+  },
+  {
+   "at": 1793031908.52645,
+   "event": "PR_OPENED",
+   "state": "pr_opened"
+  },
+  {
+   "at": 1793032200.82609,
+   "event": "CI_GREEN",
+   "state": "ci_green"
+  },
+  {
+   "at": 1793032207.310788,
+   "event": "PR_READY",
+   "state": "pr_ready"
+  },
+  {
+   "at": 1793032245.367748,
+   "event": "PR_OPENED",
+   "state": "pr_opened"
+  },
+  {
+   "at": 1793035786.009931,
+   "event": "PR_OPENED",
+   "state": "pr_opened"
+  },
+  {
+   "at": 1793036131.252963,
+   "event": "CI_RED",
+   "state": "pr_opened"
+  },
+  {
+   "at": 1793036265.407028,
+   "event": "PR_OPENED",
+   "state": "pr_opened"
+  },
+  {
+   "at": 1793036507.826613,
+   "event": "CI_GREEN",
+   "state": "ci_green"
+  },
+  {
+   "at": 1793036513.843106,
+   "event": "PR_READY",
+   "state": "pr_ready"
+  },
+  {
+   "at": 1793039745.547012,
+   "event": "PR_OPENED",
+   "state": "pr_opened"
+  },
+  {
+   "at": 1793040055.72612,
+   "event": "CI_GREEN",
+   "state": "ci_green"
+  },
+  {
+   "at": 1793040061.594135,
+   "event": "PR_READY",
+   "state": "pr_ready"
+  },
+  {
+   "at": 1793040212.170603,
+   "event": "AC_CHECKPOINTED",
+   "state": "start"
+  }
+ ],
+ "review_fix": [
+  {
+   "at": 1793031807.656915,
+   "event": "AC_CHECKPOINTED",
+   "state": "start"
+  },
+  {
+   "at": 1793031810.019732,
+   "event": "AC_CHECKPOINTED",
+   "state": "start"
+  },
+  {
+   "at": 1793031814.761872,
+   "event": "AC_CHECKPOINTED",
+   "state": "start"
+  },
+  {
+   "at": 1793040212.211549,
+   "event": "AC_CHECKPOINTED",
+   "state": "start"
+  },
+  {
+   "at": 1793040222.183374,
+   "event": "REVIEW_RECORDED",
+   "state": "review_recorded"
+  }
+ ]
+}

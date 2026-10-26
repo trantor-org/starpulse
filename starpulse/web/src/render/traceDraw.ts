@@ -5,9 +5,9 @@ import { EXT, OFF, TRACE, rgba, tierColor, type Drawing, type DrawCtx, type Hove
 import type { Level } from "./levels";
 import { bez, curveOf, stateR, type Curve, type Pt, type Scene } from "./scene";
 import type { Sky } from "./sky";
-import { trailOf } from "./transit";
+import { mix, routeOf, type RouteOf } from "./transit";
 import type { Target } from "../features/level/search";
-import { draws, layout as traceLayout, sessionRings, type Place, type Run, type Subject } from "../features/level/trace";
+import { draws, layout as traceLayout, sessionRings, type MachineStep, type Place, type Run, type Subject } from "../features/level/trace";
 
 /** What the renderer owns and the trace's drawing reads as it draws; each is read when a frame draws, so the renderer's own state is never copied. */
 export interface TraceIO {
@@ -23,10 +23,41 @@ export interface TraceIO {
   level(): Level;
   pinnable(s: Subject): boolean;
   runFor(s: Subject): Run | "loading" | "unavailable";
+  /** The machine paths `/api/history` has answered for a task, by machine; a machine not yet read is absent. */
+  walked(task: string, machines: string[]): Record<string, MachineStep[]>;
   sourceOf(flow: string | null | undefined): string | undefined;
 }
 
 type Mode = "board" | "state" | "machine";
+
+/** A dot's path back through its phase tree: the line it rode, shaded machine into machine, the stations it walked and the machines in the order it walked them. */
+export interface Trail {
+  pts: (Pt & { c: string; k?: string })[];
+  stations: (Pt & { c: string; k?: string })[];
+  machines: string[];
+}
+/** A dot's route out of its sun's hub, up its own branch from the station it forked from, lit as `/api/history` says it was walked: a station shows
+ *  only where its machine's path landed in its step, and the fork and the dot's own stay lit; the machines it rode come in the order their first events
+ *  came (the route's own order while none has history). Where the machine changes, the colour blends over the stretch between the stations either side. */
+export function trailOf({ run, end }: RouteOf, walked: Record<string, MachineStep[]>): Trail {
+  const isStation = (p: { k?: string }) => /:\d+$/.test(p.k ?? ""), pts: (Pt & { c: string; k?: string; machine: string })[] = [...run, end], seen = [...new Set(run.map((n) => n.machine).filter(Boolean))];
+  const first = (m: string) => walked[m]?.[0]?.at ?? Infinity, read = seen.filter((m) => walked[m]?.length);
+  const machines = read.length ? read.sort((a, b) => first(a) - first(b)) : seen;
+  const cum = pts.reduce<number[]>((c, q, i) => (c.push(i ? c[i - 1] + Math.hypot(q.x - pts[i - 1].x, q.y - pts[i - 1].y) : 0), c), []);
+  const blended = [...pts];
+  for (let j = 1; j < pts.length; j++) {
+    if (pts[j].c === pts[j - 1].c) continue;
+    const from = Math.max(0, pts.slice(0, j).findLastIndex(isStation)), next = pts.findIndex((p, i) => i >= j && isStation(p)), to = next < 0 ? pts.length - 1 : next;
+    for (let i = from + 1; i < to; i++) blended[i] = { ...pts[i], c: mix(pts[from].c, pts[to].c, (cum[i] - cum[from]) / (cum[to] - cum[from] || 1)) };
+  }
+  const last = (i: number) => !run.slice(i + 1).some((n) => isStation(n) && n.machine === run[i].machine);
+  const stations = run.filter((n, i) => {
+    if (!isStation(n)) return false;
+    const states = walked[n.machine]?.map((r) => r.state);
+    return !states || states.includes(n.step ?? "") || last(i);
+  });
+  return { pts: blended, stations, machines };
+}
 
 export interface TraceDrawing {
   drawTrace(): void;
@@ -148,7 +179,8 @@ export function traceDraw(dc: DrawCtx, pen: Drawing, io: TraceIO): TraceDrawing 
     if (!body) return;
     // a dot out on a phase or sub-machine branch lights the line it rode there as a state route is lit: each leg shaded from the colour
     // of the place it leaves to the one it reaches (hub, then the machine's), each station it passed firmed up, an arrow into the dot
-    const trail = board ? trailOf(t.subject.id, sc) : null;
+    const route = board ? routeOf(t.subject.id, sc) : null;
+    const trail = route ? trailOf(route, io.walked(t.subject.id.split("~")[0], [...new Set(route.run.map((n) => n.machine).filter(Boolean))])) : null;
     if (trail) {
       const thick = 2.6 / Math.max(1, ZS);
       cx.lineCap = "round";
