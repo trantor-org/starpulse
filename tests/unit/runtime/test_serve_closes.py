@@ -13,8 +13,11 @@ import time
 import urllib.request
 from pathlib import Path
 
-from starpulse.event_log.event_log import EventLog
+from sqlalchemy import create_engine
+
+from starpulse.event_log.migrate import migrate
 from starpulse.flow_metrics.history import HistoryStore
+from starpulse.runtime.store_migrate import maintain
 from starpulse.runtime.adapter_kit import serve, url
 
 
@@ -30,8 +33,12 @@ def _check_twenty_serves(root: Path) -> None:
     # the migration chain builds a store in ~0.5 s: build the settings store once and copy it into each serve's
     # directory, and share one history store, since the count is of the socket, settings database and request worker
     store = root / "migrated.sqlite"
-    EventLog(f"sqlite:///{store}").engine.dispose()
-    history = HistoryStore("sqlite://", {})
+    engine = create_engine(f"sqlite:///{store}")
+    migrate(engine)
+    engine.dispose()
+    history_url = f"sqlite:///{root / 'history.sqlite'}"
+    maintain(history_url, {}, None)
+    history = HistoryStore(history_url, {})
     for n in range(20):
         (root / str(n)).mkdir()
         shutil.copyfile(store, root / str(n) / "settings.sqlite")

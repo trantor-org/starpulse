@@ -16,6 +16,7 @@ from starpulse.views.bin import api_worker
 
 from tests import fake_board
 from tests.conftest import FakeSupervisor
+from tests.stores import migrate_config_store
 
 BOARD = '[board]\ntype = "tests.fake_board"\nlanes = ["waiting", "ready", "done"]\nwrites = true\n'
 
@@ -31,6 +32,7 @@ def config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr("starpulse.runtime.server.serve_until_stopped", lambda httpd, feed: None)
     path = tmp_path / "starpulse.toml"
     path.write_text(BOARD)
+    migrate_config_store(path)
     return path
 
 

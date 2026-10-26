@@ -12,6 +12,7 @@ import pytest
 from sqlalchemy import Engine, create_engine, event
 from starpulse.board.adapters import upstream_backlog
 from starpulse.event_log import event_log
+from starpulse.event_log.migrate import migrate
 from starpulse.flow_metrics.history import HistoryStore
 
 from tests.machines import MACHINES
@@ -86,6 +87,16 @@ def stop_upstream_backlogs(timeout: float = 5.0) -> None:
     for backlog, thread in list(upstream_backlog._live.items()):
         backlog.stop()
         thread.join(timeout)
+
+
+@pytest.fixture(autouse=True)
+def _stores_migrate_on_open(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A test opens stores no `starpulse migrate` ran on; it gets the migration an open used to run. An `unmigrated`
+    test keeps the refusal."""
+    if request.node.get_closest_marker("unmigrated"):
+        return
+    for module in ("starpulse.event_log.event_log", "starpulse.flow_metrics.history", "starpulse.pulls.pulls"):
+        monkeypatch.setattr(f"{module}.require_migrated", migrate)
 
 
 @pytest.fixture(autouse=True)

@@ -2,7 +2,8 @@
 
 `serve` runs the view (`starpulse.runtime.server`), `init` scaffolds a first install (`starpulse.cli.init`),
 `connect` writes the
-config's `[board]` for a tracker after checking it answers (`starpulse.cli.connect`) and `import-history` adds a
+config's `[board]` for a tracker after checking it answers (`starpulse.cli.connect`), `migrate` brings the store to its
+schema (`starpulse.runtime.store_migrate`) and `import-history` adds a
 board's earlier lane changes to the store (`starpulse.runtime.history_import`) and `conform` replays the recorded
 history against the machines the project declares (`starpulse.runtime.conform`); each reads the rest of the
 line with its own flags, so `starpulse serve --help` lists the server's. Any other word is a verb that reads the
@@ -30,6 +31,7 @@ COMMANDS: dict[str, Callable[[list[str]], int | None]] = {
     "init": _lazy("starpulse.cli.init"),
     "connect": _lazy("starpulse.cli.connect"),
     "worker": _lazy("starpulse.runtime.worker"),
+    "migrate": _lazy("starpulse.runtime.store_migrate"),
     "import-history": _lazy("starpulse.runtime.history_import"),
     "import-board": _lazy("starpulse.runtime.board_import"),
     "conform": _lazy("starpulse.runtime.conform"),

@@ -10,6 +10,7 @@ from starpulse.event_log.checkpoints import Checkpoints
 from starpulse.flow_metrics import history
 from starpulse.flow_metrics.history import HistoryStore
 from starpulse.flow_metrics.summaries import Summariser
+from starpulse.runtime.store_migrate import maintain
 
 from tests.machines import MACHINES
 from tests.summaries import assert_matches_rebuild
@@ -195,6 +196,12 @@ def _wipe(store: HistoryStore) -> None:
             db.execute(text(f"DELETE FROM {table}"))
 
 
+def _maintained(url: str, machines: dict) -> HistoryStore:
+    """Open the store as `starpulse migrate` leaves it: its lanes and summaries maintained first."""
+    maintain(url, machines, None)
+    return HistoryStore(url, machines)
+
+
 def test_the_incremental_fold_over_a_seeded_trace_equals_the_rebuild(store: HistoryStore) -> None:
     _fill(store)
     _event(store, "e0", "WORKTREE_READY", MIDNIGHT - 500)  # recorded late: a step of zero length
@@ -221,25 +228,27 @@ def test_the_start_up_pass_builds_what_recording_would_have_and_a_second_run_cha
     assert _snapshot(store) == recorded
 
 
-def test_opening_a_store_whose_summaries_are_empty_builds_them(tmp_path: Path) -> None:
+def test_maintaining_a_store_whose_summaries_are_empty_builds_them(tmp_path: Path) -> None:
     url = f"sqlite:///{tmp_path / 'history.sqlite'}"
     first = HistoryStore(url, MACHINES)
     _fill(first)
+    maintain(url, MACHINES, None)
     recorded = _snapshot(first)
     _wipe(first)
 
-    assert _snapshot(HistoryStore(url, MACHINES)) == recorded
+    assert _snapshot(_maintained(url, MACHINES)) == recorded
 
 
-def test_opening_a_store_whose_summaries_predate_the_lane_counts_counts_its_lanes(tmp_path: Path) -> None:
+def test_maintaining_a_store_whose_summaries_predate_the_lane_counts_counts_its_lanes(tmp_path: Path) -> None:
     url = f"sqlite:///{tmp_path / 'history.sqlite'}"
     first = HistoryStore(url, MACHINES)
     _fill(first)
+    maintain(url, MACHINES, None)
     recorded = _snapshot(first)
     with first.engine.begin() as db:
         db.execute(text("DELETE FROM starpulse_lanes"))
 
-    assert _snapshot(HistoryStore(url, MACHINES)) == recorded
+    assert _snapshot(_maintained(url, MACHINES)) == recorded
 
 
 def _sources(store: HistoryStore) -> list[tuple]:
@@ -265,6 +274,7 @@ def test_rebuilding_the_summaries_writes_each_stays_source(store: HistoryStore) 
 
 def test_the_start_up_pass_leaves_summaries_that_already_exist_alone(store: HistoryStore) -> None:
     _fill(store)
+    store.build_summaries()
     with store.engine.begin() as db:
         db.execute(text("UPDATE starpulse_step_summaries SET steps = steps + 5"))
     tampered = _snapshot(store)
@@ -287,52 +297,55 @@ def _checkpointed_then_lint_green(store: HistoryStore) -> None:
     _event(store, "e3", "LINT_GREEN", 30.0)
 
 
-def test_opening_a_store_with_an_edited_machine_folds_its_rows_under_the_edited_machine(tmp_path: Path) -> None:
+def test_maintaining_a_store_with_an_edited_machine_folds_its_rows_under_the_edited_machine(tmp_path: Path) -> None:
     url = f"sqlite:///{tmp_path / 'history.sqlite'}"
     first = HistoryStore(url, MACHINES)
     _checkpointed_then_lint_green(first)
     assert [row[4] for row in _cases(first)] == ["lint_green"]
 
-    reopened = HistoryStore(url, _with_lint_loop(MACHINES))
+    reopened = _maintained(url, _with_lint_loop(MACHINES))
 
     assert_matches_rebuild(reopened)
     assert [row[4] for row in _cases(reopened)] == ["checkpointed"]
 
 
-def test_opening_a_store_whose_machines_are_unchanged_rebuilds_nothing(tmp_path: Path) -> None:
+def test_maintaining_a_store_whose_machines_are_unchanged_rebuilds_nothing(tmp_path: Path) -> None:
     url = f"sqlite:///{tmp_path / 'history.sqlite'}"
     first = HistoryStore(url, MACHINES)
     _fill(first)
+    maintain(url, MACHINES, None)
     with first.engine.begin() as db:
         db.execute(text("UPDATE starpulse_step_summaries SET steps = steps + 5"))
     tampered = _snapshot(first)
 
-    assert _snapshot(HistoryStore(url, MACHINES)) == tampered
+    assert _snapshot(_maintained(url, MACHINES)) == tampered
 
 
 def test_an_edit_that_changes_no_placement_rebuilds_nothing(tmp_path: Path) -> None:
     url = f"sqlite:///{tmp_path / 'history.sqlite'}"
     first = HistoryStore(url, MACHINES)
     _fill(first)
+    maintain(url, MACHINES, None)
     with first.engine.begin() as db:
         db.execute(text("UPDATE starpulse_step_summaries SET steps = steps + 5"))
     tampered = _snapshot(first)
     machine = MACHINES["in-progress"]
     renamed = {**machine, "name": "Renamed", "states": [{**s, "name": s["name"].upper()} for s in machine["states"]]}
 
-    assert _snapshot(HistoryStore(url, MACHINES | {"in-progress": renamed})) == tampered
+    assert _snapshot(_maintained(url, MACHINES | {"in-progress": renamed})) == tampered
 
 
-def test_opening_a_store_that_predates_the_machine_record_rebuilds_once(tmp_path: Path) -> None:
+def test_maintaining_a_store_that_predates_the_machine_record_rebuilds_once(tmp_path: Path) -> None:
     url = f"sqlite:///{tmp_path / 'history.sqlite'}"
     first = HistoryStore(url, MACHINES)
     _fill(first)
+    maintain(url, MACHINES, None)
     recorded = _snapshot(first)
     with first.engine.begin() as db:
         db.execute(text("UPDATE starpulse_step_summaries SET steps = steps + 5"))
         db.execute(text("DELETE FROM starpulse_summary_basis"))
 
-    assert _snapshot(HistoryStore(url, MACHINES)) == recorded
+    assert _snapshot(_maintained(url, MACHINES)) == recorded
 
 
 def test_a_store_opening_while_another_worker_rebuilds_waits_out_the_rebuild(store: HistoryStore) -> None:

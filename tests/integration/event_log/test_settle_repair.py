@@ -6,6 +6,7 @@ from pathlib import Path
 
 from sqlalchemy import text
 from starpulse.flow_metrics.history import HistoryStore
+from starpulse.runtime.store_migrate import maintain
 
 from tests.machines import MACHINES
 from tests.summaries import assert_matches_rebuild
@@ -26,7 +27,7 @@ ROWS = [
 ]
 
 
-def test_a_settle_recorded_behind_later_moves_is_dropped_when_the_store_starts(tmp_path: Path) -> None:
+def test_a_settle_recorded_behind_later_moves_is_dropped_when_the_store_is_maintained(tmp_path: Path) -> None:
     url = f"sqlite:///{tmp_path / 'history.sqlite'}"
     held = HistoryStore(url, MACHINES)
     with held.engine.begin() as db:
@@ -41,6 +42,7 @@ def test_a_settle_recorded_behind_later_moves_is_dropped_when_the_store_starts(t
     held.rebuild_summaries()
     held.engine.dispose()
 
+    maintain(url, MACHINES, None)
     repaired = HistoryStore(url, MACHINES)
 
     assert [change["to"] for change in repaired.lane_path("T-1")] == ["ready", "in_progress", "done", "completed"]

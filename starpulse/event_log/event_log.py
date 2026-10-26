@@ -39,7 +39,7 @@ from sqlalchemy.dialects import sqlite
 from sqlalchemy.engine import Connection, make_url
 
 from starpulse.event_log.checkpoints import Checkpoints
-from starpulse.event_log.migrate import migrate
+from starpulse.event_log.migrate import require_migrated
 from starpulse.event_log.polling import DEFAULT_POLL_INTERVAL
 from starpulse.event_log.tables import events, gaps, settings
 
@@ -143,7 +143,7 @@ class EventLog:
                 if self._engine is None:
                     self._engine = _create_engine(self.url)
                 event.listen(self._engine, "connect", _sqlite_pragmas)
-                create_tables(self._engine)
+                require_migrated(self._engine)
                 self._ready = True
             assert self._engine is not None
             return self._engine
@@ -508,8 +508,3 @@ def insert_event(db: Connection, stream: str, fields: Mapping[str, Any], key: st
 
 def _create_engine(url: str) -> Engine:
     return create_engine(url, connect_args={"timeout": _SQLITE_BUSY_TIMEOUT})
-
-
-def create_tables(engine: Engine) -> None:
-    """Bring `engine`'s database to the schema the migration chain declares."""
-    migrate(engine)

@@ -46,8 +46,9 @@ from starpulse.flow_metrics.level import Level
 from starpulse.event_log import events as machine_events
 from starpulse.event_log import lane_events, lane_repair
 from starpulse.event_log.checkpoints import Checkpoints
-from starpulse.event_log.event_log import EventLog, create_tables, insert_event
+from starpulse.event_log.event_log import EventLog, insert_event
 from starpulse.event_log.lane_import import Change
+from starpulse.event_log.migrate import require_migrated
 from starpulse.event_log.polling import DEFAULT_POLL_INTERVAL
 from starpulse.event_log.tables import gaps as _gaps
 from starpulse.event_log.tables import machine_events as _machine_events
@@ -292,10 +293,7 @@ class HistoryStore:
         # the level answers computed since the last summary write, least recently used first
         self._answers: OrderedDict[Hashable, _Answer] = OrderedDict()
         self._answer_flight = threading.Lock()
-        create_tables(self.engine)  # a reader thread of the log may be bringing the same store up at the same time
-        if self.repair_lanes():
-            self.rebuild_summaries()
-        self.build_summaries()
+        require_migrated(self.engine)
 
     def repair_lanes(self) -> int:
         """Put the lane history right where two writers left it, as `lane_repair.plan` says: how many rows it dropped or
