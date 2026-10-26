@@ -5,12 +5,13 @@ from __future__ import annotations
 
 import signal
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 import pytest
 
 import starpulse.runtime.supervisor as supervisor_module
-from starpulse.runtime.closure import SELF, Reading, ReloadError
+from starpulse.runtime.closure import SELF, Reader, Reading, ReloadError
 from starpulse.runtime.supervisor import Supervisor
 from starpulse.tests.supervised import running_pids
 
@@ -337,3 +338,28 @@ def test_a_reload_whose_definitions_are_refused_changes_nothing(install: Install
         assert running_pids(running) == before
     finally:
         running.stop()
+
+
+def test_an_edit_to_the_configured_board_adapter_module_replaces_each_child_that_loads_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    Child.made = []
+    package = tmp_path / "demo"
+    package.mkdir()
+    (package / "__init__.py").write_text("")
+    (package / "board.py").write_text("VALUE = 1\n")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    config = tmp_path / "starpulse.toml"
+    config.write_text('[board]\ntype = "demo.board"\n')
+    running = Supervisor(
+        {name: [name] for name in NAMES}, spawn=Child, read=Reader(config), execute=lambda: None, poll=60.0
+    )
+    running.start()
+    try:
+        (package / "board.py").write_text("VALUE = 2\n")
+
+        report = running.reload()
+    finally:
+        running.stop()
+
+    assert report == {"supervisor": "re-executed", "children": {"pulls": "replaced", "scheduler": "replaced"}}
