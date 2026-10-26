@@ -50,6 +50,7 @@ from starpulse.harness_telemetry.harness import HARNESS
 logger = logging.getLogger(__name__)
 
 SESSION_ENDED = "session-ended"
+SETTLE_REFUSED = "settle-refused"
 HELD_KEY = "scheduler.held"
 PAUSES_KEY = "scheduler.harness_pauses"
 #: The dimensions a host reading measures, so a run's peak is how far they rose while it ran.
@@ -323,7 +324,9 @@ class Loop:
             logger.exception("StarPulse scheduler: cannot record the run of %s", task)
 
     def _reap(self, now: float) -> None:
-        """Settle each run idle past the limit with its task still open: once, to Needs attention, never back to Ready."""
+        """Settle each run idle past the limit with its task still open: once, to Needs attention, never back to Ready.
+
+        A settle the board refuses closes the run too, so its slot and demand free and it is not retried each tick."""
         limit = self._policy.idle_minutes * 60
         for task, run in list(self._running.items()):
             seen = self._feed.machine_task(HARNESS.name, task)
@@ -337,7 +340,8 @@ class Loop:
             if (written := self._settle(task, reason)).ok:
                 self._close(task, run, self._feed.roles.attention or "settled", now)
             else:
-                logger.warning("StarPulse scheduler: cannot settle %s: %s", task, written.output)
+                logger.warning("StarPulse scheduler: cannot settle %s, releasing its run: %s", task, written.output)
+                self._close(task, run, SETTLE_REFUSED, now)
 
     def _counted(self, task: str) -> bool:
         """Whether the sampler already counts the task's session: its harness machine is active."""
