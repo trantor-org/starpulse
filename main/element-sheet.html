@@ -1103,6 +1103,13 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
 #kb h2 .uh { margin-left: 6px; padding: 0 6px; border-radius: 9px; border: 1px solid color-mix(in srgb, var(--fail) 40%, transparent); background: color-mix(in srgb, var(--fail) 10%, transparent); color: var(--fail-text); font: inherit; font-size: calc(10.5px * var(--fs)); cursor: pointer; }
 #kb h2 .uh.on { background: color-mix(in srgb, var(--fail) 30%, transparent); color: var(--fail-hi); }
 #kb h2 .uh:focus-visible { outline: 1px solid var(--agent); }
+
+#kbm .tvrail .props .sep td { padding-top: 8px; }
+#kbm .tvrail .sz { display: inline-grid; place-items: center; min-width: calc(18px * var(--fs)); padding: 0 5px; border-radius: 5px; background: color-mix(in srgb, var(--slate) 12%, transparent); font-variant-numeric: tabular-nums; }
+#kbm .tv .chip .x { all: unset; cursor: pointer; margin-left: 5px; color: var(--muted); } #kbm .tv .chip .x:hover { color: var(--ink); }
+#kbm .tv .fv.chips .chipinput { flex: 1 0 calc(80px * var(--fs)); width: auto; }
+#kbm .tvrail .rule { margin-top: 3px; font-size: calc(10.5px * var(--fs)); color: var(--muted); }
+#kbm .tvrail .rule.err { color: var(--fail); }
 </style>
 <style>
 /* Sheet layout only, in the palette's own tokens: the specimens below are styled by style.css, never here. */
