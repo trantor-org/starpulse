@@ -96,7 +96,7 @@ export function traceDraw(dc: DrawCtx, pen: Drawing, io: TraceIO): TraceDrawing 
         }),
       ];
     }));
-    if (mode === "board") return Object.fromEntries(Object.values(sc.galaxies).map((g) => [g.id, { id: g.id, name: g.name, x: g.x, y: g.y, r: g.r, R: g.R, color: g.color, lab: g.lab }]));
+    if (mode === "board") return Object.fromEntries(Object.values(sc.galaxies).map((g) => [g.id, { id: g.id, name: g.name, x: g.x, y: g.y, r: g.r, R: g.R, color: g.color, lab: { x: g.x, y: g.y + (g.text[0]?.y ?? 0) * (sc.labelScale ?? 1) * (sc.px ?? 1) } }]));
     return Object.fromEntries(Object.values(sc.mStates).map((m) => {
       const r = stateR(m);
       return [m.id, { id: m.id, name: m.name, x: m.x, y: m.y, r, R: r + 12 / K, color: m.color, lab: m.lab ?? { x: m.x, y: m.y + r + 16 } }];

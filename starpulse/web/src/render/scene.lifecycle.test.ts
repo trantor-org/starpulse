@@ -69,8 +69,7 @@ describe("a Board whose every open state opens into lifecycle machines", () => {
     const F = ((scene.labelScale ?? 1) * scene.w) / (0.94 * W), out: { o: string; x0: number; x1: number; y0: number; y1: number }[] = [];
     const add = (o: string, x: number, hw: number, y0: number, y1: number) => out.push({ o, x0: x - hw, x1: x + hw, y0, y1 });
     for (const g of Object.values(scene.galaxies)) {
-      const sub = `${g.n}${g.subs.length ? ` · ${g.subs.length} lifecycles` : ""}`;
-      add(g.id, g.lab.x, (Math.max(textW(g.name, 13), textW(sub, 11)) / 2) * F, g.lab.y - 6.5 * F, g.lab.y + 21.5 * F);
+      for (const l of g.text) add(g.id, g.x, (textW(l.text, l.size) / 2) * F, g.y + (l.y - l.size / 2) * F, g.y + (l.y + l.size / 2) * F);
       add(g.id, g.x, g.R, g.y - g.R, g.y + g.R);
     }
     for (const m of scene.moons) {

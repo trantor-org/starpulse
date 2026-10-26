@@ -10,7 +10,7 @@ import {
   BOARD_COLOR, SUN_R, TAU, bez, clip, curveOf, stateR, taskSlot, terminal, textW,
   type BEdge, type Curve, type GNode, type MEdge, type MState, type Planet, type Scene,
 } from "./scene";
-import { FLARE, PULSE, RING, TRAVEL, countText, hosted, type Move, type Moves, type Sky } from "./sky";
+import { FLARE, PULSE, RING, TRAVEL, hosted, type Move, type Moves, type Sky } from "./sky";
 
 /** How a tied DAG's orbiter looks: the Spinner while its DAG runs, else its last run's colour, with a dashed ring after a failed run. */
 export const orbiterLook = (status: string) => ({ spin: status === "running", color: status === "queued" ? "#94a3b8" : DAG_COLOR[status] || "#94a3b8", dashed: status === "failed" });
@@ -41,13 +41,13 @@ export interface BoardIO {
 
 export function boardDraw(dc: DrawCtx, d: Drawing, io: BoardIO) {
   const { cx } = dc;
-  const { text, labPx, label, circle, dot, isHot, disc, hole, comet, pulse, flowLine, body, drawTrackRings, machine, machineName } = d;
+  const { text, labPx, label, sunLabel, circle, dot, isHot, disc, hole, comet, pulse, flowLine, body, drawTrackRings, machine, machineName } = d;
   function drawGalaxies() {
     for (const g of Object.values(io.scene!.galaxies)) {
       const hot = isHot("galaxy", g);
       body(g, hot);
       drawTrackRings(g, g.color);
-      label(g.name, g.lab.x, g.lab.y, hot, `${countText(g.n, g.today)}${g.subs.length ? ` · ${g.subs.length} lifecycles` : ""}`, 13);
+      sunLabel(g.text, g.x, g.y, hot, terminal(g));
     }
   }
   // lifecycle moons: still, named bodies on their state's dashed outer ring, brighter while they have sessions, ringed in amber while one moves.

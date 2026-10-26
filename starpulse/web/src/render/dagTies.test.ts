@@ -99,10 +99,10 @@ describe("the hangar names, placed round the ring", () => {
       expect(ties.pivots.length).toBeGreaterThan(0);
       for (const h of ties.pivots) {
         const others = ties.pivots.filter((x) => x !== h);
-        // every moon and its label, and the other hangars' name boxes and orbiters. A state's disc and name (each state's first two boxes) are
-        // left out: the Board's fixed footprints reserve no room for a hangar's chain, a gap TASK-3839 accepts, so a hangar beside a tightly
-        // packed neighbour may touch it
-        const keep = obstacles(sc, others, u, ts).slice(2 * Object.keys(sc.galaxies).length);
+        // every moon and its label, and the other hangars' name boxes and orbiters. A state's disc (each state's first box) is left out: the
+        // Board's fixed footprints reserve no room for a hangar's chain, a gap TASK-3839 accepts, so a hangar beside a tightly packed
+        // neighbour may touch it
+        const keep = obstacles(sc, others, u, ts).slice(Object.keys(sc.galaxies).length);
         for (const k of keep) expect(over([...h.box, 1], k), `${h.state} at ${ts}`).toBe(0);
       }
     });

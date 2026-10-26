@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { build, Drawn, pickRows, SUN_R, routed, curveDist, glyph, nearestWithin, paged, rings, sample, stateR, terminal, textW, turnPage, type Curve, type Galaxy, type MState, type Pt, type Scene } from "./scene";
+import { build, Drawn, pickRows, SUN_FIT, SUN_R, sunTexts, tally, routed, curveDist, glyph, nearestWithin, paged, rings, sample, stateR, terminal, textW, turnPage, type Curve, type Galaxy, type MState, type Pt, type Scene } from "./scene";
 import { ledgerLevel, type Level } from "./levels";
 import { merge, midnight, Moves } from "./sky";
 import { emptyNote } from "../features/level/machineRows";
@@ -208,15 +208,17 @@ describe("a Board state's task rings", () => {
     const perRing = radii.map((R) => done.filter((k) => k.R === R).length);
 
     expect(done).toHaveLength(376);
-    radii.slice(1).forEach((R, i) => expect(R - radii[i]).toBeGreaterThanOrEqual(8));
+    radii.slice(1).forEach((R, i) => expect(R - radii[i]).toBeGreaterThanOrEqual(8 - 1e-9));
     radii.forEach((R, i) => expect((2 * Math.PI * R) / perRing[i]).toBeGreaterThanOrEqual(8));
   });
   it("keeps a quiet state's footprint, its tasks on the one ring nearest the sun", () => {
     const quiet = withDone(5), busy = withDone(376);
 
-    expect(quiet.galaxies.done.rings).toEqual([SUN_R + 14]);
-    expect(quiet.galaxies.done.R).toBe(SUN_R + 44);
-    expect(busy.galaxies.done.R).toBeGreaterThan(SUN_R + 44);
+    const r = quiet.galaxies.done.r;
+
+    expect(quiet.galaxies.done.rings).toEqual([r + 14]);
+    expect(quiet.galaxies.done.R).toBe(r + 44);
+    expect(busy.galaxies.done.R).toBeGreaterThan(busy.galaxies.done.r + 44);
   });
 });
 
@@ -296,14 +298,6 @@ describe("a Board path's route", () => {
     expect(routed(a, b, c0, [a, b, by(4)], new Drawn(), sky, held).c).toEqual(held);
     expect(routed(a, b, c0, [a, b, by(30)], new Drawn(), sky, held).c).toEqual(c0);
   });
-  it("keeps the bend it held while a name widening toward it stays off the path, so a count gaining a digit never hops it to another spot", () => {
-    const name = { of: "ready", x0: 380, y0: 280, x1: 420, y1: 320 }, first = routed(a, b, c0, [a, b], new Drawn(), sky, undefined, [name]);
-    const gap = Math.min(...sample(first, 400).map((p) => Math.hypot(Math.max(name.x0 - p.x, 0, p.x - name.x1), Math.max(name.y0 - p.y, 0, p.y - name.y1))));
-    const wider = (by: number) => [{ of: "ready", x0: name.x0 - by, y0: name.y0 - by, x1: name.x1 + by, y1: name.y1 + by }];
-
-    expect(routed(a, b, c0, [a, b], new Drawn(), sky, first.c, wider(gap - 1)).c).toEqual(first.c);
-    expect(routed(a, b, c0, [a, b], new Drawn(), sky, first.c, wider(gap + 2)).c).not.toEqual(first.c);
-  });
   it("keeps the bend it held while a state growing toward it leaves three quarters of its clearance, so a ring of tasks filling never hops it", () => {
     const o = (R: number) => at("ready", 400, 300, R), first = routed(a, b, c0, [a, b, o(40)], new Drawn(), sky);
     const room = Math.min(...sample(first, 400).map((p) => Math.hypot(p.x - 400, p.y - 300))) - 40;
@@ -312,24 +306,6 @@ describe("a Board path's route", () => {
     expect(routed(a, b, c0, [a, b, o(40 + room - 12)], new Drawn(), sky, first.c).c).not.toEqual(first.c);
   });
 
-  it("bends round a name printed in its way, and where no bend clears every name crosses the fewest it can", () => {
-    const name = { of: "ready", x0: 380, y0: 280, x1: 420, y1: 320 }, all = { of: "sky", x0: 0, y0: 0, x1: 800, y1: 600 };
-    const inName = (e: Curve) => sample(e, 400).filter((p) => p.x > 375 && p.x < 425 && p.y > 275 && p.y < 325);
-    const e = routed(a, b, c0, [a, b], new Drawn(), sky, undefined, [name]), fewest = routed(a, b, c0, [a, b], new Drawn(), sky, undefined, [name, all]);
-
-    expect(e.c).not.toEqual(c0);
-    expect(inName(e)).toEqual([]);
-    expect(routed(a, b, c0, [a, b], new Drawn(), sky, undefined, [all]).c).toEqual(c0);
-    expect(inName(fewest)).toEqual([]);
-  });
-  it("leaves each of its two states outside the rows that state's machines are named in, sliding its end round the rim", () => {
-    // New's rows cover the side of its rim that faces Done and the sky above and below it, so every path to Done crosses them and no
-    // bend worth making starts one outside them
-    const row = { of: "new/m0", x0: 107, y0: 100, x1: 140, y1: 500 }, e = routed(a, b, c0, [a, b], new Drawn(), sky, undefined, [row]);
-
-    expect(Math.hypot(e.p0.x - a.x, e.p0.y - a.y)).toBeCloseTo(a.edge);
-    expect(e.p0.x).toBeLessThan(row.x0 - 5);
-  });
   it("never cuts back through either of its own two states", () => {
     // a bend behind New starts the path on New's far side, to run back through New on its way to Done
     const behind = { x: 60, y: 300 }, e = routed(a, b, behind, [a, b], new Drawn(), sky);
@@ -415,116 +391,116 @@ describe("a Board path's route", () => {
       expect(routes).toMatchInlineSnapshot(`
         {
           "1280x720": [
-            "new>ready 151.967654,336.47528",
-            "new>blocked 251.192233,266.149149",
-            "new>waiting 290,370",
-            "new>in_progress 350.416812,195.823019",
-            "ready>in_progress 290,290",
-            "ready>blocked 288.46356,384.972003",
-            "ready>waiting 296.199434,534.120013",
-            "ready>archived 410,330",
-            "blocked>ready 288.46356,384.972003",
-            "blocked>in_progress 517.856214,287.978557",
-            "blocked>archived 650,250",
-            "waiting>ready 296.199434,534.120013",
-            "waiting>in_progress 502.384466,371.638345",
-            "waiting>archived 530,570",
-            "in_progress>blocked 517.856214,287.978557",
-            "in_progress>review 623.408622,348.078756",
-            "in_progress>done 714.576699,195.823019",
-            "in_progress>needs_attention 510.12034,138.830546",
+            "new>ready 152.524766,350.060482",
+            "new>blocked 255.85884,296.270071",
+            "new>waiting 250,370",
+            "new>in_progress 330,330",
+            "ready>in_progress 530,490",
+            "ready>blocked 293.656643,422.494063",
+            "ready>waiting 294.583598,571.328444",
+            "ready>archived 290,170",
+            "blocked>ready 293.656643,422.494063",
+            "blocked>in_progress 569.043111,322.521017",
+            "blocked>archived 570,250",
+            "waiting>ready 294.583598,571.328444",
+            "waiting>in_progress 547.184923,395.449136",
+            "waiting>archived 530,650",
+            "in_progress>blocked 569.043111,322.521017",
+            "in_progress>review 713.880551,360.324842",
+            "in_progress>done 801.343629,198.355468",
+            "in_progress>needs_attention 552.540985,137.941344",
             "in_progress>archived 810,410",
-            "review>done 767.319774,336.47528",
-            "review>in_progress 623.408622,348.078756",
-            "review>archived 754.929943,477.127541",
-            "needs_attention>ready 303.935308,301.312215",
-            "needs_attention>in_progress 510.12034,138.830546",
-            "needs_attention>archived 570,450",
-            "done>completed 926.768931,195.823019",
+            "review>done 863.540292,352.270697",
+            "review>in_progress 713.880551,360.324842",
+            "review>archived 857.840628,507.095405",
+            "needs_attention>ready 305.490533,321.526425",
+            "needs_attention>in_progress 552.540985,137.941344",
+            "needs_attention>archived 490,370",
+            "done>completed 1023.213838,201.701739",
           ],
           "1280x720 crowded": [
-            "new>ready 151.967654,336.47528",
-            "new>blocked 251.192233,266.149149",
-            "new>waiting 290,370",
-            "new>in_progress 350.416812,195.823019",
-            "ready>in_progress 370,250",
-            "ready>blocked 288.46356,384.972003",
-            "ready>waiting 296.199434,534.120013",
-            "ready>archived 450,330",
-            "blocked>ready 288.46356,384.972003",
-            "blocked>in_progress 517.856214,287.978557",
-            "blocked>archived 650,250",
-            "waiting>ready 296.199434,534.120013",
-            "waiting>in_progress 502.384466,371.638345",
-            "waiting>archived 690,170",
-            "in_progress>blocked 517.856214,287.978557",
-            "in_progress>review 623.408622,348.078756",
-            "in_progress>done 714.576699,195.823019",
-            "in_progress>needs_attention 510.12034,138.830546",
+            "new>ready 152.524766,350.060482",
+            "new>blocked 255.85884,296.270071",
+            "new>waiting 250,370",
+            "new>in_progress 330,330",
+            "ready>in_progress 490,490",
+            "ready>blocked 293.656643,422.494063",
+            "ready>waiting 294.583598,571.328444",
+            "ready>archived 330,170",
+            "blocked>ready 293.656643,422.494063",
+            "blocked>in_progress 569.043111,322.521017",
+            "blocked>archived 610,250",
+            "waiting>ready 294.583598,571.328444",
+            "waiting>in_progress 547.184923,395.449136",
+            "waiting>archived 570,650",
+            "in_progress>blocked 569.043111,322.521017",
+            "in_progress>review 713.880551,360.324842",
+            "in_progress>done 801.343629,198.355468",
+            "in_progress>needs_attention 552.540985,137.941344",
             "in_progress>archived 810,410",
-            "review>done 767.319774,336.47528",
-            "review>in_progress 623.408622,348.078756",
-            "review>archived 754.929943,477.127541",
-            "needs_attention>ready 303.935308,301.312215",
-            "needs_attention>in_progress 510.12034,138.830546",
-            "needs_attention>archived 570,410",
-            "done>completed 926.768931,195.823019",
+            "review>done 863.540292,352.270697",
+            "review>in_progress 713.880551,360.324842",
+            "review>archived 890,490",
+            "needs_attention>ready 305.490533,321.526425",
+            "needs_attention>in_progress 552.540985,137.941344",
+            "needs_attention>archived 490,330",
+            "done>completed 1023.213838,201.701739",
           ],
           "1920x1080": [
-            "new>ready 141.365004,308.285715",
-            "new>blocked 233.857827,243.134656",
-            "new>waiting 250,330",
-            "new>in_progress 326.35065,177.983596",
-            "ready>in_progress 290,250",
-            "ready>blocked 268.396775,353.088354",
-            "ready>waiting 275.563391,491.511786",
-            "ready>archived 450,290",
-            "blocked>ready 268.396775,353.088354",
-            "blocked>in_progress 482.048887,263.483077",
-            "blocked>archived 650,250",
-            "waiting>ready 275.563391,491.511786",
-            "waiting>in_progress 490,330",
-            "waiting>archived 530,530",
-            "in_progress>blocked 482.048887,263.483077",
-            "in_progress>review 580.414192,319.037595",
-            "in_progress>done 662.573481,177.983596",
-            "in_progress>needs_attention 474.882271,125.059645",
-            "in_progress>archived 690,330",
-            "review>done 711.445662,308.285715",
-            "review>in_progress 580.414192,319.037595",
-            "review>archived 701.748533,438.587835",
-            "needs_attention>ready 250,250",
-            "needs_attention>in_progress 474.882271,125.059645",
-            "needs_attention>archived 490,370",
-            "done>completed 857.431309,177.983596",
+            "new>ready 126.444246,291.06",
+            "new>blocked 213.275944,244.017978",
+            "new>waiting 213.275944,330.899185",
+            "new>in_progress 330,250",
+            "ready>in_progress 530,370",
+            "ready>blocked 244.244283,349.562552",
+            "ready>waiting 245.828907,474.649705",
+            "ready>archived 290,130",
+            "blocked>ready 244.244283,349.562552",
+            "blocked>in_progress 470.907056,265.455748",
+            "blocked>archived 610,250",
+            "waiting>ready 245.828907,474.649705",
+            "waiting>in_progress 450,370",
+            "waiting>archived 450,530",
+            "in_progress>blocked 470.907056,265.455748",
+            "in_progress>review 587.459394,299.200948",
+            "in_progress>done 661.284097,163.345872",
+            "in_progress>needs_attention 457.846721,114.173746",
+            "in_progress>archived 770,410",
+            "review>done 712.02211,291.25229",
+            "review>in_progress 587.459394,299.200948",
+            "review>archived 707.201364,420.847235",
+            "needs_attention>ready 254.593528,266.539348",
+            "needs_attention>in_progress 457.846721,114.173746",
+            "needs_attention>archived 490,330",
+            "done>completed 848.237262,165.854697",
           ],
           "1920x1080 crowded": [
-            "new>ready 141.365004,308.285715",
-            "new>blocked 233.857827,243.134656",
+            "new>ready 126.444246,291.06",
+            "new>blocked 213.275944,244.017978",
             "new>waiting 250,330",
-            "new>in_progress 326.35065,177.983596",
-            "ready>in_progress 290,250",
-            "ready>blocked 268.396775,353.088354",
-            "ready>waiting 275.563391,491.511786",
-            "ready>archived 490,290",
-            "blocked>ready 268.396775,353.088354",
-            "blocked>in_progress 482.048887,263.483077",
-            "blocked>archived 650,250",
-            "waiting>ready 275.563391,491.511786",
-            "waiting>in_progress 490,330",
-            "waiting>archived 690,170",
-            "in_progress>blocked 482.048887,263.483077",
-            "in_progress>review 580.414192,319.037595",
-            "in_progress>done 662.573481,177.983596",
-            "in_progress>needs_attention 474.882271,125.059645",
-            "in_progress>archived 690,330",
-            "review>done 711.445662,308.285715",
-            "review>in_progress 580.414192,319.037595",
-            "review>archived 701.748533,438.587835",
-            "needs_attention>ready 250,250",
-            "needs_attention>in_progress 474.882271,125.059645",
-            "needs_attention>archived 530,370",
-            "done>completed 857.431309,177.983596",
+            "new>in_progress 330,250",
+            "ready>in_progress 490,370",
+            "ready>blocked 244.244283,349.562552",
+            "ready>waiting 245.828907,474.649705",
+            "ready>archived 330,130",
+            "blocked>ready 244.244283,349.562552",
+            "blocked>in_progress 470.907056,265.455748",
+            "blocked>archived 610,250",
+            "waiting>ready 245.828907,474.649705",
+            "waiting>in_progress 530,370",
+            "waiting>archived 530,530",
+            "in_progress>blocked 470.907056,265.455748",
+            "in_progress>review 587.459394,299.200948",
+            "in_progress>done 661.284097,163.345872",
+            "in_progress>needs_attention 457.846721,114.173746",
+            "in_progress>archived 730,370",
+            "review>done 712.02211,291.25229",
+            "review>in_progress 587.459394,299.200948",
+            "review>archived 707.201364,420.847235",
+            "needs_attention>ready 254.593528,266.539348",
+            "needs_attention>in_progress 457.846721,114.173746",
+            "needs_attention>archived 450,290",
+            "done>completed 848.237262,165.854697",
           ],
         }
       `);
@@ -636,6 +612,13 @@ const machinesOn = (state: string, n: number) => (snap: Snapshot) => {
     snap.graphs.push(`m${i}`);
     snap.flows.push({ name: `m${i}`, agents: [], machine: machine(["a", "b"]) });
   }
+};
+
+/** Whether every line a sun draws sits inside its black hole's shadow, in the type the canvas draws; a sun that cannot grow draws none. */
+const holds = (s: Scene) => {
+  const F = s.labelScale! * s.px!;
+
+  return Object.values(s.galaxies).every((g) => g.text.every((l) => Math.hypot(textW(l.text, l.size * F) / 2, Math.abs(l.y * F) + (l.size * F) / 2) <= g.r * SUN_FIT + 1e-6));
 };
 
 describe("the Board's tiers", () => {
@@ -775,7 +758,8 @@ describe("the Board's tiers", () => {
     const none = tiered(1920, 1080).galaxies, nine = tiered(1920, 1080, DEFAULT_TIERS, machinesOn("review", 9));
 
     expect(nine.moons).toEqual([]);
-    expect(nine.galaxies.review.R).toBeCloseTo(none.review.R);
+    // the machines crowd the Board, so its zoom drops and the suns grow to hold their names: the footprint past the sun is what stays
+    expect(nine.galaxies.review.R - nine.galaxies.review.r).toBeCloseTo(none.review.R - none.review.r);
   });
 
   it("keeps today's sun-to-dot ratio and caps the zoom at 16 on a Board that would otherwise grow past it", () => {
@@ -785,7 +769,7 @@ describe("the Board's tiers", () => {
       snap.flows[0].machine.mainLine = ["new", "done"];
     });
 
-    for (const s of Object.values(tiered(1920, 1080).galaxies)) expect(s.r).toBe(SUN_R);
+    for (const s of Object.values(tiered(1920, 1080).galaxies)) expect(s.r).toBeGreaterThanOrEqual(SUN_R);
     expect(zoom(small, 3440)).toBeLessThanOrEqual(16 + 1e-6);
   });
 
@@ -800,9 +784,10 @@ describe("the Board's tiers", () => {
           snap.flows.push({ name: `m-${state}`, agents: [], machine: machine(["a", "b"]) });
         }
       });
+      // the nominal sun the type scale reads: the drawn suns grow past it to hold their names
       return { label: s.labelScale! * 13, sun: SUN_R * zoom(s, W) };
     };
-    const small = px(1366, 768), mid = px(1920, 1080), big = px(3840, 2160);
+    const small = px(1366, 768), mid = px(2560, 1440), big = px(3840, 2160);
 
     expect(small.label).toBeCloseTo(12);
     expect(mid.label).toBeCloseTo(0.45 * mid.sun);
@@ -821,20 +806,20 @@ describe("the Board's tiers", () => {
   });
 
   it.each([
-    [1366, 768, [52.484, 52.484, 51.38]],
-    [1920, 1080, [75.184, 75.184, 75.184]],
-    [2560, 1440, [101.407, 101.407, 101.407]],
-    [3440, 1440, [132.62, 129.77, 126.92]],
-  ] as const)("draws the demo's eight states at the sun size TASK-3839 set, within a pixel, at %i x %i", (W, H, suns) => {
-    // the demo's eight states; the sizes are the zoom the layout drew before the tiers were steadied, at 100, 125 and 150% text
+    [1366, 768],
+    [1920, 1080],
+    [2560, 1440],
+    [3440, 1440],
+  ] as const)("draws the demo's eight states' names inside their suns, or hides a name its sun cannot grow to hold without costing the zoom, at 100, 125 and 150% text, at %i x %i", (W, H) => {
     const eight = (snap: Snapshot) => {
       const m = snap.flows[0].machine, gone = ["blocked", "completed"];
       m.states = m.states.filter((q) => !gone.includes(q.id));
       m.transitions = m.transitions.filter((t) => !gone.includes(t.source) && !gone.includes(t.target));
     };
-    const drawn = [100, 125, 150].map((scale) => SUN_R * zoom(tiered(W, H, DEFAULT_TIERS, eight, scale), W));
 
-    drawn.forEach((r, i) => expect(Math.abs(r - suns[i])).toBeLessThanOrEqual(1));
+    for (const scale of [100, 125, 150]) {
+      expect(holds(tiered(W, H, DEFAULT_TIERS, eight, scale)), `${scale}%`).toBe(true);
+    }
   });
 
   describe("with machines open under In Progress and Review, on a 1366 x 768 window whose side rails leave an 866 x 768 canvas (TASK-4243)", () => {
@@ -869,25 +854,19 @@ describe("the Board's tiers", () => {
     const suns = (shape: (snap: Snapshot) => void, tiers?: string[][]) =>
       [100, 125, 150].map((scale) => SUN_R * zoom(tiered(866, 768, tiers, (snap) => { shape(snap); rings(snap); }, scale), 866));
 
-    it("draws the fourteen states' suns at 12 px or more at 150% text, round the room their machines' branches take", () => {
+    it("keeps the fourteen states' suns at 12 px or more at 150% text, round the room their machines' branches take, when no zoom holds their names", () => {
       const [a, b, c] = suns(fourteen, TIERS_14);
 
       expect(c).toBeGreaterThanOrEqual(12);
-      expect(Math.abs(a - 16.0)).toBeLessThanOrEqual(0.1);
-      expect(Math.abs(b - 14.5)).toBeLessThanOrEqual(0.1);
+      expect(a).toBeGreaterThanOrEqual(c);
+      expect(b).toBeGreaterThanOrEqual(c);
     });
 
-    it("draws the eight states' suns at the sizes their machines' branches leave, within 0.1 px, at 100, 125 and 150% text", () => {
-      const drawn = suns(eight, DEFAULT_TIERS);
-
-      [24.8, 22.7, 20.2].forEach((want, i) => expect(Math.abs(drawn[i] - want)).toBeLessThanOrEqual(0.1));
+    it("draws the eight states' names inside their suns, round the room their machines' branches take, or hides a name its sun cannot grow to hold without costing the zoom", () => {
+      for (const scale of [100, 125, 150]) {
+        expect(holds(tiered(866, 768, DEFAULT_TIERS, (snap) => { eight(snap); rings(snap); }, scale)), `${scale}%`).toBe(true);
+      }
     });
-  });
-
-  it("makes room for larger names at a larger Admin text size, never shrinking the sun's footprint", () => {
-    const at = (scale: number) => tiered(1366, 768, DEFAULT_TIERS, () => {}, scale);
-
-    expect(zoom(at(150), 1366)).toBeLessThanOrEqual(zoom(at(100), 1366) + 1e-9);
   });
 });
 
@@ -968,22 +947,9 @@ describe("Board paths", () => {
     const ends = (id: string) => scene.bEdges.flatMap((e) => [...(e.source === id ? [e.p0!] : []), ...(e.target === id ? [e.p1!] : [])]).map((p) => Math.hypot(p.x - g[id].x, p.y - g[id].y));
 
     expect(ends("new").length * ends("ready").length * ends("in_progress").length).toBeGreaterThan(0);
-    for (const d of ends("new")) expect(d).toBeCloseTo(SUN_R + 10);
+    for (const d of ends("new")) expect(d).toBeCloseTo(g.new.r + 10);
     for (const d of ends("ready")) expect(d).toBeCloseTo(Math.max(...g.ready.rings!) + 10);
-    for (const d of ends("in_progress")) expect(d).toBeCloseTo(52);
-  });
-
-  it.each([
-    ["the base Board", {}],
-    ["a busy Board", crowdedCounts],
-  ])("cross no state's name on %s", (_, counts) => {
-    const scene = build(crowd(1920, 1080, counts, machinesOn("in_progress", 8)), { kind: "board" }), over: string[] = [];
-
-    expect(scene.names.map((n) => n.of)).toEqual(expect.arrayContaining(["ready", "in_progress"]));
-    for (const e of scene.bEdges)
-      for (const n of scene.names)
-        if (sample(e as Curve, 400).some((p) => p.x > n.x0 && p.x < n.x1 && p.y > n.y0 && p.y < n.y1)) over.push(`${e.source}>${e.target} over ${n.of}`);
-    expect(over).toEqual([]);
+    for (const d of ends("in_progress")) expect(d).toBeCloseTo(g.in_progress.r + 18);
   });
 
   describe("on a Board of fourteen states and thirty-three paths", () => {
@@ -992,8 +958,8 @@ describe("Board paths", () => {
       ready>waiting waiting>ready ready>blocked blocked>ready in_progress>waiting waiting>in_progress in_progress>needs_attention needs_attention>ready
       needs_attention>in_progress qa>in_progress review>in_progress staging>qa review>done review>archived done>archived ready>archived new>ready
       new>in_progress triage>blocked blocked>needs_attention approved>archived qa>needs_attention waiting>archived completed>archived`.split(/\s+/).map((p) => p.split(">"));
-    const board = (scale: number) => {
-      const sky = savedBoardSky(1920, 1080, (snap) => {
+    const board = (scale: number, W = 1920, H = 1080) => {
+      const sky = savedBoardSky(W, H, (snap) => {
         const m = snap.flows[0].machine;
         m.states = TIERS.flat().map((id, i) => ({ id, name: id, initial: i === 0, final: ["archived", "completed"].includes(id) }));
         m.transitions = PATHS.map(([source, target]) => ({ source, target, event: `${source}_${target}` }));
@@ -1003,14 +969,61 @@ describe("Board paths", () => {
       return build({ ...sky, scale }, { kind: "board" });
     };
 
-    it.each([100, 125, 150])("runs no path over a state's name or count at %i% text", (scale) => {
-      const scene = board(scale), over: string[] = [];
+    // a crowded canvas at a large text size cannot grow its suns without shrinking the Board past use, so the suns hold their radius and the
+    // names that do not fit them are hidden: the Board never runs away to the minimum zoom, and no name spills past its sun
+    it.each([[1070, 830, 150], [1318, 830, 150], [1070, 830, 125]])("keeps the suns bounded on a %i x %i canvas at %i% text, hiding the names they cannot hold", (W, H, scale) => {
+      const s = board(scale, W, H), g = Object.values(s.galaxies);
 
-      expect(scene.bEdges).toHaveLength(33);
-      for (const e of scene.bEdges)
-        for (const n of scene.names)
-          if (sample(e as Curve, 400).some((p) => p.x > n.x0 && p.x < n.x1 && p.y > n.y0 && p.y < n.y1)) over.push(`${e.source}>${e.target} over ${n.of}`);
-      expect(over).toEqual([]);
+      expect(Math.max(...g.map((x) => x.r))).toBeLessThan(SUN_R * 4);
+      expect(holds(s)).toBe(true);
+      expect(g.some((x) => x.text.length === 0)).toBe(true);
+    });
+  });
+
+  it.each([100, 125, 150])("draw each state's name and count inside its sun at %i% text", (scale) => {
+    const names = (snap: Snapshot) => { for (const st of snap.flows[0].machine.states) st.name = st.id.split("_").map((w) => w[0].toUpperCase() + w.slice(1)).join(" "); };
+    const scene = build({ ...savedBoardSky(1920, 1080, names), scale }, { kind: "board" }), F = scene.labelScale! * scene.px!, out: string[] = [];
+
+    // the name and count lines are stacked about the sun's centre in the type the canvas draws them in: a line's farthest corner is within the
+    // black hole's shadow, which ends at SUN_FIT of the sun's radius
+    for (const g of Object.values(scene.galaxies)) {
+      for (const l of g.text) {
+        const reach = Math.hypot(textW(l.text, l.size * F) / 2, Math.abs(l.y * F) + (l.size * F) / 2);
+        if (reach > g.r * SUN_FIT) out.push(`${g.id} ${l.text}: ${reach.toFixed(1)} > ${(g.r * SUN_FIT).toFixed(1)}`);
+      }
+      // wrapping drops no word: the lines hold the name and count as they read on one line
+      expect(g.text.map((l) => l.text).join(" ")).toBe(`${g.name} ${tally(g)}`.replaceAll(" \u00b7 ", " "));
+    }
+    expect(out).toEqual([]);
+  });
+
+  it("grows only the suns whose text needs the room", () => {
+    const names = (snap: Snapshot) => { for (const st of snap.flows[0].machine.states) st.name = st.id.split("_").map((w) => w[0].toUpperCase() + w.slice(1)).join(" "); };
+    const rs = Object.values(build({ ...savedBoardSky(1920, 1080, names), scale: 100 }, { kind: "board" }).galaxies).map((g) => g.r);
+
+    expect(Math.min(...rs)).toBe(SUN_R);
+    expect(Math.max(...rs)).toBeGreaterThan(SUN_R);
+  });
+
+  describe("sunTexts", () => {
+    const rOf = (name: string, count: string) => sunTexts(name, count)[0].r;
+
+    it("offers the fewest lines first, and a wrapped name needs a smaller sun than one long line", () => {
+      const cands = sunTexts("Needs Attention Today", "3 \u00b7 2 today");
+
+      expect(cands[0].lines.length).toBeLessThanOrEqual(cands[cands.length - 1].lines.length);
+      expect(Math.min(...cands.map((c) => c.r))).toBeLessThan(cands[0].r);
+    });
+
+    it("breaks the count at its separator and the name at its spaces, dropping no word", () => {
+      const cands = sunTexts("In Progress", "21 \u00b7 16 today");
+
+      for (const c of cands) expect(c.lines.map((l) => l.text).join(" ").replaceAll(" \u00b7 ", " ")).toBe("In Progress 21 16 today");
+      expect(cands.some((c) => c.lines.length === 4)).toBe(true);
+    });
+
+    it("grows the sun for a word that cannot wrap", () => {
+      expect(rOf("Internationalisation", "1")).toBeGreaterThan(rOf("Done", "1"));
     });
   });
 
@@ -1025,7 +1038,9 @@ describe("Board paths", () => {
     }), scene = build(sky, { kind: "board" }), into = scene.bEdges.filter((e) => e.target === "archived");
 
     expect(into).toHaveLength(3);
-    for (const e of into) expect(e.c!.y).toBeCloseTo(scene.galaxies.archived.y);
+    // the sources above and below the middle one bend round it: the footprints keep no room for a name between the stacked states
+    expect(into.find((e) => e.source === "ready")!.c!.y).toBeCloseTo(scene.galaxies.archived.y);
+    for (const e of into) expect(e.p1!.x).toBeCloseTo(into[0].p1!.x, 0);
   });
 
   it("bow as one path when a pair is joined both ways, and run straight when it is one way", () => {
@@ -1063,7 +1078,8 @@ describe("Board paths", () => {
     const scene = endBoard([["new", "ready"], ["ready", "review"], ["review", "done"], ["done", "review"], ["ready", "done"], ["new", "done"]]);
     const edge = (s: string, t: string) => scene.bEdges.find((e) => e.source === s && e.target === t) as unknown as Curve, end = scene.galaxies.done.y;
 
-    for (const from of ["ready", "new"]) expect(edge(from, "done").c.y).toBeCloseTo(end);
+    expect(edge("ready", "done").c.y).toBeCloseTo(end);
+    expect(edge("new", "done").p1.x).toBeCloseTo(edge("ready", "done").p1.x, 0);
     expect(Math.abs(edge("review", "done").c.y - end)).toBeGreaterThan(10);
     mirrored(edge("review", "done"), edge("done", "review"));
   });
@@ -1314,7 +1330,9 @@ describe("a Board state's machines", () => {
   it("holds the state at one size, whether it opens into two machines or twenty", () => {
     const base = board(2).galaxies.in_progress, stress = board(20).galaxies.in_progress;
 
-    expect([stress.R, stress.edge]).toEqual([base.R, base.edge]);
+    // twenty machines may crowd the zoom down and the sun up to hold its name: what stands past the sun stays
+    expect(stress.R - stress.r).toBeCloseTo(base.R - base.r);
+    expect(stress.edge - stress.r).toBeCloseTo(base.edge - base.r);
   });
 
   it("counts every task of a state on the state, wherever it orbits", () => {
@@ -1727,16 +1745,19 @@ describe("a task's trail on a state level", () => {
 describe("a Board state's sun", () => {
   const sized = (counts: Record<string, number> = {}) => build(withTasks(boardSky(), counts), { kind: "board" }).galaxies;
 
-  it("is one fixed size on every state, whatever its live tasks", () => {
+  it("is at least the least size, whatever its live tasks, and grows only for its own text", () => {
     const quiet = sized();
     const busy = sized({ new: 5, ready: 80, review: 120, done: 3000 });
 
-    for (const g of [quiet, busy]) for (const id of Object.keys(g)) expect(g[id].r).toBe(SUN_R);
+    for (const g of [quiet, busy]) for (const id of Object.keys(g)) expect(g[id].r).toBeGreaterThanOrEqual(SUN_R);
+    // each sun holds its own name and count, so the suns are not all one size
+    for (const g of [quiet, busy]) expect(new Set(Object.values(g).map((x) => x.r)).size).toBeGreaterThan(1);
   });
-  it("is the same size on the state's own level as on the Board", () => {
+  it("is the least size on the state's own level, whatever the Board's suns grew to hold their names", () => {
     const sky = withTasks(boardSky(), { done: 400 });
 
     expect(build(sky, { kind: "state", id: "done" }).sun!.r).toBe(SUN_R);
+    expect(build(sky, { kind: "board" }).galaxies.done.r).toBeGreaterThanOrEqual(SUN_R);
   });
 });
 

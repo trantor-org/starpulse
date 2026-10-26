@@ -5,8 +5,8 @@ import type { ContractReport, LedgerRow, RawTask } from "../api";
 import { labelPx } from "../features/admin/adminPrefs";
 import type { Pivot, Orbiter } from "./dagTies";
 import {
-  TAU, bez, terminal, textW,
-  type BEdge, type Body, type Galaxy, type GNode, type Hop, type LedgerView, type MachineTask, type MEdge, type Moon, type MState, type Planet, type Pt, type RowView, type Star, type SubState, type Sun,
+  SUN_FIT, TAU, bez, terminal, textW,
+  type BEdge, type Body, type Galaxy, type GNode, type Hop, type LedgerView, type MachineTask, type MEdge, type Moon, type MState, type Planet, type Pt, type RowView, type Star, type SubState, type Sun, type SunLine,
 } from "./scene";
 
 /** Activity: everything that moves on any level uses this one colour. */
@@ -102,6 +102,16 @@ export function drawing(dc: DrawCtx) {
     if (sub) text(sub, x, y + size + 3 / dc.K, size - labelPx(2, dc.K, dc.scale), rgba(MUTED, hot ? 0.8 : 0.42), "center", 300);
     cx.letterSpacing = "0px";
   }
+  // a Board state's name and count, the lines scene.ts stacked about the sun's centre; `lift` firms them up as a hot state's are, for text set on a
+  // black hole's shadow, where the grey face barely shows
+  function sunLabel(lines: SunLine[], x: number, y: number, hot: boolean, lift = false) {
+    cx.letterSpacing = `${0.6 / dc.K}px`;
+    for (const l of lines) {
+      const col = l.sub ? (lift ? rgba(LABEL, 0.85) : rgba(MUTED, hot ? 0.8 : 0.42)) : rgba(LABEL, hot || lift ? 0.95 : 0.58);
+      text(l.text, x, y + labPx(l.y), labPx(l.size), col, "center", 300);
+    }
+    cx.letterSpacing = "0px";
+  }
   function circle(x: number, y: number, r: number, stroke: string, w = 1, dash?: number[] | null) {
     cx.strokeStyle = stroke;
     cx.lineWidth = w;
@@ -129,7 +139,7 @@ export function drawing(dc: DrawCtx) {
   }
   /** A terminal state as a black hole: a lensing halo in the state's colour, a shadow darker than the sky, one bright photon ring and a faint outer edge. */
   function hole(x: number, y: number, r: number, col: string, hot: boolean) {
-    const rs = r * 0.6, g = cx.createRadialGradient(x, y, rs, x, y, r);
+    const rs = r * SUN_FIT, g = cx.createRadialGradient(x, y, rs, x, y, r);
     g.addColorStop(0, rgba(col, hot ? 0.42 : 0.28));
     g.addColorStop(1, rgba(col, 0));
     cx.fillStyle = g;
@@ -264,7 +274,7 @@ export function drawing(dc: DrawCtx) {
     text(src, x0 + wm + gap, y, size, rgba(EXT, 0.6), "left", 300);
   }
 
-  return { nameWidth, text, labPx, label, circle, dot, isHot, disc, hole, comet, pulse, flowLine, fitText, stroke, rail, arrow, badge, pill, body, drawTrackRings, machine, machineName };
+  return { nameWidth, text, labPx, label, sunLabel, circle, dot, isHot, disc, hole, comet, pulse, flowLine, fitText, stroke, rail, arrow, badge, pill, body, drawTrackRings, machine, machineName };
 }
 /** The primitives, bound to one frame's context. */
 export type Drawing = ReturnType<typeof drawing>;
