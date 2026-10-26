@@ -11,10 +11,10 @@ import pytest
 
 from starpulse._internal.config.config import load
 from starpulse.board.board_feed import BoardFeed
-from starpulse.scheduler.adapters.remote import Remote, follow_status, follow_wakes, publisher
-from starpulse._internal.server.server import scheduler_remote
 from starpulse.event_log.event_log import EventLog
 from starpulse.harness_telemetry.harness import SESSION_MACHINES
+from starpulse.runtime.server import scheduler_remote
+from starpulse.scheduler.adapters.remote import Remote, follow_status, follow_wakes, publisher
 from starpulse.tests.machines import MACHINES, ROLES
 
 DEADLINE_S = 5.0

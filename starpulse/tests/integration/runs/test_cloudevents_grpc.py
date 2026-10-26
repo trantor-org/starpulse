@@ -14,8 +14,8 @@ import pytest
 from google.protobuf.empty_pb2 import Empty
 from google.protobuf.timestamp_pb2 import Timestamp
 
-from starpulse._internal.kit.adapter_kit import url
 from starpulse.runs.wire.cloudevents_pb2 import CloudEvent, CloudEventBatch
+from starpulse.runtime.adapter_kit import url
 from starpulse.tests.integration.runs import test_cloudevents_http as http
 from starpulse.tests.integration.runs.test_cloudevents_http import Stack
 

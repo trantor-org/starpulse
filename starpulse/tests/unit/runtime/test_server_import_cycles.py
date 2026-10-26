@@ -1,22 +1,21 @@
-"""No module of `starpulse._internal.server` imports itself back through the others, counting the imports made inside
+"""No module of `starpulse.views` or `starpulse.runtime` imports itself back through the others, counting the imports made inside
 functions as well: a function-level import is still an edge a worker's startup can follow."""
 
 from __future__ import annotations
 
 import ast
+import importlib
 from graphlib import CycleError, TopologicalSorter
 from pathlib import Path
 
-import starpulse._internal.server as server_package
-
-PACKAGE = "starpulse._internal.server"
-ROOT = Path(server_package.__file__).parent
+import pytest
 
 
-def _modules() -> dict[str, Path]:
+def _modules(package: str) -> dict[str, Path]:
+    root = Path(importlib.import_module(package).__file__ or "").parent
     found = {}
-    for path in ROOT.glob("*.py"):
-        name = PACKAGE if path.name == "__init__.py" else f"{PACKAGE}.{path.stem}"
+    for path in root.glob("*.py"):
+        name = package if path.name == "__init__.py" else f"{package}.{path.stem}"
         found[name] = path
     return found
 
@@ -32,8 +31,9 @@ def _imported(path: Path) -> set[str]:
     return names
 
 
-def test_no_import_cycle_among_the_server_modules() -> None:
-    modules = _modules()
+@pytest.mark.parametrize("package", ["starpulse.views", "starpulse.runtime"])
+def test_no_import_cycle_among_the_server_modules(package: str) -> None:
+    modules = _modules(package)
     graph = {name: (_imported(path) & modules.keys()) - {name} for name, path in modules.items()}
 
     try:

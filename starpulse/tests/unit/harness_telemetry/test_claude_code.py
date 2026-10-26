@@ -4,13 +4,13 @@ import json
 import re
 from pathlib import Path
 
-from starpulse._internal.kit.adapter_kit import MachineEventsAdapterKit
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.event_log.event_log import EventLog, Tail
 from starpulse.harness_telemetry.claude_code import ClaudeCodeAdapter, publisher
 from starpulse.harness_telemetry.harness import SESSION_MACHINES
 from starpulse.harness_telemetry.otlp import BRANCH, LogEvent, parse
 from starpulse.machine_engine.model.transitions import Table
+from starpulse.runtime.adapter_kit import MachineEventsAdapterKit
 from starpulse.tests.machines import MACHINES
 
 #: A two-turn session exported with `OTEL_LOG_TOOL_DETAILS=1`, scrubbed of account ids, prompt and reply text.

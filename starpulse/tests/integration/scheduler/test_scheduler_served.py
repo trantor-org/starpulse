@@ -19,12 +19,14 @@ import pytest
 
 from starpulse._internal.config.config import load
 from starpulse.board.board_feed import BoardFeed
-from starpulse.scheduler.model.ledger import LEDGER_FILE, Ledger
-from starpulse.scheduler.adapters.runtime import Runtime
-from starpulse.scheduler.model.sampler import PERIOD
-from starpulse._internal.server.assembly import assemble, history_store
-from starpulse._internal.server.scheduler_service import start_scheduler
 from starpulse.event_log.event_log import EventLog
+from starpulse.runtime import server
+from starpulse.runtime.assembly import assemble, history_store
+from starpulse.scheduler.adapters.runtime import Runtime
+from starpulse.scheduler.bin.scheduler_service import start_scheduler
+from starpulse.scheduler.model.ledger import LEDGER_FILE, Ledger
+from starpulse.scheduler.model.sampler import PERIOD
+from starpulse.sessions.session_start import starter
 
 #: How long a test waits for the loop: far under the sampler's period, which is the bound the spec names.
 DEADLINE_S = 10.0
@@ -117,7 +119,20 @@ def _served(base: Path, config_text: str = "") -> Iterator[tuple[BoardFeed, Runt
     board.start(feed, "test", log)
     stop = threading.Event()
     before = set(threading.enumerate())
-    runtime = start_scheduler(config, base, feed, board, history, log, None, stop, probe=lambda: IDLE_HOST)
+    runtime = start_scheduler(
+        config,
+        base,
+        feed,
+        board,
+        history,
+        log,
+        None,
+        stop,
+        probe=lambda: IDLE_HOST,
+        trajectories_response=server.trajectories_response,
+        cached=server._cached,
+        starter=starter,
+    )
     started = [t for t in threading.enumerate() if t not in before and t.name.startswith("scheduler-")]
     try:
         runtime.set_enabled(True)

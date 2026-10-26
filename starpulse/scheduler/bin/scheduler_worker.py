@@ -15,21 +15,20 @@ import logging
 import threading
 from collections.abc import Callable, Mapping
 from pathlib import Path
+from typing import Any
 
-from starpulse.runtime.blocks import scheduler_fixed_blocks, scheduler_live_blocks
-from starpulse.board.model.seam import Board
 from starpulse._internal.config.config import Config, discover, load
 from starpulse.board.board_feed import BoardFeed, follow
 from starpulse.board.machine_tasks import MachineTasks
-from starpulse.scheduler.adapters.remote import follow_wakes, publisher
-from starpulse.scheduler.adapters.runtime import Runtime
-from starpulse.runtime.assembly import history_store, worker_board
-from starpulse.runtime.hold import hold
-from starpulse.scheduler.bin.scheduler_service import start_scheduler
+from starpulse.board.model.seam import Board
 from starpulse.event_log import events as machine_events
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url
 from starpulse.flow_metrics.history import History
+from starpulse.scheduler.adapters.remote import follow_wakes, publisher
+from starpulse.scheduler.adapters.runtime import Runtime
+from starpulse.scheduler.bin.blocks import scheduler_fixed_blocks, scheduler_live_blocks
+from starpulse.scheduler.bin.scheduler_service import start_scheduler
 
 logger = logging.getLogger(__name__)
 
@@ -46,8 +45,15 @@ class Scheduler:
         log: EventLog,
         history: History,
         probe: Callable[[], Mapping[str, float]] | None = None,
+        *,
+        trajectories_response: Callable[..., tuple[bytes, int]],
+        cached: Callable[[Callable[[], dict[str, Any]], float], Callable[[], dict[str, Any]]],
+        starter: Callable[..., Any],
     ) -> None:
         self._config = config
+        self._trajectories_response = trajectories_response
+        self._cached = cached
+        self._starter = starter
         self._built = (base, board, feed, log, history)
         self._probe = probe
         self._stop = threading.Event()
@@ -70,6 +76,9 @@ class Scheduler:
             stop,
             probe=self._probe,
             publish=publisher(log, feed),
+            trajectories_response=self._trajectories_response,
+            cached=self._cached,
+            starter=self._starter,
         )
         follow_wakes(log, self._wake, stop)
 
@@ -105,7 +114,18 @@ class Scheduler:
         self.start()
 
 
-def main(argv: list[str] | None, parser: argparse.ArgumentParser) -> None:
+def main(
+    argv: list[str] | None,
+    parser: argparse.ArgumentParser,
+    *,
+    worker_board: Callable[..., tuple[Board, BoardFeed]],
+    history_store: Callable[[Config, Path, Mapping[str, dict]], History],
+    hold: Callable[[threading.Event, Callable[[], None]], None],
+    trajectories_response: Callable[..., tuple[bytes, int]],
+    cached: Callable[[Callable[[], dict[str, Any]], float], Callable[[], dict[str, Any]]],
+    starter: Callable[..., Any],
+) -> None:
+    """Run the Scheduler worker; `runtime` passes the collaborators it builds, as no context imports it."""
     args = parser.parse_args(argv)
     path = discover(args.config)
     try:
@@ -121,7 +141,17 @@ def main(argv: list[str] | None, parser: argparse.ArgumentParser) -> None:
         parser.exit(1, f"{exc}\n")
     tasks = MachineTasks(feed, board.keys)
     follow(tasks, log, machine_events.STREAM, tasks.handle_entry)
-    scheduler = Scheduler(config, base, board, feed, log, history_store(config, base, feed.machines))
+    scheduler = Scheduler(
+        config,
+        base,
+        board,
+        feed,
+        log,
+        history_store(config, base, feed.machines),
+        trajectories_response=trajectories_response,
+        cached=cached,
+        starter=starter,
+    )
     scheduler.start()
     hold(stop, lambda: scheduler.reload(path))
     scheduler.stop()

@@ -6,9 +6,9 @@ import urllib.request
 from pathlib import Path
 
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.kit.adapter_kit import serve, url
-from starpulse._internal.server.page_server import PageServer
+from starpulse.runtime.adapter_kit import serve, url
 from starpulse.tests.machines import MACHINES, ROLES
+from starpulse.views.page_server import PageServer
 
 
 def _metrics(server: PageServer) -> list[str]:

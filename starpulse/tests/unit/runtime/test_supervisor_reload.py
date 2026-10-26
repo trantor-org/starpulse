@@ -9,9 +9,9 @@ from typing import Any
 
 import pytest
 
-import starpulse._internal.server.supervisor as supervisor_module
-from starpulse._internal.server.closure import SELF, Reading, ReloadError
-from starpulse._internal.server.supervisor import Supervisor
+import starpulse.runtime.supervisor as supervisor_module
+from starpulse.runtime.closure import SELF, Reading, ReloadError
+from starpulse.runtime.supervisor import Supervisor
 from starpulse.tests.supervised import running_pids
 
 NAMES = ("pulls", "scheduler")

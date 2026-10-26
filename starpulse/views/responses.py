@@ -9,12 +9,11 @@ from collections import Counter
 from collections.abc import Callable, Collection, Mapping
 from typing import TYPE_CHECKING, Any
 
+from starpulse._internal.config.analytics import Analytics
+from starpulse.board.ledger import PAGE
 from starpulse.board.model.seam import (
     TaskReader,
 )
-from starpulse._internal.config.analytics import Analytics
-from starpulse.board.ledger import PAGE
-from starpulse.views.encoding import encode
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.flow_metrics import analytics
 from starpulse.flow_metrics.cells import cell_report, transition_cost
@@ -27,14 +26,15 @@ from starpulse.flow_metrics.traces import Case, missed_loads
 from starpulse.flow_metrics.traces import cases as trace_cases
 from starpulse.harness_telemetry.telemetry import Signal, TelemetryLog
 from starpulse.machine_engine.model.stays import lane_stays
+from starpulse.views.encoding import encode
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
-    from starpulse.board.board_feed import BoardFeed
     from starpulse.board.adapters.search import SearchIndex
-    from starpulse.pulls.pulls import PullStore
+    from starpulse.board.board_feed import BoardFeed
     from starpulse.flow_metrics.history import History
+    from starpulse.pulls.pulls import PullStore
 
 
 #: The most rows `/api/ledger/<event>` and `/api/machines` serve at once.

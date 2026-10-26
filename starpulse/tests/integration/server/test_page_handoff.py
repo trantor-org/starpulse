@@ -18,11 +18,11 @@ from typing import Any
 
 import pytest
 
-from starpulse._internal.kit.adapter_kit import serve as _serve
-from starpulse._internal.server.hold import LISTEN_FD_ENV
-from starpulse._internal.server.page_server import DRAIN_S, PageServer
-from starpulse._internal.server.server import inherited_socket, serve_until_stopped
-from starpulse._internal.server.supervisor import Supervisor
+from starpulse.runtime.adapter_kit import serve as _serve
+from starpulse.runtime.hold import LISTEN_FD_ENV
+from starpulse.runtime.server import inherited_socket, serve_until_stopped
+from starpulse.runtime.supervisor import Supervisor
+from starpulse.views.page_server import DRAIN_S, PageServer
 
 
 def test_a_socket_named_by_the_handoff_variable_is_adopted_and_not_passed_on() -> None:

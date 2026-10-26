@@ -21,9 +21,9 @@ from datetime import datetime
 from pathlib import Path
 
 from starpulse._internal.config.config import ConfigError, discover, load
-from starpulse.runtime.assembly import assemble, history_store
 from starpulse.flow_metrics.history import HistoryStore
 from starpulse.machine_engine.model import replay
+from starpulse.runtime.assembly import assemble, history_store
 
 __all__ = ["main"]
 

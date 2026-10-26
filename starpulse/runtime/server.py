@@ -183,26 +183,15 @@ from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING, Any, NamedTuple
 
-from starpulse.board.model.seam import (
-    Board,
-)
 from starpulse._internal.cli import doctor
 from starpulse._internal.config.config import Config, ConfigError, RunsInstance, discover, load, runs_adapter
 from starpulse._internal.config.level import Level
 from starpulse._internal.config.pins import GitHub, LiveBuild, running_commit
-from starpulse.board.claim_refusals import CLAIMS_STREAM
 from starpulse.board.adapters.history_window import SETTINGS_FILE, HistoryWindow
-from starpulse.views.asgi_app import _CONTRACT_TTL_S, _cached, page_app
-from starpulse.runtime.closure import ENTRIES, Reader
-from starpulse.runtime.control import control_file
-from starpulse.views.encoding import encode, event
-from starpulse.runtime.hold import LISTEN_FD_ENV, STATIC_ENV, announce_ready
-from starpulse.views.page_server import BACKLOG, DRAIN_S, PageServer
-from starpulse.views.responses import _HEALTH_HOURS, _error, _hours, health_response, history_response  # noqa: F401 - the read routes stay importable from here
-from starpulse.views.services import Services
-from starpulse.runtime.supervisor import Supervisor, worker_commands
-from starpulse.views.take_over import temporal_take_over
-from starpulse.runtime.zygote import Forker
+from starpulse.board.claim_refusals import CLAIMS_STREAM
+from starpulse.board.model.seam import (
+    Board,
+)
 from starpulse.event_log import events as machine_events
 from starpulse.event_log import lane_events
 from starpulse.event_log.conformance_monitor import Conformance
@@ -226,7 +215,18 @@ from starpulse.runs import opt_in
 from starpulse.runs import projection as runs_projection
 from starpulse.runs.cloudevents import CloudEventsIngest
 from starpulse.runs.ingest import tokens as ingest_tokens
+from starpulse.runtime.closure import ENTRIES, Reader
+from starpulse.runtime.control import control_file
+from starpulse.runtime.hold import LISTEN_FD_ENV, STATIC_ENV, announce_ready
+from starpulse.runtime.supervisor import Supervisor, worker_commands
+from starpulse.runtime.zygote import Forker
 from starpulse.sessions.session_start import starter
+from starpulse.views.asgi_app import _CONTRACT_TTL_S, _cached, page_app
+from starpulse.views.encoding import encode, event
+from starpulse.views.page_server import BACKLOG, DRAIN_S, PageServer
+from starpulse.views.responses import _HEALTH_HOURS, _error, _hours, health_response, history_response  # noqa: F401 - the read routes stay importable from here
+from starpulse.views.services import Services
+from starpulse.views.take_over import temporal_take_over
 
 logger = logging.getLogger(__name__)
 
@@ -240,10 +240,10 @@ _STATIC = _HERE / "static"
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     from starpulse.board.board_feed import BoardFeed
-    from starpulse.scheduler.adapters.remote import Remote
     from starpulse.event_log.event_log import EventLog
     from starpulse.flow_metrics.history import History
     from starpulse.pulls.pulls import PullStore
+    from starpulse.scheduler.adapters.remote import Remote
 
 
 def trajectories_response(

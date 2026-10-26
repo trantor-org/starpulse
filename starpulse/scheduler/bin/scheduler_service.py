@@ -1,7 +1,7 @@
 """The scheduler's runtime started over a board: the sampler and the dispatch loop, on daemon threads.
 
-`starpulse worker scheduler` starts it as its own process (`server.scheduler_worker`), a child `serve` supervises. It is not
-imported at the top of `server.server`, so the Delivery worker's import closure holds no scheduler module.
+`starpulse worker scheduler` starts it as its own process (`starpulse.scheduler.bin.scheduler_worker`), a child `serve` supervises. It is not
+imported at the top of `starpulse.runtime.server`, so the Delivery worker's import closure holds no scheduler module.
 """
 
 from __future__ import annotations
@@ -13,18 +13,16 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
-from starpulse.board.model.seam import Board, Written
 from starpulse._internal.config.config import Config
 from starpulse._internal.config.level import Level
 from starpulse.board.board_feed import BoardFeed
-from starpulse.scheduler.model.admission import ranks_from_trajectories_body
+from starpulse.board.model.seam import Board, Written
+from starpulse.event_log.event_log import EventLog
+from starpulse.flow_metrics.history import History
 from starpulse.scheduler.adapters.runtime import Runtime
 from starpulse.scheduler.adapters.runtime import build as build_scheduler
 from starpulse.scheduler.adapters.starter import builtin_starter
-from starpulse.runtime.server import _cached, trajectories_response
-from starpulse.event_log.event_log import EventLog
-from starpulse.flow_metrics.history import History
-from starpulse.sessions.session_start import starter
+from starpulse.scheduler.model.admission import ranks_from_trajectories_body
 
 #: How long the dispatch loop holds the trajectory chain it ranks on: the analytics read the whole history.
 _CHAIN_TTL_S = 300
@@ -41,13 +39,17 @@ def start_scheduler(
     stop: threading.Event,
     probe: Callable[[], Mapping[str, float]] | None = None,
     publish: Callable[[str, dict[str, Any]], None] | None = None,
+    *,
+    trajectories_response: Callable[..., tuple[bytes, int]],
+    cached: Callable[[Callable[[], dict[str, Any]], float], Callable[[], dict[str, Any]]],
+    starter: Callable[..., Any],
 ) -> Runtime:
     """The scheduler's runtime with its sampler and dispatch loop running on daemon threads until `stop` is set.
 
     The loop admits from the lane `[scheduler] lane` names (else the board's initial lane), starts a session through
     `session_start_url` (else the built-in tmux starter in `base`), and settles a stuck one by moving it to Needs
     attention through the board's editor. Its chain and per-task P(goal) are the trajectory analytics' when this
-    server has a `[level]` table.
+    server has a `[level]` table. `runtime` passes `trajectories_response`, `cached` and `starter`, as no context imports it.
     """
 
     def settle(task: str, reason: str) -> Written:
@@ -80,7 +82,7 @@ def start_scheduler(
             return empty
         return ranks_from_trajectories_body(json.loads(body), lane)
 
-    ranks = _cached(read_ranks, _CHAIN_TTL_S)
+    ranks = cached(read_ranks, _CHAIN_TTL_S)
     state_dir = base / (config.scheduler.state_dir or "")
     state_dir.mkdir(parents=True, exist_ok=True)
     runtime = build_scheduler(

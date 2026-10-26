@@ -1,9 +1,9 @@
 """A BoardFeed.put for one task re-encodes only that task's snapshot fragment."""
 
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.kit.adapter_kit import task
-from starpulse._internal.server.snapshot_cache import SnapshotCache
+from starpulse.runtime.adapter_kit import task
 from starpulse.tests.machines import MACHINES, ROLES
+from starpulse.views.snapshot_cache import SnapshotCache
 
 
 def test_a_move_of_one_task_keeps_unrelated_agent_json_bytes() -> None:

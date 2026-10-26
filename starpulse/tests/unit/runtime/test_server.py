@@ -13,19 +13,19 @@ from pathlib import Path
 import pytest
 from sqlalchemy import update
 
-from starpulse.board.model.seam import MoveWriter, Written
 from starpulse._internal.config.config import CommitKeys, Config, RunsInstance, load
 from starpulse._internal.config.harnesses import Harness, Harnesses, Tier, load_harnesses
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.kit.adapter_kit import serve, task, url
-from starpulse._internal.server.assembly import keep_event_log
-from starpulse._internal.server.server import _adapter, _config
-from starpulse._internal.server.write_routes import _no_writer
-from starpulse._internal.server.writes import move_task, rerun_dag, run_dag, start_task
+from starpulse.board.model.seam import MoveWriter, Written
 from starpulse.contracts.adapters import Move, StartFailedError
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.tables import events
+from starpulse.runtime.adapter_kit import serve, task, url
+from starpulse.runtime.assembly import keep_event_log
+from starpulse.runtime.server import _adapter, _config
 from starpulse.tests.machines import MACHINES, ROLES
+from starpulse.views.write_routes import _no_writer
+from starpulse.views.writes import move_task, rerun_dag, run_dag, start_task
 
 #: The workflows the config declares run-safe in these tests, and the domains it groups them in.
 RUN_SAFE = frozenset({"dagu/whole-repo-gate", "dagu/healthcheck"})

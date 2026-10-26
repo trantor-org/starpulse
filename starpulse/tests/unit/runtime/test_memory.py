@@ -5,7 +5,7 @@ import os
 
 import pytest
 
-import starpulse._internal.server.memory as memory_module
+import starpulse.runtime.memory as memory_module
 
 ROLLUP = "Rss:             900000 kB\nPss:              12345 kB\nShared_Clean:     800000 kB\n"
 

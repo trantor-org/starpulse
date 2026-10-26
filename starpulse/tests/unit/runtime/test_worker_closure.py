@@ -9,7 +9,7 @@ import starpulse
 
 ROOT = Path(starpulse.__file__).parents[1]
 PROBE = (
-    "import json, sys, starpulse._internal.server.worker;"
+    "import json, sys, starpulse.runtime.worker;"
     "print(json.dumps(sorted(m for m in sys.modules if m.startswith('starpulse.scheduler.'))))"
 )
 

@@ -19,8 +19,8 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from starpulse._internal.config.config import ConfigError, discover, load
-from starpulse.runtime.assembly import assemble, history_store
 from starpulse.event_log import lane_import
+from starpulse.runtime.assembly import assemble, history_store
 
 __all__ = ["main"]
 

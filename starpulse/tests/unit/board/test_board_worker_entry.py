@@ -7,10 +7,11 @@ from pathlib import Path
 
 import pytest
 
+from starpulse.board.bin import board_worker
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.server import board_worker, worker
 from starpulse.contracts import BoardTask
 from starpulse.flow_metrics.history import HistoryStore
+from starpulse.runtime import worker
 from starpulse.tests import fake_board
 from starpulse.tests.machines import MACHINES, ROLES
 
@@ -108,7 +109,7 @@ def test_the_writers_wait_for_the_board_to_be_read_before_they_forget_a_met_date
 @pytest.fixture
 def held(monkeypatch: pytest.MonkeyPatch, stop: threading.Event) -> list[threading.Event]:
     held: list[threading.Event] = []
-    monkeypatch.setattr(board_worker, "hold", lambda event, reload: held.append(event))
+    monkeypatch.setattr("starpulse.runtime.hold.hold", lambda event, reload: held.append(event))
     return held
 
 

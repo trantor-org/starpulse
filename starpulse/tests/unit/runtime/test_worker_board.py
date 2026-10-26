@@ -5,14 +5,14 @@ import threading
 from dataclasses import replace
 from pathlib import Path
 
+from starpulse._internal.config.config import load
 from starpulse.board.adapters.native import board
 from starpulse.board.adapters.task_history import KIND
-from starpulse._internal.config.config import load
-from starpulse.pulls.task_actor import ACTOR
-from starpulse._internal.server.assembly import worker_board
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.readmodel.projector import Projector
 from starpulse.event_log.store import EventStore, NewEvent
+from starpulse.pulls.task_actor import ACTOR
+from starpulse.runtime.assembly import worker_board
 from starpulse.tests.unit.board.test_native import write_task
 
 PULL = "https://github.com/acme/trantor/pull/7"

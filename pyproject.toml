@@ -74,15 +74,15 @@ id = "layers"
 name = "entrypoints, producers, derived features and the core are layered, and siblings in a tier are independent"
 type = "layers"
 # Four tiers, each importing only the tiers below it and `contracts`. Features on one `|` line are independent; a line
-# of its own marks a named edge (the ADR "StarPulse Is Layered Around Its Event Log"): `kit` drives a `server`,
-# `server` serves the doctor's checks from `cli`, `pulls` reads GitHub Actions runs from `runs`,
+# of its own marks a named edge (the ADR "StarPulse Is Layered Around Its Event Log"): the `runtime` composition root
+# builds every context and starts its `bin` workers, `views` draws the contexts for people, `pulls` reads GitHub Actions runs from `runs`,
 # `scheduler` samples the board feed and the harness machine, the Board (model, adapters and feed) sits under the
 # features that read it, and the
 # history store in `flow_metrics` reads `config` and `machine_engine`.
 layers = [
     # entrypoints
-    "starpulse._internal.kit",
-    "starpulse._internal.server",
+    "starpulse.runtime",
+    "starpulse.views",
     "starpulse._internal.cli",
     # producers
     "starpulse.pulls | starpulse.scheduler | starpulse.sessions",
@@ -97,11 +97,26 @@ layers = [
 ]
 
 [[tool.importlinter.contracts]]
-id = "page-contract"
-name = "Only the server and the kit import the page contract"
+id = "composition-roots"
+name = "No context imports the runtime or the cli"
 type = "forbidden"
-# The wire DTOs in `contracts.api` are the inbound adapter's published language: the server maps features onto them and
-# encodes them, and the kit drives a server. Every other tier reads `contracts.adapters` and the rest of `contracts`.
+# `runtime` and `cli` are the only composition roots (spec doc-966, D6): they build every context and hand each
+# the collaborators it runs on; a context never reaches back, and each worker's entry lives in its context's `bin`.
+allow_indirect_imports = true
+source_modules = [
+    "starpulse.board", "starpulse.scheduler", "starpulse.flow_metrics",
+    "starpulse.harness_telemetry", "starpulse.sessions",
+    "starpulse.pulls", "starpulse.runs", "starpulse.views",
+    "starpulse.machine_engine", "starpulse.event_log",
+]
+forbidden_modules = ["starpulse.runtime", "starpulse._internal.cli"]
+
+[[tool.importlinter.contracts]]
+id = "page-contract"
+name = "Only views and the runtime import the page contract"
+type = "forbidden"
+# The wire DTOs in `contracts.api` are the inbound adapter's published language: views maps features onto them and
+# encodes them, and the runtime drives them. Every other tier reads `contracts.adapters` and the rest of `contracts`.
 source_modules = [
     "starpulse._internal.cli",
     "starpulse.pulls", "starpulse.scheduler",

@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 
+from starpulse.event_log.event_log import EventLog
 from starpulse.runs import projection, run_events
 from starpulse.runs.push_runs import PUSHED_INSTANCE
-from starpulse._internal.server import runs_worker, server, worker
-from starpulse.event_log.event_log import EventLog
+from starpulse.runtime import server, worker
 from starpulse.tests import fake_board
 
 BOARD = '[board]\ntype = "starpulse.tests.fake_board"\nlanes = ["waiting", "ready", "done"]\nwrites = true\n'
@@ -66,7 +66,7 @@ def run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, dagu: Dagu, held: list[
     """`worker.main` on `text`, holding returns at once; yields the log the worker shares with `serve`."""
     monkeypatch.setattr(fake_board, "BUILT", [])
     monkeypatch.setattr(server, "runs_adapter", lambda kind: dagu)
-    monkeypatch.setattr(runs_worker, "hold", lambda stop, reload: held.append(stop))
+    monkeypatch.setattr("starpulse.runtime.hold.hold", lambda stop, reload: held.append(stop))
     def start(text: str = CONFIG) -> EventLog:
         config = tmp_path / "starpulse.toml"
         config.write_text(text)

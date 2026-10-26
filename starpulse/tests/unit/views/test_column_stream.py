@@ -1,6 +1,6 @@
 """Which changes make a held or lanes stream read its view again."""
 
-from starpulse._internal.server.column_stream import Interest
+from starpulse.views.column_stream import Interest
 
 
 def _task(

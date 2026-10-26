@@ -10,7 +10,7 @@ import time
 
 import pytest
 
-from starpulse._internal.server.zygote import fork_supported
+from starpulse.runtime.zygote import fork_supported
 
 
 def _alive(pid: int) -> bool:
@@ -29,13 +29,13 @@ def _wait_for(check, timeout: float = 10.0):
 HOLD = [
     sys.executable,
     "-c",
-    "import threading; from starpulse._internal.server.hold import hold; hold(threading.Event(), print)",
+    "import threading; from starpulse.runtime.hold import hold; hold(threading.Event(), print)",
 ]
 FORKED = [sys.executable, "-m", "starpulse", "hold"]
 DRIVER = """
 import sys, time
-from starpulse._internal.server.supervisor import Supervisor, spawn_child
-from starpulse._internal.server.zygote import Forker
+from starpulse.runtime.supervisor import Supervisor, spawn_child
+from starpulse.runtime.zygote import Forker
 from starpulse.tests.supervised import running_pids
 forker = Forker([], entry="starpulse.tests.zygote_entry:main")
 spawn = forker if sys.argv[1] == "forked" else spawn_child

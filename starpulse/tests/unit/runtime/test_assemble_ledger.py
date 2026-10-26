@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from starpulse._internal.config.config import load
-from starpulse._internal.server.assembly import assemble
+from starpulse.runtime.assembly import assemble
 from starpulse.tests import fake_board
 
 CONFIG = """

@@ -2,7 +2,7 @@
 
 import os
 
-from starpulse._internal.server.hold import READY_FD_ENV, announce_ready
+from starpulse.runtime.hold import READY_FD_ENV, announce_ready
 
 
 def test_announce_ready_writes_a_byte_to_the_named_descriptor_and_forgets_it() -> None:

@@ -14,13 +14,13 @@ import pytest
 from starpulse import sessions
 from starpulse._internal.config.analytics import Analytics
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.kit.adapter_kit import serve, url
-from starpulse._internal.server.page_server import PageServer
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.event_log.event_log import EventLog
 from starpulse.harness_telemetry.telemetry import Signal, TelemetryLog, signals
+from starpulse.runtime.adapter_kit import serve, url
 from starpulse.tests.machines import MACHINES, ROLES
 from starpulse.tests.unit.harness_telemetry.test_telemetry import FIXTURES
+from starpulse.views.page_server import PageServer
 
 KEYS = TaskKeys(
     key=re.compile(r"TASK-\d+"),

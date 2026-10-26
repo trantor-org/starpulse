@@ -5,12 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from starpulse.board.model.view import board_columns
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.kit.adapter_kit import next_event as _next_event
-from starpulse._internal.kit.adapter_kit import serve as _serve
-from starpulse._internal.kit.adapter_kit import task
-from starpulse._internal.kit.adapter_kit import url as _url
+from starpulse.board.model.view import board_columns
+from starpulse.runtime.adapter_kit import next_event as _next_event
+from starpulse.runtime.adapter_kit import serve as _serve
+from starpulse.runtime.adapter_kit import task
+from starpulse.runtime.adapter_kit import url as _url
 from starpulse.tests.machines import MACHINES, ROLES
 
 
@@ -23,7 +23,7 @@ def test_a_task_move_on_the_main_stream_does_not_call_board_columns(
         calls.append(1)
         return board_columns(*args, **kwargs)
 
-    monkeypatch.setattr("starpulse._internal.server.column_stream.board_columns", counted)
+    monkeypatch.setattr("starpulse.views.column_stream.board_columns", counted)
     feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.put(task("PROJ-1", "To Do"))
     feed.put(task("PROJ-2", "To Do"))

@@ -15,10 +15,10 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.server import zygote
-from starpulse._internal.server.closure import SELF, Reading
-from starpulse._internal.server.supervisor import Supervisor
-from starpulse._internal.server.zygote import Forker
+from starpulse.runtime import zygote
+from starpulse.runtime.closure import SELF, Reading
+from starpulse.runtime.supervisor import Supervisor
+from starpulse.runtime.zygote import Forker
 
 NEW_MARKER = 'VALUE = "changed"\n'
 ENTRY = "starpulse.tests.zygote_entry:main"

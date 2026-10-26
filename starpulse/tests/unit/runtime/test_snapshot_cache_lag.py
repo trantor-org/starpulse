@@ -4,9 +4,9 @@ import threading
 import time
 
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.kit.adapter_kit import task
-from starpulse._internal.server.snapshot_cache import SnapshotCache
+from starpulse.runtime.adapter_kit import task
 from starpulse.tests.machines import MACHINES, ROLES
+from starpulse.views.snapshot_cache import SnapshotCache
 
 
 def _cache(ttl_s: float = 60, settle_s: float = 60) -> tuple[BoardFeed, SnapshotCache]:

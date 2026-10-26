@@ -16,9 +16,9 @@ from typing import NamedTuple
 
 import pytest
 
-from starpulse._internal.server import server
 from starpulse.event_log.opening import DEFAULT_FILE
 from starpulse.flow_metrics.history import HistoryStore
+from starpulse.runtime import server
 from starpulse.tests.page_stub import held
 
 _CLIENT_MODULE = "re" + "dis"
@@ -64,7 +64,7 @@ def _get(port: int, path: str) -> tuple[int, dict]:
 
 
 def _serve_command(port: int, config: Path) -> list[str]:
-    return [sys.executable, "-m", "starpulse._internal.server.server", "--port", str(port), "--config", str(config)]
+    return [sys.executable, "-m", "starpulse.runtime.server", "--port", str(port), "--config", str(config)]
 
 
 def _await_page(proc: subprocess.Popen, port: int) -> None:

@@ -7,110 +7,25 @@ Runs context, run by `starpulse.runs.bin.runs_worker`; `dagu`, `github-actions` 
 `starpulse.flow_metrics.bin.flow_metrics_worker`; `search` is the Search context's embedding catch-up, run by
 `starpulse.board.bin.search_worker`; `board` is the Board context's writer (the Start Criteria dating), run by `starpulse.board.bin.board_worker`.
 
-The `pulls` worker reads the config and the history database `serve` does and meets `serve` only in the event log
-(`starpulse.pulls.delivery`): it keeps the pull request projection there, takes the refreshes a page asked and
-relays the actor's metrics. `SIGTERM` stops it; `SIGHUP` re-reads the config and, when a Delivery setting
-changed, rebuilds the loops in the same process.
+`pulls` is run by `starpulse.pulls.bin.pulls_worker`. This module is the composition root of the workers: it builds the
+collaborators a worker needs (`runtime.assembly`, `runtime.hold`, `runtime.server`) and hands them to its `main`, as no
+context imports `runtime`.
 """
 
 from __future__ import annotations
 
 import argparse
 import logging
-import threading
+import os
 from pathlib import Path
 
-from starpulse.runtime.blocks import pulls_delivery_blocks, pulls_fixed_blocks
-from starpulse.board.model.seam import Board
-from starpulse._internal.config.config import Config, discover, load
-from starpulse._internal.config.pins import GitHub
-from starpulse.board.board_feed import BoardFeed
-from starpulse.pulls.delivery import (
-    Projected,
-    Publisher,
-    announce_saves,
-    follow_events,
-    follow_refreshes,
-    keep_metrics,
-)
-from starpulse.pulls.pull_events import JOBS_STREAM, MACHINE_STREAM, RecordProjection
-from starpulse.pulls.pulls import PullStore
-from starpulse.runtime.assembly import history_store, worker_board
-from starpulse.runtime.hold import hold
-from starpulse.runtime.server import listen_options, start_delivery
-from starpulse.event_log.event_log import EventLog
-from starpulse.event_log.opening import database_url
+from starpulse.runtime.server import listen_options
 
 logger = logging.getLogger(__name__)
 
 #: The run Adapters that are opt-in workers (`starpulse.runs.bin.adapter_worker`): `serve` supervises none.
 OPT_IN = ("dagu", "github-actions", "systemd")
 CONTEXTS = ("api", "pulls", "scheduler", "runs", "flow-metrics", "search", "board", *OPT_IN)
-
-
-class Delivery:
-    """The Delivery loops of one config, taken down and built again in this process when a reload changes them."""
-
-    def __init__(
-        self, config: Config, board: Board, feed: BoardFeed, log: EventLog, pulls: PullStore, pins: GitHub
-    ) -> None:
-        self._config = config
-        self._built = (board, feed, log, pulls, pins)
-        self._stop = threading.Event()
-
-    def start(self) -> None:
-        """Start the loops of the running config, each ending when `stop` is called. Raises `ValueError` as
-        `start_delivery` does."""
-        board, feed, log, pulls, pins = self._built
-        self._stop = stop = threading.Event()
-        try:
-            actor, sync = start_delivery(
-                self._config,
-                board,
-                feed,
-                log,
-                pulls,
-                pins,
-                stop,
-                after_project=Publisher(log, feed).publish,
-            )
-        except ValueError:
-            stop.set()
-            raise
-        if sync:
-            follow_refreshes(log, sync.request, stop)
-            projection = RecordProjection(pulls, feed, sync.project)
-            follow_events(log, feed, {MACHINE_STREAM: projection.handle, JOBS_STREAM: projection.handle_job}, stop)
-        if actor:
-            keep_metrics(log, actor.exposition, stop)
-
-    def stop(self) -> None:
-        self._stop.set()
-
-    def reload(self, path: Path) -> None:
-        """Re-read `path`. An invalid config is logged and the running loops kept; a changed Delivery block takes them
-        down and builds them again from the new config, and one the new config cannot build leaves the old config's
-        loops running again."""
-        try:
-            new = load(path)
-        except (OSError, ValueError) as exc:
-            logger.error("reload: %s: %s; keeping the running config", path, exc)
-            return
-        if pulls_fixed_blocks(new) != pulls_fixed_blocks(self._config):
-            logger.warning("reload: the database or board changed; restart the worker to apply it")
-        if pulls_delivery_blocks(new) == pulls_delivery_blocks(self._config):
-            logger.info("reload: no Delivery setting changed")
-            return
-        logger.info("reload: a Delivery setting changed; rebuilding the loops")
-        running = self._config
-        self.stop()
-        self._config = new
-        try:
-            self.start()
-        except ValueError as exc:
-            logger.error("reload: %s; keeping the running config", exc)
-            self._config = running
-            self.start()
 
 
 def worker_parser() -> argparse.ArgumentParser:
@@ -133,58 +48,90 @@ def worker_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Run the worker `argv` names. Each bin is imported only for its own context: the other workers' closures hold no
+    page, scheduler or run adapter module."""
     logging.basicConfig(level=logging.INFO)
     parser = worker_parser()
     args = parser.parse_args(argv)
-    if args.context == "api":  # imported here: the other workers' closures hold no page
+    if args.context == "api":
+        from starpulse._internal.cli import doctor
+        from starpulse.runtime import read_model_follow, server
+        from starpulse.runtime.assembly import assemble, history_store
+        from starpulse.runtime.hold import LISTEN_FD_ENV, STATIC_ENV, announce_ready
         from starpulse.views.bin import api_worker
 
-        return api_worker.main(argv, parser)
-    if args.context == "scheduler":  # imported here: the Delivery worker's closure holds no scheduler module
-        from starpulse.scheduler.bin import scheduler_worker as worker
+        if static := os.environ.get(STATIC_ENV):
+            server._STATIC = Path(static)  # the page build `serve` checked, which `prepare` and the page app read
+        host = api_worker.Host(
+            config=server._config,
+            prepare=server.prepare,
+            inherited_socket=server.inherited_socket,
+            listen=server.listen,
+            announce=server.announce,
+            scheduler_remote=server.scheduler_remote,
+            serve_until_stopped=server.serve_until_stopped,
+            announce_ready=announce_ready,
+            assemble=assemble,
+            history_store=history_store,
+            follow_read_model=read_model_follow.follow,
+            contract=doctor.contract,
+            probes=doctor.LIVE,
+            static=server._STATIC,
+            listen_fd_env=LISTEN_FD_ENV,
+        )
+        return api_worker.main(argv, parser, host=host)
+    from starpulse.runtime.assembly import history_store, worker_board
+    from starpulse.runtime.hold import hold
 
-        return worker.main(argv, parser)
-    if args.context == "runs":  # imported here: the Delivery worker's closure holds no run adapter module
+    if args.context == "scheduler":
+        from starpulse.runtime.server import _cached, trajectories_response
+        from starpulse.scheduler.bin import scheduler_worker
+        from starpulse.sessions.session_start import starter
+
+        return scheduler_worker.main(
+            argv,
+            parser,
+            worker_board=worker_board,
+            history_store=history_store,
+            hold=hold,
+            trajectories_response=trajectories_response,
+            cached=_cached,
+            starter=starter,
+        )
+    if args.context == "runs":
         from starpulse.runs.bin import runs_worker
+        from starpulse.runtime.server import run_adapters
 
-        return runs_worker.main(argv, parser)
+        return runs_worker.main(
+            argv, parser, run_adapters=run_adapters, worker_board=worker_board, history_store=history_store, hold=hold
+        )
     if args.context in OPT_IN:  # an opt-in worker: `serve` supervises none
         from starpulse.runs.bin import adapter_worker
+        from starpulse.runtime.server import run_adapters
 
-        return adapter_worker.main(argv, parser, args.context)
+        return adapter_worker.main(
+            argv, parser, args.context, run_adapters=run_adapters, worker_board=worker_board, hold=hold
+        )
     if args.context == "flow-metrics":
         from starpulse.flow_metrics.bin import flow_metrics_worker
+        from starpulse.runtime.assembly import assemble, keep_event_log
 
-        return flow_metrics_worker.main(argv, parser)
+        return flow_metrics_worker.main(
+            argv, parser, assemble=assemble, history_store=history_store, keep_event_log=keep_event_log, hold=hold
+        )
     if args.context == "search":
         from starpulse.board.bin import search_worker
 
-        return search_worker.main(argv, parser)
+        return search_worker.main(argv, parser, hold=hold)
     if args.context == "board":
         from starpulse.board.bin import board_worker
+        from starpulse.runtime.assembly import assemble
+        from starpulse.runtime.read_model_follow import follow
 
-        return board_worker.main(argv, parser)
-    path = discover(args.config)
-    try:
-        config = load(path)
-    except (OSError, ValueError) as exc:
-        parser.exit(1, f"{path}: {exc}\n")
-    base = args.config.parent if args.config else Path.cwd()
-    log = EventLog(database_url(config.database_url, base))
-    stop = threading.Event()
-    try:
-        board, feed = worker_board(config, base, log, "starpulse-pulls", stop)
-    except ValueError as exc:
-        parser.exit(1, f"{exc}\n")
-    # the task actor records the lane of each write it makes under its own name; the placements of the Board are `serve`'s
-    feed.record_lanes(history_store(config, base, feed.machines), log, live=False)
-    Projected(log, feed).apply()  # the pull request answers the pins read: the Board's checkpoint no longer holds them
-    pins = GitHub(lambda: feed.pull_answers().get("pins", {}))
-    store = PullStore(log.engine)
-    announce_saves(store, log)  # `serve` holds records in memory and takes each save from the database again
-    delivery = Delivery(config, board, feed, log, store, pins)
-    try:
-        delivery.start()
-    except ValueError as exc:
-        parser.exit(1, f"{exc}\n")
-    hold(stop, lambda: delivery.reload(path))
+        return board_worker.main(argv, parser, assemble=assemble, history_store=history_store, follow=follow, hold=hold)
+    from starpulse.pulls.bin import pulls_worker
+    from starpulse.runtime.server import start_delivery
+
+    return pulls_worker.main(
+        argv, parser, worker_board=worker_board, history_store=history_store, start_delivery=start_delivery, hold=hold
+    )

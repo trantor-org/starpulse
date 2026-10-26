@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.server import server, worker
+from starpulse.runtime import server, worker
 from starpulse.tests import fake_board
 
 BOARD = '[board]\ntype = "starpulse.tests.fake_board"\nlanes = ["waiting", "ready", "done"]\nwrites = true\n'
@@ -55,7 +55,7 @@ def _serve(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, text: str, gh: bool 
     static.mkdir()
     (static / "index.html").write_text("<html></html>")
     monkeypatch.setattr(server, "_STATIC", static)
-    monkeypatch.setattr(worker, "hold", lambda *args: None)
+    monkeypatch.setattr("starpulse.runtime.hold.hold", lambda *args: None)
     monkeypatch.setattr(server.shutil, "which", lambda name: f"/usr/bin/{name}" if gh else None)
     monkeypatch.setattr(server, "TaskActor", Actor)
     monkeypatch.setattr(Actor, "built", [])

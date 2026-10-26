@@ -8,7 +8,7 @@ from temporalio import workflow
 from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Worker
 
-from starpulse._internal.server.take_over import UPDATE, send_take_over
+from starpulse.views.take_over import UPDATE, send_take_over
 
 
 @workflow.defn(name="stub_task")

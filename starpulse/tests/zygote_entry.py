@@ -4,8 +4,8 @@ import os
 import threading
 from pathlib import Path
 
-from starpulse._internal.server.hold import hold
-from starpulse._internal.server.server import inherited_socket
+from starpulse.runtime.hold import hold
+from starpulse.runtime.server import inherited_socket
 
 
 def main(argv: list[str]) -> None:

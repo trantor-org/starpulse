@@ -16,25 +16,29 @@ from __future__ import annotations
 import argparse
 import logging
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
+from typing import Protocol
 
-from starpulse.runtime.blocks import board_built_blocks
-from starpulse.board.adapters import replica
 from starpulse._internal.config.config import Config, discover, load
-from starpulse.board.board_feed import BoardFeed
-from starpulse.runtime import read_model_follow
-from starpulse.runtime.assembly import assemble, history_store
-from starpulse.runtime.hold import hold
+from starpulse.board.adapters import replica
+from starpulse.board.bin.blocks import board_built_blocks
+from starpulse.board.board_feed import BoardFeed, CriteriaStore, ExpiriesStore, LaneRecorder
+from starpulse.board.model.seam import Board
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url
 from starpulse.event_log.readmodel.declared import declared_fields
 from starpulse.event_log.readmodel.projector import Projector
 from starpulse.event_log.readmodel.read_model import ReadModel
 from starpulse.event_log.store import EventStore
-from starpulse.flow_metrics.history import HistoryStore
 
 logger = logging.getLogger(__name__)
+
+
+class WriterStore(LaneRecorder, CriteriaStore, ExpiriesStore, Protocol):
+    """What the criteria thread keeps its dating in (`HistoryStore`)."""
+
+    def lane_path(self, task: str) -> list[dict]: ...
 
 
 def reload(path: Path, config: Config) -> None:
@@ -52,7 +56,7 @@ def reload(path: Path, config: Config) -> None:
 
 def start_writers(
     feed: BoardFeed,
-    store: HistoryStore,
+    store: WriterStore,
     evaluate: Callable[[str, str], list[dict]] | None,
     stop: threading.Event,
     live: bool = True,
@@ -73,7 +77,17 @@ def start_writers(
     return criteria
 
 
-def main(argv: list[str] | None, parser: argparse.ArgumentParser) -> None:
+def main(
+    argv: list[str] | None,
+    parser: argparse.ArgumentParser,
+    *,
+    assemble: Callable[..., tuple[Board, BoardFeed]],
+    history_store: Callable[[Config, Path, Mapping[str, dict]], WriterStore],
+    follow: Callable[..., object],
+    hold: Callable[[threading.Event, Callable[[], None]], None],
+) -> None:
+    """Run the Board writer; `runtime` passes the collaborators it builds (`assemble`, `history_store`, the read model's
+    `follow` and `hold`), as no context imports it."""
     args = parser.parse_args(argv)
     path = discover(args.config)
     try:
@@ -100,5 +114,5 @@ def main(argv: list[str] | None, parser: argparse.ArgumentParser) -> None:
             board.attach(log)  # the sweep's releases append the History events the read model folds
         if board.sweep is not None:
             board.sweep(feed, log, store.save_claim_expiries)
-        read_model_follow.follow(Projector(log.engine, EventStore(log.engine)), feed, stop)
+        follow(Projector(log.engine, EventStore(log.engine)), feed, stop)
     hold(stop, lambda: reload(path, config))

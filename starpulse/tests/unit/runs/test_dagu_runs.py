@@ -15,7 +15,8 @@ from pathlib import Path
 import pytest
 
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.kit.adapter_kit import RunsAdapterKit
+from starpulse.contracts.adapters import StartFailedError, TaskKeys
+from starpulse.event_log.event_log import EventLog
 from starpulse.runs import run_events
 from starpulse.runs.dagu import (
     _STATUS,
@@ -33,8 +34,7 @@ from starpulse.runs.dagu import (
     status_of,
 )
 from starpulse.runs.dagu import follow as dagu_follow
-from starpulse.contracts.adapters import StartFailedError, TaskKeys
-from starpulse.event_log.event_log import EventLog
+from starpulse.runtime.adapter_kit import RunsAdapterKit
 from starpulse.tests.dagu_stub import InFlight, Past, Queue, dagu, run_entry, step_entry
 
 LISTING = "/api/v1/dags?perPage=200"

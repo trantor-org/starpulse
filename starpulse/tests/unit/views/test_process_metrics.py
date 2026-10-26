@@ -3,7 +3,7 @@
 import os
 from pathlib import Path
 
-from starpulse._internal.server.process_metrics import process_gauges
+from starpulse.views.process_metrics import process_gauges
 
 
 def _proc(tmp_path: Path, *, resident_pages: int, threads: int, fds: int, utime: int = 0, stime: int = 0) -> Path:

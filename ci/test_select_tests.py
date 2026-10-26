@@ -27,7 +27,7 @@ def repo(tmp_path: Path) -> Path:
         "starpulse/runs/dagu.py": "def start(): ...\ndef follow(): ...\n",
         "starpulse/_internal/config/adapter_types.py": 'BUILT_IN = {"dagu": "starpulse.runs.dagu", "jira": "x"}\n',
         "starpulse/event_log/__init__.py": "",
-        "starpulse/_internal/server/server.py": "",
+        "starpulse/runtime/server.py": "",
         "starpulse/event_log/event_log.py": "from starpulse import leaf\n",
         "starpulse/event_log/migrations/versions/0001_initial.py": "",
         "starpulse/board/adapters/jira.py": "def board(settings, base):\n    return None\n",
@@ -191,7 +191,7 @@ def test_a_file_no_test_reads_selects_nothing(repo, path):
 
 
 def test_a_non_python_file_whose_mapped_reader_is_gone_runs_the_full_suite(repo):
-    (repo / "starpulse/_internal/server/server.py").unlink()
+    (repo / "starpulse/runtime/server.py").unlink()
     assert select(repo, ["README.md"]) == FULL
 
 

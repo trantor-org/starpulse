@@ -1,6 +1,6 @@
-"""The test kit an adapter author runs against their work; the implementation is in `starpulse._internal.kit.adapter_kit`."""
+"""The test kit an adapter author runs against their work; the implementation is in `starpulse.runtime.adapter_kit`."""
 
-from starpulse._internal.kit.adapter_kit import (
+from starpulse.runtime.adapter_kit import (
     BoardAdapterKit,
     MachineEventsAdapterKit,
     RunsAdapterKit,
@@ -10,7 +10,7 @@ from starpulse._internal.kit.adapter_kit import (
     task,
     url,
 )
-from starpulse._internal.kit.write_instance import WriteInstance, write_instance
+from starpulse.runtime.write_instance import WriteInstance, write_instance
 
 __all__ = [
     "BoardAdapterKit",

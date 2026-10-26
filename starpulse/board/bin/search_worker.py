@@ -15,12 +15,12 @@ from __future__ import annotations
 import argparse
 import logging
 import threading
+from collections.abc import Callable
 from pathlib import Path
 
-from starpulse.runtime.blocks import search_built_blocks
 from starpulse._internal.config.config import Config, discover, load
 from starpulse.board.adapters.search import SearchIndex
-from starpulse.runtime.hold import hold
+from starpulse.board.bin.blocks import search_built_blocks
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url
 
@@ -40,7 +40,13 @@ def reload(path: Path, config: Config) -> None:
         logger.info("reload: no Search setting changed")
 
 
-def main(argv: list[str] | None, parser: argparse.ArgumentParser) -> None:
+def main(
+    argv: list[str] | None,
+    parser: argparse.ArgumentParser,
+    *,
+    hold: Callable[[threading.Event, Callable[[], None]], None],
+) -> None:
+    """Run the embedding catch-up; `runtime` passes `hold`, as no context imports it."""
     args = parser.parse_args(argv)
     path = discover(args.config)
     try:

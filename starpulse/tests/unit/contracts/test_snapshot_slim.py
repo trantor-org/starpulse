@@ -4,10 +4,10 @@ import json
 import time
 
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.kit.adapter_kit import task
-from starpulse._internal.server.encoding import encode, encode_snapshot, event, slim_snapshot
 from starpulse.contracts.adapters import Move
+from starpulse.runtime.adapter_kit import task
 from starpulse.tests.machines import MACHINES, ROLES
+from starpulse.views.encoding import encode, encode_snapshot, event, slim_snapshot
 
 DAY_S = 86400.0
 

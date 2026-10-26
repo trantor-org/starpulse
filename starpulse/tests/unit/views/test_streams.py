@@ -5,16 +5,16 @@ from __future__ import annotations
 import pytest
 
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.server.reads import Request, Response
-from starpulse._internal.server.snapshot_cache import SnapshotCache
-from starpulse._internal.server.streams import Stream, Streams
+from starpulse.views.reads import Request, Response
+from starpulse.views.snapshot_cache import SnapshotCache
+from starpulse.views.streams import Stream, Streams
 
 
 @pytest.fixture
 def streams(monkeypatch: pytest.MonkeyPatch) -> Streams:
     feed = BoardFeed()
     opened = Streams(feed, SnapshotCache(feed), lambda: "build-1")
-    monkeypatch.setattr("starpulse._internal.server.streams._PING_S", 0.01)
+    monkeypatch.setattr("starpulse.views.streams._PING_S", 0.01)
     return opened
 
 

@@ -13,21 +13,20 @@ from __future__ import annotations
 import argparse
 import logging
 import threading
+from collections.abc import Callable, Mapping
 from pathlib import Path
+from typing import Any
 
-from starpulse.runtime.blocks import runs_built_blocks
 from starpulse._internal.config.config import Config, discover, load
 from starpulse.board.board_feed import follow
-from starpulse.runs import opt_in, run_events
-from starpulse.runs.projection import Publisher
-from starpulse.runs.push_runs import PUSHED_INSTANCE, PushRuns
-from starpulse.runs.run_streams import RunStreams, record_run_streams
-from starpulse.runtime.assembly import history_store, worker_board
-from starpulse.runtime.hold import hold
-from starpulse.runtime.server import run_adapters
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url
 from starpulse.event_log.store import EventStore
+from starpulse.runs import opt_in, run_events
+from starpulse.runs.bin.blocks import runs_built_blocks
+from starpulse.runs.projection import Publisher
+from starpulse.runs.push_runs import PUSHED_INSTANCE, PushRuns
+from starpulse.runs.run_streams import RunStreams, record_run_streams
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +44,17 @@ def reload(path: Path, config: Config) -> None:
         logger.info("reload: no Runs setting changed")
 
 
-def main(argv: list[str] | None, parser: argparse.ArgumentParser) -> None:
+def main(
+    argv: list[str] | None,
+    parser: argparse.ArgumentParser,
+    *,
+    run_adapters: Callable[[argparse.ArgumentParser, Config], Any],
+    worker_board: Callable[..., tuple[object, Any]],
+    history_store: Callable[[Config, Path, Mapping[str, dict]], Any],
+    hold: Callable[[threading.Event, Callable[[], None]], None],
+) -> None:
+    """Run the Runs worker; `runtime` passes the collaborators it builds (`run_adapters`, `worker_board`,
+    `history_store` and `hold`), as no context imports it."""
     args = parser.parse_args(argv)
     path = discover(args.config)
     try:

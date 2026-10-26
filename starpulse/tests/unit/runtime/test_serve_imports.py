@@ -8,7 +8,7 @@ import sys
 import pytest
 
 # `python -X importtime` on SERVER (ai-vm-1, 2026-10-17): ~2.03 s before the defer, ~0.5-0.6 s after (gate: under 1.2 s).
-SERVER = "starpulse._internal.server.server"
+SERVER = "starpulse.runtime.server"
 
 
 @pytest.mark.parametrize("heavy", ["sqlalchemy", "alembic"])

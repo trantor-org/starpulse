@@ -4,8 +4,8 @@ import socket
 import sys
 from pathlib import Path
 
-from starpulse._internal.server.hold import LISTEN_FD_ENV
-from starpulse._internal.server.supervisor import spawn_child
+from starpulse.runtime.hold import LISTEN_FD_ENV
+from starpulse.runtime.supervisor import spawn_child
 
 
 def test_a_child_is_handed_the_listening_socket_on_the_descriptor_its_environment_names(tmp_path: Path) -> None:

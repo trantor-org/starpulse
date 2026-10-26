@@ -7,11 +7,13 @@ import sys
 
 import pytest
 
-SERVER = "starpulse._internal.server.server"
+SERVER = "starpulse.runtime.server"
 
 
-@pytest.mark.parametrize("worker", ["flow_metrics_worker", "search_worker"])
+@pytest.mark.parametrize(
+    "worker", ["starpulse.flow_metrics.bin.flow_metrics_worker", "starpulse.board.bin.search_worker"]
+)
 def test_worker_entry_does_not_import_the_server(worker: str) -> None:
-    probe = f"import sys, importlib; importlib.import_module('starpulse._internal.server.{worker}'); print('{SERVER}' in sys.modules)"
+    probe = f"import sys, importlib; importlib.import_module('{worker}'); print('{SERVER}' in sys.modules)"
     out = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, check=True).stdout
     assert out.strip() == "False"

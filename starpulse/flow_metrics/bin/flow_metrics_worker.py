@@ -14,17 +14,23 @@ from __future__ import annotations
 import argparse
 import logging
 import threading
+from collections.abc import Callable, Mapping
 from pathlib import Path
+from typing import Protocol
 
-from starpulse.runtime.blocks import flow_metrics_built_blocks
 from starpulse._internal.config.config import Config, discover, load
-from starpulse.runtime.assembly import assemble, history_store, keep_event_log
-from starpulse.runtime.hold import hold
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url
-from starpulse.flow_metrics.history import record_machine_events
+from starpulse.flow_metrics.bin.blocks import flow_metrics_built_blocks
+from starpulse.flow_metrics.history import HistoryStore, record_machine_events
 
 logger = logging.getLogger(__name__)
+
+
+class Feed(Protocol):
+    """The board feed as far as this worker reads it."""
+
+    machines: Mapping[str, dict]
 
 
 def reload(path: Path, config: Config) -> None:
@@ -40,7 +46,16 @@ def reload(path: Path, config: Config) -> None:
         logger.info("reload: no History setting changed")
 
 
-def main(argv: list[str] | None, parser: argparse.ArgumentParser) -> None:
+def main(
+    argv: list[str] | None,
+    parser: argparse.ArgumentParser,
+    *,
+    assemble: Callable[..., tuple[object, Feed]],
+    history_store: Callable[[Config, Path, Mapping[str, dict]], HistoryStore],
+    keep_event_log: Callable[..., object],
+    hold: Callable[[threading.Event, Callable[[], None]], None],
+) -> None:
+    """Run the History recorder; `runtime` passes the collaborators it builds, as no context imports it."""
     args = parser.parse_args(argv)
     path = discover(args.config)
     try:

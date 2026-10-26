@@ -13,9 +13,9 @@ from typing import Any
 
 import pytest
 
-from starpulse._internal.server import control
-from starpulse._internal.server.closure import ReloadError
-from starpulse._internal.server.control import Control
+from starpulse.runtime import control
+from starpulse.runtime.closure import ReloadError
+from starpulse.runtime.control import Control
 
 REPORT = {"supervisor": "kept", "children": {"pulls": "kept", "scheduler": "replaced"}}
 
@@ -129,7 +129,7 @@ def test_a_control_file_nothing_listens_on_is_no_supervisor_either(
 def test_a_reload_that_fails_exits_two_with_the_reason_and_the_supervisor_keeps_running(
     config: Path, supervisor: FakeSupervisor, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    supervisor.failure = ReloadError("starpulse._internal.server.worker does not import")
+    supervisor.failure = ReloadError("starpulse.runtime.worker does not import")
 
     assert control.main(["--config", str(config)]) == 2
 

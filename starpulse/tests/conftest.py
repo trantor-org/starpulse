@@ -165,9 +165,9 @@ def supervisors(monkeypatch: pytest.MonkeyPatch) -> list[FakeSupervisor]:
     monkeypatch.setenv("STARPULSE_STATIC", "")  # `server.main` exports the page build it checked; undone at teardown
     monkeypatch.delenv("STARPULSE_STATIC")
     FakeForker.made = []
-    if "starpulse._internal.server.server" in sys.modules:
-        monkeypatch.setattr("starpulse._internal.server.server.Supervisor", FakeSupervisor)
-        monkeypatch.setattr("starpulse._internal.server.server.Forker", FakeForker)
+    if "starpulse.runtime.server" in sys.modules:
+        monkeypatch.setattr("starpulse.runtime.server.Supervisor", FakeSupervisor)
+        monkeypatch.setattr("starpulse.runtime.server.Forker", FakeForker)
     return FakeSupervisor.made
 
 

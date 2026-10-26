@@ -8,9 +8,10 @@ from pathlib import Path
 import pytest
 
 from starpulse._internal.config.config import load
-from starpulse.pulls import delivery
-from starpulse._internal.server import server, worker
 from starpulse.event_log.event_log import EventLog
+from starpulse.pulls import delivery
+from starpulse.pulls.bin import pulls_worker
+from starpulse.runtime import server, worker
 from starpulse.tests import fake_board
 
 BOARD = '[board]\ntype = "starpulse.tests.fake_board"\nlanes = ["waiting", "ready", "done"]\nwrites = true\n'
@@ -83,7 +84,7 @@ def run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(Actor, "made", [])
     monkeypatch.setattr(Sync, "made", [])
     held: list[threading.Event] = []
-    monkeypatch.setattr(worker, "hold", lambda stop, reload: held.append(stop))
+    monkeypatch.setattr("starpulse.runtime.hold.hold", lambda stop, reload: held.append(stop))
 
     def start(text: str = CONFIG) -> EventLog:
         config = tmp_path / "starpulse.toml"
@@ -153,7 +154,7 @@ class Loops:
     def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
         self.built: list[tuple[object, threading.Event]] = []
         self.refuse: set[bool] = set()
-        monkeypatch.setattr(worker, "start_delivery", self.start)
+        monkeypatch.setattr("starpulse.runtime.server.start_delivery", self.start)
 
     def start(self, config, board, feed, log, pulls, pins, stop, **kwargs):
         if config.pull_requests in self.refuse:
@@ -162,8 +163,8 @@ class Loops:
         return None, None
 
 
-def _delivery(path: Path) -> worker.Delivery:
-    delivery = worker.Delivery(load(path), None, None, None, None, None)
+def _delivery(path: Path) -> pulls_worker.Delivery:
+    delivery = pulls_worker.Delivery(load(path), None, None, None, None, None, server.start_delivery)
     delivery.start()
     return delivery
 

@@ -13,12 +13,12 @@ import pytest
 
 from starpulse._internal.config.analytics import Analytics, SkillLoad
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.kit.adapter_kit import serve, url
-from starpulse._internal.server.page_server import PageServer
 from starpulse.contracts.adapters import BoardTask, TaskKeys
 from starpulse.event_log.event_log import EventLog
 from starpulse.harness_telemetry.telemetry import TelemetryLog, signals
+from starpulse.runtime.adapter_kit import serve, url
 from starpulse.tests.machines import MACHINES, ROLES
+from starpulse.views.page_server import PageServer
 
 pytestmark = pytest.mark.usefixtures("sqlite_stores_from_template")
 

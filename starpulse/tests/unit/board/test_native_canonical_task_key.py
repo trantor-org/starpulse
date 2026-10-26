@@ -10,8 +10,8 @@ import yaml
 from starpulse.board.adapters.native import board
 from starpulse.board.adapters.upstream_backlog import UpstreamBacklog, board_moves, upstream_keys
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.server.server import history_response
 from starpulse.contracts.adapters import BoardTask
+from starpulse.runtime.server import history_response
 from starpulse.tests.unit.board.test_native import LANES, native_root, write_task
 
 

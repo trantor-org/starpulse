@@ -11,10 +11,11 @@ from pathlib import Path
 import pytest
 
 from starpulse.board.adapters import replica
-from starpulse._internal.server import api_worker, assembly, server, worker
-from starpulse._internal.server.hold import STATIC_ENV
+from starpulse.runtime import assembly, server, worker
+from starpulse.runtime.hold import STATIC_ENV
 from starpulse.tests import fake_board
 from starpulse.tests.conftest import FakeSupervisor
+from starpulse.views.bin import api_worker
 
 BOARD = '[board]\ntype = "starpulse.tests.fake_board"\nlanes = ["waiting", "ready", "done"]\nwrites = true\n'
 
@@ -27,7 +28,7 @@ def config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (static / "index.html").write_text("<html></html>")
     monkeypatch.setattr(server, "_STATIC", static)
     monkeypatch.setattr(server, "stay_until_stopped", lambda: None)
-    monkeypatch.setattr(api_worker, "serve_until_stopped", lambda httpd, feed: None)
+    monkeypatch.setattr("starpulse.runtime.server.serve_until_stopped", lambda httpd, feed: None)
     path = tmp_path / "starpulse.toml"
     path.write_text(BOARD)
     return path

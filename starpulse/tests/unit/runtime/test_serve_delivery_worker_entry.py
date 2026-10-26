@@ -6,9 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.server import api_worker, server
-from starpulse._internal.server import worker as api_child
+from starpulse.runtime import server
+from starpulse.runtime import worker as api_child
 from starpulse.tests import fake_board
+from starpulse.views.bin import api_worker
 
 BOARD = '[board]\ntype = "starpulse.tests.fake_board"\nlanes = ["waiting", "ready", "done"]\nwrites = true\n'
 CONTEXT = f'refresh_token_env = "PULL_REFRESH_TOKEN"\n[release]\n{BOARD}[board.actor]\n'
@@ -88,7 +89,7 @@ def _serve(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, text: str, *, gh: bo
     static.mkdir()
     (static / "index.html").write_text("<html></html>")
     monkeypatch.setattr(server, "_STATIC", static)
-    monkeypatch.setattr(api_worker, "serve_until_stopped", lambda httpd, feed: None)
+    monkeypatch.setattr("starpulse.runtime.server.serve_until_stopped", lambda httpd, feed: None)
     monkeypatch.setattr(server.shutil, "which", lambda name: f"/usr/bin/{name}" if gh else None)
     monkeypatch.setenv("PULL_REFRESH_TOKEN", "secret")
     # `serve_page` reads the sync and refresh; the actor and pull requests are built by `server.start_delivery`

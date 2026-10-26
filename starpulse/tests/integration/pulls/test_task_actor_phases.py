@@ -12,11 +12,11 @@ from sqlalchemy import create_engine
 
 from starpulse._internal.config.config import load
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.kit.adapter_kit import task
+from starpulse.machine_engine.model.transitions import board_machine
 from starpulse.pulls.pulls import PullStore
 from starpulse.pulls.task_actor import ACTOR
-from starpulse._internal.server import server
-from starpulse.machine_engine.model.transitions import board_machine
+from starpulse.runtime import server
+from starpulse.runtime.adapter_kit import task
 from starpulse.tests.machines import STATUSES, flow
 from starpulse.tests.task_actor_kit import MOVES, WAITS, Board, Pins, running, until
 

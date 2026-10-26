@@ -10,16 +10,16 @@ from typing import Any
 
 import pytest
 
-from starpulse.board.model.seam import Board, Written
-from starpulse.board.board_feed import BoardFeed
 from starpulse.board.adapters.history_window import HistoryWindow
-from starpulse._internal.kit.adapter_kit import serve as _serve
-from starpulse._internal.kit.adapter_kit import task
-from starpulse._internal.kit.adapter_kit import url as _url
-from starpulse._internal.server import server as server_module
-from starpulse._internal.server.page_server import PageServer
+from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.seam import Board, Written
 from starpulse.contracts.adapters import Move
 from starpulse.event_log.event_log import EventLog
+from starpulse.runtime import server as server_module
+from starpulse.runtime.adapter_kit import serve as _serve
+from starpulse.runtime.adapter_kit import task
+from starpulse.runtime.adapter_kit import url as _url
+from starpulse.views.page_server import PageServer
 
 _FOREIGN = "https://evil.example"
 #: Every route that writes, as (method, path, body): a refused request must reach none of their writers.

@@ -17,15 +17,15 @@ import pytest
 from starpulse._internal.config.config import Producer
 from starpulse.board.board_feed import BoardFeed, follow
 from starpulse.board.machine_tasks import MachineTasks
-from starpulse._internal.kit.adapter_kit import next_event, serve, url
-from starpulse.runs.cloudevents import BATCH, MAX_DATA, SINGLE, CloudEventsIngest
-from starpulse.runs.ingest import MAX_BATCH_BODY
-from starpulse.runs.ingest import tokens as ingest_tokens
-from starpulse._internal.server.page_server import PageServer
 from starpulse.event_log.event_log import EventLog, Tail
 from starpulse.machine_engine.adapters.machine_loader import load_machine
 from starpulse.machine_engine.model.snapshot import describe
 from starpulse.machine_engine.model.transitions import board_machine
+from starpulse.runs.cloudevents import BATCH, MAX_DATA, SINGLE, CloudEventsIngest
+from starpulse.runs.ingest import MAX_BATCH_BODY
+from starpulse.runs.ingest import tokens as ingest_tokens
+from starpulse.runtime.adapter_kit import next_event, serve, url
+from starpulse.views.page_server import PageServer
 
 DELIVERY = """\
 name: delivery

@@ -12,20 +12,28 @@ from __future__ import annotations
 
 import argparse
 import threading
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
-from starpulse._internal.config.config import discover, load
-from starpulse.runs import opt_in
-from starpulse.runs.projection import Publisher
-from starpulse.runtime.assembly import worker_board
-from starpulse.runtime.hold import hold
-from starpulse.runs.bin.runs_worker import reload
-from starpulse.runtime.server import run_adapters
+from starpulse._internal.config.config import Config, discover, load
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url
+from starpulse.runs import opt_in
+from starpulse.runs.bin.runs_worker import reload
+from starpulse.runs.projection import Publisher
 
 
-def main(argv: list[str] | None, parser: argparse.ArgumentParser, context: str) -> None:
+def main(
+    argv: list[str] | None,
+    parser: argparse.ArgumentParser,
+    context: str,
+    *,
+    run_adapters: Callable[[argparse.ArgumentParser, Config], Any],
+    worker_board: Callable[..., tuple[object, Any]],
+    hold: Callable[[threading.Event, Callable[[], None]], None],
+) -> None:
+    """Run one opt-in Adapter worker; `runtime` passes the collaborators it builds, as no context imports it."""
     args = parser.parse_args(argv)
     path = discover(args.config)
     try:

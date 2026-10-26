@@ -7,15 +7,15 @@ from pathlib import Path
 
 import pytest
 
-from starpulse.board.board_feed import BoardFeed
 from starpulse.board.adapters.history_window import HistoryWindow
-from starpulse._internal.server.compression import Encoded
-from starpulse._internal.server.reads import Arrival, ReadRoutes, Request, Response
-from starpulse._internal.server.services import Services
-from starpulse._internal.server.snapshot_cache import SnapshotCache
+from starpulse.board.board_feed import BoardFeed
 from starpulse.event_log.event_log import EventLog
 from starpulse.flow_metrics.history import HistoryStore
 from starpulse.tests.fake_board import bare_board
+from starpulse.views.compression import Encoded
+from starpulse.views.reads import Arrival, ReadRoutes, Request, Response
+from starpulse.views.services import Services
+from starpulse.views.snapshot_cache import SnapshotCache
 
 
 @pytest.fixture

@@ -4,11 +4,12 @@ from pathlib import Path
 
 import pytest
 
+from starpulse.runtime import server
+from starpulse.runtime import worker as api_child
 from starpulse.scheduler.adapters.remote import Remote
-from starpulse._internal.server import scheduler_service as service
-from starpulse._internal.server import api_worker, server
-from starpulse._internal.server import worker as api_child
+from starpulse.scheduler.bin import scheduler_service as service
 from starpulse.tests import fake_board
+from starpulse.views.bin import api_worker
 
 BOARD = '[board]\ntype = "starpulse.tests.fake_board"\nlanes = ["waiting", "ready", "done"]\nwrites = true\n'
 
@@ -19,7 +20,7 @@ def _serve(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[list[object
     static.mkdir()
     (static / "index.html").write_text("<html></html>")
     monkeypatch.setattr(server, "_STATIC", static)
-    monkeypatch.setattr(api_worker, "serve_until_stopped", lambda httpd, feed: None)
+    monkeypatch.setattr("starpulse.runtime.server.serve_until_stopped", lambda httpd, feed: None)
     started: list[object] = []
     monkeypatch.setattr(service, "start_scheduler", lambda *args, **kwargs: started.append(args) or None)
     handled: dict[str, object] = {}

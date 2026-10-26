@@ -79,7 +79,7 @@ The `api` child serves the page and the HTTP API. `serve` binds `--host` and `--
 
 Every context is its own child, the light ones (`history`, `search`) included, so a restart, a reload and a memory limit each reach one context alone. Merging the light ones into one child would save their duplicated import floor; sharing that floor between separate children saves it without giving up the isolation.
 
-On Linux `serve` starts one preloaded process before any thread, `python -m starpulse._internal.server.zygote`, that imports every supervised context's entry module (the Page API's excepted), freezes what it imported out of the garbage collector's way and waits on a socket from `serve`. Each child is a fork of it that runs the same `starpulse worker <context>` main, so the children share the pages of the interpreter and imports until they write to them, and a context still has its own process to restart, reload and limit. A child still dies with `serve`: it inherits the preloaded process's stdin pipe from `serve`. The Page API child is always a `subprocess` child, since it inherits `serve`'s listening socket. Where `fork` is not safe (macOS and Windows), or when the preloaded process fails to start or answer (`serve` logs one warning naming the preloaded process and starts every later child with `subprocess` instead), a child is a `subprocess` child with its own imports.
+On Linux `serve` starts one preloaded process before any thread, `python -m starpulse.runtime.zygote`, that imports every supervised context's entry module (the Page API's excepted), freezes what it imported out of the garbage collector's way and waits on a socket from `serve`. Each child is a fork of it that runs the same `starpulse worker <context>` main, so the children share the pages of the interpreter and imports until they write to them, and a context still has its own process to restart, reload and limit. A child still dies with `serve`: it inherits the preloaded process's stdin pipe from `serve`. The Page API child is always a `subprocess` child, since it inherits `serve`'s listening socket. Where `fork` is not safe (macOS and Windows), or when the preloaded process fails to start or answer (`serve` logs one warning naming the preloaded process and starts every later child with `subprocess` instead), a child is a `subprocess` child with its own imports.
 
 `starpulse reload` replaces the children whose installed code changed, tells those whose only change is their config block to re-read it, and re-executes `serve` when its own code changed, so a deploy restarts only what it changed. A reload that changes code any child runs also retires the preloaded process: it takes no more forks and exits when its last child has, and a new one that imports the installed code forks every replaced child, so a replaced child never runs the old preloaded code. See [Reloading a running serve](cli.md#reloading-a-running-serve).
 
@@ -172,9 +172,9 @@ included), and one active hash per machine in `starpulse_machine_active`. Nothin
   new version lacks is refused too.
 - Archived Tasks count as live. The live board is still file-based, so only the event-sourced Task streams are remapped.
 
-`sync_definitions` (`starpulse/_internal/server/machine_sync.py`) activates the Board's `[board] machine` file against the
+`sync_definitions` (`starpulse/runtime/machine_sync.py`) activates the Board's `[board] machine` file against the
 live Tasks and each file in `.starpulse/machines/` (the owners' definitions directory). `serve` runs it at start, once the
-port is bound, in a child process (`python -m starpulse._internal.server.machine_sync`, exit 3 on a refusal) so the
+port is bound, in a child process (`python -m starpulse.runtime.machine_sync`, exit 3 on a refusal) so the
 server itself never loads the database stack; a refusal exits `serve` 1. It runs again before every reload (`starpulse reload`, `POST /reload`): a refused reload changes
 nothing and the running workers stay on the active version.
 

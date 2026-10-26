@@ -8,10 +8,10 @@ from pathlib import Path
 import pytest
 from sqlalchemy import select
 
-from starpulse._internal.server import assembly, flow_metrics_worker, worker
 from starpulse.event_log import events
 from starpulse.event_log.event_log import EventLog
 from starpulse.flow_metrics.history import HistoryStore, _machine_events
+from starpulse.runtime import assembly, worker
 from starpulse.tests import fake_board
 
 BOARD = '[board]\ntype = "starpulse.tests.fake_board"\nlanes = ["waiting", "ready", "done"]\nwrites = true\n'
@@ -52,7 +52,7 @@ def held() -> list[threading.Event]:
 def run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, pruned: list[dict], held: list[threading.Event]):
     """`worker.main` on `text`, holding returns at once; yields the log and store the worker shares with `serve`."""
     monkeypatch.setattr(fake_board, "BUILT", [])
-    monkeypatch.setattr(flow_metrics_worker, "hold", lambda stop, reload: held.append(stop))
+    monkeypatch.setattr("starpulse.runtime.hold.hold", lambda stop, reload: held.append(stop))
     url = f"sqlite:///{(tmp_path / 'starpulse-history.sqlite').resolve()}"
 
     def start(text: str = BOARD) -> tuple[EventLog, HistoryStore]:
@@ -103,7 +103,7 @@ def test_a_restarted_worker_neither_drops_nor_repeats_a_history_row(
 
 
 def test_the_retired_history_context_name_is_refused() -> None:
-    from starpulse._internal.server.worker import worker_parser
+    from starpulse.runtime.worker import worker_parser
 
     with pytest.raises(SystemExit) as refused:
         worker_parser().parse_args(["history"])

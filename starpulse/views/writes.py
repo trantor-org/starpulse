@@ -121,6 +121,9 @@ from urllib.parse import urlsplit
 import yaml
 from pydantic import BaseModel, ValidationError
 
+from starpulse._internal.config.harnesses import Harnesses
+from starpulse.board.adapters.history_window import HistoryWindow
+from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model import post_merge_checks
 from starpulse.board.model.seam import (
     AGENT,
@@ -136,9 +139,6 @@ from starpulse.board.model.seam import (
     TaskRestorer,
     Written,
 )
-from starpulse._internal.config.harnesses import Harnesses
-from starpulse.board.board_feed import BoardFeed
-from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.contracts.adapters import Move, StartFailedError
 from starpulse.contracts.api.dto.requests import (
     CREATE_LISTS,

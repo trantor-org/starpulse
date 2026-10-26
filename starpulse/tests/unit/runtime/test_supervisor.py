@@ -10,12 +10,12 @@ import time
 from dataclasses import replace
 from pathlib import Path
 
-import starpulse._internal.server.memory as memory_module
-import starpulse._internal.server.supervisor as supervisor_module
+import starpulse.runtime.memory as memory_module
+import starpulse.runtime.supervisor as supervisor_module
 from starpulse._internal.config.config import MemoryLimit, load
 from starpulse._internal.config.search import Search
-from starpulse._internal.server.hold import LISTEN_FD_ENV
-from starpulse._internal.server.supervisor import Supervisor, spawn_child, worker_commands
+from starpulse.runtime.hold import LISTEN_FD_ENV
+from starpulse.runtime.supervisor import Supervisor, spawn_child, worker_commands
 from starpulse.tests.supervised import running_pids
 
 STEP = 0.25

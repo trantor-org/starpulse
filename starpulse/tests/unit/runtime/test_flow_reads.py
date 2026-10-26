@@ -9,10 +9,10 @@ import pytest
 from sqlalchemy import create_engine, event, text
 
 from starpulse._internal.config.level import Level, Orbit, Terminal
-from starpulse._internal.server import server
-from starpulse._internal.server.server import health_response, trajectories_response
 from starpulse.flow_metrics import history
 from starpulse.flow_metrics.history import HistoryStore
+from starpulse.runtime import server
+from starpulse.runtime.server import health_response, trajectories_response
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.rows import rows_fetched
 from starpulse.tests.summaries import assert_matches_rebuild

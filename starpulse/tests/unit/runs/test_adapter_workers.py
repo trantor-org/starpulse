@@ -8,9 +8,9 @@ from pathlib import Path
 import pytest
 
 from starpulse._internal.config.config import load
-from starpulse.runs import dagu, github_actions, opt_in, projection, systemd
-from starpulse._internal.server import adapter_worker, runs_worker, server, supervisor, worker
 from starpulse.event_log.event_log import EventLog
+from starpulse.runs import dagu, github_actions, opt_in, projection, systemd
+from starpulse.runtime import server, supervisor, worker
 from starpulse.tests import fake_board
 
 BOARD = '[board]\ntype = "starpulse.tests.fake_board"\nlanes = ["waiting", "ready", "done"]\nwrites = true\n'
@@ -83,8 +83,8 @@ def run(
     """`worker.main` of a context on the config of `kind`, holding returns at once."""
     monkeypatch.setattr(fake_board, "BUILT", [])
     monkeypatch.setattr(server, "runs_adapter", lambda _kind: adapter)
-    monkeypatch.setattr(runs_worker, "hold", lambda stop, reload: held.append(stop))
-    monkeypatch.setattr(adapter_worker, "hold", lambda stop, reload: held.append(stop))
+    monkeypatch.setattr("starpulse.runtime.hold.hold", lambda stop, reload: held.append(stop))
+    monkeypatch.setattr("starpulse.runtime.hold.hold", lambda stop, reload: held.append(stop))
 
     def start(context: str) -> None:
         config = tmp_path / "starpulse.toml"

@@ -136,7 +136,7 @@ def test_the_snapshot_held_at_open_places_nothing_so_it_cannot_stand_for_a_poste
     assert placed_from(snapshot(("delivery", ["r1"]))) == set()
 
 
-SERVER = "starpulse/_internal/server/server.py"
+SERVER = "starpulse/runtime/server.py"
 IMPORTS_TEST = "starpulse/tests/unit/server/test_serve_imports.py"
 START_TEST = "starpulse/tests/integration/server/test_serve_start.py"
 LIFETIME_TEST = "starpulse/tests/integration/server/test_supervisor_lifetime.py"

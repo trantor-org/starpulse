@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.server.closure import SELF, Reading
-from starpulse._internal.server.supervisor import Supervisor
+from starpulse.runtime.closure import SELF, Reading
+from starpulse.runtime.supervisor import Supervisor
 from starpulse.tests.integration.server.test_standalone import _env, build  # noqa: F401 - `build` is a fixture
 from starpulse.tests.supervised import running_pids
 

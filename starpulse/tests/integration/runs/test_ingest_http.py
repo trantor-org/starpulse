@@ -16,14 +16,14 @@ import pytest
 
 from starpulse._internal.config.config import Producer, load
 from starpulse.board.board_feed import BoardFeed, follow
-from starpulse._internal.kit.adapter_kit import serve, url
+from starpulse.event_log.event_log import EventLog, Tail
 from starpulse.runs import run_events
 from starpulse.runs.cloudevents import SINGLE, CloudEventsIngest
 from starpulse.runs.ingest import MAX_BATCH_BODY
 from starpulse.runs.ingest import tokens as ingest_tokens
 from starpulse.runs.push_runs import PUSHED_INSTANCE, PushRuns
-from starpulse._internal.server.page_server import PageServer
-from starpulse.event_log.event_log import EventLog, Tail
+from starpulse.runtime.adapter_kit import serve, url
+from starpulse.views.page_server import PageServer
 
 TOKENS = {"cron": "cron-secret", "rundeck": "rundeck-secret"}
 PRODUCERS = tuple(Producer(name, f"{name.upper()}_TOKEN", machines=(), actors=()) for name in TOKENS)

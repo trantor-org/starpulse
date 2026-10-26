@@ -20,12 +20,12 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from starpulse.board.adapters.replica import publish
-from starpulse.board.adapters.upstream_backlog import _live
 from starpulse._internal.cli import agent_cli
 from starpulse._internal.config.config import load
-from starpulse.runtime.adapter_kit import assembled, serve, url
+from starpulse.board.adapters.replica import publish
+from starpulse.board.adapters.upstream_backlog import _live
 from starpulse.event_log.event_log import EventLog
+from starpulse.runtime.adapter_kit import assembled, serve, url
 
 #: How often the Board adapter rescans the board's files, so a task a write created is on the feed within a scan.
 SCAN_INTERVAL_S = 0.05

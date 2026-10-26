@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.server import closure
-from starpulse._internal.server.closure import SELF, Reader, Reading, ReloadError, code_of, package_hashes
-from starpulse._internal.server.supervisor import WORKER_FLAGS
+from starpulse.runtime import closure
+from starpulse.runtime.closure import SELF, Reader, Reading, ReloadError, code_of, package_hashes
+from starpulse.runtime.supervisor import WORKER_FLAGS
 
 
 @pytest.fixture

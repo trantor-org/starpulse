@@ -11,20 +11,20 @@ from pathlib import Path
 
 import pytest
 
-from starpulse.board.model.seam import Written
 from starpulse._internal.config.scheduler import Scheduler
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.machine_tasks import MachineTasks
-from starpulse._internal.kit.adapter_kit import serve, url
-from starpulse.scheduler.adapters.runtime import Runtime, build
-from starpulse.scheduler.model.sampler import Crossing
-from starpulse._internal.server.page_server import PageServer
-from starpulse._internal.server.writes import scheduler
+from starpulse.board.model.seam import Written
 from starpulse.contracts.adapters import BoardTask, MachineEvent
 from starpulse.contracts.api.dto.scheduler import SchedulerStatus
 from starpulse.event_log.event_log import EventLog
 from starpulse.harness_telemetry.harness import SESSION_MACHINES
+from starpulse.runtime.adapter_kit import serve, url
+from starpulse.scheduler.adapters.runtime import Runtime, build
+from starpulse.scheduler.model.sampler import Crossing
 from starpulse.tests.machines import MACHINES, ROLES
+from starpulse.views.page_server import PageServer
+from starpulse.views.writes import scheduler
 
 HOST = {"cpu": 35.0, "memory": 60.0}
 

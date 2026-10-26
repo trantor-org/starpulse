@@ -8,15 +8,15 @@ import pytest
 from pydantic import ValidationError
 
 from starpulse._internal.config.config import load
-from starpulse._internal.kit.adapter_kit import (
+from starpulse.board.model.seam import Written
+from starpulse.contracts.adapters import TaskKeys
+from starpulse.runtime.adapter_kit import (
     BoardAdapterKit,
     MachineEventsAdapterKit,
     RunsAdapterKit,
     _AdapterKit,
     assembled,
 )
-from starpulse.board.model.seam import Written
-from starpulse.contracts.adapters import TaskKeys
 from starpulse.tests.machines import MACHINES
 
 PROJ = TaskKeys(key=re.compile(r"PROJ-\d+"), branch=re.compile(r"feature/(PROJ-\d+)"))

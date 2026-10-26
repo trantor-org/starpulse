@@ -9,12 +9,12 @@ import pytest
 import yaml
 
 from starpulse._internal.config.config import Config
-from starpulse._internal.server.machine_sync import sync_definitions
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.readmodel.fold import replay
 from starpulse.event_log.store import EventStore, NewEvent
 from starpulse.event_log.store.machine_registry import MachineRegistry
 from starpulse.machine_engine.model.machine_definition import MachineDefinitionError
+from starpulse.runtime.machine_sync import sync_definitions
 
 BOARD = {
     "name": "board",
@@ -118,7 +118,7 @@ def test_a_renamed_state_with_a_mapping_remaps_the_live_tasks_on_reload(tmp_path
 
 
 def test_serve_admits_the_definitions_its_config_names_and_refuses_a_stranding_edit(tmp_path: Path) -> None:
-    from starpulse._internal.server.server import admit_definitions  # noqa: PLC0415 - imports the server stack
+    from starpulse.runtime.server import admit_definitions  # noqa: PLC0415 - imports the server stack
 
     path = tmp_path / "starpulse.toml"
     path.write_text(f'database_url = "sqlite:///{tmp_path / "events.sqlite"}"\n[board]\nmachine = "board.yaml"\n')

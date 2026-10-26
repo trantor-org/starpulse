@@ -11,9 +11,9 @@ from pydantic import BaseModel, ValidationError
 
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.snapshot import BoardSnapshot
-from starpulse._internal.server.server import serve_until_stopped
 from starpulse.contracts.adapters import BoardTask
 from starpulse.event_log.event_log import EventLog
+from starpulse.runtime.server import serve_until_stopped
 
 STREAM = "board:tasks"
 

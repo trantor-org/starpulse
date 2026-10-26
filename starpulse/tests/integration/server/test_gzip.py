@@ -8,11 +8,11 @@ from http.client import HTTPResponse
 from pathlib import Path
 
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.kit.adapter_kit import serve as _serve
-from starpulse._internal.kit.adapter_kit import task
-from starpulse._internal.kit.adapter_kit import url as _url
-from starpulse._internal.server.page_server import PageServer
+from starpulse.runtime.adapter_kit import serve as _serve
+from starpulse.runtime.adapter_kit import task
+from starpulse.runtime.adapter_kit import url as _url
 from starpulse.tests.machines import MACHINES, ROLES
+from starpulse.views.page_server import PageServer
 
 GZIP = {"Accept-Encoding": "gzip"}
 

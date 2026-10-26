@@ -5,13 +5,14 @@ from pathlib import Path
 
 import pytest
 
+from starpulse.runtime import server, worker
+from starpulse.runtime.closure import ENTRIES, Reader
+from starpulse.runtime.server import DATABASE_STACK
 from starpulse.scheduler.adapters.remote import Remote
-from starpulse._internal.server import scheduler_service as service
-from starpulse._internal.server import api_worker, server, worker
-from starpulse._internal.server.closure import ENTRIES, Reader
-from starpulse._internal.server.server import DATABASE_STACK
+from starpulse.scheduler.bin import scheduler_service as service
 from starpulse.tests import fake_board
 from starpulse.tests.conftest import FakeForker, FakeSupervisor
+from starpulse.views.bin import api_worker
 
 BOARD = '[board]\ntype = "starpulse.tests.fake_board"\nlanes = ["waiting", "ready", "done"]\nwrites = true\n'
 
@@ -30,7 +31,7 @@ def _serve(
             raise ending
 
     monkeypatch.setattr(server, "stay_until_stopped", end)
-    monkeypatch.setattr(api_worker, "serve_until_stopped", lambda httpd, feed: None)
+    monkeypatch.setattr("starpulse.runtime.server.serve_until_stopped", lambda httpd, feed: None)
     threads: list[str] = []
     monkeypatch.setattr(service, "start_scheduler", lambda *args, **kwargs: threads.append("scheduler"))
     monkeypatch.setattr(server, "start_delivery", lambda *args, **kwargs: threads.append("delivery") or (None, None))

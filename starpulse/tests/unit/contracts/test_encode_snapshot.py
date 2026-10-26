@@ -3,9 +3,9 @@
 import json
 
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.kit.adapter_kit import task
-from starpulse._internal.server.encoding import encode, encode_snapshot, slim_snapshot
+from starpulse.runtime.adapter_kit import task
 from starpulse.tests.machines import MACHINES, ROLES
+from starpulse.views.encoding import encode, encode_snapshot, slim_snapshot
 
 
 def _feed(*tasks: tuple[str, str]) -> BoardFeed:

@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from starpulse._internal.server.asgi_app import PageApp
+from starpulse.views.asgi_app import PageApp
 
 
 def test_drained_waits_for_a_request_taken_before_its_endpoint(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

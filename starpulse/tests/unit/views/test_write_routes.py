@@ -8,14 +8,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from starpulse.board.board_feed import BoardFeed
 from starpulse.board.adapters.history_window import HistoryWindow
-from starpulse._internal.server.reads import Response
-from starpulse._internal.server.services import Services
-from starpulse._internal.server.write_routes import WriteRequest, WriteRoutes
+from starpulse.board.board_feed import BoardFeed
 from starpulse.contracts.api.registry import REQUESTS
 from starpulse.event_log.event_log import EventLog
 from starpulse.tests.fake_board import bare_board
+from starpulse.views.reads import Response
+from starpulse.views.services import Services
+from starpulse.views.write_routes import WriteRequest, WriteRoutes
 
 _JSON = {"Content-Type": "application/json"}
 

@@ -8,13 +8,13 @@ from pathlib import Path
 
 from starpulse._internal.config.scheduler import Scheduler
 from starpulse.board.board_feed import BoardFeed
-from starpulse.scheduler.adapters.runtime import Runtime, build
-from starpulse._internal.server.writes import scheduler
 from starpulse.contracts.api.dto.scheduler import SchedulerStatus
 from starpulse.event_log.event_log import EventLog
 from starpulse.harness_telemetry.harness import SESSION_MACHINES
+from starpulse.scheduler.adapters.runtime import Runtime, build
 from starpulse.tests.machines import MACHINES, ROLES
-from starpulse.tests.unit.server.test_scheduler_route import HOST, _feed
+from starpulse.tests.unit.runtime.test_scheduler_route import HOST, _feed
+from starpulse.views.writes import scheduler
 
 
 def _runtime(tmp_path: Path, feed: BoardFeed) -> Runtime:

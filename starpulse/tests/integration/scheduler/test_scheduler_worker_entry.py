@@ -9,11 +9,13 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from starpulse._internal.config.config import load
+from starpulse.event_log.event_log import EventLog
+from starpulse.runtime import server
+from starpulse.runtime.assembly import assemble, history_store
 from starpulse.scheduler.adapters.loop import PAUSES_KEY
 from starpulse.scheduler.adapters.remote import Remote
-from starpulse._internal.server.assembly import assemble, history_store
-from starpulse._internal.server.scheduler_worker import Scheduler
-from starpulse.event_log.event_log import EventLog
+from starpulse.scheduler.bin.scheduler_worker import Scheduler
+from starpulse.sessions.session_start import starter
 from starpulse.tests.integration.scheduler.test_scheduler_served import IDLE_HOST, _start_service, _task, _until
 
 
@@ -27,7 +29,16 @@ def _worker(base: Path, url: str) -> Iterator[tuple[Scheduler, Remote]]:
     log = EventLog(f"sqlite:///{base / 'events.sqlite'}")
     board.start(feed, "test-worker", log)
     worker = Scheduler(
-        config, base, board, feed, log, history_store(config, base, feed.machines), probe=lambda: IDLE_HOST
+        config,
+        base,
+        board,
+        feed,
+        log,
+        history_store(config, base, feed.machines),
+        probe=lambda: IDLE_HOST,
+        trajectories_response=server.trajectories_response,
+        cached=server._cached,
+        starter=starter,
     )
     worker.start()
     try:

@@ -3,7 +3,7 @@
 import threading
 import time
 
-from starpulse._internal.server.read_model_follow import follow
+from starpulse.runtime.read_model_follow import follow
 
 
 class _Counts:

@@ -31,18 +31,14 @@ from dataclasses import replace
 from pathlib import Path
 
 from sqlalchemy import Engine, event, insert
-from starpulse.board.adapters import native
-from starpulse.board.model.seam import Board, Written
+
+import starpulse
 from starpulse._internal.config.config import load
 from starpulse._internal.config.scheduler import Scheduler
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.adapters import native
 from starpulse.board.adapters.history_window import HistoryWindow
-from starpulse.scheduler.adapters.runtime import Runtime
-from starpulse.scheduler.adapters.runtime import build as build_scheduler
-from starpulse._internal.server.asgi_app import page_app
-from starpulse._internal.server.assembly import assemble
-from starpulse._internal.server.page_server import PageServer
-from starpulse._internal.server.services import Services
+from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.seam import Board, Written
 from starpulse.contracts.adapters import BoardTask
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.lane_import import Change
@@ -52,8 +48,12 @@ from starpulse.event_log.readmodel.read_model import ReadModel
 from starpulse.event_log.store import EventStore, NewEvent
 from starpulse.event_log.tables import machine_events
 from starpulse.flow_metrics.history import HistoryStore
-
-import starpulse
+from starpulse.runtime.assembly import assemble
+from starpulse.scheduler.adapters.runtime import Runtime
+from starpulse.scheduler.adapters.runtime import build as build_scheduler
+from starpulse.views.asgi_app import page_app
+from starpulse.views.page_server import PageServer
+from starpulse.views.services import Services
 
 PREVIEW = Path(__file__).with_name("preview.toml")
 STATIC = Path(starpulse.__file__).parent / "static"

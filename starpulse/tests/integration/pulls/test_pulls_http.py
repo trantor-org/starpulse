@@ -14,10 +14,10 @@ import pytest
 from sqlalchemy import create_engine
 
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.kit.adapter_kit import serve, url
 from starpulse.pulls.pulls import PullStore
-from starpulse._internal.server.page_server import PageServer
+from starpulse.runtime.adapter_kit import serve, url
 from starpulse.tests.machines import MACHINES, ROLES
+from starpulse.views.page_server import PageServer
 
 
 def _pull(repo: str, number: int, state: str, body: str, fetched: float) -> dict:

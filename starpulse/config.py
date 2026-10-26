@@ -8,7 +8,7 @@ from starpulse._internal.config.config import (
     load,
     runs_adapter,
 )
-from starpulse._internal.server.closure import CONFIG_OWNERS, restarts_serve
+from starpulse.runtime.closure import CONFIG_OWNERS, restarts_serve
 
 __all__ = [
     "CONFIG_OWNERS",

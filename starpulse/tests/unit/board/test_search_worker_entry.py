@@ -11,8 +11,8 @@ from sqlalchemy import create_engine, text
 from starpulse._internal.config.search import Search
 from starpulse.board.adapters import search as search_module
 from starpulse.board.adapters.search import SearchIndex
-from starpulse._internal.server import search_worker, worker
 from starpulse.contracts.adapters import BoardTask
+from starpulse.runtime import worker
 from starpulse.tests import fake_board
 
 BOARD = '[board]\ntype = "starpulse.tests.fake_board"\nlanes = ["waiting", "ready", "done"]\nwrites = true\n'
@@ -52,7 +52,7 @@ def held() -> list[threading.Event]:
 def run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, held: list[threading.Event]):
     """`worker.main` on `text`, holding returns at once; yields the index the worker shares with `serve`."""
     monkeypatch.setattr(fake_board, "BUILT", [])
-    monkeypatch.setattr(search_worker, "hold", lambda stop, reload: held.append(stop))
+    monkeypatch.setattr("starpulse.runtime.hold.hold", lambda stop, reload: held.append(stop))
     url = f"sqlite:///{(tmp_path / 'starpulse-history.sqlite').resolve()}"
 
     def start(config_text: str = SEARCH + BOARD) -> SearchIndex:

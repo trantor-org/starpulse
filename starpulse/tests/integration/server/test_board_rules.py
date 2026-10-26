@@ -10,11 +10,11 @@ from typing import Any
 
 import pytest
 
-from starpulse.board.adapters import native
 from starpulse._internal.cli import agent_cli as cli
+from starpulse.board.adapters import native
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.kit.adapter_kit import serve, task, url
 from starpulse.contracts.adapters import Move
+from starpulse.runtime.adapter_kit import serve, task, url
 from starpulse.tests.machines import MACHINES, ROLES
 from starpulse.tests.unit.board.test_native import native_root, write_task
 

@@ -50,7 +50,7 @@ LINT_TABLES = ("importlinter",)
 #: Source files whose importers check the import in a subprocess, which the nightly coverage run does not trace, so the
 #: map never lists those tests for them.
 SUBPROCESS_IMPORTERS = {
-    "starpulse/_internal/server/server.py": (
+    "starpulse/runtime/server.py": (
         "starpulse/tests/unit/server/test_serve_imports.py",
         "starpulse/tests/integration/server/test_serve_start.py",
         "starpulse/tests/integration/server/test_supervisor_lifetime.py",
@@ -59,7 +59,7 @@ SUBPROCESS_IMPORTERS = {
 
 #: Non-Python files and the Python files that open them by path; each reader counts as changed.
 READERS = {
-    "README.md": ("starpulse/_internal/server/server.py", "ci/ui_preview.py"),
+    "README.md": ("starpulse/runtime/server.py", "ci/ui_preview.py"),
     "docs/public-surface.md": ("starpulse/tests/unit/contracts/test_public_surface.py",),
     "starpulse/web/*": ("starpulse/tests/unit/contracts/test_neutrality.py", "ci/ui_preview.py"),
     "design/*": ("ci/ui_preview.py",),

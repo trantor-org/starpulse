@@ -9,7 +9,8 @@ HEAVY = (
     "statemachine",
     "jsonschema",
     "sqlalchemy",
-    "starpulse._internal.server",
+    "starpulse.runtime",
+    "starpulse.views",
     "starpulse.event_log.event_log",
 )
 
