@@ -563,6 +563,24 @@ aside h3 { margin: 0 0 8px; font-size: calc(10px * var(--fs)); font-weight: 500;
 #kbm .tvrail .ratewhy .count.full { color: var(--fail); }
 #kbm .tvrail .ratewhy button { all: unset; color: var(--agent-text); font-size: calc(11px * var(--fs)); }
 #kbm .tvrail .ratewhy button:hover, #kbm .tvrail .ratewhy button:focus-visible { text-decoration: underline; }
+
+
+#kbm .tvrail .box { display: flex; flex-direction: column; gap: 3px; max-height: calc(176px * var(--fs)); overscroll-behavior: contain; margin-right: -6px; padding-right: 6px;
+  mask-image: linear-gradient(var(--ink) calc(100% - 18px), transparent); }
+#kbm .tvrail .box.end { mask-image: none; }
+
+#kbm .tvrail .pull .rd { font-size: calc(11px * var(--fs)); color: var(--muted); }
+#kbm .chk.unread i { background: transparent; border: 1px dashed var(--slate); box-sizing: border-box; }
+
+#kbm .tvrail .who2 { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 10px; margin: 6px 0 0; font-size: calc(11.5px * var(--fs)); }
+#kbm .tvrail .who2 dt { color: var(--muted); }
+#kbm .tvrail .who2 dd { margin: 0; color: var(--ink-2); min-width: 0; overflow-wrap: anywhere; }
+#kbm .tvrail .who2 code { font: calc(11px * var(--fs)) "JetBrains Mono", ui-monospace, monospace; color: var(--ink-3); }
+#kbm .mini { all: unset; cursor: pointer; margin-left: 6px; font-size: calc(10.5px * var(--fs)); color: var(--muted); }
+#kbm .mini:hover, #kbm .mini:focus-visible { color: var(--ink); }
+#kbm .tvrail .why { font-size: calc(11px * var(--fs)); color: var(--slate); margin-bottom: 6px; }
+#kbm .tvrail .who2.dev { margin: 0 0 6px; }
+#kbm .tvrail .tier { font-size: calc(10.5px * var(--fs)); color: var(--run-text); }
 #kbm .tvrail .rs .editrefusal { margin-top: 6px; }
 
 #kbm .tvhead .mv { position: relative; }
@@ -910,7 +928,7 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
 #legend svg { vertical-align: middle; }
 
 
-#nav .matches, #nav .outline, #nav .leaderboard, #panel, :is(#kb, #nav, #dg) .menu, #kb .col .body, #kbm .modal, #tkm .modal, #kbm .tvbody, #kbm .tvcol, #kbm .tv textarea.fv.long, #dg #catalog, #admin {
+#nav .matches, #nav .outline, #nav .leaderboard, #panel, :is(#kb, #nav, #dg) .menu, #kb .col .body, #kbm .modal, #tkm .modal, #kbm .tvbody, #kbm .tvcol, #kbm .tvrail .box, #kbm .tv textarea.fv.long, #dg #catalog, #admin {
   overflow-x: hidden; overflow-y: auto; scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--slate) 25%, transparent) transparent; }
 
 .src::after { content: attr(data-src); margin-left: .45em; color: color-mix(in srgb, var(--mapped) 70%, transparent); }
