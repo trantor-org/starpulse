@@ -15,6 +15,15 @@ export const canvasSpace = (viewport: number, nav: number, rail: number) => ({ l
 
 export type ViewName = "constellation" | "kanban" | "dags" | "admin";
 
+/** The page's phone width: no navigator and no rail, and no Star Map, which is desktop-only. Width alone, so a landscape phone wider than this keeps it. */
+export const PHONE = "(max-width: 900px)";
+
+/** Whether the page is at phone width now; false where the browser has no `matchMedia`. */
+export const onPhone = () => window.matchMedia?.(PHONE).matches ?? false;
+
+/** The view the page shows for the one an address or the Admin chose: the Kanban in place of the Star Map at phone width. */
+export const shownView = (view: ViewName, phone: boolean): ViewName => (phone && view === "constellation" ? "kanban" : view);
+
 /** Whether the address is a retired per-graph one (`/board`, `/flow/<name>`, `/#sec-<name>`): those open the Star Map whatever "Opens on" says. */
 export const retired = (pathname: string, hash: string) => pathname !== "/" || hash !== "";
 

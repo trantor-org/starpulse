@@ -7,7 +7,7 @@ import { loadLateFonts } from "./render/fonts";
 import { renderer } from "./render/renderer";
 import type { Renderer } from "./render/rendererTypes";
 import { NO_BOARD_MS, markDrawn } from "./shared/boardMark";
-import { retired, viewOf } from "./shared/nav";
+import { onPhone, retired, shownView, viewOf } from "./shared/nav";
 
 /** What the page adopts from its boot. */
 export interface Booted {
@@ -30,8 +30,10 @@ const frameOf = <T extends HTMLElement>(id: string) => document.getElementById(i
 export function boot(mount: () => void): Booted {
   const canvas = frameOf<HTMLCanvasElement>("c"), tip = frameOf<HTMLDivElement>("tip"), panel = frameOf<HTMLDivElement>("panel");
   const admin = new AdminStore(), store = new HudStore();
-  // a bare address opens the view the Admin chose; one that names a view opens that, and a view that covers the map leaves it undrawn
-  const star = viewOf(location.search, retired(location.pathname, location.hash) ? "constellation" : admin.get().view) === "constellation";
+  // a bare address opens the view the Admin chose; one that names a view opens that, and a view that covers the map leaves it undrawn;
+  // a phone width has no Star Map, so it opens the Kanban whatever the address or the Admin chose
+  const wanted = viewOf(location.search, retired(location.pathname, location.hash) ? "constellation" : admin.get().view);
+  const star = shownView(wanted, onPhone()) === "constellation";
   let mounted = false;
   const open = () => {
     if (mounted) return;

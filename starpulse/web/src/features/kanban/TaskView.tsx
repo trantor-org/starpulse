@@ -1,6 +1,7 @@
 // The task view: every section reads in place and edits in place, one at a time, each Save a guarded write of that section's diff.
 import { Fragment, useCallback, useEffect, useEffectEvent, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { ago, fmtAt } from "../../shared/clock";
+import { usePhone } from "../../shared/usePhone";
 import { RatingControl } from "./RatingControl";
 import { columnsOf, prReadState, roleOf, type KanbanTask } from "./kanbanModel";
 import { startLane, startable } from "./start";
@@ -307,6 +308,7 @@ const CHECKLIST_FIELDS = ["acceptanceCriteria", "definitionOfDone"] as const;
 const unnumbered = (r: TaskRecord) => CHECKLIST_FIELDS.some((field) => r[field].some((item) => !item.n));
 
 export function TaskView(p: TaskViewProps) {
+  const phone = usePhone();
   const opened = p.record ?? fromSnapshot(p.task);
   const [editing, setEditing] = useState<Section | null>(p.record ? p.initialEditing ?? null : null);
   const [seenRecord, setSeenRecord] = useState(p.record);
@@ -536,7 +538,7 @@ export function TaskView(p: TaskViewProps) {
             </button>
             <LanePill lane={p.task.lane} role={roleOf(roles, p.task.lane)} name={p.lane} />
             {p.saving && <span className="k">saving</span>}
-            <a href="/" onClick={(e) => { e.preventDefault(); p.constellation(); }}>Open in Star Map ↗</a>
+            {phone ? <span className="off" aria-disabled="true" title="Star Map is desktop-only">Open in Star Map ↗</span> : <a href="/" onClick={(e) => { e.preventDefault(); p.constellation(); }}>Open in Star Map ↗</a>}
             <div className="acts">
               {startVisible && <button className="startbtn" disabled={!startable(p.task, roles) || unavailable}
                 title={startable(p.task, roles) ? undefined : working?.reason}

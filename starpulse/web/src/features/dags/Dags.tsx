@@ -9,6 +9,7 @@ import { lastLine, Orb, poolText, Strip, TieChip, type LedgerGo } from "./DagPar
 import { closedProcessKeys, filterRows, group, order, PHASES, processNames, RECENCY, recent, refusal, rowEstimate, rows, short, ties, type DagData, type Phase, type Row, type Tie } from "./dagsModel";
 import { ChoiceMenu } from "../../shared/ChoiceMenu";
 import { useViewActive } from "../../shared/Kept";
+import { PHONE } from "../../shared/nav";
 import { BOARD, ledgerLevel, type Path } from "../../render/levels";
 import { refused, startRun } from "../../render/panels";
 import { Viewport, ViewportRow } from "../../shared/ViewportRows";
@@ -16,7 +17,6 @@ import { Viewport, ViewportRow } from "../../shared/ViewportRows";
 type Post = Parameters<typeof startRun>[1];
 
 /** The phone layout: a row takes two lines (the stylesheet's `max-width: 900px` query). */
-const PHONE = "(max-width: 900px)";
 const phone = () => window.matchMedia?.(PHONE).matches ?? false;
 const onPhone = (change: () => void) => {
   const q = window.matchMedia?.(PHONE);

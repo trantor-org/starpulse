@@ -90,6 +90,7 @@ aside h3 { margin: 0 0 8px; font-size: calc(10px * var(--fs)); font-weight: 500;
 .node:hover { background: color-mix(in srgb, var(--slate) 8%, transparent); color: var(--ink); }
 .node.on { background: linear-gradient(90deg, color-mix(in srgb, var(--agent) 18%, transparent), transparent); color: var(--ink); }
 .node.here { box-shadow: inset 2px 0 0 var(--agent); }
+.node:disabled { opacity: .4; cursor: not-allowed; background: none; color: inherit; }
 .node .g { justify-self: center; border-radius: 50%; border: 1.5px solid currentColor; box-sizing: border-box; transition: box-shadow .2s, border-color .2s; }
 .node.live .g { box-shadow: 0 0 0 3px color-mix(in srgb, var(--run) 25%, transparent), 0 0 10px var(--run); border-color: var(--run); }
 .node .n { font-size: calc(10.5px * var(--fs)); color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -367,7 +368,8 @@ aside h3 { margin: 0 0 8px; font-size: calc(10px * var(--fs)); font-weight: 500;
 #kbm .tvlane i { width: 6px; height: 6px; border-radius: 50%; background: var(--c); box-shadow: 0 0 6px var(--c); }
 #kbm .tvlane[data-role=ready] { --c: var(--ready); } #kbm .tvlane[data-role=waiting] { --c: var(--slate); } #kbm .tvlane[data-role=working] { --c: var(--run); }
 #kbm .tvlane[data-role=review] { --c: var(--agent); } #kbm .tvlane[data-role=attention] { --c: var(--fail); } #kbm .tvlane[data-role=done] { --c: var(--ok); }
-#kbm .tvmeta > a { font-size: calc(11px * var(--fs)); white-space: nowrap; }
+#kbm .tvmeta > :is(a, .off) { font-size: calc(11px * var(--fs)); white-space: nowrap; }
+#kbm .tvmeta > .off { opacity: .4; cursor: not-allowed; }
 #kbm .tv .acts { margin-left: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; }
 #kbm .tv .acts button { flex: none; white-space: nowrap; }
 #kbm .tv .acts .tvx { all: unset; color: var(--muted); font-size: calc(14px * var(--fs)); padding: 2px 6px; margin-left: 4px; }
@@ -1018,6 +1020,7 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
   #pnav button span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #pnav button:is(:hover, :focus-visible) { color: var(--ink-3); }
   #pnav button:focus-visible { outline: 1px solid var(--agent); outline-offset: -3px; }
+  #pnav button:disabled { opacity: .35; cursor: not-allowed; color: inherit; }
   #pnav button.on { color: var(--ink); background: linear-gradient(180deg, color-mix(in srgb, var(--agent) 18%, transparent), transparent); box-shadow: inset 0 2px 0 var(--agent); }
   #pnav svg { width: 17px; height: 17px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
   #pnav svg.kb { fill: currentColor; stroke: none; }
