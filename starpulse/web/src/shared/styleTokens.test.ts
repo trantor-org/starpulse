@@ -97,3 +97,11 @@ describe("colorLiterals", () => {
     expect(colorLiterals(":root { --ok: #34d399; --fs: 1; } a { color: var(--ok); }")).toEqual([]);
   });
 });
+
+describe("stylesheet selectors against a drawn diagram", () => {
+  it("resets only a button.node: mermaid draws a flowchart node as g.node, and a reset on it would wipe its transform", () => {
+    const rules = styles.replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(rules).not.toMatch(/(^|\})\s*\.node\s*\{/);
+    expect(rules).toMatch(/(^|\})\s*button\.node\s*\{\s*all:\s*unset/);
+  });
+});

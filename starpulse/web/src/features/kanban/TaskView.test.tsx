@@ -179,10 +179,10 @@ describe("the task view's right rail", () => {
   const trail = Array.from({ length: 7 }, (_, i) => ({ state: `step_${i}`, event: `event_${i}`, at: 800 + i }));
   const rows = (html: string, section: string) => railOf(html).split('<section').find((x) => x.includes(`<span class="t">${section}</span>`)) ?? "";
 
-  it("draws Status, Pull requests, CI history, Dependencies and Details in that order, each heading with its count", () => {
+  it("draws Status, Pull requests, CI history, Dependencies, Docs and Details in that order, each heading with its count", () => {
     const html = draw({ tasks: many });
 
-    expect(headings(html)).toEqual(["Status", "Session", "Pull requests", "CI history", "Dependencies", "Details"]);
+    expect(headings(html)).toEqual(["Status", "Session", "Pull requests", "CI history", "Dependencies", "Docs", "Details"]);
     expect(rows(html, "Pull requests")).toContain('<span class="n">1</span>');
     expect(rows(html, "Dependencies")).toContain('<span class="n">9</span>');
     expect(rows(html, "Status")).not.toContain('class="n"');

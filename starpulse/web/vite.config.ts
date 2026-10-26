@@ -9,11 +9,14 @@ import { defineConfig } from "vitest/config";
 // `--mode one-file` builds the same page as one script, into ../static/one-file, for
 // `starpulse.cli.demo`: a demo is a single HTML file with no server to fetch a chunk
 // from, so it inlines that script. `pnpm run build` runs both, the page first, since
-// its build empties ../static.
+// its build empties ../static. The demo leaves mermaid out (src/demo/noMermaid.ts): its
+// bundle would add 5 MB and strings the demo leak scan refuses, so a demo's diagram is
+// the mermaid source in a code fence.
 export default defineConfig(({ mode }) => {
   const oneFile = mode === "one-file";
   return {
     plugins: [react()],
+    resolve: { alias: oneFile ? [{ find: "mermaid", replacement: new URL("src/demo/noMermaid.ts", import.meta.url).pathname }] : [] },
     build: {
       outDir: oneFile ? "../static/one-file" : "../static",
       emptyOutDir: !oneFile,

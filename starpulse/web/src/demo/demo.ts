@@ -145,6 +145,13 @@ const HANDLERS: Record<string, Handler> = {
   "/api/rating": (server, _path, _query, init) => server.rate(String(init?.body ?? "{}")),
   "/api/scheduler": (server, _path, _query, init) => server.scheduler(init?.method ?? "GET", String(init?.body ?? "")),
   "/api/harnesses": () => json(HARNESSES),
+  "/api/milestones": (_server, path) => json({ milestone: demoMilestone(decodeURIComponent(path.slice("/api/milestones/".length))) }),
+  "/api/docs": (_server, path) => {
+    const id = decodeURIComponent(path.slice("/api/docs/".length));
+    if (path === "/api/docs") return json({ docs: DEMO_DOCS.map(({ body: _body, ...listed }) => listed) });
+    const doc = DEMO_DOCS.find((d) => d.id === id);
+    return doc ? json({ doc }) : json({ error: `${id} is not an open doc` }, 404);
+  },
   "/api/doctor": (server) => json(demoContract(server.snapshot, scenarioOf(globalThis.location?.search ?? ""))),
   "/api/ledger": (server, path, query) => json(server.ledgerPage(decodeURIComponent(path.slice("/api/ledger/".length)), query.has("before") ? Number(query.get("before")) : undefined, Number(query.get("limit") ?? PAGE))),
   "/api/runs": (server, path, _query, init) => {
@@ -537,6 +544,23 @@ const startingLane = (machine: Machine, roles: Roles): string => {
 };
 
 /** The Markdown every demo description carries: a table and a fenced block the dialog draws, and the creation sections it hides. */
+const DEMO_DOCS = [
+  {
+    id: "doc-1", title: "Demo spec", type: "specification",
+    body: [
+      "## Outcome", "A synthetic spec the public preview opens in the task dialog.",
+      "## Decisions", "| Decision | Measure |\n| --- | ---: |\n| Draw a diagram | 1 |\n| Load mermaid late | 2 |",
+      "## Flow", "```mermaid\nflowchart LR\n  Task --> Milestone\n  Milestone --> Spec\n```",
+    ].join("\n\n"),
+  },
+  { id: "doc-2", title: "Demo notes", type: "guide", body: "## Notes\n\nThis doc contains no real board data." },
+];
+
+/** A synthetic milestone of any id, whose one spec is the demo spec. */
+const demoMilestone = (id: string) => ({
+  id, title: "Demo milestone", specs: ["doc-1 — Demo spec"], description: "## Outcome\n\nThe public preview shows a milestone, its spec and its docs.\n\n## Spec\n\n- doc-1 — Demo spec",
+});
+
 const DEMO_BODY = [
   "## Rollout",
   "| Stage | Hosts | Window |\n| --- | ---: | --- |\n| Canary | 1 | 10 min |\n| Fleet | 24 | 1 h |",
@@ -554,6 +578,7 @@ const demoRecord = (card: RawTask, roles: Roles, now: number, failing = false): 
     priority: "Medium",
     labels: card.labels ?? ["demo"],
     milestone: card.milestone ?? "",
+    documentation: ["docs/specs/doc-1 - Demo spec.md", "docs/doc-2 - Demo notes.md"],
     dependencies: card.dependencies ?? [],
     description: [card.description ?? "A synthetic task used by the public StarPulse preview.", DEMO_BODY, criteria && criteriaBlock(criteria)].filter(Boolean).join("\n\n"),
     ...(criteria && { start_criteria: criteria }),

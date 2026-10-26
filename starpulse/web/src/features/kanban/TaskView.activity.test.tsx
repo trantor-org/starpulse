@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TaskView } from "./TaskView";
-import { props, record, task } from "../../tests/taskViewFixtures";
+import { props, record, task, stubWrites } from "../../tests/taskViewFixtures";
 
 describe("the task view's Activity and Comments sections", () => {
   const mounted: { root: ReturnType<typeof createRoot>; host: HTMLElement }[] = [];
@@ -69,7 +69,7 @@ describe("the task view's Activity and Comments sections", () => {
 
   it("comment posts an edit carrying the comment and writes no field", async () => {
     const fetcher = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ task: "TASK-9" })));
-    vi.stubGlobal("fetch", fetcher);
+    stubWrites(fetcher);
     const host = mount({ record: { ...record, comments: [] } });
     typeInto(q<HTMLTextAreaElement>(host, "#comments textarea")!, "ship it");
 

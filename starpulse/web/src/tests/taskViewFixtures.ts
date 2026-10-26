@@ -1,3 +1,4 @@
+import { vi } from "vitest";
 import { LIFECYCLE_ROLES } from "./lifecycleRoles";
 import type { KanbanTask } from "../features/kanban/kanbanModel";
 import type { TaskView } from "../features/kanban/TaskView";
@@ -25,3 +26,8 @@ export const props = (over: Partial<Parameters<typeof TaskView>[0]> = {}): Param
   names: { ready: "Ready", done: "Done", review: "Review" }, roles: LIFECYCLE_ROLES, capabilities: { edit: true, archive: true }, saving: false, claiming: false,
   close: () => {}, hide: () => {}, constellation: () => {}, move: () => {}, start: () => {}, ...over,
 });
+
+/** Install `writer` as fetch, except that the dialog's Docs reads are answered "not found" and never reach it, so it sees only the writes. */
+export const stubWrites = (writer: typeof fetch) => vi.stubGlobal("fetch", (url: string | URL | Request, init?: RequestInit) => (
+  /^\/api\/(milestones\/|docs$)/.test(String(url)) ? Promise.resolve(new Response("{}", { status: 404 })) : writer(url, init)
+));

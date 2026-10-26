@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { KanbanTask } from "./kanbanModel";
-import { changedFields, ciHistory, detailFields, editKey, fetchRecord, labelRuleError, markdown, menuKey, postComment, saveSection, saveTask, SECTION_FIELDS, setDetailField, taskActivity, taskBody, toggleItem, type MenuState, type TaskRecord } from "./taskViewModel";
+import { changedFields, ciHistory, detailFields, docLinks, fetchDoc, fetchDocs, fetchMilestone, editKey, fetchRecord, labelRuleError, markdown, menuKey, postComment, saveSection, saveTask, SECTION_FIELDS, setDetailField, taskActivity, taskBody, toggleItem, type MenuState, type TaskRecord } from "./taskViewModel";
 
 const record = {
   title: "T", profile: "@agent-standard-high", priority: "High", labels: ["needs-review"], milestone: "m-89", dependencies: ["TASK-1"],
@@ -362,5 +362,45 @@ describe("setDetailField", () => {
     expect(setDetailField(["kind-execute", "x", "size-3", "size-8"], "size", "5")).toEqual(["kind-execute", "x", "size-5"]);
     expect(setDetailField(["x", "mode-attended"], "mode", "")).toEqual(["x"]);
     expect(setDetailField(["x"], "area", "docs")).toEqual(["x", "area-docs"]);
+  });
+});
+
+describe("docLinks", () => {
+  const milestone = { id: "m-89", title: "Task dialog", description: "d", specs: ["doc-993 — Task dialog redesign"] };
+  const docs = [{ id: "doc-993", title: "Task dialog redesign", type: "specification" }, { id: "doc-12", title: "Working notes", type: "other" }];
+
+  it("lists the milestone, its spec, then each linked doc once, titled from the board's list", () => {
+    const links = docLinks({ milestone: "m-89", documentation: ["docs/specs/doc-993 - Task dialog redesign.md", "docs/doc-12 - Working notes.md"] }, milestone, docs);
+
+    expect(links).toEqual([
+      { kind: "Milestone", id: "m-89", title: "Task dialog", openable: true },
+      { kind: "Spec", id: "doc-993", title: "Task dialog redesign", openable: true },
+      { kind: "Doc", id: "doc-12", title: "Working notes", openable: true },
+    ]);
+  });
+
+  it("names a specification the milestone does not list a Spec, and leaves a file the board does not serve closed", () => {
+    const links = docLinks({ milestone: "", documentation: ["docs/doc-993 - Task dialog redesign.md", "docs/doc-404 - Gone.md", "notes.md"] }, null, docs);
+
+    expect(links).toEqual([
+      { kind: "Spec", id: "doc-993", title: "Task dialog redesign", openable: true },
+      { kind: "Doc", id: "doc-404", title: "Gone", openable: false },
+      { kind: "Doc", id: "", title: "notes", openable: false },
+    ]);
+  });
+
+  it("keeps the milestone row closed until the milestone is read, and has no rows for a task with neither", () => {
+    expect(docLinks({ milestone: "m-89" }, null, [])).toEqual([{ kind: "Milestone", id: "m-89", title: "m-89", openable: false }]);
+    expect(docLinks({ milestone: "" }, null, docs)).toEqual([]);
+  });
+});
+
+describe("the doc reads", () => {
+  it("unwrap the board's milestone, list and doc, and give nothing when the board refuses", async () => {
+    expect(await fetchMilestone("m-89", reply(200, { milestone: { id: "m-89" } }) as never)).toEqual({ id: "m-89" });
+    expect(await fetchDocs(reply(200, { docs: [{ id: "doc-1" }] }) as never)).toEqual([{ id: "doc-1" }]);
+    expect(await fetchDoc("doc-1", reply(200, { doc: { id: "doc-1", body: "b" } }) as never)).toEqual({ id: "doc-1", body: "b" });
+    expect(await fetchMilestone("m-1", reply(404, { error: "no" }) as never)).toBeNull();
+    expect(await fetchDocs((async () => { throw new Error("offline"); }) as never)).toEqual([]);
   });
 });

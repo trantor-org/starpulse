@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TaskView } from "./TaskView";
-import { props, task } from "../../tests/taskViewFixtures";
+import { props, task, stubWrites } from "../../tests/taskViewFixtures";
 import type { Rating } from "../../api";
 
 /** The deviated sample: a step-down trial carries a `trial-` label, and only it is rated. */
@@ -27,7 +27,7 @@ describe("the Rating section of the task view", () => {
   /** Stub the writer: `answer` makes each POST's response, the calls come back as parsed bodies. */
   const stubWriter = (answer: (body: Record<string, unknown>) => Response = (b) => new Response(JSON.stringify({ task: b.task, verdict: b.verdict, reason: b.reason ?? "", changes: 3 }))) => {
     const fetcher = vi.fn<typeof fetch>(async (_url, init) => answer(JSON.parse(String(init?.body))));
-    vi.stubGlobal("fetch", fetcher);
+    stubWrites(fetcher);
     return () => fetcher.mock.calls.map(([url, init]) => ({ url: String(url), ...JSON.parse(String(init?.body)) }));
   };
   const section = (host: HTMLElement) => [...host.querySelectorAll<HTMLElement>(".tvrail .sec.rs")].find((s) => s.querySelector(".t")?.textContent === "Rating") ?? null;

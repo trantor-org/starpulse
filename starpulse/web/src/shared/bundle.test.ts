@@ -46,14 +46,15 @@ function build(out: string, ...args: string[]): Promise<void> {
   });
 }
 
-/** Each script chunk in a build's `assets/`: its size and the source files it holds. */
+/** Each script chunk in a build's `assets/`: its size and the source files it holds (none for a chunk the build wrote no map for, such as one of mermaid's). */
 function chunks(out: string): { name: string; bytes: number; sources: string[] }[] {
-  return readdirSync(join(out, "assets"))
-    .filter((f: string) => f.endsWith(".js"))
-    .map((name: string) => ({
+  const files: string[] = readdirSync(join(out, "assets"));
+  return files
+    .filter((f) => f.endsWith(".js"))
+    .map((name) => ({
       name,
       bytes: readFileSync(join(out, "assets", name)).length,
-      sources: JSON.parse(readFileSync(join(out, "assets", `${name}.map`), "utf8")).sources as string[],
+      sources: files.includes(`${name}.map`) ? JSON.parse(readFileSync(join(out, "assets", `${name}.map`), "utf8")).sources as string[] : [],
     }));
 }
 
@@ -96,6 +97,22 @@ describe("the built page", () => {
     const sync = chunks(served).filter((c) => c.name === entry || preloads.includes(c.name));
     const sources = sync.flatMap((c) => c.sources);
     expect(LAZY_BOARD_EXTRAS.filter((v) => holds(sources, v))).toEqual([]);
+  });
+
+  it("loads mermaid only when a doc opens: in a chunk of its own, never in the sync first-paint chunks", () => {
+    const html = readFileSync(join(served, "index.html"), "utf8");
+    const entry = /<script type="module"[^>]*src="\/assets\/([^"]+)"/.exec(html)![1];
+    const preloads = [...html.matchAll(/modulepreload[^>]*href="\/assets\/([^"]+)"/g)].map((m) => m[1]);
+    const all = chunks(served);
+    const mermaid = (c: { sources: string[] }) => c.sources.some((source) => source.includes("/node_modules/mermaid/"));
+    expect(all.filter((c) => (c.name === entry || preloads.includes(c.name)) && mermaid(c))).toEqual([]);
+    expect(all.some(mermaid)).toBe(true);
+  });
+
+  it("leaves mermaid out of the one-file demo, whose leak scan refuses its strings and whose size it would multiply", () => {
+    const [script] = chunks(oneFile);
+    expect(script.sources.some((source) => source.includes("/node_modules/mermaid/"))).toBe(false);
+    expect(script.bytes).toBeLessThan(1_500_000);
   });
 
   it("still ships every view, each in a chunk the page loads on demand", () => {
