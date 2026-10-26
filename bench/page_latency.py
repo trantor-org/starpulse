@@ -550,9 +550,10 @@ def time_page(
         page.wait_for_function("() => !document.querySelector('[data-view=kanban]')?.hasAttribute('inert')", timeout=10_000)
         page.wait_for_selector("#cols .card[data-id]", timeout=30_000)
         ahead = 0
-        for task in page.eval_on_selector_all(
+        shown = page.eval_on_selector_all(
             "#cols .card[data-id]", "els => els.filter(e => e.checkVisibility()).map(e => e.dataset.id)"
-        )[:samples]:
+        )
+        for task in shown[:samples]:
             card = page.locator(f'#cols .card[data-id="{task}"]:visible').first
             if not card.count():
                 continue
@@ -602,6 +603,21 @@ def time_page(
         rows.append(Row("page animation-frame work", "frame", FRAME_BUDGET_MS, probe["frames"]))
         # every entry is a task over 50 ms, so one is enough to put the row over
         rows.append(Row("main-thread tasks over 50 ms", "frame", LONG_TASK_MS, probe["longTasks"]))
+
+        # The In Progress drill-in (`?drill=TASK-N`) animates its streams every frame; a fresh page, so its frames stand alone.
+        if shown:
+            page.goto(f"{base.rstrip('/')}/?drill={shown[0]}", wait_until="domcontentloaded")
+            page.wait_for_selector('[aria-label="In Progress drill-in"] canvas', timeout=30_000)
+            page.wait_for_timeout(3000)
+            rows.append(
+                Row(
+                    "In Progress drill-in animation-frame work",
+                    "frame",
+                    FRAME_BUDGET_MS,
+                    page.evaluate("window.__sp.frames"),
+                    note="the Suns board streaming for 3 s",
+                )
+            )
         browser.close()
     return rows
 

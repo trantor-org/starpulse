@@ -115,6 +115,18 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 const HANDLERS: Record<string, Handler> = {
   "/api/history": (server, _path, query) => {
     const task = query.get("task") ?? "", machine = query.get("machine");
+    // the drill-in's replay: every machine's trail of the task, each step a move from the state before it
+    if (query.has("hours"))
+      return json({
+        task,
+        events: server.snapshot.flows
+          .flatMap((f) => {
+            const init = f.machine.states.find((s) => s.initial)?.id ?? f.machine.states[0]?.id ?? "start";
+            const trail = f.agents.find((x) => (x.task ?? x.id) === task)?.trail ?? [];
+            return trail.map(({ at, event, state }, i) => ({ at, machine: f.name, event, from: trail[i - 1]?.state ?? init, to: state }));
+          })
+          .sort((a, b) => a.at - b.at),
+      });
     if (!machine) return json({ task, path: server.lanes[task] ?? [] });
     const f = server.snapshot.flows.find((x) => x.name === machine);
     if (!f) return json({ error: `no machine ${machine}` }, 404);

@@ -2,7 +2,7 @@
 // the right rail (recent moves on top, the legend at the bottom), and the
 // tooltip and panel the renderer fills. The canvas is the renderer's; this reads
 // what it publishes and asks it to move.
-import { Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { NO_STARMAP_FILTERS, STARMAP_PREFS_KEY, useFilters } from "./shared/viewPrefs";
 import { AdminStore } from "./features/admin/adminPrefs";
 import { HistoryWindowStore } from "./features/admin/historyWindow";
@@ -25,6 +25,9 @@ import type { Renderer } from "./render/rendererTypes";
 import { booted } from "./boot";
 import { search, type Target } from "./features/level/search";
 import { StartStore, fetchHarnesses, postStart } from "./features/kanban/start";
+
+/** The In Progress drill-in; loaded only when `?drill=TASK-N` opens it. */
+const SunsDrillIn = lazy(() => import("./features/level/SunsDrillIn").then((m) => ({ default: m.SunsDrillIn })));
 
 /** Keep page-wide React reconciliation outside the two-frame reveal and a rapid follow-up switch. */
 const REVEAL_SETTLE_FRAMES = 8;
@@ -104,6 +107,13 @@ export function App() {
     commitView(v, url);
   }, [admin, commitView, reveal]);
   useEffect(() => () => cancelAnimationFrame(pendingView.current), []);
+  const [drill, setDrill] = useState(() => new URLSearchParams(location.search).get("drill"));
+  const closeDrill = () => {
+    const q = new URLSearchParams(location.search);
+    q.delete("drill");
+    history.replaceState(null, "", `${location.pathname}${q.size ? `?${q}` : ""}${location.hash}`);
+    setDrill(null);
+  };
   // stable, so a stream event that changes nothing the Kanban shows does not draw it again
   const flyToLane = useCallback((lane: string) => { choose("constellation"); renderer.current?.go([...BOARD, { kind: "state", id: lane }]); }, [choose]);
 
@@ -170,6 +180,7 @@ export function App() {
         }} />
       {!held && <div ref={tip} id="tip" />}
       {!held && <div ref={panel} id="panel" />}
+      {drill && <Suspense fallback={null}><SunsDrillIn tasks={hud.cards} roles={hud.roles} task={drill} dags={hud.dags.length} onClose={closeDrill} /></Suspense>}
     </>
   );
 }

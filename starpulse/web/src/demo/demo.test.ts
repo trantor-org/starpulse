@@ -346,6 +346,16 @@ describe("the demo server", () => {
     expect((await s.fetch("/api/history?task=DEMO-1&machine=nowhere")).status).toBe(404);
   });
 
+  it("answers a task's 24-hour replay as machine events from its trail on every machine", async () => {
+    const s = new DemoServer(fixture());
+
+    expect(await body(s.fetch("/api/history?task=DEMO-1&hours=24"))).toEqual({
+      task: "DEMO-1",
+      events: [{ at: 50, machine: "in-progress", event: "RED", from: "start", to: "red" }],
+    });
+    expect(await body(s.fetch("/api/history?task=DEMO-9&hours=24"))).toEqual({ task: "DEMO-9", events: [] });
+  });
+
   it("gives each Board card a verdict for every column its lane exits to", () => {
     const s = new DemoServer(fixture());
 
