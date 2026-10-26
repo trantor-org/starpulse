@@ -570,7 +570,7 @@ const demoRecord = (card: RawTask, roles: Roles, now: number, failing = false): 
       { created: stamp(now - 5400), author: "starpulse/task-actor", text: "Every dependency has merged." },
       { created: stamp(now - 3600), author: "agent", text: "Verified AC #1: `pnpm exec vitest run` failed on the stale field, then passed" },
       { created: stamp(now - 2700), author: "operator", text: "Keep the **saved** card in place while it refreshes." },
-      { created: stamp(now - 1800), author: "agent", text: "Verified AC #2: the card re-rendered within one snapshot, see TASK-1" },
+      { created: stamp(now - 1800), author: "agent", text: "Verified AC #2: `pnpm exec vitest run -t refresh` exited 0\n\n```\n Test Files  1 passed (1)\n      Tests  3 passed (3)\n```" },
     ] : [],
   };
 };
