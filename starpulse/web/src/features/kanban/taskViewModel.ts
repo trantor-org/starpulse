@@ -25,6 +25,8 @@ export interface TaskRecord {
   priority: string;
   labels: string[];
   milestone: string;
+  /** The task's type (`story`); read-only, and absent from a record the board does not type. */
+  type?: string;
   dependencies: string[];
   description: string;
   plan: string;
@@ -168,7 +170,7 @@ export async function saveTask(
 export type Section = "title" | "description" | "acceptanceCriteria" | "definitionOfDone" | "plan" | "notes" | "details";
 export const SECTION_FIELDS: Record<Section, TaskField[]> = {
   title: ["title"], description: ["description"], acceptanceCriteria: ["acceptanceCriteria"], definitionOfDone: ["definitionOfDone"],
-  plan: ["plan"], notes: ["notes"], details: ["profile", "priority", "milestone"],
+  plan: ["plan"], notes: ["notes"], details: ["profile", "priority", "labels", "milestone"],
 };
 
 /** How a section is named in its ✎ label and in the toast that confirms its save. */
@@ -203,6 +205,45 @@ export function editKey(key: string, ctrl: boolean, meta: boolean): EditAction |
 }
 
 export const PRIORITIES = ["High", "Medium", "Low"];
+
+/** The first-class fields the board stores as a `<field>-<value>` label, with the values the Details select offers (doc-993 D10). */
+export const LABEL_FIELDS = { kind: ["execute", "decide", "investigate", "verify"], size: ["1", "2", "3", "5", "8"], area: [] as string[], mode: ["attended", "unattended"] };
+export type LabelField = keyof typeof LABEL_FIELDS;
+const LABEL_FIELD_NAMES = Object.keys(LABEL_FIELDS) as LabelField[];
+const TRIAL = "trial-";
+/** The label rule as the Add label control states it before anything is typed (doc-993 D11). */
+export const LABEL_RULE = "kebab-case · 3 words · 24 chars · no dates or ids";
+
+const fieldOf = (label: string) => LABEL_FIELD_NAMES.find((field) => label.startsWith(`${field}-`));
+
+/** A record's labels as Details draws them: each field's value (the first label of its prefix, "" when none) and the free-form labels as chips. */
+export function detailFields(labels: string[]): Record<LabelField, string> & { chips: string[] } {
+  const value = (field: LabelField) => labels.find((label) => fieldOf(label) === field)?.slice(field.length + 1) ?? "";
+  return {
+    kind: value("kind"), size: value("size"), area: value("area"), mode: value("mode"),
+    chips: labels.filter((label) => !fieldOf(label) && !label.startsWith(TRIAL)),
+  };
+}
+
+/** The labels with `field` set to `value`: its label replaced in place, any second label of its prefix dropped, and none left for an empty value. */
+export function setDetailField(labels: string[], field: LabelField, value: string): string[] {
+  const first = labels.findIndex((label) => fieldOf(label) === field);
+  const next = value ? `${field}-${value}` : null;
+  const rest = labels.map((label, i) => fieldOf(label) === field ? (i === first ? next : null) : label);
+  return (first < 0 && next ? [...rest, next] : rest).filter((label): label is string => label !== null);
+}
+
+/** Why the board would refuse a free-form `label`, in the words the control shows as it is typed; "" when it passes. */
+export function labelRuleError(label: string): string {
+  const field = LABEL_FIELD_NAMES.find((name) => label.startsWith(`${name}-`));
+  if (field) return `${field}- is a field; set ${field} above.`;
+  const words = label.split("-").length;
+  const dated = /\d{3,}/.test(label) ? " Dates and ids go in meta." : "";
+  if (label.length > 24 || words > 3) return `"${label}" is ${label.length} chars, ${words} words; labels are 3 words, 24 chars at most.${dated}`;
+  if (dated) return `"${label}" carries a date or id.${dated}`;
+  if (!/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/.test(label)) return `"${label}" is not kebab-case: lowercase words joined by hyphens.`;
+  return "";
+}
 /** The levels of a task's Impact and Urgency, which the scheduler's Priority matrix maps to a weight. */
 export const LEVELS = ["high", "medium", "low"];
 

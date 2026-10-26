@@ -123,7 +123,7 @@ describe("editing one section at a time", () => {
     expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ description: "a better description" }), ["description"]);
   });
 
-  it("edits the title and Details with their own bars, Details as profile, priority and milestone selects", async () => {
+  it("edits the title and Details with their own bars, Details as kind, size, area, mode, priority, profile and milestone selects", async () => {
     const fetcher = stubWriter();
     const host = mount({ profiles: ["@agent-standard-high", "@agent-light-low"], milestones: ["m-89", "m-90"] });
 
@@ -132,13 +132,85 @@ describe("editing one section at a time", () => {
     expect(q(host, ".tvhead")?.textContent).toContain("Ctrl+Enter saves · Esc cancels");
     click(pen(host, "details"));
     expect(open(host)).toHaveLength(1);
-    expect([...host.querySelectorAll(".sec.on select")].map((x) => x.getAttribute("aria-label"))).toEqual(["Profile", "Priority", "Milestone"]);
+    expect([...host.querySelectorAll(".sec.on select")].map((x) => x.getAttribute("aria-label"))).toEqual(["Kind", "Size", "Area", "Mode", "Priority", "Profile", "Milestone"]);
     const milestone = q<HTMLSelectElement>(host, '.sec.on select[aria-label="Milestone"]')!;
     act(() => { Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!.call(milestone, "m-90"); milestone.dispatchEvent(new Event("change", { bubbles: true })); });
     await key("Enter", { ctrlKey: true });
 
     expect(wrote(fetcher).changes).toEqual({ milestone: "m-90" });
     expect(q(host, ".toast")?.textContent).toBe("✓ Saved details");
+  });
+
+  const inRail = (host: HTMLElement) => [...host.querySelectorAll(".tvrail .props tr")].map((tr) => [tr.children[0].textContent, tr.children[1].textContent]);
+  const typeLabel = (host: HTMLElement, value: string) => {
+    const input = q<HTMLInputElement>(host, 'input[aria-label="Add label"]');
+    expect(input, "Add label input").toBeTruthy();
+    act(() => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value); input!.dispatchEvent(new Event("input", { bubbles: true })); });
+    return input!;
+  };
+  const labelled = { ...props().record!, labels: ["kind-execute", "size-5", "area-starpulse", "mode-attended", "follow-up", "needs-review"], type: "story" };
+
+  it("details: a row per field from the prefixed labels, and no prefixed label among the chips", () => {
+    const host = mount({ record: labelled });
+
+    expect(inRail(host)).toEqual([
+      ["kind", "execute"], ["size", "5"], ["area", "starpulse"], ["mode", "attended"], ["priority", "High"],
+      ["profile", "@agent-standard-high"], ["type", "story"], ["labels", "follow-upneeds-review"], ["milestone", "m-89"], ["created", "15m ago"],
+    ]);
+    expect([...host.querySelectorAll(".tvrail .props .chip")].map((c) => c.textContent)).toEqual(["follow-up", "needs-review"]);
+  });
+
+  it("details: editing a field rewrites its prefixed label and saves the labels", async () => {
+    const fetcher = stubWriter();
+    const host = mount({ record: labelled });
+
+    click(pen(host, "details"));
+    const size = q<HTMLSelectElement>(host, '.sec.on select[aria-label="Size"]')!;
+    act(() => { Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!.call(size, "8"); size.dispatchEvent(new Event("change", { bubbles: true })); });
+    click(q(host, 'button[aria-label="Remove follow-up"]'));
+    typeLabel(host, "audit");
+    await key("Enter", { ctrlKey: true });
+
+    expect(wrote(fetcher).changes).toEqual({ labels: ["kind-execute", "size-8", "area-starpulse", "mode-attended", "needs-review", "audit"] });
+  });
+
+  it("details: the label rule shows as the label is typed, and an invalid one is neither added nor saved", async () => {
+    const fetcher = stubWriter();
+    const host = mount({ record: labelled });
+
+    click(pen(host, "details"));
+    expect(q(host, ".rule")?.textContent).toBe("kebab-case · 3 words · 24 chars · no dates or ids");
+    typeLabel(host, "TASK-12");
+    expect(q(host, ".rule.err")?.textContent).toContain("not kebab-case");
+    await key("Enter", { ctrlKey: true });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("label refused: the board's refusal text draws under Add label, not in the banner", async () => {
+    const fetcher = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ error: "label \"audit\" is not on the board's list", skill: "" }), { status: 409 }));
+    vi.stubGlobal("fetch", fetcher);
+    const host = mount({ record: labelled });
+
+    click(pen(host, "details"));
+    typeLabel(host, "audit");
+    await key("Enter", { ctrlKey: true });
+
+    expect(q(host, ".rule.err")?.textContent).toBe('label "audit" is not on the board\'s list');
+    expect(q(host, ".editrefusal")).toBeNull();
+    expect(q(host, ".fv.chips")?.className).toContain("bad");
+    typeLabel(host, "audit-2");
+    expect(q(host, ".rule.err")).toBeNull();
+  });
+
+  it("label refused: Enter adds a valid label as a chip and clears the input", () => {
+    const host = mount({ record: labelled });
+
+    click(pen(host, "details"));
+    const input = typeLabel(host, "audit");
+    act(() => { input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); });
+
+    expect(input.value).toBe("");
+    expect([...host.querySelectorAll(".sec.on .chip")].map((c) => c.textContent?.replace("×", ""))).toEqual(["follow-up", "needs-review", "audit"]);
   });
 
   it("cancels the open editor on Escape, and a second Escape closes the modal", async () => {

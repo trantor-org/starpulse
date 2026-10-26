@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { KanbanTask } from "./kanbanModel";
-import { changedFields, ciHistory, editKey, fetchRecord, markdown, menuKey, postComment, saveSection, saveTask, SECTION_FIELDS, taskActivity, taskBody, toggleItem, type MenuState, type TaskRecord } from "./taskViewModel";
+import { changedFields, ciHistory, detailFields, editKey, fetchRecord, labelRuleError, markdown, menuKey, postComment, saveSection, saveTask, SECTION_FIELDS, setDetailField, taskActivity, taskBody, toggleItem, type MenuState, type TaskRecord } from "./taskViewModel";
 
 const record = {
   title: "T", profile: "@agent-standard-high", priority: "High", labels: ["needs-review"], milestone: "m-89", dependencies: ["TASK-1"],
@@ -163,14 +163,14 @@ describe("saving one section", () => {
     expect(result).toMatchObject({ ok: true, changed: ["description"] });
   });
 
-  it("writes Details' profile, priority and milestone and nothing else", async () => {
+  it("writes Details' profile, priority, labels and milestone and nothing else", async () => {
     const draft = { ...base, profile: "@agent-light-low", priority: "Low", milestone: "m-90", labels: ["x"], notes: "z" };
     const fetcher = ok();
 
     await saveSection("TASK-9", "details", base, draft, {}, fetcher);
 
-    expect(SECTION_FIELDS.details).toEqual(["profile", "priority", "milestone"]);
-    expect(Object.keys(sent(fetcher).changes)).toEqual(["profile", "priority", "milestone"]);
+    expect(SECTION_FIELDS.details).toEqual(["profile", "priority", "labels", "milestone"]);
+    expect(Object.keys(sent(fetcher).changes)).toEqual(["profile", "priority", "labels", "milestone"]);
   });
 
   it("sends a criterion added in the editor without a number, which the board assigns", async () => {
@@ -330,5 +330,37 @@ describe("a task's CI history", () => {
     expect(ciHistory(task({ machines: [{ machine: "in-progress", state: "pr_opened", at: 1, trail }] }))).toBeNull();
     expect(ciHistory(task({ prs: [], machines: [{ machine: "ci", state: "running", at: 3, trail: trail.slice(1, 3) }] }))?.pulls)
       .toEqual([{ number: null, url: null, runs: 1, reruns: 0, rebases: 0, conflicts: 0, state: "failing" }]);
+  });
+});
+
+describe("labelRuleError", () => {
+  it("refuses a date, an id, a long label and a field's prefix, and accepts a short kebab-case word", () => {
+    expect(labelRuleError("weekly-code-audit-2026-10-25-follow-up")).toMatch(/3 words, 24 chars/);
+    expect(labelRuleError("TASK-12")).toMatch(/not kebab-case/);
+    expect(labelRuleError("a".repeat(25))).toMatch(/25 chars/);
+    expect(labelRuleError("audit-signal-hotspot-a1597d40")).toMatch(/4 words/);
+    expect(labelRuleError("release-2026")).toMatch(/carries a date or id/);
+    expect(labelRuleError("size-3")).toBe("size- is a field; set size above.");
+    expect(labelRuleError("follow-up")).toBe("");
+    expect(labelRuleError("a".repeat(24))).toBe("");
+  });
+});
+
+describe("detailFields", () => {
+  it("reads kind, size, area and mode from their prefixed labels and leaves the free-form ones as chips", () => {
+    const labels = ["kind-execute", "size-5", "needs-review", "area-starpulse", "mode-attended", "trial-a", "follow-up"];
+    expect(detailFields(labels)).toEqual({ kind: "execute", size: "5", area: "starpulse", mode: "attended", chips: ["needs-review", "follow-up"] });
+  });
+
+  it("draws the first of two labels sharing a prefix and an empty value for a prefix with none", () => {
+    expect(detailFields(["size-3", "size-8"])).toMatchObject({ kind: "", size: "3", chips: [] });
+  });
+});
+
+describe("setDetailField", () => {
+  it("replaces a field's label in place, drops a second one, and removes it for an empty value", () => {
+    expect(setDetailField(["kind-execute", "x", "size-3", "size-8"], "size", "5")).toEqual(["kind-execute", "x", "size-5"]);
+    expect(setDetailField(["x", "mode-attended"], "mode", "")).toEqual(["x"]);
+    expect(setDetailField(["x"], "area", "docs")).toEqual(["x", "area-docs"]);
   });
 });
