@@ -3,16 +3,19 @@
 // context and from what the renderer owns (`LedgerIO`, read as it draws), and keeps what it drew this frame (`Ledger`) for the renderer's
 // hit testing.
 import type { MachineEntry, RawTask } from "../api";
-import { sizes as ledgerSizes, slot as ledgerSlot } from "../features/level/machineLedger";
+import { glideStarts, sizes as ledgerSizes, slot as ledgerSlot } from "../features/level/machineLedger";
 import { entryAt, entryPath, PAGE, rowLabels } from "../features/level/machineLanes";
 import type { Paging } from "../features/level/machinePaging";
 import { emptyNote, rowMeta, stuckCount } from "../features/level/machineRows";
 import { thumbOf, windowOf, type Thumb } from "../features/level/machineScroll";
 import { stripLabel, stripScale, ticks, viewSpan, type Tick } from "../features/level/machineStrip";
 import { sessionsOf, traceSteps, type Spot } from "../features/level/machineTrace";
-import { ACT, OFF, easeO, rgba, tierColor, type Drawing, type DrawCtx, type LTask } from "./draw";
-import { RAMP, bez, curveOf, type Curve, type Pt, type RowView, type Scene } from "./scene";
-import { PULSE, TRAVEL, type Move, type Sky } from "./sky";
+import { ACT, OFF, PHASE, PHASE_TEXT, SUBM, SUBM_TEXT, rgba, tierColor, type Drawing, type DrawCtx, type LTask } from "./draw";
+import { RAMP, bez, curveOf, sample, type Curve, type Pt, type RowView, type Scene } from "./scene";
+import { PULSE, glideTime, type Move, type Sky } from "./sky";
+
+/** How far a flow line runs. */
+const curveLen = (c: Curve) => sample(c).reduce((a, p, i, ps) => (i ? a + Math.hypot(p.x - ps[i - 1].x, p.y - ps[i - 1].y) : 0), 0);
 
 type Box = { x0: number; y0: number; x1: number; y1: number };
 /** What the scroll rail is under the pointer: the back-to-newest chip, the thumb, a tick of the strip or the footer. */
@@ -104,20 +107,25 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
   ) {
     const scale = dc.scale, { gs, dot: dr } = ledgerSizes(scale), seat: Record<string, number> = {};
     for (const s of agents) {
-      const ev = io.events().findLast((m) => m.task === s.id && m.machine === machine && m.at <= io.T), state = ev ? ev.to : s.state, cur = where(state);
+      // its latest moves chain: one landing during a glide starts when that glide ends, so a dot rides the flow lines at one speed
+      const legs = io.events().filter((m) => m.task === s.id && m.machine === machine && m.at <= io.T).slice(-8).map((m) => {
+        const a = m.from && m.from !== m.to ? where(m.from) : undefined, b = where(m.to);
+        return { m, a, b, dur: a && b ? glideTime(curveLen(curveOf(a, b, bend(m.from!, m.to))), gs) : 0 };
+      });
+      const starts = glideStarts(legs.map((l) => ({ at: l.m.at, dur: l.dur }))), live = legs.findIndex((l, i) => l.dur && starts[i] <= io.T && io.T < starts[i] + l.dur);
+      const done = legs.findLastIndex((l, i) => starts[i] + l.dur <= io.T), state = legs[done]?.m.to ?? (legs[0] ? (legs[0].m.from ?? legs[0].m.to) : s.state), cur = where(state);
+      if (live >= 0) {
+        const l = legs[live], c = curveOf(l.a!, l.b!, bend(l.m.from!, l.m.to)), u = (io.T - starts[live]) / l.dur, q = bez(c.p0, c.c, c.p1, u);
+        comet(c.p0, c.c, c.p1, u, dr * 1.5, tierColor(s.model));
+        seen?.(s.id, q, state);
+        continue;
+      }
       if (!cur) {
         seen?.(s.id, null, state);
         continue;
       }
-      const prev = ev?.from && ev.from !== state ? where(ev.from) : undefined, u = ev ? (io.T - ev.at) / TRAVEL : 9;
-      if (prev && u < 1) {
-        const c = curveOf(prev, cur, bend(ev!.from!, state)), q = bez(c.p0, c.c, c.p1, easeO(u));
-        comet(c.p0, c.c, c.p1, easeO(u), dr * 1.5, tierColor(s.model));
-        seen?.(s.id, q, state);
-        continue;
-      }
-      const pa = ev ? (io.T - ev.at - TRAVEL) / PULSE : 9;
-      if (prev && pa >= 0 && pa < 1) pulse(cur.x, cur.y, 3, pa, ACT, 18 * gs); // the task landed: one ring where it sits
+      const pa = legs[done]?.a ? (io.T - starts[done] - legs[done].dur) / PULSE : 9;
+      if (pa >= 0 && pa < 1) pulse(cur.x, cur.y, 3, pa, ACT, 18 * gs); // the task landed: one ring where it sits
       const sl = ledgerSlot(cur.r, (seat[state] = (seat[state] ?? 0) + 1) - 1, scale), th = sl.a + dc.clock * 0.06, p = { x: cur.x + sl.R * Math.cos(th), y: cur.y + sl.R * Math.sin(th) };
       seen?.(s.id, p, state);
       dot(p.x, p.y, big?.(s.id) ? dr * 1.5 : dr, rgba(tierColor(s.model), 0.9));
@@ -530,7 +538,7 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
       text(m.end, mx + mw, ty + nameP * 0.7, subP, rgba(PLANET, on ? 1 : 0.7), "right", 300);
       const nm = { text: fitText(row.name, mw - endW, nameP), x: mx, y: ty + nameP * 0.7, px: nameP };
       led.rowNames.set(row.name, nm);
-      text(nm.text, nm.x, nm.y, nameP, rgba(INK, on ? 0.97 : m.status.idle ? 0.55 : 0.85), "left", 400);
+      text(nm.text, nm.x, nm.y, nameP, rgba(row.kind === "phase" ? PHASE_TEXT : row.kind === "sub" ? SUBM_TEXT : INK, on ? 0.97 : m.status.idle ? 0.55 : 0.85), "left", 400);
       const dotCol = m.tie.kind === "none" || m.tie.kind === "dag" ? null : m.tie.machine === top.machine ? sc.mStates[m.tie.state!]?.color : (top.rows.find((q) => q.name === m.tie.machine)?.nodes.find((n) => n.id === m.tie.state)?.color ?? PLANET);
       const tieInk = m.tie.kind === "dag" ? rgba(DAGC, 0.75) : m.tie.kind === "none" ? rgba(SUB, 0.5) : rgba(INK, 0.62), ly = ty + nameP * 1.4 + subP * 0.75;
       if (dotCol) dot(mx + 3, ly, 2.6 * gs, rgba(dotCol, 0.95));
@@ -545,7 +553,8 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
       for (const t of f.machine.transitions) {
         const a = ns.get(t.source), b = ns.get(t.target);
         if (!a || !b || a === b) continue;
-        flowBetween(a, b, b.x < a.x - 1 ? Math.min(0.28, (row.h * 0.6) / (Math.hypot(b.x - a.x, b.y - a.y) || 1)) : 0.04, Math.min(1, on ? 0.95 : 0.36), on ? 0.8 : 0, [1.5, 4]);
+        const line = row.kind === "phase" ? PHASE : row.kind === "sub" ? SUBM : undefined;
+        flowBetween(line ? { ...a, color: line } : a, line ? { ...b, color: line } : b, b.x < a.x - 1 ? Math.min(0.28, (row.h * 0.6) / (Math.hypot(b.x - a.x, b.y - a.y) || 1)) : 0.04, Math.min(1, on ? 0.95 : 0.36), on ? 0.8 : 0, [1.5, 4]);
       }
       for (const n of row.nodes) {
         const p = ns.get(n.id)!, hotN = dc.hover?.kind === "rstate" && dc.hover.o === n;

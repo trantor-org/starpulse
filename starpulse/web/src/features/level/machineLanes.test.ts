@@ -19,6 +19,19 @@ describe("the machine ledger's lane", () => {
     expect(laneRows([fan("wide", 5)], span, frame(10)).rows[0].h).toBe(wide.h);
   });
 
+  it.each([100, 125, 150])("gives a phase's row more height than a sub-machine's, its branches farther apart, at %i% text", (scale) => {
+    const [sub, phase] = laneRows([fan("sub", 3), { ...fan("phase", 3), phase: true }], span, frame(10, scale)).rows;
+    const gap = (r: typeof sub) => r.nodes.find((n) => n.id === "m0")!.oy - r.nodes.find((n) => n.id === "m1")!.oy;
+
+    expect(phase.h).toBeGreaterThan(sub.h);
+    expect(Math.abs(gap(phase))).toBeGreaterThan(Math.abs(gap(sub)));
+  });
+
+  it("makes a phase's meta column taller, so a flat phase is taller than a flat sub-machine", () => {
+    const [sub, phase] = laneRows([line("sub", "a", "b"), { ...line("phase", "a", "b"), phase: true }], span, frame(10)).rows;
+    expect(phase.h).toBeGreaterThan(sub.h);
+  });
+
   it("stretches a few rows to fill the lane, never past 3.2 times their height", () => {
     const flat = laneRows([line("a", "x", "y")], span, frame(10)).rows[0].h;
     const some = laneRows([line("a", "x", "y"), line("b", "x", "y")], span, frame(3 * flat)), most = laneRows([line("a", "x", "y"), line("b", "x", "y")], span, frame(100 * flat));

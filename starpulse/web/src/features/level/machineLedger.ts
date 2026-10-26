@@ -64,6 +64,8 @@ export interface LedgerTop {
   metaW: number;
   x0: number;
   x1: number;
+  /** Where the last column of states stands: the names to its right run on to x1. */
+  xEnd: number;
 }
 
 const TAU = Math.PI * 2;
@@ -173,18 +175,26 @@ function placeLabels(nodes: LedgerNode[], g: Layers, f: LedgerFrame, top: { hdrB
 export function ledgerTop(m: LedgerMachine, f: LedgerFrame): LedgerTop {
   const { W, H, scale, measure } = f, { fs } = sizes(scale);
   const trans = m.transitions.filter((t) => t.source !== t.target);
-  if (!m.states.length) return { nodes: [], labels: [], hdrB: 0, natural: 0, metaT: 0, metaX: 0, metaW: 0, x0: 0, x1: 0 };
+  if (!m.states.length) return { nodes: [], labels: [], hdrB: 0, natural: 0, metaT: 0, metaX: 0, metaW: 0, x0: 0, x1: 0, xEnd: 0 };
   const g = layers(m.states, trans), n = g.cols.length;
   const metaX = 22, metaW = Math.round(clamp(186 * fs, 170, 290)), x0 = metaX + metaW + 34 * fs, x1 = W - 34;
   // nothing here reads the tasks: every state keeps the same radius and the same room for its orbit, so tasks moving through never shift it
   const r = stateRadius(scale), o = orbitRoom(scale), count = (id: string) => m.tasks[id] ?? 0, px = sizes(scale).main;
-  // a column of three or more states names them beside it, so the gap after it widens to hold its longest name; the other gaps share what is left,
-  // each as far apart as two orbits if there is room, else no closer than two states, and only then does everything shrink to fit
+  // a column of three or more states names them beside it, so the gap after it widens to hold its longest name; every gap gets at least what it
+  // needs (no closer than two states), the slack lifts the narrowest first so the columns spread evenly, and only then does everything shrink to fit
   const low = 2 * o + 10, floor = 2 * r + 10, wide = (c: string[]) => Math.max(...c.map((id) => measure(m.states.find((s) => s.id === id)!.name, px)));
   const need = g.cols.map((c, i) => (c.length >= 3 ? wide(c) + 2 * o + 40 * fs : g.cols[i + 1]?.length >= 3 ? wide(c) / 2 + o + 20 * fs : 0)).slice(0, n - 1);
-  const free = need.filter((v) => !v).length, named = need.reduce((a, v) => a + (v ? Math.max(v, low) : 0), 0);
-  const u = Math.max(floor, (x1 - x0 - named) / Math.max(1, free));
-  const gap = need.map((v) => (v ? Math.max(v, low) : u)), k = (x1 - x0) / Math.max(1, gap.reduce((a, b) => a + b, 0)), xs = [x0];
+  const least = need.map((v) => (v ? Math.max(v, low) : floor));
+  // the last column stands a name's width short of the right margin, so every machine's last states name themselves to their right instead of
+  // crowding against the flow lines that reach them
+  const lastW = Math.max(0, ...g.cols[n - 1].map((id) => measure(m.states.find((s) => s.id === id)!.name, px))), xEnd = Math.min(x1, Math.max(x1 - (Math.max(lastW, 110 * fs) + o + 10), x0 + least.reduce((a, v) => a + v, 0)));
+  let rest = xEnd - x0, left = least.length;
+  for (const v of [...least].sort((a, b) => b - a)) {
+    if (v <= rest / Math.max(1, left)) break;
+    rest -= v;
+    left -= 1;
+  }
+  const level = rest / Math.max(1, left), gap = least.map((v) => Math.max(v, level)), k = (xEnd - x0) / Math.max(1, gap.reduce((a, b) => a + b, 0)), xs = [x0];
   gap.forEach((v) => xs.push(xs[xs.length - 1] + v * k));
   // the top is as tall as the machine would be with one row of branches, however wide a branch fans: a wider fan packs its states into that
   // height, never closer than their discs and names allow, and the top grows only when even that does not fit
@@ -206,5 +216,12 @@ export function ledgerTop(m: LedgerMachine, f: LedgerFrame): LedgerTop {
     id: s.id, name: s.name, x: xs[g.depth[s.id]], y: yMain + g.row[s.id] * step[g.depth[s.id]], r, orbit: o, u: n > 1 ? g.depth[s.id] / (n - 1) : 0,
     initial: s.initial, final: s.final, n: count(s.id),
   }));
-  return { nodes, labels: placeLabels(nodes, g, f, { hdrB, metaX, metaW }), hdrB, natural, metaT: f.inset ?? 0, metaX, metaW, x0, x1 };
+  return { nodes, labels: placeLabels(nodes, g, f, { hdrB, metaX, metaW }), hdrB, natural, metaT: f.inset ?? 0, metaX, metaW, x0, x1, xEnd };
+}
+
+/** When each of a task's moves starts to glide: as it lands, or when the glide before it ends, so a dot rides one flow line after another at one speed. */
+export function glideStarts(moves: { at: number; dur: number }[]): number[] {
+  const out: number[] = [];
+  moves.forEach((m, i) => out.push(i ? Math.max(m.at, out[i - 1] + moves[i - 1].dur) : m.at));
+  return out;
 }
