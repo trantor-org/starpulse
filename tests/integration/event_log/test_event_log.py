@@ -60,6 +60,9 @@ def test_an_idle_poll_reads_the_oldest_and_newest_id_without_scanning_the_table(
 def test_a_running_tail_hands_over_what_another_process_appends(
     database_url: str, processes: ProcessPoolExecutor
 ) -> None:
+    engine = create_engine(database_url)
+    migrate(engine)  # the appending process opens the store without the test's shim: it must find it migrated
+    engine.dispose()
     seen: list[Entry] = []
     arrived = threading.Event()
 
