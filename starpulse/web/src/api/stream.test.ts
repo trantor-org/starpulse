@@ -749,8 +749,8 @@ describe("the page's sources", () => {
   });
 
   it("keeps no timed refresh anywhere but the clock-only and non-data timers", () => {
-    // each allowed timer repaints a clock stamp, a DOM busy state or a simulator; none refetches live data
-    const clockOnly = /\/(App\.tsx|Kanban\.tsx|Dags\.tsx|reload\.ts|renderer\.ts|demo\.ts)$/;
+    // each allowed timer repaints a clock stamp, a DOM busy state or a simulator (the drill-in's replay and move animation); none refetches live data
+    const clockOnly = /\/(App\.tsx|Kanban\.tsx|Dags\.tsx|SunsDrillIn\.tsx|reload\.ts|renderer\.ts|demo\.ts)$/;
     const timed = Object.entries(sources)
       .filter(([file, text]) => !clockOnly.test(file) && /setInterval|REFRESH_MS/.test(text))
       .map(([file]) => file);

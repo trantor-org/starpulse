@@ -1,0 +1,499 @@
+// The B · Suns board engine, ported verbatim from the approved canvas (SunTracesTC, artifact LKGRip1dE1bjMMp5wTS88z); its yellows are remapped
+// (AC #7, design record #29). It draws into a scene `g` and reads and writes view state through `g.self` ({state, setState}); sunsScene.ts hosts it.
+/* eslint-disable */
+const LENSES=['security','ux','ui','code'];
+const LN={security:'Security',ux:'UX',ui:'UI',code:'Code'};
+const PN={build:'Build',qa:'QA',deliver:'Deliver',review_fix:'Review fix',parked:'Needs attention',done:'Review'};
+const STEPS={build:['worktree_ready','red_proven','green','criteria_checked','docs_reconciled'],qa:['reviewing'],deliver:['lint_green','committed','pushed','pr_opened','ci_green','pr_ready'],review_fix:['threads_read','fixes_pushed','review_recorded']};
+const TIER={deep:'#a78bfa',standard:'#67e8f9',fast:'#e2e8f0'};
+const TRGB={deep:'167,139,250',standard:'103,232,249',fast:'226,232,240'};
+const VC={PASS:'#34d399',CHANGES:'#fb7185'};
+function L(v,s){return {state:v||'pending',step:v?3:(s||0)};}
+function V(a,b,c,d){return {security:a,ux:b,ui:c,code:d};}
+function seed(){return [
+ {id:'TASK-8412',tier:'standard',title:'Rate-limit the board search API',spec:'doc-972',phase:'qa',step:0,round:2,limit:3,attended:false,mins:6,lenses:{security:L(null,1),ux:L('PASS'),ui:L('PASS'),code:L(null,2)},plan:{security:'PASS',code:'PASS'},
+  trail:[{phase:'build',round:1,mins:22},{phase:'qa',round:1,mins:9,v:V('CHANGES','PASS','PASS','PASS'),why:'Security: the search term reaches the SQL LIKE pattern unescaped'},{phase:'build',round:2,mins:11},{phase:'qa',round:2,mins:6}]},
+ {id:'TASK-8433',tier:'deep',title:'Show claim expiry on In Progress cards',spec:'doc-968',phase:'build',step:2,round:1,limit:3,attended:true,mins:14,lenses:{},plan:{ui:'CHANGES',why:'UI: the expiry badge overprints the phase track at 150% text'},trail:[{phase:'build',round:1,mins:14}]},
+ {id:'TASK-8440',tier:'fast',title:'Fix the kanban scroll jump on reload',spec:'none',phase:'deliver',step:4,round:1,limit:3,attended:false,mins:3,lenses:{},plan:{},
+  trail:[{phase:'build',round:1,mins:18},{phase:'qa',round:1,mins:7,v:V('PASS','PASS','PASS','PASS')},{phase:'deliver',round:1,mins:3}]},
+ {id:'TASK-8451',tier:'standard',title:'Serve the /api/views card manifest',spec:'doc-972',phase:'qa',step:0,round:1,limit:3,attended:false,mins:4,lenses:{security:L('PASS'),ux:L(null,0),ui:L(null,2),code:L('PASS')},plan:{ux:'PASS',ui:'PASS'},
+  trail:[{phase:'build',round:1,mins:31},{phase:'qa',round:1,mins:4}]},
+ {id:'TASK-8457',tier:'fast',title:'Rename the scheduler toggle label',spec:'none',phase:'review_fix',step:1,round:1,limit:3,attended:false,mins:2,lenses:{},plan:{},
+  trail:[{phase:'build',round:1,mins:6},{phase:'qa',round:1,mins:5,v:V('PASS','PASS','PASS','PASS')},{phase:'deliver',round:1,mins:12},{phase:'review_fix',round:1,mins:2}]},
+ {id:'TASK-8462',tier:'standard',title:'Archive stale worktrees nightly',spec:'doc-955',phase:'build',step:1,round:3,limit:3,attended:false,mins:5,lenses:{},plan:{},
+  trail:[{phase:'build',round:1,mins:15},{phase:'qa',round:1,mins:8,v:V('PASS','PASS','PASS','CHANGES'),why:'Code: deletes a worktree that still has uncommitted changes'},{phase:'build',round:2,mins:9},{phase:'qa',round:2,mins:7,v:V('PASS','PASS','PASS','CHANGES'),why:'Code: the uncommitted check skips untracked files'},{phase:'build',round:3,mins:5}]},
+ {id:'TASK-8470',tier:'deep',title:'Fill ledger columns on drill-down',spec:'doc-819',phase:'qa',step:0,round:3,limit:3,attended:false,mins:3,lenses:{security:L('PASS'),ux:L('PASS'),ui:L(null,1),code:L('PASS')},plan:{ui:'CHANGES',why:'UI: the column fill stops short of xEnd on a near-empty board'},
+  trail:[{phase:'build',round:1,mins:26},{phase:'qa',round:1,mins:8,v:V('PASS','PASS','CHANGES','PASS'),why:'UI: the fill overflows its lane at 125% text'},{phase:'build',round:2,mins:12},{phase:'qa',round:2,mins:6,v:V('PASS','CHANGES','PASS','PASS'),why:'UX: no empty state when a phase has no tasks'},{phase:'build',round:3,mins:8},{phase:'qa',round:3,mins:3}]},
+ {id:'TASK-8481',tier:'standard',title:'Retry the PR store refresh on a 502',spec:'none',phase:'build',step:3,round:1,limit:3,attended:false,mins:9,lenses:{},plan:{},trail:[{phase:'build',round:1,mins:9}]}
+];}
+function tick(jobs,n){return jobs.map(function(j0,i){
+ if((n+i)%3!==0) return j0;
+ var j=Object.assign({},j0,{lenses:Object.assign({},j0.lenses),trail:j0.trail.slice(),mins:j0.mins+1});
+ if(j.phase==='parked'||j.phase==='done') return j0;
+ if(j.phase==='qa'){
+  var pend=LENSES.filter(function(l){return j.lenses[l].state==='pending';});
+  if(pend.length){var l=pend[n%pend.length],c=j.lenses[l];
+   j.lenses[l]=c.step<(typeof LST!=='undefined'?LST[l].length-1:2)?{state:'pending',step:c.step+1}:{state:(j.plan&&j.plan[l])||'PASS',step:3};return j;}
+  var v={};LENSES.forEach(function(x){v[x]=j.lenses[x].state;});
+  var bad=LENSES.filter(function(x){return v[x]==='CHANGES';});
+  var cur=Object.assign({},j.trail[j.trail.length-1],{v:v,mins:j.mins});
+  if(bad.length) cur.why=(j.plan&&j.plan.why)||(LN[bad[0]]+': a finding to address');
+  j.trail[j.trail.length-1]=cur;j.mins=0;j.plan={};
+  if(bad.length){if(j.round>=j.limit){j.phase='parked';j.trail.push({phase:'parked',round:j.round,mins:0,why:'Rounds exhausted: '+bad.map(function(x){return LN[x];}).join(', ')+' still CHANGES'});}
+   else{j.round++;j.phase='build';j.step=1;j.trail.push({phase:'build',round:j.round,mins:0});}}
+  else{j.phase='deliver';j.step=0;j.trail.push({phase:'deliver',round:j.round,mins:0});}
+  return j;}
+ var steps=STEPS[j.phase];
+ if(j.step<steps.length-1){j.step++;return j;}
+ var next={build:'qa',deliver:'review_fix',review_fix:'done'}[j.phase];
+ j.trail[j.trail.length-1]=Object.assign({},j.trail[j.trail.length-1],{mins:j.mins});
+ j.phase=next;j.step=0;j.mins=0;
+ if(next==='qa') LENSES.forEach(function(x){j.lenses[x]={state:'pending',step:0};});
+ j.trail.push({phase:next,round:j.round,mins:0});
+ return j;});}
+function trailOf(j){return j.trail.map(function(s){
+ var color=s.phase==='qa'?'#5eead4':(s.phase==='parked'?'#fb7185':'#60a5fa');
+ return {color:color,label:PN[s.phase]+' · round '+s.round+(s.mins?' · '+s.mins+' min':''),hasWhy:!!s.why,why:s.why||''};});}
+function statusOf(j){
+ if(j.phase==='parked') return {t:'Needs attention',c:'#fda4af'};
+ if(j.phase==='done') return {t:'In Review',c:'#6ee7b7'};
+ if(j.phase==='qa'){var p=LENSES.filter(function(l){return j.lenses[l].state==='pending';}).length;return {t:'QA '+(4-p)+'/4',c:'#5eead4'};}
+ return {t:PN[j.phase],c:'#94a3b8'};}
+function longStatus(j){var s=statusOf(j);
+ if(j.phase==='build'||j.phase==='deliver'||j.phase==='review_fix') return {t:PN[j.phase]+' · '+STEPS[j.phase][j.step].replace(/_/g,' ')+' · '+j.mins+' min'+(j.attended?' · attended':''),c:'#94a3b8'};
+ if(j.phase==='qa') return {t:'QA round '+j.round+' · '+s.t.slice(3)+' lenses reported · '+j.mins+' min',c:'#5eead4'};
+ return s;}
+function fleetOf(self,jobs){return jobs.map(function(j){var on=self.state.sel===j.id,st=statusOf(j);
+ return {id:j.id,title:j.title,status:st.t,statusColor:st.c,aria:j.id+' '+j.title+', '+st.t,pick:function(){self.setState({sel:j.id});},
+  dot:'width:7px;height:7px;border-radius:50%;flex-shrink:0;background:'+TIER[j.tier]+';box-shadow:0 0 6px '+TIER[j.tier]+(j.attended?',0 0 0 3px rgba(167,139,250,.35)':''),
+  rowStyle:'display:flex;flex-direction:column;gap:3px;width:100%;padding:9px 20px;border:none;border-left:2px solid '+(on?'#a78bfa':'transparent')+';background:'+(on?'rgba(148,163,184,.06)':'transparent')+';color:inherit'};});}
+function rnd(seedv){var x=seedv;return function(){x=(x*9301+49297)%233280;return x/233280;};}
+function starfield(w,h,n){var r=rnd(7),out=[];for(var i=0;i<n;i++){var a=r(),b=r(),c=r();
+ out.push({style:'position:absolute;left:'+(a*w).toFixed(1)+'px;top:'+(b*h).toFixed(1)+'px;width:'+(c>.9?2:1)+'px;height:'+(c>.9?2:1)+'px;border-radius:50%;background:#cbd5e1;opacity:'+(.12+c*.4).toFixed(2)+(c>.85?';animation:twinkle '+(3+c*4).toFixed(1)+'s ease-in-out infinite':'')});}return out;}
+const PH='#3b82f6',PHT='#93c5fd',SB='#14b8a6',SBT='#5eead4',DG='#34d399',DGT='#6ee7b7',KICK='#fb7185';
+const PRGB={ph:'59,130,246',sb:'20,184,166',dg:'52,211,153'};
+const LSTEPS=['read_diff','probe','verdict'];
+const DSTEPS=['queued','running','succeeded'];
+function pt(x,y){return x.toFixed(1)+','+y.toFixed(1);}
+function seen(j,p){return p===j.phase||j.trail.some(function(s){return s.phase===p;});}
+function fillOf(j,p,n){if(j.phase===p) return p==='qa'?1:j.step+1;return seen(j,p)?n:0;}
+function lensOf(j,l){var last=null;j.trail.forEach(function(s){if(s.phase==='qa'&&s.v) last=s;});
+ if(j.phase==='qa'){var c=j.lenses[l];return c.state==='pending'?{fill:c.step,state:null,live:c.step>0,at:c.step}:{fill:3,state:c.state,live:false,at:-1};}
+ return last?{fill:3,state:last.v[l],live:false,at:-1}:null;}
+function dagOf(j){if(j.phase==='deliver'&&j.step>=4) return j.step===4?{fill:2,live:true}:{fill:3,live:false};
+ return (seen(j,'review_fix')||j.phase==='done')?{fill:3,live:false}:null;}
+function station(out,x,y,col,filled,r){r=r||3;
+ out.push({style:'position:absolute;left:'+(x-r)+'px;top:'+(y-r)+'px;width:'+(2*r)+'px;height:'+(2*r)+'px;border-radius:50%;box-sizing:border-box;'+(filled?'background:'+col+';box-shadow:0 0 6px '+col:'border:1.2px solid '+col+';opacity:.6')});}
+function pulsar(out,x,y){out.push({style:'position:absolute;left:'+(x-11)+'px;top:'+(y-11)+'px;width:22px;height:22px;border-radius:50%;border:1.5px solid rgba(226,232,240,.9);box-sizing:border-box;animation:pulse 1.8s ease-out infinite'});}
+function jobDot(out,x,y,col,r){r=r||7;out.push({style:'position:absolute;left:'+(x-r)+'px;top:'+(y-r)+'px;width:'+(2*r)+'px;height:'+(2*r)+'px;border-radius:50%;background:radial-gradient(circle at 40% 35%,#fff,'+col+' 55%,rgba(11,18,36,.3));box-shadow:0 0 16px 3px '+col+';transition:left .9s ease,top .9s ease'});}
+function text(out,t,sub,x,y,col,o){o=o||{};
+ out.push({text:t,sub:sub||'',subColor:o.subColor||'#94a3b8',style:'position:absolute;left:'+(o.align==='right'?x-220:(o.align==='center'?x-110:x))+'px;top:'+y+'px;width:220px;text-align:'+(o.align||'left')+';font-size:'+(o.size||'.72em')+';font-weight:300;letter-spacing:'+(o.ls||'.02em')+';color:'+col+';white-space:nowrap'});}
+function kickReasons(j){var k=j.trail.filter(function(s){return s.phase==='qa'&&s.why;}).map(function(s){return {text:'r'+s.round+' · '+s.why,color:'#fda4af'};});
+ if(j.phase==='parked') k.push({text:'Left In Progress: '+j.trail[j.trail.length-1].why,color:'#fb7185'});
+ return k.length?k:[{text:'no kickbacks',color:'#6b7a93'}];}
+/* Radial growth: the hub is a sun; each phase machine grows as a blue branch out of the hub ring (spoke, then an arc of stations);
+   QA's lenses grow as teal sub-machine branches from QA's station, and deliver's ci_green opens a green DAG branch. */
+function radial(j,o){
+ var CX=o.cx,CY=o.cy,k=o.k,HUB=44*k,R1=128*k,LR=[182*k,212*k,242*k,272*k],DR=184*k,ST=11,LS=7;
+ var ANG={build:200,qa:290,deliver:30,review_fix:120};
+ function P(r,d){var a=d*Math.PI/180;return {x:CX+r*Math.cos(a),y:CY+r*Math.sin(a)};}
+ function arcD(r,a0,a1){var p=P(r,a0),q=P(r,a1);return ' A'+r.toFixed(1)+','+r.toFixed(1)+' 0 0 1 '+pt(q.x,q.y);}
+ var L={ph:[],sb:[],dg:[],kick:[],park:[],exit:[]},S=[],T=[],B=[],col=TIER[j.tier],cur=j.phase,here=null,probes=[];
+ ['build','qa','deliver','review_fix'].forEach(function(p){if(!seen(j,p)) return;
+  var th=ANG[p],n=p==='qa'?1:STEPS[p].length,a1=th+(n-1)*ST,h=P(HUB,th),s0=P(R1,th);
+  L.ph.push('M'+pt(h.x,h.y)+' L'+pt(s0.x,s0.y)+(n>1?arcD(R1,th,a1):''));
+  var f=fillOf(j,p,n),names=p==='qa'?['reviewing']:STEPS[p];
+  for(var i=0;i<n;i++){var q=P(R1,th+i*ST);station(S,q.x,q.y,PH,i<f,3.2);if(cur===p&&i===(p==='qa'?0:j.step)) here={x:q.x,y:q.y,name:names[i],a:th+i*ST};}
+  var mr=(HUB+R1)/2,e=P(mr,th),na=(th-90)*Math.PI/180,c=Math.cos(na);
+  text(T,PN[p].toLowerCase(),'',e.x+Math.cos(na)*10,e.y+Math.sin(na)*10-8,'rgba(147,197,253,'+(cur===p?.95:.55)+')',{align:c<-.2?'right':(c>.2?'left':'center'),size:'.76em'});
+  if(p==='qa') LENSES.forEach(function(l,li){var ls=lensOf(j,l);if(!ls) return;var r=LR[li],sp=P(R1,th),tp=P(r,th);
+   L.sb.push('M'+pt(sp.x,sp.y)+' L'+pt(tp.x,tp.y)+arcD(r,th,th+2*LS));
+   for(var i=0;i<3;i++){var q=P(r,th+i*LS),last=i===2&&ls.state;station(S,q.x,q.y,last?VC[ls.state]:SB,i<ls.fill,last?4:2.6);
+    if(ls.live&&i===ls.at) probes.push({x:q.x,y:q.y});}
+   var e2=P(r,th+2*LS+4);text(T,LN[l],ls.state||(ls.live?LSTEPS[ls.at].replace(/_/g,' '):(cur==='qa'?'queued':'')),e2.x+4,e2.y-9,'rgba(94,234,212,.8)',{subColor:ls.state?VC[ls.state]:'#e2e8f0'});});
+  if(p==='deliver'){var dg=dagOf(j);if(dg){var dt=th+4*ST,d0=P(R1,dt),d1=P(DR,dt);
+   L.dg.push('M'+pt(d0.x,d0.y)+' L'+pt(d1.x,d1.y)+arcD(DR,dt,dt+2*8));
+   for(var i2=0;i2<3;i2++){var q2=P(DR,dt+i2*8);station(S,q2.x,q2.y,DG,i2<dg.fill,2.8);if(dg.live&&i2===1) pulsar(B,q2.x,q2.y);}
+   var ea=dt+2*8,e3=P(DR+16,ea),c3=Math.cos(ea*Math.PI/180);text(T,'dagu/ci-validate',dg.live?'running':'succeeded',e3.x,e3.y-6,'rgba(110,231,183,.8)',{align:c3<-.2?'right':(c3>.2?'left':'center'),subColor:dg.live?'#e2e8f0':DGT});}}
+ });
+ var qs=P(R1,ANG.qa),b0=P(R1,ANG.build);
+ j.trail.filter(function(s){return s.phase==='qa'&&s.why;}).forEach(function(s,i){var c=P((52+i*18)*k,250);L.kick.push('M'+pt(qs.x,qs.y)+' Q'+pt(c.x,c.y)+' '+pt(b0.x,b0.y));});
+ return {L:L,S:S,T:T,B:B,here:here,probes:probes,P:P,R1:R1,HUB:HUB,ANG:ANG,ST:ST};}
+/* The Board transitions into In Progress and out of it, laid as a Star Map state level lays them: entries fan in from the left edge to the
+   pivot's rim, exits fan out to the right edge, each shaded from its source state's colour to its target's, named "from X" / "to X" at the edge. */
+const BC={new:'#94a3b8',ready:'#60a5fa',waiting:'#e2e8f0',in_progress:'#a78bfa',review:'#e879f9',needs_attention:'#64748b',done:'#34d399',archived:'#475569'};
+const BN={new:'New',ready:'Ready',waiting:'Waiting',review:'Review',needs_attention:'Needs attention',done:'Done',archived:'Archived'};
+const ENTRY=['new','ready','waiting','needs_attention','review','done'],EXITS=['ready','waiting','needs_attention','review','done','archived'];
+function qpt(a,c,b,t){var u=1-t;return {x:u*u*a.x+2*u*t*c.x+t*t*b.x,y:u*u*a.y+2*u*t*c.y+t*t*b.y};}
+function flows(T,o){var fl={},hot={};
+ [[ENTRY,-1,'e',o.inP,o.inR,o.inY],[EXITS,1,'x',o.outP,o.outR,o.outY]].forEach(function(z){var list=z[0],side=z[1],pre=z[2],P=z[3],R=z[4],FY=z[5];
+  list.forEach(function(s,i){var off=i-(list.length-1)/2,a=(side<0?Math.PI:0)+side*off*.12,rim={x:P.x+Math.cos(a)*R,y:P.y+Math.sin(a)*R};
+   var far={x:side<0?-10:1000,y:FY+off*o.gap},c={x:rim.x+side*o.pull,y:far.y},p0=side<0?far:rim,p1=side<0?rim:far;
+   var lit=(side<0?o.litIn:o.litOut)===s,c1=side<0?BC[s]:BC.in_progress,c2=side<0?BC.in_progress:BC[s];
+   fl[pre+i]={d:'M'+pt(p0.x,p0.y)+' Q'+pt(c.x,c.y)+' '+pt(p1.x,p1.y),x1:p0.x.toFixed(1),y1:p0.y.toFixed(1),x2:p1.x.toFixed(1),y2:p1.y.toFixed(1),c1:c1,c2:c2,
+    op:lit?.95:(s==='archived'?.18:.38),w:lit?2.4:1.1};
+   if(lit) hot[side<0?'in':'out']={a:p0,c:c,b:p1};
+   text(T,(side<0?'from ':'to ')+BN[s],'',side<0?20:970,far.y-18,lit?'#e2e8f0':'#64748b',{align:side<0?'left':'right',size:'.7em'});});});
+ return {fl:fl,hot:hot};}
+function litOf(j){return {litIn:seen(j,'review_fix')?'review':'ready',litOut:j.phase==='done'?'review':(j.phase==='parked'?'needs_attention':null)};}
+/* Round 4: In Progress is the focal sun (drawn as the Star Map's drawSun draws a state level's sun), the Board flow lines fan into and out of its
+   rim left and right, and the job's phase machines grow as straight rays into the top and bottom sectors only, clear of those lines. */
+const SUNC='#94a3b8',SUNRGB='148,163,184',SR=34,CX=495,CY=478;
+const RAY={build:218,qa:270,deliver:322,review_fix:90},SP=26;var R0=114,RING_OUT=92;
+const EXEC={security:'@agent-deep-high',ux:'@agent-standard-medium',ui:'@agent-fast-medium',code:'@agent-deep-medium'};
+const ETIER={security:'deep',ux:'standard',ui:'fast',code:'deep'};
+function RP(r,d){var a=d*Math.PI/180;return {x:CX+r*Math.cos(a),y:CY+r*Math.sin(a)};}
+function sunParts(core,jobs,j){
+ var G=SR+5*SR;
+ core.push({style:'position:absolute;left:'+(CX-G)+'px;top:'+(CY-G)+'px;width:'+(2*G)+'px;height:'+(2*G)+'px;border-radius:50%;background:radial-gradient(circle closest-side,rgba('+SUNRGB+',.55) 0%,rgba('+SUNRGB+',.2) 25%,rgba('+SUNRGB+',0) 100%)'});
+ [SR+9].forEach(function(r){core.push({style:'position:absolute;left:'+(CX-r)+'px;top:'+(CY-r)+'px;width:'+(2*r)+'px;height:'+(2*r)+'px;border-radius:50%;border:1px solid rgba('+SUNRGB+',.16);box-sizing:border-box'});});
+ core.push({style:'position:absolute;left:'+(CX-SR)+'px;top:'+(CY-SR)+'px;width:'+(2*SR)+'px;height:'+(2*SR)+'px;border-radius:50%;background:radial-gradient(circle,#f5f3ff 0%,rgba('+SUNRGB+',.95) 50%,rgba('+SUNRGB+',.6) 100%);animation:breathe 3.2s ease-in-out infinite'});
+ var others=jobs.filter(function(x){return x.id!==j.id&&x.phase!=='parked';});
+ others.forEach(function(o,i){var a=(i/others.length)*2*Math.PI+.3,r=SR+9;core.push({style:'position:absolute;left:'+(CX+r*Math.cos(a)-2.5)+'px;top:'+(CY+r*Math.sin(a)-2.5)+'px;width:5px;height:5px;border-radius:50%;background:'+TIER[o.tier]+';box-shadow:0 0 5px '+TIER[o.tier]});});}
+/* A phase ray: a spoke from the rim, its stations along it, its name beside the first station. */
+function ray(g,j,p,names,live){var th=RAY[p],n=names.length,s0=RP(SR+4,th),e=RP(R0+(n-1)*SP,th),f=fillOf(j,p,n),here=null;
+ g.L.ph.push('M'+pt(s0.x,s0.y)+' L'+pt(e.x,e.y));
+ names.forEach(function(nm,i){var q=RP(R0+i*SP,th);station(g.S,q.x,q.y,PH,i<f,3.2);if(live&&i===(p==='qa'?0:j.step)) here={x:q.x,y:q.y,name:nm,a:th};});
+ var side=Math.cos(th*Math.PI/180),q0=RP(R0+(p==='qa'?0:SP*.5),th),pa=(th+(side<0?-90:90))*Math.PI/180,lp={x:q0.x+Math.cos(pa)*14,y:q0.y+Math.sin(pa)*14};
+ if(p==='qa') lp={x:q0.x+14,y:q0.y+4};
+ text(g.T,PN[p].toLowerCase(),'',lp.x,lp.y-8,'rgba(147,197,253,'+(live?.95:.55)+')',{align:p==='qa'?'left':(side<-.2?'right':(side>.2?'left':'center')),size:'.76em'});
+ return {here:here,end:e,at:function(i){return RP(R0+i*SP,th);}};}
+function lensRows(j){return LENSES.map(function(l){var s=lensOf(j,l);return {l:l,s:s};});}
+function arcP(cx,cy,rx,ry,a0,a1){if(a1-a0>=359.9) return arcP(cx,cy,rx,ry,a0,a0+180)+' '+arcP(cx,cy,rx,ry,a0+180,a0+359.9);
+ function e(d){var a=d*Math.PI/180;return {x:cx+rx*Math.cos(a),y:cy+ry*Math.sin(a)};}
+ var p=e(a0),q=e(a1);return 'M'+pt(p.x,p.y)+' A'+rx.toFixed(1)+','+ry.toFixed(1)+' 0 '+(a1-a0>180?1:0)+' 1 '+pt(q.x,q.y);}
+function lensState(j,l){var s=lensOf(j,l);if(!s) return null;return {p:s.fill/3,state:s.state,live:s.live,at:s.at,word:s.state||(s.live?(typeof LST!=='undefined'?LST[l]:LSTEPS)[s.at].replace(/_/g,' '):(j.phase==='qa'?'queued':''))};}
+function legend(g,x,y,j,align){LENSES.forEach(function(l,i){var s=lensState(j,l);if(!s) return;
+ text(g.T,LN[l]+' · '+s.word,EXEC[l],x,y+i*30,s.state?VC[s.state]:(s.live?'#e2e8f0':'rgba(94,234,212,.8)'),{align:align||'left',subColor:TIER[ETIER[l]]});});}
+const RK=[52,64,76,88];
+function hist(j,l){var out=[];for(var r=1;r<=j.limit;r++){var s=j.trail.filter(function(t){return t.phase==='qa'&&t.round===r&&t.v;})[0];
+ if(s) out.push({v:s.v[l]});else if(j.phase==='qa'&&j.round===r) out.push({live:lensState(j,l)});else out.push(null);}return out;}
+function onRing(r,deg){return RP(r,deg);}
+function bucketFor(g,s,w){return s.state?(s.state==='PASS'?g.L[w?'passW':'pass']:g.L[w?'chgW':'chg']):g.L[w?'sbW':'sb'];}
+function tdot(out,x,y,j,pinned,r){r=r||3.2;var c=TIER[j.tier];
+ out.push({style:'position:absolute;left:'+(x-r)+'px;top:'+(y-r)+'px;width:'+(2*r)+'px;height:'+(2*r)+'px;border-radius:50%;background:'+c+';box-shadow:0 0 6px '+c+(pinned?',0 0 0 2px #05070d,0 0 0 3.2px #f5f3ff':'')+';transition:left .9s ease,top .9s ease'});}
+function rampCol(i,n){return RAMP_[Math.round((n>1?i/(n-1):0)*(RAMP_.length-1))];}
+const RAMP_=['#94a3b8','#60a5fa','#818cf8','#a78bfa','#c084fc','#e879f9','#f472b6','#e2e8f0','#34d399'];
+/* Backtraces always on: every row draws what its round walked, not only on hover. Rows stay compact; there is no expanded view. */
+const TRACE_ALL=true,COMPACT_ALL=true;
+/* Lines only between groups of rows (phase machines and the lens machines), none inside a group. */
+const NO_SEPS=true;
+/* Mock: each lens with its own phase machine instead of one shared read_diff → probe → verdict. The states are illustrative, not
+   the lenses' real machines: Security maps the attack surface and may try several exploits, or skip straight to a verdict when
+   there is none; UX walks the flows again after a copy fix; UI retakes a flaky screenshot, or goes straight to a verdict when there is no baseline yet; Code is a
+   straight run. Every lens still ends in pass or changes. */
+const LST={security:['read_diff','map_surface','probe','exploit_tried','verdict'],ux:['read_spec','walk_flows','check_copy','verdict'],
+ ui:['render','screenshot','compare','verdict'],code:['read_diff','run_tests','static_checks','design_review','verdict']};
+var MDL_=null;
+function MDL(l){if(!MDL_){var fin=function(c){return {PASS:{c:c,l:-.5},CHANGES:{c:c,l:.5}};},m=function(main,extra,pos){return def('sub',main.concat(['PASS','CHANGES']).concat(Object.keys(pos||{}).filter(function(n){return main.indexOf(n)<0&&n!=='PASS'&&n!=='CHANGES';})),
+  [['verdict','CHANGES']].concat(extra),{main:main.concat('PASS'),final:['PASS','CHANGES'],pos:Object.assign(fin(main.length),pos||{}),quiet:['PASS','CHANGES']});};
+ MDL_={security:m(LST.security,[['exploit_tried','probe'],['map_surface','verdict']]),
+  ux:m(LST.ux,[['check_copy','walk_flows']]),
+  ui:m(LST.ui,[['compare','screenshot'],['screenshot','verdict']]),
+  code:m(LST.code,[])};}
+ return MDL_[l];}
+/* Round 12 · Sun: the rounded circuit view with its states drawn as suns. One shape for every state, dim until the task reaches it. Grey for structure, colour only for meaning (blue phase, teal lens, green DAG, green pass,
+   rose changes; the task itself in its tier colour). In Progress's own exits leave the template as labelled traces, the way a Star Map drill-in
+   shows flow to other states, so no other board state is drawn here. */
+const HEX='clip-path:polygon(25% 0,75% 0,100% 50%,75% 100%,25% 100%,0 50%)',GREY='#3b4a63',INK2='rgba(203,213,225,.8)';
+function fR(s,o){if(s&&s.mini) return s.q?3:4.2;return o.big?10:(s.q?5:7);}
+function glowOf(g,x,y,R,col,k,a){span(g,'left:'+(x-R*k)+'px;top:'+(y-R*k)+'px;width:'+(R*2*k)+'px;height:'+(R*2*k)+'px;border-radius:50%;background:radial-gradient(circle closest-side,'+hexA(col,a)+',transparent)');}
+function disc(g,x,y,r,st){span(g,'left:'+(x-r)+'px;top:'+(y-r)+'px;width:'+(2*r)+'px;height:'+(2*r)+'px;border-radius:50%;box-sizing:border-box;'+st);}
+/* Sun: a reached state is a star with a white-hot core and a corona; an unreached one is a faint, unlit disc; a final state's corona
+   is ringed. */
+function hexPad(g,x,y,R,col,fill,o){o=o||{};if(fill) glowOf(g,x,y,R,col,o.glow?3.4:2.2,o.glow?.55:.32);
+ if(o.fin) disc(g,x,y,R+4,'border:1px dashed '+hexA(col,o.dim?.3:.6));
+ if(fill) disc(g,x,y,R,'background:radial-gradient(circle,#fff 0%,'+hexA(col,1)+' 58%,'+hexA(col,.85)+' 100%);box-shadow:0 0 '+(R*.8)+'px '+hexA(col,.7)+(o.glow?';animation:breathe 2.4s ease-in-out infinite':''));
+ else disc(g,x,y,R*.85,'background:'+hexA(col,o.dim?.12:.2)+';border:1px solid '+hexA(col,o.dim?.35:.6));}
+/* Rounded: a run that changes level is one smooth S-curve, level at both ends, instead of an octilinear dogleg. */
+function trace(a,b,ta,tb,mode){if(Math.abs(a.y-b.y)<.5) return octi(a,b,ta,tb,mode);var dir=b.x>a.x?1:-1,sx=a.x+dir*ta,ex=b.x-dir*tb,k=(ex-sx)*.55;
+ return {d:'M'+sx.toFixed(1)+','+a.y+' C'+(sx+k).toFixed(1)+','+a.y+' '+(ex-k).toFixed(1)+','+b.y+' '+ex.toFixed(1)+','+b.y,mid:{x:(sx+ex)/2,y:(a.y+b.y)/2}};}
+/* The task moves the way StarPulse moves one (orbitTasks in machineLedgerDraw.ts), scaled to the ledger's smaller states: at rest it is a
+   dot in its tier colour orbiting the state it is in, a lap in ~105 s; when it steps, a comet runs the flow line in 3 s (ease-out) with
+   a fading tail and the edge heated under it, then one ring pulses where it lands. A move is a change in where a row's task sits since
+   the last frame; a row seen for the first time, a newly picked task and a scrubbed replay only rest. */
+var MOVES={},ANIM_UNTIL=0;const TRAVEL=3000,PULSE=1800;
+/* StarPulse's task colours by tier (a task dot is lighter than the tier's own swatch) */
+const TASKC={deep:'#c4b5fd',standard:'#67e8f9'};
+function easeO(u){return 1-Math.pow(1-u,3);}
+/* points along an absolute M/L/Q/C path, by length */
+function sampler(d){var t=d.match(/[MLQC]|-?[\d.]+/g)||[],pts=[],i=0,cmd,x=0,y=0;function nx(){return +t[i++];}
+ while(i<t.length){if(/[MLQC]/.test(t[i])) cmd=t[i++];
+  if(cmd==='M'||cmd==='L'){x=nx();y=nx();pts.push({x:x,y:y});}
+  else if(cmd==='Q'){var ax=nx(),ay=nx(),bx=nx(),by=nx(),x0=x,y0=y;for(var k=1;k<=10;k++){var u=k/10,v=1-u;pts.push({x:v*v*x0+2*v*u*ax+u*u*bx,y:v*v*y0+2*v*u*ay+u*u*by});}x=bx;y=by;}
+  else if(cmd==='C'){var c1x=nx(),c1y=nx(),c2x=nx(),c2y=nx(),ex=nx(),ey=nx(),x1=x,y1=y;for(var m=1;m<=16;m++){var w=m/16,z=1-w;pts.push({x:z*z*z*x1+3*z*z*w*c1x+3*z*w*w*c2x+w*w*w*ex,y:z*z*z*y1+3*z*z*w*c1y+3*z*w*w*c2y+w*w*w*ey});}x=ex;y=ey;}
+  else i++;}
+ var acc=[0];for(var n=1;n<pts.length;n++) acc.push(acc[n-1]+Math.hypot(pts[n].x-pts[n-1].x,pts[n].y-pts[n-1].y));var len=acc[acc.length-1]||1;
+ return function(u){var L=Math.max(0,Math.min(1,u))*len,n=1;while(n<acc.length-1&&acc[n]<L) n++;var a=pts[n-1]||pts[0],b=pts[n]||a,f=(L-acc[n-1])/Math.max(acc[n]-acc[n-1],1e-6);
+  return {x:a.x+(b.x-a.x)*f,y:a.y+(b.y-a.y)*f};};}
+function moveOf(j,o,state){var now=Date.now(),k=j.id+'|'+o.key,sig=j.phase+':'+j.round+':'+o.node,m=MOVES[k],seen=MOVES[j.id],still=state.at!=null&&!state.replaying;
+ var fresh=!seen||now-seen>2500;MOVES[j.id]=now;
+ if(!m||m.sig!==sig){var t=-1e9;if(!fresh&&!still) t=m&&m.phase===j.phase&&m.round===j.round?now:now-TRAVEL;MOVES[k]=m={sig:sig,phase:j.phase,round:j.round,t:t};}
+ if(m.t+TRAVEL+PULSE>now) ANIM_UNTIL=Math.max(ANIM_UNTIL,m.t+TRAVEL+PULSE);return now-m.t;}
+/* A flow line as StarPulse draws one: thin, dashed, streaming toward its target. */
+function flow(g,d,col,a){line(g,d,hexA(col,a||.6),1.3,{dash:'2 5',st:'animation:march 1.4s linear infinite'});}
+function arrowHead(g,x,y,col){line(g,'M'+(x-5)+','+(y-3.5)+' L'+x+','+y+' L'+(x-5)+','+(y+3.5),col,1.3,{cap:'round',sharp:true});}
+const STYLE={M:{base:24,step:8,back:'below',skip:'above',lab:24},MINI:{base:12,step:6,lane:.8,minH:60,pad:16},
+ state:function(g,s,o){var R=fR(s,o),col=s.q?s.c:KC[o.kind];if(o.dot) return;
+  hexPad(g,s.x,s.y,R,o.on?col:GREY,o.on,{fin:s.fin,glow:o.cur,dim:!o.on});
+  /* a state's name sits where no line runs: above it, or below it when a loop leaves upward, or up and to the right when loops leave both ways */
+  var lx=s.x,ly=s.y-R-17,al='center';if((o.legUp||o.init)&&!o.legDown) ly=s.y+R+4;else if(o.legUp&&o.legDown){lx=s.x+R+5;ly=s.y-R-14;al='left';}
+  if(s.q){lx=s.x+R+6;ly=s.y-8;al='left';}
+  /* folded: above the state if no loop runs over it, else below, else above the highest loop */
+  else if(s.mini){lx=s.x;al='center';ly=!o.upLv?s.y-R-14:(!o.downLv?s.y+R+3:s.y-(o.M.base+o.upLv*o.M.step)-13);}
+  /* a folded row names only the state its task is in */
+  if((s.mini?o.cur:o.label)&&!(s.q&&!o.on)) name(g,o.name,lx,ly,{align:al,size:s.q?'.66em':'.68em',col:s.q?hexA(s.c,.9):(o.on?INK2:'rgba(148,163,184,.5)')});},
+ edge:function(g,a,b,o){var c=trace(a,b,fR(a,{})+3,fR(b,{})+3);if(o.on) line(g,c.d,b.q?b.c:KC[o.kind],1.8,{cap:'butt'});else flow(g,c.d,b.q?b.c:KC[o.kind],.45);},
+ loop:function(g,a,b,off,o){var R=fR(a,{}),dir=b.x>a.x?1:-1,y=a.y+off,s=off<0?-1:1;
+  flow(g,'M'+a.x+','+(a.y+s*R)+' L'+a.x+','+(y-s*5)+' L'+(a.x+dir*5)+','+y+' L'+(b.x-dir*5)+','+y+' L'+b.x+','+(y-s*5)+' L'+b.x+','+(b.y+s*R),'#64748b',.7);},
+ task:function(g,cur,prev,j,o){var col=TASKC[j.tier]||'#e2e8f0',R=fR(cur,{}),k=cur.mini?.5:.7,age=moveOf(j,o,g.self.state),now=Date.now();
+  if(age<TRAVEL){var d=roundPath(trace(prev,cur,fR(prev,{})+3,R+3).d,ROUND_R),at=sampler(d),u=easeO(age/TRAVEL),h=at(u);
+   line(g,d,hexA(col,.22),cur.mini?1.8:2.4,{cap:'butt'});
+   for(var i=0;i<14;i++){var a=at(u-.27*(14-i)/14),b=at(u-.27*(13-i)/14);line(g,'M'+a.x.toFixed(1)+','+a.y.toFixed(1)+' L'+b.x.toFixed(1)+','+b.y.toFixed(1),hexA(col,(i+1)/14*.6),(i+1)/14*2.6*k/.7,{sharp:true});}
+   glowOf(g,h.x,h.y,14*k,col,1,.7);disc(g,h.x,h.y,6*k*.75,'background:'+hexA(col,.95)+';box-shadow:0 0 '+(6*k)+'px '+hexA(col,.8));return;}
+  if(age<TRAVEL+PULSE){var p=(age-TRAVEL)/PULSE,r=(3+easeO(p)*18)*k/.7;disc(g,cur.x,cur.y,R+r,'border:'+(2*(1-p)+.4).toFixed(2)+'px solid '+hexA(col,Math.pow(1-p,2)*.85));}
+  var orb=R+5.5*k/.7,ang=now/1000*.06;disc(g,cur.x+Math.cos(ang)*orb,cur.y+Math.sin(ang)*orb,4*k*.75,'background:'+hexA(col,.9)+';box-shadow:0 0 '+(4*k)+'px '+hexA(col,.6));},
+ mark:function(g,x,y,col){hexPad(g,x,y,4,col,true);},
+ crowd:function(){},
+ template:function(g,jobs,j){var Y=TY,X={build:470,fork:548,join:752,deliver:850,review_fix:975},EX=1176,at={},BUS=66,MUTE='#64748b';
+  jobs.forEach(function(x){if(x.phase==='qa'){LENSES.forEach(function(l){if(x.lenses[l].state==='pending') (at[l]=at[l]||[]).push(x);});return;}(at[x.phase]=at[x.phase]||[]).push(x);});
+  function run(a,b,col,mode){var c=trace(a,b,a.r||0,b.r||0,mode);flow(g,c.d,col,.7);return c;}
+  function n(k){return (at[k]||[]).length;}
+  function tasksIn(k,label,kind){return {title:label,sub:kind+' · '+n(k)+' task'+(n(k)===1?'':'s')+' here now',rows:(at[k]||[]).map(function(x){return {k:x.id,v:x.title,c:TIER[x.tier]};})};}
+  /* in: one streaming line per board state that hands a task to In Progress */
+  var ENT=[['Ready','CLAIM','an agent claims the task'],['Waiting','START_WAITING','what it waited on is done'],['Needs Attention','RESUME','a person resumes it'],['Review','SEND_BACK','review sends it back'],['New','CREATE_IN_PROGRESS','created straight into work'],['Done','REOPEN','a closed task is reopened']];
+  /* entries come in from the pane's left edge and exits leave at its right edge, each named just above its line at that edge */
+  ENT.forEach(function(e,k){var y=Y-70+k*28,d='M262,'+y+' L300,'+y+' Q410,'+y+' 457,'+(Y+(y-Y)*.12);flow(g,d,MUTE,.8);name(g,e[0],264,y-15,{size:'.66em',col:'rgba(148,163,184,.75)'});
+   hv(g,'entry:'+e[0],260,y-16,110,22,{t:'From '+e[0],lines:[e[2]]},{title:'From '+e[0],sub:'board event '+e[1]+' → In Progress',rows:[{k:'lands on',v:'Build'},{k:'when',v:e[2]}]});});
+  /* the sequence, the fork and the join */
+  run({x:X.build,y:Y,r:13},{x:X.fork,y:Y,r:3},KC.phase);run({x:X.join,y:Y,r:3},{x:X.deliver,y:Y,r:13},KC.phase);run({x:X.deliver,y:Y,r:13},{x:X.review_fix,y:Y,r:13},KC.phase);
+  LENSES.forEach(function(l){run({x:X.fork,y:Y},{x:650,y:LYT[l],r:12},KC.sub,'early');run({x:650,y:LYT[l],r:12},{x:X.join,y:Y},KC.sub,'late');});
+  [X.fork,X.join].forEach(function(x){span(g,'left:'+(x-3)+'px;top:'+(Y-3)+'px;width:6px;height:6px;border-radius:50%;background:'+KC.sub);});
+  hv(g,'fork',X.fork-8,Y-8,16,16,{t:'Fork',lines:['the four lenses start together']},null);hv(g,'join',X.join-8,Y-8,16,16,{t:'Join',lines:['deliver starts when all four pass']},null);
+  /* loops */
+  flow(g,'M968,'+(Y-9)+' L968,'+(Y-33)+' L963,'+(Y-38)+' L862,'+(Y-38)+' L857,'+(Y-33)+' L857,'+(Y-9),MUTE,.8);
+  hv(g,'loop:fix',857,Y-44,111,14,{t:'Review fix → Deliver',lines:['fixes pushed, deliver runs again']},{title:'Review fix → Deliver',sub:'event LINT_GREEN',rows:[{k:'when',v:'the PR head holds every fix and lint is green'},{k:'fired by',v:'agent-cmd lint, pre-commit hook'}]});
+  flow(g,'M'+X.join+','+(Y+5)+' L'+X.join+','+(LYT.code+33)+' L'+(X.join-5)+','+(LYT.code+38)+' L510,'+(LYT.code+38)+' L505,'+(LYT.code+33)+' L505,'+(Y+20)+' L483,'+(Y+7),MUTE,.8);
+  hv(g,'loop:changes',505,LYT.code+30,247,16,{t:'QA → Build',lines:['a lens asked for changes','next round, up to 3']},{title:'QA → Build',sub:'a kickback: the next round of build',rows:[{k:'when',v:'any lens returns CHANGES'},{k:'limit',v:'3 rounds, then the task goes to Needs Attention'}]});
+  /* out: each exit to the board state it hands the task to; parked leaves from any phase over the top */
+  flow(g,'M440,'+BUS+' L'+EX+','+BUS,MUTE,.8);
+  [[463,440],[843,820],[982,1005]].forEach(function(p){flow(g,'M'+p[0]+','+(Y-8)+' L'+p[1]+','+(Y-31)+' L'+p[1]+','+BUS,MUTE,.8);});
+  flow(g,'M988,'+Y+' L'+EX+','+Y,MUTE,.8);
+  /* Needs Attention and Done leave Deliver as flat curves, the way the entries arrive: Done dips deeper and sooner, so it stays under Needs Attention */
+  flow(g,'M872,'+(Y+4)+' C905,'+(Y+20)+' 910,'+(Y+74)+' 980,'+(Y+74)+' L'+EX+','+(Y+74),MUTE,.8);
+  flow(g,'M866,'+(Y+7)+' C890,'+(Y+20)+' 892,'+(Y+100)+' 970,'+(Y+100)+' L'+EX+','+(Y+100),MUTE,.8);
+  [[BUS,'Waiting','PARK_ON_CRITERIA','parked, from any phase','build, deliver or review fix'],[Y,'Review','REVIEW','review recorded','review fix'],[Y+74,'Needs Attention','DEFER','CI blocked','deliver'],[Y+100,'Done','FINALIZE','finalized, no PR','deliver']].forEach(function(o){
+   arrowHead(g,EX,o[0],MUTE);name(g,o[1],EX-14,o[0]-18,{align:'right',size:'.74em',col:INK2});
+   hv(g,'exit:'+o[1],EX-124,o[0]-18,128,24,{t:'To '+o[1],lines:[o[3]],x:EX-210,y:o[0]+8},{title:'To '+o[1],sub:'board event '+o[2],rows:[{k:'leaves from',v:o[4]},{k:'when',v:o[3]}]});});
+  /* states: names only; counts, lists and the lenses' story wait for hover and click */
+  ['build','deliver','review_fix'].forEach(function(k){var cur=j.phase===k;hexPad(g,X[k],Y,10,KC.phase,true,{glow:cur});name(g,PN[k],X[k],Y+16,{align:'center',size:'.86em',col:INK2});
+   hv(g,'st:'+k,X[k]-34,Y-14,68,48,{t:PN[k],lines:[n(k)+' task'+(n(k)===1?'':'s')+' here now','phase machine · '+(MD[k].nodes.length)+' states']},tasksIn(k,PN[k],'phase machine'));});
+  LENSES.forEach(function(l){var s=lensState(j,l),col=s&&s.state?VC[s.state]:KC.sub;hexPad(g,650,LYT[l],8,col,true,{glow:s&&s.live});
+   name(g,LN[l],650,LYT[l]-27,{align:'center',size:'.74em',col:'rgba(153,246,228,.8)'});
+   hv(g,'st:lens:'+l,620,LYT[l]-28,60,40,{t:LN[l]+' lens',lines:[n(l)+' task'+(n(l)===1?'':'s')+' reviewing',(typeof MDL==='function'?'own phase machine · '+(MDL(l).nodes.length-2)+' steps':'runs alongside the other three')]},tasksIn(l,LN[l]+' lens','lens sub-machine'));});
+  [[470,Y+34,KC.phase],[650,LYT.code+12,KC.sub],[850,Y+34,KC.phase],[975,Y+34,KC.phase]].forEach(function(t){flow(g,'M'+t[0]+','+t[1]+' L'+t[0]+','+(HAIR-3),t[2],.5);
+   span(g,'left:'+(t[0]-2.5)+'px;top:'+(HAIR-2.5)+'px;width:5px;height:5px;border-radius:50%;background:'+t[2]);});
+  /* the stems run left along the hairline, through the dots, to the routing lane, then turn down it; where the lens run shares the
+     phase run, their dashes alternate */
+  line(g,'M975,'+HAIR+' L392,'+HAIR+' Q384,'+HAIR+' 384,'+(HAIR+8),hexA(KC.phase,.5),1.3,{dash:'2 5',st:'animation:march 1.4s linear infinite'});
+  line(g,'M650,'+HAIR+' L392,'+HAIR+' Q384,'+HAIR+' 384,'+(HAIR+8),hexA(KC.sub,.6),1.3,{dash:'2 5',st:'animation:march 1.4s linear infinite;animation-delay:-.35s'});
+  g.P.lane.push('M262,'+HAIR+' L'+PANE_R+','+HAIR);}};
+const ROUND_R=60;
+/* Round 10: Z1's layout (the In Progress template over one row per machine the pinned task ran, newest first) with the drawing handed to
+   a style. The engine places states, sorts each machine's edges into steps, lane changes, loops back and skips ahead, stacks loops and
+   skips into levels so none overlap, and sizes every row to hold its levels, so no arc leaves its row. */
+const X0=470,X1=1100,PANE_R=1180,HAIR=392,ROWS_END=846;
+const KC={phase:'#60a5fa',sub:'#2dd4bf',dag:'#34d399',tpl:'#a78bfa'},KT={phase:'#93c5fd',sub:'#5eead4',dag:'#6ee7b7',tpl:'#c4b5fd'};
+function hexA(h,a){var n=parseInt(h.slice(1),16);return 'rgba('+(n>>16)+','+((n>>8)&255)+','+(n&255)+','+a+')';}
+function tc(s){return s.replace(/_/g,' ').replace(/\b[a-z]/g,function(c){return c.toUpperCase();});}
+/* Rounded flow lines (the rounded variant sets ROUND_R): a polyline's short chamfers fold into their corner, then every corner
+   becomes a quarter curve of radius ROUND_R, so octilinear runs and loops read as smooth curves. Curved paths pass through untouched. */
+function roundPath(d,R){if(/[^MLml0-9.,\s-]/.test(d)) return d;var out=[];d.split(/(?=M)/).forEach(function(sub){
+ var p=(sub.match(/-?[\d.]+/g)||[]).map(Number),q=[];for(var i=0;i+1<p.length;i+=2) q.push({x:p[i],y:p[i+1]});
+ function L(a,b){return Math.hypot(b.x-a.x,b.y-a.y);}
+ for(var k=1;k+2<q.length;k++){if(L(q[k],q[k+1])<10){var a=q[k-1],b=q[k],c=q[k+1],e=q[k+2],d1x=b.x-a.x,d1y=b.y-a.y,d2x=e.x-c.x,d2y=e.y-c.y,den=d1x*d2y-d1y*d2x;
+  if(Math.abs(den)>1e-6){var t=((c.x-a.x)*d2y-(c.y-a.y)*d2x)/den;q.splice(k,2,{x:a.x+t*d1x,y:a.y+t*d1y});k--;}}}
+ if(q.length<3){out.push(sub.trim());return;}
+ var s='M'+q[0].x.toFixed(1)+','+q[0].y.toFixed(1);
+ for(var j=1;j<q.length-1;j++){var A=q[j-1],B=q[j],C=q[j+1],r=Math.min(R,L(A,B)/2,L(B,C)/2),u=r/L(A,B),v=r/L(B,C);
+  s+=' L'+(B.x+(A.x-B.x)*u).toFixed(1)+','+(B.y+(A.y-B.y)*u).toFixed(1)+' Q'+B.x.toFixed(1)+','+B.y.toFixed(1)+' '+(B.x+(C.x-B.x)*v).toFixed(1)+','+(B.y+(C.y-B.y)*v).toFixed(1);}
+ s+=' L'+q[q.length-1].x.toFixed(1)+','+q[q.length-1].y.toFixed(1);out.push(s);});return out.join(' ');}
+function line(g,d,c,w,o){o=o||{};if(typeof ROUND_R!=='undefined'&&!o.sharp&&typeof d==='string') d=roundPath(d,ROUND_R);g.L.push({d:d,c:c,w:w,dash:o.dash||'none',op:o.op==null?1:o.op,st:o.st||'',cap:o.cap||'round'});}
+function span(g,st,layer){(layer||g.S).push({style:'position:absolute;'+st});}
+function name(g,t,x,y,o){o=o||{};text(g.T,t,o.sub||'',x,y,o.col||'rgba(207,217,234,'+(o.ink||.7)+')',{align:o.align,size:o.size||'.84em',ls:o.ls||'.04em',subColor:o.subColor});}
+/* A state's name: beside it, over it or under it, brighter on the walked path; a verdict is named only when reached. */
+function slabel(g,s,o,R){if(!o.label||(s.q&&!o.on)) return;var col=o.on||o.tpl?'rgba(207,217,234,.8)':'rgba(148,163,184,.5)',side=o.side||(s.q?'right':(o.above?'top':'bottom')),sz=o.big?'.86em':(s.q?'.66em':'.68em');
+ if(side==='right') name(g,o.name,s.x+R+6,s.y-8,{size:sz,col:s.q?hexA(s.c,.9):col});
+ else if(side==='topright') name(g,o.name,s.x+R+4,s.y-R-18,{size:sz,col:col});
+ else if(side==='top') name(g,o.name,s.x,s.y-R-(o.big?22:18),{align:'center',size:sz,col:col});
+ else name(g,o.name,s.x,s.y+R+3,{align:'center',size:sz,col:col});}
+/* Delayed disclosure: a hover target shows a short tip; a click opens its details in the side panel. */
+function hv(g,key,x,y,w,h,tip,det,pick){g.V.push({aria:tip?tip.t:key,style:'all:unset;position:absolute;cursor:pointer;left:'+x+'px;top:'+y+'px;width:'+w+'px;height:'+h+'px',
+ enter:function(){if(g.self.state.hover!==key) g.self.setState({hover:key});},leave:function(){if(g.self.state.hover===key) g.self.setState({hover:null});},
+ pick:pick||function(){if(det) g.self.setState({det:g.self.state.det===key?null:key});}});
+ if(tip) g.tips[key]={x:tip.x!=null?tip.x:x+w+8,y:tip.y!=null?tip.y:y,t:tip.t,lines:tip.lines};if(det) g.dets[key]=det;}
+function P(p){return p.x.toFixed(1)+','+p.y.toFixed(1);}
+/* A quadratic from a to b bowed by `bend` (a share of its length), trimmed `ta` and `tb` px off its ends; mid is its halfway point. */
+function qcurve(a,b,bend,ta,tb){var dx=b.x-a.x,dy=b.y-a.y,mx=(a.x+b.x)/2-dy*bend,my=(a.y+b.y)/2+dx*bend;
+ function trim(p,q,r){var d=Math.hypot(q.x-p.x,q.y-p.y)||1;return {x:p.x+(q.x-p.x)*r/d,y:p.y+(q.y-p.y)*r/d};}
+ var p0=trim(a,{x:mx,y:my},ta||0),p1=trim(b,{x:mx,y:my},tb||0);
+ return {d:'M'+P(p0)+' Q'+mx.toFixed(1)+','+my.toFixed(1)+' '+P(p1),mid:{x:.25*p0.x+.5*mx+.25*p1.x,y:.25*p0.y+.5*my+.25*p1.y},p0:p0,p1:p1};}
+/* A loop or skip held to a band: out of a, along the band `off` px above (-) or below (+) the row line, into b. */
+function band(a,b,off,r){var y=a.y+off,s=off<0?-1:1,k=Math.min(10,Math.abs(off)*.6),dir=b.x>a.x?1:-1;
+ return {d:'M'+a.x+','+(a.y+s*r)+' L'+a.x+','+(y-s*k)+' Q'+a.x+','+y+' '+(a.x+dir*k)+','+y+' L'+(b.x-dir*k)+','+y+' Q'+b.x+','+y+' '+b.x+','+(y-s*k)+' L'+b.x+','+(b.y+s*r),mid:{x:(a.x+b.x)/2,y:y}};}
+/* An octilinear run: level, then a 45 degree diagonal, then level again. */
+function octi(a,b,ta,tb,mode){if(Math.abs(a.y-b.y)<.5){var dir=b.x>a.x?1:-1;return {d:'M'+(a.x+dir*ta)+','+a.y+' L'+(b.x-dir*tb)+','+b.y,mid:{x:(a.x+b.x)/2,y:a.y}};}
+ var dy=Math.abs(b.y-a.y),dir=b.x>a.x?1:-1;
+ if(mode==='early') return {d:'M'+(a.x+dir*ta)+','+a.y+' L'+(a.x+dir*(ta+dy))+','+b.y+' L'+(b.x-dir*tb)+','+b.y,mid:{x:a.x+dir*(ta+dy/2),y:(a.y+b.y)/2}};
+ if(mode==='late') return {d:'M'+(a.x+dir*ta)+','+a.y+' L'+(b.x-dir*(tb+dy))+','+a.y+' L'+(b.x-dir*tb)+','+b.y,mid:{x:b.x-dir*(tb+dy/2),y:(a.y+b.y)/2}};
+ var xm=(a.x+b.x)/2,h=Math.min(dy,Math.abs(b.x-a.x)-ta-tb)/2;
+ return {d:'M'+(a.x+dir*ta)+','+a.y+' L'+(xm-dir*h)+','+a.y+' L'+(xm+dir*h)+','+b.y+' L'+(b.x-dir*tb)+','+b.y,mid:{x:xm,y:(a.y+b.y)/2}};}
+/* ---- the machines ---- */
+function ch(ns){var e=[];for(var i=1;i<ns.length;i++) e.push([ns[i-1],ns[i]]);return e;}
+function def(kind,nodes,extra,o){o=o||{};var pos={};nodes.forEach(function(n,i){pos[n]=(o.pos&&o.pos[n])||{c:i,l:0};});
+ return {kind:kind,nodes:nodes,pos:pos,edges:(o.edges||ch(o.main||nodes)).concat(extra||[]),final:o.final||[nodes[nodes.length-1]],x1:o.x1||X1,quiet:o.quiet||[]};}
+const MD={
+ build:def('phase',['start'].concat(STEPS.build),[['green','red_proven'],['criteria_checked','red_proven'],['worktree_ready','criteria_checked'],['worktree_ready','docs_reconciled']]),
+ deliver:def('phase',['start'].concat(STEPS.deliver),[['lint_green','start'],['pushed','committed']]),
+ review_fix:def('phase',['start'].concat(STEPS.review_fix),[]),
+ lens:def('sub',['read_diff','probe','verdict','PASS','CHANGES'],[['verdict','CHANGES']],{main:['read_diff','probe','verdict','PASS'],final:['PASS','CHANGES'],pos:{PASS:{c:3,l:-.5},CHANGES:{c:3,l:.5}},quiet:['PASS','CHANGES']}),
+ triage:def('sub',['start','audit_active','dismissal_replied','audit_recorded','approval_requested','fix_verified','fix_replied','completed'],[],
+  {edges:[['start','audit_active'],['audit_active','dismissal_replied'],['dismissal_replied','audit_active'],['audit_active','audit_recorded'],['audit_recorded','approval_requested'],['start','fix_verified'],['fix_verified','fix_replied'],['fix_replied','start'],['start','completed']],
+   pos:{audit_active:{c:1,l:0},dismissal_replied:{c:1.5,l:-1},audit_recorded:{c:2,l:0},approval_requested:{c:3,l:0},completed:{c:3,l:-1},fix_verified:{c:1,l:1},fix_replied:{c:2,l:1}},final:['completed']}),
+ dag:def('dag',['queued','running','succeeded','failed'],[['running','failed']],{main:['queued','running','succeeded'],final:['succeeded','failed'],pos:{succeeded:{c:2,l:-.5},failed:{c:2,l:.5}},quiet:['succeeded','failed']})};
+function stateCol(d,n,c,mc){if(n==='PASS'||n==='succeeded') return '#34d399';if(n==='CHANGES'||n==='failed') return '#fb7185';return KC[d.kind];}
+/* Lay a machine out on its row: positions, edges sorted into kinds, loops and skips stacked into levels, and the room they need. */
+function geom(d,M,o){o=o||{};var mc=0,xy={},lane=o.lane||34;d.nodes.forEach(function(n){mc=Math.max(mc,d.pos[n].c);});
+ d.nodes.forEach(function(n){var p=d.pos[n];xy[n]={w:(d.x1-X0)/mc,ci:p.c,mc:mc,x1:d.x1,x:X0+p.c*(d.x1-X0)/mc,l:p.l*lane,c:stateCol(d,n),q:d.quiet.indexOf(n)>=0,fin:d.final.indexOf(n)>=0,n:n};});
+ var E=d.edges.map(function(e){var A=d.pos[e[0]],B=d.pos[e[1]],dc=B.c-A.c,k=A.l!==B.l?'lane':(dc===1?'step':(dc<0?'back':'skip'));
+  return {a:e[0],b:e[1],k:k,side:k==='back'?M.back:(k==='skip'?M.skip:null),lo:Math.min(A.c,B.c),hi:Math.max(A.c,B.c),lv:0};});
+ var lv={above:0,below:0};['above','below'].forEach(function(side){var placed=[];
+  E.filter(function(e){return e.side===side;}).sort(function(x,y){return (x.hi-x.lo)-(y.hi-y.lo);}).forEach(function(e){
+   var L=1;while(placed.some(function(p){return p.lv===L&&p.lo<e.hi&&e.lo<p.hi;})) L++;e.lv=L;placed.push(e);lv[side]=Math.max(lv[side],L);});});
+ var minL=0,maxL=0;d.nodes.forEach(function(n){minL=Math.min(minL,xy[n].l);maxL=Math.max(maxL,xy[n].l);});
+ var lab=o.labels!==false,top=-minL+(minL<0&&lab?26:12)+(lv.above?M.base+lv.above*M.step:0),bot=maxL+(lab?M.lab:10)+(lv.below?M.base+(M.back==='below'&&lab?0:0)+lv.below*M.step:0);
+ return {xy:xy,E:E,top:top,bot:bot,lane:lane,M:M};}
+function place(G,y){Object.keys(G.xy).forEach(function(n){G.xy[n].y=y+G.xy[n].l;});}
+/* Draw one row through the style: edges, then the walked path over them, then states, then the task. */
+function drawRow(g,S,d,G,o){var xy=G.xy,path=o.path||[],tp=Array.isArray(o.trace)?o.trace:path,on={},walked={};tp.forEach(function(n){on[n]=1;});for(var i=1;i<tp.length;i++) walked[tp[i-1]+'>'+tp[i]]=i;
+ G.E.forEach(function(e){var a=xy[e.a],b=xy[e.b],w=walked[e.a+'>'+e.b];
+  if(e.k==='back'||e.k==='skip') S.loop(g,a,b,(e.side==='above'?-1:1)*(G.M.base+e.lv*G.M.step),{kind:d.kind,k:e.k,on:!!w,G:G});
+  else S.edge(g,a,b,{kind:d.kind,k:e.k,on:!!w,num:w&&o.nums?o.nums[w-1]:''});});
+ var leg={};G.E.forEach(function(x){if(x.k==='back'||x.k==='skip'){[x.a,x.b].forEach(function(n){(leg[n]=leg[n]||{})[x.side]=1;});}});
+ /* the highest loop that runs over each state, per side, so a label can clear it */
+ function over(n,side){var c=xy[n].ci,m=0;G.E.forEach(function(x){if(x.side===side&&x.lo<=c&&c<=x.hi) m=Math.max(m,x.lv);});return m;}
+ d.nodes.forEach(function(n,i){var s=xy[n];S.state(g,s,{upLv:over(n,'above'),downLv:over(n,'below'),M:G.M,legUp:!!(leg[n]&&leg[n].above),legDown:!!(leg[n]&&leg[n].below),kind:d.kind,on:!!on[n],cur:o.now&&n===path[path.length-1],init:i===0,label:o.labels!==false||s.q,name:s.q?n.toLowerCase():tc(n),above:s.l<0});});
+ if(o.now&&path.length){var cur=xy[path[path.length-1]],prev=path.length>1?xy[path[path.length-2]]:{x:cur.x-60,y:cur.y};S.task(g,cur,prev,o.job,{live:o.live,key:o.key,node:path[path.length-1]});}}
+function head(g,y,nm,col,s1,s2,s2c){name(g,nm,272,y-14,{col:col,size:'.88em'});if(s1) name(g,s1,272,y+4,{size:'.7em',col:'rgba(148,163,184,.62)'});if(s2) name(g,s2,272,y+18,{size:'.7em',col:s2c||'rgba(148,163,184,.62)'});}
+/* ---- the template ---- */
+const TY=214,LYT={security:136,ux:188,ui:240,code:292};
+function tpl(){var T={build:{x:X0,y:TY,n:'Build'},fork:{x:548,y:TY,n:'',dot:1},join:{x:752,y:TY,n:'',dot:1},deliver:{x:850,y:TY,n:'Deliver'},review_fix:{x:975,y:TY,n:'Review Fix'},
+ review_recorded:{x:1100,y:TY,n:'Review Recorded',fin:1},parked:{x:850,y:112,n:'Parked',fin:1,exit:1},needs_attention:{x:975,y:112,n:'Needs Attention',fin:1,exit:1},finalized:{x:975,y:316,n:'Finalized',fin:1,exit:1}};
+ LENSES.forEach(function(l){T[l]={x:650,y:LYT[l],n:LN[l]+' Lens',lens:1};});Object.keys(T).forEach(function(k){T[k].c=T[k].lens||T[k].dot?KC.sub:(T[k].exit?'#e879f9':KC.tpl);T[k].k=k;});return T;}
+function template(g,S,jobs,j){if(S.template) return S.template(g,jobs,j);var T=tpl(),ed=function(a,b,o){S.edge(g,T[a],T[b],Object.assign({kind:'tpl',k:'step'},o||{}));};
+ ed('build','fork');LENSES.forEach(function(l){ed('fork',l,{k:'lane'});ed(l,'join',{k:'lane'});});ed('join','deliver');ed('deliver','review_fix');ed('review_fix','review_recorded');
+ ['build','deliver','review_fix'].forEach(function(k){ed(k,'parked',{k:'exit'});});ed('deliver','needs_attention',{k:'exit'});ed('deliver','finalized',{k:'exit'});
+ S.loop(g,T.review_fix,T.deliver,-(S.M.base+S.M.step),{kind:'tpl',k:'back',label:'Lint Green'});
+ S.loop(g,T.join,T.build,LYT.code-TY+30,{kind:'tpl',k:'back',label:'Changes'});
+ Object.keys(T).forEach(function(k){var s=T[k];if(s.dot){S.state(g,s,{kind:'sub',dot:true});return;}
+  var ls=s.lens?lensState(j,s.k):null;if(ls&&ls.state) s.c=VC[ls.state];
+  S.state(g,s,{kind:s.lens?'sub':'tpl',on:true,big:true,label:true,name:s.n,init:k==='build',side:s.lens||k==='finalized'?'right':(s.exit||k==='review_recorded'?'top':'bottom'),cur:ls&&ls.live,tpl:true});});
+ name(g,'four lenses at once',T.fork.x+52,84,{align:'center',size:'.66em',col:'rgba(148,163,184,.55)'});
+ var at={};jobs.forEach(function(x){if(x.phase==='qa'){LENSES.forEach(function(l){if(x.lenses[l].state==='pending') (at[l]=at[l]||[]).push(x);});return;}var p=x.phase==='done'?'review_recorded':x.phase;(at[p]=at[p]||[]).push(x);});
+ Object.keys(at).forEach(function(k){if(T[k]) S.crowd(g,T[k],at[k],j.id);});
+ g.P.lane.push('M262,'+HAIR+' L'+PANE_R+','+HAIR);
+ [X0,650,850,975,1100].forEach(function(x){g.P.guide.push('M'+x+','+(HAIR+6)+' L'+x+','+ROWS_END);});}
+/* The rows: one per machine, in the template's order, never one per run. A machine the task ran more than once keeps one row, and its
+   rounds are pills under its name: the selected round's path is drawn (the newest by default) and a lens's pills carry its verdict. The
+   machine the task is in now is open; the rest fold to a small, unlabelled copy of their graph. Click a name to open or fold a row. */
+function rows(g,S,j){var Y=HAIR+4,stop=false,open=g.open||{},pick=g.pick||{},qa=[],bl=[],dl=[],rf=[];
+ j.trail.forEach(function(t,i){var e={t:t,i:i,now:i===j.trail.length-1&&j.phase===t.phase};({qa:qa,build:bl,deliver:dl,review_fix:rf}[t.phase]||[]).push(e);});
+
+ function sep(x){g.P.lane.push('M'+(x||262)+','+Y+' L'+PANE_R+','+Y);}
+ function toggle(k,v){return function(){var o=Object.assign({},g.self.state.open||{});o[k]=v;g.self.setState({open:o});};}
+ function choose(k,v){return function(){var o=Object.assign({},g.self.state.pick||{});o[k]=v;g.self.setState({pick:o});};}
+ /* rounds as pills: r1 r2 r3, the selected one lit; `vc` colours a lens round by its verdict */
+ function pills(k,ents,sel,y,vc){ents.forEach(function(e,n){var on=n===sel,c=vc?vc(e):KC.phase;
+  g.Q.push({text:'r'+e.t.round+(e.now?' •':''),aria:k+' round '+e.t.round,pick:choose(k,n),style:'all:unset;cursor:pointer;position:absolute;left:'+(272+n*34)+'px;top:'+y+'px;height:14px;padding:0 6px;border-radius:7px;font-size:10px;line-height:13px;box-sizing:border-box;'+
+   'color:'+(on?'#0b1224':hexA(c,.9))+';background:'+(on?c:'transparent')+';border:1px solid '+hexA(c,on?1:.45)});});}
+ /* one machine row: open (full graph, names) or folded (small graph); `paths(e)` says what a round walked */
+ function row(k,label,col,d,ents,paths,o){if(stop||!ents.length) return;o=o||{};var sel=pick[k]!=null&&pick[k]<ents.length?pick[k]:ents.length-1,e=ents[sel],isOpen=typeof COMPACT_ALL!=='undefined'?false:open[k]!=null?open[k]:!!o.active;
+  var MI=S.MINI||{base:7,step:3,lane:.3,minH:38,pad:8},path=paths(e),M=isOpen?S.M:{base:MI.base,step:MI.step,back:S.M.back,skip:S.M.skip,lab:6},G=geom(d,M,{labels:isOpen&&o.labels!==false,lane:isOpen?(o.lane||34):(o.lane||34)*MI.lane});
+  var h=Math.max(isOpen?66:MI.minH,G.top+G.bot+(isOpen?18:2*MI.pad)),y0=Y;
+  var y=Y+G.top+(isOpen?10:MI.pad);if(!isOpen) Object.keys(G.xy).forEach(function(n){G.xy[n].mini=true;});place(G,y);
+  /* the backtrace is drawn on hover or once picked: over the row, or over the task where it is now */
+  var hk=g.self.state.hover,dk=g.self.state.det,live=e.now&&(o.isLive?o.isLive(e):true),rk=function(x){return x==='row:'+k||x==='row:'+k+':g';},lit=typeof TRACE_ALL!=='undefined'||rk(hk)||rk(dk)||(live&&(hk==='task'||dk==='task'));
+  if(o.stem!=null){var f=G.xy[d.nodes[0]],sx=o.stem;var lx=384;
+   /* every stem reaches the routing lane along the hairline (the template draws that run, through the stems' dots); here it runs down
+      the lane beside the round pills, then into the row */
+   /* phase and lens stems share one track; a lens stem's dashes sit in the phase stem's gaps */
+   line(g,'M'+lx+','+(HAIR+8)+' L'+lx+','+f.y+' L'+(f.x-(isOpen?11:6))+','+f.y,hexA(KC[d.kind],isOpen?.55:.3),1.3,{dash:'2 5',st:'animation:march 1.4s linear infinite'+(d.kind==='phase'?'':';animation-delay:-.35s')});}
+  drawRow(g,S,d,G,{path:path,trace:lit?path:path.slice(-1),labels:isOpen&&o.labels!==false,now:live,live:true,job:j,key:k});
+  var ty=isOpen?y-16:Y+h/2-17,info=o.info?o.info(e):'';name(g,label,272,ty,{col:hexA(col,isOpen?1:.8),size:'.82em'});
+  var hasPills=ents.length>1||o.pillsAlways,cy=hasPills?ty+9:ty;if(hasPills) pills(k,ents,sel,ty+18,o.vc);
+  var tip={t:label+' · round '+e.t.round,lines:[info],x:272,y:y0+h+2},det={title:label,sub:'round '+e.t.round+' of '+ents.length+(e.now?' · running now':''),
+   rows:[{k:'status',v:info,c:o.vc?o.vc(e):''},{k:'walked',v:path.map(tc).join(' → ')}].concat(o.more?o.more(e):[])};
+  hv(g,'row:'+k,272,ty-2,180,16,tip,det);hv(g,'row:'+k+':g',460,y0+2,PANE_R-460,h-4,null,det);
+  if(live&&path.length){var c=G.xy[path[path.length-1]],at=tc(path[path.length-1]),tr=isOpen?12:9;
+   hv(g,'task',c.x-tr,c.y-tr,2*tr,2*tr,{t:j.id,lines:['at '+at+' · '+j.mins+' min']},{title:j.id,sub:j.title,rows:[{k:'tier',v:j.tier,c:TIER[j.tier]},{k:'machine',v:label},{k:'state',v:at},{k:'round',v:j.round+' of '+j.limit},{k:'in state',v:j.mins+' min'},{k:'spec',v:j.spec}]});}
+  if(typeof COMPACT_ALL==='undefined'){g.H.push({aria:(isOpen?'Fold ':'Open ')+label,pick:toggle(k,!isOpen),style:'all:unset;position:absolute;cursor:pointer;left:254px;top:'+(cy-1)+'px;width:16px;height:16px'});
+   text(g.T,isOpen?'▾':'▸','',258,cy+1,'rgba(148,163,184,.55)',{size:'.7em'});}Y+=h;if(typeof NO_SEPS==='undefined') sep(o.inner?470:262);else if(!o.inner) sep(262);}
+ function phasePath(p){return function(e){var n=MD[p].nodes;return e.now?n.slice(0,j.step+2):n;};}
+ function doneSub(p){return function(e){return e.now?'at '+tc(MD[p].nodes[j.step+1])+' · '+j.mins+' min':'done in '+e.t.mins+' min';};}
+ row('build','Build',KT.phase,MD.build,bl,phasePath('build'),{stem:470,active:j.phase==='build',info:doneSub('build')});
+ if(qa.length&&!stop){var y0=Y;LENSES.forEach(function(l,li){
+   function v(e){return e.now?lensState(j,l):(e.t.v?{state:e.t.v[l]}:null);}
+   function why(e){return e.t.why&&e.t.why.indexOf(LN[l]+':')===0?e.t.why.slice(LN[l].length+2):'';}
+   var ST=typeof LST!=='undefined'?LST[l]:LSTEPS;
+   row('lens:'+l,LN[l]+' lens',KT.sub,typeof MDL==='function'?MDL(l):MD.lens,qa,function(e){var s=v(e);return s&&s.state?ST.concat(s.state):(s&&s.live?ST.slice(0,s.at+1):ST.slice(0,1));},
+    {stem:650,active:j.phase==='qa',lane:24,lens:true,last:li===LENSES.length-1,labels:typeof MDL==='function'||li===0,isLive:function(e){var s=v(e);return !!(s&&s.live);},inner:li<3,pillsAlways:true,vc:function(e){var s=v(e);return s&&s.state?VC[s.state]:KC.sub;},
+     info:function(e){var s=v(e);return s&&s.state?(s.state==='PASS'?'passed':'asked for changes'):(s&&s.live?'reviewing now':'waiting to start');},
+     more:function(e){var w=why(e);return w?[{k:'why',v:w,c:VC.CHANGES}]:[];}});});
+  }
+ if(dl.length&&!stop){var y1=Y,de=dl[dl.length-1],ip=de.now&&j.step<5,run=de.now&&j.step===4,act=j.phase==='deliver';
+  row('deliver','Deliver',KT.phase,MD.deliver,dl,phasePath('deliver'),{stem:850,active:act,info:doneSub('deliver'),inner:true});
+  if(!de.now||j.step>=3) row('triage','Review triage',KT.sub,MD.triage,dl,function(e){return e.now&&ip?['start','audit_active']:['start','audit_active','audit_recorded','approval_requested'];},{stem:850,active:act,lane:30,inner:true,isLive:function(e){return e.now&&ip;},info:function(e){return e.now&&ip?'auditing while the PR is open':'approval requested';}});
+  if(!de.now||j.step>=4) row('dag','ci-validate',KT.dag,MD.dag,dl,function(e){return e.now&&run?['queued','running']:['queued','running','succeeded'];},{stem:850,active:act,lane:22,labels:false,isLive:function(e){return e.now&&run;},info:function(e){return 'DAG · '+(e.now&&run?'running':'passed');}});
+  }
+ row('review_fix','Review fix',KT.phase,MD.review_fix,rf,phasePath('review_fix'),{stem:975,active:j.phase==='review_fix',info:doneSub('review_fix')});
+ var last=j.trail[j.trail.length-1];if(!stop&&(last.phase==='parked'||last.phase==='done')){var pk=last.phase==='parked',to=pk?'Needs Attention':'Review';
+  name(g,'→ '+to,272,Y+10,{size:'.8em',col:pk?'#fda4af':'#6ee7b7'});
+  hv(g,'left',268,Y+8,130,18,{t:'Left In Progress',lines:[pk?(last.why||'').split(':')[0]||'deferred':'review recorded']},{title:'Left In Progress',sub:'to '+to,rows:[{k:'why',v:last.why||(pk?'deferred':'review recorded'),c:pk?'#fda4af':'#6ee7b7'},{k:'round',v:String(last.round)}]});}
+ return Y;}
+/* ---- replay ---- */
+/* A replay bar under the rows, for the pinned task only (one task's 24h is ~120 events, so the client folds it in ~1-2 ms). The axis spans
+   the task's history up to 24h, with a tick per machine entry. Hover anywhere on the bar for the time and where the task was; click to
+   put the playhead there, and the template and rows show the task as it was. ▶ plays forward from the playhead; Live returns to now. */
+var NOW_M=5*60+30;
+const SX0=330,SX1=1176,SY=866;
+function hhmm(ago){var m=((NOW_M-Math.round(ago))%1440+1440)%1440;return ('0'+Math.floor(m/60)).slice(-2)+':'+('0'+(m%60)).slice(-2);}
+function entriesOf(x){var out=[],ago=x.mins;for(var i=x.trail.length-1;i>=0;i--){var t=x.trail[i];if(i<x.trail.length-1) ago+=t.mins||0;
+  if(t.phase!=='parked'&&t.phase!=='done') out.unshift({t:t,i:i,ago:ago,dur:i===x.trail.length-1?x.mins:(t.mins||0)});}
+ var n={};out.forEach(function(e){n[e.t.phase]=n[e.t.phase]||0;e.k=n[e.t.phase]++;});return out;}
+function spanOf(j){var es=entriesOf(j);return Math.min(1440,(es.length?es[0].ago:10)*1.06+2);}
+/* The task as it was `ago` minutes back: its trail cut at that moment, the step inside the machine it was in, and its lenses so far. */
+function jobAt(j,ago){if(ago==null||ago<.5) return j;var es=entriesOf(j),e=null;es.forEach(function(x){if(x.ago>=ago) e=x;});if(!e) e=es[0];if(!e) return j;
+ var r=Object.assign({},j),frac=Math.max(0,Math.min(1,(e.ago-ago)/Math.max(e.dur,1))),n=(STEPS[e.t.phase]||['x']).length;
+ r.trail=j.trail.slice(0,e.i+1);r.phase=e.t.phase;r.round=e.t.round;r.mins=Math.max(0,Math.round(e.ago-ago));r.step=Math.min(n-1,Math.floor(frac*n));
+ if(e.t.phase==='qa'){var cur=e.i===j.trail.length-1;r.lenses={};LENSES.forEach(function(l,li){var v=cur?(j.lenses[l]&&j.lenses[l].state!=='pending'?j.lenses[l].state:null):(e.t.v?e.t.v[l]:null);
+  var n=typeof LST!=='undefined'?LST[l].length:3;r.lenses[l]=v&&frac>=.55+li*.1?L(v):L(null,Math.min(n-1,Math.floor(frac*n)));});}
+ return r;}
+function replay(g,j,at,playing){var tw=spanOf(j),es=entriesOf(j);function xOf(ago){return SX1-(ago/tw)*(SX1-SX0);}
+ g.P.lane.push('M'+SX0+','+SY+' L'+SX1+','+SY);
+ name(g,hhmm(tw),SX0,SY+6,{size:'.6em',col:'rgba(148,163,184,.45)'});name(g,'now',SX1,SY+6,{align:'center',size:'.6em',col:'rgba(148,163,184,.45)'});
+ es.forEach(function(e){var x=xOf(e.ago),past=at!=null&&e.ago<at;span(g,'left:'+(x-1)+'px;top:'+(SY-8)+'px;width:2px;height:8px;border-radius:1px;background:'+hexA(e.t.phase==='qa'?KC.sub:KC.phase,past?.3:.95));});
+ var px=xOf(at==null?0:at);
+ if(at!=null){span(g,'left:'+px+'px;top:'+(SY-1)+'px;width:'+(SX1-px)+'px;height:2px;background:rgba(148,163,184,.12)');
+  span(g,'left:'+(px-1)+'px;top:'+(SY-20)+'px;width:2px;height:24px;background:#e2e8f0;box-shadow:0 0 6px #e2e8f0');name(g,hhmm(at),px,SY-36,{align:'center',size:'.66em',col:'#e2e8f0'});}
+ else span(g,'left:'+(px-3.5)+'px;top:'+(SY-3.5)+'px;width:7px;height:7px;border-radius:50%;background:#34d399;box-shadow:0 0 6px #34d399');
+ /* scrub targets: hover for the time and where the task was, click to move the playhead there */
+ var N=96,w=(SX1-SX0)/N;for(var i=0;i<N;i++){(function(i){var ago=tw*(1-(i+.5)/N),r=jobAt(j,ago),ph=r.phase==='qa'?'QA lenses':(PN[r.phase]||r.phase);
+  hv(g,'scrub:'+i,SX0+i*w,SY-22,w,30,{t:hhmm(ago),lines:[ph+' · r'+r.round],x:Math.max(SX0,SX0+i*w-40),y:SY-74},null,function(){g.self.setState({at:ago,det:null});});})(i);}
+ g.H.push({aria:playing?'Pause replay':'Play replay',pick:function(){var st=g.self.state;g.self.setState({replaying:!playing,at:st.at==null?tw:st.at});},
+  style:'all:unset;cursor:pointer;position:absolute;left:272px;top:'+(SY-9)+'px;width:18px;height:18px'});
+ text(g.T,playing?'❚❚':'▶','',275,SY-8,playing?'#e2e8f0':'rgba(203,213,225,.8)',{size:'.72em'});
+ if(at!=null){g.H.push({aria:'Back to live',pick:function(){g.self.setState({at:null,replaying:false});},style:'all:unset;cursor:pointer;position:absolute;left:294px;top:'+(SY-9)+'px;width:30px;height:18px'});
+  text(g.T,'Live','',297,SY-8,'#6ee7b7',{size:'.7em'});}}
+/** Pins the clock the scrubber labels count back from, in local minutes past midnight. */
+function setNowMinutes(m){NOW_M=m;}
+export { LENSES, LN, PN, STEPS, TIER, statusOf, starfield, STYLE, PANE_R, HAIR, ANIM_UNTIL, template, rows, hhmm, spanOf, jobAt, replay, setNowMinutes };
