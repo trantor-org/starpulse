@@ -113,6 +113,7 @@ def _record(built: Board, task: str) -> dict[str, Any]:
     assert built.read is not None
     record = dict(built.read(task) or {})
     record.pop("start_criteria")  # derived from the description, which an edit of the description changes
+    record.pop("session")  # derived from the notes' Assignee marker, which an edit of the notes changes
     return record
 
 

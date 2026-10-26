@@ -79,6 +79,15 @@ def test_a_move_appends_a_transition_naming_both_states(served) -> None:
     assert (moved.type, moved.payload["from"], moved.payload["to"]) == ("Transitioned", "To Do", "In Progress")
 
 
+def test_a_claim_recorded_by_its_assignee_marker_alone_folds_its_session_as_the_assignee(served) -> None:
+    built, _, store, _ = served
+
+    assert built.writer("task-5", "In Progress", "agent", "s-1").ok
+
+    assert _types(store, "task-5")[-1] == "Claimed"
+    assert replay(store.read("task", "task-5"))["assignee"] == "s-1"
+
+
 def test_rewriting_a_status_whose_append_was_lost_transitions_from_the_historys_state(
     served, monkeypatch: pytest.MonkeyPatch
 ) -> None:
