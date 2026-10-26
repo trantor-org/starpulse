@@ -232,6 +232,15 @@ describe("a Board state's sun", () => {
 });
 
 describe("a Board laid out at the values it shows", () => {
+  it("lays a Board out the same whichever Board was laid before it, so a remembered zoom never leaks between inputs", () => {
+    const quiet = withTasks(boardSky(), { ready: 2 }), busy = withTasks(boardSky(), { ready: 150, done: 400 });
+    const at = (s: Scene) => Object.fromEntries(Object.entries(s.galaxies).map(([id, g]) => [id, [g.x, g.y, g.r]]));
+    const first = at(build(busy, { kind: "board" })), other = at(build(quiet, { kind: "board" }));
+
+    expect(at(build(busy, { kind: "board" }))).toEqual(first);
+    expect(at(build(quiet, { kind: "board" }))).toEqual(other);
+    expect(other).not.toEqual(first);
+  });
   it("carries each state's place, and the sky's width, as the renderer eases them", () => {
     const sky = withTasks(boardSky(), { ready: 150, done: 400 }), full = build(sky, { kind: "board" });
     const shown = build({ ...sky, ease: (key: string, v: number) => (key.endsWith(".r") ? v / 2 : key === "done.x" ? v + 100 : key === "sky.w" ? v + 50 : v) }, { kind: "board" });

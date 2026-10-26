@@ -725,6 +725,8 @@ export const MOONS = 8;
 const GROW_KEEP = 0.5;
 const ZOOM_MAX = 16;
 const ZOOM_MIN = 0.05;
+/** The last Board zoom search: which grid, how many lines, the zoom and whether the suns grow, and the inputs it was made from. */
+let searched: { key: string; at: number; rows: number; k: number; grow: boolean } | null = null;
 /**
  * The dot and ring gaps that hold `n` bodies in rings from r0 out to r1: a fuller body adds rings inside its band, closer together, never past it,
  * and never closer than `least`.
@@ -868,10 +870,17 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
       const q = S.latest[a.id], f = flowsOf(sid)[0];
       return !!q && !a.today && ps.some((p) => (q.flow === f && p.q.id === q.state) || p.child.machine === q.flow);
     };
+    // a state's tasks split the same at every zoom, so the zoom search below sizes each state from one split
+    const held = new Map(
+      states.map((st) => {
+        const all = byState[st.id] || [], fs = flowsOf(st.id), ps = phasesOf(st.id), sides = ps.flatMap((p) => p.side);
+        // the sun's own tasks: none in a phase, a side machine or a lifecycle's sub-state
+        const here = all.filter((a) => !sides.includes(S.latest[a.id]?.flow ?? "") && !phased(st.id, ps, a) && !deepest(a));
+        return [st.id, { fs, ps, here }];
+      }),
+    );
     const radius = (st: (typeof states)[number], sunR: number) => {
-      const all = byState[st.id] || [], fs = flowsOf(st.id), ps = phasesOf(st.id), sides = ps.flatMap((p) => p.side);
-      // the sun's own tasks: none in a phase, a side machine or a lifecycle's sub-state
-      const here = all.filter((a) => !sides.includes(S.latest[a.id]?.flow ?? "") && !phased(st.id, ps, a) && !deepest(a)), foot = footprint(false, here.length, sunR - SUN_R);
+      const { fs, ps, here } = held.get(st.id)!, foot = footprint(false, here.length, sunR - SUN_R);
       // the sky is laid out from the footprint the machines' moons once reserved, so the suns keep the places the Board has always given them
       const was = footprint(fs.length > 0, here.length, sunR - SUN_R), lay = { R: was.R, reach: fs.length ? was.reach : null };
       return { r: sunR, R: foot.R, band: foot.band, lay, ps, here };
@@ -1029,24 +1038,27 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
       }
       return lo;
     };
+    const grids = pull.size ? [grid(true), grid(false)] : [grid(false)];
     const choose = () =>
-      (pull.size ? [grid(true), grid(false)] : [grid(false)])
-      .map((g) => {
-        const zooms = g.cols.map((_, i) => zoom(g, i + 1)), rows = pickRows(zooms);
-        return { g, rows, k: zooms[rows - 1] };
-      })
-      .reduce((a, b) => (b.k > a.k + 1e-9 ? b : a));
-    // the suns' growth is kept only while it costs the Board little of its zoom: a Board whose names would swell the suns, and with them every ring
-    // and branch, to shrink the rest to specks keeps the suns at their fixed size, hiding each name its sun cannot hold
-    let best = choose();
-    const grown = best.k;
-    grow = false;
-    const fixed = choose();
-    if (grown >= GROW_KEEP * fixed.k && grown > ZOOM_MIN) {
-      grow = true;
-    } else {
-      best = fixed;
+      grids
+        .map((g, at) => {
+          const zooms = g.cols.map((_, i) => zoom(g, i + 1)), rows = pickRows(zooms);
+          return { at, rows, k: zooms[rows - 1] };
+        })
+        .reduce((a, b) => (b.k > a.k + 1e-9 ? b : a));
+    // most live deltas leave the canvas, the grids and what each state is sized and named from as they were, so the last search stands while
+    // they match
+    const key = JSON.stringify([W, H, ctx.scale, grids, states.map((st) => [st.id, held.get(st.id)!.fs.length > 0, held.get(st.id)!.here.length, texts[st.id]])]);
+    if (searched?.key !== key) {
+      // the suns' growth is kept only while it costs the Board little of its zoom: a Board whose names would swell the suns, and with them every
+      // ring and branch, to shrink the rest to specks keeps the suns at their fixed size, hiding each name its sun cannot hold
+      const grown = choose();
+      grow = false;
+      const fixed = choose(), keep = grown.k >= GROW_KEEP * fixed.k && grown.k > ZOOM_MIN;
+      searched = { key, ...(keep ? grown : fixed), grow: keep };
     }
+    grow = searched.grow;
+    const best = { g: grids[searched.at], rows: searched.rows, k: searched.k };
     const rows = best.rows, L = lay(best.g, best.k, rows);
     // each state's place and the sky's width ease toward the layout's targets, so a state changing size moves its neighbours and the fit smoothly
     for (const p of L.ps) {
