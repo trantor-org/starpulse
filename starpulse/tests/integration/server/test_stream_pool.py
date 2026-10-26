@@ -15,11 +15,11 @@ import pytest
 from sqlalchemy import create_engine
 
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.kit.adapter_kit import next_event, serve, url
 from starpulse.pulls.pulls import PullStore
-from starpulse._internal.server import asgi_app
-from starpulse._internal.server.page_server import PageServer
+from starpulse.runtime.adapter_kit import next_event, serve, url
 from starpulse.tests.machines import MACHINES, ROLES
+from starpulse.views import asgi_app
+from starpulse.views.page_server import PageServer
 
 _STREAM = "/api/lanes"
 
@@ -80,7 +80,7 @@ def test_a_stream_over_the_cap_is_refused_with_retry_after_and_holds_no_request_
 
 
 def test_a_closed_stream_frees_its_place_in_the_pool(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("starpulse._internal.server.streams._PING_S", 0.05)
+    monkeypatch.setattr("starpulse.views.streams._PING_S", 0.05)
     with _small_pools(tmp_path, monkeypatch, requests=1, streams=1) as server:
         with ExitStack() as first:
             _open(server, first)

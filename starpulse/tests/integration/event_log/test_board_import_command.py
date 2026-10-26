@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.server import board_import
 from starpulse.event_log import lane_import
 from starpulse.event_log.event_log import EventLog
 from starpulse.flow_metrics.history import HistoryStore
+from starpulse.runtime import board_import
 from starpulse.tests.machines import MACHINES
 
 

@@ -16,8 +16,8 @@ import pytest
 import yaml
 from sqlalchemy import delete
 
-from starpulse.board.adapters import replica
-from starpulse.board.adapters import upstream_backlog
+from starpulse._internal.config.config import load
+from starpulse.board.adapters import replica, upstream_backlog
 from starpulse.board.adapters.upstream_backlog import (
     BacklogConfig,
     UpstreamBacklog,
@@ -28,16 +28,15 @@ from starpulse.board.adapters.upstream_backlog import (
     read_config,
     upstream_keys,
 )
-from starpulse._internal.config.config import load
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.kit.adapter_kit import BoardAdapterKit
-from starpulse._internal.server.writes import move_task
 from starpulse.contracts.adapters import BoardTask, Move
 from starpulse.event_log.event_log import EventLog, Tail
 from starpulse.event_log.tables import events
 from starpulse.machine_engine.model.machine_definition import Writer
 from starpulse.machine_engine.model.state_roles import StateRoles
+from starpulse.runtime.adapter_kit import BoardAdapterKit
 from starpulse.tests.conftest import stop_upstream_backlogs
+from starpulse.views.writes import move_task
 
 STATUSES = ("To Do", "Doing", "Review", "Done")
 BOARD_ROLES = StateRoles(

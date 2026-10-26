@@ -11,17 +11,17 @@ from pathlib import Path
 
 import pytest
 
-from starpulse.board.model.seam import Written
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.kit.adapter_kit import next_event as _next_event
-from starpulse._internal.kit.adapter_kit import serve as _serve
-from starpulse._internal.kit.adapter_kit import task
-from starpulse._internal.kit.adapter_kit import url as _url
-from starpulse._internal.server import snapshot_cache
-from starpulse._internal.server.page_server import PageServer
+from starpulse.board.model.seam import Written
 from starpulse.contracts.adapters import Move
+from starpulse.runtime.adapter_kit import next_event as _next_event
+from starpulse.runtime.adapter_kit import serve as _serve
+from starpulse.runtime.adapter_kit import task
+from starpulse.runtime.adapter_kit import url as _url
 from starpulse.tests.fake_board import bare_board
 from starpulse.tests.machines import MACHINES, ROLES
+from starpulse.views import snapshot_cache
+from starpulse.views.page_server import PageServer
 
 
 def _get(server: PageServer) -> bytes:

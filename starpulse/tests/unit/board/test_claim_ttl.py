@@ -9,17 +9,17 @@ from types import SimpleNamespace
 
 import pytest
 
+from starpulse._internal.config.config import load
 from starpulse.board.adapters import claim_ttl
 from starpulse.board.adapters.claim_ttl import sweep
-from starpulse.board.model.seam import Board
 from starpulse.board.adapters.upstream_backlog import UpstreamBacklog
-from starpulse._internal.config.config import load
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.server.assembly import assemble
+from starpulse.board.model.seam import Board
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import last_run_event
 from starpulse.event_log.store import EventStore, NewEvent
 from starpulse.flow_metrics.history import HistoryStore
+from starpulse.runtime.assembly import assemble
 
 FILE = """---
 id: task-5

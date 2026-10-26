@@ -6,7 +6,7 @@ import urllib.request
 from pathlib import Path
 
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.kit.adapter_kit import serve, task, url
+from starpulse.runtime.adapter_kit import serve, task, url
 from starpulse.tests.fake_board import bare_board
 
 DAY_S = 86400.0

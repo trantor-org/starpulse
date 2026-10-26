@@ -11,8 +11,8 @@ from pathlib import Path
 from typing import Any
 
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.kit.adapter_kit import serve, task, url
 from starpulse.event_log.event_log import EventLog
+from starpulse.runtime.adapter_kit import serve, task, url
 from starpulse.tests.fake_board import bare_board
 from starpulse.tests.machines import MACHINES, ROLES
 

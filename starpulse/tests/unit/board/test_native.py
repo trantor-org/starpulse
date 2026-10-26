@@ -8,18 +8,18 @@ from pathlib import Path
 import pytest
 import yaml
 
-from starpulse.board.adapters.native import board
-from starpulse.board.model.seam import Board
-from starpulse.board.adapters.upstream_backlog import UpstreamBacklog, board_moves, upstream_keys
 from starpulse._internal.config.config import load
+from starpulse.board.adapters.native import board
+from starpulse.board.adapters.upstream_backlog import UpstreamBacklog, board_moves, upstream_keys
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.kit.adapter_kit import BoardAdapterKit
-from starpulse._internal.server.assembly import assemble
-from starpulse._internal.server.server import announce
-from starpulse._internal.server.writes import move_task
+from starpulse.board.model.seam import Board
 from starpulse.contracts.adapters import BoardTask
 from starpulse.event_log.event_log import EventLog
 from starpulse.machine_engine.model.machine_definition import Writer
+from starpulse.runtime.adapter_kit import BoardAdapterKit
+from starpulse.runtime.assembly import assemble
+from starpulse.runtime.server import announce
+from starpulse.views.writes import move_task
 
 LANES = ["To Do", "In Progress", "Done"]
 _OPERATOR_ONLY = """\

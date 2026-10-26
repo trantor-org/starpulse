@@ -4,7 +4,7 @@ An adapter is a producer of these records for StarPulse: a Backlog.md or Jira re
 `BoardTask`s, a harness or git hook writes `MachineEvent`s, and a scheduler reader writes `Dag`s, each with its
 `ActiveRun`s, and the `Pool`s they run on.
 Each model is also published as a JSON Schema under `schemas/`, regenerated with
-`python -m starpulse.contracts`; `starpulse._internal.kit.adapter_kit` runs an adapter's output against them.
+`python -m starpulse.contracts`; `starpulse.runtime.adapter_kit` runs an adapter's output against them.
 """
 
 from __future__ import annotations

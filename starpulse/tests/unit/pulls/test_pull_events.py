@@ -6,13 +6,13 @@ import pytest
 from sqlalchemy import create_engine
 
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.kit.adapter_kit import task
-from starpulse.pulls.pull_events import RecordProjection
-from starpulse.pulls.pulls import PullStore
 from starpulse.event_log.event_log import Entry, EventLog
 from starpulse.event_log.readmodel.projector import Projector
 from starpulse.event_log.readmodel.read_model import ReadModel
 from starpulse.event_log.store import EventStore, NewEvent
+from starpulse.pulls.pull_events import RecordProjection
+from starpulse.pulls.pulls import PullStore
+from starpulse.runtime.adapter_kit import task
 
 URL = "https://github.com/acme/widgets/pull/7"
 PULL = ("acme/widgets", 7)

@@ -12,7 +12,7 @@ from starpulse._internal.cli import agent_cli as cli
 from starpulse._internal.cli import doctor
 from starpulse._internal.config.config import CommitKeys, Config, Repo, RunsInstance
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.kit.adapter_kit import serve, task, url
+from starpulse.runtime.adapter_kit import serve, task, url
 from starpulse.tests.dagu_stub import dagu
 from starpulse.tests.hosts import FakeHost
 from starpulse.tests.machines import MACHINES, ROLES

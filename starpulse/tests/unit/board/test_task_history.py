@@ -7,8 +7,6 @@ from pathlib import Path
 import pytest
 
 from starpulse._internal.config.config import load
-from starpulse._internal.server.assembly import assemble
-from starpulse._internal.server.writes import edit_task
 from starpulse.board.adapters.task_history import WRITER, _events
 from starpulse.board.adapters.upstream_backlog import UpstreamBacklog
 from starpulse.board.board_feed import BoardFeed
@@ -19,6 +17,8 @@ from starpulse.event_log.readmodel.projector import Projector
 from starpulse.event_log.readmodel.read_model import ReadModel
 from starpulse.event_log.store import EventStore, NewEvent
 from starpulse.event_log.tables import retired_tasks
+from starpulse.runtime.assembly import assemble
+from starpulse.views.writes import edit_task
 
 FILE = """---
 id: task-5

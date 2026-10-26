@@ -8,15 +8,15 @@ from pathlib import Path
 
 import pytest
 
-from starpulse.board.board_feed import BoardFeed
 from starpulse.board.adapters.history_window import HistoryWindow
+from starpulse.board.board_feed import BoardFeed
 from starpulse.board.machine_tasks import MachineTasks
-from starpulse._internal.kit.adapter_kit import serve, url
-from starpulse._internal.server.writes import history_window
 from starpulse.event_log.event_log import EventLog
+from starpulse.runtime.adapter_kit import serve, url
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.unit.board.test_machine_tasks import _entry
-from starpulse.tests.unit.server.test_server import _ip
+from starpulse.tests.unit.runtime.test_server import _ip
+from starpulse.views.writes import history_window
 
 REFUSED = "history window must be between 1 and 72 hours; got {}"
 

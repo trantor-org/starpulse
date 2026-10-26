@@ -7,13 +7,13 @@ from pathlib import Path
 
 import pytest
 
+from starpulse._internal.config.config import ConfigError, load
 from starpulse.board.model.seam import Board
 from starpulse.board.model.seam import load as load_board
-from starpulse._internal.config.config import ConfigError, load
-from starpulse._internal.server.assembly import assemble, history_store
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import DEFAULT_FILE
 from starpulse.flow_metrics.history import HistoryStore
+from starpulse.runtime.assembly import assemble, history_store
 from starpulse.tests import fake_board
 
 TASK = """---
@@ -133,11 +133,11 @@ def test_a_board_type_whose_module_builds_no_board_is_refused_by_name(tmp_path: 
 
 SEAM_FILES = (
     "board/model/seam.py",
-    "_internal/kit/adapter_kit.py",
-    "_internal/server/asgi_app.py",
-    "_internal/server/reads.py",
-    "_internal/server/write_routes.py",
-    "_internal/server/services.py",
+    "runtime/adapter_kit.py",
+    "views/asgi_app.py",
+    "views/reads.py",
+    "views/write_routes.py",
+    "views/services.py",
 )
 MOST_PARAMETERS = 12
 

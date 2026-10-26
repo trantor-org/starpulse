@@ -7,15 +7,15 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine
 
-from starpulse.pulls.ci_trail import parse
 from starpulse._internal.config.config import Repo
 from starpulse._internal.config.pins import GitHub
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.kit.adapter_kit import task
+from starpulse.event_log.event_log import Entry
+from starpulse.pulls.ci_trail import parse
 from starpulse.pulls.pull_events import RecordProjection
 from starpulse.pulls.pull_requests import GhUnavailableError, PullRequests, query_github
 from starpulse.pulls.pulls import PullStore
-from starpulse.event_log.event_log import Entry
+from starpulse.runtime.adapter_kit import task
 
 REPO = "https://github.com/acme/widgets/pull"
 FIRST, SECOND = f"{REPO}/1750", f"{REPO}/1751"

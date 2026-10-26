@@ -97,8 +97,8 @@ def test_the_snapshot_body_route_is_filled_from_the_reference_the_stream_sent():
 
 
 def test_every_read_route_the_server_answers_is_timed():
-    package = Path(__file__).resolve().parents[1] / "starpulse" / "_internal" / "server"
-    server = "".join(module.read_text() for module in package.glob("*.py"))
+    package = Path(__file__).resolve().parents[1] / "starpulse"
+    server = "".join(module.read_text() for directory in ("views", "runtime") for module in (package / directory).glob("*.py"))
     for route in pl.READS:
         assert route.split("?")[0].removesuffix("/<id>") in server, route
 

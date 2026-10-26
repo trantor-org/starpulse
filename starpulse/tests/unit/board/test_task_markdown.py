@@ -5,8 +5,8 @@ import json
 import pytest
 
 from starpulse.board.model.markdown import MarkdownRefusedError, imported, render
-from starpulse._internal.server.writes import edit_task
 from starpulse.tests.unit.board.test_task_history import served  # noqa: F401  (the fixture)
+from starpulse.views.writes import edit_task
 
 
 def test_an_untouched_rendering_imports_as_no_change(served) -> None:  # noqa: F811

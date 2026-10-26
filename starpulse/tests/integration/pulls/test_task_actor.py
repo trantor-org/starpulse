@@ -12,16 +12,16 @@ from sqlalchemy import create_engine
 
 from starpulse._internal.config.config import load
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.kit.adapter_kit import task
-from starpulse.pulls.pull_events import RecordProjection
-from starpulse.pulls.pulls import PullStore
-from starpulse.pulls.task_actor import ACTOR, TaskActor
-from starpulse._internal.server import server
-from starpulse._internal.server.assembly import assemble
 from starpulse.event_log.event_log import Entry, EventLog
 from starpulse.event_log.readmodel.projector import Projector
 from starpulse.event_log.readmodel.read_model import ReadModel
 from starpulse.event_log.store import EventStore, NewEvent
+from starpulse.pulls.pull_events import RecordProjection
+from starpulse.pulls.pulls import PullStore
+from starpulse.pulls.task_actor import ACTOR, TaskActor
+from starpulse.runtime import server
+from starpulse.runtime.adapter_kit import task
+from starpulse.runtime.assembly import assemble
 from starpulse.tests.machines import MACHINES, ROLES
 from starpulse.tests.task_actor_kit import (
     CHILD,

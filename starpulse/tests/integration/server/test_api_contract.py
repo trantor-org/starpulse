@@ -11,20 +11,20 @@ from pydantic import TypeAdapter
 from sqlalchemy import create_engine
 
 from starpulse._internal.config.scheduler import Scheduler
-from starpulse.board.board_feed import BoardFeed
 from starpulse.board.adapters.search import SearchIndex
-from starpulse._internal.kit.adapter_kit import serve, task, url
-from starpulse.scheduler.adapters.runtime import build
-from starpulse._internal.server.page_server import PageServer
+from starpulse.board.board_feed import BoardFeed
 from starpulse.contracts.api.registry import BODIES, RESPONSES
 from starpulse.event_log.event_log import EventLog
 from starpulse.flow_metrics.history import HistoryStore
 from starpulse.harness_telemetry.telemetry import Signal, TelemetryLog, signals
+from starpulse.runtime.adapter_kit import serve, task, url
+from starpulse.scheduler.adapters.runtime import build
 from starpulse.tests.fake_board import bare_board
 from starpulse.tests.machines import MACHINES, ROLES
 from starpulse.tests.unit.board.test_board_feed import _paged_feed
 from starpulse.tests.unit.flow_metrics.test_analytics import NOW, ROWS
 from starpulse.tests.unit.harness_telemetry.test_telemetry import FIXTURES
+from starpulse.views.page_server import PageServer
 
 #: Every GET route the server answers with JSON, as the page asks for it; `/api/events` is a stream, tested apart.
 ROUTES = (

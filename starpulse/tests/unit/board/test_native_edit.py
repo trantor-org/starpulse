@@ -6,17 +6,17 @@ from typing import Any
 
 import pytest
 
-from starpulse.board.model.seam import Board
-from starpulse.board.adapters.upstream_backlog import UpstreamBacklog, _split
 from starpulse._internal.cli import agent_cli as cli
 from starpulse._internal.config.config import load
+from starpulse.board.adapters.upstream_backlog import UpstreamBacklog, _split
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.kit.adapter_kit import serve
-from starpulse._internal.server import writes
-from starpulse._internal.server.assembly import assemble
-from starpulse._internal.server.page_server import PageServer
-from starpulse._internal.server.writes import archive_task, edit_task, task_record
+from starpulse.board.model.seam import Board
 from starpulse.event_log.event_log import EventLog
+from starpulse.runtime.adapter_kit import serve
+from starpulse.runtime.assembly import assemble
+from starpulse.views import writes
+from starpulse.views.page_server import PageServer
+from starpulse.views.writes import archive_task, edit_task, task_record
 
 LAN = "192.168.0.42"
 FILE = """---

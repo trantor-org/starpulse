@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.kit.adapter_kit import serve, task
+from starpulse.runtime.adapter_kit import serve, task
 from starpulse.tests.machines import MACHINES, ROLES
 
 VIEWERS = 40
@@ -53,7 +53,7 @@ def _feed() -> BoardFeed:
 
 
 def _serve_crowd(directory: str, conn: Connection) -> None:
-    import starpulse._internal.server.streams as streams_mod
+    import starpulse.views.streams as streams_mod
 
     streams_mod._PING_S = 0.05
     with serve(Path(directory), _feed()) as server:

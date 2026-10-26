@@ -10,12 +10,12 @@ from typing import Any
 
 from starpulse.board.adapters import native
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.kit.adapter_kit import serve, task, url
 from starpulse.contracts import LaneEvent
 from starpulse.contracts.adapters import Move
 from starpulse.event_log import lane_events
 from starpulse.event_log.event_log import EventLog, Tail
 from starpulse.flow_metrics.history import HistoryStore
+from starpulse.runtime.adapter_kit import serve, task, url
 from starpulse.tests.machines import MACHINES, ROLES
 from starpulse.tests.unit.board.test_native import native_root, write_task
 

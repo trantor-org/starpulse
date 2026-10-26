@@ -13,8 +13,8 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 
 from starpulse.board.adapters.jira import JiraProject, board, http_fetch, import_workflow, jira_keys
-from starpulse._internal.kit.adapter_kit import BoardAdapterKit
 from starpulse.contracts.adapters import BoardTask
+from starpulse.runtime.adapter_kit import BoardAdapterKit
 
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "jira"
 WORKFLOW = "Payments Software Workflow"

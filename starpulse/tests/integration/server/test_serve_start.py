@@ -3,21 +3,20 @@
 import json
 import subprocess
 import sys
-from pathlib import Path
 
 import pytest
 
-from starpulse._internal.server import server
+from starpulse.runtime import server
 from starpulse.tests.page_stub import held
 
 # Loading the database stack is the second a start spends: the Page API child pays it, and `serve` checks the config
 # against it only once the children run.
-_NOT_YET = ("sqlalchemy", "alembic", "starpulse._internal.server.assembly")
+_NOT_YET = ("sqlalchemy", "alembic", "starpulse.runtime.assembly")
 _STARPULSE_MODULES = 150
 
 _FIRST_CHILD = """
 import json, sys
-from starpulse._internal.server import server, supervisor
+from starpulse.runtime import server, supervisor
 
 
 def first_child(self):

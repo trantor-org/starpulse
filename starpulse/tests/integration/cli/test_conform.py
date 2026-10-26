@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.server import conform
 from starpulse.flow_metrics.history import HistoryStore
+from starpulse.runtime import conform
 from starpulse.tests.machines import MACHINES
 
 BOARD = """\

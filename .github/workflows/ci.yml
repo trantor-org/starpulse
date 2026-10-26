@@ -186,7 +186,7 @@ jobs:
         env:
           GRPC_PYTHON_BUILD_EXT_COMPILER_JOBS: "3"
       # A dependency that re-enables the GIL on import leaves every test green on the build this job exists to test.
-      - run: uv run --no-sync python -c "import sys, starpulse._internal.server.server; sys.exit(sys._is_gil_enabled())"
+      - run: uv run --no-sync python -c "import sys, starpulse.runtime.server; sys.exit(sys._is_gil_enabled())"
       - run: echo "PYTEST_ADDOPTS=-n $(uv run --no-sync python ci/xdist_workers.py) --dist worksteal" >> "$GITHUB_ENV"
       # The selected files may leave nothing for pytest to run (exit 5), which is a pass only while targets were selected.
       - run: |

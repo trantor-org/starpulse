@@ -8,11 +8,11 @@ from pathlib import Path
 import pytest
 
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.kit.adapter_kit import serve, url
 from starpulse.event_log import events as machine_events
 from starpulse.event_log import lane_events
 from starpulse.event_log.conformance_monitor import Conformance
 from starpulse.event_log.event_log import EventLog, Tail
+from starpulse.runtime.adapter_kit import serve, url
 from starpulse.tests.machines import MACHINES, ROLES
 
 BOARD = {

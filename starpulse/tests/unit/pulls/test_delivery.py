@@ -9,10 +9,10 @@ from pathlib import Path
 import pytest
 
 from starpulse.board.board_feed import BoardFeed
+from starpulse.event_log.event_log import EventLog
 from starpulse.pulls import delivery
 from starpulse.pulls.pulls import PullStore
-from starpulse._internal.server.reads import _PullReads
-from starpulse.event_log.event_log import EventLog
+from starpulse.views.reads import _PullReads
 
 PULLS = {
     "TASK-1": [{"number": 7, "repo": "acme/widgets", "url": "https://github.com/acme/widgets/pull/7", "checks": "pass"}]

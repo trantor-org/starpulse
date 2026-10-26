@@ -11,9 +11,9 @@ import time
 import pytest
 
 from starpulse._internal.config.adapter_types import BUILT_IN, module_name
-from starpulse._internal.kit.adapter_kit import RunsAdapterKit
-from starpulse.runs import systemd
 from starpulse.contracts.adapters import TaskKeys
+from starpulse.runs import systemd
+from starpulse.runtime.adapter_kit import RunsAdapterKit
 
 STARTED = "Thu 2026-10-08 20:00:01 UTC"
 EXITED = "Thu 2026-10-08 20:00:09 UTC"

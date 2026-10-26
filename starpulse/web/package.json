@@ -2,7 +2,7 @@
   "name": "@starpulse/web",
   "private": true,
   "type": "module",
-  "description": "StarPulse: React HUD over a canvas renderer, built into ../static for starpulse._internal.server.server",
+  "description": "StarPulse: React HUD over a canvas renderer, built into ../static for starpulse.runtime.server",
   "scripts": {
     "dev": "vite",
     "build": "vite build && vite build --mode one-file",

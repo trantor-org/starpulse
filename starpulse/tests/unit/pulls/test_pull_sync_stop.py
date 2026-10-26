@@ -5,10 +5,10 @@ import threading
 from sqlalchemy import create_engine
 
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.kit.adapter_kit import task
 from starpulse.pulls.pull_store import PullSync
 from starpulse.pulls.pulls import PullStore
-from starpulse._internal.server import server
+from starpulse.runtime import server
+from starpulse.runtime.adapter_kit import task
 
 WAIT_S = 5.0
 

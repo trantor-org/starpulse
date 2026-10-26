@@ -14,12 +14,12 @@ import pytest
 from sqlalchemy import create_engine
 
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.kit.adapter_kit import serve, url
 from starpulse.pulls.pull_refresh import PullRefresh
 from starpulse.pulls.pull_store import PullSync, refresh_pull
 from starpulse.pulls.pulls import PullStore
-from starpulse._internal.server.page_server import PageServer
+from starpulse.runtime.adapter_kit import serve, url
 from starpulse.tests.unit.pulls.test_pull_store import NEW, REPO, Github
+from starpulse.views.page_server import PageServer
 
 TOKEN = "refresh-secret"
 

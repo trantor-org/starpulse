@@ -7,8 +7,8 @@ from pathlib import Path
 from starpulse._internal.cli.doctor import contract
 from starpulse._internal.config.config import Config, Repo, RunsInstance
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.kit.adapter_kit import serve, url
-from starpulse._internal.server.server import _cached
+from starpulse.runtime.adapter_kit import serve, url
+from starpulse.runtime.server import _cached
 from starpulse.tests.hosts import FakeHost
 
 CONFIG = Config(

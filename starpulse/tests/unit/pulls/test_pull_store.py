@@ -11,10 +11,10 @@ from sqlalchemy import create_engine, event
 
 from starpulse._internal.config.config import Repo
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.kit.adapter_kit import task
 from starpulse.pulls.pull_requests import query_github
 from starpulse.pulls.pull_store import PullSync, refresh_pull
 from starpulse.pulls.pulls import PullStore
+from starpulse.runtime.adapter_kit import task
 
 REPO = "acme/widgets"
 OLD, NEW = "2026-10-07T12:00:00Z", "2026-10-07T13:00:00Z"

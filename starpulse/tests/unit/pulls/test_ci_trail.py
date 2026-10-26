@@ -6,18 +6,18 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine
 
-from starpulse.pulls.ci import CI_MACHINES
-from starpulse.pulls.ci_trail import CiTrail, parse
 from starpulse._internal.config.config import Producer
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.machine_tasks import MachineTasks
-from starpulse._internal.kit.adapter_kit import task
+from starpulse.event_log import events
+from starpulse.event_log.event_log import Entry, EventLog, Tail
+from starpulse.pulls.ci import CI_MACHINES
+from starpulse.pulls.ci_trail import CiTrail, parse
 from starpulse.pulls.github import GITHUB_MACHINES
 from starpulse.pulls.pull_events import RecordProjection
 from starpulse.pulls.pulls import PullStore
 from starpulse.runs.cloudevents import CloudEventsIngest
-from starpulse.event_log import events
-from starpulse.event_log.event_log import Entry, EventLog, Tail
+from starpulse.runtime.adapter_kit import task
 from starpulse.tests.machines import MACHINES
 
 TASK = "PROJ-7"

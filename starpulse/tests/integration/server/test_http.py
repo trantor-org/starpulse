@@ -11,19 +11,19 @@ from pathlib import Path
 
 import pytest
 
-from starpulse.board.model.seam import Board, Written
 from starpulse._internal.config.config import CommitKeys
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.machine_tasks import MachineTasks
-from starpulse._internal.kit.adapter_kit import next_event as _next_event
-from starpulse._internal.kit.adapter_kit import serve as _serve
-from starpulse._internal.kit.adapter_kit import task
-from starpulse._internal.kit.adapter_kit import url as _url
-from starpulse._internal.server import server as server_module
-from starpulse._internal.server.page_server import PageServer
+from starpulse.board.model.seam import Board, Written
 from starpulse.contracts.adapters import Move
+from starpulse.runtime import server as server_module
+from starpulse.runtime.adapter_kit import next_event as _next_event
+from starpulse.runtime.adapter_kit import serve as _serve
+from starpulse.runtime.adapter_kit import task
+from starpulse.runtime.adapter_kit import url as _url
 from starpulse.tests.fake_board import bare_board
 from starpulse.tests.machines import MACHINES, ROLES
+from starpulse.views.page_server import PageServer
 
 RUN_SAFE = frozenset({"dagu/whole-repo-gate"})
 
@@ -169,7 +169,7 @@ def test_a_change_is_encoded_once_however_many_pages_are_streaming(
 ) -> None:
     encoded: list[str] = []
     encode_event = server_module.event
-    monkeypatch.setattr("starpulse._internal.server.streams.event", lambda name, data: encoded.append(name) or encode_event(name, data))
+    monkeypatch.setattr("starpulse.views.streams.event", lambda name, data: encoded.append(name) or encode_event(name, data))
     feed = BoardFeed()
     with _serve(tmp_path, feed) as server:
         with (
@@ -191,7 +191,7 @@ def test_a_change_is_encoded_once_however_many_pages_are_streaming(
 def test_an_idle_event_stream_sends_a_comment_so_a_dead_page_is_noticed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("starpulse._internal.server.streams._PING_S", 0.05)
+    monkeypatch.setattr("starpulse.views.streams._PING_S", 0.05)
     with _serve(tmp_path) as server:
         with urllib.request.urlopen(_url(server, "/api/events"), timeout=5) as resp:
             lines = [resp.readline() for _ in range(8)]  # the snapshot and the build take six
@@ -200,7 +200,7 @@ def test_an_idle_event_stream_sends_a_comment_so_a_dead_page_is_noticed(
 
 
 def test_a_page_that_goes_away_is_unsubscribed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("starpulse._internal.server.streams._PING_S", 0.05)
+    monkeypatch.setattr("starpulse.views.streams._PING_S", 0.05)
     feed = BoardFeed()
     with _serve(tmp_path, feed) as server:
         with urllib.request.urlopen(_url(server, "/api/events"), timeout=5) as resp:

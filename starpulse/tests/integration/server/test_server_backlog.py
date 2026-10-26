@@ -2,7 +2,7 @@
 
 import socket
 
-from starpulse._internal.server.page_server import PageServer
+from starpulse.views.page_server import PageServer
 
 
 def test_fifty_pages_connecting_before_any_is_accepted_all_connect() -> None:

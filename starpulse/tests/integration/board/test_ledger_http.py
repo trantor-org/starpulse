@@ -12,8 +12,8 @@ import pytest
 
 from starpulse._internal.config.config import CommitKeys
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.kit.adapter_kit import next_event, serve, url
-from starpulse._internal.server.page_server import PageServer
+from starpulse.runtime.adapter_kit import next_event, serve, url
+from starpulse.views.page_server import PageServer
 
 NOW = datetime(2026, 10, 7, 1, tzinfo=UTC).timestamp()
 MACHINE = {

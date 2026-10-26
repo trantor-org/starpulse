@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-import starpulse._internal.server.memory as memory_module
+import starpulse.runtime.memory as memory_module
 
 MB = 1024 * 1024
 

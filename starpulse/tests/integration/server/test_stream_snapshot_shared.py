@@ -7,17 +7,17 @@ from pathlib import Path
 import pytest
 
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.kit.adapter_kit import next_event as _next_event
-from starpulse._internal.kit.adapter_kit import serve as _serve
-from starpulse._internal.kit.adapter_kit import task
-from starpulse._internal.kit.adapter_kit import url as _url
-from starpulse._internal.server.column_stream import ColumnViews
-from starpulse._internal.server.snapshot_cache import SnapshotCache
+from starpulse.runtime.adapter_kit import next_event as _next_event
+from starpulse.runtime.adapter_kit import serve as _serve
+from starpulse.runtime.adapter_kit import task
+from starpulse.runtime.adapter_kit import url as _url
 from starpulse.tests.machines import MACHINES, ROLES
+from starpulse.views.column_stream import ColumnViews
+from starpulse.views.snapshot_cache import SnapshotCache
 
 
 def test_a_stream_never_builds_the_snapshot_on_its_own_thread(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("starpulse._internal.server.streams._HELD_SETTLE_S", 0)
+    monkeypatch.setattr("starpulse.views.streams._HELD_SETTLE_S", 0)
     builders: list[str] = []
     build = SnapshotCache._build
 

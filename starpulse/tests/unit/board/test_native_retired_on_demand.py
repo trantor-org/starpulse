@@ -5,13 +5,13 @@ from pathlib import Path
 
 import pytest
 
+from starpulse._internal.config.config import load
 from starpulse.board.adapters import native
 from starpulse.board.adapters.native import _Retired
-from starpulse.board.model.seam import Board
 from starpulse.board.adapters.upstream_backlog import UpstreamBacklog
-from starpulse._internal.config.config import load
-from starpulse._internal.server.assembly import assemble
+from starpulse.board.model.seam import Board
 from starpulse.event_log.event_log import EventLog
+from starpulse.runtime.assembly import assemble
 from starpulse.tests.unit.board.test_native import native_root, write_task
 
 

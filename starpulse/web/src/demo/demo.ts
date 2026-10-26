@@ -206,7 +206,7 @@ function columns(m: Machine, state: string): string[] {
 const ALLOWED = { allowed: true, reason: "", skill: "" };
 
 /**
- * The server a demo page has instead of starpulse._internal.server.server: it holds the snapshot, plays the `?demo` walk on it, keeps
+ * The server a demo page has instead of starpulse.runtime.server: it holds the snapshot, plays the `?demo` walk on it, keeps
  * each Board card's lane history and move verdicts current, and answers /api requests from that, so every view and
  * every hover of a page with no server behaves as it does on a served one.
  */
@@ -449,7 +449,7 @@ export class DemoServer {
   }
 
   /**
-   * `/api/scheduler` as starpulse._internal.server.writes.scheduler answers it, with the sessions in flight and the next pick the
+   * `/api/scheduler` as starpulse.views.writes.scheduler answers it, with the sessions in flight and the next pick the
    * strip also draws: the Board's In Progress cards are the sessions and its first unblocked Ready card is the pick.
    */
   scheduler(method: string, raw: string): Response {

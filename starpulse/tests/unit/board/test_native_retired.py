@@ -9,17 +9,17 @@ from pathlib import Path
 
 import pytest
 
-from starpulse.board.adapters.native import board
-from starpulse.board.model.seam import Board
-from starpulse.board.adapters.upstream_backlog import UpstreamBacklog
-from starpulse.board.model.view import board_flow, task_view
 from starpulse._internal.config.config import load
+from starpulse.board.adapters.native import board
+from starpulse.board.adapters.upstream_backlog import UpstreamBacklog
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.server import writes
-from starpulse._internal.server.assembly import assemble
+from starpulse.board.model.seam import Board
+from starpulse.board.model.view import board_flow, task_view
 from starpulse.event_log.event_log import EventLog
+from starpulse.runtime.assembly import assemble
 from starpulse.tests.unit.board.test_native import native_root, write_task
 from starpulse.tests.unit.board.test_native_rules import done_needs
+from starpulse.views import writes
 
 
 @pytest.fixture

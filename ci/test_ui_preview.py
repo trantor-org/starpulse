@@ -10,7 +10,6 @@ from pathlib import Path
 import pytest
 import ui_preview
 import yaml
-from starpulse._internal.cli import demo
 from ui_preview import (
     DEMO_BRANCH,
     DEMO_REPO,
@@ -43,6 +42,8 @@ from ui_preview import (
     unpublish_demos,
 )
 
+from starpulse._internal.cli import demo
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -61,7 +62,7 @@ ROOT = Path(__file__).resolve().parents[1]
         (["design/elements/index.html"], [MOCKUP, ELEMENTS]),
         (["starpulse/web/src/style.css"], [STARPULSE, ELEMENTS]),
         (["design/data.js", "starpulse/web/src/features/kanban/Kanban.tsx"], [STARPULSE, MOCKUP]),
-        (["starpulse/_internal/server/server.py", "README.md", "starpulse/tests/unit/cli/test_demo.py", ".github/workflows/ci.yml"], []),
+        (["starpulse/runtime/server.py", "README.md", "starpulse/tests/unit/cli/test_demo.py", ".github/workflows/ci.yml"], []),
     ],
 )
 def test_surfaces_follow_the_changed_paths(changed: list[str], expected: list[str]) -> None:
@@ -140,7 +141,7 @@ def compare(*files: str, status: str = "ahead") -> dict:
 
 
 def test_a_push_that_changed_no_ui_path_since_the_last_render_needs_no_render() -> None:
-    assert not push_touches_ui(compare("README.md", "starpulse/_internal/server/server.py", "ci/select_tests.py"))
+    assert not push_touches_ui(compare("README.md", "starpulse/runtime/server.py", "ci/select_tests.py"))
     assert not push_touches_ui(compare())
 
 
@@ -181,7 +182,7 @@ def test_the_shipped_mockup_builds_a_demo_that_leaks_nothing() -> None:
     ("changed", "expected"),
     [
         (["design/task-modal/task-modal.js"], ["task-modal"]),
-        (["design/admin/index.html", "design/edit/edit.js", "design/admin/admin.js", "starpulse/_internal/server/server.py"], ["admin", "edit"]),
+        (["design/admin/index.html", "design/edit/edit.js", "design/admin/admin.js", "starpulse/runtime/server.py"], ["admin", "edit"]),
         (["design/index.html", "design/data.js"], []),
         (["design/elements/index.html", "design/elements/elements.js"], []),
         (["starpulse/web/src/features/kanban/Kanban.tsx"], []),

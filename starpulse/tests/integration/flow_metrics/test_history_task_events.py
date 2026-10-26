@@ -9,10 +9,10 @@ from pathlib import Path
 import pytest
 
 from starpulse.board.board_feed import BoardFeed
-from starpulse._internal.kit.adapter_kit import serve, url
-from starpulse._internal.server.page_server import PageServer
 from starpulse.flow_metrics.history import HistoryStore
+from starpulse.runtime.adapter_kit import serve, url
 from starpulse.tests.machines import MACHINES, ROLES
+from starpulse.views.page_server import PageServer
 
 NOW = 100 * 86400.0
 HOUR = 3600.0
