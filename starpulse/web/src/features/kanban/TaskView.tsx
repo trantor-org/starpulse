@@ -7,8 +7,8 @@ import { startLane, startable } from "./start";
 import { StartCriteria } from "./StartCriteria";
 import type { Capabilities, Pull, Roles } from "../../api";
 import {
-  PRIORITIES, SECTION_NAMES, ciHistory, closesOnKey, copyText, copyToClipboard, dependencyRows, editKey, fetchRecord, markdown, menuKey, metCount, onScrim, postComment, saveSection, sessionOf, taskActivity, taskBody, toggleItem,
-  type ActivityEvent, type CiPull, type DepRow, type Item, type MenuState, type Section, type TaskField, type TaskRecord,
+  LABEL_FIELDS, LABEL_RULE, PRIORITIES, SECTION_NAMES, ciHistory, closesOnKey, copyText, copyToClipboard, dependencyRows, detailFields, editKey, fetchRecord, labelRuleError, markdown, menuKey, metCount, onScrim, postComment, saveSection, sessionOf, setDetailField, taskActivity, taskBody, toggleItem,
+  type ActivityEvent, type CiPull, type DepRow, type Item, type LabelField, type MenuState, type Section, type TaskField, type TaskRecord,
 } from "./taskViewModel";
 
 export interface TaskViewProps {
@@ -76,10 +76,11 @@ function Select({ value, options, label, onChange, ...f }: FieldProps & {
   );
 }
 
-/** Labels in the rail's read table: a chip each, with the one that needs the operator highlighted. */
-function ChipList({ values }: { values: string[] }) {
-  return values.length ? <span className="chips">{values.map((v) => <span key={v} className="chip">{v}</span>)}</span> : <span className="k">—</span>;
-}
+/** A free-form label, with a × to remove it while Details is open; the read table lists them as a ChipList. */
+const Chip = ({ value, remove }: { value: string; remove?: (value: string) => void }) =>
+  <span className="chip">{value}{remove && <button className="x" aria-label={`Remove ${value}`} onClick={() => remove(value)}>×</button>}</span>;
+const ChipList = ({ values }: { values: string[] }) =>
+  values.length ? <span className="chips">{values.map((v) => <Chip key={v} value={v} />)}</span> : <span className="k">—</span>;
 
 const LanePill = ({ lane, role, name, small = false }: { lane: string; role?: string; name: string; small?: boolean }) =>
   <span className={`tvlane${small ? " sm" : ""}`} data-lane={lane} data-role={role}><i />{name}</span>;
@@ -319,6 +320,8 @@ export function TaskView(p: TaskViewProps) {
   const [writing, setWriting] = useState(false);
   const [writeRefusal, setWriteRefusal] = useState<{ reason: string; skill: string } | null>(null);
   const [toast, setToast] = useState("");
+  const [pending, setPending] = useState("");
+  const [labelRefusal, setLabelRefusal] = useState("");
   const [comment, setComment] = useState("");
   const [posting, setPosting] = useState(false);
   const names = p.names ?? {};
@@ -345,6 +348,8 @@ export function TaskView(p: TaskViewProps) {
     setTried(new Set());
     setInvalid(new Set());
     setWriteRefusal(null);
+    setPending("");
+    setLabelRefusal("");
     setPreview(false);
   }, []);
   const edit = (section: Section) => {
@@ -378,10 +383,25 @@ export function TaskView(p: TaskViewProps) {
       setInvalid(new Set(["acceptanceCriteria"]));
     } else {
       setInvalid(new Set(result.fields));
-      setWriteRefusal({ reason: result.reason, skill: result.skill });
+      // a refused label draws under Add label, where the operator can fix it
+      if (section === "details" && result.fields.includes("labels")) setLabelRefusal(result.reason);
+      else setWriteRefusal({ reason: result.reason, skill: result.skill });
     }
   }, [base, clear, p, writing]);
-  const save = useCallback(() => { if (editing) void commit(editing, draft, evidence); }, [commit, draft, editing, evidence]);
+  const typed = pending.trim();
+  const typedError = typed ? labelRuleError(typed) || (draft.labels.includes(typed) ? `"${typed}" is already on this task.` : "") : "";
+  const addLabel = () => {
+    if (!typed || typedError) return;
+    change("labels", [...draft.labels, typed]);
+    setPending("");
+  };
+  /** A label typed but not yet added is added by the save, once it passes the rule. */
+  const save = useCallback(() => {
+    if (!editing) return;
+    const label = editing === "details" ? pending.trim() : "";
+    if (label && (labelRuleError(label) || draft.labels.includes(label))) return;
+    void commit(editing, label ? { ...draft, labels: [...draft.labels, label] } : draft, evidence);
+  }, [commit, draft, editing, evidence, pending]);
   /** A comment is its own write: it changes no field, lands in Comments and never checkpoints or moves the task. */
   const post = async () => {
     if (!comment.trim() || posting) return;
@@ -502,6 +522,7 @@ export function TaskView(p: TaskViewProps) {
       ? <Txt {...fp(section)} value={draft[section]} label={name} long focus onChange={(value) => change(section, value)} />
       : shown.trim() ? <Md text={shown} open={p.open} /> : <span className="none">—</span>);
   };
+  const row = (name: string, value: ReactNode, className?: string) => <tr key={name} className={className}><td>{name}</td><td>{value}</td></tr>;
   const tab = (on: boolean, text: string) => <button role="tab" aria-selected={preview === on} className={preview === on ? "on" : ""} onClick={() => setPreview(on)}>{text}</button>;
 
   return (
@@ -588,15 +609,39 @@ export function TaskView(p: TaskViewProps) {
                 </>}
               </div>
             </RailSection>
-            {sec("details", "Details", (
-              <table className="props"><tbody>
-                <tr><td>profile</td><td>{editing === "details" ? <Select {...fp("profile", "details")} label="Profile" value={draft.profile} options={[["", "unassigned"], ...p.profiles.map((v): [string, string] => [v, v])]} onChange={(value) => change("profile", value)} /> : draft.profile || "—"}</td></tr>
-                <tr><td>priority</td><td>{editing === "details" ? <Select {...fp("priority", "details")} label="Priority" value={priorityValue(draft.priority)} options={[["", "—"], ...PRIORITIES.map((v): [string, string] => [v, v])]} onChange={(value) => change("priority", value)} /> : priorityValue(draft.priority) || "—"}</td></tr>
-                <tr><td>labels</td><td><ChipList values={draft.labels} /></td></tr>
-                <tr><td>milestone</td><td>{editing === "details" ? <Select {...fp("milestone", "details")} label="Milestone" value={draft.milestone} options={[["", "—"], ...p.milestones.map((v): [string, string] => [v, v])]} onChange={(value) => change("milestone", value)} /> : draft.milestone || "—"}</td></tr>
-                <tr><td>created</td><td><span className="k">{p.task.created ? `${ago(p.now - p.task.created)} ago` : "—"}</span></td></tr>
-              </tbody></table>
-            ), undefined, true)}
+            {sec("details", "Details", (() => {
+              const live = editing === "details";
+              const { chips, ...fields } = detailFields(draft.labels);
+              const labelFp = { ...fp("labels", "details"), bad: false };
+              const areas = [...new Set([...p.tasks.map((t) => detailFields(t.labels).area), fields.area])].filter(Boolean).sort();
+              const field = (name: LabelField, options: string[]) => (
+                <Select {...labelFp} label={name[0].toUpperCase() + name.slice(1)} value={fields[name]}
+                  options={[["", "—"], ...options.map((v): [string, string] => [v, v])]} onChange={(value) => change("labels", setDetailField(draft.labels, name, value))} />
+              );
+              const note = typedError || labelRefusal;
+              return (
+                <table className="props"><tbody>
+                  {row("kind", live ? field("kind", LABEL_FIELDS.kind) : fields.kind || "—")}
+                  {row("size", live ? field("size", LABEL_FIELDS.size) : fields.size ? <span className="sz">{fields.size}</span> : "—")}
+                  {row("area", live ? field("area", areas) : fields.area || "—")}
+                  {(live || fields.mode) && row("mode", live ? field("mode", LABEL_FIELDS.mode) : fields.mode)}
+                  {row("priority", live ? <Select {...fp("priority", "details")} label="Priority" value={priorityValue(draft.priority)} options={[["", "—"], ...PRIORITIES.map((v): [string, string] => [v, v])]} onChange={(value) => change("priority", value)} /> : priorityValue(draft.priority) || "—")}
+                  {row("profile", live ? <Select {...fp("profile", "details")} label="Profile" value={draft.profile} options={[["", "unassigned"], ...p.profiles.map((v): [string, string] => [v, v])]} onChange={(value) => change("profile", value)} /> : draft.profile || "—")}
+                  {!live && draft.type && row("type", draft.type)}
+                  {row("labels", live ? <>
+                    <div className={fieldClass("fv chips", true, Boolean(note))}>
+                      {chips.map((v) => <Chip key={v} value={v} remove={(value) => change("labels", draft.labels.filter((label) => label !== value))} />)}
+                      <input className="chipinput" placeholder="add label" aria-label="Add label" value={pending}
+                        onChange={(e) => { setPending(e.currentTarget.value); setLabelRefusal(""); }}
+                        onKeyDown={(e) => { if (e.key === "Enter" && !e.ctrlKey && !e.metaKey) { e.preventDefault(); addLabel(); } }} />
+                    </div>
+                    <div className={`rule${note ? " err" : ""}`} role="status">{note || LABEL_RULE}</div>
+                  </> : <ChipList values={chips} />, "sep")}
+                  {row("milestone", live ? <Select {...fp("milestone", "details")} label="Milestone" value={draft.milestone} options={[["", "—"], ...p.milestones.map((v): [string, string] => [v, v])]} onChange={(value) => change("milestone", value)} /> : draft.milestone || "—")}
+                  {!live && row("created", <span className="k">{p.task.created ? `${ago(p.now - p.task.created)} ago` : "—"}</span>)}
+                </tbody></table>
+              );
+            })(), undefined, true)}
           </div>
         </div>
         {toast && <div className="toast" role="status">{toast}</div>}

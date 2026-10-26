@@ -279,11 +279,10 @@ describe("the task view's right rail", () => {
     expect(rows(draw({ task: { ...task, created: null } }), "Details")).toMatch(/created<\/td><td><span class="k">—<\/span>/);
   });
 
-  it("edits only profile, priority and milestone in Details, and leaves Dependencies read-only", () => {
+  it("edits kind, size, area, mode, priority, profile and milestone in Details, and leaves Dependencies read-only", () => {
     const html = draw({ initialEditing: "details", tasks: many });
 
-    expect(rows(html, "Details")).toMatch(/data-field="profile"[\s\S]*data-field="priority"[\s\S]*data-field="milestone"/);
-    expect(rows(html, "Details")).not.toContain('data-field="labels"');
+    expect(rows(html, "Details")).toMatch(/data-field="priority"[\s\S]*data-field="profile"[\s\S]*data-field="milestone"/);
     expect(rows(html, "Dependencies")).not.toContain("data-field");
     expect(rows(html, "Dependencies")).toContain('<span class="id">TASK-1</span>');
   });
