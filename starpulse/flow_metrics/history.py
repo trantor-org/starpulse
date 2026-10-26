@@ -388,17 +388,6 @@ class HistoryStore:
             self._summaries_changed()
         return written
 
-    def record_lane_entry(self, entry_id: str, fields: dict, *, cursor: int | None = None) -> bool:
-        """Fold one `lane_events` entry (`fields`) into the lane history as `record_lane` does, under its log id."""
-        return self.record_lane(
-            fields.get("event_id") or entry_id,
-            fields["task"],
-            fields["lane"],
-            float(fields["time"]),
-            cursor=cursor,
-            actor=fields.get("actor"),
-        )
-
     def _fold_lane(
         self, db: Connection, event_id: str, task: str, status: str, at: float, actor: str | None = None
     ) -> bool:
@@ -863,25 +852,3 @@ def record_machine_events(
     )
 
 
-def record_lane_events(
-    store: HistoryStore, log: EventLog, stop: threading.Event, *, interval: float = DEFAULT_POLL_INTERVAL
-) -> None:
-    """Fold the log's lane entries into `store`'s lane history until `stop`, resuming after the cursor the store holds.
-
-    It reads as `record_machine_events` reads, and each entry is written with its cursor in one transaction.
-    """
-    stream = lane_events.STREAM
-    while not stop.is_set():
-        try:
-            after = store.checkpoints.load(stream)[0]
-            break
-        except OperationalError as exc:
-            logger.warning("history: cannot read the %s cursor, retrying in %ss: %s", stream, interval, exc)
-            stop.wait(interval)
-    else:
-        return
-    log.tail(stream, after=after, interval=interval).run(
-        lambda entry: store.record_lane_entry(entry.event_id, entry.fields, cursor=entry.id),
-        stop,
-        transient=(OperationalError,),
-    )

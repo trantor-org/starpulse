@@ -60,12 +60,14 @@ def start_writers(
     evaluate: Callable[[str, str], list[dict]] | None,
     stop: threading.Event,
     live: bool = True,
+    log: EventLog | None = None,
 ) -> threading.Thread:
     """Start the criteria thread, which runs until `stop` is set; it waits for `feed` to have read the Board. A `live`
     feed also records each lane a task enters as it places it; the Board child places none live, as `serve` records the
-    ones its replica puts and the ones its writes make."""
+    ones its replica puts and the ones its writes make. `log` carries each lane change's actor to the `board:lanes`
+    entry."""
     feed.date_lanes(store.lane_path)
-    feed.record_lanes(store, live=live)
+    feed.record_lanes(store, log, live=live)
     feed.track_criteria(evaluate, store)
 
     def keep() -> None:
@@ -104,12 +106,12 @@ def main(
     store = history_store(config, base, feed.machines)
     stop = threading.Event()
     if model is None:
-        start_writers(feed, store, board.evaluate, stop, live=False)
+        start_writers(feed, store, board.evaluate, stop, live=False, log=log)
         replica.publish(board, feed, "starpulse-board", log, config)
     else:
         # the read model replaces the task files as the board's reader: nothing publishes a replica of them
         feed.ready.set()
-        start_writers(feed, store, board.evaluate, stop, live=False)
+        start_writers(feed, store, board.evaluate, stop, live=False, log=log)
         if board.attach is not None:
             board.attach(log)  # the sweep's releases append the History events the read model folds
         if board.sweep is not None:
