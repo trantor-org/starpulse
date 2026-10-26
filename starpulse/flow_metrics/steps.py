@@ -55,6 +55,7 @@ def _step(task: str | None, s: Signal) -> dict[str, Any]:
         "keys": [],
         "tokens": {name: getattr(s, name) for name in _TOKENS},
         "captured": s.captured,
+        "eval": s.eval,
     }
 
 

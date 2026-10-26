@@ -200,3 +200,10 @@ def test_a_command_stored_before_the_claims_were_declared_gives_the_session_its_
 
     assert [s["task"] for s in session_steps(found, KEYS)] == [None, None]
     assert [s["task"] for s in session_steps(found, KEYS, claims)] == ["TASK-9", "TASK-9"]
+
+
+def test_a_step_names_the_eval_run_that_made_its_request_and_is_empty_for_any_other() -> None:
+    evaluated = signals(export(request(0, "2026-10-09T11:00:00.000Z"), resource={**BRANCH, "trantor.eval": "judge"}))
+    plain = signals(export(request(0, "2026-10-09T11:00:00.000Z", session="s2")))
+
+    assert [step["eval"] for step in session_steps(evaluated + plain, KEYS)] == ["judge", ""]

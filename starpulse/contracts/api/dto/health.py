@@ -110,6 +110,7 @@ class SessionHealth(_Api):
     session: str
     task: str | None
     kind: Literal["headless", "interactive", "unknown"]
+    eval: str
     first_at: float
     last_at: float
     prompts: int
@@ -204,6 +205,7 @@ class SessionStep(_Api):
     )
     tokens: TokenCounts
     captured: bool = Field(description="False for a harness the steps-per-completion ledger does not cover (Codex).")
+    eval: str = Field(description="The purpose an eval run stamped with `trantor.eval`; empty for any other request.")
 
 
 class SessionSteps(_Api):

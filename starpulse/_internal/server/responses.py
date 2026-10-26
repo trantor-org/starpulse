@@ -436,14 +436,17 @@ def _telemetry_cases(
     analytics: Analytics,
     now: float,
     kind: str,
+    include_eval: bool = True,
 ) -> list[Case] | tuple[bytes, int]:
     """The cases of the signals from the last `window` hours, or the 501, 503 or (a window longer than the history)
-    400 response for a log that has none."""
+    400 response for a log that has none. `include_eval` False leaves out the signals an eval run stamped."""
     if telemetry is None:
         return _error("this instance receives no harness telemetry, so it cannot read what its sessions did"), 501
     found = _held_signals(telemetry, window, kind, now, "analytics")
     if isinstance(found, tuple):
         return found
+    if not include_eval:
+        found = [s for s in found if not s.eval]
     return trace_cases(found, keys, roots=analytics.roots, tasks=titled(), analytics=analytics)
 
 
@@ -553,7 +556,7 @@ def trace_clusters_response(
             ),
             400,
         )
-    found = _telemetry_cases(telemetry, window, keys, titled, analytics, now, "trace_clusters")
+    found = _telemetry_cases(telemetry, window, keys, titled, analytics, now, "trace_clusters", include_eval=False)
     if isinstance(found, tuple):
         return found
     clusters = trace_clusters(found, stop=analytics.stop_activities, threshold=threshold)

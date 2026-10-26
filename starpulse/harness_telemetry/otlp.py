@@ -51,6 +51,7 @@ _KINDS = {
     for spelling in (kind, f"claude_code.{kind}")
 }
 BRANCH = "vcs.ref.head.name"
+EVAL = "trantor.eval"
 MAX_BODY = 8 * 1024 * 1024
 
 
@@ -90,18 +91,20 @@ def _attributes(record: dict[str, Any]) -> dict[str, Any]:
     return {a["key"]: _value(a.get("value")) for a in attributes if isinstance(a, dict) and "key" in a}
 
 
-def _records(payload: dict[str, Any]) -> Iterator[tuple[str | None, dict[str, Any]]]:
-    """Each log record with the branch its resource names."""
+def _records(payload: dict[str, Any]) -> Iterator[tuple[str | None, str | None, dict[str, Any]]]:
+    """Each log record with the branch and eval purpose its resource names."""
     resources = payload.get("resourceLogs")
     for resource in resources if isinstance(resources, list) else ():
         scopes = resource.get("scopeLogs") if isinstance(resource, dict) else None
         described = resource.get("resource") if isinstance(resource, dict) else None
-        branch = _attributes(described).get(BRANCH) if isinstance(described, dict) else None
+        attributes = _attributes(described) if isinstance(described, dict) else {}
+        branch = attributes.get(BRANCH)
+        purpose = attributes.get(EVAL)
         for scope in scopes if isinstance(scopes, list) else ():
             records = scope.get("logRecords") if isinstance(scope, dict) else None
             for record in records if isinstance(records, list) else ():
                 if isinstance(record, dict):
-                    yield (str(branch) if branch else None), record
+                    yield (str(branch) if branch else None), (str(purpose) if purpose else None), record
 
 
 def _epoch(timestamp: Any) -> float | None:
@@ -127,7 +130,7 @@ def _kind(record: dict[str, Any], attributes: dict[str, Any]) -> str | None:
 def parse(payload: dict[str, Any]) -> list[LogEvent]:
     """The prompts, tool results, skill activations and replies in an OTLP logs payload, in the order it carries them."""
     events = []
-    for branch, record in _records(payload):
+    for branch, _purpose, record in _records(payload):
         attributes = _attributes(record)
         kind = _kind(record, attributes)
         session = attributes.get("session.id")

@@ -614,3 +614,11 @@ def test_session_rows_of_one_session_is_what_session_health_gives_for_it() -> No
 def test_no_doc_lists_starpulse_insights() -> None:
     docs = Path(__file__).resolve().parents[4] / "docs"
     assert [path.name for path in docs.glob("*.md") if "starpulse_insights" in path.read_text()] == []
+
+
+def test_a_session_row_names_the_eval_run_its_signals_came_from() -> None:
+    at = "2026-10-09T11:00:00.000Z"
+    evaluated = signals(export(claude("api_request", 0, at, model="m"), resource={"trantor.eval": "judge"}))
+    plain = signals(export(claude("api_request", 0, at, model="m", **{"session.id": "s2"})))
+
+    assert sorted(row["eval"] for row in session_health(evaluated + plain, None)) == ["", "judge"]

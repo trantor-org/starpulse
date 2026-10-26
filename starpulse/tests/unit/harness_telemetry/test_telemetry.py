@@ -274,6 +274,12 @@ def test_a_launch_branch_on_the_resource_is_every_signals_branch() -> None:
     assert [s.branch for s in signals(payload)] == ["claude/task-9-z"]
 
 
+def test_an_eval_purpose_on_the_resource_is_every_signals_eval() -> None:
+    payload = export(codex("codex.user_prompt"), resource={"trantor.eval": "memory-search-judge"})
+
+    assert [s.eval for s in signals(payload)] == ["memory-search-judge"]
+
+
 def test_a_record_without_a_timestamp_is_skipped() -> None:
     payload = export({"event.name": "user_prompt", "session.id": "s", "event.sequence": 1})
 
