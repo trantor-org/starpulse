@@ -5,6 +5,7 @@ import { EXT, OFF, TRACE, rgba, tierColor, type Drawing, type DrawCtx, type Hove
 import type { Level } from "./levels";
 import { bez, curveOf, stateR, type Curve, type Pt, type Scene } from "./scene";
 import type { Sky } from "./sky";
+import { trailOf } from "./transit";
 import type { Target } from "../features/level/search";
 import { draws, layout as traceLayout, sessionRings, type Place, type Run, type Subject } from "../features/level/trace";
 
@@ -145,6 +146,27 @@ export function traceDraw(dc: DrawCtx, pen: Drawing, io: TraceIO): TraceDrawing 
     }
     // a rail-spotted task the level draws no dot for still has its path; its state body is lit in its place
     if (!body) return;
+    // a dot out on a phase or sub-machine branch lights the line it rode there as a state route is lit: each leg shaded from the colour
+    // of the place it leaves to the one it reaches (hub, then the machine's), each station it passed firmed up, an arrow into the dot
+    const trail = board ? trailOf(t.subject.id, sc) : null;
+    if (trail) {
+      const thick = 2.6 / Math.max(1, ZS);
+      cx.lineCap = "round";
+      for (let i = 1; i < trail.pts.length; i++) {
+        const p = trail.pts[i - 1], q = trail.pts[i], g = cx.createLinearGradient(p.x, p.y, q.x, q.y);
+        g.addColorStop(0, rgba(p.c, 0.95));
+        g.addColorStop(1, rgba(q.c, 0.95));
+        cx.strokeStyle = g;
+        cx.lineWidth = thick;
+        cx.beginPath();
+        cx.moveTo(p.x, p.y);
+        cx.lineTo(q.x, q.y);
+        cx.stroke();
+      }
+      for (const s of trail.stations) circle(s.x, s.y, 4 / K, rgba(s.c, 1), 2.2 / Math.max(1, ZS));
+      const n = trail.pts.length, a = trail.pts[n - 2], b = trail.pts[n - 1], l = Math.hypot(b.x - a.x, b.y - a.y);
+      if (l > 10 / K) arrow(a, { x: b.x - ((b.x - a.x) / l) * (9 / K), y: b.y - ((b.y - a.y) / l) * (9 / K) }, rgba(b.c, 0.95), 9);
+    }
     circle(body.x, body.y, 9 / K, rgba(TRACE, 0.9), 1.6 / K);
     dot(body.x, body.y, 4.5 / K, rgba(tierColor(body.model), 1));
   }

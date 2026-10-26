@@ -15,6 +15,10 @@ export const ACT = "#fbbf24";
 export const TRACE = "#fbbf24", OFF = "#fb7185";
 /** A mapped machine (machine.source: a third party moves it) is drawn like a local one, in a colour of its own: blue, never purple. */
 export const EXT = "#60a5fa";
+/** A phase machine is blue-500 by convention (--phase); a sub-machine a phase opens is teal-500 (--submachine). */
+export const PHASE = "#3b82f6", SUBM = "#14b8a6", PHASE_TEXT = "#93c5fd", SUBM_TEXT = "#5eead4";
+/** A node's printed name, and the grey of its second line. */
+export const LABEL = "#cfd9ea", MUTED = "#94a3b8";
 /** An agent is coloured by the tier its profile names (`@agent-<tier>-<effort>`); a person or fast is the other colour. */
 export const tierColor = (profile = "") =>
   profile.startsWith("@agent-deep") ? "#c4b5fd" : profile.startsWith("@agent-standard") ? "#67e8f9" : "#fde68a";
@@ -94,8 +98,8 @@ export function drawing(dc: DrawCtx) {
   function label(name: string, x: number, y: number, hot: boolean, sub?: string | null, size = 12.5) {
     size = labelPx(size, dc.K, dc.scale); // type is a fixed size on screen: readable at fit, never balloons when zoomed in; the Admin font size scales it
     cx.letterSpacing = `${0.6 / dc.K}px`;
-    text(name, x, y, size, rgba("#cfd9ea", hot ? 0.95 : 0.58), "center", 300);
-    if (sub) text(sub, x, y + size + 3 / dc.K, size - labelPx(2, dc.K, dc.scale), rgba("#94a3b8", hot ? 0.8 : 0.42), "center", 300);
+    text(name, x, y, size, rgba(LABEL, hot ? 0.95 : 0.58), "center", 300);
+    if (sub) text(sub, x, y + size + 3 / dc.K, size - labelPx(2, dc.K, dc.scale), rgba(MUTED, hot ? 0.8 : 0.42), "center", 300);
     cx.letterSpacing = "0px";
   }
   function circle(x: number, y: number, r: number, stroke: string, w = 1, dash?: number[] | null) {

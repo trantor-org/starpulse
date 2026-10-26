@@ -237,14 +237,6 @@ describe("a Board laid out at the values it shows", () => {
     expect(shown.galaxies.done.x).toBeCloseTo(full.galaxies.done.x + 100);
     expect(shown.w).toBeCloseTo(full.w + 50);
   });
-  it("eases a state's ring of machines and each machine's place on it, so a machine row growing moves them instead of snapping", () => {
-    const sky = withTasks(boardSky(), { in_progress: 40 }), full = build(sky, { kind: "board" });
-    const shown = build({ ...sky, ease: (key: string, v: number) => (key.endsWith(".moonR") ? v + 30 : key.endsWith(".dx") ? v + 10 : v) }, { kind: "board" });
-
-    expect(full.moons.length).toBeGreaterThan(0);
-    expect(shown.galaxies.in_progress.moonR).toBeCloseTo(full.galaxies.in_progress.moonR + 30);
-    for (const [i, m] of shown.moons.entries()) if (!m.pager) expect(m.x).toBeCloseTo(full.moons[i].x + 10);
-  });
   it("eases each state's footprint and where its paths end, so a new ring of tasks moves the ends instead of snapping them", () => {
     const sky = withTasks(boardSky(), { ready: 150, done: 400 }), full = build(sky, { kind: "board" });
     const shown = build({ ...sky, ease: (key: string, v: number) => (key.endsWith(".R") || key.endsWith(".edge") ? v + 30 : v) }, { kind: "board" });
@@ -779,16 +771,11 @@ describe("the Board's tiers", () => {
     expect(busy.ready.n).toBe(64);
   });
 
-  it("draws the same footprint with eight machines as with none under it, and pages the ninth", () => {
-    const none = tiered(1920, 1080).galaxies, eight = tiered(1920, 1080, DEFAULT_TIERS, machinesOn("review", 8)), nine = tiered(1920, 1080, DEFAULT_TIERS, machinesOn("review", 9));
-    const on = (s: Scene) => s.moons.filter((m) => m.parent.id === "review");
+  it("draws the same footprint with nine machines under a state as with none, and no moon or pager for them", () => {
+    const none = tiered(1920, 1080).galaxies, nine = tiered(1920, 1080, DEFAULT_TIERS, machinesOn("review", 9));
 
-    expect(on(eight).filter((m) => !m.pager)).toHaveLength(8);
-    expect(on(eight).some((m) => m.pager)).toBe(false);
-    expect(on(nine).filter((m) => !m.pager)).toHaveLength(8);
-    expect(on(nine).some((m) => m.pager)).toBe(true);
-    expect(nine.galaxies.review.R).toBeCloseTo(eight.galaxies.review.R);
-    expect(none.review.R).toBeLessThan(eight.galaxies.review.R);
+    expect(nine.moons).toEqual([]);
+    expect(nine.galaxies.review.R).toBeCloseTo(none.review.R);
   });
 
   it("keeps today's sun-to-dot ratio and caps the zoom at 16 on a Board that would otherwise grow past it", () => {
@@ -882,18 +869,18 @@ describe("the Board's tiers", () => {
     const suns = (shape: (snap: Snapshot) => void, tiers?: string[][]) =>
       [100, 125, 150].map((scale) => SUN_R * zoom(tiered(866, 768, tiers, (snap) => { shape(snap); rings(snap); }, scale), 866));
 
-    it("draws the fourteen states' suns at 12 px or more at 150% text, the 100% and 125% sizes unchanged", () => {
+    it("draws the fourteen states' suns at 12 px or more at 150% text, round the room their machines' branches take", () => {
       const [a, b, c] = suns(fourteen, TIERS_14);
 
       expect(c).toBeGreaterThanOrEqual(12);
-      expect(Math.abs(a - 15.9)).toBeLessThanOrEqual(0.1);
-      expect(Math.abs(b - 14.2)).toBeLessThanOrEqual(0.1);
+      expect(Math.abs(a - 16.0)).toBeLessThanOrEqual(0.1);
+      expect(Math.abs(b - 14.5)).toBeLessThanOrEqual(0.1);
     });
 
-    it("draws the eight states' suns at the TASK-3839 table's sizes, within 0.1 px, at 100, 125 and 150% text", () => {
+    it("draws the eight states' suns at the sizes their machines' branches leave, within 0.1 px, at 100, 125 and 150% text", () => {
       const drawn = suns(eight, DEFAULT_TIERS);
 
-      [21.3, 19.4, 17.7].forEach((want, i) => expect(Math.abs(drawn[i] - want)).toBeLessThanOrEqual(0.1));
+      [24.8, 22.7, 20.2].forEach((want, i) => expect(Math.abs(drawn[i] - want)).toBeLessThanOrEqual(0.1));
     });
   });
 
@@ -976,23 +963,23 @@ describe("Board paths", () => {
     expect(close).toEqual([]);
   });
 
-  it("end just outside what each state draws: its sun when it holds no task, its outermost ring of tasks when it does, its moons' orbits where machines map", () => {
+  it("end just outside what each state draws: its sun when it holds no task, its outermost ring of tasks when it does, past its branches' root where machines map", () => {
     const sky = crowd(1920, 1080, { ready: 47 }, machinesOn("in_progress", 3)), scene = build(sky, { kind: "board" }), g = scene.galaxies;
     const ends = (id: string) => scene.bEdges.flatMap((e) => [...(e.source === id ? [e.p0!] : []), ...(e.target === id ? [e.p1!] : [])]).map((p) => Math.hypot(p.x - g[id].x, p.y - g[id].y));
 
     expect(ends("new").length * ends("ready").length * ends("in_progress").length).toBeGreaterThan(0);
     for (const d of ends("new")) expect(d).toBeCloseTo(SUN_R + 10);
     for (const d of ends("ready")) expect(d).toBeCloseTo(Math.max(...g.ready.rings!) + 10);
-    for (const d of ends("in_progress")) expect(d).toBeCloseTo(g.in_progress.moonR + 4);
+    for (const d of ends("in_progress")) expect(d).toBeCloseTo(52);
   });
 
   it.each([
     ["the base Board", {}],
     ["a busy Board", crowdedCounts],
-  ])("cross no state's name and no machine's name on %s", (_, counts) => {
+  ])("cross no state's name on %s", (_, counts) => {
     const scene = build(crowd(1920, 1080, counts, machinesOn("in_progress", 8)), { kind: "board" }), over: string[] = [];
 
-    expect(scene.names.map((n) => n.of)).toEqual(expect.arrayContaining(["ready", "in_progress", "in_progress/m0", "in_progress/m7"]));
+    expect(scene.names.map((n) => n.of)).toEqual(expect.arrayContaining(["ready", "in_progress"]));
     for (const e of scene.bEdges)
       for (const n of scene.names)
         if (sample(e as Curve, 400).some((p) => p.x > n.x0 && p.x < n.x1 && p.y > n.y0 && p.y < n.y1)) over.push(`${e.source}>${e.target} over ${n.of}`);
@@ -1321,108 +1308,17 @@ const moonSky = (skills = 2, W = 1920, H = 1080, ties: { writes?: Record<string,
   return { S, moves, W, H, T: 1000 };
 };
 
-describe("the Board's lifecycle moons", () => {
+describe("a Board state's machines", () => {
   const board = (skills: number) => build(moonSky(skills), { kind: "board" });
-  const moonsOf = (scene: ReturnType<typeof build>) => scene.moons.filter((m) => m.parent === scene.galaxies.in_progress && !m.pager);
-  const side = (scene: ReturnType<typeof build>, m: { x: number }) => Math.sign(m.x - scene.galaxies.in_progress.x);
-  /** The height of the row a moon and its sub-states take: the largest orbit among them, or a line of type. */
-  const rowOf = (m: (typeof board extends (n: number) => infer R ? R : never)["moons"][number]) => 2 * Math.max(m.R, ...m.chain.map((b) => b.R)) + 6;
 
-  it("sets a state's machines in rows, its primary first and the rest alternating right and left", () => {
-    const scene = board(4);
-
-    expect(moonsOf(scene).map((m) => [m.name, side(scene, m)])).toEqual([["in-progress", 1], ["skill-00", -1], ["skill-01", 1], ["skill-02", -1], ["skill-03", 1]]);
-  });
-
-  it("holds each moon on its state's dashed ring and the rows of one side apart, however many machines the state opens into", () => {
-    for (const n of [2, 20]) {
-      const scene = board(n), g = scene.galaxies.in_progress;
-
-      for (const sd of [1, -1]) {
-        const rows = moonsOf(scene).filter((m) => side(scene, m) === sd).sort((a, b) => a.y - b.y);
-        rows.forEach((m, i) => {
-          expect(Math.hypot(m.x - g.x, m.y - g.y)).toBeCloseTo(g.moonR);
-          if (i) expect(m.y - rows[i - 1].y).toBeGreaterThanOrEqual((rowOf(m) + rowOf(rows[i - 1])) / 2 - 1e-9);
-        });
-      }
-    }
-  });
-
-  it("holds the ring and state at one size, whether the state opens into two machines or twenty", () => {
+  it("holds the state at one size, whether it opens into two machines or twenty", () => {
     const base = board(2).galaxies.in_progress, stress = board(20).galaxies.in_progress;
 
-    expect([stress.moonR, stress.R, stress.reach]).toEqual([base.moonR, base.R, base.reach]);
-  });
-
-  it("chains a machine's sub-states outward from its moon on its row, and names the chain beside the machine", () => {
-    const scene = board(4), g = scene.galaxies.in_progress, [primary, skill] = moonsOf(scene);
-
-    expect([primary.chain.map((b) => b.state), skill.chain.map((b) => b.state), moonsOf(scene)[2].chain]).toEqual([["pr_opened"], ["reading"], []]);
-    for (const m of [primary, skill]) {
-      const b = m.chain[0], out = side(scene, m);
-      expect([b.y, (b.x - m.x) * out > 0, (m.x - g.x) * out > 0]).toEqual([m.y, true, true]);
-      expect(Math.abs(b.x - m.x)).toBeGreaterThanOrEqual(m.R + b.R);
-      expect(b.machine).toBe(m.name);
-    }
-    expect([primary.label, skill.label]).toEqual(["in-progress › pr_opened", "skill-00 › reading"]);
-  });
-
-  it("puts a task in pr_opened on that sub-state and a task in a skill machine on its moon", () => {
-    const scene = board(4), host = (id: string) => scene.tasks.find((t) => t.id === id)!.host, [, skill] = moonsOf(scene);
-
-    expect(host("PROJ-1")).toBe(scene.subStates.find((b) => b.machine === "in-progress" && b.state === "pr_opened"));
-    expect(host("PROJ-2")).toBe(skill);
-    expect(host("PROJ-3")).toBe(scene.galaxies.in_progress);
-    expect(host("PROJ-4")).toBe(scene.galaxies.review);
+    expect([stress.R, stress.edge]).toEqual([base.R, base.edge]);
   });
 
   it("counts every task of a state on the state, wherever it orbits", () => {
     expect(board(4).galaxies.in_progress.n).toBe(3);
-  });
-
-  it("holds 40 px between a state's moon names and the next state beside it", () => {
-    const scene = board(20), gs = Object.values(scene.galaxies);
-
-    for (const a of gs) for (const b of gs) if (a.x < b.x && Math.abs(a.y - b.y) < a.R + b.R) expect(b.x - b.reach[1] - (a.x + a.reach[0])).toBeGreaterThanOrEqual(40);
-  });
-
-  it("keeps every Board state and DAG fixed while a stressed state's machine page changes", () => {
-    const fixture = moonSky(20, 1920, 1080, { writes: { claimer: ["CLAIM"], reviewer: ["REVIEW"] } });
-    const page = (at: number) => build({ ...fixture, pages: { in_progress: at } }, { kind: "board" });
-    const first = page(0), second = page(1);
-    const at = (scene: Scene) => ({
-      states: Object.fromEntries(Object.entries(scene.galaxies).map(([id, g]) => [id, [g.x, g.y]])),
-      dags: Object.fromEntries(Object.entries(scene.stars).map(([id, s]) => [id, [s.x, s.y]])),
-    });
-
-    expect(second.moons.map((m) => m.name)).not.toEqual(first.moons.map((m) => m.name));
-    expect(first.moons.filter((m) => m.pager).map((m) => m.name)).toEqual(["‹ 3/3", "2/3 ›"]);
-    expect(second.moons.filter((m) => m.pager).map((m) => m.name)).toEqual(["‹ 1/3", "3/3 ›"]);
-    expect(at(second)).toEqual(at(first));
-  });
-
-  it("pages with two machine nodes on the bottom of the state's ring, back on the left and forward on the right", () => {
-    const scene = board(20), g = scene.galaxies.in_progress, [back, forward] = scene.moons.filter((m) => m.pager);
-
-    expect([back.pager!.d, forward.pager!.d, back.r, forward.r]).toEqual([-1, 1, 9, 9]);
-    for (const m of [back, forward]) {
-      expect(Math.hypot(m.x - g.x, m.y - g.y)).toBeCloseTo(g.moonR);
-      expect(m.y).toBeGreaterThan(Math.max(...moonsOf(scene).map((o) => o.y)));
-    }
-    expect([back.x - g.x, back.y]).toEqual([g.x - forward.x, forward.y]);
-    expect(forward.x - back.x).toBeGreaterThanOrEqual(back.R + forward.R);
-  });
-
-  it("makes each row as tall as a busy pager's orbit, as it does a machine's", () => {
-    // on page two the back node stands in for skill-00 to skill-06, which forty-three tasks work between them
-    const scene = build({ ...moonSky(20, 1920, 1080, { busy: 72 }), pages: { in_progress: 1 } }, { kind: "board" });
-    const g = scene.galaxies.in_progress, pager = scene.moons.find((m) => m.pager?.d === -1)!;
-
-    const right = moonsOf(scene).filter((m) => m.x > g.x).sort((a, b) => a.y - b.y);
-
-    expect(pager.n).toBe(43);
-    expect(pager.R).toBeLessThanOrEqual(Math.max(...moonsOf(scene).map((m) => m.R)));
-    right.forEach((m, i) => { if (i) expect(m.y - right[i - 1].y).toBeGreaterThanOrEqual(2 * pager.R + 6 - 1e-9); });
   });
 });
 

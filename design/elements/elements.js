@@ -34,6 +34,10 @@ const ROLES = [
     "--shadow": "the base of every drop shadow",
     "--white": "code inside a refusal",
   }],
+  ["Star Map branches", {
+    "--phase": "a task's phase machine, drawn as a branch with a station per state off its Board state",
+    "--submachine": "a sub-machine opened from a phase station, drawn as a ray out of it",
+  }],
   ["Status", {
     "--ok": "checks pass, done, start, saved",
     "--ok-hi": "ok on hover; the start button's fill",
