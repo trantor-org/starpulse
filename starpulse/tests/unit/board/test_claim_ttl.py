@@ -5,6 +5,7 @@ import threading
 import time
 from functools import partial
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -236,6 +237,25 @@ def test_serve_follows_the_claim_expiry_the_sweep_pass_saved(served, tmp_path: P
 
     feed.follow_expiries(history, stopped)
 
+    assert feed.task("task-5")["claim_expires_at"] == claimed + 1800
+
+
+def test_the_board_sweep_saves_its_pass_expiry_that_serve_follows(served, tmp_path: Path, monkeypatch) -> None:
+    built, feed, store, log = served
+    claimed = _claim(built, store)
+    _scanned(tmp_path, feed)
+    history = HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", {})
+    passes = []
+    monkeypatch.setattr(BoardFeed, "spawn", lambda self, target, name: passes.append(target))
+
+    built.sweep(feed, log, history.save_claim_expiries)  # the board worker's call
+    waits = iter([False, True])  # one pass, then the sweeper stops
+    passes[-1](SimpleNamespace(wait=lambda _timeout: next(waits)))
+
+    assert history.claim_expiries() == {"task-5": claimed + 1800}
+    stopped = threading.Event()
+    stopped.set()
+    feed.follow_expiries(history, stopped)
     assert feed.task("task-5")["claim_expires_at"] == claimed + 1800
 
 
