@@ -30,6 +30,7 @@ from starpulse.event_log import lane_events
 from starpulse.event_log.conformance_monitor import Conformance
 from starpulse.harness_telemetry.telemetry import TelemetryLog
 from starpulse.pulls.delivery import Projected, follow_saves, metrics_of, poller_problem, request_refresh
+from starpulse.scheduler.adapters.exposition import autopilot_exposition
 from starpulse.pulls.pull_refresh import PullRefresh
 from starpulse.pulls.pull_store import PullSync
 from starpulse.runs import opt_in
@@ -204,6 +205,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         actor_metrics=actor_metrics,
         lane_metrics=unattributed.exposition,
         conformance_metrics=conformance.exposition,
+        autopilot_metrics=lambda: autopilot_exposition(log),
     )
     app = page_app(feed, host.static, store, window, board, services)
     try:

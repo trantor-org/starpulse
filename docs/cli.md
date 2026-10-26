@@ -405,6 +405,13 @@ not allow, a config that cannot be read, a board the config does not assemble or
 judged: the history keeps the lane and the event but no facts, so a move is checked by its shape. [Conformance
 violations](serving.md#conformance-violations) counts the same judgment live.
 
+## Backing up the store
+
+`starpulse backup --to DIR [--keep N] [--config starpulse.toml]` writes a `VACUUM INTO` copy of the SQLite store the config
+names into `DIR` as `starpulse-<local time>.db`, proves it with `PRAGMA integrity_check`, and keeps the newest `N` copies
+(default 14). It prints one JSON line with the copy's path, `integrity` and the `kept` count, and exits 2 for a store that
+is not SQLite, which its own backup tool owns. The read lock is held only for the copy, so `serve` keeps answering.
+
 ## Reloading a running serve
 
 `starpulse reload [--config starpulse.toml]` makes the `serve` started from that config pick up changed code and config
