@@ -472,6 +472,12 @@ def test_a_production_connection_keeps_the_write_ahead_log_and_normal_syncing(tm
     connection.close()
 
 
+def test_a_write_waits_thirty_seconds_for_the_lock_so_a_host_disk_stall_drops_no_event(log: EventLog) -> None:
+    # The Sunday ai-vm-1 snapshot backup stalls disk writes for seconds; a 5 s wait dropped telemetry and failed read-model passes.
+    with log.engine.connect() as db:
+        assert db.exec_driver_sql("PRAGMA busy_timeout").scalar() == 30_000
+
+
 def test_an_instances_database_never_gains_the_hubs_rollups(tmp_path: Path) -> None:
     log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
 
