@@ -90,7 +90,7 @@ def _until(
 
 
 def _task(base: Path, status: str) -> None:
-    """`task-1`'s file on the native board, in `status` (written whole, so a poll never reads half of it)."""
+    """`task-1`'s file on the native board, in `status` and on a profile (written whole, so a poll never reads half of it)."""
     root = base / ".starpulse" / "board"
     path = root / "tasks" / "task-1 - Title.md"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -99,7 +99,7 @@ def _task(base: Path, status: str) -> None:
     )
     scratch = path.with_suffix(".tmp")
     scratch.write_text(
-        f"---\nid: task-1\ntitle: Title\nstatus: {status}\nlabels:\n  - size-3\n---\n\n"
+        f"---\nid: task-1\ntitle: Title\nstatus: {status}\nprofile: '@agent-standard-high'\nlabels:\n  - size-3\n---\n\n"
         "<!-- SECTION:DESCRIPTION:BEGIN -->\nWhy\n<!-- SECTION:DESCRIPTION:END -->\n"
     )
     os.replace(scratch, path)
