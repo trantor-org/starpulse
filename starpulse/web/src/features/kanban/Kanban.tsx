@@ -17,7 +17,7 @@ import {
 import { sessionNickname } from "./nickname";
 import { linkedTask, loadPrefs, savePrefs, withoutFilters } from "./kanbanPrefs";
 import { codeParts, place, targets, type MoveStore, type Refusal, type Target } from "./move";
-import { browserStorage } from "../../shared/nav";
+import { browserStorage, PHONE } from "../../shared/nav";
 import {
   canDrag, dropAsks, placeClaims, profileOf, runsOn, startLane, startable,
   type Asking, type Claiming, type Failed, type Harnesses, type Pick, type StartStore,
@@ -507,8 +507,6 @@ function ModalHost({ store, cards, draw }: { store: OpenTask; cards: KanbanTask[
 
 /** Pixels a press travels before it lifts the card instead of opening it. */
 const LIFT_PX = 5;
-/** The phone layout: one lane shows at a time and a card moves from its task view, so a pointer drag on a card scrolls the lane instead. */
-const PHONE = "(max-width: 900px)";
 
 /**
  * The Kanban view. `spot` is the task a Recent line is hovered for: its card lights as a hovered card does and its column scrolls to it,

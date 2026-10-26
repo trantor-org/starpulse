@@ -70,6 +70,20 @@ describe("the task view in read mode", () => {
 });
 
 describe("the task view's header", () => {
+  it("offers no way into the Star Map at phone width", () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(max-width: 900px)", addEventListener() {}, removeEventListener() {} }));
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const host = document.body.appendChild(document.createElement("div")), root = createRoot(host);
+    try {
+      act(() => root.render(<TaskView {...props()} />));
+      expect(host.querySelector(".tvhead")!.textContent).not.toContain("Open in Star Map");
+    } finally {
+      act(() => root.unmount());
+      host.remove();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("draws the id, Copy, lane, Open in Star Map and the actions in one row, with the title below", () => {
     const head = headOf(draw());
     const at = (text: string) => head.indexOf(text);

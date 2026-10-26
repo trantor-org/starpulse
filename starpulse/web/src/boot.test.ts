@@ -98,6 +98,20 @@ describe("the page's boot", () => {
     expect(mount).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    ["an address naming it", () => history.replaceState(null, "", "/?view=constellation")],
+    ["a saved Opens on", () => { history.replaceState(null, "", "/"); localStorage.setItem("fv.admin.prefs", JSON.stringify({ view: "constellation" })); }],
+  ])("draws no Star Map at phone width for %s, and hides it until the page widens", async (_name, address) => {
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(max-width: 900px)" }));
+    address();
+    const { boot } = await import("./boot");
+    boot(vi.fn());
+
+    expect(made.calls[0][5], "no first-frame mark waits on the Star Map").toBeUndefined();
+    expect(document.getElementById("c")!.classList.contains("off")).toBe(true);
+    expect(made.spy.show).toHaveBeenCalledWith(false);
+  });
+
   it("holds what the page adopts: the store, the Admin's preferences and the renderer", async () => {
     const { boot, booted } = await import("./boot");
     expect(booted()).toBeNull();

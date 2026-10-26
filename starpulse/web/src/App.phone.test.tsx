@@ -57,8 +57,26 @@ beforeEach(() => {
   localStorage.clear();
   boot.calls.length = 0;
   history.replaceState(null, "", "/?view=constellation");
+  viewport.install();
   host = document.body.appendChild(document.createElement("div"));
 });
+/** A viewport the page's phone query (`max-width: 900px`) reads; `resize` fires the change the page listens for. */
+const viewport = {
+  narrow: false,
+  listeners: new Set<() => void>(),
+  install() {
+    this.narrow = false;
+    this.listeners.clear();
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: this.narrow && query === "(max-width: 900px)",
+      addEventListener: (_: string, l: () => void) => this.listeners.add(l),
+      removeEventListener: (_: string, l: () => void) => this.listeners.delete(l),
+    }));
+  },
+  resize(to: boolean) {
+    return act(() => { this.narrow = to; this.listeners.forEach((l) => l()); });
+  },
+};
 afterEach(() => {
   act(() => root.unmount());
   host.remove();
@@ -67,23 +85,31 @@ afterEach(() => {
 });
 
 describe("the phone-width view bar", () => {
-  it("draws a button per view and then More, in the navigator's order", async () => {
+  it("draws a button per view but the Star Map, and then More, in the navigator's order", async () => {
+    await viewport.resize(true);
     await mount();
 
-    expect(buttons().map((b) => b.textContent)).toEqual(["Star Map", "Kanban", "DAGs", "Admin", "More"]);
+    expect(buttons().map((b) => b.textContent)).toEqual(["Kanban", "DAGs", "Admin", "More"]);
   });
 
   it("marks the view showing, and a tap on another button opens that view", async () => {
+    await viewport.resize(true);
     await mount();
-    expect(button("Star Map").getAttribute("aria-current")).toBe("page");
-    expect(button("Kanban").getAttribute("aria-current")).toBeNull();
+    expect(button("Kanban").getAttribute("aria-current")).toBe("page");
+    expect(button("DAGs").getAttribute("aria-current")).toBeNull();
 
-    tap("Kanban");
+    tap("DAGs");
     await frames();
 
-    expect(button("Kanban").getAttribute("aria-current")).toBe("page");
-    expect(button("Star Map").getAttribute("aria-current")).toBeNull();
-    expect(location.search).toBe("?view=kanban");
+    expect(button("DAGs").getAttribute("aria-current")).toBe("page");
+    expect(button("Kanban").getAttribute("aria-current")).toBeNull();
+    expect(location.search).toBe("?view=dags");
+  });
+
+  it("keeps the Star Map button on a page wider than the phone", async () => {
+    await mount();
+
+    expect(buttons().map((b) => b.textContent)).toEqual(["Star Map", "Kanban", "DAGs", "Admin", "More"]);
   });
 
   it("refits the Board on a tap on the Star Map while it shows, as the navigator's entry does", async () => {
@@ -92,6 +118,48 @@ describe("the phone-width view bar", () => {
     tap("Star Map");
 
     expect(boot.calls).toContain("fitView");
+  });
+});
+
+describe("phone width retires the Star Map", () => {
+  it.each([
+    ["an address naming it", () => history.replaceState(null, "", "/?view=constellation")],
+    ["a saved Opens on", () => { history.replaceState(null, "", "/"); localStorage.setItem("fv.admin.prefs", JSON.stringify({ view: "constellation" })); }],
+    ["a retired per-graph address", () => history.replaceState(null, "", "/board")],
+  ])("opens the Kanban for %s and never shows the Star Map", async (_name, address) => {
+    address();
+    await viewport.resize(true);
+    await mount();
+
+    expect(button("Kanban").getAttribute("aria-current")).toBe("page");
+    expect(host.querySelector("#first-run")).toBeNull();
+  });
+
+  it("brings the Star Map back when the page widens past the phone, and takes it away again when it narrows", async () => {
+    history.replaceState(null, "", "/?view=constellation");
+    await viewport.resize(true);
+    await mount();
+    expect(button("Kanban").getAttribute("aria-current")).toBe("page");
+
+    await viewport.resize(false);
+    await frames();
+
+    expect(button("Star Map").getAttribute("aria-current")).toBe("page");
+    expect(boot.calls).toContain("show");
+
+    await viewport.resize(true);
+    await frames();
+
+    expect(buttons().map((b) => b.textContent)).not.toContain("Star Map");
+    expect(button("Kanban").getAttribute("aria-current")).toBe("page");
+  });
+
+  it("keeps a view the address names other than the Star Map", async () => {
+    history.replaceState(null, "", "/?view=dags");
+    await viewport.resize(true);
+    await mount();
+
+    expect(button("DAGs").getAttribute("aria-current")).toBe("page");
   });
 });
 
