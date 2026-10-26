@@ -328,9 +328,18 @@ describe("placeBranches", () => {
     expect(riders.length).toBeGreaterThan(0);
     // a name printed over a station leaves the branch no place that fits, so it is placed afresh
     (scene.names as unknown[]).push({ x0: st.x - 4, y0: st.y - 4, x1: st.x + 4, y1: st.y + 4, of: `${line.sun}/name` });
-    const prev = riders.map((k) => T.dotsOf(k.id)[0]), jumps: number[] = [];
-    for (let t = 9.1; t < 13; t += 1 / 60) {
+    const prev = riders.map((k) => T.dotsOf(k.id)[0]), jumps: number[] = [], ext: number[] = [], gliding: boolean[] = [], onLine: boolean[] = [], old = stationsOf(line);
+    // the app rebuilds the scene each frame, so each task starts it back at its Board place
+    const home = scene.tasks.map((k) => ({ x: k.x, y: k.y }));
+    // the riders' Board places lie off the line, on the far side of the sun (they were drawn on their stations when mock() placed them)
+    const g = scene.galaxies[line.sun];
+    riders.forEach((k, i) => Object.assign(home[scene.tasks.indexOf(k)], { x: g.x + 260 * Math.cos(line.th + Math.PI + i / 4), y: g.y + 260 * Math.sin(line.th + Math.PI + i / 4) }));
+    for (let t = 9.1; t < 24; t += 1 / 60) {
+      scene.tasks.forEach((k, i) => Object.assign(k, home[i]));
       T.placeBranches(scene, t);
+      gliding.push(scene.tasks.some((k) => k.moving));
+      onLine.push(riders.some((k) => old.some((o) => dist(o, T.dotsOf(k.id)[0]) < 8)));
+      ext.push(T.branchLines(0).find((l) => l.key === line.key)?.ext ?? 0);
       riders.forEach((k, i) => {
         const d = T.dotsOf(k.id)[0];
         jumps.push(dist(d, prev[i]));
@@ -338,9 +347,17 @@ describe("placeBranches", () => {
       });
     }
     expect(T.branchLines().find((l) => l.key === line.key)!.th, "re-placed").not.toBe(line.th);
+    // the old line stays drawn, whole, while its dots glide back off it, then tears down and grows out again in the new place
+    const fall = ext.findIndex((e, i) => i && e < ext[i - 1]);
+    expect(fall, "the line tears down").toBeGreaterThan(0);
+    expect(ext[fall - 1], "whole until its dots have left").toBe(1);
+    expect(gliding[fall] || onLine[fall], "a dot still on it when it tears down").toBe(false);
+    expect(ext.slice(fall).findIndex((e) => e === 0), "an ease over 0.6 s, not a cut").toBeGreaterThanOrEqual(0.6 * 60 - 2);
+    expect(ext.slice(fall).some((e) => e === 0), "gone before it regrows").toBe(true);
     expect(Math.max(...jumps)).toBeLessThan(98 / 60 + 0.1);
     expect(jumps.filter((d) => d > 0.01).length, "glided").toBeGreaterThan(10);
-    riders.forEach((k, i) => expect(dist(prev[i], k), k.id).toBeLessThan(0.5));
+    const placed = stationsOf(T.branchLines().find((l) => l.key === line.key)!);
+    riders.forEach((k, i) => expect(placed.some((st) => dist(st, prev[i]) < 8), k.id).toBe(true));
   });
 
   it("draws, for each phase agent of the live snapshot, a dot on the station of every state of its machine's configuration", () => {
