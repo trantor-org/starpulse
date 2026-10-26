@@ -109,6 +109,12 @@ describe("the built page", () => {
     expect(all.some(mermaid)).toBe(true);
   });
 
+  it("leaves mermaid out of the one-file demo, whose leak scan refuses its strings and whose size it would multiply", () => {
+    const [script] = chunks(oneFile);
+    expect(script.sources.some((source) => source.includes("/node_modules/mermaid/"))).toBe(false);
+    expect(script.bytes).toBeLessThan(1_500_000);
+  });
+
   it("still ships every view, each in a chunk the page loads on demand", () => {
     const all = chunks(served).flatMap((c) => c.sources);
     expect(LAZY_VIEWS.filter((v) => !holds(all, v))).toEqual([]);
