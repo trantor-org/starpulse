@@ -30,8 +30,8 @@ FEED_EVENT_RESEND = {
     "scheduler": False,
 }
 
-# The public path's name, not this module's: operators and trantor's tests filter the feed's records by it.
-logger = logging.getLogger("starpulse.board_feed")
+# The feed's name, not this module's: operators and trantor's tests filter the feed's records by it.
+logger = logging.getLogger("starpulse.board.board_feed")
 
 _PULL_REQUEST = re.compile(r"https://github\.com/[^/\s]+/[^/\s]+/pull/\d+/?")
 

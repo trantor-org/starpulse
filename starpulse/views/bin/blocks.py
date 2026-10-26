@@ -2,14 +2,15 @@
 importing the worker."""
 
 from __future__ import annotations
+
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from starpulse._internal.analytics import Analytics
     from starpulse.board.model.search_config import Search
+    from starpulse.contracts.analytics import Analytics
     from starpulse.harness_telemetry.harnesses import Harnesses
     from starpulse.pulls.pins import Repo
     from starpulse.runs.config import Producer

@@ -25,8 +25,8 @@ internal and can change in any release.
   criterion the task lacks. Each exits 0 on success, 1 refused, 2 usage, 3 when the board cannot write tasks and, for
   every verb but `create`, 4 for an unknown task.
 - `starpulse import-history`, and the JSON Lines it reads: one `{event_id, task, lane, time}` object per line ([format](cli.md#importing-a-boards-history)).
-- The documented entry point `python -m starpulse.claude_code`, which receives Claude Code's and Codex's OTLP log
-  exports, `python -m starpulse.cursor`, which reads Cursor's agent transcripts, and `python -m starpulse.cursor_context`,
+- The documented entry point `python -m starpulse.runtime.claude_code`, which receives Claude Code's and Codex's OTLP log
+  exports, `python -m starpulse.runtime.cursor`, which reads Cursor's agent transcripts, and `python -m starpulse.runtime.cursor_context`,
   which restarts a Cursor task session past its context limit.
 - `GET /api/analytics/sessions` and its body in `api.schema.json`: session and slice health from those exports (see
   [Connect sources](sources.md#measure-session-and-slice-health)).
@@ -89,22 +89,44 @@ switch was last written), `starpulse_autopilot_ledger_runs` (rows in the run led
 `starpulse_autopilot_decisions_total{verdict="admitted|refused"}` (verdicts the loop has logged, kept in the store) read
 the store on each scrape.
 
-The modules an adapter may import, each exporting exactly the names in its `__all__`:
+The modules an adapter may import. A context package exports exactly the names in its `__all__`; a `runtime` module
+is public for the names listed here:
 
-- `starpulse.board`: the board adapter seam (`Board`, `Written`, the writer, task, milestone and doc protocols, and the `UpstreamBacklog` reference adapter).
-- `starpulse.board_feed`: the feed a board adapter places tasks on (`BoardFeed`) and what following a stream needs of it.
+- `starpulse.board`: the board adapter seam (`Board`, `Written`, the writer, task, milestone and doc protocols, and the `UpstreamBacklog` reference adapter), the feed a board adapter places tasks on (`BoardFeed`, `BoardStore`, `Followed`, `Resumable`) and `CommitKeys`.
 - `starpulse.contracts`: the board (a `BoardTask` carries `acceptance_criteria` with `acceptance_checked`, `pause_reason` and `notes` beside its `description`), machine-event, run-event (`RunEvent`), lane-event (`LaneEvent`), runs (`Dag`, `RecentRun`) records, their JSON Schemas, `EVENT_STREAMS` (the record of each event log stream), and `RunsSink`.
-- `starpulse.adapter_kit`: the test kit an adapter author runs against their work, and the helpers that serve it, and `write_instance(base)`, which serves the write routes over the board a config file names so a test writes tasks through StarPulse (`WriteInstance.run` calls a `starpulse` verb in-process).
-- `starpulse.machine_definition`: loading and validating a machine, and the `Registry` of guards and actions.
-- `starpulse.snapshot`: how a machine is described to the page, and how its workflows are named.
-- `starpulse.history`: the history a board adapter may keep itself, and placing a task's events on a machine.
 - `starpulse.event_log`: the database event log readers tail; [Build a consumer](consumers.md) shows a reader that keeps its cursor in its own store.
-- `starpulse.config`: loading the config file, the runs adapter a `type` names, and `CONFIG_OWNERS` (the processes that read each key) with `restarts_serve` (whether a change to the raw tables needs `serve` itself restarted).
-- `starpulse.harnesses`: loading the harness file, the tiers and efforts an agent profile names.
-- `starpulse.conformance`: replaying recorded moves (`check_lanes`, `check_events`) and event traces (`conform`, `replay`, `runs`) against a declared machine, and the paths and gate `bypasses` a machine generates.
-- `starpulse.mermaid_import`: drafting a machine definition from a Mermaid state diagram.
-- `starpulse.otlp`: decoding Claude Code's OpenTelemetry log export.
+- `starpulse.flow_metrics`: the history a board adapter may keep itself, and placing a task's events on a machine.
+- `starpulse.harness_telemetry`: loading the harness file and the tiers and efforts an agent profile names, and decoding Claude Code's OpenTelemetry log export.
+- `starpulse.machine_engine`: loading and validating a machine and the `Registry` of guards and actions, replaying recorded moves (`check_lanes`, `check_events`) and event traces (`conform`, `replay`, `runs`) against it, the paths and gate `bypasses` it generates, how it is described to the page and its workflows are named, and drafting one from a Mermaid state diagram (`draft_machine`).
+- `starpulse.runs`: the runs instance a config file declares (`RunsInstance`).
 - `starpulse.sessions`: what an agent session did: the Activity each tool call performed (`activities`, labels with no arguments), and session and slice Health folded from Claude Code's and Codex's log exports (`session_health`, `slice_health`) as the DTOs `GET /api/analytics/sessions` serves.
+- `starpulse.runtime.adapter_kit`: the test kit an adapter author runs against their work, and the helpers that serve it.
+- `starpulse.runtime.write_instance`: `write_instance(base)`, which serves the write routes over the board a config file names so a test writes tasks through StarPulse (`WriteInstance.run` calls a `starpulse` verb in-process).
+- `starpulse.runtime.config`: loading the config file and the runs adapter a `type` names.
+- `starpulse.runtime.closure`: `CONFIG_OWNERS` (the processes that read each key) with `restarts_serve` (whether a change to the raw tables needs `serve` itself restarted).
+
+### Moved in 0.y
+
+Release 0.y deleted the top-level facade modules and the `_internal` package; a context's package is its public path. Update each import as the table says. `python -m starpulse.claude_code`, `python -m starpulse.cursor` and `python -m starpulse.cursor_context` are now `python -m starpulse.runtime.claude_code`, `.cursor` and `.cursor_context`. The `starpulse.board_feed` logger is now `starpulse.board.board_feed`. `python -m starpulse.mermaid_import` is `python -m starpulse.machine_engine.adapters.mermaid_import`.
+
+| Old path | New path |
+| --- | --- |
+| `starpulse.adapter_kit` (the kit) | `starpulse.runtime.adapter_kit` |
+| `starpulse.adapter_kit` (`WriteInstance`, `write_instance`) | `starpulse.runtime.write_instance` |
+| `starpulse.board_feed` | `starpulse.board` |
+| `starpulse.config` (`Config`, `ConfigError`, `load`, `runs_adapter`) | `starpulse.runtime.config` |
+| `starpulse.config` (`CONFIG_OWNERS`, `restarts_serve`) | `starpulse.runtime.closure` |
+| `starpulse.config` (`CommitKeys`) | `starpulse.board` |
+| `starpulse.config` (`RunsInstance`) | `starpulse.runs` |
+| `starpulse.conformance` | `starpulse.machine_engine` |
+| `starpulse.machine_definition` | `starpulse.machine_engine` |
+| `starpulse.mermaid_import` | `starpulse.machine_engine` |
+| `starpulse.snapshot` | `starpulse.machine_engine` |
+| `starpulse.history` | `starpulse.flow_metrics` |
+| `starpulse.harnesses` | `starpulse.harness_telemetry` |
+| `starpulse.otlp` | `starpulse.harness_telemetry` |
+| `starpulse.claude_code`, `starpulse.cursor`, `starpulse.cursor_context` | `starpulse.runtime.claude_code`, `.cursor`, `.cursor_context` |
+| `starpulse._internal.*` | not public; use the context packages above |
 
 A package test pins this list and each module's names, so adding or removing one is a reviewed change.
 

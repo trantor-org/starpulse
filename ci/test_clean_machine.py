@@ -137,10 +137,10 @@ def test_the_snapshot_held_at_open_places_nothing_so_it_cannot_stand_for_a_poste
 
 
 SERVER = "starpulse/runtime/server.py"
-IMPORTS_TEST = "starpulse/tests/unit/server/test_serve_imports.py"
-START_TEST = "starpulse/tests/integration/server/test_serve_start.py"
-LIFETIME_TEST = "starpulse/tests/integration/server/test_supervisor_lifetime.py"
-OTHER_TEST = "starpulse/tests/unit/server/test_other.py"
+IMPORTS_TEST = "tests/unit/server/test_serve_imports.py"
+START_TEST = "tests/integration/server/test_serve_start.py"
+LIFETIME_TEST = "tests/integration/server/test_supervisor_lifetime.py"
+OTHER_TEST = "tests/unit/server/test_other.py"
 
 
 def _repo_with(root: Path, *paths: str) -> None:

@@ -65,7 +65,7 @@ def _until(probe, what: str):
         try:
             if found := probe():
                 return found
-        except (OSError, urllib.error.HTTPError):
+        except OSError, urllib.error.HTTPError:
             pass
         time.sleep(0.3)
     pytest.fail(f"{what} did not happen within {DEADLINE:.0f}s")
@@ -108,8 +108,15 @@ def _stub_harness(install: Path, receiver_port: int, ago_s: float) -> None:
 
 def test_a_first_install_links_the_session_that_claims_a_task_to_it(tmp_path: Path, page_build: None) -> None:
     install = tmp_path / "demo"
-    package_root = str(Path(starpulse.__file__).parent.parent)  # the subprocesses run the code under test, not an installed copy
-    env = {**os.environ, "STARPULSE_TOKEN": "first-install-token", "STARPULSE_SESSION": SESSION, "PYTHONPATH": package_root}
+    package_root = str(
+        Path(starpulse.__file__).parent.parent
+    )  # the subprocesses run the code under test, not an installed copy
+    env = {
+        **os.environ,
+        "STARPULSE_TOKEN": "first-install-token",
+        "STARPULSE_SESSION": SESSION,
+        "PYTHONPATH": package_root,
+    }
     env.pop("STARPULSE_CONFIG", None)
     init = _starpulse("init", "--dir", str(install), "--harness", "claude-code", cwd=tmp_path, env=env)
     assert init.returncode == 0, init.stderr
@@ -123,7 +130,15 @@ def test_a_first_install_links_the_session_that_claims_a_task_to_it(tmp_path: Pa
         stderr=(tmp_path / "serve.log").open("w"),
     )
     receiver = subprocess.Popen(
-        [sys.executable, "-m", "starpulse.claude_code", "--config", "starpulse.toml", "--port", str(receiver_port)],
+        [
+            sys.executable,
+            "-m",
+            "starpulse.runtime.claude_code",
+            "--config",
+            "starpulse.toml",
+            "--port",
+            str(receiver_port),
+        ],
         cwd=install,
         env=env,
         stderr=(tmp_path / "receiver.log").open("w"),

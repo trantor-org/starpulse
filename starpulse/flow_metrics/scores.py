@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from starpulse._internal.signals import CLAUDE_CODE
+from starpulse.contracts.signals import CLAUDE_CODE
 from starpulse.flow_metrics.cells import cell_of
 from starpulse.github import Transport, get
 
@@ -143,7 +143,9 @@ def merged_pulls(transport: Transport, repo: str, pages: int = 5) -> dict[str, i
     pages of 100; a task named by several keeps the newest."""
     found: dict[str, int] = {}
     for page in range(1, pages + 1):
-        listed = get(transport, f"/repos/{repo}/pulls?state=closed&sort=updated&direction=desc&per_page=100&page={page}")
+        listed = get(
+            transport, f"/repos/{repo}/pulls?state=closed&sort=updated&direction=desc&per_page=100&page={page}"
+        )
         for pull in listed["items"]:
             named = re.search(r"TASK-\d+", pull["title"])
             if named and pull.get("merged_at"):

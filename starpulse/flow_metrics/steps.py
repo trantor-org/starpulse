@@ -22,9 +22,9 @@ from bisect import bisect_right
 from collections.abc import Iterable
 from typing import Any, NamedTuple
 
-from starpulse._internal.analytics import Analytics
-from starpulse._internal.signals import Signal
 from starpulse.contracts.adapters import TaskKeys
+from starpulse.contracts.analytics import Analytics
+from starpulse.contracts.signals import Signal
 from starpulse.flow_metrics.session_health import attributed, grouped
 
 __all__ = ["NO_SKILL", "Owned", "owned_steps", "session_steps"]

@@ -5,7 +5,7 @@ With no file the view runs as an individual-contributor view of its own
 Markdown board in `./.starpulse/board`, keeping its history in a SQLite file, with no runs adapter.
 
 The `[board]` table names the board adapter by `type` (`starpulse.board`); the rest of the table is that
-adapter's settings. `database_url` is the SQLAlchemy URL of the history store (`starpulse.history`).
+adapter's settings. `database_url` is the SQLAlchemy URL of the history store (`starpulse.flow_metrics.history`).
 
 Each `[[runs]]` table is one instance of a runs adapter: its `name`, the adapter module `type` (a built-in name from
 `board.model.adapter_types`, or the dotted path of a module an installed package provides), the `url` it reads, the workflows Run now may start (`run_safe`) and the `domains` that
@@ -26,11 +26,11 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from types import ModuleType
 
-from starpulse._internal.analytics import Analytics, AnalyticsError, parse_analytics
 from starpulse.board.model.adapter_types import DEFAULT_TYPE, module_name
 from starpulse.board.model.commit_keys import CommitKeys
 from starpulse.board.model.search_config import Search, SearchError, parse_search
 from starpulse.cli.project import Project, ProjectError, parse_project
+from starpulse.contracts.analytics import Analytics, AnalyticsError, parse_analytics
 from starpulse.flow_metrics.level import Level, LevelError, parse_level
 from starpulse.harness_telemetry.cursor_context_config import (
     CursorContext,
@@ -593,7 +593,9 @@ def load(path: Path | None) -> Config:
     kind, board, task_actor = _board(raw)
     url = _text(raw, "database_url")
     repos = _repos(raw.get("repos", []))
-    return _config(raw, mode, runs, harnesses, kind, board, url, session_start_url, log_retention, tls, task_actor, repos)
+    return _config(
+        raw, mode, runs, harnesses, kind, board, url, session_start_url, log_retention, tls, task_actor, repos
+    )
 
 
 def _check_keys(raw: dict) -> None:

@@ -26,9 +26,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from starpulse._internal.analytics import Analytics
-from starpulse._internal.signals import CURSOR, Signal, claim_key, claimed
 from starpulse.contracts.adapters import TaskKeys
+from starpulse.contracts.analytics import Analytics
+from starpulse.contracts.signals import CURSOR, Signal, claim_key, claimed
 from starpulse.event_log.opening import open_event_log
 from starpulse.harness_telemetry.activity import SHELLS, activities, elide_heredocs, paths
 from starpulse.harness_telemetry.intent_classification import intent_label

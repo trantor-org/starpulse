@@ -63,9 +63,7 @@ def test_a_nightly_only_job_skips_a_pull_request(name):
 def test_release_build_runs_hosted_for_a_push_and_on_the_ai_vm_1_fleet_otherwise():
     """A tag and a merge to main both publish what the build makes, so both build on a clean hosted runner."""
     runs_on = job("release.yml", "build")["runs-on"]
-    match = re.fullmatch(
-        r"\$\{\{ github\.event_name == 'push' && '([^']+)' \|\| fromJSON\('([^']+)'\) \}\}", runs_on
-    )
+    match = re.fullmatch(r"\$\{\{ github\.event_name == 'push' && '([^']+)' \|\| fromJSON\('([^']+)'\) \}\}", runs_on)
     assert match, runs_on
     push_runner, other_runner = match.groups()
     assert push_runner == HOSTED
@@ -409,11 +407,11 @@ def test_release_runs_only_the_push_and_dispatch_events():
 
 
 def test_a_merge_to_main_that_changes_the_wheel_triggers_a_release_run():
-    """The wheel is the `starpulse` package without its tests, plus the project file that names its dependencies and version."""
+    """The wheel is the `starpulse` package (the tests live beside it, not in it), plus the project file that names its dependencies and version."""
     push = yaml.safe_load((WORKFLOWS / "release.yml").read_text())[True]["push"]
     assert push["tags"] == ["v*"]
     assert push["branches"] == ["main"]
-    assert push["paths"] == ["starpulse/**", "!starpulse/tests/**", "pyproject.toml"]
+    assert push["paths"] == ["starpulse/**", "pyproject.toml"]
 
 
 def test_a_merge_to_main_publishes_a_beta_version_that_only_the_runner_holds():
@@ -436,7 +434,7 @@ def test_a_beta_release_is_a_prerelease_cut_at_the_merged_commit_and_a_tag_relea
     step = next(s for s in release["steps"] if "gh release create" in s.get("run", ""))
 
     assert step["env"]["TAG"] == "${{ needs.build.outputs.tag }}"
-    assert 'flags=(--verify-tag)' in step["run"]
+    assert "flags=(--verify-tag)" in step["run"]
     assert 'flags=(--target "$GITHUB_SHA" --prerelease)' in step["run"]
     assert '"$TAG"' in step["run"] and '"${flags[@]}"' in step["run"]
 

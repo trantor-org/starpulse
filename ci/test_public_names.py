@@ -35,8 +35,8 @@ def test_a_neutral_file_and_a_word_that_only_contains_tower_report_nothing(tmp_p
         ".github/workflows/release.yml",
         ".github/actionlint.yaml",
         "ci/test_x.py",
-        "starpulse/tests/unit/test_y.py",
-        "starpulse/tests/fixtures/z.json",
+        "tests/unit/test_y.py",
+        "tests/fixtures/z.json",
     ],
 )
 def test_workflow_and_test_files_are_exempt(tmp_path, rel):

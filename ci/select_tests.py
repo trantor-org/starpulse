@@ -40,7 +40,7 @@ FULL_SUITE = (
     "uv.lock",
     "conftest.py",
     "*/conftest.py",
-    "starpulse/tests/fixtures/*",
+    "tests/fixtures/*",
 )
 
 #: The `[tool.*]` tables of `pyproject.toml` that only a lint step reads; an edit to nothing else leaves every test's
@@ -51,29 +51,29 @@ LINT_TABLES = ("importlinter",)
 #: map never lists those tests for them.
 SUBPROCESS_IMPORTERS = {
     "starpulse/runtime/server.py": (
-        "starpulse/tests/unit/server/test_serve_imports.py",
-        "starpulse/tests/integration/server/test_serve_start.py",
-        "starpulse/tests/integration/server/test_supervisor_lifetime.py",
+        "tests/unit/server/test_serve_imports.py",
+        "tests/integration/server/test_serve_start.py",
+        "tests/integration/server/test_supervisor_lifetime.py",
     ),
 }
 
 #: Non-Python files and the Python files that open them by path; each reader counts as changed.
 READERS = {
     "README.md": ("starpulse/runtime/server.py", "ci/ui_preview.py"),
-    "docs/public-surface.md": ("starpulse/tests/unit/contracts/test_public_surface.py",),
-    "starpulse/web/*": ("starpulse/tests/unit/contracts/test_neutrality.py", "ci/ui_preview.py"),
+    "docs/public-surface.md": ("tests/unit/contracts/test_public_surface.py",),
+    "starpulse/web/*": ("tests/unit/contracts/test_neutrality.py", "ci/ui_preview.py"),
     "design/*": ("ci/ui_preview.py",),
-    ".claude-plugin/*": ("starpulse/tests/integration/cli/test_agent_cli.py",),
-    "docs/consumers.md": ("starpulse/tests/unit/event_log/test_consumer_pattern.py",),
-    "docs/serving.md": ("starpulse/tests/unit/board/test_builtin_types.py",),
-    "docs/sources.md": ("starpulse/tests/unit/board/test_builtin_types.py",),
+    ".claude-plugin/*": ("tests/integration/cli/test_agent_cli.py",),
+    "docs/consumers.md": ("tests/unit/event_log/test_consumer_pattern.py",),
+    "docs/serving.md": ("tests/unit/board/test_builtin_types.py",),
+    "docs/sources.md": ("tests/unit/board/test_builtin_types.py",),
     "ci/preview.toml": ("ci/ui_preview.py", "ci/seeded_server.py"),
     "starpulse/schemas/api.schema.json": ("starpulse/contracts/api/schema.py", "starpulse/contracts/api/__main__.py"),
     "starpulse/schemas/machine.schema.json": ("starpulse/machine_engine/adapters/machine_loader.py",),
     "starpulse/schemas/*": (
         "starpulse/contracts/adapters.py",
         "starpulse/contracts/__main__.py",
-        "starpulse/tests/unit/contracts/test_contracts.py",
+        "tests/unit/contracts/test_contracts.py",
     ),
     "starpulse/event_log/migrations/*": ("starpulse/event_log/event_log.py",),
     "pyproject.toml": (),
@@ -82,11 +82,11 @@ READERS = {
         "starpulse/pulls/ci.py",
         "starpulse/harness_telemetry/harness.py",
         "starpulse/pulls/github.py",
-        "starpulse/tests/unit/machine_engine/test_github_pull_request_machine.py",
+        "tests/unit/machine_engine/test_github_pull_request_machine.py",
     ),
     "starpulse/skills/*": (
         "starpulse/cli/skill_install.py",
-        "starpulse/tests/integration/cli/test_agent_cli.py",
+        "tests/integration/cli/test_agent_cli.py",
     ),
     "bench/page_latency.py": ("ci/test_page_latency.py", "ci/test_soak.py", "ci/test_load.py"),
     "bench/soak.py": ("ci/test_soak.py",),
@@ -122,7 +122,7 @@ INERT = (
 NAMED_LOADERS = ("starpulse.board.model.seam", "starpulse.runtime.config")
 
 #: The feature packages that hold adapters; a module directly in one of them may be an adapter.
-ADAPTER_PACKAGES = ("starpulse.board.adapters.", *(f"starpulse._internal.{package}." for package in ("runs", "pulls")), "starpulse.harness_telemetry.")
+ADAPTER_PACKAGES = ("starpulse.board.adapters.", "starpulse.runs.", "starpulse.pulls.", "starpulse.harness_telemetry.")
 
 #: The module that lists every built-in adapter's name. Every loader reaches it, so its text names no adapter a test
 #: names: it would otherwise select every adapter's tests for a change to any loader.
@@ -161,7 +161,7 @@ def shards_for(selection: Selection) -> list[int]:
 def _modules(root: Path) -> dict[str, Path]:
     """Importable module name -> file; `ci/` scripts are imported by bare name (`pythonpath = ["ci"]`)."""
     found = {}
-    for path in (root / "starpulse").rglob("*.py"):
+    for path in (*(root / "starpulse").rglob("*.py"), *(root / "tests").rglob("*.py")):
         rel = path.relative_to(root)
         if {"web", "__pycache__", "node_modules"} & set(rel.parts):
             continue

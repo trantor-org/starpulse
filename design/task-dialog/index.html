@@ -1424,7 +1424,7 @@ titles["DEMO-8610"] = "Kanban: card density pass"; lanes["DEMO-8610"] = "ready";
 const stub = (id) => ({
   id, title: titles[id] || "Add a retry to the board projection reader", lane: [laneName[lanes[id] || "ready"], lanes[id] || "ready"], forAge: "3h",
   description: "The projection reader gives up on the first `backlog:projection` miss. Retry once after 250 ms before reporting the board unreadable.",
-  ac: [["`uv run agent-cmd run-tests starpulse/tests/unit/board` passes with a test for one transient miss", false]], dod: [], plan: "", notes: "", activity: [],
+  ac: [["`uv run agent-cmd run-tests tests/unit/board` passes with a test for one transient miss", false]], dod: [], plan: "", notes: "", activity: [],
   session: null, prs: [], ci: null, deps: [], blocks: [], docs: [], machines: [],
   fields: { kind: "execute", size: 1, area: "starpulse", mode: "", priority: "Low", profile: "@agent-fast-low", type: "bug" }, tags: [], meta: [], created: "3h ago",
 });

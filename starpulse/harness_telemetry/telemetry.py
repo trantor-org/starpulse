@@ -29,9 +29,9 @@ from collections.abc import Callable, Iterable, Iterator
 from dataclasses import asdict, fields
 from typing import TYPE_CHECKING, Any
 
-from starpulse._internal.analytics import Analytics
-from starpulse._internal.signals import CLAUDE_CODE, CODEX, Signal, claim_key, claimed, main_thread_source
 from starpulse.contracts.adapters import TaskKeys
+from starpulse.contracts.analytics import Analytics
+from starpulse.contracts.signals import CLAUDE_CODE, CODEX, Signal, claim_key, claimed, main_thread_source
 from starpulse.harness_telemetry.activity import SHELLS, activities, elide_heredocs, paths, writes_file
 from starpulse.harness_telemetry.intent_classification import intent_label
 from starpulse.harness_telemetry.otlp import BRANCH, EVAL, _attributes, _epoch, _records
@@ -52,7 +52,7 @@ _SWITCH = re.compile(r"\bgit\s+(?:-C\s+\S+\s+)?(?:switch|checkout)\s+((?:-(?!-\s
 def _number(value: Any) -> int:
     try:
         return max(int(float(str(value))), 0)
-    except (ValueError, OverflowError):
+    except ValueError, OverflowError:
         return 0
 
 
@@ -357,7 +357,9 @@ def _signal(stored: dict[str, Any]) -> Signal:
     kept = {k: v for k, v in stored.items() if k in _FIELDS}
     kept.setdefault("captured", kept.get("harness") == CLAUDE_CODE)  # rows stored before the mark was kept
     # Read from the stored command, so a row stored before the mark existed carries it too.
-    kept["shell_write"] = kept.get("kind") == "tool" and kept.get("name") in SHELLS and writes_file(kept.get("command", ""))
+    kept["shell_write"] = (
+        kept.get("kind") == "tool" and kept.get("name") in SHELLS and writes_file(kept.get("command", ""))
+    )
     return Signal(**{k: tuple(v) if k in _LISTS else v for k, v in kept.items()})
 
 
@@ -389,6 +391,7 @@ class TelemetryLog:
         self._log = log
 
         from starpulse.event_log.event_log import Tail  # noqa: PLC0415 - the database stack loads when a log opens
+
         self._tail = Tail.replay(log, self.STREAM, batch=5000)
         self._keep = keep
         self._held: list[Signal] = []

@@ -32,8 +32,8 @@ from starpulse.harness_telemetry.activity import (
 from starpulse.harness_telemetry.telemetry import held, signals
 
 if TYPE_CHECKING:
-    from starpulse._internal.analytics import Analytics
     from starpulse.contracts.adapters import TaskKeys
+    from starpulse.contracts.analytics import Analytics
 
 __all__ = [
     "SHELLS",

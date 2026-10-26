@@ -31,17 +31,17 @@ def repo(tmp_path: Path) -> Path:
         "starpulse/event_log/event_log.py": "from starpulse import leaf\n",
         "starpulse/event_log/migrations/versions/0001_initial.py": "",
         "starpulse/board/adapters/jira.py": "def board(settings, base):\n    return None\n",
-        "starpulse/tests/__init__.py": "",
-        "starpulse/tests/conftest.py": "",
-        "starpulse/tests/helpers.py": "from starpulse import lone\n",
-        "starpulse/tests/unit/feed/test_leaf.py": "from starpulse.leaf import X\n",
-        "starpulse/tests/unit/event_log/test_event_log.py": "from starpulse.event_log import event_log\n",
-        "starpulse/tests/unit/feed/test_lone.py": "from starpulse.tests.helpers import lone\n",
-        "starpulse/tests/unit/board/test_board.py": 'from starpulse.board.model import seam\n\nKIND = "jira"\n',
-        "starpulse/tests/unit/contracts/test_public_surface.py": "",
-        "starpulse/tests/unit/contracts/test_neutrality.py": "",
-        "starpulse/tests/unit/event_log/test_consumer_pattern.py": "",
-        "starpulse/tests/unit/board/test_builtin_types.py": "",
+        "tests/__init__.py": "",
+        "tests/conftest.py": "",
+        "tests/helpers.py": "from starpulse import lone\n",
+        "tests/unit/feed/test_leaf.py": "from starpulse.leaf import X\n",
+        "tests/unit/event_log/test_event_log.py": "from starpulse.event_log import event_log\n",
+        "tests/unit/feed/test_lone.py": "from tests.helpers import lone\n",
+        "tests/unit/board/test_board.py": 'from starpulse.board.model import seam\n\nKIND = "jira"\n',
+        "tests/unit/contracts/test_public_surface.py": "import starpulse\n",
+        "tests/unit/contracts/test_neutrality.py": "import starpulse\n",
+        "tests/unit/event_log/test_consumer_pattern.py": "import starpulse\n",
+        "tests/unit/board/test_builtin_types.py": "import starpulse\n",
         "starpulse/contracts/__init__.py": "",
         "starpulse/contracts/api/__init__.py": "",
         "starpulse/contracts/api/schema.py": "",
@@ -49,15 +49,15 @@ def repo(tmp_path: Path) -> Path:
         "starpulse/contracts/__main__.py": "",
         "starpulse/contracts/adapters.py": "",
         "starpulse/machine_engine/adapters/machine_loader.py": "",
-        "starpulse/tests/unit/contracts/test_contracts.py": "from starpulse.contracts import adapters\nfrom starpulse.contracts.api import schema\n",
-        "starpulse/tests/unit/machine_engine/test_machine_definition.py": "from starpulse.machine_engine.adapters import machine_loader\n",
+        "tests/unit/contracts/test_contracts.py": "from starpulse.contracts import adapters\nfrom starpulse.contracts.api import schema\n",
+        "tests/unit/machine_engine/test_machine_definition.py": "from starpulse.machine_engine.adapters import machine_loader\n",
         "starpulse/pulls/ci.py": "",
         "starpulse/harness_telemetry/harness.py": "",
         "starpulse/pulls/github.py": "",
         "starpulse/cli/skill_install.py": "",
-        "starpulse/tests/unit/pulls/test_github.py": "from starpulse.pulls import github\n",
-        "starpulse/tests/unit/machine_engine/test_github_pull_request_machine.py": "",
-        "starpulse/tests/integration/cli/test_agent_cli.py": "from starpulse.cli import skill_install\n",
+        "tests/unit/pulls/test_github.py": "from starpulse.pulls import github\n",
+        "tests/unit/machine_engine/test_github_pull_request_machine.py": "import starpulse\n",
+        "tests/integration/cli/test_agent_cli.py": "from starpulse.cli import skill_install\n",
         "ci/sizer.py": "",
         "ci/test_sizer.py": "from sizer import X\n",
         "ci/test_workflow_placement.py": "",
@@ -75,18 +75,16 @@ def repo(tmp_path: Path) -> Path:
 
 def test_a_changed_module_selects_the_tests_that_import_it_directly_or_through_another_module(repo):
     assert select(repo, ["starpulse/leaf.py"]) == Selection(
-        ["starpulse/tests/unit/event_log/test_event_log.py", "starpulse/tests/unit/feed/test_leaf.py"]
+        ["tests/unit/event_log/test_event_log.py", "tests/unit/feed/test_leaf.py"]
     )
 
 
 def test_a_changed_test_helper_selects_the_tests_that_import_it(repo):
-    assert select(repo, ["starpulse/tests/helpers.py"]) == Selection(["starpulse/tests/unit/feed/test_lone.py"])
+    assert select(repo, ["tests/helpers.py"]) == Selection(["tests/unit/feed/test_lone.py"])
 
 
 def test_a_changed_test_file_selects_itself(repo):
-    assert select(repo, ["starpulse/tests/unit/feed/test_lone.py"]) == Selection(
-        ["starpulse/tests/unit/feed/test_lone.py"]
-    )
+    assert select(repo, ["tests/unit/feed/test_lone.py"]) == Selection(["tests/unit/feed/test_lone.py"])
 
 
 def test_a_ci_script_selects_the_ci_test_that_imports_it_by_its_bare_name(repo):
@@ -94,26 +92,24 @@ def test_a_ci_script_selects_the_ci_test_that_imports_it_by_its_bare_name(repo):
 
 
 def test_an_adapter_selects_the_tests_of_the_loader_that_imports_it_by_name(repo):
-    assert "starpulse/tests/unit/board/test_board.py" in select(repo, ["starpulse/board/adapters/jira.py"]).tests
+    assert "tests/unit/board/test_board.py" in select(repo, ["starpulse/board/adapters/jira.py"]).tests
 
 
 def test_named_loaders_expand_when_the_last_module_popped_is_covered_only_by_other_tests(repo):
     """The loader is the last module a test reaches and another test alone covers it: its adapter still counts."""
-    coverage = {"tests": {"starpulse/tests/unit/other/test_seam.py::test_seam": ["starpulse/board/model/seam.py"]}}
-    assert "starpulse/tests/unit/board/test_board.py" in select(
-        repo, ["starpulse/board/adapters/jira.py"], coverage
-    ).tests
+    coverage = {"tests": {"tests/unit/other/test_seam.py::test_seam": ["starpulse/board/model/seam.py"]}}
+    assert "tests/unit/board/test_board.py" in select(repo, ["starpulse/board/adapters/jira.py"], coverage).tests
 
 
 def test_a_package_init_selects_every_test_under_the_package(repo):
     assert select(repo, ["starpulse/__init__.py"]) == Selection(
-        sorted(str(p.relative_to(repo)) for p in (repo / "starpulse/tests").rglob("test_*.py"))
+        sorted(str(p.relative_to(repo)) for p in (repo / "tests").rglob("test_*.py"))
     )
 
 
 def test_a_migration_selects_the_tests_of_the_module_that_runs_migrations(repo):
     assert select(repo, ["starpulse/event_log/migrations/versions/0001_initial.py"]) == Selection(
-        ["starpulse/tests/unit/event_log/test_event_log.py"]
+        ["tests/unit/event_log/test_event_log.py"]
     )
 
 
@@ -122,8 +118,8 @@ def test_a_migration_selects_the_tests_of_the_module_that_runs_migrations(repo):
     [
         "pyproject.toml",
         "uv.lock",
-        "starpulse/tests/conftest.py",
-        "starpulse/tests/fixtures/jira/search_page_1.json",
+        "tests/conftest.py",
+        "tests/fixtures/jira/search_page_1.json",
         "starpulse/gone.py",  # deleted: what imported it is no longer in the graph
         "some/new/file.txt",
         "scripts/new_tool.py",
@@ -137,11 +133,11 @@ def test_a_change_whose_readers_the_graph_cannot_name_runs_the_full_suite(repo, 
     ("path", "tests"),
     [
         ("README.md", ["ci/test_ui_preview.py"]),
-        ("docs/public-surface.md", ["starpulse/tests/unit/contracts/test_public_surface.py"]),
-        ("starpulse/web/src/App.tsx", ["ci/test_ui_preview.py", "starpulse/tests/unit/contracts/test_neutrality.py"]),
-        ("docs/consumers.md", ["starpulse/tests/unit/event_log/test_consumer_pattern.py"]),
-        ("docs/serving.md", ["starpulse/tests/unit/board/test_builtin_types.py"]),
-        ("docs/sources.md", ["starpulse/tests/unit/board/test_builtin_types.py"]),
+        ("docs/public-surface.md", ["tests/unit/contracts/test_public_surface.py"]),
+        ("starpulse/web/src/App.tsx", ["ci/test_ui_preview.py", "tests/unit/contracts/test_neutrality.py"]),
+        ("docs/consumers.md", ["tests/unit/event_log/test_consumer_pattern.py"]),
+        ("docs/serving.md", ["tests/unit/board/test_builtin_types.py"]),
+        ("docs/sources.md", ["tests/unit/board/test_builtin_types.py"]),
         (
             ".github/workflows/ci.yml",
             [
@@ -159,13 +155,13 @@ def test_a_change_whose_readers_the_graph_cannot_name_runs_the_full_suite(repo, 
         (
             "starpulse/machines/copilot.yaml",
             [
-                "starpulse/tests/unit/machine_engine/test_github_pull_request_machine.py",
-                "starpulse/tests/unit/pulls/test_github.py",
+                "tests/unit/machine_engine/test_github_pull_request_machine.py",
+                "tests/unit/pulls/test_github.py",
             ],
         ),
         (
             "starpulse/skills/writing-starpulse-adapters/SKILL.md",
-            ["starpulse/tests/integration/cli/test_agent_cli.py"],
+            ["tests/integration/cli/test_agent_cli.py"],
         ),
         ("ci/static_checks.sh", ["ci/test_workflow_placement.py"]),
     ],
@@ -196,19 +192,17 @@ def test_a_non_python_file_whose_mapped_reader_is_gone_runs_the_full_suite(repo)
 
 
 def test_a_deleted_test_file_selects_nothing(repo):
-    assert select(repo, ["starpulse/tests/unit/feed/test_gone.py"]) == Selection([])
+    assert select(repo, ["tests/unit/feed/test_gone.py"]) == Selection([])
 
 
 def test_a_module_replaced_by_a_package_selects_the_tests_that_import_the_package(repo):
     """`contracts/api.py` became `contracts/api/__init__.py`: its importers still import the name."""
-    assert select(repo, ["starpulse/contracts/api.py"]) == Selection(
-        ["starpulse/tests/unit/contracts/test_contracts.py"]
-    )
+    assert select(repo, ["starpulse/contracts/api.py"]) == Selection(["tests/unit/contracts/test_contracts.py"])
 
 
 def test_an_adapter_selects_a_subset_and_not_the_ci_tests(repo):
     selected = select(repo, ["starpulse/board/adapters/jira.py"]).tests
-    assert "starpulse/tests/unit/board/test_board.py" in selected
+    assert "tests/unit/board/test_board.py" in selected
     assert "ci/test_sizer.py" not in selected
 
 
@@ -234,11 +228,11 @@ def test_a_diff_touching_a_python_source_file_selects_a_target_and_so_launches_a
         ([f"ci/test_{i}.py" for i in range(12)], [1]),  # 12 files at 5 s: one shard's worth of tests
         ([f"ci/test_{i}.py" for i in range(50)], [1, 2, 3, 4, 5]),
         ([f"ci/test_{i}.py" for i in range(500)], list(range(1, SHARD_COUNT + 1))),
-        (["starpulse/tests/integration/cli/test_agent_cli.py"], [1]),  # one heavy file fills one shard, never two
+        (["tests/integration/cli/test_agent_cli.py"], [1]),  # one heavy file fills one shard, never two
         (
             [
-                "starpulse/tests/integration/cli/test_agent_cli.py",
-                "starpulse/tests/integration/flow_metrics/test_history.py",
+                "tests/integration/cli/test_agent_cli.py",
+                "tests/integration/flow_metrics/test_history.py",
             ],
             [1, 2],
         ),
@@ -331,19 +325,19 @@ def test_an_adapter_no_test_names_is_not_selected_through_the_loader_even_though
 
 
 def test_a_module_a_conftest_fixture_uses_selects_the_tests_that_request_the_fixture(repo):
-    (repo / "starpulse/tests/conftest.py").write_text(
+    (repo / "tests/conftest.py").write_text(
         "import pytest\nfrom starpulse.lone import Y\n\n\n@pytest.fixture\ndef answer():\n    return Y\n"
     )
-    (repo / "starpulse/tests/unit/feed/test_leaf.py").write_text("def test_it(answer):\n    assert answer\n")
+    (repo / "tests/unit/feed/test_leaf.py").write_text("def test_it(answer):\n    assert answer\n")
     assert select(repo, ["starpulse/lone.py"]) == Selection(
-        ["starpulse/tests/unit/feed/test_leaf.py", "starpulse/tests/unit/feed/test_lone.py"]
+        ["tests/unit/feed/test_leaf.py", "tests/unit/feed/test_lone.py"]
     )
 
 
 def test_a_module_conftest_code_uses_outside_a_fixture_selects_every_test_the_conftest_serves(repo):
-    (repo / "starpulse/tests/conftest.py").write_text("from starpulse.lone import Y\n\nTABLES = (Y,)\n")
+    (repo / "tests/conftest.py").write_text("from starpulse.lone import Y\n\nTABLES = (Y,)\n")
     assert select(repo, ["starpulse/lone.py"]) == Selection(
-        sorted(str(p.relative_to(repo)) for p in (repo / "starpulse/tests").rglob("test_*.py"))
+        sorted(str(p.relative_to(repo)) for p in (repo / "tests").rglob("test_*.py"))
     )
 
 
@@ -381,8 +375,8 @@ def mapped(**tests: list[str]) -> dict:
 
 
 LEAF = "starpulse/leaf.py"
-TEST_LEAF = "starpulse/tests/unit/feed/test_leaf.py"
-TEST_LOG = "starpulse/tests/unit/event_log/test_event_log.py"
+TEST_LEAF = "tests/unit/feed/test_leaf.py"
+TEST_LOG = "tests/unit/event_log/test_event_log.py"
 
 
 def test_a_changed_file_in_the_coverage_map_selects_only_the_tests_that_ran_it(repo):
@@ -396,19 +390,19 @@ def test_a_file_missing_from_the_coverage_map_falls_back_to_the_import_graph(rep
 
 
 def test_a_new_test_file_the_map_never_saw_selects_itself(repo):
-    new = "starpulse/tests/unit/feed/test_new.py"
+    new = "tests/unit/feed/test_new.py"
     (repo / new).write_text("from starpulse.leaf import X\n")
     assert select(repo, [new], mapped(**{TEST_LEAF: [LEAF]})) == Selection([new])
 
 
 def test_a_mapped_conftest_selects_its_tests_instead_of_the_full_suite(repo):
-    conftest = "starpulse/tests/conftest.py"
+    conftest = "tests/conftest.py"
     assert select(repo, [conftest], mapped(**{TEST_LEAF: [LEAF, conftest]})) == Selection([TEST_LEAF])
     assert select(repo, [conftest], mapped(**{TEST_LEAF: [LEAF]})) == FULL
 
 
 def test_a_coverage_map_test_that_no_longer_exists_is_not_selected(repo):
-    coverage = mapped(**{TEST_LEAF: [LEAF], "starpulse/tests/unit/gone/test_gone.py": [LEAF]})
+    coverage = mapped(**{TEST_LEAF: [LEAF], "tests/unit/gone/test_gone.py": [LEAF]})
     assert select(repo, [LEAF], coverage) == Selection([TEST_LEAF])
 
 
@@ -444,7 +438,7 @@ def test_a_pyproject_with_no_earlier_version_to_compare_runs_the_full_suite(repo
 
 def test_a_non_python_file_selects_a_mapped_reader_by_the_map_not_the_import_graph(repo):
     reader = "starpulse/pulls/github.py"
-    ran = "starpulse/tests/unit/machine_engine/test_github_pull_request_machine.py"
+    ran = "tests/unit/machine_engine/test_github_pull_request_machine.py"
     coverage = mapped(**{ran: [reader]})
     assert select(repo, ["starpulse/machines/copilot.yaml"], coverage) == Selection([ran])
 
@@ -479,19 +473,17 @@ def test_a_change_to_the_board_seam_selects_the_lane_written_test(repo, tmp_path
         "    lane: str | None = None\n"
         "    at: float | None = None\n"
     )
-    written_test = repo / "starpulse/tests/unit/server/test_lane_written.py"
+    written_test = repo / "tests/unit/server/test_lane_written.py"
     written_test.parent.mkdir(parents=True)
     written_test.write_text("from starpulse.board.model.seam import Written\n")
     coverage = {
         "tests": {
-            "starpulse/tests/unit/server/test_lane_written.py::test_a_write_then_its_placement": [
-                "starpulse/board/model/seam.py"
-            ]
+            "tests/unit/server/test_lane_written.py::test_a_write_then_its_placement": ["starpulse/board/model/seam.py"]
         }
     }
     selection = select(repo, ["starpulse/board/model/seam.py"], coverage)
 
-    assert "starpulse/tests/unit/server/test_lane_written.py" in selection.tests
+    assert "tests/unit/server/test_lane_written.py" in selection.tests
 
 
 def test_a_change_to_the_github_package_reaches_the_pulls_tests(repo: Path) -> None:
@@ -499,16 +491,12 @@ def test_a_change_to_the_github_package_reaches_the_pulls_tests(repo: Path) -> N
 
     (repo / "starpulse/github").mkdir(parents=True)
     (repo / "starpulse/github/__init__.py").write_text("def connect(): ...\n")
-    pulls_test = repo / "starpulse/tests/integration/pulls/test_github.py"
+    pulls_test = repo / "tests/integration/pulls/test_github.py"
     pulls_test.parent.mkdir(parents=True)
     pulls_test.write_text("from starpulse.github import connect\n")
     coverage = {
-        "tests": {
-            "starpulse/tests/integration/pulls/test_github.py::test_connect_reads_a_page": [
-                "starpulse/github/__init__.py"
-            ]
-        }
+        "tests": {"tests/integration/pulls/test_github.py::test_connect_reads_a_page": ["starpulse/github/__init__.py"]}
     }
     selection = select(repo, ["starpulse/github/__init__.py"], coverage)
 
-    assert "starpulse/tests/integration/pulls/test_github.py" in selection.tests
+    assert "tests/integration/pulls/test_github.py" in selection.tests

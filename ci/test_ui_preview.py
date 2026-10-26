@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 import ui_preview
 import yaml
+from starpulse.cli import demo
 from ui_preview import (
     DEMO_BRANCH,
     DEMO_REPO,
@@ -42,8 +43,6 @@ from ui_preview import (
     unpublish_demos,
 )
 
-from starpulse.cli import demo
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -62,7 +61,7 @@ ROOT = Path(__file__).resolve().parents[1]
         (["design/elements/index.html"], [MOCKUP, ELEMENTS]),
         (["starpulse/web/src/style.css"], [STARPULSE, ELEMENTS]),
         (["design/data.js", "starpulse/web/src/features/kanban/Kanban.tsx"], [STARPULSE, MOCKUP]),
-        (["starpulse/runtime/server.py", "README.md", "starpulse/tests/unit/cli/test_demo.py", ".github/workflows/ci.yml"], []),
+        (["starpulse/runtime/server.py", "README.md", "tests/unit/cli/test_demo.py", ".github/workflows/ci.yml"], []),
     ],
 )
 def test_surfaces_follow_the_changed_paths(changed: list[str], expected: list[str]) -> None:
@@ -107,7 +106,9 @@ KANBAN_PAGES = ["starpulse-kanban", "starpulse-task", "starpulse-task-unplanned"
         (["ci/preview.toml"], list(PAGES[STARPULSE])),
     ],
 )
-def test_starpulse_shoots_only_the_views_whose_folder_holds_every_changed_page_path(changed: list[str], expected: list[str]) -> None:
+def test_starpulse_shoots_only_the_views_whose_folder_holds_every_changed_page_path(
+    changed: list[str], expected: list[str]
+) -> None:
     assert list(pages(STARPULSE, changed)) == expected
 
 
@@ -182,7 +183,10 @@ def test_the_shipped_mockup_builds_a_demo_that_leaks_nothing() -> None:
     ("changed", "expected"),
     [
         (["design/task-modal/task-modal.js"], ["task-modal"]),
-        (["design/admin/index.html", "design/edit/edit.js", "design/admin/admin.js", "starpulse/runtime/server.py"], ["admin", "edit"]),
+        (
+            ["design/admin/index.html", "design/edit/edit.js", "design/admin/admin.js", "starpulse/runtime/server.py"],
+            ["admin", "edit"],
+        ),
         (["design/index.html", "design/data.js"], []),
         (["design/elements/index.html", "design/elements/elements.js"], []),
         (["starpulse/web/src/features/kanban/Kanban.tsx"], []),
@@ -405,7 +409,9 @@ class RacedGh(DemoGh):
         if args[0] == "api" and args[1] != route:
             return "landed\n"
         if args[2:3] == ("PUT",) and "sha" not in json.loads(Path(args[5]).read_text()):
-            raise RuntimeError("`gh api --method PUT` exited 1: gh: Invalid request.\n\"sha\" wasn't supplied. (HTTP 422)")
+            raise RuntimeError(
+                '`gh api --method PUT` exited 1: gh: Invalid request.\n"sha" wasn\'t supplied. (HTTP 422)'
+            )
         return super().__call__(*args)
 
 
@@ -440,7 +446,9 @@ class MovedPutGh(DemoGh):
         return super().__call__(*args)
 
 
-def test_publish_refetches_the_sha_and_succeeds_after_a_409_on_put(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_publish_refetches_the_sha_and_succeeds_after_a_409_on_put(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     monkeypatch.setattr("ui_preview.time.sleep", lambda _: None)
     built = tmp_path / "starpulse.html"
     built.write_text("<html>")
@@ -538,7 +546,9 @@ def test_unpublish_deletes_only_this_prs_folder() -> None:
 
     unpublish_demos(gh, "pr-7")
 
-    assert gh.writes == [("DELETE", "pr-7/a.html", {"message": "Unpublish pr-7/a.html", "sha": "a", "branch": DEMO_BRANCH})]
+    assert gh.writes == [
+        ("DELETE", "pr-7/a.html", {"message": "Unpublish pr-7/a.html", "sha": "a", "branch": DEMO_BRANCH})
+    ]
 
 
 def test_publishing_to_a_repository_without_the_pages_branch_creates_it_first(tmp_path: Path) -> None:

@@ -14,7 +14,7 @@ from starpulse.board.adapters import project_machines
 from starpulse.board.model.seam import Board
 
 if TYPE_CHECKING:
-    from starpulse.board_feed import BoardFeed
+    from starpulse.board.board_feed import BoardFeed
     from starpulse.event_log import EventLog
     from starpulse.machine_engine.model.snapshot import Qualify
 

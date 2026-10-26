@@ -18,9 +18,9 @@ from dataclasses import dataclass
 from fnmatch import fnmatchcase
 from typing import Any
 
-from starpulse._internal.analytics import Analytics, SkillLoad
-from starpulse._internal.signals import Signal
 from starpulse.contracts.adapters import TaskKeys
+from starpulse.contracts.analytics import Analytics, SkillLoad
+from starpulse.contracts.signals import Signal
 from starpulse.flow_metrics.session_health import attributed, grouped, session_kind
 
 __all__ = ["Case", "Missed", "cases", "missed_loads"]
