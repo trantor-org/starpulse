@@ -905,6 +905,15 @@ def test_task_create_writes_a_task_with_the_details_given_and_reports_its_id(
     assert "- [ ] #1 It rotates\n- [ ] #2 It logs" in written
 
 
+def test_task_create_files_the_source_a_producer_finds_the_task_by(
+    tasked: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["task", "create", "Rotate the key", "--source", "rotate-key", "--server", tasked])
+
+    assert (code, doc) == (0, {"task": "task-2"})
+    assert "source: rotate-key" in _task_file(tmp_path, "task-2").read_text()
+
+
 def test_task_create_and_edit_write_the_impact_and_urgency(
     tasked: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -992,6 +1001,16 @@ def test_task_edit_writes_every_field_given_in_one_write_and_reports_those_that_
     assert "- ui\n- api" in written
     assert "Draw them." in written
     assert "Retitled" in written
+
+
+def test_task_edit_sets_the_source_a_producer_finds_the_task_by(
+    tasked: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["task", "edit", "task-1", "--source", "rotate-key", "--server", tasked])
+
+    assert code == 0
+    assert doc["changed"] == ["source"]
+    assert "source: rotate-key" in _task_file(tmp_path).read_text()
 
 
 def test_task_edit_that_changes_nothing_writes_nothing(
