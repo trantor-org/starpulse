@@ -258,4 +258,18 @@ describe("placeBranches", () => {
     expect(left).not.toContain(key);
     expect(left).toEqual(lines.map((l) => l.key).filter((k) => k !== key));
   });
+
+  it("keeps every branch clear of the orbiter of whichever DAG has its turn", async () => {
+    const scene = mock(), D = await import("./dagTies"), orb = 7 / fitLevel(scene, 1920, 1080).k;
+    // one orbiter per state, just off its ring where a hangar's DAG docks
+    const orbs = Object.entries(scene.galaxies).map(([id, g]) => ({ dag: `dagu/${id}`, x: g.x + g.R * 1.3, y: g.y - g.R * 1.3 }));
+    scene.hangars = orbs.map((o) => ({ of: `hangar:${o.dag}`, x0: o.x - orb, y0: o.y - orb, x1: o.x + orb, y1: o.y + orb }));
+    run(scene, 10, 6);
+    const pts = T.branchLines().flatMap((l) => l.pts), dags = orbs.map((o) => o.dag);
+    expect(pts.length).toBeGreaterThan(0);
+    for (let i = 0; i < dags.length; i++) {
+      const o = orbs.find((x) => x.dag === D.dagTurn(dags, i * D.TURN)!.dag)!;
+      expect(Math.min(...pts.map((p) => dist(p, o))), o.dag).toBeGreaterThan(orb);
+    }
+  });
 });

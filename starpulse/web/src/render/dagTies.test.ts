@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { boardTies, hangarLevel, nameLines, nameOf, obstacles, over, tieLedger, touches, type Pivot, type Orbiter } from "./dagTies";
+import { boardTies, dagTurn, turnDags, hangarLevel, nameLines, nameOf, obstacles, over, tieLedger, touches, TURN, type Pivot, type Orbiter } from "./dagTies";
 import { BOARD, startPath, tree } from "./levels";
 import { crumbs } from "../features/level/Crumb";
 import { backStep } from "../shared/nav";
 import { build, sample, type Curve, type Scene } from "./scene";
 import { fitLevel } from "./zoom";
 import { merge, Moves, PULSE, TRAVEL, type Move } from "./sky";
-import type { Cue, Dag, Machine, Snapshot } from "../api";
+import type { Cue, Dag, Machine, Snapshot, Tie } from "../api";
+import live from "./fixtures/events-dag-ties.json";
 import { LIFECYCLE_ROLES } from "../tests/lifecycleRoles";
 
 // The live Board of 2026-10-07 (doc-111, D7b): ten states, the writers and cues of its tied DAGs, and DAGs that only launch or have no tie.
@@ -252,5 +253,33 @@ describe("what a click on a hangar or an orbiter opens", () => {
     expect(backStep({ panel: false, focus: null, scrolled: false, depth: path.length })).toBe("up");
     expect(path.slice(0, -1)).toEqual(BOARD);
     expect(startPath("/", "", path, tree({ graphs: ["board"], flows: [{ name: "board", agents: [], machine }] }))).toEqual(path);
+  });
+});
+
+describe("each Board DAG's turn on the map", () => {
+  const dags = ["a", "b", "c"];
+  it("rotates every 12 s over every DAG, round and round", () => {
+    expect(TURN).toBe(12);
+    const at = (t: number) => dagTurn(dags, t)!.dag;
+    expect([0, 6, 12, 18, 24, 30, 36, 42, 71].map(at)).toEqual(["a", "a", "b", "b", "c", "c", "a", "a", "c"]);
+    expect(dagTurn([], 5)).toBeNull();
+  });
+  it("fades a DAG in and out at its window's edges and holds it between", () => {
+    const alpha = (t: number) => dagTurn(dags, t)!.alpha;
+    expect(alpha(12)).toBe(0);
+    expect(alpha(12.3)).toBeCloseTo(0.5);
+    expect(alpha(18)).toBe(1);
+    expect(alpha(23.7)).toBeCloseTo(0.5);
+    expect(alpha(24)).toBe(0);
+  });
+  it("gives every kind-dag tie of a captured live snapshot a window, beside the hangars' DAGs", () => {
+    const ctx = liveSky(), sc = build(ctx, { kind: "board" }), ties = boardTies(sc, ctx.S, unitOf(sc));
+    const flows = Object.fromEntries(live.flows.map((f) => [f.name, f])) as Record<string, { ties: Tie[] }>;
+    const named = live.flows.flatMap((f) => f.ties.map((t) => t.dag as string));
+    expect(named).toHaveLength(4);
+    const list = turnDags(ties, flows);
+    expect(list).toEqual(expect.arrayContaining(named));
+    expect(list).toEqual(expect.arrayContaining(ties.pivots.flatMap((h) => h.orbs.map((o) => o.dag))));
+    expect(new Set(list.map((_, i) => dagTurn(list, i * TURN)!.dag))).toEqual(new Set(list));
   });
 });

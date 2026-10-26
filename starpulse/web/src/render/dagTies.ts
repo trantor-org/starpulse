@@ -5,6 +5,7 @@
 //   cue   — a Board event cues the DAG (the snapshot's `cues`)
 import { pathLedger, type Fold } from "./levels";
 import type { Source } from "../features/level/ledger";
+import type { Tie } from "../api";
 import { bez, sample, type BEdge, type Curve, type Pt, type Scene } from "./scene";
 import { PULSE, TRAVEL, type Move, type Sky } from "./sky";
 
@@ -130,6 +131,23 @@ export function boardTies(sc: Scene, sky: Sky, u: number, ts = 1): Ties {
   const paths = sc.bEdges.flatMap((e) => (e.p0 && e.c && e.p1 ? sample(e as Curve, Math.ceil((Math.hypot(e.c.x - e.p0.x, e.c.y - e.p0.y) + Math.hypot(e.p1.x - e.c.x, e.p1.y - e.c.y)) / (4 * u))) : []));
   for (const [state, os] of byState) pivots.push(place(sc, state, os, pivots, u, ts, paths));
   return { pivots, u, ts };
+}
+
+/** Seconds each tied DAG holds the map in its turn, and seconds its edges fade over. */
+export const TURN = 12;
+export const TURN_FADE = 0.6;
+
+/** The DAGs that take a turn: those tied to a Board state, then any DAG a phase flow names in a tie of kind dag, each once. */
+export function turnDags({ pivots }: Ties, flows: Record<string, { ties?: Tie[] | null }>): string[] {
+  const named = Object.values(flows).flatMap((f) => (f.ties ?? []).flatMap((t) => (t.kind === "dag" && t.dag ? [t.dag] : [])));
+  return [...new Set([...pivots.flatMap((h) => h.orbs.map((o) => o.dag)), ...named])];
+}
+
+/** The DAG whose turn it is at `now` seconds, round the DAGs in order, and how visible it is: fading in and out over TURN_FADE at its window's edges. */
+export function dagTurn(dags: readonly string[], now: number): { dag: string; alpha: number } | null {
+  if (!dags.length) return null;
+  const t = (((now / TURN) % dags.length) + dags.length) % dags.length, i = Math.floor(t), into = (t - i) * TURN;
+  return { dag: dags[i], alpha: Math.max(0, Math.min(1, into / TURN_FADE, (TURN - into) / TURN_FADE)) };
 }
 
 /** The Ledger a hangar opens: that of the first transition its DAGs dock by that has one, else the fold of its DAGs. */
