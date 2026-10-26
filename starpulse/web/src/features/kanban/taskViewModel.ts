@@ -25,6 +25,8 @@ export interface TaskRecord {
   priority: string;
   labels: string[];
   milestone: string;
+  /** The files of the docs the task links, as the board writes them. Read-only: an edit never carries it. */
+  documentation?: string[];
   /** The task's type (`story`); read-only, and absent from a record the board does not type. */
   type?: string;
   dependencies: string[];
@@ -43,7 +45,7 @@ export interface TaskRecord {
 
 export interface TaskComment { created: string; text: string; author?: string }
 
-export type TaskField = Exclude<keyof TaskRecord, "session" | "comments">;
+export type TaskField = Exclude<keyof TaskRecord, "session" | "comments" | "documentation">;
 export interface TaskDiff {
   fields: TaskField[];
   base: Partial<TaskRecord>;
@@ -257,6 +259,57 @@ export async function fetchRecord(id: string, fetcher: typeof apiFetch = apiFetc
   } catch {
     return null;
   }
+}
+
+/** A milestone as `GET /api/milestones/<id>` gives it, less its sections. */
+export interface MilestoneDoc { id: string; title: string; description: string; specs: string[] }
+
+/** A doc as `GET /api/docs` lists it. */
+export interface DocSummary { id: string; title: string; type: string }
+
+/** One row of the rail's Docs: `id` is empty for a linked file the board does not serve, and such a row does not open. */
+export interface DocLink { kind: "Milestone" | "Spec" | "Doc"; id: string; title: string; openable: boolean }
+
+async function getJson<T>(url: string, key: string, fetcher: typeof apiFetch): Promise<T | null> {
+  try {
+    const response = await fetcher(url);
+    const body = response.ok ? (await response.json().catch(() => null)) as Record<string, T> | null : null;
+    return body?.[key] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export const fetchMilestone = (id: string, fetcher: typeof apiFetch = apiFetch) =>
+  getJson<MilestoneDoc>(`/api/milestones/${encodeURIComponent(id)}`, "milestone", fetcher);
+export const fetchDocs = async (fetcher: typeof apiFetch = apiFetch): Promise<DocSummary[]> =>
+  (await getJson<DocSummary[]>("/api/docs", "docs", fetcher)) ?? [];
+export const fetchDoc = (id: string, fetcher: typeof apiFetch = apiFetch) =>
+  getJson<DocSummary & { body: string }>(`/api/docs/${encodeURIComponent(id)}`, "doc", fetcher);
+
+/** The doc a board file name or a milestone's Spec bullet starts with (`doc-993 - Title.md`, `doc-993 — path`), else empty. */
+const docId = (text: string): string => /^(doc-\d+)\b/.exec(text)?.[1] ?? "";
+
+/**
+ * The rail's Docs rows for a record: its milestone, that milestone's specs, then the docs it links, each doc once. A title is the
+ * listed doc's, else the file's name; the milestone row opens once the milestone has been read.
+ */
+export function docLinks(record: Pick<TaskRecord, "milestone" | "documentation">, milestone: MilestoneDoc | null, docs: DocSummary[]): DocLink[] {
+  const listed = new Map(docs.map((d) => [d.id, d]));
+  const specs = new Set((milestone?.specs ?? []).map(docId).filter(Boolean));
+  const links: DocLink[] = record.milestone
+    ? [{ kind: "Milestone", id: record.milestone, title: milestone?.title ?? record.milestone, openable: milestone !== null }]
+    : [];
+  const seen = new Set<string>();
+  for (const entry of [...specs, ...(record.documentation ?? [])]) {
+    const name = entry.split("/").pop()!.replace(/\.md$/, "");
+    const id = docId(name);
+    if (id && seen.has(id)) continue;
+    seen.add(id);
+    const doc = listed.get(id);
+    links.push({ kind: specs.has(id) || doc?.type === "specification" ? "Spec" : "Doc", id, title: doc?.title ?? (name.replace(/^doc-\d+ - /, "") || name), openable: Boolean(doc) });
+  }
+  return links;
 }
 
 /** Milliseconds a record read while the pointer rested on its card stays fresh enough for its modal to draw without reading again. */

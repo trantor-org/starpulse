@@ -4,7 +4,7 @@ import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TaskView } from "./TaskView";
-import { props } from "../../tests/taskViewFixtures";
+import { props, stubWrites } from "../../tests/taskViewFixtures";
 
 describe("editing one section at a time", () => {
   const mounted: { root: ReturnType<typeof createRoot>; host: HTMLElement }[] = [];
@@ -22,7 +22,7 @@ describe("editing one section at a time", () => {
   });
   const stubWriter = () => {
     const fetcher = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ task: "TASK-9" })));
-    vi.stubGlobal("fetch", fetcher);
+    stubWrites(fetcher);
     return fetcher;
   };
   const wrote = (fetcher: ReturnType<typeof stubWriter>) => JSON.parse(String(fetcher.mock.calls[0][1]?.body));
@@ -188,7 +188,7 @@ describe("editing one section at a time", () => {
 
   it("label refused: the board's refusal text draws under Add label, not in the banner", async () => {
     const fetcher = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ error: "label \"audit\" is not on the board's list", skill: "" }), { status: 409 }));
-    vi.stubGlobal("fetch", fetcher);
+    stubWrites(fetcher);
     const host = mount({ record: labelled });
 
     click(pen(host, "details"));

@@ -6,10 +6,12 @@ import { RatingControl } from "./RatingControl";
 import { columnsOf, prReadState, roleOf, type KanbanTask } from "./kanbanModel";
 import { startLane, startable } from "./start";
 import { StartCriteria } from "./StartCriteria";
+import { DocReader, DocRows, useDocs } from "./DocReader";
+import { Linked, Md } from "./Markdown";
 import type { Capabilities, Pull, Roles } from "../../api";
 import {
-  LABEL_FIELDS, LABEL_RULE, PRIORITIES, SECTION_NAMES, ciHistory, closesOnKey, copyText, copyToClipboard, dependencyRows, detailFields, editKey, fetchRecord, labelRuleError, markdown, menuKey, metCount, onScrim, postComment, saveSection, sessionOf, setDetailField, taskActivity, taskBody, toggleItem,
-  type ActivityEvent, type CiPull, type DepRow, type Item, type LabelField, type MenuState, type Section, type TaskField, type TaskRecord,
+  LABEL_FIELDS, LABEL_RULE, PRIORITIES, SECTION_NAMES, ciHistory, closesOnKey, copyText, copyToClipboard, dependencyRows, detailFields, editKey, fetchRecord, labelRuleError, menuKey, metCount, onScrim, postComment, saveSection, sessionOf, setDetailField, taskActivity, taskBody, toggleItem,
+  type ActivityEvent, type CiPull, type DepRow, type DocLink, type Item, type LabelField, type MenuState, type Section, type TaskField, type TaskRecord,
 } from "./taskViewModel";
 
 export interface TaskViewProps {
@@ -191,13 +193,6 @@ function DepRows({ rows, names, roles, open }: { rows: DepRow[]; names: Record<s
   ));
 }
 
-/** Text with each TASK-N id drawn as a link that opens that task in this dialog. */
-function Linked({ text, open }: { text: string; open: (id: string) => void }) {
-  return <>{text.split(/(TASK-\d+)/).map((part, i) => i % 2 ? (
-    <a key={i} className="tl" href={`?view=kanban&task=${part}`} onClick={(e) => { e.preventDefault(); open(part); }}>{part}</a>
-  ) : part)}</>;
-}
-
 /** An Activity or Comments row's body with the mockup's inline Markdown: `code`, **bold**, [links](url) and TASK-N ids. */
 function Inline({ text, open }: { text: string; open: (id: string) => void }) {
   return <>{text.split(/(`[^`]+`|\*\*[^*]+\*\*|\[[^\]]+\]\(https?:[^)]+\))/).map((part, i) => {
@@ -207,22 +202,6 @@ function Inline({ text, open }: { text: string; open: (id: string) => void }) {
     const [, label, href] = /^\[(.+)\]\((.+)\)$/.exec(part)!;
     return <a key={i} href={href} target="_blank" rel="noopener"><Inline text={label} open={open} /> ↗</a>;
   })}</>;
-}
-
-/** A section's description, plan or notes as Markdown blocks. */
-function Md({ text, className = "md", drawn = false, open }: { text: string; className?: string; drawn?: boolean; open: (id: string) => void }) {
-  const at = (t: string) => <Linked text={t} open={open} />;
-  return <div className={className}>{markdown(text, drawn).map((b, i) => {
-    if (b.kind === "table") return (
-      <div key={i} className="tbl"><table>
-        <thead><tr>{b.head.map((c, j) => <th key={j} className={b.right[j] ? "r" : undefined}>{at(c)}</th>)}</tr></thead>
-        <tbody>{b.rows.map((row, j) => <tr key={j}>{row.map((c, k) => <td key={k} className={b.right[k] ? "r" : undefined}>{at(c)}</td>)}</tr>)}</tbody>
-      </table></div>
-    );
-    if (b.kind === "h") return <h4 key={i}>{at(b.text)}</h4>;
-    if (b.kind === "pre") return <figure key={i} className="fence"><span className="lang">{b.lang || "text"}</span><pre>{b.text}</pre></figure>;
-    return <p key={i} className={b.kind === "moved" ? "moved" : undefined}>{at(b.text)}</p>;
-  })}</div>;
 }
 
 interface ChecksProps {
@@ -326,6 +305,9 @@ export function TaskView(p: TaskViewProps) {
   const [labelRefusal, setLabelRefusal] = useState("");
   const [comment, setComment] = useState("");
   const [posting, setPosting] = useState(false);
+  const [reading, setReading] = useState<{ task: string; doc: DocLink } | null>(null);
+  const docs = useDocs(opened);
+  const readDoc = reading?.task === p.task.id ? reading.doc : null;
   const names = p.names ?? {};
   const { roles } = p;
   const canEdit = Boolean(p.capabilities?.edit && p.record);
@@ -557,6 +539,7 @@ export function TaskView(p: TaskViewProps) {
         </div>
         <div className="tvbody">
           <div className="tvcol tvleft">
+            {readDoc ? <DocReader link={readDoc} milestone={docs.milestone} back={() => setReading(null)} open={p.open} /> : <>
             {p.readNote}
             {writeRefusal && <div className="editrefusal"><b>Save refused.</b> {writeRefusal.reason}{writeRefusal.skill && <div>Required skill: <code>{writeRefusal.skill}</code></div>}</div>}
             {sec("description", "Description", editing === "description" ? <>
@@ -582,6 +565,7 @@ export function TaskView(p: TaskViewProps) {
                 </div>
               )}
             </section>
+            </>}
           </div>
           <div className="tvcol tvrail">
             {p.refusal}
@@ -611,6 +595,9 @@ export function TaskView(p: TaskViewProps) {
                 </>}
               </div>
             </RailSection>
+            {docs.links.length > 0 && <RailSection name="Docs" count={docs.links.length}>
+              <DocRows links={docs.links} reading={readDoc?.id ?? null} open={(doc) => setReading({ task: p.task.id, doc })} />
+            </RailSection>}
             {sec("details", "Details", (() => {
               const live = editing === "details";
               const { chips, ...fields } = detailFields(draft.labels);

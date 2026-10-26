@@ -1121,3 +1121,16 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
 #kbm .tv .fv.chips .chipinput { flex: 1 0 calc(80px * var(--fs)); width: auto; }
 #kbm .tvrail .rule { margin-top: 3px; font-size: calc(10.5px * var(--fs)); color: var(--muted); }
 #kbm .tvrail .rule.err { color: var(--fail); }
+#kbm .tvrail .docs { display: flex; flex-direction: column; gap: 3px; }
+#kbm .tvrail .doc { display: grid; grid-template-columns: calc(62px * var(--fs)) minmax(0, 1fr); gap: 8px; align-items: baseline; text-decoration: none; padding: 2px 6px; margin: 0 -6px; border-radius: 5px; }
+#kbm .tvrail a.doc:hover { background: color-mix(in srgb, var(--slate) 8%, transparent); }
+#kbm .tvrail .doc .kd { font-size: calc(10.5px * var(--fs)); color: var(--muted); }
+#kbm .tvrail .doc .tt { color: var(--ink-3); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+#kbm .tvrail .doc .tt b { color: var(--agent); font-weight: 400; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: .92em; margin-right: 6px; }
+#kbm .tvrail .doc[aria-current] { background: color-mix(in srgb, var(--agent) 12%, transparent); }
+#kbm .docbar { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; padding-bottom: 10px; margin-bottom: 4px; border-bottom: 1px solid color-mix(in srgb, var(--slate) 12%, transparent); }
+#kbm .docbar .kd { font-size: calc(11px * var(--fs)); color: var(--muted); }
+#kbm .docbar b { color: var(--agent); font-weight: 400; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: calc(11.5px * var(--fs)); }
+#kbm .doctitle { margin: 8px 0 2px; font-size: calc(16px * var(--fs)); font-weight: 500; color: var(--ink-hi); }
+#kbm .tv .md .fence.mm { padding: 22px 12px 12px; }
+#kbm .tv .mmd svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
