@@ -154,11 +154,17 @@ describe("placeBranches", () => {
       }
   });
 
-  it("grows a new branch out over two seconds", () => {
-    const scene = board(live(), { secs: 1.5 });
-    expect(T.branchLines()).toEqual([]);
-    run(scene, 1.5, 0.6);
-    expect(T.branchLines().length).toBeGreaterThan(0);
+  it("opens a new branch over 0.6 s on an ease, slow at both ends", () => {
+    const scene = board(live(), { secs: 0 }), ext: number[] = [];
+    for (let i = 1; i <= 45; i++) {
+      T.placeBranches(scene, i / 60);
+      ext.push(Math.max(0, ...T.branchLines(0).filter((l) => l.ring === 1).map((l) => l.ext)));
+    }
+    expect(ext[5], "0.1 s").toBeLessThan(0.1);
+    expect(ext[17], "0.3 s").toBeGreaterThan(0.45);
+    expect(ext[17], "0.3 s").toBeLessThan(0.55);
+    expect(ext[29], "0.5 s").toBeGreaterThan(0.9);
+    expect(ext[36], "0.6 s").toBe(1);
   });
 
   it("keeps a dot on the lines drawn under it as it rides out onto a sub-machine that is still growing", () => {
@@ -247,16 +253,126 @@ describe("placeBranches", () => {
     expect(dist(trail.pts.at(-1)!, k)).toBeLessThan(0.5);
   });
 
-  it("retracts a branch once no task is on its machine, and removes it", () => {
+  it("tears a branch down over 0.6 s on an ease once no task is on its machine, and removes it", () => {
     const snap = live(), scene = board(snap), lines = T.branchLines();
-    const key = lines.find((l) => l.ring === 1)!.key, [sun, machine] = key.split("|");
+    const key = lines.find((l) => l.ring === 1)!.key, [sun, machine] = key.split("|"), ext: number[] = [];
     for (const k of scene.tasks) if (k.h?.machine === machine && (k.host as Galaxy).id === sun) k.h = undefined;
-    run(scene, 3, 1);
-    expect(T.branchLines().map((l) => l.key)).toContain(key);
-    run(scene, 4, 8);
-    const left = T.branchLines().map((l) => l.key);
-    expect(left).not.toContain(key);
-    expect(left).toEqual(lines.map((l) => l.key).filter((k) => k !== key));
+    // the dots that rode it glide off first, each keeping the branch up until it is clear
+    for (let i = 0; i < 720; i++) {
+      T.placeBranches(scene, 3 + i / 60);
+      ext.push(T.branchLines(0).find((l) => l.key === key)?.ext ?? 0);
+    }
+    const start = ext.findIndex((e) => e < 1);
+    expect(ext[0]).toBe(1);
+    expect(start).toBeGreaterThan(0);
+    expect(ext[start + 5], "0.1 s").toBeGreaterThan(0.9);
+    expect(ext[start + 17], "0.3 s").toBeGreaterThan(0.45);
+    expect(ext[start + 17], "0.3 s").toBeLessThan(0.55);
+    expect(ext[start + 37], "0.6 s").toBe(0);
+    expect(T.branchLines().map((l) => l.key)).toEqual(lines.map((l) => l.key).filter((k) => k !== key));
+  });
+
+  it("names one station per state in a machine's configuration, in step order, or the one step it is on", () => {
+    const h = { machine: "qa", steps: ["a", "b", "c", "d"], j: 1, ring1: true };
+    expect(T.stationOf({ ...h, config: ["d", "a"] })).toEqual([0, 3]);
+    expect(T.stationOf({ ...h, config: ["c", "c"] })).toEqual([2]);
+    expect(T.stationOf(h)).toEqual([1]);
+    expect(T.stationOf({ ...h, config: ["gone"] })).toEqual([1]);
+  });
+
+  it("draws one dot on each station of a task in parallel states, and no more", () => {
+    const scene = mock(), k = scene.tasks.find((t) => t.h?.ring1 && t.h.machine === "deliver")!, h = k.h!, sun = (k.host as Galaxy).id;
+    expect(T.dotsOf(k.id)).toHaveLength(1);
+    k.h = { ...h, config: [h.steps[0], h.steps.at(-1)!] };
+    run(scene, 9, 3);
+    const line = T.branchLines().find((l) => l.key === `${sun}|deliver`)!, dots = T.dotsOf(k.id);
+    expect(dots).toHaveLength(2);
+    [0, h.steps.length - 1].forEach((s, n) => expect(dist(dots[n], line.pts.find((p) => p.k === `${line.key}:${s}`)!), `step ${s}`).toBeLessThan(1));
+    k.h = { ...h, config: [h.steps[0]] };
+    run(scene, 12, 3);
+    expect(T.dotsOf(k.id)).toHaveLength(1);
+  });
+
+  it("stacks dots sharing a station one step further out from the sun each, by id order", () => {
+    const scene = mock(), by = new Map<string, string[]>();
+    for (const k of scene.tasks) if (k.h) by.set(`${(k.host as Galaxy).id}|${k.h.machine}|${k.h.j}`, [...(by.get(`${(k.host as Galaxy).id}|${k.h.machine}|${k.h.j}`) ?? []), k.id]);
+    const shared = [...by.entries()].filter(([, ids]) => ids.length > 1);
+    expect(shared.length).toBeGreaterThan(0);
+    for (const [key, ids] of shared) {
+      const g = scene.galaxies[key.split("|")[0]], out = ids.sort().map((id) => dist(T.dotsOf(id)[0], g));
+      out.slice(1).forEach((d, i) => expect(d - out[i], key).toBeCloseTo(5, 0));
+    }
+  });
+
+  it("glides a dot from one station to the next at 98 px/s", () => {
+    const scene = mock(), k = scene.tasks.find((t) => t.h?.ring1 && t.h.machine === "deliver")!, h = k.h!;
+    const j = (h.j + 2) % h.steps.length;
+    k.h = { ...h, j, config: [h.steps[j]] };
+    const step: number[] = [];
+    let last = T.dotsOf(k.id)[0];
+    for (let t = 9; t < 14; t += 1 / 60) {
+      T.placeBranches(scene, t);
+      const d = T.dotsOf(k.id)[0];
+      step.push(dist(d, last));
+      last = d;
+    }
+    const moving = step.filter((d) => d > 0.01);
+    expect(moving.length).toBeGreaterThan(20);
+    // constant speed, never slower on a longer way and never faster on a shorter
+    for (const d of moving.slice(1, -1)) expect(d).toBeCloseTo(98 / 60, 1);
+  });
+
+  it("glides the dots of a branch placed afresh to its new place, never jumping one", () => {
+    const scene = mock(), line = T.branchLines().find((l) => l.ring === 1)!, st = stationsOf(line)[0];
+    const riders = scene.tasks.filter((k) => k.h?.ring1 && `${(k.host as Galaxy).id}|${k.h.machine}` === line.key);
+    expect(riders.length).toBeGreaterThan(0);
+    // a name printed over a station leaves the branch no place that fits, so it is placed afresh
+    (scene.names as unknown[]).push({ x0: st.x - 4, y0: st.y - 4, x1: st.x + 4, y1: st.y + 4, of: `${line.sun}/name` });
+    const prev = riders.map((k) => T.dotsOf(k.id)[0]), jumps: number[] = [], ext: number[] = [], gliding: boolean[] = [], onLine: boolean[] = [], old = stationsOf(line);
+    // the app rebuilds the scene each frame, so each task starts it back at its Board place
+    const home = scene.tasks.map((k) => ({ x: k.x, y: k.y }));
+    // the riders' Board places lie off the line, on the far side of the sun (they were drawn on their stations when mock() placed them)
+    const g = scene.galaxies[line.sun];
+    riders.forEach((k, i) => Object.assign(home[scene.tasks.indexOf(k)], { x: g.x + 260 * Math.cos(line.th + Math.PI + i / 4), y: g.y + 260 * Math.sin(line.th + Math.PI + i / 4) }));
+    for (let t = 9.1; t < 24; t += 1 / 60) {
+      scene.tasks.forEach((k, i) => Object.assign(k, home[i]));
+      T.placeBranches(scene, t);
+      gliding.push(scene.tasks.some((k) => k.moving));
+      onLine.push(riders.some((k) => old.some((o) => dist(o, T.dotsOf(k.id)[0]) < 8)));
+      ext.push(T.branchLines(0).find((l) => l.key === line.key)?.ext ?? 0);
+      riders.forEach((k, i) => {
+        const d = T.dotsOf(k.id)[0];
+        jumps.push(dist(d, prev[i]));
+        prev[i] = d;
+      });
+    }
+    expect(T.branchLines().find((l) => l.key === line.key)!.th, "re-placed").not.toBe(line.th);
+    // the old line stays drawn, whole, while its dots glide back off it, then tears down and grows out again in the new place
+    const fall = ext.findIndex((e, i) => i && e < ext[i - 1]);
+    expect(fall, "the line tears down").toBeGreaterThan(0);
+    expect(ext[fall - 1], "whole until its dots have left").toBe(1);
+    expect(gliding[fall] || onLine[fall], "a dot still on it when it tears down").toBe(false);
+    expect(ext.slice(fall).findIndex((e) => e === 0), "an ease over 0.6 s, not a cut").toBeGreaterThanOrEqual(0.6 * 60 - 2);
+    expect(ext.slice(fall).some((e) => e === 0), "gone before it regrows").toBe(true);
+    expect(Math.max(...jumps)).toBeLessThan(98 / 60 + 0.1);
+    expect(jumps.filter((d) => d > 0.01).length, "glided").toBeGreaterThan(10);
+    const placed = stationsOf(T.branchLines().find((l) => l.key === line.key)!);
+    riders.forEach((k, i) => expect(placed.some((st) => dist(st, prev[i]) < 8), k.id).toBe(true));
+  });
+
+  it("draws, for each phase agent of the live snapshot, a dot on the station of every state of its machine's configuration", () => {
+    const scene = mock(), lines = new Map(T.branchLines().map((l) => [l.key, l]));
+    const phased = scene.tasks.filter((k) => k.h && k.alpha !== 0);
+    expect(phased.length).toBeGreaterThan(0);
+    for (const k of phased) {
+      const h = k.h!, sun = h.ring1 || !h.side ? `${(k.host as Galaxy).id}|${h.machine}` : "", stations = T.stationOf(h);
+      expect(T.dotsOf(k.id), k.id).toHaveLength(stations.length);
+      if (!sun || !lines.has(sun)) continue;
+      T.dotsOf(k.id).forEach((d, n) => {
+        const s = lines.get(sun)!.pts.find((p) => p.k === `${sun}:${stations[n]}`)!;
+        expect(dist(d, s), `${k.id} on ${h.steps[stations[n]]}`).toBeLessThan(5 * phased.length);
+      });
+    }
   });
 
   it("keeps every branch clear of the orbiter of whichever DAG has its turn", async () => {

@@ -1064,7 +1064,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
           if (!q || a.today) continue;
           const ph = phs.find((p) => q.flow === f0 && p.q.id === q.state), sd = phs.find((p) => p.side.includes(q.flow)), m = S.flows[q.flow]?.machine.states.map((x) => x.id);
           if (ph) hOf.set(a, { machine: ph.child.machine, steps: ph.steps.map((x) => x.id), j: 0, ring1: true });
-          else if (m) hOf.set(a, { machine: q.flow, steps: m, j: Math.max(0, m.indexOf(q.state)), ring1: !phs.length || phs.some((p) => p.child.machine === q.flow), side: sd && { machine: sd.child.machine, steps: sd.steps.map((x) => x.id), j: Math.max(0, sd.steps.findIndex((x) => x.id === "pr_opened")) } });
+          else if (m) hOf.set(a, { machine: q.flow, steps: m, j: Math.max(0, m.indexOf(q.state)), config: [q.state], ring1: !phs.length || phs.some((p) => p.child.machine === q.flow), side: sd && { machine: sd.child.machine, steps: sd.steps.map((x) => x.id), j: Math.max(0, sd.steps.findIndex((x) => x.id === "pr_opened")) } });
         }
       const free = (byState[st.id] || []).filter((a) => !hOf.has(a) && (!a.today || here.includes(a)));
       const fit = pack(free.length, r0, r1, 11, 12, ROOM), ring = free.length ? attach(free, g, r0, fit.gap, fit.ringGap, false) : sized[st.id].r;

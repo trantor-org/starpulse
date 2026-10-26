@@ -1,6 +1,6 @@
 // The Star Map's phase machines (Round 22, concept H): a machine is drawn only while a task uses it, as a branch that grows out of its sun's hub ring,
 // takes the first free arc and retracts once no task needs it. A task rides the lines: hub, branch, station, and the Board's curves between suns.
-import { bez, textW, type BEdge, type Galaxy, type Pt, type Scene } from "./scene";
+import { bez, textW, type BEdge, type Body, type Galaxy, type Pt, type Scene } from "./scene";
 import { LABEL, MUTED, PHASE, SUBM, rgba, tierColor, type DrawCtx, type Drawing } from "./draw";
 import { glideTime } from "./sky";
 import { fitLevel } from "./zoom";
@@ -10,8 +10,15 @@ export interface HPlace {
   machine: string;
   steps: string[];
   j: number;
+  /** Every state its machine is in at once: a dot rides the station of each. Absent, it is the one step `j`. */
+  config?: string[];
   ring1: boolean;
   side?: { machine: string; steps: string[]; j: number };
+}
+/** The stations a task's dots sit on its machine's line: one per state of its configuration, in step order, or the step it is on. */
+export function stationOf(h: HPlace): number[] {
+  const at = (h.config ?? []).map((s) => h.steps.indexOf(s)).filter((s) => s >= 0);
+  return at.length ? [...new Set(at)].sort((a, b) => a - b) : [h.j];
 }
 type Node = Pt & { k: string };
 /** How much a branch's place gives up to fit: nothing (0), a station on a Board curve (1), its line over a name (2), a station on a name (3), a
@@ -29,7 +36,10 @@ interface Branch {
   /** Which hub lane its stations ride (0 next to the hub, each further one LANE out) and which way round they run from `th`. */
   lane: number;
   dir: 1 | -1;
+  /** How far out it is drawn (0 to 1): `p` on an ease. */
   ext: number;
+  /** How far through opening (up) or tearing down (down) it is, linear in time. */
+  p: number;
   alive: boolean;
   seen: number;
   route: Node[];
@@ -44,6 +54,8 @@ interface Branch {
   ok?: string;
   /** Uprooted once to make room for another branch, so it is never uprooted again: two branches cannot keep uprooting each other. */
   moved?: boolean;
+  /** Being taken off the sky to be placed afresh: its dots glide back to the hub along the old line, which stays drawn until they are off it, then tears down. */
+  leaving?: boolean;
   /** The sky it last found no room in: it stays unplaced, its dots on their orbits, until a branch on its sun or the Board moves. */
   boxed?: string;
 }
@@ -65,12 +77,15 @@ interface Mem {
 }
 
 const STEP1 = 0.236, D1 = 20, LANE = 28, PAD = 0.06, TAIL = 0.25, GAP = 0.12, CLEAR = 12, OFF = 5, FADE = 0.35, RING = 0.6, BOX = 16, NUDGE = 0.02;
-/** Seconds a branch takes to grow out in full, and to retract. */
-const GROW = 2, SHRINK = 1.5;
+/** Seconds a branch takes to open in full, and to tear down, each on a smoothstep ease. */
+const OPEN = 0.6;
+const ease = (u: number) => u * u * (3 - 2 * u);
 const TAU = Math.PI * 2;
 /** A ring-1 branch is a phase machine, drawn blue; a ring-2 branch is a sub-machine, drawn teal. */
 const kind = (b: Branch) => (b.ring === 1 ? PHASE : SUBM);
 const branches = new Map<string, Branch>(), mems = new Map<string, Mem>();
+/** The dots beyond a task's first, drawn this frame: each a copy of its task's body, its own position and id `<task>~<n>`. */
+let twins: Body[] = [];
 let lastNow = 0;
 
 const at = (g: Pt, r: number, a: number, k: string): Node => ({ k, x: g.x + Math.cos(a) * r, y: g.y + Math.sin(a) * r });
@@ -152,7 +167,7 @@ function fitter(b: Branch, sc: Scene, spare: (o: Branch) => boolean = () => fals
     return [...Array.from({ length: m + 1 }, (_, i) => at(g, r, a0 + (d * i) / m, "")), ...spoke];
   };
   // siblings opened off one station share the ray out from it, so only their own lanes' runs are kept apart: each takes a lane of its own
-  const kin = [...branches.values()].filter((o) => o !== b && o.sun === b.sun && !Number.isNaN(o.th) && o.key !== b.parent && o.parent !== b.key && !spare(o));
+  const kin = [...branches.values()].filter((o) => o !== b && o.sun === b.sun && !Number.isNaN(o.th) && !o.leaving && o.key !== b.parent && o.parent !== b.key && !spare(o));
   const sib = (o: Branch) => b.ring === 2 && o.parent === b.parent && o.pj === b.pj;
   const others = kin.filter((o) => !sib(o)).flatMap((o) => claims(o, o.th, o.lane, o.dir, o.at)), sibs = kin.filter(sib).map((o) => claims(o, o.th, o.lane, o.dir, o.at)[0]);
   // the next station steps on round its lane until it clears every curve, by at most another step: a curve may pass between two stations
@@ -204,11 +219,10 @@ function search(b: Branch, sc: Scene, prefer: number, spare?: (o: Branch) => boo
     }
   return best;
 }
-/** Takes `b` and its sub-machines off the sky, to be placed afresh and grow out again from the hub, their dots with them. */
+/** Sends `b` and its sub-machines off the sky, to be placed afresh and grow out again from the hub: their dots glide back to the hub first, the
+ *  lines tear down once no dot is on them, and the room they held is free to the branches placed meanwhile. */
 function uproot(b: Branch) {
-  const fam = [b, ...[...branches.values()].filter((o) => o.parent === b.key)];
-  for (const o of fam) Object.assign(o, { th: NaN, ext: 0, ok: undefined });
-  for (const [id, m] of mems) if (fam.some((o) => m.node.startsWith(`${o.key}#`))) mems.delete(id);
+  for (const o of [b, ...[...branches.values()].filter((o) => o.parent === b.key)]) o.leaving = true;
   return b;
 }
 /** Places `b` once, as near `prefer` as it fits on its lanes. A branch boxed in by the sun's other branches takes the place it would have
@@ -222,7 +236,7 @@ function allocate(b: Branch, sc: Scene, prefer: number) {
     if (best || !(best = search(b, sc, prefer, spare))) continue;
     const mine = claims(b, best.th, best.lane, best.dir, best.at);
     for (const o of branches.values()) {
-      if (o.sun !== b.sun || o === b || o.key === b.parent || Number.isNaN(o.th) || !spare(o)) continue;
+      if (o.sun !== b.sun || o === b || o.key === b.parent || Number.isNaN(o.th) || o.leaving || !spare(o)) continue;
       // a sibling shares the ray out from its station, so only its own lane's run is in the way
       const theirs = claims(o, o.th, o.lane, o.dir, o.at), sib = o.parent === b.parent && o.pj === b.pj;
       if (sib ? hit(mine.slice(0, 1), theirs.slice(0, 1)) : hit(mine, theirs)) Object.assign(uproot(o), { moved: true });
@@ -233,7 +247,7 @@ function allocate(b: Branch, sc: Scene, prefer: number) {
 }
 function ensure(key: string, sun: string, ring: 1 | 2, machine: string, steps: string[], parent?: string, pj = 0): Branch {
   let b = branches.get(key);
-  if (!b) branches.set(key, (b = { key, sun, ring, machine, steps, parent, pj, th: NaN, lane: 0, dir: 1, ext: 0, alive: false, seen: -1, route: [], own: 0, st: [], at: [] }));
+  if (!b) branches.set(key, (b = { key, sun, ring, machine, steps, parent, pj, th: NaN, lane: 0, dir: 1, ext: 0, p: 0, alive: false, seen: -1, route: [], own: 0, st: [], at: [] }));
   b.alive = true;
   return b;
 }
@@ -277,7 +291,7 @@ function common(a: Node[], b: Node[]) {
   return c;
 }
 /** The way between two places, on lines only: back down the old branch, round the hub or across the Board's curve, up the new one. */
-function travel(sc: Scene, sa: string, A: Node[], sb: string, B: Node[]): Node[] | null {
+export function travel(sc: Scene, sa: string, A: Node[], sb: string, B: Node[]): Node[] | null {
   const rev = [...A].reverse();
   if (sa === sb) {
     const c = common(A, B);
@@ -394,7 +408,7 @@ export function placeBranches(sc: Scene, now: number): boolean {
   lastNow = now;
   let busy = false;
   for (const b of branches.values()) b.alive = false;
-  const want = new Map<string, { b: Branch; j: number }>();
+  const want = new Map<string, { b: Branch; j: number }>(), dots: Body[] = [];
   for (const k of tasks) {
     const h = k.h, sun = (k.host as Galaxy).id, m = mems.get(k.id);
     if (!h) continue;
@@ -407,8 +421,13 @@ export function placeBranches(sc: Scene, now: number): boolean {
       p.seen = Math.max(p.seen, par.j);
       b = ensure(`${p.key}|${h.machine}`, sun, 2, h.machine, h.steps, p.key, par.j);
     }
-    b.seen = Math.max(b.seen, h.j);
-    want.set(k.id, { b, j: h.j });
+    const js = stationOf(h);
+    b.seen = Math.max(b.seen, ...js);
+    // a task in parallel states has a dot on each station of its configuration: the first is the task's own, the rest are copies of its body
+    js.forEach((j, n) => {
+      want.set(n ? `${k.id}~${n}` : k.id, { b, j });
+      if (n) dots.push(Object.assign(Object.create(k) as Body, { id: `${k.id}~${n}` }));
+    });
   }
   for (const m of mems.values()) for (const key of m.hold) wake(key);
   for (const b of branches.values()) if (b.parent && b.alive) wake(b.parent);
@@ -416,7 +435,7 @@ export function placeBranches(sc: Scene, now: number): boolean {
     // a place is kept while it still fits: only once the sun moves or grows, or a curve or name moves onto it, is it checked again, and a branch
     // that no longer fits is placed afresh and grows out again from the hub, its sub-machines and dots with it
     for (const b of branches.values()) {
-      if (b.ring !== ring || Number.isNaN(b.th) || !sc.galaxies[b.sun] || (b.parent && !branches.has(b.parent))) continue;
+      if (b.ring !== ring || Number.isNaN(b.th) || b.leaving || !sc.galaxies[b.sun] || (b.parent && !branches.has(b.parent))) continue;
       const ok = layout(sc, b.sun);
       if (b.ok === ok) continue;
       b.ok = ok;
@@ -429,14 +448,16 @@ export function placeBranches(sc: Scene, now: number): boolean {
     }
     for (const b of branches.values()) {
       if (b.ring !== ring || !Number.isNaN(b.th) || !sc.galaxies[b.sun]) continue;
-      if ((b.parent && (!branches.has(b.parent) || Number.isNaN(branches.get(b.parent)!.th))) || b.boxed === room(sc, b.sun)) continue;
+      if ((b.parent && (!branches.has(b.parent) || Number.isNaN(branches.get(b.parent)!.th) || branches.get(b.parent)!.leaving)) || b.boxed === room(sc, b.sun)) continue;
       const k = tasks.find((t) => want.get(t.id)?.b === b), m = k && mems.get(k.id), g = sc.galaxies[b.sun];
       const at = ring === 2 ? phiOf(b) : m ? angle(g, m) : NaN;
       allocate(b, sc, Number.isFinite(at) ? at : -Math.PI / 2);
       b.ok = layout(sc, b.sun);
     }
   }
-  const kids = new Set([...branches.values()].flatMap((b) => (b.parent ? [b.parent] : [])));
+  const kids = new Set([...branches.values()].flatMap((b) => (b.parent && !Number.isNaN(b.th) ? [b.parent] : [])));
+  // the branches a dot is on, or still gliding off: a line leaving the sky waits for them to clear
+  const ridden = new Set([...mems.values()].flatMap((m) => [...m.hold, ...m.bks]));
   for (const b of [...branches.values()]) {
     if (!sc.galaxies[b.sun] || (b.parent && !branches.has(b.parent))) {
       branches.delete(b.key);
@@ -444,11 +465,13 @@ export function placeBranches(sc: Scene, now: number): boolean {
     }
     // a branch grows once it is placed, a sub-machine once its parent's line has reached the station it opens from
     const par = b.parent ? branches.get(b.parent)! : undefined;
-    if (b.alive && !Number.isNaN(b.th) && (!par || reached(par, b.pj))) b.ext = Math.min(1, b.ext + dt / GROW);
-    else if (!kids.has(b.key)) b.ext -= dt / SHRINK;
+    if (b.alive && !b.leaving && !Number.isNaN(b.th) && (!par || reached(par, b.pj))) b.p = Math.min(1, b.p + dt / OPEN);
+    else if (!kids.has(b.key) && !(b.leaving && ridden.has(b.key))) b.p -= dt / OPEN;
+    b.ext = ease(Math.max(0, b.p));
+    if (b.leaving && b.p <= 0) Object.assign(b, { leaving: false, th: NaN, ext: 0, p: 0, ok: undefined });
     // a branch opened on a frame no time has passed since is still wanted, not retracted
-    if (b.ext <= 0 && !b.alive) branches.delete(b.key);
-    else if (b.ext < 1) busy = true;
+    if (b.p <= 0 && !b.alive) branches.delete(b.key);
+    else if (b.p < 1) busy = true;
   }
   for (const ring of [1, 2]) for (const b of branches.values()) if (b.ring === ring) shape(b, sc.galaxies[b.sun]);
   // the nodes of each branch's own line its growing tip has not reached yet: a dot rides up to the tip and waits there
@@ -461,11 +484,12 @@ export function placeBranches(sc: Scene, now: number): boolean {
   // a dot's stack index among those on its station, by id
   const stacks = new Map<string, string[]>();
   for (const [id, w] of want) stacks.set(`${w.b.key}#${w.j}`, [...(stacks.get(`${w.b.key}#${w.j}`) ?? []), id].sort());
-  for (const k of tasks) {
+  const copies = new Set(dots);
+  for (const k of [...tasks, ...dots]) {
     const sun = (k.host as Galaxy).id, g = sc.galaxies[sun];
     let w = want.get(k.id), route: Node[], node: string, bks: string[];
     // a dot whose place is being placed afresh holds where it is until the place has one; one with no room rides its orbit
-    if (w && (w.b.boxed || (w.b.parent && branches.get(w.b.parent)?.boxed))) w = undefined;
+    if (w && (w.b.boxed || w.b.leaving || (w.b.parent && (branches.get(w.b.parent)?.boxed || branches.get(w.b.parent)?.leaving)))) w = undefined;
     else if (w && !(Number.isFinite(w.b.th) && (!w.b.parent || Number.isFinite(branches.get(w.b.parent)?.th ?? NaN)))) {
       const held = mems.get(k.id);
       if (held) {
@@ -473,6 +497,11 @@ export function placeBranches(sc: Scene, now: number): boolean {
         continue;
       }
       w = undefined;
+    }
+    // a further dot has no orbit to fall back to: it goes with its station
+    if (!w && copies.has(k)) {
+      mems.delete(k.id);
+      continue;
     }
     if (w) {
       const i = stacks.get(`${w.b.key}#${w.j}`)!.indexOf(k.id);
@@ -543,10 +572,14 @@ export function placeBranches(sc: Scene, now: number): boolean {
     k.alpha = i >= 3 && done ? 0 : alpha;
     k.arrive = w && age >= 0 && age < 1 && now - m.t0 < 9 ? { x: q.x, y: q.y, r: 6, col: "#c084fc", age, grow: 18 } : null;
   }
-  const ids = new Set(tasks.map((k) => k.id));
+  const ids = new Set([...tasks, ...dots].map((k) => k.id));
   for (const id of [...mems.keys()]) if (!ids.has(id)) mems.delete(id);
+  twins = dots.filter((k) => mems.has(k.id));
   return busy;
 }
+
+/** Where each dot of task `id` sits: its own, then one for each further state of its machine's configuration. */
+export const dotsOf = (id: string): Pt[] => [...mems].filter(([d]) => d === id || d.startsWith(`${id}~`)).map(([, m]) => ({ x: m.x, y: m.y }));
 
 /** The live branches and their stations, the step and machine names of each the pointer (`at`) or a hovered dot is on, then the movers' comet
  *  tails, each bending with its line; drawTasks draws the heads. */
@@ -599,7 +632,8 @@ export function drawBranches(dc: DrawCtx, d: Drawing, sc: Scene, at: Pt | null) 
     d.text(l.s, l.t.x, l.t.y, h, rgba(LABEL, 0.85 * l.e), l.t.align, 300);
     if (l.n > 3) d.text(`+${l.n - 3}`, l.t.x + Math.cos(l.a) * h * 4, l.t.y + Math.sin(l.a) * h * 4, d.labPx(8), rgba(LABEL, 0.6 * l.e));
   }
-  for (const k of sc.tasks) {
+  for (const k of twins) if (k.alpha !== 0) d.dot(k.x, k.y, 2.6 * (k.s ?? 1), rgba(tierColor(k.model), 0.8 * (k.alpha ?? 1)));
+  for (const k of [...sc.tasks, ...twins]) {
     const m = mems.get(k.id);
     if (!k.moving || !m || m.path.length < 2) continue;
     const head = m.gone, tail = tailOf(m), col = tierColor(k.model);
