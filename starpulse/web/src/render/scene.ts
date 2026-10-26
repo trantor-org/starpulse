@@ -459,7 +459,7 @@ export const clip = (s: string) => (s.length > NAME_MAX ? `${s.slice(0, NAME_MAX
 const loopsOf = (flow: { machine: { transitions: Transition[] } }, id: string) => flow.machine.transitions.filter((t) => t.source === id && t.target === id).map((t) => t.event);
 /**
  * Every Board state's sun, on the Board and on its own level: one size, so neither its tasks nor its share of the moves resizes it. On the Board
- * it is the least: the suns grow together, in sky units, to hold the longest name and count at the type size the zoom gives.
+ * it is the least: each sun grows on its own, in sky units, to hold its name and count at the type size the zoom gives.
  */
 export const SUN_R = 34;
 /** The share of a sun's radius its text may fill, which is where a terminal state's black-hole shadow ends, and the margin a sun keeps round its text. */
@@ -997,13 +997,14 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     const lay = (grid: Grid, k: number, rows: number) => {
       const ls = labelScale(k);
       F = (ls * ((ctx.scale ?? 100) / 100)) / k;
-      // every sun grows together, to the one that holds its text in the least room at this type size (until `grow` is off), and each prints the
-      // fewest lines that fit that size
-      const sunR = grow ? Math.max(SUN_R, ...states.map((st) => F * Math.min(...texts[st.id].map((t) => t.r)))) : SUN_R, sized = Object.fromEntries(states.map((st) => [st.id, radius(st, sunR)])), sw = (0.94 * W) / k, sh = (0.94 * H) / k, gap = 16 / k;
-      const picks = Object.fromEntries(states.map((st) => [st.id, texts[st.id].find((t) => t.r * F <= sunR + 1e-6)?.lines ?? texts[st.id].reduce((a, b) => (b.r < a.r ? b : a)).lines]));
+      // each sun grows on its own to the least room that holds its text at this type size (until `grow` is off), and prints the fewest lines that
+      // fit it; a sun held at SUN_R that no breaking fits prints none
+      const need = (id: string) => (grow ? Math.max(SUN_R, F * Math.min(...texts[id].map((t) => t.r))) : SUN_R);
+      const sized = Object.fromEntries(states.map((st) => [st.id, radius(st, need(st.id))])), sw = (0.94 * W) / k, sh = (0.94 * H) / k, gap = 16 / k;
+      const picks = Object.fromEntries(states.map((st) => [st.id, texts[st.id].find((t) => t.r * F <= sized[st.id].r + 1e-6)?.lines ?? []]));
       // a state reaches at least half its name's width either side, so two names at one height never run together
       const es = states.map((st) => {
-        const s = sized[st.id].lay, half = Math.max(...picks[st.id].map((l) => textW(l.text, l.size * F))) / 2;
+        const s = sized[st.id].lay, half = Math.max(0, ...picks[st.id].map((l) => textW(l.text, l.size * F))) / 2;
         return { l: Math.max(half, s.reach?.[1] ?? s.R), r: Math.max(half, s.reach?.[0] ?? s.R), t: s.R, b: s.R };
       });
       const g = gridLay(grid, es, rows, sw, sh, gap);
@@ -1036,7 +1037,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
       })
       .reduce((a, b) => (b.k > a.k + 1e-9 ? b : a));
     // the suns' growth is kept only while it costs the Board little of its zoom: a Board whose names would swell the suns, and with them every ring
-    // and branch, to shrink the rest to specks keeps the suns at their fixed size, the names spilling past them
+    // and branch, to shrink the rest to specks keeps the suns at their fixed size, hiding each name its sun cannot hold
     let best = choose();
     const grown = best.k;
     grow = false;
