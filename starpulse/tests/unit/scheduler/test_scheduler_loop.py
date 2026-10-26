@@ -567,6 +567,7 @@ def test_a_held_task_stays_out_of_admission_on_a_new_loop_over_the_same_store(tm
         chain=lambda: {},
         lane="ready",
         clock=lambda: rig.now,
+        log=rig.log,
     )
     rig.put("T-2")
 
@@ -583,6 +584,17 @@ def test_moving_a_held_task_out_of_ready_lets_admission_take_it_once_it_is_ready
     rig.put("T-1", lane="to_do")  # a person or the sweep moved it
     rig.loop.tick()
     rig.put("T-1")
+
+    assert rig.loop.tick() == ["T-1"]
+
+
+def test_a_held_ready_task_is_admitted_once_its_start_cooldown_has_passed(rig: Rig) -> None:
+    rig.put("T-1")
+    rig.loop.tick()
+    rig.session("T-1")
+    rig.session("T-1", "SESSION_STOPPED")
+    rig.loop.tick()
+    rig.after(16)  # past START_COOLDOWN; the task sat in Ready the whole time
 
     assert rig.loop.tick() == ["T-1"]
 

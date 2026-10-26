@@ -186,7 +186,7 @@ class Loop:
         self._observe()
         self._finish(now)
         self._revive(now)
-        self._release()
+        self._release(now)
         self._reap(now)
         if not admit or not self._toggle.get() or self._quiet(now) or self._selected_paused(now):
             return []
@@ -489,12 +489,15 @@ class Loop:
             harness=self.selected_harness(),
         )
 
-    def _release(self) -> None:
-        """Drop a hold once the task leaves Ready and In Progress: a person or the sweep moved it."""
+    def _release(self, now: float) -> None:
+        """Drop a hold once the task leaves Ready and In Progress, or once it is Ready and its stopped run has cooled:
+        a person or the sweep moved it, or the cooldown that guards a restart has passed."""
         kept = set()
         for task in self._held:
             agent = self._feed.task(task)
-            if agent is not None and agent["state"] in (self._lane, self._feed.roles.working):
+            if agent is None:
+                continue
+            if agent["state"] == self._feed.roles.working or (agent["state"] == self._lane and self._cooling(task, now)):
                 kept.add(task)
         released = self._held - kept
         if not released:
