@@ -231,7 +231,7 @@ from starpulse.views.take_over import temporal_take_over
 logger = logging.getLogger(__name__)
 
 
-_HERE = Path(__file__).parents[2]
+_HERE = Path(__file__).parents[1]
 
 
 #: The Vite build of web/; it holds nothing but the page, so all of it is served.
