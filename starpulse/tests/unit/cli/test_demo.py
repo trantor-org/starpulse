@@ -10,7 +10,7 @@ import jsonschema
 import pytest
 
 from starpulse.pulls.ci import CI_MACHINES
-from starpulse._internal.cli.demo import (
+from starpulse.cli.demo import (
     SEED_ROLES,
     STATIC,
     TITLES,

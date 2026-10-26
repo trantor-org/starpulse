@@ -20,8 +20,8 @@ from itertools import pairwise
 from statistics import median
 from typing import Any, NamedTuple
 
-from starpulse._internal.config.analytics import Analytics, MachineStage, SkillMachine
-from starpulse._internal.config.level import Level, Terminal
+from starpulse._internal.analytics import Analytics, MachineStage, SkillMachine
+from starpulse.flow_metrics.level import Level, Terminal
 from starpulse._internal.signals import CLAUDE_CODE, Signal
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.flow_metrics.cells import MIN_N, cell_of

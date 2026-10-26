@@ -7,7 +7,6 @@ draws it apart from a machine StarPulse's own actors move. The config's `[ci]` t
 from collections.abc import Collection, Mapping
 from pathlib import Path
 
-from starpulse._internal.config.config import ConfigError
 from starpulse.machine_engine.adapters.machine_loader import load_machine
 from starpulse.machine_engine.model.snapshot import describe
 
@@ -19,15 +18,19 @@ CI_MACHINES = {CI.name: describe(CI.machine)}
 WHEN = "a PR is open"
 
 
+class CiError(ValueError):
+    """A `[ci]` state the Board machine does not have."""
+
+
 def attach(machines: Mapping[str, dict], states: Collection[str]) -> dict[str, dict]:
     """`machines` with the CI machine added and a submachine link to it under each of the Board's `states`.
 
-    A state the Board machine lacks is a `ConfigError` naming it; the Board machine passed in is left as it was.
+    A state the Board machine lacks is a `CiError` naming it; the Board machine passed in is left as it was.
     """
     board = machines["board"]
     known = {state["id"] for state in board["states"]}
     if missing := [state for state in states if state not in known]:
-        raise ConfigError(
+        raise CiError(
             f"ci: {', '.join(missing)} is not a state of the board machine; it has {', '.join(sorted(known))}"
         )
     links = [{"state": state, "machine": CI.name, "exits": {}, "parent": "board", "when": WHEN} for state in states]

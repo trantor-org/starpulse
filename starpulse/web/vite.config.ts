@@ -7,7 +7,7 @@ import { defineConfig } from "vitest/config";
 // chunks the page loads on demand (src/lazyViews.ts).
 //
 // `--mode one-file` builds the same page as one script, into ../static/one-file, for
-// `starpulse._internal.cli.demo`: a demo is a single HTML file with no server to fetch a chunk
+// `starpulse.cli.demo`: a demo is a single HTML file with no server to fetch a chunk
 // from, so it inlines that script. `pnpm run build` runs both, the page first, since
 // its build empties ../static.
 export default defineConfig(({ mode }) => {

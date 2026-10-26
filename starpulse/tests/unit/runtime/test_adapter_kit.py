@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from starpulse._internal.config.config import load
+from starpulse.runtime.config import load
 from starpulse.board.model.seam import Written
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.runtime.adapter_kit import (

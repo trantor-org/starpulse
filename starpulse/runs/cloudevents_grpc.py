@@ -20,7 +20,7 @@ from connectrpc.method import IdempotencyLevel, MethodInfo
 from connectrpc.server import ConnectASGIApplication, Endpoint
 from google.protobuf.empty_pb2 import Empty
 
-from starpulse._internal.config.config import MAX_BATCH
+from starpulse.runs.config import MAX_BATCH
 from starpulse.runs.wire.cloudevents_pb2 import CloudEvent, CloudEventBatch
 
 if TYPE_CHECKING:

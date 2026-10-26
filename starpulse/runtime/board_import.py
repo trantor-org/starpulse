@@ -24,7 +24,7 @@ from pathlib import Path
 
 from sqlalchemy import select
 
-from starpulse._internal.config.config import ConfigError, discover, load
+from starpulse.runtime.config import ConfigError, discover, load
 from starpulse.board.adapters.board_import import import_board
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.store import EventStore

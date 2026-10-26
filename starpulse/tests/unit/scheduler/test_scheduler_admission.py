@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from starpulse._internal.config.scheduler import DIMENSIONS, Scheduler
+from starpulse.scheduler.model.config import DIMENSIONS, Scheduler
 from starpulse.scheduler.model.admission import MIN_RUNS, NO_PROFILE, decide, demand, ranks_from_trajectories_body
 from starpulse.scheduler.model.ledger import Ledger, RunRecord
 from starpulse.scheduler.model.sampler import Reading

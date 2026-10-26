@@ -12,7 +12,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from starpulse._internal.config.config import Config, discover, load
+from starpulse.runtime.config import Config, discover, load
 from starpulse.board.adapters.project_machines import DIRECTORY
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url

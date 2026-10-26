@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from starpulse._internal.config.config import load
+from starpulse.runtime.config import load
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model.seam import Board, Written
 from starpulse.contracts.adapters import Move

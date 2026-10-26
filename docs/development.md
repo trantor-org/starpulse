@@ -77,13 +77,15 @@ coverage map the nightly full suite records (`ci/coverage_map.py`): a changed fi
 file the map lacks, such as a new module, falls back to the import graph, and a changed test file selects itself. A
 machine, skill or `pyproject.toml` lint-table edit selects the tests of the code that reads it; only a dependency,
 `conftest.py` or fixture change, or any other `pyproject.toml` edit, runs the whole suite.
-`uv run lint-imports` checks the tiers under `starpulse/_internal`, top to bottom: `api` over `cli` (the server's routes,
-then the command line), `adapters`, `level`, `feed` and `ci`, `store`, `eventlog`, then `config`, `machines` and
-`contracts`. A package imports its own tier or one below; none import upward, and `feed` and `ci` never import each other.
-The `store-table-private` contract lets only `store` import its tables, so every stream write goes through `EventStore`.
-The `context-*` contracts hold each bounded context (Board, Delivery, Scheduler, Runs,
-Flow Metrics, Harness Telemetry) to the contexts upstream of it; `config`, `eventlog`, `machines` and
-`contracts` are the shared kernel and belong to none.
+`uv run lint-imports` checks the tiers in `pyproject.toml`, top to bottom: the entrypoints (`runtime`, `views`, `cli`),
+the producers (`pulls`, `scheduler`, `sessions`, `runs`, `harness_telemetry`), the derived `flow_metrics` and `board`, then
+the core (`event_log`, `_internal.analytics`, `machine_engine`, `github`, `_internal.signals`, `contracts`). A package imports its own tier or one below,
+and siblings on one line never import each other. `runtime` and `cli` are the only composition roots: no context
+imports them, and `runtime` owns the root config loader (`starpulse/runtime/config.py`) that reads `starpulse.toml` and
+hands each context its typed section, which lives in that context (`[scheduler]` in `scheduler/model/config.py`, for
+one); `cli` reads the same loader. The `store-table-private` contract lets only the event store import its tables, so
+every stream write goes through `EventStore`. The `context-*` contracts hold each bounded context to the contexts
+upstream of it; `event_log`, `analytics`, `github`, `signals` and `contracts` are the shared kernel and belong to none.
 The top level holds only the public modules the [Public surface](public-surface.md#public-surface) lists, each a facade over its feature.
 `pnpm --dir starpulse/web run check` typechecks, lints, tests and builds the page.
 The page's `web/src` is organized by feature: `api/` (types, `apiFetch`, the event stream), `features/<name>/` (a view with its
@@ -98,7 +100,7 @@ request and page surface against the 50 ms budget, and a Locust load test that h
 
 [`design/`](../design/index.html) is the design mockup, a static page over a saved snapshot (`data.js`) and, behind
 `?view=kanban`, a saved Board (`board.js`) drawn by `kanban.js`; both hold synthetic tasks only, never a real board's titles; view it with
-`uv run python -m http.server 8781 --directory design`, and `uv run python -m starpulse._internal.cli.demo --mockup design --out
+`uv run python -m http.server 8781 --directory design`, and `uv run python -m starpulse.cli.demo --mockup design --out
 mockup.html` writes it as one scrubbed file. A pull request that changes the page (`starpulse/web/**`), the mockup or
 the preview itself gets one UI-preview comment from
 [`.github/workflows/ui-preview.yml`](../.github/workflows/ui-preview.yml): screenshots of each changed surface's
@@ -106,7 +108,7 @@ scrubbed demo, built by [`ci/ui_preview.py`](../ci/ui_preview.py) against the de
 [`ci/preview.toml`](../ci/preview.toml), with the demos published to the `gh-pages` branch of `trantor-org/starpulse`, which GitHub Pages serves, under `pr-<N>/`
 while the pull request is open. That config draws a fictional workspace at a working team's scale: the Board adapter
 [`ci/demo_workspace.py`](../ci/demo_workspace.py) serves an eight-lane Board whose In Progress opens a delivery machine and
-the lifecycle machines in [`ci/workspace/`](../ci/workspace), beside five DAG domains, and `starpulse._internal.cli.demo` fills it with
+the lifecycle machines in [`ci/workspace/`](../ci/workspace), beside five DAG domains, and `starpulse.cli.demo` fills it with
 synthetic tasks, sessions, runs and pools. Each changed sub-mockup, a `design/<dir>/index.html` layered over a scrubbed page
 capture, is published beside the demos as `mockup-<dir>.html` with its scripts inlined. The preview is review context and never gates the pull request, so a failed render leaves the run green.
 A final workflow step then replaces the comment with one titled "failed" that names the head commit, links the run and carries no screenshots,

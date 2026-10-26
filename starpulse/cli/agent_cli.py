@@ -111,8 +111,8 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any, NoReturn
 
-from starpulse._internal.cli import agent_commands, agent_tasks, agent_wire, demo, doctor, skill_install
-from starpulse._internal.cli.agent_keys import (
+from starpulse.cli import agent_commands, agent_tasks, agent_wire, demo, doctor, skill_install
+from starpulse.cli.agent_keys import (
     CELL_KEYS,
     CLAIM_KEYS,
     DIFF_KEYS,
@@ -129,7 +129,7 @@ from starpulse._internal.cli.agent_keys import (
     TASK_KEYS,
     TRANSITION_KEYS,
 )
-from starpulse._internal.config.config import Config, ConfigError, discover, load
+from starpulse.runtime.config import Config, ConfigError, discover, load
 from starpulse.flow_metrics.cells import cell_of
 from starpulse.flow_metrics.scores import PullFacts, cell_task_scores, merged_pulls, pull_facts, score_cells
 from starpulse.flow_metrics.verdicts import cell_verdicts
@@ -424,7 +424,7 @@ def _diff(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any
 
 
 def _doctor(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    """Every install check of `starpulse._internal.cli.doctor`; `ok` is false, and the exit code 1, when any fails."""
+    """Every install check of `starpulse.cli.doctor`; `ok` is false, and the exit code 1, when any fails."""
     base = agent_wire.server_url(args.server, environ)
     path = discover(args.config)
     try:
@@ -513,7 +513,9 @@ def _validate(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str,
 
     machines = [_checked(path) for path in args.paths]
     if args.config is not None:
-        held = {row["state"] for row in ReadModel(open_event_log(args.config).engine).snapshot()}
+        path = discover(args.config)
+        log = open_event_log(load(path).database_url, path)
+        held = {row["state"] for row in ReadModel(log.engine).snapshot()}
         for machine in machines:
             if machine["ok"]:
                 machine["errors"] = _dead_migrations(Path(machine["path"]), held)

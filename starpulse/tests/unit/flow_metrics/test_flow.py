@@ -5,7 +5,7 @@ from itertools import count
 
 import pytest
 
-from starpulse._internal.config.analytics import Analytics, MachineStage, SkillMachine
+from starpulse._internal.analytics import Analytics, MachineStage, SkillMachine
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.flow_metrics.flow import cost_to_go, directly_follows, fast_slow_diff, sub_stages
 from starpulse.harness_telemetry.telemetry import CLAUDE_CODE, Signal

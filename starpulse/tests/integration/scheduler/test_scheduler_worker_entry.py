@@ -8,7 +8,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from starpulse._internal.config.config import load
+from starpulse.runtime.config import load
 from starpulse.event_log.event_log import EventLog
 from starpulse.runtime import server
 from starpulse.runtime.assembly import assemble, history_store

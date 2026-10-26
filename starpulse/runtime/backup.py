@@ -15,7 +15,7 @@ import time
 from contextlib import closing
 from pathlib import Path
 
-from starpulse._internal.config.config import discover, load
+from starpulse.runtime.config import discover, load
 from starpulse.event_log.opening import database_url
 
 PREFIX = "starpulse-"

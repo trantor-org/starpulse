@@ -9,7 +9,7 @@ from dataclasses import asdict
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-from starpulse._internal.config.analytics import Analytics, Labeller
+from starpulse._internal.analytics import Analytics, Labeller
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.event_log.event_log import EventLog
 from starpulse.harness_telemetry.claude_code import ClaudeCodeAdapter, handler, publisher

@@ -18,16 +18,15 @@ import threading
 from collections.abc import Callable
 from pathlib import Path
 
-from starpulse._internal.config.config import Config, discover, load
 from starpulse.board.adapters.search import SearchIndex
-from starpulse.board.bin.blocks import search_built_blocks
+from starpulse.board.bin.blocks import BoardConfig, search_built_blocks
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url
 
 logger = logging.getLogger(__name__)
 
 
-def reload(path: Path, config: Config) -> None:
+def reload(path: Path, config: BoardConfig, load: Callable[[Path | None], BoardConfig]) -> None:
     """Re-read `path`; an invalid config is logged, and a change to what the worker was built from asks for a restart."""
     try:
         new = load(path)
@@ -44,6 +43,8 @@ def main(
     argv: list[str] | None,
     parser: argparse.ArgumentParser,
     *,
+    discover: Callable[[Path | None], Path | None],
+    load: Callable[[Path | None], BoardConfig],
     hold: Callable[[threading.Event, Callable[[], None]], None],
 ) -> None:
     """Run the embedding catch-up; `runtime` passes `hold`, as no context imports it."""
@@ -62,4 +63,4 @@ def main(
         if index is None:
             parser.exit(1, f"{path}: the database keeps no search index (SQLite with FTS5 is required)\n")
         threading.Thread(target=index.keep_embedding, args=(stop,), name="search-embeddings", daemon=True).start()
-    hold(stop, lambda: reload(path, config))
+    hold(stop, lambda: reload(path, config, load))

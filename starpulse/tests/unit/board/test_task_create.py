@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.config.config import load
+from starpulse.runtime.config import load
 from starpulse.board.adapters.upstream_backlog import UpstreamBacklog, _split
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model.seam import Board

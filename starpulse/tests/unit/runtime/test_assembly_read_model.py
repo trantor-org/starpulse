@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.config.config import load
+from starpulse.runtime.config import load
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.readmodel.projector import Projector
 from starpulse.event_log.readmodel.read_model import ReadModel

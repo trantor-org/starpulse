@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from starpulse._internal.config.config import Producer, load
+from starpulse.runs.config import Producer
 from starpulse.board.board_feed import BoardFeed, follow
 from starpulse.event_log.event_log import EventLog, Tail
 from starpulse.runs import run_events
@@ -23,6 +23,7 @@ from starpulse.runs.ingest import MAX_BATCH_BODY
 from starpulse.runs.ingest import tokens as ingest_tokens
 from starpulse.runs.push_runs import PUSHED_INSTANCE, PushRuns
 from starpulse.runtime.adapter_kit import serve, url
+from starpulse.runtime.config import load
 from starpulse.views.page_server import PageServer
 
 TOKENS = {"cron": "cron-secret", "rundeck": "rundeck-secret"}

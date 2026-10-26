@@ -7,7 +7,7 @@ PACKAGE = next(root for root in Path(__file__).resolve().parents if (root / "boa
 RUNNER = re.compile(r"\bdagu\b", re.IGNORECASE)
 ADAPTER = {"dagu.py", "adapter_worker.py"}
 #: The adapter table and the worker dispatcher, which names the `dagu` context it launches.
-SEAMS = (("_internal", "config", "adapter_types.py"), ("runtime", "worker.py"))
+SEAMS = (("board", "model", "adapter_types.py"), ("runtime", "worker.py"))
 
 
 def _sources() -> list[Path]:

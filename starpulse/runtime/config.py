@@ -8,11 +8,11 @@ The `[board]` table names the board adapter by `type` (`starpulse.board`); the r
 adapter's settings. `database_url` is the SQLAlchemy URL of the history store (`starpulse.history`).
 
 Each `[[runs]]` table is one instance of a runs adapter: its `name`, the adapter module `type` (a built-in name from
-`config.adapter_types`, or the dotted path of a module an installed package provides), the `url` it reads, the workflows Run now may start (`run_safe`) and the `domains` that
+`board.model.adapter_types`, or the dotted path of a module an installed package provides), the `url` it reads, the workflows Run now may start (`run_safe`) and the `domains` that
 group its workflows on the page. A workflow is shown as `<instance>/<workflow>`, so two instances can
 carry the same workflow name.
 
-The optional `[level]` table configures the flow graph drawn above the Board (`starpulse._internal.config.level`).
+The optional `[level]` table configures the flow graph drawn above the Board (`starpulse.flow_metrics.level`).
 """
 
 from __future__ import annotations
@@ -26,21 +26,22 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from types import ModuleType
 
-from starpulse._internal.config.adapter_types import module_name
-from starpulse._internal.config.analytics import Analytics, AnalyticsError, parse_analytics
-from starpulse._internal.config.cursor_context import CursorContext, CursorContextError, parse_cursor_context
-from starpulse._internal.config.harnesses import Harnesses, load_harnesses
-from starpulse._internal.config.level import Level, LevelError, parse_level
-from starpulse._internal.config.project import Project, ProjectError, parse_project
-from starpulse._internal.config.scheduler import Scheduler, SchedulerError, parse_scheduler
-from starpulse._internal.config.search import Search, SearchError, parse_search
-
-#: The default of `slow_read_seconds`.
-SLOW_READ_S = 1.0
-
-#: The board adapter type a config without a `[board]` table names.
-DEFAULT_TYPE = "native"
-
+from starpulse._internal.analytics import Analytics, AnalyticsError, parse_analytics
+from starpulse.board.model.adapter_types import DEFAULT_TYPE, module_name
+from starpulse.board.model.commit_keys import CommitKeys
+from starpulse.board.model.search_config import Search, SearchError, parse_search
+from starpulse.cli.project import Project, ProjectError, parse_project
+from starpulse.flow_metrics.level import Level, LevelError, parse_level
+from starpulse.harness_telemetry.cursor_context_config import (
+    CursorContext,
+    CursorContextError,
+    parse_cursor_context,
+)
+from starpulse.harness_telemetry.harnesses import Harnesses, load_harnesses
+from starpulse.pulls.pins import Repo
+from starpulse.runs.config import Producer, RunsInstance
+from starpulse.scheduler.model.config import Scheduler, SchedulerError, parse_scheduler
+from starpulse.views.services import SLOW_READ_S
 
 _KEYS = {
     "tracker_url",
@@ -86,11 +87,9 @@ _MEMORY_KEYS = {"soft_mb", "hard_mb"}
 _ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 __all__ = [
-    "CommitKeys",
     "Config",
     "ConfigError",
     "MemoryLimit",
-    "RunsInstance",
     "load",
     "runs_adapter",
 ]
@@ -109,52 +108,6 @@ def _names(value: object) -> bool:
 
 
 @dataclass(frozen=True)
-class CommitKeys:
-    """The run parameters of one runs instance that carry a commit or a task: a key left out is a parameter the
-    instance's workflows do not take."""
-
-    after: str | None = None
-    """The parameter naming the commit a run applies (the merge's SHA)."""
-    before: str | None = None
-    """The parameter naming the commit the run starts from."""
-    force: str | None = None
-    """The parameter that marks a forced rerun."""
-    task: str | None = None
-    """The parameter naming the task a run was started for, which pairs a run with a non-merge Board transition."""
-
-
-@dataclass(frozen=True)
-class RunsInstance:
-    """One configured runs adapter: the workflows it lists are shown as `<name>/<workflow>`."""
-
-    name: str
-    type: str | None
-    """The adapter module that reads the instance: a name under `starpulse`, or a dotted module path; none: a push-only instance."""
-    url: str | None
-    """What the adapter reads; none with no type."""
-    run_safe: tuple[str, ...] = ()
-    """The workflows Run now may start; any other answers 404, so none is startable by default."""
-    domains: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
-    """The page's groups of this instance's workflows, in the order it lays them out; a nested domain lists its workflows name-sorted."""
-    processes: Mapping[str, tuple[tuple[str, tuple[str, ...]], ...]] = field(default_factory=dict)
-    """Each domain's ordered `(process, workflows)` packages; an empty tuple is a flat domain."""
-    commit: CommitKeys | None = None
-    """The `[runs.commit]` table; none: a run pairs with a merge only by the time it started."""
-
-
-@dataclass(frozen=True)
-class Repo:
-    """A repository whose merges reach live state through the parent's pin bump (`[[repos]]`)."""
-
-    name: str
-    """The repository's name as its pull request links spell it (`trantor-org/<name>`)."""
-    path: str
-    """Where the parent repository holds it as a submodule."""
-    applied_by: str
-    """How its merges are applied; only `pin-bump`."""
-
-
-@dataclass(frozen=True)
 class Release:
     """The `[release]` table: StarPulse moves a Waiting task to Ready once its dependencies settle."""
 
@@ -164,21 +117,6 @@ class Release:
     dependency settles when its task is Done."""
     repo: str | None = None
     """The name of the repository the running build comes from, for `settle = "release"`."""
-
-
-#: The most events one CloudEvents batch may hold.
-MAX_BATCH = 200
-
-
-@dataclass(frozen=True)
-class Producer:
-    """A system that posts machine events as CloudEvents; `token_env` names the variable holding its token, and it may
-    write only the `machines` and `actors` named here."""
-
-    name: str
-    token_env: str
-    machines: tuple[str, ...]
-    actors: tuple[str, ...]
 
 
 def runs_adapter(kind: str) -> ModuleType:

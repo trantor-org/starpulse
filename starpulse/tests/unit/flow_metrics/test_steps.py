@@ -3,7 +3,7 @@
 import json
 import re
 
-from starpulse._internal.config.analytics import Analytics
+from starpulse._internal.analytics import Analytics
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.flow_metrics.steps import session_steps
 from starpulse.harness_telemetry.telemetry import signals

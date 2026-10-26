@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from starpulse._internal.config.config import Config, MemoryLimit
+from starpulse.runtime.config import Config, MemoryLimit
 from starpulse.runtime.closure import SELF, Reading, ReloadError
 from starpulse.runtime.control import Control
 from starpulse.runtime.hold import LISTEN_FD_ENV, READY_FD_ENV, SUPERVISED_ENV

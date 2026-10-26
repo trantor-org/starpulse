@@ -121,7 +121,7 @@ from urllib.parse import urlsplit
 import yaml
 from pydantic import BaseModel, ValidationError
 
-from starpulse._internal.config.harnesses import Harnesses
+from starpulse.harness_telemetry.harnesses import Harnesses
 from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model import post_merge_checks

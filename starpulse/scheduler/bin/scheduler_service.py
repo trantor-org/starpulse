@@ -13,8 +13,8 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
-from starpulse._internal.config.config import Config
-from starpulse._internal.config.level import Level
+from starpulse.flow_metrics.level import Level
+from starpulse.scheduler.bin.blocks import SchedulerConfig
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model.seam import Board, Written
 from starpulse.event_log.event_log import EventLog
@@ -29,7 +29,7 @@ _CHAIN_TTL_S = 300
 
 
 def start_scheduler(
-    config: Config,
+    config: SchedulerConfig,
     base: Path,
     feed: BoardFeed,
     board: Board,

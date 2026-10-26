@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.config.config import load
+from starpulse.runtime.config import load
 from starpulse.event_log.event_log import EventLog
 from starpulse.pulls import delivery
 from starpulse.pulls.bin import pulls_worker
@@ -177,7 +177,7 @@ def test_a_reload_with_an_invalid_config_keeps_the_running_loops(
     delivery = _delivery(path)
     path.write_text("pull_requests = 3\n")
 
-    delivery.reload(path)
+    delivery.reload(path, load)
 
     assert [stop.is_set() for _, stop in loops.built] == [False]
 
@@ -190,7 +190,7 @@ def test_a_reload_that_changes_no_delivery_block_keeps_the_running_loops(
     delivery = _delivery(path)
     path.write_text("slow_read_seconds = 2.0\n")
 
-    delivery.reload(path)
+    delivery.reload(path, load)
 
     assert [stop.is_set() for _, stop in loops.built] == [False]
 
@@ -204,7 +204,7 @@ def test_a_reload_that_changes_a_delivery_block_rebuilds_the_loops_in_the_same_p
     delivery = _delivery(path)
     path.write_text("pull_requests = false\n")
 
-    delivery.reload(path)
+    delivery.reload(path, load)
 
     assert [(config.pull_requests, stop.is_set()) for config, stop in loops.built] == [(True, True), (False, False)]
 
@@ -218,7 +218,7 @@ def test_a_changed_delivery_block_the_loops_cannot_build_leaves_the_old_loops_ru
     loops.refuse = {False}
     path.write_text("pull_requests = false\n")
 
-    delivery.reload(path)
+    delivery.reload(path, load)
 
     assert [(config.pull_requests, stop.is_set()) for config, stop in loops.built] == [(True, True), (True, False)]
 
@@ -230,9 +230,9 @@ def test_a_reload_after_a_rebuild_compares_with_the_rebuilt_config(
     path = _config(tmp_path, "pull_requests = true\n")
     delivery = _delivery(path)
     path.write_text("pull_requests = false\n")
-    delivery.reload(path)
+    delivery.reload(path, load)
 
-    delivery.reload(path)
+    delivery.reload(path, load)
 
     assert len(loops.built) == 2
 
@@ -243,7 +243,7 @@ def test_a_changed_board_or_database_is_left_to_a_restart(tmp_path: Path, monkey
     delivery = _delivery(path)
     path.write_text('database_url = "sqlite:///other.sqlite"\n')
 
-    delivery.reload(path)
+    delivery.reload(path, load)
 
     assert [stop.is_set() for _, stop in loops.built] == [False]
 

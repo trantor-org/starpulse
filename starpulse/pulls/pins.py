@@ -21,11 +21,22 @@ from functools import cache
 from importlib import metadata
 from typing import Protocol
 
-from starpulse._internal.config.config import Repo
-
-__all__ = ["GitHub", "LiveBuild", "Pins", "build_commit", "contained", "link", "running_commit"]
+__all__ = ["GitHub", "LiveBuild", "Pins", "Repo", "build_commit", "contained", "link", "running_commit"]
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class Repo:
+    """A repository whose merges reach live state through the parent's pin bump (`[[repos]]`)."""
+
+    name: str
+    """The repository's name as its pull request links spell it (`trantor-org/<name>`)."""
+    path: str
+    """Where the parent repository holds it as a submodule."""
+    applied_by: str
+    """How its merges are applied; only `pin-bump`."""
+
 
 _PULL = re.compile(r"https://github\.com/([^/\s]+)/([^/\s]+)/pull/\d+/?")
 _GH_TIMEOUT_S = 30

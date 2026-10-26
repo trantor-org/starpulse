@@ -7,7 +7,7 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 from starpulse.board.model.seam import Written
-from starpulse._internal.config.config import Repo
+from starpulse.pulls.pins import Repo
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.criteria import authored
 from starpulse.pulls.pulls import PullStore

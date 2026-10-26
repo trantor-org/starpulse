@@ -4,7 +4,7 @@ import os
 import shutil
 from pathlib import Path
 
-from starpulse._internal.config.analytics import Analytics
+from starpulse._internal.analytics import Analytics
 from starpulse.event_log.event_log import EventLog
 from starpulse.harness_telemetry.cursor import ingest
 from starpulse.harness_telemetry.telemetry import TelemetryLog

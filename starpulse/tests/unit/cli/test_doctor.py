@@ -8,9 +8,12 @@ from typing import Any
 
 import pytest
 
-from starpulse._internal.cli import agent_cli as cli
-from starpulse._internal.cli import doctor
-from starpulse._internal.config.config import CommitKeys, Config, Repo, RunsInstance
+from starpulse.cli import agent_cli as cli
+from starpulse.cli import doctor
+from starpulse.pulls.pins import Repo
+from starpulse.runs.config import RunsInstance
+from starpulse.runtime.config import Config
+from starpulse.board.model.commit_keys import CommitKeys
 from starpulse.board.board_feed import BoardFeed
 from starpulse.runtime.adapter_kit import serve, task, url
 from starpulse.tests.dagu_stub import dagu

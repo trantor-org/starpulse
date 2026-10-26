@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.config.config import ConfigError, Release, load
+from starpulse.runtime.config import ConfigError, Release, load
 
 REPOS = '[[repos]]\nname = "starpulse"\npath = "starpulse"\napplied_by = "pin-bump"\n'
 

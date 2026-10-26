@@ -1,5 +1,5 @@
 // The demo: `?demo` walks random legal transitions in random flows so every section moves, and a self-contained
-// demo page (`starpulse._internal.cli.demo`) runs that walk inside a DemoServer that answers the page's /api requests itself.
+// demo page (`starpulse.cli.demo`) runs that walk inside a DemoServer that answers the page's /api requests itself.
 // A served page never loads this module on the first-paint path: `demo/host.ts` is what `apiFetch` and `openStream` read.
 import { arriveMerge, demoContract, demoLedger, demoPins, demoStrip, scenarioOf } from "./demoLedger";
 import { PAGE } from "../features/level/ledgerScroll";
@@ -106,7 +106,7 @@ export function stepRuns(prev: Snapshot, random = Math.random): Snapshot {
   return snap;
 }
 
-/** The snapshot `starpulse._internal.cli.demo` embeds, with each Board task's lane changes as `/api/history?task=` answers them. */
+/** The snapshot `starpulse.cli.demo` embeds, with each Board task's lane changes as `/api/history?task=` answers them. */
 export type DemoFixture = Snapshot & { history?: Record<string, LaneStep[]> };
 
 type Handler = (server: DemoServer, path: string, query: URLSearchParams, init?: RequestInit) => Response | Promise<Response>;

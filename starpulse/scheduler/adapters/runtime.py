@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from starpulse.board.model.seam import Written
-from starpulse._internal.config.scheduler import Scheduler
+from starpulse.scheduler.model.config import Scheduler
 from starpulse.board.board_feed import BoardFeed
 from starpulse.scheduler.model.harness_setting import HarnessSetting
 from starpulse.scheduler.model.inputs import review_points, sessions_in_flight

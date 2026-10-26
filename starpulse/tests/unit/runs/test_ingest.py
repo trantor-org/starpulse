@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from starpulse._internal.config.config import Producer
+from starpulse.runs.config import Producer
 from starpulse.runs import ingest
 
 TOKENS = {"cron": "s3cret-cron", "dagu": "s3cret-dagu"}

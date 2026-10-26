@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from starpulse._internal.config.config import Config
+from starpulse.runtime.config import Config
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.readmodel.fold import replay
 from starpulse.event_log.store import EventStore, NewEvent

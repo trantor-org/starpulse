@@ -22,8 +22,8 @@ import yaml
 from starpulse.board.model.markdown import MarkdownRefusedError, imported, render
 from starpulse.board.model.seam import OPERATOR
 from starpulse.board.model.view import AGENT, board_columns, board_flow, cold_agent, done_ids, roles_of, task_view
-from starpulse._internal.cli import agent_wire
-from starpulse._internal.cli.agent_keys import CLAIM_KEYS, LIFECYCLE_KEYS
+from starpulse.cli import agent_wire
+from starpulse.cli.agent_keys import CLAIM_KEYS, LIFECYCLE_KEYS
 
 #: What a task route's 404 says when the board has no such task, as opposed to a board that cannot read or write tasks.
 _TASK_MISSING = ("is not on the board", "has no record to read")

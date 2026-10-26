@@ -26,8 +26,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from starpulse._internal.config.analytics import Analytics
-from starpulse._internal.config.config import discover, load
+from starpulse._internal.analytics import Analytics
 from starpulse._internal.signals import CURSOR, Signal, claim_key, claimed
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.event_log.opening import open_event_log
@@ -162,7 +161,13 @@ def ingest(
     return read
 
 
-def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — process boundary
+def main(
+    argv: list[str] | None = None,
+    *,
+    discover: Callable[[Path | None], Path | None],
+    load: Callable[[Path | None], Any],
+) -> None:  # pragma: no mutate block — process boundary
+    """Read the transcripts; `discover` and `load` read the root config, which the runtime owns and passes in."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
     parser.add_argument("--root", type=Path, default=Path.home() / ".cursor" / "projects", help="Cursor's projects dir")
     parser.add_argument("--hours", type=float, default=48.0, help="read transcripts written in the last N hours")
@@ -178,14 +183,12 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     args = parser.parse_args(argv)
     keys = TaskKeys(key=re.compile(args.key), branch=re.compile(args.branch), key_format=args.key_format)
     try:
-        log = open_event_log(args.config)
-        analytics = load(discover(args.config)).analytics
+        path = discover(args.config)
+        config = load(path)
+        log = open_event_log(config.database_url, path)
+        analytics = config.analytics
         redact = redactor(args.redactor) if args.redactor else None
     except (OSError, ValueError) as exc:
         parser.error(str(exc))
     read = ingest(args.root, TelemetryLog(log), keys=keys, analytics=analytics, redact=redact, hours=args.hours)
     print(f"cursor: read {read} transcript(s) under {args.root}", flush=True)
-
-
-if __name__ == "__main__":
-    main()

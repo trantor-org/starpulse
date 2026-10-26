@@ -8,8 +8,8 @@ from typing import Any
 import pytest
 import yaml
 
-from starpulse._internal.config.level import Level, Terminal
-from starpulse._internal.config.scheduler import Scheduler
+from starpulse.flow_metrics.level import Level, Terminal
+from starpulse.scheduler.model.config import Scheduler
 from starpulse.board.adapters.native import board
 from starpulse.board.adapters.upstream_backlog import UpstreamBacklog
 from starpulse.board.board_feed import BoardFeed

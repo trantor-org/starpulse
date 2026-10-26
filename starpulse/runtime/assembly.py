@@ -6,7 +6,7 @@ import threading
 from collections.abc import Collection, Mapping
 from pathlib import Path
 
-from starpulse._internal.config.config import Config
+from starpulse.runtime.config import Config, ConfigError
 from starpulse.board.adapters import replica
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model.seam import Board
@@ -18,7 +18,7 @@ from starpulse.event_log.readmodel.read_model import ReadModel
 from starpulse.flow_metrics.history import HistoryStore
 from starpulse.harness_telemetry.harness import SESSION_MACHINES
 from starpulse.machine_engine.model.snapshot import qualifier
-from starpulse.pulls.ci import attach
+from starpulse.pulls.ci import CiError, attach
 from starpulse.pulls.task_actor import ACTOR
 from starpulse.runtime import read_model_follow
 
@@ -44,7 +44,10 @@ def assemble(
     # Every harness adapter writes this one machine, so the page draws it unless the board declares a machine of that name.
     machines = {**drawn, **{name: m for name, m in SESSION_MACHINES.items() if name not in drawn}}
     if config.ci:
-        machines = attach(machines, config.ci)
+        try:
+            machines = attach(machines, config.ci)
+        except CiError as exc:
+            raise ConfigError(str(exc)) from exc
     if config.level:
         config.level.check(machines)
     feed = BoardFeed(

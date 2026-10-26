@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from starpulse._internal.config.config import load
+from starpulse.runtime.config import load
 from starpulse.board.adapters import claim_ttl
 from starpulse.board.adapters.claim_ttl import sweep
 from starpulse.board.adapters.upstream_backlog import UpstreamBacklog

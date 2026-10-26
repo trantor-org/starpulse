@@ -10,7 +10,7 @@ import pytest
 from pydantic import TypeAdapter
 from sqlalchemy import create_engine
 
-from starpulse._internal.config.scheduler import Scheduler
+from starpulse.scheduler.model.config import Scheduler
 from starpulse.board.adapters.search import SearchIndex
 from starpulse.board.board_feed import BoardFeed
 from starpulse.contracts.api.registry import BODIES, RESPONSES

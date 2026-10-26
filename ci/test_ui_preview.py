@@ -42,7 +42,7 @@ from ui_preview import (
     unpublish_demos,
 )
 
-from starpulse._internal.cli import demo
+from starpulse.cli import demo
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -57,7 +57,7 @@ ROOT = Path(__file__).resolve().parents[1]
         (["ci/workspace/board.yaml"], [STARPULSE]),
         (["ci/select_tests.py", "ci/test_ui_preview.py", "ci/seeded_server.py"], []),
         ([".github/workflows/ui-preview.yml"], [STARPULSE]),
-        (["starpulse/_internal/cli/demo.py"], [STARPULSE]),
+        (["starpulse/cli/demo.py"], [STARPULSE]),
         (["design/admin/index.html"], [MOCKUP]),
         (["design/elements/index.html"], [MOCKUP, ELEMENTS]),
         (["starpulse/web/src/style.css"], [STARPULSE, ELEMENTS]),

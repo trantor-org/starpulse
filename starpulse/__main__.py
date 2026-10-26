@@ -1,19 +1,19 @@
 """`starpulse serve|<verb> ...` (or `python -m starpulse`): the package's command line.
 
-`serve` runs the view (`starpulse.runtime.server`), `init` scaffolds a first install (`starpulse._internal.cli.init`),
+`serve` runs the view (`starpulse.runtime.server`), `init` scaffolds a first install (`starpulse.cli.init`),
 `connect` writes the
-config's `[board]` for a tracker after checking it answers (`starpulse._internal.cli.connect`) and `import-history` adds a
+config's `[board]` for a tracker after checking it answers (`starpulse.cli.connect`) and `import-history` adds a
 board's earlier lane changes to the store (`starpulse.runtime.history_import`) and `conform` replays the recorded
 history against the machines the project declares (`starpulse.runtime.conform`); each reads the rest of the
 line with its own flags, so `starpulse serve --help` lists the server's. Any other word is a verb that reads the
-running server as JSON (`starpulse._internal.cli.agent_cli`), and `starpulse help --agent` lists them.
+running server as JSON (`starpulse.cli.agent_cli`), and `starpulse help --agent` lists them.
 """
 
 import importlib
 import sys
 from collections.abc import Callable
 
-from starpulse._internal.cli import agent_cli
+from starpulse.cli import agent_cli
 
 
 def _lazy(module: str) -> Callable[[list[str]], int | None]:
@@ -27,8 +27,8 @@ def _lazy(module: str) -> Callable[[list[str]], int | None]:
 
 COMMANDS: dict[str, Callable[[list[str]], int | None]] = {
     "serve": _lazy("starpulse.runtime.server"),
-    "init": _lazy("starpulse._internal.cli.init"),
-    "connect": _lazy("starpulse._internal.cli.connect"),
+    "init": _lazy("starpulse.cli.init"),
+    "connect": _lazy("starpulse.cli.connect"),
     "worker": _lazy("starpulse.runtime.worker"),
     "import-history": _lazy("starpulse.runtime.history_import"),
     "import-board": _lazy("starpulse.runtime.board_import"),

@@ -20,8 +20,8 @@ from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 
-from starpulse._internal.config.adapter_types import module_name
-from starpulse._internal.config.config import Config, discover, load
+from starpulse.board.model.adapter_types import module_name
+from starpulse.runtime.config import Config, discover, load
 
 SELF = "serve"
 
@@ -237,5 +237,6 @@ class Reader:
 
     def __call__(self, name: str) -> Reading:
         config = self._config()
-        code = code_of(ENTRIES[name]) | board_adapter_code(config.board_type)
+        # a worker's main takes the root config loader from `runtime` (spec doc-966, D6), so its entry imports none
+        code = code_of(ENTRIES[name]) | code_of("starpulse.runtime.config") | board_adapter_code(config.board_type)
         return Reading(code, *_blocks(name, config))

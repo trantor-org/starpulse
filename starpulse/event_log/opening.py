@@ -9,7 +9,6 @@ from pathlib import Path
 
 from sqlalchemy import Engine, func, select
 
-from starpulse._internal.config.config import discover, load
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.tables import machine_events
 
@@ -22,14 +21,14 @@ def database_url(configured: str | None, directory: Path) -> str:
     return configured or f"sqlite:///{(directory / DEFAULT_FILE).resolve()}"
 
 
-def open_event_log(path: Path | None = None) -> EventLog:
+def open_event_log(configured: str | None, path: Path | None) -> EventLog:
     """The event log in the store `serve --config path` keeps its history in, so a producer and the view share it.
 
-    A producer runs from no fixed directory, so it names the config as `serve` does: `path`, else `starpulse.toml`
-    in the working directory, else the defaults. Raises `OSError` or `ValueError` for a config that cannot be read.
+    `configured` is the `database_url` of the config at `path`, which the runtime discovers and loads as `serve` does
+    (`path`, else `starpulse.toml` in the working directory, else the defaults); with no file, the working directory
+    holds the default database.
     """
-    path = discover(path)
-    return EventLog(database_url(load(path).database_url, path.parent if path else Path.cwd()))
+    return EventLog(database_url(configured, path.parent if path else Path.cwd()))
 
 
 def last_run_event(engine: Engine, run: str) -> float | None:

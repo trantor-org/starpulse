@@ -19,8 +19,7 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Protocol
 
 from starpulse.pulls.ci_trail import PullHistory, parse
-from starpulse._internal.config.config import Repo
-from starpulse._internal.config.pins import GitHub, Pins, link
+from starpulse.pulls.pins import GitHub, Pins, Repo, link
 from starpulse.board.board_feed import BoardFeed
 
 if TYPE_CHECKING:  # annotation only: the pull store opens the database stack

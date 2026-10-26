@@ -33,7 +33,7 @@ from typing import Any, ClassVar
 import jsonschema
 from pydantic import BaseModel
 
-from starpulse._internal.config.config import Config
+from starpulse.runtime.config import Config
 from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.machine_tasks import MachineTasks

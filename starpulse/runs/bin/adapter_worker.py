@@ -15,8 +15,8 @@ import threading
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+from starpulse.runs.bin.blocks import RunsConfig
 
-from starpulse._internal.config.config import Config, discover, load
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url
 from starpulse.runs import opt_in
@@ -29,7 +29,9 @@ def main(
     parser: argparse.ArgumentParser,
     context: str,
     *,
-    run_adapters: Callable[[argparse.ArgumentParser, Config], Any],
+    discover: Callable[[Path | None], Path | None],
+    load: Callable[[Path | None], RunsConfig],
+    run_adapters: Callable[[argparse.ArgumentParser, RunsConfig], Any],
     worker_board: Callable[..., tuple[object, Any]],
     hold: Callable[[threading.Event, Callable[[], None]], None],
 ) -> None:
@@ -52,4 +54,4 @@ def main(
     for instance, adapter in adapters:
         adapter.follow(instance.url, publisher.runs(instance.name, feed.runs(instance.name)), log)
         opt_in.keep_beating(log, instance.name, stop)
-    hold(stop, lambda: reload(path, config))
+    hold(stop, lambda: reload(path, config, load))

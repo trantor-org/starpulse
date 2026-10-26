@@ -16,7 +16,7 @@ from pathlib import Path
 
 import yaml
 
-SOURCE = Path(__file__).parents[2] / "skills"
+SOURCE = Path(__file__).parents[1] / "skills"
 #: Each harness's documented discovery path, relative to a project or the home directory.
 HARNESS_DIRS = {"claude": ".claude/skills", "codex": ".agents/skills"}
 MARKER = ".starpulse-install.json"

@@ -14,7 +14,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from starpulse._internal.config.config import CommitKeys
+from starpulse.board.model.commit_keys import CommitKeys
 from starpulse.board import ledger
 from starpulse.board.ledger import Occurrence, _matches, build, page, pair, pull_occurrences, reruns, strip
 

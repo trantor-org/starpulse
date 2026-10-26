@@ -4,18 +4,12 @@ import sys
 from pathlib import Path
 
 import pytest
+from starpulse.board.model.commit_keys import CommitKeys
+from starpulse.pulls.pins import Repo
+from starpulse.runs.config import Producer
 
-from starpulse._internal.config.config import (
-    CommitKeys,
-    Config,
-    ConfigError,
-    MemoryLimit,
-    Producer,
-    Repo,
-    load,
-    runs_adapter,
-)
-from starpulse._internal.config.harnesses import HarnessError
+from starpulse.runtime.config import Config, ConfigError, MemoryLimit, load, runs_adapter
+from starpulse.harness_telemetry.harnesses import HarnessError
 
 
 def _write(tmp_path: Path, text: str) -> Path:

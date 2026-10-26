@@ -17,7 +17,6 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
-from starpulse._internal.config.config import Config, discover, load
 from starpulse.board.board_feed import BoardFeed, follow
 from starpulse.board.machine_tasks import MachineTasks
 from starpulse.board.model.seam import Board
@@ -27,7 +26,7 @@ from starpulse.event_log.opening import database_url
 from starpulse.flow_metrics.history import History
 from starpulse.scheduler.adapters.remote import follow_wakes, publisher
 from starpulse.scheduler.adapters.runtime import Runtime
-from starpulse.scheduler.bin.blocks import scheduler_fixed_blocks, scheduler_live_blocks
+from starpulse.scheduler.bin.blocks import SchedulerConfig, scheduler_fixed_blocks, scheduler_live_blocks
 from starpulse.scheduler.bin.scheduler_service import start_scheduler
 
 logger = logging.getLogger(__name__)
@@ -38,7 +37,7 @@ class Scheduler:
 
     def __init__(
         self,
-        config: Config,
+        config: SchedulerConfig,
         base: Path,
         board: Board,
         feed: BoardFeed,
@@ -95,7 +94,7 @@ class Scheduler:
         if self.runtime is not None and self.runtime.loop is not None:
             self.runtime.loop.wake()  # the loop looks at `stop` between events
 
-    def reload(self, path: Path) -> None:
+    def reload(self, path: Path, load: Callable[[Path | None], SchedulerConfig]) -> None:
         """Re-read `path`. An invalid config is logged and the running one kept; a changed Scheduler block takes the
         runtime down and builds it again from the new config."""
         try:
@@ -118,8 +117,10 @@ def main(
     argv: list[str] | None,
     parser: argparse.ArgumentParser,
     *,
+    discover: Callable[[Path | None], Path | None],
+    load: Callable[[Path | None], SchedulerConfig],
     worker_board: Callable[..., tuple[Board, BoardFeed]],
-    history_store: Callable[[Config, Path, Mapping[str, dict]], History],
+    history_store: Callable[[SchedulerConfig, Path, Mapping[str, dict]], History],
     hold: Callable[[threading.Event, Callable[[], None]], None],
     trajectories_response: Callable[..., tuple[bytes, int]],
     cached: Callable[[Callable[[], dict[str, Any]], float], Callable[[], dict[str, Any]]],
@@ -153,5 +154,5 @@ def main(
         starter=starter,
     )
     scheduler.start()
-    hold(stop, lambda: scheduler.reload(path))
+    hold(stop, lambda: scheduler.reload(path, load))
     scheduler.stop()

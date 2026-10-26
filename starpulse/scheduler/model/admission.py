@@ -18,7 +18,7 @@ from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, replace
 from typing import Any
 
-from starpulse._internal.config.scheduler import DIMENSIONS, Scheduler
+from starpulse.scheduler.model.config import DIMENSIONS, Scheduler
 from starpulse.scheduler.model.inputs import points
 from starpulse.scheduler.model.ledger import Ledger
 from starpulse.scheduler.model.sampler import Reading

@@ -12,7 +12,7 @@ import pytest
 import yaml
 from pydantic import TypeAdapter
 
-from starpulse._internal.cli import agent_cli as cli
+from starpulse.cli import agent_cli as cli
 from starpulse.board.adapters import native, native_docs
 from starpulse.board.adapters.upstream_backlog import _split
 from starpulse.board.board_feed import BoardFeed

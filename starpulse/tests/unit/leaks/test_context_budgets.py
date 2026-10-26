@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine
 
-from starpulse._internal.config.scheduler import Scheduler
+from starpulse.scheduler.model.config import Scheduler
 from starpulse.board import board_feed
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model.seam import Written

@@ -15,8 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
 
-from starpulse._internal.config.adapter_types import module_name
-from starpulse._internal.config.config import DEFAULT_TYPE
+from starpulse.board.model.adapter_types import DEFAULT_TYPE, module_name
 from starpulse.machine_engine.model.state_roles import StateRoles
 from starpulse.machine_engine.model.transitions import DEFAULT_STATUSES
 

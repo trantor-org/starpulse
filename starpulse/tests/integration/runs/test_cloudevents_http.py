@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from starpulse._internal.config.config import Producer
+from starpulse.runs.config import Producer
 from starpulse.board.board_feed import BoardFeed, follow
 from starpulse.board.machine_tasks import MachineTasks
 from starpulse.event_log.event_log import EventLog, Tail

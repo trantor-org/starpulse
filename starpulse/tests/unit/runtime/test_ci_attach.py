@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.config.config import ConfigError, load
+from starpulse.runtime.config import ConfigError, load
 from starpulse.runtime.assembly import assemble
 
 

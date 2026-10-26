@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import replace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 from starpulse.contracts.api.dto.health import SessionHealth, SliceHealth, TokenCounts
 from starpulse.flow_metrics import session_health as _sessions
@@ -32,7 +32,7 @@ from starpulse.harness_telemetry.activity import (
 from starpulse.harness_telemetry.telemetry import held, signals
 
 if TYPE_CHECKING:
-    from starpulse._internal.config.config import Config
+    from starpulse._internal.analytics import Analytics
     from starpulse.contracts.adapters import TaskKeys
 
 __all__ = [
@@ -50,10 +50,16 @@ __all__ = [
 ]
 
 
+class SessionsConfig(Protocol):
+    """What session health reads of the root config, which `runtime` loads and hands in."""
+
+    analytics: Analytics
+
+
 def session_health(
     exports: Iterable[Mapping[str, Any]],
     keys: TaskKeys | None = None,
-    config: Config | None = None,
+    config: SessionsConfig | None = None,
     redact: Callable[[str], str] | None = None,
 ) -> list[SessionHealth]:
     """One row per (session, task) of the Claude Code and Codex OTLP/HTTP log payloads `exports`, oldest first.

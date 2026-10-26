@@ -54,7 +54,7 @@ def main(argv: list[str] | None = None) -> None:
     parser = worker_parser()
     args = parser.parse_args(argv)
     if args.context == "api":
-        from starpulse._internal.cli import doctor
+        from starpulse.cli import doctor
         from starpulse.runtime import read_model_follow, server
         from starpulse.runtime.assembly import assemble, history_store
         from starpulse.runtime.hold import LISTEN_FD_ENV, STATIC_ENV, announce_ready
@@ -81,7 +81,11 @@ def main(argv: list[str] | None = None) -> None:
         )
         return api_worker.main(argv, parser, host=host)
     from starpulse.runtime.assembly import history_store, worker_board
+    from starpulse.runtime.config import discover, load
     from starpulse.runtime.hold import hold
+
+    # each context's bin reads its section of the root config, which only the runtime loads (spec doc-966, D6)
+    loader = {"discover": discover, "load": load}
 
     if args.context == "scheduler":
         from starpulse.runtime.server import _cached, trajectories_response
@@ -91,6 +95,7 @@ def main(argv: list[str] | None = None) -> None:
         return scheduler_worker.main(
             argv,
             parser,
+            **loader,
             worker_board=worker_board,
             history_store=history_store,
             hold=hold,
@@ -103,35 +108,55 @@ def main(argv: list[str] | None = None) -> None:
         from starpulse.runtime.server import run_adapters
 
         return runs_worker.main(
-            argv, parser, run_adapters=run_adapters, worker_board=worker_board, history_store=history_store, hold=hold
+            argv,
+            parser,
+            **loader,
+            run_adapters=run_adapters,
+            worker_board=worker_board,
+            history_store=history_store,
+            hold=hold,
         )
     if args.context in OPT_IN:  # an opt-in worker: `serve` supervises none
         from starpulse.runs.bin import adapter_worker
         from starpulse.runtime.server import run_adapters
 
         return adapter_worker.main(
-            argv, parser, args.context, run_adapters=run_adapters, worker_board=worker_board, hold=hold
+            argv, parser, args.context, **loader, run_adapters=run_adapters, worker_board=worker_board, hold=hold
         )
     if args.context == "flow-metrics":
         from starpulse.flow_metrics.bin import flow_metrics_worker
         from starpulse.runtime.assembly import assemble, keep_event_log
 
         return flow_metrics_worker.main(
-            argv, parser, assemble=assemble, history_store=history_store, keep_event_log=keep_event_log, hold=hold
+            argv,
+            parser,
+            **loader,
+            assemble=assemble,
+            history_store=history_store,
+            keep_event_log=keep_event_log,
+            hold=hold,
         )
     if args.context == "search":
         from starpulse.board.bin import search_worker
 
-        return search_worker.main(argv, parser, hold=hold)
+        return search_worker.main(argv, parser, **loader, hold=hold)
     if args.context == "board":
         from starpulse.board.bin import board_worker
         from starpulse.runtime.assembly import assemble
         from starpulse.runtime.read_model_follow import follow
 
-        return board_worker.main(argv, parser, assemble=assemble, history_store=history_store, follow=follow, hold=hold)
+        return board_worker.main(
+            argv, parser, **loader, assemble=assemble, history_store=history_store, follow=follow, hold=hold
+        )
     from starpulse.pulls.bin import pulls_worker
     from starpulse.runtime.server import start_delivery
 
     return pulls_worker.main(
-        argv, parser, worker_board=worker_board, history_store=history_store, start_delivery=start_delivery, hold=hold
+        argv,
+        parser,
+        **loader,
+        worker_board=worker_board,
+        history_store=history_store,
+        start_delivery=start_delivery,
+        hold=hold,
     )

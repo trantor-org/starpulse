@@ -65,8 +65,8 @@ READERS = {
     "design/*": ("ci/ui_preview.py",),
     ".claude-plugin/*": ("starpulse/tests/integration/cli/test_agent_cli.py",),
     "docs/consumers.md": ("starpulse/tests/unit/event_log/test_consumer_pattern.py",),
-    "docs/serving.md": ("starpulse/tests/unit/config/test_builtin_types.py",),
-    "docs/sources.md": ("starpulse/tests/unit/config/test_builtin_types.py",),
+    "docs/serving.md": ("starpulse/tests/unit/board/test_builtin_types.py",),
+    "docs/sources.md": ("starpulse/tests/unit/board/test_builtin_types.py",),
     "ci/preview.toml": ("ci/ui_preview.py", "ci/seeded_server.py"),
     "starpulse/schemas/api.schema.json": ("starpulse/contracts/api/schema.py", "starpulse/contracts/api/__main__.py"),
     "starpulse/schemas/machine.schema.json": ("starpulse/machine_engine/adapters/machine_loader.py",),
@@ -85,7 +85,7 @@ READERS = {
         "starpulse/tests/unit/machine_engine/test_github_pull_request_machine.py",
     ),
     "starpulse/skills/*": (
-        "starpulse/_internal/cli/skill_install.py",
+        "starpulse/cli/skill_install.py",
         "starpulse/tests/integration/cli/test_agent_cli.py",
     ),
     "bench/page_latency.py": ("ci/test_page_latency.py", "ci/test_soak.py", "ci/test_load.py"),
@@ -116,17 +116,17 @@ INERT = (
     "bench/ic_event_log.py",
 )
 
-#: The board seam and `config.py` import an adapter by the name configuration gives (`importlib.import_module`), so a
+#: The board seam and `runtime/config.py` import an adapter by the name configuration gives (`importlib.import_module`), so a
 #: test reaching either reaches each adapter whose name appears in a module it reaches: a configured `kind = "dagu"` in
 #: the test or a helper, or the loader's own default (`config.DEFAULT_TYPE`).
-NAMED_LOADERS = ("starpulse.board.model.seam", "starpulse._internal.config.config")
+NAMED_LOADERS = ("starpulse.board.model.seam", "starpulse.runtime.config")
 
 #: The feature packages that hold adapters; a module directly in one of them may be an adapter.
 ADAPTER_PACKAGES = ("starpulse.board.adapters.", *(f"starpulse._internal.{package}." for package in ("runs", "pulls")), "starpulse.harness_telemetry.")
 
 #: The module that lists every built-in adapter's name. Every loader reaches it, so its text names no adapter a test
 #: names: it would otherwise select every adapter's tests for a change to any loader.
-TYPE_TABLE = "starpulse._internal.config.adapter_types"
+TYPE_TABLE = "starpulse.board.model.adapter_types"
 
 
 @dataclass(frozen=True)

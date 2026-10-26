@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 
 from starpulse.board.adapters.machines_only import board
-from starpulse._internal.config.adapter_types import module_name
+from starpulse.board.model.adapter_types import module_name
 
 BOARD = """\
 name: Board

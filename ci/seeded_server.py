@@ -33,8 +33,8 @@ from pathlib import Path
 from sqlalchemy import Engine, event, insert
 
 import starpulse
-from starpulse._internal.config.config import load
-from starpulse._internal.config.scheduler import Scheduler
+from starpulse.runtime.config import load
+from starpulse.scheduler.model.config import Scheduler
 from starpulse.board.adapters import native
 from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.board_feed import BoardFeed

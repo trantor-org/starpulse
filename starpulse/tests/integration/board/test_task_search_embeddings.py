@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 from sqlalchemy import create_engine, event, text
 
-from starpulse._internal.config.search import Search
+from starpulse.board.model.search_config import Search
 from starpulse.board.adapters import search as search_module
 from starpulse.board.adapters.search import EmbeddingError, SearchIndex
 from starpulse.contracts.adapters import BoardTask

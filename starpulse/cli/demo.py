@@ -1,8 +1,8 @@
 """Build StarPulse as one self-contained HTML file that runs with no server.
 
-    .venv/bin/python -m starpulse._internal.cli.demo --server http://127.0.0.1:8766 --out .tmp/flow-demo.html
-    .venv/bin/python -m starpulse._internal.cli.demo --mockup <the design mockup directory> --out .tmp/mockup-demo.html
-    .venv/bin/python -m starpulse._internal.cli.demo --elements design/elements --out .tmp/element-sheet.html
+    .venv/bin/python -m starpulse.cli.demo --server http://127.0.0.1:8766 --out .tmp/flow-demo.html
+    .venv/bin/python -m starpulse.cli.demo --mockup <the design mockup directory> --out .tmp/mockup-demo.html
+    .venv/bin/python -m starpulse.cli.demo --elements design/elements --out .tmp/element-sheet.html
 
 It reads a running starpulse.runtime.server's snapshot for its structure (the
 machines, the DAGs and their steps) and replaces every task with a synthetic
@@ -27,7 +27,7 @@ from starpulse.machine_engine.model.state_roles import StateRoles
 from starpulse.machine_engine.model.transitions import board_machine
 
 #: The page built as one script (`vite build --mode one-file`): a demo is one file, with no server to fetch a lazy chunk from.
-STATIC = Path(__file__).parents[2] / "static" / "one-file"
+STATIC = Path(__file__).parents[1] / "static" / "one-file"
 #: Board labels that say what kind of work a task is and nothing about it.
 LABELS = re.compile(r"^(kind-[a-z]+|size-\d+|adr-needed|bug|feature)$")
 #: The mockup data keys `scrub_mockup` knows how to clean; any other key is refused rather than passed through.

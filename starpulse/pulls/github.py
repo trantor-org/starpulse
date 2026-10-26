@@ -1,6 +1,6 @@
 """The GitHub adapter: a repository's pull requests, checks and Copilot work become events on two machines.
 
-    python -m starpulse.pulls.github --repo OWNER/NAME [--interval 300] [--config FILE] [--key RE --branch RE --key-format FMT]
+    python -m starpulse.cli.github_adapter --repo OWNER/NAME [--interval 300] [--config FILE] [--key RE --branch RE --key-format FMT]
 
 Every `--interval` seconds it reads the repository's 30 most recently updated pull requests and appends their events
 to the event log in the database `--config` names (default `starpulse.toml` in the working directory), the store
@@ -27,6 +27,8 @@ import argparse
 import os
 import re
 import time
+from collections.abc import Callable
+from typing import Any
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -173,7 +175,13 @@ def poll(transport: Transport, repo: str, adapter: GitHubAdapter, log: EventLog,
         seen[pull["number"]] = pull["updated_at"]
 
 
-def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — polling process boundary
+def main(
+    argv: list[str] | None = None,
+    *,
+    discover: Callable[[Path | None], Path | None],
+    load: Callable[[Path | None], Any],
+) -> None:  # pragma: no mutate block — polling process boundary
+    """Poll the repository; `discover` and `load` read the root config, which the runtime owns and passes in."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
     parser.add_argument("--repo", required=True, help="the repository to read, `owner/name` or its URL")
     parser.add_argument("--interval", type=float, default=300.0, help="seconds between reads")
@@ -186,7 +194,8 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     args = parser.parse_args(argv)
     keys = TaskKeys(key=re.compile(args.key), branch=re.compile(args.branch), key_format=args.key_format)
     try:
-        log = open_event_log(args.config)
+        path = discover(args.config)
+        log = open_event_log(load(path).database_url, path)
     except (OSError, ValueError) as exc:
         parser.error(f"{args.config or 'starpulse.toml'}: {exc}")
 
@@ -200,7 +209,3 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         except OSError as exc:  # GitHub unreachable or refused: the next poll tries again
             print(f"github adapter: {exc}", flush=True)
         time.sleep(args.interval)
-
-
-if __name__ == "__main__":
-    main()

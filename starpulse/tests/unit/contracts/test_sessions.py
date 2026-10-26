@@ -7,8 +7,8 @@ from typing import Any
 import pytest
 
 from starpulse import sessions
-from starpulse._internal.config.analytics import Analytics, Labeller
-from starpulse._internal.config.config import Config
+from starpulse._internal.analytics import Analytics, Labeller
+from starpulse.runtime.config import Config
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.contracts.api.dto.health import SessionHealth, SliceHealth
 from starpulse.flow_metrics import session_health as fold

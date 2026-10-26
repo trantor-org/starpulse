@@ -7,8 +7,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine
 
-from starpulse._internal.config.config import Repo
-from starpulse._internal.config.pins import GitHub
+from starpulse.pulls.pins import GitHub, Repo
 from starpulse.board.board_feed import BoardFeed
 from starpulse.event_log.event_log import Entry
 from starpulse.pulls.ci_trail import parse

@@ -29,7 +29,7 @@ from math import ceil
 from statistics import median
 from typing import Any
 
-from starpulse._internal.config.analytics import Analytics
+from starpulse._internal.analytics import Analytics
 from starpulse._internal.signals import CLAUDE_CODE, Signal
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.flow_metrics.steps import owned_steps

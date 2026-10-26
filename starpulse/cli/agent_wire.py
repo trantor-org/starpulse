@@ -10,7 +10,7 @@ import urllib.request
 from collections.abc import Mapping
 from typing import Any
 
-from starpulse._internal.cli.agent_keys import SNAPSHOT_KEYS
+from starpulse.cli.agent_keys import SNAPSHOT_KEYS
 
 #: serve's default `--port`, where a server runs unless the caller says otherwise.
 DEFAULT_SERVER = "http://localhost:8766"

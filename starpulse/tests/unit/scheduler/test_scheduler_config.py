@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.config.config import ConfigError, load
-from starpulse._internal.config.scheduler import DIMENSIONS, Scheduler
+from starpulse.runtime.config import ConfigError, load
+from starpulse.scheduler.model.config import DIMENSIONS, Scheduler
 from starpulse.scheduler.adapters.probe import LocalProbe
 
 

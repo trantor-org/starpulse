@@ -20,9 +20,8 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Protocol
 
-from starpulse._internal.config.config import Config, discover, load
 from starpulse.board.adapters import replica
-from starpulse.board.bin.blocks import board_built_blocks
+from starpulse.board.bin.blocks import BoardConfig, board_built_blocks
 from starpulse.board.board_feed import BoardFeed, CriteriaStore, ExpiriesStore, LaneRecorder
 from starpulse.board.model.seam import Board
 from starpulse.event_log.event_log import EventLog
@@ -41,7 +40,7 @@ class WriterStore(LaneRecorder, CriteriaStore, ExpiriesStore, Protocol):
     def lane_path(self, task: str) -> list[dict]: ...
 
 
-def reload(path: Path, config: Config) -> None:
+def reload(path: Path, config: BoardConfig, load: Callable[[Path | None], BoardConfig]) -> None:
     """Re-read `path`; an invalid config is logged, and a change to what the worker was built from asks for a restart."""
     try:
         new = load(path)
@@ -83,8 +82,10 @@ def main(
     argv: list[str] | None,
     parser: argparse.ArgumentParser,
     *,
+    discover: Callable[[Path | None], Path | None],
+    load: Callable[[Path | None], BoardConfig],
     assemble: Callable[..., tuple[Board, BoardFeed]],
-    history_store: Callable[[Config, Path, Mapping[str, dict]], WriterStore],
+    history_store: Callable[[BoardConfig, Path, Mapping[str, dict]], WriterStore],
     follow: Callable[..., object],
     hold: Callable[[threading.Event, Callable[[], None]], None],
 ) -> None:
@@ -117,4 +118,4 @@ def main(
         if board.sweep is not None:
             board.sweep(feed, log, store.save_claim_expiries)
         follow(Projector(log.engine, EventStore(log.engine)), feed, stop)
-    hold(stop, lambda: reload(path, config))
+    hold(stop, lambda: reload(path, config, load))

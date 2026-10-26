@@ -3,7 +3,7 @@ equal hand-worked values, and a window longer than the history is refused with t
 
 import pytest
 
-from starpulse._internal.config.level import Level, Terminal
+from starpulse.flow_metrics.level import Level, Terminal
 from starpulse.flow_metrics.level_metrics import UNATTRIBUTED, Run, WindowPastHistory, level_metrics
 
 H = 3600.0

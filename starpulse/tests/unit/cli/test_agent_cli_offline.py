@@ -9,8 +9,8 @@ from typing import Any
 
 import pytest
 
-from starpulse._internal.cli import agent_cli as cli
-from starpulse._internal.cli import agent_wire
+from starpulse.cli import agent_cli as cli
+from starpulse.cli import agent_wire
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.readmodel.projector import Projector
 from starpulse.event_log.store import EventStore, NewEvent

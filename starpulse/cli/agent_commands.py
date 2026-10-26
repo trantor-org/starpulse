@@ -8,8 +8,8 @@ import time
 from collections.abc import Mapping
 from typing import Any
 
-from starpulse._internal.cli.agent_wire import CliError
-from starpulse._internal.config.config import ConfigError, discover, load
+from starpulse.cli.agent_wire import CliError
+from starpulse.runtime.config import ConfigError, discover, load
 
 #: What a caller does for a step the project has not mapped.
 FALLBACK = "AGENTS.md"

@@ -19,8 +19,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 from starpulse.board.model.seam import TaskEditor
-from starpulse._internal.config.config import Repo
-from starpulse._internal.config.pins import GitHub, LiveBuild, Pins, link
+from starpulse.pulls.pins import GitHub, LiveBuild, Pins, Repo, link
 from starpulse.board import criteria
 from starpulse.board.board_feed import BoardFeed
 from starpulse.pulls.pull_requests import PULL_URL

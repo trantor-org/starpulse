@@ -18,10 +18,9 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Protocol
 
-from starpulse._internal.config.config import Config, discover, load
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url
-from starpulse.flow_metrics.bin.blocks import flow_metrics_built_blocks
+from starpulse.flow_metrics.bin.blocks import FlowMetricsConfig, flow_metrics_built_blocks
 from starpulse.flow_metrics.history import HistoryStore, record_machine_events
 
 logger = logging.getLogger(__name__)
@@ -33,7 +32,7 @@ class Feed(Protocol):
     machines: Mapping[str, dict]
 
 
-def reload(path: Path, config: Config) -> None:
+def reload(path: Path, config: FlowMetricsConfig, load: Callable[[Path | None], FlowMetricsConfig]) -> None:
     """Re-read `path`; an invalid config is logged, and a change to what the worker was built from asks for a restart."""
     try:
         new = load(path)
@@ -50,8 +49,10 @@ def main(
     argv: list[str] | None,
     parser: argparse.ArgumentParser,
     *,
+    discover: Callable[[Path | None], Path | None],
+    load: Callable[[Path | None], FlowMetricsConfig],
     assemble: Callable[..., tuple[object, Feed]],
-    history_store: Callable[[Config, Path, Mapping[str, dict]], HistoryStore],
+    history_store: Callable[[FlowMetricsConfig, Path, Mapping[str, dict]], HistoryStore],
     keep_event_log: Callable[..., object],
     hold: Callable[[threading.Event, Callable[[], None]], None],
 ) -> None:
@@ -72,4 +73,4 @@ def main(
     stop = threading.Event()
     keep_event_log(log, config, base, stop=stop)
     threading.Thread(target=record_machine_events, args=(store, log, stop), name="machine-history", daemon=True).start()
-    hold(stop, lambda: reload(path, config))
+    hold(stop, lambda: reload(path, config, load))

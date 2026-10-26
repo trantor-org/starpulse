@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from starpulse.board.model.seam import Written
-from starpulse._internal.config.scheduler import Scheduler
+from starpulse.scheduler.model.config import Scheduler
 from starpulse.board.board_feed import BoardFeed
 from starpulse.scheduler.adapters.runtime import build
 from starpulse.contracts.adapters import BoardTask

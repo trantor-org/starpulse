@@ -9,9 +9,8 @@ import subprocess
 import time
 from collections.abc import Callable
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
-from starpulse._internal.config.config import discover, load
 from starpulse.contracts.adapters import StartFailedError
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import open_event_log
@@ -168,16 +167,21 @@ def _run(command: list[str]) -> str:  # pragma: no mutate block — process boun
 
 
 def main(
-    starter: Callable[[str | None], Callable[..., str] | None], argv: list[str] | None = None
+    starter: Callable[[str | None], Callable[..., str] | None],
+    argv: list[str] | None = None,
+    *,
+    discover: Callable[[Path | None], Path | None],
+    load: Callable[[Path | None], Any],
 ) -> None:  # pragma: no mutate block — process boundary
     """Reset the sessions over the limit; `starter` builds the session starter from the config's `session_start_url`,
-    so Harness Telemetry imports no Sessions code."""
+    so Harness Telemetry imports no Sessions code; `discover` and `load` read the root config, which the runtime owns."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
     parser.add_argument("--config", type=Path, help="the TOML config naming the event log, limit and session starter")
     args = parser.parse_args(argv)
     try:
         path = discover(args.config)
-        config, log = load(path), open_event_log(args.config)
+        config = load(path)
+        log = open_event_log(config.database_url, path)
     except (OSError, ValueError) as exc:
         parser.error(str(exc))
     start = starter(config.session_start_url)
@@ -197,7 +201,3 @@ def main(
     print(f"cursor_context: {len(acted)} session(s) acted on", flush=True)
     for line in acted:
         print(f"cursor_context: {line}", flush=True)
-
-
-if __name__ == "__main__":
-    main()

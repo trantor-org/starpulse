@@ -7,8 +7,7 @@ import time
 
 import pytest
 
-from starpulse._internal.config.config import Repo
-from starpulse._internal.config.pins import _RETRY_WAIT_S, GitHub, build_commit, contained, link
+from starpulse.pulls.pins import _RETRY_WAIT_S, GitHub, Repo, build_commit, contained, link
 
 REPOS = (Repo(name="skills", path="skills", applied_by="pin-bump"),)
 CHILD_SHA, LATER_SHA = "c1" * 20, "c2" * 20

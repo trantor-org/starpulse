@@ -42,7 +42,7 @@ from sqlalchemy import event as sa_event
 from sqlalchemy.dialects import sqlite
 from sqlalchemy.exc import OperationalError
 
-from starpulse._internal.config.level import Level
+from starpulse.flow_metrics.level import Level
 from starpulse.event_log import events as machine_events
 from starpulse.event_log import lane_events, lane_repair
 from starpulse.event_log.checkpoints import Checkpoints

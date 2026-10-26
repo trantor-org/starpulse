@@ -31,7 +31,7 @@ import numpy as np
 from sqlalchemy import Connection, Engine, bindparam, text
 from sqlalchemy.exc import OperationalError, SQLAlchemyError
 
-from starpulse._internal.config.search import Search
+from starpulse.board.model.search_config import Search
 from starpulse.contracts.adapters import BoardTask
 
 logger = logging.getLogger(__name__)

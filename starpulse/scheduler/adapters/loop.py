@@ -32,7 +32,7 @@ from dataclasses import asdict, dataclass, field, replace
 from typing import Any
 
 from starpulse.board.model.seam import Written
-from starpulse._internal.config.scheduler import Scheduler
+from starpulse.scheduler.model.config import Scheduler
 from starpulse.board.board_feed import BoardFeed
 from starpulse.scheduler.model.admission import Decision, decide, demand, tier_of
 from starpulse.scheduler.model.harness_setting import DEFAULT as DEFAULT_HARNESS

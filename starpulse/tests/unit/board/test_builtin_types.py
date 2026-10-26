@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.config.adapter_types import BUILT_IN, module_name
+from starpulse.board.model.adapter_types import BUILT_IN, module_name
 
 DOCS = next(root for root in Path(__file__).resolve().parents if (root / "README.md").is_file()) / "docs"
 #: The docs that show a `[board]` or `[[runs]]` table: the config file, and the sources a runs adapter reads.

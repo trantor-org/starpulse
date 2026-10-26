@@ -173,9 +173,10 @@ def test_each_public_module_exports_exactly_its_pinned_names(module: str) -> Non
 CONTEXTS = {"board", "flow_metrics", "harness_telemetry", "machine_engine", "pulls", "runs", "scheduler", "sessions"}
 
 #: Root entries that are not a listed public module: the entry points, the internal code, the generic GitHub transport,
-#: the packages that ship data, the bounded contexts, and the `views` and `runtime` roots (doc-966).
+#: the packages that ship data, the bounded contexts, the `views` package and the `runtime` and `cli` roots (doc-966).
 ROOT_OTHER = {
-    "__init__", "__main__", "claude_code", "cursor", "cursor_context", "_internal", "github", "tests", "views", "runtime"
+    "__init__", "__main__", "claude_code", "cursor", "cursor_context", "_internal", "github", "tests", "views",
+    "runtime", "cli",
 } | CONTEXTS
 
 
@@ -215,9 +216,10 @@ def test_the_board_feed_logs_under_its_public_path() -> None:
 
 
 #: Test directories under a tier that mirror no `_internal` package: the public `contracts` package and the public
-#: surface, the `event_log` kernel, the `leaks` gate that measures memory across every feature, and the bounded contexts.
+#: surface, the `event_log` kernel, the `leaks` gate that measures memory across every feature, the bounded contexts and
+#: the `views`, `runtime` and `cli` roots.
 #: `server` is the end-to-end `serve` tests of the integration tier, which the move out of `_internal/server` leaves in place.
-TEST_DIRECTORIES_OTHER = {"contracts", "event_log", "leaks", "views", "runtime", "server"} | CONTEXTS
+TEST_DIRECTORIES_OTHER = {"contracts", "event_log", "leaks", "views", "runtime", "cli", "server"} | CONTEXTS
 
 
 def _misplaced_tests(tests: Path, features: set[str]) -> set[str]:

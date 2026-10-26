@@ -17,13 +17,12 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
-from starpulse._internal.config.config import Config, discover, load
 from starpulse.board.board_feed import follow
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url
 from starpulse.event_log.store import EventStore
 from starpulse.runs import opt_in, run_events
-from starpulse.runs.bin.blocks import runs_built_blocks
+from starpulse.runs.bin.blocks import RunsConfig, runs_built_blocks
 from starpulse.runs.projection import Publisher
 from starpulse.runs.push_runs import PUSHED_INSTANCE, PushRuns
 from starpulse.runs.run_streams import RunStreams, record_run_streams
@@ -31,7 +30,7 @@ from starpulse.runs.run_streams import RunStreams, record_run_streams
 logger = logging.getLogger(__name__)
 
 
-def reload(path: Path, config: Config) -> None:
+def reload(path: Path, config: RunsConfig, load: Callable[[Path | None], RunsConfig]) -> None:
     """Re-read `path`; an invalid config is logged, and a change to what the worker was built from asks for a restart."""
     try:
         new = load(path)
@@ -48,9 +47,11 @@ def main(
     argv: list[str] | None,
     parser: argparse.ArgumentParser,
     *,
-    run_adapters: Callable[[argparse.ArgumentParser, Config], Any],
+    discover: Callable[[Path | None], Path | None],
+    load: Callable[[Path | None], RunsConfig],
+    run_adapters: Callable[[argparse.ArgumentParser, RunsConfig], Any],
     worker_board: Callable[..., tuple[object, Any]],
-    history_store: Callable[[Config, Path, Mapping[str, dict]], Any],
+    history_store: Callable[[RunsConfig, Path, Mapping[str, dict]], Any],
     hold: Callable[[threading.Event, Callable[[], None]], None],
 ) -> None:
     """Run the Runs worker; `runtime` passes the collaborators it builds (`run_adapters`, `worker_board`,
@@ -79,4 +80,4 @@ def main(
     # Every entry path's run entries also land in the event store, one stream per run.
     streams = RunStreams(EventStore(log.engine))
     threading.Thread(target=record_run_streams, args=(streams, log, stop), daemon=True).start()
-    hold(stop, lambda: reload(path, config))
+    hold(stop, lambda: reload(path, config, load))

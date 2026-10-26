@@ -21,8 +21,8 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+from starpulse.views.bin.blocks import ApiConfig
 
-from starpulse._internal.config.config import Config
 from starpulse.board.adapters.history_window import SETTINGS_FILE, HistoryWindow
 from starpulse.board.claim_refusals import CLAIMS_STREAM
 from starpulse.event_log import events as machine_events
@@ -48,7 +48,7 @@ class Host:
     """What the page needs from `starpulse.runtime`, the composition root that builds it: no context imports `runtime`,
     so `runtime` passes these in. `probes` is the live health probes, `contract` the doctor's reading of them."""
 
-    config: Callable[..., Config]
+    config: Callable[..., ApiConfig]
     prepare: Callable[..., tuple[Any, ...]]
     inherited_socket: Callable[[Any], socket.socket | None]
     listen: Callable[..., socket.socket]
@@ -80,7 +80,7 @@ def main(argv: list[str] | None, parser: argparse.ArgumentParser, *, host: Host)
 def serve_page(  # pragma: no mutate block — serve_forever process boundary
     parser: argparse.ArgumentParser,
     args: argparse.Namespace,
-    config: Config,
+    config: ApiConfig,
     ready: tuple[Any, ...],
     listening: socket.socket,
     *,

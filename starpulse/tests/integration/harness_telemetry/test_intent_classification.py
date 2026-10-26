@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
-from starpulse._internal.config.analytics import Analytics, Labeller
+from starpulse._internal.analytics import Analytics, Labeller
 from starpulse.harness_telemetry.telemetry import signals
 from starpulse.tests.unit.harness_telemetry.test_telemetry import claude, export
 
