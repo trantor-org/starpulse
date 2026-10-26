@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 
+from starpulse._internal.config.adapter_types import module_name
 from starpulse._internal.config.config import Config, discover, load
 
 SELF = "serve"
@@ -166,6 +167,23 @@ def code_of(entry: str, package: str = "starpulse") -> frozenset[tuple[str, str]
         raise ReloadError(f"{entry}: {exc}") from exc
 
 
+def board_adapter_code(board_type: str) -> frozenset[tuple[str, str]]:
+    """The file and content hash of the module `board_type` maps to in `adapter_types`. `config` imports the board
+    adapter lazily, so no entry's import closure holds it and an edit to it would reach no child.
+
+    Raises `ReloadError` when the type names no module, the module is not installed or its file cannot be read."""
+    try:
+        spec = importlib.util.find_spec(module_name(board_type))
+    except (ImportError, ValueError) as exc:
+        raise ReloadError(f"board type {board_type}: {exc}") from exc
+    if spec is None or spec.origin is None:
+        raise ReloadError(f"board type {board_type} names no module file")
+    try:
+        return frozenset({(spec.origin, sha256(Path(spec.origin).read_bytes()).hexdigest())})
+    except OSError as exc:
+        raise ReloadError(f"{spec.origin}: {exc}") from exc
+
+
 def _blocks(name: str, config: Config) -> tuple[object, object]:
     """The (restart, live) config blocks of `name`: the ones a running worker needs a new process for, and the ones it
     re-reads on `SIGHUP`. `serve` itself has none.
@@ -202,12 +220,14 @@ class Reader:
         self._path = discover(config_path)
         self._hashes: dict[str, str] | None = None
 
-    def _blocks(self, name: str) -> tuple[object, object]:
+    def _config(self) -> Config:
         try:
-            config = load(self._path)
+            return load(self._path)
         except (OSError, ValueError) as exc:
             raise ReloadError(f"{self._path}: {exc}") from exc
-        return _blocks(name, config)
+
+    def _blocks(self, name: str) -> tuple[object, object]:
+        return _blocks(name, self._config())
 
     def at_start(self, name: str) -> Reading:
         """The reading of `name` as `serve` starts it: its config blocks and the hash of each module file, no closure."""
@@ -216,5 +236,6 @@ class Reader:
         return Reading(frozenset(), *self._blocks(name), files=self._hashes)
 
     def __call__(self, name: str) -> Reading:
-        blocks = self._blocks(name)
-        return Reading(code_of(ENTRIES[name]), *blocks)
+        config = self._config()
+        code = code_of(ENTRIES[name]) | board_adapter_code(config.board_type)
+        return Reading(code, *_blocks(name, config))

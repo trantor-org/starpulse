@@ -156,3 +156,13 @@ def test_package_hashes_name_each_module_file_of_the_package_with_its_content_ha
 
     assert hashes[str(package / "unused.py")] == sha256((package / "unused.py").read_bytes()).hexdigest()
     assert set(hashes) == {str(package / name) for name in ("__init__.py", "entry.py", "used.py", "unused.py")}
+
+
+@pytest.mark.parametrize("entry", list(closure.ENTRIES))
+def test_every_entry_reads_the_board_adapter_module_the_config_maps_its_type_to(entry: str) -> None:
+    assert any(file.endswith("starpulse/board/adapters/native.py") for file, _ in Reader(None)(entry).code)
+
+
+def test_a_board_type_that_names_no_module_is_a_reload_error() -> None:
+    with pytest.raises(ReloadError, match="nowhere"):
+        closure.board_adapter_code("nowhere")
