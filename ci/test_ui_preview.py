@@ -492,6 +492,20 @@ def test_unpublish_gives_up_on_a_branch_that_never_settles(monkeypatch: pytest.M
         unpublish_demos(gh, "pr-7")
 
 
+def test_put_demo_reports_a_recovered_409_once_and_then_succeeds(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    monkeypatch.setattr("ui_preview.time.sleep", lambda _: None)
+    gh = ConflictedGh({"pr-7/starpulse.html": "old"}, conflicts=1)
+
+    ui_preview._put_demo(gh, "pr-7/starpulse.html", {"message": "Publish"}, tmp_path / "request.json")
+
+    assert [(method, path) for method, path, _ in gh.writes if method == "PUT"] == [("PUT", "pr-7/starpulse.html")]
+    assert capsys.readouterr().err.splitlines() == [
+        f"sp-preview recovered HTTP 409 on repos/{DEMO_REPO}/contents/pr-7/starpulse.html after 2 attempts"
+    ]
+
+
 def test_unpublish_deletes_only_this_prs_folder() -> None:
     gh = DemoGh({"pr-7/a.html": "a", "pr-70/a.html": "b", "main/a.html": "m"})
 

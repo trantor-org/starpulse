@@ -351,6 +351,7 @@ def _blob_sha(gh: Callable[..., str], route: str) -> str | None:
 def _put_demo(gh: Callable[..., str], path: str, body: dict[str, Any], request: Path) -> None:
     """Commit one demo, taking the file's current sha again when another run landed it or moved it under the write."""
     route = f"repos/{DEMO_REPO}/contents/{path}"
+    conflicted = False
     for attempt in range(1, _CONFLICT_ATTEMPTS + 1):
         request.write_text(json.dumps(body))
         try:
@@ -358,12 +359,15 @@ def _put_demo(gh: Callable[..., str], path: str, body: dict[str, Any], request: 
         except RuntimeError as error:
             if attempt == _CONFLICT_ATTEMPTS or not ("wasn't supplied" in str(error) or "HTTP 409" in str(error)):
                 raise
+            conflicted = conflicted or "HTTP 409" in str(error)
             time.sleep(attempt)
             current = _blob_sha(gh, route)
             body.pop("sha", None)
             if current:
                 body["sha"] = current
         else:
+            if conflicted:
+                print(f"sp-preview recovered HTTP 409 on {route} after {attempt} attempts", file=sys.stderr)
             return
 
 
