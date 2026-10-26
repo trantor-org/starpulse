@@ -289,8 +289,8 @@ class ReadRoutes:
             return Response(*ledger_response(self._feed, unquote(event), query))
         if path.startswith(_TASK):
             status, body = task_record(self._feed, self._read, unquote(path.removeprefix(_TASK)))
-            if status == 200:
-                body["record"]["pulls"] = cited_pulls(self._pull_store, body["record"].get("references", []))
+            if status == 200 and (cited := cited_pulls(self._pull_store, body["record"].get("references", []))):
+                body["record"]["pulls"] = cited
             return Response(encode("task", body), status)
         if path.startswith(f"{_MILESTONES}/") and path not in _MILESTONE_WRITES:
             status, body = milestone_record(self._milestones, unquote(path.removeprefix(f"{_MILESTONES}/")))
