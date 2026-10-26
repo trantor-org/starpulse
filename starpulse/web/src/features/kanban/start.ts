@@ -96,17 +96,23 @@ export function defaultPick(assignee: string, h: Harnesses): Pick {
 /** The assignee a pick saves: `@agent-<tier>-<effort>`, or `@agent-<tier>` for a tier with no effort. */
 export const profileOf = (pick: Pick) => `@agent-${pick.tier}${pick.effort ? `-${pick.effort}` : ""}`;
 
+/** The model a pick runs: its effort's model id when the tier names one, else the tier's model. */
+const modelOf = (pick: Pick, h: Harnesses): string => {
+  const tier = harnessOf(pick.harness, h)?.tiers[pick.tier];
+  return (pick.effort && tier?.models?.[pick.effort]) || tier?.model || pick.tier;
+};
+
 /** The line under the pick: the model, its effort and the harness. */
 export function runsOn(pick: Pick, h: Harnesses): string {
   const harness = harnessOf(pick.harness, h);
-  const tier = harness?.tiers[pick.tier];
-  const model = (pick.effort && tier?.models?.[pick.effort]) || tier?.model || pick.tier;
-  return `runs ${model}${pick.effort ? ` at ${pick.effort} effort` : ""} on ${harness?.label ?? pick.harness}`;
+  return `runs ${modelOf(pick, h)}${pick.effort ? ` at ${pick.effort} effort` : ""} on ${harness?.label ?? pick.harness}`;
 }
 
-/** Claude Desktop's new-session link on `desktop`'s SSH host and folder, its prompt prefilled (never sent) to start `task`. */
-const desktopLink = (task: string, desktop: { host: string; folder: string }) =>
-  `claude://code/new?ssh_host=${encodeURIComponent(desktop.host)}&ssh_folder=${encodeURIComponent(desktop.folder)}&q=${encodeURIComponent(`Start ${task}`)}`;
+/** Claude Desktop's new-session link on `desktop`'s SSH host and folder, its prompt prefilled (never sent): the pick's model and effort as slash commands, then `Start TASK-N`. */
+const desktopLink = (task: string, desktop: { host: string; folder: string }, pick: Pick, h: Harnesses) => {
+  const prompt = [`/model ${modelOf(pick, h)}`, pick.effort && `/effort ${pick.effort}`, `Start ${task}`].filter(Boolean).join("\n");
+  return `claude://code/new?ssh_host=${encodeURIComponent(desktop.host)}&ssh_folder=${encodeURIComponent(desktop.folder)}&q=${encodeURIComponent(prompt)}`;
+};
 
 /** A card waiting for its claim stays put: the session is already working it. */
 export const canDrag = (id: string, state: StartState) => !state.claiming[id];
@@ -205,7 +211,7 @@ export class StartStore {
     const desktop = asking && harnessOf(asking.pick.harness, this.state.harnesses)?.desktop;
     if (!asking || !desktop) return;
     this.set({ asking: null });
-    this.open(desktopLink(asking.task.id, desktop));
+    this.open(desktopLink(asking.task.id, desktop, asking.pick, this.state.harnesses));
   }
 
   /** Start a session on the pick: the card goes to In progress at once and waits there for the agent's claim. */
