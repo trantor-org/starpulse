@@ -5,6 +5,8 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { NO_STARMAP_FILTERS, STARMAP_PREFS_KEY, useFilters } from "./shared/viewPrefs";
 import { AdminStore } from "./features/admin/adminPrefs";
+import { applyTheme } from "./features/admin/theme/apply";
+import { ThemeStore } from "./features/admin/theme/themeStore";
 import { HistoryWindowStore } from "./features/admin/historyWindow";
 import { HudStore, type FeedLine, type HudState } from "./render/hud";
 import { BOARD, pathKey, type Path } from "./render/levels";
@@ -48,6 +50,7 @@ export function App() {
   useEffect(() => (drawn ? prefetchViews() : undefined), [drawn]);
   // once it is, the views not yet opened also mount hidden in the background, so a first switch to one only unhides it
   const [admin] = useState(() => held?.admin ?? new AdminStore());
+  const [theme] = useState(() => held?.theme ?? new ThemeStore(applyTheme));
   const [historyWindow] = useState(() => new HistoryWindowStore());
   // a move outlives the view that made it: the card stays where it landed while the writer answers
   const [moves] = useState(() => new MoveStore(postMove));
@@ -167,7 +170,7 @@ export function App() {
         </Suspense>
       </Kept>
       <Kept name="dags" on={view === "dags"} warm={drawn}><Suspense fallback={null}><Dags data={hud.dagData} openPath={open} spot={spottedDag} opening={openingDag} /></Suspense></Kept>
-      <Kept name="admin" on={view === "admin"} warm={drawn}><Suspense fallback={null}><AdminPage store={admin} window={historyWindow} hint={hud.hint} /></Suspense></Kept>
+      <Kept name="admin" on={view === "admin"} warm={drawn}><Suspense fallback={null}><AdminPage store={admin} theme={theme} window={historyWindow} hint={hud.hint} /></Suspense></Kept>
       <Rail shown={shell} hud={hud} view={view} note={view === "kanban" && line && why ? { key: line, text: why } : null}
         can={(l) => (view === "kanban" ? !!l.task : view === "dags" ? !!l.dag : view === "constellation" && !!l.task)}
         spot={(l) => {
