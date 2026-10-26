@@ -1,12 +1,32 @@
 import { describe, expect, it, vi } from "vitest";
 import type { KanbanTask } from "./kanbanModel";
-import { changedFields, ciHistory, editKey, fetchRecord, markdown, menuKey, saveSection, saveTask, SECTION_FIELDS, taskBody, toggleItem, type MenuState, type TaskRecord } from "./taskViewModel";
+import { activityEvents, changedFields, ciHistory, editKey, fetchRecord, markdown, menuKey, postComment, saveSection, saveTask, SECTION_FIELDS, taskBody, toggleItem, type MenuState, type TaskRecord } from "./taskViewModel";
 
 const record = {
   title: "T", profile: "@agent-standard-high", priority: "High", labels: ["needs-review"], milestone: "m-89", dependencies: ["TASK-1"],
   description: "d", plan: "1. a", notes: "n", acceptanceCriteria: [{ n: 1, text: "a gate", checked: true }], definitionOfDone: [],
 };
 const reply = (status: number, body: unknown) => async () => new Response(JSON.stringify(body), { status });
+
+describe("activityEvents", () => {
+  const step = (event: string, state: string, at: number) => ({ event, state, at });
+  const machineTask = (machines: KanbanTask["machines"]) => ({ id: "TASK-1", machines }) as KanbanTask;
+  it("lists every machine step oldest first, across machines", () => {
+    const events = activityEvents(machineTask([
+      { machine: "in-progress", state: "pr_opened", at: 300, trail: [step("AC_CHECKPOINTED", "in_progress", 200), step("PR_OPENED", "pr_opened", 300)] },
+      { machine: "ci", state: "green", at: 250, trail: [step("CI_PASSED", "green", 250)] },
+    ]));
+    expect(events.map((e) => [e.at, e.machine, e.event])).toEqual([
+      [200, "in-progress", "AC_CHECKPOINTED"],
+      [250, "ci", "CI_PASSED"],
+      [300, "in-progress", "PR_OPENED"],
+    ]);
+  });
+
+  it("is empty for a task whose machines have no steps", () => {
+    expect(activityEvents(machineTask([{ machine: "in-progress", state: "ready", at: 0, trail: [] }]))).toEqual([]);
+  });
+});
 
 describe("fetching a task's record", () => {
   it("asks /api/task/<id> and returns the record the server sends", async () => {
@@ -20,6 +40,25 @@ describe("fetching a task's record", () => {
   it("returns null when the board cannot read the task or the request fails", async () => {
     expect(await fetchRecord("TASK-1", reply(404, { error: "no" }))).toBeNull();
     expect(await fetchRecord("TASK-1", async () => { throw new Error("offline"); })).toBeNull();
+  });
+});
+
+describe("postComment", () => {
+  it("posts the comment on the edit endpoint naming the title as it stands, changing no field", async () => {
+    let sent: { url: string; body: unknown } | undefined;
+    const ok = await postComment("TASK-1", record as TaskRecord, "  looks good  ", async (url, init) => {
+      sent = { url, body: JSON.parse(String(init?.body)) };
+      return new Response("{}");
+    });
+
+    expect(ok).toBe(true);
+    expect(sent?.url).toBe("/api/edit");
+    expect(sent?.body).toMatchObject({ task: "TASK-1", base: { title: "T" }, changes: { title: "T" }, comment: "looks good" });
+  });
+
+  it("reports a refused or unreachable write as not posted", async () => {
+    expect(await postComment("TASK-1", record as TaskRecord, "x", reply(409, { error: "stale" }))).toBe(false);
+    expect(await postComment("TASK-1", record as TaskRecord, "x", async () => { throw new Error("offline"); })).toBe(false);
   });
 });
 
