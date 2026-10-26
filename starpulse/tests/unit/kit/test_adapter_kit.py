@@ -2,12 +2,20 @@
 
 import re
 from collections.abc import Callable
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
+from starpulse._internal.config.config import load
+from starpulse._internal.kit.adapter_kit import (
+    BoardAdapterKit,
+    MachineEventsAdapterKit,
+    RunsAdapterKit,
+    _AdapterKit,
+    assembled,
+)
 from starpulse.board.model.seam import Written
-from starpulse._internal.kit.adapter_kit import BoardAdapterKit, MachineEventsAdapterKit, RunsAdapterKit, _AdapterKit
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.tests.machines import MACHINES
 
@@ -219,3 +227,22 @@ def test_every_status_of_the_closed_enum_passes_the_runs_checks_with_or_without_
     assert [failing(check) for check in every_check(adapter(RunsAdapterKit, records))] == [False] * len(
         every_check(adapter(RunsAdapterKit, records))
     )
+
+
+def test_a_machine_file_edited_between_two_assemblies_draws_the_edited_machine(tmp_path: Path) -> None:
+    config = tmp_path / "starpulse.toml"
+    config.write_text("")
+    machine = tmp_path / ".starpulse" / "machines" / "delivery.yaml"
+    machine.parent.mkdir(parents=True)
+    machine.write_text(
+        "name: delivery\nstates:\n  start: {initial: true}\n  shipped: {final: true}\nevents:\n  SHIPPED:\n    - {from: start, to: shipped}\n"
+    )
+    assembled(load(config), tmp_path)
+
+    machine.write_text(
+        "name: delivery\nstates:\n  start: {initial: true}\n  built: {}\n  shipped: {final: true}\n"
+        "events:\n  BUILT:\n    - {from: start, to: built}\n  SHIPPED:\n    - {from: built, to: shipped}\n"
+    )
+    _, feed = assembled(load(config), tmp_path)
+
+    assert [state["id"] for state in feed.machines["delivery"]["states"]] == ["start", "built", "shipped"]

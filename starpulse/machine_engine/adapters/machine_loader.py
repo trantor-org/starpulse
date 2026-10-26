@@ -1,8 +1,10 @@
 """Read a machine from its YAML file: parse it, validate it against `machine.schema.json`, and compile it.
 
-An error cites the file and the line of the value the schema or the compiler refuses.
+An error cites the file and the line of the value the schema or the compiler refuses. A file is parsed once per
+process until its modification time or size changes, so a test suite that assembles many boards reads each once.
 """
 
+import copy
 import json
 from collections.abc import Iterable
 from pathlib import Path
@@ -62,7 +64,24 @@ def load_machine(path: Path, registry: Registry = Registry()) -> Compiled:
     return compile_document(_read(path), path, registry)
 
 
+#: Each read document by resolved path, with the modification time and size it was read at.
+_READ: dict[Path, tuple[int, int, dict[str, Any]]] = {}
+
+
 def _read(path: Path) -> dict[str, Any]:
+    """The validated document at `path`, a copy the caller may change."""
+    try:
+        stat = path.stat()
+    except OSError:
+        return _parse(path)
+    key = path.resolve()
+    cached = _READ.get(key)
+    if cached is None or cached[:2] != (stat.st_mtime_ns, stat.st_size):
+        cached = _READ[key] = (stat.st_mtime_ns, stat.st_size, _parse(path))
+    return copy.deepcopy(cached[2])
+
+
+def _parse(path: Path) -> dict[str, Any]:
     try:
         text = path.read_text()
         document = yaml.safe_load(text)
