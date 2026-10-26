@@ -161,6 +161,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   // ---- view: scroll zooms about the cursor (scale only, never changes level), drag pans; kept per screen size and level ----
   const railW = () => document.getElementById("rail")?.offsetWidth ?? 0;
   const navW = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--nav")) || 0;
+  // the view bar along the bottom edge at phone width mounts after the Board's first frame: its height comes from the stylesheet, not the bar
+  const barH = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--pnav")) || 0;
   // the canvas is the page between the navigator and the rail, so its size (not the window's) keys the remembered zoom
   const viewKey = () => `fv.view.${W}x${H}.${pathKey(path)}.${scene?.w}x${scene?.h}`;
   // the default view fits the level's content box (the whole sky on the Board), centred between the open navigator and the
@@ -217,7 +219,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     ({ left: L, width: W } = canvasSpace(innerWidth, navW(), railW()));
     FW = W;
     // the view bar along the bottom edge at phone width is not canvas
-    H = innerHeight - (document.getElementById("pnav")?.offsetHeight ?? 0);
+    H = innerHeight - barH();
     cv.width = W * dpr;
     cv.height = H * dpr;
     cv.style.left = `${L}px`;

@@ -188,7 +188,7 @@ function Navigator({ shell, ...props }: { shell: boolean } & Parameters<typeof N
     addEventListener("keydown", key);
     return () => removeEventListener("keydown", key);
   }, [sheet]);
-  // the Star Map's canvas ends above the bar, which mounts after the renderer started: it fits again once the bar is drawn and whenever the text size resizes it
+  // the Star Map's canvas ends above the bar and leaves its height from the first frame; it fits again whenever the text size resizes the bar
   const bar = useRef<HTMLElement>(null);
   useEffect(() => {
     const el = bar.current;
