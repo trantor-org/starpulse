@@ -50,7 +50,7 @@ interface Branch {
   at: number[];
   /** Placed where no lane in reach was clear of the Board's curves, so its stations may sit on one. */
   loose?: Loose;
-  /** The sun's geometry and the Board's curves and names the branch's place was last checked against. */
+  /** The sun's geometry and the Board's curves and hangars the branch's place was last checked against. */
   ok?: string;
   /** Uprooted once to make room for another branch, so it is never uprooted again: two branches cannot keep uprooting each other. */
   moved?: boolean;
@@ -159,7 +159,14 @@ function fitter(b: Branch, sc: Scene, spare: (o: Branch) => boolean = () => fals
   const v = fitLevel(sc, sc.w, sc.h), view: Box = { x0: -v.x / v.k + BOX, y0: -v.y / v.k + BOX, x1: (sc.w - v.x) / v.k - BOX, y1: (sc.h - v.y) / v.k - BOX };
   const off = (ps: Pt[]) => ps.some((p) => !inBox(p, view, 0));
   const onCurve = ({ st, spoke }: { st: Pt[]; spoke: Pt[] }) => st.some((p) => close(p, all)) || (b.ring === 1 && close(spoke[0], docked)) || spoke.filter((p) => close(p, docked)).length * 4 > 3 * CLEAR;
-  const texts = [...sc.names, ...(sc.hangars ?? [])], named = (p: Pt) => texts.some((n) => inBox(p, n, OFF));
+  // a sub-machine keeps off the name its parent prints at its end, which drawBranches sets down first
+  const par = b.parent ? branches.get(b.parent) : undefined, tag: Box[] = [];
+  if (par && par.route.length) {
+    const end = par.route.at(-1)!, a = angle(g, end) + par.dir * 0.12, h = 9.5 / v.k, w = textW(par.machine, 9.5) / v.k, sp = stepSpot(g, a, Math.hypot(end.x - g.x, end.y - g.y));
+    const x0 = sp.align === "left" ? sp.x : sp.align === "right" ? sp.x - w : sp.x - w / 2;
+    tag.push({ x0, y0: sp.y - h / 2, x1: x0 + w, y1: sp.y + h / 2 });
+  }
+  const texts = [...(sc.hangars ?? []), ...tag], named = (p: Pt) => texts.some((n) => inBox(p, n, OFF));
   // the arc between its stations and the spoke out to them stay off every printed name too
   const track = ({ st, spoke }: { st: Pt[]; spoke: Pt[] }, lane: number) => {
     const r = rad(g, lane), a0 = b.ring === 1 ? angle(g, st[0]) : angle(g, spoke[spoke.length - 1]), a1 = angle(g, st[st.length - 1]), d = Math.atan2(Math.sin(a1 - a0), Math.cos(a1 - a0));
@@ -393,10 +400,10 @@ export const mix = (a: string, b: string, t: number) => {
   const ch = (s: number) => Math.round(((x >> s) & 255) * (1 - u) + ((y >> s) & 255) * u);
   return `#${((ch(16) << 16) | (ch(8) << 8) | ch(0)).toString(16).padStart(6, "0")}`;
 };
-/** The sun's place and size and the Board's curves and names, which a branch's place was checked against. */
+/** The sun's place and size and the Board's curves and hangars, which a branch's place was checked against. */
 function layout(sc: Scene, sun: string) {
   const g = sc.galaxies[sun];
-  return [sc.bEdges.length, sc.names.length, sc.hangars?.length ?? 0, Math.round(g.x), Math.round(g.y), Math.round(g.edge)].join();
+  return [sc.bEdges.length, sc.hangars?.length ?? 0, Math.round(g.x), Math.round(g.y), Math.round(g.edge)].join();
 }
 /** The sky a branch on `sun` is placed in: the sun and the Board round it, and where the sun's other branches sit. */
 function room(sc: Scene, sun: string) {
@@ -594,7 +601,7 @@ export function drawBranches(dc: DrawCtx, d: Drawing, sc: Scene, at: Pt | null) 
   const occ = new Map<string, number>();
   for (const m of mems.values()) if (m.node.includes("#")) occ.set(m.node, (occ.get(m.node) ?? 0) + 1);
   const hover = dc.hover?.kind === "task" ? mems.get(dc.hover.o.id)?.bks : undefined, reach = 10 / dc.K;
-  const labs: { s: string; t: Spot; px: number; rank: number; n: number; a: number; e: number }[] = [], pins: Pt[] = [];
+  const labs: { s: string; t: Spot; px: number; rank: number; n: number; a: number; e: number; pin?: Pt }[] = [], pins: Pt[] = [];
   for (const b of branches.values()) {
     const g = sc.galaxies[b.sun], own = b.route.slice(b.own), cum = lengths(own), tip = b.ext * cum.at(-1)!;
     if (!g || own.length < 2) continue;
@@ -616,19 +623,19 @@ export function drawBranches(dc: DrawCtx, d: Drawing, sc: Scene, at: Pt | null) 
       // a step's name prints square off its line: outward from an arc, to the branch's side of a ray
       const i = b.st[s], u = b.route[Math.min(i + 1, b.route.length - 1)], v = b.route[Math.max(i - 1, b.own)], r = angle(g, p);
       const a = Math.abs(Math.sin(Math.atan2(u.y - v.y, u.x - v.x) - r)) > 0.7 ? r : r + (b.dir * Math.PI) / 2;
-      labs.push({ s: name.replace(/_/g, " "), t: stepSpot(p, a, d.labPx(5)), px: 9, rank: n ? 1 : 2, n, a, e: b.ext });
+      labs.push({ s: name.replace(/_/g, " "), t: stepSpot(p, a, d.labPx(5)), pin: p, px: 9, rank: n ? 1 : 2, n, a, e: b.ext });
     });
     if (!hot) continue;
     // a name centred above or below the sun would sit on its own arc, so it moves a line further out
     const end = b.route.at(-1)!, a = angle(g, end) + b.dir * 0.12, R = Math.hypot(end.x - g.x, end.y - g.y) + (Math.abs(Math.cos(a)) <= 0.2 ? d.labPx(9.5) : 0);
     labs.push({ s: b.machine, t: stepSpot(g, a, R), px: 9.5, rank: 0, n: 0, a, e: b.ext });
   }
-  // names print machine first, then occupied steps, each only where it clears every name and station already down
+  // names print machine first, then occupied steps, each only where it clears every name and every station but its own
   const taken: Box[] = [];
   for (const l of labs.sort((x, y) => x.rank - y.rank)) {
     const h = d.labPx(l.px), w = (textW(l.s, l.px) * h) / l.px, x0 = l.t.align === "left" ? l.t.x : l.t.align === "right" ? l.t.x - w : l.t.x - w / 2;
     const box = { x0, y0: l.t.y - h / 2, x1: x0 + w, y1: l.t.y + h / 2 };
-    if (taken.some((o) => box.x0 < o.x1 && o.x0 < box.x1 && box.y0 < o.y1 && o.y0 < box.y1) || pins.some((p) => inBox(p, box, h / 4))) continue;
+    if (taken.some((o) => box.x0 < o.x1 && o.x0 < box.x1 && box.y0 < o.y1 && o.y0 < box.y1) || pins.some((p) => p !== l.pin && inBox(p, box, h / 4))) continue;
     taken.push(box);
     d.text(l.s, l.t.x, l.t.y, h, rgba(LABEL, 0.85 * l.e), l.t.align, 300);
     if (l.n > 3) d.text(`+${l.n - 3}`, l.t.x + Math.cos(l.a) * h * 4, l.t.y + Math.sin(l.a) * h * 4, d.labPx(8), rgba(LABEL, 0.6 * l.e));

@@ -7,10 +7,10 @@ import { stepStates } from "../features/level/stepStates";
 import { ACT, DAG_COLOR, EXT, easeO, rgba, tierColor, type Drawing, type DrawCtx } from "./draw";
 import { activeDag, dagTurn, IDLE, nameLines, touches, turnDags, type Pivot, type Ties } from "./dagTies";
 import {
-  BOARD_COLOR, SUN_R, TAU, bez, clip, curveOf, stateR, taskSlot, terminal, textW,
+  BOARD_COLOR, SUN_R, TAU, bez, clip, curveOf, stateR, taskSlot, tally, terminal, textW,
   type BEdge, type Curve, type GNode, type MEdge, type MState, type Planet, type Scene,
 } from "./scene";
-import { FLARE, PULSE, RING, TRAVEL, countText, hosted, type Move, type Moves, type Sky } from "./sky";
+import { FLARE, PULSE, RING, TRAVEL, hosted, type Move, type Moves, type Sky } from "./sky";
 
 /** How a tied DAG's orbiter looks: the Spinner while its DAG runs, else its last run's colour, with a dashed ring after a failed run. */
 export const orbiterLook = (status: string) => ({ spin: status === "running", color: status === "queued" ? "#94a3b8" : DAG_COLOR[status] || "#94a3b8", dashed: status === "failed" });
@@ -47,7 +47,7 @@ export function boardDraw(dc: DrawCtx, d: Drawing, io: BoardIO) {
       const hot = isHot("galaxy", g);
       body(g, hot);
       drawTrackRings(g, g.color);
-      label(g.name, g.lab.x, g.lab.y, hot, `${countText(g.n, g.today)}${g.subs.length ? ` · ${g.subs.length} lifecycles` : ""}`, 13);
+      label(g.name, g.lab.x, g.lab.y, hot, tally(g), 13);
     }
   }
   // lifecycle moons: still, named bodies on their state's dashed outer ring, brighter while they have sessions, ringed in amber while one moves.

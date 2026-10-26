@@ -179,15 +179,17 @@ type Box = [number, number, number, number, number];
 /** The area two boxes share, weighted by `b`'s. */
 export const over = (a: Box, b: Box) => Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0])) * Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1])) * b[4];
 
-/** What a hangar's name and orbiters keep clear of, each padded: every state's disc (but `state`'s own) and its name and count, every moon and
+/** How little a name's overlap with a neighbour's footprint counts beside one with an orbiter or a moon label: suns sized to their names leave
+ *  footprints that tile the gaps, so every spot touches one, and the name still has to stay off its own orbiters. */
+const DISC = 0.02;
+
+/** What a hangar's name and orbiters keep clear of, each padded: every state's disc (but `state`'s own), every moon and
  *  its full name (a zoomed-in map cuts none), and the hangars already placed with their orbiters. */
 export function obstacles(sc: Scene, placed: Pivot[], u: number, ts: number, state?: string): Box[] {
   const pad = 8 * u, out: Box[] = [];
   for (const s of Object.values(sc.galaxies)) {
     const R = Math.max(s.R, s.visR);
-    if (s.id !== state) out.push([s.x - R - pad, s.y - R - pad, s.x + R + pad, s.y + R + pad, 1]);
-    const w = (Math.max(s.name.length * 4.2, 54) + 6) * u * ts;
-    out.push([s.lab.x - w - pad, s.lab.y - 16 * u * ts - pad, s.lab.x + w + pad, s.lab.y + 26 * u * ts + pad, 1]);
+    if (s.id !== state) out.push([s.x - R - pad, s.y - R - pad, s.x + R + pad, s.y + R + pad, DISC]);
   }
   for (const m of sc.moons) {
     const left = m.x < m.parent.x, x0 = m.x + (left ? -1 : 1) * (m.R + m.ext + 10), w = (m.label.length * 6 + 4) * u * ts, h = 9 * u * ts;
@@ -225,7 +227,7 @@ function place(sc: Scene, state: string, orbs: Orbiter[], placed: Pivot[], u: nu
       }
   };
   spread();
-  // the ring crosses the state's own name and its neighbours: each orbiter takes the nearest stretch clear of them
+  // the ring crosses its neighbours and their labels: each orbiter takes the nearest stretch clear of them
   const ring = obstacles(sc, placed, u, ts, state), rr = 10 * u, step = Math.PI / 90;
   const posAt = (a: number) => ({ x: c.x + Math.cos(a) * orbit, y: c.y + Math.sin(a) * orbit });
   const free = (a: number) => {

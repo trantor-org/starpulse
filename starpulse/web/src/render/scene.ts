@@ -311,9 +311,9 @@ export interface FoldView {
   p1?: Pt;
   ledger?: LedgerView;
 }
-/** A box on the Board's sky that a name prints in, which no path crosses: a state's name and count, or a machine's row out to its name's end. */
+/** A box on the Board's sky that a name prints in, which no path crosses: a tied DAG's hangar name and orbiters. */
 export interface NameBox {
-  /** The state's id, or `state/machine` for a machine's row. */
+  /** The hangar's id: `hangar:` and its state or DAG. */
   of: string;
   x0: number;
   y0: number;
@@ -331,8 +331,6 @@ export interface Scene {
   px?: number;
   galaxies: Record<string, Galaxy>;
   bEdges: BEdge[];
-  /** The Board's names, each in its box. */
-  names: NameBox[];
   /** Every tied-DAG hangar's name and orbiters, each in its box, which the phase machines keep off. */
   hangars?: NameBox[];
   tasks: Body[];
@@ -458,8 +456,15 @@ export const clip = (s: string) => (s.length > NAME_MAX ? `${s.slice(0, NAME_MAX
 
 /** The events a machine takes from one of its states back to the same state. */
 const loopsOf = (flow: { machine: { transitions: Transition[] } }, id: string) => flow.machine.transitions.filter((t) => t.source === id && t.target === id).map((t) => t.event);
-/** Every Board state's sun, on the Board and on its own level: one fixed size, so neither its tasks nor its share of the moves resizes it. */
+/**
+ * Every Board state's sun, on the Board and on its own level: one size, so neither its tasks nor its share of the moves resizes it. On the Board
+ * it is the least: the suns grow together, in sky units, to hold the longest name and count at the type size the zoom gives.
+ */
 export const SUN_R = 34;
+/** Half the height, in `F` units, of a Board state's name and count lines about the sun's centre, and the margin a sun keeps round them. */
+const LINES = 14, SUN_PAD = 4;
+/** A Board state's count line: its tasks, and its lifecycles when it holds any. */
+export const tally = (g: { n: number; today?: number; subs: unknown[] }) => `${countText(g.n, g.today)}${g.subs.length ? ` · ${g.subs.length} lifecycles` : ""}`;
 /**
  * A machine state's radius from its task count, growing with its square root to a fixed maximum (near 150 tasks on a machine level, 55 inside
  * a planet).
@@ -499,69 +504,32 @@ export function boardPlaces(states: { id: string; final: boolean }[], transition
 /** A sun's radius: `min` until its `n` tasks, `gap` apart on the ring `pad` outside it, would need a second ring; past that, the radius that holds them in one. */
 export const oneRing = (n: number, gap: number, pad: number, min: number) => Math.max(min, Math.ceil((n * gap) / TAU) - pad);
 
-const CLEAR = 20, HOLD = 16, NAME_CLEAR = 5, CROSS = 0.05, NAMED = 2, SKIM = 1, THROUGH = 50, NEAR = 10;
+const CLEAR = 20, HOLD = 16, HELD_SLACK = 5, CROSS = 0.05, SKIM = 1, THROUGH = 50, NEAR = 10;
 /**
  * The last Board's routed paths, keyed on everything that places them. A stream delta rarely moves a state, so the next Board reuses the
  * search instead of running it again on every task move.
  */
 const last = { routes: { key: "", curves: [] as (Curve | null)[] } };
-/**
- * Where a path bending through a point meets `g`'s rim: the point on the rim facing it. Where that point is in one of `rows`, the rows
- * `g`'s machines print their names in, the path meets the rim at the nearest point round it, in steps of 2°, that is in none.
- */
-const rimOf = (g: Galaxy, rows: NameBox[] = []) => {
-  const on = (t: number) => ({ x: g.x + Math.cos(t) * g.edge, y: g.y + Math.sin(t) * g.edge });
-  const shut = (p: Pt) => rows.some((n) => p.x > n.x0 - NAME_CLEAR && p.x < n.x1 + NAME_CLEAR && p.y > n.y0 - NAME_CLEAR && p.y < n.y1 + NAME_CLEAR);
-  // every spot on the sky asks, so the rim is read once, a degree at a time, the first time a path faces a row; a step then looks its
-  // angle up before it is measured
-  let open: boolean[] | undefined;
-  const free = (t: number) => {
-    if (!open![((Math.round((t * 180) / Math.PI) % 360) + 360) % 360]) return null;
-    const p = on(t);
-    return shut(p) ? null : p;
-  };
-  return (c: Pt) => {
-    const at = Math.atan2(c.y - g.y, c.x - g.x), p = on(at);
-    if (!rows.length || !shut(p)) return p;
-    open ||= Array.from({ length: 360 }, (_, k) => !shut(on((k * Math.PI) / 180)));
-    for (let i = 1; i <= 45; i++) {
-      const q = free(at + (i * Math.PI) / 90) ?? free(at - (i * Math.PI) / 90);
-      if (q) return q;
-    }
-    return p;
-  };
-};
-/** The rows a state's machines print their names in, of all the names on the Board. */
-const rowsOf = (g: Galaxy, names: NameBox[]) => names.filter((n) => n.of.startsWith(`${g.id}/`));
-/**
- * Whether a path meets the line `u = at` between `lo` and `hi` on the other axis: `a`, `b` and `c` are the path's quadratic along `u`
- * (a·t² + b·t + c), `a2`, `b2` and `c2` its quadratic along the other axis.
- */
-const meets = (a: number, b: number, c: number, a2: number, b2: number, c2: number, at: number, lo: number, hi: number) => {
-  const within = (t: number) => {
-    const v = (a2 * t + b2) * t + c2;
-    return t >= 0 && t <= 1 && v > lo && v < hi;
-  };
-  if (Math.abs(a) < 1e-9) return Math.abs(b) > 1e-9 && within((at - c) / b);
-  const d = b * b - 4 * a * (c - at);
-  return d >= 0 && (within((-b + Math.sqrt(d)) / (2 * a)) || within((-b - Math.sqrt(d)) / (2 * a)));
+/** Where a path bending through a point meets `g`'s rim: the point on the rim facing it. */
+const rimOf = (g: Galaxy) => (c: Pt) => {
+  const t = Math.atan2(c.y - g.y, c.x - g.x);
+  return { x: g.x + Math.cos(t) * g.edge, y: g.y + Math.sin(t) * g.edge };
 };
 /**
- * A Board path between two states. It keeps CLEAR px from every other state's footprint, out of what its own two draw, and NAME_CLEAR
- * from the names in `names`, its own two states' included. Where the path from `c0` would not, its control point moves to a spot on the
- * sky; each spot costs its bend from `c0` and what its path runs over, counted as the bend it is worth to avoid: NAMED for a name, SKIM
- * for a state's footprint, THROUGH for what a state draws (twice that at its centre), and CROSS for each point of it on a path already drawn. The cheapest spot
- * wins, so a path that can clear everything takes the least bend that does, and one that cannot runs over the least it can. `sky` bounds
- * the path; its control point stays on it unless every such spot still runs through a state's body, when it may lie beyond any edge, up to the
- * sky's own size past it, as far as the path itself stays on the sky. `held` is the bend the path took last, which it keeps while that stays
- * out of every name and CLEAR - NAME_CLEAR from every other footprint.
+ * A Board path between two states. It keeps CLEAR px from every other state's footprint and out of what its own two draw. Where the path
+ * from `c0` would not, its control point moves to a spot on the sky; each spot costs its bend from `c0` and what its path runs over, counted
+ * as the bend it is worth to avoid: SKIM for a state's footprint, THROUGH for what a state draws (twice that at its centre), and CROSS for
+ * each point of it on a path already drawn. The cheapest spot wins, so a path that can clear everything takes the least bend that does, and
+ * one that cannot runs over the least it can. `sky` bounds the path; its control point stays on it unless every such spot still runs through
+ * a state's body, when it may lie beyond any edge, up to the sky's own size past it, as far as the path itself stays on the sky. `held` is
+ * the bend the path took last, which it keeps while that stays CLEAR - HELD_SLACK from every other footprint.
  */
-export function routed(a: Galaxy, b: Galaxy, c0: Pt, all: Galaxy[], drawn: Drawn, sky: Pt, held?: Pt, names: NameBox[] = []): Curve {
-  const others = all.filter((g) => g !== a && g !== b), from = rimOf(a, rowsOf(a, names)), to = rimOf(b, rowsOf(b, names));
+export function routed(a: Galaxy, b: Galaxy, c0: Pt, all: Galaxy[], drawn: Drawn, sky: Pt, held?: Pt): Curve {
+  const others = all.filter((g) => g !== a && g !== b), from = rimOf(a), to = rimOf(b);
   const shape = (c: Pt): Curve => ({ p0: from(c), c, p1: to(c) });
   /** What a path runs over, with `by` the room it leaves a footprint: counted only up to `cap`, past which the path is already beaten. */
   const over = ({ p0, c, p1 }: Curve, by = CLEAR, cap = Infinity) => {
-    // a path lies inside the box of its three points, so only a state or a name whose margin reaches that box can be in its way
+    // a path lies inside the box of its three points, so only a state whose margin reaches that box can be in its way
     const x0 = Math.min(p0.x, c.x, p1.x), x1 = Math.max(p0.x, c.x, p1.x), y0 = Math.min(p0.y, c.y, p1.y), y1 = Math.max(p0.y, c.y, p1.y);
     const near = others.filter((g) => g.x + g.R + by > x0 && g.x - g.R - by < x1 && g.y + g.R + by > y0 && g.y - g.R - by < y1), deep = near.map(() => 0);
     let n = 0, own = 0;
@@ -580,15 +548,6 @@ export function routed(a: Galaxy, b: Galaxy, c0: Pt, all: Galaxy[], drawn: Drawn
       if (!own && ((x - a.x) ** 2 + (y - a.y) ** 2 < (a.edge - 2) ** 2 || (x - b.x) ** 2 + (y - b.y) ** 2 < (b.edge - 2) ** 2)) n += own = THROUGH;
       if (n >= cap) return n;
     }
-    // a name is thinner than the step between two of those points, so the path itself is tested: it enters a box it does not start in
-    // only across one of the box's four sides
-    const pad = NAME_CLEAR + by - CLEAR, ax = p0.x - 2 * c.x + p1.x, bx = 2 * (c.x - p0.x), ay = p0.y - 2 * c.y + p1.y, by2 = 2 * (c.y - p0.y);
-    for (const k of names) {
-      const l = k.x0 - pad, r = k.x1 + pad, t = k.y0 - pad, d = k.y1 + pad;
-      if (r <= x0 || l >= x1 || d <= y0 || t >= y1) continue;
-      if ((p0.x > l && p0.x < r && p0.y > t && p0.y < d) || meets(ax, bx, p0.x, ay, by2, p0.y, l, t, d) || meets(ax, bx, p0.x, ay, by2, p0.y, r, t, d) || meets(ay, by2, p0.y, ax, bx, p0.x, t, l, r) || meets(ay, by2, p0.y, ax, bx, p0.x, d, l, r)) n += NAMED;
-      if (n >= cap) return n;
-    }
     return n;
   };
   /** The paths drawn that `e` crosses, counted only while they can still bring it under `cap`. */
@@ -600,11 +559,11 @@ export function routed(a: Galaxy, b: Galaxy, c0: Pt, all: Galaxy[], drawn: Drawn
     }
     return n;
   };
-  // a bent path straightens only once the straight path clears by HOLD more, and keeps its bend while that clears by NAME_CLEAR less than a
+  // a bent path straightens only once the straight path clears by HOLD more, and keeps its bend while that clears by HELD_SLACK less than a
   // new bend must, so a count gaining a digit or a ring of tasks filling beside the path never hops it to another spot and back
   const straight = shape(c0);
   if (!over(straight, held ? CLEAR + HOLD : CLEAR)) return straight;
-  if (held && !over(shape(held), CLEAR - NAME_CLEAR)) return shape(held);
+  if (held && !over(shape(held), CLEAR - HELD_SLACK)) return shape(held);
   // the spots are tried nearest first, equals in sky order, until the next is further than the best costs. That is a few dozen in for most
   // paths, so the search takes the spots a band of bend at a time (each band twice as wide as the last, so a spot is measured once more at
   // most) and sorts only the band it reaches
@@ -727,12 +686,13 @@ export function rings(n: number, r0: number, gap: number, ringGap: number) {
 const FOOT = { task0: SUN_R + 14, task1: SUN_R + 38, moon: 18, sub: 16 };
 /** The least dot and ring gap a Board state's tasks keep, so a pointer can pick one: a state too full for its band at this gap widens it. */
 const ROOM = 8;
-/** How far past task1 a Board state's band widens to hold `n` tasks ROOM apart; none while they fit. */
-const widen = (n: number) => Math.max(0, rings(n, FOOT.task0, ROOM, ROOM).outer - FOOT.task1);
+/** How far past task1 a Board state's band widens to hold `n` tasks ROOM apart round a sun `d` larger than SUN_R; none while they fit. */
+const widen = (n: number, d: number) => Math.max(0, rings(n, FOOT.task0 + d, ROOM, ROOM).outer - FOOT.task1 - d);
 /** The machines a Board state's ring holds before the rest page: its primary and the MOONS - 1 on the page. */
 export const MOONS = 8;
 /** The Board's greatest zoom: the sun is today's size, so a Board of a few states grows to fill the canvas only this far. */
 const ZOOM_MAX = 16;
+const ZOOM_MIN = 0.05;
 /**
  * The dot and ring gaps that hold `n` bodies in rings from r0 out to r1: a fuller body adds rings inside its band, closer together, never past it,
  * and never closer than `least`.
@@ -801,7 +761,7 @@ export function build(ctx: Ctx, l: Level): Scene {
 function layoutLevel(ctx: Ctx, l: Level): Scene {
   const { S, moves, W, H, T } = ctx, ease = ctx.ease ?? ((_key: string, v: number) => v), routes = ctx.routes ?? new Map<string, Pt>(), EVENTS = moves.events, board = S.board, SUBS = S.subs, dagBy = S.dagBy;
   const stateName = (id: string) => board.machine.states.find((s) => s.id === id)?.name || id;
-  const scene: Scene = { w: 2460, h: 1340, galaxies: {}, bEdges: [], names: [], tasks: [], machineTasks: [], mStates: {}, mEdges: [], planets: [], moons: [], subStates: [], stars: {}, groups: [], sun: null, machine: null, pivot: null, hops: [], entries: [], exits: [] };
+  const scene: Scene = { w: 2460, h: 1340, galaxies: {}, bEdges: [], tasks: [], machineTasks: [], mStates: {}, mEdges: [], planets: [], moons: [], subStates: [], stars: {}, groups: [], sun: null, machine: null, pivot: null, hops: [], entries: [], exits: [] };
   // a DAG's instance prefix is drawn only where another instance runs a DAG by the same bare name
   const bare = (name: string) => name.slice(name.indexOf("/") + 1), bareCount = new Map<string, number>();
   for (const n of Object.keys(dagBy)) bareCount.set(bare(n), (bareCount.get(bare(n)) ?? 0) + 1);
@@ -853,14 +813,14 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     // rings packed into the band round it. Its machines are drawn only while they run, as branches off it (transit.ts), so they reserve no ring of
     // their own.
     const FREE = SUN_R + 7, MOON_RING = 104;
-    const footprint = (moons: boolean, n: number) => {
-      const more = widen(n);
+    const footprint = (moons: boolean, n: number, d: number) => {
+      const more = widen(n, d);
       if (!moons) {
-        const band = FOOT.task1 + more, R = band + 6;
+        const band = FOOT.task1 + d + more, R = band + 6;
         return { moonR: band, R, reach: [R, R] as [number, number], band };
       }
-      const side = MOON_RING + more + 12 + textW("x".repeat(NAME_MAX), 9.5) * F;
-      return { moonR: MOON_RING + more, R: MOON_RING + more + 22, reach: [side, side] as [number, number], band: FOOT.task1 + more };
+      const side = MOON_RING + d + more + 12 + textW("x".repeat(NAME_MAX), 9.5) * F;
+      return { moonR: MOON_RING + d + more, R: MOON_RING + d + more + 22, reach: [side, side] as [number, number], band: FOOT.task1 + d + more };
     };
     // A state's primary machine whose states open child machines is drawn as its phases: each phase's steps are its child's states.
     const phasesOf = (sid: string) => {
@@ -876,13 +836,13 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
       const q = S.latest[a.id], f = flowsOf(sid)[0];
       return !!q && !a.today && ps.some((p) => (q.flow === f && p.q.id === q.state) || p.child.machine === q.flow);
     };
-    const radius = (st: (typeof states)[number]) => {
+    const radius = (st: (typeof states)[number], sunR: number) => {
       const all = byState[st.id] || [], fs = flowsOf(st.id), ps = phasesOf(st.id), sides = ps.flatMap((p) => p.side);
       // the sun's own tasks: none in a phase, a side machine or a lifecycle's sub-state
-      const here = all.filter((a) => !sides.includes(S.latest[a.id]?.flow ?? "") && !phased(st.id, ps, a) && !deepest(a)), foot = footprint(false, here.length);
+      const here = all.filter((a) => !sides.includes(S.latest[a.id]?.flow ?? "") && !phased(st.id, ps, a) && !deepest(a)), foot = footprint(false, here.length, sunR - SUN_R);
       // the sky is laid out from the footprint the machines' moons once reserved, so the suns keep the places the Board has always given them
-      const was = footprint(fs.length > 0, here.length), lay = { R: was.R, reach: fs.length ? was.reach : null };
-      return { r: SUN_R, R: foot.R, band: foot.band, lay, ps, here };
+      const was = footprint(fs.length > 0, here.length, sunR - SUN_R), lay = { R: was.R, reach: fs.length ? was.reach : null };
+      return { r: sunR, R: foot.R, band: foot.band, lay, ps, here };
     };
     // The grid: the Board's tiers are its cells, in order, in `rows` lines of them wrapping left to right, a tier's states stacked top to
     // bottom in its cell. The tiers are the board machine's configured `tiers` (the states drawn at each stage, left to right); with none
@@ -940,8 +900,6 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
       if (!conf) return runSide.get(id) ?? -1;
       return beside.some(lone) ? [...id].reduce((t, ch) => t + ch.charCodeAt(0), 0) % 2 : -1;
     };
-    // what a state's cell takes either side of its centre: its footprint, at least half its name's width, and above it the room for that name
-    const NAME_ROOM = 34;
     // a tier's states stacked in the slots it names them in, a tier of one state in the high or low of two, so its moon names tuck above or
     // below its neighbour's; a tier's sun stays right of the last one's, by at least the larger of their rings
     const gridLay = (grid: Grid, es: { l: number; r: number; t: number; b: number }[], rows: number, sw: number, sh: number, gap: number) => {
@@ -1002,14 +960,21 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     };
     // The Board laid out at zoom `k` in `rows` lines: the sky is the canvas over `k`, and the layout holds when no two cells meet and every
     // line fits
+    let grow = true;
     const lay = (grid: Grid, k: number, rows: number) => {
       const ls = labelScale(k);
       F = (ls * ((ctx.scale ?? 100) / 100)) / k;
-      const sized = Object.fromEntries(states.map((st) => [st.id, radius(st)])), sw = (0.94 * W) / k, sh = (0.94 * H) / k, gap = 16 / k;
+      /** The radius a sun needs to hold `st`'s name and count, two lines about its centre: each line's farthest corner inside the disc. */
+      const need = (st: (typeof states)[number]) => {
+        const lines: [string, number][] = [[st.name, 13], [tally({ n: stateCount(S, st.id), today: daily(st) ? (S.today[st.id] ?? []).length : undefined, subs: SUBS[st.id] || [] }), 11]];
+        return Math.max(...lines.map(([text, size]) => Math.hypot(textW(text, size * F) / 2, LINES * F) + SUN_PAD * F));
+      };
+      // every sun grows together, to the one that holds the longest name and count at this type size (until `grow` is off)
+      const sunR = grow ? Math.max(SUN_R, ...states.map(need)) : SUN_R, sized = Object.fromEntries(states.map((st) => [st.id, radius(st, sunR)])), sw = (0.94 * W) / k, sh = (0.94 * H) / k, gap = 16 / k;
       // a state reaches at least half its name's width either side, so two names at one height never run together
       const es = states.map((st) => {
         const s = sized[st.id].lay, half = textW(stateName(st.id), 13 * F) / 2;
-        return { l: Math.max(half, s.reach?.[1] ?? s.R), r: Math.max(half, s.reach?.[0] ?? s.R), t: s.R + NAME_ROOM * F, b: s.R };
+        return { l: Math.max(half, s.reach?.[1] ?? s.R), r: Math.max(half, s.reach?.[0] ?? s.R), t: s.R, b: s.R };
       });
       const g = gridLay(grid, es, rows, sw, sh, gap);
       const ps = states.map((st, i) => ({ id: st.id, R: sized[st.id].lay.R, x: g.xs[i], y: g.ys[i] }));
@@ -1025,7 +990,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     };
     // the largest zoom, up to ZOOM_MAX, at which `rows` lines hold the Board
     const zoom = (grid: Grid, rows: number) => {
-      let lo = 0.05, hi = ZOOM_MAX;
+      let lo = ZOOM_MIN, hi = ZOOM_MAX;
       for (let i = 0; i < 30; i++) {
         const m = (lo + hi) / 2;
         if (lay(grid, m, rows).ok) lo = m;
@@ -1033,12 +998,19 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
       }
       return lo;
     };
-    const best = (pull.size ? [grid(true), grid(false)] : [grid(false)])
+    const choose = () =>
+      (pull.size ? [grid(true), grid(false)] : [grid(false)])
       .map((g) => {
         const zooms = g.cols.map((_, i) => zoom(g, i + 1)), rows = pickRows(zooms);
         return { g, rows, k: zooms[rows - 1] };
       })
       .reduce((a, b) => (b.k > a.k + 1e-9 ? b : a));
+    let best = choose();
+    // a Board too crowded to hold its names at any zoom keeps the suns at their fixed size, the names spilling past them, rather than zooming out to nothing
+    if (best.k <= ZOOM_MIN) {
+      grow = false;
+      best = choose();
+    }
     const rows = best.rows, L = lay(best.g, best.k, rows);
     // each state's place and the sky's width ease toward the layout's targets, so a state changing size moves its neighbours and the fit smoothly
     for (const p of L.ps) {
@@ -1055,7 +1027,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     for (const st of states) {
       const p = ps.find((q) => q.id === st.id)!, { x, y } = p, { ps: phs, here, band: outer } = sized[st.id], r = ease(`${st.id}.r`, sized[st.id].r), R = ease(`${st.id}.R`, sized[st.id].R);
       const g: Galaxy = { id: st.id, name: st.name, x, y, r, n: stateCount(S, st.id), color: BOARD_COLOR[st.id] ?? "#94a3b8", final: st.final, today: daily(st) ? (S.today[st.id] ?? []).length : undefined, subs: SUBS[st.id] || [], R, moonR: 0, visR: 0, edge: R, lab: { x, y }, reach: [R, R], loops: [] };
-      const r0 = phs.length ? FREE : FOOT.task0, r1 = phs.length ? SUN_R + 12 : outer;
+      const d = sized[st.id].r - SUN_R, r0 = phs.length ? FREE + d : FOOT.task0 + d, r1 = phs.length ? SUN_R + d + 12 : outer;
       // a task on a machine step rides that machine's branch (transit.ts places it); only the rest orbit the sun
       const hOf = new Map<RawTask, HPlace>(), f0 = flowsOf(st.id)[0];
       if (f0)
@@ -1069,23 +1041,19 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
       const free = (byState[st.id] || []).filter((a) => !hOf.has(a) && (!a.today || here.includes(a)));
       const fit = pack(free.length, r0, r1, 11, 12, ROOM), ring = free.length ? attach(free, g, r0, fit.gap, fit.ringGap, false) : sized[st.id].r;
       g.moonR = ease(`${st.id}.moonR`, outer + 16);
-      g.edge = ease(`${st.id}.edge`, f0 ? Math.max(52, ring + 10) : ring + 10);
+      g.edge = ease(`${st.id}.edge`, f0 ? Math.max(52 + d, ring + 10) : ring + 10);
       g.visR = outer + 7; // a task hopping in orbits on the outer edge
       scene.galaxies[st.id] = g;
       for (const [a, h] of hOf) scene.tasks.push({ ...a, host: g, R: 0, a0: 0, w: 0, big: false, s: 1, x, y, ang: 0, moving: false, arrive: null, gone: false, via: null, bev: [], h });
     }
-    // a state's name goes above its footprint, in the room its cell keeps for it, its count under it
+    // a state's name and count print inside its sun, the two lines centred on it
     const gs = Object.values(scene.galaxies);
-    for (const g of gs) {
-      g.lab = { x: g.x, y: g.y - g.R - 14 - 38 * F + 12 };
-      const half = Math.max(textW(g.name, 13 * F), textW(`${countText(g.n, g.today)}${g.subs.length ? ` · ${g.subs.length} lifecycles` : ""}`, 11 * F)) / 2;
-      scene.names.push({ of: g.id, x0: g.x - half, y0: g.lab.y - 7 * F, x1: g.x + half, y1: g.lab.y + 20 * F });
-    }
+    for (const g of gs) g.lab = { x: g.x, y: g.y - 7.5 * F };
     // One path per ordered pair of states, carrying every event between them. A pair joined both ways bows to one side, its two paths drawn
     // as one, and a one-way path runs straight. A final state reached from several states (Archived) gathers its one-way paths into one
     // stream along its side of the Board; a pair joined both ways into it keeps its shared line. Then any path that would pass another state or cross a name bends away until it clears (routed).
     const pairs = merged(transitions, S.writers);
-    const routeKey = JSON.stringify([w, hb, gs.map((g) => [g.id, g.x, g.y, g.R, g.edge, g.final]), scene.names, pairs.map((t) => [t.source, t.target]), [...routes]]);
+    const routeKey = JSON.stringify([w, hb, gs.map((g) => [g.id, g.x, g.y, g.R, g.edge, g.final]), pairs.map((t) => [t.source, t.target]), [...routes]]);
     const reuse = last.routes.key === routeKey, curves: (Curve | null)[] = [];
     const drawn = new Drawn(), there = new Map<string, Curve>();
     for (const tr of pairs) {
@@ -1104,7 +1072,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
       const k = `${tr.source}>${tr.target}`, h = routes.get(k), held = h && { x: a.x + h.x * dx - h.y * dy, y: a.y + h.x * dy + h.y * dx };
       // a pair joined both ways is one path: the way back takes the way there
       const back = there.get(`${tr.target}>${tr.source}`);
-      const r = reuse ? last.routes.curves[curves.length] : back ? { p0: back.p1, c: back.c, p1: back.p0 } : routed(a, b, c0, gs, drawn, { x: w, y: hb }, held, scene.names);
+      const r = reuse ? last.routes.curves[curves.length] : back ? { p0: back.p1, c: back.c, p1: back.p0 } : routed(a, b, c0, gs, drawn, { x: w, y: hb }, held);
       curves.push(r);
       there.set(k, r!);
       if (!reuse && !back) drawn.add(sample(r!, 30));
@@ -1115,7 +1083,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
       // snapping, and its ends stay on the rims facing the bend
       const u = ease(`${k}.u`, u0), v = ease(`${k}.v`, v0);
       const c = { x: a.x + u * dx - v * dy, y: a.y + u * dy + v * dx };
-      scene.bEdges.push({ ...tr, p0: rimOf(a, rowsOf(a, scene.names))(c), c, p1: rimOf(b, rowsOf(b, scene.names))(c) });
+      scene.bEdges.push({ ...tr, p0: rimOf(a)(c), c, p1: rimOf(b)(c) });
     }
     last.routes = { key: routeKey, curves };
   }
