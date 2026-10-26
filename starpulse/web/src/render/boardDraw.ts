@@ -5,7 +5,7 @@ import type { LedgerRow } from "../api";
 import { fanBadge, stepStatus } from "../features/fanout/fanoutModel";
 import { stepStates } from "../features/level/stepStates";
 import { ACT, DAG_COLOR, EXT, easeO, rgba, tierColor, type Drawing, type DrawCtx } from "./draw";
-import { dagTurn, nameLines, touches, turnDags, type Pivot, type Ties } from "./dagTies";
+import { activeDag, dagTurn, IDLE, nameLines, touches, turnDags, type Pivot, type Ties } from "./dagTies";
 import {
   BOARD_COLOR, SUN_R, TAU, bez, clip, curveOf, stateR, taskSlot, terminal, textW,
   type BEdge, type Curve, type GNode, type MEdge, type MState, type Planet, type Scene,
@@ -89,7 +89,7 @@ export function boardDraw(dc: DrawCtx, d: Drawing, io: BoardIO) {
   function drawTies() {
     const tz = io.ties();
     if (!tz) return;
-    const turn = dagTurn(turnDags(tz, io.S?.flows ?? {}), dc.clock);
+    const turn = dagTurn(turnDags(tz, (d) => activeDag(io.S?.dagBy[d]?.status)), dc.clock);
     for (const h of tz.pivots) drawPivot(h, turn);
     const run = new Set<BEdge>();
     for (const t of touches(tz, io.events(), ran, io.T)) {
@@ -105,9 +105,10 @@ export function boardDraw(dc: DrawCtx, d: Drawing, io: BoardIO) {
    *  DAG runs or failed is its orbiter's to show: the Spinner, or red with a dashed ring. */
   function drawPivot(h: Pivot, turn: ReturnType<typeof dagTurn>) {
     const TEAL = "#5eead4", pivotHot = isHot("pivot", h);
-    // a DAG shows only in its turn (a hovered one always), so the hangar shows as much as its most visible orbiter
-    const seen = (o: Pivot["orbs"][number]) => (isHot("tie", o) ? 1 : o.dag === turn?.dag ? turn.alpha : 0), shown = Math.max(pivotHot ? 1 : 0, ...h.orbs.map(seen));
-    if (shown <= 0) return;
+    // an active or hovered DAG shows in full and an idle one in its turn; between turns an idle orbiter stays faint, so it can be found and
+    // hovered, and the hangar's arc and name show only as much as its most lifted orbiter
+    const lift = (o: Pivot["orbs"][number]) => (isHot("tie", o) || activeDag(io.S!.dagBy[o.dag]?.status) ? 1 : o.dag === turn?.dag ? turn.alpha : 0);
+    const shown = Math.max(pivotHot ? 1 : 0, ...h.orbs.map(lift));
     cx.globalAlpha = shown;
     cx.strokeStyle = rgba(TEAL, pivotHot ? 0.4 : 0.22);
     cx.lineWidth = 1 / dc.K;
@@ -117,8 +118,7 @@ export function boardDraw(dc: DrawCtx, d: Drawing, io: BoardIO) {
       cx.stroke();
     }
     for (const o of h.orbs) {
-      cx.globalAlpha = seen(o);
-      if (cx.globalAlpha <= 0) continue;
+      cx.globalAlpha = IDLE + (1 - IDLE) * lift(o);
       const hot = isHot("tie", o), look = orbiterLook(io.S!.dagBy[o.dag]?.status ?? ""), r = (hot ? 7 : 6) / dc.K;
       // a hovered orbiter rings the states of the machine it writes
       if (hot) for (const a of o.subs) circle(a.x, a.y, 10 / dc.K, rgba("#a78bfa", 0.9), 1.4 / dc.K, [2 / dc.K, 2 / dc.K]);

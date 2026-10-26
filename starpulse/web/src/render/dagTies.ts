@@ -5,7 +5,6 @@
 //   cue   — a Board event cues the DAG (the snapshot's `cues`)
 import { pathLedger, type Fold } from "./levels";
 import type { Source } from "../features/level/ledger";
-import type { Tie } from "../api";
 import { bez, sample, type BEdge, type Curve, type Pt, type Scene } from "./scene";
 import { PULSE, TRAVEL, type Move, type Sky } from "./sky";
 
@@ -133,15 +132,16 @@ export function boardTies(sc: Scene, sky: Sky, u: number, ts = 1): Ties {
   return { pivots, u, ts };
 }
 
-/** Seconds each tied DAG holds the map in its turn, and seconds its edges fade over. */
+/** Seconds each idle tied DAG holds the map in its turn, seconds its edges fade over, and how faint an idle orbiter stays between its turns. */
 export const TURN = 12;
 export const TURN_FADE = 0.6;
+export const IDLE = 0.3;
 
-/** The DAGs that take a turn: those tied to a Board state, then any DAG a phase flow names in a tie of kind dag, each once. */
-export function turnDags({ pivots }: Ties, flows: Record<string, { ties?: Tie[] | null }>): string[] {
-  const named = Object.values(flows).flatMap((f) => (f.ties ?? []).flatMap((t) => (t.kind === "dag" && t.dag ? [t.dag] : [])));
-  return [...new Set([...pivots.flatMap((h) => h.orbs.map((o) => o.dag)), ...named])];
-}
+/** A DAG that is running, queued or failed: it shows in full, out of turn. */
+export const activeDag = (status?: string | null) => ["running", "queued", "failed"].includes(status ?? "");
+
+/** The DAGs that take a turn: the idle ones tied to a Board state, in hangar order. An active DAG needs no turn, and one with no hangar has nowhere to show. */
+export const turnDags = ({ pivots }: Ties, active: (dag: string) => boolean): string[] => pivots.flatMap((h) => h.orbs.map((o) => o.dag)).filter((d) => !active(d));
 
 /** The DAG whose turn it is at `now` seconds, round the DAGs in order, and how visible it is: fading in and out over TURN_FADE at its window's edges. */
 export function dagTurn(dags: readonly string[], now: number): { dag: string; alpha: number } | null {

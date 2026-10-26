@@ -1,13 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { boardTies, dagTurn, turnDags, hangarLevel, nameLines, nameOf, obstacles, over, tieLedger, touches, TURN, type Pivot, type Orbiter } from "./dagTies";
+import { activeDag, boardTies, dagTurn, turnDags, hangarLevel, nameLines, nameOf, obstacles, over, tieLedger, touches, TURN, type Pivot, type Orbiter } from "./dagTies";
 import { BOARD, startPath, tree } from "./levels";
 import { crumbs } from "../features/level/Crumb";
 import { backStep } from "../shared/nav";
 import { build, sample, type Curve, type Scene } from "./scene";
 import { fitLevel } from "./zoom";
 import { merge, Moves, PULSE, TRAVEL, type Move } from "./sky";
-import type { Cue, Dag, Machine, Snapshot, Tie } from "../api";
-import live from "./fixtures/events-dag-ties.json";
+import type { Cue, Dag, Machine, Snapshot } from "../api";
 import { LIFECYCLE_ROLES } from "../tests/lifecycleRoles";
 
 // The live Board of 2026-10-07 (doc-111, D7b): ten states, the writers and cues of its tied DAGs, and DAGs that only launch or have no tie.
@@ -272,14 +271,11 @@ describe("each Board DAG's turn on the map", () => {
     expect(alpha(23.7)).toBeCloseTo(0.5);
     expect(alpha(24)).toBe(0);
   });
-  it("gives every kind-dag tie of a captured live snapshot a window, beside the hangars' DAGs", () => {
-    const ctx = liveSky(), sc = build(ctx, { kind: "board" }), ties = boardTies(sc, ctx.S, unitOf(sc));
-    const flows = Object.fromEntries(live.flows.map((f) => [f.name, f])) as Record<string, { ties: Tie[] }>;
-    const named = live.flows.flatMap((f) => f.ties.map((t) => t.dag as string));
-    expect(named).toHaveLength(4);
-    const list = turnDags(ties, flows);
-    expect(list).toEqual(expect.arrayContaining(named));
-    expect(list).toEqual(expect.arrayContaining(ties.pivots.flatMap((h) => h.orbs.map((o) => o.dag))));
+  it("gives every idle hangar DAG a window and leaves an active one out, which shows out of turn", () => {
+    const ctx = liveSky({ "dagu/main-follow": "running", "dagu/healthcheck": "failed" }), sc = build(ctx, { kind: "board" }), ties = boardTies(sc, ctx.S, unitOf(sc));
+    const list = turnDags(ties, (d) => activeDag(ctx.S.dagBy[d]?.status));
+    const hangared = ties.pivots.flatMap((h) => h.orbs.map((o) => o.dag));
+    expect(list).toEqual(hangared.filter((d) => d !== "dagu/main-follow" && d !== "dagu/healthcheck"));
     expect(new Set(list.map((_, i) => dagTurn(list, i * TURN)!.dag))).toEqual(new Set(list));
   });
 });
