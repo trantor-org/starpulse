@@ -98,6 +98,10 @@ else:
     snap["claims"] = {}  # demo.scrub keeps claim reasons, which name real tasks
     if a.fixture:
         a.fixture.write_text(json.dumps(snap))
+# demo.scrub keeps DAG names, and some name hosts ci/public_names.py denies (a class per name, as it spells them)
+hosts = {"u": "nas", "p": "hypervisor", "a": "agent-host"}
+host = re.compile(r"unrai[d]|proxmo[x]|ai-v[m](-\d+)?", re.IGNORECASE)
+snap = json.loads(host.sub(lambda m: hosts[m.group()[0].lower()], json.dumps(snap)))
 html = demo.page(demo.STATIC, snap)
 head = (
     "<!--\n  Design mockup of the Admin theme picker, under operator review; not served by starpulse.\n"

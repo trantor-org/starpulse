@@ -50,7 +50,7 @@ index 85395f9e..37742e8a 100644
    );
  }
 diff --git a/starpulse/web/src/App.tsx b/starpulse/web/src/App.tsx
-index f33b0cad..28695938 100644
+index fd8d2df9..efbc7792 100644
 --- a/starpulse/web/src/App.tsx
 +++ b/starpulse/web/src/App.tsx
 @@ -5,6 +5,7 @@
@@ -61,7 +61,7 @@ index f33b0cad..28695938 100644
  import { HistoryWindowStore } from "./features/admin/historyWindow";
  import { HudStore, type FeedLine, type HudState } from "./render/hud";
  import { BOARD, pathKey, type Path } from "./render/levels";
-@@ -49,6 +50,7 @@ export function App() {
+@@ -48,6 +49,7 @@ export function App() {
    useEffect(() => (drawn ? prefetchViews() : undefined), [drawn]);
    // once it is, the views not yet opened also mount hidden in the background, so a first switch to one only unhides it
    const [admin] = useState(() => held?.admin ?? new AdminStore());
@@ -69,7 +69,7 @@ index f33b0cad..28695938 100644
    const [historyWindow] = useState(() => new HistoryWindowStore());
    // a move outlives the view that made it: the card stays where it landed while the writer answers
    const [moves] = useState(() => new MoveStore(postMove));
-@@ -163,7 +165,7 @@ export function App() {
+@@ -167,7 +169,7 @@ export function App() {
          </Suspense>
        </Kept>
        <Kept name="dags" on={view === "dags"} warm={drawn}><Suspense fallback={null}><Dags data={hud.dagData} openPath={open} spot={spottedDag} opening={openingDag} /></Suspense></Kept>
@@ -79,7 +79,7 @@ index f33b0cad..28695938 100644
          can={(l) => (view === "kanban" ? !!l.task : view === "dags" ? !!l.dag : view === "constellation" && !!l.task)}
          spot={(l) => {
 diff --git a/starpulse/web/src/boot.ts b/starpulse/web/src/boot.ts
-index 22161dae..67a60d8d 100644
+index fe821d1a..cf9d1399 100644
 --- a/starpulse/web/src/boot.ts
 +++ b/starpulse/web/src/boot.ts
 @@ -2,6 +2,8 @@
@@ -91,7 +91,7 @@ index 22161dae..67a60d8d 100644
  import { HudStore } from "./render/hud";
  import { loadLateFonts } from "./render/fonts";
  import { renderer } from "./render/renderer";
-@@ -13,6 +15,7 @@ import { retired, viewOf } from "./shared/nav";
+@@ -13,6 +15,7 @@ import { onPhone, retired, shownView, viewOf } from "./shared/nav";
  export interface Booted {
    store: HudStore;
    admin: AdminStore;
@@ -105,10 +105,10 @@ index 22161dae..67a60d8d 100644
    const canvas = frameOf<HTMLCanvasElement>("c"), tip = frameOf<HTMLDivElement>("tip"), panel = frameOf<HTMLDivElement>("panel");
 -  const admin = new AdminStore(), store = new HudStore();
 +  const admin = new AdminStore(), store = new HudStore(), theme = new ThemeStore(installRecolor());
-   // a bare address opens the view the Admin chose; one that names a view opens that, and a view that covers the map leaves it undrawn
-   const star = viewOf(location.search, retired(location.pathname, location.hash) ? "constellation" : admin.get().view) === "constellation";
-   let mounted = false;
-@@ -45,7 +48,7 @@ export function boot(mount: () => void): Booted {
+   // a bare address opens the view the Admin chose; one that names a view opens that, and a view that covers the map leaves it undrawn;
+   // a phone width has no Star Map, so it opens the Kanban whatever the address or the Admin chose
+   const wanted = viewOf(location.search, retired(location.pathname, location.hash) ? "constellation" : admin.get().view);
+@@ -47,7 +50,7 @@ export function boot(mount: () => void): Booted {
      requestAnimationFrame(open);
    };
    const r = renderer(canvas, store, { tip, panel }, new URLSearchParams(location.search).has("demo"), admin.get, star ? drawn : undefined);
@@ -393,7 +393,7 @@ index 194ee9f4..e897f334 100644
    );
 diff --git a/starpulse/web/src/features/admin/theme/ThemeCard.tsx b/starpulse/web/src/features/admin/theme/ThemeCard.tsx
 new file mode 100644
-index 00000000..14c2ff26
+index 00000000..f62b7c3d
 --- /dev/null
 +++ b/starpulse/web/src/features/admin/theme/ThemeCard.tsx
 @@ -0,0 +1,272 @@
@@ -537,7 +537,7 @@ index 00000000..14c2ff26
 +function Sample({ t }: { t: Record<string, string> }) {
 +  return (
 +    <div className="sample" data-theme-raw="" style={{ background: t.surface, borderColor: t.track }}>
-+      <div style={{ color: t.ink }}>TASK-8943 · Admin theme picker <span style={{ color: t.muted }}>· 2h ago</span></div>
++      <div style={{ color: t.ink }}>DEMO-12 · Admin theme picker <span style={{ color: t.muted }}>· 2h ago</span></div>
 +      <div className="chips">
 +        {DISTINCT.map((k) => (
 +          <span key={k} style={{ color: t[`${k}-text`], borderColor: t[k] }}><i style={{ background: t[k] }} />{ROLE_LABEL[k]}</span>
@@ -755,18 +755,17 @@ index 00000000..fc78e944
 +export const hueGap = (a: number, b: number) => Math.abs(((a - b + 540) % 360) - 180);
 diff --git a/starpulse/web/src/features/admin/theme/packs.json b/starpulse/web/src/features/admin/theme/packs.json
 new file mode 100644
-index 00000000..0fe24fea
+index 00000000..4aff54f5
 --- /dev/null
 +++ b/starpulse/web/src/features/admin/theme/packs.json
-@@ -0,0 +1,443 @@
+@@ -0,0 +1,434 @@
 +{
 + "packs": {
 +  "starpulse": {
 +   "name": "StarPulse",
 +   "vibe": "Today's slate and Tailwind statuses, with the phase machine moved to Tailwind indigo",
 +   "src": {
-+    "label": "tailwindlabs/tailwindcss palette",
-+    "url": "https://tailwindcss.com/docs/colors"
++    "label": "tailwindlabs/tailwindcss palette"
 +   },
 +   "c": {
 +    "emerald": "#34d399",
@@ -819,8 +818,7 @@ index 00000000..0fe24fea
 +   "name": "Catppuccin",
 +   "vibe": "Soft pastels on blue-violet greys; Latte by day, Mocha by night",
 +   "src": {
-+    "label": "catppuccin/palette",
-+    "url": "https://catppuccin.com/palette/"
++    "label": "catppuccin/palette"
 +   },
 +   "c": {
 +    "rosewater": "#f5e0dc",
@@ -864,8 +862,7 @@ index 00000000..0fe24fea
 +   "name": "Ros\u00e9 Pine",
 +   "vibe": "Muted rose, gold and pine on dusky purple; no pure green by design",
 +   "src": {
-+    "label": "rose-pine/palette",
-+    "url": "https://rosepinetheme.com/palette/"
++    "label": "rose-pine/palette"
 +   },
 +   "c": {
 +    "love": "#eb6f92",
@@ -920,8 +917,7 @@ index 00000000..0fe24fea
 +   "name": "Gruvbox",
 +   "vibe": "Retro warm earth: brown-grey ground, high-saturation fruit accents",
 +   "src": {
-+    "label": "morhetz/gruvbox",
-+    "url": "https://github.com/morhetz/gruvbox"
++    "label": "morhetz/gruvbox"
 +   },
 +   "c": {
 +    "red": "#fb4934",
@@ -964,8 +960,7 @@ index 00000000..0fe24fea
 +   "name": "Solarized",
 +   "vibe": "Ethan Schoonover's precision palette: one accent set, mirrored light and dark grounds",
 +   "src": {
-+    "label": "altercation/solarized",
-+    "url": "https://ethanschoonover.com/solarized/"
++    "label": "altercation/solarized"
 +   },
 +   "c": {
 +    "yellow": "#b58900",
@@ -1008,8 +1003,7 @@ index 00000000..0fe24fea
 +   "name": "Nord",
 +   "vibe": "Arctic: Polar Night greys, Frost blues, Aurora accents",
 +   "src": {
-+    "label": "nordtheme/nord",
-+    "url": "https://www.nordtheme.com/docs/colors-and-palettes"
++    "label": "nordtheme/nord"
 +   },
 +   "c": {
 +    "nord7": "#8fbcbb",
@@ -1058,8 +1052,7 @@ index 00000000..0fe24fea
 +   "name": "Everforest",
 +   "vibe": "Forest greens and warm khaki, low glare, made for long sessions",
 +   "src": {
-+    "label": "sainnhe/everforest",
-+    "url": "https://github.com/sainnhe/everforest/blob/master/palette.md"
++    "label": "sainnhe/everforest"
 +   },
 +   "c": {
 +    "red": "#e67e80",
@@ -1108,8 +1101,7 @@ index 00000000..0fe24fea
 +   "name": "Tokyo Night",
 +   "vibe": "Neon city at night: ink-blue ground, electric blue, magenta and lime",
 +   "src": {
-+    "label": "folke/tokyonight.nvim",
-+    "url": "https://github.com/folke/tokyonight.nvim"
++    "label": "folke/tokyonight.nvim"
 +   },
 +   "c": {
 +    "blue": "#7aa2f7",
@@ -1150,8 +1142,7 @@ index 00000000..0fe24fea
 +   "name": "Flexoki",
 +   "vibe": "Ink on paper: warm off-white or near-black ground, analog pigment accents",
 +   "src": {
-+    "label": "kepano/flexoki",
-+    "url": "https://stephango.com/flexoki"
++    "label": "kepano/flexoki"
 +   },
 +   "c": {
 +    "red": "#d14d41",
@@ -1363,7 +1354,7 @@ index 00000000..724faee2
 +}
 diff --git a/starpulse/web/src/features/admin/theme/scheme.ts b/starpulse/web/src/features/admin/theme/scheme.ts
 new file mode 100644
-index 00000000..34fc58a1
+index 00000000..a916fa96
 --- /dev/null
 +++ b/starpulse/web/src/features/admin/theme/scheme.ts
 @@ -0,0 +1,163 @@
@@ -1375,7 +1366,7 @@ index 00000000..34fc58a1
 +
 +/** A palette key, a #rrggbb, or a mix of two of them at t. */
 +export type Val = string | [Val, Val, number];
-+export interface Pack { name: string; vibe?: string; src?: { label: string; url?: string }; c: Record<string, string>; r: Record<string, Val>; x?: Record<string, string> }
++export interface Pack { name: string; vibe?: string; src?: { label: string }; c: Record<string, string>; r: Record<string, Val>; x?: Record<string, string> }
 +export const NEUTRALS = ["bg0", "bg1", "surface", "stack", "track", "faint", "muted", "ink2", "ink"] as const;
 +export type Neutrals = Record<(typeof NEUTRALS)[number], string>;
 +export interface Nudge { key: string; from: string; to: string }
@@ -1664,10 +1655,10 @@ index bf720b81..1ffb6cbe 100644
        removeEventListener("mousemove", onMove);
        removeEventListener("mouseup", onUp);
 diff --git a/starpulse/web/src/style.css b/starpulse/web/src/style.css
-index 096b0f14..c0af24cc 100644
+index 7646b196..20749a3a 100644
 --- a/starpulse/web/src/style.css
 +++ b/starpulse/web/src/style.css
-@@ -642,10 +642,10 @@ body.dragging, body.dragging * { user-select: none; }
+@@ -644,10 +644,10 @@ body.dragging, body.dragging * { user-select: none; }
  /* Starting a session, from the approved mockups: ▶ as a full-height strip on a startable card's right edge (TASK-3016),
     the start question, and the card that waits in In progress on a dashed amber edge until its agent claims it. */
  #kb .card.startable, #kb.compact .card.startable { padding-right: calc(max(30px, 30px * var(--fs)) + 9px); }
@@ -1681,7 +1672,7 @@ index 096b0f14..c0af24cc 100644
  #kb .card.claiming { border: 1px dashed color-mix(in srgb, var(--run) 70%, transparent); }
  #kb .card.claiming::after { content: ""; position: absolute; right: 8px; bottom: 8px; width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--run); border-top-color: transparent; animation: kb-spin .8s linear infinite; }
  #kb .mach.sess b, #kb .mach.sess .s { color: var(--run); }
-@@ -700,6 +700,8 @@ body.dragging, body.dragging * { user-select: none; }
+@@ -702,6 +702,8 @@ body.dragging, body.dragging * { user-select: none; }
  @container (max-width: 719px) { #admin .grid { grid-template-columns: minmax(0, 1fr); } }
  #admin .card { border-radius: 10px; background: color-mix(in srgb, var(--surface) 85%, transparent); border: 1px solid color-mix(in srgb, var(--slate) 13%, transparent); }
  #admin .card + .card { margin-top: 16px; }
@@ -1690,7 +1681,7 @@ index 096b0f14..c0af24cc 100644
  #admin .card h2 { margin: 0; display: flex; align-items: baseline; gap: 10px; padding: 12px 16px 10px; font-size: calc(11px * var(--fs)); font-weight: 500; letter-spacing: .2em;
    text-transform: uppercase; color: var(--slate); border-bottom: 1px solid color-mix(in srgb, var(--slate) 8%, transparent); }
  #admin .card h2 .c { font-size: calc(11px * var(--fs)); letter-spacing: 0; text-transform: none; font-weight: 400; color: var(--muted); }
-@@ -732,8 +734,8 @@ body.dragging, body.dragging * { user-select: none; }
+@@ -734,8 +736,8 @@ body.dragging, body.dragging * { user-select: none; }
  #admin .ok { margin-top: 8px; font-size: calc(11px * var(--fs)); color: var(--ok); }
  #admin .when { font-variant-numeric: tabular-nums; }
  #admin .pv { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 14px; }
@@ -1701,7 +1692,7 @@ index 096b0f14..c0af24cc 100644
  #admin .pvcard .top { display: flex; align-items: center; gap: 6px; font-size: calc(10.5px * var(--fs)); color: var(--muted); }
  #admin .pvcard .id { margin-right: auto; font-family: "JetBrains Mono", ui-monospace, monospace; color: var(--slate); }
  #admin .pvcard .pr { display: flex; align-items: center; gap: 4px; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: calc(10px * var(--fs)); padding: 1px 5px; border-radius: 4px; border: 1px solid color-mix(in srgb, var(--slate) 20%, transparent); color: var(--slate); }
-@@ -766,7 +768,7 @@ body.dragging, body.dragging * { user-select: none; }
+@@ -768,7 +770,7 @@ body.dragging, body.dragging * { user-select: none; }
  #admin .fw-next .stream { font-size: calc(10px * var(--fs)); letter-spacing: .08em; color: var(--muted); }
  #admin .fw-next .kv b { font-weight: 400; color: var(--muted); }
  #admin .fw-next li.more { background: none; padding: 0 8px; color: var(--muted); }
@@ -1710,10 +1701,10 @@ index 096b0f14..c0af24cc 100644
  #admin .pvcard.compact .t { margin: 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
  
  /* Kanban cards, Compact: tighter padding and gap and a one-line title; the card markup drops the footer. */
-@@ -1118,3 +1120,69 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
- #kbm .tv .fv.chips .chipinput { flex: 1 0 calc(80px * var(--fs)); width: auto; }
- #kbm .tvrail .rule { margin-top: 3px; font-size: calc(10.5px * var(--fs)); color: var(--muted); }
- #kbm .tvrail .rule.err { color: var(--fail); }
+@@ -1134,3 +1136,69 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
+ #kbm .doctitle { margin: 8px 0 2px; font-size: calc(16px * var(--fs)); font-weight: 500; color: var(--ink-hi); }
+ #kbm .tv .md .fence.mm { padding: 22px 12px 12px; }
+ #kbm .tv .mmd svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
 +
 +/* The Admin's Theme card (TASK-8943 mockup): a color pack and a background, each a grid of tiles a click applies. It sits
 +   under Preview in the right column, so each row stacks its label over its tiles. */
