@@ -340,6 +340,33 @@ def _retry_conflict(write: Callable[[], str]) -> None:
             return
 
 
+def _blob_sha(gh: Callable[..., str], route: str) -> str | None:
+    """The sha of the file at `route` on the Pages branch, or None when no run has committed it there."""
+    try:
+        return gh("api", f"{route}?ref={DEMO_BRANCH}", "--jq", ".sha").strip()
+    except RuntimeError:
+        return None
+
+
+def _put_demo(gh: Callable[..., str], path: str, body: dict[str, Any], request: Path) -> None:
+    """Commit one demo, taking the file's current sha again when another run landed it or moved it under the write."""
+    route = f"repos/{DEMO_REPO}/contents/{path}"
+    for attempt in range(1, _CONFLICT_ATTEMPTS + 1):
+        request.write_text(json.dumps(body))
+        try:
+            gh("api", "--method", "PUT", route, "--input", request.as_posix())
+        except RuntimeError as error:
+            if attempt == _CONFLICT_ATTEMPTS or not ("wasn't supplied" in str(error) or "HTTP 409" in str(error)):
+                raise
+            time.sleep(attempt)
+            current = _blob_sha(gh, route)
+            body.pop("sha", None)
+            if current:
+                body["sha"] = current
+        else:
+            return
+
+
 def _delete(gh: Callable[..., str], path: str, sha: str) -> None:
     route = f"repos/{DEMO_REPO}/contents/{path}"
     fields = (f"message=Unpublish {path}", f"sha={sha}", f"branch={DEMO_BRANCH}")
@@ -388,17 +415,7 @@ def publish_demos(gh: Callable[..., str], folder: str, files: Sequence[Path], sc
         body = {"message": f"Publish {path}", "content": base64.b64encode(f.read_bytes()).decode(), "branch": DEMO_BRANCH}
         if path in old:
             body["sha"] = old[path]
-        request = scratch / f"{f.name}.json"
-        request.write_text(json.dumps(body))
-        try:
-            gh("api", "--method", "PUT", f"repos/{DEMO_REPO}/contents/{path}", "--input", request.as_posix())
-        except RuntimeError as error:
-            if "wasn't supplied" not in str(error):
-                raise
-            # Another writer landed the file after the tree was read: replace what is there now.
-            body["sha"] = gh("api", f"repos/{DEMO_REPO}/contents/{path}?ref={DEMO_BRANCH}", "--jq", ".sha").strip()
-            request.write_text(json.dumps(body))
-            gh("api", "--method", "PUT", f"repos/{DEMO_REPO}/contents/{path}", "--input", request.as_posix())
+        _put_demo(gh, path, body, scratch / f"{f.name}.json")
         paths.append(path)
     for path in sorted(old.keys() - set(paths)):
         _delete(gh, path, old[path])
