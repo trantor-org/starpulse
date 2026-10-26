@@ -419,6 +419,48 @@ def test_publish_replaces_a_demo_another_writer_landed_after_the_tree_was_read(t
     ]
 
 
+class MovedPutGh(DemoGh):
+    """A demo repository where another run's commit moves a file's blob under a PUT: GitHub answers it 409."""
+
+    def __init__(self, tree: dict[str, str], conflicts: int) -> None:
+        super().__init__(tree)
+        self.conflicts = conflicts
+
+    def __call__(self, *args: str) -> str:
+        if args[:2] == ("api", "--method") and args[2] == "PUT" and self.conflicts:
+            self.conflicts -= 1
+            path = args[3].removeprefix(f"repos/{DEMO_REPO}/contents/")
+            self.tree[path] = "moved"
+            raise RuntimeError("gh: is at ec0bde28 but expected b75928fa (HTTP 409)")
+        if args[1].startswith(f"repos/{DEMO_REPO}/contents/"):
+            path = args[1].split("?")[0].removeprefix(f"repos/{DEMO_REPO}/contents/")
+            return f"{self.tree[path]}\n"
+        return super().__call__(*args)
+
+
+def test_publish_refetches_the_sha_and_succeeds_after_a_409_on_put(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr("ui_preview.time.sleep", lambda _: None)
+    built = tmp_path / "starpulse.html"
+    built.write_text("<html>")
+    gh = MovedPutGh({"pr-7/starpulse.html": "old"}, conflicts=2)
+
+    publish_demos(gh, "pr-7", [built], tmp_path / "scratch")
+
+    assert [(method, path, body.get("sha")) for method, path, body in gh.writes] == [
+        ("PUT", "pr-7/starpulse.html", "moved")
+    ]
+
+
+def test_publish_gives_up_on_a_put_that_keeps_conflicting(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr("ui_preview.time.sleep", lambda _: None)
+    built = tmp_path / "starpulse.html"
+    built.write_text("<html>")
+    gh = MovedPutGh({"pr-7/starpulse.html": "old"}, conflicts=99)
+
+    with pytest.raises(RuntimeError, match="HTTP 409"):
+        publish_demos(gh, "pr-7", [built], tmp_path / "scratch")
+
+
 class ConflictedGh(DemoGh):
     """A demo repository whose Pages branch moves under the first writes: GitHub answers them 409."""
 
