@@ -120,6 +120,8 @@ def test_a_first_install_links_the_session_that_claims_a_task_to_it(tmp_path: Pa
     env.pop("STARPULSE_CONFIG", None)
     init = _starpulse("init", "--dir", str(install), "--harness", "claude-code", cwd=tmp_path, env=env)
     assert init.returncode == 0, init.stderr
+    migrate = _starpulse("migrate", cwd=install, env=env)
+    assert migrate.returncode == 0, migrate.stderr
 
     port, receiver_port = _free_port(), _free_port()
     server = f"http://127.0.0.1:{port}"
