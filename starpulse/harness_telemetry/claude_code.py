@@ -7,7 +7,7 @@ moves the session through the machine's `bindings`:
     OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318 OTEL_LOG_TOOL_DETAILS=1 \\
     OTEL_RESOURCE_ATTRIBUTES="vcs.ref.head.name=$(git branch --show-current)" claude
 
-    python -m starpulse.claude_code [--host ADDR] [--port 4318] [--config FILE] [--key RE --branch RE --key-format FMT]
+    python -m starpulse.runtime.claude_code [--host ADDR] [--port 4318] [--config FILE] [--key RE --branch RE --key-format FMT]
 
 With `--redactor MODULE:FUNCTION`, each shell command's text is also kept on its tool signal, passed through that
 function with every heredoc body replaced by its length and SHA-256; without one no command text is kept.

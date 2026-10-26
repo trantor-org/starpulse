@@ -13,7 +13,7 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, NamedTuple
 from urllib.parse import parse_qs, unquote
 
-from starpulse._internal.analytics import Analytics
+from starpulse.contracts.analytics import Analytics
 from starpulse.harness_telemetry.harnesses import Harnesses
 from starpulse.views.compression import Encoded
 from starpulse.views.encoding import encode, full_snapshot
@@ -21,6 +21,7 @@ from starpulse.views.process_metrics import process_gauges
 from starpulse.views.responses import (
     _error,
     cells_response,
+    cited_pulls,
     cost_to_go_response,
     diff_response,
     done_response,
@@ -30,7 +31,6 @@ from starpulse.views.responses import (
     ledger_response,
     machines_response,
     missed_loads_response,
-    cited_pulls,
     pulls_response,
     search_response,
     sessions_response,
@@ -353,9 +353,7 @@ class ReadRoutes:
         return Response(encode("docs", body), status)
 
     def _retired(self, request: Request, query: Query) -> Response:
-        status, body = retired_list(
-            self._milestones, query.get("task", [""])[0], query.get("milestone", [""])[0]
-        )
+        status, body = retired_list(self._milestones, query.get("task", [""])[0], query.get("milestone", [""])[0])
         return Response(encode("retired", body), status)
 
     def _history_window(self, request: Request, query: Query) -> Response:

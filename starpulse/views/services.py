@@ -6,11 +6,9 @@ from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-
-
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
-    from starpulse._internal.analytics import Analytics
     from starpulse.board.adapters.search import SearchIndex
+    from starpulse.contracts.analytics import Analytics
     from starpulse.harness_telemetry.harnesses import Harnesses
     from starpulse.harness_telemetry.telemetry import TelemetryLog
     from starpulse.pulls.pull_refresh import PullRefresh

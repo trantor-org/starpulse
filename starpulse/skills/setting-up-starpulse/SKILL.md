@@ -26,7 +26,7 @@ lives on NFS or SMB. Run `starpulse doctor --config starpulse.toml` after an edi
 
 ## Show Claude Code sessions
 
-1. Run the receiver beside the server: `uvx --from starpulse python -m starpulse.claude_code`.
+1. Run the receiver beside the server: `uvx --from starpulse python -m starpulse.runtime.claude_code`.
 2. Start Claude Code with `CLAUDE_CODE_ENABLE_TELEMETRY=1`, `OTEL_LOGS_EXPORTER=otlp`,
    `OTEL_EXPORTER_OTLP_PROTOCOL=http/json`, `OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318`,
    `OTEL_LOG_TOOL_DETAILS=1` and `OTEL_RESOURCE_ATTRIBUTES="vcs.ref.head.name=$(git branch --show-current)"`.

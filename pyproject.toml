@@ -58,7 +58,6 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["starpulse*"]
-exclude = ["starpulse.tests", "starpulse.tests.*"]
 
 # The built page and the machine schema are read from beside the module through `__file__`.
 [tool.setuptools.package-data]
@@ -92,7 +91,7 @@ layers = [
     "starpulse.board",
     # core
     "starpulse.event_log",
-    "starpulse._internal.analytics | starpulse.machine_engine | starpulse.github | starpulse._internal.signals",
+    "starpulse.machine_engine | starpulse.github",
     "starpulse.contracts",
 ]
 # The two composition roots share one root config loader, which sits in `runtime` (spec doc-966, D6).
@@ -125,8 +124,7 @@ source_modules = [
     "starpulse.board", "starpulse.runs", "starpulse.harness_telemetry",
     "starpulse.flow_metrics",
     "starpulse.event_log",
-    "starpulse._internal.analytics", "starpulse.machine_engine", "starpulse.github",
-    "starpulse._internal.signals",
+    "starpulse.machine_engine", "starpulse.github",
 ]
 forbidden_modules = ["starpulse.contracts.api"]
 
@@ -136,9 +134,9 @@ name = "Only the store package imports the event store's tables"
 type = "forbidden"
 # A stream is appended through `EventStore` alone: its compare-and-swap, outbox row and envelope are what make the
 # stream trustworthy, so a module that imports the table could write around them.
-# The wildcards list every sibling of the store, tests included; a root or `_internal` source would contain the table
+# The wildcards list every sibling of the store, tests included; a root source would contain the table
 # and be skipped, and the store package itself contains it, so it may import it.
-source_modules = ["starpulse.*", "starpulse._internal.*", "starpulse.event_log.*"]
+source_modules = ["starpulse.*", "starpulse.event_log.*"]
 forbidden_modules = ["starpulse.event_log.store.tables"]
 allow_indirect_imports = true
 
@@ -148,7 +146,7 @@ name = "Only the read model package imports its tables"
 type = "forbidden"
 # A Task row is written by the projector alone and read through `ReadModel`: a module that imports the tables could
 # write a row no History folds into, or filter in Python what an index serves. The wildcards work as for the store.
-source_modules = ["starpulse.*", "starpulse._internal.*", "starpulse.event_log.*"]
+source_modules = ["starpulse.*", "starpulse.event_log.*"]
 forbidden_modules = ["starpulse.event_log.readmodel.tables"]
 allow_indirect_imports = true
 
@@ -171,7 +169,7 @@ forbidden_modules = [
 
 # Bounded contexts: one per StarPulse context, id `context-<glossary slug>`.
 # forbidden_modules is every other context's packages except the map's upstreams (direct imports; transitive stay
-# allowed). The shared kernel (`event_log`, `analytics`, `github`, `signals`, `contracts`) and the entrypoints
+# allowed). The shared kernel (`event_log`, `github`, `contracts`, with the `Signal` and analytics config both Flow Metrics and Harness Telemetry read) and the entrypoints
 # belong to no context.
 
 [[tool.importlinter.contracts]]
@@ -301,7 +299,7 @@ forbidden_modules = [
 ]
 
 [tool.pytest.ini_options]
-# `starpulse/tests/e2e/` runs only when asked for, `uv run pytest -m e2e`, and nightly tests only in the nightly suite,
+# `tests/e2e/` runs only when asked for, `uv run pytest -m e2e`, and nightly tests only in the nightly suite,
 # `-m "not e2e"`: a later `-m` replaces this one.
 addopts = ["--import-mode=importlib", "-m", "not e2e and not nightly"]
 markers = [
@@ -312,7 +310,7 @@ markers = [
 # A test that never returns fails after this many seconds instead of holding the job: one spinning worker grows
 # by about 6.5 MB/s through log capture.
 timeout = 120
-testpaths = ["starpulse/tests", "ci"]
+testpaths = ["tests", "ci"]
 # The UI preview script under `ci/` is imported by its module name.
 pythonpath = ["ci"]
 

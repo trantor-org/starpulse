@@ -11,7 +11,7 @@ on:
     tags: ["v*"]
     branches: [main]
     # The wheel: the `starpulse` package without its tests, and the project file that names its dependencies and version.
-    paths: ["starpulse/**", "!starpulse/tests/**", "pyproject.toml"]
+    paths: ["starpulse/**", "pyproject.toml"]
   workflow_dispatch:
     inputs:
       duration:

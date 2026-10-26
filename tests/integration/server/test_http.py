@@ -1,0 +1,616 @@
+"""What the running server hands a browser."""
+
+import http.client
+import json
+import mimetypes
+import time
+import urllib.error
+import urllib.request
+from collections.abc import Iterator
+from pathlib import Path
+
+import pytest
+from starpulse.board.board_feed import BoardFeed
+from starpulse.board.machine_tasks import MachineTasks
+from starpulse.board.model.commit_keys import CommitKeys
+from starpulse.board.model.seam import Board, Written
+from starpulse.contracts.adapters import Move
+from starpulse.runtime import server as server_module
+from starpulse.runtime.adapter_kit import next_event as _next_event
+from starpulse.runtime.adapter_kit import serve as _serve
+from starpulse.runtime.adapter_kit import task
+from starpulse.runtime.adapter_kit import url as _url
+from starpulse.views.page_server import PageServer
+
+from tests.fake_board import bare_board
+from tests.machines import MACHINES, ROLES
+
+RUN_SAFE = frozenset({"dagu/whole-repo-gate"})
+
+
+@pytest.fixture
+def server(tmp_path: Path) -> Iterator[PageServer]:
+    with _serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES)) as server:
+        yield server
+
+
+#: The host's mime table names JavaScript one of two ways (a runner's /etc/mime.types may say application/javascript).
+_JAVASCRIPT = "application/javascript"
+
+
+def _status(server: PageServer, path: str) -> tuple[int, str]:
+    try:
+        with urllib.request.urlopen(_url(server, path), timeout=5) as resp:
+            kind = resp.headers.get_content_type()
+            return resp.status, "text/javascript" if kind == _JAVASCRIPT else kind
+    except urllib.error.HTTPError as exc:
+        return exc.code, ""
+
+
+def test_the_build_is_served_and_nothing_outside_it(server: PageServer) -> None:
+    paths = (
+        "/",
+        "/?demo",
+        "/board",
+        "/runs",
+        "/flow/authoring-skills",
+        "/flow/nope",
+        "/flow/board",
+        "/assets/index-abc123.js",
+        "/assets/",
+        "/../secret.txt",
+        "/missing.js",
+    )
+
+    # The stdlib handler reads the host's mime table: a host that maps .js to the legacy
+    # application/javascript serves the same script, so both spellings are one type here.
+    legacy_js = {"application/javascript": "text/javascript"}
+    served = {
+        path: (code, legacy_js.get(kind, kind)) for path, (code, kind) in ((p, _status(server, p)) for p in paths)
+    }
+
+    assert served == {
+        "/": (200, "text/html"),
+        "/?demo": (200, "text/html"),
+        "/board": (200, "text/html"),
+        "/runs": (200, "text/html"),
+        "/flow/authoring-skills": (200, "text/html"),
+        "/flow/nope": (404, ""),
+        "/flow/board": (404, ""),  # the Board is drawn at /board
+        "/assets/index-abc123.js": (200, "text/javascript"),
+        "/assets/": (404, ""),
+        "/../secret.txt": (404, ""),
+        "/missing.js": (404, ""),
+    }
+
+
+def test_a_script_is_text_javascript_on_a_host_whose_mime_table_says_otherwise(
+    server: PageServer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    host = mimetypes.guess_file_type
+    monkeypatch.setattr(
+        mimetypes,
+        "guess_file_type",
+        lambda path, *, strict=True: (
+            ("application/javascript", None) if str(path).endswith(".js") else host(path, strict=strict)
+        ),
+    )
+
+    assert _status(server, "/assets/index-abc123.js") == (200, "text/javascript")
+
+
+def test_the_snapshot_endpoint_is_the_document_the_event_stream_connects_with(tmp_path: Path) -> None:
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
+    feed.put(task("PROJ-1", "To Do", milestone="m-76"))
+    with _serve(tmp_path, feed) as server:
+        with urllib.request.urlopen(_url(server, "/api/snapshot"), timeout=5) as resp:
+            polled = (resp.status, resp.headers["Content-Type"], resp.headers["Cache-Control"], json.load(resp))
+        with urllib.request.urlopen(_url(server, "/api/events"), timeout=5) as resp:
+            _, streamed = _next_event(resp)
+
+    status, content_type, cache, document = polled
+    assert (status, content_type, cache) == (200, "application/json", "no-store")
+    assert document.pop("now") <= streamed.pop("now")  # read a moment apart, so only the clock differs
+    assert document == streamed
+    assert [a["id"] for a in document["flows"][0]["agents"]] == ["PROJ-1"]
+
+
+def test_the_first_event_carries_each_open_tasks_milestone(tmp_path: Path) -> None:
+    feed = BoardFeed()
+    feed.put(task("PROJ-1", milestone="m-76"))
+    feed.put(task("PROJ-2"))
+    with _serve(tmp_path, feed) as server:
+        with urllib.request.urlopen(_url(server, "/api/events"), timeout=5) as resp:
+            first = _next_event(resp)
+
+    name, snapshot = first
+    assert name == "snapshot"
+    assert {a["id"]: a["milestone"] for a in snapshot["flows"][0]["agents"]} == {"PROJ-1": "m-76", "PROJ-2": ""}
+
+
+#: A workflow as the page reads it: the API refuses a body short of a field its model names.
+_DAG = {"name": "d", "status": "succeeded", "runId": "1", "startedAt": "", "finishedAt": "", "steps": []}
+
+
+def _machine_fields(task: str) -> dict:
+    return {"machine": "in-progress", "event": "WORKTREE_READY", "task": task, "time": str(time.time())}
+
+
+def test_the_event_stream_sends_a_snapshot_then_a_delta_per_change(tmp_path: Path) -> None:
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
+    feed.put(task("PROJ-1", "To Do"))
+    with _serve(tmp_path, feed) as server:
+        with urllib.request.urlopen(_url(server, "/api/events"), timeout=5) as resp:
+            head = (resp.status, resp.headers["Content-Type"], resp.headers["Cache-Control"])
+            first = _next_event(resp)
+            feed.put(task("PROJ-1", "In Progress"))
+            second = _next_event(resp)
+            feed.set_dags("ci", [_DAG], None)
+            third = _next_event(resp)
+            MachineTasks(feed).handle_entry("1-0", _machine_fields("PROJ-1"))
+            fourth = _next_event(resp)
+
+    assert head == (200, "text/event-stream", "no-store")
+    assert first[0] == "snapshot"
+    assert [(a["id"], a["state"]) for a in first[1]["flows"][0]["agents"]] == [("PROJ-1", "to_do")]
+    assert second[0] == "task"
+    assert (second[1]["id"], second[1]["agent"]["state"], second[1]["settled"]) == ("PROJ-1", "in_progress", None)
+    assert (third[0], [d["name"] for d in third[1]["dags"]]) == ("dags", ["ci/d"])
+    assert (fourth[0], fourth[1]["machine"], fourth[1]["id"], fourth[1]["agent"]["state"]) == (
+        "move",
+        "in-progress",
+        "PROJ-1",
+        "worktree_ready",
+    )
+
+
+def test_a_change_is_encoded_once_however_many_pages_are_streaming(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    encoded: list[str] = []
+    encode_event = server_module.event
+    monkeypatch.setattr(
+        "starpulse.views.streams.event", lambda name, data: encoded.append(name) or encode_event(name, data)
+    )
+    feed = BoardFeed()
+    with _serve(tmp_path, feed) as server:
+        with (
+            urllib.request.urlopen(_url(server, "/api/events"), timeout=5) as one,
+            urllib.request.urlopen(_url(server, "/api/events"), timeout=5) as other,
+        ):
+            _next_event(one)
+            _next_event(other)
+            feed.set_dags("ci", [_DAG], None)
+            seen = [_next_event(one), _next_event(other)]
+
+    assert [name for name, _ in seen] == ["dags", "dags"]
+    assert seen[0][1] == seen[1][1]
+    assert [name for name in encoded if name != "build"] == [
+        "dags"
+    ]  # a build's event is made once per build, not per change
+
+
+def test_an_idle_event_stream_sends_a_comment_so_a_dead_page_is_noticed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("starpulse.views.streams._PING_S", 0.05)
+    with _serve(tmp_path) as server:
+        with urllib.request.urlopen(_url(server, "/api/events"), timeout=5) as resp:
+            lines = [resp.readline() for _ in range(8)]  # the snapshot and the build take six
+
+    assert b": ping\n" in lines
+
+
+def test_a_page_that_goes_away_is_unsubscribed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("starpulse.views.streams._PING_S", 0.05)
+    feed = BoardFeed()
+    with _serve(tmp_path, feed) as server:
+        with urllib.request.urlopen(_url(server, "/api/events"), timeout=5) as resp:
+            _next_event(resp)
+            assert len(feed._subscribers) == 1
+        deadline = time.monotonic() + 5
+        while feed._subscribers and time.monotonic() < deadline:
+            time.sleep(0.02)
+
+    assert feed._subscribers == []
+
+
+def test_a_run_is_started_by_post_and_never_by_get(tmp_path: Path) -> None:
+    sent: list[str] = []
+
+    def start(workflow: str) -> str:
+        sent.append(workflow)
+        return "run-7"
+
+    with _serve(tmp_path, starts={"dagu": start}, run_safe=RUN_SAFE) as server:
+        with pytest.raises(urllib.error.HTTPError) as got:
+            urllib.request.urlopen(_url(server, "/api/run/dagu/whole-repo-gate"), timeout=5)
+        request = urllib.request.Request(
+            _url(server, "/api/run/dagu/whole-repo-gate"),
+            data=b"",
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=5) as resp:
+            posted = (resp.status, resp.headers.get_content_type(), json.load(resp))
+
+    assert (got.value.code, got.value.headers["Allow"]) == (405, "POST")
+    assert posted == (200, "application/json", {"runId": "run-7"})
+    assert sent == ["whole-repo-gate"]
+
+
+class _Failing(BoardFeed):
+    """A feed whose workflow has one unresolved failure, started with a known commit."""
+
+    def commit_keys(self, instance: str) -> CommitKeys:
+        return CommitKeys(after="AFTER", force="FORCE")
+
+    def open_failure(self, dag: str) -> dict:
+        return {"runId": "r-bad", "params": {"AFTER": "a" * 40}}
+
+
+def test_a_forced_rerun_is_started_by_post_and_never_by_get_through_the_reruns_path(tmp_path: Path) -> None:
+    sent: list[tuple[str, dict]] = []
+
+    def rerun(workflow: str, params: dict) -> str:
+        sent.append((workflow, params))
+        return "run-8"
+
+    with _serve(tmp_path, feed=_Failing(machines=MACHINES), reruns={"dagu": rerun}, run_safe=RUN_SAFE) as server:
+        path = "/api/runs/dagu/whole-repo-gate/rerun"
+        with pytest.raises(urllib.error.HTTPError) as got:
+            urllib.request.urlopen(_url(server, path), timeout=5)
+        request = urllib.request.Request(
+            _url(server, path), data=b"", headers={"Content-Type": "application/json"}, method="POST"
+        )
+        with urllib.request.urlopen(request, timeout=5) as resp:
+            posted = (resp.status, json.load(resp))
+        plain = urllib.request.Request(
+            _url(server, path), data=b"", headers={"Content-Type": "text/plain"}, method="POST"
+        )
+        with pytest.raises(urllib.error.HTTPError) as foreign:
+            urllib.request.urlopen(plain, timeout=5)
+
+    assert (got.value.code, got.value.headers["Allow"]) == (405, "POST")
+    assert posted == (200, {"runId": "run-8"})
+    assert sent == [("whole-repo-gate", {"FORCE": "1", "AFTER": "a" * 40})]
+    assert foreign.value.code == 415
+
+
+def test_a_refused_run_answers_json_with_its_status(tmp_path: Path) -> None:
+    with _serve(tmp_path, starts={"dagu": lambda workflow: "run-7"}) as server:
+        request = urllib.request.Request(
+            _url(server, "/api/run/dagu/board-scheduler"),
+            data=b"",
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with pytest.raises(urllib.error.HTTPError) as refused:
+            urllib.request.urlopen(request, timeout=5)
+
+    assert refused.value.code == 404
+    assert json.load(refused.value) == {"error": "dagu/board-scheduler is not declared run-safe"}
+
+
+def test_post_run_answers_404_for_an_adapter_without_start_and_a_run_id_for_a_run_safe_workflow_on_one_with_it(
+    tmp_path: Path,
+) -> None:
+    def post(server: PageServer) -> tuple[int, dict]:
+        request = urllib.request.Request(
+            _url(server, "/api/run/dagu/whole-repo-gate"),
+            data=b"",
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=5) as resp:
+                return resp.status, json.load(resp)
+        except urllib.error.HTTPError as exc:
+            return exc.code, json.load(exc)
+
+    starts = {"dagu": lambda workflow: f"{workflow}-1"}
+    with (
+        _serve(tmp_path, run_safe=RUN_SAFE) as without,
+        _serve(tmp_path, starts=starts, run_safe=RUN_SAFE) as with_start,
+    ):
+        answers = post(without), post(with_start)
+
+    assert answers == (
+        (404, {"error": "no adapter can start dagu/whole-repo-gate"}),
+        (200, {"runId": "whole-repo-gate-1"}),
+    )
+
+
+def test_a_dag_absent_from_the_configs_run_safe_list_answers_404_on_post(tmp_path: Path) -> None:
+    """`whole-repo-gate` is a DAG trantor runs, so only the config can be what refuses it here."""
+    with _serve(tmp_path, starts={"dagu": lambda workflow: "run-7"}, run_safe=frozenset({"dagu/nightly"})) as server:
+        request = urllib.request.Request(
+            _url(server, "/api/run/dagu/whole-repo-gate"),
+            data=b"",
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with pytest.raises(urllib.error.HTTPError) as refused:
+            urllib.request.urlopen(request, timeout=5)
+
+    assert refused.value.code == 404
+    assert json.load(refused.value) == {"error": "dagu/whole-repo-gate is not declared run-safe"}
+
+
+def test_a_post_anywhere_but_the_run_endpoint_is_not_found(server: PageServer) -> None:
+    request = urllib.request.Request(_url(server, "/api/snapshot"), data=b"", method="POST")
+
+    with pytest.raises(urllib.error.HTTPError) as refused:
+        urllib.request.urlopen(request, timeout=5)
+
+    assert refused.value.code == 404
+
+
+def _post_move(server: PageServer, body: dict) -> tuple[int, dict]:
+    request = urllib.request.Request(
+        _url(server, "/api/move"),
+        data=json.dumps(body).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=5) as resp:
+            return resp.status, json.load(resp)
+    except urllib.error.HTTPError as exc:
+        return exc.code, json.load(exc)
+
+
+def test_a_move_posted_with_no_content_length_is_an_empty_body_not_a_wait_for_bytes(tmp_path: Path) -> None:
+    with _serve(tmp_path) as server:
+        connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=2)
+        connection.putrequest("POST", "/api/move")
+        connection.putheader("Content-Type", "application/json")
+        connection.endheaders()
+        response = connection.getresponse()
+        body = json.load(response)
+        connection.close()
+
+    assert response.status == 400
+    assert body["error"].startswith("invalid request: ")
+
+
+def test_a_move_posted_to_the_server_reaches_the_writer_and_answers_json(tmp_path: Path) -> None:
+    sent: list[tuple[str, str]] = []
+    actors: list[str] = []
+
+    def writer(task: str, status: str, actor: str) -> Written:
+        sent.append((task, status))
+        actors.append(actor)
+        return Written(True, "ok") if status == "In Progress" else Written(False, "refused: Run the `x` skill", "x")
+
+    feed = BoardFeed()
+    feed.put(task("PROJ-3", "Ready", moves={"in_progress": Move(allowed=True), "waiting": Move(allowed=True)}))
+    with _serve(tmp_path, feed, bare_board(writer=writer)) as server:
+        allowed = _post_move(server, {"task": "PROJ-3", "to": "in_progress", "actor": "operator"})
+        refused = _post_move(server, {"task": "PROJ-3", "to": "waiting"})
+        with pytest.raises(urllib.error.HTTPError) as got:
+            urllib.request.urlopen(_url(server, "/api/move"), timeout=5)
+
+    assert allowed == (200, {"task": "PROJ-3", "to": "in_progress"})
+    assert refused == (409, {"error": "refused: Run the `x` skill", "skill": "x"})
+    assert (got.value.code, got.value.headers["Allow"]) == (405, "POST")
+    assert sent == [("PROJ-3", "In Progress"), ("PROJ-3", "Waiting")]
+    assert actors == ["operator", "anonymous"]  # the page names the operator; a write naming nobody is anonymous
+
+
+def test_a_start_posted_to_the_server_saves_the_assignee_starts_the_session_and_answers_json(tmp_path: Path) -> None:
+    assigned: list[tuple[str, str]] = []
+    started: list[tuple[str, str, str]] = []
+
+    def assign(task: str, assignee: str) -> Written:
+        assigned.append((task, assignee))
+        return Written(True, "ok")
+
+    def start_session(task: str, *, harness: str = "claude", mode: str = "interactive") -> str:
+        started.append((task, harness, mode))
+        return "https://claude.ai/code/session_01"
+
+    feed = BoardFeed(roles=ROLES)
+    feed.put(task("PROJ-3", "Ready"))
+    body = json.dumps({"task": "PROJ-3", "profile": "@agent-deep-high", "harness": "claude"}).encode()
+    with _serve(tmp_path, feed, bare_board(assign=assign), start_session=start_session) as server:
+        request = urllib.request.Request(
+            _url(server, "/api/start"), data=body, headers={"Content-Type": "application/json"}, method="POST"
+        )
+        with urllib.request.urlopen(request, timeout=5) as resp:
+            answered = resp.status, json.load(resp)
+        with pytest.raises(urllib.error.HTTPError) as got:
+            urllib.request.urlopen(_url(server, "/api/start"), timeout=5)
+
+    assert answered[0] == 200
+    assert {k: answered[1][k] for k in ("task", "url")} == {
+        "task": "PROJ-3",
+        "url": "https://claude.ai/code/session_01",
+    }
+    assert (assigned, started) == ([("PROJ-3", "@agent-deep-high")], [("PROJ-3", "claude", "interactive")])
+    assert (got.value.code, got.value.headers["Allow"]) == (405, "POST")
+
+
+def _post(server: PageServer, path: str, body: dict) -> tuple[int, dict]:
+    request = urllib.request.Request(
+        _url(server, path), data=json.dumps(body).encode(), headers={"Content-Type": "application/json"}, method="POST"
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=5) as resp:
+            return resp.status, json.load(resp)
+    except urllib.error.HTTPError as exc:
+        return exc.code, json.load(exc)
+
+
+def test_a_task_is_read_edited_and_archived_through_the_server(tmp_path: Path) -> None:
+    record = {"title": "t", "plan": "1. do it"}
+    sent: list[tuple[str, dict, str]] = []
+    archived: list[tuple[str, str]] = []
+
+    def edit(task: str, changes: dict, comment: str, actor: str) -> Written:
+        sent.append((task, changes, comment))
+        record.update(changes)
+        return Written(True, "ok")
+
+    def archive(task: str, reason: str, actor: str) -> Written:
+        archived.append((task, reason))
+        return Written(True, "ok")
+
+    feed = BoardFeed()
+    feed.put(task("PROJ-3", "Ready"))
+    with _serve(tmp_path, feed, bare_board(read=lambda _: dict(record), edit=edit, archive=archive)) as server:
+        with urllib.request.urlopen(_url(server, "/api/task/PROJ-3"), timeout=5) as resp:
+            opened = json.load(resp)
+        record["plan"] = "another writer's plan"
+        stale = _post(server, "/api/edit", {"task": "PROJ-3", "base": opened["record"], "changes": {"plan": "mine"}})
+        saved = _post(server, "/api/edit", {"task": "PROJ-3", "base": dict(record), "changes": {"title": "u"}})
+        gone = _post(server, "/api/archive", {"task": "PROJ-3", "reason": "obsolete"})
+        with pytest.raises(urllib.error.HTTPError) as got:
+            urllib.request.urlopen(_url(server, "/api/edit"), timeout=5)
+
+    assert opened == {"task": "PROJ-3", "record": {"title": "t", "plan": "1. do it"}}
+    assert stale[0] == 409
+    assert stale[1]["stale"] == ["plan"]
+    assert saved == (200, {"task": "PROJ-3", "changed": ["title"]})
+    assert sent == [("PROJ-3", {"title": "u"}, "")]
+    assert gone == (200, {"task": "PROJ-3"})
+    assert archived == [("PROJ-3", "obsolete")]
+    assert (got.value.code, got.value.headers["Allow"]) == (405, "POST")
+
+
+def test_an_archived_task_is_restored_through_the_server_and_a_refusal_carries_its_reason(tmp_path: Path) -> None:
+    restored: list[str] = []
+
+    def restore(task: str) -> Written:
+        restored.append(task)
+        return Written(
+            task == "PROJ-3", "ok" if task == "PROJ-3" else f"{task} is already on the board", skill="reopening"
+        )
+
+    with _serve(tmp_path, BoardFeed(), bare_board(restore=restore)) as server:
+        back = _post(server, "/api/restore", {"task": "PROJ-3"})
+        taken = _post(server, "/api/restore", {"task": "PROJ-4"})
+        malformed = _post(server, "/api/restore", {})
+        with pytest.raises(urllib.error.HTTPError) as got:
+            urllib.request.urlopen(_url(server, "/api/restore"), timeout=5)
+
+    assert back == (200, {"task": "PROJ-3"})
+    assert taken == (409, {"error": "PROJ-4 is already on the board", "skill": "reopening"})
+    assert malformed[0] == 400
+    assert restored == ["PROJ-3", "PROJ-4"]
+    assert (got.value.code, got.value.headers["Allow"]) == (405, "POST")
+
+
+def test_a_task_is_retired_read_back_and_imported_through_the_server(tmp_path: Path) -> None:
+    kept = {"PROJ-1": {"task": "PROJ-1", "name": "PROJ-1.md", "text": "---\nid: PROJ-1\n---\n"}}
+
+    def retire(task: str) -> Written:
+        return Written(task == "PROJ-3", "ok" if task == "PROJ-3" else f"{task} is not finished", skill="retiring")
+
+    def import_retired(name: str, text: str) -> Written:
+        return Written(True, name.removesuffix(".md"))
+
+    board = Board(
+        machines=lambda qualify, workflows: {},
+        start=lambda *_: None,
+        retire=retire,
+        retired=lambda task, milestone: [row for key, row in kept.items() if task in ("", key)],
+        import_retired=import_retired,
+    )
+    with _serve(tmp_path, BoardFeed(), board) as server:
+        retired = _post(server, "/api/retire", {"task": "PROJ-3"})
+        refused = _post(server, "/api/retire", {"task": "PROJ-4"})
+        imported = _post(server, "/api/retired/import", {"name": "PROJ-2.md", "text": "---\nid: PROJ-2\n---\n"})
+        with urllib.request.urlopen(_url(server, "/api/retired"), timeout=5) as resp:
+            every = json.load(resp)
+        with urllib.request.urlopen(_url(server, "/api/retired?task=PROJ-9"), timeout=5) as resp:
+            none = json.load(resp)
+        with pytest.raises(urllib.error.HTTPError) as got:
+            urllib.request.urlopen(_url(server, "/api/retire"), timeout=5)
+
+    assert retired == (200, {"task": "PROJ-3"})
+    assert refused == (409, {"error": "PROJ-4 is not finished", "skill": "retiring"})
+    assert imported == (200, {"task": "PROJ-2"})
+    assert every == {"tasks": [kept["PROJ-1"]]}
+    assert none == {"tasks": []}
+    assert (got.value.code, got.value.headers["Allow"]) == (405, "POST")
+
+
+def test_the_retired_tasks_of_a_board_that_keeps_none_are_404(tmp_path: Path) -> None:
+    with _serve(tmp_path, BoardFeed()) as server, pytest.raises(urllib.error.HTTPError) as got:
+        urllib.request.urlopen(_url(server, "/api/retired"), timeout=5)
+
+    assert got.value.code == 404
+
+
+def test_a_done_task_is_completed_through_the_server_and_a_refusal_carries_its_skill(tmp_path: Path) -> None:
+    completed: list[str] = []
+
+    def complete(task: str) -> Written:
+        completed.append(task)
+        return Written(task == "PROJ-3", "ok" if task == "PROJ-3" else f"{task} is Ready, not Done", skill="finishing")
+
+    feed = BoardFeed()
+    feed.put(task("PROJ-3", "Done"))
+    feed.put(task("PROJ-4", "Ready"))
+    with _serve(tmp_path, feed, bare_board(complete=complete)) as server:
+        done = _post(server, "/api/complete", {"task": "PROJ-3"})
+        early = _post(server, "/api/complete", {"task": "PROJ-4"})
+        absent = _post(server, "/api/complete", {"task": "PROJ-9"})
+        malformed = _post(server, "/api/complete", {})
+        with pytest.raises(urllib.error.HTTPError) as got:
+            urllib.request.urlopen(_url(server, "/api/complete"), timeout=5)
+
+    assert done == (200, {"task": "PROJ-3"})
+    assert early == (409, {"error": "PROJ-4 is Ready, not Done", "skill": "finishing"})
+    assert absent == (404, {"error": "PROJ-9 is not on the board"})
+    assert malformed[0] == 400
+    assert completed == ["PROJ-3", "PROJ-4"]
+    assert (got.value.code, got.value.headers["Allow"]) == (405, "POST")
+
+
+def test_a_board_that_completes_no_tasks_answers_404(tmp_path: Path) -> None:
+    feed = BoardFeed()
+    feed.put(task("PROJ-3", "Done"))
+    with _serve(tmp_path, feed) as server:
+        answer = _post(server, "/api/complete", {"task": "PROJ-3"})
+
+    assert answer == (404, {"error": "this board does not complete tasks"})
+
+
+def test_a_task_is_claimed_through_the_server_and_the_lifecycle_routes_answer_post_only(tmp_path: Path) -> None:
+    moved: list[tuple[str, str]] = []
+
+    def writer(task_id: str, target: str, *_: object) -> Written:
+        moved.append((task_id, target))
+        return Written(True, "ok")
+
+    feed = BoardFeed()
+    feed.put(task("PROJ-3", "Ready", moves={"in_progress": Move(allowed=True)}))
+    with _serve(tmp_path, feed, bare_board(writer=writer)) as server:
+        claimed = _post(server, "/api/claim", {"task": "PROJ-3", "session": "s-1"})
+        sessionless = _post(server, "/api/claim", {"task": "PROJ-3"})
+        parked = _post(server, "/api/park", {"task": "PROJ-3", "operator": "needs a decision"})
+        reviewed = _post(server, "/api/review", {"task": "PROJ-3"})
+        malformed = _post(server, "/api/park", {})
+        gets = []
+        for path in ("/api/claim", "/api/park", "/api/review"):
+            with pytest.raises(urllib.error.HTTPError) as got:
+                urllib.request.urlopen(_url(server, path), timeout=5)
+            gets.append((got.value.code, got.value.headers["Allow"]))
+
+    assert claimed == (200, {"task": "PROJ-3", "to": "in_progress", "assignee": "s-1"})
+    assert sessionless[0] == 400
+    assert moved == [("PROJ-3", "In Progress")]
+    assert (parked[0], parked[1]["error"]) == (404, "this board does not edit tasks")
+    assert (reviewed[0], reviewed[1]["error"]) == (404, "this board does not edit tasks")
+    assert malformed[0] == 400
+    assert gets == [(405, "POST")] * 3
+
+
+def test_the_page_script_is_served_as_text_javascript_whatever_the_hosts_mime_table_says(
+    server: PageServer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setitem(mimetypes.types_map, ".js", "application/javascript")  # what a runner's /etc/mime.types gives
+
+    assert _status(server, "/assets/index-abc123.js") == (200, "text/javascript")

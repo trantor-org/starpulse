@@ -1,0 +1,376 @@
+"""The history store keeps step, case and lane-interval summaries as it records, so a read need not fold every row."""
+
+import threading
+import time
+from pathlib import Path
+
+import pytest
+from sqlalchemy import text
+from starpulse.event_log.checkpoints import Checkpoints
+from starpulse.flow_metrics import history
+from starpulse.flow_metrics.history import HistoryStore
+from starpulse.flow_metrics.summaries import Summariser
+
+from tests.machines import MACHINES
+from tests.summaries import assert_matches_rebuild
+
+#: 2026-09-22 00:00 UTC, so an event a few seconds before it falls on the day before.
+MIDNIGHT = 1790035200.0
+_TASK = {"machine": "in-progress", "task": "PROJ-7"}
+
+
+@pytest.fixture
+def store(tmp_path: Path) -> HistoryStore:
+    return HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", MACHINES)
+
+
+def _rows(store: HistoryStore, table: str, columns: str) -> list[tuple]:
+    with store.engine.connect() as db:
+        return [tuple(r) for r in db.execute(text(f"SELECT {columns} FROM {table} ORDER BY {columns}"))]
+
+
+def _steps(store: HistoryStore) -> list[tuple]:
+    return _rows(store, "starpulse_step_summaries", "day, machine, from_state, to_state, steps, duration_s")
+
+
+def _cases(store: HistoryStore) -> list[tuple]:
+    return _rows(
+        store,
+        "starpulse_cases",
+        "machine, source, kind, case_id, state, since, first_at, last_event_id, last_at",
+    )
+
+
+def _intervals(store: HistoryStore) -> list[tuple]:
+    return _rows(store, "starpulse_lane_intervals", "task, lane, entered_at, left_at, event_id")
+
+
+def _lanes(store: HistoryStore) -> list[tuple]:
+    return _rows(store, "starpulse_lanes", "source, lane, open_tasks, first_at")
+
+
+def _event(store: HistoryStore, event_id: str, event: str, at: float, **fields) -> None:
+    store.record_machine(event_id, {"event_id": event_id, "event": event, "time": str(at)} | (_TASK | fields))
+
+
+def test_a_machine_event_counts_its_step_on_its_utc_day_and_moves_its_case(store: HistoryStore) -> None:
+    _event(store, "e1", "WORKTREE_READY", MIDNIGHT - 10)
+    _event(store, "e2", "RED_PROVEN", MIDNIGHT + 30)
+    _event(store, "e3", "GREEN", MIDNIGHT + 100)
+    _event(store, "e4", "GREEN", MIDNIGHT + 130)  # a loop: the task stays in green
+
+    assert _steps(store) == [
+        ("2026-09-21", "in-progress", "", "worktree_ready", 1, 0.0),
+        ("2026-09-22", "in-progress", "green", "green", 1, 30.0),
+        ("2026-09-22", "in-progress", "red_proven", "green", 1, 70.0),
+        ("2026-09-22", "in-progress", "worktree_ready", "red_proven", 1, 40.0),
+    ]
+    assert _cases(store) == [
+        (
+            "in-progress",
+            "unattributed",
+            "task",
+            "PROJ-7",
+            "green",
+            MIDNIGHT + 100,
+            MIDNIGHT - 10,
+            "e4",
+            MIDNIGHT + 130,
+        )
+    ]
+
+
+def test_a_redelivered_event_changes_no_summary(store: HistoryStore) -> None:
+    _event(store, "e1", "WORKTREE_READY", 100.0)
+    _event(store, "e2", "RED_PROVEN", 130.0)
+    before = (_steps(store), _cases(store))
+
+    _event(store, "e2", "RED_PROVEN", 130.0)
+
+    assert (_steps(store), _cases(store)) == before
+
+
+def test_a_run_keyed_event_moves_its_own_case_and_a_source_keeps_its_own(store: HistoryStore) -> None:
+    run = {"machine": "authoring-skills", "run": "run-1", "task": None}
+    store.record_machine("r1", {"event_id": "r1", "event": "GUIDANCE_READ", "time": "5"} | run)
+    _event(store, "pod-a/e1", "WORKTREE_READY", 10.0)
+    _event(store, "e1", "WORKTREE_READY", 11.0)
+
+    assert [row[:5] for row in _cases(store)] == [
+        ("authoring-skills", "unattributed", "run", "run-1", "guidance_read"),
+        ("in-progress", "pod-a", "task", "PROJ-7", "worktree_ready"),
+        ("in-progress", "unattributed", "task", "PROJ-7", "worktree_ready"),
+    ]
+
+
+def test_an_event_of_an_undrawn_machine_or_without_a_case_is_not_summarised(store: HistoryStore) -> None:
+    _event(store, "e1", "WORKTREE_READY", 10.0, machine="not-drawn")
+    _event(store, "e2", "WORKTREE_READY", 11.0, task=None)
+
+    assert (_steps(store), _cases(store)) == ([], [])
+
+
+def test_the_summary_is_written_in_the_transaction_of_the_event_and_its_cursor(
+    store: HistoryStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fail(*_args, **_kwargs) -> None:
+        raise RuntimeError("the cursor write failed")
+
+    monkeypatch.setattr(Checkpoints, "save", fail)
+    with pytest.raises(RuntimeError):
+        store.record_machine("1-0", {"event_id": "e1", "event": "WORKTREE_READY", "time": "10"} | _TASK, cursor=1)
+
+    assert (_steps(store), _cases(store), _rows(store, "starpulse_machine_events", "event_id")) == ([], [], [])
+
+
+def test_a_lane_change_closes_the_open_interval_and_opens_the_next(store: HistoryStore) -> None:
+    store.record_lane("T-1@Ready@10", "T-1", "Ready", 10.0)
+    store.record_lane("T-1@In Progress@25", "T-1", "In Progress", 25.0)
+    store.record_lane("T-1@In Progress@30", "T-1", "In Progress", 30.0)  # a reconcile: no change
+    store.record_lane("T-1@In Progress@25", "T-1", "In Progress", 25.0)  # the same change replayed
+
+    assert _intervals(store) == [
+        ("T-1", "in_progress", 25.0, None, "T-1@In Progress@25"),
+        ("T-1", "ready", 10.0, 25.0, "T-1@Ready@10"),
+    ]
+
+
+def test_a_lane_change_is_a_step_of_the_board_machine_and_moves_the_tasks_case(store: HistoryStore) -> None:
+    store.record_lane("T-1@Ready@10", "T-1", "Ready", MIDNIGHT + 10)
+    store.record_lane("T-1@In Progress@25", "T-1", "In Progress", MIDNIGHT + 25)
+    store.record_lane("T-1@Moon@40", "T-1", "Moon", MIDNIGHT + 40)  # a lane the Board machine lacks
+
+    assert _steps(store) == [
+        ("2026-09-22", "board", "", "ready", 1, 0.0),
+        ("2026-09-22", "board", "ready", "in_progress", 1, 15.0),
+    ]
+    assert [(row[0], row[3], row[4], row[7]) for row in _cases(store)] == [
+        ("board", "T-1", "in_progress", "T-1@In Progress@25")
+    ]
+    assert [row[1] for row in _intervals(store)] == ["in_progress", "moon", "ready"], "health still counts every lane"
+
+
+def test_each_lane_counts_the_tasks_in_it_now_and_keeps_a_lane_every_task_has_left(store: HistoryStore) -> None:
+    store.record_lane("T-1@Ready@10", "T-1", "Ready", 10.0)
+    store.record_lane("T-2@Ready@11", "T-2", "Ready", 11.0)
+    store.record_lane("T-1@In Progress@25", "T-1", "In Progress", 25.0)
+    store.record_lane("T-1@In Progress@30", "T-1", "In Progress", 30.0)  # a reconcile: no change
+    store.record_lane("T-2@Moon@40", "T-2", "Moon", 40.0)  # a lane the Board machine lacks
+    store.record_lane("T-2@Moon@40", "T-2", "Moon", 40.0)  # the same change replayed
+
+    assert _lanes(store) == [
+        ("unattributed", "in_progress", 1, 25.0),
+        ("unattributed", "moon", 1, 40.0),
+        ("unattributed", "ready", 0, 10.0),
+    ]
+
+
+def test_each_source_counts_its_own_tasks_in_a_lane_and_when_it_first_entered_it(store: HistoryStore) -> None:
+    store.record_lane("a/1", "T-1", "Ready", 20.0)
+    store.record_lane("b/1", "T-1", "In Progress", 10.0)  # the same task id from another source: it leaves a's stay
+    store.record_lane("a/2", "T-2", "Ready", 5.0)  # earlier than a's first, recorded later
+
+    assert _lanes(store) == [("a", "ready", 1, 5.0), ("b", "in_progress", 1, 10.0)]
+
+
+def _fill(store: HistoryStore) -> None:
+    _event(store, "e1", "WORKTREE_READY", MIDNIGHT - 10)
+    _event(store, "e2", "RED_PROVEN", MIDNIGHT + 30)
+    _event(store, "e3", "GREEN", MIDNIGHT + 100, task="PROJ-8")
+    store.record_machine(
+        "r1",
+        {"event_id": "r1", "event": "GUIDANCE_READ", "time": "5", "run": "run-1"} | {"machine": "authoring-skills"},
+    )
+    store.record_lane("T-1@Ready@10", "T-1", "Ready", MIDNIGHT + 10)
+    store.record_lane("T-1@In Progress@25", "T-1", "In Progress", MIDNIGHT + 25)
+
+
+def _snapshot(store: HistoryStore) -> tuple:
+    return _steps(store), _cases(store), _intervals(store), _lanes(store)
+
+
+def _wipe(store: HistoryStore) -> None:
+    with store.engine.begin() as db:
+        for table in ("starpulse_step_summaries", "starpulse_cases", "starpulse_lane_intervals", "starpulse_lanes"):
+            db.execute(text(f"DELETE FROM {table}"))
+
+
+def test_the_incremental_fold_over_a_seeded_trace_equals_the_rebuild(store: HistoryStore) -> None:
+    _fill(store)
+    _event(store, "e0", "WORKTREE_READY", MIDNIGHT - 500)  # recorded late: a step of zero length
+    _event(store, "u1", "WORKTREE_READY", MIDNIGHT + 5, machine="not-drawn")
+    store.record_lane("a/1", "T-3", "Ready", MIDNIGHT + 20)
+    store.record_lane("b/1", "T-3", "In Progress", MIDNIGHT + 15)  # another source, earlier than a's stay
+    store.record_lane("T-1@Moon@40", "T-1", "Moon", MIDNIGHT + 40)  # a lane the Board machine lacks
+
+    assert_matches_rebuild(store)
+
+
+def test_the_start_up_pass_builds_what_recording_would_have_and_a_second_run_changes_nothing(
+    store: HistoryStore,
+) -> None:
+    _fill(store)
+    recorded = _snapshot(store)
+    _wipe(store)
+    assert _snapshot(store) == ([], [], [], [])
+
+    store.build_summaries()
+
+    assert _snapshot(store) == recorded
+    store.build_summaries()
+    assert _snapshot(store) == recorded
+
+
+def test_opening_a_store_whose_summaries_are_empty_builds_them(tmp_path: Path) -> None:
+    url = f"sqlite:///{tmp_path / 'history.sqlite'}"
+    first = HistoryStore(url, MACHINES)
+    _fill(first)
+    recorded = _snapshot(first)
+    _wipe(first)
+
+    assert _snapshot(HistoryStore(url, MACHINES)) == recorded
+
+
+def test_opening_a_store_whose_summaries_predate_the_lane_counts_counts_its_lanes(tmp_path: Path) -> None:
+    url = f"sqlite:///{tmp_path / 'history.sqlite'}"
+    first = HistoryStore(url, MACHINES)
+    _fill(first)
+    recorded = _snapshot(first)
+    with first.engine.begin() as db:
+        db.execute(text("DELETE FROM starpulse_lanes"))
+
+    assert _snapshot(HistoryStore(url, MACHINES)) == recorded
+
+
+def _sources(store: HistoryStore) -> list[tuple]:
+    return _rows(store, "starpulse_lane_intervals", "event_id, source")
+
+
+def test_a_lane_stay_keeps_the_source_its_event_id_names(store: HistoryStore) -> None:
+    store.record_lane("a/1", "T-1", "Ready", 10.0)
+    store.record_lane("T-2@Ready@11", "T-2", "Ready", 11.0)
+
+    assert _sources(store) == [("T-2@Ready@11", "unattributed"), ("a/1", "a")]
+
+
+def test_rebuilding_the_summaries_writes_each_stays_source(store: HistoryStore) -> None:
+    store.record_lane("a/1", "T-1", "Ready", 10.0)
+    with store.engine.begin() as db:
+        db.execute(text("UPDATE starpulse_lane_intervals SET source = NULL"))
+
+    store.rebuild_summaries()
+
+    assert _sources(store) == [("a/1", "a")]
+
+
+def test_the_start_up_pass_leaves_summaries_that_already_exist_alone(store: HistoryStore) -> None:
+    _fill(store)
+    with store.engine.begin() as db:
+        db.execute(text("UPDATE starpulse_step_summaries SET steps = steps + 5"))
+    tampered = _snapshot(store)
+
+    store.build_summaries()
+
+    assert _snapshot(store) == tampered
+
+
+def _with_lint_loop(machines: dict) -> dict:
+    """The machines with `in-progress` taking LINT_GREEN as a loop from `checkpointed`, as TASK-3849 edited it."""
+    machine = machines["in-progress"]
+    loop = {"source": "checkpointed", "target": "checkpointed", "event": "LINT_GREEN"}
+    return machines | {"in-progress": machine | {"transitions": [*machine["transitions"], loop]}}
+
+
+def _checkpointed_then_lint_green(store: HistoryStore) -> None:
+    _event(store, "e1", "WORKTREE_READY", 10.0)
+    _event(store, "e2", "AC_CHECKPOINTED", 20.0)
+    _event(store, "e3", "LINT_GREEN", 30.0)
+
+
+def test_opening_a_store_with_an_edited_machine_folds_its_rows_under_the_edited_machine(tmp_path: Path) -> None:
+    url = f"sqlite:///{tmp_path / 'history.sqlite'}"
+    first = HistoryStore(url, MACHINES)
+    _checkpointed_then_lint_green(first)
+    assert [row[4] for row in _cases(first)] == ["lint_green"]
+
+    reopened = HistoryStore(url, _with_lint_loop(MACHINES))
+
+    assert_matches_rebuild(reopened)
+    assert [row[4] for row in _cases(reopened)] == ["checkpointed"]
+
+
+def test_opening_a_store_whose_machines_are_unchanged_rebuilds_nothing(tmp_path: Path) -> None:
+    url = f"sqlite:///{tmp_path / 'history.sqlite'}"
+    first = HistoryStore(url, MACHINES)
+    _fill(first)
+    with first.engine.begin() as db:
+        db.execute(text("UPDATE starpulse_step_summaries SET steps = steps + 5"))
+    tampered = _snapshot(first)
+
+    assert _snapshot(HistoryStore(url, MACHINES)) == tampered
+
+
+def test_an_edit_that_changes_no_placement_rebuilds_nothing(tmp_path: Path) -> None:
+    url = f"sqlite:///{tmp_path / 'history.sqlite'}"
+    first = HistoryStore(url, MACHINES)
+    _fill(first)
+    with first.engine.begin() as db:
+        db.execute(text("UPDATE starpulse_step_summaries SET steps = steps + 5"))
+    tampered = _snapshot(first)
+    machine = MACHINES["in-progress"]
+    renamed = {**machine, "name": "Renamed", "states": [{**s, "name": s["name"].upper()} for s in machine["states"]]}
+
+    assert _snapshot(HistoryStore(url, MACHINES | {"in-progress": renamed})) == tampered
+
+
+def test_opening_a_store_that_predates_the_machine_record_rebuilds_once(tmp_path: Path) -> None:
+    url = f"sqlite:///{tmp_path / 'history.sqlite'}"
+    first = HistoryStore(url, MACHINES)
+    _fill(first)
+    recorded = _snapshot(first)
+    with first.engine.begin() as db:
+        db.execute(text("UPDATE starpulse_step_summaries SET steps = steps + 5"))
+        db.execute(text("DELETE FROM starpulse_summary_basis"))
+
+    assert _snapshot(HistoryStore(url, MACHINES)) == recorded
+
+
+def test_a_store_opening_while_another_worker_rebuilds_waits_out_the_rebuild(store: HistoryStore) -> None:
+    """Every worker opens the store at once at `serve` start; one rebuilding the summaries holds the write lock for
+    seconds on a large history, so the others wait for it rather than exit on `database is locked`."""
+    with store.engine.connect() as db:
+        waits_ms = db.exec_driver_sql("PRAGMA busy_timeout").scalar()
+
+    assert waits_ms >= 60_000
+
+
+def test_a_writer_commits_while_the_summaries_rebuild_and_its_row_is_summarised(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A rebuild on a large history outlasts the busy timeout, so it must not hold the write lock while it folds: the
+    timeout is shortened and the fold slowed until the rebuild is several times longer than a writer waits."""
+    monkeypatch.setattr(history, "_SQLITE_BUSY_TIMEOUT", 0.3)
+    store = HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", MACHINES)
+    for n in range(300):
+        _event(store, f"e{n}", "WORKTREE_READY", float(n), task=f"PROJ-{n}")
+    folding = threading.Event()
+    fold = Summariser.event_step
+
+    def slow_step(self, *args):
+        folding.set()
+        time.sleep(0.003)
+        return fold(self, *args)
+
+    monkeypatch.setattr(Summariser, "event_step", slow_step)
+    rebuild = threading.Thread(target=store.rebuild_summaries)
+    rebuild.start()
+    assert folding.wait(10)
+
+    _event(
+        store, "live-1", "WORKTREE_READY", 1000.0, task="LIVE-1"
+    )  # raises `database is locked` if the rebuild holds it
+
+    rebuild.join(30)
+    assert not rebuild.is_alive()
+    assert "LIVE-1" in [row[3] for row in _cases(store)]
+    assert_matches_rebuild(store)

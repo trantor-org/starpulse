@@ -16,24 +16,25 @@ from pathlib import Path
 #: still runs once. `test_agent_cli.py` is weighted above its 306 CPU seconds: the shard that held it ran 162-175 s while
 #: the rest ran 75-95 s, so it gets a shard to itself.
 SECONDS = {
-    "starpulse/tests/integration/cli/test_agent_cli.py": 600,
-    "starpulse/tests/integration/flow_metrics/test_history.py": 131,
-    "starpulse/tests/integration/server/test_api_contract.py": 120,
-    "starpulse/tests/integration/event_log/test_event_log.py": 59,
-    "starpulse/tests/unit/flow_metrics/test_history_summaries.py": 55,
-    "starpulse/tests/unit/runs/test_dagu_runs.py": 34,
-    "starpulse/tests/integration/server/test_standalone.py": 33,
+    "tests/integration/cli/test_agent_cli.py": 600,
+    "tests/integration/flow_metrics/test_history.py": 131,
+    "tests/integration/server/test_api_contract.py": 120,
+    "tests/integration/event_log/test_event_log.py": 59,
+    "tests/unit/flow_metrics/test_history_summaries.py": 55,
+    "tests/unit/runs/test_dagu_runs.py": 34,
+    "tests/integration/server/test_standalone.py": 33,
     "ci/test_soak.py": 25,
-    "starpulse/tests/integration/server/test_write_guard.py": 23,
-    "starpulse/tests/integration/board/test_board_resume.py": 21,
-    "starpulse/tests/integration/flow_metrics/test_history_http.py": 20,
-    "starpulse/tests/unit/server/test_flow_reads.py": 16,
-    "starpulse/tests/integration/server/test_http.py": 13,
+    "tests/integration/server/test_write_guard.py": 23,
+    "tests/integration/board/test_board_resume.py": 21,
+    "tests/integration/flow_metrics/test_history_http.py": 20,
+    "tests/unit/server/test_flow_reads.py": 16,
+    "tests/integration/server/test_http.py": 13,
     "ci/test_latency_gate.py": 13,
-    "starpulse/tests/integration/scheduler/test_scheduler_served.py": 11,
-    "starpulse/tests/unit/board/test_lane_history_dedupe.py": 11,
+    "tests/integration/scheduler/test_scheduler_served.py": 11,
+    "tests/unit/board/test_lane_history_dedupe.py": 11,
 }
 UNMEASURED = 0.3
+
 
 def weigh(tests_per_file: dict[str, int]) -> dict[str, float]:
     return {file: SECONDS.get(file, tests * UNMEASURED) for file, tests in tests_per_file.items()}

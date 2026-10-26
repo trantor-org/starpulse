@@ -10,12 +10,12 @@ from collections import Counter
 from collections.abc import Callable, Collection, Mapping
 from typing import TYPE_CHECKING, Any
 
-from starpulse._internal.analytics import Analytics
 from starpulse.board.ledger import PAGE
 from starpulse.board.model.seam import (
     TaskReader,
 )
 from starpulse.contracts.adapters import TaskKeys
+from starpulse.contracts.analytics import Analytics
 from starpulse.flow_metrics import analytics
 from starpulse.flow_metrics.cells import cell_report, transition_cost
 from starpulse.flow_metrics.clusters import Cluster, cluster_key, dispersion, trace, trace_clusters
@@ -223,6 +223,7 @@ def health_response(
 ) -> tuple[bytes, int]:
     """The body and status for `/api/analytics/health`: the Board's flow health over the last `hours` as of `now`."""
     from starpulse.flow_metrics.history import HealthHistory, SummarisedHealth  # noqa: PLC0415 - the database stack loads when a store does
+
     window = _hours(query, "hours", _HEALTH_HOURS)
     stuck = _hours(query, "stuck_hours", _STUCK_HOURS)
     if window is None or stuck is None:
@@ -299,7 +300,9 @@ def steps_response(
     found = _held_signals(telemetry, window, "session_steps", now, "steps")
     if isinstance(found, tuple):
         return found
-    return encode("session_steps", {"now": now, "window_s": window * 3600, "steps": session_steps(found, keys, analytics)}), 200
+    return encode(
+        "session_steps", {"now": now, "window_s": window * 3600, "steps": session_steps(found, keys, analytics)}
+    ), 200
 
 
 def _kind_size_response(

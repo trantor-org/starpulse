@@ -531,7 +531,7 @@ applied_by = "pin-bump"
 # deliver = ["./bin/ship", "{task}"]
 # test = ["make", "test", "{args}"]
 
-# Optional: hold Cursor task sessions to a context limit (see `python -m starpulse.cursor_context` in docs/sources.md).
+# Optional: hold Cursor task sessions to a context limit (see `python -m starpulse.runtime.cursor_context` in docs/sources.md).
 # [cursor_context]
 # limit_tokens = 150000    # a session past this many context tokens is asked to checkpoint, then restarted fresh
 # window_tokens = 200000   # the context window the pane footer's percent is read against; limit_tokens may not exceed it

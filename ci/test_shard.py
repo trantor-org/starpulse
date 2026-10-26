@@ -36,9 +36,9 @@ def test_the_split_does_not_depend_on_collection_order():
 
 def test_a_file_weighs_its_measured_seconds_and_an_unmeasured_one_its_test_count():
     slow = next(iter(SECONDS))
-    weights = weigh({slow: 3, "starpulse/tests/new/test_new.py": 10})
+    weights = weigh({slow: 3, "tests/new/test_new.py": 10})
     assert weights[slow] == SECONDS[slow]
-    assert 0 < weights["starpulse/tests/new/test_new.py"] < SECONDS[slow]
+    assert 0 < weights["tests/new/test_new.py"] < SECONDS[slow]
 
 
 def test_the_measured_files_are_spread_over_the_shards():

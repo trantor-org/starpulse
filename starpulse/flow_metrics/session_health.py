@@ -29,9 +29,9 @@ from collections import Counter, defaultdict
 from collections.abc import Iterable, Iterator, Sequence
 from typing import Any
 
-from starpulse._internal.analytics import Analytics
-from starpulse._internal.signals import CODEX, Signal, claim_key, claimed, main_thread_source
 from starpulse.contracts.adapters import TaskKeys
+from starpulse.contracts.analytics import Analytics
+from starpulse.contracts.signals import CODEX, Signal, claim_key, claimed, main_thread_source
 
 __all__ = ["attributed", "grouped", "session_health", "session_kind", "slice_health"]
 
@@ -285,9 +285,7 @@ def session_rows(
             if row["steps_before_edit"] is None:
                 if s.kind == "request" and s.origin in {"main", "side"}:
                     steps[task] += 1
-                elif (
-                    s.kind == "tool" and s.ok and (s.name in _EDITS or s.shell_write)
-                ):
+                elif s.kind == "tool" and s.ok and (s.name in _EDITS or s.shell_write):
                     row["steps_before_edit"] = steps[task]
         elif s.kind == "skill" and completion and s.name == completion:
             loaded.add(task)
@@ -351,7 +349,11 @@ def slice_health(sessions: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
                 "skills": dict(skills),
                 "complete": any(row["complete"] for row in rows),
                 "steps_before_edit": next(
-                    (r["steps_before_edit"] for r in sorted(rows, key=lambda r: r["first_at"]) if r["steps_before_edit"] is not None),
+                    (
+                        r["steps_before_edit"]
+                        for r in sorted(rows, key=lambda r: r["first_at"])
+                        if r["steps_before_edit"] is not None
+                    ),
                     None,
                 ),
                 "raises": sum(row["raises"] for row in rows),

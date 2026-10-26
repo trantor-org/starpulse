@@ -10,7 +10,7 @@ through the event log of the history database the server reads, so give it the s
 default, is often taken: `--port` moves the receiver, and the endpoint below follows it.
 
 ```sh
-uvx --from starpulse python -m starpulse.claude_code --config starpulse.toml --port 4319
+uvx --from starpulse python -m starpulse.runtime.claude_code --config starpulse.toml --port 4319
 
 claude --settings '{"env": {
   "CLAUDE_CODE_ENABLE_TELEMETRY": "1", "OTEL_LOGS_EXPORTER": "otlp", "OTEL_EXPORTER_OTLP_PROTOCOL": "http/json",
@@ -43,7 +43,7 @@ exporter = { otlp-http = { endpoint = "http://127.0.0.1:4319/v1/logs", protocol 
 Cursor exports no telemetry, so a one-shot reader takes its agent transcripts instead, and a scheduler runs it:
 
 ```sh
-python -m starpulse.cursor [--root ~/.cursor/projects] [--hours 48] [--config FILE] [--redactor MODULE:FUNCTION]
+python -m starpulse.runtime.cursor [--root ~/.cursor/projects] [--hours 48] [--config FILE] [--redactor MODULE:FUNCTION]
 ```
 
 It reads each `<project>/agent-transcripts/<conversation-id>/<conversation-id>.jsonl` written in the window into the same
@@ -58,7 +58,7 @@ A transcript carries no token count either, and Cursor has no client-side compac
 holds each Cursor task session to a context limit from outside, and a scheduler runs it every few minutes:
 
 ```sh
-python -m starpulse.cursor_context [--config FILE]
+python -m starpulse.runtime.cursor_context [--config FILE]
 ```
 
 For each tmux session `task-N` whose pane runs `cursor-agent` it reads the footer percent of the pane (`Auto  60.3%`)

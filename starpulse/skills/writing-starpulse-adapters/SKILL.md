@@ -36,7 +36,7 @@ Done when `starpulse doctor` reports `adapter:board` as ok.
 ## Test an adapter with the kit
 
 1. Subclass the kit for the contract: `BoardAdapterKit`, `MachineEventsAdapterKit` or
-   `RunsAdapterKit`, from `starpulse.adapter_kit`.
+   `RunsAdapterKit`, from `starpulse.runtime.adapter_kit`.
 2. Declare `keys = TaskKeys(...)` and `branches = {"feature/PROJ-1-add-x": "PROJ-1", "main": None}`, with a branch that
    names a task and one that names none. A board or machine-events kit also declares `machines`; a board kit declares
    `teams = {"PROJ-1": "PROJ"}`, the team key your adapter derives for each task it produces, and one with a writer
