@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import fcntl
 import json
 from pathlib import Path
 
@@ -459,6 +460,31 @@ def test_publish_gives_up_on_a_put_that_keeps_conflicting(monkeypatch: pytest.Mo
 
     with pytest.raises(RuntimeError, match="HTTP 409"):
         publish_demos(gh, "pr-7", [built], tmp_path / "scratch")
+
+
+def test_publish_holds_the_pages_lock_for_every_write(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Concurrent runs take turns on the Pages branch: the host-wide lock is held while each write goes out."""
+    lock = tmp_path / "pages.lock"
+    monkeypatch.setattr("ui_preview._PAGES_LOCK", lock)
+    built = tmp_path / "starpulse.html"
+    built.write_text("<html>")
+    held: list[bool] = []
+
+    class ProbeGh(DemoGh):
+        def __call__(self, *args: str) -> str:
+            if args[:2] == ("api", "--method"):
+                with lock.open("w") as probe:
+                    try:
+                        fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    except BlockingIOError:
+                        held.append(True)
+                    else:
+                        held.append(False)
+            return super().__call__(*args)
+
+    publish_demos(ProbeGh({"pr-7/starpulse.html": "old"}), "pr-7", [built], tmp_path / "scratch")
+
+    assert held == [True]
 
 
 class ConflictedGh(DemoGh):

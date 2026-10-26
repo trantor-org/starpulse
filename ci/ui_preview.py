@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import fcntl
 import functools
 import json
 import os
@@ -21,6 +22,7 @@ import re
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.request
@@ -325,6 +327,16 @@ def _published(gh: Callable[..., str], folder: str) -> dict[str, str]:
 
 #: Concurrent runs commit to the one Pages branch; GitHub answers the loser `is at X but expected Y (HTTP 409)`.
 _CONFLICT_ATTEMPTS = 4
+#: One lock for every run on this host, so their Pages-branch writes take turns and no burst races the 4 attempts.
+_PAGES_LOCK = Path(tempfile.gettempdir()) / "sp-preview-pages.lock"
+
+
+@contextmanager
+def _pages_turn() -> Iterator[None]:
+    """Hold the Pages lock while a run reads and writes the branch; another run waits its turn."""
+    with _PAGES_LOCK.open("w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
 
 
 def _retry_conflict(write: Callable[[], str]) -> None:
@@ -409,29 +421,31 @@ def publish_demos(gh: Callable[..., str], folder: str, files: Sequence[Path], sc
     `scratch`.
     """
     scan_demos([f for f in files if f.suffix == ".html"])
-    if not _branch_exists(gh):
-        _create_branch(gh, scratch)
-    old = _published(gh, folder)
-    scratch.mkdir(parents=True, exist_ok=True)
-    paths = []
-    for f in files:
-        path = f"{folder}/{f.name}"
-        body = {"message": f"Publish {path}", "content": base64.b64encode(f.read_bytes()).decode(), "branch": DEMO_BRANCH}
-        if path in old:
-            body["sha"] = old[path]
-        _put_demo(gh, path, body, scratch / f"{f.name}.json")
-        paths.append(path)
-    for path in sorted(old.keys() - set(paths)):
-        _delete(gh, path, old[path])
+    with _pages_turn():
+        if not _branch_exists(gh):
+            _create_branch(gh, scratch)
+        old = _published(gh, folder)
+        scratch.mkdir(parents=True, exist_ok=True)
+        paths = []
+        for f in files:
+            path = f"{folder}/{f.name}"
+            body = {"message": f"Publish {path}", "content": base64.b64encode(f.read_bytes()).decode(), "branch": DEMO_BRANCH}
+            if path in old:
+                body["sha"] = old[path]
+            _put_demo(gh, path, body, scratch / f"{f.name}.json")
+            paths.append(path)
+        for path in sorted(old.keys() - set(paths)):
+            _delete(gh, path, old[path])
     return [demo_url(folder, f.name) for f in files]
 
 
 def unpublish_demos(gh: Callable[..., str], folder: str) -> None:
     """Remove every file under `folder` from the Pages branch; a repository without one has none."""
-    if not _branch_exists(gh):
-        return
-    for path, sha in sorted(_published(gh, folder).items()):
-        _delete(gh, path, sha)
+    with _pages_turn():
+        if not _branch_exists(gh):
+            return
+        for path, sha in sorted(_published(gh, folder).items()):
+            _delete(gh, path, sha)
 
 
 # Everything below drives processes (GitHub, the server, a browser); the pure rules above carry the tests.
