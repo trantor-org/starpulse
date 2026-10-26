@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ledgerTop, type LedgerFrame, type LedgerLabel, type LedgerMachine, type LedgerTop } from "./machineLedger";
+import { glideStarts, ledgerTop, type LedgerFrame, type LedgerLabel, type LedgerMachine, type LedgerTop } from "./machineLedger";
 
 // The live In Progress machine: one spine, Checkpointed reachable straight from Worktree ready or through Red proven.
 const ids = ["start", "worktree_ready", "red_proven", "green", "checkpointed", "docs_reconciled", "lint_green", "committed", "pushed", "pr_opened", "ci_green", "pr_ready", "review_recorded", "needs_attention"];
@@ -163,5 +163,55 @@ describe("a machine opened from a row", () => {
   it("keeps its own height when its flow is taller than the one it matches", () => {
     const f = frame(100), own = ledgerTop(machine(6), f).hdrB;
     expect(ledgerTop(machine(6), { ...f, height: own - 40 }).hdrB).toBe(own);
+  });
+});
+
+const columns = (top: LedgerTop) => [...new Set(top.nodes.map((n) => n.x))].sort((a, b) => a - b);
+
+describe("the machine ledger's filled columns", () => {
+  it.each([100, 125, 150])("stands its last column at xEnd, a name's width short of the right edge, at %i% text", (scale) => {
+    const top = ledgerTop(machine(), frame(scale)), cols = columns(top);
+
+    expect(top.xEnd).toBeLessThan(top.x1);
+    expect(cols[cols.length - 1]).toBeCloseTo(top.xEnd, 5);
+    expect(top.x1 - top.xEnd).toBeGreaterThan(110);
+  });
+
+  it("spreads the columns across x0 to xEnd, the unnamed gaps all as wide as each other", () => {
+    const top = ledgerTop(machine(), frame(100)), cols = columns(top), gaps = cols.slice(1).map((x, i) => x - cols[i]);
+
+    expect(cols[0]).toBeCloseTo(top.x0, 5);
+    for (const g of gaps) expect(g).toBeCloseTo(gaps[0], 5);
+  });
+
+  it("holds the gaps beside a wide column at what its names need and lifts every other gap to one level", () => {
+    const top = ledgerTop(machine(4), frame(100)), cols = columns(top), gaps = cols.slice(1).map((x, i) => x - cols[i]);
+    const wide = cols.findIndex((x) => top.nodes.filter((n) => n.x === x).length >= 3), level = Math.min(...gaps);
+
+    expect(cols[cols.length - 1]).toBeCloseTo(top.xEnd, 5);
+    gaps.forEach((g, i) => {
+      if (i === wide - 1 || i === wide) expect(g).toBeGreaterThan(level + 1);
+      else expect(g).toBeCloseTo(level, 5);
+    });
+  });
+
+  it("ends a state-free machine at xEnd 0", () => {
+    expect(ledgerTop({ states: [], transitions: [], tasks: {}, entered: [] }, frame(100)).xEnd).toBe(0);
+  });
+});
+
+describe("a dot's glide between columns", () => {
+  it("starts each move when it lands, or when the glide before it ends", () => {
+    const starts = glideStarts([{ at: 10, dur: 4 }, { at: 11, dur: 2 }, { at: 30, dur: 3 }, { at: 30.5, dur: 1 }]);
+
+    expect(starts).toEqual([10, 14, 30, 33]);
+  });
+
+  it("starts no move before it landed", () => {
+    expect(glideStarts([{ at: 5, dur: 1 }, { at: 9, dur: 1 }])).toEqual([5, 9]);
+  });
+
+  it("has nothing to start for no moves", () => {
+    expect(glideStarts([])).toEqual([]);
   });
 });

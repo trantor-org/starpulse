@@ -13,6 +13,8 @@ export interface LaneMachine {
   tasks: Record<string, number>;
   /** The machines entered from it, with the state each is entered from. */
   nested?: { state: string; nest: Nest }[];
+  /** A phase of the machine on top (not a sub-machine): its row is taller, to give its dots room to glide. */
+  phase?: boolean;
 }
 export interface LaneNode {
   id: string;
@@ -52,16 +54,18 @@ export const PAGE = 20;
 export const STRETCH = 3.2;
 
 export function laneRows(machines: LaneMachine[], span: { x0: number; x1: number }, f: { scale: number; laneH: number; total?: number; measure?: (s: string, px: number) => number }): { rows: LaneRow[]; k: number } {
-  const { fs, gs, dot } = sizes(f.scale), rg = 32 * fs, pad = 26 * fs + 10.5 * fs * 1.3, metaH = 12 * fs * 1.4 + 2 * 10 * fs * 1.5 + 34 * fs;
+  const { fs, gs, dot } = sizes(f.scale), meta = 12 * fs * 1.4 + 2 * 10 * fs * 1.5;
+  // a phase's row is taller than a sub-machine's: its branches stand farther apart, with more padding and meta column
+  const rgOf = (m: LaneMachine) => (m.phase ? 38 : 32) * fs, padOf = (m: LaneMachine) => (m.phase ? 40 : 26) * fs + 10.5 * fs * 1.3, metaOf = (m: LaneMachine) => meta + (m.phase ? 56 : 34) * fs;
   const gl = machines.map((m) => layers(m.states, m.transitions.filter((t) => t.source !== t.target)));
-  const hOf = (g: (typeof gl)[number]) => Math.max(metaH, 2 * pad + (g.rmax - g.rmin) * rg);
+  const hOf = (g: (typeof gl)[number], m: LaneMachine) => Math.max(metaOf(m), 2 * padOf(m) + (g.rmax - g.rmin) * rgOf(m));
   const cf = { scale: f.scale, measure: f.measure ?? ((t: string, px: number) => t.length * px * 0.55), x1: span.x1 };
   const xOf = (g: (typeof gl)[number]) => (s: string) => (g.cols.length > 1 ? span.x0 + (g.depth[s] / (g.cols.length - 1)) * (span.x1 - span.x0) : span.x0);
   const bands = machines.map((m, i) => chainBand(m.nested ?? [], gl[i], xOf(gl[i]), cf));
-  const total = gl.reduce((a, g, i) => a + hOf(g) + bands[i], 0), k = (f.total ?? machines.length) <= PAGE ? Math.max(1, Math.min(STRETCH, (f.laneH * 0.97) / Math.max(1, total))) : 1;
+  const total = gl.reduce((a, g, i) => a + hOf(g, machines[i]) + bands[i], 0), k = (f.total ?? machines.length) <= PAGE ? Math.max(1, Math.min(STRETCH, (f.laneH * 0.97) / Math.max(1, total))) : 1;
   let y = 0;
   const rows = machines.map((m, i): LaneRow => {
-    const g = gl[i], hl = hOf(g) * k, h = hl + bands[i], r = (8 + 1.2 * Math.sqrt(Math.max(0, ...Object.values(m.tasks)))) * Math.min(2, k) ** 0.6 * gs;
+    const g = gl[i], rg = rgOf(m), hl = hOf(g, m) * k, h = hl + bands[i], r = (8 + 1.2 * Math.sqrt(Math.max(0, ...Object.values(m.tasks)))) * Math.min(2, k) ** 0.6 * gs;
     const nodes = m.states.map((s, j): LaneNode => {
       const c = m.tasks[s.id] ?? 0;
       return {

@@ -386,6 +386,8 @@ export interface RowView extends Omit<LaneRow, "nodes"> {
   nodes: (LaneNode & { color: string })[];
   /** The machine's first state, where a tie or a DAG launch arrives. */
   init: string;
+  /** A phase of the machine on top (blue) or another machine it opens (teal); none for a row that is neither. */
+  kind?: "phase" | "sub";
 }
 export interface Ctx {
   S: Sky;
@@ -1295,12 +1297,13 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     const entered = [...new Set([...Object.keys(S.child[name] ?? {}), ...Object.values(S.flows).flatMap((f) => (f.ties?.[0]?.machine === name && f.ties[0].state ? [f.ties[0].state] : []))])];
     const top = ledgerTop({ states: flow.machine.states, transitions: flow.machine.transitions, tasks, entered }, { ...frame, height });
     const { fs } = ledgerSizes(ctx.scale ?? 100), laneTop = top.hdrB + 6, laneBottom = H - 50 * fs;
+    const kids = S.tree.children[name] ?? [], phases = new Set(kids.map((c) => (kids.find((k) => k.state === c.state && k.machine === c.state) ?? kids.find((k) => k.state === c.state))!.machine));
     const only = ctx.only, ranked = rankRows(S.flows, name, ctx.held).filter((m) => !only || only.machines.includes(m));
-    const order = shownRows(ranked, (m) => S.flows[m].last ?? 0, !only && ctx.paging?.top === name ? ctx.paging : null), machines = order.map((m) => ({ name: m, states: S.flows[m].machine.states, transitions: S.flows[m].machine.transitions, tasks: tasksOf(S.flows[m]), nested: nestsOf(S.flows, m) }));
-    const lane = laneRows(machines, { x0: top.x0, x1: top.x1 }, { scale: ctx.scale ?? 100, laneH: laneBottom - laneTop, total: ranked.length, measure: frame.measure });
+    const order = shownRows(ranked, (m) => S.flows[m].last ?? 0, !only && ctx.paging?.top === name ? ctx.paging : null), machines = order.map((m) => ({ name: m, states: S.flows[m].machine.states, transitions: S.flows[m].machine.transitions, tasks: tasksOf(S.flows[m]), nested: nestsOf(S.flows, m), phase: phases.has(m) }));
+    const lane = laneRows(machines, { x0: top.x0, x1: top.xEnd }, { scale: ctx.scale ?? 100, laneH: laneBottom - laneTop, total: ranked.length, measure: frame.measure });
     const rows = lane.rows.map((r): RowView => {
       const st = S.flows[r.name].machine.states;
-      return { ...r, init: (st.find((x) => x.initial) ?? st[0]).id, nodes: r.nodes.map((n) => ({ ...n, color: RAMP[Math.round(n.u * (RAMP.length - 1))] })) };
+      return { ...r, kind: phases.has(r.name) ? "phase" : kids.some((k) => k.machine === r.name) ? "sub" : undefined, init: (st.find((x) => x.initial) ?? st[0]).id, nodes: r.nodes.map((n) => ({ ...n, color: RAMP[Math.round(n.u * (RAMP.length - 1))] })) };
     });
     const more = ranked.length - rows.length, foot = more ? 34 * fs : 0;
     scene.top = { ...top, machine: name, entered, rows, laneTop, laneBottom, total: ranked.length, ranked, more, foot, task: only?.task, ...laneContent(rows, foot, { h: laneBottom - laneTop, fs }) };
