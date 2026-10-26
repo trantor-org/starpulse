@@ -55,16 +55,17 @@ def with_field(field_column: str, value: object) -> Select[Any]:
 
 
 def ready(state: str, done: str) -> Select[Any]:
-    """The ids of unarchived Tasks in `state` none of whose dependencies is outside `done`.
+    """The ids of unarchived Tasks in `state` none of whose dependencies is outside the lane `done`.
 
-    A dependency with no row blocks too: it is a Task the board has not imported yet.
+    `state` is a stored status (`Ready`) and `done` a lane id (`done`), as `lane_id` makes one; a dependency with no
+    row blocks too: it is a Task the board has not imported yet.
     """
     dependency = func.json_each(tasks.c.dependencies).table_valued("value").alias("dependency")
     target = tasks.alias("target")
     blocked = (
         select(1)
         .select_from(dependency.outerjoin(target, target.c.id == dependency.c.value))
-        .where(or_(target.c.id.is_(None), target.c.state != done))
+        .where(or_(target.c.id.is_(None), func.lower(func.replace(target.c.state, " ", "_")) != done))
     )
     return (
         select(tasks.c.id)

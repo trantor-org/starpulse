@@ -124,7 +124,7 @@ def _depending(engine: Engine, number: int, state: str, on: str) -> None:
 
 def test_a_task_is_workable_once_its_dependencies_are_done(engine: Engine) -> None:
     _append(engine, 1, "Ready")
-    _append(engine, 2, "done")
+    _append(engine, 2, "Done")
     _append(engine, 3, "Ready")
     _depending(engine, 4, "Ready", "TASK-1")
     _depending(engine, 5, "Ready", "TASK-2")
