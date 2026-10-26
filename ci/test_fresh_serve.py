@@ -106,7 +106,7 @@ def test_live_children_reads_a_hyphenated_context_name(table, log):
 def test_a_failed_smoke_carries_what_serve_logged(tmp_path, monkeypatch):
     monkeypatch.setattr(fresh_serve, "worker_contexts", lambda python, cwd: set())
     serve = tmp_path / "python"
-    serve.write_text("#!/bin/sh\necho 'cannot hand the socket' >&2\nexit 3\n")
+    serve.write_text('#!/bin/sh\n[ "$3" = migrate ] && exit 0\necho \'cannot hand the socket\' >&2\nexit 3\n')
     serve.chmod(0o755)
     problem = fresh_serve.smoke(str(serve), 5.0)
     assert problem is not None

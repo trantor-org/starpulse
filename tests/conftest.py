@@ -12,7 +12,7 @@ import pytest
 from sqlalchemy import Engine, create_engine, event
 from starpulse.board.adapters import upstream_backlog
 from starpulse.event_log import event_log
-from starpulse.event_log.migrate import migrate
+import starpulse.event_log.migrate as migrations
 from starpulse.flow_metrics.history import HistoryStore
 
 from tests.machines import MACHINES
@@ -46,7 +46,7 @@ def _sqlite_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """A SQLite store the migration chain built once on this worker, at its head."""
     path = tmp_path_factory.mktemp("template") / "store.sqlite"
     engine = create_engine(f"sqlite:///{path}")
-    event_log.migrate(engine)
+    migrations.migrate(engine)
     engine.dispose()
     return path
 
@@ -55,7 +55,7 @@ def _sqlite_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
 def sqlite_stores_from_template(_sqlite_template: Path) -> Iterator[None]:
     """Each new SQLite store a module's tests open starts as a copy of the template, which the chain then finds at its
     head: the chain's upgrade of an empty file is a fifth of a second, paid by each store of each test otherwise."""
-    production = event_log.migrate
+    production = migrations.migrate
     copying = threading.Lock()
 
     def from_template(engine: Engine) -> None:
@@ -65,9 +65,9 @@ def sqlite_stores_from_template(_sqlite_template: Path) -> Iterator[None]:
                 shutil.copyfile(_sqlite_template, database)
         production(engine)
 
-    event_log.migrate = from_template
+    migrations.migrate = from_template
     yield
-    event_log.migrate = production
+    migrations.migrate = production
 
 
 @pytest.fixture
@@ -89,14 +89,26 @@ def stop_upstream_backlogs(timeout: float = 5.0) -> None:
         thread.join(timeout)
 
 
+_OPENERS = ("starpulse.event_log.event_log", "starpulse.flow_metrics.history", "starpulse.pulls.pulls")
+_refuses_unmigrated = migrations.require_migrated
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _stores_migrate_on_open() -> Iterator[None]:
+    """A test opens stores no `starpulse migrate` ran on; it gets the migration an open used to run. Session scope, so
+    a module-scoped fixture that opens a store (ci/shared_servers.py) gets it too."""
+    with pytest.MonkeyPatch.context() as patch:
+        for module in _OPENERS:
+            patch.setattr(f"{module}.require_migrated", lambda engine: migrations.migrate(engine))
+        yield
+
+
 @pytest.fixture(autouse=True)
-def _stores_migrate_on_open(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A test opens stores no `starpulse migrate` ran on; it gets the migration an open used to run. An `unmigrated`
-    test keeps the refusal."""
+def _unmigrated_keeps_the_refusal(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An `unmigrated` test opens a store the way `starpulse` does: the refusal stays."""
     if request.node.get_closest_marker("unmigrated"):
-        return
-    for module in ("starpulse.event_log.event_log", "starpulse.flow_metrics.history", "starpulse.pulls.pulls"):
-        monkeypatch.setattr(f"{module}.require_migrated", migrate)
+        for module in _OPENERS:
+            monkeypatch.setattr(f"{module}.require_migrated", _refuses_unmigrated)
 
 
 @pytest.fixture(autouse=True)

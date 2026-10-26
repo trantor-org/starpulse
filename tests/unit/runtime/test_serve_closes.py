@@ -15,6 +15,7 @@ from pathlib import Path
 
 from sqlalchemy import create_engine
 
+import starpulse
 from starpulse.event_log.migrate import migrate
 from starpulse.flow_metrics.history import HistoryStore
 from starpulse.runtime.store_migrate import maintain
@@ -55,7 +56,11 @@ def _check_twenty_serves(root: Path) -> None:
 
 
 def test_twenty_serves_leave_the_fd_and_thread_count_where_they_started(tmp_path: Path) -> None:
-    run = subprocess.run([sys.executable, __file__, str(tmp_path)], capture_output=True, text=True, timeout=120)
+    # the fresh interpreter imports the checkout under test, not an installed copy of starpulse
+    env = {**os.environ, "PYTHONPATH": str(Path(starpulse.__file__).parent.parent)}
+    run = subprocess.run(
+        [sys.executable, __file__, str(tmp_path)], capture_output=True, text=True, timeout=120, env=env
+    )
     assert run.returncode == 0, run.stderr
 
 
