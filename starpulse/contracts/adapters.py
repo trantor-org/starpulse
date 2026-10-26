@@ -19,6 +19,7 @@ from starpulse.contracts.task_keys import TaskKeys
 __all__ = [
     "CONTRACTS",
     "EVENT_STREAMS",
+    "LAST_OUTCOMES",
     "SCHEMAS",
     "ActiveRun",
     "BoardTask",
@@ -182,6 +183,10 @@ class MachineEvent(_Contract):
 RunStatus = Literal["not_started", "queued", "running", "succeeded", "failed", "aborted", "skipped"]
 
 
+#: How many outcomes a step's `last` holds at most.
+LAST_OUTCOMES = 5
+
+
 class Step(_Contract):
     """One step of a DAG in its latest run."""
 
@@ -192,6 +197,34 @@ class Step(_Contract):
         default=None, description="The engine's own status for the step when it differs from `status`, shown as is."
     )
     kind: str | None = Field(description="The phase kind the step declares (`agent`), or None when it declares none.")
+    precondition: str | None = Field(
+        description="What must hold for the step to run, as the scheduler states it; None when it declares none."
+    )
+    lock: str | None = Field(
+        description="The lock the step takes so no other holder runs at once; None when it declares none or the "
+        "scheduler has no lock to declare."
+    )
+    last: tuple[RunStatus, ...] = Field(
+        max_length=LAST_OUTCOMES,
+        description="The step's outcomes in the runs that are over, newest first, at most five; empty when the "
+        "scheduler keeps none or the step never ran.",
+    )
+
+
+class RunStats(_Contract):
+    """A DAG's runs over the last seven days."""
+
+    runs: int = Field(ge=0, description="The runs that began in the window, over or not.")
+    hours: float = Field(ge=0, description="The summed duration of the window's runs that are over, in hours.")
+    median_seconds: float | None = Field(
+        alias="medianSeconds", description="The median duration of those runs; None while none is over."
+    )
+    p95_seconds: float | None = Field(
+        alias="p95Seconds", description="The 95th-percentile duration of those runs; None while none is over."
+    )
+    failure_share: float | None = Field(
+        alias="failureShare", ge=0, le=1, description="The share of those runs that failed; None while none is over."
+    )
 
 
 class Dag(_Contract):
@@ -212,6 +245,13 @@ class Dag(_Contract):
         description="When the latest run ended, ISO 8601 UTC; empty while it runs or before any run.",
     )
     steps: tuple[Step, ...] = Field(description="The DAG's steps; empty when the scheduler cannot describe them.")
+    schedule: tuple[str, ...] = Field(
+        description="The cron expressions that start the DAG; empty when it only runs when asked for."
+    )
+    stats: RunStats | None = Field(
+        description="The DAG's runs over the last seven days; None when it has never run or the scheduler cannot "
+        "list them, never zeros."
+    )
     active: tuple[ActiveRun, ...] = Field(
         default=(),
         description="Every run of the DAG that is running or queued now, longest-running first; empty when none "

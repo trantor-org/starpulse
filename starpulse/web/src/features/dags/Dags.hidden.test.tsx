@@ -8,8 +8,8 @@ import { Dags } from "./Dags";
 
 const running = { runId: "r1", status: "running" as const, startedAt: "1970-01-01T00:55:00Z", step: "fix", stepStartedAt: "", steps: { fix: "running" as const } };
 const data: DagData = {
-  now: 3600,
-  dags: [{ name: "runs/deploy", status: "succeeded", runId: "", startedAt: "", finishedAt: "", steps: [{ name: "fix", depends: [], status: "succeeded", kind: null }], pool: "", active: [running] }],
+  now: 3600, facts: {},
+  dags: [{ name: "runs/deploy", status: "succeeded", runId: "", startedAt: "", finishedAt: "", schedule: [], stats: null, steps: [{ name: "fix", depends: [], status: "succeeded", kind: null, precondition: null, lock: null, last: [] }], pool: "", active: [running] }],
   domains: [{ name: "Ops", dags: [{ name: "runs/deploy", runSafe: true }] }],
   pools: [], cues: [], flows: [],
 };

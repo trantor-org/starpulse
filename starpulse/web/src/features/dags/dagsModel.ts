@@ -12,7 +12,21 @@ export interface DagData {
   cues: Cue[];
   flows: { name: string; machine: Machine }[];
   now: number;
+  /** What each DAG, by name, says about its schedule and its past week. */
+  facts: Record<string, DagFacts>;
 }
+
+/** A DAG's schedule (its cron expressions, or `manual`) and its seven-day statistics; a statistic the server left out stays null, never zero. */
+export interface DagFacts { schedule: string; runs: number | null; hours: number | null; medianSeconds: number | null; p95Seconds: number | null; failureShare: number | null }
+
+export const dagFacts = (d: Dag): DagFacts => ({
+  schedule: d.schedule.join(", ") || "manual",
+  runs: d.stats?.runs ?? null,
+  hours: d.stats?.hours ?? null,
+  medianSeconds: d.stats?.medianSeconds ?? null,
+  p95Seconds: d.stats?.p95Seconds ?? null,
+  failureShare: d.stats?.failureShare ?? null,
+});
 
 /** The snapshot's DAG data as the HUD holds it; a machine's tasks stay behind, so a task move does not redraw the view. */
 export const dagData = (sky: Sky): DagData => ({
@@ -25,6 +39,7 @@ export const dagData = (sky: Sky): DagData => ({
   cues: sky.cues,
   flows: Object.values(sky.flows).map((f) => ({ name: f.name, machine: f.machine })),
   now: sky.now,
+  facts: Object.fromEntries(sky.dags.map((d) => [d.name, dagFacts(d)])),
 });
 
 /** The height a row not yet drawn holds in the list, margin included: one 40px line wide, two lines at phone width, where both lines grow with the text scale `fs`. */

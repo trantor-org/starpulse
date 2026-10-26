@@ -98,6 +98,8 @@ SEEDED_POOLS = {"deliver": 32, "default": 2}
 #: How many of each domain's other DAGs get a finished run, the seconds between their finishes, and their steps.
 FINISHED_PER_DOMAIN = 3
 FINISHED_GAP_S = 1100
+#: What a step the demo seeds declares beyond its place in the graph: no precondition, no lock, no past outcomes.
+UNDECLARED = {"precondition": None, "lock": None, "last": []}
 FINISHED_STEPS = ("prepare", "run", "report")
 
 
@@ -134,11 +136,19 @@ def _finished(domains: list[dict], deliver: str, prefix: str, now: float) -> tup
                     "startedAt": _iso(end - 240),
                     "finishedAt": _iso(end),
                     "steps": [
-                        {"name": s, "depends": [FINISHED_STEPS[i - 1]] if i else [], "status": st, "kind": None}
+                        {
+                            "name": s,
+                            "depends": [FINISHED_STEPS[i - 1]] if i else [],
+                            "status": st,
+                            "kind": None,
+                            **UNDECLARED,
+                        }
                         for i, (s, st) in enumerate(zip(FINISHED_STEPS, status))
                     ],
                     "active": [],
                     "pool": pool,
+                    "schedule": [],
+                    "stats": None,
                 }
             )
     return dags, pools
@@ -175,7 +185,13 @@ def _seed_fanout(domains: list[dict], dags: list[dict], now: float) -> tuple[lis
         for n, (step, seconds) in enumerate(SEEDED_RUNS, 1)
     ]
     steps = [
-        {"name": s, "depends": [DELIVER_STEPS[i - 1]] if i else [], "status": runs[0]["steps"][s], "kind": None}
+        {
+            "name": s,
+            "depends": [DELIVER_STEPS[i - 1]] if i else [],
+            "status": runs[0]["steps"][s],
+            "kind": None,
+            **UNDECLARED,
+        }
         for i, s in enumerate(DELIVER_STEPS)
     ]
     dag = {
@@ -187,6 +203,8 @@ def _seed_fanout(domains: list[dict], dags: list[dict], now: float) -> tuple[lis
         "steps": steps,
         "active": runs,
         "pool": f"{prefix}deliver",
+        "schedule": [],
+        "stats": None,
     }
     pools = [
         {"name": f"{prefix}{p}", "cap": cap, "running": len(runs) if p == "deliver" else 0, "queued": 0}
@@ -225,6 +243,7 @@ def _seed_catalog(domains: list[dict], dags: list[dict], now: float) -> tuple[li
                 if status == "failed" and i == 1
                 else "not_started",
                 "kind": None,
+                **UNDECLARED,
             }
             for i, step in enumerate(CATALOG_STEPS)
         ]
@@ -237,6 +256,8 @@ def _seed_catalog(domains: list[dict], dags: list[dict], now: float) -> tuple[li
                 "finishedAt": _iso(now - 3600 * (n + 1) + 90) if ran else "",
                 "steps": steps,
                 "pool": f"{name.rpartition('/')[0]}/default" if "/" in name else "default",
+                "schedule": [],
+                "stats": None,
             }
         )
         if status in CATALOG_RUN_SAFE:

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { bigPlace, chartHeight, closedProcessKeys, dagData, filterRows, order, processNames, place, RECENCY, refusal, rows, ties, type DagData } from "./dagsModel";
+import { bigPlace, chartHeight, closedProcessKeys, dagData, dagFacts, filterRows, order, processNames, place, RECENCY, refusal, rows, ties, type DagData } from "./dagsModel";
 import type { Dag, DagStep, Machine, RunStatus } from "../../api";
 
-const step = (name: string, depends: string[] = [], status: RunStatus = "succeeded"): DagStep => ({ name, depends, status, kind: null });
+const step = (name: string, depends: string[] = [], status: RunStatus = "succeeded"): DagStep => ({ name, depends, status, kind: null, precondition: null, lock: null, last: [] });
 const dag = (name: string, status: RunStatus, over: Partial<Dag> = {}): Dag => ({
-  name, status, runId: "", startedAt: "", finishedAt: "", steps: [step("a"), step("b", ["a"])], ...over,
+  name, status, runId: "", startedAt: "", finishedAt: "", schedule: [], stats: null, steps: [step("a"), step("b", ["a"])], ...over,
 });
 
 const board: Machine = {
@@ -19,9 +19,9 @@ const board: Machine = {
 };
 
 const data: DagData = {
-  now: 1000,
+  now: 1000, facts: {},
   dags: [
-    dag("runs/pr-watch", "succeeded", { finishedAt: "1970-01-01T00:10:00Z", startedAt: "1970-01-01T00:09:00Z" }),
+    dag("runs/pr-watch", "succeeded", { finishedAt: "1970-01-01T00:10:00Z", schedule: [], stats: null, startedAt: "1970-01-01T00:09:00Z" }),
     dag("runs/triage", "failed", { steps: [step("scan"), step("fix", ["scan"], "failed")], finishedAt: "1970-01-01T00:12:00Z" }),
     dag("runs/sweeper", "not_started"),
     dag("runs/backup", "queued"),
@@ -324,5 +324,18 @@ describe("the page's snapshot as the DAGs view reads it", () => {
     expect(read.flows).toEqual([{ name: "board", machine: board }]);
     expect(read.pools).toEqual(sky.pools);
     expect(read.cues).toBe(data.cues);
+  });
+
+  it("reads each DAG's schedule and statistics, a never-run DAG's as absent and not zero", () => {
+    const stats = { runs: 4, hours: 0.5, medianSeconds: 120, p95Seconds: 600, failureShare: 0.25 };
+    const ran = dag("runs/ran", "succeeded", { schedule: ["0 * * * *", "30 6 * * 1"], stats });
+    const never = dag("runs/never", "not_started");
+    const sky = { now: 5, dags: [ran, never], pools: [], cues: [], groups: [], runnable: new Set(), flows: {} } as unknown as Parameters<typeof dagData>[0];
+
+    expect(dagData(sky).facts).toEqual({
+      "runs/ran": { schedule: "0 * * * *, 30 6 * * 1", ...stats },
+      "runs/never": { schedule: "manual", runs: null, hours: null, medianSeconds: null, p95Seconds: null, failureShare: null },
+    });
+    expect(dagFacts(dag("runs/quiet", "succeeded", { stats: { ...stats, runs: 0, hours: 0, medianSeconds: null, p95Seconds: null, failureShare: null } })).runs).toBe(0);
   });
 });

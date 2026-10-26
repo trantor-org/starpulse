@@ -26,7 +26,7 @@ const snap = (now: number, tasks: RawTask[], machineTasks: RawTask[], finishedAt
     }) },
     { name: "triaging-cr-reviews", agents: [], machine: machine(["fetch"]) },
   ],
-  dags: [{ name: "board-scheduler", status: "succeeded", runId: "r", startedAt: "", finishedAt, steps: [] }],
+  dags: [{ name: "board-scheduler", status: "succeeded", runId: "r", startedAt: "", finishedAt, schedule: [], stats: null, steps: [] }],
   domains: [{ name: "Board", dags: [{ name: "board-scheduler", runSafe: false }, { name: "worktree-reap", runSafe: true }] }],
   cues: [{ dag: "apply-on-merge", event: "MERGED", state: "done", on: "each merge to main" }],
   boardUrl: "http://board",
@@ -264,7 +264,7 @@ describe("the step rings a run raises", () => {
   const entered = (runId: string, step: string): ActiveRun => ({ runId, status: "running", startedAt: "", step, stepStartedAt: "", steps: { lint: "not_started", push: "not_started" } });
   const withRuns = (now: number, active: ActiveRun[]): Snapshot => {
     const s = snap(now, [], []);
-    const dag: Dag = { name: "deliver", status: "running", runId: "a", startedAt: "", finishedAt: "", steps: [{ name: "lint", depends: [], status: "not_started", kind: null }, { name: "push", depends: ["lint"], status: "not_started", kind: null }], active, pool: "deliver" };
+    const dag: Dag = { name: "deliver", status: "running", runId: "a", startedAt: "", finishedAt: "", schedule: [], stats: null, steps: [{ name: "lint", depends: [], status: "not_started", kind: null, precondition: null, lock: null, last: [] }, { name: "push", depends: ["lint"], status: "not_started", kind: null, precondition: null, lock: null, last: [] }], active, pool: "deliver" };
     return { ...s, dags: [dag], pools: [{ name: "deliver", cap: 32, running: active.length, queued: 0 }] };
   };
 

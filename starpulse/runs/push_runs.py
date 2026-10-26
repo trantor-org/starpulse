@@ -22,7 +22,7 @@ from pydantic import BaseModel
 
 from starpulse.board.board_feed import PUSHED_INSTANCE, SAVE_INTERVAL, BoardStore, InstanceRuns, entry_position
 from starpulse.runs import run_events
-from starpulse.contracts.adapters import RunStatus
+from starpulse.contracts.adapters import LAST_OUTCOMES, RunStatus
 
 __all__ = ["PUSHED_INSTANCE", "PushRuns"]
 
@@ -40,7 +40,7 @@ class GraphStore(Protocol):
 class PushedRunsSnapshot(BaseModel):
     """The workflows `PushRuns` saves beside the position they reflect."""
 
-    SCHEMA_VERSION: ClassVar[int] = 1
+    SCHEMA_VERSION: ClassVar[int] = 2
     dags: dict[str, dict[str, Any]]
 
 
@@ -88,8 +88,29 @@ def _iso(at: float) -> str:
     return datetime.fromtimestamp(at, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _step(name: str, depends: list[str], status: str) -> dict[str, Any]:
-    return {"name": name, "depends": depends, "status": status, "kind": None}
+#: The statuses of a step that is not over.
+_UNSETTLED = {"not_started", "queued", "running"}
+
+
+def _step(name: str, depends: list[str], status: str, last: list[str] | None = None) -> dict[str, Any]:
+    """A step as pushed: a pushed run declares no precondition or lock, so only its outcomes in `last` are kept."""
+    return {
+        "name": name,
+        "depends": depends,
+        "status": status,
+        "kind": None,
+        "precondition": None,
+        "lock": None,
+        "last": last or [],
+    }
+
+
+def _outcomes(step: dict, status: str) -> list[str]:
+    """The step's `last` once it reports `status`: an outcome joins at the front, replacing the one this run already reported."""
+    if status in _UNSETTLED:
+        return step["last"]
+    kept = step["last"] if step["status"] in _UNSETTLED else step["last"][1:]
+    return [status, *kept][:LAST_OUTCOMES]
 
 
 def _dag(name: str, steps: dict[str, list[str]]) -> dict[str, Any]:
@@ -101,6 +122,8 @@ def _dag(name: str, steps: dict[str, list[str]]) -> dict[str, Any]:
         "startedAt": "",
         "finishedAt": "",
         "steps": [_step(step, depends, "not_started") for step, depends in steps.items()],
+        "schedule": [],
+        "stats": None,
     }
 
 
@@ -170,7 +193,7 @@ class PushRuns:
             return
         store, stream = self._store_at
         with self._lock:
-            seen, dags = self._seen, dict(self._dags)  # a workflow is replaced, never changed in place
+            seen, dags = (self._seen, dict(self._dags))  # a workflow is replaced, never changed in place
         if seen == self._saved:
             return
         try:
@@ -216,13 +239,18 @@ class PushRuns:
         if self._store:
             self._store.record_step(dag["name"], name, depends)
         steps = [
-            {**step, "status": status, **({} if depends is None else {"depends": depends})}
+            {
+                **step,
+                "status": status,
+                "last": _outcomes(step, status),
+                **({} if depends is None else {"depends": depends}),
+            }
             if step["name"] == name
             else step
             for step in dag["steps"]
         ]
         if all(step["name"] != name for step in steps):
-            steps.append(_step(name, depends or [], status))
+            steps.append(_step(name, depends or [], status, [] if status in _UNSETTLED else [status]))
         # a new dict: the feed compares what it was given before with what it is given now
         self._dags[dag["name"]] = {**dag, "steps": steps}
 

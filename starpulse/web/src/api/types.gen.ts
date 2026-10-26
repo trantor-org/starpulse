@@ -696,7 +696,15 @@ export interface DagBody {
    */
   raw?: string | null;
   runId: string;
+  /**
+   * The cron expressions that start the workflow; empty when it runs only when asked for.
+   */
+  schedule: string[];
   startedAt: string;
+  /**
+   * The workflow's runs over the last seven days; None when it never ran or they are unknown.
+   */
+  stats: RunStats | null;
   status: "not_started" | "queued" | "running" | "succeeded" | "failed" | "aborted" | "skipped";
   steps: Step[];
 }
@@ -736,6 +744,31 @@ export interface ActiveRun {
   };
 }
 /**
+ * A DAG's runs over the last seven days.
+ */
+export interface RunStats {
+  /**
+   * The share of those runs that failed; None while none is over.
+   */
+  failureShare: number | null;
+  /**
+   * The summed duration of the window's runs that are over, in hours.
+   */
+  hours: number;
+  /**
+   * The median duration of those runs; None while none is over.
+   */
+  medianSeconds: number | null;
+  /**
+   * The 95th-percentile duration of those runs; None while none is over.
+   */
+  p95Seconds: number | null;
+  /**
+   * The runs that began in the window, over or not.
+   */
+  runs: number;
+}
+/**
  * One step of a DAG in its latest run.
  */
 export interface Step {
@@ -748,9 +781,47 @@ export interface Step {
    */
   kind: string | null;
   /**
+   * The step's outcomes in the runs that are over, newest first, at most five; empty when the scheduler keeps none or the step never ran.
+   *
+   * @maxItems 5
+   */
+  last:
+    | []
+    | ["not_started" | "queued" | "running" | "succeeded" | "failed" | "aborted" | "skipped"]
+    | [
+        "not_started" | "queued" | "running" | "succeeded" | "failed" | "aborted" | "skipped",
+        "not_started" | "queued" | "running" | "succeeded" | "failed" | "aborted" | "skipped"
+      ]
+    | [
+        "not_started" | "queued" | "running" | "succeeded" | "failed" | "aborted" | "skipped",
+        "not_started" | "queued" | "running" | "succeeded" | "failed" | "aborted" | "skipped",
+        "not_started" | "queued" | "running" | "succeeded" | "failed" | "aborted" | "skipped"
+      ]
+    | [
+        "not_started" | "queued" | "running" | "succeeded" | "failed" | "aborted" | "skipped",
+        "not_started" | "queued" | "running" | "succeeded" | "failed" | "aborted" | "skipped",
+        "not_started" | "queued" | "running" | "succeeded" | "failed" | "aborted" | "skipped",
+        "not_started" | "queued" | "running" | "succeeded" | "failed" | "aborted" | "skipped"
+      ]
+    | [
+        "not_started" | "queued" | "running" | "succeeded" | "failed" | "aborted" | "skipped",
+        "not_started" | "queued" | "running" | "succeeded" | "failed" | "aborted" | "skipped",
+        "not_started" | "queued" | "running" | "succeeded" | "failed" | "aborted" | "skipped",
+        "not_started" | "queued" | "running" | "succeeded" | "failed" | "aborted" | "skipped",
+        "not_started" | "queued" | "running" | "succeeded" | "failed" | "aborted" | "skipped"
+      ];
+  /**
+   * The lock the step takes so no other holder runs at once; None when it declares none or the scheduler has no lock to declare.
+   */
+  lock: string | null;
+  /**
    * The step's name, unique within its DAG.
    */
   name: string;
+  /**
+   * What must hold for the step to run, as the scheduler states it; None when it declares none.
+   */
+  precondition: string | null;
   /**
    * The engine's own status for the step when it differs from `status`, shown as is.
    */

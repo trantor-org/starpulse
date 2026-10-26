@@ -6,9 +6,9 @@ import type { Dag } from "../../api";
 import type { DagData } from "./dagsModel";
 import { Dags } from "./Dags";
 
-const dag = (name: string): Dag => ({ name, status: "succeeded", runId: "", startedAt: "", finishedAt: "", steps: [{ name: "scan", depends: [], status: "succeeded", kind: null }], pool: "" });
+const dag = (name: string): Dag => ({ name, status: "succeeded", runId: "", startedAt: "", finishedAt: "", schedule: [], stats: null, steps: [{ name: "scan", depends: [], status: "succeeded", kind: null, precondition: null, lock: null, last: [] }], pool: "" });
 const dags = Array.from({ length: 60 }, (_, i) => dag(`runs/job-${i}`));
-const data: DagData = { now: 3600, dags, domains: [{ name: "Ops", dags: dags.map((d) => ({ name: d.name, runSafe: false })) }], pools: [], cues: [], flows: [] };
+const data: DagData = { now: 3600, facts: {}, dags, domains: [{ name: "Ops", dags: dags.map((d) => ({ name: d.name, runSafe: false })) }], pools: [], cues: [], flows: [] };
 
 let host: HTMLDivElement, root: Root;
 const phone = (narrow: boolean) => vi.stubGlobal("matchMedia", (query: string) => ({ matches: narrow && query === "(max-width: 900px)", addEventListener() {}, removeEventListener() {} }));

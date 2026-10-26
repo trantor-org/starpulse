@@ -24,8 +24,17 @@ BRANCHES = {"feature/PROJ-1": "PROJ-1", "main": None}
 TASK = {"id": "PROJ-1", "title": "t", "team": "PROJ", "lane": "in_progress"}
 TEAMS = {"PROJ-1": "PROJ"}
 EVENT = {"machine": "in-progress", "event": "WORKTREE_READY", "task": "PROJ-1", "time": "100.0"}
-STEP = {"name": "a", "depends": [], "status": "succeeded", "kind": None}
-DAG = {"name": "d", "status": "succeeded", "runId": "r", "startedAt": "", "finishedAt": "", "steps": [STEP]}
+STEP = {"name": "a", "depends": [], "status": "succeeded", "kind": None, "precondition": None, "lock": None, "last": []}
+DAG = {
+    "name": "d",
+    "status": "succeeded",
+    "runId": "r",
+    "startedAt": "",
+    "finishedAt": "",
+    "steps": [STEP],
+    "schedule": [],
+    "stats": None,
+}
 RUN = {"runId": "r2", "status": "running", "startedAt": "", "step": "a", "stepStartedAt": "", "steps": {"a": "running"}}
 POOL = {"name": "lane", "cap": 1, "running": 1, "queued": 0}
 BUSY = {**DAG, "active": [RUN], "pool": "lane"}

@@ -105,7 +105,16 @@ def test_a_timer_is_a_workflow_named_by_its_stem_with_one_step_for_its_service()
 
     assert dag["name"] == "t"
     assert dag["steps"] == [
-        {"name": "t.service", "depends": [], "status": "succeeded", "raw": "inactive/success", "kind": None}
+        {
+            "name": "t.service",
+            "depends": [],
+            "status": "succeeded",
+            "raw": "inactive/success",
+            "kind": None,
+            "precondition": None,
+            "lock": None,
+            "last": [],
+        }
     ]
 
 

@@ -219,6 +219,24 @@ class RunsAdapterKit(_AdapterKit):
             assert len(names) == len(set(names)), f"{dag.name} repeats a step name"
             assert [d for step in dag.steps for d in step.depends if d not in names] == []
 
+    def test_every_dag_carries_its_schedule_statistics_and_every_step_its_precondition_lock_and_history(self) -> None:
+        for dag in self.produce():
+            assert {"schedule", "stats"} <= dag.keys(), f"{dag['name']} leaves out its schedule or statistics"
+            for step in dag["steps"]:
+                missing = {"precondition", "lock", "last"} - step.keys()
+                assert not missing, f"{dag['name']} step {step['name']} leaves out {sorted(missing)}"
+
+    def test_a_dag_never_run_has_no_statistics_and_the_statistics_of_one_run_add_up(self) -> None:
+        for dag in self.records():
+            if not dag.run_id:
+                assert dag.stats is None, f"{dag.name} never ran, so it has no statistics to report as zeros"
+            elif dag.stats is not None:
+                stats = dag.stats
+                assert (stats.median_seconds is None) == (stats.p95_seconds is None), f"{dag.name} has one duration"
+                if stats.median_seconds is not None and stats.p95_seconds is not None:
+                    assert stats.median_seconds <= stats.p95_seconds, f"{dag.name} has a median above its p95"
+                assert stats.runs > 0 or stats.hours == 0, f"{dag.name} has run-hours but no runs"
+
     def test_every_active_run_is_in_flight_and_stays_within_its_own_dag(self) -> None:
         for dag in self.records():
             names = {step.name for step in dag.steps}

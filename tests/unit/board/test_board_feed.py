@@ -614,6 +614,8 @@ def _dag(name: str, *recent: dict) -> dict:
         "startedAt": "",
         "finishedAt": "",
         "steps": [],
+        "schedule": [],
+        "stats": None,
         "recent": list(recent),
     }
 

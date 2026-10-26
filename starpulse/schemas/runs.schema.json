@@ -182,6 +182,71 @@
       "title": "RecentRun",
       "type": "object"
     },
+    "RunStats": {
+      "additionalProperties": false,
+      "description": "A DAG's runs over the last seven days.",
+      "properties": {
+        "runs": {
+          "description": "The runs that began in the window, over or not.",
+          "minimum": 0,
+          "title": "Runs",
+          "type": "integer"
+        },
+        "hours": {
+          "description": "The summed duration of the window's runs that are over, in hours.",
+          "minimum": 0,
+          "title": "Hours",
+          "type": "number"
+        },
+        "medianSeconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The median duration of those runs; None while none is over.",
+          "title": "Medianseconds"
+        },
+        "p95Seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The 95th-percentile duration of those runs; None while none is over.",
+          "title": "P95Seconds"
+        },
+        "failureShare": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The share of those runs that failed; None while none is over.",
+          "title": "Failureshare"
+        }
+      },
+      "required": [
+        "runs",
+        "hours",
+        "medianSeconds",
+        "p95Seconds",
+        "failureShare"
+      ],
+      "title": "RunStats",
+      "type": "object"
+    },
     "Step": {
       "additionalProperties": false,
       "description": "One step of a DAG in its latest run.",
@@ -237,13 +302,58 @@
           ],
           "description": "The phase kind the step declares (`agent`), or None when it declares none.",
           "title": "Kind"
+        },
+        "precondition": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What must hold for the step to run, as the scheduler states it; None when it declares none.",
+          "title": "Precondition"
+        },
+        "lock": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The lock the step takes so no other holder runs at once; None when it declares none or the scheduler has no lock to declare.",
+          "title": "Lock"
+        },
+        "last": {
+          "description": "The step's outcomes in the runs that are over, newest first, at most five; empty when the scheduler keeps none or the step never ran.",
+          "items": {
+            "enum": [
+              "not_started",
+              "queued",
+              "running",
+              "succeeded",
+              "failed",
+              "aborted",
+              "skipped"
+            ],
+            "type": "string"
+          },
+          "maxItems": 5,
+          "title": "Last",
+          "type": "array"
         }
       },
       "required": [
         "name",
         "depends",
         "status",
-        "kind"
+        "kind",
+        "precondition",
+        "lock",
+        "last"
       ],
       "title": "Step",
       "type": "object"
@@ -307,6 +417,25 @@
       "title": "Steps",
       "type": "array"
     },
+    "schedule": {
+      "description": "The cron expressions that start the DAG; empty when it only runs when asked for.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Schedule",
+      "type": "array"
+    },
+    "stats": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RunStats"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "The DAG's runs over the last seven days; None when it has never run or the scheduler cannot list them, never zeros."
+    },
     "active": {
       "default": [],
       "description": "Every run of the DAG that is running or queued now, longest-running first; empty when none is or the scheduler cannot list them.",
@@ -338,7 +467,9 @@
     "runId",
     "startedAt",
     "finishedAt",
-    "steps"
+    "steps",
+    "schedule",
+    "stats"
   ],
   "title": "Dag",
   "type": "object"

@@ -9,6 +9,7 @@ import threading
 import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta
 from functools import partial
 from pathlib import Path
 
@@ -20,6 +21,7 @@ from starpulse.runs import run_events
 from starpulse.runs.dagu import (
     _STATUS,
     GRAPH_TTL,
+    STATS_TTL,
     DaguRuns,
     Transport,
     connect,
@@ -163,7 +165,7 @@ def test_an_end_entry_sets_the_terminal_status_and_reads_each_steps_status_from_
     d1 = dag(feed, "d1")
     assert (d1["status"], d1["finishedAt"]) == ("failed", "1970-01-01T00:01:45Z")
     assert statuses(feed, "d1") == {"a": "succeeded", "b": "failed"}
-    assert calls == [LISTING, "/api/v1/dags/d1"]
+    assert calls == [LISTING, "/api/v1/dags/d1", "/api/v1/dags/d1/dag-runs"]
 
 
 def test_an_end_entry_keeps_the_step_statuses_the_dag_had_when_dagu_cannot_be_read() -> None:
@@ -232,7 +234,7 @@ def test_a_start_costs_dagu_nothing_and_an_end_one_listing_and_that_dags_step_re
 
         runs.handle_entry(*run_entry("StepFinished", "d1", "r20", "succeeded", at=LISTED_AT + 50))
 
-    assert calls == [LISTING, "/api/v1/dags/d1"]
+    assert calls == [LISTING, "/api/v1/dags/d1", "/api/v1/dags/d1/dag-runs"]
     assert dag(feed, "d1")["runId"] == "r20"
 
 
@@ -448,6 +450,8 @@ def test_a_dag_carries_its_step_edges_each_steps_latest_status_and_declared_kind
 
     def urlopen(url: str, timeout: float) -> _Reply:
         asked.append(url)
+        if url.endswith("/dag-runs"):
+            return _Reply({"dagRuns": []})
         return _Reply(detail if url.endswith("/dags/alert-investigation") else listing)
 
     monkeypatch.setattr(urllib.request, "urlopen", urlopen)
@@ -455,15 +459,74 @@ def test_a_dag_carries_its_step_edges_each_steps_latest_status_and_declared_kind
     (dag,) = dags("http://dagu")
 
     assert dag["steps"] == [
-        {"name": "ack", "depends": [], "status": "succeeded", "kind": "code"},
-        {"name": "triage", "depends": ["ack"], "status": "succeeded", "kind": "code"},
-        {"name": "investigate", "depends": ["triage"], "status": "running", "kind": "agent"},
-        {"name": "reason", "depends": ["investigate"], "status": "not_started", "kind": "code"},
-        {"name": "remediate", "depends": ["reason"], "status": "not_started", "kind": "code"},
-        {"name": "fix", "depends": ["remediate"], "status": "not_started", "kind": "agent"},
-        {"name": "finalize", "depends": ["fix"], "status": "not_started", "kind": "code"},
+        {
+            "name": "ack",
+            "depends": [],
+            "status": "succeeded",
+            "kind": "code",
+            "precondition": None,
+            "lock": None,
+            "last": [],
+        },
+        {
+            "name": "triage",
+            "depends": ["ack"],
+            "status": "succeeded",
+            "kind": "code",
+            "precondition": None,
+            "lock": None,
+            "last": [],
+        },
+        {
+            "name": "investigate",
+            "depends": ["triage"],
+            "status": "running",
+            "kind": "agent",
+            "precondition": None,
+            "lock": None,
+            "last": [],
+        },
+        {
+            "name": "reason",
+            "depends": ["investigate"],
+            "status": "not_started",
+            "kind": "code",
+            "precondition": None,
+            "lock": None,
+            "last": [],
+        },
+        {
+            "name": "remediate",
+            "depends": ["reason"],
+            "status": "not_started",
+            "kind": "code",
+            "precondition": None,
+            "lock": None,
+            "last": [],
+        },
+        {
+            "name": "fix",
+            "depends": ["remediate"],
+            "status": "not_started",
+            "kind": "agent",
+            "precondition": None,
+            "lock": None,
+            "last": [],
+        },
+        {
+            "name": "finalize",
+            "depends": ["fix"],
+            "status": "not_started",
+            "kind": "code",
+            "precondition": None,
+            "lock": None,
+            "last": [],
+        },
     ]
-    assert asked[-1] == "http://dagu/api/v1/dags/alert-investigation"
+    assert asked[-2:] == [
+        "http://dagu/api/v1/dags/alert-investigation",
+        "http://dagu/api/v1/dags/alert-investigation/dag-runs",
+    ]
 
 
 def test_dags_reads_each_dags_latest_run_with_defaults_for_what_dagu_omits(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -500,6 +563,8 @@ def test_dags_reads_each_dags_latest_run_with_defaults_for_what_dagu_omits(monke
 
     def urlopen(url: str, timeout: float) -> _Reply:
         timeouts.append(timeout)
+        if url.endswith("/dag-runs"):
+            return _Reply({"dagRuns": []})
         return _Reply(details[url.rsplit("/", 1)[1]] if "perPage" not in url else listing)
 
     monkeypatch.setattr(urllib.request, "urlopen", urlopen)
@@ -511,7 +576,19 @@ def test_dags_reads_each_dags_latest_run_with_defaults_for_what_dagu_omits(monke
             "runId": "r1",
             "startedAt": "s",
             "finishedAt": "f",
-            "steps": [{"name": "only", "depends": [], "status": "not_started", "kind": None}],
+            "steps": [
+                {
+                    "name": "only",
+                    "depends": [],
+                    "status": "not_started",
+                    "kind": None,
+                    "precondition": None,
+                    "lock": None,
+                    "last": [],
+                }
+            ],
+            "schedule": [],
+            "stats": {"runs": 0, "hours": 0.0, "medianSeconds": None, "p95Seconds": None, "failureShare": None},
             "active": [],
             "pool": "",
         },
@@ -522,9 +599,27 @@ def test_dags_reads_each_dags_latest_run_with_defaults_for_what_dagu_omits(monke
             "startedAt": "q",
             "finishedAt": "",
             "steps": [
-                {"name": "a", "depends": [], "status": "not_started", "kind": None},
-                {"name": "b", "depends": ["a"], "status": "not_started", "kind": None},
+                {
+                    "name": "a",
+                    "depends": [],
+                    "status": "not_started",
+                    "kind": None,
+                    "precondition": None,
+                    "lock": None,
+                    "last": [],
+                },
+                {
+                    "name": "b",
+                    "depends": ["a"],
+                    "status": "not_started",
+                    "kind": None,
+                    "precondition": None,
+                    "lock": None,
+                    "last": [],
+                },
             ],
+            "schedule": [],
+            "stats": {"runs": 0, "hours": 0.0, "medianSeconds": None, "p95Seconds": None, "failureShare": None},
             "active": [],
             "pool": "",
         },
@@ -535,6 +630,8 @@ def test_dags_reads_each_dags_latest_run_with_defaults_for_what_dagu_omits(monke
             "startedAt": "",
             "finishedAt": "",
             "steps": [],
+            "schedule": [],
+            "stats": None,
             "active": [],
             "pool": "",
         },
@@ -544,7 +641,19 @@ def test_dags_reads_each_dags_latest_run_with_defaults_for_what_dagu_omits(monke
             "runId": "",
             "startedAt": "",
             "finishedAt": "",
-            "steps": [{"name": "a", "depends": [], "status": "running", "kind": None}],
+            "steps": [
+                {
+                    "name": "a",
+                    "depends": [],
+                    "status": "running",
+                    "kind": None,
+                    "precondition": None,
+                    "lock": None,
+                    "last": [],
+                }
+            ],
+            "schedule": [],
+            "stats": {"runs": 0, "hours": 0.0, "medianSeconds": None, "p95Seconds": None, "failureShare": None},
             "active": [],
             "pool": "",
         },
@@ -558,12 +667,16 @@ def test_dags_asks_for_step_detail_only_of_the_dags_it_is_told_to_keep(monkeypat
 
     def urlopen(url: str, timeout: float) -> _Reply:
         asked.append(url)
-        return _Reply(listing if "perPage" in url else {"dag": {}})
+        return _Reply(listing if "perPage" in url else {"dagRuns": []} if url.endswith("/dag-runs") else {"dag": {}})
 
     monkeypatch.setattr(urllib.request, "urlopen", urlopen)
 
     assert [d["name"] for d in dags("http://dagu", only={"kept"})] == ["kept"]
-    assert asked == ["http://dagu/api/v1/dags?perPage=200", "http://dagu/api/v1/dags/kept"]
+    assert asked == [
+        "http://dagu/api/v1/dags?perPage=200",
+        "http://dagu/api/v1/dags/kept",
+        "http://dagu/api/v1/dags/kept/dag-runs",
+    ]
 
 
 def test_a_dag_left_out_does_not_end_the_listing_of_those_after_it(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -789,7 +902,7 @@ def test_a_followed_instance_reads_only_the_named_dag_when_an_entry_names_a_new_
         _run_event(log, "StepStarted", "running", workflow="d3")
         _wait_until(lambda: any(d["name"] == "ci/d3" for d in feed.snapshot()["dags"]))
 
-    assert calls == [LISTING, "/api/v1/dags/d3"]
+    assert calls == [LISTING, "/api/v1/dags/d3", "/api/v1/dags/d3/dag-runs"]
     assert dag(feed, "d3")["status"] == "running"
 
 
@@ -1386,7 +1499,9 @@ FAILED = Past(
 
 
 def recent(base_url: str, tied: set[str], **kwargs) -> list[dict]:
-    return next(d for d in dags(base_url, recent=tied, **kwargs) if d["name"] == "apply").get("recent", [])
+    """The recent runs of `apply`, the listing reading no statistics so its requests are the recent runs' alone."""
+    listed = dags(base_url, recent=tied, **{"stats": {}, "budget": 0.0, **kwargs})
+    return next(d for d in listed if d["name"] == "apply").get("recent", [])
 
 
 def test_a_tied_dag_carries_its_recent_runs_with_params_times_and_per_step_status() -> None:
@@ -1570,7 +1685,9 @@ def test_a_dag_no_cue_ties_gets_no_recent_runs_from_a_reader_that_ties_none() ->
         runs.handle_entry(*run_entry("StepStarted", "apply", "r5", "running", at=101.0))
 
     assert "recent" not in sink.dags[0]
-    assert not [c for c in calls if "name=" in c]
+    assert not [
+        c for c in calls if c.startswith("/api/v1/dag-runs/apply/")
+    ]  # the statistics list runs, never read their steps
 
 
 def test_a_followed_instance_reads_the_recent_runs_of_the_workflows_its_sink_says_are_tied(
@@ -1645,6 +1762,8 @@ def _graph_listing(monkeypatch: pytest.MonkeyPatch, runs: dict[str, dict]) -> li
     def urlopen(url: str, timeout: float) -> _Reply:
         asked.append(url)
         listing = {"dags": [{"fileName": n, "latestDAGRun": r} for n, r in runs.items()]}
+        if url.endswith("/dag-runs"):
+            return _Reply({"dagRuns": []})
         return _Reply(
             listing
             if "perPage" in url
@@ -1656,7 +1775,7 @@ def _graph_listing(monkeypatch: pytest.MonkeyPatch, runs: dict[str, dict]) -> li
 
 
 def _details(asked: list[str]) -> list[str]:
-    return [u for u in asked if "perPage" not in u]
+    return [u for u in asked if "perPage" not in u and not u.endswith("/dag-runs")]
 
 
 def test_step_cache_reads_a_finished_dags_graph_once_while_its_latest_run_is_unchanged(
@@ -1752,3 +1871,106 @@ def test_a_dag_no_board_event_ties_keeps_its_recent_runs_while_its_latest_run_na
         sink, _ = follow_tied(base_url, tied=set())
 
     assert sink.recent()["dag-run-task-6166-1760000000"]["task"] == "TASK-6166"
+
+
+def _ago(seconds: float, now: datetime | None = None) -> str:
+    """The ISO 8601 instant `seconds` before `now` (default: now), as Dagu stamps a run."""
+    return ((now or datetime.now(UTC)) - timedelta(seconds=seconds)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _past(dag: str, run_id: str, label: str, began: float, lasted: float | None, **nodes: str) -> Past:
+    """A run of `dag` that began `began` seconds ago and lasted `lasted` (None: still going), with `nodes` as `step=label`."""
+    now = datetime.now(UTC).replace(microsecond=0)  # one instant, so a duration never straddles a second
+    finished = "" if lasted is None else _ago(began - lasted, now)
+    return Past(dag, run_id, label, _ago(began, now), finished, nodes=tuple(nodes.items()))
+
+
+def _listed(base_url: str, **kwargs) -> dict[str, dict]:
+    return {d["name"]: d for d in dags(base_url, **kwargs)}
+
+
+def test_a_scheduled_dag_serves_its_schedule_and_a_manual_one_none() -> None:
+    with dagu({"cron": ["a"], "manual": ["a"]}, schedules={"cron": ["11-56/15 * * * *"]}) as (base_url, _):
+        listed = _listed(base_url)
+
+    assert (listed["cron"]["schedule"], listed["manual"]["schedule"]) == (["11-56/15 * * * *"], [])
+
+
+def test_a_step_serves_its_precondition_and_a_lock_dagu_does_not_declare_as_none() -> None:
+    with dagu({"d": ["a", "b"]}, preconditions={"b": ("`test -f x`", "0")}) as (base_url, _):
+        steps = _listed(base_url)["d"]["steps"]
+
+    assert [(s["precondition"], s["lock"]) for s in steps] == [(None, None), ("`test -f x` == 0", None)]
+
+
+def test_a_step_serves_its_last_outcomes_newest_first_from_the_runs_that_are_over() -> None:
+    history = [
+        _past("d", "r4", "running", 10, None, a="running"),
+        _past("d", "r3", "failed", 100, 50, a="failed"),
+        _past("d", "r2", "succeeded", 200, 50, a="succeeded"),
+        _past("d", "r1", "succeeded", 300, 50, a="skipped"),
+    ]
+    with dagu({"d": ["a", "b"]}, history=history) as (base_url, _):
+        steps = _listed(base_url)["d"]["steps"]
+
+    assert [s["last"] for s in steps] == [["failed", "succeeded", "skipped"], []]
+
+
+def test_a_dag_serves_its_runs_hours_durations_and_failure_share_over_seven_days() -> None:
+    week = 7 * 86400
+    history = [
+        _past("d", "r5", "running", 30, None),
+        _past("d", "r4", "failed", 1000, 600),
+        _past("d", "r3", "succeeded", 2000, 180),
+        _past("d", "r2", "succeeded", 3000, 120),
+        _past("d", "r1", "succeeded", 4000, 60),
+        _past("d", "old", "succeeded", week + 3600, 60),
+    ]
+    with dagu({"d": ["a"]}, history=history) as (base_url, _):
+        stats = _listed(base_url)["d"]["stats"]
+
+    assert stats == {"runs": 5, "hours": 0.27, "medianSeconds": 150.0, "p95Seconds": 600.0, "failureShare": 0.25}
+
+
+def test_a_dag_with_runs_but_none_over_serves_counts_and_no_durations() -> None:
+    with dagu({"d": ["a"]}, history=[_past("d", "r1", "running", 30, None)]) as (base_url, _):
+        stats = _listed(base_url)["d"]["stats"]
+
+    assert stats == {"runs": 1, "hours": 0.0, "medianSeconds": None, "p95Seconds": None, "failureShare": None}
+
+
+def test_a_dag_that_never_ran_serves_no_statistics_not_zeros_and_is_not_listed_for_them() -> None:
+    with dagu({"fresh": ["a"]}, unrun=["fresh"]) as (base_url, calls):
+        fresh = _listed(base_url)["fresh"]
+
+    assert (fresh["stats"], fresh["status"]) == (None, "not_started")
+    assert not [c for c in calls if "dag-runs?name=" in c]
+
+
+def test_statistics_are_kept_until_their_ttl_passes_and_then_read_again() -> None:
+    now, stats = [0.0], {}
+    with dagu({"d": ["a"]}, history=[_past("d", "r1", "succeeded", 100, 50)]) as (base_url, calls):
+        for at in (0.0, STATS_TTL - 1, STATS_TTL):
+            now[0] = at
+            dags(base_url, stats=stats, clock=lambda: now[0])
+
+    assert len([c for c in calls if "dag-runs?name=d" in c]) == 2
+
+
+def test_a_listing_reads_statistics_only_within_its_budget() -> None:
+    with dagu({"d": ["a"]}, history=[_past("d", "r1", "succeeded", 100, 50)]) as (base_url, calls):
+        listed = _listed(base_url, stats={}, budget=0.0)
+
+    assert listed["d"]["stats"] is None
+    assert not [c for c in calls if "dag-runs?name=d" in c]
+
+
+def test_a_listing_of_named_dags_serves_the_statistics_already_read_without_reading_more() -> None:
+    stats: dict = {}
+    with dagu({"d": ["a"]}, history=[_past("d", "r1", "succeeded", 100, 50)]) as (base_url, calls):
+        full = _listed(base_url, stats=stats)["d"]["stats"]
+        asked = len(calls)
+        named = _listed(base_url, only={"d"}, stats=stats)["d"]["stats"]
+
+    assert named == full
+    assert not [c for c in calls[asked:] if "dag-runs?name=d" in c]

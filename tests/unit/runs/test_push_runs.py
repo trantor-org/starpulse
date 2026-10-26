@@ -101,11 +101,64 @@ def test_a_graph_learned_before_a_restart_is_drawn_after_it() -> None:
         "runId": "",
         "startedAt": "",
         "finishedAt": "",
+        "schedule": [],
+        "stats": None,
         "steps": [
-            {"name": "fetch", "depends": [], "status": "not_started", "kind": None},
-            {"name": "clean", "depends": ["fetch"], "status": "not_started", "kind": None},
+            {
+                "name": "fetch",
+                "depends": [],
+                "status": "not_started",
+                "kind": None,
+                "precondition": None,
+                "lock": None,
+                "last": [],
+            },
+            {
+                "name": "clean",
+                "depends": ["fetch"],
+                "status": "not_started",
+                "kind": None,
+                "precondition": None,
+                "lock": None,
+                "last": [],
+            },
         ],
     }
+
+
+def test_a_pushed_workflow_serves_what_its_events_say_and_leaves_the_rest_absent() -> None:
+    feed = BoardFeed()
+    runs = PushRuns(feed.runs(PUSHED_INSTANCE), HistoryStore("sqlite://", {}))
+    runs.handle_entry("1-0", fields("StepStarted", "running"))
+    runs.handle_entry("2-0", fields("StepFinished", "succeeded", step="fetch"))
+
+    dag = drawn(feed)
+
+    assert Dag.model_validate(dag).stats is None
+    assert (dag["schedule"], dag["stats"]) == ([], None)
+    assert [(s["precondition"], s["lock"], s["last"]) for s in dag["steps"]] == [(None, None, ["succeeded"])]
+
+
+def test_a_step_keeps_its_last_outcomes_across_runs_newest_first() -> None:
+    feed = BoardFeed()
+    runs = PushRuns(feed.runs(PUSHED_INSTANCE), HistoryStore("sqlite://", {}))
+    runs.handle_entry("1-0", fields("StepStarted", "running"))
+    runs.handle_entry("2-0", fields("StepFinished", "succeeded", step="fetch"))
+    runs.handle_entry("3-0", fields("StepStarted", "running", run="r2", at=START + 600))
+    runs.handle_entry("4-0", fields("StepFinished", "failed", step="fetch", run="r2", at=START + 601))
+    runs.handle_entry("5-0", fields("StepStarted", "running", run="r3", at=START + 1200))
+
+    assert drawn(feed)["steps"][0]["last"] == ["failed", "succeeded"]
+
+
+def test_a_step_reported_twice_in_one_run_counts_once() -> None:
+    feed = BoardFeed()
+    runs = PushRuns(feed.runs(PUSHED_INSTANCE), HistoryStore("sqlite://", {}))
+    runs.handle_entry("1-0", fields("StepStarted", "running"))
+    runs.handle_entry("2-0", fields("StepFinished", "failed", step="fetch"))
+    runs.handle_entry("3-0", fields("StepFinished", "succeeded", step="fetch", at=START + 1))
+
+    assert drawn(feed)["steps"][0]["last"] == ["succeeded"]
 
 
 def test_workflows_do_not_share_a_graph() -> None:

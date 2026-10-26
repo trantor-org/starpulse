@@ -3,7 +3,7 @@
 import itertools
 import json
 import threading
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Collection, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -64,6 +64,9 @@ def dagu(
     history: Sequence[Past] = (),
     page: int = 100,
     params: Mapping[str, list[str]] = MappingProxyType({}),
+    schedules: Mapping[str, list[str]] = MappingProxyType({}),
+    preconditions: Mapping[str, tuple[str, str]] = MappingProxyType({}),
+    unrun: Collection[str] = (),
 ) -> Iterator[tuple[str, list[str]]]:
     """Serve one DAG per key of `steps` (its value is the step names, each depending on the one before).
 
@@ -74,7 +77,9 @@ def dagu(
     Like Dagu, whose listing starts at UTC midnight unless asked for a `fromDate`, a listing with no `fromDate` leaves
     out the runs that began before `listed_since`. `history` (read at each request, so a caller may add to it) are the runs `/dag-runs?name=` lists, `page` at a time with
     a `nextCursor` while more remain; their detail is served like an in-flight run's. `params` are the `NAME=default`
-    words each DAG declares, as its detail reports them.
+    words each DAG declares, as its detail reports them. `schedules` are the cron expressions a DAG's listing entry
+    carries, `preconditions` the `(condition, expected)` a step named by key declares, and `unrun` the DAGs the
+    listing gives no latest run. `/dags/<name>/dag-runs` lists the `history` of a DAG with its steps, as Dagu does.
     Yields the base URL and the list of every request path received, in order.
     """
     calls: list[str] = []
@@ -84,7 +89,18 @@ def dagu(
     def detail(name: str) -> dict:
         return {
             "dag": {
-                "steps": [{"name": s, "depends": steps[name][i - 1 : i]} for i, s in enumerate(steps[name])],
+                "steps": [
+                    {
+                        "name": s,
+                        "depends": steps[name][i - 1 : i],
+                        **(
+                            {"preconditions": [dict(zip(("condition", "expected"), preconditions[s]))]}
+                            if s in preconditions
+                            else {"preconditions": []}
+                        ),
+                    }
+                    for i, s in enumerate(steps[name])
+                ],
                 **({"queue": queue_of[name]} if queue_of and name in queue_of else {}),
             },
             "latestDAGRun": {
@@ -123,7 +139,19 @@ def dagu(
         url = urlsplit(path)
         parts = url.path.removeprefix("/api/v1/").split("/")
         if path == "/api/v1/dags?perPage=200":
-            return 200, {"dags": [{"fileName": n, "latestDAGRun": {**run}} for n in steps]}
+            return 200, {
+                "dags": [
+                    {
+                        "fileName": n,
+                        "dag": {"schedule": [{"expression": e, "kind": "cron"} for e in schedules.get(n, [])]},
+                        **({} if n in unrun else {"latestDAGRun": {**run}}),
+                    }
+                    for n in steps
+                ]
+            }
+        if len(parts) == 3 and parts[0] == "dags" and parts[2] == "dag-runs":
+            mine = [r for r in history if r.dag == parts[1]]
+            return 200, {"dagRuns": [past_detail(r)["dagRunDetails"] for r in mine[:30]], "gridData": []}
         if parts == ["queues"]:
             if queues is None:
                 return 404, {}

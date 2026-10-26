@@ -48,7 +48,7 @@ const run = (runId: string, status: RunStatus, step: string, steps: Record<strin
   runId, status, startedAt: "2026-10-05T16:00:00Z", step, stepStartedAt: "2026-10-05T16:00:05Z", steps,
 });
 const dag = (active: ActiveRun[], over: Partial<Dag> = {}): Dag => ({
-  name: "dagu/deliver", status: "running", runId: "", startedAt: "", finishedAt: "", steps: [], active, ...over,
+  name: "dagu/deliver", status: "running", runId: "", startedAt: "", finishedAt: "", schedule: [], stats: null, steps: [], active, ...over,
 });
 const A = "deliver-agent-task-2787-1", B = "deliver-agent-task-2801-2";
 
@@ -288,8 +288,8 @@ describe("the DAG tooltip's fan-out line", () => {
 
 describe("the rings a DAG's runs raise on its glyph", () => {
   const whole = (active: ActiveRun[], status: RunStatus = "running", runId = "a", steps: Partial<Record<string, RunStatus>> = {}): Dag => ({
-    name: "deliver", status, runId, startedAt: "", finishedAt: "", pool: "deliver", active,
-    steps: STEPS.map((name): DagStep => ({ name, depends: [], status: steps[name] ?? "not_started", kind: null })),
+    name: "deliver", status, runId, startedAt: "", finishedAt: "", schedule: [], stats: null, pool: "deliver", active,
+    steps: STEPS.map((name): DagStep => ({ name, depends: [], status: steps[name] ?? "not_started", kind: null, precondition: null, lock: null, last: [] })),
   });
 
   it("rings, amber, the step a run enters", () => {
