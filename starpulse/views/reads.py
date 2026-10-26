@@ -30,6 +30,7 @@ from starpulse.views.responses import (
     ledger_response,
     machines_response,
     missed_loads_response,
+    cited_pulls,
     pulls_response,
     search_response,
     sessions_response,
@@ -221,6 +222,7 @@ class ReadRoutes:
         self._contract = services.contract
         self._milestones = board
         self._scheduler = services.scheduler
+        self._pull_store = services.pulls
         metrics = (
             services.actor_metrics,
             services.lane_metrics,
@@ -287,6 +289,8 @@ class ReadRoutes:
             return Response(*ledger_response(self._feed, unquote(event), query))
         if path.startswith(_TASK):
             status, body = task_record(self._feed, self._read, unquote(path.removeprefix(_TASK)))
+            if status == 200:
+                body["record"]["pulls"] = cited_pulls(self._pull_store, body["record"].get("references", []))
             return Response(encode("task", body), status)
         if path.startswith(f"{_MILESTONES}/") and path not in _MILESTONE_WRITES:
             status, body = milestone_record(self._milestones, unquote(path.removeprefix(f"{_MILESTONES}/")))

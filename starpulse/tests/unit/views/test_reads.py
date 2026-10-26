@@ -14,6 +14,7 @@ from starpulse.flow_metrics.history import HistoryStore
 from starpulse.tests.fake_board import bare_board
 from starpulse.views.compression import Encoded
 from starpulse.views.reads import Arrival, ReadRoutes, Request, Response
+from starpulse.views.responses import cited_pulls
 from starpulse.views.services import Services
 from starpulse.views.snapshot_cache import SnapshotCache
 
@@ -55,6 +56,33 @@ def test_a_missing_record_answers_its_status(routes) -> None:
 
     assert response is not None
     assert response.status == 404
+
+
+class _Pulls:
+    def __init__(self, records: list[dict]) -> None:
+        self.records = records
+
+    def find(self, repo: str, number: int, **_) -> list[dict]:
+        return [record for record in self.records if (record["repo"], record["number"]) == (repo, number)]
+
+
+def test_a_task_record_carries_each_cited_pull_request_without_its_body() -> None:
+    store = _Pulls([{"repo": "trantor-org/starpulse", "number": 932, "state": "MERGED", "checks": "pass", "body": "x"}])
+
+    cited = cited_pulls(
+        store,
+        [
+            "https://github.com/trantor-org/starpulse/pull/932",
+            "https://github.com/trantor-org/starpulse/pull/978",
+            "TASK-8683",
+        ],
+    )
+
+    assert cited == [{"repo": "trantor-org/starpulse", "number": 932, "state": "MERGED", "checks": "pass"}]
+
+
+def test_no_pull_store_cites_no_pull_requests() -> None:
+    assert cited_pulls(None, ["https://github.com/trantor-org/starpulse/pull/932"]) == []
 
 
 def test_metrics_answers_prometheus_text(routes) -> None:
