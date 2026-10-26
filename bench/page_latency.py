@@ -607,7 +607,7 @@ def time_page(
         # The In Progress drill-in (`?drill=TASK-N`) animates its streams every frame; a fresh page, so its frames stand alone.
         if shown:
             page.goto(f"{base.rstrip('/')}/?drill={shown[0]}", wait_until="domcontentloaded")
-            page.wait_for_selector('[aria-label="In Progress drill-in"] canvas', timeout=30_000)
+            page.wait_for_selector('[aria-label="In Progress drill-in"] svg', timeout=30_000)
             page.wait_for_timeout(3000)
             rows.append(
                 Row(
