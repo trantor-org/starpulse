@@ -38,8 +38,9 @@ Done when the code reads as the project's code does and the focused test is stil
 
 ## 4. Checkpoint the criteria
 
-Checkpoint every passed criterion that has no entry yet: `starpulse task checkpoint-ac PROJ-45 <criterion>
-<evidence>`, with the command and its result as evidence. A criterion with no behavior, such as a file that must
+Checkpoint every passed criterion that has no entry yet: `starpulse task checkpoint-ac PROJ-45 2 '<command>:
+<result>'`. It takes no flags: the criterion's number, then the command and its result as one quoted string. A
+criterion with no behavior, such as a file that must
 exist, is checkpointed the same way once its command passes. Run the project's checks on the changed files with
 `starpulse command run check -- <changed paths>` and fix what they report.
 

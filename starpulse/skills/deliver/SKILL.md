@@ -18,7 +18,8 @@ A step named `starpulse command run NAME` is the project's own command. When it 
    When a test fails because an accepted behavior made its expectation stale, update the expectation and rerun.
 2. Run the project's checks on every changed file: `starpulse command run check -- <changed paths>`. Fix what they
    report and rerun until they pass.
-3. Checkpoint every passed criterion that has no entry yet with `starpulse task checkpoint-ac`.
+3. Checkpoint every passed criterion that has no entry yet with `starpulse task checkpoint-ac PROJ-45 2
+   '<command>: <result>'`: the criterion's number, then one quoted evidence string, no flags.
 4. For each fork recommended in a task comment, file it as a task or decline it in a comment.
 
 Done when the tests and checks pass on the final tree and every criterion has an entry.
@@ -59,7 +60,9 @@ delivery marks it ready on its green verdict; when it is not, mark it ready the 
 says.
 
 Then move the task to review with `starpulse task move PROJ-45 review`: the move takes the column's lowercase id.
-A refusal names the ids the task can move to and, when a guard refused, the skill that satisfies it.
+A refusal names the ids the task can move to and, when a guard refused, the skill that satisfies it. A guard that
+wants the PR and evidence recorded takes them in one call instead: `starpulse task review PROJ-45 --ref <pr-url>
+--summary '<outcome>' --comment '<evidence>'`.
 
 Done when `starpulse command run pr-status --arg pr=<number>` reports the PR ready with green checks and
 `starpulse task show PROJ-45` shows the task in review.
