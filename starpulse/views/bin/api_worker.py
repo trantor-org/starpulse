@@ -117,7 +117,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     # the history dates the lanes the board adapter replays, so it is open before the adapter starts
     store = host.history_store(config, base, feed.machines)
     feed.date_lanes(store.lane_path)
-    feed.record_lanes(store)
+    feed.record_lanes(store, log)
     feed.record_ratings(log)
     # `starpulse worker board` dates when each task's Start Criteria were met; this process rereads the dates it keeps.
     threading.Thread(
