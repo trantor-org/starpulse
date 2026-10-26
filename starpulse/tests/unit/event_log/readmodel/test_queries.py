@@ -91,12 +91,12 @@ def test_a_queried_declared_field_selects_unarchived_tasks_and_an_unqueried_one_
         model.with_field("colour", "red")
 
 
-def test_the_ready_set_holds_tasks_whose_dependencies_are_all_done(board) -> None:
+def test_the_ready_set_holds_tasks_whose_dependencies_are_all_in_the_done_lane(board) -> None:
     engine, store, model = board
     _seed(store)
     _project(engine, store)
 
-    assert model.ready("Ready", "Done") == ["TASK-1", "TASK-4"]
+    assert model.ready("Ready", "done") == ["TASK-1", "TASK-4"]
 
 
 def test_deltas_since_a_cursor_come_in_change_order_with_archived_tasks_and_page(board) -> None:
@@ -121,7 +121,7 @@ def test_deltas_since_a_cursor_come_in_change_order_with_archived_tasks_and_page
         queries.snapshot("Ready"),
         queries.live_criteria(),
         queries.with_field("field_area", "ops"),
-        queries.ready("Ready", "Done"),
+        queries.ready("Ready", "done"),
         queries.since(10, 100),
     ],
     ids=["snapshot", "snapshot-by-state", "live-criteria", "by-field", "ready", "since"],
