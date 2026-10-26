@@ -6,6 +6,8 @@ import { TaskView } from "./TaskView";
 import { props, task } from "../../tests/taskViewFixtures";
 import type { Rating } from "../../api";
 
+/** The deviated sample: a step-down trial carries a `trial-` label, and only it is rated. */
+const trialTask = { ...task, profile: "@agent-standard-medium", labels: [...task.labels, "trial-decide-5"] };
 const rated = (over: Partial<Rating> = {}): Rating => ({ verdict: "pass", reason: "", at: 760, actor: "operator", changes: 2, ...over });
 
 describe("the Rating section of the task view", () => {
@@ -14,7 +16,7 @@ describe("the Rating section of the task view", () => {
     const host = document.body.appendChild(document.createElement("div"));
     const root = createRoot(host);
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-    act(() => root.render(<TaskView {...props(over)} />));
+    act(() => root.render(<TaskView {...props({ task: trialTask, ...over })} />));
     mounted.push({ root, host });
     return host;
   };
@@ -38,18 +40,27 @@ describe("the Rating section of the task view", () => {
   };
   const press = (el: Element | null, key: string) => act(() => { el!.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true })); });
 
-  it("sits directly under Status on every task, unrated, with neither verdict pressed and no meta line", () => {
+  it("draws no Rating row on a task without a trial- label", () => {
+    const host = mount({ task });
+
+    expect(section(host)).toBeNull();
+    expect([...host.querySelectorAll(".tvrail .sec.rs .t")].map((t) => t.textContent)).not.toContain("Rating");
+  });
+
+  it("draws the Rating row on a trial- task: what was sampled, the profile it drew, then unrated Pass and Fail and no meta line", () => {
     const host = mount();
 
     const titles = [...host.querySelectorAll(".tvrail .sec.rs .t")].map((t) => t.textContent);
     expect(titles.slice(0, 3)).toEqual(["Status", "Rating", "Session"]);
+    expect(section(host)?.querySelector(".why")?.textContent).toContain("decide work at size 5");
+    expect(section(host)?.querySelector(".who2.dev")?.textContent).toContain("@agent-standard-medium");
     expect([button(host, "pass")?.getAttribute("aria-pressed"), button(host, "fail")?.getAttribute("aria-pressed")]).toEqual(["false", "false"]);
     expect(section(host)?.querySelector(".ratemeta")).toBeNull();
     expect(section(host)?.querySelector(".editrefusal")).toBeNull();
   });
 
   it("shows a pass with who set it, when and how many changes, the history in the meta line's title", () => {
-    const host = mount({ task: { ...task, rating: rated() } });
+    const host = mount({ task: { ...trialTask, rating: rated() } });
 
     expect(button(host, "pass")?.getAttribute("aria-pressed")).toBe("true");
     expect(button(host, "fail")?.getAttribute("aria-pressed")).toBe("false");
@@ -59,18 +70,18 @@ describe("the Rating section of the task view", () => {
   });
 
   it("shows a fail with its saved reason and an edit button, or an add-a-reason link when it has none", () => {
-    const withReason = mount({ task: { ...task, rating: rated({ verdict: "fail", reason: "drops the lane filter", changes: 1 }) } });
+    const withReason = mount({ task: { ...trialTask, rating: rated({ verdict: "fail", reason: "drops the lane filter", changes: 1 }) } });
     expect(button(withReason, "fail")?.getAttribute("aria-pressed")).toBe("true");
     expect(section(withReason)?.querySelector(".ratewhy")?.textContent).toContain("drops the lane filter");
     expect(section(withReason)?.querySelector(".ratewhy button")?.textContent).toBe("Edit");
     expect(section(withReason)?.querySelector(".ratemeta")?.textContent).toBe("Failed by operator · 4m ago · 1 change");
 
-    const bare = mount({ task: { ...task, rating: rated({ verdict: "fail", changes: 1 }) } });
+    const bare = mount({ task: { ...trialTask, rating: rated({ verdict: "fail", changes: 1 }) } });
     expect(section(bare)?.querySelector(".ratewhy button")?.textContent).toBe("Add a reason");
   });
 
   it("treats a cleared rating as none", () => {
-    const host = mount({ task: { ...task, rating: rated({ verdict: "cleared" }) } });
+    const host = mount({ task: { ...trialTask, rating: rated({ verdict: "cleared" }) } });
 
     expect([button(host, "pass")?.getAttribute("aria-pressed"), button(host, "fail")?.getAttribute("aria-pressed")]).toEqual(["false", "false"]);
     expect(section(host)?.querySelector(".ratemeta")).toBeNull();
@@ -90,7 +101,7 @@ describe("the Rating section of the task view", () => {
     expect(button(host, "pass")?.getAttribute("aria-pressed")).toBe("false");
   });
 
-  it("opens the optional reason field on Fail, saves it on Enter and shows it with an edit button", async () => {
+  it("asks for a reason on Fail, saves it on Enter and shows it with an edit button", async () => {
     const calls = stubWriter();
     const host = mount();
 
@@ -148,7 +159,7 @@ describe("the Rating section of the task view", () => {
 
   it("answers a refused write with the Rating not saved line and keeps the rating it had", async () => {
     stubWriter(() => new Response(JSON.stringify({ error: "rating not saved" }), { status: 503 }));
-    const host = mount({ task: { ...task, rating: rated() } });
+    const host = mount({ task: { ...trialTask, rating: rated() } });
 
     await click(button(host, "fail"));
 

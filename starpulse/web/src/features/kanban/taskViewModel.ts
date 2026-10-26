@@ -449,8 +449,8 @@ export function ciHistory(task: KanbanTask): CiHistory | null {
   return { pulls, total: { runs: sum("runs"), reruns: sum("reruns"), rebases: sum("rebases"), conflicts: sum("conflicts") } };
 }
 
-/** What the Session section draws for a task: the claiming session's link and the line the in-progress machine gives it. */
-export interface SessionView { url: string; line: string }
+/** What the Session section draws for a task: the claiming session's link and id, and the line the in-progress machine gives it. */
+export interface SessionView { url: string; line: string; id: string }
 
 /**
  * The session that holds `task`, or null when none does. A startable task is held by no one, so the link an earlier
@@ -462,5 +462,5 @@ export function sessionOf(task: KanbanTask, record: TaskRecord | null, now: numb
   const machine = task.machines.find((m) => m.machine === "in-progress" && m.at > 0);
   const steps = machine?.steps ?? 0;
   const line = machine ? [machine.model, machine.state.replace(/_/g, " "), `${ago(now - machine.at)} ago`, `${steps} step${steps === 1 ? "" : "s"}`].filter(Boolean).join(" · ") : "";
-  return { url, line };
+  return { url, line, id: url.split("/").pop()!.replace(/^session_/, "") };
 }

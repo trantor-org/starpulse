@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { NO_PREFS, applySuggestion, applyTaskRecord, assigneeOptions, chainOf, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, kanbanTasks, labelSuggestions, layout, milestoneOptions, milestoneOutline, recent, show, showAll, stackOf, toggleFold, whyHidden, type KanbanTask } from "./kanbanModel";
+import { prReadState } from "./kanbanModel";
 import { merge, midnight } from "../../render/sky";
 import { LIFECYCLE_COLUMNS, LIFECYCLE_ROLES } from "../../tests/lifecycleRoles";
 import type { TaskRecord } from "./taskViewModel";
@@ -651,5 +652,22 @@ describe("the Done column", () => {
     const tasks = [{ ...finished("T-OLD", 13), assignee: "gone" }, finished("T-NEW", 1)];
 
     expect(assigneeOptions(recent(tasks, NOW, LIFECYCLE_ROLES), LIFECYCLE_COLUMNS)).toEqual([{ value: "", count: 1 }]);
+  });
+});
+
+describe("prReadState", () => {
+  const read = (over: Partial<Pull> = {}): Pull => ({ number: 7, repo: "o/r", url: "https://github.com/o/r/pull/7", checks: "pass", merged: false, merge_sha: null, merged_at: null, threads: 0, stale: false, ...over });
+  const unread = (): Pull => ({ ...read({ checks: "none" }), stale: true });
+
+  it("gives an unread citation as not read yet with its reason, never as a failed read or no checks", () => {
+    const state = prReadState(unread());
+
+    expect(state).toEqual({ read: false, label: "not read yet", reason: "no read since it was cited" });
+    expect(JSON.stringify(state)).not.toMatch(/stale|failed|none/);
+  });
+
+  it("gives a read pull request its state, check result and unread review count", () => {
+    expect(prReadState(read({ checks: "failing", threads: 2 }))).toEqual({ read: true, state: "open", checks: "failing", unreviewed: 2 });
+    expect(prReadState(read({ merged: true }))).toEqual({ read: true, state: "merged", checks: "pass", unreviewed: 0 });
   });
 });

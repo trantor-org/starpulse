@@ -44,7 +44,7 @@ function PullChip({ pulls }: { pulls: Pull[] }) {
   const p = pulls[0];
   if (!p) return null;
   return (
-    <span className={`pr ${checksClass(p)}`} title={`${p.merged ? "merged" : `checks ${p.checks}`}${p.threads ? `, ${p.threads} open review threads` : ""}${p.stale ? " (last read failed)" : ""}`}>
+    <span className={`pr ${checksClass(p)}`} title={`${p.merged ? "merged" : `checks ${p.checks}`}${p.threads ? `, ${p.threads} open review threads` : ""}${p.stale ? " (not read yet)" : ""}`}>
       <i />#{p.number}
       {p.threads > 0 && <span className="th"> ⌁{p.threads}</span>}
       {pulls.length > 1 && ` +${pulls.length - 1}`}

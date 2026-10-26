@@ -336,6 +336,17 @@ export function whyHidden(tasks: KanbanTask[], names: Record<string, string>, ro
   return prefs.folded.has(t.milestone) ? "in a folded milestone" : null;
 }
 
+/** What the dialog draws of a cited pull request: its state, check result and unread reviews, or why it has not been read. */
+export type PrReadState =
+  | { read: true; state: "open" | "merged"; checks: Pull["checks"]; unreviewed: number }
+  | { read: false; label: "not read yet"; reason: string };
+
+/** An unread citation (`cited` marks it `stale`) is not read yet, never a failed read or no checks: the PR store reads every repository a task cites, so none waits on a grant. */
+export const prReadState = (p: Pull): PrReadState =>
+  p.stale
+    ? { read: false, label: "not read yet", reason: "no read since it was cited" }
+    : { read: true, state: p.merged ? "merged" : "open", checks: p.checks, unreviewed: p.threads };
+
 /** Each pull request a task cites, as GitHub was last read for it; one not read yet is drawn unread (`stale`) rather than left off. */
 const cited = (urls: string[], read: Pull[]): Pull[] => {
   const unread = urls.filter((url) => !read.some((p) => p.url === url));
