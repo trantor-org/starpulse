@@ -1,0 +1,1782 @@
+diff --git a/starpulse/web/src/AdminPage.test.tsx b/starpulse/web/src/AdminPage.test.tsx
+index a403c4e8..e387cccb 100644
+--- a/starpulse/web/src/AdminPage.test.tsx
++++ b/starpulse/web/src/AdminPage.test.tsx
+@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+ import { AdminPage } from "./AdminPage";
+ import { AdminStore } from "./features/admin/adminPrefs";
+ import { HistoryWindowStore } from "./features/admin/historyWindow";
++import { ThemeStore } from "./features/admin/theme/themeStore";
+ 
+ let host: HTMLDivElement, root: Root;
+ 
+@@ -24,7 +25,7 @@ afterEach(() => {
+ 
+ describe("the Admin view", () => {
+   it("hosts Connect a tracker, which left the Kanban's filters row", async () => {
+-    await act(async () => root.render(<AdminPage store={new AdminStore()} window={new HistoryWindowStore()} hint={null} />));
++    await act(async () => root.render(<AdminPage store={new AdminStore()} theme={new ThemeStore()} window={new HistoryWindowStore()} hint={null} />));
+ 
+     const card = [...host.querySelectorAll("#admin .card")].find((c) => c.querySelector("h2")?.textContent?.startsWith("Tracker"));
+     expect(card?.textContent).toContain("Connect a tracker");
+@@ -34,7 +35,7 @@ describe("the Admin view", () => {
+     const status = { enabled: true, harness: "claude", quietHours: { start: "22:00", end: "07:00", timezone: "America/Phoenix" }, sampledAt: null, dimensions: [] };
+     vi.stubGlobal("fetch", vi.fn(async (url: string) => (String(url).endsWith("/api/scheduler") ? new Response(JSON.stringify(status)) : new Response("{}", { status: 503 }))));
+ 
+-    await act(async () => root.render(<AdminPage store={new AdminStore()} window={new HistoryWindowStore()} hint={null} />));
++    await act(async () => root.render(<AdminPage store={new AdminStore()} theme={new ThemeStore()} window={new HistoryWindowStore()} hint={null} />));
+     await act(async () => { for (let i = 0; i < 6; i++) await Promise.resolve(); });
+ 
+     const cards = [...host.querySelectorAll("#admin .card")];
+diff --git a/starpulse/web/src/AdminPage.tsx b/starpulse/web/src/AdminPage.tsx
+index 85395f9e..37742e8a 100644
+--- a/starpulse/web/src/AdminPage.tsx
++++ b/starpulse/web/src/AdminPage.tsx
+@@ -7,12 +7,14 @@ import type { HistoryWindowStore } from "./features/admin/historyWindow";
+ import { QuietHoursStore } from "./features/admin/quietHours";
+ import { SchedulerCard } from "./features/scheduler/SchedulerCard";
+ import { SchedulerStore } from "./features/scheduler/scheduler";
++import { ThemeCard } from "./features/admin/theme/ThemeCard";
++import type { ThemeStore } from "./features/admin/theme/themeStore";
+ 
+-export function AdminPage({ store, window, hint }: { store: AdminStore; window: HistoryWindowStore; hint?: string | null }) {
++export function AdminPage({ store, theme, window, hint }: { store: AdminStore; theme: ThemeStore; window: HistoryWindowStore; hint?: string | null }) {
+   const [quiet] = useState(() => new QuietHoursStore());
+   const [scheduler] = useState(() => new SchedulerStore());
+   return (
+-    <Admin store={store} window={window} tracker={<TrackerCard hint={hint} />}
++    <Admin store={store} window={window} theme={<ThemeCard theme={theme} />} tracker={<TrackerCard hint={hint} />}
+       scheduler={(clock) => <SchedulerCard store={scheduler} quiet={quiet} clock={clock} />} />
+   );
+ }
+diff --git a/starpulse/web/src/App.tsx b/starpulse/web/src/App.tsx
+index f33b0cad..28695938 100644
+--- a/starpulse/web/src/App.tsx
++++ b/starpulse/web/src/App.tsx
+@@ -5,6 +5,7 @@
+ import { lazy, Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+ import { NO_STARMAP_FILTERS, STARMAP_PREFS_KEY, useFilters } from "./shared/viewPrefs";
+ import { AdminStore } from "./features/admin/adminPrefs";
++import { ThemeStore } from "./features/admin/theme/themeStore";
+ import { HistoryWindowStore } from "./features/admin/historyWindow";
+ import { HudStore, type FeedLine, type HudState } from "./render/hud";
+ import { BOARD, pathKey, type Path } from "./render/levels";
+@@ -49,6 +50,7 @@ export function App() {
+   useEffect(() => (drawn ? prefetchViews() : undefined), [drawn]);
+   // once it is, the views not yet opened also mount hidden in the background, so a first switch to one only unhides it
+   const [admin] = useState(() => held?.admin ?? new AdminStore());
++  const [theme] = useState(() => held?.theme ?? new ThemeStore());
+   const [historyWindow] = useState(() => new HistoryWindowStore());
+   // a move outlives the view that made it: the card stays where it landed while the writer answers
+   const [moves] = useState(() => new MoveStore(postMove));
+@@ -163,7 +165,7 @@ export function App() {
+         </Suspense>
+       </Kept>
+       <Kept name="dags" on={view === "dags"} warm={drawn}><Suspense fallback={null}><Dags data={hud.dagData} openPath={open} spot={spottedDag} opening={openingDag} /></Suspense></Kept>
+-      <Kept name="admin" on={view === "admin"} warm={drawn}><Suspense fallback={null}><AdminPage store={admin} window={historyWindow} hint={hud.hint} /></Suspense></Kept>
++      <Kept name="admin" on={view === "admin"} warm={drawn}><Suspense fallback={null}><AdminPage store={admin} theme={theme} window={historyWindow} hint={hud.hint} /></Suspense></Kept>
+       <Rail shown={shell} hud={hud} view={view} note={view === "kanban" && line && why ? { key: line, text: why } : null}
+         can={(l) => (view === "kanban" ? !!l.task : view === "dags" ? !!l.dag : view === "constellation" && !!l.task)}
+         spot={(l) => {
+diff --git a/starpulse/web/src/boot.ts b/starpulse/web/src/boot.ts
+index 22161dae..67a60d8d 100644
+--- a/starpulse/web/src/boot.ts
++++ b/starpulse/web/src/boot.ts
+@@ -2,6 +2,8 @@
+ // asides, the crumb, the tip and the panel), so this starts the renderer against them from the entry chunk; the React page, a chunk
+ // of its own, mounts after that frame and adopts what is held here.
+ import { AdminStore } from "./features/admin/adminPrefs";
++import { installRecolor } from "./features/admin/theme/recolor";
++import { ThemeStore } from "./features/admin/theme/themeStore";
+ import { HudStore } from "./render/hud";
+ import { loadLateFonts } from "./render/fonts";
+ import { renderer } from "./render/renderer";
+@@ -13,6 +15,7 @@ import { retired, viewOf } from "./shared/nav";
+ export interface Booted {
+   store: HudStore;
+   admin: AdminStore;
++  theme: ThemeStore;
+   renderer: Renderer;
+   canvas: HTMLCanvasElement;
+   tip: HTMLDivElement;
+@@ -29,7 +32,7 @@ const frameOf = <T extends HTMLElement>(id: string) => document.getElementById(i
+ /** Starts the Board and calls `mount` to bring up the React page once the first frame has been marked, or when no board comes. */
+ export function boot(mount: () => void): Booted {
+   const canvas = frameOf<HTMLCanvasElement>("c"), tip = frameOf<HTMLDivElement>("tip"), panel = frameOf<HTMLDivElement>("panel");
+-  const admin = new AdminStore(), store = new HudStore();
++  const admin = new AdminStore(), store = new HudStore(), theme = new ThemeStore(installRecolor());
+   // a bare address opens the view the Admin chose; one that names a view opens that, and a view that covers the map leaves it undrawn
+   const star = viewOf(location.search, retired(location.pathname, location.hash) ? "constellation" : admin.get().view) === "constellation";
+   let mounted = false;
+@@ -45,7 +48,7 @@ export function boot(mount: () => void): Booted {
+     requestAnimationFrame(open);
+   };
+   const r = renderer(canvas, store, { tip, panel }, new URLSearchParams(location.search).has("demo"), admin.get, star ? drawn : undefined);
+-  held = { store, admin, renderer: r, canvas, tip, panel };
++  held = { store, admin, theme, renderer: r, canvas, tip, panel };
+   r.start();
+   if (!star) {
+     for (const el of [canvas, tip, panel, frameOf("crumb")]) el.classList.add("off");
+diff --git a/starpulse/web/src/features/admin/Admin.tsx b/starpulse/web/src/features/admin/Admin.tsx
+index 194ee9f4..e897f334 100644
+--- a/starpulse/web/src/features/admin/Admin.tsx
++++ b/starpulse/web/src/features/admin/Admin.tsx
+@@ -1,58 +1,151 @@
+ // The Admin view: this browser's settings in a main-area view like the Kanban. Font size, Motion, Opens on, Kanban cards and Clock; the
+-// Preview card draws a Star Map label and a Kanban card at the chosen scale and density, so the choice is judged before leaving the view.
++// Preview card draws a small Star Map and a Kanban card at the chosen scale, density and motion, so the choice is judged before leaving the view.
+ import { useEffect, useRef, useSyncExternalStore, type ReactNode } from "react";
+ import { SCALE, labelPx, type AdminStore } from "./adminPrefs";
+ import { clockHm, type ClockMode } from "../../shared/clock";
+ import { CHIPS, type HistoryWindowStore } from "./historyWindow";
++import { ACT, LABEL, MUTED, easeO, rgba } from "../../render/draw";
++import { BOARD_COLOR } from "../../render/scene";
+ 
+-/** The Preview's Star Map label: a ring with a state's name and count beneath, sized as the renderer sizes them. */
+-function drawPreview(c: HTMLCanvasElement, scale: number) {
++const TAU = Math.PI * 2, HOP = 2.4, REST = 1.1;
++const FROM = { name: "In Progress", sub: "4 tasks", color: BOARD_COLOR.intoprogress };
++const TO = { name: "Review", sub: "2 tasks", color: BOARD_COLOR.review };
++
++/**
++ * The Preview's Star Map: two Board states as suns with their names and counts, sized as the renderer sizes them, and a task
++ * hopping from one to the other as a comet that lands with a pulse. `t` is seconds into the loop; with Motion off it is a still mid-hop.
++ */
++function drawPreview(c: HTMLCanvasElement, scale: number, t: number) {
+   const r = c.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+-  c.width = r.width * dpr;
+-  c.height = r.height * dpr;
++  if (c.width !== Math.round(r.width * dpr) || c.height !== Math.round(r.height * dpr)) {
++    c.width = Math.round(r.width * dpr);
++    c.height = Math.round(r.height * dpr);
++  }
+   const cx = c.getContext("2d");
+   if (!cx) return;
+-  cx.scale(dpr, dpr);
+-  const x = r.width / 2, y = r.height / 2 - 14, name = labelPx(12.5, 1, scale), sub = labelPx(10.5, 1, scale);
+-  cx.strokeStyle = "rgba(167,139,250,.8)";
++  cx.setTransform(dpr, 0, 0, dpr, 0, 0);
++  cx.clearRect(0, 0, r.width, r.height);
++  const name = labelPx(12.5, 1, scale), sub = labelPx(10.5, 1, scale), R = Math.min(30, r.height / 5);
++  const y = (r.height - name - sub - 9 + R * 0.1) / 2, gap = Math.min(r.width / 4, 220), a = { x: r.width / 2 - gap, y }, b = { x: r.width / 2 + gap, y };
++  const ctl = { x: r.width / 2, y: y - R * 2.2 };
++  const sun = (p: { x: number; y: number }, col: string, hot: boolean) => {
++    const g = cx.createRadialGradient(p.x, p.y, 0, p.x, p.y, R);
++    g.addColorStop(0, rgba(col, 0.16));
++    g.addColorStop(1, rgba(col, 0.02));
++    cx.fillStyle = g;
++    cx.beginPath();
++    cx.arc(p.x, p.y, R, 0, TAU);
++    cx.fill();
++    cx.strokeStyle = rgba(col, hot ? 0.9 : 0.4);
++    cx.lineWidth = hot ? 2 : 1.2;
++    cx.stroke();
++  };
++  const label = (p: { x: number; y: number }, s: typeof FROM, hot: boolean) => {
++    cx.textAlign = "center";
++    cx.textBaseline = "top";
++    cx.letterSpacing = "0.6px";
++    cx.font = `300 ${name}px Inter, system-ui, sans-serif`;
++    cx.fillStyle = rgba(LABEL, hot ? 0.95 : 0.58);
++    cx.fillText(s.name, p.x, p.y + R + 6);
++    cx.font = `300 ${sub}px Inter, system-ui, sans-serif`;
++    cx.fillStyle = rgba(MUTED, hot ? 0.8 : 0.42);
++    cx.fillText(s.sub, p.x, p.y + R + 9 + name);
++    cx.letterSpacing = "0px";
++  };
++  const bez = (u: number) => ({
++    x: (1 - u) ** 2 * a.x + 2 * (1 - u) * u * ctl.x + u * u * b.x,
++    y: (1 - u) ** 2 * a.y + 2 * (1 - u) * u * ctl.y + u * u * b.y,
++  });
++  // the flow between the two states, dashed as the map dashes it
++  const fl = cx.createLinearGradient(a.x, a.y, b.x, b.y);
++  fl.addColorStop(0, rgba(FROM.color, 0.35));
++  fl.addColorStop(1, rgba(TO.color, 0.35));
++  cx.strokeStyle = fl;
+   cx.lineWidth = 1;
++  cx.setLineDash([2.4, 6]);
+   cx.beginPath();
+-  cx.arc(x, y, 9, 0, 7);
++  cx.moveTo(a.x, a.y);
++  cx.quadraticCurveTo(ctl.x, ctl.y, b.x, b.y);
+   cx.stroke();
+-  cx.textAlign = "center";
+-  cx.textBaseline = "middle";
+-  cx.letterSpacing = "0.6px";
+-  cx.font = `300 ${name}px Inter, system-ui, sans-serif`;
+-  cx.fillStyle = "rgba(207,217,234,.9)";
+-  cx.fillText("In Progress", x, y + 14 + name / 2 + 4);
+-  cx.font = `300 ${sub}px Inter, system-ui, sans-serif`;
+-  cx.fillStyle = "rgba(148,163,184,.6)";
+-  cx.fillText("4 tasks", x, y + 14 + name * 1.5 + 8);
++  cx.setLineDash([]);
++  const phase = t % (HOP + REST), u = Math.min(1, phase / HOP), landed = phase >= HOP;
++  sun(a, FROM.color, false);
++  sun(b, TO.color, landed);
++  if (landed) {
++    // the arrival pulse, under the labels so they stay readable
++    const q = (phase - HOP) / REST;
++    cx.strokeStyle = rgba(ACT, (1 - q) ** 2 * 0.85);
++    cx.lineWidth = 2 * (1 - q) + 0.4;
++    cx.beginPath();
++    cx.arc(b.x, b.y, R + easeO(q) * 20, 0, TAU);
++    cx.stroke();
++  }
++  label(a, FROM, false);
++  label(b, TO, landed);
++  if (landed) return;
++  // the task as a comet: a tapering tail along the hop, then a glowing head
++  const e = 1 - (1 - u) ** 2, n = 14, span = 0.27 * Math.min(1, e + 0.05);
++  for (let i = 1; i <= n; i++) {
++    const p = bez(Math.max(0, e - span * (1 - (i - 1) / n))), q = bez(Math.max(0, e - span * (1 - i / n)));
++    cx.strokeStyle = rgba(ACT, (i / n) * 0.6);
++    cx.lineWidth = (i / n) * 2.6;
++    cx.beginPath();
++    cx.moveTo(p.x, p.y);
++    cx.lineTo(q.x, q.y);
++    cx.stroke();
++  }
++  const h = bez(e);
++  cx.globalCompositeOperation = "lighter";
++  const g = cx.createRadialGradient(h.x, h.y, 0, h.x, h.y, 14);
++  g.addColorStop(0, rgba(ACT, 0.7));
++  g.addColorStop(1, rgba(ACT, 0));
++  cx.fillStyle = g;
++  cx.beginPath();
++  cx.arc(h.x, h.y, 14, 0, TAU);
++  cx.fill();
++  cx.globalCompositeOperation = "source-over";
++  cx.fillStyle = rgba(ACT, 0.95);
++  cx.beginPath();
++  cx.arc(h.x, h.y, 3, 0, TAU);
++  cx.fill();
+ }
+ 
+-function Preview({ scale, compact }: { scale: number; compact: boolean }) {
++function Preview({ scale, compact, motion }: { scale: number; compact: boolean; motion: boolean }) {
+   const canvas = useRef<HTMLCanvasElement>(null);
+   useEffect(() => {
+     const c = canvas.current;
+     if (!c) return;
+-    const draw = () => drawPreview(c, scale);
+-    draw();
+-    // the card's width also changes when the navigator folds, not only with the window
++    const t0 = performance.now();
++    let raf = 0;
++    const draw = () => drawPreview(c, scale, motion ? (performance.now() - t0) / 1000 : HOP * 0.55);
++    const loop = () => {
++      draw();
++      raf = requestAnimationFrame(loop);
++    };
++    if (motion) loop();
++    else draw();
++    // the card's width also changes when the navigator folds, not only with the window; a theme change repaints the still
+     const watch = new ResizeObserver(draw);
+     watch.observe(c);
+-    return () => watch.disconnect();
+-  }, [scale]);
++    window.addEventListener("sp:theme", draw);
++    return () => {
++      cancelAnimationFrame(raf);
++      watch.disconnect();
++      window.removeEventListener("sp:theme", draw);
++    };
++  }, [scale, motion]);
+   return (
+-    <section className="card">
++    <section className="card pvw">
+       <h2>Preview</h2>
+       <div className="pv">
+-        <div className="pvk">Star Map label</div>
+-        <canvas ref={canvas} />
++        <div className="pvk">Star Map</div>
++        <canvas ref={canvas} aria-label="A task moving from In Progress to Review" />
+         <div className="pvk">Kanban card</div>
+         <div className={compact ? "pvcard compact" : "pvcard"}>
+           <div className="top"><span className="id">DEMO-101</span><span className="pr"><i />#2094</span></div>
+           <div className="t">Sample card: how a title reads at this size</div>
+           {!compact && <div className="foot2"><span className="lab">feature</span><span className="lab">size-3</span><span className="lab">adr-needed</span></div>}
++          <button type="button" className="play edge" title="Start a session" aria-label="Start DEMO-101">▶</button>
+         </div>
+       </div>
+     </section>
+@@ -110,51 +203,56 @@ function ServerCard({ store, clock }: { store: HistoryWindowStore; clock: "24" |
+  * `scheduler` and `tracker` draw the Scheduler and Tracker cards in the settings column: each card is its own
+  * feature, so App hands them in, `scheduler` with the clock it is to show.
+  */
+-export function Admin({ store, window: historyWindow, scheduler, tracker }: { store: AdminStore; window: HistoryWindowStore; scheduler: (clock: ClockMode) => ReactNode; tracker?: ReactNode }) {
++export function Admin({ store, window: historyWindow, scheduler, tracker, theme }: { store: AdminStore; window: HistoryWindowStore; scheduler: (clock: ClockMode) => ReactNode; tracker?: ReactNode; theme?: ReactNode }) {
+   const { scale, motion, view, density, clock } = useSyncExternalStore(store.subscribe, store.get);
+   return (
+     <div id="admin">
+       <header><span className="title">Admin</span><span className="count">settings for this browser and for the StarPulse server</span></header>
+       <div className="grid">
+-        <div>
+-          <section className="card">
+-            <h2>This browser <span className="c">kept on this device only</span></h2>
+-            <div className="row">
+-              <div><div className="lb">Font size</div><div className="hint">Panels, Kanban cards and Star Map labels</div></div>
+-              <div>
+-                <div className="scale">
+-                  <input type="range" min={SCALE.min} max={SCALE.max} step={SCALE.step} value={scale} aria-label="Font size" aria-valuetext={`${scale}%`}
+-                    onChange={(e) => store.setScale(Number(e.target.value))} />
+-                  <span className="pct">{scale}%</span>
+-                </div>
+-                <div className="ticks">
+-                  {SCALE.ticks.map((v) => <button key={v} type="button" onClick={() => store.setScale(v)}>{v}%</button>)}
+-                </div>
++        <div className="col">
++        <section className="card">
++          <h2>This browser <span className="c">kept on this device only</span></h2>
++          <div className="row">
++            <div><div className="lb">Font size</div><div className="hint">Panels, Kanban cards and Star Map labels</div></div>
++            <div>
++              <div className="scale">
++                <input type="range" min={SCALE.min} max={SCALE.max} step={SCALE.step} value={scale} aria-label="Font size" aria-valuetext={`${scale}%`}
++                  onChange={(e) => store.setScale(Number(e.target.value))} />
++                <span className="pct">{scale}%</span>
++              </div>
++              <div className="ticks">
++                {SCALE.ticks.map((v) => <button key={v} type="button" onClick={() => store.setScale(v)}>{v}%</button>)}
+               </div>
+             </div>
+-            <div className="row">
+-              <div><div className="lb">Motion</div><div className="hint">Pulses travel, cards animate and the Star Map redraws as it moves</div></div>
+-              <div><button type="button" className="sw" role="switch" aria-checked={motion} aria-label="Motion" onClick={() => store.setMotion(!motion)} /></div>
+-            </div>
+-            <div className="row">
+-              <div><div className="lb">Opens on</div><div className="hint">When the address names no view</div></div>
+-              <Seg label="Opens on" value={view} options={[["constellation", "Star Map"], ["kanban", "Kanban"]]} onPick={(v) => store.setView(v)} />
+-            </div>
+-            <div className="row">
+-              <div><div className="lb">Kanban cards</div><div className="hint">Compact shows one title line, no labels</div></div>
+-              <Seg label="Kanban cards" value={density} options={[["comfortable", "Comfortable"], ["compact", "Compact"]]} onPick={(v) => store.setDensity(v)} />
+-            </div>
+-            <div className="row">
+-              <div><div className="lb">Clock</div><div className="hint">Navigator time, Recent feed, panels and tooltips, now {sample(clock)} MST</div></div>
+-              <Seg label="Clock" value={clock} options={[["24", "24-hour"], ["12", "12-hour"]]} onPick={(v) => store.setClock(v)} />
+-            </div>
+-            <div className="foot">Changes apply as you make them.<button type="button" className="btn" onClick={() => store.reset()}>Reset this browser</button></div>
+-          </section>
++          </div>
++          <div className="row">
++            <div><div className="lb">Motion</div><div className="hint">Pulses travel, cards animate and the Star Map redraws as it moves</div></div>
++            <div><button type="button" className="sw" role="switch" aria-checked={motion} aria-label="Motion" onClick={() => store.setMotion(!motion)} /></div>
++          </div>
++          <div className="row">
++            <div><div className="lb">Opens on</div><div className="hint">When the address names no view</div></div>
++            <Seg label="Opens on" value={view} options={[["constellation", "Star Map"], ["kanban", "Kanban"]]} onPick={(v) => store.setView(v)} />
++          </div>
++          <div className="row">
++            <div><div className="lb">Kanban cards</div><div className="hint">Compact shows one title line, no labels</div></div>
++            <Seg label="Kanban cards" value={density} options={[["comfortable", "Comfortable"], ["compact", "Compact"]]} onPick={(v) => store.setDensity(v)} />
++          </div>
++          <div className="row">
++            <div><div className="lb">Clock</div><div className="hint">Navigator time, Recent feed, panels and tooltips, now {sample(clock)} MST</div></div>
++            <Seg label="Clock" value={clock} options={[["24", "24-hour"], ["12", "12-hour"]]} onPick={(v) => store.setClock(v)} />
++          </div>
++          <div className="foot">Changes apply as you make them.<button type="button" className="btn" onClick={() => store.reset()}>Reset this browser</button></div>
++        </section>
++        <div>
+           <ServerCard store={historyWindow} clock={clock} />
+           {scheduler(clock)}
+           {tracker}
+         </div>
+-        <Preview scale={scale} compact={density === "compact"} />
++        </div>
++        <div className="col">
++          <Preview scale={scale} compact={density === "compact"} motion={motion} />
++          {theme}
++        </div>
+       </div>
+     </div>
+   );
+diff --git a/starpulse/web/src/features/admin/theme/ThemeCard.tsx b/starpulse/web/src/features/admin/theme/ThemeCard.tsx
+new file mode 100644
+index 00000000..14c2ff26
+--- /dev/null
++++ b/starpulse/web/src/features/admin/theme/ThemeCard.tsx
+@@ -0,0 +1,272 @@
++// The Admin's Theme card: a color pack and a background for this browser, each a tile that applies on click, with the built-in
++// packs, the ones imported here, and the dialogs that import a base16 or base24 scheme or make a background from one color.
++// Swatches carry data-theme-raw: they show a pack's own colors, never the page's.
++import { useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
++import { BUILTIN, DISTINCT, NEUTRALS, REFUSE_DE, SLATE, WARN_DE, bgRefusal, build, closest, fromBase16, rampFrom, type Neutrals, type Nudge, type Pack } from "./scheme";
++import type { ThemeStore } from "./themeStore";
++
++const ROLE_LABEL: Record<string, string> = {
++  ok: "passing", run: "running", fail: "failing", agent: "agent", hold: "held", waits: "waits on", ready: "ready", released: "released", phase: "phase",
++};
++const de = (d: number) => d.toFixed(3).replace(/^0/, "");
++
++function Swatches({ t }: { t: Record<string, string> }) {
++  return <span className="sws" data-theme-raw="">{DISTINCT.map((k) => <i key={k} title={ROLE_LABEL[k]} style={{ background: t[k] }} />)}</span>;
++}
++
++function Ramp({ n }: { n: Neutrals }) {
++  return <span className="ramp" data-theme-raw="">{NEUTRALS.map((k) => <i key={k} title={k} style={{ background: n[k] }} />)}</span>;
++}
++
++/** A tile's name, its Rename field, or its Delete confirmation, for the packs and backgrounds this browser imported. */
++function Own({ name, rename, remove, children }: { name: string; rename: (v: string) => void; remove: () => void; children: (title: ReactNode) => ReactNode }) {
++  const [mode, setMode] = useState<"rename" | "delete" | null>(null);
++  const [draft, setDraft] = useState(name);
++  const save = () => {
++    if (draft.trim()) rename(draft.trim());
++    setMode(null);
++  };
++  const title = mode === "rename"
++    ? <input className="ren" autoFocus value={draft} aria-label={`Rename ${name}`} maxLength={40} onChange={(e) => setDraft(e.target.value)}
++        onBlur={save} onKeyDown={(e) => {
++          if (e.key === "Enter") save();
++          if (e.key === "Escape") { setDraft(name); setMode(null); }
++        }} />
++    : null;
++  return (
++    <div className="own">
++      {children(title)}
++      {mode === "delete"
++        ? <div className="acts conf" role="group" aria-label={`Delete ${name}?`}>Delete {name}? <button className="link del" autoFocus onClick={remove}>Delete</button><button className="link" onClick={() => setMode(null)}>Keep</button></div>
++        : mode === null && <div className="acts"><button className="link" onClick={() => { setDraft(name); setMode("rename"); }}>Rename</button><button className="link" onClick={() => setMode("delete")}>Delete</button></div>}
++    </div>
++  );
++}
++
++function PackTile({ pack, on, n, choose, title }: { pack: Pack; on: boolean; n: Neutrals; choose: () => void; title?: ReactNode }) {
++  const t = useMemo(() => build(pack, n).t, [pack, n]);
++  return (
++    <div className={`tile${on ? " on" : ""}`}>
++      {title && <div className="nm">{title}</div>}
++      <button className="pick" aria-pressed={on} onClick={choose}>
++        {!title && <span className="nm">{pack.name}</span>}
++        <Swatches t={t} />
++        <span className="src">{pack.src?.label ?? ""}</span>
++      </button>
++    </div>
++  );
++}
++
++function BgTile({ name, n, on, choose, title }: { name: string; n: Neutrals; on: boolean; choose: () => void; title?: ReactNode }) {
++  return (
++    <div className={`tile${on ? " on" : ""}`}>
++      {title && <div className="nm">{title}</div>}
++      <button className="pick" aria-pressed={on} onClick={choose}>
++        {!title && <span className="nm">{name}</span>}
++        <Ramp n={n} />
++      </button>
++    </div>
++  );
++}
++
++export function ThemeCard({ theme }: { theme: ThemeStore }) {
++  const prefs = useSyncExternalStore(theme.subscribe, theme.get);
++  const [dialog, setDialog] = useState<"pack" | "bg" | null>(null);
++  const n = theme.bgOf(prefs.bg);
++  return (
++    <section className="card thm">
++      <h2>Theme <span className="c">kept on this device only</span></h2>
++      <div className="row wide">
++        <div><div className="lb">Color pack</div><div className="hint">The status colors: passing, running, failing and the rest. Each swatch row is drawn on your background.</div></div>
++        <div className="tiles packs">
++          {Object.entries(BUILTIN).map(([id, p]) => <PackTile key={id} pack={p} n={n} on={prefs.pack === id} choose={() => theme.choosePack(id)} />)}
++          {prefs.packs.map(({ id, pack }) => (
++            <Own key={id} name={pack.name} rename={(v) => theme.renamePack(id, v)} remove={() => theme.deletePack(id)}>
++              {(title) => <PackTile pack={pack} n={n} on={prefs.pack === id} choose={() => theme.choosePack(id)} title={title} />}
++            </Own>
++          ))}
++          <button className="tile add" onClick={() => setDialog("pack")}><span className="plus">+</span>Import scheme<span className="src">base16 or base24 YAML</span></button>
++        </div>
++      </div>
++      <div className="row wide">
++        <div><div className="lb">Background</div><div className="hint">The page, panels and text, darkest to lightest. Any pack goes on any background.</div></div>
++        <div className="tiles bgs">
++          <BgTile name="Slate" n={SLATE} on={prefs.bg === "slate"} choose={() => theme.chooseBg("slate")} />
++          {prefs.bgs.map((b) => (
++            <Own key={b.id} name={b.name} rename={(v) => theme.renameBg(b.id, v)} remove={() => theme.deleteBg(b.id)}>
++              {(title) => <BgTile name={b.name} n={b.n} on={prefs.bg === b.id} choose={() => theme.chooseBg(b.id)} title={title} />}
++            </Own>
++          ))}
++          <button className="tile add" onClick={() => setDialog("bg")}><span className="plus">+</span>Add background<span className="src">from one color or a scheme</span></button>
++        </div>
++      </div>
++      {dialog === "pack" && <ImportDialog theme={theme} close={() => setDialog(null)} />}
++      {dialog === "bg" && <BgDialog theme={theme} close={() => setDialog(null)} />}
++    </section>
++  );
++}
++
++function Modal({ label, close, children }: { label: string; close: () => void; children: ReactNode }) {
++  return (
++    <div id="kbm" className="thm" onClick={(e) => e.target === e.currentTarget && close()}>
++      <div className="modal ask" role="dialog" aria-label={label} onKeyDown={(e) => e.key === "Escape" && close()}>
++        <button className="x" onClick={close} aria-label="Close">✕</button>
++        <h2>{label}</h2>
++        {children}
++      </div>
++    </div>
++  );
++}
++
++/** The scheme's text from a file or the paste box: one source, so a picked file shows in the box it can be edited in. */
++function SchemeSource({ text, setText }: { text: string; setText: (v: string) => void }) {
++  return (
++    <>
++      <div className="row">
++        <span className="lb">File</span>
++        <input type="file" accept=".yaml,.yml,.txt" aria-label="Scheme file" onChange={(e) => void e.target.files?.[0]?.text().then(setText)} />
++      </div>
++      <div className="row">
++        <span className="lb">Or paste</span>
++        <textarea className="yaml" rows={5} spellCheck={false} aria-label="Scheme YAML" placeholder={"scheme: \"One Dark\"\nbase00: \"282c34\"\n…"} value={text} onChange={(e) => setText(e.target.value)} />
++      </div>
++    </>
++  );
++}
++
++/** A surface drawn in the theme's own tokens: the words a page sets on it and one chip per status. */
++function Sample({ t }: { t: Record<string, string> }) {
++  return (
++    <div className="sample" data-theme-raw="" style={{ background: t.surface, borderColor: t.track }}>
++      <div style={{ color: t.ink }}>TASK-8943 · Admin theme picker <span style={{ color: t.muted }}>· 2h ago</span></div>
++      <div className="chips">
++        {DISTINCT.map((k) => (
++          <span key={k} style={{ color: t[`${k}-text`], borderColor: t[k] }}><i style={{ background: t[k] }} />{ROLE_LABEL[k]}</span>
++        ))}
++      </div>
++    </div>
++  );
++}
++
++function Nudges({ nudged }: { nudged: Nudge[] }) {
++  if (!nudged.length) return null;
++  return (
++    <div className="nudges">
++      <div className="k">Lifted to read on the surface</div>
++      <ul data-theme-raw="">
++        {nudged.map((x) => <li key={x.key}><span className="nk">{x.key}</span><i style={{ background: x.from }} /><code>{x.from}</code>→<i style={{ background: x.to }} /><code>{x.to}</code></li>)}
++      </ul>
++    </div>
++  );
++}
++
++function parse(text: string) {
++  if (!text.trim()) return null;
++  try {
++    return fromBase16(text);
++  } catch (e) {
++    return e instanceof Error ? e : new Error(String(e));
++  }
++}
++
++function ImportDialog({ theme, close }: { theme: ThemeStore; close: () => void }) {
++  const [text, setText] = useState("");
++  const [name, setName] = useState<string | null>(null);
++  const [withBg, setWithBg] = useState(true);
++  const parsed = useMemo(() => parse(text), [text]);
++  const scheme = parsed instanceof Error ? null : parsed;
++  const bgNo = scheme && bgRefusal(scheme.bg);
++  const useBg = !!scheme && withBg && !bgNo;
++  const built = useMemo(() => scheme && build(scheme.pack, useBg ? scheme.bg : theme.bgOf(theme.get().bg)), [scheme, useBg, theme]);
++  const [d, a, b] = built ? closest(built.t) : [Infinity, "", ""];
++  const refused = d < REFUSE_DE;
++  const save = () => {
++    if (!scheme || refused) return;
++    theme.addPack({ ...scheme.pack, name: (name ?? scheme.name).trim() || scheme.name }, useBg ? scheme.bg : undefined);
++    close();
++  };
++  return (
++    <Modal label="Import a color scheme" close={close}>
++      <div className="opt">
++        <SchemeSource text={text} setText={setText} />
++        {scheme && <>
++          <div className="row"><span className="lb">Name</span><input className="nmin" value={name ?? scheme.name} aria-label="Pack name" maxLength={40} onChange={(e) => setName(e.target.value)} /></div>
++          <div className="row">
++            <span className="lb">Background</span>
++            <label className={`withbg${bgNo ? " off" : ""}`}><input type="checkbox" checked={useBg} disabled={!!bgNo} onChange={(e) => setWithBg(e.target.checked)} /> Also add its background{scheme ? <Ramp n={scheme.bg} /> : null}</label>
++          </div>
++          {bgNo && <div className="note wide">{bgNo} The pack imports on your current background.</div>}
++        </>}
++      </div>
++      {parsed instanceof Error && <div className="refusal" role="alert"><div className="k">Not read</div>{parsed.message}</div>}
++      {built && <>
++        <Sample t={built.t} />
++        {refused
++          ? <div className="refusal" role="alert"><div className="k">Not imported</div>{ROLE_LABEL[a]} and {ROLE_LABEL[b]} are too alike to tell apart on the Star Map (ΔE {de(d)}; needs {de(REFUSE_DE)}).</div>
++          : d < WARN_DE
++            ? <div className="warn" role="status"><b>Close pair:</b> {ROLE_LABEL[a]} and {ROLE_LABEL[b]} are near (ΔE {de(d)}). It imports; check them on the map.</div>
++            : <div className="okline" role="status">Every status stands apart: the closest pair, {ROLE_LABEL[a]} and {ROLE_LABEL[b]}, is ΔE {de(d)}.</div>}
++        <Nudges nudged={built.nudged} />
++      </>}
++      <div className="afoot">
++        <button className="cancel" onClick={close}>Cancel</button>
++        <button className="startbtn sp" disabled={!scheme || refused} onClick={save}>Import and apply</button>
++      </div>
++    </Modal>
++  );
++}
++
++const HEX = /^#[0-9a-fA-F]{6}$/;
++
++function BgDialog({ theme, close }: { theme: ThemeStore; close: () => void }) {
++  const [from, setFrom] = useState<"color" | "scheme">("color");
++  const [pick, setPick] = useState("#2a1f3d");
++  const [draft, setDraft] = useState(pick);
++  const [text, setText] = useState("");
++  const [name, setName] = useState("");
++  const parsed = useMemo(() => (from === "scheme" ? parse(text) : null), [from, text]);
++  const n = from === "color" ? rampFrom(pick) : parsed && !(parsed instanceof Error) ? parsed.bg : null;
++  const refused = n && bgRefusal(n);
++  const built = useMemo(() => n && !refused ? build(theme.packOf(theme.get().pack), n) : null, [n && JSON.stringify(n), refused, theme]); // eslint-disable-line react-hooks/exhaustive-deps
++  const fallback = from === "color" ? `Background ${pick}` : parsed && !(parsed instanceof Error) ? parsed.name : "";
++  const save = () => {
++    if (!n || refused) return;
++    theme.addBg(name.trim() || fallback, n);
++    close();
++  };
++  const color = (v: string) => {
++    setDraft(v);
++    if (HEX.test(v)) setPick(v.toLowerCase());
++  };
++  return (
++    <Modal label="Add a background" close={close}>
++      <div className="opt">
++        <div className="row">
++          <span className="lb">From</span>
++          <div className="seg">
++            <button className={from === "color" ? "on" : ""} aria-pressed={from === "color"} onClick={() => setFrom("color")}>One color</button>
++            <button className={from === "scheme" ? "on" : ""} aria-pressed={from === "scheme"} onClick={() => setFrom("scheme")}>A scheme file</button>
++          </div>
++        </div>
++        {from === "color"
++          ? <div className="row">
++              <span className="lb">Surface</span>
++              <span className="pickc"><input type="color" value={pick} aria-label="Surface color" onChange={(e) => color(e.target.value)} /><input className="hexin" value={draft} aria-label="Surface hex" maxLength={7} onChange={(e) => color(e.target.value)} /><span className="hint">panels sit on it; the rest steps from it</span></span>
++            </div>
++          : <SchemeSource text={text} setText={setText} />}
++        {n && <div className="row"><span className="lb">Ramp</span><Ramp n={n} /></div>}
++        <div className="row"><span className="lb">Name</span><input className="nmin" value={name} placeholder={fallback} aria-label="Background name" maxLength={40} onChange={(e) => setName(e.target.value)} /></div>
++      </div>
++      {parsed instanceof Error && <div className="refusal" role="alert"><div className="k">Not read</div>{parsed.message}</div>}
++      {refused && <div className="refusal" role="alert"><div className="k">Not added</div>{refused}</div>}
++      {built && <>
++        <Sample t={built.t} />
++        <Nudges nudged={built.nudged} />
++      </>}
++      <div className="afoot">
++        <button className="cancel" onClick={close}>Cancel</button>
++        <button className="startbtn sp" disabled={!n || !!refused} onClick={save}>Add and apply</button>
++      </div>
++    </Modal>
++  );
++}
+diff --git a/starpulse/web/src/features/admin/theme/color.ts b/starpulse/web/src/features/admin/theme/color.ts
+new file mode 100644
+index 00000000..fc78e944
+--- /dev/null
++++ b/starpulse/web/src/features/admin/theme/color.ts
+@@ -0,0 +1,78 @@
++// OKLab and OKLCH (Björn Ottosson's matrices) and WCAG contrast, the only color math a theme needs: L runs 0..1, C about 0..0.4.
++export type Lch = [number, number, number];
++export type Rgb = [number, number, number];
++
++const lin = (v: number) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
++const gam = (v: number) => (v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055);
++
++/** A #rrggbb as 0..1 channels. */
++export const rgbOf = (hex: string): Rgb => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255) as Rgb;
++
++export function labOfRgb(c: Rgb): Rgb {
++  const [r, g, b] = c.map(lin);
++  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
++  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
++  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
++  return [0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s, 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s, 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s];
++}
++
++export const lab = (hex: string) => labOfRgb(rgbOf(hex));
++
++export function lchOfRgb(c: Rgb): Lch {
++  const [L, a, b] = labOfRgb(c);
++  return [L, Math.hypot(a, b), ((Math.atan2(b, a) * 180) / Math.PI + 360) % 360];
++}
++
++export const lch = (hex: string) => lchOfRgb(rgbOf(hex));
++
++function linearOf([L, C, H]: Lch): Rgb {
++  const a = C * Math.cos((H * Math.PI) / 180), b = C * Math.sin((H * Math.PI) / 180);
++  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3, m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3, s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
++  return [4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s, -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s];
++}
++
++const inGamut = (v: Rgb) => v.every((x) => x >= -1e-4 && x <= 1 + 1e-4);
++
++/** An OKLCH color as 0..255 sRGB, its chroma cut until it fits the gamut so hue and lightness hold. */
++export function rgb255([L, C, H]: Lch): Rgb {
++  const l = Math.min(1, Math.max(0, L));
++  let v = linearOf([l, C, H]);
++  if (!inGamut(v)) {
++    let lo = 0, hi = C;
++    for (let i = 0; i < 24; i++) {
++      const mid = (lo + hi) / 2;
++      if (inGamut(linearOf([l, mid, H]))) lo = mid;
++      else hi = mid;
++    }
++    v = linearOf([l, lo, H]);
++  }
++  return v.map((x) => Math.round(Math.min(1, Math.max(0, gam(Math.max(0, x)))) * 255)) as Rgb;
++}
++
++export const hex = (c: Lch) => `#${rgb255(c).map((x) => x.toString(16).padStart(2, "0")).join("")}`;
++
++const luminance = (h: string) => {
++  const [r, g, b] = rgbOf(h).map(lin);
++  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
++};
++
++/** The WCAG contrast ratio of two colors, 1..21. */
++export function contrast(a: string, b: string) {
++  const [x, y] = [luminance(a), luminance(b)].sort((p, q) => q - p);
++  return (x + 0.05) / (y + 0.05);
++}
++
++/** How far apart two colors look: the OKLab distance, where 0.02 is about a just-noticeable difference. */
++export const deltaE = (a: string, b: string) => {
++  const p = lab(a), q = lab(b);
++  return Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
++};
++
++/** Mixes in OKLCH along the shorter way round the hue circle; a grey takes the other color's hue. */
++export function mixLch([l1, c1, h1]: Lch, [l2, c2, h2]: Lch, t: number): Lch {
++  const a = c1 > 1e-4 ? h1 : h2, b = c2 > 1e-4 ? h2 : h1;
++  const d = ((b - a + 540) % 360) - 180;
++  return [l1 + (l2 - l1) * t, c1 + (c2 - c1) * t, (a + d * t + 360) % 360];
++}
++
++export const hueGap = (a: number, b: number) => Math.abs(((a - b + 540) % 360) - 180);
+diff --git a/starpulse/web/src/features/admin/theme/packs.json b/starpulse/web/src/features/admin/theme/packs.json
+new file mode 100644
+index 00000000..0fe24fea
+--- /dev/null
++++ b/starpulse/web/src/features/admin/theme/packs.json
+@@ -0,0 +1,443 @@
++{
++ "packs": {
++  "starpulse": {
++   "name": "StarPulse",
++   "vibe": "Today's slate and Tailwind statuses, with the phase machine moved to Tailwind indigo",
++   "src": {
++    "label": "tailwindlabs/tailwindcss palette",
++    "url": "https://tailwindcss.com/docs/colors"
++   },
++   "c": {
++    "emerald": "#34d399",
++    "amber": "#fbbf24",
++    "rose": "#fb7185",
++    "red": "#f87171",
++    "violet": "#a78bfa",
++    "orange": "#fb923c",
++    "cyan": "#67e8f9",
++    "blue": "#60a5fa",
++    "teal": "#5eead4",
++    "indigo": "#818cf8"
++   },
++   "r": {
++    "ok": "emerald",
++    "run": "amber",
++    "fail": "rose",
++    "danger": "red",
++    "agent": "violet",
++    "hold": "orange",
++    "waits": "cyan",
++    "ready": "blue",
++    "released": "teal",
++    "phase": "indigo"
++   },
++   "x": {
++    "ok-hi": "#6ee7b7",
++    "ok-text": "#a7f3d0",
++    "run-hi": "#fcd34d",
++    "run-text": "#fcd34d",
++    "fail-hi": "#fecdd3",
++    "fail-text": "#fda4af",
++    "danger-hi": "#fecaca",
++    "danger-text": "#fca5a5",
++    "agent-hi": "#ede9fe",
++    "agent-text": "#c4b5fd",
++    "hold-hi": "#fed7aa",
++    "hold-text": "#fdba74",
++    "waits-hi": "#a5f3fc",
++    "waits-text": "#a5f3fc",
++    "ready-hi": "#93c5fd",
++    "ready-text": "#93c5fd",
++    "released-hi": "#99f6e4",
++    "released-text": "#99f6e4",
++    "phase-hi": "#c7d2fe",
++    "phase-text": "#a5b4fc"
++   }
++  },
++  "catppuccin": {
++   "name": "Catppuccin",
++   "vibe": "Soft pastels on blue-violet greys; Latte by day, Mocha by night",
++   "src": {
++    "label": "catppuccin/palette",
++    "url": "https://catppuccin.com/palette/"
++   },
++   "c": {
++    "rosewater": "#f5e0dc",
++    "flamingo": "#f2cdcd",
++    "pink": "#f5c2e7",
++    "mauve": "#cba6f7",
++    "red": "#f38ba8",
++    "maroon": "#eba0ac",
++    "peach": "#fab387",
++    "yellow": "#f9e2af",
++    "green": "#a6e3a1",
++    "teal": "#94e2d5",
++    "sky": "#89dceb",
++    "sapphire": "#74c7ec",
++    "blue": "#89b4fa",
++    "lavender": "#b4befe",
++    "crust": "#11111b",
++    "mantle": "#181825",
++    "base": "#1e1e2e",
++    "surface0": "#313244",
++    "surface1": "#45475a",
++    "overlay0": "#6c7086",
++    "overlay1": "#7f849c",
++    "subtext1": "#bac2de",
++    "text": "#cdd6f4"
++   },
++   "r": {
++    "ok": "green",
++    "run": "yellow",
++    "fail": "red",
++    "danger": "maroon",
++    "agent": "mauve",
++    "hold": "peach",
++    "waits": "sky",
++    "ready": "blue",
++    "released": "teal",
++    "phase": "lavender"
++   }
++  },
++  "rosepine": {
++   "name": "Ros\u00e9 Pine",
++   "vibe": "Muted rose, gold and pine on dusky purple; no pure green by design",
++   "src": {
++    "label": "rose-pine/palette",
++    "url": "https://rosepinetheme.com/palette/"
++   },
++   "c": {
++    "love": "#eb6f92",
++    "gold": "#f6c177",
++    "rose": "#ebbcba",
++    "pine": "#31748f",
++    "foam": "#9ccfd8",
++    "iris": "#c4a7e7",
++    "base": "#191724",
++    "surface": "#1f1d2e",
++    "overlay": "#26233a",
++    "muted": "#6e6a86",
++    "subtle": "#908caa",
++    "text": "#e0def4",
++    "hl-med": "#403d52",
++    "hl-high": "#524f67"
++   },
++   "r": {
++    "ok": "pine",
++    "run": "gold",
++    "fail": "love",
++    "danger": [
++     "love",
++     "rose",
++     0.3
++    ],
++    "agent": "iris",
++    "hold": [
++     "rose",
++     "gold",
++     0.35
++    ],
++    "waits": "foam",
++    "ready": [
++     "foam",
++     "iris",
++     0.5
++    ],
++    "released": [
++     "pine",
++     "foam",
++     0.5
++    ],
++    "phase": [
++     "iris",
++     "pine",
++     0.45
++    ]
++   }
++  },
++  "gruvbox": {
++   "name": "Gruvbox",
++   "vibe": "Retro warm earth: brown-grey ground, high-saturation fruit accents",
++   "src": {
++    "label": "morhetz/gruvbox",
++    "url": "https://github.com/morhetz/gruvbox"
++   },
++   "c": {
++    "red": "#fb4934",
++    "green": "#b8bb26",
++    "yellow": "#fabd2f",
++    "blue": "#83a598",
++    "purple": "#d3869b",
++    "aqua": "#8ec07c",
++    "orange": "#fe8019",
++    "red-2": "#cc241d",
++    "blue-2": "#458588",
++    "aqua-2": "#689d6a",
++    "bg0_h": "#1d2021",
++    "bg0": "#282828",
++    "bg1": "#3c3836",
++    "bg2": "#504945",
++    "bg3": "#665c54",
++    "gray": "#928374",
++    "fg2": "#d5c4a1",
++    "fg1": "#ebdbb2"
++   },
++   "r": {
++    "ok": "green",
++    "run": "yellow",
++    "fail": "red",
++    "danger": "red-2",
++    "agent": "purple",
++    "hold": "orange",
++    "waits": "aqua",
++    "ready": "blue",
++    "released": "aqua-2",
++    "phase": [
++     "blue",
++     "purple",
++     0.5
++    ]
++   }
++  },
++  "solarized": {
++   "name": "Solarized",
++   "vibe": "Ethan Schoonover's precision palette: one accent set, mirrored light and dark grounds",
++   "src": {
++    "label": "altercation/solarized",
++    "url": "https://ethanschoonover.com/solarized/"
++   },
++   "c": {
++    "yellow": "#b58900",
++    "orange": "#cb4b16",
++    "red": "#dc322f",
++    "magenta": "#d33682",
++    "violet": "#6c71c4",
++    "blue": "#268bd2",
++    "cyan": "#2aa198",
++    "green": "#859900",
++    "base03": "#002b36",
++    "base02": "#073642",
++    "base01": "#586e75",
++    "base00": "#657b83",
++    "base0": "#839496",
++    "base1": "#93a1a1"
++   },
++   "r": {
++    "ok": "green",
++    "run": "yellow",
++    "fail": "red",
++    "danger": [
++     "red",
++     "magenta",
++     0.3
++    ],
++    "agent": "magenta",
++    "hold": "orange",
++    "waits": "cyan",
++    "ready": "blue",
++    "released": [
++     "cyan",
++     "green",
++     0.45
++    ],
++    "phase": "violet"
++   }
++  },
++  "nord": {
++   "name": "Nord",
++   "vibe": "Arctic: Polar Night greys, Frost blues, Aurora accents",
++   "src": {
++    "label": "nordtheme/nord",
++    "url": "https://www.nordtheme.com/docs/colors-and-palettes"
++   },
++   "c": {
++    "nord7": "#8fbcbb",
++    "nord8": "#88c0d0",
++    "nord9": "#81a1c1",
++    "nord10": "#5e81ac",
++    "nord11": "#bf616a",
++    "nord12": "#d08770",
++    "nord13": "#ebcb8b",
++    "nord14": "#a3be8c",
++    "nord15": "#b48ead",
++    "nord0": "#2e3440",
++    "nord1": "#3b4252",
++    "nord2": "#434c5e",
++    "nord3": "#4c566a",
++    "nord3-bright": "#616e88",
++    "nord4": "#d8dee9",
++    "nord6": "#eceff4"
++   },
++   "r": {
++    "ok": "nord14",
++    "run": "nord13",
++    "fail": "nord11",
++    "danger": [
++     "nord11",
++     "nord12",
++     0.25
++    ],
++    "agent": "nord15",
++    "hold": "nord12",
++    "waits": "nord8",
++    "ready": "nord10",
++    "released": [
++     "nord7",
++     "nord14",
++     0.35
++    ],
++    "phase": [
++     "nord9",
++     "nord15",
++     0.4
++    ]
++   }
++  },
++  "everforest": {
++   "name": "Everforest",
++   "vibe": "Forest greens and warm khaki, low glare, made for long sessions",
++   "src": {
++    "label": "sainnhe/everforest",
++    "url": "https://github.com/sainnhe/everforest/blob/master/palette.md"
++   },
++   "c": {
++    "red": "#e67e80",
++    "orange": "#e69875",
++    "yellow": "#dbbc7f",
++    "green": "#a7c080",
++    "aqua": "#83c092",
++    "blue": "#7fbbb3",
++    "purple": "#d699b6",
++    "bg_dim": "#232a2e",
++    "bg0": "#2d353b",
++    "bg1": "#343f44",
++    "bg3": "#475258",
++    "bg5": "#56635f",
++    "grey0": "#7a8478",
++    "grey1": "#859289",
++    "grey2": "#9da9a0",
++    "fg": "#d3c6aa"
++   },
++   "r": {
++    "ok": "green",
++    "run": "yellow",
++    "fail": "red",
++    "danger": [
++     "red",
++     "purple",
++     0.2
++    ],
++    "agent": "purple",
++    "hold": "orange",
++    "waits": [
++     "blue",
++     "purple",
++     0.3
++    ],
++    "ready": "blue",
++    "released": "aqua",
++    "phase": [
++     "blue",
++     "purple",
++     0.55
++    ]
++   }
++  },
++  "tokyonight": {
++   "name": "Tokyo Night",
++   "vibe": "Neon city at night: ink-blue ground, electric blue, magenta and lime",
++   "src": {
++    "label": "folke/tokyonight.nvim",
++    "url": "https://github.com/folke/tokyonight.nvim"
++   },
++   "c": {
++    "blue": "#7aa2f7",
++    "cyan": "#7dcfff",
++    "blue1": "#2ac3de",
++    "magenta": "#bb9af7",
++    "purple": "#9d7cd8",
++    "orange": "#ff9e64",
++    "yellow": "#e0af68",
++    "green": "#9ece6a",
++    "green1": "#73daca",
++    "teal": "#1abc9c",
++    "red": "#f7768e",
++    "red1": "#db4b4b",
++    "bg_dark": "#16161e",
++    "bg": "#1a1b26",
++    "bg_highlight": "#292e42",
++    "terminal_black": "#414868",
++    "comment": "#565f89",
++    "dark5": "#737aa2",
++    "fg_dark": "#a9b1d6",
++    "fg": "#c0caf5"
++   },
++   "r": {
++    "ok": "green",
++    "run": "yellow",
++    "fail": "red",
++    "danger": "red1",
++    "agent": "magenta",
++    "hold": "orange",
++    "waits": "cyan",
++    "ready": "blue",
++    "released": "green1",
++    "phase": "purple"
++   }
++  },
++  "flexoki": {
++   "name": "Flexoki",
++   "vibe": "Ink on paper: warm off-white or near-black ground, analog pigment accents",
++   "src": {
++    "label": "kepano/flexoki",
++    "url": "https://stephango.com/flexoki"
++   },
++   "c": {
++    "red": "#d14d41",
++    "orange": "#da702c",
++    "yellow": "#d0a215",
++    "green": "#879a39",
++    "cyan": "#3aa99f",
++    "blue": "#4385be",
++    "purple": "#8b7ec8",
++    "magenta": "#ce5d97",
++    "red-600": "#af3029",
++    "black": "#100f0f",
++    "base-950": "#1c1b1a",
++    "base-900": "#282726",
++    "base-850": "#343331",
++    "base-700": "#575653",
++    "base-500": "#878580",
++    "base-300": "#b7b5ac",
++    "base-200": "#cecdc3"
++   },
++   "r": {
++    "ok": "green",
++    "run": "yellow",
++    "fail": "red",
++    "danger": "red-600",
++    "agent": "magenta",
++    "hold": "orange",
++    "waits": "cyan",
++    "ready": "blue",
++    "released": [
++     "cyan",
++     "green",
++     0.5
++    ],
++    "phase": "purple"
++   }
++  }
++ },
++ "slate": {
++  "bg0": "#05070d",
++  "bg1": "#0b1224",
++  "surface": "#0c1322",
++  "stack": "#11192b",
++  "track": "#334155",
++  "faint": "#475569",
++  "muted": "#6b7a93",
++  "ink2": "#cbd5e1",
++  "ink": "#dbe4f3"
++ }
++}
+\ No newline at end of file
+diff --git a/starpulse/web/src/features/admin/theme/recolor.ts b/starpulse/web/src/features/admin/theme/recolor.ts
+new file mode 100644
+index 00000000..724faee2
+--- /dev/null
++++ b/starpulse/web/src/features/admin/theme/recolor.ts
+@@ -0,0 +1,152 @@
++// Mockup only: redraws the page in a theme's tokens without touching its drawing code. Every color the page paints (stylesheet
++// rules, inline styles, SVG paint and canvas strokes) is mapped from today's palette onto the theme's: a color that is one of
++// today's tokens becomes that token's new value, and any other color keeps its lightness and chroma offset from the nearest token.
++// The shipped picker swaps the tokens themselves; this stands in for it until the drawing code reads them.
++import { labOfRgb, lchOfRgb, rgb255, rgbOf, type Lch, type Rgb } from "./color";
++import type { Tokens } from "./themeStore";
++
++const COLOR = /#([0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})\b|rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)\s*(?:[,/]\s*([\d.]+%?))?\s*\)/g;
++const ALIAS: Record<string, string> = { mapped: "ready" };
++const ATTRS = ["style", "fill", "stroke", "stop-color"];
++const CHROMATIC = 0.035, SAME = 0.004, MAX_RATIO = 1.6;
++
++interface Anchor { lab: Rgb; lch: Lch; chromatic: boolean; to: Lch; out: Rgb }
++
++const expand = (h: string) => (h.length <= 4 ? [...h].map((c) => c + c).join("") : h);
++
++/** today's `:root` hex tokens, read from the stylesheet before anything is rewritten */
++function todaysTokens(): Map<string, string> {
++  const out = new Map<string, string>();
++  for (const sheet of document.styleSheets) for (const rule of rulesOf(sheet)) {
++    if (!(rule instanceof CSSStyleRule) || rule.selectorText !== ":root") continue;
++    for (const p of rule.style) {
++      const v = rule.style.getPropertyValue(p).trim();
++      if (p.startsWith("--") && /^#[0-9a-fA-F]{3,8}$/.test(v)) out.set(p.slice(2), `#${expand(v.slice(1)).slice(0, 6).toLowerCase()}`);
++    }
++  }
++  return out;
++}
++
++function rulesOf(sheet: CSSStyleSheet | CSSGroupingRule): CSSRule[] {
++  let rules: CSSRuleList;
++  try {
++    rules = sheet.cssRules;
++  } catch {
++    return [];
++  }
++  return [...rules].flatMap((r) => ("cssRules" in r ? [r, ...rulesOf(r as CSSGroupingRule)] : [r]));
++}
++
++export function installRecolor(): (t: Tokens) => void {
++  const today = todaysTokens();
++  let anchors: Anchor[] = [];
++  const memo = new Map<string, string>();
++
++  const mapRgb = (rgb: Rgb): Rgb => {
++    const lab = labOfRgb(rgb), lch = lchOfRgb(rgb), chromatic = lch[1] > CHROMATIC;
++    let best: Anchor | null = null, bd = Infinity;
++    for (const a of anchors) {
++      if (a.chromatic !== chromatic) continue;
++      const d = Math.hypot(a.lab[0] - lab[0], a.lab[1] - lab[1], a.lab[2] - lab[2]);
++      if (d < bd) [best, bd] = [a, d];
++    }
++    if (!best) return rgb.map((v) => Math.round(v * 255)) as Rgb;
++    if (bd < SAME) return best.out;
++    const ratio = Math.min(MAX_RATIO, lch[1] / Math.max(best.lch[1], 1e-3));
++    const c = chromatic ? best.to[1] * ratio : Math.max(0, best.to[1] + lch[1] - best.lch[1]);
++    return rgb255([best.to[0] + lch[0] - best.lch[0], c, chromatic ? best.to[2] + lch[2] - best.lch[2] : best.to[2]]);
++  };
++
++  const mapText = (s: string) => {
++    const hit = memo.get(s);
++    if (hit !== undefined) return hit;
++    const out = s.replace(COLOR, (_m, h: string | undefined, r?: string, g?: string, b?: string, a?: string) => {
++      let rgb: Rgb, alpha: string | undefined;
++      if (h) {
++        const x = expand(h);
++        rgb = rgbOf(`#${x.slice(0, 6)}`);
++        if (x.length === 8) alpha = (parseInt(x.slice(6), 16) / 255).toFixed(3);
++      } else {
++        rgb = [r, g, b].map((v) => Number(v) / 255) as Rgb;
++        alpha = a;
++      }
++      const [R, G, B] = mapRgb(rgb);
++      return alpha === undefined ? `rgb(${R}, ${G}, ${B})` : `rgba(${R}, ${G}, ${B}, ${alpha})`;
++    });
++    memo.set(s, out);
++    return out;
++  };
++
++  // stylesheet rules: each rewrite starts from the value the stylesheet shipped
++  const rules: [CSSStyleDeclaration, string, string, string][] = [];
++  for (const sheet of document.styleSheets) for (const rule of rulesOf(sheet)) {
++    if (!(rule instanceof CSSStyleRule)) continue;
++    for (const p of rule.style) {
++      const v = rule.style.getPropertyValue(p);
++      if (COLOR.test(v)) rules.push([rule.style, p, v, rule.style.getPropertyPriority(p)]);
++      COLOR.lastIndex = 0;
++    }
++  }
++
++  // canvas paint goes through the mapping as it is set
++  const ctx = CanvasRenderingContext2D.prototype;
++  for (const prop of ["fillStyle", "strokeStyle", "shadowColor"] as const) {
++    const d = Object.getOwnPropertyDescriptor(ctx, prop)!;
++    Object.defineProperty(ctx, prop, { ...d, set(v: unknown) { d.set!.call(this, typeof v === "string" ? mapText(v) : v); } });
++  }
++  const stop = CanvasGradient.prototype.addColorStop;
++  CanvasGradient.prototype.addColorStop = function (o: number, c: string) { stop.call(this, o, mapText(c)); };
++
++  // inline styles and SVG paint: the page's own value is kept so a theme change maps it again, and our own writes are skipped
++  const seen = new WeakMap<Element, Map<string, { orig: string; out: string }>>();
++  const touch = (el: Element) => {
++    if (el.closest("[data-theme-raw]")) return;
++    for (const attr of ATTRS) {
++      const v = el.getAttribute(attr);
++      if (v === null) continue;
++      let m = seen.get(el);
++      const was = m?.get(attr);
++      if (was?.out === v) continue;
++      COLOR.lastIndex = 0;
++      if (!COLOR.test(v)) continue;
++      COLOR.lastIndex = 0;
++      const out = mapText(v);
++      if (!m) seen.set(el, (m = new Map()));
++      m.set(attr, { orig: v, out });
++      if (out !== v) el.setAttribute(attr, out);
++    }
++  };
++  const sweep = (root: Element) => {
++    touch(root);
++    for (const el of root.querySelectorAll(ATTRS.map((a) => `[${a}]`).join(","))) touch(el);
++  };
++  new MutationObserver((records) => {
++    for (const r of records) {
++      if (r.type === "attributes") touch(r.target as Element);
++      else for (const n of r.addedNodes) if (n instanceof Element) sweep(n);
++    }
++  }).observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ATTRS });
++
++  return (t: Tokens) => {
++    anchors = [...today].flatMap(([name, from]) => {
++      const to = t[ALIAS[name] ?? name];
++      if (!to) return [];
++      const rgb = rgbOf(from), lch = lchOfRgb(rgb), toRgb = rgbOf(to);
++      return [{ lab: labOfRgb(rgb), lch, chromatic: lch[1] > CHROMATIC, to: lchOfRgb(toRgb), out: toRgb.map((v) => Math.round(v * 255)) as Rgb }];
++    });
++    memo.clear();
++    for (const [style, p, v, pri] of rules) style.setProperty(p, mapText(v), pri);
++    const all = document.querySelectorAll(ATTRS.map((a) => `[${a}]`).join(","));
++    for (const el of all) {
++      if (el.closest("[data-theme-raw]")) continue;
++      for (const [attr, { orig }] of seen.get(el) ?? []) {
++        const out = mapText(orig);
++        seen.get(el)!.set(attr, { orig, out });
++        el.setAttribute(attr, out);
++      }
++      touch(el);
++    }
++    window.dispatchEvent(new Event("resize"));
++    window.dispatchEvent(new Event("sp:theme"));
++  };
++}
+diff --git a/starpulse/web/src/features/admin/theme/scheme.ts b/starpulse/web/src/features/admin/theme/scheme.ts
+new file mode 100644
+index 00000000..34fc58a1
+--- /dev/null
++++ b/starpulse/web/src/features/admin/theme/scheme.ts
+@@ -0,0 +1,163 @@
++// A color pack and a background become the page's tokens. A pack names its palette (c) and which palette color plays each status
++// role (r); a background is the neutral ramp the roles sit on. Every role is fitted to read on the chosen background, so any pack
++// goes on any background, and a base16 or base24 scheme imports as one of each.
++import { contrast, deltaE, hex, hueGap, lch, mixLch, type Lch } from "./color";
++import packsJson from "./packs.json";
++
++/** A palette key, a #rrggbb, or a mix of two of them at t. */
++export type Val = string | [Val, Val, number];
++export interface Pack { name: string; vibe?: string; src?: { label: string; url?: string }; c: Record<string, string>; r: Record<string, Val>; x?: Record<string, string> }
++export const NEUTRALS = ["bg0", "bg1", "surface", "stack", "track", "faint", "muted", "ink2", "ink"] as const;
++export type Neutrals = Record<(typeof NEUTRALS)[number], string>;
++export interface Nudge { key: string; from: string; to: string }
++
++export const ROLES = ["ok", "run", "fail", "danger", "agent", "hold", "waits", "ready", "released", "phase", "submachine"] as const;
++/** The roles that must not be mistaken for each other on the Star Map; danger and submachine are derived and sit beside their parents. */
++export const DISTINCT = ["ok", "run", "fail", "agent", "hold", "waits", "ready", "released", "phase"] as const;
++const TARGET_HUE: Record<string, number> = { ok: 145, run: 90, fail: 22, hold: 55, agent: 305, waits: 215, ready: 255, released: 180, phase: 280 };
++/** Below this OKLab distance two statuses read as one color: the import is refused. Below WARN_DE it is allowed with a warning. */
++export const REFUSE_DE = 0.035;
++export const WARN_DE = 0.05;
++/** A background's surface must be darker than this OKLCH lightness: the page is dark only. */
++export const MAX_SURFACE_L = 0.3;
++
++export const BUILTIN: Record<string, Pack> = packsJson.packs as unknown as Record<string, Pack>;
++export const SLATE: Neutrals = packsJson.slate;
++
++function resolve(v: Val, c: Record<string, string>): Lch {
++  if (Array.isArray(v)) return mixLch(resolve(v[0], c), resolve(v[1], c), v[2]);
++  return lch(v.startsWith("#") ? v : c[v]);
++}
++
++/** Walks OKLCH lightness up, keeping chroma and hue, until the color clears `min` against every background. */
++function fit(key: string, col: Lch, against: string[], min: number, nudged: Nudge[] | null) {
++  const from = hex(col);
++  let [l, out] = [col[0], from];
++  for (let i = 0; i < 200 && against.some((b) => contrast(out, b) < min); i++) {
++    l = Math.min(1, l + 0.005);
++    out = hex([l, col[1], col[2]]);
++  }
++  if (nudged && out !== from) nudged.push({ key, from, to: out });
++  return out;
++}
++
++/** The background's own tokens, its text colors lifted to read on its surface. */
++export function neutrals(n: Neutrals, nudged: Nudge[] = []) {
++  const t: Record<string, string> = { bg0: n.bg0, bg1: n.bg1, surface: n.surface, stack: n.stack, track: n.track, faint: n.faint };
++  t.muted = fit("muted", lch(n.muted), [n.surface], 4.5, nudged);
++  t["ink-2"] = fit("ink-2", lch(n.ink2), [n.surface], 7, nudged);
++  t.ink = fit("ink", lch(n.ink), [n.surface], 7, nudged);
++  t.ghost = hex(mixLch(lch(t.track), lch(t.faint), 0.5));
++  t.slate = hex(mixLch(lch(t.muted), lch(t["ink-2"]), 0.45));
++  return t;
++}
++
++/** Every token a pack on a background draws: the neutrals, then each role with its -hi and -text, fitted to the surface. */
++export function build(p: Pack, n: Neutrals) {
++  const nudged: Nudge[] = [];
++  const t = neutrals(n, nudged);
++  const against = [t.surface, t.bg0], ink = lch(t.ink);
++  const role = (k: string, col: Lch, pal: boolean) => {
++    t[k] = fit(k, col, against, 3, pal ? nudged : null);
++    // Toward the ink's lightness and chroma but on the role's own hue: the ink is near grey, so its hue is noise.
++    const base = lch(t[k]), toward: Lch = [ink[0], ink[1], base[2]];
++    t[`${k}-hi`] = hex(mixLch(base, toward, 0.55));
++    t[`${k}-text`] = fit(`${k}-text`, mixLch(base, toward, 0.3), against, 4.5, null);
++  };
++  for (const k of ROLES.slice(0, -1)) role(k, resolve(p.r[k], p.c), true);
++  if (p.r.submachine) role("submachine", resolve(p.r.submachine, p.c), true);
++  else {
++    const [l, c, h] = lch(t.phase);
++    role("submachine", [l - 0.08, c * 0.55, h], false);
++  }
++  Object.assign(t, p.x);
++  return { t, nudged };
++}
++
++/** The two statuses that look most alike, and how far apart they are. */
++export function closest(t: Record<string, string>): [number, string, string] {
++  let best: [number, string, string] = [Infinity, "", ""];
++  DISTINCT.forEach((a, i) => DISTINCT.slice(i + 1).forEach((b) => {
++    const d = deltaE(t[a], t[b]);
++    if (d < best[0]) best = [d, a, b];
++  }));
++  return best;
++}
++
++const shift = (h: string, dl: number) => {
++  const [l, c, hue] = lch(h);
++  return hex([l + dl, c, hue]);
++};
++
++/** A dark ramp from one picked color: Slate's lightness steps and chroma ratios, on the picked hue and chroma. */
++export function rampFrom(pick: string): Neutrals {
++  const [L, C, H] = lch(pick), base = lch(SLATE.surface);
++  const step = (k: keyof Neutrals): string => {
++    if (k === "surface") return pick;
++    const [l, c] = lch(SLATE[k]);
++    // Text steps keep at most Slate's own tint, so a saturated pick tints the page without tinting its words.
++    const tint = Math.min((C * c) / Math.max(base[1], 1e-3), l > 0.6 ? Math.max(c, 0.03) : 0.09);
++    return hex([L + (l - base[0]), tint, H]);
++  };
++  return Object.fromEntries(NEUTRALS.map((k) => [k, step(k)])) as Neutrals;
++}
++
++/** Why a ramp cannot be a background, or null when it can. */
++export const bgRefusal = (n: Neutrals) =>
++  lch(n.surface)[0] >= MAX_SURFACE_L ? `Backgrounds are dark only: this surface is ${Math.round(lch(n.surface)[0] * 100)}% light, and it must be under ${MAX_SURFACE_L * 100}%.` : null;
++
++const ACCENTS = ["08", "09", "0A", "0B", "0C", "0D", "0E", "0F"].map((s) => `base${s}`);
++const BRIGHTS = ["12", "13", "14", "15", "16", "17"].map((s) => `base${s}`);
++
++/** A base16 or base24 YAML scheme as a pack (accents matched to roles by hue) and a background (its base00-05 ramp). */
++export function fromBase16(text: string): { name: string; author?: string; pack: Pack; bg: Neutrals } {
++  const c: Record<string, string> = {};
++  let name = "", author = "";
++  for (const line of text.split(/\r?\n/)) {
++    const m = line.match(/^\s*(base[0-9A-Fa-f]{2})\s*:\s*["']?#?([0-9a-fA-F]{6})\b/);
++    if (m) {
++      c[`base${m[1].slice(4).toUpperCase()}`] = `#${m[2].toLowerCase()}`;
++      continue;
++    }
++    const kv = line.match(/^\s*(name|scheme|author)\s*:\s*["']?([^"'\n]+?)["']?\s*$/);
++    if (kv?.[1] === "author") author = kv[2];
++    else if (kv) name = kv[2];
++  }
++  const missing = ["base00", "base02", "base03", "base05", ...ACCENTS].filter((k) => !c[k]);
++  if (missing.length) throw new Error(`Not a base16 or base24 scheme: it has no ${missing.join(", ")}.`);
++  const at = (a: string, b: string, t: number) => hex(mixLch(lch(c[a]), lch(c[b]), t));
++  const bg: Neutrals = {
++    surface: c.base00, bg0: shift(c.base00, -0.035), bg1: shift(c.base00, -0.017), stack: at("base00", "base02", 0.5),
++    track: c.base02, faint: c.base03, muted: at("base03", "base05", 0.35), ink2: at("base05", "base03", 0.2), ink: c.base05,
++  };
++  const slots = (ks: string[]) => ks.filter((k) => c[k]).map((k) => ({ k, lch: lch(c[k]) })).filter((s) => s.lch[1] > 0.04);
++  const r: Record<string, Val> = {}, used = new Set<string>();
++  const assign = (pool: { k: string; lch: Lch }[]) => {
++    const pairs: [number, string, string][] = [];
++    for (const [role, h] of Object.entries(TARGET_HUE)) for (const s of pool) {
++      const gap = hueGap(s.lch[2], h);
++      if (gap <= 40) pairs.push([gap, role, s.k]);
++    }
++    pairs.sort((a, b) => a[0] - b[0]);
++    for (const [, role, k] of pairs) if (!r[role] && !used.has(c[k])) {
++      r[role] = k;
++      used.add(c[k]);
++    }
++  };
++  assign(slots(ACCENTS));
++  assign(slots(BRIGHTS));
++  const via = (role: string, a: string, b: string) => {
++    if (!r[role] && r[a] && r[b]) r[role] = [r[a], r[b], 0.5];
++  };
++  via("phase", "ready", "agent");
++  via("waits", "ready", "released");
++  via("released", "waits", "ok");
++  const pool = slots(ACCENTS).map((s) => s.lch);
++  const median = (i: number) => pool.map((p) => p[i]).sort((a, b) => a - b)[pool.length >> 1] ?? 0.75;
++  // A role the scheme has no hue for gets one at the scheme's typical lightness, held below 0.78 so the gamut leaves blues and violets
++  // enough chroma to tell apart.
++  for (const [role, h] of Object.entries(TARGET_HUE)) if (!r[role]) r[role] = hex([Math.min(median(0), 0.78), Math.max(median(1), 0.12), h]);
++  r.danger = [r.fail, r.hold, 0.15];
++  name ||= "Imported scheme";
++  return { name, author: author || undefined, pack: { name, src: { label: author ? `Imported · ${author}` : "Imported" }, c, r }, bg };
++}
+diff --git a/starpulse/web/src/features/admin/theme/themeStore.ts b/starpulse/web/src/features/admin/theme/themeStore.ts
+new file mode 100644
+index 00000000..f4e9f114
+--- /dev/null
++++ b/starpulse/web/src/features/admin/theme/themeStore.ts
+@@ -0,0 +1,89 @@
++// The theme this browser draws: a color pack and a background, each built in or imported, kept in localStorage like the Admin's other
++// choices. Every change rebuilds the tokens and hands them to `apply`, which redraws the page in them.
++import { browserStorage, type PrefStorage } from "../../../shared/nav";
++import { BUILTIN, SLATE, build, type Neutrals, type Pack } from "./scheme";
++
++export const THEME_KEY = "sp.theme";
++export interface SavedPack { id: string; pack: Pack }
++export interface SavedBg { id: string; name: string; n: Neutrals }
++export interface ThemePrefs { pack: string; bg: string; packs: SavedPack[]; bgs: SavedBg[] }
++export const THEME_DEFAULTS: ThemePrefs = { pack: "starpulse", bg: "slate", packs: [], bgs: [] };
++export type Tokens = Record<string, string>;
++
++const list = <T>(v: unknown, ok: (x: Record<string, unknown>) => boolean) =>
++  (Array.isArray(v) ? v.filter((x) => typeof x === "object" && x !== null && ok(x)) : []) as T[];
++
++export function loadTheme(storage: PrefStorage | null): ThemePrefs {
++  try {
++    const raw: unknown = JSON.parse(storage?.getItem(THEME_KEY) ?? "null");
++    const r = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
++    const packs = list<SavedPack>(r.packs, (x) => typeof x.id === "string" && typeof x.pack === "object");
++    const bgs = list<SavedBg>(r.bgs, (x) => typeof x.id === "string" && typeof x.n === "object");
++    const pack = typeof r.pack === "string" && (BUILTIN[r.pack] || packs.some((p) => p.id === r.pack)) ? r.pack : THEME_DEFAULTS.pack;
++    const bg = typeof r.bg === "string" && bgs.some((b) => b.id === r.bg) ? r.bg : THEME_DEFAULTS.bg;
++    return { pack, bg, packs, bgs };
++  } catch {
++    return THEME_DEFAULTS;
++  }
++}
++
++export function saveTheme(storage: PrefStorage | null, p: ThemePrefs): void {
++  try {
++    storage?.setItem(THEME_KEY, JSON.stringify(p));
++  } catch {
++    // storage is off: the theme lasts the session
++  }
++}
++
++const newId = () => `u${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
++
++export class ThemeStore {
++  private prefs: ThemePrefs;
++  private listeners = new Set<() => void>();
++
++  constructor(private apply: (t: Tokens) => void = () => {}, private storage: PrefStorage | null = browserStorage()) {
++    this.prefs = loadTheme(storage);
++    apply(this.tokens());
++  }
++
++  get = () => this.prefs;
++  subscribe = (fn: () => void) => {
++    this.listeners.add(fn);
++    return () => this.listeners.delete(fn);
++  };
++
++  packOf = (id: string): Pack => BUILTIN[id] ?? this.prefs.packs.find((p) => p.id === id)?.pack ?? BUILTIN.starpulse;
++  bgOf = (id: string): Neutrals => this.prefs.bgs.find((b) => b.id === id)?.n ?? SLATE;
++  tokens = (): Tokens => build(this.packOf(this.prefs.pack), this.bgOf(this.prefs.bg)).t;
++
++  choosePack = (pack: string) => this.set({ ...this.prefs, pack });
++  chooseBg = (bg: string) => this.set({ ...this.prefs, bg });
++
++  /** Saves an imported pack, and its background when `bg` is given, and switches to them. */
++  addPack = (pack: Pack, bg?: Neutrals) => {
++    const id = newId(), packs = [...this.prefs.packs, { id, pack }];
++    if (!bg) return this.set({ ...this.prefs, packs, pack: id });
++    const bid = `${id}b`;
++    this.set({ ...this.prefs, packs, pack: id, bgs: [...this.prefs.bgs, { id: bid, name: pack.name, n: bg }], bg: bid });
++  };
++  addBg = (name: string, n: Neutrals) => {
++    const id = newId();
++    this.set({ ...this.prefs, bgs: [...this.prefs.bgs, { id, name, n }], bg: id });
++  };
++  renamePack = (id: string, name: string) =>
++    this.set({ ...this.prefs, packs: this.prefs.packs.map((p) => (p.id === id ? { id, pack: { ...p.pack, name } } : p)) });
++  renameBg = (id: string, name: string) => this.set({ ...this.prefs, bgs: this.prefs.bgs.map((b) => (b.id === id ? { ...b, name } : b)) });
++  /** Deleting the pack or background in use falls back to the built-in one. */
++  deletePack = (id: string) =>
++    this.set({ ...this.prefs, packs: this.prefs.packs.filter((p) => p.id !== id), pack: this.prefs.pack === id ? THEME_DEFAULTS.pack : this.prefs.pack });
++  deleteBg = (id: string) =>
++    this.set({ ...this.prefs, bgs: this.prefs.bgs.filter((b) => b.id !== id), bg: this.prefs.bg === id ? THEME_DEFAULTS.bg : this.prefs.bg });
++
++  private set(next: ThemePrefs) {
++    const redraw = next.pack !== this.prefs.pack || next.bg !== this.prefs.bg;
++    this.prefs = next;
++    saveTheme(this.storage, next);
++    if (redraw) this.apply(this.tokens());
++    for (const fn of this.listeners) fn();
++  }
++}
+diff --git a/starpulse/web/src/render/renderer.ts b/starpulse/web/src/render/renderer.ts
+index bf720b81..1ffb6cbe 100644
+--- a/starpulse/web/src/render/renderer.ts
++++ b/starpulse/web/src/render/renderer.ts
+@@ -1183,6 +1183,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+     drawTrace();
+   }
+   let wash: { w: number; h: number; g?: CanvasGradient } = { w: 0, h: 0 };
++  /** a theme change repaints the sky at the same size, so it drops the cached wash */
++  const onTheme = () => { wash = { w: 0, h: 0 }; };
+   let shown1 = false;
+   const frame = (now: number) => {
+     if (away) return; // the canvas is hidden behind another view
+@@ -1270,7 +1272,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+   const loop = frameLoop({ draw: frame, animating: busy, idle: settle, pace: () => framePace(prefs().motion, performance.now() - lastInput) });
+   /** Every input that can change what the canvas shows wakes it; the handlers run first, so the frame sees their result. */
+   const wakers: [EventTarget, string][] = [
+-    [window, "resize"], [window, "mousemove"], [window, "mouseup"], [window, "keydown"], [document, "visibilitychange"],
++    [window, "resize"], [window, "sp:theme"], [window, "mousemove"], [window, "mouseup"], [window, "keydown"], [document, "visibilitychange"],
+     [cv, "mousedown"], [cv, "mouseleave"], [cv, "contextmenu"], [cv, "wheel"],
+   ];
+   const wake = () => {
+@@ -1303,6 +1305,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+   return {
+     start() {
+       addEventListener("resize", onResize);
++      addEventListener("sp:theme", onTheme);
+       document.addEventListener("visibilitychange", onVisibility);
+       addEventListener("mousemove", onMove);
+       addEventListener("mouseup", onUp);
+@@ -1337,6 +1340,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+       clearTimeout(saveT);
+       for (const [target, type] of wakers) target.removeEventListener(type, wake);
+       removeEventListener("resize", onResize);
++      removeEventListener("sp:theme", onTheme);
+       document.removeEventListener("visibilitychange", onVisibility);
+       removeEventListener("mousemove", onMove);
+       removeEventListener("mouseup", onUp);
+diff --git a/starpulse/web/src/style.css b/starpulse/web/src/style.css
+index 096b0f14..c0af24cc 100644
+--- a/starpulse/web/src/style.css
++++ b/starpulse/web/src/style.css
+@@ -642,10 +642,10 @@ body.dragging, body.dragging * { user-select: none; }
+ /* Starting a session, from the approved mockups: ▶ as a full-height strip on a startable card's right edge (TASK-3016),
+    the start question, and the card that waits in In progress on a dashed amber edge until its agent claims it. */
+ #kb .card.startable, #kb.compact .card.startable { padding-right: calc(max(30px, 30px * var(--fs)) + 9px); }
+-:is(#kb, #dg) .play.edge { all: unset; position: absolute; top: 0; right: 0; bottom: 0; width: max(30px, calc(30px * var(--fs))); display: flex; align-items: center; justify-content: center;
++:is(#kb, #dg, #admin) .play.edge { all: unset; position: absolute; top: 0; right: 0; bottom: 0; width: max(30px, calc(30px * var(--fs))); display: flex; align-items: center; justify-content: center;
+   border-left: 1px solid color-mix(in srgb, var(--ok) 28%, transparent); border-radius: 0 6px 6px 0; background: color-mix(in srgb, var(--ok) 6%, transparent); color: var(--ok); font-size: calc(13px * var(--fs)); line-height: 1; }
+-:is(#kb, #dg) .play.edge:hover, :is(#kb, #dg) .play.edge:focus-visible { background: color-mix(in srgb, var(--ok) 20%, transparent); color: var(--ok-hi); }
+-:is(#kb, #dg) .play.edge:disabled { opacity: .35; border-left-style: dashed; background: transparent; }
++:is(#kb, #dg, #admin) .play.edge:hover, :is(#kb, #dg, #admin) .play.edge:focus-visible { background: color-mix(in srgb, var(--ok) 20%, transparent); color: var(--ok-hi); }
++:is(#kb, #dg, #admin) .play.edge:disabled { opacity: .35; border-left-style: dashed; background: transparent; }
+ #kb .card.claiming { border: 1px dashed color-mix(in srgb, var(--run) 70%, transparent); }
+ #kb .card.claiming::after { content: ""; position: absolute; right: 8px; bottom: 8px; width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--run); border-top-color: transparent; animation: kb-spin .8s linear infinite; }
+ #kb .mach.sess b, #kb .mach.sess .s { color: var(--run); }
+@@ -700,6 +700,8 @@ body.dragging, body.dragging * { user-select: none; }
+ @container (max-width: 719px) { #admin .grid { grid-template-columns: minmax(0, 1fr); } }
+ #admin .card { border-radius: 10px; background: color-mix(in srgb, var(--surface) 85%, transparent); border: 1px solid color-mix(in srgb, var(--slate) 13%, transparent); }
+ #admin .card + .card { margin-top: 16px; }
++#admin .grid > .col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
++#admin .grid > .col > .card + .card, #admin .grid > .col > * > .card:first-child { margin-top: 0; }
+ #admin .card h2 { margin: 0; display: flex; align-items: baseline; gap: 10px; padding: 12px 16px 10px; font-size: calc(11px * var(--fs)); font-weight: 500; letter-spacing: .2em;
+   text-transform: uppercase; color: var(--slate); border-bottom: 1px solid color-mix(in srgb, var(--slate) 8%, transparent); }
+ #admin .card h2 .c { font-size: calc(11px * var(--fs)); letter-spacing: 0; text-transform: none; font-weight: 400; color: var(--muted); }
+@@ -732,8 +734,8 @@ body.dragging, body.dragging * { user-select: none; }
+ #admin .ok { margin-top: 8px; font-size: calc(11px * var(--fs)); color: var(--ok); }
+ #admin .when { font-variant-numeric: tabular-nums; }
+ #admin .pv { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 14px; }
+-#admin .pv canvas { position: static; display: block; width: 100%; height: 120px; border-radius: 8px; background: radial-gradient(circle at 50% 40%, var(--bg2), var(--bg0) 70%); }
+-#admin .pvcard { box-sizing: border-box; padding: 8px 9px 8px 10px; border-radius: 7px; background: color-mix(in srgb, var(--surface) 92%, transparent); border: 1px solid color-mix(in srgb, var(--slate) 13%, transparent); line-height: 1.4; }
++#admin .pv canvas { position: static; display: block; width: 100%; height: calc(118px + 36px * var(--fs)); border-radius: 8px; background: radial-gradient(circle at 50% 40%, var(--bg2), var(--bg0) 70%); }
++#admin .pvcard { position: relative; box-sizing: border-box; padding: 8px calc(max(30px, 30px * var(--fs)) + 9px) 8px 10px; border-radius: 7px; background: color-mix(in srgb, var(--surface) 92%, transparent); border: 1px solid color-mix(in srgb, var(--slate) 13%, transparent); line-height: 1.4; }
+ #admin .pvcard .top { display: flex; align-items: center; gap: 6px; font-size: calc(10.5px * var(--fs)); color: var(--muted); }
+ #admin .pvcard .id { margin-right: auto; font-family: "JetBrains Mono", ui-monospace, monospace; color: var(--slate); }
+ #admin .pvcard .pr { display: flex; align-items: center; gap: 4px; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: calc(10px * var(--fs)); padding: 1px 5px; border-radius: 4px; border: 1px solid color-mix(in srgb, var(--slate) 20%, transparent); color: var(--slate); }
+@@ -766,7 +768,7 @@ body.dragging, body.dragging * { user-select: none; }
+ #admin .fw-next .stream { font-size: calc(10px * var(--fs)); letter-spacing: .08em; color: var(--muted); }
+ #admin .fw-next .kv b { font-weight: 400; color: var(--muted); }
+ #admin .fw-next li.more { background: none; padding: 0 8px; color: var(--muted); }
+-#admin .pvcard.compact { padding: 4px 8px; }
++#admin .pvcard.compact { padding: 4px calc(max(30px, 30px * var(--fs)) + 9px) 4px 8px; }
+ #admin .pvcard.compact .t { margin: 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+ 
+ /* Kanban cards, Compact: tighter padding and gap and a one-line title; the card markup drops the footer. */
+@@ -1118,3 +1120,69 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
+ #kbm .tv .fv.chips .chipinput { flex: 1 0 calc(80px * var(--fs)); width: auto; }
+ #kbm .tvrail .rule { margin-top: 3px; font-size: calc(10.5px * var(--fs)); color: var(--muted); }
+ #kbm .tvrail .rule.err { color: var(--fail); }
++
++/* The Admin's Theme card (TASK-8943 mockup): a color pack and a background, each a grid of tiles a click applies. It sits
++   under Preview in the right column, so each row stacks its label over its tiles. */
++#admin .thm .row.wide { grid-template-columns: minmax(0, 1fr); align-items: start; }
++#admin .thm .tiles { display: grid; gap: 8px; }
++#admin .thm .packs { grid-template-columns: repeat(auto-fill, minmax(calc(132px * var(--fs)), 1fr)); }
++#admin .thm .bgs { grid-template-columns: repeat(auto-fill, minmax(calc(150px * var(--fs)), 1fr)); }
++#admin .thm .own { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
++#admin .thm .own .tile { flex: 1; }
++#admin .thm .tile { box-sizing: border-box; min-width: 0; display: flex; flex-direction: column; border-radius: 7px; border: 1px solid color-mix(in srgb, var(--slate) 16%, transparent); background: color-mix(in srgb, var(--slate) 3%, transparent); }
++#admin .thm .tile.on { border-color: color-mix(in srgb, var(--agent) 70%, transparent); background: color-mix(in srgb, var(--agent) 8%, transparent); }
++#admin .thm .tile > .nm { padding: 7px 9px 0; }
++#admin .thm .pick { all: unset; box-sizing: border-box; flex: 1; display: flex; flex-direction: column; gap: 6px; padding: 7px 9px 8px; cursor: pointer; }
++#admin .thm .pick:focus-visible, #admin .thm .tile.add:focus-visible { outline: 1px solid var(--agent); outline-offset: 1px; }
++#admin .thm .tile:not(.on):hover { border-color: color-mix(in srgb, var(--slate) 35%, transparent); }
++#admin .thm .nm { font-size: calc(12px * var(--fs)); color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
++#admin .thm .tile.on .nm::after { content: " ✓"; color: var(--agent-text); }
++#admin .thm .src { font-size: calc(10px * var(--fs)); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 1.4em; }
++#admin .thm .tile.add { all: unset; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; gap: 2px; min-height: calc(66px * var(--fs)); padding: 7px 9px; border-radius: 7px; border: 1px dashed color-mix(in srgb, var(--slate) 30%, transparent); font-size: calc(12px * var(--fs)); color: var(--ink-2); cursor: pointer; }
++#admin .thm .tile.add:hover { color: var(--ink); border-color: color-mix(in srgb, var(--slate) 55%, transparent); }
++#admin .thm .plus { font-size: calc(15px * var(--fs)); line-height: 1; color: var(--agent-text); }
++#admin .thm .acts { display: flex; gap: 10px; padding: 0 2px; font-size: calc(10.5px * var(--fs)); min-height: 1.5em; align-items: center; }
++#admin .thm .acts.conf { color: var(--ink-2); flex-wrap: wrap; gap: 2px 8px; }
++#admin .thm .acts .del { color: var(--danger-text); }
++#admin .thm .ren { box-sizing: border-box; width: 100%; height: calc(20px * var(--fs)); padding: 0 5px; border-radius: 4px; border: 1px solid var(--agent); background: var(--field); color: var(--ink); font: inherit; font-size: calc(12px * var(--fs)); outline: 0; }
++/* swatches show a pack's own colors on its background, so they carry data-theme-raw and never take the page's */
++.thm .sws, .thm .ramp { display: flex; height: calc(14px * var(--fs)); border-radius: 4px; overflow: hidden; }
++.thm .sws { gap: 2px; padding: 3px; background: var(--bg0); border-radius: 5px; }
++.thm .sws i { flex: 1; border-radius: 2px; }
++.thm .ramp { min-width: 120px; }
++.thm .ramp i { flex: 1; }
++#admin .thm .pick .ramp { height: calc(22px * var(--fs)); }
++
++/* the import and background dialogs */
++#kbm.thm .modal.ask { width: min(600px, calc(100vw - 40px)); max-height: 88vh; overflow-y: auto; }
++#kbm.thm .ask .opt { row-gap: 10px; align-items: start; }
++#kbm.thm .ask .opt .lb { padding-top: 3px; }
++#kbm.thm input[type=file] { font-size: calc(11.5px * var(--fs)); color: var(--ink-3); }
++#kbm.thm input[type=file]::file-selector-button { margin-right: 10px; padding: 3px 10px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--slate) 28%, transparent); background: transparent; color: var(--ink-2); font: inherit; }
++#kbm.thm :is(.yaml, .nmin, .hexin) { box-sizing: border-box; width: 100%; padding: 5px 8px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--slate) 22%, transparent); background: var(--field); color: var(--ink); font: calc(11.5px * var(--fs)) "JetBrains Mono", ui-monospace, monospace; outline: 0; }
++#kbm.thm .yaml { resize: vertical; line-height: 1.5; }
++#kbm.thm .nmin { font-family: inherit; }
++#kbm.thm :is(.yaml, .nmin, .hexin):focus { border-color: var(--agent); }
++#kbm.thm .pickc { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
++#kbm.thm .pickc input[type=color] { width: 34px; height: 26px; padding: 0; border: 1px solid color-mix(in srgb, var(--slate) 28%, transparent); border-radius: 6px; background: none; }
++#kbm.thm .hexin { width: 6.5em; }
++#kbm.thm .hint { color: var(--muted); font-size: calc(10.5px * var(--fs)); }
++#kbm.thm .withbg { display: flex; align-items: center; gap: 8px; color: var(--ink-2); font-size: calc(11.5px * var(--fs)); }
++#kbm.thm .withbg .ramp { flex: 1; min-width: 80px; height: calc(12px * var(--fs)); }
++#kbm.thm .withbg.off { color: var(--muted); }
++#kbm.thm .sample { margin-top: 14px; padding: 10px 12px; border-radius: 8px; border: 1px solid; font-size: calc(12px * var(--fs)); }
++#kbm.thm .sample .chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
++#kbm.thm .sample .chips span { display: inline-flex; align-items: center; gap: 5px; padding: 0 7px; border-radius: 4px; border: 1px solid; font-size: calc(10.5px * var(--fs)); line-height: 1.7; }
++#kbm.thm .sample .chips i { width: 7px; height: 7px; border-radius: 50%; }
++#kbm.thm :is(.refusal, .warn, .okline) { margin-top: 10px; padding: 7px 10px; border-radius: 6px; font-size: calc(11.5px * var(--fs)); line-height: 1.5; }
++#kbm.thm .refusal { border: 1px solid color-mix(in srgb, var(--fail) 35%, transparent); background: color-mix(in srgb, var(--fail) 8%, transparent); color: var(--ink-2); }
++#kbm.thm .refusal .k { color: var(--fail-text); }
++#kbm.thm .warn { border: 1px solid color-mix(in srgb, var(--hold) 35%, transparent); background: color-mix(in srgb, var(--hold) 8%, transparent); color: var(--ink-2); }
++#kbm.thm .warn b { color: var(--hold-text); font-weight: 500; }
++#kbm.thm .okline { padding: 0; color: var(--ok-text); }
++#kbm.thm .nudges { margin-top: 10px; }
++#kbm.thm .nudges ul { list-style: none; margin: 2px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 2px 14px; }
++#kbm.thm .nudges li { display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: calc(10.5px * var(--fs)); }
++#kbm.thm .nudges .nk { color: var(--ink-3); min-width: 4.5em; }
++#kbm.thm .nudges li i { width: 9px; height: 9px; border-radius: 2px; }
++#kbm.thm .nudges code { font-size: calc(10px * var(--fs)); color: var(--ink-3); }
