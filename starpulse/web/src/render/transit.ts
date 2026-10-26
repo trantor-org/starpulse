@@ -331,7 +331,7 @@ function spot(sc: Scene, nodes: Map<string, Node>, k: string): Node | undefined 
 /** Each branch drawn at least `min` of the way out to where it stops (by default all the way), with its own line from its landing (or the hub) to its last station:
  *  what the overlap check measures. Siblings share the station they open from, so a ring-2 line starts past it. */
 export const branchLines = (min = 1) =>
-  [...branches.values()].filter((b) => b.ext >= min * b.to - 1e-9 && (b.to > 0 || !min) && b.route.length).map((b) => ({ key: b.key, sun: b.sun, ring: b.ring, parent: b.parent, th: +b.th.toFixed(3), lane: b.lane, dir: b.dir, n: b.steps.length, pj: b.pj, loose: b.loose, ext: b.ext, pts: b.route.slice(b.own + (b.parent ? 1 : 0)) }));
+  [...branches.values()].filter((b) => b.ext >= min * b.to - 1e-9 && (b.to > 0 || !min) && b.route.length).map((b) => ({ key: b.key, sun: b.sun, ring: b.ring, parent: b.parent, th: +b.th.toFixed(3), lane: b.lane, dir: b.dir, n: b.steps.length, pj: b.pj, loose: b.loose, ext: b.ext, leaving: b.leaving, pts: b.route.slice(b.own + (b.parent ? 1 : 0)) }));
 /** How far `p` sits from the segment a–b. */
 function seg(p: Pt, a: Pt, b: Pt) {
   const dx = b.x - a.x, dy = b.y - a.y, l = dx * dx + dy * dy, u = l ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l)) : 0;
@@ -471,19 +471,33 @@ export function placeBranches(sc: Scene, now: number): boolean {
     }
   }
   const kids = new Set([...branches.values()].flatMap((b) => (b.parent && !Number.isNaN(b.th) ? [b.parent] : [])));
-  // the branches a dot is on, or still gliding off: a line leaving the sky waits for them to clear
-  const ridden = new Set([...mems.values()].flatMap((m) => [...m.hold, ...m.bks]));
   // the first frame with tasks on it is the page coming up on work already under way: its branches show as they stand, not grown afresh
   const born = !loaded && tasks.length > 0;
   loaded ||= born;
   for (const b of [...branches.values()]) if (!sc.galaxies[b.sun] || (b.parent && !branches.has(b.parent))) branches.delete(b.key);
   for (const ring of [1, 2]) for (const b of branches.values()) if (b.ring === ring) shape(b, sc.galaxies[b.sun]);
+  // a line leaving the sky still holds its room while it is drawn: a branch placed over it there waits for it to clear before growing on
+  const gone = [...branches.values()].filter((o) => o.leaving && o.ext > 0 && !Number.isNaN(o.th));
+  const crowded = (b: Branch) =>
+    gone.some((o) => {
+      if (o === b || o.sun !== b.sun || o.key === b.parent || o.parent === b.key) return false;
+      const [mine, theirs] = [claims(b, b.th, b.lane, b.dir, b.at), claims(o, o.th, o.lane, o.dir, o.at)];
+      return b.ring === 2 && o.parent === b.parent && o.pj === b.pj ? hit(mine.slice(0, 1), theirs.slice(0, 1)) : hit(mine, theirs);
+    });
+  // the branches a dot is on, or still gliding off: a line leaving the sky waits for them to clear. A dot bound for a branch that waits on such a
+  // line lets go of the lines its way has already passed, or the two would wait on each other
+  const toGo = (m: Mem) => {
+    const i = m.cum.findIndex((c) => c > m.gone);
+    return i < 0 ? [] : m.path.slice(i);
+  };
+  const passed = (m: Mem, key: string) => m.bks.some((k) => crowded(branches.get(k)!)) && !toGo(m).some((p) => p.k.startsWith(`${key}:`));
+  const ridden = new Set([...mems.values()].flatMap((m) => [...m.hold.filter((key) => !passed(m, key)), ...m.bks]));
   for (const b of branches.values()) {
     // a branch grows once it is placed, a sub-machine once its parent's line has reached the station it opens from, each only out to the furthest
     // station a dot or sub-machine on it has reached, and on to the next as a dot moves there
     const par = b.parent ? branches.get(b.parent)! : undefined;
     const grow = b.alive && !b.leaving && !Number.isNaN(b.th) && (born || !par || reached(par, b.pj));
-    const goal = grow ? share(b, b.seen) : kids.has(b.key) || (b.leaving && ridden.has(b.key)) ? b.ext : 0;
+    const goal = grow ? (crowded(b) ? b.ext : share(b, b.seen)) : kids.has(b.key) || (b.leaving && ridden.has(b.key)) ? b.ext : 0;
     if (goal !== b.to) Object.assign(b, { from: b.ext, to: goal, p: born ? 1 : 0 });
     else b.p = Math.min(1, b.p + dt / OPEN);
     b.ext = b.p >= 1 ? b.to : b.from + (b.to - b.from) * ease(b.p);
@@ -567,7 +581,9 @@ export function placeBranches(sc: Scene, now: number): boolean {
     m.path = m.path.map((p) => spot(sc, nodes, p.k) ?? p);
     m.path[m.path.length - 1] = route.at(-1)!;
     if (m.path.length > 1) m.cum = lengths(m.path);
-    const u = Math.min(1, (now - m.t0) / m.dur), L = m.cum.at(-1)!, stop = m.path.findIndex((p) => ahead.has(p.k.split("+")[0]));
+    // it waits at the first node past it its line has not grown out to: one behind it, on a line tearing down, never draws it back
+    const was = m.cum.findIndex((c) => c > m.gone), u = Math.min(1, (now - m.t0) / m.dur), L = m.cum.at(-1)!;
+    const stop = was < 0 ? -1 : m.path.findIndex((p, i) => i >= was && ahead.has(p.k.split("+")[0]));
     m.gone = Math.min(u * L, stop < 0 ? L : m.cum[Math.max(0, stop - 1)]);
     const done = m.fade ? u >= 1 : m.gone >= L;
     let q: Pt = route.at(-1)!, alpha = 1;

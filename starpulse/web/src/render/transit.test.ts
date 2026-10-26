@@ -64,6 +64,34 @@ describe("placeBranches", () => {
       }
   });
 
+  it("grows no branch into the room of a line still drawn while it leaves the sky", () => {
+    const scene = mock(), line = T.branchLines().find((l) => l.ring === 1)!, st = stationsOf(line)[0];
+    const riders = scene.tasks.filter((k) => k.h?.ring1 && `${(k.host as Galaxy).id}|${k.h.machine}` === line.key);
+    expect(riders.length).toBeGreaterThan(0);
+    // a name printed over a station uproots the branch: its line stays drawn while its dots glide back off it
+    (scene.hangars ??= []).push({ x0: st.x - 4, y0: st.y - 4, x1: st.x + 4, y1: st.y + 4, of: `${line.sun}/name` });
+    T.placeBranches(scene, 9.1);
+    expect(T.branchLines(0).find((l) => l.key === line.key)!.leaving).toBe(true);
+    // the name moves off again, so its room is the one the new phase prefers
+    scene.hangars.pop();
+    // meanwhile one of its tasks opens a phase of its own, which wants to sit where that line still stands
+    const k = riders[0], fresh = `${line.sun}|fresh`;
+    k.h = { ...k.h!, machine: "fresh" };
+    const drawn = (l: ReturnType<typeof T.branchLines>[number]) => {
+      const cum = l.pts.map((_, i) => l.pts.slice(1, i + 1).reduce((a, p, n) => a + dist(l.pts[n], p), 0));
+      return l.ext > 0 ? l.pts.filter((_, i) => cum[i] <= l.ext * cum.at(-1)!) : [];
+    };
+    let gap = Infinity, grew = false;
+    for (let t = 9.1 + 1 / 60; t < 16; t += 1 / 60) {
+      T.placeBranches(scene, t);
+      const lines = T.branchLines(0), old = lines.find((l) => l.key === line.key && l.leaving), mine = lines.find((l) => l.key === fresh);
+      grew ||= !!mine && mine.ext > 0;
+      if (old && mine) gap = Math.min(gap, ...drawn(old).flatMap((p) => drawn(mine).map((q) => dist(p, q))));
+    }
+    expect(grew, "the new phase grows").toBe(true);
+    expect(gap, "clear of the line leaving").toBeGreaterThan(8);
+  });
+
   // the demo's In Progress: three phases, and five sub-machines, three of them opened off one CI station, the longest thirteen steps
   it.each([[1920, 1080], [1420, 860]])("gives sub-machines opened off one station their own lanes or sides on a %ix%i canvas, never one arc", (W, H) => {
     vi.stubGlobal("location", { search: "?mock=1&extra=8&sim=3" });
