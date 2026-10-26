@@ -58,6 +58,17 @@ def test_the_snapshot_leaves_a_tasks_detail_out_and_its_full_view_keeps_it(tmp_p
     assert full["moves"]["in_progress"]["allowed"] is True
 
 
+def test_a_held_tasks_claim_expiry_is_in_the_snapshot_served(tmp_path: Path) -> None:
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
+    feed.put(task("PROJ-1", "In Progress"))
+    feed.serve_expiries({"PROJ-1": 1793031519.0})
+
+    with _serve(tmp_path, feed) as server:
+        agent = json.loads(_get(server))["flows"][0]["agents"][0]
+
+    assert agent["claim_expires_at"] == 1793031519.0
+
+
 def test_the_full_view_sends_a_pull_request_without_the_fields_the_feed_keeps_for_itself(tmp_path: Path) -> None:
     feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.put(task("PROJ-1"))

@@ -1251,7 +1251,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
     def sweep(feed: BoardFeed, log: EventLog, persist: Callable[[dict[str, float]], None]) -> None:
         from starpulse.board.adapters import claim_ttl  # noqa: PLC0415 — keeps the board's import light
 
-        claim_ttl.start(replace(made, **recorded), feed, log, settings)
+        claim_ttl.start(replace(made, **recorded), feed, log, settings, persist)
 
     read = made.read
     recorded = {
