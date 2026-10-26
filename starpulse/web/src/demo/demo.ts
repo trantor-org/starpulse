@@ -367,7 +367,7 @@ export class DemoServer {
 
   /** Apply the same optimistic-lock payload as the served writer, then publish card-sized fields. */
   edit(raw: string): Response {
-    let request: { task?: string; base?: Partial<TaskRecord>; changes?: Partial<TaskRecord> };
+    let request: { task?: string; base?: Partial<TaskRecord>; changes?: Partial<TaskRecord>; comment?: string; actor?: string };
     try { request = JSON.parse(raw) as typeof request; } catch { return json({ error: "invalid edit" }, 400); }
     const task = request.task ?? "", current = this.records[task];
     if (!current || !request.base || !request.changes || !Object.keys(request.changes).length) return json({ error: "invalid edit" }, 400);
@@ -375,7 +375,8 @@ export class DemoServer {
     const fields = Object.keys(request.changes) as (keyof TaskRecord)[];
     const stale = fields.filter((field) => JSON.stringify(current[field]) !== JSON.stringify(request.base?.[field]));
     if (stale.length) return json({ error: `${task} changed since it was opened: ${stale.join(", ")}`, stale, current: Object.fromEntries(stale.map((field) => [field, current[field]])) }, 409);
-    this.records[task] = { ...current, ...request.changes } as TaskRecord;
+    const posted = request.comment ? [{ created: stamp(this.clock()), author: request.actor ?? "operator", text: request.comment }] : [];
+    this.records[task] = { ...current, ...request.changes, comments: [...(current.comments ?? []), ...posted] } as TaskRecord;
     const next = structuredClone(this.snapshot);
     const card = next.flows.find((f) => f.name === "board")?.agents.find((agent) => agent.id === task);
     if (card) {
@@ -564,7 +565,20 @@ const demoRecord = (card: RawTask, roles: Roles, now: number, failing = false): 
       { n: 2, text: "The saved card refreshes immediately", checked: false },
     ],
     definitionOfDone: [{ n: 1, text: "The change is verified", checked: false }],
+    // a claimed task has the record's three kinds: checkpoint evidence and a StarPulse step under Activity, a person's note under Comments
+    comments: card.model ? [
+      { created: stamp(now - 5400), author: "starpulse/task-actor", text: "Every dependency has merged." },
+      { created: stamp(now - 3600), author: "agent", text: "Verified AC #1: `pnpm exec vitest run` failed on the stale field, then passed" },
+      { created: stamp(now - 2700), author: "operator", text: "Keep the **saved** card in place while it refreshes." },
+      { created: stamp(now - 1800), author: "agent", text: "Verified AC #2: the card re-rendered within one snapshot, see TASK-1" },
+    ] : [],
   };
+};
+
+/** A comment's `created` as the board writes it: local `YYYY-MM-DD HH:MM`. */
+const stamp = (at: number) => {
+  const d = new Date(at * 1000), two = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}`;
 };
 
 /**
