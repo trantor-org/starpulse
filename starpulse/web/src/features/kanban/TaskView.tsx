@@ -120,8 +120,8 @@ const TRIAL = "trial-";
 
 const checkClass = (p: Pull) => (p.merged ? "merged" : p.checks === "failing" ? "fail" : p.checks);
 
-/** One pull request's row: its state, check result and unread review count, or "not read yet" with the reason. */
-function PullRow({ p }: { p: Pull }) {
+/** One pull request's row: its state, check result and unread review count, or "not read yet" with the reason; `ci` is its CI line. */
+function PullRow({ p, ci }: { p: Pull; ci?: ReactNode }) {
   const read = prReadState(p);
   return (
     <div className="pull">
@@ -137,6 +137,7 @@ function PullRow({ p }: { p: Pull }) {
           <span className="rd">{read.reason}</span>
         </>
       )}
+      {ci}
     </div>
   );
 }
@@ -152,12 +153,6 @@ function Box({ children }: { children: ReactNode }) {
   return <div ref={ref} className="box" onScroll={fade}>{children}</div>;
 }
 
-function PullRows({ pulls }: { pulls: Pull[] }) {
-  return pulls.length ? (
-    <Box><div className="prs">{pulls.map((p) => <PullRow key={`${p.repo}#${p.number}`} p={p} />)}</div></Box>
-  ) : <span className="none">None yet</span>;
-}
-
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
 
 /** The four counts the D10 interview defined, in the order they happen to a pull request. */
@@ -166,22 +161,34 @@ function CiCounts({ c }: { c: Pick<CiPull, "runs" | "reruns" | "rebases" | "conf
     .map((text, i) => <span key={i} className={text.startsWith("0 ") ? "c z" : "c"}>{text}</span>)}</>;
 }
 
-/** The task's CI: its totals, then each pull request's counts and the state its trail left it in, blue when a third party moves the machine. */
-function CiRows({ task }: { task: KanbanTask }) {
-  const history = ciHistory(task);
-  if (!history?.pulls.length) return <span className="none">{task.prs.length ? "No CI recorded yet" : "No pull request yet"}</span>;
-  const mapped = task.machines.find((m) => m.machine === "ci")?.source;
+/** A pull request's CI: the state its trail left it in, blue when a third party moves the machine, then its counts. */
+function CiLine({ c, mapped }: { c: CiPull; mapped?: string | null }) {
   return (
     <div className="ci">
-      {history.pulls.length > 1 && <div className="tot"><CiCounts c={history.total} /></div>}
-      {history.pulls.map((p, i) => (
-        <div key={i} className="cipull">
-          {p.url ? <a href={p.url} target="_blank" rel="noopener">#{p.number} ↗</a> : <span className="k">pull request</span>}
-          <span className={mapped ? "st mapped" : "st"} title={mapped ? `mapped from ${mapped}` : undefined}><i />{p.state.replace(/_/g, " ")}</span>
-          <span className="cnt"><CiCounts c={p} /></span>
-        </div>
-      ))}
+      <span className={mapped ? "st mapped" : "st"} title={mapped ? `mapped from ${mapped}` : undefined}><i />{c.state.replace(/_/g, " ")}</span>
+      <span className="cnt"><CiCounts c={c} /></span>
     </div>
+  );
+}
+
+/** The task's pull requests, each with its CI line, under the task's CI totals when it has two or more; a CI entry no pull request matches is its own row. */
+function PullRows({ task }: { task: KanbanTask }) {
+  const history = ciHistory(task);
+  const mapped = task.machines.find((m) => m.machine === "ci")?.source;
+  const ciOf = new Map((history?.pulls ?? []).map((c) => [c.number, c]));
+  const unmatched = (history?.pulls ?? []).filter((c) => !task.prs.some((p) => p.number === c.number));
+  if (!task.prs.length && !unmatched.length) return <span className="none">None yet</span>;
+  const line = (c: CiPull | undefined) => c && <CiLine c={c} mapped={mapped} />;
+  return (
+    <>
+      {history && history.pulls.length > 1 && <div className="tot"><CiCounts c={history.total} /></div>}
+      <Box>
+        <div className="prs">
+          {task.prs.map((p) => <PullRow key={`${p.repo}#${p.number}`} p={p} ci={line(ciOf.get(p.number))} />)}
+          {unmatched.map((c, i) => <div key={i} className="pull"><span className="k">pull request</span>{line(c)}</div>)}
+        </div>
+      </Box>
+    </>
   );
 }
 
@@ -591,8 +598,7 @@ export function TaskView(p: TaskViewProps) {
                 {p.task.runs.map((r) => <div key={`${r.url} ${r.startedAt}`} className="pull"><a href={r.url} target="_blank" rel="noopener">{runStart(r.startedAt)} ↗</a><span className="k">{r.status}</span></div>)}
               </RailSection>
             )}
-            <RailSection name="Pull requests" count={p.task.prs.length}><PullRows pulls={p.task.prs} /></RailSection>
-            <RailSection name="CI history" count={ciHistory(p.task)?.pulls.length}><CiRows task={p.task} /></RailSection>
+            <RailSection name="Pull requests" count={p.task.prs.length}><PullRows task={p.task} /></RailSection>
             <RailSection name="Dependencies" count={deps.dependsOn.length + deps.holds.length + deps.more}>
               <div className="deps">
                 <div className="lb">Depends on</div>

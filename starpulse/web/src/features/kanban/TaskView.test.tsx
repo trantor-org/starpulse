@@ -180,10 +180,10 @@ describe("the task view's right rail", () => {
   const trail = Array.from({ length: 7 }, (_, i) => ({ state: `step_${i}`, event: `event_${i}`, at: 800 + i }));
   const rows = (html: string, section: string) => railOf(html).split('<section').find((x) => x.includes(`<span class="t">${section}</span>`)) ?? "";
 
-  it("draws Status, Pull requests, CI history, Dependencies, Docs and Details in that order, each heading with its count", () => {
+  it("draws Status, Pull requests, Dependencies, Docs and Details in that order, each heading with its count", () => {
     const html = draw({ tasks: many });
 
-    expect(headings(html)).toEqual(["Status", "Session", "Pull requests", "CI history", "Dependencies", "Docs", "Details"]);
+    expect(headings(html)).toEqual(["Status", "Session", "Pull requests", "Dependencies", "Docs", "Details"]);
     expect(rows(html, "Pull requests")).toContain('<span class="n">1</span>');
     expect(rows(html, "Dependencies")).toContain('<span class="n">9</span>');
     expect(rows(html, "Status")).not.toContain('class="n"');
@@ -395,7 +395,7 @@ describe("the description's start_criteria block", () => {
   });
 });
 
-describe("the task view's CI history", () => {
+describe("the task view's Pull requests section carries each pull request's CI history", () => {
   const step = (event: string, state: string, at: number) => ({ event, state, at });
   const pull = (number: number) => ({ number, repo: "o/r", url: `http://pr/${number}`, checks: "pass" as const, merged: false, merge_sha: null, merged_at: null, threads: 0, stale: false });
   const trail = [
@@ -404,28 +404,35 @@ describe("the task view's CI history", () => {
     step("PR_OPENED", "opened", 10), step("PUSHED", "running", 11), step("CHECKS_FAILED", "failing", 12),
   ];
   const ci = (source: string | null = "GitHub") => [{ machine: "ci", state: "failing", at: 12, source, trail }];
-  const section = (html: string) => railOf(html).split('<section class="sec rs">').find((s) => s.includes(">CI history<")) ?? "";
+  const section = (html: string) => railOf(html).split("<section").find((s) => s.includes('<span class="t">Pull requests</span>')) ?? "";
+  const rowOf = (html: string, ref: string) => section(html).split('<div class="pull">').find((r) => r.includes(`${ref} ↗`)) ?? "";
   const two = { prs: [pull(15), pull(12)], machines: ci() };
 
-  it("totals the task's runs, re-runs, rebases and conflicts, then gives each pull request its own counts and state", () => {
-    const html = section(draw({ task: { ...task, ...two } }));
+  it("draws no CI history section, so each pull request is listed once", () => {
+    const html = draw({ task: { ...task, ...two } });
 
-    expect(html).toContain('<span class="n">2</span>');
-    expect(html).toMatch(/2 runs/);
-    expect(html).toMatch(/1 re-run/);
-    expect(html).toMatch(/1 rebase/);
-    expect(html).toMatch(/1 conflict/);
-    expect(html.indexOf("#12")).toBeGreaterThan(-1);
-    expect(html.indexOf("#12")).toBeLessThan(html.indexOf("#15"));
-    expect(html).toMatch(/#12[\s\S]*merged[\s\S]*#15[\s\S]*failing/);
+    expect(railOf(html)).not.toContain("CI history");
+    expect(railOf(html).split("o/r#12").length).toBe(2);
   });
 
-  it("totals only when there are two pull requests to total, since one pull request's counts are the task's", () => {
-    const one = { prs: [pull(12)], machines: [{ ...ci()[0], trail: trail.slice(0, 9) }] };
+  it("gives each pull request row its checks, its CI state and its four counts", () => {
+    const html = draw({ task: { ...task, ...two } });
+    const merged = rowOf(html, "o/r#12");
+    const failing = rowOf(html, "o/r#15");
 
-    expect(section(draw({ task: { ...task, ...two } }))).toContain('class="tot"');
+    expect(merged).toMatch(/merged[\s\S]*1 run[\s\S]*1 re-run[\s\S]*1 rebase[\s\S]*1 conflict/);
+    expect(failing).toMatch(/checks pass[\s\S]*failing[\s\S]*1 run[\s\S]*0 re-runs[\s\S]*0 rebases[\s\S]*0 conflicts/);
+  });
+
+  it("totals the task's counts at the top of the section, only when there are two pull requests to total", () => {
+    const one = { prs: [pull(12)], machines: [{ ...ci()[0], trail: trail.slice(0, 9) }] };
+    const html = section(draw({ task: { ...task, ...two } }));
+
+    expect(html).toContain('class="tot"');
+    expect(html.indexOf('class="tot"')).toBeLessThan(html.indexOf("o/r#"));
+    expect(html).toMatch(/class="tot"[\s\S]*2 runs[\s\S]*1 re-run[\s\S]*1 rebase[\s\S]*1 conflict/);
     expect(section(draw({ task: { ...task, ...one } }))).not.toContain('class="tot"');
-    expect(section(draw({ task: { ...task, ...one } }))).toMatch(/#12[\s\S]*merged/);
+    expect(rowOf(draw({ task: { ...task, ...one } }), "o/r#12")).toContain("merged");
   });
 
   it("draws the state in the mapped colour only when a third party moves the machine", () => {
@@ -434,9 +441,18 @@ describe("the task view's CI history", () => {
     expect(styles).toMatch(/#kbm \.tvrail \.ci \.st\.mapped[^{]*\{[^}]*var\(--mapped\)/);
   });
 
-  it("says why it is empty: no pull request, or none recorded yet", () => {
-    expect(section(draw({ task: { ...task, prs: [], machines: [] } }))).toContain("No pull request yet");
-    expect(section(draw({ task: { ...task, machines: [] } }))).toContain("No CI recorded yet");
+  it("draws a CI entry that matches no pull request as its own row", () => {
+    const html = section(draw({ task: { ...task, prs: [], machines: ci() } }));
+
+    expect(html).not.toContain("None yet");
+    expect(html).toMatch(/pull request[\s\S]*1 run/);
+  });
+
+  it("says None yet with no pull request and no CI, and draws a pull request alone when no CI is recorded", () => {
+    expect(section(draw({ task: { ...task, prs: [], machines: [] } }))).toContain("None yet");
+    const html = section(draw({ task: { ...task, prs: [pull(12)], machines: [] } }));
+    expect(html).toContain("o/r#12");
+    expect(html).not.toContain("run");
   });
 });
 
