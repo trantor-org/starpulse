@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { arrivalRings, tierColor } from "./draw";
 import { dagRings, orbiterLook } from "./boardDraw";
 import { DAG_COLOR } from "./draw";
+import { token } from "./palette";
 import { feedOf } from "./feed";
 import { nameLines } from "./dagTies";
 import { PULSE } from "./sky";
@@ -50,13 +51,13 @@ describe("a task's arrival pulse", () => {
 
 describe("an agent's colour", () => {
   it("follows the tier its profile names, whatever the effort", () => {
-    expect(["@agent-deep-high", "@agent-deep-medium"].map(tierColor)).toEqual(["#c4b5fd", "#c4b5fd"]);
-    expect(["@agent-standard-high", "@agent-standard-medium"].map(tierColor)).toEqual(["#67e8f9", "#67e8f9"]);
+    expect(["@agent-deep-high", "@agent-deep-medium"].map(tierColor)).toEqual(Array(2).fill(token("agent-text")));
+    expect(["@agent-standard-high", "@agent-standard-medium"].map(tierColor)).toEqual(Array(2).fill(token("waits")));
   });
 
   it("is the other colour for fast, a person or no assignee", () => {
-    expect(["@agent-fast", "adin", ""].map(tierColor)).toEqual(["#fde68a", "#fde68a", "#fde68a"]);
-    expect(tierColor()).toBe("#fde68a");
+    expect(["@agent-fast", "adin", ""].map(tierColor)).toEqual(Array(3).fill(token("run-text")));
+    expect(tierColor()).toBe(token("run-text"));
   });
 });
 

@@ -11,7 +11,8 @@ import { apiFetch } from "../api/apiFetch";
 import { embedded } from "../demo/host";
 import { RunEvents } from "../features/fanout/fanoutModel";
 import type { FeedLine, HudState, HudStore } from "./hud";
-import { DAG_COLOR, drawing, ease, easeO, type DrawCtx, type Hover, type LTask } from "./draw";
+import { MACHINE, MUTED, token } from "./palette";
+import { DAG_COLOR, drawing, ease, easeO, rgba, type DrawCtx, type Hover, type LTask } from "./draw";
 import { animating, frameLoop, framePace } from "./idle";
 import { BOARD, hostOf, pathKey, pathLedger, pathTo, startPath, taskKicker, topFlow, type Level, type Path } from "./levels";
 import { optionalSteps } from "../features/level/ledger";
@@ -660,7 +661,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     }
     const ring = (at: number) => {
       const q = (T - at - TRAVEL) / PULSE;
-      if (q >= 0 && q < 1) k.arrive = { x: k.host.x, y: k.host.y, r: (k.host.R || k.host.r || 0) + 14, col: k.host.states ? "#c084fc" : (k.host.color ?? "#94a3b8"), age: q };
+      if (q >= 0 && q < 1) k.arrive = { x: k.host.x, y: k.host.y, r: (k.host.R || k.host.r || 0) + 14, col: k.host.states ? MACHINE : (k.host.color ?? MUTED), age: q };
     };
     if (bs && bs.from !== sc.sid) {
       if (age < 1) {
@@ -949,7 +950,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     const last = `${esc(o.status)}${o.finishedAt ? ` ${hhmm(finished(o.finishedAt))} MST` : ""}`;
     return {
       queue: q ? queueCell(q) : "",
-      steps: o.steps.map((s) => { const n = stepRuns(o, s.name); return `<span class="chip" style="color:${DAG_COLOR[stepStatus(o, s.name, s.status)] || "#94a3b8"}">${esc(s.name)}${n ? ` ×${n}` : ""}</span>${s.depends.length ? `<span class="k"> after ${s.depends.map(esc).join(", ")}</span>` : ""}`; }).join("<br>"),
+      steps: o.steps.map((s) => { const n = stepRuns(o, s.name); return `<span class="chip" style="color:${DAG_COLOR[stepStatus(o, s.name, s.status)] || MUTED}">${esc(s.name)}${n ? ` ×${n}` : ""}</span>${s.depends.length ? `<span class="k"> after ${s.depends.map(esc).join(", ")}</span>` : ""}`; }).join("<br>"),
       list: fanList(rows, last, (id) => taskLink(id, id, sky)),
     };
   }
@@ -1000,7 +1001,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       return (m === top.machine ? scene!.mStates[init ?? ""]?.color : top.rows.find((r) => r.name === m)?.nodes.find((n) => n.id === init)?.color) ?? RAMP[2];
     };
     panel.innerHTML = `<span class="x">✕</span><h2>${esc(o.agent.task || o.agent.title)}</h2><div class="k">${esc(boardTitle(o.agent) || o.agent.title || "")}</div>
-      <table>${all.map((b) => `<tr class="mrow"><td><i style="background:${colOf(b.machine)}"></i>${esc(b.machine)}</td><td>${esc(stName(b.machine, b.agent.state))}</td><td style="text-align:right;color:#6b7a93">${hhmm(b.agent.active ?? 0)}</td></tr>`).join("")}</table>
+      <table>${all.map((b) => `<tr class="mrow"><td><i style="background:${colOf(b.machine)}"></i>${esc(b.machine)}</td><td>${esc(stName(b.machine, b.agent.state))}</td><td style="text-align:right;color:var(--muted)">${hhmm(b.agent.active ?? 0)}</td></tr>`).join("")}</table>
       <div class="k" style="margin-top:10px">path · ${steps.length} steps, in order</div><table class="trace">${steps.map((s) => `<tr><td>${s.n}</td><td>${s.kind === "entry" ? `<b>${esc(s.b.machine)}</b> <span class="k">entered from ${esc(stName(s.a.machine, s.a.state))}</span>` : `${esc(stName(s.a.machine, s.a.state))} → ${esc(stName(s.b.machine, s.b.state))} <span class="k">${esc(s.b.machine)}</span>`}</td><td>${hhmm(s.at)}</td></tr>`).join("")}</table>`;
     openPanel();
   }
@@ -1216,13 +1217,13 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     // the current board's night sky: a radial wash and 160 slow-twinkling stars with a slight parallax against the view
     if (wash.w !== W || wash.h !== H) {
       wash = { w: W, h: H, g: cx.createRadialGradient(W * 0.5, H * 0.55, 0, W * 0.5, H * 0.55, Math.max(W, H) * 0.75) };
-      wash.g!.addColorStop(0, "#0e1628");
-      wash.g!.addColorStop(1, "#04060b");
+      wash.g!.addColorStop(0, token("bg1"));
+      wash.g!.addColorStop(1, token("bg0"));
     }
     cx.fillStyle = wash.g!;
     cx.fillRect(0, 0, W, H);
     for (const s of STARS) {
-      cx.fillStyle = `rgba(200,215,240,${0.08 + 0.12 * (0.5 + 0.5 * Math.sin(clock * 0.6 + s.p))})`;
+      cx.fillStyle = rgba(token("ink"), 0.08 + 0.12 * (0.5 + 0.5 * Math.sin(clock * 0.6 + s.p)));
       cx.beginPath();
       cx.arc(s.x * W, (((s.y * H + view.y * 0.06 * s.r) % H) + H) % H, s.r, 0, TAU);
       cx.fill();
@@ -1277,6 +1278,11 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     lastInput = performance.now();
     loop.wake(true);
   };
+  /** A theme change repaints the night sky's gradient, which is otherwise cached by canvas size, and draws the next frame in the new colors. */
+  const onTheme = () => {
+    wash = { w: 0, h: 0 };
+    wake();
+  };
 
   const probe = (): Probe => {
     const sc = scene, l = level(), canvas = { w: W, h: H }, open = panel.classList.contains("open");
@@ -1313,6 +1319,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       cv.addEventListener("wheel", onWheel, { passive: false });
       (window as unknown as { flowProbe: () => Probe }).flowProbe = probe;
       for (const [target, type] of wakers) target.addEventListener(type, wake);
+      addEventListener("sp:theme", onTheme);
       resize();
       loop.wake();
       // the first layout measures label widths and the first frame draws them: both wait for the page's fonts, which index.html preloads
@@ -1336,6 +1343,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       clearInterval(fanTimer);
       clearTimeout(saveT);
       for (const [target, type] of wakers) target.removeEventListener(type, wake);
+      removeEventListener("sp:theme", onTheme);
       removeEventListener("resize", onResize);
       document.removeEventListener("visibilitychange", onVisibility);
       removeEventListener("mousemove", onMove);

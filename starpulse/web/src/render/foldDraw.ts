@@ -14,7 +14,8 @@ import { inView } from "../features/level/ledgerStrip";
 import { drawStrip } from "../features/level/ledgerStripDraw";
 import { rerunLine, type RerunStore } from "../features/level/rerun";
 import type { AdminPrefs } from "../features/admin/adminPrefs";
-import { ACT, DAG_COLOR, easeO, rgba, type Drawing, type DrawCtx } from "./draw";
+import { token } from "./palette";
+import { ACT, DAG_COLOR, LABEL, MUTED, easeO, rgba, type Drawing, type DrawCtx } from "./draw";
 import { FLARE, RING, type Moves, type Sky } from "./sky";
 import { textW, type Scene, type Star } from "./scene";
 import { TaskTitles } from "./taskTitles";
@@ -160,7 +161,7 @@ export function foldDraw(dc: DrawCtx, d: Drawing, io: FoldIO) {
     if (!report || !banner) return;
     const col = banner.tone === "ok" ? DAG_COLOR.succeeded : banner.tone === "warn" ? AMBER : DAG_COLOR.failed, hot = dc.hover?.kind === "ldoctor", head = labPx(10.5), sub = labPx(10);
     text(banner.head, x, y, head, rgba(col, hot ? 1 : 0.85), "right", 500);
-    text(banner.sub, x, y + 14 / dc.K, sub, rgba("#94a3b8", hot ? 0.8 : 0.55), "right");
+    text(banner.sub, x, y + 14 / dc.K, sub, rgba(MUTED, hot ? 0.8 : 0.55), "right");
     const w = Math.max(textW(banner.head, head), textW(banner.sub, sub));
     io.doctor = { x0: x - w, y0: y - 9 / dc.K, x1: x, y1: y + 22 / dc.K, report };
   }
@@ -191,7 +192,7 @@ export function foldDraw(dc: DrawCtx, d: Drawing, io: FoldIO) {
       [scroll, scrollAt] = [easeScroll(scroll, dt), dc.clock];
       if (wantsPage(scroll, port, dc.clock)) askPage(led.event);
     }
-    const hairs = rgba("#94a3b8", 0.1), writer = led.cols.find((c) => c.role === "writer");
+    const hairs = rgba(MUTED, 0.1), writer = led.cols.find((c) => c.role === "writer");
     // the grid: a column down from each template, and the spine the junction hangs from
     for (const c of led.cols) stroke([{ x: c.x0, y: top }, { x: c.x0, y: bottom }], hairs);
     stroke([{ x: led.J.x, y: led.J.y + 8 / dc.K }, { x: led.J.x, y: bottom }], rgba(ACT, 0.35), 1.4);
@@ -209,13 +210,13 @@ export function foldDraw(dc: DrawCtx, d: Drawing, io: FoldIO) {
     cx.setLineDash([]);
     arrow(p0, p1, rgba(b.color, 0.6), 7 / Math.max(1, dc.ZS) * dc.K);
     for (const e of [a, b]) body(e, false);
-    text(a.name, a.x - a.r - 14 / dc.K, a.y, labPx(13), rgba("#cfd9ea", 0.85), "right");
+    text(a.name, a.x - a.r - 14 / dc.K, a.y, labPx(13), rgba(LABEL, 0.85), "right");
     label(b.name, b.x, b.y + b.r + 24 / dc.K, false, null, 13);
     // the event's mark on the path, and the DAG that writes it tied up to it
     const r = 4.5 / dc.K ** 0.5, hotMark = !!writer && named === writer.dag;
-    dot(led.mark.x, led.mark.y, r, "rgba(6,10,20,0.95)");
+    dot(led.mark.x, led.mark.y, r, rgba(token("bg0"), 0.95));
     circle(led.mark.x, led.mark.y, r, rgba(ACT, hotMark ? 1 : 0.7), 1.3 / dc.K ** 0.5);
-    text(led.event, led.mark.x, led.mark.y - 14 / dc.K, labPx(11), rgba("#dbe4f3", 0.8), "center", 500);
+    text(led.event, led.mark.x, led.mark.y - 14 / dc.K, labPx(11), rgba(token("ink"), 0.8), "center", 500);
     const rootOf = (s: Star) => ({ x: s.x + s.glyph.nodes[0].x, y: s.y + s.glyph.nodes[0].y }), nrOf = (s: Star) => (s.glyph.nodes.length === 1 ? 5.5 : 4);
     for (const c of led.cols) if (c.role === "writer") {
       const s = sc.stars[c.dag];
@@ -228,14 +229,14 @@ export function foldDraw(dc: DrawCtx, d: Drawing, io: FoldIO) {
     cx.save();
     cx.translate(led.J.x, led.J.y);
     cx.rotate(Math.PI / 4);
-    cx.fillStyle = "rgba(6,10,20,0.95)";
+    cx.fillStyle = rgba(token("bg0"), 0.95);
     cx.fillRect(-jr, -jr, 2 * jr, 2 * jr);
     cx.strokeStyle = rgba(ACT, 0.8);
     cx.lineWidth = 1.4 / dc.K ** 0.5;
     cx.strokeRect(-jr, -jr, 2 * jr, 2 * jr);
     cx.restore();
-    text(mergeRow ? "merge to main" : led.event, led.J.x - 16 / dc.K, led.J.y, labPx(12.5), rgba("#dbe4f3", 0.85), "right", 500);
-    text(mergeRow ? "PR merges" : "task moves", a.x - 8 / dc.K, (a.y + a.r + led.J.y) / 2, labPx(10.5), rgba("#94a3b8", 0.55), "right");
+    text(mergeRow ? "merge to main" : led.event, led.J.x - 16 / dc.K, led.J.y, labPx(12.5), rgba(token("ink"), 0.85), "right", 500);
+    text(mergeRow ? "PR merges" : "task moves", a.x - 8 / dc.K, (a.y + a.r + led.J.y) / 2, labPx(10.5), rgba(MUTED, 0.55), "right");
     // the rails: the writer straight from the junction, every other DAG off the bus under the templates
     const feeds = led.cols.filter((c, i) => c.role === "cue" || i > 0);
     if (writer && led.cols[0] === writer) {
@@ -246,7 +247,7 @@ export function foldDraw(dc: DrawCtx, d: Drawing, io: FoldIO) {
       const s = sc.stars[c.dag], root = rootOf(s);
       rail([{ x: led.J.x, y: led.bus }, { x: root.x - 40 / dc.K, y: led.bus }, { x: root.x - nrOf(s) - 2 / dc.K, y: root.y, c: { x: root.x - 14 / dc.K, y: led.bus } }], ACT, ACT, heat(c.dag), c.role === "cue");
     }
-    if (feeds.length) text(mergeRow ? "cue · each merge to main" : `cue · each ${led.event}`, led.J.x + 10 / dc.K, led.bus - 8 / dc.K, labPx(10), rgba("#94a3b8", 0.55), "left");
+    if (feeds.length) text(mergeRow ? "cue · each merge to main" : `cue · each ${led.event}`, led.J.x + 10 / dc.K, led.bus - 8 / dc.K, labPx(10), rgba(MUTED, 0.55), "left");
     if (mergeRow) drawDoctor(led.J.x - 16 / dc.K, led.bus - 12 / dc.K);
     // each template's caption: the contract it declares, cut to its column, and under it the merge in focus
     const byKey = new Map(io.heldRows().map((r) => [r.key, r])), fm = io.focused(), newest = held.find((r) => r.appliedBy === undefined);
@@ -254,12 +255,12 @@ export function foldDraw(dc: DrawCtx, d: Drawing, io: FoldIO) {
       const s = sc.stars[c.dag], hot = named === c.dag, size = labPx(10.5), y = s.y + s.glyph.h / 2 + 16 / dc.K, max = c.x1 - c.x0 - 8 / dc.K;
       const lines = [c.role === "writer" ? `on ${c.on}` : `cue · on ${c.on}`, ...(c.resolves ? [`clears on ${c.resolves === "forced" ? "forced rerun" : "next success"}`] : [])];
       // under the name, a line apart at the text size, so the lines never meet at 150%
-      lines.forEach((t, i) => text(fitText(t, max, size), s.x, y + labPx(15 + 15 * i), size, rgba("#94a3b8", hot ? 0.9 : 0.6), "center"));
+      lines.forEach((t, i) => text(fitText(t, max, size), s.x, y + labPx(15 + 15 * i), size, rgba(MUTED, hot ? 0.9 : 0.6), "center"));
       if (!fm) continue;
       const ln = statusLine(fm, c, fm.runs[c.dag], { event: led.event, now: io.T, hm: io.hhmm, optional: optionalSteps(held, c.dag), by: (k) => byKey.get(k) });
-      text(fitText(`${fm === newest ? "newest" : io.hhmm(fm.at)} ${(fm.sha ?? fm.key).slice(0, 7)} · ${ln.main}`, max, size), s.x, y + labPx(15 + 15 * lines.length), size, rgba(ln.state ? DAG_COLOR[ln.state] ?? CROSS : "#94a3b8", 0.85), "center");
+      text(fitText(`${fm === newest ? "newest" : io.hhmm(fm.at)} ${(fm.sha ?? fm.key).slice(0, 7)} · ${ln.main}`, max, size), s.x, y + labPx(15 + 15 * lines.length), size, rgba(ln.state ? DAG_COLOR[ln.state] ?? CROSS : MUTED, 0.85), "center");
     }
-    if (led.loading) text("loading merges…", led.J.x + 22 / dc.K, led.bus + 40 / dc.K, labPx(11), rgba("#94a3b8", 0.6), "left");
+    if (led.loading) text("loading merges…", led.J.x + 22 / dc.K, led.bus + 40 / dc.K, labPx(11), rgba(MUTED, 0.6), "left");
     // the merge rows, each template's cell beside its run's mini step graph; a row still arriving counts its own seconds
     if (grid) {
       const age = (key: string) => {
