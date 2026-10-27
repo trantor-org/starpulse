@@ -498,3 +498,15 @@ def test_a_config_with_board_rules_is_refused_naming_board_guards(tmp_path: Path
 
     with pytest.raises(ValueError, match=r"\[\[board\.guards\]\]"):
         board(config.board, tmp_path)
+
+
+def test_a_before_primitive_reads_the_task_as_it_was_not_as_the_write_leaves_it(tmp_path: Path) -> None:
+    was_high = {"before": {"field": {"field": "priority", "in": ["high"]}}}
+    rule = {"on": {"write": True}, "require": was_high, "reason": "Only a high priority task is edited"}
+    _, built = ruled(tmp_path, [rule], priority="low")
+    assert built.edit is not None and built.create is not None
+
+    refused = built.edit("task-1", {"priority": "high"}, "")
+
+    assert (refused.ok, refused.output) == (False, rule["reason"])
+    assert built.create("New", {"priority": "low"}).ok  # a create had no earlier task
