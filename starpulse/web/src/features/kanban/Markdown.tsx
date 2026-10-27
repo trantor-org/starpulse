@@ -9,9 +9,20 @@ export function Linked({ text, open }: { text: string; open: (id: string) => voi
   ) : part)}</>;
 }
 
+/** Text with the inline Markdown a task row, section or doc body draws: `code`, **bold**, [links](url) and TASK-N ids. */
+export function Inline({ text, open }: { text: string; open: (id: string) => void }) {
+  return <>{text.split(/(`[^`]+`|\*\*[^*]+\*\*|\[[^\]]+\]\(https?:[^)]+\))/).map((part, i) => {
+    if (i % 2 === 0) return <Linked key={i} text={part} open={open} />;
+    if (part.startsWith("`")) return <code key={i}>{part.slice(1, -1)}</code>;
+    if (part.startsWith("**")) return <strong key={i}><Linked text={part.slice(2, -2)} open={open} /></strong>;
+    const [, label, href] = /^\[(.+)\]\((.+)\)$/.exec(part)!;
+    return <a key={i} href={href} target="_blank" rel="noopener"><Inline text={label} open={open} /> ↗</a>;
+  })}</>;
+}
+
 /** A section's description, plan or notes as Markdown blocks; with `diagrams`, a mermaid fence draws as the diagram it describes (a task's own text keeps it as code). */
 export function Md({ text, className = "md", drawn = false, diagrams = false, open }: { text: string; className?: string; drawn?: boolean; diagrams?: boolean; open: (id: string) => void }) {
-  const at = (t: string) => <Linked text={t} open={open} />;
+  const at = (t: string) => <Inline text={t} open={open} />;
   return <div className={className}>{markdown(text, drawn).map((b, i) => {
     if (b.kind === "table") return (
       <div key={i} className="tbl"><table>
