@@ -14,9 +14,15 @@ HEAVY = (
     "starpulse.event_log.event_log",
 )
 
-#: The root config loader, which `runtime` owns (spec doc-966, D6), and the stdlib-only Page API defaults it reads, light
-#: enough for a read verb.
-CONFIG = ("starpulse.runtime", "starpulse.runtime.config", "starpulse.views", "starpulse.views.services")
+#: The root config loader and its settings model, which `runtime` owns (spec doc-966, D6), and the stdlib-only Page API
+#: defaults it reads, light enough for a read verb.
+CONFIG = (
+    "starpulse.runtime",
+    "starpulse.runtime.config",
+    "starpulse.runtime.config_model",
+    "starpulse.views",
+    "starpulse.views.services",
+)
 
 UNREACHABLE = "http://127.0.0.1:1"
 
