@@ -4,27 +4,13 @@
 import type { ContractReport, LedgerRow, RawTask } from "../api";
 import { labelPx } from "../features/admin/adminPrefs";
 import type { Pivot, Orbiter } from "./dagTies";
+import { ACT, EXT, LABEL, MACHINE, MUTED, token } from "./palette";
 import {
   SUN_FIT, TAU, bez, terminal, textW,
   type BEdge, type Body, type Galaxy, type GNode, type Hop, type LedgerView, type MachineTask, type MEdge, type Moon, type MState, type Planet, type Pt, type RowView, type Star, type SubState, type Sun, type SunLine,
 } from "./scene";
 
-/** Activity: everything that moves on any level uses this one colour. */
-export const ACT = "#fbbf24";
-/** The colour of a traced path, and of the cue for a hop with no line. */
-export const TRACE = "#fbbf24", OFF = "#fb7185";
-/** A mapped machine (machine.source: a third party moves it) is drawn like a local one, in a colour of its own: blue, never purple. */
-export const EXT = "#60a5fa";
-/** A phase machine is blue-500 by convention (--phase); a sub-machine a phase opens is teal-500 (--submachine). */
-export const PHASE = "#3b82f6", SUBM = "#14b8a6", PHASE_TEXT = "#93c5fd", SUBM_TEXT = "#5eead4";
-/** A node's printed name, and the grey of its second line. */
-export const LABEL = "#cfd9ea", MUTED = "#94a3b8";
-/** An agent is coloured by the tier its profile names (`@agent-<tier>-<effort>`); a person or fast is the other colour. */
-export const tierColor = (profile = "") =>
-  profile.startsWith("@agent-deep") ? "#c4b5fd" : profile.startsWith("@agent-standard") ? "#67e8f9" : "#fde68a";
-/** A DAG run's, or a step's, colour by its state. */
-export const DAG_COLOR: Record<string, string> = { running: "#fbbf24", queued: "#93c5fd", succeeded: "#34d399", failed: "#fb7185",
-  aborted: "#94a3b8", skipped: "#64748b", not_started: "#334155" };
+export { ACT, DAG_COLOR, EXT, LABEL, MACHINE, MOON, MUTED, OFF, PHASE, PHASE_TEXT, REVIEW, SUBM, SUBM_TEXT, TRACE, tierColor } from "./palette";
 export const rgba = (h: string, a: number) => {
   const n = parseInt(h.slice(1), 16);
   return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`;
@@ -146,7 +132,7 @@ export function drawing(dc: DrawCtx) {
     cx.beginPath();
     cx.arc(x, y, r, 0, TAU);
     cx.fill();
-    dot(x, y, rs, "#010205");
+    dot(x, y, rs, token("bg0"));
     circle(x, y, rs, rgba(col, hot ? 1 : 0.85), hot ? 2 : 1.4);
     circle(x, y, r, rgba(col, hot ? 0.5 : 0.14), 1);
   }
@@ -230,25 +216,25 @@ export function drawing(dc: DrawCtx) {
   }
   function badge(p: Pt, nums: number[], col: string) {
     const s = nums.join(" · "), w = Math.max(16 / dc.K, textW(s, 10.5) / dc.K + 10 / dc.K), h = 16 / dc.K;
-    cx.fillStyle = "rgba(6,10,20,0.96)";
+    cx.fillStyle = rgba(token("bg0"), 0.96);
     cx.strokeStyle = rgba(col, 0.95);
     cx.lineWidth = 1.2 / dc.K;
     cx.beginPath();
     cx.roundRect(p.x - w / 2, p.y - h / 2, w, h, h / 2);
     cx.fill();
     cx.stroke();
-    text(s, p.x, p.y + 0.5 / dc.K, 10.5 / dc.K, "#fef3c7", "center", 600);
+    text(s, p.x, p.y + 0.5 / dc.K, 10.5 / dc.K, token("ink"), "center", 600);
   }
   function pill(s: string, x: number, y: number, col: string) {
     const w = textW(s, 10.5) / dc.K + 12 / dc.K, h = 17 / dc.K;
-    cx.fillStyle = "rgba(6,10,20,0.92)";
+    cx.fillStyle = rgba(token("bg0"), 0.92);
     cx.strokeStyle = rgba(col, 0.6);
     cx.lineWidth = 1 / dc.K;
     cx.beginPath();
     cx.roundRect(x - w / 2, y - h / 2, w, h, 4 / dc.K);
     cx.fill();
     cx.stroke();
-    text(s, x, y + 0.5 / dc.K, 10.5 / dc.K, "#f8fafc", "center", 500);
+    text(s, x, y + 0.5 / dc.K, 10.5 / dc.K, token("ink"), "center", 500);
   }
 
   /** A Board state's or a fold end's body: a black hole where a task's lifecycle ends, else its disc. */
@@ -261,7 +247,7 @@ export function drawing(dc: DrawCtx) {
   };
   // a lifecycle machine is a flat disc with a thin ring outside it, the one mark that tells it from a state
   function machine(x: number, y: number, r: number, hot: boolean, alpha: number, mapped = false) {
-    const col = mapped ? EXT : "#c084fc";
+    const col = mapped ? EXT : MACHINE;
     disc(x, y, r, col, hot, alpha);
     circle(x, y, r + 3, rgba(col, hot ? 0.9 : 0.5), 1);
   }

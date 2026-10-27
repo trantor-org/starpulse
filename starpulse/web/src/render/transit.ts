@@ -1,7 +1,7 @@
 // The Star Map's phase machines (Round 22, concept H): a machine is drawn only while a task uses it, as a branch that grows out of its sun's hub ring,
 // takes the first free arc and retracts once no task needs it. A task rides the lines: hub, branch, station, and the Board's curves between suns.
 import { bez, textW, type BEdge, type Body, type Galaxy, type Pt, type Scene } from "./scene";
-import { LABEL, MUTED, PHASE, SUBM, rgba, tierColor, type DrawCtx, type Drawing } from "./draw";
+import { LABEL, MACHINE, MOON, MUTED, PHASE, SUBM, rgba, tierColor, type DrawCtx, type Drawing } from "./draw";
 import { glideTime } from "./sky";
 import { fitLevel } from "./zoom";
 
@@ -604,7 +604,7 @@ export function placeBranches(sc: Scene, now: number): boolean {
     k.hop = undefined;
     k.moving = !done && !m.fade;
     k.alpha = i >= 3 && done ? 0 : alpha;
-    k.arrive = w && age >= 0 && age < 1 && now - m.t0 < 9 ? { x: q.x, y: q.y, r: 6, col: "#c084fc", age, grow: 18 } : null;
+    k.arrive = w && age >= 0 && age < 1 && now - m.t0 < 9 ? { x: q.x, y: q.y, r: 6, col: MACHINE, age, grow: 18 } : null;
   }
   const ids = new Set([...tasks, ...dots].map((k) => k.id));
   for (const id of [...mems.keys()]) if (!ids.has(id)) mems.delete(id);
@@ -622,7 +622,7 @@ export function drawBranches(dc: DrawCtx, d: Drawing, sc: Scene, at: Pt | null) 
   for (const b of branches.values()) suns.set(b.sun, Math.max(suns.get(b.sun) ?? 0, full(b)));
   for (const [sun, e] of suns) {
     const g = sc.galaxies[sun];
-    if (g) d.circle(g.x, g.y, g.edge, rgba("#c4b5fd", 0.16 * e), lw);
+    if (g) d.circle(g.x, g.y, g.edge, rgba(MOON, 0.16 * e), lw);
   }
   const occ = new Map<string, number>();
   for (const m of mems.values()) if (m.node.includes("#")) occ.set(m.node, (occ.get(m.node) ?? 0) + 1);

@@ -1,7 +1,8 @@
 // The traced task's drawing: the path a hovered, pinned or rail-spotted task took through the level showing, lit over a dark veil, and the note
 // naming the source a mapped machine's level is observed from. It draws from the frame's context and primitives (draw.ts) and from what the
 // renderer owns (`TraceIO`, read as it draws); the renderer calls each in its frame order (`drawScene`).
-import { EXT, OFF, TRACE, rgba, tierColor, type Drawing, type DrawCtx, type Hover } from "./draw";
+import { token } from "./palette";
+import { EXT, MACHINE, MOON, OFF, REVIEW, TRACE, rgba, tierColor, type Drawing, type DrawCtx, type Hover } from "./draw";
 import type { Level } from "./levels";
 import { bez, curveOf, stateR, type Curve, type Pt, type Scene } from "./scene";
 import type { Sky } from "./sky";
@@ -89,7 +90,7 @@ export function traceDraw(dc: DrawCtx, pen: Drawing, io: TraceIO): TraceDrawing 
     if (mode === "state") return Object.fromEntries(sc.planets.flatMap((p) => {
       const r = p.moon || p.subState ? p.R : p.R + 14, states = p.primary ? Object.values(p.states) : [];
       return [
-        [p.name, { id: p.name, name: planetName(p.name), x: p.x, y: p.y, r, R: r + 12 / K, color: p.subState ? "#e879f9" : p.moon ? "#c4b5fd" : "#c084fc", lab: { x: p.x, y: p.y + r + 16 / K } }],
+        [p.name, { id: p.name, name: planetName(p.name), x: p.x, y: p.y, r, R: r + 12 / K, color: p.subState ? REVIEW : p.moon ? MOON : MACHINE, lab: { x: p.x, y: p.y + r + 16 / K } }],
         ...states.map((m) => {
           const id = `${p.name}#${m.id}`, mr = stateR(m);
           return [id, { id, name: m.name, x: m.x, y: m.y, r: mr, R: mr + 8 / K, color: m.color, lab: m.lab ?? { x: m.x, y: m.y + mr + 12 } }];
@@ -133,7 +134,7 @@ export function traceDraw(dc: DrawCtx, pen: Drawing, io: TraceIO): TraceDrawing 
       if (t.veil) {
         const m = cx.getTransform(), dpr = devicePixelRatio || 1;
         cx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        cx.fillStyle = "rgba(4,6,11,0.66)";
+        cx.fillStyle = rgba(token("bg0"), 0.66);
         cx.fillRect(0, 0, io.W, io.H);
         cx.setTransform(m);
       }

@@ -13,16 +13,15 @@ import { rankRows } from "../features/level/machineRows";
 import { ledgerOf, type Ledger, type Tie } from "../features/level/ledger";
 import type { Viewport } from "../features/level/ledgerScroll";
 import { countText, daily, HOUR, hosted, stale, stateCount, type Move, type Moves, type Sky } from "./sky";
+import { BOARD_COLOR, MUTED, RAMP } from "./palette";
 import { pinsOf } from "../features/level/ledgerPins";
 import type { Dag, DagStep, RawTask, Transition, Writer } from "../api";
 
 export const TAU = Math.PI * 2;
-export const BOARD_COLOR: Record<string, string> = { new: "#94a3b8", ready: "#60a5fa", waiting: "#fbbf24", blocked: "#fb7185", intoprogress: "#a78bfa",
-  review: "#e879f9", needs_attention: "#64748b", done: "#34d399", completed: "#2dd4bf", archived: "#475569" };
+export { BOARD_COLOR, RAMP } from "./palette";
 /** Where a task's lifecycle ends, drawn as a black hole: a final Board state, Done once the board machine declares it final. A nested
  *  machine's final state is not one: it hands its task back to the state that runs the machine. */
 export const terminal = (s: { final: boolean; flow?: string }) => s.final && !s.flow;
-export const RAMP = ["#94a3b8", "#60a5fa", "#818cf8", "#a78bfa", "#c084fc", "#e879f9", "#f472b6", "#fbbf24", "#34d399"];
 
 export interface Pt {
   x: number;
@@ -1074,7 +1073,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     const sized = L.sized, picks = L.picks, ps = L.ps, hb = scene.h - 40;
     for (const st of states) {
       const p = ps.find((q) => q.id === st.id)!, { x, y } = p, { ps: phs, here, band: outer } = sized[st.id], r = ease(`${st.id}.r`, sized[st.id].r), R = ease(`${st.id}.R`, sized[st.id].R);
-      const g: Galaxy = { id: st.id, name: st.name, x, y, r, n: stateCount(S, st.id), color: BOARD_COLOR[st.id] ?? "#94a3b8", final: st.final, today: daily(st) ? (S.today[st.id] ?? []).length : undefined, subs: SUBS[st.id] || [], R, moonR: 0, visR: 0, edge: R, text: picks[st.id], reach: [R, R], loops: [] };
+      const g: Galaxy = { id: st.id, name: st.name, x, y, r, n: stateCount(S, st.id), color: BOARD_COLOR[st.id] ?? MUTED, final: st.final, today: daily(st) ? (S.today[st.id] ?? []).length : undefined, subs: SUBS[st.id] || [], R, moonR: 0, visR: 0, edge: R, text: picks[st.id], reach: [R, R], loops: [] };
       const d = sized[st.id].r - SUN_R, r0 = phs.length ? FREE + d : FOOT.task0 + d, r1 = phs.length ? SUN_R + d + 12 : outer;
       // a task on a machine step rides that machine's branch (transit.ts places it); only the rest orbit the sun
       const hOf = new Map<RawTask, HPlace>(), f0 = flowsOf(st.id)[0];
@@ -1163,7 +1162,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     const cx0 = scene.w / 2, cy0 = scene.h / 2;
     if (!subs.length) {
       const n = stateCount(S, sid);
-      const sun: Sun = { id: sid, name: stateName(sid), final: !!st?.final, today: st && daily(st) ? today.length : undefined, x: cx0, y: cy0, r: SUN_R, R: 0, n, color: BOARD_COLOR[sid] ?? "#94a3b8" };
+      const sun: Sun = { id: sid, name: stateName(sid), final: !!st?.final, today: st && daily(st) ? today.length : undefined, x: cx0, y: cy0, r: SUN_R, R: 0, n, color: BOARD_COLOR[sid] ?? MUTED };
       scene.sun = sun;
       scene.pivot = sun;
       sun.R = attach(list, sun, sun.r + 30, 16, 16, true);
@@ -1373,7 +1372,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
       const x0 = x, x1 = (x += basis[i] + want[i] * g + slack);
       return { ...t, x0, x1, y0: cap - 9 * F, y1: cap + 34 * F };
     });
-    const end = (id: string, x: number): FoldEnd => ({ id, name: stateName(id), final: !!board.machine.states.find((s) => s.id === id)?.final, color: BOARD_COLOR[id] || "#94a3b8", x, y: yP, r: R });
+    const end = (id: string, x: number): FoldEnd => ({ id, name: stateName(id), final: !!board.machine.states.find((s) => s.id === id)?.final, color: BOARD_COLOR[id] || MUTED, x, y: yP, r: R });
     f.a = end(led.from, sx);
     f.b = end(led.to, dnx);
     f.p0 = { x: sx + R + 8 * u, y: yP };

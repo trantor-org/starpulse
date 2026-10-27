@@ -63,7 +63,7 @@ export function mocked(snap: Snapshot): Snapshot {
     b.id = "mock-banner";
     b.textContent = "Simulated phases" + (extra.length ? ` · +${extra.length} tasks` : "") + (sim ? ` · ${q.get("sim") === "3" ? "2 tasks on one CI step" : `${q.get("sim") === "2" ? "2 tasks through 6 machines, " : ""}a step every ${SIM_PERIOD} s`}` : "");
     b.title = `${pair.join(" and ")} walk the phases`;
-    b.style.cssText = "position:fixed;right:262px;top:10px;z-index:99;padding:2px 8px;border-radius:6px;font:12px Inter,system-ui,sans-serif;color:#fbbf24;background:rgba(6,10,20,0.85);border:1px solid rgba(251,191,36,0.4);pointer-events:none";
+    b.style.cssText = "position:fixed;right:262px;top:10px;z-index:99;padding:2px 8px;border-radius:6px;font:12px Inter,system-ui,sans-serif;color:var(--run);background:color-mix(in srgb,var(--bg0) 85%,transparent);border:1px solid color-mix(in srgb,var(--run) 40%,transparent);pointer-events:none";
     document.body.appendChild(b);
   }
   return { ...snap, flows };
