@@ -597,6 +597,8 @@ def _unlisted_writers(config: Config, base: Path) -> list[str]:
         refuse_unlisted,
     )
 
+    if config.reads_domains_at_start():
+        return []  # an adapter reads this instance's domains from its workflows as `serve` starts, which this offline check cannot read
     listed = [name for names in config.qualified_domains().values() for name in names]
     if not listed or config.board_type not in {"native", "upstream_backlog", "machines"}:
         return []

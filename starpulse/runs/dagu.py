@@ -390,6 +390,30 @@ STATS_BUDGET = 10.0
 RERUN_LABELS = ("rerun", "rerun-key", "rerun-repeats", "rerun-step")
 
 
+#: The label a DAG declares its domain with: `domain=<name>`. Dagu allows only `a-z A-Z 0-9 - _ . /` in a label value, so
+#: the page's name spells `-and-` as ` & ` and every other `-` as a space (`Delivery-and-CI` is "Delivery & CI").
+DOMAIN_LABEL = "domain"
+
+
+def domain_name(slug: str) -> str:
+    """The domain name the page draws for a `domain=` label's `slug`."""
+    return slug.replace("-and-", " & ").replace("-", " ")
+
+
+def domains(base_url: str) -> dict[str, tuple[str, ...]]:
+    """The DAGs of a Dagu instance by the domain their `domain=` label names, name-sorted; a DAG with none is left out.
+
+    Domains come in name order, workflows name-sorted within each.
+    """
+    grouped: dict[str, list[str]] = {}
+    for entry in _get(f"{base_url}/api/v1/dags?perPage=200").get("dags", []):
+        labels = entry.get("dag", {}).get("labels") or []
+        for label_name, sep, value in (label.partition("=") for label in labels):
+            if sep and label_name == DOMAIN_LABEL:
+                grouped.setdefault(domain_name(value), []).append(entry["fileName"])
+    return {domain: tuple(sorted(names)) for domain, names in sorted(grouped.items())}
+
+
 def _rerun_of(labels: list[str]) -> dict | None:
     """The rerun safety the DAG's `labels` declare, or None when they declare none (a `rerun-step` alone declares none)."""
     declared = {name: value for name, sep, value in (label.partition("=") for label in labels) if sep and name in RERUN_LABELS}

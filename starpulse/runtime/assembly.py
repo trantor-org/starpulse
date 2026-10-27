@@ -6,7 +6,6 @@ import threading
 from collections.abc import Collection, Mapping
 from pathlib import Path
 
-from starpulse.runtime.config import Config, ConfigError
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model.seam import Board
 from starpulse.board.model.seam import load as load_board
@@ -20,6 +19,29 @@ from starpulse.machine_engine.model.snapshot import qualifier
 from starpulse.pulls.ci import CiError, attach
 from starpulse.pulls.task_actor import ACTOR
 from starpulse.runtime import read_model_follow
+from starpulse.runtime.config import Config, ConfigError, runs_adapter
+
+
+def domains_of(config: Config) -> dict[str, tuple[str, ...]]:
+    """The config's domains plus those a runs adapter reads from its workflows (`domains(url)`, optional), as
+    `<instance>/<workflow>`, for an instance whose config lists no domains of its own; read once as the server starts.
+
+    An instance the adapter cannot read contributes none, so its workflows are drawn outside any domain until a restart.
+    """
+    merged: dict[str, tuple[str, ...]] = dict(config.qualified_domains())
+    for instance in config.runs:
+        if not instance.url or instance.domains:
+            continue
+        read = getattr(runs_adapter(instance.type), "domains", None)
+        if read is None:
+            continue
+        try:
+            tagged = read(instance.url)
+        except (OSError, ValueError):
+            continue
+        for domain, names in tagged.items():
+            merged[domain] = (*merged.get(domain, ()), *(f"{instance.name}/{n}" for n in names))
+    return merged
 
 
 def assemble(
@@ -35,7 +57,7 @@ def assemble(
     now is drawn on the `run_safe` workflows.
     """
     board = load_board(config.board_type, config.board, base)
-    domains = config.qualified_domains()
+    domains = domains_of(config)
     qualify = qualifier(domains)
     # `[board.actor]` makes the task actor a writer the machine may name beside the adapters' workflows.
     listed = [name for names in domains.values() for name in names]
