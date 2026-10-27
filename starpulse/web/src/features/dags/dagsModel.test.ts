@@ -354,7 +354,7 @@ describe("the run pressure the navigator draws", () => {
     expect(ranked).toEqual([{ name: "runs/b", hours: 12 }, { name: "runs/a", hours: 1.5 }, { name: "runs/e", hours: 1.5 }]);
   });
 
-  it("reads the Dagu CPU as one percentage of all the cores, summing the runner units of every instance", () => {
+  it("reads the Runner CPU as one percentage of all the cores, summing the runner units of every instance", () => {
     expect(cpuPercent({ dagu: { cores: 8, share: 0.375 } })).toBeCloseTo(37.5);
     expect(cpuPercent({ a: { cores: 8, share: 0.25 }, b: { cores: 8, share: 0.125 } })).toBeCloseTo(37.5);
   });

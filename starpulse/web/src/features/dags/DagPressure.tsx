@@ -1,4 +1,4 @@
-// The DAGs view's run pressure, drawn in the navigator below the Queues: the DAGs that spent the most run-hours in a week and the Dagu CPU as one share of all the cores.
+// The DAGs view's run pressure, drawn in the navigator below the Queues: the DAGs that spent the most run-hours in a week and the Runner CPU as one share of all the cores.
 import { Card } from "../../shared/Card";
 import { cpuPercent, runHours, short, type DagData } from "./dagsModel";
 
@@ -21,7 +21,7 @@ export function DagPressure({ data }: { data: DagData | null }) {
       <Card title="Run-hours" id="runhours">
         {spent.length ? spent.map((d) => <Bar key={d.name} label={short(d.name)} text={hours(d.hours)} fill={(100 * d.hours) / spent[0].hours} title={d.name} />) : <div className="none">no runs read</div>}
       </Card>
-      <Card title="Dagu CPU" id="cpu">
+      <Card title="Runner CPU" id="cpu">
         <Bar label={cpu === null ? "not read" : "of all cores"} text={cpu === null ? "" : `${Math.round(cpu)}%`} fill={cpu ?? 0} tone={cpu === null ? undefined : cpu >= 90 ? "full" : cpu > 0 ? "busy" : undefined} />
       </Card>
     </>

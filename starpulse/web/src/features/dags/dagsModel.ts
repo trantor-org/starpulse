@@ -55,7 +55,7 @@ export const runHours = (facts: Record<string, DagFacts>) =>
     .flatMap(([name, f]) => (f.hours ? [{ name, hours: f.hours }] : []))
     .sort((a, b) => b.hours - a.hours || a.name.localeCompare(b.name));
 
-/** The Dagu CPU as one percentage of all the host's cores: every instance's runner share summed. Null when the server served none, which is not zero. */
+/** The Runner CPU as one percentage of all the host's cores: every instance's runner share summed. Null when the server served none, which is not zero. */
 export const cpuPercent = (cpu: Record<string, Cpu>) => {
   const shares = Object.values(cpu).map((c) => c.share);
   return shares.length ? Math.min(100, 100 * shares.reduce((a, b) => a + b, 0)) : null;

@@ -820,7 +820,7 @@ html.still *, html.still *::before, html.still *::after { animation: none !impor
 #ef-toast span { color: var(--muted); }
 @media (prefers-reduced-motion: reduce) { #ef-toast, #efa, #efa .box { animation: none; } }
 
-/* the navigator's cards (Queues, Run-hours, Dagu CPU) share the room below the DAG filter: a card gives up height before the navigator scrolls, and its body scrolls inside it */
+/* the navigator's cards (Queues, Run-hours, Runner CPU) share the room below the DAG filter: a card gives up height before the navigator scrolls, and its body scrolls inside it */
 #nav .card { flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column; }
 #nav .card h3 { flex: none; }
 /* a card keeps a few rows however little room is left, and the CPU card, one bar, keeps all of it */

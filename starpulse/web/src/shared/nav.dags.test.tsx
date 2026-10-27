@@ -80,9 +80,9 @@ describe("the navigator's DAGs entry", () => {
 describe("the DAGs view's navigator and legend", () => {
   beforeEach(() => act(() => dagsNode().click()));
 
-  it("shows the DAG filter and the Queues, Run-hours and Dagu CPU cards, and not the Star Map's layers, DAG domains or search", () => {
+  it("shows the DAG filter and the Queues, Run-hours and Runner CPU cards, and not the Star Map's layers, DAG domains or search", () => {
     expect(q("#queues")!.textContent).toContain("main");
-    expect([...host.querySelectorAll("#nav section.card h3")].map((h) => h.textContent)).toEqual(["Queues", "Run-hours", "Dagu CPU"]);
+    expect([...host.querySelectorAll("#nav section.card h3")].map((h) => h.textContent)).toEqual(["Queues", "Run-hours", "Runner CPU"]);
     expect(q("#layers")).toBeNull();
     expect(q("#cons")).toBeNull();
     expect(q("#q")).toBeNull();

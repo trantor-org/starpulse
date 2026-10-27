@@ -27,17 +27,17 @@ afterEach(() => {
 });
 
 describe("the navigator's run pressure cards", () => {
-  it("draws Run-hours and Dagu CPU in that order, each with a body that scrolls on its own", async () => {
+  it("draws Run-hours and Runner CPU in that order, each with a body that scrolls on its own", async () => {
     await draw(data());
 
-    expect([...host.querySelectorAll("section.card h3")].map((h) => h.textContent)).toEqual(["Run-hours", "Dagu CPU"]);
+    expect([...host.querySelectorAll("section.card h3")].map((h) => h.textContent)).toEqual(["Run-hours", "Runner CPU"]);
     expect([...host.querySelectorAll("section.card")].map((s) => s.querySelectorAll(":scope > .body").length)).toEqual([1, 1]);
   });
 
-  it("draws the Dagu CPU as one bar whose fill and figure are the served share of all cores", async () => {
+  it("draws the Runner CPU as one bar whose fill and figure are the served share of all cores", async () => {
     await draw(data({ cpu: { dagu: { cores: 8, share: 0.375 } } }));
 
-    const cpu = card("Dagu CPU");
+    const cpu = card("Runner CPU");
     expect(cpu.querySelectorAll(".m i")).toHaveLength(1);
     expect(parseFloat(cpu.querySelector<HTMLElement>(".m i")!.style.width)).toBeCloseTo(37.5, 0);
     expect(cpu.querySelector(".r b")!.textContent).toBe("38%");
@@ -46,8 +46,8 @@ describe("the navigator's run pressure cards", () => {
   it("says no CPU was read when the server served none, with an empty bar", async () => {
     await draw(data());
 
-    expect(card("Dagu CPU").textContent).toContain("not read");
-    expect(card("Dagu CPU").querySelector<HTMLElement>(".m i")!.style.width).toBe("0%");
+    expect(card("Runner CPU").textContent).toContain("not read");
+    expect(card("Runner CPU").querySelector<HTMLElement>(".m i")!.style.width).toBe("0%");
   });
 
   it("lists the DAGs by run-hours, most first, the longest filling its bar", async () => {
