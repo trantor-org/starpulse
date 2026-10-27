@@ -5,16 +5,16 @@ which writes it judges, `require` is one primitive the task as it will be after 
 is the refusal every writer, the CLI's and the page's, answers with. A primitive is a one-key table naming its kind:
 `{field: {...}}`, `{label: {...}}`, `{section: {...}}`, `{body: {...}}`, `{block: {...}}`,
 `{post_merge_checks: {}}`, `{dependencies: {...}}` or `{checklist: {...}}`, or a
-combinator, `all_of`, `any_of`, `exactly_one` and `none_of`, over a list of primitives. A write carries the actor that
-makes it (`operator`, `agent`, or `<instance>/<workflow>` as a machine's `writers` spell it), which `unless_actor`
-exempts.
+combinator, `all_of`, `any_of`, `exactly_one` and `none_of`, over a list of primitives; `{before: <primitive>}` reads
+the task as it was before the write (a create had none, so it holds). A write carries the actor that makes it
+(`operator`, `agent`, or `<instance>/<workflow>` as a machine's `writers` spell it), which `unless_actor` exempts.
 """
 
 from __future__ import annotations
 
 import re
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from starpulse.board.model import post_merge_checks
@@ -32,6 +32,8 @@ class Record:
     body: str = ""
     #: The state of another task, as `lane_id` spells it, or None when the board has no such task.
     state_of: Callable[[str], str | None] = lambda _: None
+    #: The task as it was before the write, None for a create; the `before` primitive reads it.
+    earlier: Record | None = None
 
     @property
     def state(self) -> str:
@@ -297,7 +299,7 @@ _KINDS: dict[str, Callable[[Mapping[str, Any], str], Primitive]] = {
     "dependencies": _dependencies,
     "checklist": _checklist,
 }
-_NAMES = ", ".join([*_KINDS, *_COMBINATORS])
+_NAMES = ", ".join([*_KINDS, "before", *_COMBINATORS])
 
 
 def _primitive(spec: object, where: str) -> Primitive:
@@ -305,6 +307,9 @@ def _primitive(spec: object, where: str) -> Primitive:
         raise ValueError(f"{where}: a primitive is one key naming its kind: {_NAMES}")
     ((kind, body),) = spec.items()
     here = f"{where}.{kind}"
+    if kind == "before":
+        earlier = _primitive(body, here)
+        return lambda record: record.earlier is None or earlier(record.earlier)
     if kind in _COMBINATORS:
         if not isinstance(body, list) or not body:
             raise ValueError(f"{here}: {kind} takes a non-empty list of primitives")
@@ -358,6 +363,7 @@ def load(declared: object) -> tuple[Rule, ...]:
 
 def refusal(rules: tuple[Rule, ...], before: Record | None, after: Record, actor: str) -> Rule | None:
     """The first rule the write by `actor` from `before` (None for a create) to `after` breaks, or None for none."""
+    after = replace(after, earlier=before)
     return next((rule for rule in rules if rule.judges(before, after, actor) and not rule.require(after)), None)
 
 
@@ -374,7 +380,7 @@ def standing_refusal(
         read.append(task)
 
     before = Record(front, body, unread)
-    after = Record({**front, "status": lane}, body, unread)
+    after = Record({**front, "status": lane}, body, unread, before)
     for rule in rules:
         read.clear()
         if rule.judges(before, after, actor) and not rule.require(after) and not read:
