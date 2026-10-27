@@ -94,7 +94,20 @@ def _workflow(run: Systemctl, user: bool, unit: str) -> dict:
         "runId": started,
         "startedAt": started,
         "finishedAt": "" if status == "running" else _iso(shown["ExecMainExitTimestamp"]),
-        "steps": [{"name": service, "depends": [], "status": status, "raw": raw, "kind": None}],
+        "steps": [
+            {
+                "name": service,
+                "depends": [],
+                "status": status,
+                "raw": raw,
+                "kind": None,
+                "precondition": None,
+                "lock": None,
+                "last": [],
+            }
+        ],
+        "schedule": [],
+        "stats": None,
     }
 
 

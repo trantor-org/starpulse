@@ -126,7 +126,7 @@ def _job_steps(name: str, depends: list[str], ran: list[dict]) -> list[dict]:
         state = {"status": _worst([status_of(j["status"], j.get("conclusion")) for j in ran])}
     else:
         state = {"status": "not_started"}
-    out = [{"name": name, "depends": depends, **state, "kind": None}]
+    out = [{"name": name, "depends": depends, **state, "kind": None, "precondition": None, "lock": None, "last": []}]
     if len(ran) != 1:
         return out
     taken = {name}
@@ -140,6 +140,9 @@ def _job_steps(name: str, depends: list[str], ran: list[dict]) -> list[dict]:
                 "depends": [out[-1]["name"]],
                 **_reported(step["status"], step.get("conclusion")),
                 "kind": None,
+                "precondition": None,
+                "lock": None,
+                "last": [],
             }
         )
     return out
@@ -238,6 +241,8 @@ class Repository:
             "startedAt": (run.get("run_started_at") or run["created_at"]) if run else "",
             "finishedAt": run["updated_at"] if run and run["status"] == "completed" else "",
             "steps": _graph(definition, ran),
+            "schedule": [],
+            "stats": None,
         }
         ended = run is None or run["status"] == "completed"
         return _Read((workflow["updated_at"], _signature(run)), definition, dag, ended)

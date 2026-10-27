@@ -351,7 +351,9 @@ A Step event is `type` `StepStarted` or `StepFinished` with no `machine`. `subje
 `workflow`, the `status` (`not_started`, `queued`, `running`, `succeeded`, `failed`, `aborted` or `skipped`) and, for a
 step's own entry, `step` and optionally `depends`, the steps it waits on. A run's own entry names no `step`. The page
 draws an accepted event as `pushed/<source>/<workflow>`. A workflow no adapter lists is drawn from the step graph its
-events add up to, and that graph is kept in the history store across restarts. A token writes only as its own
+events add up to, and that graph is kept in the history store across restarts. Each step of it also serves its
+`last` outcomes, up to five, newest first; a pushed workflow serves no `schedule` (empty), `stats`, `precondition` or
+`lock`, which the events do not carry. A token writes only as its own
 producer: a missing or wrong token answers 401, another producer's `source` 403, an event the contract does not allow
 400, and none of them writes anything; the other answers are the machine events' table below.
 

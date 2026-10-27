@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pydantic import Field
 
-from starpulse.contracts.adapters import ActiveRun, RunStatus, Step
+from starpulse.contracts.adapters import ActiveRun, RunStats, RunStatus, Step
 from starpulse.contracts.api._base import _Api
 
 
@@ -18,6 +18,12 @@ class DagBody(_Api):
     startedAt: str
     finishedAt: str
     steps: list[Step]
+    schedule: list[str] = Field(
+        description="The cron expressions that start the workflow; empty when it runs only when asked for."
+    )
+    stats: RunStats | None = Field(
+        description="The workflow's runs over the last seven days; None when it never ran or they are unknown."
+    )
     active: list[ActiveRun] | None = Field(
         default=None, description="Every running or queued run of the workflow, including concurrent ones."
     )

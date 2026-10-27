@@ -4,8 +4,8 @@ import type { Dag, Machine, Snapshot } from "../api";
 
 /** Test fixtures shared by the scene's test files. */
 export const dag = (name: string, steps: [string, string[]][] = []): Dag => ({
-  name, status: "succeeded", runId: "r", startedAt: "", finishedAt: "",
-  steps: steps.map(([n, depends]) => ({ name: n, depends, status: "succeeded", kind: null })),
+  name, status: "succeeded", runId: "r", startedAt: "", finishedAt: "", schedule: [], stats: null,
+  steps: steps.map(([n, depends]) => ({ name: n, depends, status: "succeeded", kind: null, precondition: null, lock: null, last: [] })),
 });
 export const machine = (ids: string[], extra: Partial<Machine> = {}): Machine => ({
   states: ids.map((id, i) => ({ id, name: id, initial: i === 0, final: false })),

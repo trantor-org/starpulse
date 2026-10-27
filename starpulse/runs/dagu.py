@@ -14,6 +14,7 @@ import json
 import math
 import re
 import shlex
+import statistics
 import threading
 import time
 import urllib.error
@@ -25,7 +26,7 @@ from datetime import UTC, datetime
 from typing import Any, get_args
 
 from starpulse.runs import run_events
-from starpulse.contracts.adapters import RunsSink, RunStatus, StartFailedError
+from starpulse.contracts.adapters import LAST_OUTCOMES, RunsSink, RunStatus, StartFailedError
 from starpulse.event_log.event_log import EventLog, Tail
 from starpulse.event_log.polling import DEFAULT_POLL_INTERVAL
 
@@ -155,16 +156,50 @@ def _get(url: str) -> dict:
         return json.load(resp)
 
 
+def _precondition(step: dict) -> str | None:
+    """What a step's `preconditions` demand, as `condition == expected` joined by `; `; None when it declares none."""
+    words = [
+        f"{p['condition']} == {p['expected']}" if p.get("expected") else p["condition"]
+        for p in step.get("preconditions") or []
+        if p.get("condition")
+    ]
+    return "; ".join(words) or None
+
+
+def _outcomes(base_url: str, name: str) -> dict[str, list[RunStatus]]:
+    """Each step's statuses in the DAG's runs that are over, newest first, at most `LAST_OUTCOMES`; none when Dagu cannot list them."""
+    try:
+        runs = _get(f"{base_url}/api/v1/dags/{name}/dag-runs").get("dagRuns", [])
+    except OSError:
+        return {}
+    out: dict[str, list[RunStatus]] = {}
+    for run in runs:
+        if status_of(run["statusLabel"]) in _OPEN:
+            continue
+        for node in run.get("nodes", []):
+            status, kept = (status_of(node["statusLabel"]), out.setdefault(node["step"]["name"], []))
+            if status not in _OPEN | {"not_started"} and len(kept) < LAST_OUTCOMES:
+                kept.append(status)
+    return out
+
+
 def _steps(base_url: str, name: str) -> tuple[str, list[dict]]:
-    """The queue a DAG declares, and its steps: each with the steps it waits on, its status in the latest run and its declared kind."""
+    """The queue a DAG declares, and its steps: each with the steps it waits on, its status in the latest run, its declared kind and precondition, and its last outcomes.
+
+    Dagu declares no step lock, so `lock` is None.
+    """
     detail = _get(f"{base_url}/api/v1/dags/{name}")
     ran = {n["step"]["name"]: n["statusLabel"] for n in (detail.get("latestDAGRun") or {}).get("nodes", [])}
+    last = _outcomes(base_url, name)
     return detail["dag"].get("queue", ""), [
         {
             "name": s["name"],
             "depends": s.get("depends", []),
             **_reported(ran.get(s["name"], "not_started")),
             "kind": _kind(s),
+            "precondition": _precondition(s),
+            "lock": None,
+            "last": last.get(s["name"], []),
         }
         for s in detail["dag"].get("steps", [])
     ]
@@ -304,6 +339,19 @@ def _recent_run(base_url: str, run: dict) -> dict:
     }
 
 
+def _listed(base_url: str, name: str, since: int) -> list[dict]:
+    """The runs of DAG `name` that began at or after epoch second `since`, newest first, read page by page; an `OSError` if Dagu cannot list them."""
+    cursor, runs = "", []
+    while True:
+        more = f"&cursor={urllib.parse.quote(cursor)}" if cursor else ""
+        page = _get(
+            f"{base_url}/api/v1/dag-runs?name={urllib.parse.quote(name)}&perPage={_PAGE}&fromDate={since}{more}"
+        )
+        runs += page.get("dagRuns", [])
+        if not (cursor := page.get("nextCursor") or ""):
+            return runs
+
+
 def recent_runs(base_url: str, name: str, finished: dict | None = None) -> list[dict]:
     """The last day's runs of DAG `name` as `RecentRun` records, in the order Dagu lists them (newest first).
 
@@ -311,14 +359,8 @@ def recent_runs(base_url: str, name: str, finished: dict | None = None) -> list[
     entries of `name` that Dagu no longer lists leave it. A listing Dagu cannot give is none.
     """
     cache = {} if finished is None else finished
-    since, cursor, runs = int(time.time()) - _RECENT_LOOKBACK, "", []
     try:
-        while True:
-            more = f"&cursor={urllib.parse.quote(cursor)}" if cursor else ""
-            page = _get(f"{base_url}/api/v1/dag-runs?name={urllib.parse.quote(name)}&perPage={_PAGE}&fromDate={since}{more}")
-            runs += page.get("dagRuns", [])
-            if not (cursor := page.get("nextCursor") or ""):
-                break
+        runs = _listed(base_url, name, int(time.time()) - _RECENT_LOOKBACK)
     except OSError:
         return []
     out = []
@@ -331,6 +373,53 @@ def recent_runs(base_url: str, name: str, finished: dict | None = None) -> list[
     for key in [k for k in cache if k[0] == name and k not in live]:
         del cache[key]
     return out
+
+
+#: The window of a DAG's run statistics, how long they are kept before the DAG's runs are read again, and how long
+#: one listing may spend reading them. Dagu answers a DAG's week of runs slowly (seconds), so a listing reads the
+#: stalest first until the budget is spent and serves the rest as absent until a later listing gets to them.
+STATS_WINDOW = 7 * 86400
+STATS_TTL = 300.0
+STATS_BUDGET = 10.0
+
+
+def _epoch(text: str) -> float | None:
+    """The epoch second of a Dagu timestamp, None for an empty or unreadable one."""
+    try:
+        return datetime.fromisoformat(text).timestamp()
+    except ValueError:
+        return None
+
+
+def _read_stats(base_url: str, name: str, kept: dict | None, at: float, wall: float) -> dict:
+    """The runs of DAG `name` in the window, merged into those `kept` from the last read.
+
+    The runs listed are those since the last read, or since the oldest run then still open when that is earlier
+    (it may have ended), so a refresh costs a short listing rather than a week's.
+    """
+    window = wall - STATS_WINDOW
+    runs = dict(kept["runs"]) if kept else {}
+    open_since = [start for start, end, _ in runs.values() if end is None]
+    since = window if kept is None else max(window, min([kept["wall"], *open_since]) - 60)
+    for run in _listed(base_url, name, int(since)):
+        start = _epoch(run.get("startedAt") or run.get("queuedAt") or "")
+        status = status_of(run["statusLabel"])
+        if start is not None:
+            runs[run["dagRunId"]] = (start, None if status in _OPEN else _epoch(run.get("finishedAt", "")), status)
+    return {"read": at, "wall": wall, "runs": {k: v for k, v in runs.items() if v[0] >= window}}
+
+
+def _stats_of(runs: Collection[tuple[float, float | None, RunStatus]]) -> dict[str, Any]:
+    """The count of runs in the window, their hours, and the median and 95th-percentile duration and failure share of those that are over (None when none is)."""
+    lasted = sorted(max(0.0, end - start) for start, end, _ in runs if end is not None)
+    failed = sum(1 for _, end, status in runs if end is not None and status == "failed")
+    return {
+        "runs": len(runs),
+        "hours": round(sum(lasted) / 3600, 2),
+        "medianSeconds": statistics.median(lasted) if lasted else None,
+        "p95Seconds": lasted[math.ceil(0.95 * len(lasted)) - 1] if lasted else None,
+        "failureShare": failed / len(lasted) if lasted else None,
+    }
 
 
 #: How long a DAG's step graph is kept once read. Dagu's listing carries no marker of a DAG file's change, so a
@@ -351,6 +440,28 @@ def _graph(base_url: str, name: str, run: dict, graphs: dict, now: float) -> tup
     return graph
 
 
+def _refresh_stats(base_url: str, listed: list[dict], stats: dict, clock: Callable[[], float], budget: float) -> None:
+    """Read the run statistics of the DAGs in `listed` that have a latest run and whose kept read is older than `STATS_TTL`.
+
+    The stalest go first and none starts once `budget` seconds have passed; a read Dagu fails is tried again next time.
+    The DAGs `listed` no longer shows leave `stats`.
+    """
+    for gone in stats.keys() - {d["fileName"] for d in listed}:
+        del stats[gone]
+    deadline = clock() + budget
+    ran = [d["fileName"] for d in listed if d.get("latestDAGRun")]
+    for name in sorted(ran, key=lambda n: stats[n]["read"] if n in stats else -math.inf):
+        at = clock()
+        if at >= deadline:
+            return
+        if name in stats and at - stats[name]["read"] < STATS_TTL:
+            continue
+        try:
+            stats[name] = _read_stats(base_url, name, stats.get(name), at, time.time())
+        except OSError:
+            continue
+
+
 def dags(
     base_url: str,
     only: Collection[str] | None = None,
@@ -358,24 +469,32 @@ def dags(
     finished: dict | None = None,
     graphs: dict | None = None,
     clock: Callable[[], float] = time.monotonic,
+    stats: dict | None = None,
+    budget: float = STATS_BUDGET,
 ) -> list[dict]:
-    """Every DAG on a Dagu instance, or just those in `only`, with its latest run, its step graph and its pool.
+    """Every DAG on a Dagu instance, or just those in `only`, with its latest run, schedule, step graph, pool and run statistics.
 
     A full listing also reads each DAG's active runs; the listing of `only` leaves them out, as it serves a step read
     after one run entry. A DAG whose detail cannot be read is listed without steps or pool rather than failing the listing.
     `graphs` keeps each DAG's graph between listings (see `_graph`); a full listing drops the DAGs it no longer shows.
+    `stats` keeps each DAG's runs of the last `STATS_WINDOW` between listings: a full listing refreshes what is older than
+    `STATS_TTL` within `budget` seconds (see `_refresh_stats`), the listing of `only` serves what is kept. A DAG with no
+    run, or whose statistics have not been read yet, has `stats` None, never zeros.
     """
     graphs = {} if graphs is None else graphs
+    stats = {} if stats is None else stats
     in_flight = _in_flight(base_url) if only is None else {}
     listed = _get(f"{base_url}/api/v1/dags?perPage=200").get("dags", [])
     if only is None:
         for gone in graphs.keys() - {d["fileName"] for d in listed}:
             del graphs[gone]
+        _refresh_stats(base_url, listed, stats, clock, budget)
     out = []
     for d in listed:
         if only is not None and d["fileName"] not in only:
             continue
         run = d.get("latestDAGRun") or {}
+        kept = stats.get(d["fileName"])  # another thread may be refreshing: read once
         # a DAG whose runs name a task keeps them too, so the task's card links them though no Board event ties it
         keeps_recent = d["fileName"] in recent or _task_of(run.get("dagRunId", "")) is not None
         try:
@@ -390,6 +509,8 @@ def dags(
                 "startedAt": run.get("startedAt") or run.get("queuedAt") or "",
                 "finishedAt": run.get("finishedAt", ""),
                 "steps": steps,
+                "schedule": [s["expression"] for s in d.get("dag", {}).get("schedule") or []],
+                "stats": _stats_of(kept["runs"].values()) if kept else None,
                 "active": [a for r in in_flight.get(d["fileName"], []) if (a := _active(base_url, r, steps))],
                 "pool": pool,
                 **({"recent": recent_runs(base_url, d["fileName"], finished)} if keeps_recent else {}),
@@ -634,7 +755,7 @@ def _other_move(reader: DaguRuns, dag: dict, run: _Run, others: list, tied: bool
     if len(others) < len(dag.get("active", [])):
         return {**dag, "active": others}, None  # the end of a run no longer the one drawn, still listed as active
     if tied and known:
-        return dag, None  # no longer the one drawn, and not active, but a run the ledger still holds
+        return (dag, None)  # no longer the one drawn, and not active, but a run the ledger still holds
     return None  # the end of a run that is no longer the one drawn
 
 
@@ -686,7 +807,8 @@ def follow(
     tied = lambda: getattr(runs, "tied", frozenset())  # noqa: E731
     finished: dict = {}
     graphs: dict = {}
-    reader = DaguRuns(runs, lambda only=None: dags(url, only, tied(), finished, graphs), lambda: pools(url), tied=tied, instance=getattr(runs, "instance", None))
+    stats: dict = {}
+    reader = DaguRuns(runs, lambda only=None: dags(url, only, tied(), finished, graphs, stats=stats), lambda: pools(url), tied=tied, instance=getattr(runs, "instance", None))
 
     def read() -> None:
         tail = Tail.live(log, run_events.STREAM, interval=interval)  # before the listing: what it holds is not replayed

@@ -85,7 +85,11 @@ A scheduler worth a full adapter is a `[[runs]]` instance (`name`, `type`, `url`
 `follow(url, runs, group)`, publishing `Dag`s through `RunsSink.set_dags(dags, error, pools, startable)` (a `Dag` lists its running and queued runs in `active`,
 `pools` is the list of concurrency pools, empty when the scheduler has none, and `startable` names the workflows
 `start` can run when it cannot start all of them, such as those a GitHub workflow file marks `workflow_dispatch`);
-its workflows are drawn as `<name>/<workflow>`.
+its workflows are drawn as `<name>/<workflow>`. A `Dag` also carries its `schedule` (cron expressions, empty when it is
+started by hand) and `stats` (`runs`, `hours`, `medianSeconds`, `p95Seconds`, `failureShare` over the last seven days;
+`None` when the workflow never ran, never zeros), and each `Step` its `precondition`, its `lock` and its `last` outcomes
+(up to five, newest first). The fields are required but nullable, so an adapter that has no value sends `None`, and the
+adapter kit fails one that leaves a field out.
 
 ## Check it
 

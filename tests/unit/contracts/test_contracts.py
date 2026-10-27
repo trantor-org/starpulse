@@ -108,7 +108,9 @@ def test_a_dag_is_read_under_the_names_the_page_draws() -> None:
             "runId": "r1",
             "startedAt": "2026-10-02T10:00:00Z",
             "finishedAt": "",
-            "steps": [{"name": "a", "depends": [], "status": "not_started", "kind": None}],
+            "schedule": [],
+            "stats": None,
+            "steps": [STEP],
         }
     )
 
@@ -116,13 +118,25 @@ def test_a_dag_is_read_under_the_names_the_page_draws() -> None:
     assert jsonschema.Draft202012Validator(SCHEMAS["runs"]).is_valid(dag.model_dump(by_alias=True, mode="json"))
 
 
+STEP = {
+    "name": "a",
+    "depends": [],
+    "status": "not_started",
+    "kind": None,
+    "precondition": None,
+    "lock": None,
+    "last": [],
+}
+STATS = {"runs": 4, "hours": 0.5, "medianSeconds": 120.0, "p95Seconds": 600.0, "failureShare": 0.25}
 DAG = {
     "name": "deliver",
     "status": "running",
     "runId": "r2",
     "startedAt": "2026-10-02T10:05:00Z",
     "finishedAt": "",
-    "steps": [{"name": "lint", "depends": [], "status": "running", "kind": None}],
+    "schedule": ["0 * * * *"],
+    "stats": STATS,
+    "steps": [{**STEP, "name": "lint", "status": "running"}],
 }
 ACTIVE = {
     "runId": "r2",
@@ -132,6 +146,27 @@ ACTIVE = {
     "stepStartedAt": "2026-10-02T10:05:01Z",
     "steps": {"lint": "running", "push": "not_started"},
 }
+
+
+@pytest.mark.parametrize("field", ["schedule", "stats"])
+def test_a_dag_leaving_out_its_schedule_or_statistics_is_refused(field: str) -> None:
+    with pytest.raises(ValidationError):
+        Dag.model_validate({k: v for k, v in DAG.items() if k != field})
+
+
+@pytest.mark.parametrize("field", ["precondition", "lock", "last"])
+def test_a_step_leaving_out_its_precondition_lock_or_history_is_refused(field: str) -> None:
+    with pytest.raises(ValidationError):
+        Step.model_validate({k: v for k, v in STEP.items() if k != field})
+
+
+def test_a_dag_serves_its_statistics_under_the_names_the_page_draws() -> None:
+    dag = Dag.model_validate({**DAG, "steps": [{**STEP, "last": ["failed", "succeeded"]}]})
+    dumped = dag.model_dump(by_alias=True, mode="json")
+
+    assert dumped["stats"] == STATS
+    assert (dumped["schedule"], dumped["steps"][0]["last"]) == (["0 * * * *"], ["failed", "succeeded"])
+    assert jsonschema.Draft202012Validator(SCHEMAS["runs"]).is_valid(dumped)
 
 
 def test_a_dag_that_reports_no_active_runs_or_pool_has_none() -> None:

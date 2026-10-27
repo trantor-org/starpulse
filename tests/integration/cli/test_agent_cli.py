@@ -68,6 +68,8 @@ def _dag(name: str, status: str, raw: str | None = None) -> dict[str, Any]:
         "startedAt": "2026-10-05T17:00:00Z",
         "finishedAt": "",
         "steps": [],
+        "schedule": [],
+        "stats": None,
     }
 
 

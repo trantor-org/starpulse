@@ -129,7 +129,16 @@ def test_the_first_event_carries_each_open_tasks_milestone(tmp_path: Path) -> No
 
 
 #: A workflow as the page reads it: the API refuses a body short of a field its model names.
-_DAG = {"name": "d", "status": "succeeded", "runId": "1", "startedAt": "", "finishedAt": "", "steps": []}
+_DAG = {
+    "name": "d",
+    "status": "succeeded",
+    "runId": "1",
+    "startedAt": "",
+    "finishedAt": "",
+    "steps": [],
+    "schedule": [],
+    "stats": None,
+}
 
 
 def _machine_fields(task: str) -> dict:

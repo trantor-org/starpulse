@@ -27,7 +27,7 @@ const task = (id: string, state: string): RawTask => ({ id, title: id, state, mo
 const snap = (tasks: RawTask[]): Snapshot => ({
   graphs: ["board"],
   flows: [{ name: "board", agents: tasks, machine: machine(["ready", "in_progress", "review"]) }],
-  dags: [{ name: "dagu/deliver", status: "succeeded", runId: "r1", startedAt: "", finishedAt: "2026-10-11T00:00:00Z", steps: [] }],
+  dags: [{ name: "dagu/deliver", status: "succeeded", runId: "r1", startedAt: "", finishedAt: "2026-10-11T00:00:00Z", schedule: [], stats: null, steps: [] }],
   domains: [{ name: "Delivery", dags: [{ name: "dagu/deliver", runSafe: false }] }],
   cues: [],
   settled: {},
