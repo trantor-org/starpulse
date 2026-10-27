@@ -47,13 +47,13 @@ def sweep(
     *,
     ttl: float = DEFAULT_TTL,
     now: float | None = None,
-    activity: Callable[[str], float | None] = lambda _session: None,
+    activity: Callable[[str, str], float | None] = lambda _session, _task: None,
     expiries: dict[str, float] | None = None,
 ) -> list[str]:
     """Releases each working Task in `rows` whose Assignee renewed nothing for `ttl`; the ids released.
 
-    `activity` is when a session last acted outside the Task's stream, such as a harness event of its run: a session
-    working in its worktree renews its claim that way without a Task Event. `expiries`, when given, is filled with each
+    `activity` is when a session last acted outside the Task's stream, such as a harness event of its run or its Task:
+    a session working in its worktree renews its claim that way without a Task Event. `expiries`, when given, is filled with each
     held working Task's claim expiry, its renewal plus `ttl`; a Task this pass releases has none.
     """
     now = time.time() if now is None else now
@@ -66,7 +66,7 @@ def sweep(
         session = row.get("assignee") or ""
         if not session or lane_id(row.get("state") or "") != working:
             continue
-        renewals = (last_renewal(store.read("task", row["id"]), session), activity(session))
+        renewals = (last_renewal(store.read("task", row["id"]), session), activity(session, row["id"]))
         renewed = max((at for at in renewals if at is not None), default=None)
         if renewed is None:
             continue
