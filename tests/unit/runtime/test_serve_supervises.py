@@ -124,7 +124,7 @@ def test_serve_stops_its_children_however_it_ends(
     assert supervisors[0].stopped
 
 
-RUNS = '[[runs]]\nname = "dagu"\ntype = "dagu"\nurl = "http://dagu.invalid"\n'
+RUNS = '[[runs]]\nname = "dagu"\ntype = "dagu"\nurl = "http://dagu.invalid"\n[runs.domains]\nops = ["x"]\n'
 
 
 class Dagu:

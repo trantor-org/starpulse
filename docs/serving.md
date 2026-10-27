@@ -430,7 +430,9 @@ url = "http://dagu.example.com:8080"     # the Dagu Adapter is an opt-in worker:
                                          # started, the page shows this instance with the error "the dagu worker has not reported" or
                                          # "last reported Ns ago" (its beat is older than 60s)
 run_safe = ["nightly"]                   # the workflows the page's Run now may start
-domains = { Data = ["nightly", "etl"] }  # how the page groups this instance's workflows
+domains = { Data = ["nightly", "etl"] }  # how the page groups this instance's workflows; leave it out and `serve` reads each DAG's
+                                         # `domain=<name>` label from Dagu as it starts instead (`-and-` reads as " & ", other `-` as a
+                                         # space: `domain=Delivery-and-CI` is "Delivery & CI"); Dagu unreachable then fails the start
 
 # Optional: a producer that posts machine events as CloudEvents (see docs/sources.md, Post machine events as CloudEvents).
 # `POST /api/machine-events` and the gRPC `starpulse.v1.CloudEventsIngest` answer 404 until one is declared. A producer writes only the machines and actors listed here.

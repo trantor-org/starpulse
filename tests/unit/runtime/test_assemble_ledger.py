@@ -4,10 +4,11 @@ import time
 from pathlib import Path
 
 import pytest
-from starpulse.runtime.assembly import assemble
-from starpulse.runtime.config import load
+from starpulse.runtime.assembly import assemble, domains_of
+from starpulse.runtime.config import ConfigError, load
 
 from tests import fake_board
+from tests.dagu_stub import dagu
 
 CONFIG = """
 [board]
@@ -18,6 +19,8 @@ lanes = ["open", "shut"]
 name = "q"
 type = "dagu"
 url = "http://q.test"
+[runs.domains]
+ops = ["nightly"]
 """
 
 
@@ -72,3 +75,19 @@ def test_an_instance_with_no_commit_keys_pairs_by_time_and_marks_it_inferred(
 
     (row,) = feed.ledger_rows("SHUT", None, 20)["rows"]
     assert row["runs"]["q/nightly"]["inferred"] is True
+
+
+def test_a_dagu_instance_with_no_domains_of_its_own_is_grouped_by_its_dags_domain_labels(tmp_path: Path) -> None:
+    path = tmp_path / "starpulse.toml"
+    with dagu({"nightly": ["s"], "other": ["s"]}, dag_labels={"nightly": ["domain=Host-ops-and-backups"]}) as (url, _):
+        path.write_text(CONFIG.replace('[runs.domains]\nops = ["nightly"]\n', "").replace("http://q.test", url))
+
+        assert domains_of(load(path)) == {"Host ops & backups": ("q/nightly",)}
+
+
+def test_an_unreachable_dagu_instance_with_no_domains_is_a_config_error(tmp_path: Path) -> None:
+    path = tmp_path / "starpulse.toml"
+    path.write_text(CONFIG.replace('[runs.domains]\nops = ["nightly"]\n', "").replace("q.test", "q.invalid"))
+
+    with pytest.raises(ConfigError, match="cannot read its DAG domains"):
+        domains_of(load(path))

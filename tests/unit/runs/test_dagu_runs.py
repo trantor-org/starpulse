@@ -27,6 +27,7 @@ from starpulse.runs.dagu import (
     connect,
     dags,
     declared_params,
+    domains,
     pools,
     rerun,
     rerunner,
@@ -2001,3 +2002,14 @@ def test_a_listing_of_named_dags_serves_the_statistics_already_read_without_read
 
     assert named == full
     assert not [c for c in calls[asked:] if "dag-runs?name=d" in c]
+
+
+def test_domains_group_the_dags_by_their_domain_label_name_sorted_and_spell_and_as_an_ampersand() -> None:
+    labels = {
+        "b": ["domain=Delivery-and-CI"],
+        "a": ["rerun=safe", "domain=Delivery-and-CI"],
+        "c": ["domain=Board"],
+        "none": ["team=ops"],
+    }
+    with dagu({n: ["s"] for n in ("a", "b", "c", "none")}, dag_labels=labels) as (base_url, _):
+        assert domains(base_url) == {"Board": ("c",), "Delivery & CI": ("a", "b")}

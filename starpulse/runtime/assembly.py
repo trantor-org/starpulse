@@ -19,7 +19,25 @@ from starpulse.harness_telemetry.harness import SESSION_MACHINES
 from starpulse.machine_engine.model.snapshot import qualifier
 from starpulse.pulls.ci import CiError, attach
 from starpulse.pulls.task_actor import ACTOR
+from starpulse.runs import dagu
 from starpulse.runtime import read_model_follow
+
+
+def domains_of(config: Config) -> dict[str, tuple[str, ...]]:
+    """The config's domains plus those every Dagu instance's DAG labels name, as `<instance>/<workflow>`, read once as
+    the server starts, for an instance whose config lists no domains of its own. Raises ConfigError when a Dagu instance cannot be read, since its DAGs would be unlisted."""
+    merged: dict[str, tuple[str, ...]] = dict(config.qualified_domains())
+    for instance in config.runs:
+        if instance.type == "dagu" and instance.url and not instance.domains:
+            try:
+                tagged = dagu.domains(instance.url)
+            except (OSError, ValueError) as exc:
+                raise ConfigError(
+                    f"runs instance {instance.name}: cannot read its DAG domains from {instance.url}: {exc}"
+                ) from exc
+            for domain, names in tagged.items():
+                merged[domain] = (*merged.get(domain, ()), *(f"{instance.name}/{n}" for n in names))
+    return merged
 
 
 def assemble(
@@ -35,7 +53,7 @@ def assemble(
     now is drawn on the `run_safe` workflows.
     """
     board = load_board(config.board_type, config.board, base)
-    domains = config.qualified_domains()
+    domains = domains_of(config)
     qualify = qualifier(domains)
     # `[board.actor]` makes the task actor a writer the machine may name beside the adapters' workflows.
     listed = [name for names in domains.values() for name in names]
