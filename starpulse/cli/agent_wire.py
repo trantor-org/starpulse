@@ -86,7 +86,11 @@ def snapshot(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, 
 
 
 def post(base: str, path: str, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
-    """The status and JSON object the server at `base` answers a POST of `body` to `path` with; {} for any other body."""
+    """The status and JSON object the server at `base` answers a POST of `body` to `path` with; {} for any other body.
+
+    A 503 that carries `Retry-After` is the server asking the caller to send the write again, and raises `CliError`
+    `unavailable` whose document names `retry_after`, the seconds to wait.
+    """
     request = urllib.request.Request(
         f"{base}{path}",
         data=json.dumps(body).encode(),
@@ -100,7 +104,11 @@ def post(base: str, path: str, body: dict[str, Any]) -> tuple[int, dict[str, Any
         ) as resp:
             return resp.status, _json_or_empty(resp)
     except urllib.error.HTTPError as exc:  # before OSError, which it subclasses
-        return exc.code, _json_or_empty(exc)
+        reply = _json_or_empty(exc)
+        wait = exc.headers.get("Retry-After", "")
+        if exc.code == 503 and wait.isdigit():
+            raise CliError("unavailable", str(reply.get("error") or f"{base} answered 503"), retry_after=int(wait)) from exc
+        return exc.code, reply
     except (OSError, ValueError) as exc:
         raise CliError("unavailable", f"cannot reach StarPulse at {base}: {exc}") from exc
 

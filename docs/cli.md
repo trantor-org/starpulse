@@ -59,7 +59,8 @@ These verbs read the running server (`starpulse serve`) over HTTP: `--server URL
 `http://localhost:8766`. `STARPULSE_TOKEN`, when set, is sent as a bearer token on every request.
 Each writes one JSON document to stdout and nothing to stderr, except `watch`, which writes
 one JSON line per change; an error is `{"error": "...", "code": "..."}`. The exit code is 0 for success, 1 for a refused or invalid request, a refused move or a failed `doctor` check, 2 for a usage
-error, 3 when the server is unreachable (the error names the address tried) or has no board writer and 4 for something not found. A verb
+error, 3 when the server is unreachable (the error names the address tried) or has no board writer and 4 for something not found. A write the server answers `503` with `Retry-After` while it restarts or replays its feed fails with code `unavailable` and a
+`retry_after` key (seconds) in the error, for a caller to send it again. A verb
 reads the server on every call and keeps nothing, and `help --agent` is generated from the command parser, so it
 lists exactly the verbs there are.
 

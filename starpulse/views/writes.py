@@ -3,8 +3,8 @@ and answers the HTTP status and JSON body.
 
 `starpulse.runtime.server` routes a request here after its write guard (`write_refusal`: 415 for a body that is not JSON, 403 for
 another site's origin) and dispatches to these; the read responses, the stream and the assembly stay there. A write
-that names a task the feed has not placed waits up to `REPLAY_WAIT_S` for a replay in progress, then answers 503, which
-a client sends again, never 404 for a task the replay has yet to reach. Every handler parses its body through the
+that names a task the feed has not placed waits up to `REPLAY_WAIT_S` for a replay in progress, then answers 503 with
+`Retry-After`, which a client sends again, never 404 for a task the replay has yet to reach. Every handler parses its body through the
 request model it is declared with (`_write`, `contracts.api.dto.requests`): a body that is not JSON, not an object, or
 holds an unnamed key, a field of the wrong type or a blank `actor`, `session` or `harness` answers 400
 `invalid request: <field>: <reason>` for its first fault, whatever the route's own "400 for" list names. The routes:
@@ -206,6 +206,8 @@ _EDIT_LOCK = threading.Lock()
 _VERDICTS = {"pass": "PASS", "miss": "MISS"}
 #: How long a task write waits, in seconds, for a restarted instance's replay to place its task before it answers 503.
 REPLAY_WAIT_S = 5.0
+#: Seconds a client is asked, in `Retry-After`, to wait before it sends again a write answered 503.
+RETRY_AFTER_S = 3
 
 
 def _held(feed: BoardFeed, task: str) -> dict | None:
