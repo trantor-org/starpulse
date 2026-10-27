@@ -1,0 +1,20 @@
+# The build phase: a worktree taken through red, green and checked criteria to reconciled docs.
+name: Build
+states:
+  start: {initial: true}
+  worktree_ready: {role: resting}
+  red_proven: {role: resting}
+  green: {role: resting}
+  criteria_checked: {role: resting}
+  docs_reconciled: {final: true}
+events:
+  WORKTREE_READY:
+    - {from: start, to: worktree_ready}
+  RED_PROVEN:
+    - {from: [worktree_ready, green], to: red_proven}
+  GREEN:
+    - {from: red_proven, to: green}
+  AC_CHECKPOINTED:
+    - {from: green, to: criteria_checked}
+  DOCS_RECONCILED:
+    - {from: criteria_checked, to: docs_reconciled}

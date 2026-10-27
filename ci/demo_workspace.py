@@ -1,9 +1,10 @@
 """The UI preview's synthetic workspace, the Board adapter `ci/preview.toml` names as `ci.demo_workspace`.
 
 It draws what a working team's StarPulse draws, from the machine files in `ci/workspace`: an eight-lane Board whose In
-Progress opens a delivery machine (and, under that machine's open pull request, a review triage), and the lifecycle
-machines of the other skills an agent session runs. It places no task: `starpulse.cli.demo` seeds the tasks, sessions and
-runs at a real workspace's scale onto this structure, so nothing a real tracker holds is behind the public demo.
+Progress opens the in-progress machine (its build, deliver and review-fix phases, and under deliver's open pull request a
+review triage), and the lifecycle machines of the other skills an agent session runs. It places no task:
+`starpulse.cli.demo` seeds the tasks, sessions and runs at a real workspace's scale onto this structure, so nothing a
+real tracker holds is behind the public demo.
 """
 
 from __future__ import annotations
@@ -25,7 +26,13 @@ MAIN_LINE = ["new", "ready", "in_progress", "review"]
 #: a cell of its own, the unworked Ready and Waiting and the final Done and Archived stacked.
 TIERS = [["new"], ["ready", "waiting"], ["needs_attention"], ["in_progress"], ["review"], ["done", "archived"]]
 #: Each machine that opens under another's state: (parent, state, flow, when).
-SUBFLOWS = [("board", "in_progress", "delivery", ""), ("delivery", "pr_opened", "review-triage", "a PR is open")]
+SUBFLOWS = [
+    ("board", "in_progress", "in-progress", ""),
+    ("in-progress", "build", "build", "the task is being built"),
+    ("in-progress", "deliver", "deliver", "the change is being delivered"),
+    ("in-progress", "review_fix", "review_fix", "the PR is in review"),
+    ("deliver", "pr_opened", "review-triage", "a PR is open"),
+]
 
 
 def _drawn(workflows: Collection[str]) -> tuple[dict[str, dict], list[dict]]:

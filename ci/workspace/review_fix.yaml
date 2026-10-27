@@ -1,0 +1,14 @@
+# The review-fix phase: a reviewer's findings read, fixed and pushed, then the review recorded.
+name: ReviewFix
+states:
+  start: {initial: true}
+  threads_read: {role: resting}
+  fixes_pushed: {role: resting}
+  review_recorded: {final: true}
+events:
+  THREADS_READ:
+    - {from: [start, fixes_pushed], to: threads_read}
+  FIXES_PUSHED:
+    - {from: threads_read, to: fixes_pushed}
+  REVIEW_RECORDED:
+    - {from: fixes_pushed, to: review_recorded}

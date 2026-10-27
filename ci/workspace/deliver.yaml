@@ -1,0 +1,25 @@
+# The deliver phase: lint, commit, push and a draft pull request, then green CI and the pull request marked ready.
+name: Deliver
+states:
+  start: {initial: true}
+  lint_green: {role: resting}
+  committed: {role: resting}
+  pushed: {role: resting}
+  pr_opened: {role: resting}
+  ci_green: {role: resting}
+  pr_ready: {final: true}
+events:
+  LINT_GREEN:
+    - {from: [start, pr_opened], to: lint_green}
+  COMMITTED:
+    - {from: lint_green, to: committed}
+  PUSHED:
+    - {from: committed, to: pushed}
+  PR_OPENED:
+    - {from: pushed, to: pr_opened}
+  CI_GREEN:
+    - {from: pr_opened, to: ci_green}
+  CI_RED:
+    - {from: ci_green, to: pr_opened}
+  PR_READY:
+    - {from: ci_green, to: pr_ready}

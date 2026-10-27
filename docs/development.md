@@ -107,8 +107,8 @@ the preview itself gets one UI-preview comment from
 scrubbed demo, built by [`ci/ui_preview.py`](../ci/ui_preview.py) against the demo config
 [`ci/preview.toml`](../ci/preview.toml), with the demos published to the `gh-pages` branch of `trantor-org/starpulse`, which GitHub Pages serves, under `pr-<N>/`
 while the pull request is open. That config draws a fictional workspace at a working team's scale: the Board adapter
-[`ci/demo_workspace.py`](../ci/demo_workspace.py) serves an eight-lane Board whose In Progress opens a delivery machine and
-the lifecycle machines in [`ci/workspace/`](../ci/workspace), beside five DAG domains, and `starpulse.cli.demo` fills it with
+[`ci/demo_workspace.py`](../ci/demo_workspace.py) serves an eight-lane Board whose In Progress opens an in-progress machine of Build, Deliver and Review-fix phase machines, with
+the other lifecycle machines in [`ci/workspace/`](../ci/workspace), beside five DAG domains, and `starpulse.cli.demo` fills it with
 synthetic tasks, sessions, runs and pools. Each changed sub-mockup, a `design/<dir>/index.html` layered over a scrubbed page
 capture, is published beside the demos as `mockup-<dir>.html` with its scripts inlined. The preview is review context and never gates the pull request, so a failed render leaves the run green.
 A final workflow step then replaces the comment with one titled "failed" that names the head commit, links the run and carries no screenshots,
