@@ -306,6 +306,7 @@ markers = [
     "e2e: an operator's entry point end to end; deselected unless `-m e2e` asks for it",
     "nightly: a budget test (leak, latency, soak) too slow for the gate's 5 s ceiling; only the nightly suite runs it",
     "slow: a gate test excused from the 5 s ceiling (ci/slow_tests.py)",
+    "unmigrated: a test of a store `starpulse migrate` never ran; the suite's shim that migrates each store on open stays off for it",
 ]
 # A test that never returns fails after this many seconds instead of holding the job: one spinning worker grows
 # by about 6.5 MB/s through log capture.

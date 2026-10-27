@@ -20,6 +20,7 @@ from starpulse.flow_metrics.history import HistoryStore
 from starpulse.runtime import server
 
 from tests.page_stub import held
+from tests.stores import migrate_config_store
 
 _CLIENT_MODULE = "re" + "dis"
 _ENV_DROPPED = (
@@ -141,6 +142,7 @@ def activated(build: None, tmp_path_factory: pytest.TempPathFactory) -> Iterator
     named = _free_port()  # what --port says of it; the server must leave it closed
     config = tmp_path_factory.mktemp("activated") / "starpulse.toml"
     config.write_text(_NO_FLOW_METRICS + "board_worker = true\nruns_worker = true\n")
+    migrate_config_store(config)
     with closing(socket.socket()) as passed:
         passed.bind(("127.0.0.1", 0))
         passed.listen(16)

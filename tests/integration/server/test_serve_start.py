@@ -8,6 +8,7 @@ import pytest
 from starpulse.runtime import server
 
 from tests.page_stub import held
+from tests.stores import migrate_config_store
 
 # Loading the database stack is the second a start spends: the Page API child pays it, and `serve` checks the config
 # against it only once the children run.
@@ -34,6 +35,7 @@ def loaded(tmp_path_factory: pytest.TempPathFactory) -> list[str]:
     """The modules `serve` holds when its supervisor is asked to start the first child."""
     config = tmp_path_factory.mktemp("first-child") / "starpulse.toml"
     config.write_text("flow_metrics_worker = true\n")
+    migrate_config_store(config)
     with held(server._STATIC):
         run = subprocess.run(
             [sys.executable, "-c", _FIRST_CHILD, str(config)], capture_output=True, text=True, timeout=60, check=False

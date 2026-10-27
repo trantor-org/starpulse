@@ -18,7 +18,7 @@ from sqlalchemy import Connection, Engine, create_engine, inspect, text
 
 from starpulse.event_log.tables import VERSION_TABLE, events
 
-__all__ = ["alembic_config", "migrate"]
+__all__ = ["StoreNotMigrated", "alembic_config", "migrate", "require_migrated"]
 
 _MIGRATIONS = Path(__file__).parent / "migrations"
 #: The revision whose schema a store has when it holds the tables but no version table: the release before the chain
@@ -26,6 +26,10 @@ _MIGRATIONS = Path(__file__).parent / "migrations"
 _UNVERSIONED = "0019"
 #: Alembic's environment is process-global, so two threads of one process cannot run the chain at once.
 _RUNNING = threading.Lock()
+
+
+class StoreNotMigrated(RuntimeError):
+    """The store is not at the schema revision the chain declares; `starpulse migrate` brings it there."""
 
 
 def alembic_config(db: Connection) -> AlembicConfig:
@@ -92,3 +96,11 @@ def migrate(engine: Engine) -> None:
             command.stamp(config, _UNVERSIONED)
         command.upgrade(config, "head")
         db.commit()
+
+
+def require_migrated(engine: Engine) -> None:
+    """Raise `StoreNotMigrated` unless the store `engine` opens is at the chain's head; it changes nothing."""
+    with engine.connect() as db:
+        if _recorded(db) != _head():
+            url = engine.url.render_as_string(hide_password=True)
+            raise StoreNotMigrated(f"{url} is not migrated: run `starpulse migrate`")

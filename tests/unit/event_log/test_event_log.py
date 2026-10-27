@@ -11,16 +11,16 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from sqlalchemy import event, inspect, text, update
+from sqlalchemy import create_engine, event, inspect, text, update
 from sqlalchemy.exc import OperationalError
 from starpulse.event_log.event_log import (
     DEFAULT_POLL_INTERVAL,
     EventLog,
     Tail,
     _sqlite_pragmas,
-    create_tables,
     prune_forever,
 )
+from starpulse.event_log.migrate import migrate
 from starpulse.event_log.tables import events
 
 
@@ -478,9 +478,9 @@ def test_a_write_waits_thirty_seconds_for_the_lock_so_a_host_disk_stall_drops_no
 
 
 def test_an_instances_database_never_gains_the_hubs_rollups(tmp_path: Path) -> None:
-    log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
-
-    create_tables(log.engine)
+    url = f"sqlite:///{tmp_path / 'events.sqlite'}"
+    migrate(create_engine(url))
+    log = EventLog(url)
 
     names = set(inspect(log.engine).get_table_names())
     assert "starpulse_events" in names

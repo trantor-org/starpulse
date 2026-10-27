@@ -99,6 +99,7 @@ def smoke(python: str, deadline: float) -> str | None:
         port = free_port()
         env = {"PATH": os.environ["PATH"], "HOME": empty}
         log = Path(empty, "serve.log")
+        subprocess.run([python, "-m", "starpulse", "migrate"], cwd=empty, env=env, check=True)
         with log.open("w") as sink:
             serve = subprocess.Popen(
                 [python, "-m", "starpulse", "serve", "--port", str(port)], cwd=empty, env=env, stderr=sink

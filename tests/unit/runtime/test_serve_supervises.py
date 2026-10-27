@@ -13,6 +13,7 @@ from starpulse.views.bin import api_worker
 
 from tests import fake_board
 from tests.conftest import FakeForker, FakeSupervisor
+from tests.stores import migrate_config_store
 
 BOARD = '[board]\ntype = "tests.fake_board"\nlanes = ["waiting", "ready", "done"]\nwrites = true\n'
 
@@ -39,6 +40,7 @@ def _serve(
     monkeypatch.setattr(api_worker, "page_app", lambda *args, **kwargs: handled.update(kwargs, services=args[5]))
     config = tmp_path / "starpulse.toml"
     config.write_text(settings + BOARD)
+    migrate_config_store(config)
 
     try:
         server.main(["--config", str(config), "--port", "0"])

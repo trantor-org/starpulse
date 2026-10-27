@@ -9,8 +9,9 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import pytest
-from sqlalchemy import event, select, text, update
+from sqlalchemy import create_engine, event, select, text, update
 from starpulse.event_log.event_log import Entry, EventLog, Tail, prune_forever
+from starpulse.event_log.migrate import migrate
 from starpulse.event_log.tables import events, gaps
 
 import starpulse
@@ -59,6 +60,9 @@ def test_an_idle_poll_reads_the_oldest_and_newest_id_without_scanning_the_table(
 def test_a_running_tail_hands_over_what_another_process_appends(
     database_url: str, processes: ProcessPoolExecutor
 ) -> None:
+    engine = create_engine(database_url)
+    migrate(engine)  # the appending process opens the store without the test's shim: it must find it migrated
+    engine.dispose()
     seen: list[Entry] = []
     arrived = threading.Event()
 
@@ -84,6 +88,9 @@ def test_a_running_tail_hands_over_what_another_process_appends(
 def test_appends_from_several_processes_are_all_read_once_in_cursor_order(
     database_url: str, processes: ProcessPoolExecutor
 ) -> None:
+    engine = create_engine(database_url)
+    migrate(engine)
+    engine.dispose()
     appends = [processes.submit(_append, database_url, f"E{i}") for i in range(6)]
     for append in appends:
         append.result()

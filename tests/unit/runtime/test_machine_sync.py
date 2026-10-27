@@ -14,6 +14,7 @@ from starpulse.event_log.store.machine_registry import MachineRegistry
 from starpulse.machine_engine.model.machine_definition import MachineDefinitionError
 from starpulse.runtime.config import Config
 from starpulse.runtime.machine_sync import sync_definitions
+from tests.stores import migrate_config_store
 
 BOARD = {
     "name": "board",
@@ -122,6 +123,7 @@ def test_serve_admits_the_definitions_its_config_names_and_refuses_a_stranding_e
     path = tmp_path / "starpulse.toml"
     path.write_text(f'database_url = "sqlite:///{tmp_path / "events.sqlite"}"\n[board]\nmachine = "board.yaml"\n')
     _write(tmp_path, "board.yaml", BOARD)
+    migrate_config_store(path)
     args = argparse.Namespace(config=path)
     admit_definitions(args)
     registry, _ = _registry(

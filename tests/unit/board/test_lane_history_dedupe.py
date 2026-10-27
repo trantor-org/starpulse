@@ -9,6 +9,7 @@ from sqlalchemy import text
 from starpulse.board.board_feed import BoardFeed
 from starpulse.contracts import BoardTask
 from starpulse.flow_metrics.history import HistoryStore
+from starpulse.runtime.store_migrate import maintain
 
 from tests.machines import MACHINES, ROLES
 from tests.summaries import assert_matches_rebuild
@@ -80,6 +81,7 @@ def test_a_store_holding_both_writers_rows_ends_with_one_chain_in_the_lane_id(tm
     held.rebuild_summaries()
     held.engine.dispose()
 
+    maintain(url, MACHINES, None)
     repaired = HistoryStore(url, MACHINES)
 
     assert repaired.lane_path("T-1") == [
@@ -89,4 +91,5 @@ def test_a_store_holding_both_writers_rows_ends_with_one_chain_in_the_lane_id(tm
         {"at": 900.0, "from": "in_progress", "to": "review"},
     ]
     assert_matches_rebuild(repaired)
-    assert HistoryStore(url, MACHINES).lane_changes() == repaired.lane_changes()  # a second start repairs nothing
+    maintain(url, MACHINES, None)  # a second maintenance repairs nothing
+    assert HistoryStore(url, MACHINES).lane_changes() == repaired.lane_changes()

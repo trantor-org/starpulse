@@ -9,7 +9,7 @@ from typing import Any
 
 from sqlalchemy import Engine, delete, insert, or_, select, tuple_
 
-from starpulse.event_log.event_log import create_tables
+from starpulse.event_log.migrate import require_migrated
 from starpulse.event_log.tables import pull_requests
 
 #: The GraphQL names a record is served under, by column.
@@ -54,7 +54,7 @@ class PullStore:
         self._lock = threading.Lock()
         self._listeners: list[Callable[[], None]] = []
         self._save_listeners: list[Callable[[list[tuple[str, int]]], None]] = []
-        create_tables(engine)
+        require_migrated(engine)
         self._held: dict[tuple[str, int], dict[str, Any]] = {}
         since = (datetime.now(UTC) - window).strftime("%Y-%m-%dT%H:%M:%SZ")
         self._hold(

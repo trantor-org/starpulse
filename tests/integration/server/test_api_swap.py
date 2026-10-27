@@ -15,6 +15,7 @@ from starpulse.runtime.closure import SELF, Reading
 from starpulse.runtime.supervisor import Supervisor
 
 from tests.integration.server.test_standalone import _env, build  # noqa: F401 - `build` is a fixture
+from tests.stores import migrate_config_store
 from tests.supervised import running_pids
 
 
@@ -35,6 +36,7 @@ def test_the_swapped_api_child_answers_every_request_made_across_the_swap(
         monkeypatch.setenv(key, value)
     config = tmp_path / "starpulse.toml"
     config.write_text("")
+    migrate_config_store(config)
     version = [0]
 
     def read(name: str) -> Reading:

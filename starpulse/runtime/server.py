@@ -565,11 +565,18 @@ def refuse_unassemblable(
 ) -> None:
     """Exit with the reason when the page cannot be built from `config`, so `serve` fails on it as the Page API child would
     rather than supervising a child that exits on it at every start."""
-    from starpulse.runtime.assembly import assemble  # noqa: PLC0415 - the database stack loads after the config is accepted
+    from sqlalchemy import create_engine  # noqa: PLC0415 - the database stack loads after the config is accepted
+
+    from starpulse.event_log.migrate import StoreNotMigrated, require_migrated  # noqa: PLC0415
+    from starpulse.event_log.opening import database_url  # noqa: PLC0415
+    from starpulse.runtime.assembly import assemble  # noqa: PLC0415
 
     base = args.config.parent if args.config else Path.cwd()
     try:
+        require_migrated(create_engine(database_url(config.database_url, base)))
         assemble(config, base, args.hours * 3600, ready.run_safe)
+    except StoreNotMigrated as exc:
+        parser.exit(1, f"{exc}\n")
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")
 

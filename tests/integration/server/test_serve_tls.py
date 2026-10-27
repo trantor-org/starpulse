@@ -18,6 +18,7 @@ pytest.importorskip("aioquic")
 from tests.integration.server.test_http2 import _h2_request
 from tests.integration.server.test_http3 import _h3, certificate  # noqa: F401 - `certificate` is a fixture
 from tests.integration.server.test_standalone import _env, _free_port, _serve_command, build  # noqa: F401 - `build` is a fixture
+from tests.stores import migrate_config_store
 
 ALT_SVC = 'h3=":{port}"; ma=3600'
 
@@ -27,6 +28,7 @@ def _serving(tmp_path: Path, config_text: str) -> Iterator[int]:
     """A `starpulse serve` child on a free port, started from a config file holding `config_text`."""
     config = tmp_path / "starpulse.toml"
     config.write_text(config_text)
+    migrate_config_store(config)
     (tmp_path / "empty-path").mkdir()  # no docker, podman or gh resolves
     port = _free_port()
     proc = subprocess.Popen(_serve_command(port, config), env=_env(PATH=str(tmp_path / "empty-path")))
