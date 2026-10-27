@@ -97,6 +97,16 @@ def test_the_ready_set_holds_tasks_whose_dependencies_are_all_in_the_done_lane(b
     assert model.ready("Ready", "done") == ["TASK-1", "TASK-4"]
 
 
+def test_a_dependency_in_the_completed_lane_is_done_to_the_ready_set(board) -> None:
+    engine, store, model = board
+    _seed(store)
+    _add(store, "TASK-6", _new("TaskCreated", title="six", state="completed"))
+    _add(store, "TASK-7", _new("TaskCreated", title="seven", state="Ready", dependencies=["TASK-6"]))
+    _project(engine, store)
+
+    assert model.ready("Ready", "done") == ["TASK-1", "TASK-4", "TASK-7"]
+
+
 def test_deltas_since_a_cursor_come_in_change_order_with_archived_tasks_and_page(board) -> None:
     engine, store, model = board
     _seed(store)

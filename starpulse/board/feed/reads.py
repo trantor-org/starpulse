@@ -6,6 +6,7 @@ import time
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
+from starpulse.event_log.lane_events import done_lanes
 from starpulse.machine_engine.model.transitions import lane_id
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
@@ -85,7 +86,7 @@ class ReadMethods:
         """Whether the task is done: completed, or in the done lane; a task the Board does not hold is not."""
         if self._read_model is not None:
             row = self._read_model.task(task_id)
-            return row is not None and lane_id(row["state"]) == self._roles.done
+            return row is not None and lane_id(row["state"]) in done_lanes(self._roles.done)
         with self._lock:
             return self._done_at(task_id) is not None
 

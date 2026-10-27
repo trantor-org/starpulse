@@ -10,6 +10,7 @@ from typing import Any
 
 from sqlalchemy import Select, column, exists, false, func, or_, select, true
 
+from starpulse.event_log.lane_events import done_lanes
 from starpulse.event_log.readmodel.tables import criteria, tasks
 
 SUMMARY = (
@@ -55,7 +56,7 @@ def with_field(field_column: str, value: object) -> Select[Any]:
 
 
 def ready(state: str, done: str) -> Select[Any]:
-    """The ids of unarchived Tasks in `state` none of whose dependencies is outside the lane `done`.
+    """The ids of unarchived Tasks in `state` none of whose dependencies is outside `done_lanes(done)`.
 
     `state` is a stored status (`Ready`) and `done` a lane id (`done`), as `lane_id` makes one; a dependency with no
     row blocks too: it is a Task the board has not imported yet.
@@ -65,7 +66,7 @@ def ready(state: str, done: str) -> Select[Any]:
     blocked = (
         select(1)
         .select_from(dependency.outerjoin(target, target.c.id == dependency.c.value))
-        .where(or_(target.c.id.is_(None), func.lower(func.replace(target.c.state, " ", "_")) != done))
+        .where(or_(target.c.id.is_(None), func.lower(func.replace(target.c.state, " ", "_")).not_in(done_lanes(done))))
     )
     return (
         select(tasks.c.id)
