@@ -524,15 +524,12 @@ class TaskActor:
         return proof, f"Pull request ready: {proof}"
 
     def _deps_done(self, agent: dict[str, Any]) -> tuple[Any, str] | None:
-        """The dependencies when the task has some, every one is done and merged, and no Start Criteria gate it."""
+        """The dependencies once every one is done and merged, an empty tuple when the task has none, and no Start
+        Criteria gate it."""
         dependencies = tuple(agent["dependencies"])
         self._pin_held.discard(agent["id"])
         self._held.discard(agent["id"])
-        if (
-            not dependencies
-            or not all(map(self._feed.is_done, dependencies))
-            or criteria.authored(agent["description"])
-        ):
+        if not all(map(self._feed.is_done, dependencies)) or criteria.authored(agent["description"]):
             return None
         if self._gate.unapplied(agent):
             self._pin_held.add(agent["id"])
