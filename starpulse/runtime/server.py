@@ -227,7 +227,6 @@ from starpulse.views.encoding import encode, event
 from starpulse.views.page_server import BACKLOG, DRAIN_S, PageServer
 from starpulse.views.responses import _HEALTH_HOURS, _error, _hours, health_response, history_response  # noqa: F401 - the read routes stay importable from here
 from starpulse.views.services import Services
-from starpulse.views.take_over import temporal_take_over
 
 logger = logging.getLogger(__name__)
 

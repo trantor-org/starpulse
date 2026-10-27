@@ -1,28 +1,29 @@
-"""Sends the payload-free `take_over` Update to a task's Temporal workflow (`TASK-N`), flipping it to interactive."""
+"""Runs the configured take-over command for a task, flipping its unattended workflow to interactive.
+
+The command is engine-neutral: StarPulse appends the task id to the configured argv and reads the exit status, so the
+workflow engine stays in the command.
+"""
 
 from __future__ import annotations
 
-import asyncio
-from collections.abc import Callable
+import subprocess
+from collections.abc import Callable, Sequence
 
-#: The Update's name: the task workflow registers the same one.
-UPDATE = "take_over"
-
-
-def temporal_take_over(address: str) -> Callable[[str], bool]:
-    """A `take_over(task)` over the Temporal frontend at `address`: True once sent, False when the task has no workflow."""
-    return lambda task: asyncio.run(send_take_over(address, task))
+#: The exit status that says the task has no running workflow (an attended task).
+NO_WORKFLOW = 1
+#: Seconds the command may take before the take-over fails.
+TIMEOUT_S = 60
 
 
-async def send_take_over(address: str, task: str) -> bool:
-    from temporalio.client import Client  # noqa: PLC0415 - the optional `temporal` extra
-    from temporalio.service import RPCError, RPCStatusCode  # noqa: PLC0415
+def command_take_over(argv: Sequence[str]) -> Callable[[str], bool]:
+    """A `take_over(task)` that runs `argv` with the task appended: True on exit 0, False on exit 1, else raises."""
 
-    client = await Client.connect(address)
-    try:
-        await client.get_workflow_handle(task).execute_update(UPDATE)
-    except RPCError as exc:
-        if exc.status == RPCStatusCode.NOT_FOUND:
+    def take_over(task: str) -> bool:
+        proc = subprocess.run([*argv, task], capture_output=True, text=True, timeout=TIMEOUT_S, check=False)
+        if proc.returncode == 0:
+            return True
+        if proc.returncode == NO_WORKFLOW:
             return False
-        raise
-    return True
+        raise RuntimeError(f"take-over command exited {proc.returncode}: {proc.stderr.strip()[-500:]}")
+
+    return take_over

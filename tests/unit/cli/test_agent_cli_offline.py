@@ -201,7 +201,7 @@ class TestConfigCheck:
             "level": None,
             "producers": [],
             "refresh_token_env": None,
-            "temporal_address": None,
+            "take_over_command": None,
             "pull_requests": True,
             "runs_worker": False,
             "flow_metrics_worker": False,
