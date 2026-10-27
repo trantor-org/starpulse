@@ -31,6 +31,7 @@ The adapter depends on nothing of trantor's: not its hooks, its `AGENTS.md` or i
 from __future__ import annotations
 
 import argparse
+import json
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -72,6 +73,40 @@ class ClaudeCodeAdapter:
             "actor": ACTOR,
             "time": self.clock() if log.time is None else log.time,
         }
+
+
+TERMINAL_HALTS = ("Autocompact is thrashing",)
+"""How the halts that end a session for good open: Claude Code writes each as a synthetic error reply."""
+TURNS = frozenset({"user", "assistant"})
+
+
+def transcript_halt(root: Path, session: str, tail: int = 64 * 1024) -> tuple[float, str] | None:
+    """The moment and text of the terminal halt `session`'s transcript under `root` ends its turns with; None when its
+    last turn is any other, or no turn lies in the transcript's last `tail` bytes (a transcript reaches 100 MB)."""
+    path = next(root.glob(f"*/{session}.jsonl"), None)
+    if path is None:
+        return None
+    with path.open("rb") as transcript:
+        transcript.seek(max(0, path.stat().st_size - tail))
+        lines = transcript.read().decode(errors="replace").splitlines()[1:]
+    for line in reversed(lines):
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if entry.get("type") in TURNS:
+            return _halt(entry)
+    return None
+
+
+def _halt(turn: dict) -> tuple[float, str] | None:
+    message = turn.get("message") or {}
+    texts = [part.get("text", "") for part in message.get("content") or [] if isinstance(part, dict)]
+    text = "".join(texts)
+    synthetic = turn.get("isApiErrorMessage") and message.get("model") == "<synthetic>"
+    if not synthetic or not text.startswith(TERMINAL_HALTS):
+        return None
+    return datetime.fromisoformat(turn["timestamp"]).timestamp(), text
 
 
 def _moves(log: LogEvent) -> bool:
