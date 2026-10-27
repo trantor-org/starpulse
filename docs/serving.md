@@ -522,7 +522,7 @@ models in `starpulse/runtime/config_model.py`, which the loader takes its keys a
 - `ci` (`[ci]` table): Draws each task's pull-request CI as a sub-flow of these Board states.
 - `release` (`[release]` table): Releases Waiting tasks natively. With the table present, `serve` moves a Waiting task to Ready once every task it depends on is Done (see Release); with no `[release]` table it releases none. The board must edit tasks and draw `waiting` and `ready` lanes, else `serve` refuses to start.
 - `board` (table): The board adapter: `type` names a module under `starpulse` or the dotted path of one an installed package provides, and the rest of the table is that adapter's settings, shown in the Board examples above. With no `[board]` table the view draws its own Markdown board, `type = "native"`.
-- `level` (table): The flow graph drawn above the Board (`starpulse.flow_metrics.level`).
+- `level` (table): The flow graph drawn above the Board (`starpulse.flow_metrics.model.level`).
 - `scheduler` (table): The scheduler's policy; every key is optional (see Scheduler).
 - `analytics` (table): What harness telemetry is read against for missed skill loads and trace clusters (see docs/sources.md).
 - `search` (table): Ranks search by meaning as well as by words (see `search` in docs/cli.md).

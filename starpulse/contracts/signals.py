@@ -1,6 +1,6 @@
 """The record session and slice health fold: one thing a harness session did, read from its telemetry export.
 
-`starpulse.harness_telemetry.telemetry` reads the exports into these; `starpulse.flow_metrics.session_health` folds them.
+`starpulse.harness_telemetry.telemetry` reads the exports into these; `starpulse.flow_metrics.model.session_health` folds them.
 """
 
 from __future__ import annotations

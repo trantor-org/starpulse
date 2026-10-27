@@ -7,7 +7,7 @@ from pathlib import Path
 from alembic import command
 from sqlalchemy import create_engine, text
 from starpulse.event_log.migrate import alembic_config, migrate
-from starpulse.flow_metrics.history import HistoryStore
+from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 from starpulse.runtime.store_migrate import maintain
 
 from tests.machines import MACHINES

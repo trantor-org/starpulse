@@ -14,12 +14,12 @@ import urllib.request
 from pathlib import Path
 
 from sqlalchemy import create_engine
+from starpulse.event_log.migrate import migrate
+from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
+from starpulse.runtime.adapter_kit import serve, url
+from starpulse.runtime.store_migrate import maintain
 
 import starpulse
-from starpulse.event_log.migrate import migrate
-from starpulse.flow_metrics.history import HistoryStore
-from starpulse.runtime.store_migrate import maintain
-from starpulse.runtime.adapter_kit import serve, url
 
 
 def _fds() -> int:

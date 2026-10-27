@@ -15,7 +15,7 @@ from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from starpulse.flow_metrics.level import Level
+from starpulse.flow_metrics.model.level import Level
 
 __all__ = [
     "AGING_WINDOW_S",

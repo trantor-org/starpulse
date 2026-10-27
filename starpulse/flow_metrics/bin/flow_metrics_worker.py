@@ -20,8 +20,8 @@ from typing import Protocol
 
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url
+from starpulse.flow_metrics.adapters.outbound.history import HistoryStore, record_machine_events
 from starpulse.flow_metrics.bin.blocks import FlowMetricsConfig, flow_metrics_built_blocks
-from starpulse.flow_metrics.history import HistoryStore, record_machine_events
 
 logger = logging.getLogger(__name__)
 

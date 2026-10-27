@@ -3,7 +3,7 @@
 import re
 
 from starpulse.contracts.analytics import SkillLoad
-from starpulse.flow_metrics.traces import Case, Missed, cases, missed_loads
+from starpulse.flow_metrics.model.traces import Case, Missed, cases, missed_loads
 
 from tests.unit.flow_metrics.test_session_health import KEYS, START_CLAIMS, T0, sig
 

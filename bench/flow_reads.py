@@ -24,8 +24,8 @@ from pathlib import Path
 from typing import NamedTuple
 
 from sqlalchemy import event
-from starpulse.flow_metrics.history import HistoryStore
-from starpulse.flow_metrics.level import Level, Orbit, Terminal
+from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
+from starpulse.flow_metrics.model.level import Level, Orbit, Terminal
 from starpulse.machine_engine.model.transitions import board_machine
 from starpulse.runtime.server import health_response, trajectories_response
 from tests.rows import rows_fetched

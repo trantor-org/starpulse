@@ -25,7 +25,7 @@ from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.migrate import migrate
 from starpulse.event_log.opening import database_url
 from starpulse.event_log.tables import scheduler_runs
-from starpulse.flow_metrics.history import HistoryStore
+from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 from starpulse.runtime.assembly import assemble
 from starpulse.runtime.config import ConfigError, discover, load
 from starpulse.scheduler.model import ledger, toggle

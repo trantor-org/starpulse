@@ -9,7 +9,7 @@ import pytest
 from starpulse.board.bin import board_worker
 from starpulse.board.board_feed import BoardFeed
 from starpulse.contracts import BoardTask
-from starpulse.flow_metrics.history import HistoryStore
+from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 from starpulse.runtime import worker
 
 from tests import fake_board

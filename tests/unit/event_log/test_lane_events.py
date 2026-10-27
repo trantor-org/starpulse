@@ -9,7 +9,7 @@ from starpulse.board.board_feed import BoardFeed
 from starpulse.contracts import BoardTask
 from starpulse.event_log import lane_events
 from starpulse.event_log.event_log import EventLog, Tail
-from starpulse.flow_metrics.history import HistoryStore
+from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 
 from tests.machines import MACHINES, ROLES
 

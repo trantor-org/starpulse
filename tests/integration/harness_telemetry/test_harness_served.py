@@ -4,7 +4,7 @@ import json
 import urllib.request
 from pathlib import Path
 
-from starpulse.flow_metrics.history import HistoryStore
+from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 from starpulse.runtime.adapter_kit import assembled, serve, url
 from starpulse.runtime.config import load
 

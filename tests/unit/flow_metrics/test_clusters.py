@@ -5,8 +5,15 @@ import math
 import random
 
 import pytest
-from starpulse.flow_metrics.clusters import Cluster, cluster_key, dispersion, lcs_length, partition, trace_clusters
-from starpulse.flow_metrics.traces import Case
+from starpulse.flow_metrics.model.clusters import (
+    Cluster,
+    cluster_key,
+    dispersion,
+    lcs_length,
+    partition,
+    trace_clusters,
+)
+from starpulse.flow_metrics.model.traces import Case
 
 NOISE = ("git status", "gh pr view", "Read", "Edit")
 

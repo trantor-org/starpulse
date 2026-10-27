@@ -188,6 +188,13 @@ type = "layers"
 layers = ["starpulse.board.adapters", "starpulse.board.model"]
 
 [[tool.importlinter.contracts]]
+id = "flow_metrics-layers"
+name = "Flow metrics' model imports no adapter"
+type = "layers"
+containers = []
+layers = ["starpulse.flow_metrics.adapters", "starpulse.flow_metrics.model"]
+
+[[tool.importlinter.contracts]]
 id = "context-machine-engine"
 name = "Machine engine imports no other StarPulse context"
 type = "forbidden"

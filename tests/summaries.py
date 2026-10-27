@@ -1,8 +1,8 @@
 """The summary tables a test compares: what the store folded as it recorded against what `rebuild_summaries` gives."""
 
 from sqlalchemy import select
-from starpulse.flow_metrics.history import HistoryStore
-from starpulse.flow_metrics.summaries import SUMMARY_TABLES
+from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
+from starpulse.flow_metrics.adapters.outbound.summaries import SUMMARY_TABLES
 
 
 def summary_rows(store: HistoryStore) -> dict[str, list[tuple]]:

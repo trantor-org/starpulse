@@ -12,8 +12,8 @@ from starpulse.board.adapters.upstream_backlog import UpstreamBacklog
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model.seam import Board
 from starpulse.event_log.event_log import EventLog
-from starpulse.flow_metrics.level import Level, Terminal
-from starpulse.flow_metrics.level_metrics import Run, level_metrics
+from starpulse.flow_metrics.model.level import Level, Terminal
+from starpulse.flow_metrics.model.level_metrics import Run, level_metrics
 from starpulse.scheduler.model.config import Scheduler
 from starpulse.scheduler.model.inputs import review_points
 from starpulse.views.writes import claim_task, park_task, review_task

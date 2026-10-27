@@ -8,9 +8,9 @@ from collections.abc import Iterable
 from random import Random
 
 import pytest
-from starpulse.flow_metrics.level import Level, Terminal
-from starpulse.flow_metrics.level_metrics import Run, WindowPastHistory
-from starpulse.flow_metrics.trajectories import (
+from starpulse.flow_metrics.model.level import Level, Terminal
+from starpulse.flow_metrics.model.level_metrics import Run, WindowPastHistory
+from starpulse.flow_metrics.model.trajectories import (
     _loops_so_far,
     _rework,
     betweenness,

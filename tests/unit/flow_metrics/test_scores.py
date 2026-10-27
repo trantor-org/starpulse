@@ -1,7 +1,7 @@
 """The cell score: ADR weights with missing parts renormalized, per kind x size cell and profile."""
 
 import pytest
-from starpulse.flow_metrics.scores import PullFacts, merged_pulls, pull_facts, score_cells, task_score
+from starpulse.flow_metrics.model.scores import PullFacts, merged_pulls, pull_facts, score_cells, task_score
 
 LABELS = {"labels": ["kind-execute", "size-5"]}
 

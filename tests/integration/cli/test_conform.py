@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 import pytest
-from starpulse.flow_metrics.history import HistoryStore
+from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 from starpulse.runtime import conform
 
 from tests.machines import MACHINES

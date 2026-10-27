@@ -20,10 +20,10 @@ from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 
-from starpulse.runtime.config import ConfigError, discover, load
-from starpulse.flow_metrics.history import HistoryStore
+from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 from starpulse.machine_engine.model import replay
 from starpulse.runtime.assembly import assemble, history_store
+from starpulse.runtime.config import ConfigError, discover, load
 
 __all__ = ["main"]
 

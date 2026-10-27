@@ -15,7 +15,7 @@ from starpulse.event_log.migrate import alembic_config
 from starpulse.event_log.readmodel import metadata as readmodel_metadata
 from starpulse.event_log.store import metadata as store_metadata
 from starpulse.event_log.tables import VERSION_TABLE, day_rollups, metadata
-from starpulse.flow_metrics.history import HistoryStore
+from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 
 from tests.machines import MACHINES
 

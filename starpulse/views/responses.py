@@ -16,15 +16,15 @@ from starpulse.board.model.seam import (
 )
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.contracts.analytics import Analytics
-from starpulse.flow_metrics import analytics
-from starpulse.flow_metrics.cells import cell_report, transition_cost
-from starpulse.flow_metrics.clusters import Cluster, cluster_key, dispersion, trace, trace_clusters
-from starpulse.flow_metrics.flow import cost_to_go, directly_follows, fast_slow_diff, sub_stages
-from starpulse.flow_metrics.level_metrics import WindowPastHistory
-from starpulse.flow_metrics.session_health import session_health, slice_health
-from starpulse.flow_metrics.steps import session_steps
-from starpulse.flow_metrics.traces import Case, missed_loads
-from starpulse.flow_metrics.traces import cases as trace_cases
+from starpulse.flow_metrics.model import analytics
+from starpulse.flow_metrics.model.cells import cell_report, transition_cost
+from starpulse.flow_metrics.model.clusters import Cluster, cluster_key, dispersion, trace, trace_clusters
+from starpulse.flow_metrics.model.flow import cost_to_go, directly_follows, fast_slow_diff, sub_stages
+from starpulse.flow_metrics.model.level_metrics import WindowPastHistory
+from starpulse.flow_metrics.model.session_health import session_health, slice_health
+from starpulse.flow_metrics.model.steps import session_steps
+from starpulse.flow_metrics.model.traces import Case, missed_loads
+from starpulse.flow_metrics.model.traces import cases as trace_cases
 from starpulse.harness_telemetry.telemetry import Signal, TelemetryLog
 from starpulse.machine_engine.model.stays import lane_stays
 from starpulse.views.encoding import encode
@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     from starpulse.board.adapters.search import SearchIndex
     from starpulse.board.board_feed import BoardFeed
-    from starpulse.flow_metrics.history import History
+    from starpulse.flow_metrics.adapters.outbound.history import History
     from starpulse.pulls.pulls import PullStore
 
 
@@ -222,7 +222,7 @@ def health_response(
     history: History, query: dict[str, list[str]], machines: Mapping[str, dict], now: float
 ) -> tuple[bytes, int]:
     """The body and status for `/api/analytics/health`: the Board's flow health over the last `hours` as of `now`."""
-    from starpulse.flow_metrics.history import HealthHistory, SummarisedHealth  # noqa: PLC0415 - the database stack loads when a store does
+    from starpulse.flow_metrics.adapters.outbound.history import HealthHistory, SummarisedHealth  # noqa: PLC0415 - the database stack loads when a store does
 
     window = _hours(query, "hours", _HEALTH_HOURS)
     stuck = _hours(query, "stuck_hours", _STUCK_HOURS)

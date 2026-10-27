@@ -7,9 +7,9 @@ from pathlib import Path
 import pytest
 from sqlalchemy import text
 from starpulse.event_log.checkpoints import Checkpoints
-from starpulse.flow_metrics import history
-from starpulse.flow_metrics.history import HistoryStore
-from starpulse.flow_metrics.summaries import Summariser
+from starpulse.flow_metrics.adapters.outbound import history
+from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
+from starpulse.flow_metrics.adapters.outbound.summaries import Summariser
 from starpulse.runtime.store_migrate import maintain
 
 from tests.machines import MACHINES
