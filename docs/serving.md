@@ -297,6 +297,7 @@ type = "native"
 # holds = "my-holds {id}"    # prints a JSON array of reasons the task actor withholds the task's `deps_done` (see Task actor)
 # validate = "my_checks:task_write"  # may refuse a task write before it lands (see docs/adapters.md)
 # claim_ttl = 1800   # seconds a claim lives without an Event by its session or a machine event of its run (harness telemetry keyed by the session id); past it StarPulse appends `Released` (naming the last renewal) and the Task keeps its State with no Assignee, free for any session to claim; the sweep reads the board feed, and a release is refused when the task file has since left that State or another session holds it
+# transcripts = "~/.claude/projects"  # where Claude Code writes each session's transcript; a claim whose session's last turn there is a terminal halt (a synthetic error reply opening `Autocompact is thrashing`), with no renewal after it, is released at once rather than at `claim_ttl`, its comment naming the halt; only the transcript's last 64 KiB is read, and a missing transcript keeps the TTL
 # types = ["spike", "bug"]  # the names a task's `type` may take; a write setting any other is refused with this list in its reason, so with no list any non-empty type is accepted and a board names none of its own
 # task_file_name = "title"   # the name a created task's file is written under: "title" is `task-1 - Draw-the-board.md`, "slug" is `task-1-draw-the-board.md`, lowercase, its slug capped at 19 characters
 

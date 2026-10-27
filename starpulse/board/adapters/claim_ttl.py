@@ -1,7 +1,10 @@
 """A stale Assignee is released (D6): a claim no Event by its session renewed within the claim TTL ends.
 
 StarPulse appends `Released` and a comment naming the last renewal. The Task keeps its State, so a Task still in
-progress is never offered to another agent as Ready; it only has no Assignee, and any session may claim it."""
+progress is never offered to another agent as Ready; it only has no Assignee, and any session may claim it.
+
+A session whose harness wrote a terminal halt as its last turn, with nothing renewing the claim after it, has stopped
+for good: its claim is released at once, before the TTL, and the comment names the halt."""
 
 from __future__ import annotations
 
@@ -11,6 +14,7 @@ import time
 from collections.abc import Callable, Iterable, Mapping
 from datetime import UTC, datetime
 from functools import partial
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from starpulse.board.model.seam import Board
@@ -21,10 +25,12 @@ if TYPE_CHECKING:
     from starpulse.board.board_feed import BoardFeed
     from starpulse.event_log.event_log import EventLog
 
-__all__ = ["DEFAULT_TTL", "ACTOR", "last_renewal", "start", "sweep"]
+__all__ = ["DEFAULT_TTL", "ACTOR", "last_renewal", "start", "sweep", "transcript_halt"]
 
 DEFAULT_TTL = 30 * 60
 """Seconds a claim lives without an Event by its session: `[board] claim_ttl`."""
+DEFAULT_TRANSCRIPTS = "~/.claude/projects"
+"""Where Claude Code writes each session's transcript, read for a terminal halt: `[board] transcripts`."""
 ACTOR = "starpulse"
 WRITER = "claim-ttl"
 
@@ -35,9 +41,48 @@ def last_renewal(events: Iterable[StoredEvent], session: str) -> float | None:
     return max(carried, default=None)
 
 
+TERMINAL_HALTS = ("Autocompact is thrashing",)
+"""How the halts that end a session for good open: Claude Code writes each as a synthetic error reply."""
+TURNS = frozenset({"user", "assistant"})
+
+
+def transcript_halt(root: Path, session: str, tail: int = 64 * 1024) -> tuple[float, str] | None:
+    """The moment and text of the terminal halt `session`'s transcript under `root` ends its turns with; None when its
+    last turn is any other, or no turn lies in the transcript's last `tail` bytes (a transcript reaches 100 MB)."""
+    path = next(root.glob(f"*/{session}.jsonl"), None)
+    if path is None:
+        return None
+    with path.open("rb") as transcript:
+        transcript.seek(max(0, path.stat().st_size - tail))
+        lines = transcript.read().decode(errors="replace").splitlines()[1:]
+    for line in reversed(lines):
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if entry.get("type") in TURNS:
+            return _halt(entry)
+    return None
+
+
+def _halt(turn: dict) -> tuple[float, str] | None:
+    message = turn.get("message") or {}
+    texts = [part.get("text", "") for part in message.get("content") or [] if isinstance(part, dict)]
+    text = "".join(texts)
+    synthetic = turn.get("isApiErrorMessage") and message.get("model") == "<synthetic>"
+    if not synthetic or not text.startswith(TERMINAL_HALTS):
+        return None
+    return datetime.fromisoformat(turn["timestamp"]).timestamp(), text
+
+
 def _note(session: str, renewed: float, ttl: float) -> str:
     stamp = datetime.fromtimestamp(renewed, UTC).strftime("%Y-%m-%d %H:%M UTC")
     return f"Released: no Event from session {session} within the {ttl / 60:g}-minute claim TTL; last renewal {stamp}."
+
+
+def _halt_note(session: str, at: float, text: str) -> str:
+    stamp = datetime.fromtimestamp(at, UTC).strftime("%Y-%m-%d %H:%M UTC")
+    return f"Released: session {session}'s transcript ends in a terminal halt at {stamp}: {text}"
 
 
 def sweep(
@@ -49,12 +94,15 @@ def sweep(
     now: float | None = None,
     activity: Callable[[str, str], float | None] = lambda _session, _task: None,
     expiries: dict[str, float] | None = None,
+    halted: Callable[[str], tuple[float, str] | None] = lambda _session: None,
 ) -> list[str]:
     """Releases each working Task in `rows` whose Assignee renewed nothing for `ttl`; the ids released.
 
     `activity` is when a session last acted outside the Task's stream, such as a harness event of its run or its Task:
     a session working in its worktree renews its claim that way without a Task Event. `expiries`, when given, is filled with each
-    held working Task's claim expiry, its renewal plus `ttl`; a Task this pass releases has none.
+    held working Task's claim expiry, its renewal plus `ttl`; a Task this pass releases has none. `halted` is the moment
+    and text of the terminal halt a session's harness wrote as its last turn, None when it wrote none; a claim with no
+    renewal after its session's halt is released before `ttl`.
     """
     now = time.time() if now is None else now
     expiries = {} if expiries is None else expiries
@@ -71,12 +119,15 @@ def sweep(
         if renewed is None:
             continue
         expiries[row["id"]] = renewed + ttl
-        if now - renewed < ttl:
+        stale = now - renewed >= ttl
+        halt = None if stale else halted(session)
+        if not stale and (halt is None or halt[0] < renewed):
             continue
+        note = _note(session, renewed, ttl) if halt is None else _halt_note(session, *halt)
         if board.release(row["id"], row["state"], session=session, actor=ACTOR).ok:
             events = [
                 NewEvent("Released", {"session": session, "last_renewal": renewed, "ttl": ttl}, ACTOR, WRITER),
-                NewEvent("CommentAdded", {"text": _note(session, renewed, ttl)}, ACTOR, WRITER),
+                NewEvent("CommentAdded", {"text": note}, ACTOR, WRITER),
             ]
             store.append("task", row["id"], store.head("task", row["id"]), events, at=now)
             released.append(row["id"])
@@ -99,11 +150,12 @@ def start(
     ttl = float(settings.get("claim_ttl", DEFAULT_TTL))
     store = EventStore(log.engine)
     activity = partial(last_run_event, log.engine)
+    halted = partial(transcript_halt, Path(settings.get("transcripts", DEFAULT_TRANSCRIPTS)).expanduser())
 
     def run(stop: threading.Event) -> None:
         while not stop.wait(min(60.0, ttl / 6)):
             expiries: dict[str, float] = {}
-            sweep(board, store, feed.open_tasks(), ttl=ttl, activity=activity, expiries=expiries)
+            sweep(board, store, feed.open_tasks(), ttl=ttl, activity=activity, expiries=expiries, halted=halted)
             persist(expiries)
             feed.serve_expiries(expiries)
 

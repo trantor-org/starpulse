@@ -1,15 +1,17 @@
 """A claim not renewed within the claim TTL is released: StarPulse appends Released, the Task keeps its State and may be
 claimed by another session, and the release names the last renewal (D6)."""
 
+import json
 import threading
 import time
+from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 from starpulse.board.adapters import claim_ttl
-from starpulse.board.adapters.claim_ttl import sweep
+from starpulse.board.adapters.claim_ttl import sweep, transcript_halt
 from starpulse.board.adapters.upstream_backlog import UpstreamBacklog
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model.seam import Board
@@ -281,3 +283,59 @@ def test_a_harness_event_of_the_held_task_with_no_run_renews_the_claim(served) -
 
     assert sweep(built, store, _rows(built), ttl=1800, now=claimed + 3400, activity=activity) == []
     assert sweep(built, store, _rows(built), ttl=1800, now=claimed + 3501, activity=activity) == ["task-5"]
+
+
+HALT = "Autocompact is thrashing: the context refilled to the limit within 3 turns of the previous compact."
+
+
+def _transcript(root: Path, *entries: dict) -> None:
+    """Writes session-1's Claude Code transcript under a project directory of `root`, one JSON line per entry."""
+    project = root / "-home-agent-repo"
+    project.mkdir(parents=True, exist_ok=True)
+    (project / "session-1.jsonl").write_text("".join(json.dumps(entry) + "\n" for entry in entries))
+
+
+def _turn(kind: str, at: float, text: str, *, halt: bool = False) -> dict:
+    stamp = datetime.fromtimestamp(at, UTC).isoformat().replace("+00:00", "Z")
+    message = {"role": kind, "model": "<synthetic>" if halt else "claude-opus-5-5", "content": [{"type": "text", "text": text}]}
+    return {"type": kind, "timestamp": stamp, "isApiErrorMessage": halt, "message": message}
+
+
+def test_a_claim_whose_transcript_ends_in_a_terminal_halt_releases_before_the_ttl(served, tmp_path: Path) -> None:
+    built, _, store, _ = served
+    claimed = _claim(built, store)
+    _transcript(tmp_path / "projects", _turn("user", claimed + 5, "go"), _turn("assistant", claimed + 10, HALT, halt=True), {"type": "cost-state"})
+    halted = partial(transcript_halt, tmp_path / "projects")
+
+    assert sweep(built, store, _rows(built), ttl=1800, now=claimed + 60, halted=halted) == ["task-5"]
+    assert "terminal halt" in store.read("task", "task-5")[-1].payload["text"]
+    assert "Autocompact is thrashing" in store.read("task", "task-5")[-1].payload["text"]
+
+
+def test_a_claim_whose_transcript_ends_in_an_ordinary_turn_is_kept(served, tmp_path: Path) -> None:
+    built, _, store, _ = served
+    claimed = _claim(built, store)
+    _transcript(tmp_path / "projects", _turn("user", claimed + 5, "go"), _turn("assistant", claimed + 10, "Done."))
+    halted = partial(transcript_halt, tmp_path / "projects")
+
+    assert sweep(built, store, _rows(built), ttl=1800, now=claimed + 60, halted=halted) == []
+
+
+def test_a_halted_session_with_activity_after_its_halt_keeps_its_claim(served, tmp_path: Path) -> None:
+    built, _, store, _ = served
+    claimed = _claim(built, store)
+    _transcript(tmp_path / "projects", _turn("assistant", claimed + 10, HALT, halt=True))
+    _renew(store, claimed + 30)
+    halted = partial(transcript_halt, tmp_path / "projects")
+
+    assert sweep(built, store, _rows(built), ttl=1800, now=claimed + 60, halted=halted) == []
+
+
+def test_a_halt_before_the_bounded_transcript_tail_is_not_read(served, tmp_path: Path) -> None:
+    built, _, store, _ = served
+    claimed = _claim(built, store)
+    padding = [{"type": "cost-state", "pad": "x" * 1000}] * 100
+    _transcript(tmp_path / "projects", _turn("assistant", claimed + 10, HALT, halt=True), *padding)
+    halted = partial(transcript_halt, tmp_path / "projects", tail=4096)
+
+    assert sweep(built, store, _rows(built), ttl=1800, now=claimed + 60, halted=halted) == []
