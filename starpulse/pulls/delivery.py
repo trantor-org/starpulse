@@ -71,7 +71,7 @@ class Publisher:
             logger.warning("pulls: the projection was not kept", exc_info=True)
             return
         self._last = body
-        self._log._append(PROJECTED_STREAM, {})
+        self._log.publish(PROJECTED_STREAM, {})
 
 
 class Projected:
@@ -106,7 +106,7 @@ class Projected:
 
 def announce_saves(store: PullStore, log: EventLog) -> None:
     """Announce the keys of each save `store` makes on `SAVED_STREAM`, for the serving store to refresh."""
-    store.subscribe_saves(lambda keys: log._append(SAVED_STREAM, {"keys": json.dumps(keys)}))
+    store.subscribe_saves(lambda keys: log.publish(SAVED_STREAM, {"keys": json.dumps(keys)}))
 
 
 def follow_saves(store: PullStore, log: EventLog, stop: threading.Event, after: int) -> threading.Thread:
@@ -125,7 +125,7 @@ def request_refresh(log: EventLog, tracked: Callable[[], list[str]]) -> Callable
     def request(repo: str, number: int) -> bool:
         if repo not in tracked():
             return False
-        log._append(REFRESH_STREAM, {"repo": repo, "number": number})
+        log.publish(REFRESH_STREAM, {"repo": repo, "number": number})
         return True
 
     return request

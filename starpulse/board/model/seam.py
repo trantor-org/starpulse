@@ -13,7 +13,7 @@ import importlib
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple, Protocol
 
 from starpulse.board.model.adapter_types import DEFAULT_TYPE, module_name
 from starpulse.machine_engine.model.state_roles import StateRoles
@@ -91,21 +91,43 @@ class Written(NamedTuple):
     """When the write put the task there, in epoch seconds; set with `lane`."""
 
 
-#: A board writer: set a task's status for `actor` and say what it did. A move that names the mover's `session` passes it
-#: as a fourth argument; one that names none passes three, so a writer that predates sessions keeps working. A claim
-#: records the session as the task's assignee.
-MoveWriter = Callable[..., Written]
-#: Set a task's assignee for `actor` (a keyword, omitted when the write names none), and say what it did. The same holds
-#: for `TaskEditor`, `TaskArchiver` and `TaskCreator`.
-AssigneeWriter = Callable[..., Written]
-#: Ends a task's claim: move it to a State and drop its session, `(task, status, /, actor=)`.
-TaskReleaser = Callable[..., Written]
+class MoveWriter(Protocol):
+    """A board writer: set a task's status for `actor` and say what it did. A move that names the mover's `session`
+    passes it as a fourth argument; one that names none passes three, so a writer that predates sessions keeps working.
+    A claim records the session as the task's assignee."""
+
+    def __call__(self, task: str, status: str, actor: str, session: str = "") -> Written: ...
+
+
+class AssigneeWriter(Protocol):
+    """Set a task's assignee to `profile` for `actor` (a keyword, omitted when the write names none), and say what it
+    did. The same holds for `TaskEditor`, `TaskArchiver` and `TaskCreator`."""
+
+    def __call__(self, task: str, profile: str, /, actor: str = ...) -> Written: ...
+
+
+class TaskReleaser(Protocol):
+    """Ends a task's claim: move it to a State and drop its `session`."""
+
+    def __call__(self, task: str, status: str, /, session: str, actor: str = ...) -> Written: ...
+
+
 #: One task's full record keyed by its editable fields, or None when the board has no such task.
 TaskReader = Callable[[str], Mapping[str, Any] | None]
-#: Apply every change to a task in one write, `(task, changes, comment | [comment, ...], /, actor=)`.
-TaskEditor = Callable[..., Written]
-#: Archive a task with the reason when there is one, `(task, reason, /, actor=)`.
-TaskArchiver = Callable[..., Written]
+class TaskEditor(Protocol):
+    """Apply every change to a task in one write, with a comment or a list of them."""
+
+    def __call__(
+        self, task: str, changes: Mapping[str, Any], comment: str | Sequence[str], /, actor: str = ...
+    ) -> Written: ...
+
+
+class TaskArchiver(Protocol):
+    """Archive a task with the reason when there is one."""
+
+    def __call__(self, task: str, reason: str, /, actor: str = ...) -> Written: ...
+
+
 #: Return an archived task's file to the board's tasks, unchanged. A task with no archived file, or whose number is
 #: already open or completed, is refused.
 TaskRestorer = Callable[[str], Written]
@@ -122,11 +144,15 @@ RetiredImporter = Callable[[str, str], Written]
 #: Move a Done task out of the lanes into the board's completed tasks; one that is not Done, is already completed or has
 #: no file is refused. A completed task is still read and edited.
 TaskCompleter = Callable[[str], Written]
-#: Create a task with this title and details in the starting lane, `(title, details, /, actor=)`. `details` holds only
-#: the fields the page filled (`description`, `priority`, `impact`, `urgency`, `labels`, `milestone`, `assignee`, `dependencies`,
-#: `acceptanceCriteria`); a caller in the same process may pass any other field `TaskEditor` sets. A successful
-#: `Written.output` is the new task's id.
-TaskCreator = Callable[..., Written]
+class TaskCreator(Protocol):
+    """Create a task with this title and details in the starting lane. `details` holds only the fields the page filled
+    (`description`, `priority`, `impact`, `urgency`, `labels`, `milestone`, `assignee`, `dependencies`,
+    `acceptanceCriteria`); a caller in the same process may pass any other field `TaskEditor` sets. A successful
+    `Written.output` is the new task's id."""
+
+    def __call__(self, title: str, details: Mapping[str, Any], /, actor: str = ...) -> Written: ...
+
+
 #: Every open milestone as `{id, title, outcome, specs, adrs, retro, description}`, oldest id first.
 MilestoneLister = Callable[[], list[Mapping[str, Any]]]
 #: One milestone's record, or None when the board has no open milestone with that id.
@@ -149,10 +175,12 @@ DocCreator = Callable[[str, Mapping[str, Any]], Written]
 DocEditor = Callable[[str, Mapping[str, Any]], Written]
 #: Archive a doc.
 DocArchiver = Callable[[str], Written]
-#: Return an archived doc's file, unchanged, to the board's docs under `folder` (a path of plain names under `docs/`,
-#: `docs/` itself when blank), `(doc, folder="", /)`. An archive keeps no folder, so the caller names where the doc goes;
-#: a doc with no archived file, one whose id is already open, or whose destination file exists is refused.
-DocRestorer = Callable[..., Written]
+class DocRestorer(Protocol):
+    """Return an archived doc's file, unchanged, to the board's docs under `folder` (a path of plain names under
+    `docs/`, `docs/` itself when blank). An archive keeps no folder, so the caller names where the doc goes; a doc with
+    no archived file, one whose id is already open, or whose destination file exists is refused."""
+
+    def __call__(self, doc: str, folder: str = "", /) -> Written: ...
 
 
 def _no_cues(qualify: Qualify) -> list[dict]:

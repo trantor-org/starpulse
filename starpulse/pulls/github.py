@@ -171,7 +171,7 @@ def poll(transport: Transport, repo: str, adapter: GitHubAdapter, log: EventLog,
             continue
         for event in adapter.events(repo, read(transport, repo, pull["number"])):
             fields = {k: v for k, v in event.items() if k != "event_id" and v is not None}
-            log._append(machine_events.STREAM, fields, event_id=event["event_id"])
+            log.publish(machine_events.STREAM, fields, event_id=event["event_id"])
         seen[pull["number"]] = pull["updated_at"]
 
 

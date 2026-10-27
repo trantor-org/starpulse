@@ -69,7 +69,7 @@ def reset_over_limit(
         if tokens is None:
             continue
         fields = {"session": name, "task": task, "tokens": tokens, "window": window}
-        log._append(CONTEXT_STREAM, fields, event_id=f"{name}:{int(now // 60)}")
+        log.publish(CONTEXT_STREAM, fields, event_id=f"{name}:{int(now // 60)}")
         key = f"cursor-context:{name}"
         if tokens < limit:
             log.delete_setting(key)

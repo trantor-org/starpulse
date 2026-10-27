@@ -30,7 +30,7 @@ def change(
 
 def append(log: EventLog, fields: dict[str, Any]) -> int | None:
     """Append a rating entry to `log`, fail-open: the cursor, or None when it was not appended."""
-    return log._append(STREAM, fields)
+    return log.publish(STREAM, fields)
 
 
 def _rating(entry: Entry, changes: int) -> dict[str, Any]:

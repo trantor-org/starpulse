@@ -966,7 +966,7 @@ class _Claims:
         if self.log is not None:
             from starpulse.board.claim_refusals import CLAIMS_STREAM  # noqa: PLC0415 - loading a board loads no feed
 
-            self.log._append(CLAIMS_STREAM, {"task": task, "actor": actor, "reason": reason, "time": time.time()})
+            self.log.publish(CLAIMS_STREAM, {"task": task, "actor": actor, "reason": reason, "time": time.time()})
 
 
 def _moved(written: Written, lane: str) -> Written:
