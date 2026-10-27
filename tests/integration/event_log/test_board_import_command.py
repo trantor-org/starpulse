@@ -28,7 +28,7 @@ def _project(tmp_path: Path) -> Path:
         [lane_import.Change("l1", "TASK-1", "To Do", 10.0), lane_import.Change("l2", "TASK-1", "Done", 20.0)]
     )
     run = {"workflow": "ci", "run_id": "7", "event": "StepStarted", "step": "lint", "time": 5.0}
-    EventLog(f"sqlite:///{tmp_path / 'store.sqlite'}")._append("runs:events", run, event_id="r1")
+    EventLog(f"sqlite:///{tmp_path / 'store.sqlite'}").publish("runs:events", run, event_id="r1")
     return config
 
 

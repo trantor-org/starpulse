@@ -77,7 +77,7 @@ def test_a_correction_appends_and_the_earlier_event_stays(
 
 
 def test_an_adapter_entry_lands_in_the_same_stream(log: EventLog, streams: RunStreams) -> None:
-    log._append(run_events.STREAM, run_events.entry("StepStarted", "build", "r1", "running", now=1.0, step="lint"))
+    log.publish(run_events.STREAM, run_events.entry("StepStarted", "build", "r1", "running", now=1.0, step="lint"))
 
     _drain(log, streams)
 

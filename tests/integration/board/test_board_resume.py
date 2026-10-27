@@ -45,7 +45,7 @@ def run() -> Iterator[Callable[[BoardFeed, EventLog], list[str]]]:
 
 
 def _place(log: EventLog, task: str, lane: str) -> int:
-    cursor = log._append(STREAM, {"id": task, "lane": lane})
+    cursor = log.publish(STREAM, {"id": task, "lane": lane})
     assert cursor is not None
     return cursor
 

@@ -42,7 +42,7 @@ def _eventually(ready: Callable[[], object]) -> bool:
 
 
 def _push(log: EventLog, workflow: str) -> None:
-    log._append(run_events.STREAM, run_events.entry("StepStarted", workflow, "r1", "running", now=START))
+    log.publish(run_events.STREAM, run_events.entry("StepStarted", workflow, "r1", "running", now=START))
 
 
 def _pushed(log: EventLog) -> list[str]:

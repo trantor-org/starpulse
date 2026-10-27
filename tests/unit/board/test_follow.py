@@ -49,14 +49,14 @@ def stop():
 def test_follow_replays_the_retained_stream_in_order_then_reads_what_is_appended(
     log: EventLog, stop: threading.Event
 ) -> None:
-    log._append(STREAM, {"n": "1"})
-    log._append("machine:events", {"n": "other stream"})
-    log._append(STREAM, {"n": "2"})
+    log.publish(STREAM, {"n": "1"})
+    log.publish("machine:events", {"n": "other stream"})
+    log.publish(STREAM, {"n": "2"})
     feed, seen = _Feed(), []
 
     follow(feed, log, STREAM, lambda entry_id, fields: seen.append((entry_id, fields["n"])), stop=stop, interval=0.01)
     _until(lambda: len(seen) == 2)
-    log._append(STREAM, {"n": "3"})
+    log.publish(STREAM, {"n": "3"})
     _until(lambda: len(seen) == 3)
 
     assert seen == [("1", "1"), ("3", "2"), ("4", "3")]
@@ -65,9 +65,9 @@ def test_follow_replays_the_retained_stream_in_order_then_reads_what_is_appended
 def test_follow_says_the_stream_is_not_reached_then_expects_the_last_entry_of_its_own_stream(
     log: EventLog, stop: threading.Event
 ) -> None:
-    log._append(STREAM, {"n": "1"})
-    last = log._append(STREAM, {"n": "2"})
-    log._append("machine:events", {"n": "after it, on another stream"})
+    log.publish(STREAM, {"n": "1"})
+    last = log.publish(STREAM, {"n": "2"})
+    log.publish("machine:events", {"n": "after it, on another stream"})
     feed = _Feed()
 
     follow(feed, log, STREAM, lambda *_: None, stop=stop, interval=0.01)
@@ -90,7 +90,7 @@ def test_follow_expects_the_empty_position_when_the_log_holds_no_entry_of_it(
 def test_follow_keeps_trying_until_the_database_is_reachable(
     log: EventLog, stop: threading.Event, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    log._append(STREAM, {"n": "1"})
+    log.publish(STREAM, {"n": "1"})
     reachable, last, attempts = threading.Event(), log.last, []
 
     def gated(stream: str) -> int | None:

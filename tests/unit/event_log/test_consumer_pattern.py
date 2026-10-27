@@ -34,8 +34,8 @@ def log(tmp_path: Path) -> EventLog:
 def _write_one_of_each(log: EventLog) -> None:
     task = BoardTask(id="T-1", title="t", team="core", lane="in_progress")
     events.publish("in-progress", "WORKTREE_READY", actor="agent", task="T-1", now=5.0, log=log)
-    log._append(lane_events.STREAM, lane_events.entry(task, 5.0), event_id="T-1@in_progress@5.0")
-    log._append(run_events.STREAM, run_events.entry("StepStarted", "nightly", "r1", "running", now=6.0))
+    log.publish(lane_events.STREAM, lane_events.entry(task, 5.0), event_id="T-1@in_progress@5.0")
+    log.publish(run_events.STREAM, run_events.entry("StepStarted", "nightly", "r1", "running", now=6.0))
 
 
 def _rows(sink: Any) -> list[tuple[str, dict]]:
@@ -65,7 +65,7 @@ def test_the_example_resumes_after_the_cursor_it_kept_in_the_sink_and_never_copi
     assert example["drain"](log, first) == 3
     first.close()
 
-    log._append(run_events.STREAM, run_events.entry("StepFinished", "nightly", "r1", "succeeded", now=7.0))
+    log.publish(run_events.STREAM, run_events.entry("StepFinished", "nightly", "r1", "succeeded", now=7.0))
     second = example["open_sink"](path)  # a new process: only the sink's own cursor says where to resume
 
     assert example["drain"](log, second) == 1

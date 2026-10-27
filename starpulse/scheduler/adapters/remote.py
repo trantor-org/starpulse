@@ -50,7 +50,7 @@ def publisher(log: EventLog, feed: BoardFeed) -> Callable[[str, dict[str, Any]],
         except Exception:
             logger.warning("scheduler: the status was not kept", exc_info=True)
             return
-        log._append(STATUS_STREAM, {})
+        log.publish(STATUS_STREAM, {})
 
     return publish
 
@@ -117,4 +117,4 @@ class Remote:
     status = served_status
 
     def _wake(self) -> None:
-        self._log._append(WAKE_STREAM, {})
+        self._log.publish(WAKE_STREAM, {})

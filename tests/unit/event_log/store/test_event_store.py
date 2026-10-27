@@ -108,7 +108,7 @@ def test_an_appended_event_waits_in_the_outbox_until_marked_sent(engine: Engine)
 def test_pruning_the_event_log_leaves_the_store_untouched(log: EventLog, engine: Engine, tmp_path: Path) -> None:
     store = EventStore(engine)
     store.append("task", "TASK-1", 0, [_event()], at=1.0)
-    log._append("lane", {"x": 1})
+    log.publish("lane", {"x": 1})
     before = _count(engine, "starpulse_stream_events")
 
     pruned = log.prune(0, now=time.time() + 10, archive_dir=tmp_path / "archive")

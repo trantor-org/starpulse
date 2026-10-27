@@ -161,15 +161,27 @@ def test_no_seam_function_takes_more_than_a_dozen_parameters() -> None:
     assert wide == []
 
 
-def test_the_seam_declares_no_one_method_protocols() -> None:
+def test_the_seam_declares_a_protocol_only_for_a_writer_with_an_actor() -> None:
+    """A writer whose `Callable[..., Written]` hid its `actor=` keyword is a Protocol; the rest stay Callable aliases."""
     source = (Path(__file__).parents[3] / "starpulse" / "board" / "model" / "seam.py").read_text()
-    protocols = [
-        node.name
+    protocols = {
+        node.name: [call.name for call in node.body if isinstance(call, ast.FunctionDef)]
         for node in ast.walk(ast.parse(source))
         if isinstance(node, ast.ClassDef) and any(ast.unparse(base).endswith("Protocol") for base in node.bases)
-    ]
+    }
 
-    assert protocols == []
+    assert protocols == {
+        name: ["__call__"]
+        for name in (
+            "MoveWriter",
+            "AssigneeWriter",
+            "TaskReleaser",
+            "TaskEditor",
+            "TaskArchiver",
+            "TaskCreator",
+            "DocRestorer",
+        )
+    }
 
 
 def test_written_carries_the_lane_and_the_moment_it_was_written() -> None:
