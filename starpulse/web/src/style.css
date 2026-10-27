@@ -862,46 +862,74 @@ html.still *, html.still *::before, html.still *::after { animation: none !impor
 #tkm .tm-copy .g { font-size: calc(12px * var(--fs)); }
 #tkm .tk-body .out { margin-top: 4px; font: calc(11px * var(--fs)) "JetBrains Mono", ui-monospace, monospace; color: var(--ok); overflow-wrap: anywhere; }
 
-/* The DAGs view: every DAG of the catalog by domain, beside the Kanban and in its frame, filters, menus, folds and ▶ strip
-   (the shared rules above). Only the catalog's rows, the step strip and the status orbs are its own, drawn from the palette tokens. */
+/* The DAGs view: the catalog in two panes, Processing and Idle, beside the Kanban and in its frame, filters, menus and ▶ strip
+   (the shared rules above). Only the stage's rows, the step strip and the status orbs are its own, drawn from the palette tokens. */
 #nav .dg-glyph { border: 0; border-radius: 0; fill: none; stroke: currentColor; stroke-width: 1.2; }
 #nav .dg-glyph circle { fill: currentColor; stroke: none; }
-.orb { display: inline-block; flex: none; width: calc(11px * var(--fs)); height: calc(11px * var(--fs)); vertical-align: middle; }
+.orb { display: inline-block; flex: none; width: calc(20px * var(--fs)); height: calc(20px * var(--fs)); vertical-align: middle; }
 .orb svg { display: block; width: 100%; height: 100%; overflow: visible; }
-/* a dependency streams toward the step that waits, as the Star Map's DAG links do, in the row the pointer, the keyboard or a
+.orb .spin { transform-origin: 0 0; animation: orb-spin 1.6s linear infinite; }
+@keyframes orb-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .orb .spin { animation: none; } }
+/* a dependency streams toward the step that waits, as the Star Map's DAG links do, in a Processing row, the row the keyboard or a
    Recent line rests on and in the open DAG's chart only: stroke-dashoffset repaints on the main thread every frame, and a
    whole catalog streaming kept an idle page's main thread busy 40% of the time */
-@media (prefers-reduced-motion: no-preference) { .kept:not([inert]) #dg :is(.trow:is(:hover, .spot, :focus-visible), .dgm) svg.dstrip path.link { animation: dag-stream .42s linear infinite; } }
+@media (prefers-reduced-motion: no-preference) { .kept:not([inert]) #dg :is(.drow:is([data-pane=processing], .spot, :focus-visible), .dgm) svg.dstrip path.link { animation: dag-stream .42s linear infinite; } }
 @keyframes dag-stream { to { stroke-dashoffset: -6; } }
-/* A process subfold: the domain fold's header one step in and one step quieter. A domain header sticks under the column header, a process header under its domain's;
-   the catalog sets --headh and --subtop from the heights the text scale gives them. */
-#dg .bucket .bucket { margin-left: 12px; }
-#dg .bucket > .bh { top: var(--headh, 20px); }
-#dg .bucket.process { margin-left: calc(14px * var(--fs)); gap: 7px; }
-#dg .bucket.process + .bucket.process { margin-top: 2px; }
-#dg .bucket.process > .bh { top: var(--subtop, 17px); z-index: 1; margin: 0 -8px 0 -10px; padding: 4px 10px 4px; color: var(--slate-4); background: var(--sticky); border-bottom: 1px dashed color-mix(in srgb, var(--slate) 10%, transparent); }
-#dg .bucket.process > .bh:hover { color: var(--ink-2); }
-#dg .bucket.process > .bh .census { margin-left: 6px; }
 #dg .fw #dgq { width: calc(270px * var(--fs)); max-width: 100%; }
-.census { display: inline-flex; align-items: center; gap: 10px; margin-left: 8px; font-size: calc(11px * var(--fs)); font-weight: 400; letter-spacing: 0; color: var(--muted); font-variant-numeric: tabular-nums; }
-.census > span { display: inline-flex; align-items: center; gap: 5px; }
-#dg #catalog { flex: 1; min-height: 0; padding-bottom: 16px; --grid: 18px minmax(calc(110px * var(--fs)), 1fr) minmax(150px, 1.5fr) minmax(calc(120px * var(--fs)), 1fr) minmax(calc(90px * var(--fs)), .7fr) minmax(calc(100px * var(--fs)), .8fr) 0; }
-#dg .thead, #dg .trow { display: grid; grid-template-columns: var(--grid); align-items: center; column-gap: 12px; }
-#dg .thead { position: sticky; top: 0; z-index: 3; padding: 0 12px 6px; font-size: calc(10px * var(--fs)); letter-spacing: .2em; text-transform: uppercase; color: var(--muted); background: var(--bg0); }
-#dg .trow { position: relative; box-sizing: border-box; min-height: 40px; margin-top: 7px; padding: 0 12px; border-radius: 7px; background: color-mix(in srgb, var(--surface) 92%, transparent); border: 1px solid color-mix(in srgb, var(--slate) 13%, transparent); }
-#dg .trow:hover, #dg .trow.spot { border-color: color-mix(in srgb, var(--slate) 30%, transparent); }
-#dg .trow:focus-visible { outline: 0; border-color: var(--agent); }
-/* every row, and the header, keep room for the run-safe strip, so a row that has one draws its columns where the rest do */
-#dg .thead, #dg .trow { padding-right: calc(max(30px, 30px * var(--fs)) + 12px); }
-#dg .thead { padding-left: 13px; }
-#dg .trow > span, #dg .trow > svg { min-width: 0; }
+/* The stage: one box of absolutely placed slots. A row's place is three custom properties, --c its column, --hs the header slots above it and --s its slot, so a DAG that changes pane is the one element and its transform's transition: nothing is cloned and nothing stays behind.
+   A row's top is hs * header + s * pitch in both columns, so a Processing row and the Idle row of its slot share a top at every text size. */
+#dg .dstage { --H: calc(68px * var(--fs)); --R: calc(64px * var(--fs)); --C: calc(22px * var(--fs)); --gap: 20px; --wp: calc((100% - var(--gap)) / 2.25); --wi: calc((100% - var(--gap)) * 1.25 / 2.25); position: relative; box-sizing: border-box; margin-bottom: 16px; height: calc(var(--hsum) * var(--H) + var(--n) * var(--R) + var(--K) * var(--C)); }
+#dg .dstage.stack { --wp: 100%; --wi: 100%; }
+#dg :is(.drow, .phead, .phint) { position: absolute; top: 0; box-sizing: border-box; left: calc(var(--c) * (var(--wp) + var(--gap))); width: calc(var(--wp) + var(--c) * (var(--wi) - var(--wp)));
+  transform: translateY(calc(var(--hs) * var(--H) + var(--s) * var(--R) + var(--k) * var(--C))); transition: transform .42s cubic-bezier(.3, .7, .2, 1), left .42s cubic-bezier(.3, .7, .2, 1), width .42s cubic-bezier(.3, .7, .2, 1); }
+/* a DAG that changed pane glides slower and above the rows it passes, in the colour of its way: finished down into Idle, starting down into Processing */
+#dg .drow[data-glide] { z-index: 2; transition-duration: .64s; --gl: var(--ok); }
+#dg .drow[data-glide=start] { --gl: var(--run); }
+#dg .drow[data-glide] .body { border-color: color-mix(in srgb, var(--gl) 55%, transparent); box-shadow: 0 6px 18px color-mix(in srgb, var(--shadow) 45%, transparent); }
+@media (prefers-reduced-motion: reduce) { #dg :is(.drow, .phead, .phint) { transition: none; } }
+#dg [data-pane=processing] { --grid: 20px calc(140px * var(--fs)) minmax(80px, calc(420px * var(--fs))) calc(76px * var(--fs)) calc(130px * var(--fs)) 0; }
+#dg [data-pane=idle] { --grid: 20px calc(140px * var(--fs)) minmax(80px, calc(420px * var(--fs))) calc(128px * var(--fs)) calc(84px * var(--fs)) calc(140px * var(--fs)) 0; }
+/* a pane's head: its title and count over its column labels, which sit on the row grid below (the row's border and left padding, and the room its ▶ strip takes on the right) */
+#dg .phead { height: calc(var(--H) - 10px * var(--fs)); display: flex; flex-wrap: wrap; align-content: space-between; align-items: center; gap: 8px; padding: 0 2px 4px; border-bottom: 1px solid color-mix(in srgb, var(--slate) 14%, transparent); font-size: calc(10px * var(--fs)); letter-spacing: .2em; text-transform: uppercase; color: var(--muted); }
+#dg .phead .cols { flex: 1 0 100%; box-sizing: border-box; display: grid; grid-template-columns: var(--grid); column-gap: 10px; align-items: center; padding: 0 calc(max(30px, 30px * var(--fs)) + 10px) 0 13px; font-size: calc(9.5px * var(--fs)); letter-spacing: .16em; white-space: nowrap; }
+#dg .phead .cols > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+#dg .phead .c { letter-spacing: 0; font-variant-numeric: tabular-nums; color: var(--slate-4); }
+#dg .phead[data-pane=processing] .c { color: var(--run-text); }
+#dg .phint { height: calc(var(--H) - 10px * var(--fs)); display: flex; align-items: center; padding-left: 2px; color: var(--ghost); font-size: calc(11px * var(--fs)); }
+/* a row: a caption band over a card, the band's text the group's name where it changes (Just finished, a domain); the whole row takes the click, and it has no hover */
+#dg .drow { height: calc(54px * var(--fs) + var(--b) * var(--C)); cursor: pointer; outline: 0; }
+#dg .drow .cap { position: absolute; bottom: calc(54px * var(--fs) + 4px * var(--fs)); line-height: 1.2; left: 2px; right: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: calc(10px * var(--fs)); letter-spacing: .18em; text-transform: uppercase; color: var(--muted); }
+#dg .drow .body { position: absolute; left: 0; right: 0; bottom: 0; height: calc(54px * var(--fs)); box-sizing: border-box; display: grid; grid-template-columns: var(--grid); align-items: center; column-gap: 10px; padding: 0 calc(max(30px, 30px * var(--fs)) + 10px) 0 14px;
+  border-radius: 7px; background: color-mix(in srgb, var(--surface) 92%, transparent); border: 1px solid color-mix(in srgb, var(--slate) 13%, transparent); transition: border-color .3s, box-shadow .3s; }
+#dg .drow.p-running .body, #dg .drow.p-queued .body { border-color: color-mix(in srgb, var(--run) 38%, transparent); }
+#dg .drow.p-failed .body { border-color: color-mix(in srgb, var(--fail) 38%, transparent); }
+#dg .drow:is(.spot, :focus-visible) .body { border-color: var(--agent); }
+#dg .drow .who { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+#dg .drow .sub { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: calc(10.5px * var(--fs)); }
+#dg .drow .nm { font-size: calc(12.5px * var(--fs)); }
+#dg .drow svg.dstrip { height: calc(30px * var(--fs)); width: 100%; min-width: 0; }
 #dg .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
 #dg .last { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: calc(11px * var(--fs)); }
 #dg .last b { font-weight: 400; color: var(--ink-2); }
 #dg .last b.hot { color: var(--run-text); }
 #dg .last b.q { color: var(--run); }
 #dg .last .bad { color: var(--fail-text); }
-#dg .pool { color: var(--muted); font-size: calc(11px * var(--fs)); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#dg .drow :is(.last, .num) { min-width: 0; }
+#dg .num { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--ink-2); font-size: calc(11.5px * var(--fs)); }
+#dg .num.bad { color: var(--fail-text); }
+#dg .k { color: var(--muted); }
+/* a phone's row keeps two lines, as on the Star Map: the name over the run's one line, the status indicator on the left and the steps on the right; the columns and their labels go */
+@media (max-width: 900px) {
+  #dg .dstage { --H: calc(44px * var(--fs)); }
+  #dg .phead .cols, #dg .drow .sub, #dg .drow .body > .num, #dg .drow .body > span:empty { display: none; }
+  #dg [data-pane] { --grid: 20px minmax(0, 1fr) minmax(60px, 34%); }
+  #dg .drow .body { row-gap: 2px; align-content: center; }
+  #dg .drow .body > :first-child { grid-row: 1 / 3; }
+  #dg .drow .who { grid-column: 2; grid-row: 1; }
+  #dg .drow .last { grid-column: 2; grid-row: 2; }
+  #dg .drow svg.dstrip { grid-column: 3; grid-row: 1 / 3; }
+}
 #dg .tie, #kbm .dgm .tie { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 6px; border-radius: 3px; line-height: 15px; font-size: calc(10.5px * var(--fs));
   color: var(--tc); background: color-mix(in srgb, var(--tc) 12%, transparent); border: 1px solid color-mix(in srgb, var(--tc) 35%, transparent); }
 #dg a.tie, #kbm .dgm a.tie { text-decoration: none; }
@@ -914,7 +942,7 @@ svg.dstrip text.one { fill: var(--slate); font-size: calc(9px * var(--fs)); }
 svg.dstrip.big { overflow: visible; }
 svg.dstrip.big text { fill: var(--slate); font-size: calc(10.5px * var(--fs)); text-anchor: middle; }
 svg.dstrip.big text.hot { fill: var(--run-text); }
-.orb.big { width: calc(15px * var(--fs)); height: calc(15px * var(--fs)); }
+.orb.big { width: calc(26px * var(--fs)); height: calc(26px * var(--fs)); }
 .dtoast { position: absolute; z-index: 5; right: 0; bottom: 18px; max-width: 60%; padding: 7px 12px; border-radius: 8px; background: var(--pop); border: 1px solid color-mix(in srgb, var(--slate) 30%, transparent);
   box-shadow: 0 10px 30px color-mix(in srgb, var(--shadow) 50%, transparent); font-size: calc(11.5px * var(--fs)); color: var(--ink); }
 /* The DAG modal: the task modal's frame, links, refusal box and Start button. Its own are one column with Run now in a footer, the chart,
@@ -945,7 +973,7 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
 
 /* Every scrolling box on the page, in one place: it scrolls only vertically, never sideways, and wears the Kanban
    columns' thin, quiet scrollbar. A box that needs to scroll joins this list rather than setting its own overflow. */
-#nav .matches, #nav .outline, #nav .leaderboard, #panel, :is(#kb, #nav, #dg) .menu, #kb .col .body, #kbm .modal, #tkm .modal, #kbm .tvbody, #kbm .tvcol, #kbm .tvrail .box, #kbm .tv textarea.fv.long, #dg #catalog, #admin {
+#nav .matches, #nav .outline, #nav .leaderboard, #panel, :is(#kb, #nav, #dg) .menu, #kb .col .body, #kbm .modal, #tkm .modal, #kbm .tvbody, #kbm .tvcol, #kbm .tvrail .box, #kbm .tv textarea.fv.long, #dg #stage, #admin {
   overflow-x: hidden; overflow-y: auto; scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--slate) 25%, transparent) transparent; }
 /* a machine a third party moves (machine.source) is drawn like a local one, in blue instead of purple */
 .src::after { content: attr(data-src); margin-left: .45em; color: color-mix(in srgb, var(--mapped) 70%, transparent); }
@@ -974,7 +1002,6 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
 /* Showing the Kanban or the DAGs styles and paints only the cards and rows on screen; one scrolled out of sight keeps the
    size it last drew at. */
 #kb .card { content-visibility: auto; contain-intrinsic-size: auto 64px; }
-#dg .trow { content-visibility: auto; contain-intrinsic-size: auto 40px; }
 
 /* the Kanban toolbar's right-hand group: the task count, then New task, wrapping together */
 #kb .filters .rt { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 6px 0; min-width: 0; max-width: 100%; margin-left: auto; }
@@ -1086,23 +1113,9 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
   #kbm .dgm .tierow .lgnote { margin-left: 0; white-space: normal; }
   #kbm .dgm .tvfoot { padding-inline: 14px; }
 
-  /* DAGs: a row is two lines, the DAG and its last run over its steps, pool and board tie; the column header has nothing left to name. */
+  /* DAGs: Idle stacks under Processing; a row keeps its card, the steps narrower beside the name. */
   #dg .fw:has(#dgq) { flex: 1 1 100%; }
   #dg .fw #dgq { width: 100%; box-sizing: border-box; }
-  #dg .thead { display: none; }
-  #dg .trow { display: flex; flex-wrap: wrap; align-items: center; gap: 0 10px; padding-block: 8px; contain-intrinsic-size: auto calc(26px + 32px * var(--fs)); }
-  #dg .trow::before { content: ""; order: 2; flex: 0 0 100%; height: 5px; }
-  #dg .trow > :is(.orb, .nm, .last) { order: 1; }
-  /* a name and a last run too long to share the line take one each, neither cut short */
-  #dg .trow > .nm { flex: 0 1 auto; max-width: calc(100% - 14px - 10px); }
-  #dg .trow > .last { flex: 0 1 auto; margin-left: auto; }
-  /* the steps keep a width they can be read at; a pool and a tie too wide to sit beside them take the next line */
-  #dg .trow > :is(svg.dstrip, .pool, .pool + span) { order: 3; }
-  #dg .trow > svg.dstrip { flex: 1 1 calc(96px * var(--fs)); min-width: calc(96px * var(--fs)); width: auto; }
-  #dg .trow > .pool { flex: 0 1 auto; }
-  #dg .trow > .pool + span { flex: 0 1 auto; margin-left: auto; display: flex; max-width: 100%; }
-  #dg .trow > .pool + span:has(> .none) { display: none; }
-  #dg .trow > .play.edge + *, #dg .trow > span:empty { display: none; }
   .dtoast { max-width: 100%; }
 
   /* Admin: a setting's name and hint sit over its control */

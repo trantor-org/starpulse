@@ -24,7 +24,7 @@ describe("the page's scrolling boxes", () => {
     expect(rule.body).toMatch(/overflow-y:\s*auto/);
     expect(rule.body).toMatch(/scrollbar-width:\s*thin/);
     expect(rule.body).toMatch(/scrollbar-color:\s*color-mix\(in srgb, var\(--slate\) 25%, transparent\) transparent/);
-    for (const box of ["#kb .col .body", "#nav .matches", "#panel", "#admin", "#dg #catalog"]) expect(rule.sel).toContain(box);
+    for (const box of ["#kb .col .body", "#nav .matches", "#panel", "#admin", "#dg #stage"]) expect(rule.sel).toContain(box);
     expect(rule.sel).not.toContain("#feed");
   });
 

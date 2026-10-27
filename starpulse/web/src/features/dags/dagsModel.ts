@@ -46,12 +46,7 @@ export const dagData = (sky: Sky): DagData => ({
   facts: Object.fromEntries(sky.dags.map((d) => [d.name, dagFacts(d)])),
 });
 
-/** The height a row not yet drawn holds in the list, margin included: one 40px line wide, two lines at phone width, where both lines grow with the text scale `fs`. */
-export const rowEstimate = (phone: boolean, fs: number) => 7 + (phone ? Math.round(26 + 32 * fs) : 40);
-
 export type Phase = "running" | "queued" | "failed" | "idle" | "ok";
-/** The Status menu's choices; a queued DAG counts as running. */
-export const PHASES: [Exclude<Phase, "queued">, string][] = [["running", "Running"], ["failed", "Failing"], ["idle", "Not run"], ["ok", "Healthy"]];
 export const short = (n: string) => n.replace(/^[^/]+\//, "");
 export const group = (p: Phase): Exclude<Phase, "queued"> => (p === "queued" ? "running" : p);
 
@@ -114,30 +109,68 @@ export function rows(data: DagData): Row[] {
 /** Stable catalog order: snapshot membership, then name (phase never moves a row). */
 export const order = (a: Row, b: Row) => a.ord - b.ord || a.d.name.localeCompare(b.d.name);
 
-/** The Last run menu's windows, each with its length in seconds; no choice shows every DAG. */
-export const RECENCY: [string, number][] = [["Past hour", 3600], ["Past day", 86400], ["Past week", 7 * 86400], ["Past month", 30 * 86400], ["Past year", 365 * 86400]];
-
-/** Whether a row's DAG is active now or last ran at or after `since` (epoch seconds); a never-run DAG is not recent. */
-export const recent = (r: Row, since: number) => group(r.phase) === "running" || (r.phase !== "idle" && Math.max(r.startedAt, r.finishedAt) >= since);
-
-/** The rows a search, a Status choice, a Domain choice and a Last run window (`since`, epoch seconds; 0 for all) leave; the search reads a DAG's name, its steps, its domain and its process. */
-export function filterRows(all: Row[], f: { q?: string; only?: Exclude<Phase, "queued"> | null; dom?: string | null; since?: number }): Row[] {
+/** The rows a search and a Domain choice leave; the search reads a DAG's name, its steps, its domain and its process. */
+export function filterRows(all: Row[], f: { q?: string; dom?: string | null }): Row[] {
   const needle = (f.q ?? "").trim().toLowerCase();
-  return all.filter((r) => (!f.only || group(r.phase) === f.only) && (!f.dom || r.domain === f.dom) && (!f.since || recent(r, f.since)) &&
+  return all.filter((r) => (!f.dom || r.domain === f.dom) &&
     (!needle || r.d.name.toLowerCase().includes(needle) || r.domain.toLowerCase().includes(needle) || (r.process ?? "").toLowerCase().includes(needle) || r.d.steps.some((x) => x.name.toLowerCase().includes(needle))));
 }
 
-/** Process names in snapshot order, then Other when a row needs it. */
-export function processNames(domain: Domain, rs: Row[]): string[] {
-  const names = (domain.processes ?? []).map((p) => p.name);
-  return rs.some((r) => r.process === "Other") && !names.includes("Other") ? [...names, "Other"] : names;
+/** How many finished DAGs the Just finished bucket at the top of Idle holds. */
+export const FRESH = 5;
+
+/** A DAG is Processing while a run of it is running or queued, and Idle otherwise; each snapshot decides, so a run whose end event never came leaves Processing with the next snapshot that no longer has it active. */
+export const processing = (r: Row) => group(r.phase) === "running";
+
+export interface Panes {
+  /** The DAGs with a run in flight, the one that began first on top and a queued DAG last, so a DAG that starts joins at the bottom. */
+  processing: Row[];
+  /** Just finished (the latest `FRESH` DAGs to finish, newest first), then every other DAG in catalog order. */
+  idle: Row[];
+  /** The names in Just finished. */
+  fresh: Set<string>;
 }
 
-/** The process folds of a domain that start folded (`cat|<domain>|<process>`): every process in a domain of more than three, unless `matching`, the rows a filter leaves, has one in it. Phase never reopens a fold. */
-export function closedProcessKeys(domain: Domain, rs: Row[], matching?: Row[]): string[] {
-  const names = processNames(domain, rs);
-  if (names.length <= 3) return [];
-  return names.filter((p) => !matching?.some((r) => r.domain === domain.name && r.process === p)).map((p) => `cat|${domain.name}|${p}`);
+/** Splits the catalog into its two disjoint activity panes. */
+export function panes(all: Row[]): Panes {
+  const active = all.filter(processing).sort((a, b) => Number(a.phase === "queued") - Number(b.phase === "queued") || a.startedAt - b.startedAt || order(a, b));
+  const rest = all.filter((r) => !processing(r)).sort(order);
+  const done = rest.filter((r) => r.finishedAt > 0).sort((a, b) => b.finishedAt - a.finishedAt || order(a, b)).slice(0, FRESH);
+  const fresh = new Set(done.map((r) => r.d.name));
+  return { processing: active, idle: [...done, ...rest.filter((r) => !fresh.has(r.d.name))], fresh };
+}
+
+/** The caption each row of a pane opens a group with, null for the rows that continue one: Just finished over the bucket, then a domain wherever the domain changes. */
+export function captions(rs: Row[], fresh: Set<string>): (string | null)[] {
+  let last = "";
+  return rs.map((r) => {
+    const label = fresh.has(r.d.name) ? `Just finished · latest ${FRESH}` : r.domain;
+    const open = label !== last;
+    last = label;
+    return open ? label : null;
+  });
+}
+
+/** Where a row sits on the stage: its column, the slots of header above it (`hs`), its slot down the column and the caption bands above that slot (`k`). `band` is whether its slot opens with a caption band, which the other pane's row of the slot may be the one to need. */
+export interface Place { col: 0 | 1; hs: number; slot: number; k: number; band: boolean }
+
+/** Every row's place by DAG name, and each pane's header as `processing-head` and `idle-head`, and the empty Processing pane's hint as `processing-hint`. Beside each other, the Processing row and the Idle row of one index share a slot, so they share a top; a slot spends a caption band only when a row of either pane opens a group there, so rows of one group sit one pitch apart. At a phone's width Idle stacks under Processing, which keeps a slot for its hint when empty. `bands` is the stage's count of caption bands. */
+export function places(p: Panes, phone: boolean): { at: Map<string, Place>; bands: number } {
+  const open = (rs: Row[]) => captions(rs, p.fresh).map((c) => c !== null);
+  const below = phone ? Math.max(p.processing.length, 1) : 0;
+  const slots = phone ? below + p.idle.length : Math.max(p.processing.length, p.idle.length, 1);
+  const band: boolean[] = Array.from({ length: slots }, () => false);
+  open(p.processing).forEach((o, i) => { band[i] = band[i] || o; });
+  open(p.idle).forEach((o, i) => { band[below + i] = band[below + i] || o; });
+  const above = (slot: number) => band.slice(0, slot).filter(Boolean).length;
+  const place = (col: 0 | 1, hs: number, slot: number): Place => ({ col, hs, slot, k: above(slot), band: band[slot] ?? false });
+  const at = new Map<string, Place>();
+  p.processing.forEach((r, slot) => at.set(r.d.name, place(0, 1, slot)));
+  p.idle.forEach((r, slot) => at.set(r.d.name, place(phone ? 0 : 1, phone ? 2 : 1, below + slot)));
+  at.set("processing-head", { col: 0, hs: 0, slot: 0, k: 0, band: false });
+  at.set("idle-head", phone ? { col: 0, hs: 1, slot: below, k: above(below), band: false } : { col: 1, hs: 0, slot: 0, k: 0, band: false });
+  at.set("processing-hint", { col: 0, hs: 1, slot: 0, k: Number(band[0]), band: false });
+  return { at, bands: above(slots) };
 }
 
 /** Where a DAG touches the Board: the event that cues it, the transitions it writes, the skill it launches. `ev` is the transition's event, which has a Ledger on the Star Map. */

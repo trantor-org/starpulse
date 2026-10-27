@@ -50,7 +50,13 @@ const post = vi.fn();
 const draw = async (d: DagData | null = data) => { await act(async () => root.render(<Dags data={d} post={post} />)); };
 const q = <T extends Element>(sel: string) => host.querySelector<T>(sel)!;
 const all = (sel: string) => [...host.querySelectorAll<HTMLElement>(sel)];
-const names = () => all("#catalog .trow .nm").map((e) => e.textContent);
+const names = () => all("#stage .drow .nm").map((e) => e.textContent);
+const paneOf = (pane: string) => all(`.drow[data-pane=${pane}] .nm`).map((e) => e.textContent);
+const rowOf = (n: string) => all("#stage .drow").find((r) => r.querySelector(".nm")!.textContent === n)!;
+const setText = (box: HTMLInputElement, v: string) => act(() => {
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(box, v);
+  box.dispatchEvent(new Event("input", { bubbles: true }));
+});
 const click = (el: Element) => act(async () => { (el as HTMLElement).click(); });
 const chip = (label: string) => all(".fchip").find((c) => c.textContent!.startsWith(label))!;
 
@@ -58,7 +64,7 @@ beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   post.mockReset();
   // The view ticks its clock each second; a frozen interval keeps a slow run from aging the fixture's elapsed times.
-  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout"] });
   localStorage.clear();
   vi.stubGlobal("IntersectionObserver", class { observe() {} unobserve() {} disconnect() {} });
   host = document.body.appendChild(document.createElement("div"));
@@ -72,23 +78,75 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("the DAGs view's catalog", () => {
-  it("mounts only a viewport and overscan of a long catalog", async () => {
-    const dags = Array.from({ length: 60 }, (_, i) => dag(`runs/job-${i}`, "succeeded"));
-    await draw({ ...data, dags, domains: [{ name: "Ops", dags: dags.map((d) => ({ name: d.name, runSafe: false })) }] });
-
-    expect(all("#catalog [data-viewport-row]")).toHaveLength(60);
-    expect(all("#catalog .trow").length).toBeLessThan(60);
-    expect(names()).toContain("job-0");
-  });
-
-  it("draws a fold per domain with its census, and a row per DAG with its dot, name, step strip, last run, pool and first tie", async () => {
+describe("the DAGs view's panes", () => {
+  it("holds exactly the DAGs with a run in flight in Processing, and the rest in Idle: disjoint, and together the catalog", async () => {
     await draw();
 
-    expect(all(".bucket .bh .bn").map((e) => e.textContent!.replace(/\d+$/, "").trim().split(" ")[0])).toEqual(["Board", "Ops"]);
-    expect(q(".bucket:last-child .bh .census").textContent).toBe("11");
-    expect(names()).toEqual(["pr-watch", "triage", "deploy", "never"]);
-    const row = all("#catalog .trow").find((r) => r.querySelector(".nm")!.textContent === "pr-watch")!;
+    expect(paneOf("processing")).toEqual(["deploy"]);
+    expect(paneOf("idle").sort()).toEqual(["never", "pr-watch", "triage"]);
+    expect(names().sort()).toEqual(["deploy", "never", "pr-watch", "triage"]);
+    expect(all(".phead").map((h) => h.querySelector(".pt")!.textContent! + h.querySelector(".c")!.textContent)).toEqual(["Processing1", "Idle3"]);
+  });
+
+  it("puts a queued DAG last in Processing, below the one that began first", async () => {
+    const queued = dag("runs/waiting", "queued");
+    await draw({ ...data, dags: [...data.dags, queued], domains: [{ name: "Ops", dags: [...data.domains[1].dags, { name: queued.name, runSafe: false }] }, data.domains[0]] });
+
+    expect(paneOf("processing")).toEqual(["deploy", "waiting"]);
+  });
+
+  it("moves a DAG whose end event was dropped to Idle on the next snapshot, and says so when Processing empties", async () => {
+    await draw();
+    expect(paneOf("processing")).toEqual(["deploy"]);
+
+    await draw({ ...data, dags: data.dags.map((d) => (d.name === "runs/deploy" ? { ...d, active: [] } : d)) });
+
+    expect(paneOf("processing")).toEqual([]);
+    expect(paneOf("idle")).toContain("deploy");
+    expect(q(".phint").textContent).toBe("Nothing is running");
+  });
+
+  it("gives a Processing row and the Idle row of its slot one header count and one slot, so they share a top", async () => {
+    await draw();
+    const place = (n: string) => ["--hs", "--s", "--k", "--b"].map((k) => rowOf(n).style.getPropertyValue(k));
+
+    expect(place("deploy")).toEqual(place("pr-watch"));
+    expect(css).toMatch(/#dg :is\(\.drow, \.phead, \.phint\) \{[^}]*left: calc\(var\(--c\) \* \(var\(--wp\) \+ var\(--gap\)\)\)[^}]*transform: translateY\(calc\(var\(--hs\) \* var\(--H\) \+ var\(--s\) \* var\(--R\) \+ var\(--k\) \* var\(--C\)\)\)/);
+  });
+
+  it("captions Just finished over the latest finished DAGs of Idle, and a domain where the domain changes", async () => {
+    await draw({ ...data, dags: data.dags.map((d) => (d.name === "runs/never" ? { ...d, startedAt: "", finishedAt: "" } : d)) });
+
+    expect(all(".drow[data-pane=idle] .cap").map((c) => c.textContent)).toEqual(["Just finished · latest 5", "Ops"]);
+    expect(all(".drow[data-pane=processing] .cap").map((c) => c.textContent)).toEqual(["Ops"]);
+  });
+
+  it("draws the first snapshot where it lies, and glides a DAG that changes pane, finished down to Idle or starting down to Processing, for as long as the glide lasts", async () => {
+    await draw();
+    expect(all("[data-glide]")).toHaveLength(0);
+
+    await draw({ ...data, dags: data.dags.map((d) => (d.name === "runs/deploy" ? { ...d, active: [] } : d.name === "runs/never" ? { ...d, status: "running" as const } : d)) });
+    expect(rowOf("deploy").dataset.glide).toBe("finish");
+    expect(rowOf("never").dataset.glide).toBe("start");
+    expect(all("[data-glide]")).toHaveLength(2);
+
+    await act(async () => { vi.advanceTimersByTime(800); });
+    expect(all("[data-glide]")).toHaveLength(0);
+  });
+
+  it("moves rows with a transition, and with none under reduced motion", () => {
+    expect(css).toMatch(/#dg :is\(\.drow, \.phead, \.phint\) \{[^}]*transition: transform \.42s[^}]*left \.42s[^}]*width \.42s/);
+    expect(css).toMatch(/#dg \.drow\[data-glide\] \{[^}]*transition-duration: \.64s/);
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\) \{ #dg :is\(\.drow, \.phead, \.phint\) \{ transition: none; \} \}/);
+  });
+});
+
+describe("the DAGs view's rows", () => {
+  it("draw a DAG with its dot, name, step strip, last run and first tie", async () => {
+    await draw();
+
+    expect(names().sort()).toEqual(["deploy", "never", "pr-watch", "triage"]);
+    const row = rowOf("pr-watch");
     expect(row.querySelector("i.orb.o-ok")).not.toBeNull();
     // each step as the Star Map's DAG bodies draw it (renderer drawStars): a dark disc ringed in its status colour round a core dot
     const steps = [...row.querySelectorAll("svg.dstrip g.step")];
@@ -104,106 +162,113 @@ describe("the DAGs view's catalog", () => {
     expect(link.getAttribute("stroke-dasharray")).toBe("1.8 4.2");
     expect(link.getAttribute("stroke")).toMatch(/^url\(#/);
     expect(row.querySelector("i.orb.o-ok circle.ring")!.getAttribute("stroke")).toBe(DAG_COLOR.succeeded);
-    expect(row.querySelector(".last")!.textContent).toBe("50m ago · 1m 0s");
-    expect(row.querySelector(".pool")!.textContent).toBe("main 1/2");
-    expect(row.querySelector(".tie")!.textContent).toBe("⇢ Review");
+    expect(row.querySelector(".sub")!.textContent).toBe("manual · pool main");
+    expect([...row.querySelectorAll(".last, .num")].map((c) => c.textContent)).toEqual(["succeeded 50m ago", "—", "—"]);
+    expect(row.querySelector(".tie")).toBeNull();
+    expect(row.querySelector(".pool")).toBeNull();
     expect(q("header .count").textContent).toBe("4 DAGs · 2 domains");
   });
 
-  it("shows a running DAG's step and a failed one's failing step in its last-run cell", async () => {
+  it("shows a running DAG's progress and elapsed time, and an idle one's last result", async () => {
     await draw();
-    const last = (n: string) => all("#catalog .trow").find((r) => r.querySelector(".nm")!.textContent === n)!.querySelector(".last")!.textContent;
+    const cell = (n: string, c: string) => rowOf(n).querySelector(c)!.textContent;
 
-    expect(last("deploy")).toBe("fix · 5m 0s");
-    expect(last("triage")).toBe("failed at fix · 50m ago");
-    expect(last("never")).toBe("never run");
+    expect(cell("deploy", ".last")).toBe("1/2 done · 1 running");
+    expect(cell("deploy", ".num")).toBe("5m 0s");
+    expect(cell("triage", ".last")).toBe("failed 50m ago");
+    expect(cell("never", ".last")).toBe("never run");
   });
 
-  it("folds a domain's rows away and back from its header", async () => {
+  it("open the modal from a click anywhere on the row, the caption band included, and from Enter on a focused row", async () => {
     await draw();
-    await click(q(".bucket .bh"));
+    const open = () => host.querySelector(".dgm");
 
-    expect(names()).toEqual(["deploy", "never"]);
-    await click(q(".bucket .bh"));
-    expect(names()).toHaveLength(4);
+    await click(rowOf("pr-watch").querySelector(".last")!);
+    expect(open()).not.toBeNull();
+    act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    await draw();
+    await click(rowOf("pr-watch").querySelector(".cap")!);
+    expect(open()).not.toBeNull();
+  });
+
+  it("have no hover state, only a focus ring and the highlight a Recent line sets", () => {
+    const rules = css.split("\n").filter((l) => l.includes(".drow") && l.includes(":hover"));
+    expect(rules).toEqual([]);
+  });
+
+  it("are taller than the old row, whose card was 40px", () => {
+    expect(css).toMatch(/#dg \.drow \.body \{[^}]*height: calc\(54px \* var\(--fs\)\)/);
+  });
+
+  it("draw no History tab, heatmap, bins or proposed-group fields", async () => {
+    await draw();
+    const src = Object.entries(import.meta.glob("./*.{ts,tsx}", { query: "?raw", import: "default", eager: true })).filter(([f]) => !f.includes(".test."));
+
+    expect(all("#dg [role=tab], #dg .heat, #dg .bin")).toHaveLength(0);
+    expect(q("#dg").textContent).not.toMatch(/History/);
+    expect(src.length).toBeGreaterThan(3);
+    for (const [f, text] of src) expect(text as string, f).not.toMatch(/propos/i);
   });
 
   it("says no DAGs were read when the snapshot has none", async () => {
     await draw(null);
 
     expect(q("header .count").textContent).toBe("no DAGs read");
-    expect(host.querySelector("#catalog")).toBeNull();
+    expect(host.querySelector("#stage")).toBeNull();
   });
 });
 
 describe("the DAGs view's filters", () => {
-  it("narrows the rows with the Status menu and the Domain menu, and counts each choice", async () => {
+  it("narrows the rows with the Domain menu, and counts each choice", async () => {
     await draw();
-    await click(chip("Status"));
-
-    expect(all(".menu button").map((b) => b.textContent)).toEqual(["Running1", "Failing1", "Not run1", "Healthy1"]);
-    await click(all(".menu button").find((b) => b.textContent!.startsWith("Failing"))!);
-    expect(names()).toEqual(["triage"]);
-    expect(chip("Status").textContent).toBe("Status: Failing ▾");
-    expect(q(".shown").textContent).toBe("1 of 4 shown");
-
     await click(chip("Domain"));
+
+    expect(all(".menu button").map((b) => b.textContent)).toEqual(["Board2", "Ops2"]);
     await click(all(".menu button").find((b) => b.textContent!.startsWith("Ops"))!);
-    expect(host.querySelector("#catalog")).toBeNull();
-    expect(q("#dg > .none").textContent).toContain("No DAG matches");
+    expect(names().sort()).toEqual(["deploy", "never"]);
+    expect(chip("Domain").textContent).toBe("Domain: Ops ▾");
+    expect(q(".shown").textContent).toBe("2 of 4 shown");
+    expect(all(".phead").map((h) => h.querySelector(".pt")!.textContent! + h.querySelector(".c")!.textContent)).toEqual(["Processing1", "Idle1"]);
 
     await click(q(".clear"));
     expect(names()).toHaveLength(4);
   });
 
-  it("filters by the name, a step or a domain typed in the search", async () => {
+  it("has no Status or Last run menu", async () => {
     await draw();
-    const box = q<HTMLInputElement>('.filters input');
-    const type = (v: string) => act(() => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(box, v);
-      box.dispatchEvent(new Event("input", { bubbles: true }));
-    });
 
-    type("deploy");
+    expect(all(".fchip").map((c) => c.textContent)).toEqual(["Domain ▾"]);
+  });
+
+  it("filters by the name, a step or a domain typed in the search, and says when nothing matches", async () => {
+    await draw();
+    const box = q<HTMLInputElement>(".filters input");
+
+    setText(box, "deploy");
     expect(names()).toEqual(["deploy"]);
-    type("ops");
-    expect(names()).toEqual(["deploy", "never"]);
+    setText(box, "ops");
+    expect(names().sort()).toEqual(["deploy", "never"]);
+    setText(box, "zzz");
+    expect(host.querySelector("#stage")).toBeNull();
+    expect(q("#dg > .none").textContent).toContain("No DAG matches");
   });
 
   it("opens on the filters it last had, after a reload", async () => {
     await draw();
-    const box = q<HTMLInputElement>('.filters input');
-    act(() => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(box, "deploy");
-      box.dispatchEvent(new Event("input", { bubbles: true }));
-    });
+    setText(q<HTMLInputElement>(".filters input"), "deploy");
     act(() => root.unmount());
     root = createRoot(host);
     await draw();
 
-    expect(q<HTMLInputElement>('.filters input').value).toBe("deploy");
+    expect(q<HTMLInputElement>(".filters input").value).toBe("deploy");
     expect(names()).toEqual(["deploy"]);
-  });
-
-  it("hides a DAG last run before the Last run window, keeps one running, and counts each window", async () => {
-    await draw({ ...data, now: 40 * 86400 });
-    await click(chip("Last run"));
-
-    expect(all(".menu button").map((b) => b.textContent)).toEqual(["Past hour1", "Past day1", "Past week1", "Past month1", "Past year3"]);
-    await click(all(".menu button").find((b) => b.textContent!.startsWith("Past week"))!);
-    expect(names()).toEqual(["deploy"]);
-    expect(chip("Last run").textContent).toBe("Last run: Past week ▾");
-    expect(q(".shown").textContent).toBe("1 of 4 shown");
-
-    await click(q(".clear"));
-    expect(names()).toHaveLength(4);
   });
 });
 
 describe("Run now", () => {
   it("draws the ▶ edge strip on a run-safe row only", async () => {
     await draw();
-    const has = (n: string) => !!all("#catalog .trow").find((r) => r.querySelector(".nm")!.textContent === n)!.querySelector("button.play.edge");
+    const has = (n: string) => !!all("#stage .drow").find((r) => r.querySelector(".nm")!.textContent === n)!.querySelector("button.play.edge");
 
     expect(has("pr-watch")).toBe(true);
     expect(has("deploy")).toBe(true);
@@ -214,7 +279,7 @@ describe("Run now", () => {
   it("disables ▶ on a DAG already running, and POSTs /api/run/<instance>/<workflow> from the others", async () => {
     post.mockResolvedValue(new Response(JSON.stringify({ runId: "r9" }), { status: 200 }));
     await draw();
-    const play = (n: string) => all("#catalog .trow").find((r) => r.querySelector(".nm")!.textContent === n)!.querySelector<HTMLButtonElement>("button.play.edge")!;
+    const play = (n: string) => all("#stage .drow").find((r) => r.querySelector(".nm")!.textContent === n)!.querySelector<HTMLButtonElement>("button.play.edge")!;
 
     expect(play("deploy").disabled).toBe(true);
     await click(play("pr-watch"));
@@ -245,13 +310,6 @@ describe("a row's last run cell for a run with no recorded time", () => {
   });
 });
 
-describe("the DAGs catalog's columns", () => {
-  it("reserve the run-safe strip on every row and the header, not only a startable row", () => {
-    expect(css).not.toMatch(/#dg \.trow\.startable \{[^}]*padding-right/);
-    expect(css).toMatch(/#dg \.thead, #dg \.trow \{ padding-right: calc\(max\(30px, 30px \* var\(--fs\)\) \+ 12px\); \}/);
-  });
-});
-
 describe("a row's step strip for a wide fan", () => {
   it("draws a ten-way fan, as apply-on-merge's, with no two step stars overlapping, and a three-step fan likewise", async () => {
     const fan = (n: number) => Array.from({ length: n }, (_, i) => step(`apply_${i}`, ["classify"]));
@@ -266,69 +324,18 @@ describe("a row's step strip for a wide fan", () => {
 });
 
 describe("a DAGs delta", () => {
-  it("re-renders only the rows of the DAGs it changed", async () => {
+  it("re-renders only the rows of the DAGs it changed, and the rows whose slot moved", async () => {
     const wire = <T,>(x: T): T => JSON.parse(JSON.stringify(x)) as T; // a delta arrives as freshly parsed JSON
     const snap = { dags: data.dags, pools: data.pools } as unknown as Parameters<typeof applyDelta>[0];
-    const next = applyDelta(snap, { kind: "dags", dags: wire(data.dags.map((d) => (d.name === "runs/triage" ? { ...d, status: "running" as const } : d))), pools: wire(data.pools), error: null });
+    // never starts after deploy did, so it joins the bottom of Processing and no other row changes slot
+    const next = applyDelta(snap, { kind: "dags", dags: wire(data.dags.map((d) => (d.name === "runs/never" ? { ...d, status: "running" as const, startedAt: "1970-01-01T00:58:00Z" } : d))), pools: wire(data.pools), error: null });
     await draw();
     drawn.names.length = 0;
 
     await draw({ ...data, dags: next.dags, pools: next.pools ?? data.pools });
 
-    expect(drawn.names).toEqual(["runs/triage"]);
-    expect(q(".trow[data-dag='runs/triage']").className).toContain("p-running");
-  });
-});
-
-describe("process folds", () => {
-  const member = (n: string) => ({ name: `runs/${n}`, runSafe: false });
-  const nest: DagData = {
-    ...data,
-    dags: [dag("runs/a1", "succeeded"), dag("runs/b1", "failed"), dag("runs/c1", "succeeded"), dag("runs/d1", "succeeded"), dag("runs/flat", "succeeded")],
-    domains: [
-      { name: "Pack", dags: ["a1", "b1", "c1", "d1"].map(member), processes: ["a1", "b1", "c1", "d1"].map((n, i) => ({ name: `P${i + 1}`, dags: [member(n)] })) },
-      { name: "Flat", dags: [member("flat")], processes: [] },
-    ],
-  };
-  const folds = () => all(".bucket").map((b) => [b.querySelector(":scope > .bh .bn")!.textContent!.replace(/\d+$/, "").trim().split(" ")[0], b.classList.contains("folded")] as const);
-  const bh = (title: string) => all(".bucket > .bh").find((h) => h.querySelector(".bn")!.textContent!.startsWith(title))!;
-
-  it("nests a fold per process in a domain that packages them, and leaves a flat domain one level", async () => {
-    await draw(nest);
-
-    expect(all("#catalog > .bucket > .bucket.process > .bh .bn").map((e) => e.textContent!.replace(/\d+$/, "").trim().split(" ")[0])).toEqual(["P1", "P2", "P3", "P4"]);
-    expect(all("#catalog > .bucket:last-child .bucket")).toHaveLength(0);
-    expect(all(".chip, .pchip")).toHaveLength(0);
-  });
-
-  it("starts every process folded in a domain of more than three, including a failing one", async () => {
-    await draw(nest);
-
-    expect(folds()).toEqual([["Pack", false], ["P1", true], ["P2", true], ["P3", true], ["P4", true], ["Flat", false]]);
-    expect(names()).toEqual(["flat"]);
-  });
-
-  it("seeds the folds once, so an operator's toggle outlives the next snapshot", async () => {
-    await draw(nest);
-    await click(bh("P1"));
-    await draw({ ...nest, now: nest.now + 5 });
-
-    expect(folds().find(([n]) => n === "P1")![1]).toBe(false);
-    await click(bh("P2"));
-    await draw({ ...nest, now: nest.now + 9 });
-    expect(folds().find(([n]) => n === "P2")![1]).toBe(false);
-  });
-
-  it("starts open every process a filter in force leaves a row in", async () => {
-    localStorage.setItem("fv.dags.prefs", JSON.stringify({ q: "c1", only: null, dom: null, win: null }));
-    await draw(nest);
-
-    expect(folds()).toEqual([["Pack", false], ["P3", false]]);
-  });
-
-  it("sticks the domain header under the column header and the process header under that", () => {
-    expect(css).toMatch(/#dg \.bucket > \.bh \{[^}]*top: var\(--headh/);
-    expect(css).toMatch(/#dg \.bucket\.process > \.bh \{[^}]*top: var\(--subtop/);
-    expect(css).toMatch(/#dg \.bucket \.bucket \{[^}]*margin-left/);
+    expect(drawn.names).toEqual(["runs/never"]);
+    expect(q(".drow[data-dag='runs/never']").className).toContain("p-running");
+    expect(paneOf("processing")).toEqual(["deploy", "never"]);
   });
 });

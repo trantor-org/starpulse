@@ -39,7 +39,7 @@ const post = vi.fn();
 const draw = async () => { await act(async () => root.render(<Dags data={data} post={post} />)); };
 const q = <T extends Element>(sel: string) => host.querySelector<T>(sel)!;
 const all = (sel: string) => [...host.querySelectorAll<HTMLElement>(sel)];
-const row = (n: string) => all("#catalog .trow").find((r) => r.querySelector(".nm")!.textContent === n)!;
+const row = (n: string) => all("#stage .drow").find((r) => r.querySelector(".nm")!.textContent === n)!;
 const click = (el: Element) => act(async () => { (el as HTMLElement).click(); });
 const key = (target: EventTarget, k: string) => act(async () => { target.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true })); });
 const cells = () => Object.fromEntries(all(".dgm table tr").map((tr) => [tr.children[0].textContent, tr.children[1].textContent]));
