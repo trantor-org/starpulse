@@ -30,7 +30,7 @@ from collections.abc import Callable, Iterable, Iterator
 from dataclasses import replace
 from pathlib import Path
 
-from sqlalchemy import Engine, event, insert
+from sqlalchemy import Engine, create_engine, event, insert
 
 import starpulse
 from starpulse.runtime.config import load
@@ -42,6 +42,7 @@ from starpulse.board.model.seam import Board, Written
 from starpulse.contracts.adapters import BoardTask
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.lane_import import Change
+from starpulse.event_log.migrate import migrate
 from starpulse.event_log.readmodel.declared import declared_fields, ensure_columns
 from starpulse.event_log.readmodel.projector import Projector
 from starpulse.event_log.readmodel.read_model import ReadModel
@@ -337,7 +338,9 @@ def build(
     config = load(PREVIEW)
     model = seed_read_model(directory, *read_model) if read_model else None
     _, feed = assemble(config, PREVIEW.parent, None, [], model)
-    log = EventLog(f"sqlite:///{directory / 'history.sqlite'}")
+    url = f"sqlite:///{directory / 'history.sqlite'}"
+    migrate(create_engine(url))
+    log = EventLog(url)
     store = HistoryStore(log.url, feed.machines)
     records, tasks = ({}, []) if model else seed(feed, store, time.time() if now is None else now)
     window = HistoryWindow(feed, 24 * 7, log, directory / "starpulse-settings.json")
