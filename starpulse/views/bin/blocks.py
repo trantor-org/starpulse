@@ -32,7 +32,7 @@ class ApiConfig(Protocol):
     session_start_url: str | None
     slow_read_seconds: float
     task_actor: bool
-    temporal_address: str | None
+    take_over_command: tuple[str, ...] | None
     tls: tuple[Path, Path] | None
 
 

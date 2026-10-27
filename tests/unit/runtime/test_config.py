@@ -205,7 +205,7 @@ def test_a_mode_other_than_ic_is_not_a_config_setting(tmp_path: Path) -> None:
 def test_unknown_keys_are_refused_by_name_beside_the_known_ones(tmp_path: Path) -> None:
     assert _refusal(tmp_path, 'zeta = 1\ntrakcer_url = "http://x.test"\n') == (
         "unknown config key(s) trakcer_url, zeta; known: analytics, api_worker, board, board_worker, ci, cursor_context, database_url, event_log_archive_dir, event_log_retention_days, "
-        "flow_metrics_worker, harnesses_file, level, mode, producers, project, pull_requests, read_model, refresh_token_env, release, repos, runs, runs_worker, scheduler, search, search_worker, session_start_url, slow_read_seconds, temporal_address, tls_cert, tls_key, tracker_url, worker_memory"
+        "flow_metrics_worker, harnesses_file, level, mode, producers, project, pull_requests, read_model, refresh_token_env, release, repos, runs, runs_worker, scheduler, search, search_worker, session_start_url, slow_read_seconds, take_over_command, tls_cert, tls_key, tracker_url, worker_memory"
     )
 
 
@@ -377,6 +377,16 @@ def test_the_pull_request_refresh_credential_is_the_name_of_an_environment_varia
     assert _refusal(tmp_path, 'refresh_token_env = "not a name"\n') == (
         "refresh_token_env must be the name of an environment variable"
     )
+
+
+def test_the_take_over_command_is_an_argv_of_strings(tmp_path: Path) -> None:
+    assert load(None).take_over_command is None
+    assert load(_write(tmp_path, 'take_over_command = ["take-over", "--engine"]\n')).take_over_command == (
+        "take-over",
+        "--engine",
+    )
+    for text in ('take_over_command = "take-over"\n', "take_over_command = []\n", 'take_over_command = ["a", 1]\n'):
+        assert _refusal(tmp_path, text) == "take_over_command must be a non-empty list of strings"
 
 
 def test_an_instance_keeps_a_pull_request_store_unless_configured_off(tmp_path: Path) -> None:

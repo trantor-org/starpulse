@@ -412,11 +412,11 @@ type = "native"
 # on the PATH, the route answers 404, and a named variable that is empty stops `serve`.
 # refresh_token_env = "STARPULSE_REFRESH_TOKEN"
 
-# The Temporal frontend (`host:port`) `POST /api/take-over` sends its Update through. The body is `{"task": "TASK-7"}`; the
-# Update (`take_over`, no payload) goes to the workflow whose ID is the task and flips it to interactive, so the workflow types
-# nothing more into the task's session. 200 sent; 409 when the task has no running workflow; 404 when this is unset. Needs the
-# `temporal` extra (`pip install starpulse[temporal]`).
-# temporal_address = "127.0.0.1:7233"
+# The command `POST /api/take-over` runs, as an argv: StarPulse appends the task id (`{"task": "TASK-7"}` in the body) and
+# the command asks the task's workflow engine to flip that task's workflow to interactive, so it types nothing more into
+# the task's session. Exit 0: sent (200). Exit 1: the task has no running workflow (409). Any other exit: an error, with
+# the command's stderr. 404 when this is unset. The command is the only place a workflow engine appears.
+# take_over_command = ["/usr/local/bin/take-over"]
 
 # One instance of a runs adapter, a module under `starpulse` or the dotted path of one an installed package provides
 # (it offers `start(url)` and `follow(url, runs, log)`, and optionally `rerun(url)` and `declared_params(url, workflow)`, the parameter names a workflow declares, which `doctor` reads); its workflows are drawn as `<name>/<workflow>`.

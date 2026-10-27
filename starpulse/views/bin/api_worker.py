@@ -40,7 +40,7 @@ from starpulse.sessions.session_start import starter
 from starpulse.views.asgi_app import _CONTRACT_TTL_S, _cached, page_app
 from starpulse.views.page_server import DRAIN_S, PageServer
 from starpulse.views.services import Services
-from starpulse.views.take_over import temporal_take_over
+from starpulse.views.take_over import command_take_over
 
 
 @dataclasses.dataclass(frozen=True)
@@ -200,7 +200,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         search=search,
         analytics=config.analytics,
         pull_refresh=pull_refresh,
-        take_over=temporal_take_over(config.temporal_address) if config.temporal_address else None,
+        take_over=command_take_over(config.take_over_command) if config.take_over_command else None,
         slow_read_s=config.slow_read_seconds,
         actor_metrics=actor_metrics,
         lane_metrics=unattributed.exposition,
