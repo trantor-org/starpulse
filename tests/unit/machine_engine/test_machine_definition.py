@@ -393,6 +393,30 @@ class TestWriters:
         with pytest.raises(MachineDefinitionError, match="NOPE"):
             load_machine(path)
 
+    @pytest.mark.parametrize("trigger", ["the docs step's task comment", "a reply asking for approval", "after review"])
+    def test_an_agent_trigger_in_prose_on_a_final_event_is_refused_by_event(self, tmp_path: Path, trigger: str) -> None:
+        path = _written(tmp_path, _doc(writers={"GO": [{"actor": "agent", "trigger": trigger}]}))
+
+        with pytest.raises(MachineDefinitionError, match="GO"):
+            load_machine(path)
+
+    @pytest.mark.parametrize("trigger", ["make lint-docs", "./.venv/bin/backlog-task park", "Skill", "gh pr ready"])
+    def test_an_agent_trigger_naming_a_command_or_tool_on_a_final_event_is_accepted(
+        self, tmp_path: Path, trigger: str
+    ) -> None:
+        load_machine(_written(tmp_path, _doc(writers={"GO": [{"actor": "agent", "trigger": trigger}]})))
+
+    def test_prose_is_accepted_off_a_final_event_and_from_a_person(self, tmp_path: Path) -> None:
+        states = {"a": {"initial": True}, "b": {}, "c": {"final": True}}
+        document = _doc({"from": "a", "to": "b"}, states=states)
+        document["events"]["DONE"] = [{"from": "b", "to": "c"}]
+        document["writers"] = {
+            "GO": [{"actor": "agent", "trigger": "the first reply"}],
+            "DONE": [{"actor": "operator", "trigger": "merge the pull request"}],
+        }
+
+        load_machine(_written(tmp_path, document))
+
     def test_a_workflow_no_adapter_lists_is_refused_by_name(self) -> None:
         writers = {"GO": (Writer("agent", "bin/go"), Writer("dagu/ghost", "bin/ghost.py"))}
 

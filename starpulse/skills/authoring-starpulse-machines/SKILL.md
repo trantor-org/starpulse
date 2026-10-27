@@ -41,7 +41,9 @@ change how the page draws it; `docs/cli.md` describes each.
 6. `writers` names, per event, who fires it: `actor` is a bare name (`agent`, `operator`) or `<instance>/<workflow>` for
    a workflow a configured runs adapter lists, and `trigger` is how it fires. A move to an actor outside the event's
    writers is refused with the reason; an event with no `writers` entry may be made by any actor. Every `writers` key
-   must be an event the machine declares.
+   must be an event the machine declares. An `agent` trigger of an event into a final state names the command or tool
+   a session runs (`make lint-docs`, `./bin/ship`, `Skill`), never prose such as "the docs step's comment", which
+   validation refuses.
 7. A submachine is an entry in the Board file's `submachines:` list: `state` it opens under, `machine` the sibling file's
    name, and `exits` mapping each of that machine's final states to the Board event it fires. A machine composes only
    by this list; a state has no `flow:` key.
