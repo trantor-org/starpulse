@@ -383,6 +383,18 @@ button.node { all: unset; box-sizing: border-box; display: grid; grid-template-c
 #kbm .tvbody { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) clamp(320px, 31%, 440px); }
 #kbm .tvcol { min-width: 0; padding: 18px 26px 26px; display: flex; flex-direction: column; gap: 20px; }
 #kbm .tvleft .acts2 { display: flex; flex-direction: column; }
+
+#kbm .tvleft .mgroup { margin: 2px -6px 0; border-radius: 6px; }
+#kbm .tvleft .mgroup > summary { display: flex; align-items: baseline; gap: 8px; padding: 5px 6px; border-radius: 6px; cursor: pointer; font-size: calc(11px * var(--fs)); color: var(--muted); }
+#kbm .tvleft .mgroup > summary:hover, #kbm .tvleft .mgroup > summary:focus-visible { background: color-mix(in srgb, var(--slate) 8%, transparent); }
+#kbm .tvleft .mgroup > summary::-webkit-details-marker { display: none; }
+#kbm .tvleft .mgroup > summary::before { content: "▸"; width: 14px; text-align: center; color: var(--faint); transition: transform .15s; }
+#kbm .tvleft .mgroup[open] > summary::before { transform: rotate(90deg); }
+#kbm .tvleft .mgroup > summary > * { margin-left: 0; }
+#kbm .tvleft .mgroup > summary .who { color: var(--ink-3); font-weight: 500; }
+#kbm .tvleft .mgroup > summary .n { padding: 0 6px; border-radius: 999px; background: color-mix(in srgb, var(--slate) 12%, transparent); font-size: calc(10.5px * var(--fs)); }
+#kbm .tvleft .mgroup > summary .st { color: var(--ink-2); }
+#kbm .tvleft .mgroup > .acts2 { padding: 0 6px 0 18px; }
 #kbm .tvleft .ev { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 2px 10px; padding: 6px 6px 8px; margin: 0 -6px; border-radius: 6px; position: relative; }
 #kbm .tvleft .ev::before { content: ""; position: absolute; left: 12px; top: 18px; bottom: -6px; width: 1px; background: color-mix(in srgb, var(--slate) 14%, transparent); }
 #kbm .tvleft .ev:last-child::before { display: none; }
