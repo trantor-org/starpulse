@@ -67,7 +67,7 @@ describe("the start question", () => {
   it("reuses the task modal's section heading and buttons rather than drawing its own", () => {
     expect(css).toMatch(/#kbm \.ask \.sh, #kbm \.tv \.sh \{/);
     expect(css).toMatch(/#kbm \.tvhead \.startbtn, #kbm \.ask \.startbtn \{/);
-    expect(css).toMatch(/#kbm \.tv \.cancelbtn, #kbm \.tv \.savebtn, #kbm \.ask \.afoot \.manual, #kbm \.ask \.afoot \.desktopbtn, #kbm \.ask \.afoot \.cancel \{/);
+    expect(css).toMatch(/#kbm \.tv \.cancelbtn, #kbm \.tv \.savebtn, #kbm \.ask \.afoot \.manual, #kbm \.ask \.afoot \.cancel \{/);
     expect(css).not.toContain("#kbm .ask .afoot .startbtn {");
   });
 });
@@ -139,8 +139,7 @@ describe("the Kanban Start session dialog at phone width", () => {
     expect(rule("#kbm .ask .afoot")).not.toContain("flex-wrap");
   });
 
-  it("widens with the text size when it also offers Desktop (SSH), and never breaks an answer's label, so its four answers stay on one row up to 150%", () => {
-    expect(css).toMatch(/@media \(min-width: 901px\) \{ #kbm \.modal\.ask:has\(\.desktopbtn\) \{ width: min\(calc\(270px \+ 310px \* var\(--fs\)\), calc\(100vw - 40px\)\); \} \}/);
-    expect(rule("#kbm .ask .afoot :is(.cancel, .manual, .desktopbtn, .startbtn)")).toContain("white-space: nowrap");
+  it("never breaks an answer's label", () => {
+    expect(rule("#kbm .ask .afoot :is(.cancel, .manual, .startbtn)")).toContain("white-space: nowrap");
   });
 });

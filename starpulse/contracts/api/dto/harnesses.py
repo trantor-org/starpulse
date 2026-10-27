@@ -14,20 +14,12 @@ class HarnessTier(_Api):
     """The effort a session for each board effort runs at; omitted when every session runs at its board effort."""
 
 
-class HarnessDesktop(_Api):
-    """The SSH host (`user@address`) and folder the Kanban Start question's Desktop (SSH) choice opens Claude Desktop on."""
-
-    host: str
-    folder: str
-
-
 class HarnessBody(_Api):
     name: str
     label: str
     sessions: bool
     reason: str | None
     tiers: dict[str, HarnessTier]
-    desktop: HarnessDesktop | None
 
 
 class Harnesses(_Api):

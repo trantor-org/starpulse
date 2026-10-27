@@ -1205,7 +1205,6 @@ export interface Harnesses {
   tiers: string[];
 }
 export interface HarnessBody {
-  desktop: HarnessDesktop | null;
   label: string;
   name: string;
   reason: string | null;
@@ -1213,13 +1212,6 @@ export interface HarnessBody {
   tiers: {
     [k: string]: HarnessTier;
   };
-}
-/**
- * The SSH host (`user@address`) and folder the Kanban Start question's Desktop (SSH) choice opens Claude Desktop on.
- */
-export interface HarnessDesktop {
-  folder: string;
-  host: string;
 }
 export interface HarnessTier {
   efforts: string[];
