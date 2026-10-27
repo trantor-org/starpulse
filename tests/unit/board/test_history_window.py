@@ -27,7 +27,7 @@ def _log(tmp_path: Path) -> EventLog:
 
 def _window(tmp_path: Path, hours: float = 6) -> tuple[BoardFeed, HistoryWindow]:
     feed = BoardFeed(hours * 3600, machines=MACHINES)
-    return feed, HistoryWindow(feed, hours, _log(tmp_path), tmp_path / "starpulse-settings.json")
+    return feed, HistoryWindow(feed, hours, _log(tmp_path))
 
 
 def _drawn(feed: BoardFeed) -> list[str]:
@@ -153,27 +153,6 @@ def test_resetting_with_no_override_is_a_no_op(tmp_path: Path) -> None:
     _, window = _window(tmp_path, 6)
 
     assert history_window("127.0.0.1", "DELETE", b"", window) == (200, {"hours": 6, "default": 6, "overridden": False})
-
-
-@pytest.mark.parametrize("text", ["", "{", "[]", '{"history_hours": 500}', '{"history_hours": "x"}', '{"other": 1}'])
-def test_a_settings_file_that_cannot_be_read_as_a_valid_window_leaves_the_declared_hours(
-    tmp_path: Path, text: str
-) -> None:
-    (tmp_path / "starpulse-settings.json").write_text(text)
-
-    _, window = _window(tmp_path, 6)
-
-    assert history_window("127.0.0.1", "GET", b"", window)[1] == {"hours": 6, "default": 6, "overridden": False}
-
-
-def test_an_override_file_from_before_the_store_is_imported_once(tmp_path: Path) -> None:
-    (tmp_path / "starpulse-settings.json").write_text('{"history_hours": 24}')
-
-    _, window = _window(tmp_path, 6)
-
-    assert history_window("127.0.0.1", "GET", b"", window)[1] == {"hours": 24, "default": 6, "overridden": True}
-    assert _log(tmp_path).setting("history.hours") == 24
-    assert not (tmp_path / "starpulse-settings.json").exists()
 
 
 #: A public (RFC 5737) address, the first one past 172.16/12, and a documentation IPv6 address.

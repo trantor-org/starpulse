@@ -1,5 +1,5 @@
-"""A SQLite store is versioned by the Alembic chain: a fresh file is built by it, a store from before the chain is
-stamped and upgraded, and nothing but the chain changes its schema."""
+"""A SQLite store is versioned by the Alembic chain: a fresh file is built by it, and nothing but the chain changes its
+schema."""
 
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -14,7 +14,7 @@ from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.migrate import alembic_config
 from starpulse.event_log.readmodel import metadata as readmodel_metadata
 from starpulse.event_log.store import metadata as store_metadata
-from starpulse.event_log.tables import VERSION_TABLE, checkpoints, day_rollups, metadata
+from starpulse.event_log.tables import VERSION_TABLE, day_rollups, metadata
 from starpulse.flow_metrics.history import HistoryStore
 
 from tests.machines import MACHINES
@@ -46,30 +46,8 @@ def _indexes(engine: Engine, table: str) -> set[str]:
     return {index["name"] for index in inspect(engine).get_indexes(table)}
 
 
-def _a_pre_alembic_store(path: Path) -> Engine:
-    """A store as the release before the chain left it: every table but the rollups, no version table."""
-    engine = create_engine(f"sqlite:///{path}")
-    tables = [
-        table
-        for table in metadata.sorted_tables
-        if table not in (day_rollups, checkpoints) and table.name != _CLAIM_EXPIRIES
-    ]
-    metadata.create_all(engine, tables=tables)
-    with engine.begin() as db:
-        db.execute(text("CREATE TABLE starpulse_cursors (stream VARCHAR PRIMARY KEY, after_id INTEGER NOT NULL)"))
-        db.execute(
-            text(
-                "CREATE TABLE starpulse_board_state "
-                "(stream VARCHAR PRIMARY KEY, after_id VARCHAR NOT NULL, state JSON NOT NULL, saved_at FLOAT NOT NULL)"
-            )
-        )
-        db.execute(text(f"DROP INDEX {_RETIRED_AT_INDEX}"))
-        db.execute(text("DROP INDEX ix_starpulse_machine_events_run"))
-    return engine
-
-
 def test_the_chain_has_one_head() -> None:
-    assert ScriptDirectory(str(_MIGRATIONS)).get_heads() == ["0034"]
+    assert ScriptDirectory(str(_MIGRATIONS)).get_heads() == ["0035"]
 
 
 def test_a_fresh_store_is_built_by_the_chain_and_matches_the_declared_schema(tmp_path: Path) -> None:
@@ -101,32 +79,6 @@ def test_a_fresh_stores_event_ids_are_never_handed_out_again(tmp_path: Path) -> 
         ids = list(db.execute(text("SELECT id FROM starpulse_events ORDER BY id")).scalars())
 
     assert ids == [1, 3]
-
-
-def test_a_store_from_before_the_chain_is_stamped_and_upgraded_with_its_rows_intact(tmp_path: Path) -> None:
-    path = tmp_path / "legacy.sqlite"
-    legacy = _a_pre_alembic_store(path)
-    with legacy.begin() as db:
-        db.execute(
-            text(
-                "INSERT INTO starpulse_lane_changes (event_id, task, old_status, new_status, observed_at) "
-                "VALUES ('lc-1', 'PROJ-7', 'Ready', 'In Progress', 100.0)"
-            )
-        )
-        db.execute(text("INSERT INTO starpulse_cursors (stream, after_id) VALUES ('machine:events', 9)"))
-    legacy.dispose()
-
-    store = HistoryStore(f"sqlite:///{path}", MACHINES)
-
-    with store.engine.connect() as db:
-        changes = db.execute(text("SELECT event_id, task, observed_at FROM starpulse_lane_changes")).all()
-    assert (
-        _versions(store.engine),
-        [tuple(row) for row in changes],
-        store.checkpoints.load("machine:events")[0],
-        _SQLITE_ONLY_INDEX in _indexes(store.engine, "starpulse_lane_changes"),
-        _RETIRED_AT_INDEX in _indexes(store.engine, "starpulse_retired_tasks"),
-    ) == ([_head()], [("lc-1", "PROJ-7", 100.0)], 9, True, True)
 
 
 def test_the_checkpoint_revision_moves_cursors_and_saved_boards_into_one_table_and_drops_the_old_ones(

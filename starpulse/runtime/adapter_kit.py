@@ -313,7 +313,7 @@ def serve(
         served,
         static,
         history or HistoryStore(kept, machines),
-        window or HistoryWindow(served, 6, log, tmp_path / "starpulse-settings.json"),
+        window or HistoryWindow(served, 6, log),
         board,
         Services(**services),
         clock,

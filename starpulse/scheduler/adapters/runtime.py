@@ -19,13 +19,13 @@ from starpulse.scheduler.model.config import Scheduler
 from starpulse.board.board_feed import BoardFeed
 from starpulse.scheduler.model.harness_setting import HarnessSetting
 from starpulse.scheduler.model.inputs import review_points, sessions_in_flight
-from starpulse.scheduler.model.ledger import LEDGER_FILE, Ledger
+from starpulse.scheduler.model.ledger import Ledger
 from starpulse.scheduler.adapters.loop import Loop
 from starpulse.scheduler.adapters.probe import LocalProbe
 from starpulse.scheduler.model.quiet_hours import QuietHoursSetting
 from starpulse.scheduler.model.sampler import Crossing, Reading, Sampler
 from starpulse.scheduler.model.state import SchedulerState
-from starpulse.scheduler.model.toggle import TOGGLE_FILE, Toggle
+from starpulse.scheduler.model.toggle import Toggle
 from starpulse.event_log.event_log import EventLog
 from starpulse.harness_telemetry.harness import HARNESS
 
@@ -143,7 +143,6 @@ def log_crossing(crossing: Crossing) -> None:
 
 def build(
     policy: Scheduler,
-    state_dir: Path,
     log: EventLog,
     feed: BoardFeed,
     probe: Callable[[], Mapping[str, float]] | None = None,
@@ -157,7 +156,7 @@ def build(
     p_goals: Callable[[], Mapping[str, float]] = dict,
     lane: str = "",
 ) -> Runtime:
-    """The switch kept in `log`'s store (a file in `state_dir` from before it moved there is imported once) and a sampler of `policy`'s limits over `feed`, on the local probe unless given another.
+    """The switch kept in `log`'s store and a sampler of `policy`'s limits over `feed`, on the local probe unless given another.
 
     With `start` and `settle` it also builds the dispatch loop over them, admitting from `lane` and keeping its run ledger
     beside the switch; a capacity crossing then wakes it. Without them there is only the switch and the sampler.
@@ -189,7 +188,7 @@ def build(
             sampler.restore([Reading(str(row["name"]), float(row["use"]), float(row["limit"])) for row in rows], at)
         except KeyError, TypeError, ValueError:
             pass  # a malformed row is a missing sample; the first live pass is the baseline
-    toggle = Toggle(log, state_dir / TOGGLE_FILE)
+    toggle = Toggle(log)
     quiet_hours = QuietHoursSetting(log)
     harness = HarnessSetting(log)
     if start is not None and settle is not None:
@@ -198,7 +197,7 @@ def build(
             policy=policy,
             toggle=toggle,
             sampler=sampler,
-            ledger=Ledger(log, state_dir / LEDGER_FILE),
+            ledger=Ledger(log),
             start=start,
             settle=settle,
             chain=chain,

@@ -343,7 +343,7 @@ def build(
     log = EventLog(history)
     store = HistoryStore(log.url, feed.machines)
     records, tasks = ({}, []) if model else seed(feed, store, time.time() if now is None else now)
-    window = HistoryWindow(feed, 24 * 7, log, directory / "starpulse-settings.json")
+    window = HistoryWindow(feed, 24 * 7, log)
     # The preview reads its seeded task records and the native milestones and docs, and refuses every task write.
     board = replace(
         native_board(directory),

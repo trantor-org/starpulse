@@ -21,7 +21,6 @@ from tests.unit.runtime.test_scheduler_route import HOST, _feed
 def _runtime(tmp_path: Path, feed: BoardFeed) -> Runtime:
     runtime = build(
         Scheduler(),
-        tmp_path,
         EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}"),
         feed,
         probe=lambda: HOST,

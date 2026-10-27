@@ -2,18 +2,18 @@
 
 from __future__ import annotations
 
+import logging
 import threading
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, TypeGuard
-
-from starpulse.event_log import operator_settings
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     from starpulse.event_log.event_log import EventLog
 
+logger = logging.getLogger(__name__)
+
 #: The history window Admin may set, in hours.
 MIN_HOURS, MAX_HOURS = 1, 72
-#: The override's file before it moved into the store; a file by this name beside the config is imported once.
+#: The override's file before it moved into the store; `starpulse migrate` imports a file by this name once.
 SETTINGS_FILE = "starpulse-settings.json"
 KEY = "history.hours"
 
@@ -32,21 +32,23 @@ class HistoryWindow:
     """How far back a task's latest move counts: the declared `--hours`, or the override Admin wrote over it.
 
     The override is read from the store at construction, so it survives a restart; one that is missing, unreadable or
-    outside the range leaves the declared hours. `path` is the old settings file, imported when the store holds no
-    row. Every change reaches `feed` at once.
+    outside the range leaves the declared hours. Every change reaches `feed` at once.
     """
 
-    def __init__(self, feed: _Feed, declared_hours: float, log: EventLog, path: Path) -> None:
+    def __init__(self, feed: _Feed, declared_hours: float, log: EventLog) -> None:
         self._feed = feed
         self._declared = declared_hours
         self._log = log
-        self._path = path
         self._lock = threading.Lock()
         self._override = self._read()
         self._apply()
 
     def _read(self) -> float | None:
-        hours = operator_settings.read(self._log, KEY, self._path, "history_hours")
+        try:
+            hours = self._log.setting(KEY)
+        except Exception as exc:  # fail closed: an unreadable override is no override
+            logger.warning("history window: reading %s failed: %s", KEY, exc)
+            return None
         return hours if _valid(hours) else None
 
     def _apply(self) -> None:
@@ -66,13 +68,13 @@ class HistoryWindow:
         if not _valid(hours):
             raise ValueError(f"history window must be between {MIN_HOURS} and {MAX_HOURS} hours; got {hours}")
         with self._lock:
-            operator_settings.write(self._log, KEY, hours, self._path)
+            self._log.set_setting(KEY, hours)
             self._override = hours
             self._apply()
 
     def reset(self) -> None:
         """Delete the override: the window returns to the declared hours."""
         with self._lock:
-            operator_settings.clear(self._log, KEY, self._path)
+            self._log.delete_setting(KEY)
             self._override = None
             self._apply()

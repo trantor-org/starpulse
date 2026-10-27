@@ -34,7 +34,7 @@ def log(tmp_path: Path) -> EventLog:
 
 
 def test_remote_answers_a_minimal_status_before_the_worker_has_published_one(log: EventLog, tmp_path: Path) -> None:
-    assert Remote(log, tmp_path).served_status() == {
+    assert Remote(log).served_status() == {
         "enabled": False,
         "harness": "claude",
         "quietHours": None,
@@ -46,7 +46,7 @@ def test_remote_answers_a_minimal_status_before_the_worker_has_published_one(log
 def test_remote_settings_take_effect_in_the_store_and_over_the_workers_last_status(
     log: EventLog, tmp_path: Path
 ) -> None:
-    remote = Remote(log, tmp_path)
+    remote = Remote(log)
     publisher(log, BoardFeed(roles=ROLES, machines={**MACHINES, **SESSION_MACHINES}))("scheduler", STATUS)
 
     remote.set_enabled(True)
@@ -63,7 +63,7 @@ def test_remote_settings_take_effect_in_the_store_and_over_the_workers_last_stat
 
 def test_remote_refuses_what_the_runtime_refuses(log: EventLog, tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="harness"):
-        Remote(log, tmp_path).set_harness("")
+        Remote(log).set_harness("")
 
 
 def test_a_change_through_remote_wakes_the_worker(log: EventLog, tmp_path: Path) -> None:
@@ -71,7 +71,7 @@ def test_a_change_through_remote_wakes_the_worker(log: EventLog, tmp_path: Path)
     stop = threading.Event()
     follow_wakes(log, woken.set, stop)
 
-    Remote(log, tmp_path).set_quiet_hours(None)
+    Remote(log).set_quiet_hours(None)
 
     assert woken.wait(DEADLINE_S)
     stop.set()

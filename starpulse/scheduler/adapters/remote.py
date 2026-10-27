@@ -23,7 +23,7 @@ from typing import Any
 from starpulse.board.board_feed import BoardFeed
 from starpulse.scheduler.model.harness_setting import HarnessSetting
 from starpulse.scheduler.model.quiet_hours import QuietHoursSetting
-from starpulse.scheduler.model.toggle import TOGGLE_FILE, Toggle
+from starpulse.scheduler.model.toggle import Toggle
 from starpulse.event_log.event_log import Entry, EventLog, Tail
 
 logger = logging.getLogger(__name__)
@@ -83,9 +83,9 @@ def follow_wakes(log: EventLog, wake: Callable[[], None], stop: threading.Event)
 class Remote:
     """`serve`'s stand-in for the scheduler `Runtime` the worker holds: the same setters and status, over the log."""
 
-    def __init__(self, log: EventLog, state_dir: Path) -> None:
+    def __init__(self, log: EventLog) -> None:
         self._log = log
-        self._toggle = Toggle(log, state_dir / TOGGLE_FILE)
+        self._toggle = Toggle(log)
         self._quiet_hours = QuietHoursSetting(log)
         self._harness = HarnessSetting(log)
 

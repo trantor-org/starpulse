@@ -43,7 +43,7 @@ def _worker(base: Path, url: str) -> Iterator[tuple[Scheduler, Remote]]:
     )
     worker.start()
     try:
-        yield worker, Remote(log, base / (config.scheduler.state_dir or ""))
+        yield worker, Remote(log)
     finally:
         worker.stop()
 

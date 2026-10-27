@@ -31,7 +31,7 @@ def feed() -> BoardFeed:
 
 def _routes(feed: BoardFeed, tmp_path: Path, **pushes) -> WriteRoutes:
     log = EventLog(f"sqlite:///{tmp_path / 'settings.sqlite'}")
-    window = HistoryWindow(feed, 6, log, tmp_path / "starpulse-settings.json")
+    window = HistoryWindow(feed, 6, log)
     unwritten = lambda *args, **kwargs: None  # noqa: E731 - a writer that answers nothing
     return WriteRoutes(feed, window, bare_board(writer=unwritten, assign=unwritten), Services(**pushes))
 

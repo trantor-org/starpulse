@@ -83,11 +83,8 @@ def start_scheduler(
         return ranks_from_trajectories_body(json.loads(body), lane)
 
     ranks = cached(read_ranks, _CHAIN_TTL_S)
-    state_dir = base / (config.scheduler.state_dir or "")
-    state_dir.mkdir(parents=True, exist_ok=True)
     runtime = build_scheduler(
         config.scheduler,
-        state_dir,
         log,
         feed,
         probe,

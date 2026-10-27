@@ -53,8 +53,8 @@ class Rig:
             clock=lambda: self.now,
         )
         self.log = EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}")
-        self.ledger = Ledger(self.log, tmp_path / "runs.jsonl")
-        self.toggle = Toggle(self.log, tmp_path / "toggle.json")
+        self.ledger = Ledger(self.log)
+        self.toggle = Toggle(self.log)
         self.toggle.set(True)
         self.harness_setting = HarnessSetting(self.log)
         self.started: list[str] = []

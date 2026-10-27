@@ -23,7 +23,7 @@ from starpulse.runtime.assembly import assemble, history_store
 from starpulse.runtime.config import load
 from starpulse.scheduler.adapters.runtime import Runtime
 from starpulse.scheduler.bin.scheduler_service import start_scheduler
-from starpulse.scheduler.model.ledger import LEDGER_FILE, Ledger
+from starpulse.scheduler.model.ledger import Ledger
 from starpulse.scheduler.model.sampler import PERIOD
 from starpulse.sessions.session_start import starter
 
@@ -195,10 +195,9 @@ def test_a_board_with_no_scheduler_block_and_no_start_service_starts_the_task_in
 
 
 def test_the_switch_and_the_run_ledger_are_kept_in_the_store_not_in_files_beside_the_config(tmp_path: Path) -> None:
-    state = tmp_path / "starpulse-state"  # not created beforehand: the server makes it
     with _start_service() as (url, asked):
         _task(tmp_path, "Done")
-        config = f'session_start_url = "{url}"\n[scheduler]\nstate_dir = "starpulse-state"\n'
+        config = f'session_start_url = "{url}"\n'
         with _served(tmp_path, config) as (feed, runtime):
             _until(lambda: feed.task("task-1"), "the board's read of task-1")
             _task(tmp_path, "To Do")
@@ -208,10 +207,8 @@ def test_the_switch_and_the_run_ledger_are_kept_in_the_store_not_in_files_beside
             _until(lambda: "Scheduler started task-1" in task_file.read_text(), "the start's claim comment")
             _task(tmp_path, "Done")  # the run's task leaves the lane: its run is recorded
             store = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
-            ledger = Ledger(store, state / LEDGER_FILE)
+            ledger = Ledger(store)
             _until(lambda: ledger.runs("task-1"), "the run's row in the store")
 
     assert EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}").setting("scheduler.enabled") is True
-    assert not (state / LEDGER_FILE).exists()  # the ledger is a table in the store, not a file
-    assert not (state / "starpulse-scheduler.json").exists()  # the switch is a row in the store, not a file
     assert sorted(path.name for path in tmp_path.glob("starpulse-scheduler*")) == []  # nothing beside the config

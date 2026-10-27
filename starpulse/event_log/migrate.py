@@ -16,14 +16,11 @@ from alembic.config import Config as AlembicConfig
 from alembic.script import ScriptDirectory
 from sqlalchemy import Connection, Engine, create_engine, inspect, text
 
-from starpulse.event_log.tables import VERSION_TABLE, events
+from starpulse.event_log.tables import VERSION_TABLE
 
 __all__ = ["StoreNotMigrated", "alembic_config", "migrate", "require_migrated"]
 
 _MIGRATIONS = Path(__file__).parent / "migrations"
-#: The revision whose schema a store has when it holds the tables but no version table: the release before the chain
-#: upgraded each store to it on open, so a store last opened by that release is stamped here and upgraded from there.
-_UNVERSIONED = "0019"
 #: Alembic's environment is process-global, so two threads of one process cannot run the chain at once.
 _RUNNING = threading.Lock()
 
@@ -81,7 +78,7 @@ def _recorded(db: Connection) -> str | None:
 
 
 def migrate(engine: Engine) -> None:
-    """Bring the SQLite store `engine` opens to the chain's head, building it, or stamping one from before the chain."""
+    """Bring the SQLite store `engine` opens to the chain's head, building it."""
     with _RUNNING, engine.connect() as db:
         if _recorded(db) == _head():
             return
@@ -92,8 +89,6 @@ def migrate(engine: Engine) -> None:
             db.commit()
             return
         config = alembic_config(db)
-        if recorded is None and inspect(db).has_table(events.name):
-            command.stamp(config, _UNVERSIONED)
         command.upgrade(config, "head")
         db.commit()
 

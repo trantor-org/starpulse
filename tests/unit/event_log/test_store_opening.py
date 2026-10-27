@@ -1,4 +1,4 @@
-"""Opening the store does no maintenance: the schema, the lane repair and the summaries come from `starpulse migrate`."""
+"""Opening the store does no maintenance: the schema, the one-time imports and the summaries come from `starpulse migrate`."""
 
 from pathlib import Path
 
@@ -10,7 +10,7 @@ from starpulse.event_log.migrate import StoreNotMigrated, migrate
 from starpulse.flow_metrics.history import HistoryStore
 
 
-@pytest.mark.parametrize("step", ["repair_lanes", "rebuild_summaries", "build_summaries"])
+@pytest.mark.parametrize("step", ["rebuild_summaries", "build_summaries"])
 def test_opening_a_migrated_store_runs_no_maintenance_step(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, step: str) -> None:
     url = f"sqlite:///{tmp_path / 'history.sqlite'}"
     migrate(create_engine(url))

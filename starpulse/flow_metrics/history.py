@@ -44,7 +44,7 @@ from sqlalchemy.exc import OperationalError
 
 from starpulse.flow_metrics.level import Level
 from starpulse.event_log import events as machine_events
-from starpulse.event_log import lane_events, lane_repair
+from starpulse.event_log import lane_events
 from starpulse.event_log.checkpoints import Checkpoints
 from starpulse.event_log.event_log import EventLog, insert_event
 from starpulse.event_log.lane_import import Change
@@ -163,6 +163,19 @@ def _holds_move(db: Connection, task: str, source_name: str | None, status: str,
     if source_name is not None:
         query = query.where(c.event_id.startswith(f"{source_name}/", autoescape=True))
     return db.execute(query).first() is not None
+
+
+def _rechain(db: Connection, tasks: Iterable[str]) -> None:
+    """Chain each task's rows, per source, off the row before them: imported rows older than live ones sit in front."""
+    c = _lane_changes.c
+    held = select(c.id, c.task, c.event_id, c.old_status, c.new_status).where(c.task.in_(list(tasks)))
+    rows = db.execute(held.order_by(c.task, *_LANE_ORDER))
+    before: dict[tuple[str, str], str | None] = {}
+    for id_, task, event_id, old, new in rows.all():
+        key = task, event_id.partition("/")[0] if "/" in event_id else ""
+        if old != before.get(key):
+            db.execute(update(_lane_changes).where(c.id == id_).values(old_status=before.get(key)))
+        before[key] = new
 
 
 class History(Protocol):
@@ -295,20 +308,6 @@ class HistoryStore:
         self._answer_flight = threading.Lock()
         require_migrated(self.engine)
 
-    def repair_lanes(self) -> int:
-        """Put the lane history right where two writers left it, as `lane_repair.plan` says: how many rows it dropped or
-        rewrote, 0 for a history that is right (the usual start). The summaries then need `rebuild_summaries`."""
-        c = _lane_changes.c
-        with self.engine.begin() as db:
-            held = select(c.id, c.event_id, c.task, c.old_status, c.new_status, c.observed_at)
-            rows = [tuple(r) for r in db.execute(held)]
-            rewrites, drops = lane_repair.plan(rows)
-            for id_, (old, new) in rewrites.items():
-                db.execute(update(_lane_changes).where(c.id == id_).values(old_status=old, new_status=new))
-            if drops:
-                db.execute(delete(_lane_changes).where(c.id.in_(drops)))
-        return len(rewrites) + len(drops)
-
     def _insert(self, table: Table):
         return sqlite.insert(table)
 
@@ -415,9 +414,8 @@ class HistoryStore:
 
         A change is written as the board's own event id names it, so one the store holds is not written again, and a
         move the store holds under another id (task, lane, time) or a change into the lane its task was already in
-        adds nothing. Changes may be older than the rows the store holds, so each row is written unchained and the
-        store's lane history is then repaired (`repair_lanes`) and its summaries rebuilt, as a start does: nothing may
-        record while it runs.
+        adds nothing. Changes may be older than the rows the store holds, so the touched tasks are chained again and the
+        store's summaries are then rebuilt: nothing may record while it runs.
         """
         ordered = sorted(changes, key=lambda change: change.at)
         ids = [change.event_id for change in ordered]
@@ -434,7 +432,7 @@ class HistoryStore:
                     continue
                 row = {"event_id": event_id, "task": task, "old_status": None, "new_status": status, "observed_at": at}
                 db.execute(self._insert(_lane_changes).values(row).on_conflict_do_nothing())
-        self.repair_lanes()
+            _rechain(db, last)
         self.rebuild_summaries()
         with self.engine.connect() as db:
             return len(_held_ids(db, ids) - held)
