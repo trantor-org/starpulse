@@ -324,6 +324,15 @@ def test_a_producer_that_lists_no_machines_or_actors__is_still_a_producer(tmp_pa
     assert (producer.name, producer.machines, producer.actors) == ("cron", (), ())
 
 
+def test_a_producer_names_the_run_adapter_whose_status_labels_it_posts(tmp_path: Path) -> None:
+    config_file = tmp_path / "starpulse.toml"
+    config_file.write_text('[[producers]]\nname = "hooks"\ntoken_env = "T"\nadapter = "dagu"\n')
+
+    (producer,) = load(config_file).producers
+
+    assert producer.adapter == "dagu"
+
+
 _PRODUCER = 'name = "dagu"\ntoken_env = "T"\nmachines = ["ci"]\nactors = ["ci"]\n'
 
 
@@ -350,7 +359,7 @@ _PRODUCER = 'name = "dagu"\ntoken_env = "T"\nmachines = ["ci"]\nactors = ["ci"]\
         ),
         (
             "[[producers]]\n" + _PRODUCER + 'url = "x"\n',
-            "producer dagu: unknown key(s) url; known: actors, machines, name, token_env",
+            "producer dagu: unknown key(s) url; known: actors, adapter, machines, name, token_env",
         ),
         (
             "[[producers]]\n"

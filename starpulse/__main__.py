@@ -1,7 +1,7 @@
 """`starpulse serve|<verb> ...` (or `python -m starpulse`): the package's command line.
 
 `serve` runs the view (`starpulse.runtime.server`), `init` scaffolds a first install (`starpulse.cli.init`),
-`connect` writes the
+`event emit` posts one CloudEvent to the ingest (`starpulse.cli.event`), `connect` writes the
 config's `[board]` for a tracker after checking it answers (`starpulse.cli.connect`), `migrate` brings the store to its
 schema (`starpulse.runtime.store_migrate`) and `import-history` adds a
 board's earlier lane changes to the store (`starpulse.runtime.history_import`) and `conform` replays the recorded
@@ -30,6 +30,7 @@ COMMANDS: dict[str, Callable[[list[str]], int | None]] = {
     "serve": _lazy("starpulse.runtime.server"),
     "init": _lazy("starpulse.cli.init"),
     "connect": _lazy("starpulse.cli.connect"),
+    "event": _lazy("starpulse.cli.event"),
     "worker": _lazy("starpulse.runtime.worker"),
     "migrate": _lazy("starpulse.runtime.store_migrate"),
     "import-history": _lazy("starpulse.runtime.history_import"),

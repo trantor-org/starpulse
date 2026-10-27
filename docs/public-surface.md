@@ -93,7 +93,7 @@ The modules an adapter may import. A context package exports exactly the names i
 is public for the names listed here:
 
 - `starpulse.board`: the board adapter seam (`Board`, `Written`, the writer, task, milestone and doc protocols, and the `UpstreamBacklog` reference adapter), the feed a board adapter places tasks on (`BoardFeed`, `BoardStore`, `Followed`, `Resumable`) and `CommitKeys`.
-- `starpulse.contracts`: the board (a `BoardTask` carries `acceptance_criteria` with `acceptance_checked`, `pause_reason` and `notes` beside its `description`), machine-event, run-event (`RunEvent`), lane-event (`LaneEvent`), runs (`Dag`, `RecentRun`) records, their JSON Schemas, `EVENT_STREAMS` (the record of each event log stream), and `RunsSink`.
+- `starpulse.contracts`: the board (a `BoardTask` carries `acceptance_criteria` with `acceptance_checked`, `pause_reason` and `notes` beside its `description`), machine-event, CloudEvent (`CloudEvent`, the ingest's and `starpulse event emit`'s model), run-event (`RunEvent`), lane-event (`LaneEvent`), runs (`Dag`, `RecentRun`) records, their JSON Schemas, `EVENT_STREAMS` (the record of each event log stream), and `RunsSink`.
 - `starpulse.event_log`: the database event log readers tail; [Build a consumer](consumers.md) shows a reader that keeps its cursor in its own store.
 - `starpulse.flow_metrics`: the history a board adapter may keep itself, and placing a task's events on a machine.
 - `starpulse.harness_telemetry`: loading the harness file and the tiers and efforts an agent profile names, and decoding Claude Code's OpenTelemetry log export.

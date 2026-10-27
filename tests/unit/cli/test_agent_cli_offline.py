@@ -147,7 +147,7 @@ class TestConfigCheck:
 
         assert code == 0
         assert document["config"]["producers"] == [
-            {"name": "ci", "token_env": "CI_TOKEN", "machines": ["delivery"], "actors": ["ci"]}
+            {"name": "ci", "token_env": "CI_TOKEN", "machines": ["delivery"], "actors": ["ci"], "adapter": None}
         ]
 
     def test_a_producers_table_missing_its_token_env_is_refused(

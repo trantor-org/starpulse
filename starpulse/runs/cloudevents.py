@@ -25,9 +25,13 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Callable, Mapping
-from datetime import datetime
+from importlib import import_module
 from typing import TYPE_CHECKING, Any
 
+from pydantic import ValidationError
+
+from starpulse.board.model.adapter_types import module_name
+from starpulse.contracts.adapters import CloudEvent
 from starpulse.runs.config import MAX_BATCH
 from starpulse.runs import run_events
 from starpulse.runs.ingest import run_event, token_owner
@@ -48,29 +52,6 @@ class _Refused(Exception):
     def __init__(self, status: int, reason: str) -> None:
         super().__init__(reason)
         self.status = status
-
-
-def _text(event: Mapping[str, Any], key: str) -> str:
-    value = event.get(key)
-    if not (isinstance(value, str) and value):
-        raise _Refused(400, f"{key} must be non-empty text")
-    return value
-
-
-def _optional_text(event: Mapping[str, Any], key: str) -> str | None:
-    return None if event.get(key) is None else _text(event, key)
-
-
-def _epoch(value: object, now: float) -> float:
-    if value is None:
-        return now
-    try:
-        stamped = datetime.fromisoformat(value) if isinstance(value, str) else None
-    except ValueError:
-        stamped = None
-    if stamped is None or stamped.tzinfo is None:
-        raise _Refused(400, "time must be an RFC 3339 timestamp with an offset")
-    return stamped.timestamp()
 
 
 class CloudEventsIngest:
@@ -128,62 +109,69 @@ class CloudEventsIngest:
         """The stream, event id and fields one CloudEvent appends, or `_Refused` with the reason."""
         if not isinstance(event, dict):
             raise _Refused(400, "an event is a JSON object")
-        if event.get("specversion") != "1.0":
-            raise _Refused(400, 'specversion must be "1.0"')
-        event_id, source = _text(event, "id"), _text(event, "source")
-        if source != producer.name:
+        try:
+            parsed = CloudEvent.model_validate(event)
+        except ValidationError as invalid:
+            raise _Refused(
+                400, "; ".join(f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in invalid.errors())
+            ) from None
+        if parsed.source != producer.name:
             raise _Refused(403, f"source must be the producer's own name, {producer.name}")
-        if event.get("machine") is None and event.get("type") in run_events.EVENTS:
-            return run_events.STREAM, f"{producer.name}/{event_id}", self._run_entry(producer, event)
-        fields = self._machine_entry(producer, event, event_id)
+        if parsed.data is not None and len(json.dumps(parsed.data)) > MAX_DATA:
+            raise _Refused(413, f"data is at most {MAX_DATA} bytes")
+        if parsed.machine is None and parsed.type in run_events.EVENTS:
+            return run_events.STREAM, f"{producer.name}/{parsed.id}", self._run_entry(producer, parsed)
+        fields = self._machine_entry(producer, parsed)
         return STREAM, fields["event_id"], fields
 
-    def _run_entry(self, producer: Producer, event: dict[str, Any]) -> dict[str, Any]:
+    def _at(self, event: CloudEvent) -> float:
+        return self._clock() if event.time is None else event.time.timestamp()
+
+    def _run_entry(self, producer: Producer, event: CloudEvent) -> dict[str, Any]:
         """The `runs:events` fields of a Step event; the producer is the run's `instance` unless it is `local`."""
-        data = event.get("data")
-        if not isinstance(data, dict):
-            raise _Refused(400, "a run event carries data: workflow, status and, for a step, step and depends")
-        if len(json.dumps(data)) > MAX_DATA:
-            raise _Refused(413, f"data is at most {MAX_DATA} bytes")
-        wanted = {**data, "event": event["type"], "run_id": event.get("subject")}
-        if isinstance(fault := run_event(wanted), str):
+        data = event.data
+        if data is None or event.subject is None:
+            raise _Refused(
+                400, "a run event carries a subject and data: workflow, status and, for a step, step and depends"
+            )
+        if producer.adapter is not None and isinstance(data.get("status"), str):
+            try:
+                data = {**data, "status": import_module(module_name(producer.adapter)).status_of(data["status"])}
+            except ValueError as unmapped:
+                raise _Refused(400, str(unmapped)) from None
+        if isinstance(fault := run_event({**data, "event": event.type, "run_id": event.subject}), str):
             raise _Refused(400, fault)
         return run_events.entry(
-            event["type"],
+            event.type,
             data["workflow"],
-            event["subject"],
+            event.subject,
             data["status"],
-            now=_epoch(event.get("time"), self._clock()),
+            now=self._at(event),
             step=data.get("step"),
             depends=data.get("depends"),
             instance=producer.name,
         )
 
-    def _machine_entry(self, producer: Producer, event: dict[str, Any], event_id: str) -> dict[str, Any]:
+    def _machine_entry(self, producer: Producer, event: CloudEvent) -> dict[str, Any]:
         """The `machine:events` fields of one machine CloudEvent."""
-        name, machine, actor = (_text(event, k) for k in ("type", "machine", "actor"))
-        if machine not in producer.machines:
-            raise _Refused(403, f"producer {producer.name} may not write machine {machine}")
-        if actor not in producer.actors:
-            raise _Refused(403, f"producer {producer.name} may not write as {actor}")
-        self._declared(machine, name, actor)
-        task, run = _optional_text(event, "subject"), _optional_text(event, "run")
-        if (task is None) == (run is None):
+        if event.machine is None or event.actor is None:
+            raise _Refused(400, "a machine event names its machine and actor")
+        if event.machine not in producer.machines:
+            raise _Refused(403, f"producer {producer.name} may not write machine {event.machine}")
+        if event.actor not in producer.actors:
+            raise _Refused(403, f"producer {producer.name} may not write as {event.actor}")
+        self._declared(event.machine, event.type, event.actor)
+        if (event.subject is None) == (event.run is None):
             raise _Refused(400, "key an event by exactly one of subject (a task) and run")
-        data = event.get("data")
-        if data is not None and not isinstance(data, dict):
-            raise _Refused(400, "data must be a JSON object")
-        if data is not None and len(json.dumps(data)) > MAX_DATA:
-            raise _Refused(413, f"data is at most {MAX_DATA} bytes")
         return {
-            "event_id": f"{producer.name}/{event_id}",
-            "machine": machine,
-            "event": name,
-            **({"task": task} if task is not None else {"run": run}),
-            "actor": actor,
-            "time": _epoch(event.get("time"), self._clock()),
+            "event_id": f"{producer.name}/{event.id}",
+            "machine": event.machine,
+            "event": event.type,
+            **({"task": event.subject} if event.subject is not None else {"run": event.run}),
+            "actor": event.actor,
+            "time": self._at(event),
             "source": producer.name,
-            **({"data": data} if data is not None else {}),
+            **({"data": event.data} if event.data is not None else {}),
         }
 
     def _declared(self, machine: str, name: str, actor: str) -> None:

@@ -377,6 +377,7 @@ name = "ci-bot"
 token_env = "CI_BOT_TOKEN"
 machines = ["delivery"]
 actors = ["ci"]
+# adapter = "dagu"  # optional: a run adapter type whose own status labels its Step events carry, read through its `status_of`
 
 [[repos]]
 name = "skills"
@@ -539,6 +540,7 @@ models in `starpulse/runtime/config_model.py`, which the loader takes its keys a
 - `token_env` (text, required): The environment variable holding its bearer token, never the token; no two producers share one.
 - `machines` (list of text): The drawn machines it may write; leave out with `actors` for a producer that only reports runs.
 - `actors` (list of text): The actors it may write as.
+- `adapter` (text): A run adapter type whose own status labels its Step events carry, read through that adapter's `status_of`.
 
 #### [release]
 

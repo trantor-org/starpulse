@@ -109,3 +109,24 @@ def test_a_step_event_with_no_subject_is_refused_even_when_its_data_names_a_run(
     status, _ = ingest.write("flow", [event])
 
     assert status == 400
+
+
+def test_a_dagu_step_event_carries_dagus_own_label_and_lands_as_its_run_status(
+    log: EventLog, streams: RunStreams
+) -> None:
+    dagu = Producer("dagu", "DAGU_TOKEN", machines=(), actors=(), adapter="dagu")
+    ingest = CloudEventsIngest({"dagu": dagu}, ingest_tokens([dagu], {"DAGU_TOKEN": "s"}), log, {})
+    event = _cloudevent("e1", "StepFinished", status="partially_succeeded") | {"source": "dagu"}
+
+    assert ingest.write("dagu", [event])[0] == 201
+
+    _drain(log, streams)
+    assert [e.payload["status"] for e in streams.read("build", "r1")] == ["failed"]
+
+
+def test_a_dagu_step_event_with_a_label_dagu_never_reports_is_refused(log: EventLog) -> None:
+    dagu = Producer("dagu", "DAGU_TOKEN", machines=(), actors=(), adapter="dagu")
+    ingest = CloudEventsIngest({"dagu": dagu}, ingest_tokens([dagu], {"DAGU_TOKEN": "s"}), log, {})
+    event = _cloudevent("e1", "StepFinished", status="exploded") | {"source": "dagu"}
+
+    assert ingest.write("dagu", [event])[0] == 400

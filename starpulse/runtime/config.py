@@ -266,7 +266,10 @@ def _producer(raw: object) -> Producer:
     _unknown(raw, _PRODUCER_KEYS, who)
     machines = _name_list(raw, "machines", who) if "machines" in raw else ()
     actors = _name_list(raw, "actors", who) if "actors" in raw else ()
-    return Producer(name, _token_env(raw["token_env"], f"{who}:"), machines, actors)
+    adapter = raw.get("adapter")
+    if adapter is not None and not (isinstance(adapter, str) and adapter):
+        raise ConfigError(f"{who}: adapter must be the name of a run adapter type")
+    return Producer(name, _token_env(raw["token_env"], f"{who}:"), machines, actors, adapter)
 
 
 def _producers(raw: object) -> tuple[Producer, ...]:
