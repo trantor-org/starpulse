@@ -1,10 +1,13 @@
-// A DAG's modal, opened from a row of the DAGs view in the Kanban task modal's frame: the title with its state dot, the full step
-// chart, this or the last run, the pool's queue slots, every Board tie with its note, and Run now in the footer.
-import { useEffect } from "react";
-import { chartBox, LedgerNote, lastLine, Orb, Strip, TieChip, type LedgerGo } from "./DagParts";
-import { ago, refusal, short, ties, type DagData, type Row } from "./dagsModel";
+// A DAG's modal, opened from a row of the DAGs view in the Kanban task modal's frame, as wide as its graph needs: the title with its state dot and
+// declared rerun safety, the full step chart, each step's history, this or the last run, the pool's queue slots, every Board tie with its note, and Run now in the footer.
+import { useEffect, type CSSProperties } from "react";
+import { chartBox, LedgerNote, lastLine, Orb, StepHistory, Strip, TieChip, type LedgerGo } from "./DagParts";
+import { ago, refusal, rerunLine, short, ties, type DagData, type Row } from "./dagsModel";
 
 const STATE = (r: Row) => (r.phase === "ok" ? "healthy" : r.phase === "idle" ? "never run" : r.phase === "failed" ? r.d.status : r.phase);
+
+/** The modal's narrowest width, and what its frame takes from the chart's: the body's side padding. */
+const MIN_WIDTH = 640, CHROME = 52;
 
 export function DagModal({ data, r, now, starting, refused, run, close, ledger }: {
   data: DagData; r: Row; now: number; starting: boolean; refused: string | null; run: () => void; close: () => void; ledger?: LedgerGo;
@@ -14,19 +17,23 @@ export function DagModal({ data, r, now, starting, refused, run, close, ledger }
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
   }, [close]);
-  const pool = data.pools.find((p) => p.name === r.d.pool), board = ties(data, r.d.name), why = refusal(r, starting), box = chartBox(r), live = r.d.active ?? [];
+  const pool = data.pools.find((p) => p.name === r.d.pool), board = ties(data, r.d.name), why = refusal(r, starting), box = chartBox(r), rerun = rerunLine(r.d.rerun), live = r.d.active ?? [];
   return (
     <div id="kbm" onClick={(e) => e.target === e.currentTarget && close()}>
-      <div className="modal tv dgm" role="dialog" aria-label={r.d.name}>
+      <div className="modal tv dgm" role="dialog" aria-label={r.d.name} style={{ "--dgw": `${Math.max(MIN_WIDTH, Math.ceil(box.w) + CHROME)}px` } as CSSProperties}>
         <button className="x" onClick={close} aria-label="Close">✕</button>
         <div className="tvhead">
           <h2><Orb phase={r.phase} big />{short(r.d.name)}</h2>
           <div className="k">{r.d.name} · {STATE(r)} · {r.domain}{r.d.pool ? ` · pool ${short(r.d.pool)}` : ""}</div>
+          {rerun && <div className="rerun k">{rerun}</div>}
         </div>
         <div className="tvbody">
           {refused && <div className="editrefusal"><b>Run refused.</b> {refused}</div>}
           <section className="sec"><div className="sh"><span className="t">Steps</span><span className="n">{r.d.steps.length}</span></div>
             <div className="chart"><Strip r={r} w={box.w} h={box.h} big /></div>
+          </section>
+          <section className="sec"><div className="sh"><span className="t">Step history</span></div>
+            <StepHistory steps={r.d.steps} rerun={r.d.rerun} />
           </section>
           <table><tbody>
             <tr><td>{r.phase === "running" || r.phase === "queued" ? "this run" : "last run"}</td><td>{lastLine(r, now)}</td></tr>

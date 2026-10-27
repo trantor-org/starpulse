@@ -954,13 +954,25 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
   box-shadow: 0 10px 30px color-mix(in srgb, var(--shadow) 50%, transparent); font-size: calc(11.5px * var(--fs)); color: var(--ink); }
 /* The DAG modal: the task modal's frame, links, refusal box and Start button. Its own are one column with Run now in a footer, the chart,
    the queue slots and the tie rows. */
-#kbm .modal.tv.dgm { width: min(980px, calc(100vw - 40px)); height: auto; max-height: min(86vh, 860px); }
+#kbm .modal.tv.dgm { width: min(var(--dgw, 980px), calc(100vw - 40px)); height: auto; max-height: min(86vh, 860px); }
 #kbm .dgm .tvhead { padding: 18px 54px 14px 26px; }
 #kbm .dgm h2 { display: flex; align-items: center; gap: 10px; margin: 0; padding-right: 0; }
 #kbm .dgm .tvbody { display: flex; flex-direction: column; gap: 20px; padding: 18px 26px 26px; }
 /* the page never scrolls sideways: a chart wider than the modal scales down to fit it */
 #kbm .dgm .chart { padding: 6px 0 2px; }
-#kbm .dgm .chart svg { display: block; max-width: 100%; height: auto; }
+#kbm .dgm .chart svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+#kbm .dgm .rerun { margin-top: 2px; }
+/* the step history: a line a step, its last five runs as ticks in the run's colour, an empty slot for a run not made */
+#kbm .dgm .hist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+#kbm .dgm .hist li { display: flex; align-items: center; gap: 12px; min-width: 0; }
+#kbm .dgm .hist .nm { flex: none; width: 14em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: calc(11.5px * var(--fs)); }
+#kbm .dgm .hist .runs { flex: none; display: inline-flex; gap: 3px; }
+#kbm .dgm .hist .runs i { width: 14px; height: 6px; border-radius: 2px; background: transparent; border: 1px dashed var(--faint); box-sizing: border-box; }
+#kbm .dgm .hist .runs i[class] { border: 0; background: var(--slate); }
+#kbm .dgm .hist .runs i.s-succeeded { background: var(--ok); }
+#kbm .dgm .hist .runs i.s-failed, #kbm .dgm .hist .runs i.s-aborted { background: var(--fail); }
+#kbm .dgm .hist .runs i.s-running, #kbm .dgm .hist .runs i.s-queued { background: var(--run); }
+#kbm .dgm .hist .note { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: calc(10.5px * var(--fs)); }
 #kbm .dgm .mono { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: calc(11px * var(--fs)); }
 #kbm .dgm b.hot { color: var(--run-text); font-weight: 400; } #kbm .dgm b.q { color: var(--run); font-weight: 400; } #kbm .dgm .bad { color: var(--fail-text); }
 #kbm .dgm .slots { display: inline-flex; align-items: center; gap: 4px; }
