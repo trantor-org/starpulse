@@ -205,7 +205,7 @@ class SessionStep(_Api):
     )
     tokens: TokenCounts
     captured: bool = Field(description="False for a harness the steps-per-completion ledger does not cover (Codex).")
-    eval: str = Field(description="The purpose an eval run stamped with `trantor.eval`; empty for any other request.")
+    eval: str = Field(description="The purpose an eval run stamped with the configured `eval_attribute`; empty for any other request.")
 
 
 class SessionSteps(_Api):

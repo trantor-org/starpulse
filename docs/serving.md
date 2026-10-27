@@ -515,7 +515,12 @@ applied_by = "pin-bump"
 # operator_tools = ["AskUserQuestion", "ExitPlanMode"]    # tools whose result is the operator's answer: the silence before one is their wait
 # claims = ['\.venv/bin/backlog-task\s+start\s+(TASK-\d+)']        # group 1 is the task a command or `Skill` args claims
 # completion_skill = "completing-tasks"                    # with `completion_call`, marks a session's task complete
+# eval_attribute = "my.eval"                               # the OTLP attribute that stamps an eval run's purpose; none: no run is an eval
+# ladder = ["haiku-low", "haiku-high", "sonnet-high"]      # `<family>-<effort>` profiles, cheapest first; a move up is a raise
+# default_repo = "owner/name"                              # the repository `analytics scores` reads without --repo
 # completion_call = '\.venv/bin/deliver\b'                 # a shell command run after that skill loaded
+# [analytics.weights]                                      # task score part weights over the built-in ones
+# clean = 40
 # [[analytics.skill_machines]]                             # what a run under a skill reaches, in order, to conform (see Diff a fast run against a slow one in docs/sources.md)
 # skill = "developing-test-first"
 # stages = [

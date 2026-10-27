@@ -274,9 +274,10 @@ def test_a_launch_branch_on_the_resource_is_every_signals_branch() -> None:
 
 
 def test_an_eval_purpose_on_the_resource_is_every_signals_eval() -> None:
-    payload = export(codex("codex.user_prompt"), resource={"trantor.eval": "memory-search-judge"})
+    payload = export(codex("codex.user_prompt"), resource={"x.eval": "memory-search-judge"})
 
-    assert [s.eval for s in signals(payload)] == ["memory-search-judge"]
+    assert [s.eval for s in signals(payload, analytics=Analytics(eval_attribute="x.eval"))] == ["memory-search-judge"]
+    assert [s.eval for s in signals(payload)] == [""]
 
 
 def test_a_record_without_a_timestamp_is_skipped() -> None:

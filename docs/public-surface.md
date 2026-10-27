@@ -49,7 +49,7 @@ internal and can change in any release.
 - `starpulse search QUERY` and its route `GET /api/search?q=`: the board's tasks ranked by an instance-local full-text index, as `{query, hits}` ([each verb](cli.md)); the index and its module are internal.
 - `GET /api/analytics/missed-loads` and `GET /api/analytics/trace-clusters` and their bodies in `api.schema.json`:
   the skills a session did not load for work that should have loaded them, and the work that recurs across sessions
-  with the sessions an eval run stamped (`trantor.eval`) left out (see
+  with the sessions an eval run stamped (the `[analytics]` `eval_attribute`) left out (see
   [Connect sources](sources.md#find-missed-skill-loads-and-recurring-work)).
 - The board machine's `mainLine` and `tiers` in the `Machine` record of `api.schema.json`: `tiers` is a list of
   tiers, each a list of state ids, that the Star Map draws left to right, one grid cell per tier with a tier's states
@@ -62,7 +62,7 @@ internal and can change in any release.
   footprint the same whatever it holds.
 - The config file's keys, among them
   the `[analytics]` table's `roots`, `stop_activities`, `lifecycle_skills`, `injected_openings`, `operator_tools`, `claims`,
-  `completion_skill`, `completion_call`, the optional `[analytics.labeller]` table's `url`, `model`, `instructions`,
+  `completion_skill`, `completion_call`, `eval_attribute`, `ladder`, `default_repo`, the `[analytics.weights]` table, the optional `[analytics.labeller]` table's `url`, `model`, `instructions`,
   `criteria` and `timeout`, each `[[analytics.skill_loads]]`'s
   `skill`, `activities`, `title` and `label`, and each `[[analytics.skill_machines]]`'s `skill` and `stages` (`name`,
   `activities`, `ok`), and the `[search]` table's optional `embeddings_url`, `model` and

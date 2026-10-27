@@ -27,7 +27,7 @@ from starpulse.contracts.signals import CLAUDE_CODE
 from starpulse.flow_metrics.cells import cell_of
 from starpulse.github import Transport, get
 
-__all__ = ["PullFacts", "cell_task_scores", "merged_pulls", "pull_facts", "score_cells", "task_score"]
+__all__ = ["WEIGHTS", "PullFacts", "cell_task_scores", "merged_pulls", "pull_facts", "score_cells", "task_score"]
 
 WEIGHTS = {"clean": 40, "prompts": 20, "commits_after_ready": 20, "rating": 15, "time_to_merge": 5}
 #: The implicit rating of a session that lowered its model or effort mid-task: half a pass.
@@ -40,11 +40,11 @@ class PullFacts:
     hours_to_merge: float
 
 
-def task_score(parts: Mapping[str, float | None]) -> float | None:
+def task_score(parts: Mapping[str, float | None], weights: Mapping[str, float] = WEIGHTS) -> float | None:
     """The weighted mean of the parts that are present, or None when none is."""
-    held = {name: value for name, value in parts.items() if value is not None and name in WEIGHTS}
-    total = sum(WEIGHTS[name] for name in held)
-    return sum(WEIGHTS[name] * value for name, value in held.items()) / total if total else None
+    held = {name: value for name, value in parts.items() if value is not None and name in weights}
+    total = sum(weights[name] for name in held)
+    return sum(weights[name] * value for name, value in held.items()) / total if total else None
 
 
 def _rating(slice_: Mapping[str, Any], ratings: Mapping[str, float]) -> float | None:
@@ -86,12 +86,13 @@ def cell_task_scores(
     tasks: Mapping[str, Mapping[str, Any]],
     facts: Mapping[str, PullFacts],
     ratings: Mapping[str, float] | None = None,
+    weights: Mapping[str, float] = WEIGHTS,
 ) -> dict[tuple[str, int, str], list[float]]:
     """The score of each completed Claude Code slice, by `(kind, size, profile)`. `facts` maps a task to its merged
     pull request's facts; `ratings` maps a task to its operator's rating, which overrides the implicit one."""
     scores: dict[tuple[str, int, str], list[float]] = defaultdict(list)
     for key, s in _counted(slices, tasks):
-        score = task_score(_parts(s, facts.get(s["task"]), ratings or {}))
+        score = task_score(_parts(s, facts.get(s["task"]), ratings or {}), weights)
         if score is not None:
             scores[key].append(score)
     return scores
@@ -102,6 +103,7 @@ def score_cells(
     tasks: Mapping[str, Mapping[str, Any]],
     facts: Mapping[str, PullFacts],
     ratings: Mapping[str, float] | None = None,
+    weights: Mapping[str, float] = WEIGHTS,
 ) -> list[dict[str, Any]]:
     """One row per kind x size cell and profile of the completed Claude Code slices, `{kind, size, profile, n, score,
     off_arm}`: `score` the mean of the tasks' scores, `off_arm` how many of them changed model or effort mid-task."""
@@ -116,7 +118,7 @@ def score_cells(
             "score": sum(held) / len(held),
             "off_arm": off_arm[(kind, size, profile)],
         }
-        for (kind, size, profile), held in sorted(cell_task_scores(slices, tasks, facts, ratings).items())
+        for (kind, size, profile), held in sorted(cell_task_scores(slices, tasks, facts, ratings, weights).items())
     ]
 
 

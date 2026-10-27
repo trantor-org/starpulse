@@ -29,6 +29,16 @@ tasks or skills (`GET /api/analytics/sessions`):
 - `completion_skill` and `completion_call`: a task is complete in a session that loaded the skill and ran a shell
   command matching the call.
 
+Four more keys name the instance's vocabulary for reading its sessions and scoring its tasks:
+
+- `eval_attribute`: the OTLP attribute (on a resource or a record) that stamps an eval run's purpose; none: no run is
+  an eval.
+- `ladder`: the profiles a task is tried on, cheapest first, each `<model family>-<effort>` (`haiku-low`). A mid-session
+  move up it is a raise, down it a lowering; a profile off it moves nothing, and with none declared no move counts.
+- `weights`: a table of each task score part (`clean`, `prompts`, `commits_after_ready`, `rating`, `time_to_merge`) to
+  its weight; a part left out keeps the built-in weight.
+- `default_repo`: the `owner/name` that `analytics scores` reads when `--repo` is not given.
+
 A run under a skill conforms to its machine (`GET /api/analytics/diff`) when it reaches the stages of its
 `[[analytics.skill_machines]]` entry in order: each stage is a tool call whose activity matches a glob of `activities`
 and, when `ok` is set, that succeeded or failed. A skill with no entry has every run conform.
@@ -54,6 +64,10 @@ _KEYS = {
     "completion_call",
     "skill_machines",
     "labeller",
+    "eval_attribute",
+    "ladder",
+    "weights",
+    "default_repo",
 }
 _LOAD_KEYS = {"skill", "activities", "title", "label"}
 _MACHINE_KEYS = {"skill", "stages"}
@@ -130,6 +144,14 @@ class Analytics:
     """Per skill, the stages a run reaches in order to conform; a skill with none declared has every run conform."""
     labeller: Labeller | None = None
     """The endpoint that labels a human prompt's intent at ingest; none: no prompt carries a label."""
+    eval_attribute: str = ""
+    """The OTLP attribute that stamps an eval run's purpose; none: no signal is an eval."""
+    ladder: tuple[str, ...] = ()
+    """The `<family>-<effort>` profiles cheapest first; none: no profile move is a raise or a lowering."""
+    weights: tuple[tuple[str, float], ...] = ()
+    """Each task score part's weight over the built-in one, as `(part, weight)` pairs."""
+    default_repo: str = ""
+    """The `owner/name` `analytics scores` reads without `--repo`; none: `--repo` is required."""
 
 
 def _texts(raw: Mapping[str, object], key: str) -> tuple[str, ...]:
@@ -137,6 +159,21 @@ def _texts(raw: Mapping[str, object], key: str) -> tuple[str, ...]:
     if not isinstance(value, list) or not all(isinstance(item, str) and item for item in value):
         raise AnalyticsError(f"analytics: {key} must be a list of text")
     return tuple(value)
+
+
+def _text(raw: Mapping[str, object], key: str) -> str:
+    value = raw.get(key, "")
+    if not isinstance(value, str):
+        raise AnalyticsError(f"analytics: {key} must be text")
+    return value
+
+
+def _weights(raw: object) -> tuple[tuple[str, float], ...]:
+    if not isinstance(raw, dict) or not all(
+        isinstance(v, int | float) and not isinstance(v, bool) and v >= 0 for v in raw.values()
+    ):
+        raise AnalyticsError("analytics: weights must map each score part to a weight of 0 or more")
+    return tuple(sorted((str(part), float(weight)) for part, weight in raw.items()))
 
 
 def _load(raw: object, at: int) -> SkillLoad:
@@ -255,6 +292,10 @@ def parse_analytics(raw: object) -> Analytics:
     if not isinstance(machines, list):
         raise AnalyticsError("analytics: skill_machines must be a list of [[analytics.skill_machines]] tables")
     return Analytics(
+        eval_attribute=_text(raw, "eval_attribute"),
+        ladder=_texts(raw, "ladder"),
+        weights=_weights(raw.get("weights", {})),
+        default_repo=_text(raw, "default_repo"),
         roots=roots,
         stop_activities=frozenset(_texts(raw, "stop_activities")),
         lifecycle_skills=frozenset(_texts(raw, "lifecycle_skills")),

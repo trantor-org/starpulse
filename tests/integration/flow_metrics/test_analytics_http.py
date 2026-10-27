@@ -5,6 +5,7 @@ import re
 import urllib.error
 import urllib.request
 from collections.abc import Iterator
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -149,7 +150,7 @@ def test_a_session_an_eval_run_stamped_is_left_out_of_the_recurring_work(tmp_pat
         payload["resourceLogs"][0]["resource"]["attributes"] += _attributes(**{"trantor.eval": "memory-search-judge"})
     telemetry = TelemetryLog(EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}"))
     for payload in payloads:
-        telemetry.publish(signals(payload))
+        telemetry.publish(signals(payload, analytics=replace(ANALYTICS, eval_attribute="trantor.eval")))
     feed = BoardFeed(roles=ROLES, machines=MACHINES, keys=KEYS)
     with serve(tmp_path, feed, telemetry=telemetry, clock=lambda: NOW, analytics=ANALYTICS) as server:
         _, body = _get(server, "/api/analytics/trace-clusters?hours=1&min_sessions=5")

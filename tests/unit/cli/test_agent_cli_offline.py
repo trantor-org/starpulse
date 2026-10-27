@@ -256,6 +256,10 @@ class TestConfigCheck:
                 "completion_call": None,
                 "skill_machines": [],
                 "labeller": None,
+                "eval_attribute": "",
+                "ladder": [],
+                "weights": [],
+                "default_repo": "",
             },
             "task_actor": False,
             "read_model": False,
@@ -278,6 +282,11 @@ class TestConfigCheck:
             "claims = ['start\\s+(TASK-\\d+)']\n"
             'completion_skill = "completing-tasks"\n'
             "completion_call = 'deliver\\b'\n"
+            'eval_attribute = "x.eval"\n'
+            'ladder = ["haiku-low", "haiku-high"]\n'
+            'default_repo = "o/r"\n'
+            "[analytics.weights]\n"
+            "clean = 50\n"
             "[[analytics.skill_loads]]\n"
             'skill = "verifying-claims"\n'
             'title = "^verify"\n'
@@ -311,6 +320,10 @@ class TestConfigCheck:
                     "stages": [{"name": "RED", "activities": ["pytest"], "ok": False}],
                 }
             ],
+            "eval_attribute": "x.eval",
+            "ladder": ["haiku-low", "haiku-high"],
+            "weights": [["clean", 50.0]],
+            "default_repo": "o/r",
             "labeller": {
                 "url": "http://labeller/v1",
                 "model": "intent",
