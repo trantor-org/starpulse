@@ -877,9 +877,9 @@ html.still *, html.still *::before, html.still *::after { animation: none !impor
 @keyframes dag-stream { to { stroke-dashoffset: -6; } }
 #dg .fw #dgq { width: calc(270px * var(--fs)); max-width: 100%; }
 
-#dg .dstage { --H: calc(44px * var(--fs)); --P: calc(82px * var(--fs)); --gap: 14px; position: relative; box-sizing: border-box; margin-bottom: 16px; height: calc(var(--hsum) * var(--H) + var(--n) * var(--P)); }
+#dg .dstage { --H: calc(44px * var(--fs)); --R: calc(64px * var(--fs)); --C: calc(22px * var(--fs)); --gap: 14px; position: relative; box-sizing: border-box; margin-bottom: 16px; height: calc(var(--hsum) * var(--H) + var(--n) * var(--R) + var(--K) * var(--C)); }
 #dg :is(.drow, .phead, .phint) { position: absolute; top: 0; left: 0; box-sizing: border-box; width: calc((100% - (var(--cols) - 1) * var(--gap)) / var(--cols));
-  transform: translate(calc(var(--c) * (100% + var(--gap))), calc(var(--hs) * var(--H) + var(--s) * var(--P))); transition: transform .42s cubic-bezier(.3, .7, .2, 1); }
+  transform: translate(calc(var(--c) * (100% + var(--gap))), calc(var(--hs) * var(--H) + var(--s) * var(--R) + var(--k) * var(--C))); transition: transform .42s cubic-bezier(.3, .7, .2, 1); }
 
 #dg .drow[data-glide] { z-index: 2; transition-duration: .64s; --gl: var(--ok); }
 #dg .drow[data-glide=start] { --gl: var(--run); }
@@ -890,7 +890,7 @@ html.still *, html.still *::before, html.still *::after { animation: none !impor
 #dg .phead[data-pane=processing] .c { color: var(--run-text); }
 #dg .phint { height: calc(var(--H) - 10px * var(--fs)); display: flex; align-items: center; padding-left: 2px; color: var(--ghost); font-size: calc(11px * var(--fs)); }
 
-#dg .drow { height: calc(var(--P) - 10px * var(--fs)); cursor: pointer; outline: 0; }
+#dg .drow { height: calc(54px * var(--fs) + var(--b) * var(--C)); cursor: pointer; outline: 0; }
 #dg .drow .cap { position: absolute; bottom: calc(54px * var(--fs) + 4px * var(--fs)); line-height: 1.2; left: 2px; right: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: calc(10px * var(--fs)); letter-spacing: .18em; text-transform: uppercase; color: var(--muted); }
 #dg .drow .body { position: absolute; left: 0; right: 0; bottom: 0; height: calc(54px * var(--fs)); box-sizing: border-box; display: flex; align-items: center; gap: 12px; padding: 0 calc(max(30px, 30px * var(--fs)) + 10px) 0 14px;
   border-radius: 7px; background: color-mix(in srgb, var(--surface) 92%, transparent); border: 1px solid color-mix(in srgb, var(--slate) 13%, transparent); transition: border-color .3s, box-shadow .3s; }
