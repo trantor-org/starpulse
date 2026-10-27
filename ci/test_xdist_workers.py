@@ -35,10 +35,12 @@ def test_a_runner_with_no_cgroup_memory_file_gets_two(tmp_path):
 
 def test_the_pytest_job_sizes_its_workers_before_it_runs_pytest():
     runs = [step.get("run", "") for step in yaml.safe_load(CI.read_text())["jobs"]["python-shard"]["steps"]]
-    sizing = next(i for i, run in enumerate(runs) if "ci/xdist_workers.py" in run)
-    assert "PYTEST_ADDOPTS=-n" in runs[sizing]
-    assert "--dist worksteal" in runs[sizing]  # idle workers take queued tests, so a long file spreads over them
-    assert sizing < next(i for i, run in enumerate(runs) if "pytest $PYTEST_TARGETS" in run)
+    assert "ci/run.sh python-shard" in runs
+    script = (CI.parents[2] / "ci/run.sh").read_text()
+    body = script.split("cmd_python_shard() {")[1].split("\n}\n")[0]
+    assert 'addopts="-n $(uv run --no-sync python ci/xdist_workers.py)' in body
+    assert "--dist worksteal" in body  # idle workers take queued tests, so a long file spreads over them
+    assert body.index("ci/xdist_workers.py") < body.index("pytest ${PYTEST_TARGETS")
 
 
 @pytest.mark.parametrize(

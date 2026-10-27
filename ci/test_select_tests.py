@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -284,6 +285,12 @@ def _ci() -> dict:
     return yaml.safe_load(CI.read_text())["jobs"]
 
 
+def _function(name: str) -> str:
+    """The body of a function in ci/run.sh, the CI entry point the jobs call."""
+    script = (CI.parents[2] / "ci/run.sh").read_text()
+    return re.search(rf"^{name}\(\) \{{\n(.*?)^\}}$", script, re.DOTALL | re.MULTILINE).group(1)
+
+
 def test_the_nightly_schedule_and_a_dispatch_select_everything_once_in_a_job():
     workflow = yaml.safe_load(CI.read_text())
     # PyYAML reads the bare `on:` key as True.
@@ -298,15 +305,18 @@ def test_the_nightly_schedule_and_a_dispatch_select_everything_once_in_a_job():
     }
     select_step = next(s for s in job["steps"] if s.get("id") == "select")
     # The nightly schedule and a dispatch have no base commit, so both select everything; a pull request selects from its diff.
-    run = select_step["run"]
-    assert 'uv run --no-sync python ci/select_tests.py --full >> "$GITHUB_OUTPUT"' in run
-    assert '--base "$BASE"' in run
+    assert select_step["run"] == 'ci/run.sh select >> "$GITHUB_OUTPUT"'
+    script = _function("cmd_select")
+    assert "python ci/select_tests.py --full" in script
+    assert '--base "$BASE"' in script
 
 
 def test_the_import_layers_are_checked_once_in_the_select_job_not_in_every_shard():
     jobs = _ci()
-    assert any("lint-imports" in s.get("run", "") for s in jobs["select"]["steps"])
+    assert any("ci/run.sh select" in s.get("run", "") for s in jobs["select"]["steps"])
+    assert "lint-imports" in _function("cmd_select")
     assert not any("lint-imports" in s.get("run", "") for s in jobs["python-shard"]["steps"])
+    assert "lint-imports" not in _function("cmd_python_shard")
 
 
 def test_the_shard_matrix_is_the_selections_and_a_shard_runs_the_targets_it_was_given():
@@ -318,8 +328,9 @@ def test_the_shard_matrix_is_the_selections_and_a_shard_runs_the_targets_it_was_
     assert job["env"]["SHARD_COUNT"] == "${{ strategy.job-total }}"
     assert job["env"]["PYTEST_TARGETS"] == "${{ needs.select.outputs.PYTEST_TARGETS }}"
     assert not any("select_tests" in s.get("run", "") for s in job["steps"])
-    pytest_step = next(s for s in job["steps"] if "pytest $PYTEST_TARGETS" in s.get("run", ""))
-    assert "if" not in pytest_step
+    shard_step = next(s for s in job["steps"] if s.get("run") == "ci/run.sh python-shard")
+    assert "if" not in shard_step
+    assert "pytest ${PYTEST_TARGETS:-}" in _function("cmd_python_shard")
 
 
 def test_an_adapter_no_test_names_is_not_selected_through_the_loader_even_though_the_type_table_lists_it(repo):

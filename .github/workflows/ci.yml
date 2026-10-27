@@ -41,20 +41,10 @@ jobs:
           # The diff starts at the pull request's or the candidate's base, which a one-commit checkout lacks.
           fetch-depth: 0
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-      - run: uv sync --locked
-      - run: uv run --no-sync lint-imports
       - id: select
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
-        run: |
-          if [ -z "$BASE" ]; then
-            uv run --no-sync python ci/select_tests.py --full >> "$GITHUB_OUTPUT"
-            printf 'web=true\nstatic=true\n' >> "$GITHUB_OUTPUT"
-          else
-            git diff --name-only --no-renames "$BASE" HEAD > "$RUNNER_TEMP/changed.txt"
-            uv run --no-sync python ci/select_tests.py --base "$BASE" < "$RUNNER_TEMP/changed.txt" >> "$GITHUB_OUTPUT"
-            uv run --no-sync python ci/reach.py < "$RUNNER_TEMP/changed.txt" >> "$GITHUB_OUTPUT"
-          fi
+        run: ci/run.sh select >> "$GITHUB_OUTPUT"
 
   # The suite is split by test file across the shards `select` launches (ci/shard.py), each on its own runner: one to six. The matrix is its PYTEST_SHARDS output, and SHARD_COUNT the matrix's size.
   python-shard:
@@ -84,22 +74,11 @@ jobs:
           sparse-checkout: /*
           sparse-checkout-cone-mode: false
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-      - run: uv sync --locked
-      # pytest-xdist workers sized to the runner's memory: ci/xdist_workers.py.
-      # The nightly and a manual dispatch (TEST_COST_REPORT set) add `-m "not e2e"`: the nightly-marked budget tests the gate
-      # deselects (pyproject addopts).
-      - run: echo "PYTEST_ADDOPTS=-n $(uv run --no-sync python ci/xdist_workers.py) --dist worksteal ${TEST_COST_REPORT:+-m 'not e2e'}" >> "$GITHUB_ENV"
-      # The nightly suite records which source files each test runs (pyproject's [tool.coverage.run]); ci/coverage_map.py
-      # turns the shards' data into the map the select step reads.
-      - if: ${{ env.TEST_COST_REPORT == '1' }}
-        run: echo "PYTEST_ADDOPTS=$PYTEST_ADDOPTS --cov --cov-context=test --cov-report=" >> "$GITHUB_ENV"
-      # A selected run can leave a shard no test file: pytest exits 5 for it, which is a pass only while targets were selected.
-      # The full log is kept: an xdist worker crash (INTERNALERROR) prints its traceback only into this output.
-      - run: |
-          set -o pipefail  # the default step shell has none: without it tee's 0 hides a red pytest
-          status=0
-          uv run pytest $PYTEST_TARGETS 2>&1 | tee pytest-shard.log || status=$?
-          [ "$status" -eq 0 ] || { [ "$status" -eq 5 ] && [ -n "$PYTEST_TARGETS" ]; }
+      # ci/run.sh sizes the pytest-xdist workers to the runner's memory (ci/xdist_workers.py). The nightly and a manual
+      # dispatch (TEST_COST_REPORT set) add `-m "not e2e"`: the nightly-marked budget tests the gate deselects (pyproject
+      # addopts). The nightly suite also records which source files each test runs (pyproject's [tool.coverage.run]);
+      # ci/coverage_map.py turns the shards' data into the map the select step reads.
+      - run: ci/run.sh python-shard
       - if: ${{ failure() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -204,13 +183,15 @@ jobs:
     runs-on: [self-hosted, ai-vm-1]
     timeout-minutes: 5
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: /*
+          sparse-checkout-cone-mode: false
       - env:
-          SELECT: ${{ needs.select.result }}
-          SHARDS: ${{ needs.python-shard.result }}
+          SELECT_RESULT: ${{ needs.select.result }}
+          SHARDS_RESULT: ${{ needs.python-shard.result }}
           LAUNCHED: ${{ needs.select.outputs.PYTEST_SHARDS }}
-        run: |
-          test "$SELECT" = success
-          test "$SHARDS" = success || { test "$SHARDS" = skipped && test "$LAUNCHED" = '[]'; }
+        run: ci/run.sh python
 
   # The release build without publishing (release.yml's `build`): the page, then the wheel that must ship it. A pull
   # request that breaks either fails here instead of at the merge to main.
@@ -230,12 +211,8 @@ jobs:
         with:
           version: 12.6.0
           dest: ${{ runner.temp }}/setup-pnpm
-      - run: pnpm install --frozen-lockfile && pnpm run build
-        working-directory: starpulse/web
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-      - run: uv build
-      - name: The wheel carries the page
-        run: unzip -l dist/*.whl | grep -q 'starpulse/static/index.html'
+      - run: ci/run.sh build
 
   web:
     needs: select
@@ -244,9 +221,6 @@ jobs:
     if: github.event_name != 'push' && needs.select.outputs.web == 'true'
     runs-on: [self-hosted, ai-vm-1]
     timeout-minutes: 15
-    defaults:
-      run:
-        working-directory: starpulse/web
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -260,8 +234,7 @@ jobs:
           version: 12.6.0
           # The self-hosted runners share one home, so the default ~/setup-pnpm collides between concurrent jobs.
           dest: ${{ runner.temp }}/setup-pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm run check
+      - run: ci/run.sh web
 
   # The short static checks in one job (ci/static_checks.sh runs them at once): public-names, api-types and wire-pb2.
   static-checks:
@@ -284,7 +257,7 @@ jobs:
         with:
           version: 12.6.0
           dest: ${{ runner.temp }}/setup-pnpm
-      - run: bash ci/static_checks.sh
+      - run: ci/run.sh static-checks
 
   # The out-of-the-box install on Linux, the ai-vm-1 fleet's own platform: the wheel goes into an empty virtualenv and
   # `starpulse serve` starts from an empty directory with no config, then ci/fresh_serve.py fails unless the page answers
