@@ -1,10 +1,10 @@
 """The Runs context's seam with `serve`: the workflows each run adapter instance reports, kept in the event log.
 
 `starpulse worker runs` runs the adapters, so `serve` never sees what they report directly. A `Publisher` stands in the
-adapters' sink: it keeps what each instance last reported as its own entry of one log setting, which another process's
-`Publisher` never overwrites, and announces each change on a stream, and `serve` applies that setting to its feed
-(`Projected`) as the page's workflows, pools and startable workflows. A new `serve` or worker process reads the setting,
-so neither restart blanks the page.
+adapters' sink: it keeps what each instance last reported as its own entry of one worker state, which another process's
+`Publisher` never overwrites, and `serve` applies that state to its feed (`Projected`) as the page's workflows, pools and
+startable workflows when its version moves. A new `serve` or worker process reads the state, so neither restart blanks
+the page.
 """
 
 from __future__ import annotations
@@ -25,7 +25,6 @@ logger = logging.getLogger(__name__)
 
 PROJECTION = "runs.projection"
 _DAGS = TypeAdapter(list[Dag])
-PROJECTED_STREAM = "runs:projected"
 #: Seconds an idle tail waits for an append from another process.
 POLL_S = 1.0
 #: Seconds between looks at the Liveness of the opt-in workers, which a silent stop gives no announcement of.
@@ -67,12 +66,11 @@ class Publisher:
             if kept == last:
                 return
             try:
-                self._log.set_setting_entry(PROJECTION, instance, kept)
+                self._log.put_state_entry(PROJECTION, instance, kept)
             except Exception:
                 logger.warning("runs: the projection was not kept", exc_info=True)
                 return
             self._kept[instance] = kept
-            self._log.publish(PROJECTED_STREAM, {})
 
 
 class _Sink:
@@ -117,7 +115,7 @@ class Projected:
     def apply(self) -> None:
         """Take the kept reports; none kept yet, or one unreadable, leaves the feed as it was."""
         try:
-            body = self._log.setting(PROJECTION)
+            _, body = self._log.state(PROJECTION)
         except Exception:
             logger.warning("runs: the projection was not read", exc_info=True)
             return
@@ -152,16 +150,10 @@ class Projected:
 
     def follow(self, stop: threading.Event) -> threading.Thread:
         """Apply the kept reports now, then each one announced after, on a thread until `stop`."""
-        from starpulse.event_log.event_log import Tail  # noqa: PLC0415 - the database stack loads when a log opens
-
-        tail = Tail.live(self._log, PROJECTED_STREAM, interval=POLL_S)
+        thread = self._log.follow_state(PROJECTION, self.apply, stop, interval=POLL_S, thread_name="runs-projected")
         self.apply()
         if self._watched:
             threading.Thread(target=self._recheck, args=(stop,), name="runs-liveness", daemon=True).start()
-        thread = threading.Thread(
-            target=tail.run, args=(lambda _entry: self.apply(), stop), name="runs-projected", daemon=True
-        )
-        thread.start()
         return thread
 
     def _recheck(self, stop: threading.Event) -> None:

@@ -31,10 +31,13 @@ from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, field, replace
 from typing import Any
 
-from starpulse.board.model.seam import Written
-from starpulse.scheduler.model.config import Scheduler
 from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.seam import Written
+from starpulse.contracts.adapters import StartFailedError
+from starpulse.event_log.event_log import EventLog
+from starpulse.harness_telemetry.harness import HARNESS
 from starpulse.scheduler.model.admission import Decision, decide, demand, tier_of
+from starpulse.scheduler.model.config import Scheduler
 from starpulse.scheduler.model.harness_setting import DEFAULT as DEFAULT_HARNESS
 from starpulse.scheduler.model.harness_setting import HarnessSetting
 from starpulse.scheduler.model.inputs import points
@@ -44,9 +47,6 @@ from starpulse.scheduler.model.sampler import PERIOD, Reading, Sampler
 from starpulse.scheduler.model.state import START_COOLDOWN, SchedulerState
 from starpulse.scheduler.model.toggle import Toggle
 from starpulse.scheduler.model.usage_limit import until as usage_until
-from starpulse.contracts.adapters import StartFailedError
-from starpulse.event_log.event_log import EventLog
-from starpulse.harness_telemetry.harness import HARNESS
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +54,7 @@ SESSION_ENDED = "session-ended"
 SETTLE_REFUSED = "settle-refused"
 HELD_KEY = "scheduler.held"
 PAUSES_KEY = "scheduler.harness_pauses"
-#: Admission verdicts counted so far, `{"admitted": n, "refused": n}`, kept in the store for the server's `/metrics`.
+#: Admission verdicts counted so far, `{"admitted": n, "refused": n}`, kept in the worker state for `/metrics`.
 TALLY_KEY = "scheduler.decisions"
 #: The dimensions a host reading measures, so a run's peak is how far they rose while it ran.
 _HOST = ("cpu", "memory")
@@ -405,9 +405,9 @@ class Loop:
         """Add this pass's verdicts to the store's tally, which the server's `/metrics` reads."""
         counts = Counter("admitted" if decision.admitted else "refused" for decision in decisions)
         if counts:
-            tally = Counter(self._setting(TALLY_KEY) or {})
+            tally = Counter(self._kept_state(TALLY_KEY) or {})
             tally.update(counts)
-            self._put_setting(TALLY_KEY, dict(tally))
+            self._keep_state(TALLY_KEY, dict(tally))
 
     def next_pick(self) -> dict[str, Any] | None:
         """The task the next pass would start, or, when none fits, the top-ranked one and the dimension it waits on.
@@ -515,7 +515,9 @@ class Loop:
             agent = self._feed.task(task)
             if agent is None:
                 continue
-            if agent["state"] == self._feed.roles.working or (agent["state"] == self._lane and self._cooling(task, now)):
+            if agent["state"] == self._feed.roles.working or (
+                agent["state"] == self._lane and self._cooling(task, now)
+            ):
                 kept.add(task)
         released = self._held - kept
         if not released:
@@ -547,13 +549,13 @@ class Loop:
             self._save_pauses()
 
     def _load_held(self) -> set[str]:
-        raw = self._setting(HELD_KEY)
+        raw = self._kept_state(HELD_KEY)
         if not isinstance(raw, list):
             return set()
         return {item for item in raw if isinstance(item, str)}
 
     def _load_pauses(self) -> dict[str, dict[str, Any]]:
-        raw = self._setting(PAUSES_KEY)
+        raw = self._kept_state(PAUSES_KEY)
         if not isinstance(raw, dict):
             return {}
         loaded: dict[str, dict[str, Any]] = {}
@@ -563,20 +565,20 @@ class Loop:
         return loaded
 
     def _save_held(self) -> None:
-        self._put_setting(HELD_KEY, sorted(self._held))
+        self._keep_state(HELD_KEY, sorted(self._held))
 
     def _save_pauses(self) -> None:
-        self._put_setting(PAUSES_KEY, self._paused)
+        self._keep_state(PAUSES_KEY, self._paused)
 
-    def _setting(self, key: str) -> Any:
+    def _kept_state(self, key: str) -> Any:
         try:
-            return self._ledger.log.setting(key)
+            return self._ledger.log.state(key)[1]
         except Exception:  # an unreadable store holds nothing back
             logger.exception("StarPulse scheduler: cannot read %s", key)
             return None
 
-    def _put_setting(self, key: str, value: Any) -> None:
+    def _keep_state(self, key: str, value: Any) -> None:
         try:
-            self._ledger.log.set_setting(key, value)
+            self._ledger.log.put_state(key, value)
         except Exception:  # a failed write must not stop the loop
             logger.exception("StarPulse scheduler: cannot write %s", key)

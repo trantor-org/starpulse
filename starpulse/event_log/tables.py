@@ -87,6 +87,18 @@ settings = Table(
     Column("updated_at", Float, nullable=False),
 )
 
+#: What a worker keeps for others to read: its projection, status, beat and metrics, one row per name. `version` rises
+#: with each write, so a reader that remembers the version it applied knows when to read again. Operator settings stay
+#: in `starpulse_settings`.
+worker_state = Table(
+    "starpulse_worker_state",
+    metadata,
+    Column("name", String, primary_key=True),
+    Column("state", JSON, nullable=False),
+    Column("version", Integer, nullable=False),
+    Column("updated_at", Float, nullable=False),
+)
+
 #: The scheduler's run ledger: one row per finished run, the labelled data admission learns demand from. `peak` is the
 #: demand the run drew per capacity dimension; `recorded_at` is the epoch second the run was recorded (a run imported
 #: from the old JSONL file carries that file's modification time). Event-log pruning never touches it.

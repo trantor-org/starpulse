@@ -109,7 +109,7 @@ def test_each_projection_is_kept_in_the_log_for_serve(run) -> None:
 
     Sync.made[0].project()
 
-    assert log.setting(delivery.PROJECTION) is not None
+    assert log.state(delivery.PROJECTION)[1] is not None
 
 
 def test_a_refresh_serve_queued_reaches_the_pull_sync(run) -> None:

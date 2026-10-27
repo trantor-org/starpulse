@@ -41,7 +41,7 @@ from sqlalchemy.engine import Connection, make_url
 from starpulse.event_log.checkpoints import Checkpoints
 from starpulse.event_log.migrate import require_migrated
 from starpulse.event_log.polling import DEFAULT_POLL_INTERVAL
-from starpulse.event_log.tables import events, gaps, settings
+from starpulse.event_log.tables import events, gaps, settings, worker_state
 
 __all__ = ["Entry", "EventLog", "Tail"]
 
@@ -170,17 +170,6 @@ class EventLog:
                 upsert.on_conflict_do_update(index_elements=[settings.c.key], set_={"value": value, "updated_at": now})
             )
 
-    def set_setting_entry(self, key: str, entry: str, value: Any) -> None:
-        """Keep `value` under `entry` of the object kept under `key`, leaving its other entries as they are, in one
-        statement so writers in separate processes never drop each other's entries. Raises on a database error."""
-        now = time.time()
-        upsert = sqlite.insert(settings).values(key=key, value={entry: value}, updated_at=now)
-        merged = func.json_set(settings.c.value, f'$."{entry}"', func.json(json.dumps(value)))
-        with self.engine.begin() as db:
-            db.execute(
-                upsert.on_conflict_do_update(index_elements=[settings.c.key], set_={"value": merged, "updated_at": now})
-            )
-
     def setting_updated_at(self, key: str) -> float | None:
         """The epoch second `key` was last written, or None when no row holds it. Raises on a database error."""
         with self.engine.connect() as db:
@@ -190,6 +179,71 @@ class EventLog:
         """Drop `key`'s row, so the setting reads as its default again. Raises on a database error."""
         with self.engine.begin() as db:
             db.execute(delete(settings).where(settings.c.key == key))
+
+    def state(self, name: str) -> tuple[int, Any | None]:
+        """The `(version, state)` a worker kept under `name`, version 0 and no state before it kept any. Raises on a
+        database error."""
+        with self.engine.connect() as db:
+            row = db.execute(select(worker_state.c.version, worker_state.c.state).where(worker_state.c.name == name))
+            found = row.first()
+        return (0, None) if found is None else (found.version, found.state)
+
+    def put_state(self, name: str, state: Any) -> None:
+        """Keep `state` under `name`, replacing what was there, and raise its version. Raises on a database error."""
+        self._upsert_state(name, state, state)
+
+    def put_state_entry(self, name: str, entry: str, value: Any) -> None:
+        """Keep `value` under `entry` of the object kept under `name`, leaving its other entries as they are, in one
+        statement so workers in separate processes never drop each other's entries. Raises on a database error."""
+        merged = func.json_set(worker_state.c.state, f'$."{entry}"', func.json(json.dumps(value)))
+        self._upsert_state(name, {entry: value}, merged)
+
+    def _upsert_state(self, name: str, first: Any, replacement: Any) -> None:
+        now = time.time()
+        upsert = sqlite.insert(worker_state).values(name=name, state=first, version=1, updated_at=now)
+        with self.engine.begin() as db:
+            db.execute(
+                upsert.on_conflict_do_update(
+                    index_elements=[worker_state.c.name],
+                    set_={"state": replacement, "version": worker_state.c.version + 1, "updated_at": now},
+                )
+            )
+        self._wake()
+
+    def delete_state(self, name: str) -> None:
+        """Drop `name`'s row, so it reads as unkept again. Raises on a database error."""
+        with self.engine.begin() as db:
+            db.execute(delete(worker_state).where(worker_state.c.name == name))
+        self._wake()
+
+    def follow_state(
+        self, name: str, apply: Callable[[], None], stop: threading.Event, *, interval: float, thread_name: str
+    ) -> threading.Thread:
+        """Call `apply` each time the state under `name` is written after this call, on a thread until `stop`. The
+        thread rereads the version when the log is appended to or `interval` seconds pass, so a write by another
+        process on a database that cannot signal one is seen within `interval`."""
+        seen = self._version_or(name, 0)
+
+        def run() -> None:
+            nonlocal seen
+            while not stop.is_set():
+                appends = self.appends
+                if (version := self._version_or(name, seen)) != seen:
+                    seen = version
+                    apply()
+                self.wait_for_append(appends, interval, stop)
+
+        thread = threading.Thread(target=run, name=thread_name, daemon=True)
+        thread.start()
+        return thread
+
+    def _version_or(self, name: str, default: int) -> int:
+        try:
+            with self.engine.connect() as db:
+                return db.execute(select(worker_state.c.version).where(worker_state.c.name == name)).scalar() or 0
+        except Exception:  # an unreadable store changes nothing, and the next look tries again
+            logger.warning("EventLog: reading the version of %s failed", name, exc_info=True)
+            return default
 
     def publish(self, stream: str, fields: Mapping[str, Any], *, event_id: str | None = None) -> int | None:
         """Append one event and return its cursor, or None when it was not appended; never raises.
