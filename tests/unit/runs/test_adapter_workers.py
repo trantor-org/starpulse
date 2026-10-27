@@ -32,6 +32,7 @@ DAGS = [
         "steps": [],
         "schedule": [],
         "stats": None,
+        "rerun": None,
     }
 ]
 WAIT_S = 5.0
@@ -56,7 +57,9 @@ class Feed:
     def __init__(self) -> None:
         self.told: dict[str, tuple] = {}
 
-    def set_dags(self, instance: str, dags: list, error: str | None, pools: object, startable: object) -> None:
+    def set_dags(
+        self, instance: str, dags: list, error: str | None, pools: object, startable: object, cpu: object = None
+    ) -> None:
         self.told[instance] = (dags, error)
 
 

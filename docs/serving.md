@@ -419,6 +419,11 @@ type = "native"
 
 # One instance of a runs adapter, a module under `starpulse` or the dotted path of one an installed package provides
 # (it offers `start(url)` and `follow(url, runs, log)`, and optionally `rerun(url)` and `declared_params(url, workflow)`, the parameter names a workflow declares, which `doctor` reads); its workflows are drawn as `<name>/<workflow>`.
+# The Dagu Adapter reads a DAG's declared rerun safety from its Dagu labels (a value allows only `a-z A-Z 0-9 - _ . /`):
+# `rerun=safe` (a rerun repeats nothing), `rerun-key=<key>` (effects keyed by `<key>`, so a rerun for the same key repeats none)
+# or `rerun-repeats=<why>` with `rerun-step=<step>` (the step that repeats); a DAG with none serves `rerun: null`. It also
+# serves the share of all the host's cores the `dagu*.service` units used since its last reading as `cpu.<instance>`
+# (`share` 0..1, `cores`), each time it reads Dagu (every 30 s), so the scheduler and every worker count.
 [[runs]]
 name = "dagu"
 type = "dagu"

@@ -7,6 +7,7 @@ SNAPSHOT_KEYS = (
     "flows",
     "dags",
     "pools",
+    "cpu",
     "pulls",
     "mergeStrip",
     "mergePins",

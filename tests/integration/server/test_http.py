@@ -138,6 +138,7 @@ _DAG = {
     "steps": [],
     "schedule": [],
     "stats": None,
+    "rerun": None,
 }
 
 

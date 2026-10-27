@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
 import shlex
 import statistics
@@ -23,6 +24,7 @@ import urllib.request
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, get_args
 
 from starpulse.runs import run_events
@@ -382,6 +384,69 @@ STATS_WINDOW = 7 * 86400
 STATS_TTL = 300.0
 STATS_BUDGET = 10.0
 
+#: The labels a DAG declares its rerun safety with: `rerun=safe`, `rerun-key=<key>` (its effects are keyed, so a rerun for
+#: the same key repeats none), or `rerun-repeats=<why>` with the `rerun-step=<step>` that repeats. Dagu allows only
+#: `a-z A-Z 0-9 - _ . /` in a label value, so a reason is written with hyphens.
+RERUN_LABELS = ("rerun", "rerun-key", "rerun-repeats", "rerun-step")
+
+
+def _rerun_of(labels: list[str]) -> dict | None:
+    """The rerun safety the DAG's `labels` declare, or None when they declare none (a `rerun-step` alone declares none)."""
+    declared = {name: value for name, sep, value in (label.partition("=") for label in labels) if sep and name in RERUN_LABELS}
+    key, repeats = declared.get("rerun-key"), declared.get("rerun-repeats")
+    if not (key or repeats or declared.get("rerun") == "safe"):
+        return None
+    return {"key": key, "repeats": repeats, "step": declared.get("rerun-step") if repeats else None}
+
+
+#: Where the host's cgroups for systemd services are, and the units that run Dagu: its scheduler, its workers and the
+#: units beside them (`dagu*.service`).
+CGROUP_ROOT = Path("/sys/fs/cgroup/system.slice")
+CPU_UNITS = ("dagu*.service",)
+
+
+class CpuSampler:
+    """The share of all the host's cores the Dagu units used between this call and the one before it.
+
+    Each unit's cgroup counts its own and its children's CPU time since it began, so the units are summed (the scheduler,
+    every worker, and what their jobs spawn). A unit that began since the last call counts what it has used, one that
+    ended counts nothing, and one whose counter fell was restarted and counts what it has used since. The first call,
+    and one that finds no unit, has no reading: None.
+    """
+
+    def __init__(
+        self,
+        root: Path = CGROUP_ROOT,
+        units: tuple[str, ...] = CPU_UNITS,
+        *,
+        cores: int | None = None,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self._root = root
+        self._units = units
+        self._cores = cores or os.cpu_count() or 1
+        self._clock = clock
+        self._last: tuple[dict[str, int], float] | None = None
+
+    def _usage(self) -> dict[str, int]:
+        used: dict[str, int] = {}
+        for unit in (path for pattern in self._units for path in self._root.glob(pattern)):
+            try:
+                used[unit.name] = int((unit / "cpu.stat").read_text().split()[1])
+            except (OSError, ValueError, IndexError):  # the unit ended while it was read
+                continue
+        return used
+
+    def __call__(self) -> dict | None:
+        used, now = self._usage(), self._clock()
+        last, self._last = self._last, (used, now)
+        if last is None or not used or now <= last[1]:
+            return None
+        before, then = last
+        spent = sum(cur - before.get(unit, 0) if cur >= before.get(unit, 0) else cur for unit, cur in used.items())
+        share = spent / 1e6 / ((now - then) * self._cores)
+        return {"share": round(min(share, 1.0), 3), "cores": self._cores}
+
 
 def _epoch(text: str) -> float | None:
     """The epoch second of a Dagu timestamp, None for an empty or unreadable one."""
@@ -511,6 +576,7 @@ def dags(
                 "steps": steps,
                 "schedule": [s["expression"] for s in d.get("dag", {}).get("schedule") or []],
                 "stats": _stats_of(kept["runs"].values()) if kept else None,
+                "rerun": _rerun_of(d.get("dag", {}).get("labels") or []),
                 "active": [a for r in in_flight.get(d["fileName"], []) if (a := _active(base_url, r, steps))],
                 "pool": pool,
                 **({"recent": recent_runs(base_url, d["fileName"], finished)} if keeps_recent else {}),
@@ -615,6 +681,7 @@ class DaguRuns:
         fetch: Callable[[Collection[str] | None], list],
         pools: Callable[[], list[dict]] = list,
         *,
+        cpu: Callable[[], dict | None] = lambda: None,
         tied: Callable[[], Collection[str]] = frozenset,
         instance: str | None = None,
         clock: Callable[[], float] = time.time,
@@ -623,6 +690,7 @@ class DaguRuns:
         self._sink = sink
         self._fetch = fetch
         self._pools = pools
+        self._cpu = cpu
         self._tied = tied
         self._clock = clock
         self._lock = threading.RLock()
@@ -641,6 +709,7 @@ class DaguRuns:
         try:
             listed = self._fetch(None)
             pools = self._pools()
+            cpu = self._cpu()
         except OSError as exc:
             self._sink.set_dags(None, str(exc))
             return
@@ -655,7 +724,7 @@ class DaguRuns:
                 dag["name"]: dag if self._streamed.get(dag["name"], -math.inf) < listed_at else self._dags[dag["name"]]
                 for dag in listed
             }
-            self._sink.set_dags(list(self._dags.values()), None, pools)
+            self._sink.set_dags(list(self._dags.values()), None, pools, cpu=cpu)
 
     def _listed(self, name: str) -> dict | None:
         """`name` as Dagu lists it now, or None when Dagu lacks it or cannot be read; the next reconcile corrects either."""
@@ -808,7 +877,7 @@ def follow(
     finished: dict = {}
     graphs: dict = {}
     stats: dict = {}
-    reader = DaguRuns(runs, lambda only=None: dags(url, only, tied(), finished, graphs, stats=stats), lambda: pools(url), tied=tied, instance=getattr(runs, "instance", None))
+    reader = DaguRuns(runs, lambda only=None: dags(url, only, tied(), finished, graphs, stats=stats), lambda: pools(url), cpu=CpuSampler(), tied=tied, instance=getattr(runs, "instance", None))
 
     def read() -> None:
         tail = Tail.live(log, run_events.STREAM, interval=interval)  # before the listing: what it holds is not replayed

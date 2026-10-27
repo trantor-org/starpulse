@@ -124,6 +124,16 @@ describe("applyDelta", () => {
     expect([emptied.pools, kept.pools, replaced.pools]).toEqual([[], [lane], [{ ...lane, running: 2 }]]);
   });
 
+  it("takes the CPU readings a runs delta carries, and keeps the last ones from a delta that carries none", () => {
+    const reading = { dagu: { share: 0.4, cores: 36 } };
+    const s = board([], { cpu: reading });
+
+    const kept = applyDelta(s, { kind: "dags", dags: [], error: null });
+    const replaced = applyDelta(s, { kind: "dags", dags: [], cpu: { dagu: { share: 0.1, cores: 36 } }, error: null });
+
+    expect([kept.cpu, replaced.cpu]).toEqual([reading, { dagu: { share: 0.1, cores: 36 } }]);
+  });
+
   it("keeps the identity of every DAG and pin a delta leaves as it was, so only the entry it changes is new", () => {
     const wire = <T,>(x: T): T => JSON.parse(JSON.stringify(x)) as T; // each delta arrives as freshly parsed JSON
     const dags = [{ name: "ci/a", status: "succeeded", steps: [] }, { name: "ci/b", status: "running", steps: [] }] as unknown as Dag[];

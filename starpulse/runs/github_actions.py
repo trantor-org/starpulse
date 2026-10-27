@@ -243,6 +243,7 @@ class Repository:
             "steps": _graph(definition, ran),
             "schedule": [],
             "stats": None,
+            "rerun": None,
         }
         ended = run is None or run["status"] == "completed"
         return _Read((workflow["updated_at"], _signature(run)), definition, dag, ended)

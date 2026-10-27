@@ -2,13 +2,15 @@
 // the catalog, and where a step sits in its constellation. The page's snapshot reaches it as one DagData, read from the Sky.
 import { BOARD_COLOR } from "../../render/scene";
 import type { Sky } from "../../render/sky";
-import type { Cue, Dag, DagStep, Domain, Machine, Pool } from "../../api";
+import type { Cpu, Cue, Dag, DagStep, Domain, Machine, Pool, Rerun } from "../../api";
 
 /** Everything the DAGs view reads from the snapshot: the DAGs, their domains, the pools, the cues, each machine and the server's clock. */
 export interface DagData {
   dags: Dag[];
   domains: Domain[];
   pools: Pool[];
+  /** The share of all the host's cores each runs instance's runner used, by instance. */
+  cpu: Record<string, Cpu>;
   cues: Cue[];
   flows: { name: string; machine: Machine }[];
   now: number;
@@ -16,8 +18,8 @@ export interface DagData {
   facts: Record<string, DagFacts>;
 }
 
-/** A DAG's schedule (its cron expressions, or `manual`) and its seven-day statistics; a statistic the server left out stays null, never zero. */
-export interface DagFacts { schedule: string; runs: number | null; hours: number | null; medianSeconds: number | null; p95Seconds: number | null; failureShare: number | null }
+/** A DAG's schedule (its cron expressions, or `manual`), its seven-day statistics (one the server left out stays null, never zero) and the rerun safety it declares (null when it declares none). */
+export interface DagFacts { schedule: string; runs: number | null; hours: number | null; medianSeconds: number | null; p95Seconds: number | null; failureShare: number | null; rerun: Rerun | null }
 
 export const dagFacts = (d: Dag): DagFacts => ({
   schedule: d.schedule.join(", ") || "manual",
@@ -26,6 +28,7 @@ export const dagFacts = (d: Dag): DagFacts => ({
   medianSeconds: d.stats?.medianSeconds ?? null,
   p95Seconds: d.stats?.p95Seconds ?? null,
   failureShare: d.stats?.failureShare ?? null,
+  rerun: d.rerun,
 });
 
 /** The snapshot's DAG data as the HUD holds it; a machine's tasks stay behind, so a task move does not redraw the view. */
@@ -36,6 +39,7 @@ export const dagData = (sky: Sky): DagData => ({
     return { name: g.name, dags: g.dags.map(member), ...(g.processes && { processes: g.processes.map((p) => ({ name: p.name, dags: p.dags.map(member) })) }) };
   }),
   pools: sky.pools,
+  cpu: sky.cpu,
   cues: sky.cues,
   flows: Object.values(sky.flows).map((f) => ({ name: f.name, machine: f.machine })),
   now: sky.now,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pydantic import Field
 
-from starpulse.contracts.adapters import ActiveRun, RunStats, RunStatus, Step
+from starpulse.contracts.adapters import ActiveRun, Rerun, RunStats, RunStatus, Step
 from starpulse.contracts.api._base import _Api
 
 
@@ -23,6 +23,9 @@ class DagBody(_Api):
     )
     stats: RunStats | None = Field(
         description="The workflow's runs over the last seven days; None when it never ran or they are unknown."
+    )
+    rerun: Rerun | None = Field(
+        description="What the workflow declares about a rerun repeating its effects; None when it declares nothing."
     )
     active: list[ActiveRun] | None = Field(
         default=None, description="Every running or queued run of the workflow, including concurrent ones."

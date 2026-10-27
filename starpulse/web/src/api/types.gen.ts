@@ -673,9 +673,25 @@ export interface MoveDelta {
  * A runs instance's workflows.
  */
 export interface DagsDelta {
+  cpu?: {
+    [k: string]: Cpu;
+  } | null;
   dags: DagBody[];
   error: string | null;
   pools?: Pool[] | null;
+}
+/**
+ * The share of the host's CPU an instance's scheduler and workers used since the last reading.
+ */
+export interface Cpu {
+  /**
+   * How many cores the host has.
+   */
+  cores: number;
+  /**
+   * Their CPU time over all the host's cores, from 0 to 1.
+   */
+  share: number;
 }
 /**
  * A runs workflow as the page draws it: the latest run, the runs in flight and the pool it runs on.
@@ -695,6 +711,10 @@ export interface DagBody {
    * The engine's own status when it differs from `status`.
    */
   raw?: string | null;
+  /**
+   * What the workflow declares about a rerun repeating its effects; None when it declares nothing.
+   */
+  rerun: Rerun | null;
   runId: string;
   /**
    * The cron expressions that start the workflow; empty when it runs only when asked for.
@@ -742,6 +762,23 @@ export interface ActiveRun {
   steps: {
     [k: string]: "not_started" | "queued" | "running" | "succeeded" | "failed" | "aborted" | "skipped";
   };
+}
+/**
+ * What a DAG declares about a rerun of it: safe (all None), once per `key`, or repeating its effects.
+ */
+export interface Rerun {
+  /**
+   * What the DAG keys its effects by, so a rerun for the same key repeats none; None when it declares no key.
+   */
+  key: string | null;
+  /**
+   * Why a rerun repeats the DAG's effects; None when the DAG declares it does not.
+   */
+  repeats: string | null;
+  /**
+   * The step whose effects repeat; None when the DAG names none.
+   */
+  step: string | null;
 }
 /**
  * A DAG's runs over the last seven days.
@@ -2015,6 +2052,12 @@ export interface Snapshot {
    * The ids of the done tasks from before local midnight that the board feed holds as a stub, left out of `flows`: the full view (`?view=full`) only, the page reads them from `/api/done` and `/api/task/<id>`.
    */
   cold_done?: string[] | null;
+  /**
+   * The CPU share of each runs instance's scheduler and workers, by instance name.
+   */
+  cpu?: {
+    [k: string]: Cpu;
+  } | null;
   /**
    * The DAGs cued by a Board event.
    */

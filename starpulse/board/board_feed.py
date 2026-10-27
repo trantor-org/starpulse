@@ -187,6 +187,8 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         self._cited: dict[str, list[str]] = {}
         self._dags: dict[str, list] = {}
         self._pools: dict[str, list] = {}
+        #: Each instance's latest CPU reading (a `Cpu` as a dict); an instance that never reported one is absent.
+        self._cpu: dict[str, dict] = {}
         #: The workflows each instance's adapter reported it can start; an instance not here can start all it has.
         self._startable: dict[str, frozenset[str]] = {}
         self._runs_errors: dict[str, str] = {}

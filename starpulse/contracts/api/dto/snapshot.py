@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pydantic import Field
 
-from starpulse.contracts.adapters import Move, Pool
+from starpulse.contracts.adapters import Cpu, Move, Pool
 from starpulse.contracts.api._base import _Api
 from starpulse.contracts.api.dto.cue import Cue, Pull
 from starpulse.contracts.api.dto.dag import DagBody, Domain
@@ -92,6 +92,9 @@ class Snapshot(_Api):
     )
     dags: list[DagBody]
     pools: list[Pool] | None = Field(default=None, description="The concurrency pools the DAGs run on.")
+    cpu: dict[str, Cpu] | None = Field(
+        default=None, description="The CPU share of each runs instance's scheduler and workers, by instance name."
+    )
     flows: list[FlowSnapshot]
     machinePage: MachinePage | None = None
     machineStrip: MachineStrip | None = None
@@ -160,6 +163,7 @@ class DagsDelta(_Api):
 
     dags: list[DagBody]
     pools: list[Pool] | None = None
+    cpu: dict[str, Cpu] | None = None
     error: str | None
 
 

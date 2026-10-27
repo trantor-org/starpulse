@@ -21,7 +21,7 @@ vi.mock("./DagParts", async (orig) => {
 
 const step = (name: string, depends: string[] = [], status: RunStatus = "succeeded"): DagStep => ({ name, depends, status, kind: null, precondition: null, lock: null, last: [] });
 const dag = (name: string, status: RunStatus, over: Partial<Dag> = {}): Dag => ({
-  name, status, runId: "", startedAt: "1970-01-01T00:09:00Z", finishedAt: "1970-01-01T00:10:00Z", schedule: [], stats: null, steps: [step("scan"), step("fix", ["scan"])], pool: "runs/main", ...over,
+  name, status, runId: "", startedAt: "1970-01-01T00:09:00Z", finishedAt: "1970-01-01T00:10:00Z", schedule: [], stats: null, rerun: null, steps: [step("scan"), step("fix", ["scan"])], pool: "runs/main", ...over,
 });
 const board: Machine = {
   states: [{ id: "ready", name: "Ready", initial: false, final: false }, { id: "review", name: "Review", initial: false, final: false }],
@@ -29,7 +29,7 @@ const board: Machine = {
   writers: { pr_opened: [{ actor: "runs/pr-watch", trigger: "schedule" }] },
 };
 const data: DagData = {
-  now: 3600, facts: {},
+  now: 3600, facts: {}, cpu: {},
   dags: [
     dag("runs/pr-watch", "succeeded"),
     dag("runs/triage", "failed", { steps: [step("scan"), step("fix", ["scan"], "failed")] }),

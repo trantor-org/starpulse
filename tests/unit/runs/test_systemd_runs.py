@@ -62,7 +62,7 @@ class Sink:
         self.dags: list[dict] | None = None
         self.error: str | None = None
 
-    def set_dags(self, dags, error, pools=None, startable=None) -> None:
+    def set_dags(self, dags, error, pools=None, startable=None, cpu=None) -> None:
         self.dags, self.error = dags, error
 
 

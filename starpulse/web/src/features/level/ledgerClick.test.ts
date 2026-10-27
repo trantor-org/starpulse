@@ -8,7 +8,7 @@ import { bannerOf, ledgerHit, mergePanel, type DoctorBox, type PanelCtx } from "
 import type { ContractReport, Cue, Dag, LedgerRow, LedgerRun, Machine, Snapshot } from "../../api";
 
 const iso = (s: number) => new Date(s * 1000).toISOString().replace(/\.\d+Z$/, "Z");
-const dag = (name: string, steps: string[]): Dag => ({ name, status: "succeeded", runId: "r", startedAt: "", finishedAt: "", schedule: [], stats: null, steps: steps.map((n, i) => ({ name: n, depends: i ? [steps[i - 1]] : [], status: "succeeded", kind: null, precondition: null, lock: null, last: [] })) });
+const dag = (name: string, steps: string[]): Dag => ({ name, status: "succeeded", runId: "r", startedAt: "", finishedAt: "", schedule: [], stats: null, rerun: null, steps: steps.map((n, i) => ({ name: n, depends: i ? [steps[i - 1]] : [], status: "succeeded", kind: null, precondition: null, lock: null, last: [] })) });
 const machine = (): Machine => ({
   states: ["review", "done"].map((id, i) => ({ id, name: id, initial: !i, final: !!i })),
   transitions: [{ source: "review", target: "done", event: "MERGED" }],

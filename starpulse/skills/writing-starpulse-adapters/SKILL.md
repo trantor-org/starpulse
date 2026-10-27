@@ -82,12 +82,14 @@ refused and nothing was written: 401 for a missing or wrong token, 403 for anoth
 unreachable, so retry. A missing entry never means the run failed.
 
 A scheduler worth a full adapter is a `[[runs]]` instance (`name`, `type`, `url`) whose module offers `start(url)` and
-`follow(url, runs, group)`, publishing `Dag`s through `RunsSink.set_dags(dags, error, pools, startable)` (a `Dag` lists its running and queued runs in `active`,
+`follow(url, runs, group)`, publishing `Dag`s through `RunsSink.set_dags(dags, error, pools, startable, cpu)` (a `Dag` lists its running and queued runs in `active`,
 `pools` is the list of concurrency pools, empty when the scheduler has none, and `startable` names the workflows
-`start` can run when it cannot start all of them, such as those a GitHub workflow file marks `workflow_dispatch`);
+`start` can run when it cannot start all of them, such as those a GitHub workflow file marks `workflow_dispatch`, and `cpu` is
+`{"share": 0..1, "cores": N}`, the share of all the host's cores the scheduler's units used since the last reading, or `None`);
 its workflows are drawn as `<name>/<workflow>`. A `Dag` also carries its `schedule` (cron expressions, empty when it is
 started by hand) and `stats` (`runs`, `hours`, `medianSeconds`, `p95Seconds`, `failureShare` over the last seven days;
-`None` when the workflow never ran, never zeros), and each `Step` its `precondition`, its `lock` and its `last` outcomes
+`None` when the workflow never ran, never zeros), `rerun` (`key`, `repeats`, `step`: what the workflow declares about a rerun
+repeating its effects; `None` when it declares nothing), and each `Step` its `precondition`, its `lock` and its `last` outcomes
 (up to five, newest first). The fields are required but nullable, so an adapter that has no value sends `None`, and the
 adapter kit fails one that leaves a field out.
 

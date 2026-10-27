@@ -182,6 +182,55 @@
       "title": "RecentRun",
       "type": "object"
     },
+    "Rerun": {
+      "additionalProperties": false,
+      "description": "What a DAG declares about a rerun of it: safe (all None), once per `key`, or repeating its effects.",
+      "properties": {
+        "key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What the DAG keys its effects by, so a rerun for the same key repeats none; None when it declares no key.",
+          "title": "Key"
+        },
+        "repeats": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Why a rerun repeats the DAG's effects; None when the DAG declares it does not.",
+          "title": "Repeats"
+        },
+        "step": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The step whose effects repeat; None when the DAG names none.",
+          "title": "Step"
+        }
+      },
+      "required": [
+        "key",
+        "repeats",
+        "step"
+      ],
+      "title": "Rerun",
+      "type": "object"
+    },
     "RunStats": {
       "additionalProperties": false,
       "description": "A DAG's runs over the last seven days.",
@@ -436,6 +485,17 @@
       ],
       "description": "The DAG's runs over the last seven days; None when it has never run or the scheduler cannot list them, never zeros."
     },
+    "rerun": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Rerun"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "What the DAG declares about a rerun repeating its effects; None when it declares nothing, and the page then claims nothing."
+    },
     "active": {
       "default": [],
       "description": "Every run of the DAG that is running or queued now, longest-running first; empty when none is or the scheduler cannot list them.",
@@ -469,7 +529,8 @@
     "finishedAt",
     "steps",
     "schedule",
-    "stats"
+    "stats",
+    "rerun"
   ],
   "title": "Dag",
   "type": "object"

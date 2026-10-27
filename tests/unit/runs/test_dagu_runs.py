@@ -589,6 +589,7 @@ def test_dags_reads_each_dags_latest_run_with_defaults_for_what_dagu_omits(monke
             ],
             "schedule": [],
             "stats": {"runs": 0, "hours": 0.0, "medianSeconds": None, "p95Seconds": None, "failureShare": None},
+            "rerun": None,
             "active": [],
             "pool": "",
         },
@@ -620,6 +621,7 @@ def test_dags_reads_each_dags_latest_run_with_defaults_for_what_dagu_omits(monke
             ],
             "schedule": [],
             "stats": {"runs": 0, "hours": 0.0, "medianSeconds": None, "p95Seconds": None, "failureShare": None},
+            "rerun": None,
             "active": [],
             "pool": "",
         },
@@ -632,6 +634,7 @@ def test_dags_reads_each_dags_latest_run_with_defaults_for_what_dagu_omits(monke
             "steps": [],
             "schedule": [],
             "stats": None,
+            "rerun": None,
             "active": [],
             "pool": "",
         },
@@ -654,6 +657,7 @@ def test_dags_reads_each_dags_latest_run_with_defaults_for_what_dagu_omits(monke
             ],
             "schedule": [],
             "stats": {"runs": 0, "hours": 0.0, "medianSeconds": None, "p95Seconds": None, "failureShare": None},
+            "rerun": None,
             "active": [],
             "pool": "",
         },
@@ -1583,7 +1587,7 @@ class _Sink:
     def __init__(self) -> None:
         self.dags: list[dict] = []
 
-    def set_dags(self, dags: list | None, error: str | None, pools: list | None = None, startable=None) -> None:
+    def set_dags(self, dags: list | None, error: str | None, pools: list | None = None, startable=None, cpu=None) -> None:
         self.dags = dags or []
 
     def recent(self) -> dict[str, dict]:
@@ -1894,6 +1898,29 @@ def test_a_scheduled_dag_serves_its_schedule_and_a_manual_one_none() -> None:
         listed = _listed(base_url)
 
     assert (listed["cron"]["schedule"], listed["manual"]["schedule"]) == (["11-56/15 * * * *"], [])
+
+
+@pytest.mark.parametrize(
+    ("labels", "rerun"),
+    [
+        (["rerun=safe"], {"key": None, "repeats": None, "step": None}),
+        (["team=ops", "rerun-key=delivery-id"], {"key": "delivery-id", "repeats": None, "step": None}),
+        (
+            ["rerun-repeats=pages-twice", "rerun-step=page"],
+            {"key": None, "repeats": "pages-twice", "step": "page"},
+        ),
+        (["rerun-repeats=pages-twice"], {"key": None, "repeats": "pages-twice", "step": None}),
+    ],
+)
+def test_a_dag_serves_the_rerun_safety_its_labels_declare(labels: list[str], rerun: dict) -> None:
+    with dagu({"d": ["a"]}, dag_labels={"d": labels}) as (base_url, _):
+        assert _listed(base_url)["d"]["rerun"] == rerun
+
+
+@pytest.mark.parametrize("labels", [[], ["team=ops", "nightly"], ["rerun=maybe"], ["rerun-step=page"]])
+def test_a_dag_that_declares_no_rerun_safety_serves_none(labels: list[str]) -> None:
+    with dagu({"d": ["a"]}, dag_labels={"d": labels}) as (base_url, _):
+        assert _listed(base_url)["d"]["rerun"] is None
 
 
 def test_a_step_serves_its_precondition_and_a_lock_dagu_does_not_declare_as_none() -> None:

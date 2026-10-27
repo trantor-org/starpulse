@@ -4,7 +4,7 @@ import { PAGE } from "../features/level/ledgerScroll";
 import { markOf, statusLine, tiesOf } from "../features/level/ledger";
 import type { Cue, Dag, Machine, Snapshot } from "../api";
 
-const dag = (name: string, steps: string[]): Dag => ({ name, status: "succeeded", runId: "r", startedAt: "", finishedAt: "", schedule: [], stats: null, steps: steps.map((n, i) => ({ name: n, depends: i ? [steps[i - 1]] : [], status: "succeeded", kind: null, precondition: null, lock: null, last: [] })) });
+const dag = (name: string, steps: string[]): Dag => ({ name, status: "succeeded", runId: "r", startedAt: "", finishedAt: "", schedule: [], stats: null, rerun: null, steps: steps.map((n, i) => ({ name: n, depends: i ? [steps[i - 1]] : [], status: "succeeded", kind: null, precondition: null, lock: null, last: [] })) });
 const machine = (): Machine => ({
   states: ["review", "done"].map((id, i) => ({ id, name: id, initial: !i, final: !!i })),
   transitions: [{ source: "review", target: "done", event: "MERGED" }],

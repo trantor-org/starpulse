@@ -27,9 +27,14 @@ class InstanceRuns:
         return self._feed.tied(self._instance)
 
     def set_dags(
-        self, dags: list | None, error: str | None, pools: list | None = None, startable: list[str] | None = None
+        self,
+        dags: list | None,
+        error: str | None,
+        pools: list | None = None,
+        startable: list[str] | None = None,
+        cpu: dict | None = None,
     ) -> None:
-        self._feed.set_dags(self._instance, dags, error, pools, startable)
+        self._feed.set_dags(self._instance, dags, error, pools, startable, cpu)
 
 
 class Followed(Protocol):

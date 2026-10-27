@@ -110,6 +110,7 @@ def test_a_dag_is_read_under_the_names_the_page_draws() -> None:
             "finishedAt": "",
             "schedule": [],
             "stats": None,
+            "rerun": None,
             "steps": [STEP],
         }
     )
@@ -136,6 +137,7 @@ DAG = {
     "finishedAt": "",
     "schedule": ["0 * * * *"],
     "stats": STATS,
+    "rerun": None,
     "steps": [{**STEP, "name": "lint", "status": "running"}],
 }
 ACTIVE = {
@@ -148,8 +150,8 @@ ACTIVE = {
 }
 
 
-@pytest.mark.parametrize("field", ["schedule", "stats"])
-def test_a_dag_leaving_out_its_schedule_or_statistics_is_refused(field: str) -> None:
+@pytest.mark.parametrize("field", ["schedule", "stats", "rerun"])
+def test_a_dag_leaving_out_its_schedule_statistics_or_rerun_safety_is_refused(field: str) -> None:
     with pytest.raises(ValidationError):
         Dag.model_validate({k: v for k, v in DAG.items() if k != field})
 
@@ -167,6 +169,27 @@ def test_a_dag_serves_its_statistics_under_the_names_the_page_draws() -> None:
     assert dumped["stats"] == STATS
     assert (dumped["schedule"], dumped["steps"][0]["last"]) == (["0 * * * *"], ["failed", "succeeded"])
     assert jsonschema.Draft202012Validator(SCHEMAS["runs"]).is_valid(dumped)
+
+
+@pytest.mark.parametrize(
+    "rerun",
+    [
+        {"key": None, "repeats": None, "step": None},
+        {"key": "delivery", "repeats": None, "step": None},
+        {"key": None, "repeats": "pages-again", "step": "page"},
+    ],
+)
+def test_a_dag_serves_the_rerun_safety_it_declares_and_nothing_when_it_declares_none(rerun: dict) -> None:
+    declared = Dag.model_validate({**DAG, "rerun": rerun}).model_dump(by_alias=True, mode="json")
+
+    assert declared["rerun"] == rerun
+    assert jsonschema.Draft202012Validator(SCHEMAS["runs"]).is_valid(declared)
+    assert Dag.model_validate(DAG).model_dump(by_alias=True, mode="json")["rerun"] is None
+
+
+def test_a_dag_cannot_name_the_step_that_repeats_without_saying_why() -> None:
+    with pytest.raises(ValidationError):
+        Dag.model_validate({**DAG, "rerun": {"key": None, "repeats": None, "step": "page"}})
 
 
 def test_a_dag_that_reports_no_active_runs_or_pool_has_none() -> None:
