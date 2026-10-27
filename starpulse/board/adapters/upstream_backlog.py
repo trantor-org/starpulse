@@ -41,7 +41,7 @@ if TYPE_CHECKING:
     from starpulse.board.board_feed import BoardFeed
     from starpulse.contracts.adapters import BoardTask, Move
     from starpulse.event_log.event_log import EventLog
-    from starpulse.machine_engine.model.machine_definition import Compiled, Writer
+    from starpulse.machine_engine.model.machine_definition import Compiled
     from starpulse.machine_engine.model.snapshot import Qualify
 
 logger = logging.getLogger(__name__)
@@ -557,7 +557,6 @@ def project_board(
         waits=compiled.waits if compiled else {},
         roles=roles,
         source=str(root),
-        state_key=lambda: _state_key(root),
         **writers(config, roles),
     )
 
@@ -589,4 +588,6 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         raise ValueError(f"board: unknown key(s) {', '.join(unknown)}; known: {', '.join(sorted(_SETTINGS))}")
     command = shlex.split(str(settings.get("command", "backlog")))
     root = base / str(settings.get("path", "backlog"))
-    return project_board(root, settings, base, lambda config, roles: {"writer": cli_writer(root, config.statuses, roles, command)})
+    return project_board(
+        root, settings, base, lambda config, roles: {"writer": cli_writer(root, config.statuses, roles, command)}
+    )

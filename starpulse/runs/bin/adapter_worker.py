@@ -47,7 +47,7 @@ def main(
     log = EventLog(database_url(config.database_url, base))
     stop = threading.Event()
     try:
-        _, feed = worker_board(config, base, log, f"starpulse-{context}", stop)
+        _, feed = worker_board(config, base, log, stop)
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")
     publisher = Publisher(log)

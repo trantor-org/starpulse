@@ -66,12 +66,12 @@ def test_a_save_inside_a_transaction_is_kept_or_dropped_with_it(checkpoints: Che
 
 
 def test_a_snapshot_saved_under_a_new_hash_removes_the_one_under_the_old_hash(checkpoints: Checkpoints) -> None:
-    checkpoints.save("board:replica@aaaa", 4, _Snapshot())
+    checkpoints.save("board:state@aaaa", 4, _Snapshot())
     checkpoints.save("board:other@aaaa", 4, _Snapshot())
 
-    checkpoints.save("board:replica@bbbb", 9, _Snapshot())
+    checkpoints.save("board:state@bbbb", 9, _Snapshot())
 
-    assert [checkpoints.load(name)[0] for name in ("board:replica@aaaa", "board:replica@bbbb", "board:other@aaaa")] == [
+    assert [checkpoints.load(name)[0] for name in ("board:state@aaaa", "board:state@bbbb", "board:other@aaaa")] == [
         None,
         9,
         4,

@@ -137,7 +137,7 @@ def main(
     log = EventLog(database_url(config.database_url, base))
     stop = threading.Event()
     try:
-        board, feed = worker_board(config, base, log, "starpulse-scheduler", stop)
+        board, feed = worker_board(config, base, log, stop)
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")
     tasks = MachineTasks(feed, board.keys)

@@ -621,7 +621,6 @@ def stay_until_stopped() -> None:  # pragma: no mutate block — process boundar
 #: What `api_worker.serve_page` imports once the config is accepted; the preloaded process imports it too, so the Page API child
 #: forks with it loaded.
 DATABASE_STACK = (
-    "starpulse.board.adapters.replica",
     "starpulse.event_log.event_log",
     "starpulse.flow_metrics.history",
     "starpulse.board.board_feed",

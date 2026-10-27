@@ -70,7 +70,7 @@ _KEYS = {
     "flow_metrics_worker",
     "search_worker",
     "board_worker",
-    "read_model",
+    "read_model",  # retired: the read model is the only board reader; accepted so a config that still names it loads
     "api_worker",
     "slow_read_seconds",
     "tls_cert",
@@ -409,8 +409,6 @@ class Config:
     """The Search context's embedding catch-up (the thread that fills vectors for indexed task text) runs in `starpulse worker search`, not in `serve`: `serve` starts no thread; false: `serve` supervises that worker as a child when `[search]` names an `embeddings_url`."""
     board_worker: bool = False
     """The Board context's writer (the Start Criteria evaluation) runs in `starpulse worker board`, not in `serve`: `serve` starts no thread for it and reads the criteria results from the history store; false: `serve` supervises that worker as a child."""
-    read_model: bool = False
-    """`serve` draws the page from the Task read model (`readmodel`), folded from the event store's `task` streams, and the Board child reads no task file; false: the page is drawn from the Board child's replica of the task files."""
     api_worker: bool = False
     """The Page API (the HTTP server for the page, its JSON and its event stream) runs in `starpulse worker api`, not in a child of `serve`: `serve` binds no socket and starts no API child; false: `serve` binds the listening socket, hands it to a `starpulse worker api` child it supervises and replaces that child behind the socket on a reload."""
     analytics: Analytics = field(default_factory=Analytics)
@@ -705,7 +703,6 @@ def _config(
         flow_metrics_worker=_flag(raw, "flow_metrics_worker", False),
         search_worker=_flag(raw, "search_worker", False),
         board_worker=_flag(raw, "board_worker", False),
-        read_model=_flag(raw, "read_model", False),
         api_worker=_flag(raw, "api_worker", False),
         slow_read_seconds=_slow_read(raw.get("slow_read_seconds", SLOW_READ_S)),
         tls=tls,

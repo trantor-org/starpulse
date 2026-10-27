@@ -83,7 +83,7 @@ def test_the_board_worker_records_a_native_write_with_its_request_actor(
     monkeypatch.setattr(assembly, "assemble", assemble)
     url = f"sqlite:///{tmp_path / 'events.sqlite'}"
 
-    worker.main(["board", "--config", str(_config(tmp_path, url, "read_model = true\n"))])
+    worker.main(["board", "--config", str(_config(tmp_path, url))])
 
     [feed] = feeds
     _native_write(feed)

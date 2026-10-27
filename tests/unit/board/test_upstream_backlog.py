@@ -10,12 +10,10 @@ import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
 
 import pytest
 import yaml
-from sqlalchemy import delete
-from starpulse.board.adapters import replica, upstream_backlog
+from starpulse.board.adapters import upstream_backlog
 from starpulse.board.adapters.upstream_backlog import (
     BacklogConfig,
     UpstreamBacklog,
@@ -28,12 +26,10 @@ from starpulse.board.adapters.upstream_backlog import (
 )
 from starpulse.board.board_feed import BoardFeed
 from starpulse.contracts.adapters import BoardTask, Move
-from starpulse.event_log.event_log import EventLog, Tail
-from starpulse.event_log.tables import events
+from starpulse.event_log.event_log import EventLog
 from starpulse.machine_engine.model.machine_definition import Writer
 from starpulse.machine_engine.model.state_roles import StateRoles
 from starpulse.runtime.adapter_kit import BoardAdapterKit
-from starpulse.runtime.config import load
 from starpulse.views.writes import move_task
 
 from tests.conftest import stop_upstream_backlogs
@@ -783,84 +779,6 @@ def test_other_projection_code_keeps_the_saved_board_and_reads_every_file_again(
     # task-1 is read again though its file is unchanged; task-3's file is gone, so only its task is retracted
     assert sorted(read) == ["task-1 - Title of task-1.md", "task-2 - Moved.md"]
     assert _lanes(resumed) == {"task-1": "to_do", "task-2": "doing"}
-
-
-def _child_restarted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> replica.Publisher:
-    """The Board child over `tmp_path`'s board and log, once its first scan is read."""
-    log = EventLog(f"sqlite:///{tmp_path / 'log.sqlite'}")
-    publisher = replica.publish(board({"interval": "3600"}, tmp_path), BoardFeed(), "test", log, load(None))
-    assert publisher.ready.wait(timeout=5)
-    return publisher
-
-
-def _published_tasks(tmp_path: Path) -> list[str]:
-    tail = Tail.replay(EventLog(f"sqlite:///{tmp_path / 'log.sqlite'}"), replica.REPLICA_STREAM)
-    return [entry.fields["id"] for entry in tail.poll() if entry.fields.get("task")]
-
-
-def test_a_child_restarted_on_other_projection_code_publishes_only_the_tasks_that_project_differently(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    write_config(tmp_path / "backlog")
-    for task_id in ("task-1", "task-2"):
-        write_task(tmp_path / "backlog", "tasks", task_id, "To Do")
-    _child_restarted(tmp_path, monkeypatch).save()
-    assert sorted(_published_tasks(tmp_path)) == ["task-1", "task-2"]
-    monkeypatch.setattr(upstream_backlog, "_PROJECTION", (*upstream_backlog._PROJECTION, "json"))
-
-    _child_restarted(tmp_path, monkeypatch).save()
-    assert sorted(_published_tasks(tmp_path)) == ["task-1", "task-2"]  # the same projection: nothing is published
-
-    parse = UpstreamBacklog._task
-
-    def retitled(self: UpstreamBacklog, path: Path, *args: Any) -> BoardTask | None:
-        task = parse(self, path, *args)
-        return task.model_copy(update={"title": "Retitled"}) if task and task.id == "task-2" else task
-
-    monkeypatch.setattr(upstream_backlog, "_PROJECTION", (*upstream_backlog._PROJECTION, "os"))
-    monkeypatch.setattr(UpstreamBacklog, "_task", retitled)
-
-    _child_restarted(tmp_path, monkeypatch)
-
-    assert sorted(_published_tasks(tmp_path)) == ["task-1", "task-2", "task-2"]
-
-
-def test_a_child_restarted_on_another_board_config_keeps_its_board_and_publishes_only_what_it_moves(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    write_config(tmp_path / "backlog")
-    for task_id in ("task-1", "task-2"):
-        write_task(tmp_path / "backlog", "tasks", task_id, "To Do")
-    _child_restarted(tmp_path, monkeypatch).save()
-    # a deploy that edits the config without changing what a task projects to: every file is read again
-    with (tmp_path / "backlog" / "config.yml").open("a") as config:
-        config.write("auto_commit: false\n")
-
-    _child_restarted(tmp_path, monkeypatch)
-
-    assert sorted(_published_tasks(tmp_path)) == ["task-1", "task-2"]
-
-
-def test_a_reader_restarted_across_a_projection_change_serves_its_last_board_without_reading(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    write_config(tmp_path / "backlog")
-    write_task(tmp_path / "backlog", "tasks", "task-1", "To Do")
-    _child_restarted(tmp_path, monkeypatch).save()
-    log = EventLog(f"sqlite:///{tmp_path / 'log.sqlite'}")
-    with log.engine.begin() as db:  # the retention pruned the stream: only the saved Board still holds the tasks
-        db.execute(delete(events))
-    monkeypatch.setattr(upstream_backlog, "_PROJECTION", (*upstream_backlog._PROJECTION, "json"))
-    reader, stop = BoardFeed(), threading.Event()
-
-    reader.await_stream()
-    replica.read(board({"interval": "3600"}, tmp_path), reader, "test", log, load(None), stop)
-    try:
-        assert reader.ready.wait(timeout=5)
-        assert _lanes(reader) == {"task-1": "to_do"}
-        assert reader.snapshot()["reading"] is False
-    finally:
-        stop.set()
 
 
 def test_a_board_setting_the_adapter_does_not_read_is_refused_beside_the_known_ones(tmp_path: Path) -> None:
