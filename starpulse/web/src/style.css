@@ -1150,6 +1150,7 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
 #admin .thm .pick:focus-visible { outline: 1px solid var(--agent); outline-offset: 1px; }
 #admin .thm .nm { font-size: calc(12px * var(--fs)); color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #admin .thm .tile.on .nm::after { content: " ✓"; color: var(--agent-text); }
+#admin .thm .tile.on .nm:has(.ren)::after { content: none; }
 #admin .thm .vibe, #admin .thm .src { font-size: calc(10px * var(--fs)); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 1.4em; }
 /* swatches show a pack's own colors on its background, so they carry data-theme-raw and never take the page's */
 .thm .sws, .thm .ramp { display: flex; height: calc(14px * var(--fs)); border-radius: 4px; overflow: hidden; }
@@ -1157,3 +1158,50 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
 .thm .sws i { flex: 1; border-radius: 2px; }
 .thm .ramp i { flex: 1; }
 #admin .thm .pick .ramp { height: calc(22px * var(--fs)); }
+
+/* Imported packs and backgrounds (Own tiles with Rename and Delete) and the import and background dialogs, scoped to #kbm.thm. */
+#admin .thm .own { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+#admin .thm .own .tile { flex: 1; }
+#admin .thm .tile > .nm { padding: 7px 9px 0; }
+#admin .thm .pick:focus-visible, #admin .thm .tile.add:focus-visible { outline: 1px solid var(--agent); outline-offset: 1px; }
+#admin .thm .tile.add { all: unset; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; gap: 2px; min-height: calc(66px * var(--fs)); padding: 7px 9px; border-radius: 7px; border: 1px dashed color-mix(in srgb, var(--slate) 30%, transparent); font-size: calc(12px * var(--fs)); color: var(--ink-2); cursor: pointer; }
+#admin .thm .tile.add:hover { color: var(--ink); border-color: color-mix(in srgb, var(--slate) 55%, transparent); }
+#admin .thm .plus { font-size: calc(15px * var(--fs)); line-height: 1; color: var(--agent-text); }
+#admin .thm .acts { display: flex; gap: 10px; padding: 0 2px; font-size: calc(10.5px * var(--fs)); min-height: 1.5em; align-items: center; }
+#admin .thm .acts.conf { color: var(--ink-2); flex-wrap: wrap; gap: 2px 8px; }
+#admin .thm .acts .del { color: var(--danger-text); }
+#admin .thm .ren { display: block; box-sizing: border-box; width: 100%; height: calc(20px * var(--fs)); padding: 0 5px; border-radius: 4px; border: 1px solid var(--agent); background: var(--field); color: var(--ink); font: inherit; font-size: calc(12px * var(--fs)); outline: 0; }
+.thm .ramp { min-width: 120px; }
+/* the import and background dialogs */
+#kbm.thm .modal.ask { width: min(600px, calc(100vw - 40px)); max-height: 88vh; }
+#kbm.thm .ask .opt { row-gap: 10px; align-items: start; }
+#kbm.thm .ask .opt .lb { padding-top: 3px; }
+#kbm.thm input[type=file] { font-size: calc(11.5px * var(--fs)); color: var(--ink-3); }
+#kbm.thm input[type=file]::file-selector-button { margin-right: 10px; padding: 3px 10px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--slate) 28%, transparent); background: transparent; color: var(--ink-2); font: inherit; }
+#kbm.thm :is(.yaml, .nmin, .hexin) { box-sizing: border-box; width: 100%; padding: 5px 8px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--slate) 22%, transparent); background: var(--field); color: var(--ink); font: calc(11.5px * var(--fs)) "JetBrains Mono", ui-monospace, monospace; outline: 0; }
+#kbm.thm .yaml { resize: vertical; line-height: 1.5; }
+#kbm.thm .nmin { font-family: inherit; }
+#kbm.thm :is(.yaml, .nmin, .hexin):focus { border-color: var(--agent); }
+#kbm.thm .pickc { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+#kbm.thm .pickc input[type=color] { width: 34px; height: 26px; padding: 0; border: 1px solid color-mix(in srgb, var(--slate) 28%, transparent); border-radius: 6px; background: none; }
+#kbm.thm .hexin { width: 6.5em; }
+#kbm.thm .hint { color: var(--muted); font-size: calc(10.5px * var(--fs)); }
+#kbm.thm .withbg { display: flex; align-items: center; gap: 8px; color: var(--ink-2); font-size: calc(11.5px * var(--fs)); }
+#kbm.thm .withbg .ramp { flex: 1; min-width: 80px; height: calc(12px * var(--fs)); }
+#kbm.thm .withbg.off { color: var(--muted); }
+#kbm.thm .sample { margin-top: 14px; padding: 10px 12px; border-radius: 8px; border: 1px solid; font-size: calc(12px * var(--fs)); }
+#kbm.thm .sample .chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+#kbm.thm .sample .chips span { display: inline-flex; align-items: center; gap: 5px; padding: 0 7px; border-radius: 4px; border: 1px solid; font-size: calc(10.5px * var(--fs)); line-height: 1.7; }
+#kbm.thm .sample .chips i { width: 7px; height: 7px; border-radius: 50%; }
+#kbm.thm :is(.refusal, .warn, .okline) { margin-top: 10px; padding: 7px 10px; border-radius: 6px; font-size: calc(11.5px * var(--fs)); line-height: 1.5; }
+#kbm.thm .refusal { border: 1px solid color-mix(in srgb, var(--fail) 35%, transparent); background: color-mix(in srgb, var(--fail) 8%, transparent); color: var(--ink-2); }
+#kbm.thm .refusal .k { color: var(--fail-text); }
+#kbm.thm .warn { border: 1px solid color-mix(in srgb, var(--hold) 35%, transparent); background: color-mix(in srgb, var(--hold) 8%, transparent); color: var(--ink-2); }
+#kbm.thm .warn b { color: var(--hold-text); font-weight: 500; }
+#kbm.thm .okline { padding: 0; color: var(--ok-text); }
+#kbm.thm .nudges { margin-top: 10px; }
+#kbm.thm .nudges ul { list-style: none; margin: 2px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 2px 14px; }
+#kbm.thm .nudges li { display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: calc(10.5px * var(--fs)); }
+#kbm.thm .nudges .nk { color: var(--ink-3); min-width: 4.5em; }
+#kbm.thm .nudges li i { width: 9px; height: 9px; border-radius: 2px; }
+#kbm.thm .nudges code { font-size: calc(10px * var(--fs)); color: var(--ink-3); }
