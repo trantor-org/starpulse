@@ -258,6 +258,8 @@ def test_the_four_short_jobs_are_gone_and_static_checks_runs_every_check_they_ra
         "python -m starpulse.contracts.api",  # api-types: regenerate both outputs, fail on a diff
         "pnpm --dir starpulse/web run gen:types",
         "git diff --exit-code -- starpulse/schemas/api.schema.json starpulse/web/src/api/types.gen.ts",
+        "python -m grpc_tools.protoc",  # wire-pb2: regenerate the protobuf modules, fail on a diff
+        "git diff --exit-code -- starpulse/runs/wire",
     ):
         assert command in script, command
 
@@ -302,6 +304,7 @@ def test_static_checks_passes_when_every_check_passes(tmp_path):
     [
         ("ci/public_names.py", "public-names"),
         ("gen:types", "api-types"),
+        ("grpc_tools.protoc", "wire-pb2"),
     ],
 )
 def test_static_checks_fails_naming_the_failed_check_and_still_runs_the_others(tmp_path, fail_on, name):
@@ -309,7 +312,7 @@ def test_static_checks_fails_naming_the_failed_check_and_still_runs_the_others(t
     assert result.returncode == 1
     assert re.findall(r"static check failed: (\S+)", result.stdout) == [name]
     calls = (tmp_path / "calls").read_text()
-    assert all(command in calls for command in ("ci/public_names.py", "gen:types"))
+    assert all(command in calls for command in ("ci/public_names.py", "gen:types", "grpc_tools.protoc"))
 
 
 def test_static_checks_runs_its_checks_concurrently(tmp_path):

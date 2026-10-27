@@ -26,11 +26,18 @@ config_reference() {
     git diff --exit-code -- docs/serving.md
 }
 
+# The checked-in protobuf modules are generated from the .proto files beside them: regenerate them, fail when one differs.
+wire_pb2() {
+  uv run --no-sync python -m grpc_tools.protoc -I. --python_out=. --pyi_out=. \
+    starpulse/runs/wire/ingest.proto starpulse/runs/wire/cloudevents.proto &&
+    git diff --exit-code -- starpulse/runs/wire
+}
+
 # `uv sync` creates .venv, which the checks below read: it runs once here, before any of them starts, so no two uv
 # invocations race to create .venv/bin (a concurrent sync once broke a check with a missing .venv/bin temp file).
 uv sync --locked || exit 1
 
-checks=(api_types public_names config_reference)
+checks=(api_types public_names config_reference wire_pb2)
 pids=()
 for check in "${checks[@]}"; do
   "$check" >"$logs/$check.log" 2>&1 &
