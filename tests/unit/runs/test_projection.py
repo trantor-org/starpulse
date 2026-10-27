@@ -18,6 +18,7 @@ DAGS = [
         "steps": [],
         "schedule": [],
         "stats": None,
+        "rerun": None,
     }
 ]
 POOLS = [{"name": "gpu", "limit": 1, "running": 0}]

@@ -1,5 +1,6 @@
 """Finding one task's file on the native board matches its id in the raw text, so a read parses the file it returns."""
 
+import threading
 from pathlib import Path
 
 import pytest
@@ -17,12 +18,15 @@ def _write(root: Path, name: str, task_id: str, body: str = "") -> None:
 
 @pytest.fixture
 def parses(monkeypatch: pytest.MonkeyPatch) -> list[str]:
-    """The text of every file the native board parses the frontmatter of."""
+    """The text of every file the native board parses the frontmatter of on the test's thread: a board an earlier test
+    left following in the background parses on its own thread, and is not this read's work."""
     seen: list[str] = []
     split = native._split
+    test_thread = threading.get_ident()
 
     def counting(text: str):
-        seen.append(text)
+        if threading.get_ident() == test_thread:
+            seen.append(text)
         return split(text)
 
     monkeypatch.setattr(native, "_split", counting)
