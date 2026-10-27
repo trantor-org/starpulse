@@ -32,6 +32,7 @@ from typing import Any, ClassVar
 
 import jsonschema
 from pydantic import BaseModel
+from sqlalchemy import create_engine
 
 from starpulse.runtime.config import Config
 from starpulse.board.adapters.history_window import HistoryWindow
@@ -51,6 +52,7 @@ from starpulse.contracts.adapters import (
     TaskKeys,
 )
 from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.migrate import migrate
 from starpulse.flow_metrics.history import History, HistoryStore
 from starpulse.runtime.assembly import assemble as _assemble
 from starpulse.views.asgi_app import page_app
@@ -283,13 +285,13 @@ def serve(
     (static / "assets" / "index-abc123.js").write_text("")
     (tmp_path / "secret.txt").write_text("")
     served = feed or BoardFeed()
-    log = EventLog(f"sqlite:///{tmp_path / 'settings.sqlite'}")
+    log = EventLog(_migrated(tmp_path / "settings.sqlite"))
     board = board or _bare_board()
     board = replace(board, writer=board.writer or _no_writer, assign=board.assign or _no_writer)
     app = page_app(
         served,
         static,
-        history or HistoryStore("sqlite://", feed.machines if feed else {}),
+        history or HistoryStore(_migrated(tmp_path / "history.sqlite"), feed.machines if feed else {}),
         window or HistoryWindow(served, 6, log, tmp_path / "starpulse-settings.json"),
         board,
         Services(**services),
@@ -303,6 +305,13 @@ def serve(
     finally:
         server.close()
         log.close()
+
+
+def _migrated(path: Path) -> str:
+    """The URL of a new SQLite store at `path`, brought to the schema's head: opening a store runs no migration."""
+    store = f"sqlite:///{path}"
+    migrate(create_engine(store))
+    return store
 
 
 def url(server: PageServer, path: str) -> str:
