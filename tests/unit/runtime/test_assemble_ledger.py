@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 from starpulse.runtime.assembly import assemble, domains_of
-from starpulse.runtime.config import ConfigError, load
+from starpulse.runtime.config import load
 
 from tests import fake_board
 from tests.dagu_stub import dagu
@@ -85,9 +85,8 @@ def test_a_dagu_instance_with_no_domains_of_its_own_is_grouped_by_its_dags_domai
         assert domains_of(load(path)) == {"Host ops & backups": ("q/nightly",)}
 
 
-def test_an_unreachable_dagu_instance_with_no_domains_is_a_config_error(tmp_path: Path) -> None:
+def test_an_unreachable_dagu_instance_with_no_domains_contributes_none(tmp_path: Path) -> None:
     path = tmp_path / "starpulse.toml"
     path.write_text(CONFIG.replace('[runs.domains]\nops = ["nightly"]\n', "").replace("q.test", "q.invalid"))
 
-    with pytest.raises(ConfigError, match="cannot read its DAG domains"):
-        domains_of(load(path))
+    assert domains_of(load(path)) == {}

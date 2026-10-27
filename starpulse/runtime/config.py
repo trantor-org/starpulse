@@ -120,7 +120,7 @@ class Release:
 
 
 def runs_adapter(kind: str) -> ModuleType:
-    """The runs adapter module `kind` names, which offers `start(url)` and `follow(url, runs, log)`, and optionally `rerun(url)` and `declared_params(url, workflow)`."""
+    """The runs adapter module `kind` names, which offers `start(url)` and `follow(url, runs, log)`, and optionally `rerun(url)`, `declared_params(url, workflow)` and `domains(url)`."""
     if not isinstance(kind, str) or not all(part.isidentifier() for part in kind.split(".")):
         raise ConfigError(f"no runs adapter of type {kind}")
     try:
@@ -425,6 +425,10 @@ class Config:
     """The project's own command line for each step a shipped skill names (`[project.commands]`); no table: none is mapped."""
     cursor_context: CursorContext = field(default_factory=CursorContext)
     """The context limit a Cursor task session is reset at (`[cursor_context]`); no table: 150000 of a 200000 window."""
+
+    def reads_domains_at_start(self) -> bool:
+        """Whether an instance lists no domains and its adapter reads them from its workflows as `serve` starts."""
+        return any(i.url and not i.domains and hasattr(runs_adapter(i.type), "domains") for i in self.runs)
 
     def qualified_domains(self) -> dict[str, tuple[str, ...]]:
         """Every instance's domains as `<instance>/<workflow>`, one entry per domain name, in first-seen order."""

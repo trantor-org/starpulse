@@ -6,7 +6,6 @@ import threading
 from collections.abc import Collection, Mapping
 from pathlib import Path
 
-from starpulse.runtime.config import Config, ConfigError
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model.seam import Board
 from starpulse.board.model.seam import load as load_board
@@ -19,24 +18,29 @@ from starpulse.harness_telemetry.harness import SESSION_MACHINES
 from starpulse.machine_engine.model.snapshot import qualifier
 from starpulse.pulls.ci import CiError, attach
 from starpulse.pulls.task_actor import ACTOR
-from starpulse.runs import dagu
 from starpulse.runtime import read_model_follow
+from starpulse.runtime.config import Config, ConfigError, runs_adapter
 
 
 def domains_of(config: Config) -> dict[str, tuple[str, ...]]:
-    """The config's domains plus those every Dagu instance's DAG labels name, as `<instance>/<workflow>`, read once as
-    the server starts, for an instance whose config lists no domains of its own. Raises ConfigError when a Dagu instance cannot be read, since its DAGs would be unlisted."""
+    """The config's domains plus those a runs adapter reads from its workflows (`domains(url)`, optional), as
+    `<instance>/<workflow>`, for an instance whose config lists no domains of its own; read once as the server starts.
+
+    An instance the adapter cannot read contributes none, so its workflows are drawn outside any domain until a restart.
+    """
     merged: dict[str, tuple[str, ...]] = dict(config.qualified_domains())
     for instance in config.runs:
-        if instance.type == "dagu" and instance.url and not instance.domains:
-            try:
-                tagged = dagu.domains(instance.url)
-            except (OSError, ValueError) as exc:
-                raise ConfigError(
-                    f"runs instance {instance.name}: cannot read its DAG domains from {instance.url}: {exc}"
-                ) from exc
-            for domain, names in tagged.items():
-                merged[domain] = (*merged.get(domain, ()), *(f"{instance.name}/{n}" for n in names))
+        if not instance.url or instance.domains:
+            continue
+        read = getattr(runs_adapter(instance.type), "domains", None)
+        if read is None:
+            continue
+        try:
+            tagged = read(instance.url)
+        except (OSError, ValueError):
+            continue
+        for domain, names in tagged.items():
+            merged[domain] = (*merged.get(domain, ()), *(f"{instance.name}/{n}" for n in names))
     return merged
 
 
