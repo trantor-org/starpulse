@@ -14,12 +14,17 @@ import threading
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
+from pydantic import TypeAdapter, ValidationError
+
+from starpulse.contracts import Dag
+
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     from starpulse.event_log.event_log import EventLog
 
 logger = logging.getLogger(__name__)
 
 PROJECTION = "runs.projection"
+_DAGS = TypeAdapter(list[Dag])
 PROJECTED_STREAM = "runs:projected"
 #: Seconds an idle tail waits for an append from another process.
 POLL_S = 1.0
@@ -110,13 +115,23 @@ class Projected:
                 down = self._down(instance)
                 self._feed.set_dags(
                     instance,
-                    report["dags"],
+                    self._current(instance, report["dags"]),
                     report.get("error") or down,
                     report.get("pools"),
                     report.get("startable"),
                 )
         for instance in self._watched.keys() - reports.keys():
             self._feed.set_dags(instance, [], self._down(instance), None, None)
+
+    def _current(self, instance: str, dags: list) -> list:
+        """The kept workflows, or none when they predate the contract: a body the page's model refuses is a 500 on
+        every request until the worker reports again, and a sealed canary's worker never does."""
+        try:
+            _DAGS.validate_python(dags)
+        except ValidationError:
+            logger.warning("runs: the kept workflows of %s predate the contract; showing none", instance)
+            return []
+        return dags
 
     def _down(self, instance: str) -> str | None:
         problem = self._watched.get(instance)

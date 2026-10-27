@@ -8,7 +8,18 @@ from starpulse.board.board_feed import BoardFeed
 from starpulse.event_log.event_log import EventLog
 from starpulse.runs import projection
 
-DAGS = [{"name": "ci", "status": "success", "runId": "1", "startedAt": "", "finishedAt": "", "steps": []}]
+DAGS = [
+    {
+        "name": "ci",
+        "status": "succeeded",
+        "runId": "1",
+        "startedAt": "",
+        "finishedAt": "",
+        "steps": [],
+        "schedule": [],
+        "stats": None,
+    }
+]
 POOLS = [{"name": "gpu", "limit": 1, "running": 0}]
 WAIT_S = 5.0
 
@@ -107,6 +118,20 @@ def test_serve_applies_each_instances_kept_report_to_its_feed(log: EventLog) -> 
         ("dagu", DAGS, None, POOLS, ["ci"]),
         ("pushed", [], "down", [], None),
     ]
+
+
+def test_a_kept_report_that_predates_the_contract_gives_the_feed_no_workflows_until_the_worker_reports_again(
+    log: EventLog,
+) -> None:
+    stale = [{key: value for key, value in DAGS[0].items() if key not in ("schedule", "stats")}]
+    log.set_setting_entry(
+        projection.PROJECTION, "dagu", {"dags": stale, "error": None, "pools": POOLS, "startable": None}
+    )
+    feed = Feed()
+
+    projection.Projected(log, feed).apply()
+
+    assert feed.given == [("dagu", [], None, POOLS, None)]
 
 
 @pytest.mark.parametrize("kept", [None, [], "text", {"dagu": "text"}, {"dagu": {"dags": "text", "error": None}}])

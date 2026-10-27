@@ -22,7 +22,18 @@ def config_of(kind: str) -> str:
     return f'[[runs]]\nname = "{kind}"\ntype = "{kind}"\nurl = "http://adapter.invalid"\n' + BOARD
 
 
-DAGS = [{"name": "ci", "status": "success", "runId": "1", "startedAt": "", "finishedAt": "", "steps": []}]
+DAGS = [
+    {
+        "name": "ci",
+        "status": "succeeded",
+        "runId": "1",
+        "startedAt": "",
+        "finishedAt": "",
+        "steps": [],
+        "schedule": [],
+        "stats": None,
+    }
+]
 WAIT_S = 5.0
 NOW = 1_700_000_000.0
 
