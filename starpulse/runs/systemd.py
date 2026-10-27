@@ -108,6 +108,7 @@ def _workflow(run: Systemctl, user: bool, unit: str) -> dict:
         ],
         "schedule": [],
         "stats": None,
+        "rerun": None,
     }
 
 

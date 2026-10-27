@@ -4,7 +4,7 @@
 import { stepRings, type StepRing } from "../features/fanout/fanoutModel";
 import { tree, type Tree } from "./levels";
 import { mocked } from "./mockSky";
-import type { Capabilities, Cue, Dag, FlowSnapshot, LedgerRow, MachineEntry, MachinePage, MergeStrip, Move as Verdict, Pool, Pull, RawTask, Rating, Roles, Settled, Snapshot, Writer } from "../api";
+import type { Capabilities, Cpu, Cue, Dag, FlowSnapshot, LedgerRow, MachineEntry, MachinePage, MergeStrip, Move as Verdict, Pool, Pull, RawTask, Rating, Roles, Settled, Snapshot, Writer } from "../api";
 
 /** Seconds one move takes to cross its path, the arrival rings, and a finished DAG's flare. */
 export const TRAVEL = 3;
@@ -40,6 +40,8 @@ export interface Sky {
   dags: Dag[];
   /** The concurrency pools the DAGs run on; empty when the adapter reports none. */
   pools: Pool[];
+  /** The CPU share of all the host's cores each runs instance's runner used, by instance; empty when no adapter reports one. */
+  cpu: Record<string, Cpu>;
   dagBy: Record<string, Dag>;
   writers: Record<string, Writer[]>;
   launches: Launch[];
@@ -157,6 +159,7 @@ export function merge(raw: Snapshot, since = midnight()): Sky {
     board,
     dags: snap.dags,
     pools: snap.pools ?? [],
+    cpu: snap.cpu ?? {},
     dagBy: Object.fromEntries(snap.dags.map((d) => [d.name, d])),
     writers: Object.fromEntries(Object.entries(board.machine.writers ?? {}).map(([event, ws]) => [event, ws.filter((w) => !actors.has(w.actor))])),
     launches: Object.entries(board.machine.launches ?? {}).map(([dag, l]) => ({ dag, skill: l.skill, machine: l.machine })),

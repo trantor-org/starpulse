@@ -53,7 +53,7 @@ function tied(): DemoFixture {
   const f = fixture(), steps = (names: string[]) => names.map((n, i) => ({ name: n, depends: i ? [names[i - 1]] : [], status: "succeeded" as RunStatus, kind: null, precondition: null, lock: null, last: [] as [] }));
   f.flows[0].machine = { ...BOARD, writers: { MERGED: [{ actor: "main-follow", trigger: "push" }] }, dagActors: ["main-follow"] };
   f.cues = [{ dag: "apply-on-merge", event: "MERGED", state: "done", on: "each merge", resolves: "forced" }];
-  f.dags = ["main-follow", "apply-on-merge"].map((name) => ({ name, status: "succeeded" as RunStatus, runId: "r", startedAt: "", finishedAt: "", schedule: [], stats: null, steps: steps(["a", "b"]) }));
+  f.dags = ["main-follow", "apply-on-merge"].map((name) => ({ name, status: "succeeded" as RunStatus, runId: "r", startedAt: "", finishedAt: "", schedule: [], stats: null, rerun: null, steps: steps(["a", "b"]) }));
   return f;
 }
 
@@ -624,7 +624,7 @@ const run = (runId: string, step: string) => ({
 const fan = (...at: string[]): Snapshot => ({
   ...fixture(),
   dags: [{
-    name: "dagu/deliver", status: "running", runId: "deliver-agent-demo-1", startedAt: "", finishedAt: "", schedule: [], stats: null, pool: "dagu/deliver",
+    name: "dagu/deliver", status: "running", runId: "deliver-agent-demo-1", startedAt: "", finishedAt: "", schedule: [], stats: null, rerun: null, pool: "dagu/deliver",
     steps: STEPS.map((name, i) => ({ name, depends: i ? [STEPS[i - 1]] : [], status: "not_started" as const, kind: null, precondition: null, lock: null, last: [] })),
     active: at.map((step, i) => run(`deliver-agent-demo-${i + 1}`, step)),
   }],
@@ -676,7 +676,7 @@ describe("the demo's fan-out", () => {
   });
 
   it("leaves a snapshot with no pools or runs as it was", () => {
-    const snap = { ...fixture(), dags: [{ name: "x", status: "succeeded" as const, runId: "", startedAt: "", finishedAt: "", schedule: [], stats: null, steps: [] }] };
+    const snap = { ...fixture(), dags: [{ name: "x", status: "succeeded" as const, runId: "", startedAt: "", finishedAt: "", schedule: [], stats: null, rerun: null, steps: [] }] };
 
     expect(stepRuns(snap, script(0.1, 0, 0))).toEqual(snap);
   });

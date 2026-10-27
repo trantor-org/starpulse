@@ -103,6 +103,7 @@ def test_a_graph_learned_before_a_restart_is_drawn_after_it() -> None:
         "finishedAt": "",
         "schedule": [],
         "stats": None,
+        "rerun": None,
         "steps": [
             {
                 "name": "fetch",

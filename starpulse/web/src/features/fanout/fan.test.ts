@@ -22,7 +22,7 @@ const dag = (active: ActiveRun[], o: Partial<Dag> = {}): Dag => ({
   status: "running",
   runId: "",
   startedAt: "",
-  finishedAt: "", schedule: [], stats: null,
+  finishedAt: "", schedule: [], stats: null, rerun: null,
   steps: STEPS.map((name) => ({ name, depends: [], status: "not_started" as const, kind: null, precondition: null, lock: null, last: [] })),
   active,
   pool: "dagu/deliver",

@@ -1138,6 +1138,7 @@ PASSED_THROUGH = {
     "reading",
     "roles",
     "now",
+    "cpu",
 }
 
 

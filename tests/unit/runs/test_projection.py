@@ -38,7 +38,7 @@ class Feed(BoardFeed):
         self.given: list[tuple] = []
         self.taken = threading.Event()
 
-    def set_dags(self, instance, dags, error, pools=None, startable=None) -> None:
+    def set_dags(self, instance, dags, error, pools=None, startable=None, cpu=None) -> None:
         self.given.append((instance, dags, error, pools, startable))
         self.taken.set()
 
@@ -54,7 +54,7 @@ def test_a_published_report_is_kept_in_the_log_and_announced(log: EventLog) -> N
     sink.set_dags(DAGS, None, POOLS, ["ci"])
 
     assert log.setting(projection.PROJECTION) == {
-        "dagu": {"dags": DAGS, "error": None, "pools": POOLS, "startable": ["ci"]}
+        "dagu": {"dags": DAGS, "error": None, "pools": POOLS, "startable": ["ci"], "cpu": None}
     }
     assert log.last(projection.PROJECTED_STREAM) is not None
 
@@ -73,6 +73,7 @@ def test_none_keeps_what_the_instance_last_reported_and_an_empty_pools_clears_it
         "error": "unreachable",
         "pools": POOLS,
         "startable": ["ci"],
+        "cpu": None,
     }
 
     sink.set_dags(DAGS, None, [])

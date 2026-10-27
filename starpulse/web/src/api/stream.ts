@@ -44,7 +44,7 @@ function recount(done: Snapshot["milestone_done"], final: string | null | undefi
 /** `snap` with one delta folded in; `snap` itself is left as it was. */
 export function applyDelta(snap: Snapshot, delta: Delta): Snapshot {
   // a dags, pulls or ledgers delta carries the whole of what it replaces (a ledgers delta the strip and pins, never rows); whatever a delta leaves as it was keeps its old reference, so the page's work follows what changed
-  if (delta.kind === "dags") return { ...snap, dags: keep(snap.dags, delta.dags, (d) => d.name), pools: delta.pools ? keep(snap.pools, delta.pools, (p) => p.name) : snap.pools, error: delta.error };
+  if (delta.kind === "dags") return { ...snap, dags: keep(snap.dags, delta.dags, (d) => d.name), pools: delta.pools ? keep(snap.pools, delta.pools, (p) => p.name) : snap.pools, error: delta.error, cpu: delta.cpu ?? snap.cpu };
   if (delta.kind === "pulls") return { ...snap, pulls: keep(snap.pulls, delta.pulls) };
   if (delta.kind === "ledgers") return { ...snap, mergeStrip: keep(snap.mergeStrip, delta.mergeStrip), mergePins: keep(snap.mergePins, delta.mergePins) };
   if (delta.kind === "claim") return { ...snap, claims: { ...snap.claims, [delta.task]: { reason: delta.reason, at: delta.at } } };

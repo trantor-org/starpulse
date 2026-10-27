@@ -70,6 +70,7 @@ def _dag(name: str, status: str, raw: str | None = None) -> dict[str, Any]:
         "steps": [],
         "schedule": [],
         "stats": None,
+        "rerun": None,
     }
 
 

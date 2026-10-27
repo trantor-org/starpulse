@@ -28,7 +28,7 @@ const CUES: Cue[] = [
 ];
 const LAUNCH_ONLY = ["dagu/nightly-audit", "dagu/weekly-code-audit"], UNTIED = ["dagu/orphan-report"];
 
-const dag = (name: string, status: Dag["status"] = "succeeded"): Dag => ({ name, status, runId: "r", startedAt: "", finishedAt: "", schedule: [], stats: null, steps: [] });
+const dag = (name: string, status: Dag["status"] = "succeeded"): Dag => ({ name, status, runId: "r", startedAt: "", finishedAt: "", schedule: [], stats: null, rerun: null, steps: [] });
 const machine: Machine = {
   states: STATES.map((id, i) => ({ id, name: id, initial: i === 0, final: id === "completed" || id === "archived" })),
   transitions: TRANSITIONS.map(([source, target, event]) => ({ source, target, event })),

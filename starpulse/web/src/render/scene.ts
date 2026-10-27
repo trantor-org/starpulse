@@ -778,7 +778,7 @@ export const turnPage = (pager: Pager) => (pager.page + pager.d + pager.pages) %
 /** How far either side of the ring's bottom its two pager nodes sit: clear of each other's orbit, and of the lowest machine rows. */
 const pagerDx = (ring: number, orbit: number) => Math.max(0.3 * ring, orbit + 3);
 
-const stub = (name: string): Dag => ({ name, status: "not_started", runId: "", startedAt: "", finishedAt: "", schedule: [], stats: null, steps: [] });
+const stub = (name: string): Dag => ({ name, status: "not_started", runId: "", startedAt: "", finishedAt: "", schedule: [], stats: null, rerun: null, steps: [] });
 
 /** Lay a level out for a W x H canvas. */
 export function build(ctx: Ctx, l: Level): Scene {

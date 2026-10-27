@@ -23,6 +23,7 @@ __all__ = [
     "SCHEMAS",
     "ActiveRun",
     "BoardTask",
+    "Cpu",
     "Dag",
     "LaneEvent",
     "RatingEvent",
@@ -30,6 +31,7 @@ __all__ = [
     "Move",
     "Pool",
     "RecentRun",
+    "Rerun",
     "RunEvent",
     "RunStatus",
     "RunsSink",
@@ -227,6 +229,24 @@ class RunStats(_Contract):
     )
 
 
+class Rerun(_Contract):
+    """What a DAG declares about a rerun of it: safe (all None), once per `key`, or repeating its effects."""
+
+    key: str | None = Field(
+        description="What the DAG keys its effects by, so a rerun for the same key repeats none; None when it declares no key."
+    )
+    repeats: str | None = Field(
+        description="Why a rerun repeats the DAG's effects; None when the DAG declares it does not."
+    )
+    step: str | None = Field(description="The step whose effects repeat; None when the DAG names none.")
+
+    @model_validator(mode="after")
+    def _a_step_repeats_for_a_reason(self) -> Rerun:
+        if self.step is not None and self.repeats is None:
+            raise ValueError("a step repeats for a reason, so `step` needs `repeats`")
+        return self
+
+
 class Dag(_Contract):
     """One DAG with its step graph and its latest run."""
 
@@ -251,6 +271,10 @@ class Dag(_Contract):
     stats: RunStats | None = Field(
         description="The DAG's runs over the last seven days; None when it has never run or the scheduler cannot "
         "list them, never zeros."
+    )
+    rerun: Rerun | None = Field(
+        description="What the DAG declares about a rerun repeating its effects; None when it declares nothing, and the "
+        "page then claims nothing."
     )
     active: tuple[ActiveRun, ...] = Field(
         default=(),
@@ -322,16 +346,29 @@ class Pool(_Contract):
     queued: int = Field(ge=0, description="The runs waiting for the pool to have room.")
 
 
+class Cpu(_Contract):
+    """The share of the host's CPU an instance's scheduler and workers used since the last reading."""
+
+    share: float = Field(ge=0, le=1, description="Their CPU time over all the host's cores, from 0 to 1.")
+    cores: int = Field(ge=1, description="How many cores the host has.")
+
+
 class RunsSink(Protocol):
     """Where a runs adapter's `follow(url, runs, log)` publishes the workflows and `Pool`s of its one instance, and says when it cannot read them.
 
     `pools` None keeps the last reported and a list replaces them, so an adapter that reports none passes `[]`.
     `startable`, when the adapter can start only some of its workflows, names those; None keeps the last report, and an
-    adapter that never reports one is read as able to start every workflow.
+    adapter that never reports one is read as able to start every workflow. `cpu` is a `Cpu` as a dict; None keeps the
+    last reading, and an adapter that has none never passes one.
     """
 
     def set_dags(
-        self, dags: list | None, error: str | None, pools: list | None = None, startable: list[str] | None = None
+        self,
+        dags: list | None,
+        error: str | None,
+        pools: list | None = None,
+        startable: list[str] | None = None,
+        cpu: dict | None = None,
     ) -> None: ...
 
 

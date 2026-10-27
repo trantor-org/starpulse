@@ -34,6 +34,7 @@ DAG = {
     "steps": [STEP],
     "schedule": [],
     "stats": None,
+    "rerun": None,
 }
 RUN = {"runId": "r2", "status": "running", "startedAt": "", "step": "a", "stepStartedAt": "", "steps": {"a": "running"}}
 POOL = {"name": "lane", "cap": 1, "running": 1, "queued": 0}

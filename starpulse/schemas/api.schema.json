@@ -830,6 +830,29 @@
       "title": "CostToGo",
       "type": "object"
     },
+    "Cpu": {
+      "additionalProperties": false,
+      "description": "The share of the host's CPU an instance's scheduler and workers used since the last reading.",
+      "properties": {
+        "cores": {
+          "description": "How many cores the host has.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "share": {
+          "description": "Their CPU time over all the host's cores, from 0 to 1.",
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "share",
+        "cores"
+      ],
+      "title": "Cpu",
+      "type": "object"
+    },
     "CreateRequest": {
       "additionalProperties": false,
       "description": "`POST /api/tasks`: create a task in the lane `status` names or else the board's starting lane, stamped\n`created_by: <harness>:<session>`, or each of `tasks` in one call, each with its own title and details.",
@@ -1523,6 +1546,17 @@
           "default": null,
           "description": "The engine's own status when it differs from `status`."
         },
+        "rerun": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Rerun"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What the workflow declares about a rerun repeating its effects; None when it declares nothing."
+        },
         "runId": {
           "type": "string"
         },
@@ -1574,7 +1608,8 @@
         "finishedAt",
         "steps",
         "schedule",
-        "stats"
+        "stats",
+        "rerun"
       ],
       "title": "DagBody",
       "type": "object"
@@ -1583,6 +1618,20 @@
       "additionalProperties": false,
       "description": "A runs instance's workflows.",
       "properties": {
+        "cpu": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/Cpu"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "dags": {
           "items": {
             "$ref": "#/$defs/DagBody"
@@ -5379,6 +5428,52 @@
       "title": "RequiredCheck",
       "type": "object"
     },
+    "Rerun": {
+      "additionalProperties": false,
+      "description": "What a DAG declares about a rerun of it: safe (all None), once per `key`, or repeating its effects.",
+      "properties": {
+        "key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What the DAG keys its effects by, so a rerun for the same key repeats none; None when it declares no key."
+        },
+        "repeats": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Why a rerun repeats the DAG's effects; None when the DAG declares it does not."
+        },
+        "step": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The step whose effects repeat; None when the DAG names none."
+        }
+      },
+      "required": [
+        "key",
+        "repeats",
+        "step"
+      ],
+      "title": "Rerun",
+      "type": "object"
+    },
     "RestartingEvent": {
       "additionalProperties": false,
       "description": "The server was told to stop and will not answer after this: sent to every open stream before it exits.",
@@ -6971,6 +7066,21 @@
           ],
           "default": null,
           "description": "The ids of the done tasks from before local midnight that the board feed holds as a stub, left out of `flows`: the full view (`?view=full`) only, the page reads them from `/api/done` and `/api/task/<id>`."
+        },
+        "cpu": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/Cpu"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The CPU share of each runs instance's scheduler and workers, by instance name."
         },
         "cues": {
           "anyOf": [

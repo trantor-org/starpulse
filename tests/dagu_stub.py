@@ -65,6 +65,7 @@ def dagu(
     page: int = 100,
     params: Mapping[str, list[str]] = MappingProxyType({}),
     schedules: Mapping[str, list[str]] = MappingProxyType({}),
+    dag_labels: Mapping[str, list[str]] = MappingProxyType({}),
     preconditions: Mapping[str, tuple[str, str]] = MappingProxyType({}),
     unrun: Collection[str] = (),
 ) -> Iterator[tuple[str, list[str]]]:
@@ -77,7 +78,7 @@ def dagu(
     Like Dagu, whose listing starts at UTC midnight unless asked for a `fromDate`, a listing with no `fromDate` leaves
     out the runs that began before `listed_since`. `history` (read at each request, so a caller may add to it) are the runs `/dag-runs?name=` lists, `page` at a time with
     a `nextCursor` while more remain; their detail is served like an in-flight run's. `params` are the `NAME=default`
-    words each DAG declares, as its detail reports them. `schedules` are the cron expressions a DAG's listing entry
+    words each DAG declares, as its detail reports them. `dag_labels` are the labels a DAG's listing entry carries, and `schedules` the cron expressions it
     carries, `preconditions` the `(condition, expected)` a step named by key declares, and `unrun` the DAGs the
     listing gives no latest run. `/dags/<name>/dag-runs` lists the `history` of a DAG with its steps, as Dagu does.
     Yields the base URL and the list of every request path received, in order.
@@ -143,7 +144,11 @@ def dagu(
                 "dags": [
                     {
                         "fileName": n,
-                        "dag": {"schedule": [{"expression": e, "kind": "cron"} for e in schedules.get(n, [])]},
+                        "dag": {
+                            "schedule": [{"expression": e, "kind": "cron"} for e in schedules.get(n, [])],
+                            "labels": dag_labels.get(n, []),
+                            "tags": [],
+                        },
                         **({} if n in unrun else {"latestDAGRun": {**run}}),
                     }
                     for n in steps

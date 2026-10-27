@@ -149,6 +149,7 @@ def _finished(domains: list[dict], deliver: str, prefix: str, now: float) -> tup
                     "pool": pool,
                     "schedule": [],
                     "stats": None,
+                    "rerun": None,
                 }
             )
     return dags, pools
@@ -205,6 +206,7 @@ def _seed_fanout(domains: list[dict], dags: list[dict], now: float) -> tuple[lis
         "pool": f"{prefix}deliver",
         "schedule": [],
         "stats": None,
+        "rerun": None,
     }
     pools = [
         {"name": f"{prefix}{p}", "cap": cap, "running": len(runs) if p == "deliver" else 0, "queued": 0}
@@ -258,6 +260,7 @@ def _seed_catalog(domains: list[dict], dags: list[dict], now: float) -> tuple[li
                 "pool": f"{name.rpartition('/')[0]}/default" if "/" in name else "default",
                 "schedule": [],
                 "stats": None,
+                "rerun": None,
             }
         )
         if status in CATALOG_RUN_SAFE:

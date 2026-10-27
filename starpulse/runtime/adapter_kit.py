@@ -222,7 +222,7 @@ class RunsAdapterKit(_AdapterKit):
 
     def test_every_dag_carries_its_schedule_statistics_and_every_step_its_precondition_lock_and_history(self) -> None:
         for dag in self.produce():
-            assert {"schedule", "stats"} <= dag.keys(), f"{dag['name']} leaves out its schedule or statistics"
+            assert {"schedule", "stats", "rerun"} <= dag.keys(), f"{dag['name']} leaves out a schedule, stats or rerun"
             for step in dag["steps"]:
                 missing = {"precondition", "lock", "last"} - step.keys()
                 assert not missing, f"{dag['name']} step {step['name']} leaves out {sorted(missing)}"

@@ -220,6 +220,7 @@ class ViewMethods:
                 **self._machine_fields(flows, derived, now),
                 "dags": self._workflows(),
                 "pools": self._drawn_pools(),
+                "cpu": dict(self._cpu),
                 "pulls": self._pulls,
                 **self._ledger_marks(self._ledger_full),
                 "claims": dict(self._claims),

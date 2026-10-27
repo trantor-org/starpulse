@@ -124,6 +124,7 @@ def _dag(name: str, steps: dict[str, list[str]]) -> dict[str, Any]:
         "steps": [_step(step, depends, "not_started") for step, depends in steps.items()],
         "schedule": [],
         "stats": None,
+        "rerun": None,
     }
 
 
