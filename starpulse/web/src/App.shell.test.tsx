@@ -60,7 +60,7 @@ describe("the page's first tree", () => {
   it("opens the In Progress drill-in over the page for ?drill=TASK-N, and closing it drops the address's drill", async () => {
     history.replaceState(null, "", "/?view=constellation&drill=TASK-1");
     act(() => root.render(<App />));
-    act(() => held.store!.set({ tree: { states: ["In Progress"], subs: {}, children: {} }, roles: { working: "In Progress" }, cards: [{ id: "TASK-1", title: "T", lane: "In Progress" } as unknown as KanbanTask] }));
+    act(() => held.store!.set({ tree: { states: ["In Progress"], subs: {}, children: {} }, roles: { working: "In Progress" }, cards: [{ id: "TASK-1", title: "T", lane: "In Progress", dependencies: [] } as unknown as KanbanTask] }));
     await act(async () => void (await import("./features/level/SunsDrillIn")));
     expect(host.querySelector('[aria-label="In Progress drill-in"] nav[aria-label="Tasks"] button')?.getAttribute("aria-label")).toMatch(/^TASK-1 T, /);
     act(() => host.querySelector<HTMLButtonElement>('[aria-label="Back to the Board"]')!.click());
