@@ -304,7 +304,14 @@ SEED = [
     # A Waiting task in m-1 blocked by the Waiting head in m-2: it cannot stack, so the Kanban links it to that blocker.
     ("waiting", "m-1", ["size-2", "kind-feature"], 3, "@agent-fast-low", None),
     # A Review task with two pull requests, one merged and one open, so the task modal's rail draws more than one.
-    ("review", "m-2", ["size-3", "kind-feature"], None, "@agent-standard-high", (("pass", True, 0), ("pass", False, 1))),
+    (
+        "review",
+        "m-2",
+        ["size-3", "kind-feature"],
+        None,
+        "@agent-standard-high",
+        (("pass", True, 0), ("pass", False, 1)),
+    ),
     # Three Waiting tasks on index 6, so that task's modal draws a Holds list of three.
     ("waiting", "m-1", ["size-1"], 6, "@agent-fast-low", None),
     ("waiting", "m-1", ["size-2", "kind-bug"], 6, "", None),
@@ -502,7 +509,13 @@ def scrub(live: dict) -> dict:
     ]
     demo_pulls = {
         names[t]: [
-            p | {"number": 1000 * j + 100 + int(names[t].removeprefix("DEMO-")) - 1, "repo": "demo/repo", "url": "#", "stale": False}
+            p
+            | {
+                "number": 1000 * j + 100 + int(names[t].removeprefix("DEMO-")) - 1,
+                "repo": "demo/repo",
+                "url": "#",
+                "stale": False,
+            }
             for j, p in enumerate(ps)
         ]
         for t, ps in pulls.items()
@@ -624,20 +637,103 @@ def _seed_task_runs(flows: list[dict], working_state: str, now: float) -> None:
         ]
 
 
+def _inner(machine: dict) -> list[str]:
+    """The states a task can be in mid-flow: reachable from the start (the start itself has an empty route), not final."""
+    return [s["id"] for s in machine["states"] if not s.get("final") and _route(machine, s["id"])]
+
+
+def _agent(id_: str, a: dict, state: str, trail: list[dict]) -> dict:
+    """The session `a`'s task has on a machine, at `state` after `trail`."""
+    return {
+        "id": id_,
+        "title": a["title"],
+        "task": a["id"],
+        "state": state,
+        "model": a["model"],
+        "steps": len(trail),
+        "trail": trail,
+        "active": trail[-1]["at"],
+    }
+
+
+#: Seconds between two moves of a phase walk, before each task's own spread; the walk is fitted into the drill-in's day.
+PHASE_STEP_S = 1200
+
+
+def _phase_times(n: int, i: int, now: float) -> list[float]:
+    """`n` move times of task `i`'s phase walk, oldest first, ending shortly before `now` and spaced to start inside the
+    last day, spread per task so no two walks line up."""
+    gap = min(PHASE_STEP_S + 240 * (i % 6), (DAY_S - 7200) // max(n, 1))
+    end = now - 900 - 600 * (i % 6)
+    return [end - gap * (n - 1 - k) for k in range(n)]
+
+
+def _phase_moves(sub: dict, phases: dict[str, dict], i: int) -> list[tuple[str, str, str]]:
+    """Task `i`'s (machine, state, event) moves through the sub machine's phases, in order: it stands at phase `i` of
+    them (the start, then each state mid-flow); every earlier phase's machine ran to its end, and the one it stands in
+    stopped partway; each phase change is the sub machine's own move."""
+    machine = sub["machine"]
+    stops = [next(s["id"] for s in machine["states"] if s.get("initial")), *_inner(machine)]
+    route = _route(machine, stops[i % len(stops)])
+    visited = [route[0][0] if route else stops[0], *(t for _, _, t in route)]
+    moves = []
+    for k, state in enumerate(visited):
+        phase = phases.get(state)
+        last = k == len(visited) - 1
+        if phase:
+            mid = _inner(phase["machine"])
+            steps = _route(phase["machine"], mid[-1 - (i // len(stops)) % len(mid)]) if last and mid else []
+            moves += [(phase["name"], t, e) for _, e, t in steps or _finish(phase["machine"]) if not last or steps]
+        if not last:
+            moves.append((sub["name"], route[k][2], route[k][1]))
+    return moves
+
+
+def _finish(machine: dict) -> list[tuple[str, str, str]]:
+    """The shortest route from the start to the machine's first final state; [] when it has none."""
+    end = next((s["id"] for s in machine["states"] if s.get("final")), None)
+    return _route(machine, end) if end else []
+
+
+def _seed_phases(flows: list[dict], sub: dict, working: list[dict], now: float) -> set[str]:
+    """When the machine a Board state opens opens machines of its own (the phases of a task's work) and has no session,
+    walk each working task through them: the names of the machines it placed sessions on, plus the sub machine; empty
+    when there is nothing to walk."""
+    by_name = {f["name"]: f for f in flows}
+    flow = by_name.get(sub["machine"])
+    links = (
+        {k["state"]: by_name[k["machine"]] for k in flow["machine"].get("submachines", []) if k["machine"] in by_name}
+        if flow
+        else {}
+    )
+    if not links or flow["agents"] or not working:
+        return set()
+    for i, a in enumerate(working):
+        trails: dict[str, list[dict]] = {}
+        moves = _phase_moves(flow, links, i)
+        for (name, state, event), at in zip(moves, _phase_times(len(moves), i, now)):
+            trails.setdefault(name, []).append({"state": state, "event": event, "at": at})
+        for name, trail in trails.items():
+            id_ = a["id"] if name == flow["name"] else f"{name}-{i + 1}"
+            by_name[name]["agents"].append(_agent(id_, a, trail[-1]["state"], trail))
+    return {flow["name"], *(f["name"] for f in links.values())}
+
+
 def _seed_delivery(flows: list[dict], now: float) -> None:
     """Place each In Progress Board task on the Board's delivery machine when the capture placed none there, at a varied
     state along that machine, so its level and its back-trace have a task to show; and on every other machine the
-    capture placed none on, a few sessions working those tasks, as an agent's other skills run beside delivery."""
+    capture placed none on, a few sessions working those tasks, as an agent's other skills run beside delivery. A
+    delivery machine that opens phase machines of its own walks each task through them instead."""
     board = next(f for f in flows if f["name"] == "board")
     sub = next(iter(board["machine"].get("submachines", [])), None)
     if sub is None:
         return
     working = [x for x in board["agents"] if x["state"] == sub["state"]]
-    empty = [f for f in flows if f["name"] != "board" and not f["agents"]]
+    phased = _seed_phases(flows, sub, working, now)
+    empty = [f for f in flows if f["name"] != "board" and f["name"] not in phased and not f["agents"]]
     for k, flow in enumerate(empty):
         m = flow["machine"]
-        # the states a task can be in mid-flow: reachable from the start (the start itself has an empty route), not final
-        inner = [s["id"] for s in m["states"] if not s.get("final") and _route(m, s["id"])]
+        inner = _inner(m)
         if not inner:
             continue
         if flow["name"] == sub["machine"]:
@@ -647,19 +743,7 @@ def _seed_delivery(flows: list[dict], now: float) -> None:
             placed = [(f"{flow['name']}-{j + 1}", working[(k + j) % len(working)]) for j in range(n)]
         for i, (id_, a) in enumerate(placed):
             state = inner[i % len(inner)]
-            trail = _walk(m, state, i, now)
-            flow["agents"].append(
-                {
-                    "id": id_,
-                    "title": a["title"],
-                    "task": a["id"],
-                    "state": state,
-                    "model": a["model"],
-                    "steps": len(trail),
-                    "trail": trail,
-                    "active": trail[-1]["at"],
-                }
-            )
+            flow["agents"].append(_agent(id_, a, state, _walk(m, state, i, now)))
 
 
 #: The CI events each seeded pull request went through, by how it stands now (its checks, and whether it merged).
@@ -743,7 +827,13 @@ def _history(flows: list[dict], now: float) -> dict[str, list[dict]]:
 def _task(i: int, a: dict) -> dict:
     # a held task is held by a synthetic session, too short for the leak scan, so the kanban draws its nickname
     holder = f"https://example.com/code/session_demo{i + 1}" if a["state"] == "in_progress" else a.get("model", "")
-    return {"id": f"DEMO-{i + 1}", "title": TITLES[i % len(TITLES)], "state": a["state"], "model": a.get("model", ""), "assignee": holder}
+    return {
+        "id": f"DEMO-{i + 1}",
+        "title": TITLES[i % len(TITLES)],
+        "state": a["state"],
+        "model": a.get("model", ""),
+        "assignee": holder,
+    }
 
 
 def _renames(snap: dict) -> dict[str, str]:
@@ -874,7 +964,9 @@ def elements(sheet: Path) -> str:
 def page(static: Path, fixture: dict) -> str:
     """`static/index.html` with its bundle inlined and `fixture` embedded ahead of it, minus the early stream a demo
     has no server for. The stylesheet carries its fonts as `data:` URIs, so the preloads of the files it now holds go."""
-    html = re.sub(r"<script>\n// Ask for the snapshot now.*?</script>\n", "", (static / "index.html").read_text(), flags=re.S)
+    html = re.sub(
+        r"<script>\n// Ask for the snapshot now.*?</script>\n", "", (static / "index.html").read_text(), flags=re.S
+    )
     html = re.sub(r'[ \t]*<link rel="preload" href="/[^"]+" as="font"[^>]*>\n?', "", html)
     data = json.dumps(fixture).replace("</", "<\\/")
 

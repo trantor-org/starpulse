@@ -79,17 +79,22 @@ def test_the_preview_board_reopens_done_to_every_open_lane_and_still_draws_done_
     assert {s["id"]: s.get("final", False) for s in board["states"]}["done"] is True
 
 
-def test_in_progress_opens_the_delivery_machine_and_at_least_three_more_lifecycle_machines() -> None:
+def test_in_progress_opens_the_in_progress_machine_and_its_three_phases() -> None:
     machines = _machines()
 
     assert machines["board"]["submachines"][0] == {
         "state": "in_progress",
-        "machine": "delivery",
+        "machine": "in-progress",
         "exits": {},
         "parent": "board",
         "when": "",
     }
-    assert len(set(machines) - {"board", "delivery"}) >= 3
+    assert [(link["state"], link["machine"]) for link in machines["in-progress"]["submachines"]] == [
+        ("build", "build"),
+        ("deliver", "deliver"),
+        ("review_fix", "review_fix"),
+    ]
+    assert len(set(machines) - {"board", "in-progress", "build", "deliver", "review_fix"}) >= 3
 
 
 def test_the_preview_lays_out_five_domains_of_at_least_thirty_workflows() -> None:
@@ -162,13 +167,28 @@ def test_the_demo_files_new_tasks_that_morning_so_the_new_lane_counts_them() -> 
     assert all(NOW - 6 * 3600 <= a.get("created", 0) <= NOW for a in new)
 
 
-def test_the_demo_places_sessions_on_the_delivery_machine_and_on_at_least_three_lifecycle_machines() -> None:
+def test_the_demo_places_sessions_on_the_in_progress_phases_and_on_at_least_three_lifecycle_machines() -> None:
     flows = _flows(scrub(_capture()))
 
     busy = {name for name, f in flows.items() if name != "board" and f["agents"]}
-    assert "delivery" in busy
-    assert len(busy) >= 4
+    assert {"in-progress", "build", "deliver", "review_fix"} <= busy
+    assert len(busy) >= 6
     assert all(a["trail"] for name in busy for a in flows[name]["agents"])
+
+
+def test_the_demo_walks_an_in_progress_task_through_build_deliver_and_review_in_order() -> None:
+    flows = _flows(scrub(_capture()))
+
+    walks = {}
+    for name in ("build", "deliver", "review_fix"):
+        for a in flows[name]["agents"]:
+            walks.setdefault(a["task"], {})[name] = a["trail"]
+    full = [task for task, w in walks.items() if len(w) == 3]
+    assert full
+    for task in full:
+        w = walks[task]
+        assert w["build"][-1]["at"] < w["deliver"][0]["at"] <= w["deliver"][-1]["at"] < w["review_fix"][0]["at"]
+        assert NOW - 86400 < w["build"][0]["at"] and w["review_fix"][-1]["at"] <= NOW
 
 
 def test_the_demo_seeds_runs_on_every_domain_and_at_least_six_pools() -> None:

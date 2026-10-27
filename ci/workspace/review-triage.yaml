@@ -1,4 +1,4 @@
-# Working a pull request's review threads to zero, opened from Delivery while its pull request is open.
+# Working a pull request's review threads to zero, opened from Deliver while its pull request is open.
 name: ReviewTriage
 states:
   start: {initial: true}

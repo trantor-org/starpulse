@@ -1071,6 +1071,76 @@ def test_scrub_seeds_the_delivery_machine_with_the_in_progress_board_tasks_when_
     ]
 
 
+def _phased(board: list[dict]) -> dict:
+    live = _structured(board, [])
+    in_progress = _machine("build", [("build", "deliver", "BUILD_DONE"), ("deliver", "review_fix", "DELIVER_DONE")])
+    links = [{"state": "build", "machine": "build"}, {"state": "deliver", "machine": "deliver"}]
+    build = _machine("start", [("start", "green", "GREEN"), ("green", "done", "DONE")], final="done")
+    deliver = _machine(
+        "start", [("start", "lint", "LINT"), ("lint", "pr", "PUSH"), ("pr", "ready", "READY")], final="ready"
+    )
+    live["flows"][1] = {"name": "in-progress", "machine": in_progress | {"submachines": links}, "agents": []}
+    live["flows"] += [
+        {"name": "build", "machine": build, "agents": []},
+        {"name": "deliver", "machine": deliver, "agents": []},
+    ]
+    return live
+
+
+def _moves(demo: dict, task: str) -> list[tuple[str, str]]:
+    """The (machine, event) moves of `task` on every flow, oldest first."""
+    moves = [
+        (step["at"], f["name"], step["event"])
+        for f in demo["flows"]
+        for a in f["agents"]
+        if a.get("task") == task
+        for step in a["trail"]
+    ]
+    return [(machine, event) for _, machine, event in sorted(moves)]
+
+
+def test_scrub_walks_each_in_progress_task_through_the_phases_the_in_progress_machine_opens() -> None:
+    board = [{"id": f"TASK-D{n}", "state": "in_progress"} for n in (1, 2, 3)]
+
+    demo = scrub(_phased(board))
+
+    # the first still builds, the second has built and delivers, the third has delivered and is past the last phase link
+    assert _moves(demo, "DEMO-1") == [("build", "GREEN")]
+    assert _moves(demo, "DEMO-2") == [
+        ("build", "GREEN"),
+        ("build", "DONE"),
+        ("in-progress", "BUILD_DONE"),
+        ("deliver", "LINT"),
+        ("deliver", "PUSH"),
+    ]
+    assert _moves(demo, "DEMO-3") == [
+        ("build", "GREEN"),
+        ("build", "DONE"),
+        ("in-progress", "BUILD_DONE"),
+        ("deliver", "LINT"),
+        ("deliver", "PUSH"),
+        ("deliver", "READY"),
+        ("in-progress", "DELIVER_DONE"),
+    ]
+
+
+def test_scrub_times_a_phase_walk_inside_the_drill_ins_day_with_each_move_after_the_one_before() -> None:
+    board = [{"id": f"TASK-D{n}", "state": "in_progress"} for n in (1, 2, 3)]
+
+    demo = scrub(_phased(board))
+
+    for task in ("DEMO-2", "DEMO-3"):
+        at = [step["at"] for f in demo["flows"] for a in f["agents"] if a.get("task") == task for step in a["trail"]]
+        assert 100_000.0 - 86_400 < min(at) and max(at) < 100_000.0 and len(set(at)) == len(at)
+    for f in demo["flows"][1:]:
+        for a in f["agents"]:
+            assert (
+                a["steps"] == len(a["trail"])
+                and a["active"] == a["trail"][-1]["at"]
+                and a["state"] == a["trail"][-1]["state"]
+            )
+
+
 def test_scrub_leaves_a_delivery_machine_the_capture_placed_tasks_on() -> None:
     placed = [
         {"id": "TASK-D1", "task": "TASK-D1", "title": "t", "state": "green", "model": "", "steps": 0, "trail": []}
