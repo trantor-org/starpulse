@@ -28,7 +28,7 @@ Sizes are `size-1`, `size-2`, `size-3`, `size-5`, `size-8` (Fibonacci points). S
 scope, then step up one value per aggravating driver: the cause or approach is unknown; it
 touches live state, a migration or a shared interface; it spans two repositories merged in
 order (package, then the pin that consumes it); or its criteria depend on an external system.
-An `Operator approved the render` criterion is two drivers.
+An `Operator approved the render` criterion is one driver at most.
 
 | Size | Base scope |
 |---|---|
@@ -58,11 +58,11 @@ repository is size 3.
      live-state driver. A documented, idempotent apply path (a checked-in dashboard push, a
      container recreate, an apply-on-merge job running a migration) does not; a hand-run or
      first-of-its-kind live change does.
-   - An `Operator approved the render` criterion steps up two values, not one: render rounds
-     and operator wait, not code, set its length, and most tasks stepped once ran over. A
+   - An `Operator approved the render` criterion steps up one value at most: it adds operator
+     wait, not agent steps, and canvas slices stepped twice ran far under their size. A
      check that drives a burst against a live service or exposes one on the network takes
      both the live-state and external-system drivers, since the operator must approve the run.
-   - A slice with both the render criterion and the two-repository driver starts at 8.
+   - A slice with both the render criterion and the two-repository driver steps up two values.
    - A slice that edits only a submodule whose pin a bot moves does not take the
      two-repository driver.
    - Size a sweep from a count of the sites it will touch (a `rg` count), not from its brief.
