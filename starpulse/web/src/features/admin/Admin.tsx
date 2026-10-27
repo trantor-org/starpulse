@@ -1,63 +1,11 @@
 // The Admin view: this browser's settings in a main-area view like the Kanban. Font size, Motion, Opens on, Kanban cards and Clock; the
-// Preview card draws a Star Map label and a Kanban card at the chosen scale and density, so the choice is judged before leaving the view.
-import { useEffect, useRef, useSyncExternalStore, type ReactNode } from "react";
-import { SCALE, labelPx, type AdminStore } from "./adminPrefs";
+// Preview card draws a small Star Map and a Kanban card at the chosen scale, density and motion, with the Theme card under it, so the choice
+// is judged before leaving the view.
+import { useEffect, useSyncExternalStore, type ReactNode } from "react";
+import { SCALE, type AdminStore } from "./adminPrefs";
 import { clockHm, type ClockMode } from "../../shared/clock";
 import { CHIPS, type HistoryWindowStore } from "./historyWindow";
-
-/** The Preview's Star Map label: a ring with a state's name and count beneath, sized as the renderer sizes them. */
-function drawPreview(c: HTMLCanvasElement, scale: number) {
-  const r = c.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
-  c.width = r.width * dpr;
-  c.height = r.height * dpr;
-  const cx = c.getContext("2d");
-  if (!cx) return;
-  cx.scale(dpr, dpr);
-  const x = r.width / 2, y = r.height / 2 - 14, name = labelPx(12.5, 1, scale), sub = labelPx(10.5, 1, scale);
-  cx.strokeStyle = "rgba(167,139,250,.8)";
-  cx.lineWidth = 1;
-  cx.beginPath();
-  cx.arc(x, y, 9, 0, 7);
-  cx.stroke();
-  cx.textAlign = "center";
-  cx.textBaseline = "middle";
-  cx.letterSpacing = "0.6px";
-  cx.font = `300 ${name}px Inter, system-ui, sans-serif`;
-  cx.fillStyle = "rgba(207,217,234,.9)";
-  cx.fillText("In Progress", x, y + 14 + name / 2 + 4);
-  cx.font = `300 ${sub}px Inter, system-ui, sans-serif`;
-  cx.fillStyle = "rgba(148,163,184,.6)";
-  cx.fillText("4 tasks", x, y + 14 + name * 1.5 + 8);
-}
-
-function Preview({ scale, compact }: { scale: number; compact: boolean }) {
-  const canvas = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    const c = canvas.current;
-    if (!c) return;
-    const draw = () => drawPreview(c, scale);
-    draw();
-    // the card's width also changes when the navigator folds, not only with the window
-    const watch = new ResizeObserver(draw);
-    watch.observe(c);
-    return () => watch.disconnect();
-  }, [scale]);
-  return (
-    <section className="card">
-      <h2>Preview</h2>
-      <div className="pv">
-        <div className="pvk">Star Map label</div>
-        <canvas ref={canvas} />
-        <div className="pvk">Kanban card</div>
-        <div className={compact ? "pvcard compact" : "pvcard"}>
-          <div className="top"><span className="id">DEMO-101</span><span className="pr"><i />#2094</span></div>
-          <div className="t">Sample card: how a title reads at this size</div>
-          {!compact && <div className="foot2"><span className="lab">feature</span><span className="lab">size-3</span><span className="lab">adr-needed</span></div>}
-        </div>
-      </div>
-    </section>
-  );
-}
+import { Preview } from "./theme/Preview";
 
 /** A row of exclusive choices, one pressed. */
 function Seg<T extends string>({ label, value, options, onPick }: { label: string; value: T; options: readonly (readonly [T, string])[]; onPick: (v: T) => void }) {
@@ -107,16 +55,17 @@ function ServerCard({ store, clock }: { store: HistoryWindowStore; clock: "24" |
 }
 
 /**
- * `scheduler` and `tracker` draw the Scheduler and Tracker cards in the settings column: each card is its own
- * feature, so App hands them in, `scheduler` with the clock it is to show.
+ * `scheduler`, `tracker` and `theme` draw the Scheduler, Tracker and Theme cards: each card is its own
+ * feature, so App hands them in, `scheduler` with the clock it is to show. The left column holds the settings, the right the Preview
+ * and the Theme card under it at the same width.
  */
-export function Admin({ store, window: historyWindow, scheduler, tracker }: { store: AdminStore; window: HistoryWindowStore; scheduler: (clock: ClockMode) => ReactNode; tracker?: ReactNode }) {
+export function Admin({ store, window: historyWindow, scheduler, tracker, theme }: { store: AdminStore; window: HistoryWindowStore; scheduler: (clock: ClockMode) => ReactNode; tracker?: ReactNode; theme?: ReactNode }) {
   const { scale, motion, view, density, clock } = useSyncExternalStore(store.subscribe, store.get);
   return (
     <div id="admin">
       <header><span className="title">Admin</span><span className="count">settings for this browser and for the StarPulse server</span></header>
       <div className="grid">
-        <div>
+        <div className="col">
           <section className="card">
             <h2>This browser <span className="c">kept on this device only</span></h2>
             <div className="row">
@@ -154,7 +103,10 @@ export function Admin({ store, window: historyWindow, scheduler, tracker }: { st
           {scheduler(clock)}
           {tracker}
         </div>
-        <Preview scale={scale} compact={density === "compact"} />
+        <div className="col">
+          <Preview scale={scale} compact={density === "compact"} motion={motion} />
+          {theme}
+        </div>
       </div>
     </div>
   );

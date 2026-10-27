@@ -2,6 +2,8 @@
 // asides, the crumb, the tip and the panel), so this starts the renderer against them from the entry chunk; the React page, a chunk
 // of its own, mounts after that frame and adopts what is held here.
 import { AdminStore } from "./features/admin/adminPrefs";
+import { applyTheme } from "./features/admin/theme/apply";
+import { ThemeStore } from "./features/admin/theme/themeStore";
 import { HudStore } from "./render/hud";
 import { loadLateFonts } from "./render/fonts";
 import { renderer } from "./render/renderer";
@@ -13,6 +15,7 @@ import { onPhone, retired, shownView, viewOf } from "./shared/nav";
 export interface Booted {
   store: HudStore;
   admin: AdminStore;
+  theme: ThemeStore;
   renderer: Renderer;
   canvas: HTMLCanvasElement;
   tip: HTMLDivElement;
@@ -29,7 +32,8 @@ const frameOf = <T extends HTMLElement>(id: string) => document.getElementById(i
 /** Starts the Board and calls `mount` to bring up the React page once the first frame has been marked, or when no board comes. */
 export function boot(mount: () => void): Booted {
   const canvas = frameOf<HTMLCanvasElement>("c"), tip = frameOf<HTMLDivElement>("tip"), panel = frameOf<HTMLDivElement>("panel");
-  const admin = new AdminStore(), store = new HudStore();
+  // the saved theme goes on :root here, before the first paint
+  const admin = new AdminStore(), store = new HudStore(), theme = new ThemeStore(applyTheme);
   // a bare address opens the view the Admin chose; one that names a view opens that, and a view that covers the map leaves it undrawn;
   // a phone width has no Star Map, so it opens the Kanban whatever the address or the Admin chose
   const wanted = viewOf(location.search, retired(location.pathname, location.hash) ? "constellation" : admin.get().view);
@@ -47,7 +51,7 @@ export function boot(mount: () => void): Booted {
     requestAnimationFrame(open);
   };
   const r = renderer(canvas, store, { tip, panel }, new URLSearchParams(location.search).has("demo"), admin.get, star ? drawn : undefined);
-  held = { store, admin, renderer: r, canvas, tip, panel };
+  held = { store, admin, theme, renderer: r, canvas, tip, panel };
   r.start();
   if (!star) {
     for (const el of [canvas, tip, panel, frameOf("crumb")]) el.classList.add("off");
