@@ -23,6 +23,15 @@ describe("the page's fixed layout", () => {
     expect(phone).toMatch(/#nav, #rail \{ display: none/);
   });
 
+  it("never scrolls the navigator: its cards give up height first and each scrolls its body in the page's scrollbar style", () => {
+    const scrollBox = css.split("\n").find((l) => l.includes("#nav .card .body") && l.endsWith("{")) ?? "";
+
+    expect(css).toMatch(/aside \{[^}]*overflow: hidden/);
+    expect(rule("#nav .card")).toMatch(/flex: 0 1 auto; min-height: 0/);
+    expect(scrollBox).toContain("#nav .matches");
+    expect(css).toMatch(/#nav \.card \.body[^{]*\{\s*overflow-x: hidden; overflow-y: auto; scrollbar-width: thin/);
+  });
+
   it("peeks a stack's edges uniformly: each the same step narrower and lower, each under the one above it", () => {
     const edge = css.slice(css.indexOf("#kb .stack > .edge {"), css.indexOf("}", css.indexOf("#kb .stack > .edge {")));
     expect(edge).toContain("left: calc((var(--i) + 1) * 6px)");

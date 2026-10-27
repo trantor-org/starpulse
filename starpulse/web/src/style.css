@@ -212,7 +212,7 @@ button.node { all: unset; box-sizing: border-box; display: grid; grid-template-c
 :is(#kb, #dg) .clear { all: unset; padding: 5px 4px; font-size: calc(11.5px * var(--fs)); color: var(--agent-text); }
 :is(#kb, #dg) .clear:hover, :is(#kb, #dg) .clear:focus-visible { color: var(--ink); text-decoration: underline; }
 :is(#kb, #dg) .scrim { position: fixed; inset: 0; z-index: 29; }
-:is(#kb, #dg) .fw { position: relative; }
+:is(#kb, #dg, #nav) .fw { position: relative; }
 :is(#kb, #nav, #dg) .menu { position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; min-width: 240px; max-height: 360px; padding: 4px; border-radius: 8px; box-sizing: border-box;
   background: color-mix(in srgb, var(--surface) 98%, transparent); border: 1px solid color-mix(in srgb, var(--slate) 25%, transparent); box-shadow: 0 12px 30px color-mix(in srgb, var(--shadow) 50%, transparent); }
 :is(#kb, #nav, #dg) .menu .hd { padding: 5px 8px; font-size: calc(10px * var(--fs)); letter-spacing: .2em; text-transform: uppercase; color: var(--muted); }
@@ -820,15 +820,23 @@ html.still *, html.still *::before, html.still *::after { animation: none !impor
 #ef-toast span { color: var(--muted); }
 @media (prefers-reduced-motion: reduce) { #ef-toast, #efa, #efa .box { animation: none; } }
 
-/* the navigator's Queues: each pool's running/cap and a meter, amber while it runs and red once it is full */
-#queues .q { margin-bottom: 6px; }
-#queues .r { display: flex; justify-content: space-between; gap: 8px; font-size: calc(11px * var(--fs)); color: var(--muted); }
-#queues .r span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-#queues .r b { font-weight: 500; }
-#queues .busy .r b { color: var(--run); } #queues .full .r b { color: var(--fail); }
-#queues .m { height: 3px; border-radius: 2px; background: color-mix(in srgb, var(--slate) 15%, transparent); margin-top: 2px; overflow: hidden; }
-#queues .m i { display: block; height: 100%; transition: width .5s; background: var(--run); } #queues .full .m i { background: var(--fail); }
-@media (prefers-reduced-motion: reduce) { #queues .m i { transition: none; } }
+/* the navigator's cards (Queues, Run-hours, Dagu CPU) share the room below the DAG filter: a card gives up height before the navigator scrolls, and its body scrolls inside it */
+#nav .card { flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column; }
+#nav .card h3 { flex: none; }
+/* a card keeps a few rows however little room is left, and the CPU card, one bar, keeps all of it */
+#nav .card .body { min-height: calc(54px * var(--fs)); scrollbar-gutter: stable; }
+#nav .card:has(> #cpu) { flex: none; }
+#nav .card:has(> #cpu) .body { min-height: 0; }
+#nav .card .none { color: var(--faint); }
+/* a card's bars: a label and figure over a meter, amber while it runs and red once it is full */
+#nav .card .q { margin-bottom: 6px; }
+#nav .card .r { display: flex; justify-content: space-between; gap: 8px; font-size: calc(11px * var(--fs)); color: var(--muted); }
+#nav .card .r span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+#nav .card .r b { font-weight: 500; }
+#nav .card .busy .r b { color: var(--run); } #nav .card .full .r b { color: var(--fail); }
+#nav .card .m { height: 3px; border-radius: 2px; background: color-mix(in srgb, var(--slate) 15%, transparent); margin-top: 2px; overflow: hidden; }
+#nav .card .m i { display: block; height: 100%; transition: width .5s; background: var(--run); } #nav .card .full .m i { background: var(--fail); }
+@media (prefers-reduced-motion: reduce) { #nav .card .m i { transition: none; } }
 /* the Recent feed's run lines: an outcome in its colour, the newest line flashing once as it arrives */
 #feed b.ok { color: var(--ok); } #feed b.failed { color: var(--fail); }
 #feed div.new { animation: flash 1.2s; } @keyframes flash { from { background: color-mix(in srgb, var(--run) 18%, transparent); } to { background: none; } }
@@ -876,7 +884,6 @@ html.still *, html.still *::before, html.still *::after { animation: none !impor
    whole catalog streaming kept an idle page's main thread busy 40% of the time */
 @media (prefers-reduced-motion: no-preference) { .kept:not([inert]) #dg :is(.drow:is([data-pane=processing], .spot, :focus-visible), .dgm) svg.dstrip path.link { animation: dag-stream .42s linear infinite; } }
 @keyframes dag-stream { to { stroke-dashoffset: -6; } }
-#dg .fw #dgq { width: calc(270px * var(--fs)); max-width: 100%; }
 /* The stage: one box of absolutely placed slots. A row's place is three custom properties, --c its column, --hs the header slots above it and --s its slot, so a DAG that changes pane is the one element and its transform's transition: nothing is cloned and nothing stays behind.
    A row's top is hs * header + s * pitch in both columns, so a Processing row and the Idle row of its slot share a top at every text size. */
 #dg .dstage { --H: calc(68px * var(--fs)); --R: calc(64px * var(--fs)); --C: calc(22px * var(--fs)); --gap: 20px; --wp: calc((100% - var(--gap)) / 2.25); --wi: calc((100% - var(--gap)) * 1.25 / 2.25); position: relative; box-sizing: border-box; margin-bottom: 16px; height: calc(var(--hsum) * var(--H) + var(--n) * var(--R) + var(--K) * var(--C)); }
@@ -973,7 +980,7 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
 
 /* Every scrolling box on the page, in one place: it scrolls only vertically, never sideways, and wears the Kanban
    columns' thin, quiet scrollbar. A box that needs to scroll joins this list rather than setting its own overflow. */
-#nav .matches, #nav .outline, #nav .leaderboard, #panel, :is(#kb, #nav, #dg) .menu, #kb .col .body, #kbm .modal, #tkm .modal, #kbm .tvbody, #kbm .tvcol, #kbm .tvrail .box, #kbm .tv textarea.fv.long, #dg #stage, #admin {
+#nav .matches, #nav .outline, #nav .leaderboard, #nav .card .body, #panel, :is(#kb, #nav, #dg) .menu, #kb .col .body, #kbm .modal, #tkm .modal, #kbm .tvbody, #kbm .tvcol, #kbm .tvrail .box, #kbm .tv textarea.fv.long, #dg #stage, #admin {
   overflow-x: hidden; overflow-y: auto; scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--slate) 25%, transparent) transparent; }
 /* a machine a third party moves (machine.source) is drawn like a local one, in blue instead of purple */
 .src::after { content: attr(data-src); margin-left: .45em; color: color-mix(in srgb, var(--mapped) 70%, transparent); }
@@ -1114,8 +1121,6 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
   #kbm .dgm .tvfoot { padding-inline: 14px; }
 
   /* DAGs: Idle stacks under Processing; a row keeps its card, the steps narrower beside the name. */
-  #dg .fw:has(#dgq) { flex: 1 1 100%; }
-  #dg .fw #dgq { width: 100%; box-sizing: border-box; }
   .dtoast { max-width: 100%; }
 
   /* Admin: a setting's name and hint sit over its control */

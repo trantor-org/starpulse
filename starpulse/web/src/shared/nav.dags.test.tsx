@@ -80,12 +80,36 @@ describe("the navigator's DAGs entry", () => {
 describe("the DAGs view's navigator and legend", () => {
   beforeEach(() => act(() => dagsNode().click()));
 
-  it("shows the Queues section, and not the Star Map's layers, DAG domains or search", () => {
+  it("shows the DAG filter and the Queues, Run-hours and Dagu CPU cards, and not the Star Map's layers, DAG domains or search", () => {
     expect(q("#queues")!.textContent).toContain("main");
+    expect([...host.querySelectorAll("#nav section.card h3")].map((h) => h.textContent)).toEqual(["Queues", "Run-hours", "Dagu CPU"]);
     expect(q("#layers")).toBeNull();
     expect(q("#cons")).toBeNull();
     expect(q("#q")).toBeNull();
-    expect(q("#nav .note")!.textContent).toContain("Layers belong to the Star Map");
+    expect(q("#nav .note")).toBeNull();
+  });
+
+  it("holds the DAG filter below the views and above the cards, and the canvas holds none", () => {
+    const filter = q("#nav #dgq")!;
+
+    expect(filter.getAttribute("aria-label")).toContain("DAGs");
+    expect(q("#dg #dgq")).toBeNull();
+    expect(filter.compareDocumentPosition(q("#nav section.card")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("narrows the DAGs the view draws as the navigator's filter is typed in, and leaves with the view", async () => {
+    const rowNames = () => [...host.querySelectorAll<HTMLElement>("#dg .drow .nm")].map((e) => e.textContent);
+    const type = (v: string) => act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(q("#dgq"), v);
+      q("#dgq")!.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    expect(rowNames().sort()).toEqual(["pr-watch", "sweep"]);
+    type("sweep");
+    expect(rowNames()).toEqual(["sweep"]);
+    const kanban = views().find((n) => n.title === "Kanban")!;
+    await act(async () => kanban.click());
+    expect(q("#dgq")).toBeNull();
   });
 
   it("shows the DAG legend in the rail", () => {

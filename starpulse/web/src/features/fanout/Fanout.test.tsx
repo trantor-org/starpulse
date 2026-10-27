@@ -32,9 +32,12 @@ describe("the navigator's Queues section", () => {
     expect(html.match(/class="q full"/g)).toHaveLength(1);
   });
 
-  it("draws no section when the adapter reports no pools", () => {
-    expect(renderToStaticMarkup(<Queues pools={[]} />)).toBe("");
-    expect(renderToStaticMarkup(<Queues pools={undefined} />)).toBe("");
+  it("says there are no pools when the adapter reports none, and still draws the card", () => {
+    for (const pools of [[], undefined]) {
+      const html = renderToStaticMarkup(<Queues pools={pools} />);
+      expect(html).toContain("<h3>Queues</h3>");
+      expect(html).toContain("no pools");
+    }
   });
 });
 

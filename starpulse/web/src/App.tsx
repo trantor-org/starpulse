@@ -13,6 +13,7 @@ import { BOARD, pathKey, type Path } from "./render/levels";
 import { Crumb } from "./features/level/Crumb";
 import { DagLegend } from "./features/dags/DagLegend";
 import { FeedLines, linesThatFit, Queues } from "./features/fanout/Fanout";
+import { DagPressure } from "./features/dags/DagPressure";
 import { Kept, revealKept } from "./shared/Kept";
 import { SearchClear } from "./shared/SearchClear";
 import { useScrollRest } from "./shared/scrollRest";
@@ -64,6 +65,8 @@ export function App() {
   const [spottedDag, setSpottedDag] = useState<string | null>(null), [openingDag, setOpeningDag] = useState<{ name: string } | null>(null);
   // the Kanban's text search draws in the navigator's search slot
   const [searchSlot, setSearchSlot] = useState<HTMLElement | null>(null);
+  // and the DAGs view's filter draws in the same section, above the run-pressure cards
+  const [dgSlot, setDgSlot] = useState<HTMLElement | null>(null);
   // and its milestone outline draws in the outline slot below it, where Layers draw on the Star Map
   const [outlineSlot, setOutlineSlot] = useState<HTMLElement | null>(null);
   const prefs = useSyncExternalStore(admin.subscribe, admin.get);
@@ -152,7 +155,7 @@ export function App() {
   return (
     <>
       {!held && <canvas ref={canvas} id="c" />}
-      <Navigator shell={shell} hud={hud} view={view} phone={phone} activeView={activeView} slot={setSearchSlot} outlineSlot={setOutlineSlot} choose={choose} open={open}
+      <Navigator shell={shell} hud={hud} view={view} phone={phone} activeView={activeView} slot={setSearchSlot} dgSlot={setDgSlot} outlineSlot={setOutlineSlot} choose={choose} open={open}
         spot={(t) => renderer.current?.spot(t)} selectTask={(id) => renderer.current?.selectTask(id)} />
       <Crumb path={hud.path} states={hud.states} sources={hud.tree?.sources} open={open} off={view !== "constellation"} />
       {view === "constellation" && hud.tree !== null && hud.cards.length === 0 && hud.capabilities?.create && (
@@ -169,7 +172,7 @@ export function App() {
             spot={spotted} note={setWhy} opening={opening} />
         </Suspense>
       </Kept>
-      <Kept name="dags" on={view === "dags"} warm={drawn}><Suspense fallback={null}><Dags data={hud.dagData} openPath={open} spot={spottedDag} opening={openingDag} /></Suspense></Kept>
+      <Kept name="dags" on={view === "dags"} warm={drawn}><Suspense fallback={null}><Dags data={hud.dagData} openPath={open} spot={spottedDag} opening={openingDag} filterSlot={dgSlot} /></Suspense></Kept>
       <Kept name="admin" on={view === "admin"} warm={drawn}><Suspense fallback={null}><AdminPage store={admin} theme={theme} window={historyWindow} hint={hud.hint} /></Suspense></Kept>
       <Rail shown={shell} hud={hud} view={view} note={view === "kanban" && line && why ? { key: line, text: why } : null}
         can={(l) => (view === "kanban" ? !!l.task : view === "dags" ? !!l.dag : view === "constellation" && !!l.task)}
@@ -245,8 +248,8 @@ function Navigator({ shell, ...props }: { shell: boolean } & Parameters<typeof N
   );
 }
 
-function NavigatorBody({ hud, view, phone, activeView, slot, outlineSlot, choose, open, spot, selectTask }: {
-  hud: HudState; view: ViewName; phone: boolean; activeView: { current: ViewName }; slot: (el: HTMLElement | null) => void; outlineSlot: (el: HTMLElement | null) => void; choose: (v: ViewName) => void; open: (p: Path) => void;
+function NavigatorBody({ hud, view, phone, activeView, slot, dgSlot, outlineSlot, choose, open, spot, selectTask }: {
+  hud: HudState; view: ViewName; phone: boolean; activeView: { current: ViewName }; slot: (el: HTMLElement | null) => void; dgSlot: (el: HTMLElement | null) => void; outlineSlot: (el: HTMLElement | null) => void; choose: (v: ViewName) => void; open: (p: Path) => void;
   spot: (target: Target | null) => void; selectTask: (id: string) => void;
 }) {
   const [{ query }, keep] = useFilters(STARMAP_PREFS_KEY, NO_STARMAP_FILTERS), setQuery = (v: string) => keep({ query: v });
@@ -318,9 +321,9 @@ function NavigatorBody({ hud, view, phone, activeView, slot, outlineSlot, choose
           <span className="n">{hud.dags.length || ""}</span>
         </button>
       </section>
-      {view !== "admin" && view !== "dags" && (
+      {view !== "admin" && (
         <section className="away has-x search">
-          {view === "kanban" ? <div ref={slot} /> : <>
+          {view === "kanban" ? <div key="kb" ref={slot} /> : view === "dags" ? <div key="dg" ref={dgSlot} /> : <>
             <input id="q" ref={searchBox} type="search" placeholder="search…" title="Search tasks, States and lifecycle machines" aria-label="Search tasks, States and lifecycle machines" autoComplete="off" value={query}
               onChange={(e) => { setQuery(e.target.value); spot(null); }}
               onKeyDown={(e) => {
@@ -333,7 +336,7 @@ function NavigatorBody({ hud, view, phone, activeView, slot, outlineSlot, choose
         </section>
       )}
       {view === "kanban" && <section className="away outline" ref={outlineSlot} />}
-      {view === "dags" && <><section className="away note">Layers belong to the Star Map view; they return when it is open.</section><Queues pools={hud.pools} /></>}
+      {view === "dags" && <><Queues pools={hud.pools} /><DagPressure data={hud.dagData} /></>}
       {view === "constellation" && (body ? <section className="away matches">{body}</section> : <Leaderboard tasks={hud.cards} roles={hud.roles} now={now} open={selectTask} />)}
       <section className="views admin-sec">
         <button className={`node${view === "admin" ? " on here" : ""}`} title="Admin" onClick={() => choose("admin")}>

@@ -1,27 +1,24 @@
 // The two places the navigator and the right rail show a DAG's fan-out: every concurrency pool's load, and the Recent feed's lines.
 import { poolRows } from "./fanoutModel";
 import type { FeedLine } from "../../render/hud";
+import { Card } from "../../shared/Card";
 import type { Pool } from "../../api";
 
-/** The navigator's Queues section: each pool's running runs against its cap with any waiting, and a meter that turns red when it is full. Nothing when the adapter reports no pools. */
+/** The navigator's Queues card: each pool's running runs against its cap with any waiting, and a meter that turns red when it is full. It says so when the adapter reports no pools. */
 export function Queues({ pools }: { pools: Pool[] | undefined }) {
   const rows = poolRows(pools);
-  if (!rows.length) return null;
   return (
-    <section className="away">
-      <h3>Queues</h3>
-      <div id="queues">
-        {rows.map((p) => (
-          <div key={p.name} className={["q", p.full ? "full" : p.busy && "busy"].filter(Boolean).join(" ")} title={p.name}>
-            <div className="r">
-              <span>{p.label}</span>
-              <b>{p.count}{p.queued && ` ${p.queued}`}</b>
-            </div>
-            <div className="m"><i style={{ width: `${p.pct}%` }} /></div>
+    <Card title="Queues" id="queues">
+      {rows.length ? rows.map((p) => (
+        <div key={p.name} className={["q", p.full ? "full" : p.busy && "busy"].filter(Boolean).join(" ")} title={p.name}>
+          <div className="r">
+            <span>{p.label}</span>
+            <b>{p.count}{p.queued && ` ${p.queued}`}</b>
           </div>
-        ))}
-      </div>
-    </section>
+          <div className="m"><i style={{ width: `${p.pct}%` }} /></div>
+        </div>
+      )) : <div className="none">no pools</div>}
+    </Card>
   );
 }
 
