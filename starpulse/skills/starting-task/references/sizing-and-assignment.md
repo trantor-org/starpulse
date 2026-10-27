@@ -16,6 +16,12 @@ Every task but an `unattended` one carries exactly one kind label:
 | `kind-spike` | measures, evaluates or researches, and reports | an evaluation, a benchmark |
 | `kind-decide` | produces a design, a decision or a plan other work depends on | an ADR, a decision spike, slicing a milestone, a governance change |
 
+A `kind-execute` brief names its mechanism, and the `file:line` its premise was checked against,
+on one `Mechanism:` line. A goal-only follow-up, whose brief states an outcome (make X
+incremental, fold A into B) and names no mechanism, is not `kind-execute`: file it `kind-decide`,
+or write the mechanism into the brief first. A project's profile table may lift an execute brief
+that names no mechanism off its cheapest profile.
+
 ## Sizes
 
 Sizes are `size-1`, `size-2`, `size-3`, `size-5`, `size-8` (Fibonacci points). Start from the
