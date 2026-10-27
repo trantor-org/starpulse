@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     from starpulse.board.board_feed import BoardFeed
     from starpulse.event_log.event_log import EventLog
 
-__all__ = ["DEFAULT_TTL", "ACTOR", "last_renewal", "start", "sweep"]
+__all__ = ["DEFAULT_TTL", "ACTOR", "last_renewal", "start", "sweep", "transcript_halt"]
 
 DEFAULT_TTL = 30 * 60
 """Seconds a claim lives without an Event by its session: `[board] claim_ttl`."""
@@ -39,6 +39,40 @@ def last_renewal(events: Iterable[StoredEvent], session: str) -> float | None:
     """The moment of the latest Event by `session` or naming it, as a claim's does; None when there is none."""
     carried = (event.at for event in events if session == event.actor or session in json.dumps(event.payload))
     return max(carried, default=None)
+
+
+TERMINAL_HALTS = ("Autocompact is thrashing",)
+"""How the halts that end a session for good open: Claude Code writes each as a synthetic error reply."""
+TURNS = frozenset({"user", "assistant"})
+
+
+def transcript_halt(root: Path, session: str, tail: int = 64 * 1024) -> tuple[float, str] | None:
+    """The moment and text of the terminal halt `session`'s transcript under `root` ends its turns with; None when its
+    last turn is any other, or no turn lies in the transcript's last `tail` bytes (a transcript reaches 100 MB)."""
+    path = next(root.glob(f"*/{session}.jsonl"), None)
+    if path is None:
+        return None
+    with path.open("rb") as transcript:
+        transcript.seek(max(0, path.stat().st_size - tail))
+        lines = transcript.read().decode(errors="replace").splitlines()[1:]
+    for line in reversed(lines):
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if entry.get("type") in TURNS:
+            return _halt(entry)
+    return None
+
+
+def _halt(turn: dict) -> tuple[float, str] | None:
+    message = turn.get("message") or {}
+    texts = [part.get("text", "") for part in message.get("content") or [] if isinstance(part, dict)]
+    text = "".join(texts)
+    synthetic = turn.get("isApiErrorMessage") and message.get("model") == "<synthetic>"
+    if not synthetic or not text.startswith(TERMINAL_HALTS):
+        return None
+    return datetime.fromisoformat(turn["timestamp"]).timestamp(), text
 
 
 def _note(session: str, renewed: float, ttl: float) -> str:
@@ -112,7 +146,6 @@ def start(
     claim_ttl` seconds, until the feed stops. The feed holds the board's tasks whether or not a read model folds them.
     `persist` keeps each pass's expiries where the serving process reads them."""
     from starpulse.event_log.opening import last_run_event  # noqa: PLC0415 — keeps the board's import light
-    from starpulse.harness_telemetry.claude_code import transcript_halt  # noqa: PLC0415 — keeps the board's import light
 
     ttl = float(settings.get("claim_ttl", DEFAULT_TTL))
     store = EventStore(log.engine)
