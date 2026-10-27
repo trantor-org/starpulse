@@ -9,9 +9,9 @@ import pytest
 from starpulse.runtime import closure
 from starpulse.runtime.closure import CONFIG_OWNERS, SELF, _blocks, restarts_serve
 from starpulse.runtime.config import _KEYS, Config, load
-from starpulse.runtime.supervisor import WORKER_FLAGS, Supervisor, worker_commands
+from starpulse.runtime.supervisor import WORKER_CONTEXTS, Supervisor, worker_commands
 
-CHILDREN = tuple(WORKER_FLAGS)
+CHILDREN = WORKER_CONTEXTS
 
 #: The `Config` attribute each top-level key fills; a key absent here is read through no single attribute.
 ATTRIBUTE = {
@@ -52,11 +52,6 @@ def test_a_key_is_owned_by_exactly_the_processes_whose_reading_it_changes(key: s
     assert moved == set(CONFIG_OWNERS[key]) - {SELF}
 
 
-@pytest.mark.parametrize("flag", [flag for flag in WORKER_FLAGS.values() if flag])
-def test_a_worker_flag_is_read_by_serve_alone(flag: str) -> None:
-    assert CONFIG_OWNERS[flag] == (SELF,)
-
-
 @pytest.mark.parametrize(
     ("old", "new"),
     [
@@ -73,7 +68,6 @@ def test_a_change_to_a_context_owned_table_does_not_restart_serve(old: dict, new
 @pytest.mark.parametrize(
     ("old", "new"),
     [
-        ({"runs_worker": True}, {"runs_worker": False}),
         ({}, {"worker_memory": {"runs": {"soft_mb": 1, "hard_mb": 2}}}),
         ({}, {"mode": "team"}),
         ({}, {"tls_cert": "a.crt", "tls_key": "a.key"}),

@@ -53,17 +53,6 @@ def test_serve_binds_the_socket_and_hands_it_to_the_api_child_it_supervises(
     assert supervisor.stopped
 
 
-def test_serve_binds_nothing_and_starts_no_api_child_for_a_true_api_worker_setting(
-    config: Path, monkeypatch: pytest.MonkeyPatch, supervisors: list[FakeSupervisor]
-) -> None:
-    config.write_text("api_worker = true\n" + BOARD)
-
-    server.main(["--config", str(config), "--port", "0"])
-
-    assert "api" not in supervisors[0].commands
-    assert supervisors[0].options["sockets"] == {}
-
-
 def test_serve_refuses_an_unbuilt_page_before_it_starts_any_child(
     config: Path, monkeypatch: pytest.MonkeyPatch, supervisors: list[FakeSupervisor], tmp_path: Path
 ) -> None:

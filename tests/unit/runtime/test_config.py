@@ -204,8 +204,8 @@ def test_a_mode_other_than_ic_is_not_a_config_setting(tmp_path: Path) -> None:
 
 def test_unknown_keys_are_refused_by_name_beside_the_known_ones(tmp_path: Path) -> None:
     assert _refusal(tmp_path, 'zeta = 1\ntrakcer_url = "http://x.test"\n') == (
-        "unknown config key(s) trakcer_url, zeta; known: analytics, api_worker, board, board_worker, ci, cursor_context, database_url, event_log_archive_dir, event_log_retention_days, "
-        "flow_metrics_worker, harnesses_file, level, mode, producers, project, pull_requests, read_model, refresh_token_env, release, repos, runs, runs_worker, scheduler, search, search_worker, session_start_url, slow_read_seconds, take_over_command, telemetry_loki_url, tls_cert, tls_key, tracker_url, worker_memory"
+        "unknown config key(s) trakcer_url, zeta; known: analytics, board, ci, cursor_context, database_url, event_log_archive_dir, event_log_retention_days, "
+        "harnesses_file, level, mode, producers, project, pull_requests, read_model, refresh_token_env, release, repos, runs, scheduler, search, session_start_url, slow_read_seconds, take_over_command, telemetry_loki_url, tls_cert, tls_key, tracker_url, worker_memory"
     )
 
 
@@ -404,22 +404,10 @@ def test_an_instance_keeps_a_pull_request_store_unless_configured_off(tmp_path: 
     assert _refusal(tmp_path, 'pull_requests = "no"\n') == "pull_requests must be true or false"
 
 
-@pytest.mark.parametrize("context", ["delivery", "scheduler"])
+@pytest.mark.parametrize("context", ["api", "board", "delivery", "flow_metrics", "runs", "scheduler", "search"])
 def test_a_removed_worker_setting_is_refused_by_name(tmp_path: Path, context: str) -> None:
     key = f"{context}_worker"
     assert _refusal(tmp_path, f"{key} = true\n").startswith(f"unknown config key(s) {key};")
-
-
-def test_runs_worker_defaults_off_and_is_a_flag(tmp_path: Path) -> None:
-    assert load(None).runs_worker is False
-    assert load(_write(tmp_path, "runs_worker = true\n")).runs_worker is True
-    assert _refusal(tmp_path, 'runs_worker = "yes"\n') == "runs_worker must be true or false"
-
-
-def test_flow_metrics_worker_defaults_off_and_is_a_flag(tmp_path: Path) -> None:
-    assert load(None).flow_metrics_worker is False
-    assert load(_write(tmp_path, "flow_metrics_worker = true\n")).flow_metrics_worker is True
-    assert _refusal(tmp_path, 'flow_metrics_worker = "yes"\n') == "flow_metrics_worker must be true or false"
 
 
 def test_history_worker_key_is_refused_as_unknown(tmp_path: Path) -> None:
@@ -433,20 +421,8 @@ def test_worker_memory_retired_spellings_are_refused_as_unknown(tmp_path: Path, 
     assert tuned["flow-metrics"] == MemoryLimit(10, 20)
 
 
-def test_board_worker_defaults_off_and_is_a_flag(tmp_path: Path) -> None:
-    assert load(None).board_worker is False
-    assert load(_write(tmp_path, "board_worker = true\n")).board_worker is True
-    assert _refusal(tmp_path, 'board_worker = "yes"\n') == "board_worker must be true or false"
-
-
 def test_the_retired_read_model_key_still_loads_and_sets_nothing(tmp_path: Path) -> None:
     assert not hasattr(load(_write(tmp_path, "read_model = true\n")), "read_model")
-
-
-def test_search_worker_defaults_off_and_is_a_flag(tmp_path: Path) -> None:
-    assert load(None).search_worker is False
-    assert load(_write(tmp_path, "search_worker = true\n")).search_worker is True
-    assert _refusal(tmp_path, 'search_worker = "yes"\n') == "search_worker must be true or false"
 
 
 def test_a_pulls_read_is_slow_at_one_second_unless_the_config_says_otherwise(tmp_path: Path) -> None:

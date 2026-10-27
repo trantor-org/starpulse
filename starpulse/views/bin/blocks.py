@@ -22,7 +22,6 @@ class ApiConfig(Protocol):
     database_url: str | None
     board_type: str
     board: Mapping[str, object]
-    board_worker: bool
     read_model: bool
     analytics: Analytics
     harnesses: Harnesses | None

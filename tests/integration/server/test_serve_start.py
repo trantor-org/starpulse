@@ -34,7 +34,7 @@ server.main(["--port", "0", "--config", sys.argv[1]])
 def loaded(tmp_path_factory: pytest.TempPathFactory) -> list[str]:
     """The modules `serve` holds when its supervisor is asked to start the first child."""
     config = tmp_path_factory.mktemp("first-child") / "starpulse.toml"
-    config.write_text("flow_metrics_worker = true\n")
+    config.write_text("")
     migrate_config_store(config)
     with held(server._STATIC):
         run = subprocess.run(

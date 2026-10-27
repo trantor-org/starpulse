@@ -1,4 +1,4 @@
-"""`serve` supervises a `starpulse worker` child for each context whose `*_worker` setting is false, and runs no context's threads itself."""
+"""`serve` supervises a `starpulse worker` child for each context, and runs no context's threads itself."""
 
 import threading
 from pathlib import Path
@@ -86,32 +86,6 @@ def test_serve_forks_its_workers_from_one_preloaded_process_it_closes_at_the_end
     assert supervisors[0].options["retire"] == forker.retire
 
 
-@pytest.mark.parametrize(
-    ("settings", "supervised"),
-    [
-        ("api_worker = true\n", {"pulls", "scheduler", "runs", "flow-metrics", "board"}),
-        ("runs_worker = true\n", {"api", "pulls", "scheduler", "flow-metrics", "board"}),
-        ("flow_metrics_worker = true\n", {"api", "pulls", "scheduler", "runs", "board"}),
-        ("board_worker = true\n", {"api", "pulls", "scheduler", "runs", "flow-metrics"}),
-        (
-            "api_worker = true\nruns_worker = true\nflow_metrics_worker = true\nboard_worker = true\n",
-            {"pulls", "scheduler"},
-        ),
-    ],
-)
-def test_a_true_worker_setting_gets_neither_a_thread_nor_a_child(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    supervisors: list[FakeSupervisor],
-    settings: str,
-    supervised: set[str],
-) -> None:
-    _, threads = _serve(tmp_path, monkeypatch, settings)
-
-    assert threads == []
-    assert set(supervisors[0].commands) == supervised
-
-
 @pytest.mark.parametrize("ending", [None, KeyboardInterrupt, SystemExit])
 def test_serve_stops_its_children_however_it_ends(
     tmp_path: Path,
@@ -141,26 +115,24 @@ class Dagu:
         cls.followed.append(url)
 
 
-@pytest.mark.parametrize("settings", ["", "runs_worker = true\n"])
 def test_serve_follows_no_run_adapter_and_starts_no_pushed_run_reader(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, supervisors: list[FakeSupervisor], settings: str
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, supervisors: list[FakeSupervisor]
 ) -> None:
     monkeypatch.setattr(Dagu, "followed", [])
     monkeypatch.setattr(server, "_adapter", lambda parser, instance: Dagu)
     monkeypatch.setattr(server, "PushRuns", lambda *args: pytest.fail("serve follows pushed runs"), raising=False)
-    handled, _ = _serve(tmp_path, monkeypatch, settings + RUNS)
+    handled, _ = _serve(tmp_path, monkeypatch, RUNS)
 
     assert Dagu.followed == []
     assert "dagu" in handled["services"].starts  # the page's Run now still reaches the adapter
 
 
-@pytest.mark.parametrize("settings", ["", "flow_metrics_worker = true\n"])
 def test_serve_runs_neither_the_recorder_nor_the_prune_thread_whatever_the_history_setting(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, supervisors: list[FakeSupervisor], settings: str
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, supervisors: list[FakeSupervisor]
 ) -> None:
     before = {t.name for t in threading.enumerate()}
 
-    _serve(tmp_path, monkeypatch, settings)
+    _serve(tmp_path, monkeypatch, "")
 
     assert not {"machine-history", "event-log-prune"} & ({t.name for t in threading.enumerate()} - before)
 
@@ -168,28 +140,22 @@ def test_serve_runs_neither_the_recorder_nor_the_prune_thread_whatever_the_histo
 SEARCH = '[search]\nembeddings_url = "http://embeddings.test/v1/embeddings"\nmodel = "m"\n'
 
 
-@pytest.mark.parametrize(("settings", "supervised"), [("", True), ("search_worker = true\n", False)])
-def test_serve_runs_no_embedding_thread_and_supervises_a_search_child_for_a_false_setting(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    supervisors: list[FakeSupervisor],
-    settings: str,
-    supervised: bool,
+def test_serve_runs_no_embedding_thread_and_supervises_a_search_child(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, supervisors: list[FakeSupervisor]
 ) -> None:
     before = {t.name for t in threading.enumerate()}
 
-    _serve(tmp_path, monkeypatch, settings + SEARCH)
+    _serve(tmp_path, monkeypatch, SEARCH)
 
     assert "search-embeddings" not in {t.name for t in threading.enumerate()} - before
-    assert ("search" in supervisors[0].commands) is supervised
+    assert "search" in supervisors[0].commands
 
 
-@pytest.mark.parametrize("settings", ["", "board_worker = true\n"])
-def test_serve_runs_no_criteria_thread_whatever_the_board_setting(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, supervisors: list[FakeSupervisor], settings: str
+def test_serve_runs_no_criteria_thread(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, supervisors: list[FakeSupervisor]
 ) -> None:
     before = set(threading.enumerate())
 
-    _serve(tmp_path, monkeypatch, settings)
+    _serve(tmp_path, monkeypatch, "")
 
     assert "board-criteria" not in {t.name for t in set(threading.enumerate()) - before}

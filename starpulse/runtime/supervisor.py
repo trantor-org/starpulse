@@ -1,10 +1,10 @@
-"""`serve` as a supervisor: each context whose `*_worker` setting is false runs as a `starpulse worker <context>` child.
+"""`serve` as a supervisor: each context runs as a `starpulse worker <context>` child.
 
 A child is started by `spawn` (`starpulse.runtime.zygote.Forker`: a fork of one preloaded process, else
 `subprocess`) with a pipe it exits on when `serve` dies, restarted with a growing delay when it exits and stopped with
 `serve`. Past its soft memory limit a child is replaced (the new one starts, then the old one stops); past its hard
-limit it is killed and restarted. A context whose setting is true is run by something outside `serve`, so it gets no
-child here.
+limit it is killed and restarted. The run adapters (`dagu`, `github-actions`, `systemd`) are run by something outside
+`serve`, so they get no child here.
 
 `starpulse reload` (`starpulse.runtime.control`) calls `Supervisor.reload`: it reads each child's code and config
 again from the installed files (`starpulse.runtime.closure`) and replaces only the children something changed
@@ -38,22 +38,14 @@ logger = logging.getLogger(__name__)
 
 _HANGUP = getattr(signal, "SIGHUP", None)
 
-#: The `starpulse worker` contexts, by the `Config` flag that says an outside runner owns them; none: `serve` always supervises it.
-WORKER_FLAGS = {
-    "api": "api_worker",
-    "pulls": None,
-    "scheduler": None,
-    "runs": "runs_worker",
-    "flow-metrics": "flow_metrics_worker",
-    "search": "search_worker",
-    "board": "board_worker",
-}
+#: The `starpulse worker` contexts `serve` supervises, in start order.
+WORKER_CONTEXTS = ("api", "pulls", "scheduler", "runs", "flow-metrics", "search", "board")
 
 _MB = 1024 * 1024
 
 
 def worker_commands(config: Config, config_path: Path | None) -> dict[str, list[str]]:
-    """The command of each context `serve` supervises: pulls, scheduler, and the others whose `*_worker` setting is false.
+    """The command of each context `serve` supervises (`WORKER_CONTEXTS`).
 
     Search has work only with an `embeddings_url`, so a config without one gets no search child.
     """
@@ -67,8 +59,8 @@ def worker_commands(config: Config, config_path: Path | None) -> dict[str, list[
             context,
             *tail,
         ]
-        for context, flag in WORKER_FLAGS.items()
-        if not (flag and getattr(config, flag)) and (context != "search" or config.search.embeddings_url)
+        for context in WORKER_CONTEXTS
+        if context != "search" or config.search.embeddings_url
     }
 
 

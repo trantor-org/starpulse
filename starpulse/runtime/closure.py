@@ -41,7 +41,7 @@ _CHILDREN = tuple(name for name in ENTRIES if name != SELF)
 _BOARD_READERS = ("pulls", "scheduler", "runs", "flow-metrics", "board")
 
 
-#: The keys `serve` alone reads: whether each child runs, its memory limit, its refresh token and its take-over command,
+#: The keys `serve` alone reads: each child's memory limit, its refresh token and its take-over command,
 #: and the certificate it wraps the shared listening socket in, which a hot swap behind that socket cannot change.
 _SERVE_KEYS = (
     "tls_cert",
@@ -51,11 +51,6 @@ _SERVE_KEYS = (
     "take_over_command",
     "slow_read_seconds",
     "worker_memory",
-    "api_worker",
-    "runs_worker",
-    "flow_metrics_worker",
-    "search_worker",
-    "board_worker",
 )
 
 

@@ -135,10 +135,8 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     stop = threading.Event()
     if board.attach is not None:
         board.attach(log)
-    # `starpulse worker board` folds the events when it runs; otherwise this process does
-    projector = None if config.board_worker else Projector(log.engine, EventStore(log.engine), search)
-    if projector is not None:
-        projector.catch_up()
+    projector = Projector(log.engine, EventStore(log.engine), search)
+    projector.catch_up()
     feed.follow_read_model()
     feed.ready.set()
     host.follow_read_model(projector, feed, stop)

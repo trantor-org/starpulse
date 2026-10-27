@@ -280,66 +280,6 @@ class ConfigFile(_Table):
             "one store is kept."
         ),
     )
-    api_worker: bool = Field(
-        default=False,
-        description=(
-            "Whether something outside `serve` runs the Page API (the page and the HTTP API). False, the default: "
-            "`serve` binds the listening socket, keeps it, and supervises `starpulse worker api` as a child that "
-            "serves from it. True: you run `starpulse worker api --config <this file>` yourself, which binds "
-            "`--host` and `--port` (or adopts the socket the service manager passes in), and `serve` binds and "
-            "supervises nothing for it."
-        ),
-    )
-    runs_worker: bool = Field(
-        default=False,
-        description=(
-            "Whether something outside `serve` runs the Runs context (the run adapters no opt-in worker runs, and "
-            "the pushed-runs follower). False, the default: `serve` supervises it as a child process, `starpulse "
-            "worker runs`. True: you run `starpulse worker runs --config <this file>` yourself and `serve` starts no "
-            "child for it. Either way `serve` runs none of them: it draws the workflows, pools and startable "
-            "workflows the worker keeps in the event log (`runs.projection`), and the page's Run now still starts a "
-            "workflow through the adapter. Run-stream cursors stay in the event log, so a restarted worker neither "
-            "drops nor repeats a run entry. With the flag set and no worker running, no run is followed."
-        ),
-    )
-    flow_metrics_worker: bool = Field(
-        default=False,
-        description=(
-            "Whether something outside `serve` runs the History context's writers (the machine-history recorder and "
-            "the hourly prune of the event log). False, the default: `serve` supervises them as one child process, "
-            "`starpulse worker flow-metrics`. True: you run `starpulse worker flow-metrics --config <this file>` "
-            "yourself and `serve` starts neither thread. They run together because both write the history database. "
-            "The recorder's cursor is saved with the rows it covers, so a restarted worker neither drops nor "
-            "repeats a history row. With the flag set and no worker running, no machine event is recorded and the "
-            "log is not pruned."
-        ),
-    )
-    search_worker: bool = Field(
-        default=False,
-        description=(
-            "Whether something outside `serve` runs the Search context's embedding catch-up (the thread that fills "
-            "vectors for the indexed task text). False, the default: with `[search] embeddings_url` set, `serve` "
-            "supervises it as a child process, `starpulse worker search`. True: you run `starpulse worker search "
-            "--config <this file>` yourself and `serve` starts no thread and no child. Vectors are stored per batch "
-            "in one transaction, keyed by the text's digest, so a restarted worker neither drops nor repeats an "
-            "embedding; `serve` rereads the vectors it ranks by every 30 s. With the flag set and no worker "
-            "running, no vector is written and search ranks by the vectors already stored, else lexically."
-        ),
-    )
-    board_worker: bool = Field(
-        default=False,
-        description=(
-            "Whether something outside `serve` runs the Board context's writer (the thread that dates when each "
-            "Waiting task's Start Criteria were met). False, the default: `serve` supervises it as a child "
-            "process, `starpulse worker board`. True: you run `starpulse worker board --config <this file>` "
-            "yourself and `serve` starts no thread and no child. The dates are saved in the history and read back "
-            "at start, so a restarted worker does not re-date a task; `serve` rereads the dates every 30 s. With "
-            "the flag set and no worker running, no Start Criteria are evaluated, so a Waiting task with them "
-            "never becomes workable. The release of dependents belongs to the `pulls` worker. The Board worker "
-            "folds the History events into the read model, and `serve` and the other workers read that read model "
-            "instead of running the adapter, so a change reaches them within half a second."
-        ),
-    )
     refresh_token_env: EnvName | None = Field(
         default=None,
         description=(

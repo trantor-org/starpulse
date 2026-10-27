@@ -60,45 +60,30 @@ def _wait_for(check, timeout: float = 10.0):
     raise AssertionError("condition not reached")
 
 
-def test_a_context_whose_worker_setting_is_false_gets_a_child_command_and_a_true_one_gets_none() -> None:
+def test_every_context_gets_a_child_command_with_the_config_path_when_one_is_given() -> None:
     every = worker_commands(load(None), None)
-    only_delivery_and_scheduler = worker_commands(
-        replace(
-            load(None),
-            runs_worker=True,
-            flow_metrics_worker=True,
-            board_worker=True,
-            api_worker=True,
-        ),
-        Path("/etc/starpulse.toml"),
-    )
+    with_config = worker_commands(load(None), Path("/etc/starpulse.toml"))
 
     assert every["pulls"] == [sys.executable, "-m", "starpulse", "worker", "pulls"]
     assert every["runs"] == [sys.executable, "-m", "starpulse", "worker", "runs"]
     assert every["flow-metrics"] == [sys.executable, "-m", "starpulse", "worker", "flow-metrics"]
     assert set(every) == {"api", "pulls", "scheduler", "runs", "flow-metrics", "board"}
-    assert only_delivery_and_scheduler == {
-        context: [sys.executable, "-m", "starpulse", "worker", context, "--config", "/etc/starpulse.toml"]
-        for context in ("pulls", "scheduler")
-    }
+    assert with_config["board"] == [
+        sys.executable,
+        "-m",
+        "starpulse",
+        "worker",
+        "board",
+        "--config",
+        "/etc/starpulse.toml",
+    ]
 
 
-def test_the_flow_metrics_child_runs_for_a_false_setting() -> None:
-    assert "flow-metrics" in worker_commands(load(None), None)
-    assert "flow-metrics" not in worker_commands(replace(load(None), flow_metrics_worker=True), None)
-
-
-def test_the_board_child_runs_for_a_false_setting() -> None:
-    assert "board" in worker_commands(load(None), None)
-    assert "board" not in worker_commands(replace(load(None), board_worker=True), None)
-
-
-def test_the_search_child_runs_only_for_an_embeddings_url_and_a_false_setting() -> None:
+def test_the_search_child_runs_only_for_an_embeddings_url() -> None:
     embedding = replace(load(None), search=Search("http://embeddings.test/v1/embeddings", "m"))
 
     assert "search" in worker_commands(embedding, None)
     assert "search" not in worker_commands(load(None), None)  # no endpoint, nothing to embed
-    assert "search" not in worker_commands(replace(embedding, search_worker=True), None)
 
 
 def test_a_child_that_exits_repeatedly_is_restarted_after_a_growing_delay() -> None:
@@ -282,7 +267,7 @@ def test_this_platform_reads_a_live_processs_resident_size() -> None:
     assert reader(os.getpid()) > MB
 
 
-def test_the_api_child_runs_for_a_false_setting() -> None:
+def test_the_api_child_command_names_the_config() -> None:
     config = Path("/etc/starpulse.toml")
 
     assert worker_commands(load(None), config)["api"] == [
@@ -294,7 +279,6 @@ def test_the_api_child_runs_for_a_false_setting() -> None:
         "--config",
         str(config),
     ]
-    assert "api" not in worker_commands(replace(load(None), api_worker=True), None)
 
 
 def test_a_child_started_without_a_socket_is_told_of_none(tmp_path: Path) -> None:

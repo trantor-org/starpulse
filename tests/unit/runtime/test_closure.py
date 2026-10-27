@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from starpulse.runtime import closure
 from starpulse.runtime.closure import SELF, Reader, Reading, ReloadError, code_of, package_hashes
-from starpulse.runtime.supervisor import WORKER_FLAGS
+from starpulse.runtime.supervisor import WORKER_CONTEXTS
 
 
 @pytest.fixture
@@ -93,17 +93,17 @@ def test_a_delivery_setting_is_a_live_change_to_pulls_and_leaves_scheduler_and_s
 
 
 def test_every_supervised_worker_has_a_closure_entry() -> None:
-    assert set(WORKER_FLAGS) <= set(closure.ENTRIES)
+    assert set(WORKER_CONTEXTS) <= set(closure.ENTRIES)
 
 
 @pytest.mark.usefixtures("no_code")
 def test_the_database_is_a_restart_change_to_every_worker(tmp_path: Path) -> None:
     path = _toml(tmp_path, "")
     reader = Reader(path)
-    old = {name: reader(name) for name in WORKER_FLAGS}
+    old = {name: reader(name) for name in WORKER_CONTEXTS}
     _toml(tmp_path, 'database_url = "sqlite:///other.db"\n')
 
-    new = {name: reader(name) for name in WORKER_FLAGS}
+    new = {name: reader(name) for name in WORKER_CONTEXTS}
 
     assert all(new[n].restart != old[n].restart and new[n].live == old[n].live for n in old)
 
