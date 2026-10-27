@@ -487,6 +487,37 @@ def test_a_server_that_answers_json_that_is_no_snapshot_is_unavailable(
     }
 
 
+@pytest.mark.parametrize("verb", [["snapshot"], ["board"], ["task", "show", "PROJ-1"]])
+def test_a_degraded_snapshot_from_a_server_one_release_behind_is_still_read(
+    base: str, verb: list[str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The server answers a stale-worker `error` and lacks `cpu`, which a newer release added: both are data."""
+    with urllib.request.urlopen(f"{base}/api/snapshot?view=full", timeout=5) as resp:
+        served = json.load(resp)
+    served.pop("cpu")
+    served["error"] = "dagu: the dagu worker last reported 6613s ago"
+    body = json.dumps(served).encode()
+
+    class Behind(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args: Any) -> None:
+            pass
+
+    with ThreadingHTTPServer(("127.0.0.1", 0), Behind) as behind:
+        threading.Thread(target=behind.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
+        try:
+            code, _ = _run(capsys, [*verb, "--server", f"http://127.0.0.1:{behind.server_address[1]}"])
+        finally:
+            behind.shutdown()
+
+    assert code == 0
+
+
 @pytest.mark.parametrize(
     ("flag", "env", "expected"),
     [
