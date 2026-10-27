@@ -2527,16 +2527,6 @@
     "HarnessBody": {
       "additionalProperties": false,
       "properties": {
-        "desktop": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/HarnessDesktop"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
         "label": {
           "type": "string"
         },
@@ -2568,28 +2558,9 @@
         "label",
         "sessions",
         "reason",
-        "tiers",
-        "desktop"
+        "tiers"
       ],
       "title": "HarnessBody",
-      "type": "object"
-    },
-    "HarnessDesktop": {
-      "additionalProperties": false,
-      "description": "The SSH host (`user@address`) and folder the Kanban Start question's Desktop (SSH) choice opens Claude Desktop on.",
-      "properties": {
-        "folder": {
-          "type": "string"
-        },
-        "host": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "host",
-        "folder"
-      ],
-      "title": "HarnessDesktop",
       "type": "object"
     },
     "HarnessTier": {

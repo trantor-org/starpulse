@@ -181,9 +181,9 @@ const NIGHT = { start: "22:00", end: "07:00", timezone: "America/Phoenix" };
 const HARNESSES = {
   tiers: ["fast", "standard", "deep"],
   harnesses: [
-    { name: "claude", label: "Claude Code", sessions: true, reason: null, desktop: null, tiers: {
+    { name: "claude", label: "Claude Code", sessions: true, reason: null, tiers: {
       fast: { model: "haiku", efforts: [] }, standard: { model: "sonnet", efforts: ["medium", "high"] }, deep: { model: "opus", efforts: ["medium", "high"] } } },
-    { name: "cursor", label: "Cursor", sessions: true, reason: null, desktop: null, tiers: {
+    { name: "cursor", label: "Cursor", sessions: true, reason: null, tiers: {
       fast: { model: "composer-2.5-fast", efforts: [] }, standard: { model: "composer-2.5", efforts: ["medium", "high"] }, deep: { model: "cursor-grok-4.6-xhigh", efforts: ["medium", "high"] } } },
   ],
 };

@@ -174,7 +174,6 @@ def test_the_page_receives_the_tiers_and_each_harness_without_its_credentials_or
                     "standard": {"model": "sonnet", "efforts": ["medium", "high"]},
                     "deep": {"model": "opus", "efforts": ["medium", "high"]},
                 },
-                "desktop": None,
             }
         ],
     }
@@ -252,37 +251,14 @@ def test_tier_names_must_be_non_empty_strings_in_a_list(tmp_path: Path, tiers: s
     assert _refusal(tmp_path, f"tiers = {tiers}\n") == "tiers must be a non-empty list of names"
 
 
-_DESKTOP = """
+_LEFTOVER_DESKTOP = """
 [harnesses.claude.desktop]
-host_env = "DESKTOP_TEST_HOST"
 user = "adinb"
-folder = "/home/adinb/trantor"
 """
 
 
-def test_a_desktop_table_serves_the_ssh_host_its_env_names_and_the_folder(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("DESKTOP_TEST_HOST", "192.0.2.7")
+def test_a_leftover_desktop_table_still_loads_and_is_not_served(tmp_path: Path) -> None:
+    served = _load(tmp_path, _CLAUDE + _LEFTOVER_DESKTOP).as_json()
 
-    served = _load(tmp_path, _CLAUDE + _DESKTOP).as_json()["harnesses"][0]
-
-    assert served["desktop"] == {"host": "adinb@192.0.2.7", "folder": "/home/adinb/trantor"}
-
-
-def test_no_desktop_is_served_without_the_table_or_with_its_host_variable_unset(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.delenv("DESKTOP_TEST_HOST", raising=False)
-
-    assert _load(tmp_path, _CLAUDE).as_json()["harnesses"][0]["desktop"] is None
-    assert _load(tmp_path, _CLAUDE + _DESKTOP).as_json()["harnesses"][0]["desktop"] is None
-
-
-def test_a_desktop_table_without_its_host_variable_or_folder_is_refused(tmp_path: Path) -> None:
-    assert _refusal(tmp_path, _CLAUDE + _DESKTOP.replace('host_env = "DESKTOP_TEST_HOST"\n', "")) == (
-        "harness claude desktop needs host_env and folder"
-    )
-    assert _refusal(tmp_path, _CLAUDE + _DESKTOP.replace('folder = "/home/adinb/trantor"\n', "")) == (
-        "harness claude desktop needs host_env and folder"
-    )
+    assert served == _load(tmp_path, _CLAUDE).as_json()
+    assert "desktop" not in served["harnesses"][0]

@@ -349,12 +349,11 @@ function Segments({ label, options, value, set }: {
   );
 }
 
-/** How a move to In progress starts: a session on a picked harness, tier and effort (1), the task worked by hand (2), or, when the harness
- *  names a Desktop SSH host, a Claude Desktop session opened on it (3). The picks sit on one label/value grid and the answers on one footer
+/** How a move to In progress starts: a session on a picked harness, tier and effort (1), or the task worked by hand (2). The picks sit on one label/value grid and the answers on one footer
  *  row, as the confirmation box lays its own out. */
-export function StartQuestion({ asking, harnesses, names, canStart, pick, start, manual, cancel, desktop = null }: {
+export function StartQuestion({ asking, harnesses, names, canStart, pick, start, manual, cancel }: {
   asking: Asking; harnesses: Harnesses; names: Record<string, string>; canStart: boolean; pick: (change: Partial<Pick>) => void;
-  start: () => void; manual: () => void; cancel: () => void; desktop?: (() => void) | null;
+  start: () => void; manual: () => void; cancel: () => void;
 }) {
   const { task, pick: p } = asking;
   const harness = harnesses.harnesses.find((h) => h.name === p.harness);
@@ -397,13 +396,11 @@ export function StartQuestion({ asking, harnesses, names, canStart, pick, start,
         <p className="note">
           <b>Start session</b> opens a Remote Control session; its agent claims the task, and the card waits in In progress until it does.
           {" "}<b>Work it manually</b> moves it through the board writer; no session starts.
-          {desktop && <>{" "}<b>Desktop (SSH)</b> opens Claude Desktop on this host with <code>Start {task.id}</code> typed for you to send; it runs Desktop's own model and effort.</>}
         </p>
         <div className="afoot">
           <button className="cancel" onClick={cancel}>Cancel <kbd>Esc</kbd></button>
           <span className="sp" />
           <button className="manual" onClick={manual}>Work it manually <kbd>2</kbd></button>
-          {desktop && <button className="desktopbtn" onClick={desktop}>Desktop (SSH) <kbd>3</kbd></button>}
           <button className="startbtn" disabled={!canStart} onClick={start}>▶ Start session <kbd>1</kbd></button>
         </div>
       </div>
@@ -908,7 +905,7 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
       )}
       {active && started.asking && (
         <StartQuestion asking={started.asking} harnesses={started.harnesses} names={hud.names} canStart={starts.canStart()} pick={(change) => starts.pick(change)}
-          start={() => answer("1")} manual={() => answer("2")} cancel={() => answer("Escape")} desktop={starts.canDesktop() ? () => answer("3") : null} />
+          start={() => answer("1")} manual={() => answer("2")} cancel={() => answer("Escape")} />
       )}
       {active && (
         <ModalHost store={openTask} cards={cards} draw={(task) => {
