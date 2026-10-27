@@ -128,3 +128,12 @@ def test_the_projection_and_the_store_to_actor_handoff_are_exported_as_histogram
     for name in ("projection", "handoff"):
         assert f"# TYPE starpulse_task_actor_{name}_seconds histogram" in exposition
         assert _sample(exposition, f"starpulse_task_actor_{name}_seconds_count") == 1
+
+
+def test_a_waiting_task_with_no_dependencies_and_no_start_criteria_is_released(
+    store: PullStore, stop: threading.Event
+) -> None:
+    board = Board(BoardFeed(roles=ROLES), task("TASK-1", "Waiting"))
+    running(board, store, stop)
+
+    assert until(lambda: board.moved() == [("TASK-1", "ready")])

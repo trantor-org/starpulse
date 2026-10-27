@@ -213,14 +213,16 @@ def test_criteria_move_a_gated_task_both_ways_each_time_the_evaluators_result_go
     board = Board(BoardFeed(), task("TASK-1", "Waiting", description=GATED), task("TASK-2", "Waiting"))
     evaluate = Criteria("unmet")
     running(board, store, stop, evaluate=evaluate, fresh_s=0.05)
-    assert board.moved() == []
+    assert ("TASK-1", "ready") not in board.moved()  # TASK-2 has no criteria and no dependency: released at once
 
     evaluate.status = "met"
 
-    assert until(lambda: board.moved() == [("TASK-1", "ready")])
-    assert board.writes[0][3] == ACTOR
+    assert until(lambda: ("TASK-1", "ready") in board.moved())
+    assert {each[3] for each in board.writes} == {ACTOR}
     evaluate.status = "unmet"
-    assert until(lambda: board.moved() == [("TASK-1", "ready"), ("TASK-1", "waiting")])
+    assert until(
+        lambda: [each for each in board.moved() if each[0] == "TASK-1"] == [("TASK-1", "ready"), ("TASK-1", "waiting")]
+    )
     assert "TASK-2" not in evaluate.asked  # a task with no Start Criteria is never evaluated
 
 
