@@ -49,8 +49,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 def maintain(url: str, machines: Mapping[str, dict], retention_days: int | None) -> None:
     """The work `HistoryStore` used to do on every open: the schema, then the lane repair and the summaries it needs."""
     engine = create_engine(url)
-    migrate(engine)
-    store = HistoryStore(url, machines, engine, retention_days=retention_days)
-    if store.repair_lanes():
-        store.rebuild_summaries()
-    store.build_summaries()
+    try:
+        migrate(engine)
+        store = HistoryStore(url, machines, engine, retention_days=retention_days)
+        if store.repair_lanes():
+            store.rebuild_summaries()
+        store.build_summaries()
+    finally:
+        engine.dispose()

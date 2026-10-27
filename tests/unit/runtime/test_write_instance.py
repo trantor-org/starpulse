@@ -4,6 +4,8 @@ import json
 import threading
 from pathlib import Path
 
+import pytest
+
 from starpulse.runtime.write_instance import write_instance
 
 
@@ -38,3 +40,12 @@ def test_no_board_thread_outlives_the_block(tmp_path: Path) -> None:
         instance.run("task", "create", "First")
     left = [thread.name for thread in threading.enumerate() if thread not in before and thread.is_alive()]
     assert left == []
+
+
+@pytest.mark.unmigrated
+def test_its_scratch_store_is_migrated_before_the_board_publishes_to_it(tmp_path: Path) -> None:
+    """A store opens only once `starpulse migrate` ran, and nothing outside the block can migrate the scratch one."""
+    _board(tmp_path)
+    with write_instance(tmp_path) as instance:
+        created = instance.run("task", "create", "First")
+    assert created.returncode == 0

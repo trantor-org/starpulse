@@ -22,6 +22,7 @@ from pathlib import Path
 
 from starpulse.cli import agent_cli
 from starpulse.runtime.config import load
+from starpulse.runtime.store_migrate import maintain
 from starpulse.board.adapters.replica import publish
 from starpulse.board.adapters.upstream_backlog import _live
 from starpulse.event_log.event_log import EventLog
@@ -92,7 +93,9 @@ def write_instance(base: Path, config_file: str = "starpulse.toml") -> Generator
     with tempfile.TemporaryDirectory() as scratch:
         state = Path(scratch)
         stream, feed = assembled(config, base)
-        log = EventLog(f"sqlite:///{state / 'events.sqlite'}")
+        store = f"sqlite:///{state / 'events.sqlite'}"
+        maintain(store, feed.machines, config.event_log_retention_days)
+        log = EventLog(store)
         with _STARTING:
             before = set(_live)
             publish(stream, feed, "write-instance", log, config)
