@@ -3,6 +3,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import { ago, bigPlace, chartHeight, place, took, type Phase, type Row, type Tie } from "./dagsModel";
 import { DAG_COLOR } from "../../render/draw";
+import { orbiterLook } from "../../render/boardDraw";
 import { useId } from "react";
 
 /** A step as the Star Map draws a DAG body's steps (renderer drawStars): a dark disc ringed in its status colour round a core dot, dimmer before it runs. */
@@ -33,12 +34,21 @@ function Link({ id, a, b, r, from, to }: { id: string; a: { x: number; y: number
 
 const PHASE_STATUS: Record<Phase, string> = { running: "running", queued: "queued", ok: "succeeded", failed: "failed", idle: "not_started" };
 
-/** A DAG's state as one of its steps would be drawn in that state. */
-export const Orb = ({ phase, big = false }: { phase: Phase; big?: boolean }) => (
-  <i className={`orb o-${phase}${big ? " big" : ""}`} aria-hidden="true">
-    <svg viewBox="-6 -6 12 12"><StepStar x={0} y={0} r={5} status={PHASE_STATUS[phase]} /></svg>
-  </i>
-);
+/** A DAG's state as the Star Map draws its orbiter (boardDraw `orbiterLook`): a ring round a core dot in the run's colour, the Spinner's quarter-arc
+ *  turning while it runs, a dashed outer ring after a failed run, grey while it waits. */
+export const Orb = ({ phase, big = false }: { phase: Phase; big?: boolean }) => {
+  const look = orbiterLook(PHASE_STATUS[phase]), c = look.color, lit = look.spin || look.dashed;
+  return (
+    <i className={`orb o-${phase}${big ? " big" : ""}`} aria-hidden="true">
+      <svg viewBox="-9 -9 18 18">
+        <circle r={5} fill="var(--bg0)" stroke={c} strokeOpacity={lit ? 0.95 : 0.6} strokeWidth={1.3} className="ring" />
+        <circle r={5 * (look.spin ? 0.45 : 0.4)} fill={c} fillOpacity={lit ? 0.95 : 0.7} className="core" />
+        {look.spin && <path d="M 0 -8.5 A 8.5 8.5 0 0 1 8.5 0" fill="none" stroke={c} strokeOpacity={0.9} strokeWidth={1.4} className="spin" />}
+        {look.dashed && <circle r={8.5} fill="none" stroke={c} strokeOpacity={0.7} strokeWidth={1} strokeDasharray="2 2" className="fail-ring" />}
+      </svg>
+    </i>
+  );
+};
 
 /** A name cut to `n` characters with an ellipsis: the strip draws outside its box, so its text must fit. */
 const fit = (t: string, n: number) => (t.length <= n ? t : `${t.slice(0, Math.max(1, Math.floor(n) - 1))}…`);
