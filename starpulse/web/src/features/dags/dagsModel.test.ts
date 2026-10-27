@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bigPlace, chartHeight, closedProcessKeys, dagData, dagFacts, filterRows, order, processNames, place, RECENCY, refusal, rows, ties, type DagData } from "./dagsModel";
+import { FRESH, bigPlace, captions, chartHeight, dagData, dagFacts, filterRows, order, panes, place, places, refusal, rows, ties, type DagData } from "./dagsModel";
 import type { Dag, DagStep, Machine, RunStatus } from "../../api";
 
 const step = (name: string, depends: string[] = [], status: RunStatus = "succeeded"): DagStep => ({ name, depends, status, kind: null, precondition: null, lock: null, last: [] });
@@ -112,46 +112,6 @@ describe("a DAG's process", () => {
   });
 });
 
-describe("process folds", () => {
-  const proc = (name: string, ...dags: string[]) => ({ name, dags: dags.map((d) => ({ name: d, runSafe: false })) });
-  const mk = (procs: ReturnType<typeof proc>[], over: Record<string, Partial<Dag>> = {}) => {
-    const dom = { name: "D", dags: procs.flatMap((p) => p.dags), processes: procs };
-    const d: DagData = { ...data, dags: dom.dags.map((x) => dag(x.name, "succeeded", over[x.name])), domains: [dom] };
-    return { dom, rs: rows(d) };
-  };
-
-  it("lists processes in snapshot order, then Other when a row needs it", () => {
-    const { dom, rs } = mk([proc("B", "x/1"), proc("A", "x/2")]);
-    expect(processNames(dom, rs)).toEqual(["B", "A"]);
-    const stray = rows({ ...data, dags: [dag("x/1", "succeeded"), dag("x/9", "succeeded")], domains: [{ ...dom, dags: [...dom.dags, { name: "x/9", runSafe: false }], processes: [proc("B", "x/1")] }] });
-    expect(processNames({ ...dom, processes: [proc("B", "x/1")] }, stray)).toEqual(["B", "Other"]);
-  });
-
-  describe("closedProcessKeys", () => {
-    const four = [proc("P1", "x/1"), proc("P2", "x/2"), proc("P3", "x/3"), proc("P4", "x/4")];
-
-    it("collapses an all-healthy process when the domain has more than three processes", () => {
-      const { dom, rs } = mk(four);
-      expect(closedProcessKeys(dom, rs)).toEqual(["cat|D|P1", "cat|D|P2", "cat|D|P3", "cat|D|P4"]);
-    });
-
-    it("collapses a process even when it has a failing DAG (folds freeze; no auto-open on fail)", () => {
-      const { dom, rs } = mk(four, { "x/2": { status: "failed" } });
-      expect(closedProcessKeys(dom, rs)).toEqual(["cat|D|P1", "cat|D|P2", "cat|D|P3", "cat|D|P4"]);
-    });
-
-    it("keeps every process open when the domain has three or fewer processes", () => {
-      const { dom, rs } = mk(four.slice(0, 3));
-      expect(closedProcessKeys(dom, rs)).toEqual([]);
-    });
-
-    it("keeps open every process a filter leaves a row in", () => {
-      const { dom, rs } = mk(four);
-      expect(closedProcessKeys(dom, rs, rs.filter((r) => r.process === "P3"))).toEqual(["cat|D|P1", "cat|D|P2", "cat|D|P4"].filter((k) => k !== "cat|D|P3"));
-    });
-  });
-});
-
 describe("the catalog's order", () => {
   it("lists each domain's DAGs in snapshot membership order, then Other by name", () => {
     // Board: pr-watch, triage, sweeper; Ops: backup, deploy, lost; Other: stray — not by phase
@@ -216,26 +176,9 @@ describe("filtering the catalog", () => {
     expect(filterRows(all, { q: "  " })).toHaveLength(all.length);
   });
 
-  it("keeps a queued DAG under Running, and narrows by Status and Domain together", () => {
-    expect(names(filterRows(all, { only: "running" }))).toEqual(["runs/backup", "runs/deploy"]);
-    expect(names(filterRows(all, { only: "failed" }))).toEqual(["runs/lost", "runs/triage"]);
-    expect(names(filterRows(all, { only: "failed", dom: "Ops" }))).toEqual(["runs/lost"]);
+  it("narrows by Domain and the search together", () => {
+    expect(names(filterRows(all, { dom: "Ops" }))).toEqual(["runs/backup", "runs/deploy", "runs/lost"]);
     expect(names(filterRows(all, { dom: "Board", q: "sweeper" }))).toEqual(["runs/sweeper"]);
-  });
-
-  it("keeps, within a Last run window, a DAG active now or last run inside it, and drops one last run earlier or never", () => {
-    const at = (s: number) => new Date(s * 1000).toISOString();
-    const recent = rows({ ...data, now: 10 * 86400, dags: [
-      dag("runs/fresh", "succeeded", { startedAt: at(10 * 86400 - 1800), finishedAt: at(10 * 86400 - 1700) }),
-      dag("runs/stale", "failed", { startedAt: at(86400), finishedAt: at(86400 + 60) }),
-      dag("runs/live", "running", { startedAt: at(86400) }),
-      dag("runs/waiting", "queued"),
-      dag("runs/never", "not_started"),
-    ] });
-
-    expect(names(filterRows(recent, { since: 10 * 86400 - 3600 }))).toEqual(["runs/fresh", "runs/live", "runs/waiting"]);
-    expect(names(filterRows(recent, { since: 0 }))).toHaveLength(5);
-    expect(RECENCY.map(([l, s]) => [l, s])).toEqual([["Past hour", 3600], ["Past day", 86400], ["Past week", 604800], ["Past month", 2592000], ["Past year", 31536000]]);
   });
 });
 
@@ -339,5 +282,54 @@ describe("the page's snapshot as the DAGs view reads it", () => {
     });
     expect(dagData({ ...sky, cpu: { dagu: { share: 0.25, cores: 36 } } } as unknown as Parameters<typeof dagData>[0]).cpu).toEqual({ dagu: { share: 0.25, cores: 36 } });
     expect(dagFacts(dag("runs/quiet", "succeeded", { stats: { ...stats, runs: 0, hours: 0, medianSeconds: null, p95Seconds: null, failureShare: null } })).runs).toBe(0);
+  });
+});
+
+describe("the activity panes", () => {
+  const names = (rs: { d: { name: string } }[]) => rs.map((r) => r.d.name);
+  it("hold a DAG with a run running or queued in Processing and every other DAG in Idle, disjoint and together the catalog", () => {
+    const all = rows(data), p = panes(all);
+    expect(names(p.processing)).toEqual(["runs/deploy", "runs/backup"]);
+    expect(names(p.idle).filter((n) => names(p.processing).includes(n))).toEqual([]);
+    expect([...names(p.processing), ...names(p.idle)].sort()).toEqual(names(all).sort());
+  });
+  it("orders Processing by when its run began, a queued DAG last, so a DAG that starts joins at the bottom", () => {
+    const at = (n: string, s: string) => dag(n, "running", { active: [{ runId: "r", status: "running", startedAt: s, step: "a", stepStartedAt: "", steps: {} }] });
+    const d: DagData = { ...data, dags: [at("runs/new", "1970-01-01T00:30:00Z"), dag("runs/q", "queued"), at("runs/old", "1970-01-01T00:20:00Z")], domains: [] };
+    expect(names(panes(rows(d)).processing)).toEqual(["runs/old", "runs/new", "runs/q"]);
+  });
+  it("lead Idle with the latest FRESH finished DAGs, newest first, then the rest in catalog order", () => {
+    const done = (i: number) => dag(`runs/d${i}`, "succeeded", { finishedAt: new Date((600 + i) * 1000).toISOString() });
+    const d: DagData = { ...data, dags: [...Array.from({ length: 7 }, (_, i) => done(i)), dag("runs/never", "not_started")], domains: [] };
+    const p = panes(rows(d));
+    expect(FRESH).toBe(5);
+    expect(names(p.idle).slice(0, FRESH)).toEqual(["runs/d6", "runs/d5", "runs/d4", "runs/d3", "runs/d2"]);
+    expect(names(p.idle).slice(FRESH)).toEqual(["runs/d0", "runs/d1", "runs/never"]);
+    expect([...p.fresh].sort()).toEqual(["runs/d2", "runs/d3", "runs/d4", "runs/d5", "runs/d6"]);
+  });
+  it("moves a DAG to Idle on the next snapshot that no longer has its run active, whatever event was dropped", () => {
+    const running = { ...data, dags: [dag("runs/x", "running", { active: [{ runId: "r", status: "running", startedAt: "1970-01-01T00:20:00Z", step: "a", stepStartedAt: "", steps: {} }] })], domains: [] };
+    const after = { ...running, dags: [dag("runs/x", "succeeded", { finishedAt: "1970-01-01T00:21:00Z" })] };
+    expect(names(panes(rows(running)).processing)).toEqual(["runs/x"]);
+    expect(names(panes(rows(after)).processing)).toEqual([]);
+    expect(names(panes(rows(after)).idle)).toEqual(["runs/x"]);
+  });
+  it("captions the first row of a group: Just finished over the bucket, a domain where it changes", () => {
+    const p = panes(rows(data));
+    expect(captions(p.idle, p.fresh)).toEqual(["Just finished · latest 5", null, "Board", "Ops", "Other"]);
+    expect(captions(p.processing, p.fresh)).toEqual(["Ops", null]);
+  });
+});
+
+describe("the panes' row grid", () => {
+  it("puts the Processing row and the Idle row of one index at the same height, in the other column", () => {
+    const p = panes(rows(data)), at = places(p, false);
+    p.processing.forEach((r, i) => expect(at.get(r.d.name)).toEqual({ col: 0, hs: 1, slot: i }));
+    p.idle.forEach((r, i) => expect(at.get(r.d.name)).toEqual({ col: 1, hs: 1, slot: i }));
+  });
+  it("stacks Idle under Processing, and its header with it, at a phone's width", () => {
+    const p = panes(rows(data)), at = places(p, true);
+    expect(at.get(p.idle[0].d.name)).toEqual({ col: 0, hs: 2, slot: p.processing.length });
+    expect(at.get("idle-head")).toEqual({ col: 0, hs: 1, slot: p.processing.length });
   });
 });

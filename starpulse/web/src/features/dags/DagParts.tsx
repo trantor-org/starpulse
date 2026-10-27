@@ -1,10 +1,9 @@
 // What the DAGs catalog and a DAG's modal both draw: the state dot, the step constellation (small in a row, large in the modal),
 // the last-run line, the pool text and a Board tie's chip. Steps and links are drawn as the Star Map draws a DAG body's (boardDraw drawStars), in DAG_COLOR.
 import type { CSSProperties, ReactNode } from "react";
-import { ago, bigPlace, chartHeight, place, short, took, type Phase, type Row, type Tie } from "./dagsModel";
+import { ago, bigPlace, chartHeight, place, took, type Phase, type Row, type Tie } from "./dagsModel";
 import { DAG_COLOR } from "../../render/draw";
 import { useId } from "react";
-import type { Pool } from "../../api";
 
 /** A step as the Star Map draws a DAG body's steps (renderer drawStars): a dark disc ringed in its status colour round a core dot, dimmer before it runs. */
 export function StepStar({ x, y, r, status }: { x: number; y: number; r: number; status: string }) {
@@ -94,11 +93,6 @@ export function lastLine(r: Row, now: number): ReactNode {
   if (!r.finishedAt) return "ran";
   return <>{ago(now, r.finishedAt)}{r.startedAt ? ` · ${took(r.startedAt, r.finishedAt)}` : ""}</>;
 }
-
-export const poolText = (pools: Pool[], r: Row) => {
-  const p = pools.find((x) => x.name === r.d.pool);
-  return p ? `${short(p.name)} ${p.running}/${p.cap}${p.queued ? ` +${p.queued}` : ""}` : "";
-};
 
 /** Opens a tie's Ledger on the Star Map, or null when the tie names no transition that has one. */
 export type LedgerGo = (ev: string | undefined) => (() => void) | null;

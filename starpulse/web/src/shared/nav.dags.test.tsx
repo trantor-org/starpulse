@@ -129,9 +129,9 @@ describe("a DAG's line in the Recent rail", () => {
 
     expect([task.classList.contains("go"), dag.classList.contains("go")]).toEqual([false, true]);
     hover(dag);
-    expect([...host.querySelectorAll<HTMLElement>("#dg .trow.spot")].map((r) => r.dataset.dag)).toEqual(["runs/pr-watch"]);
+    expect([...host.querySelectorAll<HTMLElement>("#dg .drow.spot")].map((r) => r.dataset.dag)).toEqual(["runs/pr-watch"]);
     act(() => void dag.dispatchEvent(new MouseEvent("pointerout", { bubbles: true })));
-    expect(q("#dg .trow.spot")).toBeNull();
+    expect(q("#dg .drow.spot")).toBeNull();
 
     expect(q("#dg .dgm")).toBeNull();
     act(() => dag.click());

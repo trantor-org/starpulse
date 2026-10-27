@@ -5,7 +5,7 @@ const memory = () => { const m = new Map<string, string>(); return { getItem: (k
 
 describe("view filters", () => {
   it("round-trips what a view saved", () => {
-    const s = memory(), f = { q: "lint", only: "failed", dom: "ops", win: null };
+    const s = memory(), f = { q: "lint", dom: "ops" };
     saveFilters(s, DAG_PREFS_KEY, f);
     expect(loadFilters(s, DAG_PREFS_KEY, NO_DAG_FILTERS)).toEqual(f);
   });
@@ -18,7 +18,7 @@ describe("view filters", () => {
   });
   it("keeps the fallback for a field of the wrong type", () => {
     const s = memory();
-    s.setItem(DAG_PREFS_KEY, JSON.stringify({ q: 3, only: "failed", dom: [1] }));
-    expect(loadFilters(s, DAG_PREFS_KEY, NO_DAG_FILTERS)).toEqual({ ...NO_DAG_FILTERS, only: "failed" });
+    s.setItem(DAG_PREFS_KEY, JSON.stringify({ q: 3, dom: "ops" }));
+    expect(loadFilters(s, DAG_PREFS_KEY, NO_DAG_FILTERS)).toEqual({ ...NO_DAG_FILTERS, dom: "ops" });
   });
 });

@@ -4,8 +4,8 @@ import { browserStorage, type PrefStorage } from "./nav";
 
 export const DAG_PREFS_KEY = "fv.dags.prefs", STARMAP_PREFS_KEY = "fv.starmap.prefs";
 
-export type DagFilters = { q: string; only: string | null; dom: string | null; win: string | null };
-export const NO_DAG_FILTERS: DagFilters = { q: "", only: null, dom: null, win: null };
+export type DagFilters = { q: string; dom: string | null };
+export const NO_DAG_FILTERS: DagFilters = { q: "", dom: null };
 export type StarmapFilters = { query: string };
 export const NO_STARMAP_FILTERS: StarmapFilters = { query: "" };
 

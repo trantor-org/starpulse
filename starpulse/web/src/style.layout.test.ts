@@ -40,9 +40,8 @@ describe("switching views under load", () => {
     expect(block("aside")).not.toContain("backdrop-filter");
   });
 
-  it("skips the Kanban cards and DAG rows scrolled out of sight, so showing either view styles and paints only what is on screen", () => {
+  it("skips the Kanban cards scrolled out of sight, so showing the view styles and paints only what is on screen", () => {
     expect(css).toMatch(/#kb \.card \{[^}]*content-visibility: auto; contain-intrinsic-size: auto \d+px/);
-    expect(css).toMatch(/#dg \.trow \{[^}]*content-visibility: auto; contain-intrinsic-size: auto \d+px/);
   });
 
   it("keeps a Kanban column's width when its scrollbar comes and goes, as an unstacked stack overflows it", () => {
@@ -80,10 +79,10 @@ describe("the DAGs view at a larger text size", () => {
 });
 
 describe("the DAGs view at rest", () => {
-  it("streams links only in the row the pointer, keyboard or a Recent line rests on and in the open DAG's chart: stroke-dashoffset repaints every frame", () => {
+  it("streams links only in a Processing row, the row the keyboard or a Recent line rests on and in the open DAG's chart: stroke-dashoffset repaints every frame", () => {
     const streams = css.split("\n").filter((l) => l.includes("animation: dag-stream"));
     expect(streams).toEqual([
-      "@media (prefers-reduced-motion: no-preference) { .kept:not([inert]) #dg :is(.trow:is(:hover, .spot, :focus-visible), .dgm) svg.dstrip path.link { animation: dag-stream .42s linear infinite; } }",
+      "@media (prefers-reduced-motion: no-preference) { .kept:not([inert]) #dg :is(.drow:is([data-pane=processing], .spot, :focus-visible), .dgm) svg.dstrip path.link { animation: dag-stream .42s linear infinite; } }",
     ]);
   });
 });

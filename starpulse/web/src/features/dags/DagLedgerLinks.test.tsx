@@ -31,7 +31,7 @@ let host: HTMLDivElement, root: Root;
 const open = vi.fn();
 const q = <T extends Element>(sel: string) => host.querySelector<T>(sel);
 const all = (sel: string) => [...host.querySelectorAll<HTMLElement>(sel)];
-const row = (n: string) => all("#catalog .trow").find((r) => r.querySelector(".nm")!.textContent === n)!;
+const row = (n: string) => all("#stage .drow").find((r) => r.querySelector(".nm")!.textContent === n)!;
 const click = (el: Element) => act(async () => { (el as HTMLElement).click(); });
 const draw = () => act(async () => root.render(<Dags data={data} openPath={open} />));
 
