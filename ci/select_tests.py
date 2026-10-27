@@ -65,7 +65,7 @@ READERS = {
     "design/*": ("ci/ui_preview.py",),
     ".claude-plugin/*": ("tests/integration/cli/test_agent_cli.py",),
     "docs/consumers.md": ("tests/unit/event_log/test_consumer_pattern.py",),
-    "docs/serving.md": ("tests/unit/board/test_builtin_types.py",),
+    "docs/serving.md": ("tests/unit/board/test_builtin_types.py", "starpulse/runtime/config_reference.py"),
     "docs/sources.md": ("tests/unit/board/test_builtin_types.py",),
     "ci/preview.toml": ("ci/ui_preview.py", "ci/seeded_server.py"),
     "starpulse/schemas/api.schema.json": ("starpulse/contracts/api/schema.py", "starpulse/contracts/api/__main__.py"),

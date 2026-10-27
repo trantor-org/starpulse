@@ -20,11 +20,17 @@ api_types() {
     git diff --exit-code -- starpulse/schemas/api.schema.json starpulse/web/src/api/types.gen.ts
 }
 
+# The settings reference in docs/serving.md is generated from starpulse/runtime/config_model.py: regenerate it, fail on a diff.
+config_reference() {
+  uv run --no-sync python -m starpulse.runtime.config_reference &&
+    git diff --exit-code -- docs/serving.md
+}
+
 # `uv sync` creates .venv, which the checks below read: it runs once here, before any of them starts, so no two uv
 # invocations race to create .venv/bin (a concurrent sync once broke a check with a missing .venv/bin temp file).
 uv sync --locked || exit 1
 
-checks=(api_types public_names)
+checks=(api_types public_names config_reference)
 pids=()
 for check in "${checks[@]}"; do
   "$check" >"$logs/$check.log" 2>&1 &
