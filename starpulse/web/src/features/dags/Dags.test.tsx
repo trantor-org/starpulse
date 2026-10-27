@@ -45,9 +45,11 @@ const data: DagData = {
   flows: [{ name: "board", machine: board }],
 };
 
-let host: HTMLDivElement, root: Root;
+let host: HTMLDivElement, root: Root, slot: HTMLDivElement;
 const post = vi.fn();
-const draw = async (d: DagData | null = data) => { await act(async () => root.render(<Dags data={d} post={post} />)); };
+const draw = async (d: DagData | null = data) => { await act(async () => root.render(<Dags data={d} post={post} filterSlot={slot} />)); };
+// the navigator's filter slot sits outside the view
+const filterBox = () => slot.querySelector<HTMLInputElement>("#dgq")!;
 const q = <T extends Element>(sel: string) => host.querySelector<T>(sel)!;
 const all = (sel: string) => [...host.querySelectorAll<HTMLElement>(sel)];
 const names = () => all("#stage .drow .nm").map((e) => e.textContent);
@@ -68,11 +70,13 @@ beforeEach(() => {
   localStorage.clear();
   vi.stubGlobal("IntersectionObserver", class { observe() {} unobserve() {} disconnect() {} });
   host = document.body.appendChild(document.createElement("div"));
+  slot = document.body.appendChild(document.createElement("div"));
   root = createRoot(host);
 });
 afterEach(() => {
   act(() => root.unmount());
   host.remove();
+  slot.remove();
   vi.unstubAllGlobals();
 
   vi.useRealTimers();
@@ -242,7 +246,7 @@ describe("the DAGs view's filters", () => {
 
   it("filters by the name, a step or a domain typed in the search, and says when nothing matches", async () => {
     await draw();
-    const box = q<HTMLInputElement>(".filters input");
+    const box = filterBox();
 
     setText(box, "deploy");
     expect(names()).toEqual(["deploy"]);
@@ -253,14 +257,32 @@ describe("the DAGs view's filters", () => {
     expect(q("#dg > .none").textContent).toContain("No DAG matches");
   });
 
+  it("draws the search in the navigator's slot, not the canvas, and what it holds narrows both panes", async () => {
+    await draw();
+
+    expect(host.querySelector("#dgq")).toBeNull();
+    expect(slot.querySelector("#dgq")).not.toBeNull();
+    expect([paneOf("processing"), paneOf("idle")]).toEqual([["deploy"], ["pr-watch", "triage", "never"]]);
+    setText(filterBox(), "ops");
+    expect([paneOf("processing"), paneOf("idle")]).toEqual([["deploy"], ["never"]]);
+    setText(filterBox(), "triage");
+    expect([paneOf("processing"), paneOf("idle")]).toEqual([[], ["triage"]]);
+  });
+
+  it("draws no search where there is no slot to hold it", async () => {
+    await act(async () => root.render(<Dags data={data} post={post} />));
+
+    expect(document.querySelector("#dgq")).toBeNull();
+  });
+
   it("opens on the filters it last had, after a reload", async () => {
     await draw();
-    setText(q<HTMLInputElement>(".filters input"), "deploy");
+    setText(filterBox(), "deploy");
     act(() => root.unmount());
     root = createRoot(host);
     await draw();
 
-    expect(q<HTMLInputElement>(".filters input").value).toBe("deploy");
+    expect(filterBox().value).toBe("deploy");
     expect(names()).toEqual(["deploy"]);
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FRESH, bigPlace, captions, chartHeight, dagData, dagFacts, filterRows, order, panes, place, places, refusal, rows, ties, type DagData } from "./dagsModel";
+import { FRESH, bigPlace, captions, chartHeight, cpuPercent, dagData, dagFacts, filterRows, order, panes, place, places, refusal, rows, runHours, ties, type DagData } from "./dagsModel";
 import type { Dag, DagStep, Machine, RunStatus } from "../../api";
 
 const step = (name: string, depends: string[] = [], status: RunStatus = "succeeded"): DagStep => ({ name, depends, status, kind: null, precondition: null, lock: null, last: [] });
@@ -342,5 +342,24 @@ describe("the panes' row grid", () => {
     const p = panes(rows(data)), { at } = places(p, true);
     expect(at.get(p.idle[0].d.name)).toMatchObject({ col: 0, hs: 2, slot: p.processing.length });
     expect(at.get("idle-head")).toMatchObject({ col: 0, hs: 1, slot: p.processing.length });
+  });
+});
+
+describe("the run pressure the navigator draws", () => {
+  const facts = (hours: number | null) => ({ ...dagFacts(dag("x", "succeeded")), hours });
+
+  it("ranks the DAGs by their seven-day run-hours, most first, and leaves out one with none read or none spent", () => {
+    const ranked = runHours({ "runs/a": facts(1.5), "runs/b": facts(12), "runs/c": facts(null), "runs/d": facts(0), "runs/e": facts(1.5) });
+
+    expect(ranked).toEqual([{ name: "runs/b", hours: 12 }, { name: "runs/a", hours: 1.5 }, { name: "runs/e", hours: 1.5 }]);
+  });
+
+  it("reads the Runner CPU as one percentage of all the cores, summing the runner units of every instance", () => {
+    expect(cpuPercent({ dagu: { cores: 8, share: 0.375 } })).toBeCloseTo(37.5);
+    expect(cpuPercent({ a: { cores: 8, share: 0.25 }, b: { cores: 8, share: 0.125 } })).toBeCloseTo(37.5);
+  });
+
+  it("reads no CPU when the server served none, never zero", () => {
+    expect(cpuPercent({})).toBeNull();
   });
 });

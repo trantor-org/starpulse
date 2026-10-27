@@ -4,6 +4,7 @@
 // the pane's columns (a run's progress, or its last run and statistics) and, on a run-safe DAG, the Kanban's ▶ edge strip. A row has no hover; a click anywhere on it opens its modal. The rows are the stage's
 // children, placed by transform, so a DAG whose state changes glides to its other pane rather than being drawn there afresh.
 import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type RefObject } from "react";
+import { createPortal } from "react-dom";
 import { same } from "../../api/same";
 import { DAG_PREFS_KEY, NO_DAG_FILTERS, useFilters } from "../../shared/viewPrefs";
 import { DagModal } from "./DagModal";
@@ -11,6 +12,7 @@ import { IdleCells, Orb, RunCells, Strip, type LedgerGo } from "./DagParts";
 import { captions, filterRows, panes, places, refusal, rows, short, type DagData, type DagFacts, type Row } from "./dagsModel";
 import { ChoiceMenu } from "../../shared/ChoiceMenu";
 import { useViewActive } from "../../shared/Kept";
+import { SearchClear } from "../../shared/SearchClear";
 import { PHONE } from "../../shared/nav";
 import { BOARD, ledgerLevel, type Path } from "../../render/levels";
 import { refused, startRun } from "../../render/panels";
@@ -112,13 +114,14 @@ function useGlides(pane: Map<string, Pane>) {
 
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
 
-/** The DAGs view. `spot` is the DAG a Recent line is hovered for: its row lights and scrolls into view. A new `opening` opens that DAG's modal. */
-export function Dags({ data, post, openPath, spot = null, opening = null }: { data: DagData | null; post?: Post; openPath?: (p: Path) => void; spot?: string | null; opening?: { name: string } | null }) {
+/** The DAGs view. `spot` is the DAG a Recent line is hovered for: its row lights and scrolls into view. A new `opening` opens that DAG's modal. `filterSlot` is the navigator's filter slot, where the DAG filter draws; with none the view has no filter field. */
+export function Dags({ data, post, openPath, spot = null, opening = null, filterSlot = null }: { data: DagData | null; post?: Post; openPath?: (p: Path) => void; spot?: string | null; opening?: { name: string } | null; filterSlot?: HTMLElement | null }) {
   // the filters survive a reload, so the view opens as it was left
   const [kept, keep] = useFilters(DAG_PREFS_KEY, NO_DAG_FILTERS);
   const { q, dom } = kept;
   const setQ = (v: string) => keep({ q: v }), setDom = (v: string | null) => keep({ dom: v });
   const [menu, setMenu] = useState(false);
+  const filterBox = useRef<HTMLInputElement>(null);
   const [toast, setToast] = useState<{ text: string; n: number } | null>(null);
   const [starting, setStarting] = useState<Set<string>>(new Set());
   const [opened, setOpened] = useState<string | null>(null);
@@ -206,11 +209,15 @@ export function Dags({ data, post, openPath, spot = null, opening = null }: { da
         <span className="title">DAGs</span>
         <span className="count">{plural(all.length, "DAG")} · {plural(new Set(all.map((r) => r.domain)).size, "domain")}</span>
       </header>
-      <div className="filters">
+      {filterSlot && createPortal(
         <div className="fw">
-          <input id="dgq" type="text" placeholder="filter by name, step or domain…" aria-label="Filter DAGs by name, step or domain" autoComplete="off" spellCheck={false} value={q}
+          <input id="dgq" ref={filterBox} type="text" placeholder="filter DAGs by name, step or domain…" aria-label="Filter DAGs by name, step or domain" autoComplete="off" spellCheck={false} value={q}
             onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Escape" && setQ("")} />
-        </div>
+          <SearchClear input={filterBox} value={q} clear={() => setQ("")} />
+        </div>,
+        filterSlot,
+      )}
+      <div className="filters">
         <div className="fw">
           {chip("Domain", dom)}
           {menu && (
