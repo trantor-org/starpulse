@@ -497,6 +497,7 @@ def _starpulse() -> Iterator[int]:  # pragma: no cover — process boundary
     """A server on `PREVIEW_CONFIG`, using its isolated preview database."""
     port = _free_port()
     env = {k: v for k, v in os.environ.items() if k != "DATABASE_URI"}
+    _run(sys.executable, "-m", "starpulse", "migrate", "--config", PREVIEW_CONFIG, env=env)
     server = subprocess.Popen(
         [sys.executable, "-m", "starpulse.runtime.server", "--port", str(port), "--config", PREVIEW_CONFIG], env=env
     )
