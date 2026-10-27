@@ -40,10 +40,8 @@ from starpulse.views.responses import (
     transitions_response,
 )
 from starpulse.views.routes import (
-    _DOC_WRITES,
     _DOCS,
     _LEDGER,
-    _MILESTONE_WRITES,
     _MILESTONES,
     _RETIRED,
     _SCHEDULER,
@@ -191,6 +189,7 @@ class Response(NamedTuple):
 
 Query = dict[str, list[str]]
 Route = Callable[[Request, Query], Response]
+Handler = Callable[[Request], Response]
 
 
 class ReadRoutes:
@@ -276,36 +275,47 @@ class ReadRoutes:
         with self._slow_reads.watch(request.query, queued_s, arrival) as timing:
             yield timing
 
-    def __call__(self, request: Request) -> Response | None:
-        path, query = request.path, parse_qs(request.query)
-        if path.startswith(_LEDGER) and path.removeprefix(_LEDGER).partition("/")[2] == "events":
-            return None  # the ledger's stream
-        if path.startswith(_SNAPSHOT_BODY):
-            return self._snapshot_body(path.removeprefix(_SNAPSHOT_BODY))
-        if path.startswith(_LEDGER):
-            event, _, tail = path.removeprefix(_LEDGER).partition("/")
-            if tail:
-                return Response(_error(f"unknown route {path}"), 404)
-            return Response(*ledger_response(self._feed, unquote(event), query))
-        if path.startswith(_TASK):
-            status, body = task_record(self._feed, self._read, unquote(path.removeprefix(_TASK)))
-            if status == 200 and (cited := cited_pulls(self._pull_store, body["record"].get("references", []))):
-                body["record"]["pulls"] = cited
-            return Response(encode("task", body), status)
-        if path.startswith(f"{_MILESTONES}/") and path not in _MILESTONE_WRITES:
-            status, body = milestone_record(self._milestones, unquote(path.removeprefix(f"{_MILESTONES}/")))
-            return Response(encode("milestone", body), status)
-        if path.startswith(f"{_DOCS}/") and path not in _DOC_WRITES:
-            status, body = doc_record(self._milestones, unquote(path.removeprefix(f"{_DOCS}/")))
-            return Response(encode("doc", body), status)
-        route = self._exact.get(path)
-        return route(request, query) if route else None
+    def routes(self) -> list[tuple[str, Handler]]:
+        """Every read route as its path template (`{name}` is a segment, `{name:path}` the rest of the path) and its
+        handler, in the order they match. A ledger's stream is `Streams`' and a write is `WriteRoutes`'."""
+        records: list[tuple[str, Handler]] = [
+            (f"{_SNAPSHOT_BODY}{{key:path}}", self._snapshot_body),
+            (f"{_LEDGER}{{rest:path}}", self._ledger),
+            (f"{_TASK}{{id:path}}", self._task),
+            (f"{_MILESTONES}/{{id:path}}", self._milestone),
+            (f"{_DOCS}/{{id:path}}", self._doc),
+        ]
+        return [*records, *((path, self._queried(route)) for path, route in self._exact.items())]
 
-    def _snapshot_body(self, key: str) -> Response:
+    def _queried(self, route: Route) -> Handler:
+        return lambda request: route(request, parse_qs(request.query))
+
+    def _snapshot_body(self, request: Request) -> Response:
+        key = request.path.removeprefix(_SNAPSHOT_BODY)
         body = self._snapshots.body(key)
         if body is None:
             return Response(encode("error", {"error": f"no snapshot {key} is held"}), 404)
         return Response(body, cache="max-age=3600, immutable")
+
+    def _ledger(self, request: Request) -> Response:
+        event, _, tail = request.path.removeprefix(_LEDGER).partition("/")
+        if tail:
+            return Response(_error(f"unknown route {request.path}"), 404)
+        return Response(*ledger_response(self._feed, unquote(event), parse_qs(request.query)))
+
+    def _task(self, request: Request) -> Response:
+        status, body = task_record(self._feed, self._read, unquote(request.path.removeprefix(_TASK)))
+        if status == 200 and (cited := cited_pulls(self._pull_store, body["record"].get("references", []))):
+            body["record"]["pulls"] = cited
+        return Response(encode("task", body), status)
+
+    def _milestone(self, request: Request) -> Response:
+        status, body = milestone_record(self._milestones, unquote(request.path.removeprefix(f"{_MILESTONES}/")))
+        return Response(encode("milestone", body), status)
+
+    def _doc(self, request: Request) -> Response:
+        status, body = doc_record(self._milestones, unquote(request.path.removeprefix(f"{_DOCS}/")))
+        return Response(encode("doc", body), status)
 
     def _snapshot(self, request: Request, query: Query) -> Response:
         if query.get("view") == ["full"]:

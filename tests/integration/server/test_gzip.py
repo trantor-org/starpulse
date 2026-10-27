@@ -128,7 +128,7 @@ def test_the_snapshot_body_a_page_reads_by_reference_is_gzipped_for_a_page_that_
 
 
 def test_a_hashed_asset_is_gzipped_and_kept_for_a_year(tmp_path: Path) -> None:
-    script = "export const board = 'a long line of the bundle';\n" * 400
+    script = "export const board = 'a long line of the bundle';\n" * 2000
     with _serve(tmp_path) as server:
         (tmp_path / "static" / "assets" / "index-abc123.js").write_text(script)
         with urllib.request.urlopen(
@@ -138,7 +138,7 @@ def test_a_hashed_asset_is_gzipped_and_kept_for_a_year(tmp_path: Path) -> None:
         with urllib.request.urlopen(_url(server, "/assets/index-abc123.js")) as resp:
             plain, plain_body = resp.headers, resp.read()
 
-    assert (zipped["Content-Encoding"], kind) == ("gzip", "text/javascript")
+    assert (zipped["Content-Encoding"], kind) == ("gzip", "text/javascript; charset=utf-8")
     assert gzip.decompress(body).decode() == script == plain_body.decode()
     assert plain["Content-Encoding"] is None
     assert zipped["Cache-Control"] == plain["Cache-Control"] == "public, max-age=31536000, immutable"

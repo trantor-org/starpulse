@@ -62,8 +62,20 @@ stream past the limit gets `503` with `Retry-After: 5` and the client reconnects
 
 A request answered without reading its body, such as a push refused for its size or sent to a route that does not exist,
 has the rest of the body read and discarded as the response starts, so a stop is never held by a client still sending.
-Every method reaches the sign-in gate first; one the server does not serve (`PATCH`, `OPTIONS`, `TRACE`) is then
-answered `501`.
+Every method reaches the sign-in gate first, as a middleware ahead of the routes.
+
+Each handler is a Starlette `Route` of its own, in match order: the streams, the reads, the writes (each with the
+methods it answers), the page (`/`, `/board`, `/runs` and `/flow/<flow>` for a known flow) and last the build's files by
+`StaticFiles`, which sets `ETag` and `Last-Modified` and answers a conditional request `304`. A file under `/assets/`
+is kept for a year (`immutable`). A path under `/api/` is never a file (the `served` path convertor refuses it), so an
+unknown one is `404`. A method a path does not take is Starlette's `405` with its `Allow`, `PATCH` and `OPTIONS`
+included; a `HEAD` of a read or a stream is the headers of its `GET` with no body, and opens no stream. A
+`POST` to a push this deployment leaves unconfigured is `404`.
+
+`GZipMiddleware` (subclassed as `Gzip`) compresses a body over 64 KB at level 6 for a client that accepts gzip, on a
+thread, and each event of a stream with a flush so a page decodes it as it arrives; `gzip;q=0` is a refusal. A
+snapshot body held for many pages (`Encoded`) carries its own gzip, level 1, and is sent as it is. A file of 64 KB or
+less is sent uncompressed.
 
 A stopping server first tells the feed it is restarting, ends every open stream, waits up to 8 s (`DRAIN_S`) for the
 requests it took and closes.

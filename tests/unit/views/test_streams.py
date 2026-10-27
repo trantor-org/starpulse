@@ -8,6 +8,8 @@ from starpulse.views.reads import Request, Response
 from starpulse.views.snapshot_cache import SnapshotCache
 from starpulse.views.streams import Stream, Streams
 
+from tests.unit.views.routing import answer
+
 
 @pytest.fixture
 def streams(monkeypatch: pytest.MonkeyPatch) -> Streams:
@@ -18,7 +20,7 @@ def streams(monkeypatch: pytest.MonkeyPatch) -> Streams:
 
 
 def _open(streams: Streams, path: str, query: str = "", admit: bool = True) -> Stream | Response | None:
-    return streams(Request(path, query, "127.0.0.1"), lambda: admit)
+    return answer(streams.routes(), Request(path, query, "127.0.0.1"), lambda: admit)
 
 
 def _stream(streams: Streams, path: str, query: str = "") -> Stream:
@@ -71,7 +73,9 @@ def test_a_stream_is_refused_when_the_pool_is_full(streams: Streams) -> None:
 
 
 def test_a_held_stream_must_name_its_session_and_asks_for_no_room_first(streams: Streams) -> None:
-    refused = streams(Request("/api/held", "", "127.0.0.1"), lambda: pytest.fail("admitted before the 400"))
+    refused = answer(
+        streams.routes(), Request("/api/held", "", "127.0.0.1"), lambda: pytest.fail("admitted before the 400")
+    )
 
     assert isinstance(refused, Response)
     assert refused.status == 400

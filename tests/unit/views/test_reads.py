@@ -17,6 +17,7 @@ from starpulse.views.services import Services
 from starpulse.views.snapshot_cache import SnapshotCache
 
 from tests.fake_board import bare_board
+from tests.unit.views.routing import answer
 
 
 @pytest.fixture
@@ -34,7 +35,7 @@ def routes(tmp_path: Path):
 
 
 def _get(routes, path: str, query: str = "") -> Response | None:
-    return routes(Request(path, query, "127.0.0.1"))
+    return answer(routes.routes(), Request(path, query, "127.0.0.1"))
 
 
 def _json(response: Response) -> dict:
@@ -103,7 +104,7 @@ def test_a_query_reaches_the_route(routes) -> None:
 
 
 def test_the_history_window_answers_a_lan_client(routes) -> None:
-    response = routes(Request("/api/history-window", "", "127.0.0.1"))
+    response = _get(routes, "/api/history-window")
 
     assert response is not None
     assert response.status == 200
@@ -115,9 +116,7 @@ def test_the_history_window_answers_a_lan_client(routes) -> None:
         "/api/events",  # a stream, not a read
         "/api/held",
         "/api/lanes",
-        "/api/ledger/anything/events",
         "/api/move",  # a write: a GET of it is the server's 405
-        "/api/milestones/edit",
         "/",  # the page
         "/assets/app.js",  # a static file
         "/nothing",
@@ -125,6 +124,13 @@ def test_the_history_window_answers_a_lan_client(routes) -> None:
 )
 def test_a_path_that_is_no_read_route_is_left_to_the_server(routes, path: str) -> None:
     assert _get(routes, path) is None
+
+
+def test_a_get_of_a_milestone_write_path_is_the_milestone_read_of_that_id(routes) -> None:
+    response = _get(routes, "/api/milestones/edit")
+
+    assert response is not None
+    assert response.status == 404
 
 
 def test_the_pulls_read_is_timed_and_any_other_is_not(routes, caplog: pytest.LogCaptureFixture) -> None:

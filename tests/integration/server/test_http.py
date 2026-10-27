@@ -347,13 +347,14 @@ def test_a_dag_absent_from_the_configs_run_safe_list_answers_404_on_post(tmp_pat
     assert json.load(refused.value) == {"error": "dagu/whole-repo-gate is not declared run-safe"}
 
 
-def test_a_post_anywhere_but_the_run_endpoint_is_not_found(server: PageServer) -> None:
+def test_a_post_to_a_path_that_only_reads_is_a_405_naming_what_it_answers(server: PageServer) -> None:
     request = urllib.request.Request(_url(server, "/api/snapshot"), data=b"", method="POST")
 
     with pytest.raises(urllib.error.HTTPError) as refused:
         urllib.request.urlopen(request, timeout=5)
 
-    assert refused.value.code == 404
+    assert refused.value.code == 405
+    assert set(refused.value.headers["Allow"].split(", ")) == {"GET", "HEAD"}  # in no fixed order
 
 
 def _post_move(server: PageServer, body: dict) -> tuple[int, dict]:

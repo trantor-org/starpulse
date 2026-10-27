@@ -1,7 +1,8 @@
 """The page as an ASGI app: the page and its assets, the event streams and every `/api` route.
 
-Each request runs its (blocking) routes on a worker thread, so the routes stay plain functions of a request; a stream
-hands its frames to the event loop one at a time. A server such as Hypercorn runs the app, over HTTP/1.1 or HTTP/2.
+Each handler is a Starlette route and runs (blocking) on a worker thread, so the handlers stay plain functions of a
+request; a stream hands its frames to the event loop one at a time. A server such as Hypercorn runs the app, over
+HTTP/1.1 or HTTP/2.
 """
 
 from __future__ import annotations
@@ -9,14 +10,14 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import functools
-import gzip
 import hashlib
 import logging
 import math
 import mimetypes
+import os
 import threading
 import time
-from collections.abc import AsyncIterator, Callable, Collection, MutableMapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Collection, MutableMapping
 from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -24,29 +25,32 @@ from typing import TYPE_CHECKING, Any
 from anyio import CancelScope, CapacityLimiter, from_thread, to_thread
 from pydantic import ValidationError
 from starlette.applications import Starlette
+from starlette.convertors import PathConvertor, register_url_convertor
+from starlette.middleware import Middleware
 from starlette.requests import ClientDisconnect
 from starlette.requests import Request as Incoming
-from starlette.responses import FileResponse, PlainTextResponse, StreamingResponse
+from starlette.responses import PlainTextResponse, StreamingResponse
 from starlette.responses import Response as Reply
 from starlette.routing import Route
+from starlette.staticfiles import StaticFiles
 
 from starpulse.harness_telemetry.harnesses import Harnesses
 from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.model.seam import Board
 from starpulse.runs.cloudevents_grpc import PATH as CLOUDEVENTS_GRPC_PATH
 from starpulse.runs.cloudevents_grpc import cloudevents_grpc
-from starpulse.views.compression import LEVEL, Encoded, accepts_gzip, compressed, gzip_frames
+from starpulse.views.compression import Encoded, Gzip, accepts_gzip
 from starpulse.views.encoding import encode, event
 from starpulse.views.gate_request import GateRequest
-from starpulse.views.reads import Arrival, ReadRoutes, Request, Response
+from starpulse.views.reads import Arrival, Handler, ReadRoutes, Request, Response
 from starpulse.views.routes import _PAGES
 from starpulse.views.services import Services
 from starpulse.views.snapshot_cache import SnapshotCache
-from starpulse.views.streams import Stream, Streams
-from starpulse.views.write_routes import WriteRequest, WriteRoutes
+from starpulse.views.streams import Stream, StreamHandler, Streams
+from starpulse.views.write_routes import WriteHandler, WriteRequest, WriteRoutes
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
-    from starlette.types import ASGIApp
+    from starlette.types import ASGIApp, Receive, Scope, Send
 
     from starpulse.board.board_feed import BoardFeed
     from starpulse.flow_metrics.history import History
@@ -69,12 +73,19 @@ _ASSETS = "/assets/"
 _KEPT = "public, max-age=31536000, immutable"
 
 
-#: The static files worth gzipping: the build's text. Its images and fonts are already compressed.
-_TEXT = (".html", ".js", ".mjs", ".css", ".svg", ".json", ".map")
-
-
 #: The page's scripts are `text/javascript` on every host: the host's MIME table may call them `application/javascript`.
-_SCRIPTS = {".js": "text/javascript", ".mjs": "text/javascript"}
+mimetypes.add_type("text/javascript", ".js")
+mimetypes.add_type("text/javascript", ".mjs")
+
+
+class _Served(PathConvertor):
+    """The path of a file of the build: any but one under `/api`, which only a route answers, so a GET of a write
+    answers 405 and a route that does not exist 404."""
+
+    regex = r"(?!api/).*"
+
+
+register_url_convertor("served", _Served())
 
 
 @functools.lru_cache(maxsize=4)
@@ -108,12 +119,6 @@ def build_gauge(static: Path) -> str:
     return f'# HELP {name} The id of the page build served.\n# TYPE {name} gauge\n{name}{{build="{build}"}} 1\n'
 
 
-@functools.lru_cache(maxsize=64)
-def _gzipped(path: str, mtime_ns: int) -> bytes:
-    """A static file gzipped once per build: `mtime_ns` keys a rebuilt file afresh."""
-    return gzip.compress(Path(path).read_bytes(), compresslevel=LEVEL, mtime=0)
-
-
 #: How long `/api/doctor` holds its report: the checks read the scheduler and run `git`.
 _CONTRACT_TTL_S = 60
 
@@ -135,10 +140,6 @@ def _cached(
     return get
 
 
-#: Every method reaches the gate, which answers each before any route does; only the five it serves go further.
-_METHODS = ("GET", "HEAD", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "TRACE")
-
-
 class _Body:
     """A request's body, read by a worker thread only as much as a route asks for: a push over its limit is refused
     without the body being taken off the wire."""
@@ -158,14 +159,50 @@ class _Body:
         return from_thread.run(self._read, size) if size > 0 else b""
 
 
+class _Build(StaticFiles):
+    """The build's files; one under `/assets/` is kept by the browser for good."""
+
+    def file_response(
+        self, full_path: os.PathLike[str] | str, stat_result: os.stat_result, scope: Scope, status_code: int = 200
+    ) -> Reply:
+        response = super().file_response(full_path, stat_result, scope, status_code)
+        if scope["path"].startswith(_ASSETS):
+            response.headers["cache-control"] = _KEPT
+        return response
+
+
+class _Gated:
+    """Answers or admits each request before any route sees it, whatever its method and path."""
+
+    def __init__(self, app: ASGIApp, gate: Callable[[GateRequest], bool], workers: CapacityLimiter) -> None:
+        self.app, self._gate, self._workers = app, gate, workers
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http":
+            refused = await to_thread.run_sync(
+                self._refusal, Incoming(scope), abandon_on_cancel=True, limiter=self._workers
+            )
+            if refused is not None:
+                await refused(scope, receive, send)
+                return
+        await self.app(scope, receive, send)
+
+    def _refusal(self, request: Incoming) -> Reply | None:
+        """The gate's answer when it refuses the request, or None when it admits it."""
+        query = request.url.query
+        asked = GateRequest(request.method, _target(request) + (f"?{query}" if query else ""), request.headers)
+        if self._gate(asked):
+            return None
+        answer = Reply(asked.wfile.getvalue(), asked.status)
+        answer.raw_headers = [(name.lower().encode("latin-1"), value.encode("latin-1")) for name, value in asked.sent]
+        return answer
+
+
 class _Events(StreamingResponse):
     """An open stream's response: the frames the page reads, until it leaves or the server ends the stream."""
 
-    def __init__(self, app: PageApp, stream: Stream, gzipped: bool) -> None:
-        headers = {"content-type": "text/event-stream", "cache-control": "no-store"}
-        if gzipped:
-            headers["content-encoding"] = "gzip"
-        super().__init__(app.pump(stream.frames, gzip_frames() if gzipped else None), headers=headers)
+    def __init__(self, app: PageApp, stream: Stream) -> None:
+        super().__init__(app.pump(stream.frames), headers=_EVENT_HEADERS)
         self._app = app
         self._stream = stream
 
@@ -177,6 +214,12 @@ class _Events(StreamingResponse):
                 self._stream.frames.close()  # closed once that frame is dropped
             self._stream.release()
             self._app.closed_stream()
+
+
+_EVENT_HEADERS = {"content-type": "text/event-stream", "cache-control": "no-store"}
+
+Endpoint = Callable[[Incoming], Awaitable[Reply]]
+Work = Callable[[Incoming, Arrival, _Body], Reply]
 
 
 class PageApp:
@@ -194,9 +237,10 @@ class PageApp:
         gate: Callable[[GateRequest], bool] | None = None,
         grpc: ASGIApp | None = None,
     ) -> None:
-        self._routes, self._writes, self._streams, self._snapshots = routes, writes, streams, snapshots
+        self._routes, self._snapshots = routes, snapshots
         self._grpc = grpc
-        self._static, self._flows, self._gate = static, flows, gate
+        self._flows = flows
+        self._files = _Build(directory=static, check_dir=False)
         self._workers = CapacityLimiter(REQUEST_THREADS)
         self._frames = CapacityLimiter(
             math.inf
@@ -210,7 +254,18 @@ class PageApp:
         )
         self._quiet = asyncio.Event()
         self._quiet.set()
-        self._app = Starlette(routes=[Route("/{path:path}", self._endpoint, methods=list(_METHODS))])
+        # In match order: a ledger's stream before the ledger's read, and the files last, since a request a route
+        # matches by path alone is that route's 405 only while no later route matches it in full.
+        table = [
+            *(Route(path, self._streamed(handler), methods=["GET"]) for path, handler in streams.routes()),
+            *(Route(path, self._read(handler), methods=["GET"]) for path, handler in routes.routes()),
+            *(Route(path, self._written(handler), methods=list(methods)) for path, methods, handler in writes.routes()),
+            *(Route(path, self._page, methods=["GET"]) for path in _PAGES),
+            Route("/flow/{flow}", self._flow, methods=["GET"]),
+            Route("/{path:served}", self._file, methods=["GET"]),
+        ]
+        gated = [] if gate is None else [Middleware(_Gated, gate=gate, workers=self._workers)]
+        self._app = Starlette(routes=table, middleware=[Middleware(Gzip), *gated])
 
     async def __call__(self, scope: MutableMapping[str, Any], receive: Any, send: Any) -> None:
         if scope["type"] != "http":
@@ -280,18 +335,13 @@ class PageApp:
             return False
         return True
 
-    async def pump(self, frames: Any, compress: Callable[[bytes], bytes] | None) -> AsyncIterator[bytes]:
+    async def pump(self, frames: Any) -> AsyncIterator[bytes]:
         """`frames` as they are made, each wait on a thread of its own: it ends with the stream or on a stop."""
-
-        def step() -> bytes | None:
-            frame = next(frames, None)
-            return frame if frame is None or compress is None else compress(frame)
-
         while not self._ending:
             with CancelScope() as waiting:
                 self._scopes.add(waiting)
                 try:
-                    frame = await to_thread.run_sync(step, abandon_on_cancel=True, limiter=self._frames)
+                    frame = await to_thread.run_sync(next, frames, None, abandon_on_cancel=True, limiter=self._frames)
                 finally:
                     self._scopes.discard(waiting)
             if waiting.cancelled_caught or frame is None:
@@ -309,129 +359,114 @@ class PageApp:
             self.open_streams += 1
             return True
 
-    async def _endpoint(self, request: Incoming) -> Reply:
+    async def _worker(self, request: Incoming, work: Work) -> Reply:
+        """Run `work` for `request` on a worker thread; a body its model refuses is a logged 500, since the page reads only
+        what a model names."""
         arrival = Arrival(
             time.monotonic(), self._workers.borrowed_tokens + 1, self.open_streams
         )  # busy counts this request
-        return await to_thread.run_sync(
-            self._respond, request, arrival, _Body(request), abandon_on_cancel=True, limiter=self._workers
-        )
+        body = _Body(request)
 
-    def _respond(self, request: Incoming, arrival: Arrival, body: _Body) -> Reply:
-        """Answer one request on a worker thread; a body its model refuses is a logged 500, since the page reads only
-        what a model names."""
-        queued_s = time.monotonic() - arrival.at
-        try:
-            if (refused := self._gated(request)) is not None:
-                return refused
-            if request.method not in ("GET", "HEAD", "POST", "PUT", "DELETE"):
-                return Reply(status_code=501)  # the gate has answered it first, as it answers every method
-            if request.method in ("POST", "PUT", "DELETE"):
-                return self._write(request, body)
-            return self._get(request, queued_s, arrival)
-        except ClientDisconnect:
-            return Reply(status_code=400)  # the client left mid-body; nobody reads this
-        except ValidationError:
-            logger.exception("StarPulse: %s %s built a body its model refuses", request.method, request.url.path)
-            error = encode("error", {"error": "the server built a body its contract refuses"})
-            return self._json(request, Response(error, 500))
+        def run() -> Reply:
+            try:
+                return work(request, arrival, body)
+            except ClientDisconnect:
+                return Reply(status_code=400)  # the client left mid-body; nobody reads this
+            except ValidationError:
+                logger.exception("StarPulse: %s %s built a body its model refuses", request.method, request.url.path)
+                error = encode("error", {"error": "the server built a body its contract refuses"})
+                return self._json(request, Response(error, 500))
 
-    def _gated(self, request: Incoming) -> Reply | None:
-        """The gate's answer when it refuses the request, or None when it admits it."""
-        if self._gate is None:
-            return None
-        query = request.url.query
-        asked = GateRequest(request.method, _target(request) + (f"?{query}" if query else ""), request.headers)
-        if self._gate(asked):
-            return None
-        answer = Reply(asked.wfile.getvalue(), asked.status)
-        answer.raw_headers = [(name.lower().encode("latin-1"), value.encode("latin-1")) for name, value in asked.sent]
-        return answer
+        return await to_thread.run_sync(run, abandon_on_cancel=True, limiter=self._workers)
 
-    def _get(self, request: Incoming, queued_s: float, arrival: Arrival) -> Reply:
-        path = _target(request)
-        if request.method == "HEAD":
-            return self._page(request, path)
-        read = Request(path, request.url.query, _client(request))
-        took = False
-
-        def admit() -> bool:
-            nonlocal took
-            took = self._admit()
-            return took
-
-        try:
-            stream = self._streams(read, admit)
-        except BaseException:
-            if took:
-                self.closed_stream()
-            raise
-        if isinstance(stream, Stream):
-            return _Events(self, stream, accepts_gzip(request.headers.get("accept-encoding")))
-        if took:  # admitted, then refused (a ledger that does not exist)
-            self.closed_stream()
-        if stream is not None:
-            return self._json(request, stream)
-        with self._routes.watch(read, queued_s, arrival) as timing:
-            response = self._routes(read)
-            timing.computed()
-            if response is not None:
+    def _read(self, handler: Handler) -> Endpoint:
+        def read(request: Incoming, arrival: Arrival, body: _Body) -> Reply:
+            queued_s = time.monotonic() - arrival.at
+            asked = Request(_target(request), request.url.query, _client(request))
+            with self._routes.watch(asked, queued_s, arrival) as timing:
+                response = handler(asked)
+                timing.computed()
                 return self._json(request, response)
-        return self._page(request, path)
 
-    def _write(self, request: Incoming, body: _Body) -> Reply:
-        """Answer a write through `writes`; a method and path it does not name are a 404."""
-        write = WriteRequest(request.method, _target(request), _client(request), request.headers, body)
-        response = self._writes(write)
-        return _not_found() if response is None else self._json(request, response)
+        return self._endpoint(read)
 
-    def _page(self, request: Incoming, path: str) -> Reply:
-        if self._writes.post_only(path):
-            return Reply(status_code=405, headers={"allow": "POST"})
-        if path in _PAGES or path.startswith("/flow/") and path[6:] in self._flows - {"board"}:
-            return self._file(request, path, "/index.html")
-        return self._file(request, path, request.scope["path"])
+    def _written(self, handler: WriteHandler) -> Endpoint:
+        def write(request: Incoming, arrival: Arrival, body: _Body) -> Reply:
+            asked = WriteRequest(request.method, _target(request), _client(request), request.headers, body)
+            response = handler(asked)
+            if response is None:
+                return _not_found()  # a push this deployment leaves unconfigured
+            reply = self._json(request, response)
+            self._snapshots.require_current()  # a write is answered once the snapshot read after it holds what it published
+            return reply
 
-    def _file(self, request: Incoming, path: str, name: str) -> Reply:
-        """The static file `name` names, gzipped when it is text and the page accepts gzip; `path` is the request's."""
-        file = self._static.joinpath(*(part for part in name.split("/") if part not in ("", ".", "..")))
-        try:
-            stat = file.stat()
-        except OSError:
+        return self._endpoint(write)
+
+    def _streamed(self, handler: StreamHandler) -> Endpoint:
+        def open_stream(request: Incoming, arrival: Arrival, body: _Body) -> Reply:
+            asked = Request(_target(request), request.url.query, _client(request))
+            took = False
+
+            def admit() -> bool:
+                nonlocal took
+                took = self._admit()
+                return took
+
+            try:
+                stream = handler(asked, admit)
+            except BaseException:
+                if took:
+                    self.closed_stream()
+                raise
+            if isinstance(stream, Stream):
+                return _Events(self, stream)
+            if took:  # admitted, then refused (a ledger that does not exist)
+                self.closed_stream()
+            return self._json(request, stream)
+
+        opening = self._endpoint(open_stream)
+
+        async def endpoint(request: Incoming) -> Reply:
+            if request.method == "HEAD":
+                return Reply(headers=_EVENT_HEADERS)  # the headers a GET sends, without opening a stream
+            return await opening(request)
+
+        return endpoint
+
+    def _endpoint(self, work: Work) -> Endpoint:
+        async def endpoint(request: Incoming) -> Reply:
+            return await self._worker(request, work)
+
+        return endpoint
+
+    async def _page(self, request: Incoming) -> Reply:
+        return await self._files.get_response("index.html", request.scope)
+
+    async def _flow(self, request: Incoming) -> Reply:
+        flow = request.path_params["flow"]
+        if flow == "board" or flow not in self._flows:
             return _not_found()
-        if not file.is_file():
-            return _not_found()
-        headers = {
-            "content-type": _SCRIPTS.get(file.suffix.lower())
-            or mimetypes.guess_type(file.name)[0]
-            or "application/octet-stream"
-        }
-        if path.startswith(_ASSETS):
-            headers["cache-control"] = _KEPT
-        if file.name.endswith(_TEXT) and accepts_gzip(request.headers.get("accept-encoding")):
-            headers |= {"content-encoding": "gzip", "vary": "Accept-Encoding"}
-            return Reply(_gzipped(str(file), stat.st_mtime_ns), headers=headers)
-        return FileResponse(file, headers=headers, stat_result=stat)
+        return await self._page(request)
+
+    async def _file(self, request: Incoming) -> Reply:
+        return await self._files.get_response(request.path_params["path"], request.scope)
 
     def _json(self, request: Incoming, response: Response) -> Reply:
         """`response` as it says: JSON unless told otherwise; an `Encoded` body is sent as the gzip it already holds to a
-        page that accepts gzip."""
+        page that accepts gzip, and any other is left to the `Gzip` middleware."""
         body, status, cache, content_type, retry_after, close = response
-        accepted = request.headers.get("accept-encoding")
-        if isinstance(body, Encoded):
-            body, gzipped = body.body, body.gzipped if accepts_gzip(accepted) else None
-        else:
-            gzipped = compressed(body, accepted)
         headers = {"content-type": content_type, "cache-control": cache}
+        if isinstance(body, Encoded):
+            gzipped = body.gzipped if accepts_gzip(request.headers.get("accept-encoding")) else None
+            body = body.body if gzipped is None else gzipped
+            if gzipped is not None:
+                headers["content-encoding"] = "gzip"
         if retry_after is not None:
             headers["retry-after"] = str(retry_after)
-        if gzipped is not None:
-            body = gzipped
-            headers["content-encoding"] = "gzip"
         if close and request.scope["http_version"] != "2":  # HTTP/2 has no connection header, and a stream ends alone
             headers["connection"] = "close"
-        if request.method != "GET":
-            self._snapshots.require_current()  # a write is answered once the snapshot read after it holds what it published
+        if request.method == "HEAD":
+            return Reply(b"", status, headers | {"content-length": str(len(body))})
         return Reply(body, status, headers)
 
 

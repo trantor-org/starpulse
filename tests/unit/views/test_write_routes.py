@@ -17,6 +17,7 @@ from starpulse.views.services import Services
 from starpulse.views.write_routes import WriteRequest, WriteRoutes
 
 from tests.fake_board import bare_board
+from tests.unit.views.routing import answer, handler_for
 
 _JSON = {"Content-Type": "application/json"}
 
@@ -52,7 +53,7 @@ def _write(
     client: str = "127.0.0.1",
 ) -> Response | None:
     sent = {"Content-Length": str(len(body)), **(headers if headers is not None else _JSON)}
-    return routes(WriteRequest(method, path, client, sent, lambda size: body[:size]))
+    return answer(routes.routes(), WriteRequest(method, path, client, sent, lambda size: body[:size]))
 
 
 def _json(response: Response) -> dict:
@@ -147,7 +148,7 @@ def test_a_push_over_its_limit_is_refused_unread_and_closes_the_connection(feed:
         raise AssertionError("an oversized body is not read")
 
     request = WriteRequest("POST", "/api/pulls/refresh", "127.0.0.1", {"Content-Length": str(10**9)}, unread)
-    response = routes(request)
+    response = answer(routes.routes(), request)
 
     assert response is not None
     assert response.status == 413
@@ -160,7 +161,7 @@ def test_an_unreadable_length_on_a_push_is_read_as_empty(feed: BoardFeed, tmp_pa
         "POST", "/api/pulls/refresh", "127.0.0.1", {"Content-Length": "many"}, lambda size: b"x" * size
     )
 
-    response = routes(request)
+    response = answer(routes.routes(), request)
 
     assert response is not None
     assert _json(response) == {"error": "auth=None body="}
@@ -179,8 +180,11 @@ def test_an_unreadable_length_on_a_push_is_read_as_empty(feed: BoardFeed, tmp_pa
         ("/", False),
     ],
 )
-def test_post_only_names_the_paths_a_get_is_refused(routes: WriteRoutes, path: str, post_only: bool) -> None:
-    assert routes.post_only(path) is post_only
+def test_a_get_reaches_no_write_route(routes: WriteRoutes, path: str, post_only: bool) -> None:
+    table = routes.routes()
+
+    assert handler_for(table, path, "GET") is None
+    assert (handler_for(table, path, "POST") is not None) is post_only
 
 
 def test_a_take_over_post_sends_the_update_to_the_tasks_workflow(feed: BoardFeed, tmp_path: Path) -> None:

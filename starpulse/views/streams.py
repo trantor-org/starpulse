@@ -67,6 +67,10 @@ class EventText:
             return text
 
 
+Admit = Callable[[], bool]
+StreamHandler = Callable[[Request, Admit], "Stream | Response"]
+
+
 class Stream(NamedTuple):
     """An open stream: `frames` are the bytes to write, in order, until the client leaves (the caller then closes the
     generator); `release` detaches the stream from the feed once it ends."""
@@ -81,8 +85,7 @@ def _frame(name: str, data: str) -> bytes:
 
 class Streams:
     """The streams the page holds open: the Board's events, a session's held tasks, the lanes and one Ledger's rows. A
-    call answers a `Request` with the `Stream` to write, a `Response` where it refuses to open one, or None where the
-    path is no stream."""
+    route answers a `Request` with the `Stream` to write, or a `Response` where it refuses to open one."""
 
     def __init__(
         self,
@@ -96,24 +99,36 @@ class Streams:
         self._event_text = EventText()
         self._column_views = ColumnViews()
 
-    def __call__(self, request: Request, admit: Callable[[], bool]) -> Stream | Response | None:
-        """`admit` moves the connection's worker into the stream pool and says whether there was room."""
-        path, query = request.path, parse_qs(request.query)
-        if path == "/api/events":
-            return self._admitted(admit, lambda: self._events(query.get("snapshot") == ["ref"]))
-        if path == _HELD:
-            assignee = (query.get("assignee") or [""])[0]
-            if not assignee:
-                return Response(_error(f"name the session: {_HELD}?assignee=<session>"), 400)
-            return self._admitted(admit, lambda: self._columns("held", assignee))
-        if path == _LANES:
-            return self._admitted(admit, lambda: self._columns("lanes", None, query.get("state", [])))
-        if path.startswith(_LEDGER) and path.removeprefix(_LEDGER).endswith("/events"):
-            event = unquote(path.removeprefix(_LEDGER).partition("/")[0])
-            return self._admitted(admit, lambda: self._ledger(event))
-        return None
+    def routes(self) -> list[tuple[str, StreamHandler]]:
+        """Every stream as its path template (`ReadRoutes.routes` says how it is written) and its handler, which takes
+        the request and `admit`, which moves the connection's worker into the stream pool and says whether there was
+        room."""
+        return [
+            ("/api/events", self._board),
+            (_HELD, self._held),
+            (_LANES, self._lanes),
+            (f"{_LEDGER}{{rest:path}}/events", self._ledger_rows),
+        ]
 
-    def _admitted(self, admit: Callable[[], bool], open_stream: Callable[[], Stream | Response]) -> Stream | Response:
+    def _board(self, request: Request, admit: Admit) -> Stream | Response:
+        by_ref = parse_qs(request.query).get("snapshot") == ["ref"]
+        return self._admitted(admit, lambda: self._events(by_ref))
+
+    def _held(self, request: Request, admit: Admit) -> Stream | Response:
+        assignee = (parse_qs(request.query).get("assignee") or [""])[0]
+        if not assignee:
+            return Response(_error(f"name the session: {_HELD}?assignee=<session>"), 400)
+        return self._admitted(admit, lambda: self._columns("held", assignee))
+
+    def _lanes(self, request: Request, admit: Admit) -> Stream | Response:
+        states = parse_qs(request.query).get("state", [])
+        return self._admitted(admit, lambda: self._columns("lanes", None, states))
+
+    def _ledger_rows(self, request: Request, admit: Admit) -> Stream | Response:
+        event = unquote(request.path.removeprefix(_LEDGER).partition("/")[0])
+        return self._admitted(admit, lambda: self._ledger(event))
+
+    def _admitted(self, admit: Admit, open_stream: Callable[[], Stream | Response]) -> Stream | Response:
         if not admit():
             return Response(_error("too many open streams; retry shortly"), 503, retry_after=_STREAM_RETRY_S)
         return open_stream()
