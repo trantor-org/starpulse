@@ -5,6 +5,7 @@ import { createHistory } from "../../api/history";
 import type { MachineEvent, Roles } from "../../api/types.gen";
 import { ANIM_UNTIL, spanOf, starfield, type Line, type Scene } from "./sunsEngine";
 import { css, jobOf, sceneOf, type View } from "./sunsScene";
+import { tint } from "./tint";
 
 /** What the Tasks panel needs of a board card; a Kanban card has these and more. */
 export interface DrillTask {
@@ -27,9 +28,10 @@ interface Props {
 }
 
 const W = 1440, H = 900, RECENT = 14;
+const LANE = { stroke: tint("slate", 16) }, GUIDE = { stroke: tint("slate", 10) }, GROUP = { stroke: tint("released", 38) };
 const SVG = { position: "absolute", left: 0, top: 0, pointerEvents: "none" } as const;
-const PANEL = { position: "absolute", top: 0, bottom: 0, width: 250, background: "rgba(5,7,13,.55)", padding: "20px 18px", boxSizing: "border-box" } as const;
-const HEAD = { letterSpacing: ".22em", fontSize: ".78em", color: "#6b7a93" } as const;
+const PANEL = { position: "absolute", top: 0, bottom: 0, width: 250, background: tint("bg0", 55), padding: "20px 18px", boxSizing: "border-box" } as const;
+const HEAD = { letterSpacing: ".22em", fontSize: ".78em", color: "var(--muted)" } as const;
 const NAV = { display: "flex", alignItems: "center", gap: 12, padding: "6px 18px", marginLeft: -18 } as const;
 const fit = () => Math.min(window.innerWidth / W, window.innerHeight / H);
 const clockText = (sec: number) => new Date(sec * 1000).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false, timeZoneName: "short" });
@@ -61,8 +63,8 @@ function Pieces({ g }: { g: Scene }) {
 function Tip({ tip }: { tip: ReturnType<typeof sceneOf>["tip"] }) {
   return tip && (
     <div role="tooltip" style={css(tip.style)}>
-      <div style={{ color: "#f1f5f9", marginBottom: 2 }}>{tip.t}</div>
-      {tip.lines.map((s, i) => <div key={i} style={{ color: "#94a3b8" }}>{s}</div>)}
+      <div style={{ color: "var(--ink-hi)", marginBottom: 2 }}>{tip.t}</div>
+      {tip.lines.map((s, i) => <div key={i} style={{ color: "var(--slate)" }}>{s}</div>)}
     </div>
   );
 }
@@ -112,57 +114,57 @@ export function SunsDrillIn({ tasks, roles, task, onClose, dags, clock = () => D
   }, [clock, onClose, setView]);
 
   return (
-    <div role="dialog" aria-label="In Progress drill-in" className="suns-drill" style={{ position: "fixed", inset: 0, zIndex: 50, overflow: "hidden", background: "#05070d" }}>
-      <div style={{ position: "absolute", left: "50%", top: "50%", width: W, height: H, transform: `translate(-50%,-50%) scale(${scale})`, boxSizing: "border-box", background: "#05070d", color: "#dbe4f3", fontFamily: "Inter,system-ui,sans-serif", fontSize: "calc(14px * var(--fs))", overflow: "hidden" }}>
-        <div style={{ position: "relative", width: W, height: H, overflow: "hidden", background: "radial-gradient(ellipse at 40% 30%, #0b1224 0%, #05070d 70%)" }}>
+    <div role="dialog" aria-label="In Progress drill-in" className="suns-drill" style={{ position: "fixed", inset: 0, zIndex: 50, overflow: "hidden", background: "var(--bg0)" }}>
+      <div style={{ position: "absolute", left: "50%", top: "50%", width: W, height: H, transform: `translate(-50%,-50%) scale(${scale})`, boxSizing: "border-box", background: "var(--bg0)", color: "var(--ink)", fontFamily: "Inter,system-ui,sans-serif", fontSize: "calc(14px * var(--fs))", overflow: "hidden" }}>
+        <div style={{ position: "relative", width: W, height: H, overflow: "hidden", background: "radial-gradient(ellipse at 40% 30%, var(--bg1) 0%, var(--bg0) 70%)" }}>
           {stars.map((st, i) => <span key={i} style={css(st.style)} />)}
-          <nav aria-label="Tasks" style={{ ...PANEL, left: 0, borderRight: "1px solid rgba(148,163,184,.08)", fontSize: ".86em" }}>
-            <div style={{ letterSpacing: ".32em", fontSize: "1.05em", color: "#e2e8f0" }}>STARPULSE</div>
-            <div style={{ marginTop: 8, color: "#94a3b8", fontSize: ".86em" }}>
-              <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "#34d399", marginRight: 6 }} />live · {clockText(now)}
+          <nav aria-label="Tasks" style={{ ...PANEL, left: 0, borderRight: `1px solid ${tint("slate", 8)}`, fontSize: ".86em" }}>
+            <div style={{ letterSpacing: ".32em", fontSize: "1.05em", color: "var(--ink-hi)" }}>STARPULSE</div>
+            <div style={{ marginTop: 8, color: "var(--slate)", fontSize: ".86em" }}>
+              <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "var(--ok)", marginRight: 6 }} />live · {clockText(now)}
             </div>
             <div style={{ ...HEAD, margin: "28px 0 8px" }}>VIEWS</div>
-            <div style={{ ...NAV, background: "linear-gradient(90deg,rgba(167,139,250,.16),transparent)", borderLeft: "2px solid #a78bfa" }}>
-              <span style={{ width: 12, height: 12, borderRadius: 3, border: "1px solid #c4b5fd" }} /><span style={{ flex: 1, color: "#e2e8f0" }}>Star Map</span>
+            <div style={{ ...NAV, background: `linear-gradient(90deg,${tint("agent", 16)},transparent)`, borderLeft: "2px solid var(--agent)" }}>
+              <span style={{ width: 12, height: 12, borderRadius: 3, border: "1px solid var(--agent-text)" }} /><span style={{ flex: 1, color: "var(--ink-hi)" }}>Star Map</span>
             </div>
             <div style={NAV}>
-              <span style={{ width: 12, height: 12, borderRadius: 3, border: "1px solid #64748b" }} /><span style={{ flex: 1, color: "#cbd5e1" }}>Kanban</span><span style={{ color: "#6b7a93", fontSize: ".86em" }}>{tasks.length}</span>
+              <span style={{ width: 12, height: 12, borderRadius: 3, border: "1px solid var(--dim)" }} /><span style={{ flex: 1, color: "var(--ink-2)" }}>Kanban</span><span style={{ color: "var(--muted)", fontSize: ".86em" }}>{tasks.length}</span>
             </div>
             <div style={NAV}>
-              <span style={{ width: 12, height: 12, borderRadius: 3, border: "1px solid #64748b" }} /><span style={{ flex: 1, color: "#cbd5e1" }}>DAGs</span><span style={{ color: "#6b7a93", fontSize: ".86em" }}>{dags || ""}</span>
+              <span style={{ width: 12, height: 12, borderRadius: 3, border: "1px solid var(--dim)" }} /><span style={{ flex: 1, color: "var(--ink-2)" }}>DAGs</span><span style={{ color: "var(--muted)", fontSize: ".86em" }}>{dags || ""}</span>
             </div>
-            <div style={{ marginTop: 22, border: "1px solid rgba(148,163,184,.18)", borderRadius: 6, padding: "6px 10px", color: "#64748b" }}>search…</div>
+            <div style={{ marginTop: 22, border: `1px solid ${tint("slate", 18)}`, borderRadius: 6, padding: "6px 10px", color: "var(--dim)" }}>search…</div>
             <div style={{ ...HEAD, margin: "30px 0 10px", display: "flex", justifyContent: "space-between" }}><span>TASKS</span></div>
-            <div style={{ display: "flex", justifyContent: "space-between", color: "#94a3b8", fontSize: ".86em", marginBottom: 4 }}><span>In Progress</span><span>{jobs.length}</span></div>
+            <div style={{ display: "flex", justifyContent: "space-between", color: "var(--slate)", fontSize: ".86em", marginBottom: 4 }}><span>In Progress</span><span>{jobs.length}</span></div>
             {s.fleet.map((f) => (
               <button key={f.id} type="button" aria-label={f.aria} aria-current={f.on} onClick={f.pick}
-                style={{ all: "unset", cursor: "pointer", display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "baseline", width: "100%", boxSizing: "border-box", padding: "5px 6px", margin: "0 -6px", borderRadius: 4, background: f.on ? "rgba(167,139,250,.12)" : undefined }}>
-                <span style={{ fontFamily: "JetBrains Mono,monospace", fontSize: ".95em", color: f.on ? "#ede9fe" : "#dbe4f3" }}>{f.id}</span>
-                <span style={{ color: "#6b7a93", fontSize: ".86em" }}>{f.where}</span>
+                style={{ all: "unset", cursor: "pointer", display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "baseline", width: "100%", boxSizing: "border-box", padding: "5px 6px", margin: "0 -6px", borderRadius: 4, background: f.on ? tint("agent", 12) : undefined }}>
+                <span style={{ fontFamily: "JetBrains Mono,monospace", fontSize: ".95em", color: f.on ? "var(--agent-hi)" : "var(--ink)" }}>{f.id}</span>
+                <span style={{ color: "var(--muted)", fontSize: ".86em" }}>{f.where}</span>
                 <span style={css(f.bar)} />
               </button>
             ))}
           </nav>
-          <section aria-label="Recent" style={{ ...PANEL, right: 0, borderLeft: "1px solid rgba(148,163,184,.08)", fontSize: ".8em" }}>
-            <div style={{ letterSpacing: ".22em", color: "#6b7a93", marginBottom: 10, fontSize: ".9em" }}>RECENT</div>
+          <section aria-label="Recent" style={{ ...PANEL, right: 0, borderLeft: `1px solid ${tint("slate", 8)}`, fontSize: ".8em" }}>
+            <div style={{ letterSpacing: ".22em", color: "var(--muted)", marginBottom: 10, fontSize: ".9em" }}>RECENT</div>
             {recent.map((r, i) => (
-              <div key={i} style={{ fontFamily: "JetBrains Mono, monospace", color: "#cbd5e1", padding: "2px 0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                <span style={{ color: "#475569", marginRight: 8 }}>{hm(r.at)}</span>{r.text}
+              <div key={i} style={{ fontFamily: "JetBrains Mono, monospace", color: "var(--ink-2)", padding: "2px 0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                <span style={{ color: "var(--faint)", marginRight: 8 }}>{hm(r.at)}</span>{r.text}
               </div>
             ))}
             {s.det && (
-              <section aria-label="Details" style={{ position: "absolute", inset: 0, background: "#070b16", padding: "20px 18px", boxSizing: "border-box" }}>
+              <section aria-label="Details" style={{ position: "absolute", inset: 0, background: "var(--glass)", padding: "20px 18px", boxSizing: "border-box" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                  <span style={{ letterSpacing: ".22em", color: "#6b7a93", fontSize: ".9em" }}>DETAILS</span>
-                  <button type="button" aria-label="Close details" onClick={() => setView({ det: null })} style={{ all: "unset", cursor: "pointer", color: "#94a3b8", fontSize: "1.2em", lineHeight: 1, padding: "0 4px" }}>×</button>
+                  <span style={{ letterSpacing: ".22em", color: "var(--muted)", fontSize: ".9em" }}>DETAILS</span>
+                  <button type="button" aria-label="Close details" onClick={() => setView({ det: null })} style={{ all: "unset", cursor: "pointer", color: "var(--slate)", fontSize: "1.2em", lineHeight: 1, padding: "0 4px" }}>×</button>
                 </div>
-                <div style={{ marginTop: 14, color: "#f1f5f9", fontSize: "1.15em" }}>{s.det.title}</div>
-                <div style={{ marginTop: 4, color: "#94a3b8" }}>{s.det.sub}</div>
+                <div style={{ marginTop: 14, color: "var(--ink-hi)", fontSize: "1.15em" }}>{s.det.title}</div>
+                <div style={{ marginTop: 4, color: "var(--slate)" }}>{s.det.sub}</div>
                 <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 10 }}>
                   {s.det.rows.map((r, i) => (
                     <div key={i}>
-                      <div style={{ color: "#6b7a93", fontSize: ".86em", letterSpacing: ".06em" }}>{r.k}</div>
-                      <div style={{ color: r.c ?? "#dbe4f3", marginTop: 2, lineHeight: 1.45 }}>{r.v}</div>
+                      <div style={{ color: "var(--muted)", fontSize: ".86em", letterSpacing: ".06em" }}>{r.k}</div>
+                      <div style={{ color: r.c ?? "var(--ink)", marginTop: 2, lineHeight: 1.45 }}>{r.v}</div>
                     </div>
                   ))}
                 </div>
@@ -170,17 +172,17 @@ export function SunsDrillIn({ tasks, roles, task, onClose, dags, clock = () => D
             )}
           </section>
           <svg width={W} height={H} style={SVG} aria-hidden="true">
-            <path d={s.paths.lane} fill="none" stroke="rgba(148,163,184,.16)" strokeWidth={1} />
-            <path d={s.paths.guide} fill="none" stroke="rgba(148,163,184,.10)" strokeWidth={1} strokeDasharray="1 5" />
-            <path d={s.paths.grp} fill="none" stroke="rgba(94,234,212,.38)" strokeWidth={1} />
+            <path d={s.paths.lane} fill="none" style={LANE} strokeWidth={1} />
+            <path d={s.paths.guide} fill="none" style={GUIDE} strokeWidth={1} strokeDasharray="1 5" />
+            <path d={s.paths.grp} fill="none" style={GROUP} strokeWidth={1} />
           </svg>
           <Lines lines={s.main.L} w={W} h={H} />
           <Pieces g={s.main} />
-          <div style={{ position: "absolute", left: 251, top: 393, width: 939, height: 437, overflowY: "auto", overflowX: "hidden", scrollbarWidth: "thin", scrollbarColor: "rgba(148,163,184,.25) transparent" }}>
+          <div style={{ position: "absolute", left: 251, top: 393, width: 939, height: 437, overflowY: "auto", overflowX: "hidden", scrollbarWidth: "thin", scrollbarColor: `${tint("slate", 25)} transparent` }}>
             <div style={{ position: "relative", left: -251, top: s.rowsTop, width: 1190, height: s.rowsH, marginBottom: s.rowsTop }}>
               <svg width={1190} height={s.rowsH} style={SVG} aria-hidden="true">
-                <path d={s.rpaths.lane} fill="none" stroke="rgba(148,163,184,.16)" strokeWidth={1} />
-                <path d={s.rpaths.grp} fill="none" stroke="rgba(94,234,212,.38)" strokeWidth={1} />
+                <path d={s.rpaths.lane} fill="none" style={LANE} strokeWidth={1} />
+                <path d={s.rpaths.grp} fill="none" style={GROUP} strokeWidth={1} />
               </svg>
               <Lines lines={s.rows.L} w={1190} h={s.rowsH} />
               <Pieces g={s.rows} />
@@ -189,11 +191,11 @@ export function SunsDrillIn({ tasks, roles, task, onClose, dags, clock = () => D
           </div>
           <Tip tip={s.tip} />
           <div style={{ position: "absolute", left: 274, top: 16, display: "flex", flexDirection: "column", gap: 9 }}>
-            <span style={{ fontSize: ".86em", color: "#94a3b8" }}>
-              <button type="button" onClick={onClose} aria-label="Back to the Board" style={{ all: "unset", cursor: "pointer" }}>Board</button> <span style={{ color: "#475569" }}>›</span> <span style={{ color: "#e2e8f0" }}>In Progress</span>
+            <span style={{ fontSize: ".86em", color: "var(--slate)" }}>
+              <button type="button" onClick={onClose} aria-label="Back to the Board" style={{ all: "unset", cursor: "pointer" }}>Board</button> <span style={{ color: "var(--faint)" }}>›</span> <span style={{ color: "var(--ink-hi)" }}>In Progress</span>
             </span>
-            <span style={{ fontSize: ".93em", color: "#dbe4f3", letterSpacing: ".05em" }}>in-progress</span>
-            <span style={{ fontSize: ".72em", color: "#6b7a93", letterSpacing: ".04em" }}>{jobs.length} tasks · showing {s.job.id}</span>
+            <span style={{ fontSize: ".93em", color: "var(--ink)", letterSpacing: ".05em" }}>in-progress</span>
+            <span style={{ fontSize: ".72em", color: "var(--muted)", letterSpacing: ".04em" }}>{jobs.length} tasks · showing {s.job.id}</span>
           </div>
         </div>
       </div>

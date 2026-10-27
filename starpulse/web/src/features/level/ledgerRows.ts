@@ -8,12 +8,16 @@
 import { statusLine, type LineCtx } from "./ledger";
 import { portOf, type Pins } from "./ledgerPins";
 import { PAGE, chip, footer, place, thumbOf, type Scroll } from "./ledgerScroll";
+import { ACT, MUTED, OFF, mix, onTheme, token } from "../../render/palette";
 import type { Glyph, LedgerView } from "../../render/scene";
 import type { LedgerRow } from "../../api";
 
-export const AMBER = "#f59e0b";
-export const CROSS = "#c084fc";
-const ACT = "#fbbf24", MUTED = "#94a3b8", INK = "#dbe4f3", BG = "rgba(6,10,20,0.9)";
+/** An ambiguous pairing, and the cross lane of another repository's merge: shades of the hold and agent roles, repainted with the theme. */
+export let AMBER = "", CROSS = "";
+let INK = "", NIGHT = "";
+onTheme(() => {
+  [AMBER, CROSS, INK, NIGHT] = [mix("run", "hold", 0.7), mix("agent", "fail", 0.15), token("ink"), token("bg0")];
+});
 const NONE: ReadonlySet<string> = new Set();
 
 /** A rectangle in world units. */
@@ -125,7 +129,7 @@ export function drawRows(ink: Ink, f: RowsFrame): Hits {
   const tip = chip(sc, vp);
   if (tip) {
     const cx = (J.x + right) / 2, cy = Math.min(vp.top + px(14), vp.top + vp.view / 2), w = ink.width(tip, px(11), 500) + px(22), box = { x0: cx - w / 2, y0: cy - px(10), x1: cx + w / 2, y1: cy + px(10) };
-    ink.rect(box, "rgba(6,10,20,0.92)", rgba(sc.fresh ? ACT : MUTED, 0.6), 1);
+    ink.rect(box, rgba(NIGHT, 0.92), rgba(sc.fresh ? ACT : MUTED, 0.6), 1);
     ink.text(tip, cx, cy, px(11), sc.fresh ? ACT : rgba(INK, 0.85), "center", 500);
     hits.chip = box;
   }
@@ -134,7 +138,7 @@ export function drawRows(ink: Ink, f: RowsFrame): Hits {
 
 /** The unresolved band: a tint and a red edge down the spine behind the pinned rows, drawn above the rows' viewport, its count over them and, at its right, a rerun under way. */
 function drawBand(ink: Ink, f: RowsFrame, at: (key: string, y: number) => { y: number; a: number; age: number | undefined }, ys: Map<string, number>) {
-  const { led, px, pins } = f, g = led.grid!, red = f.palette.failed ?? "#fb7185", right = led.cols[led.cols.length - 1].x1;
+  const { led, px, pins } = f, g = led.grid!, red = f.palette.failed ?? OFF, right = led.cols[led.cols.length - 1].x1;
   if (!pins.shown.length) return;
   const y0 = g.top, y1 = g.top + pins.shown.length * g.rh, label = `UNRESOLVED · ${pins.failed} failed run${pins.failed > 1 ? "s" : ""}${pins.below ? ` (+${pins.below} below)` : ""}`;
   ink.rect({ x0: g.label.x, y0, x1: right, y1 }, rgba(red, 0.05));
@@ -154,10 +158,10 @@ function drawRow(ink: Ink, f: RowsFrame, row: LedgerRow, where: { y: number; a: 
     ink.stroke([{ x: x0, y: y0 }, { x: right, y: y0 }, { x: right, y: y1 }, { x: x0, y: y1 }, { x: x0, y: y0 }], rgba(ACT, 0.5), 1);
   }
   if (cross) {
-    ink.dot(g.lane, y, px(3.6), "rgba(6,10,20,1)");
+    ink.dot(g.lane, y, px(3.6), NIGHT);
     ink.circle(g.lane, y, px(3.6), rgba(CROSS, 0.9 * a), px(1.3));
     ink.stroke([{ x: J.x, y }, { x: g.lane - px(4), y }], rgba(CROSS, 0.25 * a), 1);
-  } else if (row.pinned) ink.star4(J.x, y, px(6.5), f.palette.failed ?? "#fb7185");
+  } else if (row.pinned) ink.star4(J.x, y, px(6.5), f.palette.failed ?? OFF);
   else ink.dot(J.x, y, px(3.4), rgba(ACT, 0.85 * a));
   if (age !== undefined && age < RING * 1.3) ink.pulse(cross ? g.lane : J.x, y, px(3.4), age / RING, ACT, 22);
   // the label: the time and task, the PR and commit after them while there is room, and the task's title under them
@@ -178,7 +182,7 @@ function drawRow(ink: Ink, f: RowsFrame, row: LedgerRow, where: { y: number; a: 
       for (const [p, q] of gl.links) ink.stroke([pos(p), pos(q)], rgba(color(q.name), 0.5 * a), 1);
       for (const n of gl.nodes) {
         const c = color(n.name), idle = stepOf(n.name) === "not_started", { x, y: ny } = pos(n);
-        ink.dot(x, ny, g.nr, BG);
+        ink.dot(x, ny, g.nr, rgba(NIGHT, 0.9));
         ink.circle(x, ny, g.nr, rgba(c, (idle ? 0.45 : 0.85) * a), px(1));
         ink.dot(x, ny, g.nr * 0.34, rgba(c, (idle ? 0.45 : 0.9) * a));
         if (stepOf(n.name) === "running") ink.pulse(x, ny, g.nr, (f.clock * 0.7) % 1, ACT, 10);

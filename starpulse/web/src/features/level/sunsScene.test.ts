@@ -59,4 +59,15 @@ describe("sunsScene", () => {
     s.main.V.find((v) => v.aria === "From Ready")!.enter();
     expect(changes).toEqual([{ hover: "entry:Ready" }]);
   });
+
+  it("styles the tooltip and each fleet bar with the theme's tokens, so a theme change repaints them with no redraw", () => {
+    const s = sceneOf([jobOf("T", "t", undefined, [], NOW)], { ...view("T"), hover: "entry:Ready" }, () => {}, NOW);
+    const colours = (style: string) => style.match(/#[0-9a-fA-F]{3,8}\b|rgba?\(/g);
+
+    expect(s.tip?.style).toContain("var(--bg1)");
+    expect(s.tip?.style).toContain("color:var(--ink)");
+    expect(s.tip?.style).toContain("var(--slate)");
+    expect(colours(s.tip?.style ?? "")).toBeNull();
+    expect(s.fleet[0].bar).toContain("color-mix(in srgb, var(--slate) 12%, transparent)");
+  });
 });

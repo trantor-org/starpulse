@@ -1,6 +1,9 @@
-import { describe, expect, it } from "vitest";
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it } from "vitest";
+import { applyPack } from "../../tests/themeFixtures";
 import { bannerOf, doctorTip, failHtml, focusRow, junctionTip, mergePanel, mergeTip, stepStates, stepTip, type PanelCtx } from "./ledgerPanel";
 import type { Tie } from "./ledger";
+import { AMBER } from "./ledgerRows";
 import type { ContractCheck, ContractReport, LedgerFail, LedgerRow, LedgerRun } from "../../api";
 
 const iso = (s: number) => new Date(s * 1000).toISOString().replace(/\.\d+Z$/, "Z");
@@ -215,5 +218,20 @@ describe("focusRow", () => {
     expect(focusRow(null, rows[2], rows)).toBe(rows[2]);
     expect(focusRow(null, null, rows)).toBe(rows[1]);
     expect(focusRow(null, null, [])).toBeUndefined();
+  });
+});
+
+describe("mergePanel in a chosen theme", () => {
+  afterEach(() => void applyPack("starpulse"));
+
+  it("shades the ambiguous pairing in the theme's amber and a state the palette lacks in its slate", () => {
+    const t = applyPack("nord");
+    const runs = { healthcheck: run({ status: "running", inferred: true, ambiguous: 2, steps: { index: "succeeded" } }) };
+
+    const panel = mergePanel(row({ runs }), ctx());
+
+    expect(panel).toContain(`style="color:${AMBER}">≈ paired by time`);
+    expect(AMBER).not.toBe("#f59e0b");
+    expect(panel).toContain(`<b style="color:${t.slate}">running</b>`);
   });
 });

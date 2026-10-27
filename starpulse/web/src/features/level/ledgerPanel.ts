@@ -1,5 +1,7 @@
 // The Ledger's merge panel, tips and doctor banner: the words a merge row, its panel and the contract banner show. Pure: the renderer owns when they
 // open and where they sit, and hands over the clock, the colours and the links.
+import { MUTED } from "../../render/palette";
+import { AMBER } from "./ledgerRows";
 import { dur, markOf, shortApplied, statusLine, type Tie } from "./ledger";
 import { esc } from "../../render/panels";
 import type { GNode, LedgerView, Scene } from "../../render/scene";
@@ -70,7 +72,7 @@ export function rerunHtml(row: LedgerRow, ctx: PanelCtx): string {
 const pairing = (row: LedgerRow, run: LedgerRun) => {
   if (markOf(run) === "keyed") return `<div class="k">paired by commit: AFTER=${esc(sha7(row))}</div>`;
   const n = run.ambiguous;
-  return `<div class="k" style="${n ? "color:#f59e0b" : ""}">≈ paired by time: the newest merge before the run started${n ? `; ${n} more merge${n > 1 ? "s" : ""} landed first, so it may be theirs` : ""}</div>`;
+  return `<div class="k" style="${n ? `color:${AMBER}` : ""}">≈ paired by time: the newest merge before the run started${n ? `; ${n} more merge${n > 1 ? "s" : ""} landed first, so it may be theirs` : ""}</div>`;
 };
 
 function tieRow(row: LedgerRow, tie: Tie, ctx: PanelCtx): string {
@@ -81,13 +83,13 @@ function tieRow(row: LedgerRow, tie: Tie, ctx: PanelCtx): string {
   }
   const names = ctx.steps[tie.dag] ?? [], start = epoch(run.startedAt), end = epoch(run.finishedAt), over = run.status !== "running" && run.status !== "queued" && end > 0;
   const chips = names.map((n) => {
-    const s = stepState(run, n, names), c = ctx.palette[s] ?? "#94a3b8";
+    const s = stepState(run, n, names), c = ctx.palette[s] ?? MUTED;
     return `<span class="chip" style="color:${c};border-color:${c}66" title="${esc(s)}">${esc(n)}</span>`;
   }).join(" ");
   const applied = shortApplied(run, ctx.optional[tie.dag] ?? new Set());
   const state = run.status === "queued" ? "waiting to start" : run.status.replace("_", " ");
   const window = start ? ` · ${ctx.hm(start)}${over ? `–${ctx.hm(end)} · ${dur(end - start)}` : ""}` : "";
-  return `<tr>${name}<td><b style="color:${ctx.palette[run.status] ?? "#94a3b8"}">${esc(state)}</b>${window}${applied ? `<div class="k">applied: ${esc(applied)}</div>` : ""}${pairing(row, run)}<div class="steps">${chips}</div></td></tr>`;
+  return `<tr>${name}<td><b style="color:${ctx.palette[run.status] ?? MUTED}">${esc(state)}</b>${window}${applied ? `<div class="k">applied: ${esc(applied)}</div>` : ""}${pairing(row, run)}<div class="steps">${chips}</div></td></tr>`;
 }
 
 /** The panel a clicked merge opens: its commit, where the Board moved it, and each tied DAG's run with its steps, pairing and failure. */
@@ -130,7 +132,7 @@ export const focusRow = (hovered: LedgerRow | null, selected: LedgerRow | null, 
 /** One tied DAG's status line for a merge, coloured by its run's state. */
 function runRow(row: LedgerRow, tie: Tie, ctx: PanelCtx): string {
   const line = statusLine(row, tie, row.runs[tie.dag], { event: ctx.event, now: ctx.now, hm: ctx.hm, optional: ctx.optional[tie.dag] ?? new Set(), by: ctx.by });
-  return `<div style="color:${line.state ? ctx.palette[line.state] ?? "#94a3b8" : "#94a3b8"}">${esc(tie.dag)}: ${esc(line.main)}${line.sub ? ` <span class="k">· ${esc(line.sub)}</span>` : ""}</div>`;
+  return `<div style="color:${line.state ? ctx.palette[line.state] ?? MUTED : MUTED}">${esc(tie.dag)}: ${esc(line.main)}${line.sub ? ` <span class="k">· ${esc(line.sub)}</span>` : ""}</div>`;
 }
 
 /** A merge row's tip: the commit, the task, each tied DAG's status line and its failures. */

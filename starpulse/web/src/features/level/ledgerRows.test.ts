@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it } from "vitest";
+import { applyPack, packTokens } from "../../tests/themeFixtures";
+import { rgba } from "../../render/draw";
+import { mix } from "../../render/palette";
 import { build } from "../../render/scene";
 import { merge, Moves } from "../../render/sky";
 import { AMBER, CROSS, drawRows, type Box, type Ink, type RowsFrame } from "./ledgerRows";
@@ -126,9 +130,9 @@ describe("drawRows", () => {
     drawRows(r.ink, frame(rows));
 
     const dashed = r.strokes.filter((s) => s.dash && s.pts.length === 5);
-    expect(dashed.map((s) => s.col.includes("245,158,11"))).toEqual([false, true]);
-    expect(r.texts.find((t) => t.s.startsWith("≈ 2 in window"))!.col).toContain("245,158,11");
-    expect(AMBER).toBe("#f59e0b");
+    expect(dashed.map((s) => s.col === rgba(AMBER, 0.8))).toEqual([false, true]);
+    expect(r.texts.find((t) => t.s.startsWith("≈ 2 in window"))!.col).toBe(rgba(AMBER, 0.85));
+    expect(AMBER).toBe(mix("run", "hold", 0.7));
   });
 
   it("puts another repository's merge on the cross lane and links it to the pin-bump row that applies it", () => {
@@ -137,13 +141,13 @@ describe("drawRows", () => {
     drawRows(r.ink, f);
 
     const g = f.led.grid!, lane = g.lane;
-    expect(r.circles.some((c) => c.x === lane && c.y === place(f.scroll, g)[1].y && c.col.includes("192,132,252"))).toBe(true);
+    expect(r.circles.some((c) => c.x === lane && c.y === place(f.scroll, g)[1].y && c.col === rgba(CROSS, 0.9))).toBe(true);
     expect(r.texts.find((t) => t.s === "applied by its pin bump bmp0000")).toBeDefined();
     const link = r.strokes.find((s) => s.dash && s.pts.length === 2 && s.pts[0].x === lane && s.pts[0].y === place(f.scroll, g)[1].y)!;
     expect(link.pts[1].y).toBe(place(f.scroll, g)[0].y);
-    expect(link.col).toContain("192,132,252");
+    expect(link.col).toBe(rgba(CROSS, 0.6));
     expect(r.texts.some((t) => t.s === "pin bump")).toBe(true);
-    expect(CROSS).toBe("#c084fc");
+    expect(CROSS).toBe(mix("agent", "fail", 0.15));
   });
 
   it("leaves a cross row unlinked while no shown row has pin-bumped it", () => {
@@ -294,5 +298,39 @@ describe("the unresolved band", () => {
 
     expect(r.texts.find((t) => t.s.startsWith("UNRESOLVED"))!.s).toBe(`UNRESOLVED · ${g.cap + 2} failed runs (+2 below)`);
     expect(r.texts.find((t) => t.s === "↻ forced rerun running · 12 s")).toMatchObject({ y: g.top - 9, clipped: false });
+  });
+});
+
+describe("the rows in a chosen theme", () => {
+  const tokens = packTokens("nord");
+  const hexOf = (col: string) => (col.startsWith("#") ? col : `#${col.match(/\d+/g)!.slice(0, 3).map((n) => Number(n).toString(16).padStart(2, "0")).join("")}`);
+  afterEach(() => void applyPack("starpulse"));
+
+  it("draws every colour from the theme's tokens, the amber and the cross lane as shades of its roles", () => {
+    applyPack("nord");
+    const palette = Object.fromEntries(Object.keys(PALETTE).map((k) => [k, tokens.ok])), allowed = new Set([...Object.values(tokens), mix("run", "hold", 0.7), mix("agent", "fail", 0.15)]);
+    const r = recorder(), rows = [
+      row("bmp", 990, { tasks: [], runs: { "main-follow": run(), "apply-on-merge": run({ inferred: true, ambiguous: 1 }) } }),
+      row("kid", 980, { appliedBy: "bmp", pr: { repo: "starpulse", number: 7, url: "u" } }),
+      row("bad", 970, { pinned: true, runs: { "apply-on-merge": run({ status: "failed" }) } }),
+    ];
+
+    drawRows(r.ink, frame(rows, { palette, lit: "bmp", pins: { shown: [rows[2]], all: [rows[2]], below: 0, failed: 1 } }));
+
+    const drawn = [...r.texts, ...r.strokes, ...r.circles, ...r.stars].map((d) => d.col);
+    expect(drawn.length).toBeGreaterThan(20);
+    expect(drawn.filter((c) => !allowed.has(hexOf(c)))).toEqual([]);
+    expect(r.texts.find((t) => t.s.startsWith("t990"))!.col).toBe(rgba(tokens.ink, 0.92));
+    expect(r.circles.find((c) => c.col === rgba(mix("agent", "fail", 0.15), 0.9))).toBeDefined();
+  });
+
+  it("writes the footer in the theme's slate", () => {
+    applyPack("nord");
+    const f = frame([row("aaa", 990)]);
+    const r = recorder();
+
+    drawRows(r.ink, { ...f, scroll: { ...f.scroll, more: false } });
+
+    expect(r.texts.find((t) => t.s.startsWith("oldest merge"))!.col).toBe(rgba(tokens.slate, 0.55));
   });
 });

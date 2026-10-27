@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest";
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it } from "vitest";
+import { applyPack, packTokens } from "../../tests/themeFixtures";
 import type { Ink } from "./ledgerRows";
 import { drawStrip, type StripFrame } from "./ledgerStripDraw";
 import { stripLabel, stripMarks } from "./ledgerStrip";
@@ -64,5 +66,28 @@ describe("drawStrip", () => {
     const hours = r.texts.filter((t) => /^\d\d:00$/.test(t.s)).map((t) => t.s);
     expect(hours.length).toBeGreaterThanOrEqual(8);
     expect(hours.every((h) => Number(h.slice(0, 2)) % 3 === 0)).toBe(true);
+  });
+});
+
+describe("drawStrip in a chosen theme", () => {
+  const rgba = (hex: string, a: number) => {
+    const n = parseInt(hex.slice(1), 16);
+    return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`;
+  };
+  const t = packTokens("nord");
+  afterEach(() => void applyPack("starpulse"));
+
+  it("draws the baseline, captions and span in the theme's slate and run, repainted without a reload", () => {
+    applyPack("nord");
+    const r = recorder();
+
+    drawStrip(r.ink, frame({ pins: [row(7, { pinned: true })] }));
+
+    const caption = r.texts.find((x) => x.s.startsWith("last 24 h"));
+    const range = r.texts.find((x) => x.s.startsWith("showing") || x.s === stripLabel(frame().inView, 20, 4, "24"));
+    expect(caption?.col).toBe(rgba(t.slate, 0.7));
+    expect(range?.col).toBe(rgba(t.run, 0.6));
+    expect(r.texts.find((x) => x.s === "↻")?.col).toBe(rgba(t.run, 0.9));
+    expect(r.strokes[0].col).toBe(rgba(t.slate, 0.18));
   });
 });
