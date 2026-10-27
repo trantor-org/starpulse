@@ -361,11 +361,13 @@ def refusal(rules: tuple[Rule, ...], before: Record | None, after: Record, actor
     return next((rule for rule in rules if rule.judges(before, after, actor) and not rule.require(after)), None)
 
 
-def standing_refusal(rules: tuple[Rule, ...], front: Mapping[str, Any], body: str, lane: str) -> Rule | None:
-    """The first rule that refuses moving the task to `lane` whoever moves it and whatever other tasks hold, or None.
+def standing_refusal(
+    rules: tuple[Rule, ...], front: Mapping[str, Any], body: str, lane: str, actor: str = ""
+) -> Rule | None:
+    """The first rule that refuses moving the task to `lane` by `actor` whatever other tasks hold, or None.
 
-    A rule that exempts an actor, or reads another task's state, can change its verdict without the task's file
-    changing; the write still enforces it, but a standing verdict recorded with the task leaves it out."""
+    A rule that reads another task's state can change its verdict without the task's file changing; the write still
+    enforces it, but a standing verdict recorded with the task leaves it out."""
     read: list[str] = []
 
     def unread(task: str) -> None:
@@ -375,6 +377,6 @@ def standing_refusal(rules: tuple[Rule, ...], front: Mapping[str, Any], body: st
     after = Record({**front, "status": lane}, body, unread)
     for rule in rules:
         read.clear()
-        if not rule.exempt and rule.judges(before, after, "") and not rule.require(after) and not read:
+        if rule.judges(before, after, actor) and not rule.require(after) and not read:
             return rule
     return None

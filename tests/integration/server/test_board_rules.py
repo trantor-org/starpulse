@@ -9,10 +9,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 from starpulse.board.adapters import native
 from starpulse.board.board_feed import BoardFeed
 from starpulse.cli import agent_cli as cli
-from starpulse.contracts.adapters import Move
+from starpulse.contracts.adapters import Move, Verdict
 from starpulse.runtime.adapter_kit import serve, task, url
 
 from tests.machines import MACHINES, ROLES
@@ -39,11 +40,11 @@ def _served(tmp_path: Path, rules: list[dict[str, Any]]) -> Iterator[str]:
         yield url(server, "")
 
 
-def _page_move(server: str) -> tuple[int, dict[str, Any]]:
-    """The page's move of task-1 to Done: it names no actor, so the board writes it as the operator."""
+def _page_move(server: str, to: str = "done") -> tuple[int, dict[str, Any]]:
+    """The page's move of task-1 to `to`: it names the `operator` actor, as the page does."""
     post = urllib.request.Request(
         f"{server}/api/move",
-        data=json.dumps({"task": "task-1", "to": "done"}).encode(),
+        data=json.dumps({"task": "task-1", "to": to, "actor": "operator"}).encode(),
         headers={"Content-Type": "application/json"},
         method="POST",
     )
@@ -117,6 +118,63 @@ def test_the_actor_a_move_carries_decides_whether_a_rule_exempts_it(
     assert (status, refused) == (409, REFUSED)
     assert (code, via_cli["ok"]) == (0, True)
     assert "status: Done\n" in next(native_root(tmp_path).glob("tasks/*.md")).read_text()
+
+
+QUESTION = {
+    "on": {"from": "Needs attention", "to": "Ready"},
+    "require": {"section": {"heading": "Needs attention", "not_matching": r"\?"}},
+    "unless_actor": ["operator"],
+    "reason": "only the operator answers the question",
+}
+NEEDS_PROFILE = {
+    "on": {"to": "Ready"},
+    "require": {"field": {"field": "profile", "matches": "."}},
+    "reason": "a Ready task needs an agent profile",
+}
+
+
+@contextmanager
+def _asking(tmp_path: Path, **fields: object) -> Iterator[str]:
+    """A server whose board holds `task-1` in Needs attention with a question for the operator, Ready offered."""
+    native_root(tmp_path).mkdir(parents=True)
+    statuses = ["Needs attention", "Ready", "Done"]
+    config = {"project_name": "demo", "statuses": statuses, "task_prefix": "task"}
+    (native_root(tmp_path) / "config.yml").write_text(yaml.safe_dump(config))
+    path = write_task(tmp_path, "task-1", "Needs attention", **fields)
+    path.write_text(path.read_text() + "\n## Needs attention\nWhich one?\n")
+    built = native.board({"guards": [QUESTION, NEEDS_PROFILE]}, tmp_path)
+    ready = Move(allowed=False, reason=QUESTION["reason"], actors={"operator": Verdict(allowed=True)})
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
+    feed.put(task("task-1", "Needs attention", moves={"ready": ready}))
+    with serve(tmp_path, feed, built) as server:
+        yield url(server, "")
+
+
+def test_the_page_moves_a_task_asking_the_operator_a_question_to_ready(tmp_path: Path) -> None:
+    with _asking(tmp_path, profile="'@agent-standard-high'") as server:
+        status, body = _page_move(server, "ready")
+
+    assert status == 200, body
+    assert "status: Ready\n" in next(native_root(tmp_path).glob("tasks/*.md")).read_text()
+
+
+def test_the_page_is_refused_the_ready_profile_it_names_for_a_task_with_none(tmp_path: Path) -> None:
+    with _asking(tmp_path) as server:
+        status, body = _page_move(server, "ready")
+
+    assert (status, body["error"]) == (409, NEEDS_PROFILE["reason"])
+    assert "status: Needs attention\n" in next(native_root(tmp_path).glob("tasks/*.md")).read_text()
+
+
+def test_task_moves_refuses_the_agent_ready_as_task_move_does(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    with _asking(tmp_path, profile="'@agent-standard-high'") as server:
+        assert cli.main(["task", "moves", "task-1", "--server", server], {}) == 0
+        offered = json.loads(capsys.readouterr().out)["moves"]["ready"]
+        code = cli.main(["task", "move", "task-1", "ready", "--server", server], {})
+        refused = json.loads(capsys.readouterr().out)
+
+    assert (offered["allowed"], offered["reason"]) == (False, QUESTION["reason"])
+    assert (code, refused["ok"], refused["reason"]) == (1, False, QUESTION["reason"])
 
 
 def _batch_create(server: str, specs: list[dict[str, Any]]) -> tuple[int, dict[str, Any]]:

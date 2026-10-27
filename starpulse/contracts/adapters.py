@@ -49,6 +49,14 @@ class _Contract(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=True)
 
 
+class Verdict(_Contract):
+    """What a guard says to one actor about a move: allowed, or the reason and skill of the rule that refuses it."""
+
+    allowed: bool = Field(description="False when a guard would refuse the move to this actor.")
+    reason: str = Field(default="", description="What the refusing guard needs; empty when allowed.")
+    skill: str = Field(default="", description="The skill that produces what the guard needs; empty when allowed.")
+
+
 class Move(_Contract):
     """The verdict on moving a task to one column: allowed, or guarded by a declared rule."""
 
@@ -60,17 +68,26 @@ class Move(_Contract):
         description="The actors the machine YAML declares for the event behind the move; empty when it declares none, "
         "and then any actor may make it.",
     )
+    actors: dict[str, Verdict] = Field(
+        default_factory=dict,
+        description="The verdict for an actor a guard treats apart from the rest, such as one it exempts, by actor; "
+        "any other actor meets the move's own.",
+    )
 
     def permits(self, actor: str) -> bool:
         """False when the machine declares writers for the event and `actor` is none of them."""
         return not self.writers or actor in self.writers
 
     def for_actor(self, actor: str) -> Move:
-        """The verdict as `actor` meets it: this move, or a refusal when `actor` is not among its writers."""
-        if self.permits(actor):
-            return self
-        reason = self.reason or f"made by {', '.join(self.writers)}, not {actor}"
-        return self.model_copy(update={"allowed": False, "reason": reason})
+        """The verdict as `actor` meets it: this move with the guard verdict kept for `actor`, or a refusal when `actor`
+        is not among its writers."""
+        move = self
+        if (own := self.actors.get(actor)) is not None:
+            move = self.model_copy(update=own.model_dump())
+        if move.permits(actor):
+            return move
+        reason = move.reason or f"made by {', '.join(move.writers)}, not {actor}"
+        return move.model_copy(update={"allowed": False, "reason": reason})
 
 
 class BoardTask(_Contract):

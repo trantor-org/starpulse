@@ -146,7 +146,7 @@ def test_a_machine_may_declare_an_initial_and_a_final_state_that_are_not_lanes(
 
     flow = feed.snapshot()["flows"][0]
     assert [state["id"] for state in flow["machine"]["states"]] == ["new", "to_do", "in_progress", "done", "archived"]
-    assert flow["agents"][0]["moves"] == {"in_progress": {"allowed": True, "reason": "", "skill": "", "writers": ()}}
+    assert flow["agents"][0]["moves"] == {"in_progress": {"allowed": True, "reason": "", "skill": "", "writers": (), "actors": {}}}
 
 
 def test_a_move_a_board_rule_refuses_is_offered_as_refused_with_the_rules_reason(
@@ -166,6 +166,7 @@ def test_a_move_a_board_rule_refuses_is_offered_as_refused_with_the_rules_reason
             "reason": "A retro ships no pull request",
             "skill": "running-milestone-retros",
             "writers": (),
+            "actors": {},
         }
     }
 

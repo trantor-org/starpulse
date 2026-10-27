@@ -560,6 +560,12 @@ export interface TaskCriterion {
  */
 export interface Move {
   /**
+   * The verdict for an actor a guard treats apart from the rest, such as one it exempts, by actor; any other actor meets the move's own.
+   */
+  actors?: {
+    [k: string]: Verdict;
+  };
+  /**
    * False when a guard the board writer enforces would refuse the move.
    */
   allowed: boolean;
@@ -575,6 +581,23 @@ export interface Move {
    * The actors the machine YAML declares for the event behind the move; empty when it declares none, and then any actor may make it.
    */
   writers?: string[];
+}
+/**
+ * What a guard says to one actor about a move: allowed, or the reason and skill of the rule that refuses it.
+ */
+export interface Verdict {
+  /**
+   * False when a guard would refuse the move to this actor.
+   */
+  allowed: boolean;
+  /**
+   * What the refusing guard needs; empty when allowed.
+   */
+  reason?: string;
+  /**
+   * The skill that produces what the guard needs; empty when allowed.
+   */
+  skill?: string;
 }
 /**
  * The claim a Board task's claim-TTL sweep released: when, and the session, last renewal and TTL it released.

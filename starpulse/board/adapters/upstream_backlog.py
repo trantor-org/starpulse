@@ -218,7 +218,7 @@ class UpstreamBacklog:
         files: Mapping[str, list] | None = None,
         kept: Callable[[dict[str, list]], None] = lambda _files: None,
         retired: Callable[[bool], Iterable[str] | None] = lambda _force=False: None,
-        refusal: Callable[[Mapping[str, Any], str, str], tuple[str, str] | None] = lambda *_: None,
+        refusal: Callable[[Mapping[str, Any], str, str], Mapping[str, Any] | None] = lambda *_: None,
         roles: StateRoles | None = None,
     ) -> None:
         """`files` are the fingerprints a saved Board was placed from (`files`), so the first scan reads only the files
@@ -226,7 +226,8 @@ class UpstreamBacklog:
         text of every retired task, or answers None while that is unchanged since it last answered (a `True` argument
         streams it regardless); a scan settles the ones in the done lane as completed, so a task depending on one is
         not left waiting on a file that is gone. Only their ids are kept, never their text. `refusal` answers, from a task's front matter and body and a lane,
-        the reason and skill of a rule that refuses the move there, which the task's move to that lane then carries."""
+        the update a rule that refuses the move there makes to it (`Move.actors` included), which the task's move to that
+        lane then carries."""
         self.root = root
         self.config = read_config(root)
         self._team = require_project(root, self.config)
@@ -391,7 +392,7 @@ class UpstreamBacklog:
         moves = dict(self._moves.get(lane, {}))
         for target, move in moves.items():
             if refused := self._refusal(frontmatter, body, target):
-                moves[target] = move.model_copy(update={"allowed": False, "reason": refused[0], "skill": refused[1]})
+                moves[target] = type(move).model_validate({**move.model_dump(), **refused})
         return moves
 
     def start(
@@ -493,13 +494,13 @@ def project_board(
     base: Path,
     writers: Callable[[BacklogConfig, StateRoles], Mapping[str, Any]],
     retired: Callable[[bool], Iterable[str] | None] = lambda _force=False: None,
-    refusal: Callable[[Mapping[str, Any], str, str], tuple[str, str] | None] = lambda *_: None,
+    refusal: Callable[[Mapping[str, Any], str, str], Mapping[str, Any] | None] = lambda *_: None,
 ) -> Board:
     """The Board of the Markdown project in `root`, polled every `settings["interval"]` seconds, with the writers `writers` builds.
 
     Any lane reaches any other unless `settings["machine"]` names a machine file (relative to `base`), whose transitions
     and `writers` then decide which moves are offered and to whom. `retired` is the scan's reader of retired task text;
-    `refusal` is the reason and skill of a board rule that refuses a task's move to a lane.
+    `refusal` is the update a board rule that refuses a task's move to a lane makes to the move.
     """
     interval = float(settings.get("interval", POLL_INTERVAL))
     config = read_config(root)

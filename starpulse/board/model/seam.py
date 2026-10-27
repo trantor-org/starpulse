@@ -198,6 +198,10 @@ class Board:
     """Archives a task from any column; None refuses every archive."""
     restore: TaskRestorer | None = None
     """Returns an archived task to the board's tasks; None refuses every restore."""
+    standing: Callable[[str, str], Mapping[str, Any] | None] | None = None
+    """The update to the move of a task to a lane that the board's rules make for the task as it stands: a refusal, and
+    the verdict of each actor a rule exempts (`Move.actors`); None when no rule refuses. None leaves a read-model move
+    unjudged."""
     complete: TaskCompleter | None = None
     """Completes a Done task; None refuses every complete."""
     retire: TaskRetirer | None = None

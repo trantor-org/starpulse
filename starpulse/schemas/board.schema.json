@@ -29,12 +29,48 @@
           },
           "title": "Writers",
           "type": "array"
+        },
+        "actors": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Verdict"
+          },
+          "description": "The verdict for an actor a guard treats apart from the rest, such as one it exempts, by actor; any other actor meets the move's own.",
+          "title": "Actors",
+          "type": "object"
         }
       },
       "required": [
         "allowed"
       ],
       "title": "Move",
+      "type": "object"
+    },
+    "Verdict": {
+      "additionalProperties": false,
+      "description": "What a guard says to one actor about a move: allowed, or the reason and skill of the rule that refuses it.",
+      "properties": {
+        "allowed": {
+          "description": "False when a guard would refuse the move to this actor.",
+          "title": "Allowed",
+          "type": "boolean"
+        },
+        "reason": {
+          "default": "",
+          "description": "What the refusing guard needs; empty when allowed.",
+          "title": "Reason",
+          "type": "string"
+        },
+        "skill": {
+          "default": "",
+          "description": "The skill that produces what the guard needs; empty when allowed.",
+          "title": "Skill",
+          "type": "string"
+        }
+      },
+      "required": [
+        "allowed"
+      ],
+      "title": "Verdict",
       "type": "object"
     }
   },

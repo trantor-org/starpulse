@@ -69,6 +69,7 @@ def assemble(
         hint=found_backlog(config, base),
         commit={instance.name: instance.commit for instance in config.runs if instance.commit},
         read_model=read_model,
+        standing=board.standing or (lambda *_: None),
     )
     return board, feed
 

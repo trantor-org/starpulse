@@ -482,13 +482,14 @@ unless_actor = ["dagu/reconciler"]
     assert "status: Done\n" in path.read_text()
 
 
-def test_a_standing_refusal_leaves_out_a_rule_that_exempts_an_actor_or_reads_another_task() -> None:
+def test_a_standing_refusal_leaves_out_a_rule_that_reads_another_task_and_one_that_exempts_the_actor() -> None:
     gated: dict[str, Any] = {"on": {"to": "Done"}, "require": {"dependencies": {"all_in": ["Done"]}}, "reason": "r"}
     exempting = {**DONE_NEEDS_PR, "unless_actor": ["operator"]}
     front = {"status": "In Progress", "dependencies": ["task-2"]}
 
-    assert rules.standing_refusal(rules.load([gated, exempting]), front, "", "done") is None
-    assert rules.standing_refusal(rules.load([DONE_NEEDS_PR]), front, "", "done") is not None
+    assert rules.standing_refusal(rules.load([gated]), front, "", "done") is None
+    assert rules.standing_refusal(rules.load([gated, exempting]), front, "", "done") is not None
+    assert rules.standing_refusal(rules.load([gated, exempting]), front, "", "done", "operator") is None
 
 
 def test_a_config_with_board_rules_is_refused_naming_board_guards(tmp_path: Path) -> None:
