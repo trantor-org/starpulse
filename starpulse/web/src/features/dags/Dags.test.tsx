@@ -108,10 +108,10 @@ describe("the DAGs view's panes", () => {
 
   it("gives a Processing row and the Idle row of its slot one header count and one slot, so they share a top", async () => {
     await draw();
-    const place = (n: string) => ["--hs", "--s"].map((k) => rowOf(n).style.getPropertyValue(k));
+    const place = (n: string) => ["--hs", "--s", "--k", "--b"].map((k) => rowOf(n).style.getPropertyValue(k));
 
     expect(place("deploy")).toEqual(place("pr-watch"));
-    expect(css).toMatch(/#dg :is\(\.drow, \.phead, \.phint\) \{[^}]*transform: translate\(calc\(var\(--c\) \* \(100% \+ var\(--gap\)\)\), calc\(var\(--hs\) \* var\(--H\) \+ var\(--s\) \* var\(--P\)\)\)/);
+    expect(css).toMatch(/#dg :is\(\.drow, \.phead, \.phint\) \{[^}]*transform: translate\(calc\(var\(--c\) \* \(100% \+ var\(--gap\)\)\), calc\(var\(--hs\) \* var\(--H\) \+ var\(--s\) \* var\(--R\) \+ var\(--k\) \* var\(--C\)\)\)/);
   });
 
   it("captions Just finished over the latest finished DAGs of Idle, and a domain where the domain changes", async () => {

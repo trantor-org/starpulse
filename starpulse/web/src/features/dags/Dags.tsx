@@ -35,11 +35,11 @@ function RunBtn({ r, why, run }: { r: Row; why: string | null; run: (r: Row) => 
   );
 }
 
-interface RowProps { r: Row; now: number; spot: boolean; why: string | null; tie: Tie | undefined; ledger?: LedgerGo; run: (r: Row) => void; open: (r: Row) => void; pane: Pane; col: number; hs: number; slot: number; caption: string | null; glide: Glide | undefined }
+interface RowProps { r: Row; now: number; spot: boolean; why: string | null; tie: Tie | undefined; ledger?: LedgerGo; run: (r: Row) => void; open: (r: Row) => void; pane: Pane; col: number; hs: number; slot: number; k: number; band: boolean; caption: string | null; glide: Glide | undefined }
 
 /** One DAG's row, a slot on the stage: where it sits is three custom properties, so a move between panes is its transform's transition and the one element is the whole animation. It draws again only when what it shows changed: its row's reference holds while its DAG does, and a tie is new on every read, so it is compared by what it says. */
-const DagRow = memo(function DagRow({ r, now, spot, why, tie, ledger, run, open, pane, col, hs, slot, caption, glide }: RowProps) {
-  const at = { "--c": col, "--hs": hs, "--s": slot } as CSSProperties;
+const DagRow = memo(function DagRow({ r, now, spot, why, tie, ledger, run, open, pane, col, hs, slot, k, band, caption, glide }: RowProps) {
+  const at = { "--c": col, "--hs": hs, "--s": slot, "--k": k, "--b": Number(band) } as CSSProperties;
   return (
     <div className={`drow p-${r.phase}${r.runSafe ? " startable" : ""}${spot ? " spot" : ""}`} data-dag={r.d.name} data-pane={pane} data-glide={glide} style={at} tabIndex={0} onClick={() => open(r)}
       onKeyDown={(e) => e.key === "Enter" && e.target === e.currentTarget && open(r)}>
@@ -124,7 +124,7 @@ export function Dags({ data, post, openPath, spot = null, opening = null }: { da
   const rs = useMemo(() => filterRows(all, { q, dom }), [all, q, dom]);
   const split = useMemo(() => panes(rs), [rs]);
   const small = useSyncExternalStore(onPhone, phone);
-  const at = useMemo(() => places(split, small), [split, small]);
+  const { at, bands } = useMemo(() => places(split, small), [split, small]);
   const pane = useMemo(() => new Map<string, Pane>([...split.processing.map((r) => [r.d.name, "processing"] as const), ...split.idle.map((r) => [r.d.name, "idle"] as const)]), [split]);
   const caps = useMemo(() => new Map([...captions(split.processing, split.fresh).map((c, i) => [split.processing[i].d.name, c] as const), ...captions(split.idle, split.fresh).map((c, i) => [split.idle[i].d.name, c] as const)]), [split]);
   const gliding = useGlides(pane);
@@ -158,10 +158,10 @@ export function Dags({ data, post, openPath, spot = null, opening = null }: { da
   );
   // the stage's height: the header slots and the rows of its taller column, or of both stacked at a phone's width
   const stacked = Math.max(split.processing.length, 1) + split.idle.length;
-  const stage = { "--cols": small ? 1 : 2, "--hsum": small ? 2 : 1, "--n": small ? stacked : Math.max(split.processing.length, split.idle.length, 1) } as CSSProperties;
+  const stage = { "--cols": small ? 1 : 2, "--hsum": small ? 2 : 1, "--n": small ? stacked : Math.max(split.processing.length, split.idle.length, 1), "--K": bands } as CSSProperties;
   const head = (id: Pane, title: string, n: number) => {
     const w = at.get(`${id}-head`)!;
-    return <div className="phead" data-pane={id} style={{ "--c": w.col, "--hs": w.hs, "--s": w.slot } as CSSProperties}><span className="pt">{title}</span><span className="c">{n}</span></div>;
+    return <div className="phead" data-pane={id} style={{ "--c": w.col, "--hs": w.hs, "--s": w.slot, "--k": w.k } as CSSProperties}><span className="pt">{title}</span><span className="c">{n}</span></div>;
   };
 
   return (
@@ -190,11 +190,11 @@ export function Dags({ data, post, openPath, spot = null, opening = null }: { da
           <div className="dstage" style={stage}>
             {head("processing", "Processing", split.processing.length)}
             {head("idle", "Idle", split.idle.length)}
-            {!split.processing.length && <div className="phint" style={{ "--c": 0, "--hs": 1, "--s": 0 } as CSSProperties}>Nothing is running</div>}
+            {!split.processing.length && <div className="phint" style={{ "--c": 0, "--hs": 1, "--s": 0, "--k": at.get("processing-hint")!.k } as CSSProperties}>Nothing is running</div>}
             {rs.map((r) => {
               const w = at.get(r.d.name)!;
               return <DagRow key={r.d.name} r={r} now={now} spot={r.d.name === spot} why={why(r)} tie={ties(data, r.d.name)[0]} ledger={ledger} run={run} open={openRow}
-                pane={pane.get(r.d.name)!} col={w.col} hs={w.hs} slot={w.slot} caption={caps.get(r.d.name) ?? null} glide={gliding.get(r.d.name)} />;
+                pane={pane.get(r.d.name)!} col={w.col} hs={w.hs} slot={w.slot} k={w.k} band={w.band} caption={caps.get(r.d.name) ?? null} glide={gliding.get(r.d.name)} />;
             })}
           </div>
         </Viewport>

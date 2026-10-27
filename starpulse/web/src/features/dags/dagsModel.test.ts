@@ -323,13 +323,24 @@ describe("the activity panes", () => {
 
 describe("the panes' row grid", () => {
   it("puts the Processing row and the Idle row of one index at the same height, in the other column", () => {
-    const p = panes(rows(data)), at = places(p, false);
-    p.processing.forEach((r, i) => expect(at.get(r.d.name)).toEqual({ col: 0, hs: 1, slot: i }));
-    p.idle.forEach((r, i) => expect(at.get(r.d.name)).toEqual({ col: 1, hs: 1, slot: i }));
+    const p = panes(rows(data)), { at } = places(p, false);
+    p.processing.forEach((r, i) => expect(at.get(r.d.name)).toMatchObject({ col: 0, hs: 1, slot: i }));
+    p.idle.forEach((r, i) => expect(at.get(r.d.name)).toMatchObject({ col: 1, hs: 1, slot: i }));
+  });
+  it("spends a caption band only on a slot where a row of either pane opens a group", () => {
+    const p = panes(rows(data)), { at, bands } = places(p, false);
+    const open = (rs: typeof p.processing) => captions(rs, p.fresh).map((c) => c !== null);
+    const [op, oi] = [open(p.processing), open(p.idle)];
+    const slots = Math.max(p.processing.length, p.idle.length);
+    const want = Array.from({ length: slots }, (_, i) => Boolean(op[i] || oi[i]));
+    const rowAt = (i: number) => at.get((p.idle[i] ?? p.processing[i]).d.name)!;
+    want.forEach((b, i) => expect(rowAt(i).band).toBe(b));
+    want.forEach((_, i) => expect(rowAt(i).k).toBe(want.slice(0, i).filter(Boolean).length));
+    expect(bands).toBe(want.filter(Boolean).length);
   });
   it("stacks Idle under Processing, and its header with it, at a phone's width", () => {
-    const p = panes(rows(data)), at = places(p, true);
-    expect(at.get(p.idle[0].d.name)).toEqual({ col: 0, hs: 2, slot: p.processing.length });
-    expect(at.get("idle-head")).toEqual({ col: 0, hs: 1, slot: p.processing.length });
+    const p = panes(rows(data)), { at } = places(p, true);
+    expect(at.get(p.idle[0].d.name)).toMatchObject({ col: 0, hs: 2, slot: p.processing.length });
+    expect(at.get("idle-head")).toMatchObject({ col: 0, hs: 1, slot: p.processing.length });
   });
 });

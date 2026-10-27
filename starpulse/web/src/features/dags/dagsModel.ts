@@ -151,18 +151,26 @@ export function captions(rs: Row[], fresh: Set<string>): (string | null)[] {
   });
 }
 
-/** Where a row sits on the stage: its column, the slots of header above it (`hs`) and its slot down the column. */
-export interface Place { col: 0 | 1; hs: number; slot: number }
+/** Where a row sits on the stage: its column, the slots of header above it (`hs`), its slot down the column and the caption bands above that slot (`k`). `band` is whether its slot opens with a caption band, which the other pane's row of the slot may be the one to need. */
+export interface Place { col: 0 | 1; hs: number; slot: number; k: number; band: boolean }
 
-/** Every row's place by DAG name, and each pane's header as `processing-head` and `idle-head`. Beside each other, the Processing row and the Idle row of one index share a slot, so they share a top; at a phone's width Idle stacks under Processing, which keeps a slot for its hint when empty. */
-export function places(p: Panes, phone: boolean): Map<string, Place> {
-  const at = new Map<string, Place>();
-  p.processing.forEach((r, slot) => at.set(r.d.name, { col: 0, hs: 1, slot }));
+/** Every row's place by DAG name, and each pane's header as `processing-head` and `idle-head`, and the empty Processing pane's hint as `processing-hint`. Beside each other, the Processing row and the Idle row of one index share a slot, so they share a top; a slot spends a caption band only when a row of either pane opens a group there, so rows of one group sit one pitch apart. At a phone's width Idle stacks under Processing, which keeps a slot for its hint when empty. `bands` is the stage's count of caption bands. */
+export function places(p: Panes, phone: boolean): { at: Map<string, Place>; bands: number } {
+  const open = (rs: Row[]) => captions(rs, p.fresh).map((c) => c !== null);
   const below = phone ? Math.max(p.processing.length, 1) : 0;
-  p.idle.forEach((r, slot) => at.set(r.d.name, { col: phone ? 0 : 1, hs: phone ? 2 : 1, slot: below + slot }));
-  at.set("processing-head", { col: 0, hs: 0, slot: 0 });
-  at.set("idle-head", phone ? { col: 0, hs: 1, slot: below } : { col: 1, hs: 0, slot: 0 });
-  return at;
+  const slots = phone ? below + p.idle.length : Math.max(p.processing.length, p.idle.length, 1);
+  const band: boolean[] = Array.from({ length: slots }, () => false);
+  open(p.processing).forEach((o, i) => { band[i] = band[i] || o; });
+  open(p.idle).forEach((o, i) => { band[below + i] = band[below + i] || o; });
+  const above = (slot: number) => band.slice(0, slot).filter(Boolean).length;
+  const place = (col: 0 | 1, hs: number, slot: number): Place => ({ col, hs, slot, k: above(slot), band: band[slot] ?? false });
+  const at = new Map<string, Place>();
+  p.processing.forEach((r, slot) => at.set(r.d.name, place(0, 1, slot)));
+  p.idle.forEach((r, slot) => at.set(r.d.name, place(phone ? 0 : 1, phone ? 2 : 1, below + slot)));
+  at.set("processing-head", { col: 0, hs: 0, slot: 0, k: 0, band: false });
+  at.set("idle-head", phone ? { col: 0, hs: 1, slot: below, k: above(below), band: false } : { col: 1, hs: 0, slot: 0, k: 0, band: false });
+  at.set("processing-hint", { col: 0, hs: 1, slot: 0, k: Number(band[0]), band: false });
+  return { at, bands: above(slots) };
 }
 
 /** Where a DAG touches the Board: the event that cues it, the transitions it writes, the skill it launches. `ev` is the transition's event, which has a Ledger on the Star Map. */
