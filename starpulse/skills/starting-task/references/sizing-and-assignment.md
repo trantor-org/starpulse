@@ -78,7 +78,12 @@ repository is size 3.
    - A `kind-diagnose` task whose gate is a multi-hour end-to-end run that stops at the first
      failure steps up one size, and each further fault the run uncovers is forked unless it
      blocks the gate.
-   - A cutover slice that rewires a live caller and retires the old path starts at 8.
+   - A cutover slice that rewires a live caller and retires the old path starts at 8; a slice
+     that retires any live path is a cutover whatever its line count.
+   - A `kind-execute` task names its mechanism and the current-state constraint each premise
+     was checked against, on one description line `Mechanism: <what>, checked against
+     <path>:<line>`. A task whose mechanism is open, or whose premise nobody checked, is
+     `kind-decide`; an execute brief with no such line leaves the fast tier.
    - Forecast compaction last: a task whose scope, once the drivers are counted, runs past
      about 70 agent steps or reads large outputs (logs, a corpus scan, a full test run) is
      forecast to compact. Step it up one size; at slicing, split it instead when a seam keeps

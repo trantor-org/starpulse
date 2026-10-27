@@ -32,6 +32,8 @@ from typing import Any, ClassVar
 
 import jsonschema
 from pydantic import BaseModel
+from sqlalchemy import Engine, create_engine
+from sqlalchemy.pool import StaticPool
 
 from starpulse.runtime.config import Config
 from starpulse.board.adapters.history_window import HistoryWindow
@@ -51,6 +53,7 @@ from starpulse.contracts.adapters import (
     TaskKeys,
 )
 from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.migrate import migrate
 from starpulse.flow_metrics.history import History, HistoryStore
 from starpulse.runtime.assembly import assemble as _assemble
 from starpulse.views.asgi_app import page_app
@@ -63,6 +66,7 @@ __all__ = [
     "BoardAdapterKit",
     "MachineEventsAdapterKit",
     "RunsAdapterKit",
+    "migrated_log",
     "assembled",
     "next_event",
     "serve",
@@ -261,6 +265,19 @@ def _bare_board() -> Board:
     return Board(machines=lambda qualify, workflows: {}, start=lambda feed, name, log: None)
 
 
+def _migrated(url: str) -> Engine:
+    """An engine on `url` whose store `starpulse migrate` has brought to its head; one shared connection for in-memory."""
+    engine = create_engine(url, poolclass=StaticPool) if url == "sqlite://" else create_engine(url)
+    migrate(engine)
+    return engine
+
+
+def migrated_log(url: str) -> EventLog:
+    """The event log on the SQLite file `url`, migrated first, since opening a store migrates nothing."""
+    _migrated(url).dispose()
+    return EventLog(url)
+
+
 @contextmanager
 def serve(
     tmp_path: Path,
@@ -283,13 +300,13 @@ def serve(
     (static / "assets" / "index-abc123.js").write_text("")
     (tmp_path / "secret.txt").write_text("")
     served = feed or BoardFeed()
-    log = EventLog(f"sqlite:///{tmp_path / 'settings.sqlite'}")
+    log = migrated_log(f"sqlite:///{tmp_path / 'settings.sqlite'}")
     board = board or _bare_board()
     board = replace(board, writer=board.writer or _no_writer, assign=board.assign or _no_writer)
     app = page_app(
         served,
         static,
-        history or HistoryStore("sqlite://", feed.machines if feed else {}),
+        history or HistoryStore("sqlite://", feed.machines if feed else {}, _migrated("sqlite://")),
         window or HistoryWindow(served, 6, log, tmp_path / "starpulse-settings.json"),
         board,
         Services(**services),

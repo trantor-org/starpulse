@@ -24,8 +24,7 @@ from starpulse.cli import agent_cli
 from starpulse.runtime.config import load
 from starpulse.board.adapters.replica import publish
 from starpulse.board.adapters.upstream_backlog import _live
-from starpulse.event_log.event_log import EventLog
-from starpulse.runtime.adapter_kit import assembled, serve, url
+from starpulse.runtime.adapter_kit import assembled, migrated_log, serve, url
 
 #: How often the Board adapter rescans the board's files, so a task a write created is on the feed within a scan.
 SCAN_INTERVAL_S = 0.05
@@ -92,7 +91,7 @@ def write_instance(base: Path, config_file: str = "starpulse.toml") -> Generator
     with tempfile.TemporaryDirectory() as scratch:
         state = Path(scratch)
         stream, feed = assembled(config, base)
-        log = EventLog(f"sqlite:///{state / 'events.sqlite'}")
+        log = migrated_log(f"sqlite:///{state / 'events.sqlite'}")
         with _STARTING:
             before = set(_live)
             publish(stream, feed, "write-instance", log, config)
