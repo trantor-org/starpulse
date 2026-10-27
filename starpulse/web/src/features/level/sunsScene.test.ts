@@ -1,6 +1,8 @@
-import { describe, expect, it } from "vitest";
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it } from "vitest";
 import type { MachineEvent } from "../../api/types.gen";
-import { jobAt } from "./sunsEngine";
+import { applyPack, applyTheme, packTokens } from "../../tests/themeFixtures";
+import { jobAt, TIER } from "./sunsEngine";
 import { css, jobOf, sceneOf, type View } from "./sunsScene";
 
 const NOW = 1_800_000_000;
@@ -69,5 +71,34 @@ describe("sunsScene", () => {
     expect(s.tip?.style).toContain("var(--slate)");
     expect(colours(s.tip?.style ?? "")).toBeNull();
     expect(s.fleet[0].bar).toContain("color-mix(in srgb, var(--slate) 12%, transparent)");
+  });
+
+  describe("theme", () => {
+    afterEach(() => void applyPack("starpulse"));
+    const hexes = (v: unknown) => JSON.stringify(v).match(/#[0-9a-f]{6}\b/gi) ?? [];
+    const drawn = () => {
+      const jobs = [jobOf("T", "t", "@agent-deep-high", story, NOW), jobOf("U", "u", undefined, [], NOW), jobOf("V", "v", "@agent-fast-medium", [], NOW)];
+      return sceneOf(jobs, { ...view("T"), hover: "entry:Ready" }, () => {}, NOW);
+    };
+
+    it("draws the scene in the applied pack's colours, so a pack switch repaints it with no reload", () => {
+      const starpulse = packTokens("starpulse"), stub = { ...starpulse, agent: "#123456", waits: "#654321", ok: "#0a0b0c" };
+      applyTheme(stub);
+
+      expect(TIER).toMatchObject({ deep: "#123456", standard: "#654321" });
+      const found = hexes(drawn());
+      expect(found).toContain("#123456");
+      expect(found).toContain("#654321");
+      expect(found).toContain("#0a0b0c");
+      expect(found).not.toContain(starpulse.agent);
+      expect(found).not.toContain(starpulse.waits);
+    });
+
+    it("draws no colour of the StarPulse pack under another pack", () => {
+      const starpulse = new Set(Object.values(packTokens("starpulse"))), nord = new Set(Object.values(applyPack("nord")));
+      const foreign = hexes(drawn()).filter((h) => starpulse.has(h.toLowerCase()) && !nord.has(h.toLowerCase()));
+
+      expect(foreign).toEqual([]);
+    });
   });
 });

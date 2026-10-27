@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Roles } from "../../api/types.gen";
+import { applyPack, packTokens } from "../../tests/themeFixtures";
 import { SunsDrillIn, type DrillTask } from "./SunsDrillIn";
 
 const roles = { working: "In Progress" } as Roles;
@@ -20,6 +21,7 @@ afterEach(() => {
   act(() => root.unmount());
   host.remove();
   vi.unstubAllGlobals();
+  applyPack("starpulse");
 });
 const mount = (onClose = () => undefined) =>
   act(() => root.render(<SunsDrillIn tasks={[task("TASK-1", "In Progress"), task("TASK-2", "In Progress"), task("TASK-3", "Ready")]} roles={roles} task="TASK-1" onClose={onClose} />));
@@ -27,6 +29,17 @@ const button = (label: string) => host.querySelector<HTMLButtonElement>(`button[
 const fleet = () => [...host.querySelectorAll('nav[aria-label="Tasks"] button')].map((b) => b.getAttribute("aria-label"));
 
 describe("SunsDrillIn", () => {
+  it("repaints the scene in a new theme's colours when the theme changes, with no remount", () => {
+    mount();
+    const dots = () => [...host.querySelectorAll<HTMLElement>("span")].map((e) => e.getAttribute("style") ?? "").join(" ");
+    expect(dots()).toContain(packTokens("starpulse").waits);
+
+    act(() => void applyPack("nord"));
+
+    expect(dots()).toContain(packTokens("nord").waits);
+    expect(dots()).not.toContain(packTokens("starpulse").waits);
+  });
+
   it("lists the In Progress tasks in its Tasks panel and shows the drilled one", () => {
     mount();
     expect(fleet().map((a) => a?.split(" ")[0])).toEqual(["TASK-1", "TASK-2"]);

@@ -93,6 +93,12 @@ export function SunsDrillIn({ tasks, roles, task, onClose, dags, clock = () => D
     live.current = { view, job: s.job };
   });
   useEffect(() => {
+    // the scene's colours are read from the theme per draw, so a theme change only needs the next draw
+    const repaint = () => redraw((n) => n + 1);
+    window.addEventListener("sp:theme", repaint);
+    return () => window.removeEventListener("sp:theme", repaint);
+  }, []);
+  useEffect(() => {
     // the replay steps back through the selected task's span in 240 ticks; the move animation redraws at 20 fps only while a comet flies
     const step = setInterval(() => {
       const { view: v, job } = live.current;

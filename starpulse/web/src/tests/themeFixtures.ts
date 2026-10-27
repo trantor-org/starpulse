@@ -3,6 +3,8 @@
 import { applyTheme } from "../features/admin/theme/apply";
 import { BUILTIN, SLATE, build } from "../features/admin/theme/scheme";
 
+export { applyTheme };
+
 export const packTokens = (pack: keyof typeof BUILTIN) => build(BUILTIN[pack], SLATE).t;
 
 /** Applies a built-in pack on Slate and returns its tokens. */
