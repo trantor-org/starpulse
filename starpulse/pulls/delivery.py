@@ -3,13 +3,13 @@
 The Delivery worker (`starpulse worker pulls`) is the one writer of the pull store and the one reader of GitHub; `serve`
 keeps the store read-only. What the worker projects, and what `serve` must say back to it, cross the event log:
 
-- the worker keeps its latest projection in the `PROJECTION` setting and announces each change on `PROJECTED_STREAM`;
-  `serve` applies it to its feed (`Projected`), so snapshots keep drawing pull request state;
+- the worker keeps its latest projection in the `PROJECTION` worker state; `serve` applies it to its feed (`Projected`)
+  when the state's version moves, so snapshots keep drawing pull request state;
 - the worker announces the records of each save on `SAVED_STREAM` (`announce_saves`); `serve` holds records in memory
   and takes those from the database again (`follow_saves`), so `/api/pulls` never answers from before a save;
 - a page's refresh request lands on `REFRESH_STREAM` (`request_refresh`) and the worker asks `PullSync` for it;
-- the actor's `/metrics` text is kept in the `METRICS` setting for `serve` to relay;
-- the poller writes the time to the `POLLER` setting while it runs (`keep_beating`), and `starpulse doctor` reports it
+- the actor's `/metrics` text is kept in the `METRICS` worker state for `serve` to relay;
+- the poller writes the time to the `POLLER` worker state while it runs (`keep_beating`), and `starpulse doctor` reports it
   down once that is older than `DOWN_S` (`poller_problem`).
 """
 
@@ -23,14 +23,13 @@ from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
-    from starpulse.pulls.pulls import PullStore
     from starpulse.event_log.event_log import Entry, EventLog
+    from starpulse.pulls.pulls import PullStore
 
 logger = logging.getLogger(__name__)
 
 PROJECTION = "pulls.projection"
 METRICS = "pulls.metrics"
-PROJECTED_STREAM = "pulls:projected"
 SAVED_STREAM = "pulls:saved"
 REFRESH_STREAM = "pulls:refresh"
 POLLER = "pulls.poller"
@@ -60,18 +59,17 @@ class Publisher:
         self._last: dict | None = None
 
     def publish(self) -> None:
-        """Write the feed's projection and announce it, unless the log already holds this one. A log that cannot be
+        """Write the feed's projection, unless the log already holds this one. A log that cannot be
         written is tried again on the next call."""
         body = {"pulls": self._feed.pulls(), "answers": self._feed.pull_answers()}
         if body == self._last:
             return
         try:
-            self._log.set_setting(PROJECTION, body)
+            self._log.put_state(PROJECTION, body)
         except Exception:
             logger.warning("pulls: the projection was not kept", exc_info=True)
             return
         self._last = body
-        self._log.publish(PROJECTED_STREAM, {})
 
 
 class Projected:
@@ -88,7 +86,7 @@ class Projected:
         contract, so every `/api/snapshot` would 500 until the worker keeps a new one.
         """
         try:
-            body = self._log.setting(PROJECTION)
+            _, body = self._log.state(PROJECTION)
         except Exception:
             logger.warning("pulls: the projection was not read", exc_info=True)
             return
@@ -99,9 +97,9 @@ class Projected:
 
     def follow(self, stop: threading.Event) -> threading.Thread:
         """Apply the kept projection now, then each one announced after, on a thread until `stop`."""
-        after = self._log.head() or 0
+        thread = self._log.follow_state(PROJECTION, self.apply, stop, interval=POLL_S, thread_name="pull-projected")
         self.apply()
-        return _follow("pull-projected", self._log, PROJECTED_STREAM, after, lambda _entry: self.apply(), stop)
+        return thread
 
 
 def announce_saves(store: PullStore, log: EventLog) -> None:
@@ -163,7 +161,7 @@ def follow_events(
 def publish_metrics(log: EventLog, text: str) -> None:
     """Keep the worker's exposition `text` for `serve` to relay."""
     try:
-        log.set_setting(METRICS, text)
+        log.put_state(METRICS, text)
     except Exception:
         logger.warning("pulls: the metrics were not kept", exc_info=True)
 
@@ -190,7 +188,7 @@ def keep_beating(
         while not stop.is_set():
             if running.is_set():
                 try:
-                    log.set_setting(POLLER, {"at": clock()})
+                    log.put_state(POLLER, {"at": clock()})
                 except Exception:
                     logger.warning("pulls: the poller's beat was not kept", exc_info=True)
             stop.wait(BEAT_S)
@@ -205,7 +203,7 @@ def poller_problem(log: EventLog, clock: Callable[[], float] = time.time) -> Cal
 
     def read() -> str | None:
         try:
-            beat = log.setting(POLLER)
+            _, beat = log.state(POLLER)
         except Exception as exc:
             return f"the event log cannot be read: {exc}"
         at = beat.get("at") if isinstance(beat, dict) else None
@@ -222,7 +220,7 @@ def metrics_of(log: EventLog) -> Callable[[], str]:
 
     def read() -> str:
         try:
-            text = log.setting(METRICS)
+            _, text = log.state(METRICS)
         except Exception:
             return ""
         return text if isinstance(text, str) else ""

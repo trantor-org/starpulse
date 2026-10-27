@@ -23,7 +23,7 @@ def _metrics(server: object) -> str:
 def test_metrics_carries_the_four_autopilot_series_of_the_seeded_store(tmp_path: Path) -> None:
     log = EventLog(f"sqlite:///{tmp_path / 'settings.sqlite'}")
     log.set_setting(SWITCH_KEY, True, updated_at=1_700_000_000)
-    log.set_setting(TALLY_KEY, {"admitted": 3, "refused": 1})
+    log.put_state(TALLY_KEY, {"admitted": 3, "refused": 1})
 
     with serve(
         tmp_path, BoardFeed(roles=ROLES, machines=MACHINES), autopilot_metrics=lambda: autopilot_exposition(log)

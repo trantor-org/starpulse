@@ -54,10 +54,10 @@ def test_a_published_report_is_kept_in_the_log_and_announced(log: EventLog) -> N
 
     sink.set_dags(DAGS, None, POOLS, ["ci"])
 
-    assert log.setting(projection.PROJECTION) == {
+    assert log.state(projection.PROJECTION)[1] == {
         "dagu": {"dags": DAGS, "error": None, "pools": POOLS, "startable": ["ci"], "cpu": None}
     }
-    assert log.last(projection.PROJECTED_STREAM) is not None
+    assert log.state(projection.PROJECTION)[0] == 1
 
 
 def test_a_published_sink_reports_the_workflows_the_feed_ties(log: EventLog) -> None:
@@ -69,7 +69,7 @@ def test_none_keeps_what_the_instance_last_reported_and_an_empty_pools_clears_it
     sink.set_dags(DAGS, None, POOLS, ["ci"])
 
     sink.set_dags(None, "unreachable")
-    assert log.setting(projection.PROJECTION)["dagu"] == {
+    assert log.state(projection.PROJECTION)[1]["dagu"] == {
         "dags": DAGS,
         "error": "unreachable",
         "pools": POOLS,
@@ -78,8 +78,8 @@ def test_none_keeps_what_the_instance_last_reported_and_an_empty_pools_clears_it
     }
 
     sink.set_dags(DAGS, None, [])
-    assert log.setting(projection.PROJECTION)["dagu"]["pools"] == []
-    assert log.setting(projection.PROJECTION)["dagu"]["error"] is None
+    assert log.state(projection.PROJECTION)[1]["dagu"]["pools"] == []
+    assert log.state(projection.PROJECTION)[1]["dagu"]["error"] is None
 
 
 def test_instances_are_kept_side_by_side(log: EventLog) -> None:
@@ -87,7 +87,7 @@ def test_instances_are_kept_side_by_side(log: EventLog) -> None:
     publisher.runs("dagu", Inner()).set_dags(DAGS, None)
     publisher.runs("pushed", Inner()).set_dags([], None)
 
-    assert set(log.setting(projection.PROJECTION)) == {"dagu", "pushed"}
+    assert set(log.state(projection.PROJECTION)[1]) == {"dagu", "pushed"}
 
 
 def test_publishers_in_separate_processes_keep_each_others_instances(log: EventLog) -> None:
@@ -95,17 +95,17 @@ def test_publishers_in_separate_processes_keep_each_others_instances(log: EventL
     projection.Publisher(log).runs("timers", Inner()).set_dags([], None)
     projection.Publisher(log).runs("dagu", Inner()).set_dags([], None)
 
-    assert set(log.setting(projection.PROJECTION)) == {"dagu", "timers"}
+    assert set(log.state(projection.PROJECTION)[1]) == {"dagu", "timers"}
 
 
 def test_a_report_the_log_already_holds_is_not_announced_again(log: EventLog) -> None:
     sink = projection.Publisher(log).runs("dagu", Inner())
     sink.set_dags(DAGS, None)
-    announced = log.last(projection.PROJECTED_STREAM)
+    announced = log.state(projection.PROJECTION)[0]
 
     sink.set_dags(DAGS, None)
 
-    assert log.last(projection.PROJECTED_STREAM) == announced
+    assert log.state(projection.PROJECTION)[0] == announced
 
 
 def test_serve_applies_each_instances_kept_report_to_its_feed(log: EventLog) -> None:
@@ -126,7 +126,7 @@ def test_a_kept_report_that_predates_the_contract_gives_the_feed_no_workflows_un
     log: EventLog,
 ) -> None:
     stale = [{key: value for key, value in DAGS[0].items() if key not in ("schedule", "stats")}]
-    log.set_setting_entry(
+    log.put_state_entry(
         projection.PROJECTION, "dagu", {"dags": stale, "error": None, "pools": POOLS, "startable": None}
     )
     feed = Feed()
@@ -139,7 +139,7 @@ def test_a_kept_report_that_predates_the_contract_gives_the_feed_no_workflows_un
 @pytest.mark.parametrize("kept", [None, [], "text", {"dagu": "text"}, {"dagu": {"dags": "text", "error": None}}])
 def test_a_kept_report_that_is_missing_or_unreadable_leaves_the_feed_as_it_was(log: EventLog, kept: object) -> None:
     if kept is not None:
-        log.set_setting(projection.PROJECTION, kept)
+        log.put_state(projection.PROJECTION, kept)
     feed = Feed()
 
     projection.Projected(log, feed).apply()

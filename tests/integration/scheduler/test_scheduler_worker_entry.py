@@ -85,7 +85,7 @@ def test_a_restarted_worker_keeps_a_harness_paused(tmp_path: Path) -> None:
     until = time.time() + 3600
     with _start_service() as (url, asked):
         log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
-        log.set_setting(PAUSES_KEY, {"claude": {"until": until, "reason": "usage limit"}})
+        log.put_state(PAUSES_KEY, {"claude": {"until": until, "reason": "usage limit"}})
         with _worker(tmp_path, url) as (_, remote):
             remote.set_enabled(True)
             _until(lambda: remote.served_status().get("pauses"), "the paused harness in the status")

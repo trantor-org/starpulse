@@ -47,7 +47,7 @@ def _push(log: EventLog, workflow: str) -> None:
 
 def _pushed(log: EventLog) -> list[str]:
     """The names of the pushed workflows the worker has kept in the log."""
-    kept = (log.setting(projection.PROJECTION) or {}).get(PUSHED_INSTANCE, {})
+    kept = (log.state(projection.PROJECTION)[1] or {}).get(PUSHED_INSTANCE, {})
     return sorted(dag["name"] for dag in kept.get("dags", []))
 
 
@@ -84,7 +84,7 @@ def test_the_worker_follows_each_instance_and_keeps_its_workflows_in_the_log(run
     log = run()
 
     assert dagu.followed == ["http://dagu.invalid"]
-    assert log.setting(projection.PROJECTION)["dagu"]["dags"] == DAGS
+    assert log.state(projection.PROJECTION)[1]["dagu"]["dags"] == DAGS
 
 
 def test_a_pushed_run_reaches_the_log_as_the_pushed_instance(run) -> None:

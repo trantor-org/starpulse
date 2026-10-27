@@ -723,7 +723,7 @@ guard may require the reason to ask one), and is never started again. A board wi
 refusal and retries on the next sampler period. The sampler period (60 seconds) is the only timer; it finishes and settles
 runs and never admits.
 
-The runs in flight, each task's last start time and the last capacity sample live in `starpulse_settings`
+The runs in flight, each task's last start time and the last capacity sample live in `starpulse_worker_state`
 (`scheduler.inflight`, `scheduler.starts`, `scheduler.sample`), so a restart restores them: `GET /api/scheduler` still
 lists the sessions, the loop still settles and records them, and a task it already started is not started again. A restart
 logs `StarPulse scheduler: restored N in-flight`. A start still inside 15 minutes (`START_COOLDOWN`) is not admitted

@@ -18,7 +18,7 @@ def autopilot_exposition(log: EventLog) -> str:
     """The four `starpulse_autopilot_*` series as exposition text."""
     with log.engine.connect() as db:
         runs = db.execute(select(func.count()).select_from(scheduler_runs)).scalar() or 0
-    tally = log.setting(TALLY_KEY) or {}
+    tally = log.state(TALLY_KEY)[1] or {}
     switched = log.setting_updated_at(SWITCH_KEY) or 0
     return "\n".join(
         [

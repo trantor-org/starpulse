@@ -18,21 +18,21 @@ START_COOLDOWN = 15 * 60
 
 
 class SchedulerState:
-    """JSON blobs under the settings keys; a store that cannot be read or written is skipped, never raised."""
+    """JSON blobs under worker state names; a store that cannot be read or written is skipped, never raised."""
 
     def __init__(self, log: EventLog) -> None:
         self.log = log
 
     def load(self, key: str) -> Any | None:
         try:
-            return self.log.setting(key)
+            return self.log.state(key)[1]
         except Exception as exc:
             logger.warning("scheduler state: reading %s failed: %s", key, exc)
             return None
 
     def save(self, key: str, value: Any) -> None:
         try:
-            self.log.set_setting(key, value)
+            self.log.put_state(key, value)
         except Exception:
             logger.exception("scheduler state: cannot write %s", key)
 

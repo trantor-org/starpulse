@@ -43,7 +43,7 @@ def _key(instance: str) -> str:
 
 def beat(log: EventLog, instance: str, clock: Callable[[], float] = time.time) -> None:
     """Write the time to the log as `instance`'s worker's latest beat."""
-    log.set_setting(_key(instance), {"at": clock()})
+    log.put_state(_key(instance), {"at": clock()})
 
 
 def keep_beating(log: EventLog, instance: str, stop: threading.Event) -> threading.Thread:
@@ -67,7 +67,7 @@ def problem(log: EventLog, instance: str, clock: Callable[[], float] = time.time
 
     def read() -> str | None:
         try:
-            kept = log.setting(_key(instance))
+            _, kept = log.state(_key(instance))
         except Exception as exc:
             return f"the event log cannot be read: {exc}"
         at = kept.get("at") if isinstance(kept, dict) else None

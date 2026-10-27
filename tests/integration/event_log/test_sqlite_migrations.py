@@ -25,8 +25,6 @@ _MIGRATIONS = Path(migrate.__file__).parent / "migrations"
 _SQLITE_ONLY_INDEX = "ix_starpulse_lane_changes_observed"
 #: The index revision 0020 added to the declared schema, so the release before the chain had none.
 _RETIRED_AT_INDEX = "ix_starpulse_retired_tasks_retired_at"
-#: The table revision 0034 added, so the release before the chain had none.
-_CLAIM_EXPIRIES = "starpulse_claim_expiries"
 _DIALECT_ONLY = {day_rollups.name, _SQLITE_ONLY_INDEX}
 
 
@@ -47,7 +45,7 @@ def _indexes(engine: Engine, table: str) -> set[str]:
 
 
 def test_the_chain_has_one_head() -> None:
-    assert ScriptDirectory(str(_MIGRATIONS)).get_heads() == ["0035"]
+    assert ScriptDirectory(str(_MIGRATIONS)).get_heads() == ["0036"]
 
 
 def test_a_fresh_store_is_built_by_the_chain_and_matches_the_declared_schema(tmp_path: Path) -> None:

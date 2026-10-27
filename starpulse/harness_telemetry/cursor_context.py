@@ -72,16 +72,17 @@ def reset_over_limit(
         log.publish(CONTEXT_STREAM, fields, event_id=f"{name}:{int(now // 60)}")
         key = f"cursor-context:{name}"
         if tokens < limit:
-            log.delete_setting(key)
+            log.delete_state(key)
             continue
         digest = hashlib.sha256(pane.encode()).hexdigest()
-        asked_at = log.setting_updated_at(key)
+        kept = log.state(key)[1] or {}
+        asked_at = kept.get("at")
         if asked_at is None or now - asked_at > _STALE * wrapup_s:
             panes.send(name, wrapup)
-            log.set_setting(key, {"digest": digest}, updated_at=now)
+            log.put_state(key, {"digest": digest, "at": now})
             acted.append(f"{task}: asked to wrap up at {tokens} tokens")
-        elif (log.setting(key) or {}).get("digest") == digest or now - asked_at >= wrapup_s:
-            log.delete_setting(key)
+        elif kept.get("digest") == digest or now - asked_at >= wrapup_s:
+            log.delete_state(key)
             panes.kill(name)
             try:
                 start(task, harness="cursor", mode="interactive")
@@ -90,7 +91,7 @@ def reset_over_limit(
                 continue
             acted.append(f"{task}: restarted fresh at {tokens} tokens")
         else:
-            log.set_setting(key, {"digest": digest}, updated_at=asked_at)
+            log.put_state(key, {"digest": digest, "at": asked_at})
     if failed:
         raise StartFailedError(f"could not restart {'; '.join(failed)}")
     return acted

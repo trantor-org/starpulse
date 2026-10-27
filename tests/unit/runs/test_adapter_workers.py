@@ -140,7 +140,7 @@ def test_the_worker_follows_the_instance_and_keeps_its_workflows_in_the_log(
     run(WORKERS[kind])
 
     assert adapter.followed == ["http://adapter.invalid"]
-    assert log.setting(projection.PROJECTION)[kind]["dags"] == DAGS
+    assert log.state(projection.PROJECTION)[1][kind]["dags"] == DAGS
 
 
 def test_the_runs_worker_leaves_the_instance_to_its_worker(run, adapter: Adapter) -> None:

@@ -50,8 +50,8 @@ def test_a_projection_is_kept_in_the_log_and_announced(log: EventLog) -> None:
 
     delivery.Publisher(log, feed).publish()
 
-    assert log.setting(delivery.PROJECTION) == {"pulls": PULLS, "answers": ANSWERS}
-    assert log.last(delivery.PROJECTED_STREAM) is not None
+    assert log.state(delivery.PROJECTION)[1] == {"pulls": PULLS, "answers": ANSWERS}
+    assert log.state(delivery.PROJECTION)[0] == 1
 
 
 def test_a_projection_that_has_not_changed_is_not_announced_again(log: EventLog) -> None:
@@ -59,11 +59,11 @@ def test_a_projection_that_has_not_changed_is_not_announced_again(log: EventLog)
     feed.set_pulls(PULLS, ANSWERS)
     publisher = delivery.Publisher(log, feed)
     publisher.publish()
-    first = log.last(delivery.PROJECTED_STREAM)
+    first = log.state(delivery.PROJECTION)[0]
 
     publisher.publish()
 
-    assert log.last(delivery.PROJECTED_STREAM) == first
+    assert log.state(delivery.PROJECTION)[0] == first
 
 
 def test_the_serving_feed_takes_the_projection_the_worker_kept(log: EventLog) -> None:
@@ -88,7 +88,7 @@ def test_serving_with_no_projection_yet_leaves_the_feed_as_it_was(log: EventLog)
 def test_serving_leaves_the_feed_as_it_was_for_a_projection_kept_before_pulls_carried_repo(log: EventLog) -> None:
     """A projection from before TASK-7845 has no `repo` on its pulls, which the snapshot contract refuses."""
     before = {"TASK-1": [{"number": 7, "url": "https://github.com/acme/widgets/pull/7", "checks": "pass"}]}
-    log.set_setting(delivery.PROJECTION, {"pulls": before, "answers": ANSWERS})
+    log.put_state(delivery.PROJECTION, {"pulls": before, "answers": ANSWERS})
     serving = Feed()
 
     delivery.Projected(log, serving).apply()
@@ -178,7 +178,7 @@ def test_a_running_poller_beats_into_the_log_and_the_beat_reads_as_up(log: Event
     running.set()
     thread = delivery.keep_beating(log, running, stop, lambda: 100.0)
     deadline = time.monotonic() + WAIT_S
-    while log.setting(delivery.POLLER) is None and time.monotonic() < deadline:
+    while log.state(delivery.POLLER)[1] is None and time.monotonic() < deadline:
         time.sleep(0.01)
     stop.set()
     thread.join(WAIT_S)
@@ -191,7 +191,7 @@ def test_a_poller_that_never_beat_reads_as_not_reported(log: EventLog) -> None:
 
 
 def test_a_beat_older_than_the_limit_reads_as_down_with_its_age(log: EventLog) -> None:
-    log.set_setting(delivery.POLLER, {"at": 100.0})
+    log.put_state(delivery.POLLER, {"at": 100.0})
 
     problem = delivery.poller_problem(log, lambda: 100.0 + delivery.DOWN_S + 1)()
 
