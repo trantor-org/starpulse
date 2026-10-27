@@ -133,8 +133,8 @@ describe("a tied DAG's orbiter", () => {
   });
 
   it("is slate for a DAG that has not reported, and for one that is only queued", () => {
-    expect(orbiterLook("")).toMatchObject({ spin: false, color: "#94a3b8", dashed: false });
-    expect(orbiterLook("queued")).toMatchObject({ spin: false, color: "#94a3b8", dashed: false });
+    expect(orbiterLook("")).toMatchObject({ spin: false, color: token("slate"), dashed: false });
+    expect(orbiterLook("queued")).toMatchObject({ spin: false, color: token("slate"), dashed: false });
   });
 });
 

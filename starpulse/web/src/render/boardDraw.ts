@@ -4,7 +4,9 @@
 import type { LedgerRow } from "../api";
 import { fanBadge, stepStatus } from "../features/fanout/fanoutModel";
 import { stepStates } from "../features/level/stepStates";
-import { ACT, DAG_COLOR, EXT, easeO, rgba, tierColor, type Drawing, type DrawCtx } from "./draw";
+import { ACT, DAG_COLOR, EXT, LABEL, MACHINE, MOON, MUTED, easeO, rgba, tierColor, type Drawing, type DrawCtx } from "./draw";
+import { CORE, MACHINE_RING, NAME_INK, STEM } from "./boardPalette";
+import { token } from "./palette";
 import { activeDag, dagTurn, IDLE, nameLines, touches, turnDags, type Pivot, type Ties } from "./dagTies";
 import {
   BOARD_COLOR, SUN_R, TAU, bez, clip, curveOf, stateR, taskSlot, terminal, textW,
@@ -13,7 +15,7 @@ import {
 import { FLARE, PULSE, RING, TRAVEL, hosted, type Move, type Moves, type Sky } from "./sky";
 
 /** How a tied DAG's orbiter looks: the Spinner while its DAG runs, else its last run's colour, with a dashed ring after a failed run. */
-export const orbiterLook = (status: string) => ({ spin: status === "running", color: status === "queued" ? "#94a3b8" : DAG_COLOR[status] || "#94a3b8", dashed: status === "failed" });
+export const orbiterLook = (status: string) => ({ spin: status === "running", color: status === "queued" ? MUTED : DAG_COLOR[status] || MUTED, dashed: status === "failed" });
 
 /** The ring a DAG's run ending at `fin` has on screen at `now`, as its age from 0 to 1: one ring per event, over PULSE, never repeated. */
 export const dagRings = (fin: number | undefined, now: number): number[] =>
@@ -57,14 +59,14 @@ export function boardDraw(dc: DrawCtx, d: Drawing, io: BoardIO) {
     for (const g of Object.values(sc.galaxies)) if (sc.moons.some((m) => m.parent === g)) circle(g.x, g.y, g.moonR, rgba(g.color, isHot("galaxy", g) ? 0.6 : 0.25), 1, [2, 5]);
     for (const m of sc.moons) {
       const hot = isHot("moon", m), flows = m.pager?.hidden ?? [m.name], mv = flows.flatMap(io.moving).length, busy = flows.some((name) => !!hosted(io.S!, name, m.parent.id).length);
-      drawTrackRings(m, "#c084fc");
+      drawTrackRings(m, MACHINE_RING);
       const src = m.pager ? undefined : io.sourceOf(m.name);
       machine(m.x, m.y, m.r!, hot, busy ? 0.32 : 0.14, !!src);
       if (mv) circle(m.x, m.y, m.r! + 4, rgba(ACT, 0.85), 1.5);
       // named beside the moon on the side away from its state, past its chain of sub-states
       const left = m.x < m.parent.x - 1;
       cx.letterSpacing = `${0.5 / dc.K}px`;
-      const col = rgba("#d8c8f5", hot ? 0.95 : 0.6);
+      const col = rgba(NAME_INK, hot ? 0.95 : 0.6);
       machineName(sc.clipped ? clip(m.label) : m.label, m.x + (left ? -1 : 1) * (m.R + m.ext + 10), m.y, labPx(10.5), col, left ? "right" : "left", src);
       cx.letterSpacing = "0px";
     }
@@ -104,7 +106,7 @@ export function boardDraw(dc: DrawCtx, d: Drawing, io: BoardIO) {
   /** A hangar: a faint arc behind its orbiters, broken where it would cross a name, one orbiter per DAG and the hangar's name alone. Whether a
    *  DAG runs or failed is its orbiter's to show: the Spinner, or red with a dashed ring. */
   function drawPivot(h: Pivot, turn: ReturnType<typeof dagTurn>) {
-    const TEAL = "#5eead4", pivotHot = isHot("pivot", h);
+    const TEAL = token("released"), pivotHot = isHot("pivot", h);
     // an active or hovered DAG shows in full and an idle one in its turn; between turns an idle orbiter stays faint, so it can be found and
     // hovered, and the hangar's arc and name show only as much as its most lifted orbiter
     const lift = (o: Pivot["orbs"][number]) => (isHot("tie", o) || activeDag(io.S!.dagBy[o.dag]?.status) ? 1 : o.dag === turn?.dag ? turn.alpha : 0);
@@ -121,8 +123,8 @@ export function boardDraw(dc: DrawCtx, d: Drawing, io: BoardIO) {
       cx.globalAlpha = IDLE + (1 - IDLE) * lift(o);
       const hot = isHot("tie", o), look = orbiterLook(io.S!.dagBy[o.dag]?.status ?? ""), r = (hot ? 7 : 6) / dc.K;
       // a hovered orbiter rings the states of the machine it writes
-      if (hot) for (const a of o.subs) circle(a.x, a.y, 10 / dc.K, rgba("#a78bfa", 0.9), 1.4 / dc.K, [2 / dc.K, 2 / dc.K]);
-      dot(o.x, o.y, r, "rgba(6,10,20,0.95)");
+      if (hot) for (const a of o.subs) circle(a.x, a.y, 10 / dc.K, rgba(MACHINE, 0.9), 1.4 / dc.K, [2 / dc.K, 2 / dc.K]);
+      dot(o.x, o.y, r, rgba(token("bg0"), 0.95));
       if (look.spin) {
         circle(o.x, o.y, r, rgba(look.color, 0.95), 1.3 / dc.K);
         dot(o.x, o.y, r * 0.45, rgba(look.color, 0.95));
@@ -140,7 +142,7 @@ export function boardDraw(dc: DrawCtx, d: Drawing, io: BoardIO) {
     cx.globalAlpha = shown;
     const ls = labPx(11.5);
     cx.letterSpacing = `${0.6 / dc.K}px`;
-    nameLines(h.orbs).forEach((n, i) => text(n, h.lab.x, h.lab.y + i * (ls + 2 / dc.K), ls, rgba("#cfd9ea", pivotHot ? 0.95 : 0.58), h.align, 300));
+    nameLines(h.orbs).forEach((n, i) => text(n, h.lab.x, h.lab.y + i * (ls + 2 / dc.K), ls, rgba(LABEL, pivotHot ? 0.95 : 0.58), h.align, 300));
     cx.letterSpacing = "0px";
     cx.globalAlpha = 1;
   }
@@ -164,7 +166,7 @@ export function boardDraw(dc: DrawCtx, d: Drawing, io: BoardIO) {
     cx.arc(s.x, s.y, r + 5 * SUN_R, 0, TAU);
     cx.fill();
     const core = cx.createRadialGradient(s.x, s.y, 0, s.x, s.y, r);
-    core.addColorStop(0, "#f5f3ff");
+    core.addColorStop(0, CORE);
     core.addColorStop(0.5, rgba(s.color, 0.95));
     core.addColorStop(1, rgba(s.color, 0.6));
     cx.fillStyle = core;
@@ -199,13 +201,13 @@ export function boardDraw(dc: DrawCtx, d: Drawing, io: BoardIO) {
     };
     for (const l of sc.hops) {
       const lit = isHot("link", l), heat = l.busy ? 1 : 0;
-      flowLine({ ...l.p0, color: "#a78bfa" }, { ...l.p1, color: "#c084fc" }, lit ? 0.95 : 0.22 + heat * 0.55, heat + (lit ? 0.8 : 0));
+      flowLine({ ...l.p0, color: MACHINE }, { ...l.p1, color: MACHINE_RING }, lit ? 0.95 : 0.22 + heat * 0.55, heat + (lit ? 0.8 : 0));
       stroke(l);
     }
     for (const l of [...sc.entries, ...sc.exits]) {
       if (!l.p0) continue;
       const lit = isHot("bedge", l), heat = l.busy ? 1 : 0;
-      flowLine({ ...l.p0, color: BOARD_COLOR[l.source] ?? "#94a3b8" }, { ...l.p1!, color: BOARD_COLOR[l.target] ?? "#94a3b8" }, lit ? 0.95 : (l.events.every((v) => v === "ARCHIVE") ? 0.1 : 0.2) + heat * 0.55, heat + (lit ? 0.8 : 0));
+      flowLine({ ...l.p0, color: BOARD_COLOR[l.source] ?? MUTED }, { ...l.p1!, color: BOARD_COLOR[l.target] ?? MUTED }, lit ? 0.95 : (l.events.every((v) => v === "ARCHIVE") ? 0.1 : 0.2) + heat * 0.55, heat + (lit ? 0.8 : 0));
       stroke(l as Curve);
       label(l.lab!.name, l.lab!.x, l.lab!.y - 12 / dc.K, lit, null, 10.5);
     }
@@ -235,7 +237,7 @@ export function boardDraw(dc: DrawCtx, d: Drawing, io: BoardIO) {
         if (labels) label(s.name, s.lab ? s.lab.x : s.x, s.lab ? s.lab.y : s.y + R + 16, hot);
         continue;
       }
-      dot(s.x, s.y, R, "rgba(6,10,20,0.9)");
+      dot(s.x, s.y, R, rgba(token("bg0"), 0.9));
       circle(s.x, s.y, R, rgba(s.color, hot ? 1 : s.n ? 0.85 : 0.45), hot ? 2.2 : s.mini ? 1 : 1.6);
       dot(s.x, s.y, s.mini ? 1.5 : s.initial ? 4 : 2.5, rgba(s.color, 0.9));
       if (labels) label(s.name, s.lab ? s.lab.x : s.x, s.lab ? s.lab.y : s.y + R + 16, hot);
@@ -316,7 +318,7 @@ export function boardDraw(dc: DrawCtx, d: Drawing, io: BoardIO) {
     for (const p of sc.planets) {
       const hot = isHot("planet", p), mv = p.pager ? p.pager.hidden.flatMap(io.moving) : io.moving(p.name);
       if (p.anchor) {
-        cx.strokeStyle = rgba("#a78bfa", 0.4);
+        cx.strokeStyle = rgba(MACHINE, 0.4);
         cx.setLineDash([2, 4]);
         cx.lineWidth = 1;
         cx.beginPath();
@@ -325,11 +327,11 @@ export function boardDraw(dc: DrawCtx, d: Drawing, io: BoardIO) {
         cx.stroke();
         cx.setLineDash([]);
       }
-      for (const R of p.rings || []) circle(p.x, p.y, R, rgba("#c4b5fd", 0.26), 1, [1.5, 4]); // the task orbits around this machine
+      for (const R of p.rings || []) circle(p.x, p.y, R, rgba(MOON, 0.26), 1, [1.5, 4]); // the task orbits around this machine
       // a sub-state: a small fuchsia disc on a dashed stem from the body before it
       if (p.subState) {
-        stem(p.prev!, p, "#e879f9", hot);
-        disc(p.x, p.y, p.R, "#e879f9", hot, p.n ? 0.32 : 0.22);
+        stem(p.prev!, p, STEM, hot);
+        disc(p.x, p.y, p.R, STEM, hot, p.n ? 0.32 : 0.22);
         continue;
       }
       // a skill moon: a still disc, brighter while it has sessions and ringed in amber while one moves, named beside it away from the primary, past
@@ -340,13 +342,13 @@ export function boardDraw(dc: DrawCtx, d: Drawing, io: BoardIO) {
         machine(p.x, p.y, p.R, hot, p.n ? 0.32 : 0.14, !!src);
         if (mv.length) circle(p.x, p.y, p.R + 4, rgba(ACT, 0.85), 1.5);
         cx.letterSpacing = `${0.5 / dc.K}px`;
-        const col = rgba("#d8c8f5", hot ? 0.95 : 0.6);
+        const col = rgba(NAME_INK, hot ? 0.95 : 0.6);
         machineName(p.label || p.name, p.x + sd * past(p), p.y, labPx(11.5), col, sd < 0 ? "right" : "left", src);
         cx.letterSpacing = "0px";
         continue;
       }
       const psrc = io.sourceOf(p.name);
-      dot(p.x, p.y, p.R + 14, "rgba(10,14,26,0.85)");
+      dot(p.x, p.y, p.R + 14, rgba(token("bg0"), 0.85));
       if (mv.length) {
         const g = cx.createRadialGradient(p.x, p.y, p.R + 14, p.x, p.y, p.R + 30);
         g.addColorStop(0, rgba(ACT, 0.2));
@@ -357,7 +359,7 @@ export function boardDraw(dc: DrawCtx, d: Drawing, io: BoardIO) {
         cx.arc(p.x, p.y, p.R + 14, 0, TAU, true);
         cx.fill();
       }
-      circle(p.x, p.y, p.R + 14, mv.length ? rgba(ACT, 0.6) : rgba(psrc ? EXT : "#c084fc", hot ? 0.9 : psrc ? 0.6 : p.n ? 0.45 : 0.22), hot ? 2 : 1.2);
+      circle(p.x, p.y, p.R + 14, mv.length ? rgba(ACT, 0.6) : rgba(psrc ? EXT : MACHINE_RING, hot ? 0.9 : psrc ? 0.6 : p.n ? 0.45 : 0.22), hot ? 2 : 1.2);
       drawMachineEdges(p.edges, true);
       drawStates(p.states, false);
       for (const e of mv) {
@@ -383,7 +385,7 @@ export function boardDraw(dc: DrawCtx, d: Drawing, io: BoardIO) {
     for (const grp of io.scene!.groups) {
       for (const s of grp.stars) {
         const live = !!s.active?.some((r) => r.status === "running"), status = live ? "running" : s.status;
-        const col = DAG_COLOR[status] || "#94a3b8", hot = isHot("dag", s), g = s.glyph;
+        const col = DAG_COLOR[status] || MUTED, hot = isHot("dag", s), g = s.glyph;
         if (hot || status === "running") {
           // no resting glow: only a hovered or currently running DAG gets a faint halo
           const glow = cx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.br * 1.3);
@@ -401,7 +403,7 @@ export function boardDraw(dc: DrawCtx, d: Drawing, io: BoardIO) {
         const folded = io.scene!.fold?.ledger && io.heldRows().length ? stepStates(io.focused(), s.name, g.nodes.map((n) => n.name)) ?? {} : null;
         const ss = (n: GNode) => (folded ? folded[n.name] ?? "not_started" : stepStatus(s, n.name, n.status));
         for (const [p, q] of g.links) {
-          const a = { x: s.x + p.x, y: s.y + p.y, color: DAG_COLOR[ss(p)] || "#94a3b8" }, b = { x: s.x + q.x, y: s.y + q.y, color: DAG_COLOR[ss(q)] || "#94a3b8" };
+          const a = { x: s.x + p.x, y: s.y + p.y, color: DAG_COLOR[ss(p)] || MUTED }, b = { x: s.x + q.x, y: s.y + q.y, color: DAG_COLOR[ss(q)] || MUTED };
           const running = ss(p) === "running" || ss(q) === "running", dx = (b.x - a.x) / 2;
           flowLine(a, b, hot || running ? 0.8 : 0.42, running ? 0.6 : 0, [1.5, 3.5]);
           cx.beginPath();
@@ -412,7 +414,7 @@ export function boardDraw(dc: DrawCtx, d: Drawing, io: BoardIO) {
         }
         for (const n of g.nodes) {
           const st = ss(n), c = DAG_COLOR[st] || col, idle = st === "not_started", x = s.x + n.x, y = s.y + n.y;
-          dot(x, y, nr, "rgba(6,10,20,0.9)");
+          dot(x, y, nr, rgba(token("bg0"), 0.9));
           circle(x, y, nr, rgba(c, hot ? 1 : idle ? 0.45 : 0.85), hot ? 1.4 : 1);
           dot(x, y, nr * 0.34, rgba(c, idle ? 0.45 : 0.9));
           for (const r of io.moves.rings) if (r.dag === s.name && r.step === n.name) pulse(x, y, nr, (io.T - r.at) / RING, DAG_COLOR[r.status], 16); // a run entering or ending in this step rings it once
@@ -422,7 +424,7 @@ export function boardDraw(dc: DrawCtx, d: Drawing, io: BoardIO) {
         if (fan) {
           const bc = fan.full ? DAG_COLOR.failed : ACT, bw = textW(fan.text, 10.5) / dc.K + 6 / dc.K, bh = 15 / dc.K;
           const bx = s.x + g.w / 2 + nr + 8 / dc.K, by = s.y - g.h / 2 - nr - 10 / dc.K;
-          cx.fillStyle = "rgba(6,10,20,0.85)";
+          cx.fillStyle = rgba(token("bg0"), 0.85);
           cx.strokeStyle = rgba(bc, 0.8);
           cx.lineWidth = 1 / dc.K;
           cx.beginPath();
@@ -431,7 +433,7 @@ export function boardDraw(dc: DrawCtx, d: Drawing, io: BoardIO) {
           cx.stroke();
           text(fan.text, bx + bw / 2, by + 0.5 / dc.K, 10.5 / dc.K, bc, "center", 500);
         }
-        if (s.runnable) circle(s.x, s.y, s.br, rgba("#dbe4f3", 0.35), 1, [2, 3]);
+        if (s.runnable) circle(s.x, s.y, s.br, rgba(token("ink"), 0.35), 1, [2, 3]);
         for (const age of dagRings(io.moves.flare[s.name], io.T)) pulse(s.x, s.y, s.br, age, ACT, 38); // each run ending rings its DAG
       }
     }

@@ -10,7 +10,9 @@ import { emptyNote, rowMeta, stuckCount } from "../features/level/machineRows";
 import { thumbOf, windowOf, type Thumb } from "../features/level/machineScroll";
 import { stripLabel, stripScale, ticks, viewSpan, type Tick } from "../features/level/machineStrip";
 import { sessionsOf, traceSteps, type Spot } from "../features/level/machineTrace";
-import { ACT, OFF, PHASE, PHASE_TEXT, SUBM, SUBM_TEXT, rgba, tierColor, type Drawing, type DrawCtx, type LTask } from "./draw";
+import { ACT, LABEL, MACHINE, MUTED, OFF, PHASE, PHASE_TEXT, SUBM, SUBM_TEXT, rgba, tierColor, type Drawing, type DrawCtx, type LTask } from "./draw";
+import { DAG_HI, DAG_INK, MACHINE_RING } from "./boardPalette";
+import { token } from "./palette";
 import { RAMP, bez, curveOf, sample, type Curve, type Pt, type RowView, type Scene } from "./scene";
 import { PULSE, glideTime, type Move, type Sky } from "./sky";
 
@@ -86,7 +88,6 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
     return s.machine === top.machine ? top.nodes.some((n) => n.id === s.state) : !!top.rows.find((r) => r.name === s.machine)?.nodes.some((n) => n.id === s.state);
   }
   // ---- the machine across a state level's top, in screen pixels (machineLedger.ts places it; the type and dots grow with the square root of the text size) ----
-  const INK = "#cfd9ea", SUB = "#94a3b8", DAGC = "#fcd34d", PLANET = RAMP[4];
   /** A flow line between two states, trimmed to their discs. */
   function flowBetween(a: Pt & { color: string; r: number }, b: Pt & { color: string; r: number }, bend: number, alpha: number, heat: number, dash?: number[]) {
     const c = curveOf(a, b, bend), len = Math.hypot(b.x - a.x, b.y - a.y) || 1, t0 = Math.min(0.4, (a.r + 1) / len), t1 = 1 - Math.min(0.4, (b.r + 2) / len);
@@ -133,9 +134,9 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
   }
   /** A DAG launch: the star, and its dashed line to the machine's first state. */
   function launch(sx: number, sy: number, to: Pt & { r: number; color: string }, gs: number) {
-    flowBetween({ x: sx, y: sy, r: 7, color: DAGC }, to, 0, 0.4, 0, [1, 4]);
-    dot(sx, sy, 11 * gs, rgba(DAGC, 0.12));
-    cx.fillStyle = rgba(DAGC, 0.9);
+    flowBetween({ x: sx, y: sy, r: 7, color: DAG_INK }, to, 0, 0.4, 0, [1, 4]);
+    dot(sx, sy, 11 * gs, rgba(DAG_INK, 0.12));
+    cx.fillStyle = rgba(DAG_INK, 0.9);
     cx.beginPath();
     for (let i = 0; i < 8; i++) {
       const r = (i % 2 ? 0.3 : 1) * 5.5 * gs, th = (i * Math.PI) / 4 - Math.PI / 2;
@@ -154,12 +155,12 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
     led.rowNames.clear();
     // the template's own name and what it holds, then the machines entered from it, over the spine under the header
     cx.letterSpacing = "0.6px";
-    text(fitText(top.machine, mw, name * 1.08), mx, top.metaT + 4 + name * 0.6, name * 1.08, rgba(INK, 0.9), "left", 400);
-    text(fitText(`template · ${top.nodes.length} states · ${flow?.agents.length ?? 0} tasks`, mw, sub), mx, top.metaT + 6 + name * 1.3 + sub * 0.6, sub, rgba(SUB, 0.7), "left", 300);
-    const count = (ink: number) => text(fitText(`${top.total} machine${top.total === 1 ? "" : "s"}${top.task ? ` holding ${top.task}` : stuck ? ` · ${stuck} stuck` : " · newest first"}`, mw, sub), mx, top.hdrB - sub, sub, rgba(SUB, ink), "left", 300);
+    text(fitText(top.machine, mw, name * 1.08), mx, top.metaT + 4 + name * 0.6, name * 1.08, rgba(LABEL, 0.9), "left", 400);
+    text(fitText(`template · ${top.nodes.length} states · ${flow?.agents.length ?? 0} tasks`, mw, sub), mx, top.metaT + 6 + name * 1.3 + sub * 0.6, sub, rgba(MUTED, 0.7), "left", 300);
+    const count = (ink: number) => text(fitText(`${top.total} machine${top.total === 1 ? "" : "s"}${top.task ? ` holding ${top.task}` : stuck ? ` · ${stuck} stuck` : " · newest first"}`, mw, sub), mx, top.hdrB - sub, sub, rgba(MUTED, ink), "left", 300);
     count(0.6);
     cx.letterSpacing = "0px";
-    cx.fillStyle = rgba(SUB, 0.16);
+    cx.fillStyle = rgba(MUTED, 0.16);
     cx.fillRect(mx - 10, top.hdrB, top.x1 + 22 - mx, 1);
     for (const id of top.entered) {
       const n = nodes.get(id);
@@ -205,7 +206,7 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
     drawRail();
     // a pinned path is the focused setting: the rest of the ledger steps back under the page's dark veil
     if (pinnedTask()) {
-      cx.fillStyle = "rgba(4,6,11,0.66)";
+      cx.fillStyle = rgba(token("bg0"), 0.66);
       cx.fillRect(0, 0, io.FW, io.H);
       cx.letterSpacing = "0.6px";
       count(0.9); // the count names the task the rows are narrowed to, over the veil
@@ -242,14 +243,14 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
   };
   function stepBadge(p: Pt, s: string, col: string) {
     const w = badgeW(s), h = 15;
-    cx.fillStyle = "rgba(6,10,20,0.92)";
+    cx.fillStyle = rgba(token("bg0"), 0.92);
     cx.strokeStyle = rgba(col, 0.95);
     cx.lineWidth = 1.1;
     cx.beginPath();
     cx.roundRect(p.x - w / 2, p.y - h / 2, w, h, h / 2);
     cx.fill();
     cx.stroke();
-    text(s, p.x, p.y + 0.5, 10, "#fef3c7", "center", 600);
+    text(s, p.x, p.y + 0.5, 10, DAG_HI, "center", 600);
   }
   /**
    * The hovered task's path, else the pinned one's, across every machine of the ledger it has a session in: each hop retraced along the flow line
@@ -295,7 +296,7 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
     cx.letterSpacing = "0.6px";
     for (const m of new Set(steps.flatMap((s) => [s.a.machine, s.b.machine]))) {
       const r = led.rowNames.get(m);
-      if (r) clipY(top.laneTop, top.laneBottom, () => text(r.text, r.x, r.y, r.px, rgba(INK, 0.97), "left", 400));
+      if (r) clipY(top.laneTop, top.laneBottom, () => text(r.text, r.x, r.y, r.px, rgba(LABEL, 0.97), "left", 400));
     }
     cx.letterSpacing = "0px";
     // step numbers at each line's middle, a line taken twice carrying both, slid along it clear of the others
@@ -328,14 +329,14 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
         const hot = l.hot || lit.has(l.key);
         cx.globalAlpha = l.ga * (hot ? 1 : veil);
         if (l.lead) {
-          cx.strokeStyle = rgba(INK, 0.22);
+          cx.strokeStyle = rgba(LABEL, 0.22);
           cx.lineWidth = 1;
           cx.beginPath();
           cx.moveTo(l.lead.x, l.lead.y);
           cx.lineTo(l.lead.x, l.lead.to);
           cx.stroke();
         }
-        text(l.text, l.x, l.y, l.px, rgba(INK, hot ? 0.95 : l.ink), "left", l.weight);
+        text(l.text, l.x, l.y, l.px, rgba(LABEL, hot ? 0.95 : l.ink), "left", l.weight);
         cx.globalAlpha = 1;
       });
     cx.letterSpacing = "0px";
@@ -343,24 +344,24 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
   /** The colour a tick takes: the state its machine was entered from, amber for a DAG launch. */
   function entryColor(e: MachineEntry): string {
     const sc = io.scene!, top = sc.top!;
-    if (e.dag != null) return DAGC;
-    if (!e.from) return PLANET;
-    if (e.from.machine === top.machine) return sc.mStates[e.from.state]?.color ?? PLANET;
+    if (e.dag != null) return DAG_INK;
+    if (!e.from) return MACHINE_RING;
+    if (e.from.machine === top.machine) return sc.mStates[e.from.state]?.color ?? MACHINE_RING;
     const st = io.S!.flows[e.from.machine]?.machine.states ?? [], j = st.findIndex((s) => s.id === e.from!.state);
-    return j < 0 ? PLANET : RAMP[Math.round((st.length > 1 ? j / (st.length - 1) : 0) * (RAMP.length - 1))];
+    return j < 0 ? MACHINE_RING : RAMP[Math.round((st.length > 1 ? j / (st.length - 1) : 0) * (RAMP.length - 1))];
   }
   /** The thumb, the back-to-newest chip and the strip of the last 24 h of machine entries under the lane, with the rows in view shaded on it. */
   function drawRail() {
     const top = io.scene!.top!, { fs } = ledgerSizes(dc.scale), sp = 10 * fs, stripT = top.laneBottom, sx0 = top.metaX, sx1 = top.x1, hot = hotRow();
-    cx.fillStyle = rgba(SUB, 0.16);
+    cx.fillStyle = rgba(MUTED, 0.16);
     cx.fillRect(top.metaX - 10, stripT, top.x1 + 20 - top.metaX, 1);
     led.thumb = thumbOf(top.content, { h: stripT - top.laneTop, fs }, io.scrollPos, top.max);
     Object.assign(led.railBox, { thumbX: top.x1 + 18, laneTop: top.laneTop, stripT, sx0, sx1, chip: null, foot: null });
     if (led.thumb) {
       const t = led.thumb, x = led.railBox.thumbX;
-      cx.fillStyle = rgba(SUB, 0.08);
+      cx.fillStyle = rgba(MUTED, 0.08);
       cx.fillRect(x - 1, top.laneTop + t.y0, 2, t.y1 - t.y0);
-      cx.fillStyle = rgba(SUB, io.railHover?.kind === "thumb" || io.thumbDrag ? 0.65 : 0.32);
+      cx.fillStyle = rgba(MUTED, io.railHover?.kind === "thumb" || io.thumbDrag ? 0.65 : 0.32);
       cx.beginPath();
       cx.roundRect(x - 2, top.laneTop + t.ty, 4, t.th, 2);
       cx.fill();
@@ -374,13 +375,13 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
       led.railBox.chip = { x0, y0, x1: x0 + w, y1: y0 + h };
       cx.beginPath();
       cx.roundRect(x0, y0, w, h, h / 2);
-      cx.fillStyle = "rgba(12,19,34,0.92)";
+      cx.fillStyle = rgba(token("surface"), 0.92);
       cx.fill();
-      cx.strokeStyle = `rgba(167,139,250,${io.railHover?.kind === "chip" ? 0.7 : 0.35})`;
+      cx.strokeStyle = rgba(MACHINE, io.railHover?.kind === "chip" ? 0.7 : 0.35);
       cx.lineWidth = 1;
       cx.stroke();
       cx.letterSpacing = "0.6px";
-      text(label, x0 + w / 2, y0 + h / 2, sp, rgba(INK, 0.9), "center", 400);
+      text(label, x0 + w / 2, y0 + h / 2, sp, rgba(LABEL, 0.9), "center", 400);
       cx.letterSpacing = "0px";
     }
     // the strip: one continuous stretch shaded for the rows in view, a tick per entry, hours along the axis
@@ -389,27 +390,27 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
     const inView = windowOf(top.rows, io.scrollPos, { h: stripT - top.laneTop, fs }).inView.map((i) => io.S!.flows[top.rows[i].name]?.last ?? null), span = viewSpan(inView, scale.t0);
     if (span) {
       const a = scale.x(span.from), b = scale.x(span.to);
-      cx.fillStyle = rgba(PLANET, 0.12);
+      cx.fillStyle = rgba(MACHINE_RING, 0.12);
       cx.fillRect(a - 3, by - 14 * fs, b - a + 6, 14 * fs);
-      cx.fillStyle = rgba(PLANET, 0.5);
+      cx.fillStyle = rgba(MACHINE_RING, 0.5);
       cx.fillRect(a - 3, by, b - a + 6, 1);
     }
-    cx.fillStyle = rgba(SUB, 0.22);
+    cx.fillStyle = rgba(MUTED, 0.22);
     cx.fillRect(sx0, by, sx1 - sx0, 1);
     cx.letterSpacing = "0.6px";
     for (let h = Math.ceil(scale.t0 / 10800) * 10800; h <= scale.t1; h += 10800) {
       const x = scale.x(h);
-      cx.fillStyle = rgba(SUB, 0.3);
+      cx.fillStyle = rgba(MUTED, 0.3);
       cx.fillRect(x, by, 1, 4);
-      if (x - sx0 > 18 && sx1 - x > 18) text(io.hhmm(h), x, by + 11 * fs, sp * 0.95, rgba(SUB, 0.5), "center", 300);
+      if (x - sx0 > 18 && sx1 - x > 18) text(io.hhmm(h), x, by + 11 * fs, sp * 0.95, rgba(MUTED, 0.5), "center", 300);
     }
     for (const t of led.ticks) {
       const on = hot === t.entry.row || (io.railHover?.kind === "tick" && io.railHover.tick === t), len = (on ? 13 : 8) * fs;
       cx.fillStyle = rgba(entryColor(t.entry), on ? 1 : 0.62);
       cx.fillRect(t.x - 0.75, by - len, 1.5, len);
     }
-    text("24 h · machine entries", sx0, stripT + 8 * fs, sp, rgba(SUB, 0.6), "left", 300);
-    text(stripLabel(span, top.rows.length, top.total, io.hhmm), sx1, stripT + 8 * fs, sp, rgba(SUB, 0.7), "right", 300);
+    text("24 h · machine entries", sx0, stripT + 8 * fs, sp, rgba(MUTED, 0.6), "left", 300);
+    text(stripLabel(span, top.rows.length, top.total, io.hhmm), sx1, stripT + 8 * fs, sp, rgba(MUTED, 0.7), "right", 300);
     cx.letterSpacing = "0px";
   }
   /** The row the pointer is on, over its name or one of its states. */
@@ -430,7 +431,7 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
       cx.rect(c.clip.x0, y, c.clip.x1 - c.clip.x0, row.h);
       cx.clip();
       for (const st of c.stems) {
-        cx.strokeStyle = rgba(col.get(st.state) ?? PLANET, al * 0.7);
+        cx.strokeStyle = rgba(col.get(st.state) ?? MACHINE_RING, al * 0.7);
         cx.beginPath();
         st.pts.forEach((p, i) => (i ? cx.lineTo(p.x, y + p.y) : cx.moveTo(p.x, y + p.y)));
         for (const d of st.drops) {
@@ -441,7 +442,7 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
       }
       for (const b of c.blocks) {
         for (const l of b.lines) {
-          cx.strokeStyle = rgba(SUB, 0.35 * al * l.a);
+          cx.strokeStyle = rgba(MUTED, 0.35 * al * l.a);
           cx.beginPath();
           cx.moveTo(l.x, y + l.y);
           cx.lineTo(l.x + (l.states.length - 1) * l.dx, y + l.y);
@@ -450,7 +451,7 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
         }
         cx.setLineDash([1.5, 2]);
         for (const h of b.hangs) {
-          cx.strokeStyle = rgba(PLANET, al * h.a);
+          cx.strokeStyle = rgba(MACHINE_RING, al * h.a);
           cx.beginPath();
           cx.moveTo(h.x, y + h.y0);
           cx.lineTo(h.x, y + h.y1);
@@ -459,8 +460,8 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
         cx.setLineDash([]);
         const lab = fit(b.name, Math.max(12, b.label.w - (b.tail ? nameWidth(b.tail, sp) : 0)));
         cx.letterSpacing = "0.6px";
-        text(lab, b.label.x, y + b.label.y, sp, rgba(PLANET, al), "left", 300);
-        if (b.tail) text(b.tail, b.label.x + nameWidth(lab, sp), y + b.label.y, sp, rgba(SUB, 0.75), "left", 300);
+        text(lab, b.label.x, y + b.label.y, sp, rgba(MACHINE_RING, al), "left", 300);
+        if (b.tail) text(b.tail, b.label.x + nameWidth(lab, sp), y + b.label.y, sp, rgba(MUTED, 0.75), "left", 300);
         cx.letterSpacing = "0px";
       }
       cx.restore();
@@ -497,7 +498,7 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
       return { row, y: eased - io.scrollPos, to: to - io.scrollPos };
     });
     if (fl) led.sliding = true; // the glow fades over frames
-    if (!top.rows.length) text(emptyNote(top.machine), (top.x0 + top.x1) / 2, (top.laneTop + top.laneBottom) / 2, subP, rgba(SUB, 0.6), "center", 300);
+    if (!top.rows.length) text(emptyNote(top.machine), (top.x0 + top.x1) / 2, (top.laneTop + top.laneBottom) / 2, subP, rgba(MUTED, 0.6), "center", 300);
     const shown = led.lane.filter(({ row, y }) => y + row.h > top.laneTop && y < top.laneBottom);
     const pos = (row: RowView, y: number) => new Map(row.nodes.map((n) => [n.id, { x: n.x, y: y + row.c + n.oy, r: n.r, color: n.color, orbit: n.orbit }]));
     const spots = new Map(shown.map((d) => [d.row.name, pos(d.row, d.y)])); // only the rows in view are placed
@@ -507,10 +508,10 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
       cx.globalAlpha = fade;
       const lit = Math.max(on ? (picked ? 0.09 : 0.055) : 0, io.glow?.name === row.name ? 0.16 * fl : 0);
       if (lit) {
-        cx.fillStyle = rgba(PLANET, lit);
+        cx.fillStyle = rgba(MACHINE_RING, lit);
         cx.fillRect(mx - 10, y, top.x1 + 20 - mx, row.h);
       }
-      cx.fillStyle = rgba(SUB, 0.09);
+      cx.fillStyle = rgba(MUTED, 0.09);
       cx.fillRect(mx - 10, y + row.h - 1, top.x1 + 20 - mx, 1);
       if (m.status.stuck) {
         cx.fillStyle = rgba(OFF, 0.85);
@@ -535,15 +536,15 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
       const ty = y + row.h / 2 - (nameP * 1.4 + 2 * subP * 1.5) / 2;
       cx.letterSpacing = "0.6px";
       const endW = nameWidth(m.end, subP) + 8;
-      text(m.end, mx + mw, ty + nameP * 0.7, subP, rgba(PLANET, on ? 1 : 0.7), "right", 300);
+      text(m.end, mx + mw, ty + nameP * 0.7, subP, rgba(MACHINE_RING, on ? 1 : 0.7), "right", 300);
       const nm = { text: fitText(row.name, mw - endW, nameP), x: mx, y: ty + nameP * 0.7, px: nameP };
       led.rowNames.set(row.name, nm);
-      text(nm.text, nm.x, nm.y, nameP, rgba(row.kind === "phase" ? PHASE_TEXT : row.kind === "sub" ? SUBM_TEXT : INK, on ? 0.97 : m.status.idle ? 0.55 : 0.85), "left", 400);
-      const dotCol = m.tie.kind === "none" || m.tie.kind === "dag" ? null : m.tie.machine === top.machine ? sc.mStates[m.tie.state!]?.color : (top.rows.find((q) => q.name === m.tie.machine)?.nodes.find((n) => n.id === m.tie.state)?.color ?? PLANET);
-      const tieInk = m.tie.kind === "dag" ? rgba(DAGC, 0.75) : m.tie.kind === "none" ? rgba(SUB, 0.5) : rgba(INK, 0.62), ly = ty + nameP * 1.4 + subP * 0.75;
+      text(nm.text, nm.x, nm.y, nameP, rgba(row.kind === "phase" ? PHASE_TEXT : row.kind === "sub" ? SUBM_TEXT : LABEL, on ? 0.97 : m.status.idle ? 0.55 : 0.85), "left", 400);
+      const dotCol = m.tie.kind === "none" || m.tie.kind === "dag" ? null : m.tie.machine === top.machine ? sc.mStates[m.tie.state!]?.color : (top.rows.find((q) => q.name === m.tie.machine)?.nodes.find((n) => n.id === m.tie.state)?.color ?? MACHINE_RING);
+      const tieInk = m.tie.kind === "dag" ? rgba(DAG_INK, 0.75) : m.tie.kind === "none" ? rgba(MUTED, 0.5) : rgba(LABEL, 0.62), ly = ty + nameP * 1.4 + subP * 0.75;
       if (dotCol) dot(mx + 3, ly, 2.6 * gs, rgba(dotCol, 0.95));
       text(fitText(m.tie.text, mw - (dotCol ? 11 : 0), subP), mx + (dotCol ? 11 : 0), ly, subP, tieInk, "left", 300);
-      text(fitText(m.status.text, mw, subP), mx, ty + nameP * 1.4 + subP * 2.25, subP, m.status.stuck ? rgba(OFF, 0.9) : rgba(SUB, m.status.idle ? 0.5 : 0.7), "left", 300);
+      text(fitText(m.status.text, mw, subP), mx, ty + nameP * 1.4 + subP * 2.25, subP, m.status.stuck ? rgba(OFF, 0.9) : rgba(MUTED, m.status.idle ? 0.5 : 0.7), "left", 300);
       cx.letterSpacing = "0px";
       // its DAG launches, each a star left of the first state
       const dags = (f.ties ?? []).filter((t) => t.kind === "dag"), init = ns.get(row.init)!, stars = dags.map((_, k) => ({ x: top.x0 - 18 * fs, y: y + row.c + (k - (dags.length - 1) / 2) * 12 * fs }));
@@ -576,7 +577,7 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
     if (top.more) {
       const footY = top.laneTop + top.content - top.foot - io.scrollPos, busy = io.pg?.busy, wait = io.pg?.failedAt != null && !busy;
       cx.letterSpacing = "0.6px";
-      text(busy ? `loading ${Math.min(PAGE, top.more)} more…` : wait ? `could not load ${Math.min(PAGE, top.more)} more · trying again` : `${top.more} more · scroll to load`, (top.x0 + top.x1) / 2, footY + top.foot / 2, subP, rgba(wait ? OFF : SUB, 0.7), "center", 300);
+      text(busy ? `loading ${Math.min(PAGE, top.more)} more…` : wait ? `could not load ${Math.min(PAGE, top.more)} more · trying again` : `${top.more} more · scroll to load`, (top.x0 + top.x1) / 2, footY + top.foot / 2, subP, rgba(wait ? OFF : MUTED, 0.7), "center", 300);
       cx.letterSpacing = "0px";
     }
     // a row's tie, drawn while the row or the state it is entered from is under the pointer, along the path its sessions take in; it crosses the

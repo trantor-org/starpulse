@@ -35,7 +35,7 @@ const milestoneName = (milestone: string) => milestone || "No milestone";
 /** A machine event this recent still pulses on its card, in seconds. */
 const HOT_S = 120;
 
-const profileColor = (a: string) => (/deep/.test(a) ? "#a78bfa" : /standard/.test(a) ? "#67e8f9" : /fast/.test(a) ? "#fbbf24" : "#94a3b8");
+const profileColor = (a: string) => (/deep/.test(a) ? "var(--agent)" : /standard/.test(a) ? "var(--waits)" : /fast/.test(a) ? "var(--run)" : "var(--slate)");
 /** An assignee as a card draws it: a session URL is its nickname, a profile name loses its `@agent-` prefix. */
 const shortProfile = (a: string) => sessionNickname(a) ?? a.replace(/^@agent-/, "").replace(/^@/, "");
 const checksClass = (p: Pull) => (p.merged ? "merged" : p.checks === "failing" ? "fail" : p.checks);
