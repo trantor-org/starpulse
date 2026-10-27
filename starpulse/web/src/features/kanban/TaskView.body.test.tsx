@@ -19,6 +19,16 @@ describe("task dialog body", () => {
     expect(html).toContain('<a class="tl" href="?view=kanban&amp;task=TASK-1">TASK-1</a>');
   });
 
+  it("draws inline code, bold and links in the description, plan, notes and a criterion", () => {
+    const line = "Run `make lint` with **care** and read [the guide](https://example.com).";
+    const html = draw({ record: { ...record, description: line, plan: line, notes: line, acceptanceCriteria: [{ n: 1, text: line, checked: false }] } });
+
+    expect(html.match(/<code>make lint<\/code>/g)).toHaveLength(4);
+    expect(html.match(/<strong>care<\/strong>/g)).toHaveLength(4);
+    expect(html.match(/<a href="https:\/\/example.com" target="_blank" rel="noopener">the guide/g)).toHaveLength(4);
+    expect(html).not.toMatch(/`|\*\*/);
+  });
+
   it("drops the creation signals: Duplicate Search, Duplicate Resolution and ADR Needed", () => {
     const description = "Intro.\n\n## Duplicate Search\n\nnone found\n\n## Background\n\nKept text.\n\n## ADR Needed\n\nNo\n\n## Duplicate Resolution\n\ndupes resolved\n\n```md\n## ADR Needed\n```";
     const html = draw({ record: { ...record, description } });

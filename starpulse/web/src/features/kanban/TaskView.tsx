@@ -7,7 +7,7 @@ import { columnsOf, prReadState, roleOf, type KanbanTask } from "./kanbanModel";
 import { startLane, startable } from "./start";
 import { StartCriteria } from "./StartCriteria";
 import { DocReader, DocRows, useDocs } from "./DocReader";
-import { Linked, Md } from "./Markdown";
+import { Inline, Md } from "./Markdown";
 import { sessionNickname } from "./nickname";
 import type { Capabilities, Pull, Roles } from "../../api";
 import {
@@ -201,17 +201,6 @@ function DepRows({ rows, names, roles, open }: { rows: DepRow[]; names: Record<s
   ));
 }
 
-/** An Activity or Comments row's body with the mockup's inline Markdown: `code`, **bold**, [links](url) and TASK-N ids. */
-function Inline({ text, open }: { text: string; open: (id: string) => void }) {
-  return <>{text.split(/(`[^`]+`|\*\*[^*]+\*\*|\[[^\]]+\]\(https?:[^)]+\))/).map((part, i) => {
-    if (i % 2 === 0) return <Linked key={i} text={part} open={open} />;
-    if (part.startsWith("`")) return <code key={i}>{part.slice(1, -1)}</code>;
-    if (part.startsWith("**")) return <strong key={i}><Linked text={part.slice(2, -2)} open={open} /></strong>;
-    const [, label, href] = /^\[(.+)\]\((.+)\)$/.exec(part)!;
-    return <a key={i} href={href} target="_blank" rel="noopener"><Inline text={label} open={open} /> ↗</a>;
-  })}</>;
-}
-
 interface ChecksProps {
   name: string; field: "acceptanceCriteria" | "definitionOfDone"; items: Item[]; editing: boolean; canToggle: boolean; bad: boolean;
   evidenceFor: number | null; evidence: Record<number, string>; tried: Set<number>;
@@ -229,7 +218,7 @@ function Checks({ name, field, items, editing, canToggle, bad, evidenceFor, evid
             <label className={`ritem${item.checked ? " done" : ""}`} id={field === "acceptanceCriteria" ? `ac${item.n}` : undefined}>
               <input type="checkbox" checked={item.checked} disabled={!canToggle} aria-label={`${name} #${item.n} done`}
                 onChange={(e) => toggle(item.n, e.currentTarget.checked)} />
-              <span className="nn">#{item.n}</span><span className="tx"><Linked text={item.text} open={open} /></span>
+              <span className="nn">#{item.n}</span><span className="tx"><Inline text={item.text} open={open} /></span>
             </label>
             {evidenceFor === item.n && <label className={`evidence${tried.has(item.n) && !evidence[item.n]?.trim() ? " missing" : ""}`}>
               Evidence for #{item.n}<textarea autoFocus value={evidence[item.n] ?? ""} onChange={(e) => setEvidence(item.n, e.currentTarget.value)} />
