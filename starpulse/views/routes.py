@@ -1,4 +1,4 @@
-"""The routes the server answers: their paths, which are writes and the body each answers."""
+"""The paths the routes answer."""
 
 from __future__ import annotations
 
@@ -112,16 +112,3 @@ _MACHINE_EVENTS = "/api/machine-events"
 
 
 _PULL_REFRESH = "/api/pulls/refresh"
-
-
-#: The write routes of milestone records; `/api/milestones/<id>` reads one, so a GET of these answers 405.
-_MILESTONE_WRITES = frozenset({_MILESTONES, _MILESTONE_EDIT, _MILESTONE_ARCHIVE})
-
-
-#: The write routes of doc records; `/api/docs/<id>` reads one, so a GET of these answers 405.
-_DOC_WRITES = frozenset({_DOCS, _DOC_EDIT, _DOC_ARCHIVE, _DOC_RESTORE})
-
-
-def _is_rerun(path: str) -> bool:
-    """Whether `path` is `/api/runs/<instance>/<workflow>/rerun`."""
-    return path.startswith(_RERUN) and path.endswith(_RERUN_TAIL) and path.count("/") == 5

@@ -1,11 +1,14 @@
-"""Gzip for what the server writes to a page that accepts it: a JSON body over `MIN_BYTES`, and every stream event."""
+"""Gzip for what the server writes to a page that accepts it: a body over `MIN_BYTES` and every stream event, by
+Starlette's `GZipMiddleware`, and the snapshot bodies held once, gzipped, for many pages."""
 
 from __future__ import annotations
 
 import gzip
-import zlib
-from collections.abc import Callable
 from typing import NamedTuple
+
+from starlette.datastructures import Headers
+from starlette.middleware.gzip import DEFAULT_EXCLUDED_CONTENT_TYPES, GZipMiddleware
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 #: A body this size or smaller is sent as it is: gzip's header and the page's decode cost more than it saves.
 MIN_BYTES = 64 * 1024
@@ -25,13 +28,6 @@ def accepts_gzip(accept_encoding: str | None) -> bool:
     return False
 
 
-def compressed(body: bytes, accept_encoding: str | None, level: int = LEVEL) -> bytes | None:
-    """`body` gzipped, or None when it is `MIN_BYTES` or smaller or the page does not accept gzip."""
-    if len(body) <= MIN_BYTES or not accepts_gzip(accept_encoding):
-        return None
-    return gzip.compress(body, compresslevel=level, mtime=0)
-
-
 class Encoded(NamedTuple):
     """A body and its gzip, made once for a body many pages read: gzip of a ~1 MB body takes tens of ms."""
 
@@ -41,15 +37,26 @@ class Encoded(NamedTuple):
 
     @classmethod
     def of(cls, body: bytes) -> Encoded:
-        return cls(body, compressed(body, "gzip", HELD_LEVEL))
+        return cls(body, gzip.compress(body, compresslevel=HELD_LEVEL, mtime=0) if len(body) > MIN_BYTES else None)
 
 
-def gzip_frames() -> Callable[[bytes], bytes]:
-    """A compressor of one gzip stream that ends a deflate block after each write and returns that write's bytes, so the
-    page decodes every event or ping as it arrives rather than when the next fills the compressor's buffer."""
-    deflater = zlib.compressobj(LEVEL, wbits=31)
+class Gzip(GZipMiddleware):
+    """`GZipMiddleware` at this server's levels: a body over `MIN_BYTES` goes to a thread rather than the event loop, an
+    event stream is compressed with a flush after each event so a page decodes it as it arrives, and `gzip;q=0` is
+    a refusal, which `GZipMiddleware` reads as an offer. A response that holds its own gzip (`Encoded`) is left as it is."""
 
-    def write(data: bytes) -> bytes:
-        return deflater.compress(data) + deflater.flush(zlib.Z_SYNC_FLUSH)
+    def __init__(self, app: ASGIApp) -> None:
+        excluded = tuple(kind for kind in DEFAULT_EXCLUDED_CONTENT_TYPES if kind != "text/event-stream")
+        super().__init__(
+            app,
+            minimum_size=MIN_BYTES,
+            compresslevel=LEVEL,
+            thread_minimum_size=MIN_BYTES,
+            exclude_content_types=excluded,
+        )
 
-    return write
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http" and not accepts_gzip(Headers(scope=scope).get("accept-encoding")):
+            kept = [(name, value) for name, value in scope["headers"] if name != b"accept-encoding"]
+            scope = {**scope, "headers": kept}
+        await super().__call__(scope, receive, send)

@@ -2,6 +2,7 @@
 
 import asyncio
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -10,7 +11,8 @@ from starpulse.views.asgi_app import PageApp
 
 def test_drained_waits_for_a_request_taken_before_its_endpoint(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     async def exchange() -> tuple[bool, bool]:
-        app = PageApp(None, None, None, None, tmp_path, ())  # type: ignore[arg-type]  # the stub below answers, not the routes
+        bare = SimpleNamespace(routes=list)  # no route: the stub below answers
+        app = PageApp(bare, bare, bare, None, tmp_path, ())  # type: ignore[arg-type]
         taken, release = asyncio.Event(), asyncio.Event()
 
         async def before_the_endpoint(scope: Any, receive: Any, send: Any) -> None:

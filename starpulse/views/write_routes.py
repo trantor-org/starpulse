@@ -43,7 +43,6 @@ from starpulse.views.routes import (
     _TASKS,
     _VERDICT,
     _WINDOW,
-    _is_rerun,
 )
 from starpulse.views.writes import (
     RETRY_AFTER_S,
@@ -107,6 +106,8 @@ def _no_writer(task: str, status: str, actor: str = OPERATOR) -> Written:
 
 TaskWrite = Callable[[str, bytes], tuple[int, dict]]
 Pushed = Callable[[str | None, bytes], tuple[int, dict]]
+WriteHandler = Callable[[WriteRequest], "Response | None"]
+WriteRoute = tuple[str, tuple[str, ...], WriteHandler]
 
 
 def _answered(kind: str, body: dict, status: int) -> Response:
@@ -116,8 +117,7 @@ def _answered(kind: str, body: dict, status: int) -> Response:
 
 class WriteRoutes:
     """Every route that changes something: the board's writes, a workflow's run, the token-guarded pushes and the
-    settings a page puts. A call answers a `WriteRequest` with its `Response`, or None where the method and path are
-    no write route."""
+    settings a page puts."""
 
     def __init__(self, feed: BoardFeed, window: HistoryWindow, board: Board, services: Services) -> None:
         writer = board.writer or _no_writer
@@ -160,78 +160,66 @@ class WriteRoutes:
             _DOC_ARCHIVE: (lambda client, raw: archive_doc(client, raw, milestones), "doc_archive"),
             _DOC_RESTORE: (lambda client, raw: restore_doc(client, raw, milestones), "doc_restore"),
         }
-        # The pushes a deployment may leave unconfigured: their route is then none, and a POST of it answers 404.
-        self._pushes: dict[str, tuple[Pushed | None, int, str]] = {
-            _PULL_REFRESH: (services.pull_refresh, MAX_REFRESH_BODY, "ingest"),
-        }
+        # The pushes a deployment may leave unconfigured: a POST of one answers 404.
+        self._pull_refresh = services.pull_refresh
         self._events = services.events
 
-    def post_only(self, path: str) -> bool:
-        """Whether `path` is a route a GET is refused: a write (or run) that answers 405, though a read may share its prefix."""
-        return path.startswith(_RUN) or _is_rerun(path) or path in {*self._writes, _MACHINE_EVENTS, _PULL_REFRESH}
+    def routes(self) -> list[WriteRoute]:
+        """Every write route as its path template (`ReadRoutes.routes` says how it is written), the methods it answers
+        and its handler. A handler answers None where a deployment leaves its route unconfigured."""
+        guarded = [
+            (path, ("POST",), self._guarded(kind, self._body(handler)))
+            for path, (handler, kind) in self._writes.items()
+        ]
+        return [
+            *guarded,
+            (f"{_RUN}{{name:path}}", ("POST",), self._guarded("run", self._run)),
+            (f"{_RERUN}{{instance}}/{{workflow}}{_RERUN_TAIL}", ("POST",), self._guarded("run", self._rerun)),
+            (_PULL_REFRESH, ("POST",), self._push),
+            (_MACHINE_EVENTS, ("POST",), self._machine_events),
+            (_SCHEDULER, ("PUT",), self._guarded("scheduler", self._scheduled)),
+            (_WINDOW, ("PUT", "DELETE"), self._guarded("window", self._windowed)),
+        ]
 
-    def __call__(self, request: WriteRequest) -> Response | None:
-        if request.method == "POST":
-            return self._post(request)
-        if request.method == "PUT":
-            return self._put(request)
-        if request.method == "DELETE":
-            return self._delete(request)
-        return None
+    def _guarded(self, kind: str, answer: Callable[[WriteRequest], tuple[int, dict]]) -> WriteHandler:
+        """`answer` as a `kind` body, unless another web page may have sent the request."""
 
-    def _post(self, request: WriteRequest) -> Response | None:
-        path = request.path
-        if (path in self._writes or path.startswith(_RUN) or _is_rerun(path)) and (
-            refusal := self._refused(request)
-        ) is not None:
-            return refusal
-        kind = "run"
-        push, limit, pushed_kind = self._pushes.get(path, (None, 0, ""))
-        if path in self._writes:
-            handler, kind = self._writes[path]
-            status, body = handler(request.client, self._whole(request))
-        elif push is not None:
-            return self._pushed(request, pushed_kind, push, limit)
-        elif path == _MACHINE_EVENTS and self._events is not None:
-            content_type = request.headers.get("Content-Type")
-            events = self._events
-            return self._pushed(request, "ingest", lambda auth, raw: events(auth, content_type, raw), MAX_BATCH_BODY)
-        elif _is_rerun(path):
-            name = unquote(path.removeprefix(_RERUN).removesuffix(_RERUN_TAIL))
-            status, body = rerun_dag(request.client, name, self._feed, self._reruns, self._run_safe)
-        elif path.startswith(_RUN):
-            status, body = run_dag(request.client, unquote(path.removeprefix(_RUN)), self._starts, self._run_safe)
-        else:
+        def handle(request: WriteRequest) -> Response:
+            refusal = self._refused(request)
+            if refusal is not None:
+                return refusal
+            status, body = answer(request)
+            return _answered(kind, body, status)
+
+        return handle
+
+    def _body(self, handler: TaskWrite) -> Callable[[WriteRequest], tuple[int, dict]]:
+        return lambda request: handler(request.client, self._whole(request))
+
+    def _run(self, request: WriteRequest) -> tuple[int, dict]:
+        name = unquote(request.path.removeprefix(_RUN))
+        return run_dag(request.client, name, self._starts, self._run_safe)
+
+    def _rerun(self, request: WriteRequest) -> tuple[int, dict]:
+        name = unquote(request.path.removeprefix(_RERUN).removesuffix(_RERUN_TAIL))
+        return rerun_dag(request.client, name, self._feed, self._reruns, self._run_safe)
+
+    def _scheduled(self, request: WriteRequest) -> tuple[int, dict]:
+        return scheduler(request.client, "PUT", self._whole(request), self._scheduler)
+
+    def _windowed(self, request: WriteRequest) -> tuple[int, dict]:
+        return history_window(request.client, request.method, self._whole(request), self._window)
+
+    def _push(self, request: WriteRequest) -> Response | None:
+        push = self._pull_refresh
+        return None if push is None else self._pushed(request, "ingest", push, MAX_REFRESH_BODY)
+
+    def _machine_events(self, request: WriteRequest) -> Response | None:
+        events = self._events
+        if events is None:
             return None
-        return _answered(kind, body, status)
-
-    def _put(self, request: WriteRequest) -> Response | None:
-        """The switches a page puts: the scheduler's and the history window."""
-        path = request.path
-        if path == _SCHEDULER:
-            return self._guarded(
-                request, "scheduler", lambda raw: scheduler(request.client, "PUT", raw, self._scheduler)
-            )
-        return self._windowed(request)
-
-    def _delete(self, request: WriteRequest) -> Response | None:
-        return self._windowed(request)
-
-    def _windowed(self, request: WriteRequest) -> Response | None:
-        """The history window's PUT or DELETE."""
-        if request.path != _WINDOW:
-            return None
-        return self._guarded(
-            request, "window", lambda raw: history_window(request.client, request.method, raw, self._window)
-        )
-
-    def _guarded(self, request: WriteRequest, kind: str, answer: Callable[[bytes], tuple[int, dict]]) -> Response:
-        """`answer` for the whole body of `request` as a `kind` body, unless another web page may have sent it."""
-        refusal = self._refused(request)
-        if refusal is not None:
-            return refusal
-        status, body = answer(self._whole(request))
-        return _answered(kind, body, status)
+        content_type = request.headers.get("Content-Type")
+        return self._pushed(request, "ingest", lambda auth, raw: events(auth, content_type, raw), MAX_BATCH_BODY)
 
     def _refused(self, request: WriteRequest) -> Response | None:
         """The refusal of a write another web page may have sent, or None."""

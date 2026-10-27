@@ -74,7 +74,7 @@ def test_a_client_that_knows_the_port_speaks_http2_gets_the_page(cleartext: int)
     answer = _h2c(cleartext, "GET", "/", {})
 
     assert answer.status == 200
-    assert answer.headers["content-type"] == "text/html"
+    assert answer.headers["content-type"] == "text/html; charset=utf-8"
     assert answer.body == b"<!doctype html>"
 
 
