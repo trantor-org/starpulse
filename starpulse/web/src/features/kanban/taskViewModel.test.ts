@@ -30,18 +30,18 @@ describe("taskActivity", () => {
     expect(comments.map(({ kind, who, body }) => ({ kind, who, body }))).toEqual([{ kind: "comment", who: "Adin", body: "Drop AC #4." }]);
   });
 
-  it("interleaves the machines' lifecycle steps oldest first, without the harness's tool calls or a checkpoint's echo", () => {
+  it("groups the machines' lifecycle steps per machine, oldest first, apart from the flat activity and without the harness's tool calls or a checkpoint's echo", () => {
     const evidence = at("2026-10-26 10:28");
-    const { activity } = taskActivity(machineTask([
-      { machine: "deliver", state: "pr_ready", at: evidence + 60, trail: [step("AC_CHECKPOINTED", "start", evidence), step("PR_READY", "pr_ready", evidence + 60)] },
+    const { activity, machines } = taskActivity(machineTask([
+      { machine: "deliver", state: "pr_ready", at: evidence + 60, trail: [step("AC_CHECKPOINTED", "start", evidence), step("PR_OPENED", "pr_opened", evidence + 30), step("PR_READY", "pr_ready", evidence + 60)] },
       { machine: "build", state: "worktree_ready", at: evidence - 60, trail: [step("WORKTREE_READY", "worktree_ready", evidence - 60)] },
       { machine: "harness", state: "active", at: evidence + 1, trail: [step("TOOL_USED", "active", evidence + 1)] },
     ]), [{ created: "2026-10-26 10:28", text: "Verified AC #1: green" }]);
 
-    expect(activity.map(({ kind, who, body }) => [kind, who, body])).toEqual([
-      ["system", "build", "`WORKTREE_READY` → worktree ready"],
-      ["checkpoint", "agent", "green"],
-      ["system", "deliver", "`PR_READY` → pr ready"],
+    expect(activity.map(({ kind, who, body }) => [kind, who, body])).toEqual([["checkpoint", "agent", "green"]]);
+    expect(machines.map(({ machine, state, at, steps }) => [machine, state, at, steps.map((s) => s.body)])).toEqual([
+      ["build", "worktree_ready", evidence - 60, ["`WORKTREE_READY` → worktree ready"]],
+      ["deliver", "pr_ready", evidence + 60, ["`PR_OPENED` → pr opened", "`PR_READY` → pr ready"]],
     ]);
   });
 
@@ -62,7 +62,7 @@ describe("taskActivity", () => {
   });
 
   it("is empty for a task with no steps and no comments", () => {
-    expect(taskActivity(machineTask([{ machine: "in-progress", state: "ready", at: 0, trail: [] }]), [])).toEqual({ activity: [], comments: [] });
+    expect(taskActivity(machineTask([{ machine: "in-progress", state: "ready", at: 0, trail: [] }]), [])).toEqual({ activity: [], machines: [], comments: [] });
   });
 });
 

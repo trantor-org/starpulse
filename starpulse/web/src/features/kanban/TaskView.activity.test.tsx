@@ -33,17 +33,28 @@ describe("the task view's Activity and Comments sections", () => {
   ];
   const evidence = { created: "2026-10-26 10:28", author: "agent", text: "Verified AC #1: `vitest` failed, then passed" };
 
-  it("activity draws checkpoint evidence and lifecycle steps oldest first, with no checkbox, button or select inside it", () => {
+  it("activity draws checkpoint evidence flat and each machine's steps in its own collapsed group, with no checkbox, button or select inside it", () => {
     const host = mount({ task: { ...task, machines }, record: { ...record, comments: [evidence] } });
     const activity = q<HTMLElement>(host, "#activity")!;
-    const rows = [...activity.querySelectorAll<HTMLElement>(".ev")];
+    const flat = [...activity.querySelectorAll<HTMLElement>(":scope > .acts2 > .ev")];
+    const groups = [...activity.querySelectorAll<HTMLDetailsElement>("details.mgroup")];
 
-    expect(rows.map((row) => row.dataset.kind)).toEqual(["checkpoint", "system"]);
-    expect(rows[0].querySelector(".tag")?.textContent).toBe("AC #1");
-    expect(rows[0].querySelector(".bd code")?.textContent).toBe("vitest");
-    expect(rows[1].textContent).toContain("PR_OPENED");
+    expect(flat.map((row) => row.dataset.kind)).toEqual(["checkpoint"]);
+    expect(flat[0].querySelector(".tag")?.textContent).toBe("AC #1");
+    expect(flat[0].querySelector(".bd code")?.textContent).toBe("vitest");
+    expect(groups.map((g) => [g.open, g.querySelector("summary .who")?.textContent, g.querySelector("summary .n")?.textContent, g.querySelector("summary .st")?.textContent])).toEqual([[false, "deliver", "1", "pr opened"]]);
+    expect(groups[0].querySelector(".ev")?.textContent).toContain("PR_OPENED");
     expect(activity.textContent).not.toContain("TOOL_USED");
     expect(activity.querySelectorAll("input, button, select")).toHaveLength(0);
+  });
+
+  it("clicking a machine group's summary expands it", () => {
+    const host = mount({ task: { ...task, machines } });
+    const group = q<HTMLDetailsElement>(host, "#activity details.mgroup")!;
+
+    act(() => group.querySelector<HTMLElement>("summary")!.click());
+
+    expect(group.open).toBe(true);
   });
 
   it("activity folds a checkpoint's command output under its one-line evidence", () => {
