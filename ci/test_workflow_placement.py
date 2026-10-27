@@ -244,6 +244,7 @@ def test_the_free_threaded_environment_lives_outside_the_checkout_and_is_set_in_
 
 
 STATIC_SCRIPT = WORKFLOWS.parents[1] / "ci/static_checks.sh"
+RUN = WORKFLOWS.parents[1] / "ci/run.sh"
 
 
 def test_the_four_short_jobs_are_gone_and_static_checks_runs_every_check_they_ran():
@@ -252,7 +253,8 @@ def test_the_four_short_jobs_are_gone_and_static_checks_runs_every_check_they_ra
     assert not {"ic", "public-names", "api-types", "tier-policy"} & jobs.keys()
     script = STATIC_SCRIPT.read_text()
     runs = "\n".join(step["run"] for step in job("ci.yml", "static-checks")["steps"] if "run" in step)
-    assert "ci/static_checks.sh" in runs
+    assert "ci/run.sh static-checks" in runs
+    assert "ci/static_checks.sh" in RUN.read_text()
     for command in (
         "ci/public_names.py",
         "python -m starpulse.contracts.api",  # api-types: regenerate both outputs, fail on a diff
@@ -325,14 +327,16 @@ def test_static_checks_runs_its_checks_concurrently(tmp_path):
     assert first_of_second < last_of_first
 
 
-def run_step(step: dict, tmp_path, env: dict[str, str], *, uv_exit: int = 0) -> int:
-    """Run a workflow step's shell with the given environment and a stub `uv` that exits `uv_exit`; return its status."""
+def run_ci(command: str, tmp_path, env: dict[str, str], *, pytest_exit: int = 0) -> int:
+    """Run `ci/run.sh <command>` with the given environment and a stub `uv` whose pytest exits `pytest_exit`; return its status."""
     stub = tmp_path / "uv"
-    stub.write_text(f"#!/usr/bin/env bash\nexit {uv_exit}\n")
+    stub.write_text(
+        f'#!/usr/bin/env bash\n[[ "$*" == *pytest* ]] && exit {pytest_exit}\n[[ "$*" == *xdist_workers* ]] && echo 2\nexit 0\n'
+    )
     stub.chmod(0o755)
     shell = subprocess.run(
-        ["bash", "-e", "-c", step["run"]],
-        env={"PATH": f"{tmp_path}:/usr/bin:/bin", **env},
+        [str(RUN), command],
+        env={"PATH": f"{tmp_path}:/usr/bin:/bin", "SHARD_LOG": str(tmp_path / "pytest-shard.log"), **env},
         capture_output=True,
         text=True,
         check=False,
@@ -351,9 +355,11 @@ def test_the_python_check_waits_for_the_selection_and_the_shards_and_runs_behind
     assert aggregate["needs"] == ["select", "python-shard"]
     # A skipped aggregate reads as a missing required check; a push carries none, so it skips there with the shards.
     assert aggregate["if"] == "always() && github.event_name != 'push'"
-    assert aggregate["steps"][0]["env"] == {
-        "SELECT": "${{ needs.select.result }}",
-        "SHARDS": "${{ needs.python-shard.result }}",
+    step = next(s for s in aggregate["steps"] if "run" in s)
+    assert step["run"] == "ci/run.sh python"
+    assert step["env"] == {
+        "SELECT_RESULT": "${{ needs.select.result }}",
+        "SHARDS_RESULT": "${{ needs.python-shard.result }}",
         "LAUNCHED": "${{ needs.select.outputs.PYTEST_SHARDS }}",
     }
 
@@ -375,15 +381,12 @@ def test_the_python_check_passes_when_every_launched_shard_passed_or_none_was_ne
     tmp_path, select_result, shards, launched, status
 ):
     """The ruleset requires `python`: a red, cancelled or never-run shard must not leave it green or missing."""
-    step = job("ci.yml", "python")["steps"][0]
-    env = {"SELECT": select_result, "SHARDS": shards, "LAUNCHED": launched}
-    assert run_step(step, tmp_path, env) == status
+    env = {"SELECT_RESULT": select_result, "SHARDS_RESULT": shards, "LAUNCHED": launched}
+    assert run_ci("python", tmp_path, env) == status
 
 
-def pytest_step() -> dict:
-    return next(
-        step for step in job("ci.yml", "python-shard")["steps"] if "pytest $PYTEST_TARGETS" in step.get("run", "")
-    )
+def test_a_shard_runs_ci_run_sh_python_shard():
+    assert "ci/run.sh python-shard" in [step.get("run") for step in job("ci.yml", "python-shard")["steps"]]
 
 
 @pytest.mark.parametrize(
@@ -400,7 +403,7 @@ def pytest_step() -> dict:
 def test_a_shard_with_no_selected_files_passes_but_a_failing_or_empty_full_run_does_not(
     tmp_path, targets, pytest_exit, status
 ):
-    assert run_step(pytest_step(), tmp_path, {"PYTEST_TARGETS": targets}, uv_exit=pytest_exit) == status
+    assert run_ci("python-shard", tmp_path, {"PYTEST_TARGETS": targets}, pytest_exit=pytest_exit) == status
 
 
 def test_release_runs_only_the_push_and_dispatch_events():
