@@ -29,6 +29,9 @@ SNAPSHOT_KEYS = (
     "now",
 )
 
+# Keys a server one release behind may not serve yet: a snapshot without them is still a snapshot.
+NEWER_SNAPSHOT_KEYS = ("cpu",)
+
 
 HEALTH_KEYS = ("now", "window_s", "stuck_after_s", "states", "throughput", "stuck", "warnings")
 

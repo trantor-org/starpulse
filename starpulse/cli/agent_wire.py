@@ -10,7 +10,7 @@ import urllib.request
 from collections.abc import Mapping
 from typing import Any
 
-from starpulse.cli.agent_keys import SNAPSHOT_KEYS
+from starpulse.cli.agent_keys import NEWER_SNAPSHOT_KEYS, SNAPSHOT_KEYS
 
 #: serve's default `--port`, where a server runs unless the caller says otherwise.
 DEFAULT_SERVER = "http://localhost:8766"
@@ -71,12 +71,12 @@ def get(base: str, path: str) -> tuple[int, Any]:
 
 
 def get_snapshot(base: str) -> dict[str, Any]:
-    """The snapshot the server at `base` answers; JSON without every snapshot key is no StarPulse server."""
+    """The snapshot the server at `base` answers; JSON without every snapshot key a server of the last release serves is no StarPulse server."""
     path = "/api/snapshot"
     status, document = get(base, f"{path}?view=full")
     if status != 200:
         raise CliError("unavailable", f"{base} answered {status} for {path}: is it a StarPulse server?")
-    if not isinstance(document, dict) or not document.keys() >= set(SNAPSHOT_KEYS):
+    if not isinstance(document, dict) or not document.keys() >= set(SNAPSHOT_KEYS) - set(NEWER_SNAPSHOT_KEYS):
         raise CliError("unavailable", f"{base} answered {path} with no StarPulse snapshot: is it a StarPulse server?")
     return document
 
