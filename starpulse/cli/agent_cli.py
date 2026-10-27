@@ -596,13 +596,10 @@ def _unlisted_writers(config: Config, base: Path) -> list[str]:
         MachineDefinitionError,
         refuse_unlisted,
     )
-    from starpulse.runtime.assembly import domains_of  # noqa: PLC0415 - import cost, paid on first use
-    from starpulse.runtime.config import ConfigError  # noqa: PLC0415 - import cost, paid on first use
 
-    try:
-        listed = [name for names in domains_of(config).values() for name in names]
-    except ConfigError:
-        return []  # an unreachable Dagu lists no DAGs, so no writer can be checked against them
+    if any(i.type == "dagu" and i.url and not i.domains for i in config.runs):
+        return []  # a Dagu instance listing no domains lists its DAGs from Dagu's labels as `serve` starts, which this offline check cannot read
+    listed = [name for names in config.qualified_domains().values() for name in names]
     if not listed or config.board_type not in {"native", "upstream_backlog", "machines"}:
         return []
     board_file = base / str(config.board["machine"]) if "machine" in config.board else None
