@@ -19,11 +19,10 @@ from __future__ import annotations
 import http.client
 import random
 import time
-import urllib.parse
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import AbstractContextManager
 
-from page_latency import BUDGET_MS, READS, fill, ids_of, ref_key
+from page_latency import BUDGET_MS, READS, connection, fill, ids_of, ref_key
 
 #: The stream's first snapshot, as Locust names it among the routes.
 FIRST_SNAPSHOT = "/api/events first snapshot"
@@ -92,11 +91,11 @@ class Once[T]:
         return self._value  # type: ignore[return-value]
 
 
-def compressed_body(host: str, port: int, path: str) -> tuple[int, int]:
+def compressed_body(base: str, path: str) -> tuple[int, int]:
     """`path`'s status and the bytes it sent, asked for gzip and left compressed. A viewer's browser inflates the body
     on the viewer's machine; inflating a crowd's worth here would time this process, not the server (the snapshot's
     5 MB takes ~28 ms of the one thread every viewer shares, which is what its own p50 and p95 then measured)."""
-    conn = http.client.HTTPConnection(host, port, timeout=60)
+    conn = connection(base)
     try:
         conn.request("GET", path, headers={"accept-encoding": "gzip"})
         response = conn.getresponse()
@@ -165,9 +164,7 @@ else:
 
         def _watch(self) -> None:
             """Hold the stream open, as the page does, timing connect to the end of its first snapshot."""
-            parts = urllib.parse.urlsplit(self.host)
-            address = parts.hostname or "127.0.0.1", parts.port or 80
-            conn = http.client.HTTPConnection(*address, timeout=60)
+            conn = connection(self.host)
             start, first = time.perf_counter(), True
             try:
                 conn.request("GET", "/api/events?snapshot=ref", headers={"accept": "text/event-stream"})
@@ -188,10 +185,9 @@ else:
 
         def _fetch(self, name: str, path: str) -> None:
             """Read `path` as the viewer's browser would receive it, compressed, and time it as route `name`."""
-            parts = urllib.parse.urlsplit(self.host)
             start, error = time.perf_counter(), None
             try:
-                status, _ = compressed_body(parts.hostname or "127.0.0.1", parts.port or 80, path)
+                status, _ = compressed_body(self.host, path)
                 error = None if status == 200 else http.client.HTTPException(f"{path} answered {status}")
             except (http.client.HTTPException, OSError) as failed:
                 error = failed
