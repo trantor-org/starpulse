@@ -259,32 +259,25 @@ truncates it to that bound instead of leaving the file at its high-water mark, a
 the planner statistics stay fresh. The limit bounds the file after a checkpoint; it does not cap growth between them.
 
 ```toml
-# The tracker's web address: a task links to `<tracker_url>/tasks/<id>`. Unset, it opens in the page's own Kanban.
+# Every top-level key and table is described in the settings reference below; a setting left out takes its default.
 tracker_url = "https://tracker.example.com"
-
-# The SQLite file that holds the history; unset, `starpulse-history.sqlite` beside the config.
 database_url = "sqlite:////var/lib/starpulse/history.sqlite"
-
-# How long `serve` keeps the event log's rows: it prunes older ones at start and hourly, so the table, a SQLite file
-# and every reader's replay at boot stay bounded. A reader that was down longer than this resumes at the oldest kept
-# row and records the span it missed in `starpulse_gaps`. A whole number of days, 1 or more.
 event_log_retention_days = 7   # the default
-
-# Where `serve`'s History child writes each row it prunes, before it deletes the row (see Event log archive): a directory, relative to
-# this file unless absolute.
 event_log_archive_dir = "starpulse-archive"   # the default
-
-# The seconds a `GET /api/pulls` read may take, from accept to the last byte written, before `serve` logs a `slow_read`
-# line for it: `queue_s`, `compute_s` and `write_s`, the seconds it waited for a handler thread, computed its answer
-# and wrote it, `in_flight`, the `/api/pulls` reads running when it began, and `busy` and `streams`, the request workers
-# in use (the read itself included) and the streams open when it was accepted. No other route is timed. Above 0.
 slow_read_seconds = 1   # the default
+# pull_requests = true
+# api_worker = false
+# runs_worker = false
+# flow_metrics_worker = false
+# search_worker = false
+# board_worker = false
+# refresh_token_env = "STARPULSE_REFRESH_TOKEN"
+# take_over_command = ["/usr/local/bin/take-over"]
 
-# The memory limits (proportional size on Linux, resident size on macOS) `serve` holds each worker child to, in megabytes (see Worker processes): past `soft_mb` it
-# replaces the child, past `hard_mb` it kills and restarts it. Contexts: `pulls`, `scheduler`, `runs`. Either key may be left out.
 # [worker_memory.pulls]
 # soft_mb = 768    # the default
 # hard_mb = 1536   # the default
+
 
 # The board adapter: a module under `starpulse`, or the dotted path of one an installed package provides.
 # The rest of the table is that adapter's settings.
@@ -348,112 +341,37 @@ type = "native"
 # user = "ada@example.com"               # Jira Cloud: the account the API token belongs to
 # interval = 30                          # seconds between polls
 
-# Draw each task's pull-request CI as a sub-flow of these Board states: StarPulse ships one `ci` machine, which GitHub
-# moves and StarPulse only observes (its `source` is GitHub). Each name is a Board state id; one the Board lacks is refused.
-# With `gh` available, each task with a PR is one agent in that flow, and its trail is the PR's pushes, check results,
-# re-runs, conflicts, rebases and merge, read from GitHub every minute and kept in the event log (`machine:events`).
+
 # [ci]
 # states = ["in_progress", "review"]
 
-# With `gh` on the PATH, `serve` keeps a pull request store, current from the lifecycle events, that `/api/pulls`, the `ci`
-# trail and `[release]` read. false never updates it: no event is applied, `POST /api/pulls/refresh` answers 404, tasks carry
-# no PR state, and `/api/pulls` answers only from rows the database already holds. Set it on a second instance beside one
-# that reads the same repositories, so one store is kept.
-# pull_requests = true
-
-# Whether something outside `serve` runs the Page API (the page and the HTTP API). False, the default: `serve` binds the
-# listening socket, keeps it, and supervises `starpulse worker api` as a child that serves from it. True: you run
-# `starpulse worker api --config <this file>` yourself, which binds `--host` and `--port` (or adopts the socket the service
-# manager passes in), and `serve` binds and supervises nothing for it.
-# api_worker = false
-
-# Whether something outside `serve` runs the Runs context (the run adapters no opt-in worker runs, and the pushed-runs follower). False, the default: `serve` supervises it as a child process, `starpulse worker runs`. True: you run
-# `starpulse worker runs --config <this file>` yourself and `serve` starts no child for it. Either way `serve` runs
-# none of them: it draws the workflows, pools and startable workflows the worker keeps in the event log
-# (`runs.projection`), and the page's Run now still starts a workflow through the adapter. Run-stream cursors stay in the
-# event log, so a restarted worker neither drops nor repeats a run entry. With the flag set and no worker running, no
-# run is followed.
-# runs_worker = false
-
-# Whether something outside `serve` runs the History context's writers (the machine-history recorder and the hourly
-# prune of the event log). False, the default: `serve` supervises them as one child process, `starpulse worker
-# flow-metrics`. True: you run `starpulse worker flow-metrics --config <this file>` yourself and `serve` starts neither thread.
-# They run together because both write the history database. The recorder's cursor is saved with the rows it covers, so
-# a restarted worker neither drops nor repeats a history row. With the flag set and no worker running, no machine event is recorded and the log is not pruned.
-# flow_metrics_worker = false
-
-# Whether something outside `serve` runs the Search context's embedding catch-up (the thread that fills vectors for the
-# indexed task text). False, the default: with `[search] embeddings_url` set, `serve` supervises it as a child process,
-# `starpulse worker search`. True: you run `starpulse worker search --config <this file>` yourself and `serve` starts
-# no thread and no child. Vectors are stored per batch in one transaction, keyed by the text's digest, so a restarted
-# worker neither drops nor repeats an embedding; `serve` rereads the vectors it ranks by every 30 s. With the flag set and no worker running, no vector is
-# written and search ranks by the vectors already stored, else lexically.
-# search_worker = false
-
-# Whether something outside `serve` runs the Board context's writer (the thread that dates when each Waiting task's
-# Start Criteria were met). False, the default: `serve` supervises it as a child process, `starpulse worker board`.
-# True: you run `starpulse worker board --config <this file>` yourself and `serve` starts no thread and no child. The
-# dates are saved in the history and read back at start, so a restarted worker does not re-date a task; `serve`
-# rereads the dates every 30 s. With the flag set and no worker running, no Start Criteria are
-# evaluated, so a Waiting task with them never becomes workable. The release of dependents belongs to the `pulls` worker.
-# The Board worker folds the History events into the read model, and `serve` and the other workers read that read
-# model instead of running the adapter, so a change reaches them within half a second.
-# board_worker = false
-
-# Let a producer that just saw a pull request close have its record read now instead of at the next minute's refresh:
-# `POST /api/pulls/refresh` with `{"repo": "<owner>/<name>", "number": 12}` and `Authorization: Bearer <token>`. The PR store's
-# thread reads that pull request alone (one single-PR GraphQL read, no listing) and publishes it as a refresh does; one
-# asked for during a refresh is read after the repository in hand, ahead of that refresh's projection. The
-# minute's refresh stays the fallback. 202 queued; 401 for a missing or wrong token; 403 for a repository this instance does not
-# track; 400 for any other body. The value is the name of an environment variable, never the token; unset, or with no `gh`
-# on the PATH, the route answers 404, and a named variable that is empty stops `serve`.
-# refresh_token_env = "STARPULSE_REFRESH_TOKEN"
-
-# The command `POST /api/take-over` runs, as an argv: StarPulse appends the task id (`{"task": "TASK-7"}` in the body) and
-# the command asks the task's workflow engine to flip that task's workflow to interactive, so it types nothing more into
-# the task's session. Exit 0: sent (200). Exit 1: the task has no running workflow (409). Any other exit: an error, with
-# the command's stderr. 404 when this is unset. The command is the only place a workflow engine appears.
-# take_over_command = ["/usr/local/bin/take-over"]
-
-# One instance of a runs adapter, a module under `starpulse` or the dotted path of one an installed package provides
-# (it offers `start(url)` and `follow(url, runs, log)`, and optionally `rerun(url)` and `declared_params(url, workflow)`, the parameter names a workflow declares, which `doctor` reads); its workflows are drawn as `<name>/<workflow>`.
-# The Dagu Adapter reads a DAG's declared rerun safety from its Dagu labels (a value allows only `a-z A-Z 0-9 - _ . /`):
-# `rerun=safe` (a rerun repeats nothing), `rerun-key=<key>` (effects keyed by `<key>`, so a rerun for the same key repeats none)
-# or `rerun-repeats=<why>` with `rerun-step=<step>` (the step that repeats); a DAG with none serves `rerun: null`. It also
-# serves the share of all the host's cores the `dagu*.service` units used since its last reading as `cpu.<instance>`
-# (`share` 0..1, `cores`), each time it reads Dagu (every 30 s), so the scheduler and every worker count.
 [[runs]]
 name = "dagu"
 type = "dagu"
-url = "http://dagu.example.com:8080"     # the Dagu Adapter is an opt-in worker: you run `starpulse worker dagu --config <this file>` (`github-actions` and `systemd` likewise);
-                                         # `serve` starts it nowhere (not in the `runs` worker, not as a child) and, with it down or never
-                                         # started, the page shows this instance with the error "the dagu worker has not reported" or
-                                         # "last reported Ns ago" (its beat is older than 60s)
+url = "http://dagu.example.com:8080"
 run_safe = ["nightly"]                   # the workflows the page's Run now may start
 domains = { Data = ["nightly", "etl"] }  # how the page groups this instance's workflows
 
-# Optional: a producer that posts machine events as CloudEvents (see docs/sources.md, Post machine events as CloudEvents).
-# `POST /api/machine-events` and the gRPC `starpulse.v1.CloudEventsIngest` answer 404 until one is declared. A producer writes only the machines and actors listed here.
-[[producers]]
-name = "ci-bot"                          # the CloudEvents `source` its events carry; unique
-token_env = "CI_BOT_TOKEN"               # the environment variable holding its bearer token; never the token; no two producers share one
-machines = ["delivery"]                  # the drawn machines it may write; leave out with `actors` for a producer that only reports runs
-actors = ["ci"]                          # the actors it may write as
-
-# Optional: the run parameters that carry what a run applies, so the Ledger pairs a run with its merge for certain.
-# Each value names a parameter; a key left out is a parameter this instance has none of.
 [runs.commit]
-after = "AFTER"                          # the merge commit the run applies: pairs the run with that merge
-before = "BEFORE"                        # the commit before it
-force = "FORCE"                          # the parameter that marks a forced run
-task = "TASK"                            # the task a run is for: pairs a run with a task's entry into a lane (any Board event but MERGED)
+after = "AFTER"
+before = "BEFORE"
+force = "FORCE"
+task = "TASK"
 
-# Optional: a repository whose merges apply through the parent's pin bump rather than a run of their own. `name` is the
-# repository as its pull request links spell it, `path` where the parent holds it as a submodule.
+[[producers]]
+name = "ci-bot"
+token_env = "CI_BOT_TOKEN"
+machines = ["delivery"]
+actors = ["ci"]
+
 [[repos]]
 name = "skills"
 path = "skills"
 applied_by = "pin-bump"
+
+# [release]
+# settle = "pin-bump"  # or "release", with `repo = "owner/name"`
+
 
 # Optional: the scheduler's policy. Every key is optional; with no [scheduler] table the defaults below apply.
 # [scheduler]
@@ -477,14 +395,6 @@ applied_by = "pin-bump"
 # [scheduler.session_limits]  # optional per-harness session caps; a harness left out uses limits.sessions
 # claude = 3
 # cursor = 2
-
-# Optional: release Waiting tasks natively. With the table present, `serve` moves a Waiting task to Ready once every task
-# it depends on is Done (see Release); with no [release] table it releases none. The board must edit tasks and draw
-# `waiting` and `ready` lanes, else `serve` refuses to start.
-# [release]
-# settle = "pin-bump"  # optional: a dependency citing a pull request in a [[repos]] repository settles only once the parent pins its merge commit
-# settle = "release"   # or: a dependency citing a pull request in `repo` settles only once the running build contains its merge commit
-# repo = "owner/name"  # settle = "release" only: the repository the running build is released from
 
 # Optional: what harness telemetry is read against for missed skill loads and trace clusters (see Find missed skill
 # loads and recurring work in docs/sources.md). Every key is optional; with no table nothing is declared, and no
@@ -545,6 +455,109 @@ applied_by = "pin-bump"
 # window_tokens = 200000   # the context window the pane footer's percent is read against; limit_tokens may not exceed it
 # wrapup_s = 600           # seconds an asked session has to checkpoint before it is restarted regardless
 ```
+
+### Runs adapters
+
+A `[[runs]]` instance's `type` names one of the built-in adapters `dagu`, `github_actions` and `systemd`, or an installed
+package's module. Each built-in one is an opt-in worker: you run `starpulse worker dagu --config <this file>`
+(`github-actions` and `systemd` likewise); `serve` starts it nowhere (not in the `runs` worker, not as a child) and, with
+it down or never started, the page shows the instance with the error "the dagu worker has not reported" or "last
+reported Ns ago" (its beat is older than 60s).
+
+The Dagu Adapter reads a DAG's declared rerun safety from its Dagu labels (a value allows only `a-z A-Z 0-9 - _ . /`):
+`rerun=safe` (a rerun repeats nothing), `rerun-key=<key>` (effects keyed by `<key>`, so a rerun for the same key repeats
+none) or `rerun-repeats=<why>` with `rerun-step=<step>` (the step that repeats); a DAG with none serves `rerun: null`. It
+also serves the share of all the host's cores the `dagu*.service` units used since its last reading as `cpu.<instance>`
+(`share` 0..1, `cores`), each time it reads Dagu (every 30 s), so the scheduler and every worker count.
+
+### Settings reference
+
+The board adapters, `[scheduler]`, `[analytics]`, `[search]`, `[project]` and `[cursor_context]` are described by the examples above and
+by [Scheduler](#scheduler); `[level]` by the flow graph it draws. Every other setting is described below, generated from the
+models in `starpulse/runtime/config_model.py`, which the loader takes its keys and defaults from: edit a description there, run
+`python -m starpulse.runtime.config_reference`, and commit the result. CI fails when this section differs from the models.
+
+<!-- config-reference:begin (generated by `python -m starpulse.runtime.config_reference`; edit the Field descriptions in starpulse/runtime/config_model.py) -->
+
+#### Top level
+
+- `tracker_url` (text): The tracker's web address: a task links to `<tracker_url>/tasks/<id>`. Unset, it opens in the page's own Kanban.
+- `database_url` (text): The SQLAlchemy URL of the history store; unset, `starpulse-history.sqlite` beside the config. The credentials never live here; they come from the driver's environment, such as `PGPASSWORD`.
+- `event_log_retention_days` (whole number, 1 or more, default `7`): How long `serve` keeps the event log's rows: it prunes older ones at start and hourly, so the table, a SQLite file and every reader's replay at boot stay bounded. A reader that was down longer than this resumes at the oldest kept row and records the span it missed in `starpulse_gaps`. A whole number of days.
+- `event_log_archive_dir` (text, default `"starpulse-archive"`): Where `serve`'s History child writes each row it prunes, before it deletes the row (see Event log archive): a directory, relative to this file unless absolute.
+- `slow_read_seconds` (number, above 0, default `1.0`): The seconds a `GET /api/pulls` read may take, from accept to the last byte written, before `serve` logs a `slow_read` line for it: `queue_s`, `compute_s` and `write_s`, the seconds it waited for a handler thread, computed its answer and wrote it, `in_flight`, the `/api/pulls` reads running when it began, and `busy` and `streams`, the request workers in use (the read itself included) and the streams open when it was accepted. No other route is timed.
+- `worker_memory` (table of `[worker_memory.<context>]` table): The memory limits (proportional size on Linux, resident size on macOS) `serve` holds each worker child to, in megabytes (see Worker processes), set as `[worker_memory.<context>]` with either key left out. Past `soft_mb` it replaces the child, past `hard_mb` it kills and restarts it. Defaults, soft/hard: `pulls` 768/1536, `scheduler` 384/768, `runs` 512/1024, `flow-metrics` 384/768, `search` 384/768, `board` 768/1536.
+- `mode` (`"ic"`, default `"ic"`): `ic`, the one value: one person on one machine.
+- `tls_cert` (text): The TLS certificate, relative to this file's directory; set with `tls_key`, else both unset.
+- `tls_key` (text): The TLS private key, relative to this file's directory; set with `tls_cert`.
+- `session_start_url` (text): The session-start service a started task is sent to (`POST <url>/start/TASK-N?harness=&mode=`); unset: nothing can be started.
+- `harnesses_file` (text): A file, relative to this one, that declares the tiers and per-harness models.
+- `pull_requests` (true or false, default `true`): With `gh` on the PATH, `serve` keeps a pull request store, current from the lifecycle events, that `/api/pulls`, the `ci` trail and `[release]` read. false never updates it: no event is applied, `POST /api/pulls/refresh` answers 404, tasks carry no PR state, and `/api/pulls` answers only from rows the database already holds. Set it on a second instance beside one that reads the same repositories, so one store is kept.
+- `api_worker` (true or false, default `false`): Whether something outside `serve` runs the Page API (the page and the HTTP API). False, the default: `serve` binds the listening socket, keeps it, and supervises `starpulse worker api` as a child that serves from it. True: you run `starpulse worker api --config <this file>` yourself, which binds `--host` and `--port` (or adopts the socket the service manager passes in), and `serve` binds and supervises nothing for it.
+- `runs_worker` (true or false, default `false`): Whether something outside `serve` runs the Runs context (the run adapters no opt-in worker runs, and the pushed-runs follower). False, the default: `serve` supervises it as a child process, `starpulse worker runs`. True: you run `starpulse worker runs --config <this file>` yourself and `serve` starts no child for it. Either way `serve` runs none of them: it draws the workflows, pools and startable workflows the worker keeps in the event log (`runs.projection`), and the page's Run now still starts a workflow through the adapter. Run-stream cursors stay in the event log, so a restarted worker neither drops nor repeats a run entry. With the flag set and no worker running, no run is followed.
+- `flow_metrics_worker` (true or false, default `false`): Whether something outside `serve` runs the History context's writers (the machine-history recorder and the hourly prune of the event log). False, the default: `serve` supervises them as one child process, `starpulse worker flow-metrics`. True: you run `starpulse worker flow-metrics --config <this file>` yourself and `serve` starts neither thread. They run together because both write the history database. The recorder's cursor is saved with the rows it covers, so a restarted worker neither drops nor repeats a history row. With the flag set and no worker running, no machine event is recorded and the log is not pruned.
+- `search_worker` (true or false, default `false`): Whether something outside `serve` runs the Search context's embedding catch-up (the thread that fills vectors for the indexed task text). False, the default: with `[search] embeddings_url` set, `serve` supervises it as a child process, `starpulse worker search`. True: you run `starpulse worker search --config <this file>` yourself and `serve` starts no thread and no child. Vectors are stored per batch in one transaction, keyed by the text's digest, so a restarted worker neither drops nor repeats an embedding; `serve` rereads the vectors it ranks by every 30 s. With the flag set and no worker running, no vector is written and search ranks by the vectors already stored, else lexically.
+- `board_worker` (true or false, default `false`): Whether something outside `serve` runs the Board context's writer (the thread that dates when each Waiting task's Start Criteria were met). False, the default: `serve` supervises it as a child process, `starpulse worker board`. True: you run `starpulse worker board --config <this file>` yourself and `serve` starts no thread and no child. The dates are saved in the history and read back at start, so a restarted worker does not re-date a task; `serve` rereads the dates every 30 s. With the flag set and no worker running, no Start Criteria are evaluated, so a Waiting task with them never becomes workable. The release of dependents belongs to the `pulls` worker. The Board worker folds the History events into the read model, and `serve` and the other workers read that read model instead of running the adapter, so a change reaches them within half a second.
+- `refresh_token_env` (text): Lets a producer that just saw a pull request close have its record read now instead of at the next minute's refresh: `POST /api/pulls/refresh` with `{"repo": "<owner>/<name>", "number": 12}` and `Authorization: Bearer <token>`. The PR store's thread reads that pull request alone (one single-PR GraphQL read, no listing) and publishes it as a refresh does; one asked for during a refresh is read after the repository in hand, ahead of that refresh's projection. The minute's refresh stays the fallback. 202 queued; 401 for a missing or wrong token; 403 for a repository this instance does not track; 400 for any other body. The value is the name of an environment variable, never the token; unset, or with no `gh` on the PATH, the route answers 404, and a named variable that is empty stops `serve`.
+- `take_over_command` (list of text): The command `POST /api/take-over` runs, as an argv: StarPulse appends the task id (`{"task": "TASK-7"}` in the body) and the command asks the task's workflow engine to flip that task's workflow to interactive, so it types nothing more into the task's session. Exit 0: sent (200). Exit 1: the task has no running workflow (409). Any other exit: an error, with the command's stderr. 404 when this is unset. The command is the only place a workflow engine appears.
+- `runs` (list of `[[runs]]` table): One instance of a runs adapter per `[[runs]]` table.
+- `producers` (list of `[[producers]]` table): A system that posts machine events as CloudEvents (see docs/sources.md, Post machine events as CloudEvents). `POST /api/machine-events` and the gRPC `starpulse.v1.CloudEventsIngest` answer 404 until one is declared. A producer writes only the machines and actors listed here.
+- `repos` (list of `[[repos]]` table): A repository whose merges apply through the parent's pin bump rather than a run of their own.
+- `ci` (`[ci]` table): Draws each task's pull-request CI as a sub-flow of these Board states.
+- `release` (`[release]` table): Releases Waiting tasks natively. With the table present, `serve` moves a Waiting task to Ready once every task it depends on is Done (see Release); with no `[release]` table it releases none. The board must edit tasks and draw `waiting` and `ready` lanes, else `serve` refuses to start.
+- `board` (table): The board adapter: `type` names a module under `starpulse` or the dotted path of one an installed package provides, and the rest of the table is that adapter's settings, shown in the Board examples above. With no `[board]` table the view draws its own Markdown board, `type = "native"`.
+- `level` (table): The flow graph drawn above the Board (`starpulse.flow_metrics.level`).
+- `scheduler` (table): The scheduler's policy; every key is optional (see Scheduler).
+- `analytics` (table): What harness telemetry is read against for missed skill loads and trace clusters (see docs/sources.md).
+- `search` (table): Ranks search by meaning as well as by words (see `search` in docs/cli.md).
+- `project` (table): The project's own command line for each step a shipped skill names.
+- `cursor_context` (table): Holds Cursor task sessions to a context limit (see docs/sources.md).
+- `read_model` (any value, retired): Retired: the read model is the only board reader; accepted so a config that still names it loads.
+
+#### [ci]
+
+- `states` (list of text, required): The Board state ids the shipped `ci` machine is attached to as a sub-flow; one the Board lacks is refused. StarPulse ships one `ci` machine, which GitHub moves and StarPulse only observes (its `source` is GitHub). With `gh` available, each task with a PR is one agent in that flow, and its trail is the PR's pushes, check results, re-runs, conflicts, rebases and merge, read from GitHub every minute and kept in the event log (`machine:events`).
+
+#### [[producers]]
+
+- `name` (text, required): The CloudEvents `source` its events carry; unique.
+- `token_env` (text, required): The environment variable holding its bearer token, never the token; no two producers share one.
+- `machines` (list of text): The drawn machines it may write; leave out with `actors` for a producer that only reports runs.
+- `actors` (list of text): The actors it may write as.
+
+#### [release]
+
+- `settle` (`"pin-bump"` or `"release"`): When a dependency counts as settled; left out, it settles when its task is Done. `pin-bump`: a dependency citing a pull request in a `[[repos]]` repository settles only once the parent pins its merge commit. `release`: a dependency citing a pull request in `repo` settles only once the running build contains its merge commit.
+- `repo` (text): `settle = "release"` only: the repository the running build is released from.
+
+#### [[repos]]
+
+- `name` (text, required): The repository as its pull request links spell it.
+- `path` (text, required): Where the parent holds the repository as a submodule: relative, inside the parent.
+- `applied_by` (`"pin-bump"`, required): How its merges are applied; only `pin-bump`.
+
+#### [runs.commit]
+
+- `after` (text): The merge commit the run applies: pairs the run with that merge.
+- `before` (text): The commit before it.
+- `force` (text): The parameter that marks a forced run.
+- `task` (text): The task a run is for: pairs a run with a task's entry into a lane (any Board event but MERGED).
+
+#### [[runs]]
+
+- `name` (text, required): The instance's name, unique; its workflows are drawn as `<name>/<workflow>`.
+- `type` (text, required): The runs adapter: a module under `starpulse` or the dotted path of one an installed package provides. It offers `start(url)` and `follow(url, runs, log)`, and optionally `rerun(url)` and `declared_params(url, workflow)`, the parameter names a workflow declares, which `doctor` reads. See Runs adapters for what a built-in adapter reads and serves.
+- `url` (text, required): What the adapter reads. A built-in adapter is an opt-in worker: you run `starpulse worker <adapter> --config <this file>`, `serve` starts it nowhere, and, with it down or never started, the page shows this instance with the error "the <adapter> worker has not reported" or "last reported Ns ago" (its beat is older than 60s).
+- `run_safe` (list of text): The workflows the page's Run now may start.
+- `domains` (table of list of text or table of list of text): How the page groups this instance's workflows: each domain is a list of workflow names, or a table of process name to workflow list.
+- `commit` (`[runs.commit]` table): The run parameters that carry what a run applies, so the Ledger pairs a run with its merge for certain. Each key names a parameter; a key left out is a parameter this instance has none of.
+
+#### [worker_memory.<context>]
+
+- `soft_mb` (whole number, 1 or more): Past this the child is replaced: a new one starts, then the old one stops.
+- `hard_mb` (whole number, 1 or more): Past this the child is killed and restarted. Above `soft_mb`.
+
+<!-- config-reference:end -->
 
 ## Scheduler
 
