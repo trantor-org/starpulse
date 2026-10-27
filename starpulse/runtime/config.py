@@ -353,6 +353,8 @@ class Config:
     """`serve` prunes the event log's rows older than this many days, hourly, so the table and every reader's boot replay stay bounded; a reader that was behind the oldest retained row records a gap."""
     event_log_archive_dir: str = _DEFAULTS.event_log_archive_dir
     """Where `serve` writes the event log rows it prunes, one gzip JSONL file per UTC day, before it deletes them; a relative path is beside the config."""
+    telemetry_loki_url: str | None = None
+    """The Loki base URL the harness adapters push telemetry signals to and the analytics views read; unset, the signals go to the event log."""
     repos: tuple[Repo, ...] = ()
     """The repositories whose merges apply through the parent's pin bump (`[[repos]]`)."""
     ci: tuple[str, ...] = ()
@@ -662,6 +664,7 @@ def _config(
         producers=_producers(raw.get("producers", [])),
         event_log_retention_days=log_retention,
         event_log_archive_dir=_archive_dir(raw.get("event_log_archive_dir", _DEFAULTS.event_log_archive_dir)),
+        telemetry_loki_url=_text(raw, "telemetry_loki_url"),
         repos=repos,
         ci=_ci(raw),
         scheduler=_scheduler(raw.get("scheduler")),

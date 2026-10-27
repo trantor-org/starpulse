@@ -156,12 +156,15 @@ def parse(payload: dict[str, Any]) -> list[LogEvent]:
 
 
 def receiver(
-    ingest: Callable[[list[LogEvent]], None], on_export: Callable[[dict[str, Any]], object] | None = None
+    ingest: Callable[[list[LogEvent]], None],
+    on_export: Callable[[dict[str, Any]], object] | None = None,
+    metrics: tuple[str, Callable[[], bytes]] | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     """A request handler that parses each logs export and hands its events to `ingest`, one call per POST.
 
     `on_export`, when given, is called with the decoded export itself, for a consumer that reads more than `ingest`'s
-    events; one that raises is logged and the export is still answered and ingested."""
+    events; one that raises is logged and the export is still answered and ingested. `metrics`, when given, is the
+    content type and renderer of the exposition `GET /metrics` answers."""
 
     class Handler(BaseHTTPRequestHandler):
         def _reply(self, status: int, body: bytes = b"{}", content_type: str = "application/json") -> None:
@@ -174,6 +177,8 @@ def receiver(
         def do_GET(self) -> None:
             if self.path == "/healthz":
                 self._reply(200, b"ok", "text/plain")
+            elif metrics and self.path == "/metrics":
+                self._reply(200, metrics[1](), metrics[0])
             else:
                 self._reply(404)
 

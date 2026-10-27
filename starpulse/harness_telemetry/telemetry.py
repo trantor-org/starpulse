@@ -25,6 +25,7 @@ import json
 import logging
 import re
 import threading
+import time
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import asdict, fields
 from typing import TYPE_CHECKING, Any
@@ -34,12 +35,13 @@ from starpulse.contracts.analytics import Analytics
 from starpulse.contracts.signals import CLAUDE_CODE, CODEX, Signal, claim_key, claimed, main_thread_source
 from starpulse.harness_telemetry.activity import SHELLS, activities, elide_heredocs, paths, writes_file
 from starpulse.harness_telemetry.intent_classification import intent_label
+from starpulse.harness_telemetry.loki import LokiSignals
 from starpulse.harness_telemetry.otlp import BRANCH, _attributes, _epoch, _records
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     from starpulse.event_log.event_log import EventLog
 
-__all__ = ["CLAUDE_CODE", "CODEX", "Signal", "TelemetryLog", "held", "redactor", "signals"]
+__all__ = ["CLAUDE_CODE", "CODEX", "Signal", "TelemetryLog", "held", "redactor", "signals", "telemetry_log"]
 
 log = logging.getLogger(__name__)
 
@@ -374,42 +376,73 @@ def held(found: Iterable[Signal]) -> list[Signal]:
 
 
 class TelemetryLog:
-    """The signals both harnesses' exports gave, kept in the event log's `telemetry:signals` stream.
+    """The signals both harnesses' exports gave, kept in Loki when the config names one, else in the event log's
+    `telemetry:signals` stream.
 
     The stream is private to the instance: it has no entry in `EVENT_STREAMS` and no consumer tails it.
 
-    `publish` appends each signal under its `key`, so a replayed export adds nothing, and fails open like the log: a
+    `publish` stores each signal under its `key`, so a replayed export adds nothing, and fails open like the log: a
     database that cannot be opened drops the signals, never the export. `read` returns the signals no older than
-    `since`, in the order they were published; it polls the stream's tail since its last read and holds what it
-    read, dropping what is older than `keep` seconds before the newest signal it holds (the log prunes its own rows
-    by its `event_log_retention_days`). Every read returns references into that one held snapshot, so concurrent
-    analytics requests cost a list of pointers each, never a second hydration of the stream.
+    `since`, in the order they were published; it polls the store since its last read and holds what it read,
+    dropping what is older than `keep` seconds before the newest signal it holds (the log prunes its own rows by its
+    `event_log_retention_days`, Loki's stream by its retention rule). Every read returns references into that one
+    held snapshot, so concurrent analytics requests cost a list of pointers each, never a second hydration of the
+    stream. A Loki store keeps a replayed signal's second line, which `read` drops by key.
     """
 
     STREAM = "telemetry:signals"
 
-    def __init__(self, log: EventLog, keep: float = 7 * 86400.0) -> None:
+    def __init__(self, log: EventLog | None, keep: float = 7 * 86400.0, *, loki: LokiSignals | None = None) -> None:
         self._log = log
-
-        from starpulse.event_log.event_log import Tail  # noqa: PLC0415 - the database stack loads when a log opens
-
-        self._tail = Tail.replay(log, self.STREAM, batch=5000)
+        self._loki = loki
         self._keep = keep
         self._held: list[Signal] = []
+        self._keys: set[str] = set()
         self._lock = threading.Lock()
+        if loki is None:
+            assert log is not None  # without Loki the event log is the store
+            from starpulse.event_log.event_log import Tail  # noqa: PLC0415 - the database stack loads when a log opens
+
+            self._tail = Tail.replay(log, self.STREAM, batch=5000)
+        self._stamp = time.time_ns() - int(keep * 1e9)
 
     def publish(self, found: Iterable[Signal]) -> None:
+        if self._loki is not None:
+            self._loki.push(asdict(signal) for signal in found)
+            return
         for signal in found:
             self._log.publish(self.STREAM, asdict(signal), event_id=signal.key)
 
-    def read(self, since: float = 0.0) -> list[Signal]:
-        """The held signals from `since` on; raises when the database cannot be read."""
-        with self._lock:
+    def _poll(self) -> list[Signal]:
+        """The stored signals since the last poll."""
+        if self._loki is None:
+            polled = []
             while entries := self._tail.poll():
-                self._held += [_signal(entry.fields) for entry in entries]
+                polled += [_signal(entry.fields) for entry in entries]
                 if len(entries) < self._tail.batch:
                     break
+            return polled
+        rows = self._loki.fetch(self._stamp)
+        if rows:
+            self._stamp = rows[-1][0]
+        new = []
+        for _, row in rows:
+            if row.get("key") not in self._keys:
+                self._keys.add(row["key"])
+                new.append(_signal(row))
+        return new
+
+    def read(self, since: float = 0.0) -> list[Signal]:
+        """The held signals from `since` on; raises when the store cannot be read."""
+        with self._lock:
+            self._held += self._poll()
             if self._held:
                 floor = max(s.time for s in self._held) - self._keep
                 self._held = [s for s in self._held if s.time >= floor]
+                self._keys.intersection_update(s.key for s in self._held)
             return [s for s in self._held if s.time >= since]
+
+
+def telemetry_log(url: str | None, log: EventLog | None) -> TelemetryLog:
+    """The `TelemetryLog` of `telemetry_loki_url`, else of the event log `log`."""
+    return TelemetryLog(log, loki=LokiSignals(url) if url else None)

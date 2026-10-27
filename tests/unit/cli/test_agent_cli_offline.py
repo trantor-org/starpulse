@@ -223,6 +223,7 @@ class TestConfigCheck:
             },
             "event_log_retention_days": 7,
             "event_log_archive_dir": "starpulse-archive",
+            "telemetry_loki_url": None,
             "ci": [],
             "scheduler": {
                 "lane": None,
