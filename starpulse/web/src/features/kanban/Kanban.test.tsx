@@ -323,12 +323,16 @@ describe("a Waiting card linked to a blocker in another milestone", () => {
   const badge = (el: El) => walk(el).find((k) => /\bxm\b/.test(k.props.className ?? ""));
   const ev = () => ({ stopPropagation: vi.fn(), key: "Enter", preventDefault: vi.fn() });
 
-  it("draws a held session's URL as its nickname", () => {
-    const held: KanbanTask = { ...task, assignee: "https://claude.ai/code/session_01AbCdEfGh" };
+  it.each([
+    ["URL", "https://claude.ai/code/session_01AbCdEfGh", "01AbC"],
+    ["bare UUID", "1491aced-f6da-42b1-9303-9c19adfcc87d", "1491a"],
+  ])("draws a held session's %s as its nickname", (_, assignee, raw) => {
+    const held: KanbanTask = { ...task, assignee };
     const html = renderToStaticMarkup(<Card task={held} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} />);
 
-    expect(html).toContain(sessionNickname(held.assignee)!);
-    expect(html).not.toContain("01AbC");
+    expect(html).toMatch(/[a-z]+-[a-z]+/);
+    expect(html).toContain(String(sessionNickname(assignee)));
+    expect(html).not.toContain(raw);
     expect(html).not.toContain("claude.ai");
   });
 
