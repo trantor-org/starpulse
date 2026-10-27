@@ -4,7 +4,7 @@
 
 <h1 align="center">StarPulse</h1>
 
-<p align="center"><strong>Every task, workflow run and agent in flight, on one live page.</strong></p>
+<p align="center"><strong>State machines for agent work: declare the lifecycle, and every task, workflow run and agent moves through it on one live page.</strong></p>
 
 <p align="center">
   <a href="https://github.com/trantor-org/starpulse/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/trantor-org/starpulse/ci.yml?branch=main&style=flat-square&label=ci" alt="CI status"></a>
@@ -34,10 +34,19 @@ machines, and I wanted to map the whole agent lifecycle and pair it with the
 Dagu workflows I already run, so scripts and DAGs could take over manual AI
 commands and cut the step count.
 
-StarPulse is what I built. It shows tasks, workflow runs and agents on one live
-page. It produces data and leaves what to do with that data to you. It is not
-tied to one agent harness or one lifecycle: you define the states, and it draws
-and records them.
+StarPulse is what I built: a state-machine tool for agent work. You declare each
+lifecycle as a machine, as data: its states, its transitions and who may make each
+move (the operator, an agent or a named workflow). StarPulse records every move
+against its machine and draws the machines live, with tasks, workflow runs and
+agents moving through them on one page. The board's writer refuses a move its
+machine forbids, the same way for the command line and the page.
+
+A Kanban board is one shape a machine takes, not what StarPulse is. The Board
+machine's states become the lanes, and its transitions and `writers` decide which
+moves are offered, and to whom. Every other machine, such as a task's delivery
+phases, a skill's steps or a pull request's CI, is drawn as a flow beside it.
+StarPulse is not tied to one agent harness or one lifecycle, and it produces data
+and leaves what to do with that data to you.
 
 ## Quick start
 
