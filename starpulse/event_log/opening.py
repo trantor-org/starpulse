@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from sqlalchemy import Engine, func, select
+from sqlalchemy import Engine, func, or_, select
 
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.tables import machine_events
@@ -31,9 +31,11 @@ def open_event_log(configured: str | None, path: Path | None) -> EventLog:
     return EventLog(database_url(configured, path.parent if path else Path.cwd()))
 
 
-def last_run_event(engine: Engine, run: str) -> float | None:
-    """Epoch of the latest machine event of run `run` in the store on `engine`, None for a run with none: the harness
-    keys a session's telemetry by its session id, so this is when that session last acted."""
+def last_run_event(engine: Engine, run: str, task: str | None = None) -> float | None:
+    """Epoch of the latest machine event of run `run`, or of task `task` when given, on `engine`; None when there is
+    none: the harness keys a taskless session's telemetry by its session id and a task-branch session's by its task, so
+    this is when that session last acted."""
     c = machine_events.c
+    match = (c.run == run) if task is None else or_(c.run == run, c.task == task)
     with engine.connect() as db:
-        return db.execute(select(func.max(c.occurred_at)).where(c.run == run)).scalar()
+        return db.execute(select(func.max(c.occurred_at)).where(match)).scalar()

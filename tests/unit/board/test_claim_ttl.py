@@ -268,3 +268,16 @@ def test_stopping_the_feed_ends_the_running_sweeper(served) -> None:
 
     sweeper.join(5)
     assert not sweeper.is_alive()
+
+
+def test_a_harness_event_of_the_held_task_with_no_run_renews_the_claim(served) -> None:
+    """A session on a task branch writes harness telemetry keyed by the task, with no run."""
+    built, _, store, log = served
+    claimed = _claim(built, store)
+    history = HistoryStore("", {}, engine=log.engine)
+    fields = {"task": "task-5", "machine": "harness", "event": "TOOL_USED", "time": claimed + 1700}
+    history.record_machine("harness-2", fields)
+    activity = partial(last_run_event, log.engine)
+
+    assert sweep(built, store, _rows(built), ttl=1800, now=claimed + 3400, activity=activity) == []
+    assert sweep(built, store, _rows(built), ttl=1800, now=claimed + 3501, activity=activity) == ["task-5"]
