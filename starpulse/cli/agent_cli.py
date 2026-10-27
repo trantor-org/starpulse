@@ -131,7 +131,15 @@ from starpulse.cli.agent_keys import (
 )
 from starpulse.runtime.config import Config, ConfigError, discover, load
 from starpulse.flow_metrics.cells import cell_of
-from starpulse.flow_metrics.scores import PullFacts, cell_task_scores, merged_pulls, pull_facts, score_cells
+from starpulse.contracts.analytics import Analytics
+from starpulse.flow_metrics.scores import (
+    WEIGHTS,
+    PullFacts,
+    cell_task_scores,
+    merged_pulls,
+    pull_facts,
+    score_cells,
+)
 from starpulse.flow_metrics.verdicts import cell_verdicts
 from starpulse.github import GitHubError, connect, repo_of
 
@@ -385,7 +393,15 @@ def _scores(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, A
     window = _window_read(args, environ, "/api/analytics/sessions", ("now", "window_s", "slices"))
     settled = agent_wire.get_snapshot(agent_wire.server_url(args.server, environ))["settled"]
     tasks = {task: {"labels": found.get("labels", [])} for task, found in settled.items()}
-    repo = repo_of(args.repo)
+    path = discover(args.config)
+    try:
+        analytics = load(path).analytics if path else Analytics()
+    except (OSError, ValueError) as exc:
+        raise agent_wire.CliError("usage", f"{path}: {exc}") from exc
+    weights = {**WEIGHTS, **dict(analytics.weights)}
+    if not (args.repo or analytics.default_repo):
+        raise agent_wire.CliError("usage", "--repo is required: the config sets no [analytics] default_repo")
+    repo = repo_of(args.repo or analytics.default_repo)
     transport = connect(environ.get("GITHUB_TOKEN") or environ.get("GH_TOKEN"))
     facts: dict[str, PullFacts] = {}
     try:
@@ -400,8 +416,8 @@ def _scores(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, A
     return {
         "now": window["now"],
         "window_s": window["window_s"],
-        "scores": score_cells(window["slices"], tasks, facts),
-        "verdicts": cell_verdicts(cell_task_scores(window["slices"], tasks, facts)),
+        "scores": score_cells(window["slices"], tasks, facts, weights=weights),
+        "verdicts": cell_verdicts(cell_task_scores(window["slices"], tasks, facts, weights=weights)),
     }
 
 
@@ -497,7 +513,11 @@ def _dead_migrations(path: Path, held: set[str]) -> list[dict[str, Any]]:
 
     mapping = _read(path).get("migrations", {})
     return [
-        {"file": str(path), "line": None, "message": f"migrations entry {source} -> {target}: no live Task holds {source}"}
+        {
+            "file": str(path),
+            "line": None,
+            "message": f"migrations entry {source} -> {target}: no live Task holds {source}",
+        }
         for source, target in mapping.items()
         if source not in held
     ]
@@ -955,7 +975,9 @@ def _parser() -> argparse.ArgumentParser:
     )
     agent_tasks.writer_flags(rate)
     rate.add_argument("task", help="the task's key (`PROJ-45`)")
-    rate.add_argument("verdict", choices=("pass", "fail", "clear"), help="`pass`, `fail`, or `clear` to drop the rating")
+    rate.add_argument(
+        "verdict", choices=("pass", "fail", "clear"), help="`pass`, `fail`, or `clear` to drop the rating"
+    )
     rate.add_argument("--reason", default="", help="why the task fails, up to 120 characters")
     miss = leaf(
         task_verbs,
@@ -1069,7 +1091,9 @@ def _parser() -> argparse.ArgumentParser:
         reads_server=False,
     )
     validate.add_argument("paths", nargs="+", type=Path, help="the machine YAML files")
-    validate.add_argument("--config", type=Path, help="also refuse a migrations entry no live Task in this config's event log holds")
+    validate.add_argument(
+        "--config", type=Path, help="also refuse a migrations entry no live Task in this config's event log holds"
+    )
     importer = machine_verbs.add_parser("import", description="draft a machine file", help="draft a machine file")
     import_verbs = importer.add_subparsers(dest="source_kind", required=True, metavar="format")
     mermaid = leaf(
@@ -1311,7 +1335,10 @@ def _parser() -> argparse.ArgumentParser:
         (0, 1, 2, 3),
     )
     scores.add_argument("--hours", type=float, help="the window to read, in hours (default 168)")
-    scores.add_argument("--repo", required=True, help="the repository whose pull requests to read, `owner/name`")
+    scores.add_argument(
+        "--repo", help="the repository whose pull requests to read, `owner/name` (default the config's default_repo)"
+    )
+    scores.add_argument("--config", type=Path, help="the TOML config file; default starpulse.toml when it exists")
     command = verbs.add_parser("command", description="the project's commands", help="the project's commands")
     command_run = leaf(
         command.add_subparsers(dest="verb", required=True, metavar="verb"),

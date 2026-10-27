@@ -355,9 +355,25 @@ def test_a_mid_session_move_up_the_ladder_is_a_raise_and_a_move_down_a_lowering(
         sig("request", 4, model="claude-haiku-5", effort="medium"),
     ]
 
-    (found_slice,) = slice_health(session_health(found, KEYS))
+    ladder = ("haiku-low", "haiku-medium", "haiku-high", "sonnet-high", "opus-low", "opus-medium", "opus-high")
+
+    (found_slice,) = slice_health(session_health(found, KEYS, Analytics(ladder=ladder)))
 
     assert (found_slice["raises"], found_slice["lowers"]) == (2, 1)
+
+
+def test_the_configured_ladder_ranks_every_rung_it_names_and_none_ranks_nothing() -> None:
+    found = [
+        sig("prompt", 0, branch="claude/task-4-x"),
+        sig("request", 1, model="claude-sonnet-5", effort="low"),
+        sig("request", 2, model="claude-sonnet-5", effort="medium"),
+    ]
+    nine = ("sonnet-low", "sonnet-medium", "sonnet-high")
+
+    (ranked,) = slice_health(session_health(found, KEYS, Analytics(ladder=nine)))
+    (unranked,) = slice_health(session_health(found, KEYS))
+
+    assert (ranked["raises"], unranked["raises"]) == (1, 0)
 
 
 def by_task(rows: list[dict], field: str) -> dict[tuple[str, str | None], object]:
@@ -618,7 +634,10 @@ def test_no_doc_lists_starpulse_insights() -> None:
 
 def test_a_session_row_names_the_eval_run_its_signals_came_from() -> None:
     at = "2026-10-09T11:00:00.000Z"
-    evaluated = signals(export(claude("api_request", 0, at, model="m"), resource={"trantor.eval": "judge"}))
+    reading = Analytics(eval_attribute="trantor.eval")
+    evaluated = signals(
+        export(claude("api_request", 0, at, model="m"), resource={"trantor.eval": "judge"}), analytics=reading
+    )
     plain = signals(export(claude("api_request", 0, at, model="m", **{"session.id": "s2"})))
 
     assert sorted(row["eval"] for row in session_health(evaluated + plain, None)) == ["", "judge"]

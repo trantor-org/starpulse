@@ -34,7 +34,7 @@ from starpulse.contracts.analytics import Analytics
 from starpulse.contracts.signals import CLAUDE_CODE, CODEX, Signal, claim_key, claimed, main_thread_source
 from starpulse.harness_telemetry.activity import SHELLS, activities, elide_heredocs, paths, writes_file
 from starpulse.harness_telemetry.intent_classification import intent_label
-from starpulse.harness_telemetry.otlp import BRANCH, EVAL, _attributes, _epoch, _records
+from starpulse.harness_telemetry.otlp import BRANCH, _attributes, _epoch, _records
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     from starpulse.event_log.event_log import EventLog
@@ -289,7 +289,7 @@ def signals(
     A Claude Code shell result keeps its command, passed through `redact`; with none, no command is kept."""
     reading = analytics or Analytics()
     found: list[Signal] = []
-    for resource_branch, resource_eval, record in _records(payload):
+    for resource_branch, resource_eval, record in _records(payload, reading.eval_attribute):
         a = _attributes(record)
         harness, session, read = _identity(a)
         at = _epoch(a.get("event.timestamp"))
@@ -297,7 +297,8 @@ def signals(
             continue
         name = str(a.get("event.name") or "").removeprefix("claude_code.")
         branch = resource_branch or (str(a.get(BRANCH)) if a.get(BRANCH) else None)
-        purpose = resource_eval or (str(a.get(EVAL)) if a.get(EVAL) else "")
+        record_eval = a.get(reading.eval_attribute) if reading.eval_attribute else None
+        purpose = resource_eval or (str(record_eval) if record_eval else "")
         identity = a.get("event.sequence") if harness == CLAUDE_CODE else a.get("call_id")
         key = f"{harness}:{session}:{name}:{identity}:{a.get('event.timestamp')}"
         turn = str(a.get("prompt.id") or "") if harness == CLAUDE_CODE else ""

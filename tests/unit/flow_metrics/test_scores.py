@@ -43,6 +43,12 @@ def test_no_parts_is_no_score() -> None:
     assert task_score({"clean": None}) is None
 
 
+def test_a_configured_weight_replaces_the_built_in_one() -> None:
+    parts = {"clean": 100.0, "prompts": 0.0}
+
+    assert task_score(parts, {"clean": 1, "prompts": 3}) == pytest.approx(25)
+
+
 def test_cell_row_averages_task_scores_per_profile_with_github_parts() -> None:
     slices = [slice_("TASK-1"), slice_("TASK-2", clean=False, prompts=1), slice_("TASK-3", model="opus", effort="low")]
     tasks = dict.fromkeys(("TASK-1", "TASK-2", "TASK-3"), LABELS)

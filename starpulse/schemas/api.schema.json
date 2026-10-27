@@ -6640,7 +6640,7 @@
           "type": "boolean"
         },
         "eval": {
-          "description": "The purpose an eval run stamped with `trantor.eval`; empty for any other request.",
+          "description": "The purpose an eval run stamped with the configured `eval_attribute`; empty for any other request.",
           "type": "string"
         },
         "harness": {

@@ -40,9 +40,6 @@ _EDITS = {"Edit", "Write", "MultiEdit", "NotebookEdit", "StrReplace"}
 #: The sources of a rejected tool decision that the operator made: a refusal, or an abort of the turn.
 _USER_REJECTS = {"user_reject", "user_abort"}
 _TOKENS = ("input", "output", "cache_read", "cache_write", "reasoning")
-# The trial ladder, cheapest first, mirrored from backlog_workflow.trials; a move up it is a raise.
-_LADDER = ("haiku-low", "haiku-medium", "haiku-high", "sonnet-high", "opus-low", "opus-medium", "opus-high")
-_FAMILIES = ("haiku", "sonnet", "opus")
 #: `originator` values of Codex's interactive front ends; `codex_exec` is its headless one.
 _CODEX_INTERACTIVE = {"codex-tui", "codex_cli_rs"}
 
@@ -109,21 +106,24 @@ def _count(row: dict[str, Any], key: str, name: str) -> None:
     row[key][name] = row[key].get(name, 0) + 1
 
 
-def _rank(model: str | None, effort: str | None) -> int | None:
-    family = next((name for name in _FAMILIES if model and name in model), None)
+def _rank(ladder: tuple[str, ...], model: str | None, effort: str | None) -> int | None:
+    families = {rung.rpartition("-")[0] for rung in ladder}
+    family = next((name for name in sorted(families) if model and name in model), None)
     key = f"{family}-{effort}"
-    return _LADDER.index(key) if key in _LADDER else None
+    return ladder.index(key) if key in ladder else None
 
 
-def _direction(before: tuple[str | None, str | None], after: tuple[str | None, str | None]) -> int:
-    """1 when the profile moved up the trial ladder, -1 when down, 0 on a tie or an unranked profile."""
-    before_rank, after_rank = _rank(*before), _rank(*after)
+def _direction(
+    ladder: tuple[str, ...], before: tuple[str | None, str | None], after: tuple[str | None, str | None]
+) -> int:
+    """1 when the profile moved up the ladder, -1 when down, 0 on a tie or an unranked profile."""
+    before_rank, after_rank = _rank(ladder, *before), _rank(ladder, *after)
     if before_rank is None or after_rank is None:
         return 0
     return (after_rank > before_rank) - (after_rank < before_rank)
 
 
-def _note_request(row: dict[str, Any], s: Signal, last: dict[str, str]) -> None:
+def _note_request(row: dict[str, Any], s: Signal, last: dict[str, str], ladder: tuple[str, ...]) -> None:
     if s.origin in {"main", "side"}:
         row["requests" if s.origin == "main" else "side_requests"] += 1
     for name, value in (("models", s.model), ("efforts", s.effort)):
@@ -131,7 +131,7 @@ def _note_request(row: dict[str, Any], s: Signal, last: dict[str, str]) -> None:
             row[name].append(value)
     if s.origin == "main":
         before = (last.get("model"), last.get("effort"))
-        step = _direction(before, (s.model or before[0], s.effort or before[1]))
+        step = _direction(ladder, before, (s.model or before[0], s.effort or before[1]))
         row["raises"] += step > 0
         row["lowers"] += step < 0
         for field, change in (("model", "model_changes"), ("effort", "effort_changes")):
@@ -148,9 +148,9 @@ def _note_request(row: dict[str, Any], s: Signal, last: dict[str, str]) -> None:
         row["cost_usd"] = (row["cost_usd"] or 0.0) + s.cost
 
 
-def _note(row: dict[str, Any], s: Signal, last: dict[str, str]) -> None:
+def _note(row: dict[str, Any], s: Signal, last: dict[str, str], ladder: tuple[str, ...]) -> None:
     if s.kind == "request":
-        _note_request(row, s, last)
+        _note_request(row, s, last, ladder)
     elif s.kind == "tool":
         row["tool_calls"] += 1
         row["tool_failures"] += int(not s.ok)
@@ -237,6 +237,7 @@ def session_rows(
     """One row per task the session `ordered` (oldest first, as `grouped` gives it) worked, in the order it reached them."""
     completion = analytics.completion_skill if analytics else ""
     operator_tools = analytics.operator_tools if analytics else frozenset()
+    ladder = analytics.ladder if analytics else ()
     kind = session_kind(ordered)
     ids = _turn_ids(ordered)
     ends: dict[str, float] = {}
@@ -292,7 +293,7 @@ def session_rows(
         elif s.kind == "deliver" and task in loaded:
             row["complete"] = True
         row["last_at"] = s.time
-        _note(row, s, last[task or ""])
+        _note(row, s, last[task or ""], ladder)
     for opened in open_turns.values():
         opened["interrupts"] += 1
     return list(by_task.values())

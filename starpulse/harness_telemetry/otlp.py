@@ -51,7 +51,6 @@ _KINDS = {
     for spelling in (kind, f"claude_code.{kind}")
 }
 BRANCH = "vcs.ref.head.name"
-EVAL = "trantor.eval"
 MAX_BODY = 8 * 1024 * 1024
 
 
@@ -91,7 +90,9 @@ def _attributes(record: dict[str, Any]) -> dict[str, Any]:
     return {a["key"]: _value(a.get("value")) for a in attributes if isinstance(a, dict) and "key" in a}
 
 
-def _records(payload: dict[str, Any]) -> Iterator[tuple[str | None, str | None, dict[str, Any]]]:
+def _records(
+    payload: dict[str, Any], eval_attribute: str = ""
+) -> Iterator[tuple[str | None, str | None, dict[str, Any]]]:
     """Each log record with the branch and eval purpose its resource names."""
     resources = payload.get("resourceLogs")
     for resource in resources if isinstance(resources, list) else ():
@@ -99,7 +100,7 @@ def _records(payload: dict[str, Any]) -> Iterator[tuple[str | None, str | None, 
         described = resource.get("resource") if isinstance(resource, dict) else None
         attributes = _attributes(described) if isinstance(described, dict) else {}
         branch = attributes.get(BRANCH)
-        purpose = attributes.get(EVAL)
+        purpose = attributes.get(eval_attribute) if eval_attribute else None
         for scope in scopes if isinstance(scopes, list) else ():
             records = scope.get("logRecords") if isinstance(scope, dict) else None
             for record in records if isinstance(records, list) else ():

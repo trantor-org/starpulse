@@ -1923,7 +1923,7 @@ export interface SessionStep {
    */
   captured: boolean;
   /**
-   * The purpose an eval run stamped with `trantor.eval`; empty for any other request.
+   * The purpose an eval run stamped with the configured `eval_attribute`; empty for any other request.
    */
   eval: string;
   harness: string;
