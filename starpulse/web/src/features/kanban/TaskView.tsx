@@ -434,7 +434,7 @@ export function TaskView(p: TaskViewProps) {
   }, [toast]);
 
   const criteria = base.start_criteria ?? [];
-  const { activity, comments } = taskActivity(p.task, base.comments ?? []);
+  const { activity, machines, comments } = taskActivity(p.task, base.comments ?? []);
   /** A checkpoint's AC tag brings its criterion into view and flashes it, as the approved mockup does. */
   const jump = (event: MouseEvent<HTMLAnchorElement>, n: number) => {
     event.preventDefault();
@@ -553,7 +553,15 @@ export function TaskView(p: TaskViewProps) {
             {p.record && prose("notes", "Notes")}
             <section className="sec" id="activity">
               <div className="sh"><span className="t">Activity</span>{activity.length > 0 && <span className="n">{activity.length}</span>}</div>
-              {activity.length > 0 ? <div className="acts2">{activity.map(ev)}</div> : <span className="none">No activity yet</span>}
+              {activity.length > 0 && <div className="acts2">{activity.map(ev)}</div>}
+              {machines.map((m) => (
+                <details key={m.machine} className="mgroup">
+                  <summary><span className="who">{m.machine}</span><span className="n">{m.steps.length}</span>
+                    <span className="st">{m.state.replace(/_/g, " ")}</span><span>{fmtAt(m.at)}</span></summary>
+                  <div className="acts2">{m.steps.map(ev)}</div>
+                </details>
+              ))}
+              {activity.length === 0 && machines.length === 0 && <span className="none">No activity yet</span>}
             </section>
             <section className="sec" id="comments">
               <div className="sh"><span className="t">Comments</span>{comments.length > 0 && <span className="n">{comments.length}</span>}</div>

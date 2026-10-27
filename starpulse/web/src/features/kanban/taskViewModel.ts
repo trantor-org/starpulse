@@ -108,13 +108,20 @@ function commentRow(c: TaskComment, i: number): ActivityEvent {
   return { ...row, kind: "comment", ...fold(c.text) };
 }
 
-/** D4: Activity is the read-only record, oldest first (checkpoints, the claim, lifecycle steps); Comments is everything people wrote. */
-export function taskActivity(task: KanbanTask, comments: TaskComment[]): { activity: ActivityEvent[]; comments: ActivityEvent[] } {
+/** One machine's lifecycle steps under Activity, oldest first, with the state it stands in and when it last moved. */
+export interface MachineGroup { machine: string; state: string; at: number; steps: ActivityEvent[] }
+
+/** D4: Activity is the read-only record, oldest first (checkpoints, the claim), with each machine's lifecycle steps in a group of its own; Comments is everything people wrote. */
+export function taskActivity(task: KanbanTask, comments: TaskComment[]): { activity: ActivityEvent[]; machines: MachineGroup[]; comments: ActivityEvent[] } {
   const rows = comments.map(commentRow);
-  const steps = task.machines.filter((m) => m.machine !== QUIET_MACHINE).flatMap((m) => m.trail.filter((s) => s.event !== QUIET_EVENT).map((s, i): ActivityEvent => (
-    { key: `${m.machine}${i}`, at: s.at, kind: "system", who: m.machine, body: `\`${s.event}\` → ${s.state.replace(/_/g, " ")}` })));
+  const groups = task.machines.filter((m) => m.machine !== QUIET_MACHINE).map((m): MachineGroup => ({
+    machine: m.machine, state: m.state, at: m.at,
+    steps: m.trail.filter((s) => s.event !== QUIET_EVENT).map((s, i): ActivityEvent => (
+      { key: `${m.machine}${i}`, at: s.at, kind: "system", who: m.machine, body: `\`${s.event}\` → ${s.state.replace(/_/g, " ")}` })),
+  }));
   return {
-    activity: [...rows.filter((r) => r.kind !== "comment"), ...steps].sort((a, b) => a.at - b.at),
+    activity: rows.filter((r) => r.kind !== "comment").sort((a, b) => a.at - b.at),
+    machines: groups.filter((g) => g.steps.length > 0).sort((a, b) => a.steps[0].at - b.steps[0].at),
     comments: rows.filter((r) => r.kind === "comment"),
   };
 }
