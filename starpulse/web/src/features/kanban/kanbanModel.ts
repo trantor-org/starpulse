@@ -66,7 +66,6 @@ export interface KanbanTask {
 export const applyTaskRecord = (task: KanbanTask, record: TaskRecord): KanbanTask => ({
   ...task,
   title: record.title,
-  assignee: record.profile,
   profile: record.profile,
   labels: record.labels,
   milestone: record.milestone,

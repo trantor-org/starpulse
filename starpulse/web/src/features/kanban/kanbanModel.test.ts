@@ -271,7 +271,7 @@ describe("the cards drawn from a snapshot", () => {
     };
 
     expect(applyTaskRecord(before, record)).toMatchObject({
-      title: "Saved title", assignee: "@bob", labels: ["saved"], milestone: "m-99", dependencies: ["PROJ-8"], description: "Saved description",
+      title: "Saved title", profile: "@bob", assignee: before.assignee, labels: ["saved"], milestone: "m-99", dependencies: ["PROJ-8"], description: "Saved description",
     });
   });
 });

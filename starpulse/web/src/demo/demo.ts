@@ -388,7 +388,7 @@ export class DemoServer {
     const card = next.flows.find((f) => f.name === "board")?.agents.find((agent) => agent.id === task);
     if (card) {
       const record = this.records[task];
-      Object.assign(card, { title: record.title, model: record.profile, labels: record.labels, milestone: record.milestone, dependencies: record.dependencies, description: record.description });
+      Object.assign(card, { title: record.title, model: record.profile, profile: record.profile, labels: record.labels, milestone: record.milestone, dependencies: record.dependencies, description: record.description });
       this.publish(next);
     }
     return json({ task, changed: fields });

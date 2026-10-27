@@ -19,7 +19,7 @@ import { linkedTask, loadPrefs, savePrefs, withoutFilters } from "./kanbanPrefs"
 import { codeParts, place, targets, type MoveStore, type Refusal, type Target } from "./move";
 import { browserStorage, PHONE } from "../../shared/nav";
 import {
-  canDrag, dropAsks, placeClaims, profileOf, runsOn, startLane, startable,
+  canDrag, dropAsks, placeClaims, profileOf, profilesOf, runsOn, startLane, startable,
   type Asking, type Claiming, type Failed, type Harnesses, type Pick, type StartStore,
 } from "./start";
 import { MilestoneOutline } from "./MilestoneOutline";
@@ -914,7 +914,7 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
         <ModalHost store={openTask} cards={cards} draw={(task) => {
           const taskStack = stackOf(view, task.id);
           return <Modal key={task.id} task={task} tasks={cards} records={records} open={setOpen} stack={taskStack && <StackList stack={taskStack} id={task.id} open={setOpen} />} names={hud.names} roles={roles} marks={marksOf(task.id)} now={now} capabilities={hud.capabilities}
-          profiles={assignees.map((o) => o.value).filter(Boolean)} milestones={milestones.map((o) => o.value).filter(Boolean)} close={() => setOpen(null)}
+          profiles={profilesOf(started.harnesses)} milestones={milestones.map((o) => o.value).filter(Boolean)} close={() => setOpen(null)}
           hide={() => { setPrefs((p) => hideTask(p, task.id)); setOpen(null); }} archive={() => setArchiving(task.id)} constellation={() => constellation(task.lane)}
           move={(to) => { if (!dropAsks(task, to, roles)) return void moves.drop(task, to); starts.ask(task, "modal", roles); setOpen(null); }}
           start={() => { starts.ask(task, "modal", roles); setOpen(null); }}

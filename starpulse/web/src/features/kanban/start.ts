@@ -96,6 +96,14 @@ export function defaultPick(assignee: string, h: Harnesses): Pick {
 /** The assignee a pick saves: `@agent-<tier>-<effort>`, or `@agent-<tier>` for a tier with no effort. */
 export const profileOf = (pick: Pick) => `@agent-${pick.tier}${pick.effort ? `-${pick.effort}` : ""}`;
 
+/** Every configured agent profile, once, in tier order: the set `starpulse task profile` accepts. */
+export const profilesOf = (h: Harnesses): string[] => {
+  const picks = h.harnesses.flatMap((harness) => h.tiers.flatMap((tier) => (
+    tier in harness.tiers ? (harness.tiers[tier].efforts.length ? harness.tiers[tier].efforts : [""]).map((effort) => profileOf({ harness: harness.name, tier, effort })) : []
+  )));
+  return [...new Set(picks)];
+};
+
 /** The model a pick runs: its effort's model id when the tier names one, else the tier's model. */
 const modelOf = (pick: Pick, h: Harnesses): string => {
   const tier = harnessOf(pick.harness, h)?.tiers[pick.tier];

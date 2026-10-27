@@ -278,7 +278,7 @@ function MoveMenu({ items, disabled, move }: { items: { to: string; text: string
 }
 
 const fromSnapshot = (task: KanbanTask): TaskRecord => ({
-  title: task.title, profile: task.assignee, priority: "", labels: task.labels, milestone: task.milestone,
+  title: task.title, profile: task.profile ?? "", priority: "", labels: task.labels, milestone: task.milestone,
   dependencies: task.dependencies, description: task.description.split("\n## ")[0], plan: "", notes: "",
   acceptanceCriteria: [], definitionOfDone: [],
 });
@@ -616,7 +616,7 @@ export function TaskView(p: TaskViewProps) {
                   {row("area", live ? field("area", areas) : fields.area || "—")}
                   {(live || fields.mode) && row("mode", live ? field("mode", LABEL_FIELDS.mode) : fields.mode)}
                   {row("priority", live ? <Select {...fp("priority", "details")} label="Priority" value={priorityValue(draft.priority)} options={[["", "—"], ...PRIORITIES.map((v): [string, string] => [v, v])]} onChange={(value) => change("priority", value)} /> : priorityValue(draft.priority) || "—")}
-                  {row("profile", live ? <Select {...fp("profile", "details")} label="Profile" value={draft.profile} options={[["", "unassigned"], ...p.profiles.map((v): [string, string] => [v, v])]} onChange={(value) => change("profile", value)} /> : draft.profile || "—")}
+                  {row("profile", live ? <Select {...fp("profile", "details")} label="Profile" value={draft.profile} options={[["", "unassigned"], ...(draft.profile && !p.profiles.includes(draft.profile) ? [...p.profiles, draft.profile] : p.profiles).map((v): [string, string] => [v, v])]} onChange={(value) => change("profile", value)} /> : draft.profile || "—")}
                   {!live && draft.type && row("type", draft.type)}
                   {row("labels", live ? <>
                     <div className={fieldClass("fv chips", true, Boolean(note))}>

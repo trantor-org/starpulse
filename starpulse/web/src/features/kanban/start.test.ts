@@ -3,7 +3,7 @@ import { LIFECYCLE_ROLES } from "../../tests/lifecycleRoles";
 import type { KanbanTask } from "./kanbanModel";
 import { MoveStore, type Post, type Reply } from "./move";
 import {
-  StartStore, canDrag, choose, defaultPick, dropAsks, fetchHarnesses, placeClaims, postStart, profileOf, runsOn, startable,
+  StartStore, canDrag, choose, defaultPick, dropAsks, fetchHarnesses, placeClaims, postStart, profileOf, profilesOf, runsOn, startable,
   type Harnesses, type PostStart, type StartReply,
 } from "./start";
 
@@ -285,5 +285,15 @@ describe("the requests", () => {
 
     expect(await fetchHarnesses(served)).toEqual(HARNESSES);
     expect(await fetchHarnesses(down)).toEqual({ tiers: [], harnesses: [] });
+  });
+});
+
+describe("profilesOf", () => {
+  it("lists each configured agent profile once, tier by tier, across harnesses", () => {
+    expect(profilesOf(HARNESSES)).toEqual(["@agent-fast", "@agent-standard-medium", "@agent-standard-high", "@agent-deep-medium", "@agent-deep-high"]);
+  });
+
+  it("lists none until the server names the harnesses", () => {
+    expect(profilesOf({ tiers: [], harnesses: [] })).toEqual([]);
   });
 });

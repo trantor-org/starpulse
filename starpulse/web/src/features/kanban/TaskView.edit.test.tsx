@@ -148,6 +148,44 @@ describe("editing one section at a time", () => {
     act(() => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value); input!.dispatchEvent(new Event("input", { bubbles: true })); });
     return input!;
   };
+  describe("a claimed task", () => {
+    const SESSION = "https://claude.ai/code/session_01Jmhc2v6DBEqAVMUDLntcfT";
+    const claimed = { ...props().task, assignee: SESSION, profile: "@agent-fast-low" };
+    const configured = ["@agent-standard-high", "@agent-fast-low"];
+    const choose = (host: HTMLElement, value: string) => {
+      const profile = q<HTMLSelectElement>(host, '.sec.on select[aria-label="Profile"]')!;
+      act(() => { Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!.call(profile, value); profile.dispatchEvent(new Event("change", { bubbles: true })); });
+    };
+
+    it("draws the profile, not the session, before its record loads", () => {
+      const host = mount({ task: claimed, record: null, profiles: configured });
+
+      expect(q(host, ".tvrail .props")?.textContent).toContain("@agent-fast-low");
+      expect(q(host, ".tvrail .props")?.textContent).not.toContain(SESSION);
+    });
+
+    it("opens Details on its profile and offers only the configured profiles", () => {
+      const host = mount({ task: claimed, record: { ...props().record!, profile: "@agent-fast-low" }, profiles: configured });
+
+      click(pen(host, "details"));
+
+      const profile = q<HTMLSelectElement>(host, '.sec.on select[aria-label="Profile"]')!;
+      expect(profile.value).toBe("@agent-fast-low");
+      expect([...profile.options].map((o) => o.value)).toEqual(["", ...configured]);
+    });
+
+    it("saves the profile and nothing of the assignee", async () => {
+      const fetcher = stubWriter();
+      const host = mount({ task: claimed, record: { ...props().record!, profile: "@agent-fast-low" }, profiles: configured });
+
+      click(pen(host, "details"));
+      choose(host, "@agent-standard-high");
+      await key("Enter", { ctrlKey: true });
+
+      expect(wrote(fetcher).changes).toEqual({ profile: "@agent-standard-high" });
+    });
+  });
+
   const labelled = { ...props().record!, labels: ["kind-execute", "size-5", "area-starpulse", "mode-attended", "follow-up", "needs-review"], type: "story" };
 
   it("details: a row per field from the prefixed labels, and no prefixed label among the chips", () => {
