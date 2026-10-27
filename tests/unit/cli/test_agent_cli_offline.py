@@ -1,9 +1,12 @@
 """`starpulse machine validate|machine import mermaid|config check|demo`: the verbs that need no running server."""
 
+import io
 import json
 import socket
+import urllib.error
 import urllib.request
 from collections.abc import Sequence
+from email.message import Message
 from pathlib import Path
 from typing import Any
 
@@ -443,6 +446,37 @@ class TestSearchTimeout:
         assert document["code"] == "unavailable"
         assert "slow search" in document["error"]
         assert "cannot reach StarPulse" not in document["error"]
+
+
+class TestRestartingServer:
+    def _answering(self, monkeypatch: pytest.MonkeyPatch, headers: Message) -> None:
+        def urlopen(request, timeout=None):
+            body = io.BytesIO(b'{"error": "PROJ-3 is not on the board yet: the board is replaying its feed, retry"}')
+            raise urllib.error.HTTPError(request.full_url, 503, "Service Unavailable", headers, body)
+
+        monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+
+    def test_a_503_with_retry_after_is_an_unavailable_error_naming_the_seconds_to_wait(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        headers = Message()
+        headers["Retry-After"] = "3"
+        self._answering(monkeypatch, headers)
+
+        code, document = _run(capsys, ["task", "restore", "PROJ-3", "--server", "http://127.0.0.1:9"])
+
+        assert (code, document["code"], document["retry_after"]) == (3, "unavailable", 3)
+        assert "replaying its feed" in document["error"]
+
+    def test_a_503_without_retry_after_names_no_wait(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        self._answering(monkeypatch, Message())
+
+        code, document = _run(capsys, ["task", "restore", "PROJ-3", "--server", "http://127.0.0.1:9"])
+
+        assert code == 3
+        assert "retry_after" not in document
 
 
 class TestMachineShow:

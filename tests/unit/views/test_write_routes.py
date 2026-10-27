@@ -11,6 +11,7 @@ from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.board_feed import BoardFeed
 from starpulse.contracts.api.registry import REQUESTS
 from starpulse.event_log.event_log import EventLog
+from starpulse.views import writes as server_writes
 from starpulse.views.reads import Response
 from starpulse.views.services import Services
 from starpulse.views.write_routes import WriteRequest, WriteRoutes
@@ -33,7 +34,8 @@ def _routes(feed: BoardFeed, tmp_path: Path, **pushes) -> WriteRoutes:
     log = EventLog(f"sqlite:///{tmp_path / 'settings.sqlite'}")
     window = HistoryWindow(feed, 6, log)
     unwritten = lambda *args, **kwargs: None  # noqa: E731 - a writer that answers nothing
-    return WriteRoutes(feed, window, bare_board(writer=unwritten, assign=unwritten), Services(**pushes))
+    board = bare_board(writer=unwritten, assign=unwritten, read=unwritten, edit=unwritten)
+    return WriteRoutes(feed, window, board, Services(**pushes))
 
 
 @pytest.fixture
@@ -209,3 +211,26 @@ def test_a_take_over_on_a_board_without_workflows_is_a_404(feed: BoardFeed, tmp_
 
     assert response is not None
     assert response.status == 404
+
+
+def test_a_write_the_replay_has_not_reached_is_a_503_asking_the_client_to_wait(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(server_writes, "REPLAY_WAIT_S", 0.01)
+    replaying = BoardFeed()
+    replaying.await_stream()
+    routes = _routes(replaying, tmp_path)
+    body = json.dumps({"task": "PROJ-3", "base": {"title": "x"}, "changes": {"title": "y"}}).encode()
+
+    response = _write(routes, "POST", "/api/edit", body=body)
+
+    assert response is not None
+    assert response.status == 503
+    assert response.retry_after == server_writes.RETRY_AFTER_S
+
+
+def test_a_write_the_server_refuses_for_another_reason_asks_for_no_retry(routes: WriteRoutes) -> None:
+    response = _write(routes, "POST", "/api/move", body=b"not json")
+
+    assert response is not None
+    assert response.retry_after is None

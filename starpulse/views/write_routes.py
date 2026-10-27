@@ -46,6 +46,7 @@ from starpulse.views.routes import (
     _is_rerun,
 )
 from starpulse.views.writes import (
+    RETRY_AFTER_S,
     archive_doc,
     archive_milestone,
     archive_task,
@@ -106,6 +107,11 @@ def _no_writer(task: str, status: str, actor: str = OPERATOR) -> Written:
 
 TaskWrite = Callable[[str, bytes], tuple[int, dict]]
 Pushed = Callable[[str | None, bytes], tuple[int, dict]]
+
+
+def _answered(kind: str, body: dict, status: int) -> Response:
+    """The write's answer; a 503 asks the client to send it again after `RETRY_AFTER_S`."""
+    return Response(encode(kind, body), status, retry_after=RETRY_AFTER_S if status == 503 else None)
 
 
 class WriteRoutes:
@@ -197,7 +203,7 @@ class WriteRoutes:
             status, body = run_dag(request.client, unquote(path.removeprefix(_RUN)), self._starts, self._run_safe)
         else:
             return None
-        return Response(encode(kind, body), status)
+        return _answered(kind, body, status)
 
     def _put(self, request: WriteRequest) -> Response | None:
         """The switches a page puts: the scheduler's and the history window."""
@@ -225,7 +231,7 @@ class WriteRoutes:
         if refusal is not None:
             return refusal
         status, body = answer(self._whole(request))
-        return Response(encode(kind, body), status)
+        return _answered(kind, body, status)
 
     def _refused(self, request: WriteRequest) -> Response | None:
         """The refusal of a write another web page may have sent, or None."""
@@ -246,4 +252,4 @@ class WriteRoutes:
         if declared > limit:
             return Response(encode(kind, {"error": f"a body is at most {limit} bytes"}), 413, close=True)
         status, body = ingest(request.headers.get("Authorization"), request.body(max(declared, 0)))
-        return Response(encode(kind, body), status)
+        return _answered(kind, body, status)
