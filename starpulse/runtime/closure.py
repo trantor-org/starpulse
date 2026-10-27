@@ -69,6 +69,7 @@ CONFIG_OWNERS: dict[str, tuple[str, ...]] = {
     "tls_cert": _owned_by(),
     "tls_key": _owned_by(),
     "analytics": _owned_by(),
+    "telemetry_loki_url": _owned_by(),
     "cursor_context": _owned_by(),
     "producers": _owned_by(),
     "project": _owned_by(),

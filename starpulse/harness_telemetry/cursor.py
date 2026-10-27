@@ -32,7 +32,7 @@ from starpulse.contracts.signals import CURSOR, Signal, claim_key, claimed
 from starpulse.event_log.opening import open_event_log
 from starpulse.harness_telemetry.activity import SHELLS, activities, elide_heredocs, paths
 from starpulse.harness_telemetry.intent_classification import intent_label
-from starpulse.harness_telemetry.telemetry import _SWITCH, TelemetryLog, redactor
+from starpulse.harness_telemetry.telemetry import _SWITCH, TelemetryLog, redactor, telemetry_log
 
 __all__ = ["CURSOR", "ingest", "main", "transcript_signals"]
 
@@ -190,5 +190,6 @@ def main(
         redact = redactor(args.redactor) if args.redactor else None
     except (OSError, ValueError) as exc:
         parser.error(str(exc))
-    read = ingest(args.root, TelemetryLog(log), keys=keys, analytics=analytics, redact=redact, hours=args.hours)
+    telemetry = telemetry_log(config.telemetry_loki_url, log)
+    read = ingest(args.root, telemetry, keys=keys, analytics=analytics, redact=redact, hours=args.hours)
     print(f"cursor: read {read} transcript(s) under {args.root}", flush=True)

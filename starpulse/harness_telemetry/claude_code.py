@@ -40,12 +40,14 @@ from pathlib import Path
 from typing import Any
 
 from starpulse.contracts.adapters import TaskKeys
+from starpulse.contracts.signals import Signal
 from starpulse.event_log import events as machine_events
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import open_event_log
+from starpulse.harness_telemetry import step_seconds
 from starpulse.harness_telemetry.harness import HARNESS
 from starpulse.harness_telemetry.otlp import TOOL_RESULT, LogEvent, receiver
-from starpulse.harness_telemetry.telemetry import TelemetryLog, redactor, signals
+from starpulse.harness_telemetry.telemetry import redactor, signals, telemetry_log
 
 ACTOR = "claude-code"
 DEFAULT_PORT = 4318
@@ -82,14 +84,16 @@ def handler(
     adapter: ClaudeCodeAdapter,
     publish: Callable[[dict], object],
     telemetry: Callable[[dict], object] | None = None,
+    metrics: tuple[str, Callable[[], bytes]] | None = None,
 ) -> type[BaseHTTPRequestHandler]:
-    """An OTLP/HTTP logs handler that publishes each event an export maps to, and hands `telemetry` each export."""
+    """An OTLP/HTTP logs handler that publishes each event an export maps to, hands `telemetry` each export and
+    serves `metrics` (a content type and a renderer) at `GET /metrics`."""
 
     def ingest(logs: list[LogEvent]) -> None:
         for event in adapter.events(logs):
             publish(event)
 
-    return receiver(ingest, telemetry)
+    return receiver(ingest, telemetry, metrics)
 
 
 def publisher(log: EventLog) -> Callable[[dict], int | None]:
@@ -146,13 +150,19 @@ def main(
     except ValueError as exc:
         parser.error(str(exc))
 
-    telemetry = TelemetryLog(log)
+    telemetry = telemetry_log(config.telemetry_loki_url, log)
+
+    def publish_signals(found: list[Signal]) -> None:
+        step_seconds.observe(found)
+        telemetry.publish(found)
+
     print(f"claude code adapter on {args.host}:{args.port}", flush=True)
     ThreadingHTTPServer(
         (args.host, args.port),
         handler(
             ClaudeCodeAdapter(keys),
             publisher(log),
-            lambda payload: telemetry.publish(signals(payload, redact, analytics=analytics, keys=keys)),
+            lambda payload: publish_signals(signals(payload, redact, analytics=analytics, keys=keys)),
+            (step_seconds.CONTENT_TYPE, step_seconds.exposition),
         ),
     ).serve_forever()

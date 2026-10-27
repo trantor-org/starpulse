@@ -205,7 +205,7 @@ def test_a_mode_other_than_ic_is_not_a_config_setting(tmp_path: Path) -> None:
 def test_unknown_keys_are_refused_by_name_beside_the_known_ones(tmp_path: Path) -> None:
     assert _refusal(tmp_path, 'zeta = 1\ntrakcer_url = "http://x.test"\n') == (
         "unknown config key(s) trakcer_url, zeta; known: analytics, api_worker, board, board_worker, ci, cursor_context, database_url, event_log_archive_dir, event_log_retention_days, "
-        "flow_metrics_worker, harnesses_file, level, mode, producers, project, pull_requests, read_model, refresh_token_env, release, repos, runs, runs_worker, scheduler, search, search_worker, session_start_url, slow_read_seconds, take_over_command, tls_cert, tls_key, tracker_url, worker_memory"
+        "flow_metrics_worker, harnesses_file, level, mode, producers, project, pull_requests, read_model, refresh_token_env, release, repos, runs, runs_worker, scheduler, search, search_worker, session_start_url, slow_read_seconds, take_over_command, telemetry_loki_url, tls_cert, tls_key, tracker_url, worker_memory"
     )
 
 
@@ -456,6 +456,12 @@ def test_a_slow_read_threshold_that_is_not_a_positive_number_is_refused(tmp_path
 def test_the_event_log_keeps_seven_days_unless_the_config_says_otherwise(tmp_path: Path) -> None:
     assert load(_write(tmp_path, "")).event_log_retention_days == 7
     assert load(_write(tmp_path, "event_log_retention_days = 30\n")).event_log_retention_days == 30
+
+
+def test_signals_go_to_the_event_log_unless_the_config_names_a_loki(tmp_path: Path) -> None:
+    assert load(_write(tmp_path, "")).telemetry_loki_url is None
+    config = load(_write(tmp_path, 'telemetry_loki_url = "http://loki.test:3100"\n'))
+    assert config.telemetry_loki_url == "http://loki.test:3100"
 
 
 def test_the_event_log_archive_is_a_directory_beside_the_config_unless_the_config_names_one(tmp_path: Path) -> None:

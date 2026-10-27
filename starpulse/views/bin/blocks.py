@@ -30,6 +30,7 @@ class ApiConfig(Protocol):
     repos: tuple[Repo, ...]
     search: Search
     session_start_url: str | None
+    telemetry_loki_url: str | None
     slow_read_seconds: float
     task_actor: bool
     take_over_command: tuple[str, ...] | None

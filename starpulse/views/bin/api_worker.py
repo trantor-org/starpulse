@@ -28,7 +28,7 @@ from starpulse.board.claim_refusals import CLAIMS_STREAM
 from starpulse.event_log import events as machine_events
 from starpulse.event_log import lane_events
 from starpulse.event_log.conformance_monitor import Conformance
-from starpulse.harness_telemetry.telemetry import TelemetryLog
+from starpulse.harness_telemetry.telemetry import telemetry_log
 from starpulse.pulls.delivery import Projected, follow_saves, metrics_of, poller_problem, request_refresh
 from starpulse.scheduler.adapters.exposition import autopilot_exposition
 from starpulse.pulls.pull_refresh import PullRefresh
@@ -192,7 +192,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         scheduler=scheduler_runtime,
         contract=_cached(lambda: host.contract(feed.snapshot(), config, probes), _CONTRACT_TTL_S),
         pulls=pulls,
-        telemetry=TelemetryLog(log),
+        telemetry=telemetry_log(config.telemetry_loki_url, log),
         search=search,
         analytics=config.analytics,
         pull_refresh=pull_refresh,
