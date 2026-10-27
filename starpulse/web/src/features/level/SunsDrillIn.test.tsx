@@ -73,6 +73,19 @@ describe("SunsDrillIn", () => {
     expect(button("Pause replay")).not.toBeNull();
   });
 
+  it("paints its surfaces and text from the theme's tokens, so a theme change repaints it with no reload", () => {
+    mount();
+    const dialog = host.querySelector<HTMLElement>('[role="dialog"]')!;
+    const frame = dialog.firstElementChild as HTMLElement;
+    const brand = [...host.querySelectorAll<HTMLElement>("nav div")].find((d) => d.textContent === "STARPULSE")!;
+    const live = host.querySelector<HTMLElement>("nav span[style*='border-radius: 50%']")!;
+
+    expect(dialog.style.background).toBe("var(--bg0)");
+    expect([frame.style.background, frame.style.color]).toEqual(["var(--bg0)", "var(--ink)"]);
+    expect(brand.style.color).toBe("var(--ink-hi)");
+    expect(live.style.background).toBe("var(--ok)");
+  });
+
   it("draws nothing yellow", () => {
     mount();
     expect(host.innerHTML).not.toMatch(/#fbbf24|#fcd34d|#fde68a|251,\s*191,\s*36/i);

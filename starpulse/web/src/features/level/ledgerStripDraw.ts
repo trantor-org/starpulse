@@ -3,10 +3,11 @@
 import { clockHm, type ClockMode } from "../../shared/clock";
 import type { Ink } from "./ledgerRows";
 import { stripLabel, stripMarks } from "./ledgerStrip";
+import { ACT, MUTED } from "../../render/palette";
 import type { LedgerView } from "../../render/scene";
 import type { LedgerRow, MergeStrip } from "../../api";
 
-const ACT = "#fbbf24", MUTED = "#94a3b8", HOUR = 3600, DAY = 86400;
+const HOUR = 3600, DAY = 86400;
 
 const rgba = (hex: string, a: number) => {
   const n = parseInt(hex.slice(1), 16);

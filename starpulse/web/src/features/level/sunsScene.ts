@@ -2,6 +2,7 @@
 // Deliver and Review fix, rounds and steps), and one pass of the engine becomes the scene, tooltips, details and Tasks panel the drill-in draws.
 import type { CSSProperties } from "react";
 import type { MachineEvent } from "../../api/types.gen";
+import { tint } from "./tint";
 import { HAIR, jobAt, LENSES, LN, PANE_R, PN, replay, rows, setNowMinutes, statusOf, STEPS, STYLE, template, TIER, type Job, type Scene, type View } from "./sunsEngine";
 
 export type { Job, View };
@@ -76,7 +77,7 @@ export function jobOf(id: string, title: string, assignee: string | undefined, e
   };
 }
 
-const TIP = "position:absolute;pointer-events:none;max-width:210px;padding:6px 9px;border-radius:5px;background:rgba(9,14,28,.96);border:1px solid rgba(148,163,184,.28);box-shadow:0 4px 16px rgba(0,0,0,.5);font-size:.72em;line-height:1.45;color:#dbe4f3;z-index:5";
+const TIP = `position:absolute;pointer-events:none;max-width:210px;padding:6px 9px;border-radius:5px;background:${tint("bg1", 96)};border:1px solid ${tint("slate", 28)};box-shadow:0 4px 16px ${tint("shadow", 50)};font-size:.72em;line-height:1.45;color:var(--ink);z-index:5`;
 
 const blank = (self: Scene["self"]): Scene => ({ P: { lane: [], guide: [], grp: [] }, L: [], S: [], B: [], T: [], K: [], H: [], Q: [], V: [], tips: {}, dets: {}, self, open: self.state.open, pick: self.state.pick });
 const joined = (P: Scene["P"]) => ({ lane: P.lane.join(" "), guide: P.guide.join(" "), grp: P.grp.join(" ") });
@@ -100,7 +101,7 @@ export function sceneOf(jobs: Job[], view: View, setView: (patch: Partial<View>)
   const fleet = jobs.map((x) => ({
     id: x.id, on: x.id === job.id, aria: `${x.id} ${x.title}, ${statusOf(x).t}`, where:x.phase === "qa" ? "qa" : (PN[x.phase] ?? x.phase).toLowerCase(),
     pick: () => setView({ sel: x.id, open: {}, pick: {}, hover: null, det: null, at: null, replaying: false }),
-    bar: `flex-basis:100%;height:2px;margin-top:5px;border-radius:1px;background:linear-gradient(90deg,${TIER[x.tier]} ${Math.round(30 + ((x.mins * 7) % 60))}%,rgba(148,163,184,.12) 0)`,
+    bar: `flex-basis:100%;height:2px;margin-top:5px;border-radius:1px;background:linear-gradient(90deg,${TIER[x.tier]} ${Math.round(30 + ((x.mins * 7) % 60))}%,${tint("slate", 12)} 0)`,
   }));
   return { job, main, rows: rowScene, rowsH, rowsTop: -(HAIR + 1), paths: joined(main.P), rpaths: joined(rowScene.P), tip: tipOf(main, PANE_R), rtip: tipOf(rowScene, 1186), det, fleet };
 }
