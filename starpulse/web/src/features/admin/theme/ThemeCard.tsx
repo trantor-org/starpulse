@@ -50,7 +50,7 @@ function PackTile({ pack, on, n, choose, title }: { pack: Pack; on: boolean; n: 
       {title && <div className="nm">{title}</div>}
       <button type="button" className="pick" aria-pressed={on} onClick={choose}>
         {!title && <span className="nm">{pack.name}</span>}
-        <span className="vibe">{pack.vibe ?? ""}</span>
+        {pack.vibe && <span className="vibe">{pack.vibe}</span>}
         <Swatches t={t} />
         <span className="src">{pack.src?.label ?? ""}</span>
       </button>

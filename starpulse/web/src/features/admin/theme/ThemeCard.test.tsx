@@ -27,6 +27,15 @@ describe("ThemeCard uploads", () => {
     expect(document.querySelectorAll(".tile.on")).toHaveLength(2);
   });
 
+  it("draws a vibe line only for a pack that has one", () => {
+    const theme = new ThemeStore(vi.fn(), memory());
+    theme.addPack({ ...mine, vibe: undefined });
+    view = mount(<ThemeCard theme={theme} />);
+    expect(document.querySelectorAll(".own")).toHaveLength(1);
+    expect(document.querySelectorAll(".own .vibe")).toHaveLength(0);
+    expect(document.querySelectorAll(".tile .vibe").length).toBe(Object.keys(BUILTIN).length);
+  });
+
   it("opens the import and background dialogs from the add tiles", () => {
     open();
     click(button("+Import schemebase16 or base24 YAML"));
