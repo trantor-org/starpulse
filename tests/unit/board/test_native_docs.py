@@ -403,7 +403,7 @@ def test_native_doc_restore_route_answers_the_doc_and_the_writers_refusal(
     assert (archived[0], restored) == (200, (200, {"doc": "doc-84"}))
     assert again[0] == 409
     assert "doc-84" in again[1]["error"]
-    assert (no_doc[0], bad_folder[0], read.value.code) == (400, 400, 405)
+    assert (no_doc[0], bad_folder[0], read.value.code) == (400, 400, 404)
     assert (docs / "specs" / ARCHIVED).is_file()
 
 
