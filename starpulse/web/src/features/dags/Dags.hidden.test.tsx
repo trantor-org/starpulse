@@ -28,7 +28,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-const last = () => host.querySelector(".last")?.textContent;
+const last = () => host.querySelector(".num")?.textContent;
 
 describe("the DAGs view when it is left", () => {
   it("stops counting a run's seconds, and counts them again once it is shown and live", async () => {

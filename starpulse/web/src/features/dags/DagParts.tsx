@@ -1,18 +1,21 @@
 // What the DAGs catalog and a DAG's modal both draw: the state dot, the step constellation (small in a row, large in the modal),
 // the last-run line, the pool text and a Board tie's chip. Steps and links are drawn as the Star Map draws a DAG body's (boardDraw drawStars), in DAG_COLOR.
 import type { CSSProperties, ReactNode } from "react";
-import { ago, bigPlace, chartHeight, place, took, type Phase, type Row, type Tie } from "./dagsModel";
+import { ago, bigPlace, chartHeight, place, took, type DagFacts, type Phase, type Row, type Tie } from "./dagsModel";
 import { DAG_COLOR } from "../../render/draw";
 import { orbiterLook } from "../../render/boardDraw";
 import { useId } from "react";
 
-/** A step as the Star Map draws a DAG body's steps (renderer drawStars): a dark disc ringed in its status colour round a core dot, dimmer before it runs. */
+/** A step's ink: its status colour, and the slate for a step with no run behind it, which the Star Map's near-black track colour leaves unreadable in a row. */
+const ink = (status: string) => (status === "not_started" ? "var(--slate)" : DAG_COLOR[status] ?? DAG_COLOR.aborted);
+
+/** A step as the Star Map draws a DAG body's steps (renderer drawStars): a dark disc ringed in its status colour round a core dot, a little dimmer before it runs. */
 export function StepStar({ x, y, r, status }: { x: number; y: number; r: number; status: string }) {
-  const c = DAG_COLOR[status] ?? DAG_COLOR.aborted, idle = status === "not_started";
+  const c = ink(status), idle = status === "not_started";
   return (
     <g className={`step s-${status}`}>
-      <circle cx={x} cy={y} r={r} fill="var(--bg0)" stroke={c} strokeOpacity={idle ? 0.45 : 0.85} strokeWidth={1} className="ring" />
-      <circle cx={x} cy={y} r={r * 0.34} fill={c} fillOpacity={idle ? 0.45 : 0.9} className="core" />
+      <circle cx={x} cy={y} r={r} fill="var(--bg0)" stroke={c} strokeOpacity={idle ? 0.8 : 0.85} strokeWidth={1} className="ring" />
+      <circle cx={x} cy={y} r={r * 0.34} fill={c} fillOpacity={idle ? 0.8 : 0.9} className="core" />
     </g>
   );
 }
@@ -24,9 +27,9 @@ function Link({ id, a, b, r, from, to }: { id: string; a: { x: number; y: number
   return (
     <>
       <linearGradient id={id} gradientUnits="userSpaceOnUse" x1={x0} y1={a.y} x2={x1} y2={b.y}>
-        <stop offset="0" stopColor={DAG_COLOR[from] ?? DAG_COLOR.aborted} /><stop offset="1" stopColor={DAG_COLOR[to] ?? DAG_COLOR.aborted} />
+        <stop offset="0" stopColor={ink(from)} /><stop offset="1" stopColor={ink(to)} />
       </linearGradient>
-      <path d={`M${x0} ${a.y}C${a.x + dx} ${a.y} ${b.x - dx} ${b.y} ${x1} ${b.y}`} fill="none" stroke={`url(#${id})`} strokeOpacity={hot ? 0.8 : 0.42}
+      <path d={`M${x0} ${a.y}C${a.x + dx} ${a.y} ${b.x - dx} ${b.y} ${x1} ${b.y}`} fill="none" stroke={`url(#${id})`} strokeOpacity={hot ? 0.8 : 0.55}
         strokeWidth={hot ? 1.9 : 1} strokeDasharray="1.8 4.2" className={hot ? "link hot" : "link"} />
     </>
   );
@@ -102,6 +105,31 @@ export function lastLine(r: Row, now: number): ReactNode {
   }
   if (!r.finishedAt) return "ran";
   return <>{ago(now, r.finishedAt)}{r.startedAt ? ` · ${took(r.startedAt, r.finishedAt)}` : ""}</>;
+}
+
+/** A Processing row's Elapsed and Progress cells: how long the run has gone, and how many steps are done and running. */
+export function RunCells({ r, now }: { r: Row; now: number }) {
+  const states = Object.values(r.steps), done = states.filter((v) => v === "succeeded" || v === "skipped").length, live = states.filter((v) => v === "running").length;
+  return (
+    <>
+      <span className="num">{r.phase === "running" && r.startedAt ? took(r.startedAt, now) : <span className="k">waiting</span>}</span>
+      <span className="last">{r.phase === "queued" ? <b className="q">queued</b> : <><b className="hot">{done}/{states.length} done</b>{live ? ` · ${live} running` : ""}</>}</span>
+    </>
+  );
+}
+
+/** An Idle row's Last run, Runs/week and Duration cells: how the last run ended and when, the week's runs, and the p95 run time with its failure share (red from 10%). */
+export function IdleCells({ r, f, now }: { r: Row; f: DagFacts | undefined; now: number }) {
+  const when = r.finishedAt ? ` ${ago(now, r.finishedAt)}` : "";
+  const fail = f?.failureShare == null ? null : Math.round(f.failureShare * 100);
+  return (
+    <>
+      <span className="last">{r.phase === "idle" ? <span className="none">never run</span>
+        : r.phase === "failed" ? <><span className="bad">{r.d.status === "aborted" ? "aborted" : "failed"}</span>{when}</> : <><b>succeeded</b>{when}</>}</span>
+      <span className="num">{f?.runs == null ? "—" : f.runs.toLocaleString()}</span>
+      <span className={`num${fail !== null && fail >= 10 ? " bad" : ""}`}>{f?.p95Seconds == null ? "—" : `p95 ${took(0, f.p95Seconds)}`}{fail !== null && <span className="k"> · {fail}% fail</span>}</span>
+    </>
+  );
 }
 
 /** Opens a tie's Ledger on the Star Map, or null when the tie names no transition that has one. */

@@ -85,7 +85,7 @@ describe("the DAGs view's panes", () => {
     expect(paneOf("processing")).toEqual(["deploy"]);
     expect(paneOf("idle").sort()).toEqual(["never", "pr-watch", "triage"]);
     expect(names().sort()).toEqual(["deploy", "never", "pr-watch", "triage"]);
-    expect(all(".phead").map((h) => h.textContent)).toEqual(["Processing1", "Idle3"]);
+    expect(all(".phead").map((h) => h.querySelector(".pt")!.textContent! + h.querySelector(".c")!.textContent)).toEqual(["Processing1", "Idle3"]);
   });
 
   it("puts a queued DAG last in Processing, below the one that began first", async () => {
@@ -111,7 +111,7 @@ describe("the DAGs view's panes", () => {
     const place = (n: string) => ["--hs", "--s", "--k", "--b"].map((k) => rowOf(n).style.getPropertyValue(k));
 
     expect(place("deploy")).toEqual(place("pr-watch"));
-    expect(css).toMatch(/#dg :is\(\.drow, \.phead, \.phint\) \{[^}]*transform: translate\(calc\(var\(--c\) \* \(100% \+ var\(--gap\)\)\), calc\(var\(--hs\) \* var\(--H\) \+ var\(--s\) \* var\(--R\) \+ var\(--k\) \* var\(--C\)\)\)/);
+    expect(css).toMatch(/#dg :is\(\.drow, \.phead, \.phint\) \{[^}]*left: calc\(var\(--c\) \* \(var\(--wp\) \+ var\(--gap\)\)\)[^}]*transform: translateY\(calc\(var\(--hs\) \* var\(--H\) \+ var\(--s\) \* var\(--R\) \+ var\(--k\) \* var\(--C\)\)\)/);
   });
 
   it("captions Just finished over the latest finished DAGs of Idle, and a domain where the domain changes", async () => {
@@ -135,7 +135,7 @@ describe("the DAGs view's panes", () => {
   });
 
   it("moves rows with a transition, and with none under reduced motion", () => {
-    expect(css).toMatch(/#dg :is\(\.drow, \.phead, \.phint\) \{[^}]*transition: transform \.42s/);
+    expect(css).toMatch(/#dg :is\(\.drow, \.phead, \.phint\) \{[^}]*transition: transform \.42s[^}]*left \.42s[^}]*width \.42s/);
     expect(css).toMatch(/#dg \.drow\[data-glide\] \{[^}]*transition-duration: \.64s/);
     expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\) \{ #dg :is\(\.drow, \.phead, \.phint\) \{ transition: none; \} \}/);
   });
@@ -162,19 +162,21 @@ describe("the DAGs view's rows", () => {
     expect(link.getAttribute("stroke-dasharray")).toBe("1.8 4.2");
     expect(link.getAttribute("stroke")).toMatch(/^url\(#/);
     expect(row.querySelector("i.orb.o-ok circle.ring")!.getAttribute("stroke")).toBe(DAG_COLOR.succeeded);
-    expect(row.querySelector(".last")!.textContent).toBe("50m ago · 1m 0s⇢ Review");
-    expect(row.querySelector(".tie")!.textContent).toBe("⇢ Review");
+    expect(row.querySelector(".sub")!.textContent).toBe("manual · pool main");
+    expect([...row.querySelectorAll(".last, .num")].map((c) => c.textContent)).toEqual(["succeeded 50m ago", "—", "—"]);
+    expect(row.querySelector(".tie")).toBeNull();
     expect(row.querySelector(".pool")).toBeNull();
     expect(q("header .count").textContent).toBe("4 DAGs · 2 domains");
   });
 
-  it("shows a running DAG's step and a failed one's failing step in its last-run cell", async () => {
+  it("shows a running DAG's progress and elapsed time, and an idle one's last result", async () => {
     await draw();
-    const last = (n: string) => rowOf(n).querySelector(".last")!.textContent;
+    const cell = (n: string, c: string) => rowOf(n).querySelector(c)!.textContent;
 
-    expect(last("deploy")).toBe("fix · 5m 0s");
-    expect(last("triage")).toBe("failed at fix · 50m ago");
-    expect(last("never")).toBe("never run");
+    expect(cell("deploy", ".last")).toBe("1/2 done · 1 running");
+    expect(cell("deploy", ".num")).toBe("5m 0s");
+    expect(cell("triage", ".last")).toBe("failed 50m ago");
+    expect(cell("never", ".last")).toBe("never run");
   });
 
   it("open the modal from a click anywhere on the row, the caption band included, and from Enter on a focused row", async () => {
@@ -226,7 +228,7 @@ describe("the DAGs view's filters", () => {
     expect(names().sort()).toEqual(["deploy", "never"]);
     expect(chip("Domain").textContent).toBe("Domain: Ops ▾");
     expect(q(".shown").textContent).toBe("2 of 4 shown");
-    expect(all(".phead").map((h) => h.textContent)).toEqual(["Processing1", "Idle1"]);
+    expect(all(".phead").map((h) => h.querySelector(".pt")!.textContent! + h.querySelector(".c")!.textContent)).toEqual(["Processing1", "Idle1"]);
 
     await click(q(".clear"));
     expect(names()).toHaveLength(4);

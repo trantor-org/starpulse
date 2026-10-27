@@ -49,15 +49,11 @@ afterEach(() => {
 const ledger = (event: string) => expect.objectContaining({ kind: "fold", event });
 
 describe("a Board tie links to its transition's Ledger", () => {
-  it("opens the Ledger from a row's chip without opening the DAG's modal", async () => {
+  it("draws no tie in a row, so the Ledger link is the modal's", async () => {
     await draw();
-    const chip = row("pr-watch").querySelector<HTMLAnchorElement>("a.tie")!;
 
-    expect(chip.textContent).toBe("⇢ on task_ready");
-    await click(chip);
-    expect(open).toHaveBeenCalledOnce();
-    expect(open).toHaveBeenCalledWith([{ kind: "board" }, ledger("task_ready")]);
-    expect(q("#kbm")).toBeNull();
+    expect(all("#stage .tie")).toEqual([]);
+    expect(open).not.toHaveBeenCalled();
   });
 
   it("links the modal's tie rows, each with an 'open the <EVENT> Ledger' link", async () => {
@@ -72,11 +68,9 @@ describe("a Board tie links to its transition's Ledger", () => {
     expect(open).toHaveBeenLastCalledWith([{ kind: "board" }, ledger("task_ready")]);
   });
 
-  it("leaves a launches or acts tie a plain chip, in the row and in the modal", async () => {
+  it("leaves a launches or acts tie a plain chip in the modal", async () => {
     await draw();
     for (const name of ["triage", "sweeper"]) {
-      expect(row(name).querySelector(".tie")).not.toBeNull();
-      expect(row(name).querySelector("a")).toBeNull();
       await click(row(name));
       expect(q(".dgm .tierow .tie")).not.toBeNull();
       expect(q(".dgm .tierow a")).toBeNull();
@@ -88,8 +82,9 @@ describe("a Board tie links to its transition's Ledger", () => {
 
   it("leaves a tie plain when its event has no Ledger to open", async () => {
     await draw();
+    await click(row("cued"));
 
-    expect(row("cued").querySelector(".tie")).not.toBeNull();
-    expect(row("cued").querySelector("a")).toBeNull();
+    expect(q(".dgm .tierow .tie")).not.toBeNull();
+    expect(q(".dgm .tierow a")).toBeNull();
   });
 });

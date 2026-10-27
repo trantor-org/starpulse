@@ -879,37 +879,57 @@ html.still *, html.still *::before, html.still *::after { animation: none !impor
 #dg .fw #dgq { width: calc(270px * var(--fs)); max-width: 100%; }
 /* The stage: one box of absolutely placed slots. A row's place is three custom properties, --c its column, --hs the header slots above it and --s its slot, so a DAG that changes pane is the one element and its transform's transition: nothing is cloned and nothing stays behind.
    A row's top is hs * header + s * pitch in both columns, so a Processing row and the Idle row of its slot share a top at every text size. */
-#dg .dstage { --H: calc(44px * var(--fs)); --R: calc(64px * var(--fs)); --C: calc(22px * var(--fs)); --gap: 14px; position: relative; box-sizing: border-box; margin-bottom: 16px; height: calc(var(--hsum) * var(--H) + var(--n) * var(--R) + var(--K) * var(--C)); }
-#dg :is(.drow, .phead, .phint) { position: absolute; top: 0; left: 0; box-sizing: border-box; width: calc((100% - (var(--cols) - 1) * var(--gap)) / var(--cols));
-  transform: translate(calc(var(--c) * (100% + var(--gap))), calc(var(--hs) * var(--H) + var(--s) * var(--R) + var(--k) * var(--C))); transition: transform .42s cubic-bezier(.3, .7, .2, 1); }
+#dg .dstage { --H: calc(68px * var(--fs)); --R: calc(64px * var(--fs)); --C: calc(22px * var(--fs)); --gap: 20px; --wp: calc((100% - var(--gap)) / 2.25); --wi: calc((100% - var(--gap)) * 1.25 / 2.25); position: relative; box-sizing: border-box; margin-bottom: 16px; height: calc(var(--hsum) * var(--H) + var(--n) * var(--R) + var(--K) * var(--C)); }
+#dg .dstage.stack { --wp: 100%; --wi: 100%; }
+#dg :is(.drow, .phead, .phint) { position: absolute; top: 0; box-sizing: border-box; left: calc(var(--c) * (var(--wp) + var(--gap))); width: calc(var(--wp) + var(--c) * (var(--wi) - var(--wp)));
+  transform: translateY(calc(var(--hs) * var(--H) + var(--s) * var(--R) + var(--k) * var(--C))); transition: transform .42s cubic-bezier(.3, .7, .2, 1), left .42s cubic-bezier(.3, .7, .2, 1), width .42s cubic-bezier(.3, .7, .2, 1); }
 /* a DAG that changed pane glides slower and above the rows it passes, in the colour of its way: finished down into Idle, starting down into Processing */
 #dg .drow[data-glide] { z-index: 2; transition-duration: .64s; --gl: var(--ok); }
 #dg .drow[data-glide=start] { --gl: var(--run); }
 #dg .drow[data-glide] .body { border-color: color-mix(in srgb, var(--gl) 55%, transparent); box-shadow: 0 6px 18px color-mix(in srgb, var(--shadow) 45%, transparent); }
 @media (prefers-reduced-motion: reduce) { #dg :is(.drow, .phead, .phint) { transition: none; } }
-#dg .phead { height: calc(var(--H) - 10px * var(--fs)); display: flex; align-items: center; gap: 8px; padding: 0 2px 4px; border-bottom: 1px solid color-mix(in srgb, var(--slate) 14%, transparent); font-size: calc(10px * var(--fs)); letter-spacing: .2em; text-transform: uppercase; color: var(--muted); }
+#dg [data-pane=processing] { --grid: 20px calc(140px * var(--fs)) minmax(80px, calc(420px * var(--fs))) calc(76px * var(--fs)) calc(130px * var(--fs)) 0; }
+#dg [data-pane=idle] { --grid: 20px calc(140px * var(--fs)) minmax(80px, calc(420px * var(--fs))) calc(128px * var(--fs)) calc(84px * var(--fs)) calc(140px * var(--fs)) 0; }
+/* a pane's head: its title and count over its column labels, which sit on the row grid below (the row's border and left padding, and the room its ▶ strip takes on the right) */
+#dg .phead { height: calc(var(--H) - 10px * var(--fs)); display: flex; flex-wrap: wrap; align-content: space-between; align-items: center; gap: 8px; padding: 0 2px 4px; border-bottom: 1px solid color-mix(in srgb, var(--slate) 14%, transparent); font-size: calc(10px * var(--fs)); letter-spacing: .2em; text-transform: uppercase; color: var(--muted); }
+#dg .phead .cols { flex: 1 0 100%; box-sizing: border-box; display: grid; grid-template-columns: var(--grid); column-gap: 10px; align-items: center; padding: 0 calc(max(30px, 30px * var(--fs)) + 10px) 0 13px; font-size: calc(9.5px * var(--fs)); letter-spacing: .16em; white-space: nowrap; }
+#dg .phead .cols > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 #dg .phead .c { letter-spacing: 0; font-variant-numeric: tabular-nums; color: var(--slate-4); }
 #dg .phead[data-pane=processing] .c { color: var(--run-text); }
 #dg .phint { height: calc(var(--H) - 10px * var(--fs)); display: flex; align-items: center; padding-left: 2px; color: var(--ghost); font-size: calc(11px * var(--fs)); }
 /* a row: a caption band over a card, the band's text the group's name where it changes (Just finished, a domain); the whole row takes the click, and it has no hover */
 #dg .drow { height: calc(54px * var(--fs) + var(--b) * var(--C)); cursor: pointer; outline: 0; }
 #dg .drow .cap { position: absolute; bottom: calc(54px * var(--fs) + 4px * var(--fs)); line-height: 1.2; left: 2px; right: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: calc(10px * var(--fs)); letter-spacing: .18em; text-transform: uppercase; color: var(--muted); }
-#dg .drow .body { position: absolute; left: 0; right: 0; bottom: 0; height: calc(54px * var(--fs)); box-sizing: border-box; display: flex; align-items: center; gap: 12px; padding: 0 calc(max(30px, 30px * var(--fs)) + 10px) 0 14px;
+#dg .drow .body { position: absolute; left: 0; right: 0; bottom: 0; height: calc(54px * var(--fs)); box-sizing: border-box; display: grid; grid-template-columns: var(--grid); align-items: center; column-gap: 10px; padding: 0 calc(max(30px, 30px * var(--fs)) + 10px) 0 14px;
   border-radius: 7px; background: color-mix(in srgb, var(--surface) 92%, transparent); border: 1px solid color-mix(in srgb, var(--slate) 13%, transparent); transition: border-color .3s, box-shadow .3s; }
 #dg .drow.p-running .body, #dg .drow.p-queued .body { border-color: color-mix(in srgb, var(--run) 38%, transparent); }
 #dg .drow.p-failed .body { border-color: color-mix(in srgb, var(--fail) 38%, transparent); }
 #dg .drow:is(.spot, :focus-visible) .body { border-color: var(--agent); }
-#dg .drow .who { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+#dg .drow .who { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+#dg .drow .sub { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: calc(10.5px * var(--fs)); }
 #dg .drow .nm { font-size: calc(12.5px * var(--fs)); }
-#dg .drow svg.dstrip { height: calc(30px * var(--fs)); flex: 0 1 calc(200px * var(--fs)); width: calc(200px * var(--fs)); max-width: 40%; }
+#dg .drow svg.dstrip { height: calc(30px * var(--fs)); width: 100%; min-width: 0; }
 #dg .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
 #dg .last { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: calc(11px * var(--fs)); }
 #dg .last b { font-weight: 400; color: var(--ink-2); }
 #dg .last b.hot { color: var(--run-text); }
 #dg .last b.q { color: var(--run); }
 #dg .last .bad { color: var(--fail-text); }
-#dg .drow .last .tie { margin-left: 6px; vertical-align: middle; }
-#dg .drow .last { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; }
+#dg .drow :is(.last, .num) { min-width: 0; }
+#dg .num { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--ink-2); font-size: calc(11.5px * var(--fs)); }
+#dg .num.bad { color: var(--fail-text); }
+#dg .k { color: var(--muted); }
+/* a phone's row keeps two lines, as on the Star Map: the name over the run's one line, the status indicator on the left and the steps on the right; the columns and their labels go */
+@media (max-width: 900px) {
+  #dg .dstage { --H: calc(44px * var(--fs)); }
+  #dg .phead .cols, #dg .drow .sub, #dg .drow .body > .num, #dg .drow .body > span:empty { display: none; }
+  #dg [data-pane] { --grid: 20px minmax(0, 1fr) minmax(60px, 34%); }
+  #dg .drow .body { row-gap: 2px; align-content: center; }
+  #dg .drow .body > :first-child { grid-row: 1 / 3; }
+  #dg .drow .who { grid-column: 2; grid-row: 1; }
+  #dg .drow .last { grid-column: 2; grid-row: 2; }
+  #dg .drow svg.dstrip { grid-column: 3; grid-row: 1 / 3; }
+}
 #dg .tie, #kbm .dgm .tie { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 6px; border-radius: 3px; line-height: 15px; font-size: calc(10.5px * var(--fs));
   color: var(--tc); background: color-mix(in srgb, var(--tc) 12%, transparent); border: 1px solid color-mix(in srgb, var(--tc) 35%, transparent); }
 #dg a.tie, #kbm .dgm a.tie { text-decoration: none; }

@@ -38,7 +38,7 @@ describe("the DAGs view's panes by width", () => {
     await draw();
     expect(place("runs/job-0")).toBe("0 1 0");
     expect(place("runs/job-1")).toBe("1 1 0");
-    expect(host.querySelector<HTMLElement>("#stage .dstage")!.style.getPropertyValue("--cols")).toBe("2");
+    expect(host.querySelector("#stage .dstage")!.classList.contains("stack")).toBe(false);
   });
 
   it("stacks Idle under Processing at 900px and narrower, one header slot lower", async () => {
@@ -47,7 +47,24 @@ describe("the DAGs view's panes by width", () => {
     expect(place("runs/job-0")).toBe("0 1 0");
     expect(place("runs/job-1")).toBe("0 2 1");
     expect(place("runs/job-2")).toBe("0 2 2");
-    expect(host.querySelector<HTMLElement>("#stage .dstage")!.style.getPropertyValue("--cols")).toBe("1");
+    expect(host.querySelector("#stage .dstage")!.classList.contains("stack")).toBe(true);
+  });
+
+  it("stacks them too when the page is too narrow for both panes' columns at the text size, and reads the size again when it changes", async () => {
+    phone(false);
+    const width = vi.spyOn(HTMLElement.prototype, "clientWidth", "get");
+    const stacked = () => host.querySelector("#stage .dstage")!.classList.contains("stack");
+    width.mockReturnValue(1200);
+    await draw();
+    expect(stacked()).toBe(true);
+    width.mockReturnValue(1500);
+    await act(async () => window.dispatchEvent(new Event("resize")));
+    await act(async () => void document.documentElement.style.setProperty("--fs", "1.5"));
+    expect(stacked()).toBe(true);
+    await act(async () => void document.documentElement.style.setProperty("--fs", "1"));
+    expect(stacked()).toBe(false);
+    width.mockRestore();
+    document.documentElement.style.removeProperty("--fs");
   });
 
   it("keeps a slot for the empty Processing pane's hint, so Idle starts below it", async () => {
