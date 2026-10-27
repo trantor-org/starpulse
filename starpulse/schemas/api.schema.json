@@ -4241,6 +4241,13 @@
       "additionalProperties": false,
       "description": "The verdict on moving a task to one column: allowed, or guarded by a declared rule.",
       "properties": {
+        "actors": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Verdict"
+          },
+          "description": "The verdict for an actor a guard treats apart from the rest, such as one it exempts, by actor; any other actor meets the move's own.",
+          "type": "object"
+        },
         "allowed": {
           "description": "False when a guard the board writer enforces would refuse the move.",
           "type": "boolean"
@@ -8528,6 +8535,31 @@
         "share"
       ],
       "title": "Variant",
+      "type": "object"
+    },
+    "Verdict": {
+      "additionalProperties": false,
+      "description": "What a guard says to one actor about a move: allowed, or the reason and skill of the rule that refuses it.",
+      "properties": {
+        "allowed": {
+          "description": "False when a guard would refuse the move to this actor.",
+          "type": "boolean"
+        },
+        "reason": {
+          "default": "",
+          "description": "What the refusing guard needs; empty when allowed.",
+          "type": "string"
+        },
+        "skill": {
+          "default": "",
+          "description": "The skill that produces what the guard needs; empty when allowed.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "allowed"
+      ],
+      "title": "Verdict",
       "type": "object"
     },
     "VerdictRequest": {

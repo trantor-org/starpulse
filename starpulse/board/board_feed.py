@@ -106,6 +106,7 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         clock: Callable[[], float] = time.time,
         roles: StateRoles | None = None,
         read_model: ReadModel | None = None,
+        standing: Callable[[str, str], Mapping[str, Any] | None] = lambda *_: None,
     ) -> None:
         self._hint = hint
         #: Set by `stop`: every thread an adapter runs for this feed (`spawn`) waits on it.
@@ -142,6 +143,8 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         self._drawn = machines if machines is not None else {"board": board_machine(DEFAULT_STATUSES)}
         #: The Board machine's moves by source lane, which a read-model agent offers; a task's done lane offers none.
         self._lane_moves = read_model_lane_moves(self._drawn["board"]) if read_model is not None else {}
+        #: The update the board's rules make to a task's move to a lane, which a read-model agent's moves carry.
+        self._standing = standing
         #: The settled states a task's settling is recorded as a move into: archived always, completed where the Board
         #: has that state (a board whose last status is its final one settles there already).
         self._settle_lanes = {lane_events.ARCHIVED} | (

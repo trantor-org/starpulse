@@ -1070,8 +1070,8 @@ def test_a_machine_file_gives_the_board_its_transitions_and_each_moves_writers(
     (flow,) = feed.snapshot()["flows"]
     assert {t["event"] for t in flow["machine"]["transitions"]} == {"to_doing", "RETURN", "to_review", "to_done"}
     assert flow["agents"][0]["moves"] == {
-        "to_do": {"allowed": True, "reason": "", "skill": "", "writers": ("operator",)},
-        "review": {"allowed": True, "reason": "", "skill": "", "writers": ()},
+        "to_do": {"allowed": True, "reason": "", "skill": "", "writers": ("operator",), "actors": {}},
+        "review": {"allowed": True, "reason": "", "skill": "", "writers": (), "actors": {}},
     }
 
 

@@ -267,10 +267,25 @@ class _Guard:
     #: The names a task's `type` may take; empty accepts any.
     types: tuple[str, ...] = ()
 
-    def standing(self, front: Mapping[str, Any], body: str, lane: str) -> tuple[str, str] | None:
-        """The reason and skill of the board rule that refuses moving the task to `lane`, or None (`rules.standing_refusal`)."""
-        broken = rules.standing_refusal(self.rules, front, body, lane)
-        return None if broken is None else (broken.reason, broken.skill)
+    def standing(self, front: Mapping[str, Any], body: str, lane: str) -> dict[str, Any] | None:
+        """The move update of the board rule that refuses moving the task to `lane`, or None when none does.
+
+        It is the verdict as an actor no rule exempts meets it, with the verdict of each actor some rule exempts that
+        differs, so a reader lifts the refusal for an actor the write lets through (`rules.standing_refusal`)."""
+
+        def verdict(actor: str) -> dict[str, Any]:
+            broken = rules.standing_refusal(self.rules, front, body, lane, actor)
+            return {"allowed": True, "reason": "", "skill": ""} if broken is None else {
+                "allowed": False,
+                "reason": broken.reason,
+                "skill": broken.skill,
+            }
+
+        own = verdict("")
+        if own["allowed"]:
+            return None
+        apart = {actor: verdict(actor) for actor in sorted({actor for rule in self.rules for actor in rule.exempt})}
+        return {**own, "actors": {actor: found for actor, found in apart.items() if found != own}}
 
     def refusal(
         self, path: Path, before: str | None, frontmatter: dict, body: str, text: str, actor: str
@@ -1282,4 +1297,20 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         "retire": history.recorded(made.retire, read),
         "create": history.created(made.create, read),
     }
-    return replace(made, start=start, sweep=sweep, attach=attach, **recorded)
+    return replace(made, start=start, sweep=sweep, attach=attach, standing=_standing(root, guard), **recorded)
+
+
+def _standing(root: Path, guard: _Guard) -> Callable[[str, str], dict[str, Any] | None]:
+    """The board rules' verdict on moving the task `task` to `lane` as its file stands now, or None for a task with no
+    file or no refusing rule."""
+
+    def standing(task: str, lane: str) -> dict[str, Any] | None:
+        if (path := _find(root, task)) is None:
+            return None
+        try:
+            front, body = _split_record(path.read_text())
+        except OSError:
+            return None
+        return guard.standing(front, body, lane)
+
+    return standing

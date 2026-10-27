@@ -220,3 +220,24 @@ describe("a move the board machine leaves to the agent alone", () => {
     expect(store.get().refused["PROJ-1"].reason).toBe("only the agent may make this move, not the operator");
   });
 });
+
+describe("a move a guard refuses the agent but exempts the operator", () => {
+  const ASKS = { allowed: false, reason: "only the operator answers the question", skill: "", actors: { operator: { allowed: true, reason: "", skill: "" } } };
+  const PROFILE = { allowed: false, reason: "a Ready task needs an agent profile", skill: "", actors: { operator: { allowed: false, reason: "a Ready task needs an agent profile", skill: "" } } };
+  const columns = ["needs_attention", "ready", "done"];
+
+  it("is a drop for the operator on the verdict the guard names for the operator", () => {
+    const t = task("PROJ-1", "needs_attention", { ready: ASKS });
+    expect(targets(t, columns).ready).toEqual({ kind: "ok" });
+  });
+
+  it("is still refused when another rule refuses the operator too", () => {
+    const t = task("PROJ-1", "needs_attention", { ready: PROFILE });
+    expect(targets(t, columns).ready).toMatchObject({ kind: "guard", reason: "a Ready task needs an agent profile" });
+  });
+
+  it("stays a guard refusal for a move that names no verdict for the operator", () => {
+    const t = task("PROJ-1", "needs_attention", { ready: { allowed: false, reason: "asks", skill: "" } });
+    expect(targets(t, columns).ready).toMatchObject({ kind: "guard", reason: "asks" });
+  });
+});

@@ -36,12 +36,20 @@ class ReadMethods:
         lane = lane_id(summary["state"])
         return {} if lane == self._roles.done else self._lane_moves.get(lane, {})
 
+    def _guarded(self, task_id: str, moves: Mapping[str, dict]) -> dict[str, dict]:
+        """`moves` with each one the board's rules refuse for the task as its file stands now marked refused."""
+        guarded = {}
+        for lane, move in moves.items():
+            refused = self._standing(task_id, lane)
+            guarded[lane] = move if refused is None else {**move, **refused}
+        return guarded
+
     def _read_model_agent(self, task_id: str) -> dict | None:
         row = self._read_model.task(task_id)  # type: ignore[union-attr]
         if row is None or row["archived"]:
             return None
         ready = task_id in self._read_model.ready(row["state"], self._roles.done)  # type: ignore[union-attr]
-        return self._expiring(summary_agent(row, ready, self._read_model_moves(row)) | read_model_detail(row))
+        return self._expiring(summary_agent(row, ready, self._guarded(task_id, self._read_model_moves(row))) | read_model_detail(row))
 
     def follow_read_model(self, limit: int = 1000) -> int:
         """Publish a `task` delta for each Task the read model changed since the last call, an archived one as gone, and

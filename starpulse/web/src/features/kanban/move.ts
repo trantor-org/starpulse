@@ -29,8 +29,10 @@ export interface MoveState {
 /** What dropping on a column does: the card's own column, an allowed move, one a declared guard refuses, or none the machine offers. */
 export type Target = { kind: "here" | "ok" | "no" } | { kind: "guard"; reason: string; skill: string };
 
-/** The verdict as the page's operator meets it: the snapshot's own, or a refusal naming who writes the move when the board machine declares writers and the operator is none of them. */
-export const asOperator = (verdict: Move): Move => {
+/** The verdict as the page's operator meets it: the snapshot's own, or the one kept for the operator when a guard treats it apart, or a refusal naming who writes the move when the board machine declares writers and the operator is none of them. */
+export const asOperator = (move: Move): Move => {
+  const own = move.actors?.[PAGE_ACTOR];
+  const verdict = own ? { ...move, ...own } : move;
   const writers = verdict.writers ?? [];
   if (!writers.length || writers.includes(PAGE_ACTOR)) return verdict;
   return { ...verdict, allowed: false, reason: `only the ${writers.join(" or ")} may make this move, not the ${PAGE_ACTOR}` };
