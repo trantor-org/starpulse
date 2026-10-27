@@ -1150,6 +1150,7 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
 #admin .thm .pick:focus-visible { outline: 1px solid var(--agent); outline-offset: 1px; }
 #admin .thm .nm { font-size: calc(12px * var(--fs)); color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #admin .thm .tile.on .nm::after { content: " ✓"; color: var(--agent-text); }
+#admin .thm .tile.on .nm:has(.ren)::after { content: none; }
 #admin .thm .vibe, #admin .thm .src { font-size: calc(10px * var(--fs)); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 1.4em; }
 /* swatches show a pack's own colors on its background, so they carry data-theme-raw and never take the page's */
 .thm .sws, .thm .ramp { display: flex; height: calc(14px * var(--fs)); border-radius: 4px; overflow: hidden; }
@@ -1169,7 +1170,7 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
 #admin .thm .acts { display: flex; gap: 10px; padding: 0 2px; font-size: calc(10.5px * var(--fs)); min-height: 1.5em; align-items: center; }
 #admin .thm .acts.conf { color: var(--ink-2); flex-wrap: wrap; gap: 2px 8px; }
 #admin .thm .acts .del { color: var(--danger-text); }
-#admin .thm .ren { box-sizing: border-box; width: 100%; height: calc(20px * var(--fs)); padding: 0 5px; border-radius: 4px; border: 1px solid var(--agent); background: var(--field); color: var(--ink); font: inherit; font-size: calc(12px * var(--fs)); outline: 0; }
+#admin .thm .ren { display: block; box-sizing: border-box; width: 100%; height: calc(20px * var(--fs)); padding: 0 5px; border-radius: 4px; border: 1px solid var(--agent); background: var(--field); color: var(--ink); font: inherit; font-size: calc(12px * var(--fs)); outline: 0; }
 .thm .ramp { min-width: 120px; }
 /* the import and background dialogs */
 #kbm.thm .modal.ask { width: min(600px, calc(100vw - 40px)); max-height: 88vh; }
