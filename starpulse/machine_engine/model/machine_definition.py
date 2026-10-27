@@ -58,7 +58,7 @@ __all__ = [
 #: The top-level keys that only change how the page draws a machine.
 DRAWING = ("tiers", "main_line", "rests", "submachines", "launches", "next")
 #: The fact kinds a state's `waits` may name: what the task actor derives from a task's pull request, dependencies and criteria.
-WAIT_FACTS = ("pr_terminal", "deps_done", "deps_unresolved", "criteria_met", "criteria_unmet")
+WAIT_FACTS = ("pr_terminal", "pr_ready", "deps_done", "deps_unresolved", "criteria_met", "criteria_unmet")
 #: Words that open a sentence, never a command: an agent trigger of a final event opening with one is prose no mapper matches.
 PROSE_HEADS = frozenset(
     {"a", "an", "the", "each", "every", "any", "its", "their", "this", "that", "after", "before", "when", "once", "on"}

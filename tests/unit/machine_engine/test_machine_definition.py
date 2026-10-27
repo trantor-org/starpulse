@@ -175,6 +175,13 @@ class TestWaits:
 
         assert compiled.waits == {"review": {"pr_terminal": "MERGED"}}
 
+    def test_a_state_waiting_on_a_ready_pull_request_reads_it_back_from_the_loaded_machine(
+        self, tmp_path: Path
+    ) -> None:
+        compiled = load_machine(_written(tmp_path, _review({"pr_ready": "MERGED"})))
+
+        assert compiled.waits == {"review": {"pr_ready": "MERGED"}}
+
     def test_a_machine_whose_states_wait_on_nothing_has_no_waits(self, tmp_path: Path) -> None:
         assert load_machine(_written(tmp_path, _doc())).waits == {}
 
