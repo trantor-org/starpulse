@@ -85,6 +85,48 @@ def test_a_review_task_whose_only_pr_merged_moves_to_done_and_no_other_task_is_d
     }
 
 
+def test_an_in_progress_task_citing_a_ready_or_merged_pull_request_moves_to_review_once(
+    store: PullStore, stop: threading.Event
+) -> None:
+    board = Board(
+        BoardFeed(),
+        task("TASK-1", "In Progress", references=(PR_ONE,)),
+        task("TASK-2", "In Progress", references=(PR_TWO,)),
+    )
+    store.save([pull(1, state="OPEN"), pull(2, state="MERGED")])
+
+    actor = running(board, store, stop)
+
+    assert until(lambda: board.moved() == [("TASK-1", "review"), ("TASK-2", "review"), ("TASK-2", "done")])
+    actor.pulls_changed()
+    assert len(board.writes) == 3
+    assert "acme/trantor#1 ready" in str(board.writes[0][2])
+    assert "acme/trantor#2 merged" in str(board.writes[1][2])
+
+
+def test_an_in_progress_task_citing_only_a_draft_or_closed_pull_request_stays(
+    store: PullStore, stop: threading.Event
+) -> None:
+    board = Board(
+        BoardFeed(),
+        task("TASK-1", "In Progress", references=(PR_ONE,)),
+        task("TASK-2", "In Progress", references=(PR_TWO,)),
+        task("TASK-3", "In Progress"),
+    )
+    draft = pull(1, state="OPEN") | {"isDraft": True}
+    store.save([draft, pull(2, state="CLOSED")])
+    actor = running(board, store, stop)
+
+    actor.pulls_changed()
+
+    assert board.moved() == []
+
+    store.save([pull(1, state="OPEN")])  # the draft is marked ready: only isDraft changed
+    actor.pulls_changed()
+
+    assert until(lambda: board.moved() == [("TASK-1", "review")])
+
+
 def test_a_waiting_task_moves_to_ready_when_its_last_dependency_enters_done(
     store: PullStore, stop: threading.Event
 ) -> None:

@@ -160,7 +160,7 @@ class TaskActor:
         self._seen: dict[str, tuple[str, tuple[str, ...], tuple[str, ...]]] = {}
         self._by_pr: dict[str, set[str]] = {}
         #: What each pull request last read as, so a refresh that changed nothing derives nothing.
-        self._pull_states: dict[str, tuple[str, str | None]] = {}
+        self._pull_states: dict[str, tuple[str, str | None, bool]] = {}
         #: Tasks whose dependencies are done but wait for a pin bump, and the store revision last read for them.
         self._pin_held: set[str] = set()
         self._store_rev = store.rev
@@ -425,9 +425,9 @@ class TaskActor:
         records = self._store.find(repo=found[1], number=int(found[2])) if found else []
         return records[0] if records else None
 
-    def _pull_state(self, url: str) -> tuple[str, str | None]:
+    def _pull_state(self, url: str) -> tuple[str, str | None, bool]:
         record = self._record(url)
-        return (record["state"], record["mergeSha"]) if record else ("", None)
+        return (record["state"], record["mergeSha"], record["isDraft"]) if record else ("", None, False)
 
     def _derive_all(self, names: Any, observed: float) -> None:
         for name in sorted(names):
@@ -508,6 +508,21 @@ class TaskActor:
         proof = "; ".join(parts)
         return proof, f"{MERGE_EVIDENCE} {proof}"
 
+    def _pr_ready(self, agent: dict[str, Any]) -> tuple[str, str] | None:
+        """The ready or merged pull requests when the task cites one that is, else None."""
+        parts = []
+        for url in agent["prs"]:
+            record = self._record(url)
+            if record is None:
+                continue
+            merged = record["state"] == "MERGED" and record["mergedAt"]
+            if merged or (record["state"] == "OPEN" and not record["isDraft"]):
+                parts.append(f"{record['repo']}#{record['number']} {'merged' if merged else 'ready'}")
+        if not parts:
+            return None
+        proof = "; ".join(parts)
+        return proof, f"Pull request ready: {proof}"
+
     def _deps_done(self, agent: dict[str, Any]) -> tuple[Any, str] | None:
         """The dependencies when the task has some, every one is done and merged, and no Start Criteria gate it."""
         dependencies = tuple(agent["dependencies"])
@@ -581,6 +596,7 @@ class TaskActor:
 
     _facts: dict[str, Callable[[TaskActor, dict[str, Any]], tuple[Any, str] | None]] = {
         "pr_terminal": _pr_terminal,
+        "pr_ready": _pr_ready,
         "deps_done": _deps_done,
         "deps_unresolved": _deps_unresolved,
         "criteria_met": _criteria_met,

@@ -756,6 +756,9 @@ move the machine declares. For a task in a state with `waits`, the first fact th
 - `pr_terminal`: every pull request the task cites is merged or closed in the PR store. A merged one is written with its
   merge commit as the proof in the edit's comment. A record that says merged with no merge time (an event's word, not
   a read of GitHub) is not terminal until the store's next read settles it.
+- `pr_ready`: the task cites a pull request and any cited one is merged (with a merge time) or open and not a draft.
+  The edit's comment names the ready and merged pull requests as the evidence. A state may declare
+  `waits: {pr_ready: REVIEW}` to move its tasks to Review once a pull request is ready.
 - `deps_done`: the task has dependencies, every one is Done, its description declares no Start Criteria, and, under
   `[release] settle = "pin-bump"`, every dependency's pin bump has merged (the rule in Release).
 - `deps_unresolved`: a dependency is not Done.

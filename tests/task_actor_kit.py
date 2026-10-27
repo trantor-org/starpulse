@@ -19,6 +19,7 @@ PR_ONE = "https://github.com/acme/trantor/pull/1"
 PR_TWO = "https://github.com/acme/trantor/pull/2"
 SHA = "a" * 40
 WAITS = {
+    "in_progress": {"pr_ready": "REVIEW"},
     "review": {"pr_terminal": "MERGED"},
     "waiting": {"deps_done": "DEPS_DONE", "criteria_met": "CRITERIA_MET"},
     "ready": {"deps_unresolved": "WAIT_ON_DEPS", "criteria_unmet": "CRITERIA_UNMET"},
@@ -28,7 +29,7 @@ ROLES = StateRoles(
         "new": "initial",
         "ready": "waiting_on_fact",
         "waiting": "waiting_on_fact",
-        "in_progress": "resting",
+        "in_progress": "waiting_on_fact",
         "review": "waiting_on_fact",
         "needs_attention": "waiting_on_person",
         "done": "resting",
@@ -38,6 +39,7 @@ ROLES = StateRoles(
     ("done",),
 )
 MOVES = {
+    ("in_progress", "REVIEW"): "review",
     ("review", "MERGED"): "done",
     ("waiting", "DEPS_DONE"): "ready",
     ("ready", "WAIT_ON_DEPS"): "waiting",
