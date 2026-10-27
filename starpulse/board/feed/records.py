@@ -94,7 +94,7 @@ class RecordsMixin:
         repeats nothing. `put` records only a change no server write recorded already (`writes._record_written`), as
         `external`: a lane the history already holds is no change. A history that cannot be written is logged: the task
         is still placed. A feed that is not `live` records no lane as `put` places it: the feed that places the same
-        task from a replica records it.
+        task from the read model records it.
         """
         self._lanes = lanes
         self._lane_log = log

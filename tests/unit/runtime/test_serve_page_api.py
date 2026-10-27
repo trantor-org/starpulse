@@ -1,5 +1,5 @@
 """`serve` owns the Page API's listening socket and supervises `starpulse worker api`, which builds the page and reads
-the Board from the replica."""
+the Board from the read model."""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ import sys
 from pathlib import Path
 
 import pytest
-from starpulse.board.adapters import replica
 from starpulse.runtime import assembly, server, worker
 from starpulse.runtime.hold import STATIC_ENV
 from starpulse.views.bin import api_worker
@@ -112,17 +111,14 @@ def test_serve_hands_the_api_child_the_page_build_it_checked_and_the_child_serve
     assert server._STATIC == elsewhere
 
 
-def test_the_api_child_reads_the_board_from_the_replica_and_starts_no_adapter_watcher(
+def test_the_api_child_reads_the_board_from_the_read_model_and_starts_no_adapter_watcher(
     config: Path, monkeypatch: pytest.MonkeyPatch, supervisors: list[FakeSupervisor]
 ) -> None:
-    read: list[dict] = []
-    monkeypatch.setattr(replica, "read", lambda *args, **kwargs: read.append(kwargs))
     handled: dict[str, object] = {}
     monkeypatch.setattr(api_worker, "page_app", lambda *args, **kwargs: handled.update(kwargs, args=args))
 
     worker.main(["api", "--config", str(config), "--port", "0"])
 
-    assert read == [{}]
     feed = handled["args"][0]
     assert "FAKE-1" not in str(feed.snapshot())  # the adapter's `start` put its tasks on the feed; nothing did
     assert supervisors == []  # the child supervises nothing

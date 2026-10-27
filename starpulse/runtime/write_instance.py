@@ -23,7 +23,6 @@ from pathlib import Path
 from starpulse.cli import agent_cli
 from starpulse.runtime.config import load
 from starpulse.runtime.store_migrate import maintain
-from starpulse.board.adapters.replica import publish
 from starpulse.board.adapters.upstream_backlog import _live
 from starpulse.event_log.event_log import EventLog
 from starpulse.runtime.adapter_kit import assembled, serve, url
@@ -98,7 +97,7 @@ def write_instance(base: Path, config_file: str = "starpulse.toml") -> Generator
         log = EventLog(store)
         with _STARTING:
             before = set(_live)
-            publish(stream, feed, "write-instance", log, config)
+            stream.start(feed, "write-instance", log)
             started = {backlog: thread for backlog, thread in _live.items() if backlog not in before}
         try:
             with serve(state, feed, stream) as server:

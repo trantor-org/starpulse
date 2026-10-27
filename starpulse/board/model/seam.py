@@ -240,12 +240,8 @@ class Board:
     holds: Callable[[str], Sequence[str]] | None = None
     """Why the board withholds a task's `deps_done` from the task actor, given its id; empty when nothing does, and an
     exception holds the task. None holds no task."""
-    state_key: Callable[[], str] | None = None
-    """Names what a rebuild of the whole Board depends on (the project's config and machine, not the projection code,
-    whose change the adapter diffs task by task), so a Board checkpointed for another is never resumed; None when the adapter keeps none. Called when the replica's checkpoint
-    is keyed on it (`starpulse.board.adapters.replica`), not when the Board is loaded."""
     attach: Callable[[EventLog], None] | None = None
-    """What a context that reads the Board from the replica, and so never calls `start`, needs of the event log the
+    """What a context that reads the Board from the read model, and so never calls `start`, needs of the event log the
     adapter would have been handed there; None needs nothing."""
 
     def __post_init__(self) -> None:

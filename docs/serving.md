@@ -75,7 +75,7 @@ requests it took and closes.
 ran a minute restarts at once) when it exits, and stops it when `serve` stops on `SIGTERM` or Ctrl-C. The children read the same config and `database_url` and meet `serve` only in
 the event log. A true setting means something outside `serve` runs that worker, so `serve` starts no child for it. No unit file is needed to run StarPulse.
 
-The `api` child serves the page and the HTTP API. `serve` binds `--host` and `--port` once (or adopts the socket the service manager passes in), keeps that listening socket for the life of the process and starts `starpulse worker api` with it on the descriptor named by `STARPULSE_LISTEN_FD`. `serve` first builds the page's machines and board from the config and exits 1 with the reason when it cannot, so a bad `starpulse.toml` or `board.yaml` stops `serve` rather than a child that exits at every start; it also tells the child, in `STARPULSE_STATIC`, which page build it checked. The child reads the Board from the replica the `board` child publishes and starts no adapter watcher. A reload of the child starts the new one on the same socket, waits until it reports (`STARPULSE_READY_FD`) it is about to serve, or 30 s (`warm`) at most, then stops the old: the old one stops accepting, finishes its in-flight requests (up to 8 s) and exits, so a connection made meanwhile queues in the backlog and none is refused.
+The `api` child serves the page and the HTTP API. `serve` binds `--host` and `--port` once (or adopts the socket the service manager passes in), keeps that listening socket for the life of the process and starts `starpulse worker api` with it on the descriptor named by `STARPULSE_LISTEN_FD`. `serve` first builds the page's machines and board from the config and exits 1 with the reason when it cannot, so a bad `starpulse.toml` or `board.yaml` stops `serve` rather than a child that exits at every start; it also tells the child, in `STARPULSE_STATIC`, which page build it checked. The child reads the Board from the read model the `board` child folds and starts no adapter watcher. A reload of the child starts the new one on the same socket, waits until it reports (`STARPULSE_READY_FD`) it is about to serve, or 30 s (`warm`) at most, then stops the old: the old one stops accepting, finishes its in-flight requests (up to 8 s) and exits, so a connection made meanwhile queues in the backlog and none is refused.
 
 Every context is its own child, the light ones (`history`, `search`) included, so a restart, a reload and a memory limit each reach one context alone. Merging the light ones into one child would save their duplicated import floor; sharing that floor between separate children saves it without giving up the isolation.
 
@@ -202,9 +202,9 @@ row in that transaction, in lane `archived` when the row is archived; no non-tes
 paths. The feed holds no Task; `_hot()` is one `snapshot()` per `position()`, `task`, `held` and `is_done` are single-row
 reads, `cold_page` pages `archived`, and the snapshot carries no archived Task (`cold_done` is empty). The Scheduler's
 `open_tasks` and the write guards go through the same reads. `follow_read_model()` publishes the Tasks changed since it last
-ran as page deltas, to run after each `Projector.catch_up`. Without a read model the in-memory path serves unchanged. Top-level `read_model = true` in the config is the cutover: `serve`
+ran as page deltas, to run after each `Projector.catch_up`. Without a read model the in-memory path serves unchanged. `serve`
 folds the History into the read tables every 0.5 s (`Projector.catch_up`, then `follow_read_model`), draws the board from them
-and skips the file replica, so the board reader opens no task file. Run `starpulse import-board` first; a restart picks the flag up. In this mode entered and workable-since times are approximated, and the overlays for runs,
+so the board reader opens no task file. The read model is the only read path: the old `read_model` config key is retired and ignored. Run `starpulse import-board` first. In this mode entered and workable-since times are approximated, and the overlays for runs,
 pulls and acceptance criteria are empty on the board card; `/api/task/<id>` returns the full record. The search index is its
 own FTS table, queried by term and never by loading Tasks; `put` still feeds it, so the cutover feeds it from the read model.
 `ci/test_read_model_latency.py` (nightly) serves 20,000 Tasks with 18,000 archived and holds every read surface to the page
@@ -396,11 +396,8 @@ type = "native"
 # dates are saved in the history and read back at start, so a restarted worker does not re-date a task; `serve`
 # rereads the dates every 30 s. With the flag set and no worker running, no Start Criteria are
 # evaluated, so a Waiting task with them never becomes workable. The release of dependents belongs to the `pulls` worker.
-# The Board worker is also the only process that runs the board adapter's watchers: it publishes each changed task to
-# the `board:replica` stream of the event log and checkpoints the Board every minute, and `serve` and the other
-# workers read that replica (restoring the checkpoint, then tailing the stream) instead of running the adapter, so a
-# task it places reaches them within half a second. With
-# no Board worker running, `serve` and those workers stay not ready, with no Board once nothing is checkpointed.
+# The Board worker folds the History events into the read model, and `serve` and the other workers read that read
+# model instead of running the adapter, so a change reaches them within half a second.
 # board_worker = false
 
 # Let a producer that just saw a pull request close have its record read now instead of at the next minute's refresh:

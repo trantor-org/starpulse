@@ -1,5 +1,4 @@
-"""A worker beside `serve` reads the Board the way the Board child serves it: from the read model when the config
-turns it on, since no replica of the task files is published then."""
+"""A worker beside `serve` reads the Board the way the Board child serves it: from the read model."""
 
 import threading
 from dataclasses import replace
@@ -31,7 +30,7 @@ def test_a_worker_reads_the_tasks_and_their_prs_from_the_read_model(tmp_path: Pa
     Projector(log.engine, events).catch_up()
     stop = threading.Event()
 
-    _, feed = worker_board(replace(load(None), read_model=True, database_url=url), tmp_path, log, "test", stop)
+    _, feed = worker_board(replace(load(None), database_url=url), tmp_path, log, stop)
     stop.set()
 
     assert feed.wait_replayed(1)
@@ -45,7 +44,7 @@ def test_a_read_model_workers_board_write_lands_in_the_task_history_the_read_mod
     write_task(tmp_path, "task-1", "Review")
     stop = threading.Event()
 
-    built, _ = worker_board(replace(load(None), read_model=True, database_url=url), tmp_path, log, "test", stop)
+    built, _ = worker_board(replace(load(None), database_url=url), tmp_path, log, stop)
     stop.set()
     assert built.edit is not None
     assert built.edit("task-1", {"status": "Done"}, "merged", actor=ACTOR).ok

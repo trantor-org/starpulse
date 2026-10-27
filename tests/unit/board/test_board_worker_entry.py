@@ -129,12 +129,12 @@ def test_the_board_worker_builds_the_board_starts_the_writers_and_holds(
     held[0].set()
 
 
-def test_the_board_worker_under_the_read_model_starts_the_claim_sweep(
+def test_the_board_worker_starts_the_claim_sweep(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, held: list[threading.Event]
 ) -> None:
     monkeypatch.setattr(fake_board, "SWEPT", [])
     config = tmp_path / "starpulse.toml"
-    config.write_text("read_model = true\n" + BOARD)
+    config.write_text(BOARD)
 
     worker.main(["board", "--config", str(config)])
 

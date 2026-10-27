@@ -3,7 +3,7 @@
 `serve` binds the listening socket and hands it to this child on the descriptor `STARPULSE_LISTEN_FD` names
 (`Host.listen_fd_env`), so a connection made while the child is being replaced waits in the
 socket's backlog for the next one rather than being refused. The child builds the page as `serve` once did: it reads the
-Board from the replica the Board child publishes and starts no adapter watcher. Started by hand, without a handed
+Board from the read model the Board child folds and starts no adapter watcher. Started by hand, without a handed
 socket, it binds `--host` and `--port` itself.
 
 `SIGTERM` finishes the requests it took (`serve_until_stopped`) and saves the Board it keeps; a config change replaces
@@ -88,7 +88,6 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
 ) -> None:
     """Build the Page API and serve it on `listening` until stopped: in the `starpulse worker api` child."""
 
-    from starpulse.board.adapters import replica  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.board.adapters.search import SearchIndex  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.board.board_feed import follow  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.board.claim_refusals import ClaimRefusals  # noqa: PLC0415 - the database stack loads after the config is accepted
@@ -108,8 +107,8 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     # The declared --hours is the default; an override Admin wrote beside the config replaces it from the first snapshot.
     url = database_url(config.database_url, base)
     log = EventLog(url)
-    # `read_model`: the page is drawn from the Task read model the projector folds, so no task file is read here
-    model = ReadModel(log.engine, declared_fields(config.board)) if config.read_model else None
+    # the page is drawn from the Task read model the projector folds, so no task file is read here
+    model = ReadModel(log.engine, declared_fields(config.board))
     try:
         board, feed = host.assemble(config, base, args.hours * 3600, run_safe, model)
     except ValueError as exc:
@@ -124,28 +123,25 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     threading.Thread(
         target=feed.follow_criteria, args=(store, threading.Event()), name="criteria-follow", daemon=True
     ).start()
-    if model is not None:  # under `read_model` the board worker sweeps and saves each pass's expiries; serve follows them
-        threading.Thread(
-            target=feed.follow_expiries, args=(store, threading.Event()), name="expiries-follow", daemon=True
-        ).start()
+    # the board worker sweeps and saves each pass's expiries; serve follows them
+    threading.Thread(
+        target=feed.follow_expiries, args=(store, threading.Event()), name="expiries-follow", daemon=True
+    ).start()
     feed.read_lanes(store.lane_rows)
     # the instance indexes its board for search
     search = SearchIndex.open(log.engine, config.search)
     if search is not None:
         feed.index_tasks(search)  # `starpulse worker search` catches the vectors up off the feed's path
     stop = threading.Event()
-    if model is None:
-        replica.read(board, feed, f"starpulse-{port}", log, config, stop)
-    else:
-        if board.attach is not None:
-            board.attach(log)
-        # `starpulse worker board` folds the events when it runs; otherwise this process does
-        projector = None if config.board_worker else Projector(log.engine, EventStore(log.engine), search)
-        if projector is not None:
-            projector.catch_up()
-        feed.follow_read_model()
-        feed.ready.set()
-        host.follow_read_model(projector, feed, stop)
+    if board.attach is not None:
+        board.attach(log)
+    # `starpulse worker board` folds the events when it runs; otherwise this process does
+    projector = None if config.board_worker else Projector(log.engine, EventStore(log.engine), search)
+    if projector is not None:
+        projector.catch_up()
+    feed.follow_read_model()
+    feed.ready.set()
+    host.follow_read_model(projector, feed, stop)
     tasks = MachineTasks(feed, board.keys)
     follow(tasks, log, machine_events.STREAM, tasks.handle_entry)
     refusals = ClaimRefusals(feed)

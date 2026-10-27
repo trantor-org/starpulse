@@ -20,7 +20,6 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Protocol
 
-from starpulse.board.adapters import replica
 from starpulse.board.bin.blocks import BoardConfig, board_built_blocks
 from starpulse.board.board_feed import BoardFeed, CriteriaStore, ExpiriesStore, LaneRecorder
 from starpulse.board.model.seam import Board
@@ -63,7 +62,7 @@ def start_writers(
 ) -> threading.Thread:
     """Start the criteria thread, which runs until `stop` is set; it waits for `feed` to have read the Board. A `live`
     feed also records each lane a task enters as it places it; the Board child places none live, as `serve` records the
-    ones its replica puts and the ones its writes make. `log` carries each lane change's actor to the `board:lanes`
+    ones its writes make. `log` carries each lane change's actor to the `board:lanes`
     entry."""
     feed.date_lanes(store.lane_path)
     feed.record_lanes(store, log, live=live)
@@ -99,23 +98,18 @@ def main(
         parser.exit(1, f"{path}: {exc}\n")
     base = args.config.parent if args.config else Path.cwd()
     log = EventLog(database_url(config.database_url, base))
-    model = ReadModel(log.engine, declared_fields(config.board)) if config.read_model else None
+    model = ReadModel(log.engine, declared_fields(config.board))
     try:
         board, feed = assemble(config, base, None, [], model)
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")
     store = history_store(config, base, feed.machines)
     stop = threading.Event()
-    if model is None:
-        start_writers(feed, store, board.evaluate, stop, live=False, log=log)
-        replica.publish(board, feed, "starpulse-board", log, config)
-    else:
-        # the read model replaces the task files as the board's reader: nothing publishes a replica of them
-        feed.ready.set()
-        start_writers(feed, store, board.evaluate, stop, live=False, log=log)
-        if board.attach is not None:
-            board.attach(log)  # the sweep's releases append the History events the read model folds
-        if board.sweep is not None:
-            board.sweep(feed, log, store.save_claim_expiries)
-        follow(Projector(log.engine, EventStore(log.engine)), feed, stop)
+    feed.ready.set()
+    start_writers(feed, store, board.evaluate, stop, live=False, log=log)
+    if board.attach is not None:
+        board.attach(log)  # the sweep's releases append the History events the read model folds
+    if board.sweep is not None:
+        board.sweep(feed, log, store.save_claim_expiries)
+    follow(Projector(log.engine, EventStore(log.engine)), feed, stop)
     hold(stop, lambda: reload(path, config, load))

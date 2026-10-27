@@ -420,10 +420,8 @@ def test_board_worker_defaults_off_and_is_a_flag(tmp_path: Path) -> None:
     assert _refusal(tmp_path, 'board_worker = "yes"\n') == "board_worker must be true or false"
 
 
-def test_read_model_defaults_off_and_is_a_flag(tmp_path: Path) -> None:
-    assert load(None).read_model is False
-    assert load(_write(tmp_path, "read_model = true\n")).read_model is True
-    assert _refusal(tmp_path, 'read_model = "yes"\n') == "read_model must be true or false"
+def test_the_retired_read_model_key_still_loads_and_sets_nothing(tmp_path: Path) -> None:
+    assert not hasattr(load(_write(tmp_path, "read_model = true\n")), "read_model")
 
 
 def test_search_worker_defaults_off_and_is_a_flag(tmp_path: Path) -> None:

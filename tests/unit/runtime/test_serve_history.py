@@ -56,6 +56,5 @@ def test_serve_and_the_flow_metrics_worker_record_run_and_task_machine_events(
         ("FAKE-1", None, "in-progress", "WORKTREE_READY"),
         (None, "run-1", "authoring-skills", "GUIDANCE_READ"),
     ]
-    assert _rows(own, "starpulse_lane_changes", "task, old_status, new_status") == [("FAKE-1", None, "open")]
     for stop in held:
         stop.set()
