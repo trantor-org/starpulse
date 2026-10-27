@@ -75,6 +75,12 @@ def _sections(text: str) -> tuple[str, dict[str, str]]:
     return "\n".join(head), {heading: "\n".join(body).strip("\n") for heading, body in sections.items()}
 
 
+def section_set(description: str, heading: str, content: str) -> str:
+    """`description` with its `## <heading>` section replaced by `content`, or ending with it when it had none."""
+    kept = re.sub(rf"^## {re.escape(heading)}\s*$.*?(?=^## |\Z)", "", description, flags=re.M | re.S)
+    return f"{kept.strip()}\n\n## {heading}\n\n{content.strip()}".strip()
+
+
 def _checklist(body: str, heading: str) -> list[dict[str, Any]]:
     """The items `body` lists, each numbered as it was or new when it has no number; a line that is no item is refused."""
     items = []

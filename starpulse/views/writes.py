@@ -111,7 +111,6 @@ import contextlib
 import functools
 import ipaddress
 import logging
-import re
 import threading
 import time
 from collections.abc import Callable, Collection, Mapping
@@ -125,6 +124,7 @@ from starpulse.harness_telemetry.harnesses import Harnesses
 from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model import post_merge_checks
+from starpulse.board.model.markdown import section_set
 from starpulse.board.model.seam import (
     AGENT,
     ANONYMOUS,
@@ -522,12 +522,6 @@ def _lifecycle_edit(
     return 200, {"task": task, "to": column}
 
 
-def _section_set(description: str, heading: str, content: str) -> str:
-    """`description` with its `## <heading>` section replaced by `content`, or ending with it when it had none."""
-    kept = re.sub(rf"^## {re.escape(heading)}\s*$.*?(?=^## |\Z)", "", description, flags=re.M | re.S)
-    return f"{kept.strip()}\n\n## {heading}\n\n{content.strip()}".strip()
-
-
 def _wait_on_tasks(feed: BoardFeed, task: str, current: dict[str, Any], ids: Any) -> dict[str, Any]:
     """The edit that makes the task wait on the tasks `ids` names, kept after the dependencies it has."""
     if not (isinstance(ids, list) and ids and all(isinstance(name, str) and name.strip() for name in ids)):
@@ -562,7 +556,7 @@ def _wait_on_criteria(feed: BoardFeed, task: str, current: dict[str, Any], found
         )
     block = "```yaml\n" + yaml.safe_dump({"start_criteria": found}, sort_keys=False) + "```"
     return {
-        "description": _section_set(current["description"], "Start Criteria", block),
+        "description": section_set(current["description"], "Start Criteria", block),
         **({"dependencies": []} if current["dependencies"] else {}),  # Done dependencies gate nothing
     }
 
@@ -571,7 +565,7 @@ def _wait_on_operator(current: dict[str, Any], reason: Any) -> dict[str, Any]:
     """The edit that records `reason` as what only the operator can clear."""
     if not _nonblank(reason):
         raise _Refusal(400, {"error": "operator needs the reason, in text, that only the operator can clear"})
-    return {"description": _section_set(current["description"], "Needs attention", reason)}
+    return {"description": section_set(current["description"], "Needs attention", reason)}
 
 
 def _nonblank(value: Any) -> bool:

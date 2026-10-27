@@ -10,6 +10,7 @@ from starpulse.board.board_feed import BoardFeed
 from starpulse.board.criteria import authored
 from starpulse.board.model.seam import Written
 from starpulse.contracts.adapters import BoardTask
+from starpulse.machine_engine.model.state_roles import StateRoles
 from starpulse.pulls.pins import Repo
 from starpulse.pulls.pulls import PullStore
 from starpulse.pulls.task_actor import TaskActor
@@ -22,6 +23,20 @@ WAITS = {
     "waiting": {"deps_done": "DEPS_DONE", "criteria_met": "CRITERIA_MET"},
     "ready": {"deps_unresolved": "WAIT_ON_DEPS", "criteria_unmet": "CRITERIA_UNMET"},
 }
+ROLES = StateRoles(
+    {
+        "new": "initial",
+        "ready": "waiting_on_fact",
+        "waiting": "waiting_on_fact",
+        "in_progress": "resting",
+        "review": "waiting_on_fact",
+        "needs_attention": "waiting_on_person",
+        "done": "resting",
+        "archived": "final",
+    },
+    WAITS,
+    ("done",),
+)
 MOVES = {
     ("review", "MERGED"): "done",
     ("waiting", "DEPS_DONE"): "ready",
@@ -76,6 +91,8 @@ class Board:
         self.tasks = {each.id: each for each in tasks}
         self.writes: list[tuple[str, Mapping[str, Any], str | Sequence[str], str]] = []
         self.refuse = False
+        #: The refusal the board gives a status change into each lane named here.
+        self.refusing: dict[str, str] = {}
         for each in tasks:
             feed.put(each)
 
@@ -87,6 +104,8 @@ class Board:
         self.writes.append((name, changes, comment, actor))
         if self.refuse:
             return Written(False, f"{name}: refused")
+        if changes.get("status") in self.refusing:
+            return Written(False, self.refusing[changes["status"]])
         if "status" in changes:
             self.put(self.tasks[name].model_copy(update={"lane": changes["status"]}))
         return Written(True, name)

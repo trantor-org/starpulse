@@ -5,8 +5,9 @@ A machine state's `waits` name a fact kind and the event that leaves the state w
 touches only the tasks naming it, and when a task's pull request state, its own lane or a dependency's changes it
 re-derives that task's waits and writes the first that holds through the board's task editor as `starpulse/task-actor`.
 The board's rules and the machine's guards judge the write like any other. A write the board refuses is logged and
-counted, and not tried again until the task's facts change. A start re-derives every open task once, which is the
-recovery for a change that happened while the server was down.
+counted, and not tried again until the task's facts change. A refused release to Ready also parks the task in Needs
+attention with the refusal as its reason, once per refusal, so the operator sees why it did not return. A start
+re-derives every open task once, which is the recovery for a change that happened while the server was down.
 
 A lifecycle machine whose phase state links a skill machine with `exits` (`submachines[].exits`) advances that phase
 too: when the skill machine reaches an exit state the actor calls `advance(machine, task, event)` with the exit's event,
@@ -28,6 +29,7 @@ from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
+from starpulse.board.model.markdown import section_set
 from starpulse.board.model.seam import HELD, MERGE_EVIDENCE, TaskEditor, Written
 from starpulse.pulls.pins import LiveBuild, Pins, Repo
 from starpulse.board import criteria
@@ -164,6 +166,8 @@ class TaskActor:
         self._store_rev = store.rev
         #: The move last tried for each task, until the task changes lane: the same facts are not tried twice.
         self._tried: dict[str, tuple] = {}
+        #: The refusal each task was last parked in Needs attention for, so the same refusal parks it once.
+        self._parked: dict[str, str] = {}
         self._metrics = threading.Lock()
         self._refusals = 0
         #: How many writes landed within each bound of `BUCKETS_S`, then how many in all, and their seconds summed.
@@ -448,19 +452,36 @@ class TaskActor:
             return
 
     def _write(self, name: str, target: str, comment: str, observed: float) -> None:
-        with self._feed.recording:  # the board's poll finds the lane recorded under the actor, not as external
-            try:
-                written = self._edit(name, {"status": target}, comment, actor=ACTOR)
-            except Exception as error:  # a board that raises refuses like one that answers no
-                written = Written(False, str(error))
-            if written.ok and written.lane:
-                self._feed.record_written(name, written.lane, written.at or time.time(), (ACTOR, "", ""))
+        written = self._apply(name, {"status": target}, comment)
         if written.ok:
             self._landed(self._clock() - observed)
             return
         logger.warning("task actor: %s was not moved to %s: %s", name, target, written.output)
+        if target == self._feed.roles.ready:
+            self._park(name, written.output)
         with self._metrics:
             self._refusals += 1
+
+    def _park(self, name: str, refusal: str) -> None:
+        """Write a task whose release to Ready was refused to Needs attention, with the refusal as its reason."""
+        if self._parked.get(name) == refusal:
+            return
+        self._parked[name] = refusal
+        reason = f"{refusal.rstrip('.')}. Clear it so the task can return to Ready?"
+        description = section_set(self._feed.task(name)["description"], "Needs attention", reason)
+        written = self._apply(name, {"status": self._feed.roles.attention, "description": description}, reason)
+        if not written.ok:
+            logger.warning("task actor: %s was not parked in Needs attention: %s", name, written.output)
+
+    def _apply(self, name: str, changes: Mapping[str, Any], comment: str) -> Written:
+        with self._feed.recording:  # the board's poll finds the lane recorded under the actor, not as external
+            try:
+                written = self._edit(name, changes, comment, actor=ACTOR)
+            except Exception as error:  # a board that raises refuses like one that answers no
+                written = Written(False, str(error))
+            if written.ok and written.lane:
+                self._feed.record_written(name, written.lane, written.at or time.time(), (ACTOR, "", ""))
+        return written
 
     def _landed(self, seconds: float) -> None:
         with self._metrics:

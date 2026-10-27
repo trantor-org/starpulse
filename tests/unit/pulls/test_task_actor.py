@@ -10,7 +10,7 @@ from starpulse.board.board_feed import BoardFeed
 from starpulse.pulls.pulls import PullStore
 from starpulse.runtime.adapter_kit import task
 
-from tests.task_actor_kit import GATED, PR_ONE, Board, Criteria, pull, running, until
+from tests.task_actor_kit import GATED, PR_ONE, ROLES, Board, Criteria, pull, running, until
 
 
 @pytest.fixture
@@ -50,6 +50,38 @@ def test_a_refused_write_is_counted_and_not_retried_until_the_tasks_facts_change
 
     assert until(lambda: len(board.writes) == 2)
     assert _sample(actor.exposition(), "starpulse_task_actor_refusals_total") == 2
+
+
+REFUSAL = "Waiting needs exactly one release gate"
+
+
+def test_a_refused_release_to_ready_parks_the_task_in_needs_attention_with_the_refusal_as_its_reason(
+    store: PullStore, stop: threading.Event
+) -> None:
+    board = Board(BoardFeed(roles=ROLES), task("TASK-9", "Done"), task("TASK-1", "Waiting", dependencies=("TASK-9",)))
+    board.refusing["ready"] = REFUSAL
+    running(board, store, stop)
+
+    assert until(lambda: len(board.moved()) == 2)
+    assert board.moved() == [("TASK-1", "ready"), ("TASK-1", "needs_attention")]
+    _, changes, _, _ = board.writes[1]
+    reason = f"{REFUSAL}. Clear it so the task can return to Ready?"
+    assert changes["description"].endswith(f"## Needs attention\n\n{reason}")
+
+
+def test_a_repeated_refusal_for_the_same_task_and_reason_parks_the_task_once(
+    store: PullStore, stop: threading.Event
+) -> None:
+    board = Board(BoardFeed(roles=ROLES), task("TASK-9", "Done"), task("TASK-1", "Waiting", dependencies=("TASK-9",)))
+    board.refusing["ready"] = REFUSAL
+    actor = running(board, store, stop)
+    assert until(lambda: len(board.moved()) == 2)
+
+    board.put(task("TASK-1", "Waiting", dependencies=("TASK-9",)))  # the operator returns it to Waiting
+    assert until(lambda: _sample(actor.exposition(), "starpulse_task_actor_refusals_total") == 2)
+
+    assert board.moved()[2:] == [("TASK-1", "ready")]
+    assert [lane for _, lane in board.moved()].count("needs_attention") == 1
 
 
 def test_the_latency_from_a_fact_to_the_landed_write_is_exported_as_a_histogram(
