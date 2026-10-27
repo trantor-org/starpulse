@@ -74,7 +74,7 @@ describe("the start question", () => {
 describe("the DAGs view at a larger text size", () => {
   it("grows a row's step strip and its status star with the text", () => {
     expect(css).toContain("svg.dstrip:not(.big) { height: calc(20px * var(--fs)); }");
-    expect(css).toMatch(/\.orb \{[^}]*width: calc\(11px \* var\(--fs\)\); height: calc\(11px \* var\(--fs\)\)/);
+    expect(css).toMatch(/\.orb \{[^}]*width: calc\(20px \* var\(--fs\)\); height: calc\(20px \* var\(--fs\)\)/);
   });
 });
 
