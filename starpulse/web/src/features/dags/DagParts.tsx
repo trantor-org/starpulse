@@ -1,7 +1,8 @@
 // What the DAGs catalog and a DAG's modal both draw: the state dot, the step constellation (small in a row, large in the modal),
 // the last-run line, the pool text and a Board tie's chip. Steps and links are drawn as the Star Map draws a DAG body's (boardDraw drawStars), in DAG_COLOR.
 import type { CSSProperties, ReactNode } from "react";
-import { ago, bigPlace, chartHeight, place, took, type DagFacts, type Phase, type Row, type Tie } from "./dagsModel";
+import type { DagStep, Rerun } from "../../api";
+import { ago, bigPlace, chartHeight, place, stepNote, took, type DagFacts, type Phase, type Row, type Tie } from "./dagsModel";
 import { DAG_COLOR } from "../../render/draw";
 import { orbiterLook } from "../../render/boardDraw";
 import { useId } from "react";
@@ -59,10 +60,37 @@ const fit = (t: string, n: number) => (t.length <= n ? t : `${t.slice(0, Math.ma
  *  inline on `<html>`, which answers without the style recalculation `getComputedStyle` forces after every DOM change. */
 export const labelPx = () => 6.1 * (Number(document.documentElement.style.getPropertyValue("--fs")) || 1);
 
-/** The modal chart's size for a DAG: as wide as its steps and their names need (at least `min`), as high as its widest column. */
-export function chartBox(r: Row, min = 924) {
-  const fan = bigPlace(r.d.steps, 0, 100, labelPx());
-  return { w: Math.max(min, fan.span), h: chartHeight(fan.wide) };
+/** The modal chart's size for a DAG: as wide as its steps and their names need, or as the steps spread when nothing squeezes them, and as high as
+ *  its widest column. The modal's own width follows it. */
+export function chartBox(r: Row) {
+  const px = labelPx(), least = bigPlace(r.d.steps, 0, 100, px), spread = bigPlace(r.d.steps, 1e6, 100, px);
+  return { w: Math.max(least.span, spread.span), h: chartHeight(least.wide) };
+}
+
+/** How many past runs a step's history strip has room for. */
+const SLOTS = 5;
+
+/** A DAG's step history: one line per step, its last runs as a strip of ticks oldest to newest in each run's status colour, an empty slot for a run not made. */
+export function StepHistory({ steps, rerun }: { steps: DagStep[]; rerun: Rerun | null }) {
+  return (
+    <ul className="hist">
+      {steps.map((s) => {
+        const runs = [...s.last].reverse(), note = stepNote(s, rerun);
+        return (
+          <li key={s.name}>
+            <span className="nm">{s.name}</span>
+            <span className="runs" role="img" aria-label={runs.length ? `last runs, oldest first: ${runs.join(", ").replace(/_/g, " ")}` : "no runs yet"}>
+              {Array.from({ length: SLOTS }, (_, i) => {
+                const v = runs[i - (SLOTS - runs.length)];
+                return <i key={i} className={v ? `s-${v}` : ""} title={v?.replace("_", " ")} />;
+              })}
+            </span>
+            {note && <span className="note k">{note}</span>}
+          </li>
+        );
+      })}
+    </ul>
+  );
 }
 
 /** A DAG's steps as a constellation: one star per step in its status colour, joined by its dependencies; the running step burns

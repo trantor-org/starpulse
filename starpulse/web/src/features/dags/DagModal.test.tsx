@@ -207,3 +207,66 @@ describe("closing the modal", () => {
     expect(host.querySelector("#kbm")).toBeNull();
   });
 });
+
+describe("a DAG modal's step history and rerun safety", () => {
+  const withSteps = (name: string, steps: DagStep[], over: Partial<Dag> = {}) => {
+    const d = data.dags.find((x) => x.name === name)!;
+    return { ...data, dags: data.dags.map((x) => (x === d ? { ...x, steps, ...over } : x)) };
+  };
+  const drawWith = async (d: DagData, name: string) => { await act(async () => root.render(<Dags data={d} post={post} />)); await click(row(name)); };
+  const hist = () => all(".dgm .hist li");
+  const marks = (li: Element) => [...li.querySelectorAll<HTMLElement>(".runs i")].map((i) => i.className);
+
+  it("draws one line per step, newest outcome last, with an empty slot for a run not yet made", async () => {
+    const steps: DagStep[] = [{ ...step("scan"), last: ["failed", "succeeded", "succeeded"] }, { ...step("fix", ["scan"], "succeeded", "agent"), last: [] }];
+    await drawWith(withSteps("runs/pr-watch", steps), "pr-watch");
+
+    expect(hist().map((li) => li.querySelector(".nm")!.textContent)).toEqual(["scan", "fix"]);
+    expect(marks(hist()[0])).toEqual(["", "", "s-succeeded", "s-succeeded", "s-failed"]);
+    expect(marks(hist()[1])).toEqual(["", "", "", "", ""]);
+  });
+
+  it("shows a never-run DAG's history as an empty strip for every step", async () => {
+    await draw();
+    await click(row("never"));
+
+    expect(hist()).toHaveLength(2);
+    expect(hist().every((li) => marks(li).length === 5 && marks(li).every((c) => c === ""))).toBe(true);
+  });
+
+  it("states the declared rerun safety in the header, and nothing for an undeclared DAG", async () => {
+    const header = () => q(".dgm .tvhead .rerun")?.textContent;
+    await drawWith(withSteps("runs/pr-watch", data.dags[0].steps, { rerun: { key: "delivery id", repeats: null, step: null } }), "pr-watch");
+    expect(header()).toBe("once per delivery id");
+    await key(document, "Escape");
+    await drawWith(withSteps("runs/pr-watch", data.dags[0].steps, { rerun: { key: null, repeats: null, step: null } }), "pr-watch");
+    expect(header()).toBe("safe to rerun");
+    await key(document, "Escape");
+    await drawWith(withSteps("runs/pr-watch", data.dags[0].steps, { rerun: { key: null, repeats: "pages again", step: "fix" } }), "pr-watch");
+    expect(header()).toBe("repeats on rerun · pages again");
+    await key(document, "Escape");
+    await drawWith(data, "pr-watch");
+    expect(q(".dgm .tvhead .rerun")).toBeNull();
+  });
+
+  it("notes a repeating step, a precondition and a lock on the step's line", async () => {
+    const steps = [{ ...step("scan"), precondition: "$CI == 1", lock: "deploy" }, step("fix", ["scan"], "succeeded", "agent")];
+    await drawWith(withSteps("runs/pr-watch", steps, { rerun: { key: null, repeats: "pages again", step: "fix" } }), "pr-watch");
+
+    expect(hist()[0].querySelector(".note")!.textContent).toBe("when $CI == 1 · lock deploy");
+    expect(hist()[1].querySelector(".note")!.textContent).toBe("repeats · pages again");
+  });
+
+  it("widens the modal with its graph: a long chain's modal is wider than a two-step DAG's", async () => {
+    const width = () => parseInt(q<HTMLElement>(".modal.dgm").style.getPropertyValue("--dgw"), 10);
+    const chain = Array.from({ length: 9 }, (_, i) => step(`stage-${i}`, i ? [`stage-${i - 1}`] : []));
+    await drawWith(withSteps("runs/fanout", chain), "fanout");
+    const big = width();
+    await key(document, "Escape");
+    await click(row("never"));
+    const small = width();
+
+    expect(small).toBeGreaterThan(0);
+    expect(big).toBeGreaterThan(small);
+  });
+});

@@ -265,6 +265,13 @@ export function bigPlace(steps: DagStep[], w: number, h: number, px: number) {
 /** The modal chart's height: the five-high fan of a folded cluster, or room for one row of steps and their names. */
 export const chartHeight = (wide: number) => Math.max(110, 74 + (wide - 1) * 40);
 
+/** What a DAG declares about a rerun, as the modal header says it; null for a DAG that declares nothing, so the view makes no claim for it. */
+export const rerunLine = (x: Rerun | null) => (!x ? null : x.key ? `once per ${x.key}` : x.repeats ? `repeats on rerun · ${x.repeats}` : "safe to rerun");
+
+/** What a step's line adds to its history: the precondition that may skip it, the lock it takes, and the repeat the DAG declares at it. */
+export const stepNote = (s: DagStep, x: Rerun | null) =>
+  [s.precondition && `when ${s.precondition}`, s.lock && `lock ${s.lock}`, x?.repeats && x.step === s.name && `repeats · ${x.repeats}`].filter(Boolean).join(" · ");
+
 /** Why Run now is refused for a DAG, or null when it may start. Only a run-safe DAG has the button; the modal shows it disabled with this reason. */
 export const refusal = (r: Row, starting = false): string | null =>
   r.phase === "running" ? "Already running" : r.phase === "queued" ? "Already queued" : !r.runSafe ? "Not run-safe: this DAG changes live state, so StarPulse will not start it. Run it from its workflow runner."
