@@ -9,12 +9,12 @@ import { useId } from "react";
 /** A step's ink: its status colour, and the slate for a step with no run behind it, which the Star Map's near-black track colour leaves unreadable in a row. */
 const ink = (status: string) => (status === "not_started" ? "var(--slate)" : DAG_COLOR[status] ?? DAG_COLOR.aborted);
 
-/** A step as the Star Map draws a DAG body's steps (renderer drawStars): a dark disc ringed in its status colour round a core dot, a little dimmer before it runs. */
+/** A step as the Star Map draws a DAG body's steps (renderer drawStars): a ring in its status colour round a core dot, the row showing through, a little dimmer before it runs. */
 export function StepStar({ x, y, r, status }: { x: number; y: number; r: number; status: string }) {
   const c = ink(status), idle = status === "not_started";
   return (
     <g className={`step s-${status}`}>
-      <circle cx={x} cy={y} r={r} fill="var(--bg0)" stroke={c} strokeOpacity={idle ? 0.8 : 0.85} strokeWidth={1} className="ring" />
+      <circle cx={x} cy={y} r={r} fill="none" stroke={c} strokeOpacity={idle ? 0.8 : 0.85} strokeWidth={1} className="ring" />
       <circle cx={x} cy={y} r={r * 0.34} fill={c} fillOpacity={idle ? 0.8 : 0.9} className="core" />
     </g>
   );
@@ -44,7 +44,7 @@ export const Orb = ({ phase, big = false }: { phase: Phase; big?: boolean }) => 
   return (
     <i className={`orb o-${phase}${big ? " big" : ""}`} aria-hidden="true">
       <svg viewBox="-9 -9 18 18">
-        <circle r={5} fill="var(--bg0)" stroke={c} strokeOpacity={lit ? 0.95 : 0.6} strokeWidth={1.3} className="ring" />
+        <circle r={5} fill="none" stroke={c} strokeOpacity={lit ? 0.95 : 0.6} strokeWidth={1.3} className="ring" />
         <circle r={5 * (look.spin ? 0.45 : 0.4)} fill={c} fillOpacity={lit ? 0.95 : 0.7} className="core" />
         {look.spin && <path d="M 0 -8.5 A 8.5 8.5 0 0 1 8.5 0" fill="none" stroke={c} strokeOpacity={0.9} strokeWidth={1.4} className="spin" />}
         {look.dashed && <circle r={8.5} fill="none" stroke={c} strokeOpacity={0.7} strokeWidth={1} strokeDasharray="2 2" className="fail-ring" />}
