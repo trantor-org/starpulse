@@ -41,7 +41,6 @@ def _feed() -> BoardFeed:
 def _runtime(tmp_path: Path, feed: BoardFeed | None = None, crossings: list[Crossing] | None = None) -> Runtime:
     return build(
         Scheduler(),
-        tmp_path,
         EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}"),
         feed or _feed(),
         probe=lambda: HOST,
@@ -139,7 +138,6 @@ def _looping(tmp_path: Path) -> Runtime:
     )
     runtime = build(
         Scheduler(lane="ready"),
-        tmp_path,
         EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}"),
         feed,
         probe=lambda: {"cpu": 5.0, "memory": 5.0},
@@ -200,7 +198,6 @@ def test_a_get_with_a_loop_names_a_harness_usage_pause(tmp_path: Path) -> None:
 
     runtime = build(
         Scheduler(lane="ready"),
-        tmp_path,
         EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}"),
         feed,
         probe=lambda: {"cpu": 5.0, "memory": 5.0},

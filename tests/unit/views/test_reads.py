@@ -27,7 +27,7 @@ def routes(tmp_path: Path):
         feed=feed,
         history=HistoryStore("sqlite://", feed.machines),
         snapshots=SnapshotCache(feed),
-        window=HistoryWindow(feed, 6, log, tmp_path / "starpulse-settings.json"),
+        window=HistoryWindow(feed, 6, log),
         board=bare_board(),
         services=Services(slow_read_s=0.0),
     )

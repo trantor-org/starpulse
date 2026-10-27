@@ -59,7 +59,6 @@ def server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[PageServer]:
     store.record_lane("l0", "T-1", "In Progress", NOW - 3600)
     runtime = build(
         Scheduler(),
-        tmp_path,
         EventLog(f"sqlite:///{tmp_path / 'settings.sqlite'}"),
         feed,
         probe=lambda: {"cpu": 10.0, "memory": 20.0},

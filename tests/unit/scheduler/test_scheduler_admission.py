@@ -39,7 +39,7 @@ def _readings(policy: Scheduler = POLICY, **use: float) -> list[Reading]:
 
 @pytest.fixture
 def ledger(tmp_path: Path) -> Ledger:
-    return Ledger(EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}"), tmp_path / "runs.jsonl")
+    return Ledger(EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}"))
 
 
 def test_demand_starts_from_the_points_times_the_tier_weight(ledger: Ledger) -> None:

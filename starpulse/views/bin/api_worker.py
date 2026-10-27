@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 from starpulse.views.bin.blocks import ApiConfig
 
-from starpulse.board.adapters.history_window import SETTINGS_FILE, HistoryWindow
+from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.claim_refusals import CLAIMS_STREAM
 from starpulse.event_log import events as machine_events
 from starpulse.event_log import lane_events
@@ -114,7 +114,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         board, feed = host.assemble(config, base, args.hours * 3600, run_safe, model)
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")
-    window = HistoryWindow(feed, args.hours, log, base / SETTINGS_FILE)
+    window = HistoryWindow(feed, args.hours, log)
     # the history dates the lanes the board adapter replays, so it is open before the adapter starts
     store = host.history_store(config, base, feed.machines)
     feed.date_lanes(store.lane_path)

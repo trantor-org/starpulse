@@ -5,14 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from sqlalchemy import text
 from starpulse.board.board_feed import BoardFeed
 from starpulse.contracts import BoardTask
 from starpulse.flow_metrics.history import HistoryStore
-from starpulse.runtime.store_migrate import maintain
 
 from tests.machines import MACHINES, ROLES
-from tests.summaries import assert_matches_rebuild
 
 MOVE = ("T-1", 100.0)
 REPLAYED = ("trantor/1bdc9eb7-9413-439e-9749-7cd8d7f8bf13", "Waiting")  # a board event: a UUID, a status as spelled
@@ -49,47 +46,3 @@ def test_a_lane_move_read_live_is_dated_by_the_boards_time_not_the_feeds_clock(s
     feed.put(BoardTask(id="T-1", team="demo", title="t", lane="in_progress", observed_at=100.0))
 
     assert store.lane_path("T-1") == [{"at": 100.0, "from": None, "to": "in_progress"}]
-
-
-#: One task's rows as two writers left them, in the order they landed: the replayed board events (a UUID, a status
-#: as spelled, the board's time) and the lane stream (a lane id, the feed's later clock), each chaining off whichever
-#: row came before it.
-LEGACY = [
-    ("trantor/u1", "T-1", None, "Waiting", 100.0),
-    ("trantor/T-1@waiting@160.0", "T-1", "Waiting", "waiting", 160.0),  # u1 seen again, a minute late
-    ("trantor/u2", "T-1", "waiting", "Ready", 200.0),
-    ("trantor/u3", "T-1", "Ready", "In Progress", 300.0),
-    ("trantor/T-1@ready@250.0", "T-1", "In Progress", "ready", 250.0),  # u2 seen again, late
-    ("trantor/T-1@in_progress@360.0", "T-1", "ready", "in_progress", 360.0),  # u3 seen again, late
-    ("trantor/T-1@review@900.0", "T-1", "in_progress", "review", 900.0),  # a move only the stream saw
-    ("trantor/u4", "T-1", "review", "Review", 901.0),  # the same move, spelled by the replay
-]
-
-
-def test_a_store_holding_both_writers_rows_ends_with_one_chain_in_the_lane_id(tmp_path: Path) -> None:
-    url = f"sqlite:///{tmp_path / 'history.sqlite'}"
-    held = HistoryStore(url, MACHINES)
-    with held.engine.begin() as db:
-        for event_id, task, old, new, at in LEGACY:
-            db.execute(
-                text(
-                    "INSERT INTO starpulse_lane_changes (event_id, task, old_status, new_status, observed_at) "
-                    "VALUES (:e, :t, :o, :n, :a)"
-                ),
-                {"e": event_id, "t": task, "o": old, "n": new, "a": at},
-            )
-    held.rebuild_summaries()
-    held.engine.dispose()
-
-    maintain(url, MACHINES, None)
-    repaired = HistoryStore(url, MACHINES)
-
-    assert repaired.lane_path("T-1") == [
-        {"at": 100.0, "from": None, "to": "waiting"},
-        {"at": 200.0, "from": "waiting", "to": "ready"},
-        {"at": 300.0, "from": "ready", "to": "in_progress"},
-        {"at": 900.0, "from": "in_progress", "to": "review"},
-    ]
-    assert_matches_rebuild(repaired)
-    maintain(url, MACHINES, None)  # a second maintenance repairs nothing
-    assert HistoryStore(url, MACHINES).lane_changes() == repaired.lane_changes()

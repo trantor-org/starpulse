@@ -45,7 +45,6 @@ def test_a_task_refused_for_headroom_starts_when_a_sample_leaves_room_with_nothi
 
     runtime = build(
         Scheduler(lane="ready"),
-        tmp_path,
         EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}"),
         feed,
         probe=lambda: host,

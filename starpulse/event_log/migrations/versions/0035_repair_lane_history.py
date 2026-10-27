@@ -3,15 +3,21 @@
 A history once took each move twice: from the board's events (a UUID id, the status as spelled, the board's time) and
 from the lane stream (`<task>@<lane>@<time>`, the lane id, the time the feed read the move). The pair interleaves into
 moves that never happened (`In Progress -> waiting -> Waiting`). `plan` says which rows to drop and how to rewrite the
-rest so each task's path chains again; `HistoryStore.repair_lanes` applies it.
-"""
+rest so each task's path chains again; `repair_lanes` applies it once. A repaired history leaves the summaries folded
+from the rows it replaced, so the summaries' basis is dropped and `starpulse migrate` folds them again.
 
-from __future__ import annotations
+Revision ID: 0035
+Revises: 0034
+"""
 
 from collections import defaultdict
 from collections.abc import Iterable
 
-from starpulse.machine_engine.model.transitions import lane_id
+import sqlalchemy as sa
+from alembic import op
+
+revision = "0035"
+down_revision = "0034"
 
 #: How long after the board made a move the lane stream may have read it and still be taken for the same move.
 TWIN_WINDOW_S = 3600.0
@@ -21,6 +27,43 @@ SETTLED = "completed"
 
 #: `(id, event_id, task, old_status, new_status, observed_at)`, a row of `starpulse_lane_changes`.
 Row = tuple[int, str, str, str | None, str, float]
+
+_LANE_CHANGES = sa.table(
+    "starpulse_lane_changes",
+    sa.column("id", sa.Integer),
+    sa.column("event_id", sa.String),
+    sa.column("task", sa.String),
+    sa.column("old_status", sa.String),
+    sa.column("new_status", sa.String),
+    sa.column("observed_at", sa.Float),
+)
+_SUMMARY_BASIS = sa.table("starpulse_summary_basis")
+
+
+def upgrade() -> None:
+    if repair_lanes(op.get_bind()):
+        op.execute(sa.delete(_SUMMARY_BASIS))
+
+
+def downgrade() -> None:
+    """A repair cannot be undone: the rows it dropped are gone."""
+
+
+def repair_lanes(db: sa.Connection) -> int:
+    """Put the lane history right where two writers left it, as `plan` says: how many rows it dropped or rewrote."""
+    c = _LANE_CHANGES.c
+    rows = [tuple(r) for r in db.execute(sa.select(c.id, c.event_id, c.task, c.old_status, c.new_status, c.observed_at))]
+    rewrites, drops = plan(rows)
+    for id_, (old, new) in rewrites.items():
+        db.execute(sa.update(_LANE_CHANGES).where(c.id == id_).values(old_status=old, new_status=new))
+    if drops:
+        db.execute(sa.delete(_LANE_CHANGES).where(c.id.in_(drops)))
+    return len(rewrites) + len(drops)
+
+
+def lane_id(status: str) -> str:
+    """A status as the Board machine's state id: lower-cased, spaces as `_`."""
+    return status.lower().replace(" ", "_")
 
 
 def source_of(event_id: str) -> str:

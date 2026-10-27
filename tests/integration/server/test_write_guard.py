@@ -68,9 +68,7 @@ def _recording(tmp_path: Path) -> Iterator[tuple[PageServer, list[str], HistoryW
 
     feed = BoardFeed()
     feed.put(task("PROJ-3", "Ready", moves={"in_progress": Move(allowed=True)}))
-    window = HistoryWindow(
-        feed, 6, EventLog(f"sqlite:///{tmp_path / 'settings.sqlite'}"), tmp_path / "starpulse-settings.json"
-    )
+    window = HistoryWindow(feed, 6, EventLog(f"sqlite:///{tmp_path / 'settings.sqlite'}"))
     with _serve(
         tmp_path,
         feed,

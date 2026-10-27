@@ -188,7 +188,7 @@ from starpulse.runtime.config import Config, ConfigError, discover, load, runs_a
 from starpulse.runs.config import RunsInstance
 from starpulse.flow_metrics.level import Level
 from starpulse.pulls.pins import GitHub, LiveBuild, running_commit
-from starpulse.board.adapters.history_window import SETTINGS_FILE, HistoryWindow
+from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.claim_refusals import CLAIMS_STREAM
 from starpulse.board.model.seam import (
     Board,
@@ -340,7 +340,7 @@ def scheduler_remote(config: Config, base: Path, feed: BoardFeed, log: EventLog,
     from starpulse.scheduler.adapters.remote import Remote, follow_status
 
     follow_status(log, feed, stop)
-    return Remote(log, base / (config.scheduler.state_dir or ""))
+    return Remote(log)
 
 
 #: The first file descriptor a service manager passes (`sd_listen_fds(3)`): 0, 1 and 2 are stdio.
