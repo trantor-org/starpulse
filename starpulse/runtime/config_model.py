@@ -110,6 +110,14 @@ class ProducerFile(_Table):
         description="The drawn machines it may write; leave out with `actors` for a producer that only reports runs.",
     )
     actors: list[str] = Field(default=[], description="The actors it may write as.")
+    adapter: str | None = Field(
+        default=None,
+        min_length=1,
+        description=(
+            "A run adapter type whose own status labels its Step events carry, read through that adapter's "
+            "`status_of`."
+        ),
+    )
 
 
 class RepoFile(_Table):

@@ -9,10 +9,11 @@ Each model is also published as a JSON Schema under `schemas/`, regenerated with
 
 from __future__ import annotations
 
+import uuid
 from pathlib import Path
 from typing import Any, Literal, Protocol, Self
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
 from starpulse.contracts.task_keys import TaskKeys
 
@@ -23,6 +24,7 @@ __all__ = [
     "SCHEMAS",
     "ActiveRun",
     "BoardTask",
+    "CloudEvent",
     "Cpu",
     "Dag",
     "LaneEvent",
@@ -126,7 +128,9 @@ class BoardTask(_Contract):
         description="When the board saw the task in this state, in epoch seconds; None when it does not say. A move "
         "read live is dated by it, not by when StarPulse read it.",
     )
-    profile: str = Field(default="", description="Which agent profile or model the task is routed to; empty when unrouted.")
+    profile: str = Field(
+        default="", description="Which agent profile or model the task is routed to; empty when unrouted."
+    )
     assignee: str = Field(
         default="",
         description="The session that last claimed the task, as its harness names it; empty when none has. `profile` is who or which agent model the task is for.",
@@ -196,6 +200,35 @@ class MachineEvent(_Contract):
         if (self.task is None) == (self.run is None):
             raise ValueError("key a machine event by exactly one of task or run")
         return self
+
+
+class CloudEvent(BaseModel):
+    """One CloudEvents 1.0 structured event, as a producer builds it and the ingest (`POST /api/machine-events`) reads it.
+
+    `subject` is the task a machine event moves, or the run id of a Step event; `machine`, `actor` and `run` are the
+    ingest's extensions. An attribute the spec lets a producer add beyond these is ignored.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    specversion: Literal["1.0"] = "1.0"
+    id: str = Field(
+        default_factory=lambda: str(uuid.uuid4()), min_length=1, description="The event id; a post sent again keeps it."
+    )
+    source: str = Field(min_length=1, description="The producer's own name.")
+    type: str = Field(min_length=1, description="The machine's event, or StepStarted or StepFinished for a run.")
+    subject: str | None = Field(default=None, min_length=1)
+    time: AwareDatetime | None = Field(
+        default=None, description="RFC 3339 with an offset; the ingest's clock when absent."
+    )
+    machine: str | None = Field(default=None, min_length=1)
+    actor: str | None = Field(default=None, min_length=1)
+    run: str | None = Field(default=None, min_length=1)
+    data: dict[str, Any] | None = None
+
+    def wire(self) -> dict[str, Any]:
+        """The JSON object a producer posts: only the attributes the event sets."""
+        return self.model_dump(mode="json", exclude_none=True)
 
 
 #: Every status a run or a step reports: an adapter maps its engine's states onto these and may keep the engine's own in `raw`.
@@ -314,7 +347,8 @@ class RecentRun(_Contract):
 
     run_id: str = Field(alias="runId", description="The run's id.")
     task: str | None = Field(
-        default=None, description="The Board task a `dag-run-task-<N>-<ts>` run id names (`TASK-N`); None for any other run."
+        default=None,
+        description="The Board task a `dag-run-task-<N>-<ts>` run id names (`TASK-N`); None for any other run.",
     )
     url: str = Field(default="", description="A link to the run in the scheduler's own page; empty when it has none.")
     status: RunStatus = Field(description="The run's status.")
@@ -324,9 +358,7 @@ class RecentRun(_Contract):
     started_at: str = Field(
         alias="startedAt", description="When the run started, ISO 8601 UTC (`2026-10-02T17:00:00Z`)."
     )
-    finished_at: str = Field(
-        alias="finishedAt", description="When the run ended, ISO 8601 UTC; empty while it runs."
-    )
+    finished_at: str = Field(alias="finishedAt", description="When the run ended, ISO 8601 UTC; empty while it runs.")
     params: dict[str, str] = Field(
         description="The `KEY=value` parameters the run started with, by name; empty when it had none."
     )
@@ -427,7 +459,8 @@ class LaneEvent(_Contract):
     milestone: str = Field(default="", description="The task's milestone; empty when it has none.")
     labels: tuple[str, ...] = Field(default=(), description="The task's labels; empty when it has none.")
     profile: str = Field(
-        default="", description="Which agent profile or model the task was routed to; empty when unrouted, and a person's name."
+        default="",
+        description="Which agent profile or model the task was routed to; empty when unrouted, and a person's name.",
     )
     assignee: str = Field(
         default="", description="The legacy name of `profile`, read on an entry an older instance wrote."
@@ -439,7 +472,8 @@ class LaneEvent(_Contract):
         "(a hand edit of the board, a board adapter that records at placement); empty on an entry that predates actors.",
     )
     session: str = Field(
-        default="", description="The harness session that made the move, as its write named it; empty when it named none."
+        default="",
+        description="The harness session that made the move, as its write named it; empty when it named none.",
     )
     harness: str = Field(
         default="", description="The harness (`claude`, `cursor`) of that session; empty when the write named none."

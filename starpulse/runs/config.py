@@ -37,3 +37,6 @@ class Producer:
     token_env: str
     machines: tuple[str, ...]
     actors: tuple[str, ...]
+    adapter: str | None = None
+    """A run Adapter type (`[[runs]]` `type`) whose own status labels this producer's Step events carry; the ingest reads
+    each through that adapter's `status_of`, so a hook posts its system's label as it is."""

@@ -49,6 +49,7 @@ PUBLIC: dict[str, set[str]] = {
         "SCHEMAS",
         "ActiveRun",
         "BoardTask",
+        "CloudEvent",
         "Dag",
         "LaneEvent",
         "MachineEvent",

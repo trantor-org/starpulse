@@ -378,6 +378,15 @@ curl -X POST "$STARPULSE_URL/api/machine-events" \
        "time": "2026-10-18T22:00:00Z", "machine": "delivery", "actor": "ci", "data": {"sha": "abc123"}}'
 ```
 
+The same post from a shell or a scheduler hook is `starpulse event emit --source ci-bot --type BUILT --subject PROJ-1
+--machine delivery --actor ci --data sha=abc123`: it builds `starpulse.contracts.CloudEvent`, the model the ingest
+reads, and posts it to `--url` (else `STARPULSE_WRITE_URL`, `STARPULSE_URL`) with the token in
+`STARPULSE_PRODUCER_<SOURCE>_TOKEN`. It exits 0 on a 201 and 1 with the ingest's answer otherwise.
+
+A producer that reports a run system's Step events may set `adapter` to that system's run Adapter type
+(`adapter = "dagu"`): its events then carry the system's own status label in `data.status`, and the ingest reads it
+through the adapter's `status_of`, so a hook posts the label as it is and an unknown label is a 400.
+
 `application/cloudevents-batch+json` takes a JSON array of up to 200 such events. The attributes map to a
 `machine:events` entry:
 
