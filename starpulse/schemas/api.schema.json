@@ -6172,6 +6172,24 @@
       "title": "SchedulerNext",
       "type": "object"
     },
+    "SchedulerOperatorTask": {
+      "additionalProperties": false,
+      "description": "A task in the eligible lane that waits on the operator's decision rather than on capacity.",
+      "properties": {
+        "task": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "title"
+      ],
+      "title": "SchedulerOperatorTask",
+      "type": "object"
+    },
     "SchedulerPause": {
       "additionalProperties": false,
       "description": "A harness whose admission is paused until `until` after a usage or credit limit.",
@@ -6271,7 +6289,7 @@
     },
     "SchedulerStatus": {
       "additionalProperties": false,
-      "description": "Whether the scheduler admits tasks, and the capacity strip's readings; no dimensions before the first sample.\n\n`inFlight`, `next` and `sessionsByHarness` are served only by a server that runs a dispatch loop; without one they\nare absent.",
+      "description": "Whether the scheduler admits tasks, and the capacity strip's readings; no dimensions before the first sample.\n\n`inFlight`, `next`, `sessionsByHarness` and `needsOperator` are served only by a server that runs a dispatch loop; without one they\nare absent.",
       "properties": {
         "dimensions": {
           "items": {
@@ -6290,6 +6308,13 @@
           "description": "The sessions the loop started and has not finished, oldest first.",
           "items": {
             "$ref": "#/$defs/SchedulerSession"
+          },
+          "type": "array"
+        },
+        "needsOperator": {
+          "description": "The `kind-decide` tasks in the eligible lane, which the scheduler never starts: the operator decides.",
+          "items": {
+            "$ref": "#/$defs/SchedulerOperatorTask"
           },
           "type": "array"
         },

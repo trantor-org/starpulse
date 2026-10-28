@@ -36,7 +36,7 @@ from starpulse.board.model.seam import Written
 from starpulse.contracts.adapters import StartFailedError
 from starpulse.event_log.event_log import EventLog
 from starpulse.harness_telemetry.harness import HARNESS
-from starpulse.scheduler.model.admission import Decision, decide, demand, tier_of
+from starpulse.scheduler.model.admission import Decision, decide, demand, needs_operator, tier_of
 from starpulse.scheduler.model.config import Scheduler
 from starpulse.scheduler.model.harness_setting import DEFAULT as DEFAULT_HARNESS
 from starpulse.scheduler.model.harness_setting import HarnessSetting
@@ -221,6 +221,11 @@ class Loop:
         finally:
             self._events = None
             self._feed.unsubscribe(events)
+
+    def needs_operator(self) -> list[dict[str, str]]:
+        """The tasks in the eligible lane that ask the operator for a decision, which admission never starts."""
+        tasks = self._feed.open_tasks()
+        return [{"task": t["id"], "title": t["title"]} for t in tasks if t["state"] == self._lane and needs_operator(t)]
 
     def in_flight(self) -> list[dict[str, Any]]:
         """The sessions this loop started whose tasks are still running, oldest first, for `GET /api/scheduler`.

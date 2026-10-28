@@ -66,10 +66,17 @@ class SchedulerHarnessSessions(_Api):
     limit: float
 
 
+class SchedulerOperatorTask(_Api):
+    """A task in the eligible lane that waits on the operator's decision rather than on capacity."""
+
+    task: str
+    title: str
+
+
 class SchedulerStatus(_Api):
     """Whether the scheduler admits tasks, and the capacity strip's readings; no dimensions before the first sample.
 
-    `inFlight`, `next` and `sessionsByHarness` are served only by a server that runs a dispatch loop; without one they
+    `inFlight`, `next`, `sessionsByHarness` and `needsOperator` are served only by a server that runs a dispatch loop; without one they
     are absent.
     """
 
@@ -89,4 +96,8 @@ class SchedulerStatus(_Api):
     sessionsByHarness: dict[str, SchedulerHarnessSessions] = Field(
         default_factory=dict,
         description="Each harness's in-flight count against its session cap; the Sessions meter follows `harness`.",
+    )
+    needsOperator: list[SchedulerOperatorTask] = Field(
+        default_factory=list,
+        description="The `kind-decide` tasks in the eligible lane, which the scheduler never starts: the operator decides.",
     )

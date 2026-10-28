@@ -1,7 +1,10 @@
 """Admission: whether a Ready task fits the capacity left, and in what order the tasks that fit go.
 
-A task's demand is priced by what a task of its tier and size has drawn. The tasks that fit rank two ways: the enforced
-order is Priority weight times critical-path depth, and the shadow order is `value / dominant share` (Dominant Resource
+A task's demand is priced by what a task of its tier and size has drawn. A `kind-decide` task is never admitted: it
+waits on the operator. The tasks that fit rank two ways. The enforced order puts first a bug another open task waits on,
+then the other bugs (type `bug`, or labelled `board-state` or `regression`), then the tasks labelled `leverage`, and
+within each the most open tasks waiting on it directly, then the deepest critical path, the heaviest Priority weight and
+the id. The shadow order is `value / dominant share` (Dominant Resource
 Fairness), where value is that weight times depth times the chance of the goal. The shadow order is only logged beside the enforced one until a calibration
 report earns it the enforced place (`shadow=False`).
 
@@ -29,6 +32,10 @@ MIN_RUNS = 3
 PERCENT_PER_UNIT = 1.0
 #: Why a task whose profile names no tier the policy weighs is refused: a session needs a profile to run on.
 NO_PROFILE = "no agent profile"
+#: Why a `kind-decide` task is refused: only the operator can make the decision it asks for.
+NEEDS_OPERATOR = "needs_operator"
+#: The labels that mark a task a bug whatever its type: a board that shows the wrong state, or a behavior that regressed.
+BUG_LABELS = frozenset({"board-state", "regression"})
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +85,35 @@ class Decision:
     enforced_rank: int | None = None
 
 
+def needs_operator(task: Mapping[str, Any]) -> bool:
+    """Whether `task` asks the operator for a decision, which no unattended session can make."""
+    return "kind-decide" in task["labels"]
+
+
+def _dependents(tasks: Collection[Mapping[str, Any]]) -> dict[str, int]:
+    """How many open tasks wait on each task directly."""
+    counts: dict[str, int] = {}
+    for task in tasks:
+        for dependency in task["dependencies"]:
+            counts[dependency] = counts.get(dependency, 0) + 1
+    return counts
+
+
+def _enforced_key(task: Mapping[str, Any], dependents: int, decision: Decision) -> tuple[Any, ...]:
+    """Where `task` goes in the enforced order: blocking bugs, bugs, leverage, then dependents, depth, weight and id."""
+    bug = task.get("type") == "bug" or not BUG_LABELS.isdisjoint(task["labels"])
+    leverage = "leverage" in task["labels"]
+    return (
+        not (bug and dependents > 0),
+        not bug,
+        not leverage,
+        -dependents,
+        -decision.depth,
+        -decision.weight,
+        decision.task,
+    )
+
+
 def _depths(tasks: Collection[Mapping[str, Any]]) -> dict[str, int]:
     """Each task's critical-path depth: itself plus the longest chain of open tasks that wait on it, directly or not."""
     dependents: dict[str, list[str]] = {}
@@ -124,8 +160,8 @@ def _score(predictor: Callable[[str], float] | None, task: Mapping[str, Any]) ->
 
 
 def _why(blocked_by: str | None) -> str:
-    """The refusal a log line gives: the dimension that is full, or the missing profile."""
-    return blocked_by if blocked_by == NO_PROFILE else f"{blocked_by} full"
+    """The refusal a log line gives: the dimension that is full, the missing profile, or the operator's decision."""
+    return blocked_by if blocked_by in (NO_PROFILE, NEEDS_OPERATOR) else f"{blocked_by} full"
 
 
 def decide(
@@ -143,7 +179,8 @@ def decide(
 ) -> list[Decision]:
     """A decision for each workable task of `tasks` in `lane`, the admitted first in enforced order, then the refused.
 
-    A task whose profile names no tier in the policy's weights is refused `NO_PROFILE`, whatever room is left.
+    A task whose profile names no tier in the policy's weights is refused `NO_PROFILE`, and a `kind-decide` task
+    `NEEDS_OPERATOR`, whatever room is left.
 
     `tasks` are all the open tasks, because a task's depth counts the ones waiting on it in other lanes. `chain` is the
     trajectory analytics' chain (`trajectory_analytics(...)["chain"]`); `p_goals` is each task's forecast chance of the
@@ -151,18 +188,20 @@ def decide(
     With `shadow` on, the predictor's score and P(goal) rank only the shadow order; off, that order is enforced. Each
     decision is logged unless `log` is off, as for a read that only looks.
     """
-    depths = _depths(tasks)
+    depths, dependents = _depths(tasks), _dependents(tasks)
     limits = {reading.name: reading.limit for reading in readings}
     headroom = {reading.name: reading.limit - reading.use for reading in readings}
     lane_p_goal = chain.get(lane, {}).get("p_goal", 1.0)
     chances = p_goals or {}
-    decisions, values = [], {}
+    decisions, values, keys = [], {}, {}
     for task in tasks:
         if task["state"] != lane or not task["workable"]:
             continue
         need = demand(task, policy, ledger)
-        if tier_of(task) not in policy.tier_weights:
-            blocked_by: str | None = NO_PROFILE
+        if needs_operator(task):
+            blocked_by: str | None = NEEDS_OPERATOR
+        elif tier_of(task) not in policy.tier_weights:
+            blocked_by = NO_PROFILE
         else:
             blocked_by = next((name for name in DIMENSIONS if need[name] > headroom[name]), None)
         score = _score(predictor, task)
@@ -173,11 +212,12 @@ def decide(
         )
         share = max(need[name] / limits[name] for name in DIMENSIONS)
         values[decision.task] = decision.weight * decision.depth * (p_goal if score is None else score) / share
+        keys[decision.task] = _enforced_key(task, dependents.get(decision.task, 0), decision)
         decisions.append(decision)
     admitted = [d for d in decisions if d.admitted]
     by_shadow = sorted(admitted, key=lambda d: (-values[d.task], -d.depth, d.task))
-    by_weighted_depth = sorted(admitted, key=lambda d: (-d.weight * d.depth, d.task))
-    enforced = by_weighted_depth if shadow else by_shadow
+    by_rule = sorted(admitted, key=lambda d: keys[d.task])
+    enforced = by_rule if shadow else by_shadow
     shadow_rank = {d.task: rank for rank, d in enumerate(by_shadow, 1)}
     enforced_rank = {d.task: rank for rank, d in enumerate(enforced, 1)}
     ranked = [replace(d, shadow_rank=shadow_rank[d.task], enforced_rank=enforced_rank[d.task]) for d in enforced]
