@@ -1,7 +1,7 @@
 name: CI
 
 # The nightly suite and a manual dispatch run every job in full. A pull request and a merge-queue candidate get their
-# checks (`python`, `web`, `static-checks`, `build`) from the sp-ci Dagu DAG, not from this workflow. A push to main
+# checks (`python`, `web`, `static-checks`, `build`) from the sp-ci Dagu DAG (its `ci-sp-*` check runs), not from this workflow. A push to main
 # runs none: the merge queue tested its candidate.
 on:
   push:
