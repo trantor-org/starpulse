@@ -131,6 +131,7 @@ from starpulse.board.model.seam import (
     AssigneeWriter,
     Board,
     MoveWriter,
+    OPERATOR,
     TaskArchiver,
     TaskCompleter,
     TaskCreator,
@@ -179,6 +180,9 @@ if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler i
     from starpulse.scheduler.adapters.runtime import Runtime
 
 logger = logging.getLogger(__name__)
+
+#: Starts the session a `StartRequest` names; `move_task` calls it for the operator's move of an unheld task.
+Starter = Callable[[StartRequest], tuple[int, dict[str, Any]]]
 
 #: Modes `POST /api/start` accepts; `interactive` is the Start-session default.
 _START_MODES = frozenset({"interactive", "headless"})
@@ -386,22 +390,27 @@ def _record_written(feed: BoardFeed | None, task: str | None, who: _Who, write: 
 
 
 @_write(MoveRequest, "Moving a task")
-def move_task(request: MoveRequest, feed: BoardFeed, writer: MoveWriter) -> tuple[int, dict[str, Any]]:
+def move_task(
+    request: MoveRequest, feed: BoardFeed, writer: MoveWriter, start: Starter | None = None
+) -> tuple[int, dict[str, Any]]:
     """Move the task `request` names, or each of its `tasks`, to the column it names, through `writer`: the HTTP status
     and JSON body. A batch answers 200 with the tasks moved and each refused one's error, so one refusal leaves the
     others moved.
 
     The board machine's exits from the task's state decide which columns are offered; the writer decides which
     it accepts, so a guard that changed since the snapshot still refuses.
+
+    The operator's move of one unheld task into the working state also starts a session through `start`, on the
+    task's own profile: the answer names its `url`, or the `startError` that kept it from starting. A batch move starts none.
     """
     who = _who(request)
     if request.task is not None:
-        return _move_one(feed, request.task, request.to, who, writer)
+        return _move_one(feed, request.task, request.to, who, writer, start)
     if request.tasks is None:
         return 400, {"error": "invalid request: task: Field required"}
     moved, refused = [], {}
     for task in request.tasks or ():
-        status, body = _move_one(feed, task, request.to, who, writer)
+        status, body = _move_one(feed, task, request.to, who, writer, None)
         if status == 200:
             moved.append(task)
         else:
@@ -409,11 +418,22 @@ def move_task(request: MoveRequest, feed: BoardFeed, writer: MoveWriter) -> tupl
     return 200, {"moved": moved, "refused": refused}
 
 
-def _move_one(feed: BoardFeed, task: str, column: str, who: _Who, writer: MoveWriter) -> tuple[int, dict[str, Any]]:
+def _move_one(
+    feed: BoardFeed, task: str, column: str, who: _Who, writer: MoveWriter, start: Starter | None
+) -> tuple[int, dict[str, Any]]:
     """Move the `task` the board holds to `column` as `who` for `move_task`: the HTTP status and JSON body."""
     if (agent := _held(feed, task)) is None:
         return _not_held(feed, task)
-    return _move(feed, agent, task, column, who, writer)
+    status, body = _move(feed, agent, task, column, who, writer)
+    if status == 200 and start is not None and _dragged_unheld(feed, agent, column, who):
+        started_status, started = start(StartRequest(task=task, profile=agent.get("model") or None))
+        body = {**body, **({"url": started["url"]} if started_status == 200 else {"startError": started["error"]})}
+    return status, body
+
+
+def _dragged_unheld(feed: BoardFeed, agent: dict, column: str, who: _Who) -> bool:
+    """Whether the operator moved a task no session holds into the working state: the move that starts its session."""
+    return who.actor == OPERATOR and column == feed.roles.working and not agent.get("assignee")
 
 
 def _status(column: str) -> str:
@@ -1175,8 +1195,7 @@ def restore_doc(request: DocRestoreRequest, board: Board | None) -> tuple[int, d
     return 200, {"doc": doc}
 
 
-@_write(StartRequest, "Starting a session")
-def start_task(
+def start_requested(
     request: StartRequest,
     feed: BoardFeed,
     assign: AssigneeWriter,
@@ -1190,6 +1209,8 @@ def start_task(
     A changed profile is saved through the guarded writer first, since the session-start service reads the
     profile from the task. `harness` selects which configured harness opens the session; `mode` defaults to
     `interactive`. `at` is when the start began, so the page applies only a refused claim made after it.
+
+    A task In Progress starts only when no session holds it: its claim was never made or the claim TTL released it.
     """
     task = request.task
     profile = request.profile if request.profile is not None else request.assignee
@@ -1212,7 +1233,12 @@ def start_task(
     if (agent := _held(feed, task)) is None:
         return _not_held(feed, task)
     startable = feed.roles.startable
-    if agent["state"] not in startable:
+    if agent["state"] == feed.roles.working:
+        if holder := agent.get("assignee"):
+            return 409, {
+                "error": f"{task} is held by {holder}: a session starts an In Progress task only once its claim is released"
+            }
+    elif agent["state"] not in startable:
         listed = [state for state in feed.roles.roles if state in startable]
         names = " or ".join(filter(None, [", ".join(listed[:-1]), *listed[-1:]]))
         return 409, {"error": f"{task} is in {agent['state']}: a session starts only a {names} task"}
@@ -1227,6 +1253,19 @@ def start_task(
         return 200, {"task": task, "url": session, "at": at}
     except StartFailedError as exc:
         return 502, {"error": str(exc)}
+
+
+@_write(StartRequest, "Starting a session")
+def start_task(
+    request: StartRequest,
+    feed: BoardFeed,
+    assign: AssigneeWriter,
+    start_session: Callable[..., str] | None,
+    harnesses: Harnesses | None = None,
+    clock: Callable[[], float] = time.time,
+) -> tuple[int, dict[str, Any]]:
+    """`POST /api/start`: `start_requested` for the request body a page or a client posts."""
+    return start_requested(request, feed, assign, start_session, harnesses, clock)
 
 
 @_write(WindowRequest, "The history window")
