@@ -68,14 +68,15 @@ def _midnight(at: float) -> float:
 
 
 def is_cold(agent: dict) -> bool:
-    """Whether the agent is a cold done task: its id, state and entered time, with the record left on the Board."""
+    """Whether the agent is a cold done task: its id, state, entered time and moves, with the record left on the Board."""
     return "title" not in agent
 
 
 def cooled(agent: dict, clock: Callable[[], float], done: str | None) -> dict:
-    """The agent, or its cold stub when it entered the `done` state before local midnight by `clock`."""
+    """The agent, or its cold stub when it entered the `done` state before local midnight by `clock`; the stub keeps
+    its moves, so a reopen is still offered."""
     if agent["state"] == done and agent["entered"] < _midnight(clock()):
-        return {"id": agent["id"], "state": agent["state"], "entered": agent["entered"]}
+        return {"id": agent["id"], "state": agent["state"], "entered": agent["entered"], "moves": agent.get("moves", {})}
     return agent
 
 
