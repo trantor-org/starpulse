@@ -360,7 +360,7 @@ def test_a_store_save_moves_the_task_while_the_projection_is_still_blocked(
     feed = BoardFeed(roles=ROLES, machines=MACHINES)
     board = Board(feed, task("TASK-1", "Review", references=(PR_ONE,)))
     store.save([pull(1, state="OPEN")])
-    delivery = SimpleNamespace(edit=board.edit, waits=WAITS, evaluate=None, holds=None)
+    delivery = SimpleNamespace(edit=board.edit, waits=WAITS, evaluate=None, holds=None, parked=None)
     monkeypatch.setattr(server.shutil, "which", lambda name: name)
     monkeypatch.setattr(server, "moves_of", lambda machine: MOVES)
     monkeypatch.setattr(server, "PullRequests", _BlockedProjection)
@@ -393,7 +393,7 @@ def test_a_merge_of_a_pr_added_after_startup_moves_the_task_to_done(
     feed = BoardFeed(roles=ROLES, machines=MACHINES, read_model=ReadModel(engine))
     board = Board(feed)
     store.save([pull(1, state="OPEN")])
-    delivery = SimpleNamespace(edit=board.edit, waits=WAITS, evaluate=None, holds=None)
+    delivery = SimpleNamespace(edit=board.edit, waits=WAITS, evaluate=None, holds=None, parked=None)
     monkeypatch.setattr(server.shutil, "which", lambda name: name)
     monkeypatch.setattr(server, "moves_of", lambda machine: MOVES)
     monkeypatch.setattr(server, "PullRequests", _BlockedProjection)
@@ -435,7 +435,7 @@ def test_a_read_model_task_whose_cited_pr_merged_before_startup_moves_to_done(
     feed = BoardFeed(roles=ROLES, machines=MACHINES, read_model=ReadModel(engine))
     board = Board(feed)
     store.save([pull(1, state="MERGED")])
-    delivery = SimpleNamespace(edit=board.edit, waits=WAITS, evaluate=None, holds=None)
+    delivery = SimpleNamespace(edit=board.edit, waits=WAITS, evaluate=None, holds=None, parked=None)
     monkeypatch.setattr(server.shutil, "which", lambda name: name)
     monkeypatch.setattr(server, "moves_of", lambda machine: MOVES)
     monkeypatch.setattr(server, "PullRequests", _BlockedProjection)
@@ -471,3 +471,70 @@ def test_a_review_task_whose_pr_is_merged_with_no_merge_time_stays_open(
     actor.pulls_changed()
 
     assert not until(lambda: board.moved() != [], within=0.3)
+
+
+#: The lanes that park on an open dependency, and the return a task with a delivery takes: Review rather than Ready.
+PARKING_WAITS = {
+    **WAITS,
+    "in_progress": {"deps_unresolved": "WAIT_ON_DEPS"},
+    "review": {"pr_terminal": "MERGED", "deps_unresolved": "WAIT_ON_DEPS"},
+    "waiting": {"deps_done_with_pr": "DEPS_DONE_REVIEW", "deps_done": "DEPS_DONE", "criteria_met": "CRITERIA_MET"},
+}
+PARKING_MOVES = {
+    **MOVES,
+    ("in_progress", "WAIT_ON_DEPS"): "waiting",
+    ("review", "WAIT_ON_DEPS"): "waiting",
+    ("waiting", "DEPS_DONE_REVIEW"): "review",
+}
+
+
+def test_a_review_task_given_an_open_dependency_waits_and_returns_to_review_when_it_is_done(
+    store: PullStore, stop: threading.Event
+) -> None:
+    board = Board(BoardFeed(), task("TASK-1", "In Progress"), task("TASK-2", "Review", references=(PR_ONE,)))
+    store.save([pull(1, state="OPEN")])
+    running(board, store, stop, PARKING_WAITS, PARKING_MOVES)
+
+    board.put(task("TASK-2", "Review", references=(PR_ONE,), dependencies=("TASK-1",)))
+    assert until(lambda: board.moved() == [("TASK-2", "waiting")])
+
+    board.put(task("TASK-1", "Done"))
+    assert until(lambda: board.moved() == [("TASK-2", "waiting"), ("TASK-2", "review")])
+
+
+def test_a_waiting_task_without_a_pull_request_returns_to_ready_when_its_dependency_is_done(
+    store: PullStore, stop: threading.Event
+) -> None:
+    board = Board(BoardFeed(), task("TASK-1", "In Progress"), task("TASK-2", "Waiting", dependencies=("TASK-1",)))
+    running(board, store, stop, PARKING_WAITS, PARKING_MOVES)
+
+    board.put(task("TASK-1", "Done"))
+
+    assert until(lambda: board.moved() == [("TASK-2", "ready")])
+
+
+def test_an_in_progress_task_given_an_open_dependency_waits_and_its_holder_is_told(
+    store: PullStore, stop: threading.Event
+) -> None:
+    told: list[str] = []
+    board = Board(BoardFeed(roles=ROLES), task("TASK-1", "Ready"), task("TASK-2", "In Progress"))
+    running(board, store, stop, PARKING_WAITS, PARKING_MOVES, parked=told.append)
+
+    board.put(task("TASK-2", "In Progress", dependencies=("TASK-1",)))
+
+    assert until(lambda: board.moved() == [("TASK-2", "waiting")])
+    assert until(lambda: told == ["TASK-2"])
+
+
+def test_a_review_task_given_an_open_dependency_tells_no_holder(store: PullStore, stop: threading.Event) -> None:
+    told: list[str] = []
+    board = Board(
+        BoardFeed(roles=ROLES), task("TASK-1", "Ready"), task("TASK-2", "Review", references=(PR_ONE,))
+    )
+    store.save([pull(1, state="OPEN")])
+    running(board, store, stop, PARKING_WAITS, PARKING_MOVES, parked=told.append)
+
+    board.put(task("TASK-2", "Review", references=(PR_ONE,), dependencies=("TASK-1",)))
+
+    assert until(lambda: board.moved() == [("TASK-2", "waiting")])
+    assert told == []

@@ -143,6 +143,7 @@ class TaskActor:
         clock: Callable[[], float] = time.monotonic,
         evaluate: Callable[[str, str], list[dict[str, Any]]] | None = None,
         holds: Callable[[str], Sequence[str]] | None = None,
+        parked: Callable[[str], None] | None = None,
         fresh_s: float = criteria.CACHE_SECONDS,
         live: LiveBuild | None = None,
         advance: Callable[[str, str, str], None] | None = None,
@@ -160,6 +161,7 @@ class TaskActor:
         self._clock = clock
         self._evaluate = evaluate
         self._holds = holds
+        self._tell = parked
         self._fresh_s = fresh_s
         #: The lanes that wait on a task's Start Criteria.
         self._gated_lanes = {lane for lane, facts in waits.items() if facts.keys() & set(_CRITERIA_FACTS)}
@@ -480,13 +482,16 @@ class TaskActor:
             sent = (agent["state"], event, evidence)
             if self._tried.get(name) != sent:
                 self._tried[name] = sent
-                self._write(name, target, comment, observed)
+                self._write(name, target, comment, observed, source=agent["state"])
             return
 
-    def _write(self, name: str, target: str, comment: str, observed: float) -> None:
+    def _write(self, name: str, target: str, comment: str, observed: float, source: str) -> None:
         written = self._apply(name, {"status": target}, comment)
         if written.ok:
             self._landed(self._clock() - observed)
+            roles = self._feed.roles
+            if self._tell and source == roles.working and target == roles.waiting:
+                self._tell_parked(name)
             return
         logger.warning("task actor: %s was not moved to %s: %s", name, target, written.output)
         if target == self._feed.roles.ready:
@@ -504,6 +509,13 @@ class TaskActor:
         written = self._apply(name, {}, f"{LINT_REFUSED} {refusal.rstrip('.')}.")
         if not written.ok:
             logger.warning("task actor: the lint refusal of %s was not commented: %s", name, written.output)
+
+    def _tell_parked(self, name: str) -> None:
+        """Tell whoever works a task the actor just moved from the working lane to Waiting; a failure is logged only."""
+        try:
+            self._tell(name)
+        except Exception:  # the move stands; the board's `parked` hook is a notice, not part of the write
+            logger.exception("task actor: %s was parked but its holder was not told", name)
 
     def _park(self, name: str, refusal: str) -> None:
         """Write a task whose release to Ready was refused to Needs attention, with the refusal as its reason."""
@@ -591,6 +603,10 @@ class TaskActor:
             return None
         return dependencies, "Every dependency has merged."
 
+    def _deps_done_with_pr(self, agent: dict[str, Any]) -> tuple[Any, str] | None:
+        """`deps_done` for a task that cites a ready or merged pull request, which a state returns to Review rather than Ready."""
+        return self._deps_done(agent) if self._pr_ready(agent) else None
+
     def _held_by(self, name: str) -> tuple[str, ...]:
         """Why the board adapter withholds the task's `deps_done`; a hold that raises holds it with that error."""
         if self._holds is None:
@@ -649,6 +665,7 @@ class TaskActor:
         "pr_merged": _pr_merged,
         "pr_ready": _pr_ready,
         "deps_done": _deps_done,
+        "deps_done_with_pr": _deps_done_with_pr,
         "deps_unresolved": _deps_unresolved,
         "criteria_met": _criteria_met,
         "criteria_unmet": _criteria_unmet,

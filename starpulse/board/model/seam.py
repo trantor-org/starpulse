@@ -270,6 +270,9 @@ class Board:
     holds: Callable[[str], Sequence[str]] | None = None
     """Why the board withholds a task's `deps_done` from the task actor, given its id; empty when nothing does, and an
     exception holds the task. None holds no task."""
+    parked: Callable[[str], None] | None = None
+    """Tells whoever works a task that the task actor moved it from the working lane to Waiting, given its id; a raise is
+    logged and the move stands. None tells no one."""
     attach: Callable[[EventLog], None] | None = None
     """What a context that reads the Board from the read model, and so never calls `start`, needs of the event log the
     adapter would have been handed there; None needs nothing."""
