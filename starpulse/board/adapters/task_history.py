@@ -5,6 +5,7 @@ with no History yet is seeded with a `TaskImported` of its record before the wri
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -248,4 +249,5 @@ class TaskHistory:
 
     @staticmethod
     def _new(kind: str, payload: dict[str, Any], actor: str) -> NewEvent:
-        return NewEvent(kind, payload, actor, BREAK_GLASS if _break_glass.get() else WRITER)
+        stored = json.loads(json.dumps(payload, default=str))  # a front matter date is a datetime, which JSON cannot hold
+        return NewEvent(kind, stored, actor, BREAK_GLASS if _break_glass.get() else WRITER)
