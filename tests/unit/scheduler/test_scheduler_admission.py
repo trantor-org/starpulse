@@ -6,7 +6,14 @@ from typing import Any
 
 import pytest
 from starpulse.event_log.event_log import EventLog
-from starpulse.scheduler.model.admission import MIN_RUNS, NO_PROFILE, decide, demand, ranks_from_trajectories_body
+from starpulse.scheduler.model.admission import (
+    MIN_RUNS,
+    NEEDS_OPERATOR,
+    NO_PROFILE,
+    decide,
+    demand,
+    ranks_from_trajectories_body,
+)
 from starpulse.scheduler.model.config import DIMENSIONS, Scheduler
 from starpulse.scheduler.model.ledger import Ledger, RunRecord
 from starpulse.scheduler.model.sampler import Reading
@@ -235,29 +242,138 @@ def test_a_predictor_that_fails_leaves_the_decision_without_a_score(ledger: Ledg
     assert (decision.admitted, decision.predictor) == (True, None)
 
 
-def test_a_high_priority_leaf_outranks_a_deeper_low_priority_chain(ledger: Ledger) -> None:
+def test_open_dependents_outrank_priority_weight(ledger: Ledger) -> None:
     tasks = [
-        _task("CHAIN", impact="low", urgency="low"),  # weight 1 x depth 3
+        _task("CHAIN", impact="low", urgency="low"),  # weight 1, one task waits on it
         _task("MID", deps=("CHAIN",), state="waiting"),
-        _task("END", deps=("MID",), state="waiting"),
-        _task("LEAF", impact="high", urgency="high"),  # weight 9 x depth 1
+        _task("LEAF", impact="high", urgency="high"),  # weight 9, nothing waits on it
     ]
 
     decisions = _decide(tasks, ledger)
 
-    assert _by_rank(decisions, "enforced_rank") == ["LEAF", "CHAIN"]
+    assert _by_rank(decisions, "enforced_rank") == ["CHAIN", "LEAF"]
     assert {d.task: d.priority for d in decisions} == {"CHAIN": "low/low", "LEAF": "high/high"}
 
 
 def test_a_task_with_no_impact_or_urgency_ranks_with_the_matrixs_default_weight(ledger: Ledger) -> None:
     policy = Scheduler(lane="ready", priority_matrix={**Scheduler().priority_matrix, "default": 3})
     tasks = [
-        _task("BARE"),  # no Impact or Urgency: the default weight 3 x depth 1
-        _task("LOW", impact="low", urgency="low"),  # weight 1 x depth 2
-        _task("AFTER", deps=("LOW",), state="waiting"),
+        _task("LOW", impact="low", urgency="low"),  # weight 1
+        _task("BARE"),  # no Impact or Urgency: the default weight 3
     ]
 
     decisions = decide(tasks, "ready", _readings(policy), policy, {}, ledger)
 
     assert _by_rank(decisions, "enforced_rank") == ["BARE", "LOW"]
     assert next(d for d in decisions if d.task == "BARE").priority == "default"
+
+
+def test_a_bug_another_task_waits_on_goes_ahead_of_every_other_task(ledger: Ledger) -> None:
+    tasks = [
+        _task("A-BUG", type="bug"),
+        _task("Z-BLOCKING", type="bug"),
+        _task("WAITS", deps=("Z-BLOCKING",), state="waiting"),
+        _task("LEVER", labels=["size-8", "leverage"]),
+        _task("DEEP"),
+        _task("DEEP-1", deps=("DEEP",), state="waiting"),
+        _task("DEEP-2", deps=("DEEP",), state="waiting"),
+    ]
+
+    assert _by_rank(_decide(tasks, ledger), "enforced_rank") == ["Z-BLOCKING", "A-BUG", "LEVER", "DEEP"]
+
+
+@pytest.mark.parametrize("marks", [{"type": "bug"}, {"labels": ["size-8", "board-state"]}, {"labels": ["regression"]}])
+def test_a_bug_by_type_or_by_its_board_state_or_regression_label_goes_ahead_of_a_task_with_dependents(
+    ledger: Ledger, marks: dict[str, Any]
+) -> None:
+    tasks = [_task("DEEP"), _task("AFTER", deps=("DEEP",), state="waiting"), _task("BUG", **marks)]
+
+    assert _by_rank(_decide(tasks, ledger), "enforced_rank") == ["BUG", "DEEP"]
+
+
+def test_a_leverage_label_goes_after_the_bugs_and_ahead_of_a_task_with_dependents(ledger: Ledger) -> None:
+    tasks = [
+        _task("DEEP"),
+        _task("AFTER", deps=("DEEP",), state="waiting"),
+        _task("LEVER", labels=["size-8", "leverage"]),
+        _task("BUG", type="bug"),
+    ]
+
+    assert _by_rank(_decide(tasks, ledger), "enforced_rank") == ["BUG", "LEVER", "DEEP"]
+
+
+def test_more_direct_open_dependents_outrank_a_deeper_chain(ledger: Ledger) -> None:
+    tasks = [
+        _task("WIDE"),  # two tasks wait on it directly: depth 2
+        _task("W-1", deps=("WIDE",), state="waiting"),
+        _task("W-2", deps=("WIDE",), state="waiting"),
+        _task("LONG"),  # one task waits on it, and one on that: depth 3
+        _task("L-1", deps=("LONG",), state="waiting"),
+        _task("L-2", deps=("L-1",), state="waiting"),
+    ]
+
+    assert _by_rank(_decide(tasks, ledger), "enforced_rank") == ["WIDE", "LONG"]
+
+
+def test_with_equal_dependents_the_deeper_chain_goes_first_then_the_heavier_weight_then_the_id(ledger: Ledger) -> None:
+    tasks = [
+        _task("SHALLOW", impact="high", urgency="high"),
+        _task("S-1", deps=("SHALLOW",), state="waiting"),
+        _task("LONG"),
+        _task("L-1", deps=("LONG",), state="waiting"),
+        _task("L-2", deps=("L-1",), state="waiting"),
+        _task("B-LEAF"),
+        _task("A-LEAF"),
+        _task("HEAVY", impact="high", urgency="high"),
+    ]
+
+    assert _by_rank(_decide(tasks, ledger), "enforced_rank") == ["LONG", "SHALLOW", "HEAVY", "A-LEAF", "B-LEAF"]
+
+
+def test_a_kind_decide_task_is_never_admitted_and_waits_on_the_operator(
+    ledger: Ledger, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level(logging.INFO, logger="starpulse.scheduler.model.admission"):
+        decisions = _decide([_task("ASK", labels=["size-1", "kind-decide"], type="bug"), _task("OK")], ledger)
+
+    assert [(d.task, d.admitted, d.blocked_by) for d in decisions] == [
+        ("OK", True, None),
+        ("ASK", False, NEEDS_OPERATOR),
+    ]
+    assert any("ASK refused (needs_operator)" in r.getMessage() for r in caplog.records)
+
+
+def test_the_bug_and_leverage_rules_leave_the_shadow_order_as_it_was(ledger: Ledger) -> None:
+    plain = _decide(_cheap_shallow_and_dear_deep(), ledger)
+    marked = _cheap_shallow_and_dear_deep()
+    marked[1] |= {"type": "bug", "labels": ["size-8", "leverage"]}
+
+    assert _by_rank(_decide(marked, ledger), "shadow_rank") == _by_rank(plain, "shadow_rank") == ["CHEAP", "DEAR"]
+
+
+def test_a_board_like_todays_starts_the_bugs_then_the_widest_stories_and_never_a_decision(ledger: Ledger) -> None:
+    """The Ready lane of 2026-10-28: two board-state bugs, stories four and two tasks wait on, and decisions to make."""
+
+    def waiting(on: str, count: int) -> list[dict[str, Any]]:
+        return [_task(f"{on}-W{n}", deps=(on,), state="waiting") for n in range(count)]
+
+    tasks = [
+        _task("TASK-9430", type="bug", labels=["size-3", "board-state"]),
+        _task("TASK-9416", type="bug"),
+        _task("TASK-9399", labels=["size-5", "regression"]),
+        _task("TASK-9266", impact="high", urgency="high"),
+        *waiting("TASK-9266", 4),
+        _task("TASK-9273"),
+        *waiting("TASK-9273", 4),
+        _task("TASK-9363", impact="high", urgency="high"),
+        *waiting("TASK-9363", 2),
+        *(_task(id, labels=["size-3", "kind-decide"]) for id in ("TASK-9280", "TASK-9381", "TASK-9407")),
+        _task("TASK-9100", impact="high", urgency="high"),  # a deep-looking leaf: nothing waits on it
+    ]
+
+    decisions = _decide(tasks, ledger)
+    order = _by_rank(decisions, "enforced_rank")
+
+    assert set(order[:3]) == {"TASK-9430", "TASK-9416", "TASK-9399"}
+    assert order[3:6] == ["TASK-9266", "TASK-9273", "TASK-9363"]
+    assert {d.task for d in decisions if d.blocked_by == NEEDS_OPERATOR} == {"TASK-9280", "TASK-9381", "TASK-9407"}

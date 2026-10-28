@@ -96,6 +96,7 @@ class Runtime:
             body["inFlight"] = self.loop.in_flight()
             body["next"] = self.loop.next_pick()
             body["sessionsByHarness"] = self.loop.sessions_by_harness()
+            body["needsOperator"] = self.loop.needs_operator()
             if pauses := self.loop.pauses():
                 body["pauses"] = pauses
         return body

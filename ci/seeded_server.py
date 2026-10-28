@@ -284,12 +284,11 @@ def native_board(directory: Path) -> Board:
     return board
 
 
-def scheduler(directory: Path, log: EventLog, feed: BoardFeed, policy: Scheduler) -> Runtime:
+def scheduler(log: EventLog, feed: BoardFeed, policy: Scheduler) -> Runtime:
     """The scheduler `GET /api/scheduler` reads, with its loop built over a starter that starts nothing, one capacity
     sample taken and no thread running: the route reads the status that sample pushed, as a served one does."""
     runtime = build_scheduler(
         policy,
-        directory,
         log,
         feed,
         lambda: HOST,
@@ -356,7 +355,7 @@ def build(
         create=None,
         read=(lambda task: row_record(model, task)) if model else (lambda task: records.get(task)),
     )
-    services = Services(scheduler=scheduler(directory, log, feed, config.scheduler))
+    services = Services(scheduler=scheduler(log, feed, config.scheduler))
     app = page_app(feed, STATIC, store, window, board, services)
     return PageServer(app, ("127.0.0.1", port)), feed, tasks
 

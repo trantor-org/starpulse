@@ -128,14 +128,16 @@ def test_an_instance_without_a_runtime_has_no_scheduler_route(tmp_path: Path) ->
     assert scheduler("127.0.0.1", "GET", b"", None)[0] == 404
 
 
-def _looping(tmp_path: Path) -> Runtime:
-    """A runtime with a dispatch loop over one Ready task and a quiet host, already sampled."""
+def _looping(tmp_path: Path, *more: BoardTask) -> Runtime:
+    """A runtime with a dispatch loop over one Ready task, and `more`, and a quiet host, already sampled."""
     feed = BoardFeed(roles=ROLES, machines={**MACHINES, **SESSION_MACHINES})
     feed.put(
         BoardTask(
             id="T-4", team="demo", title="Serve it", lane="ready", labels=["size-1"], profile="@agent-standard-high"
         )
     )
+    for task in more:
+        feed.put(task)
     runtime = build(
         Scheduler(lane="ready"),
         EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}"),
@@ -162,6 +164,18 @@ def test_a_get_with_a_loop_names_the_next_pick_and_lists_no_session_before_any_s
         "reason": "goes next",
         "priority": "default",
     }
+
+
+def test_a_get_with_a_loop_lists_the_kind_decide_tasks_that_wait_on_the_operator(tmp_path: Path) -> None:
+    assert scheduler("127.0.0.1", "GET", b"", _looping(tmp_path))[1]["needsOperator"] == []
+    decision = BoardTask(
+        id="T-5", team="demo", title="Pick one", lane="ready", labels=["kind-decide"], profile="@agent-standard-high"
+    )
+
+    body = scheduler("127.0.0.1", "GET", b"", _looping(tmp_path / "with", decision))[1]
+
+    assert body["needsOperator"] == [{"task": "T-5", "title": "Pick one"}]
+    assert body["next"]["task"] == "T-4"
 
 
 def test_a_get_with_a_loop_lists_each_started_session_and_no_pick_once_nothing_is_left(tmp_path: Path) -> None:

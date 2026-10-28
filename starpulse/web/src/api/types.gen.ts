@@ -1060,7 +1060,7 @@ export interface StripBucket {
 /**
  * Whether the scheduler admits tasks, and the capacity strip's readings; no dimensions before the first sample.
  *
- * `inFlight`, `next` and `sessionsByHarness` are served only by a server that runs a dispatch loop; without one they
+ * `inFlight`, `next`, `sessionsByHarness` and `needsOperator` are served only by a server that runs a dispatch loop; without one they
  * are absent.
  */
 export interface SchedulerStatus {
@@ -1074,6 +1074,10 @@ export interface SchedulerStatus {
    * The sessions the loop started and has not finished, oldest first.
    */
   inFlight?: SchedulerSession[];
+  /**
+   * The `kind-decide` tasks in the eligible lane, which the scheduler never starts: the operator decides.
+   */
+  needsOperator?: SchedulerOperatorTask[];
   /**
    * Null when no task in the eligible lane is workable.
    */
@@ -1120,6 +1124,13 @@ export interface SchedulerSession {
    * The session's address, as `start` answered it.
    */
   url: string;
+}
+/**
+ * A task in the eligible lane that waits on the operator's decision rather than on capacity.
+ */
+export interface SchedulerOperatorTask {
+  task: string;
+  title: string;
 }
 /**
  * The task the loop would admit next, or, when none fits, the top-ranked one and what it waits on.

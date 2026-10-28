@@ -129,6 +129,7 @@ class Rig:
         deps: tuple[str, ...] = (),
         impact: str = "",
         urgency: str = "",
+        labels: tuple[str, ...] = (),
     ) -> None:
         self.feed.put(
             BoardTask(
@@ -136,7 +137,7 @@ class Rig:
                 team="demo",
                 title=task,
                 lane=lane,
-                labels=[f"size-{size}"],
+                labels=[f"size-{size}", *labels],
                 profile=PROFILE,
                 dependencies=deps,
                 impact=impact,
@@ -481,8 +482,7 @@ def test_next_pick_is_the_task_admission_would_start_with_its_reason(rig: Rig) -
 
 def test_next_pick_names_the_priority_it_ranked_by(rig: Rig) -> None:
     rig.put("T-1", impact="low", urgency="low")
-    rig.put("T-2", impact="high", urgency="high")  # a leaf, but its weight outranks T-1's
-    rig.put("T-3", lane="to_do", deps=("T-1",))
+    rig.put("T-2", impact="high", urgency="high")  # nothing waits on either: its weight outranks T-1's
     rig.sampler.sample()
 
     assert rig.loop.next_pick() == {
@@ -523,6 +523,15 @@ def test_next_pick_counts_a_started_run_it_will_not_pick_again(tmp_path: Path) -
         "reason": "cpu",
         "priority": "default",
     }
+
+
+def test_needs_operator_lists_the_eligible_kind_decide_tasks_the_loop_never_starts(rig: Rig) -> None:
+    rig.put("T-1", labels=("kind-decide",))
+    rig.put("T-2", lane="to_do", labels=("kind-decide",))  # not yet in the eligible lane
+    rig.put("T-3")
+
+    assert rig.loop.needs_operator() == [{"task": "T-1", "title": "T-1"}]
+    assert rig.loop.tick() == ["T-3"]
 
 
 def test_next_pick_is_none_without_a_reading_or_a_workable_task(rig: Rig) -> None:
