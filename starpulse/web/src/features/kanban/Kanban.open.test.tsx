@@ -78,8 +78,8 @@ describe("opening a task's modal", () => {
     try {
       act(() => cardOf("TASK-1").click());
       expect(dialog()?.textContent).toContain("the full record's notes");
-      await settle();
-      expect(fetched).toHaveLength(2);
+      // the second read starts after the modal's effect runs, however many ticks a loaded runner takes to get there
+      await act(() => vi.waitFor(() => expect(fetched).toHaveLength(2)));
     } finally {
       fresh.mockRestore();
     }

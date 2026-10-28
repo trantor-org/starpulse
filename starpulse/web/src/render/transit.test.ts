@@ -87,6 +87,8 @@ describe("placeBranches", () => {
       const lines = T.branchLines(0), old = lines.find((l) => l.key === line.key && l.leaving), mine = lines.find((l) => l.key === fresh);
       grew ||= !!mine && mine.ext > 0;
       if (old && mine) gap = Math.min(gap, ...drawn(old).flatMap((p) => drawn(mine).map((q) => dist(p, q))));
+      // nothing is left to measure once the line has left the sky and the new phase has grown
+      if (grew && !old) break;
     }
     expect(grew, "the new phase grows").toBe(true);
     expect(gap, "clear of the line leaving").toBeGreaterThan(8);
