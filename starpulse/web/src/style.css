@@ -958,14 +958,15 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
 #kbm .dgm .tvhead { padding: 18px 54px 14px 26px; }
 #kbm .dgm h2 { display: flex; align-items: center; gap: 10px; margin: 0; padding-right: 0; }
 #kbm .dgm .tvbody { display: flex; flex-direction: column; gap: 20px; padding: 18px 26px 26px; }
-/* the page never scrolls sideways: a chart wider than the modal scales down to fit it */
-#kbm .dgm .chart { padding: 6px 0 2px; }
-#kbm .dgm .chart svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+/* the page never scrolls sideways: a chart wider than the modal scrolls inside its own box at full size, since shrunk to fit a large DAG's names go unreadable */
+#kbm .dgm .chart { padding: 6px 0 2px; overflow-x: auto; }
+#kbm .dgm .chart svg { display: block; max-width: none; margin: 0 auto; }
 #kbm .dgm .rerun { margin-top: 2px; }
 /* the step history: a line a step, its last five runs as ticks in the run's colour, an empty slot for a run not made */
 #kbm .dgm .hist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 #kbm .dgm .hist li { display: flex; align-items: center; gap: 12px; min-width: 0; }
 #kbm .dgm .hist .nm { flex: none; width: 14em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: calc(11.5px * var(--fs)); }
+#kbm .dgm .hist li.sub .nm { box-sizing: border-box; padding-left: 1.2em; }
 #kbm .dgm .hist .runs { flex: none; display: inline-flex; gap: 3px; }
 #kbm .dgm .hist .runs i { width: 14px; height: 6px; border-radius: 2px; background: transparent; border: 1px dashed var(--faint); box-sizing: border-box; }
 #kbm .dgm .hist .runs i[class] { border: 0; background: var(--slate); }
@@ -1125,8 +1126,7 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
   #kbm .modal.tv.dgm { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; border-radius: 0; border-inline: 0; }
   #kbm .dgm .tvhead { padding: 14px 44px 12px 14px; }
   #kbm .dgm .tvbody { padding: 14px; }
-  #kbm .dgm .chart { overflow-x: auto; padding-bottom: 8px; }
-  #kbm .dgm .chart svg { max-width: none; }
+  #kbm .dgm .chart { padding-bottom: 8px; }
   #kbm .dgm .tierow { flex-wrap: wrap; gap: 4px 10px; }
   #kbm .dgm .tierow .tie { max-width: 100%; }
   #kbm .dgm .tierow .lgnote { margin-left: 0; white-space: normal; }

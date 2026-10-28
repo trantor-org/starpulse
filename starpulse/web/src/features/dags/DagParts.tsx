@@ -2,7 +2,7 @@
 // the last-run line, the pool text and a Board tie's chip. Steps and links are drawn as the Star Map draws a DAG body's (boardDraw drawStars), in DAG_COLOR.
 import type { CSSProperties, ReactNode } from "react";
 import type { DagStep, Rerun } from "../../api";
-import { ago, bigPlace, chartHeight, place, stepNote, took, type DagFacts, type Phase, type Row, type Tie } from "./dagsModel";
+import { ago, bigPlace, chartHeight, place, stepLabels, stepNote, took, type DagFacts, type Phase, type Row, type Tie } from "./dagsModel";
 import { DAG_COLOR } from "../../render/draw";
 import { orbiterLook } from "../../render/boardDraw";
 import { useId } from "react";
@@ -70,15 +70,16 @@ export function chartBox(r: Row) {
 /** How many past runs a step's history strip has room for. */
 const SLOTS = 5;
 
-/** A DAG's step history: one line per step, its last runs as a strip of ticks oldest to newest in each run's status colour, an empty slot for a run not made. */
+/** A DAG's step history: one line per step, named by its chart label and indented under the step whose name it continues, its last runs as a strip of ticks oldest to newest in each run's status colour, an empty slot for a run not made. */
 export function StepHistory({ steps, rerun }: { steps: DagStep[]; rerun: Rerun | null }) {
+  const label = stepLabels(steps);
   return (
     <ul className="hist">
       {steps.map((s) => {
-        const runs = [...s.last].reverse(), note = stepNote(s, rerun);
+        const runs = [...s.last].reverse(), note = stepNote(s, rerun), sub = steps.some((o) => s.name.startsWith(`${o.name} / `));
         return (
-          <li key={s.name}>
-            <span className="nm">{s.name}</span>
+          <li key={s.name} className={sub ? "sub" : undefined}>
+            <span className="nm" title={s.name}>{label[s.name]}</span>
             <span className="runs" role="img" aria-label={runs.length ? `last runs, oldest first: ${runs.join(", ").replace(/_/g, " ")}` : "no runs yet"}>
               {Array.from({ length: SLOTS }, (_, i) => {
                 const v = runs[i - (SLOTS - runs.length)];
@@ -112,7 +113,7 @@ export function Strip({ r, w = 220, h = 20, big = false }: { r: Row; w?: number;
           <g key={s.name} className={`sd s-${v}`}>
             <StepStar x={x} y={y} r={rr} status={v} />
             {s.kind === "agent" && <circle cx={x} cy={y} r={rr + (big ? 4 : 2.5)} fill="none" stroke="var(--agent)" strokeWidth={big ? 1 : 0.7} />}
-            {big && <text x={x} y={y + (p.up(s.name) ? -14 : 22)} className={v === "running" ? "hot" : undefined}>{s.name}</text>}
+            {big && <text x={x} y={y + (p.up(s.name) ? -14 : 22)} className={v === "running" ? "hot" : undefined}>{p.label[s.name] ?? s.name}</text>}
             {big && <title>{`${s.name}: ${v.replace("_", " ")}${s.kind ? ` (${s.kind} step)` : ""}`}</title>}
           </g>
         );

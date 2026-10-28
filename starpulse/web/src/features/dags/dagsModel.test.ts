@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FRESH, bigPlace, captions, chartHeight, cpuPercent, dagData, dagFacts, filterRows, order, panes, place, places, refusal, rows, runHours, ties, type DagData } from "./dagsModel";
+import { FRESH, LABEL_MAX, bigPlace, captions, chartHeight, cpuPercent, dagData, dagFacts, filterRows, order, panes, place, places, refusal, rows, runHours, stepLabels, ties, type DagData } from "./dagsModel";
 import type { Dag, DagStep, Machine, RunStatus } from "../../api";
 
 const step = (name: string, depends: string[] = [], status: RunStatus = "succeeded"): DagStep => ({ name, depends, status, kind: null, precondition: null, lock: null, last: [] });
@@ -239,6 +239,31 @@ describe("the modal's step chart", () => {
     const p = bigPlace(steps, 0, chartHeight(2) - 12, PX150);
 
     expect(overprints(steps, p)).toEqual([]);
+  });
+
+  /** A GitHub workflow as the adapter flattens it: each job a step, then each of its steps named `<job> / <step>` in a chain. */
+  const workflow = (jobs: string[], each: string[]) => jobs.flatMap((job) => [step(job), ...each.map((s, i) => step(`${job} / ${s}`, [i ? `${job} / ${each[i - 1]}` : job]))]);
+  const JOBS = ["Build the release directory", "Switch current to the release directory", "Apply merged changes through Dagu", "Page on two consecutive failed applies"];
+  const EACH = ["Set up job", "Run actions/checkout@v4", "Post Run actions/checkout@v4", "Complete job"];
+
+  it("names a step by what follows its parent step's name, and cuts a long name to the label cap", () => {
+    const long = "x".repeat(LABEL_MAX + 10);
+    const labels = stepLabels([...workflow(JOBS.slice(0, 1), EACH), step("orphan / child"), step(long)]);
+
+    expect(labels["Build the release directory"]).toBe("Build the release directory");
+    expect(labels["Build the release directory / Set up job"]).toBe("Set up job");
+    expect(labels["orphan / child"]).toBe("orphan / child");
+    expect(labels[long]).toHaveLength(LABEL_MAX);
+    expect(labels[long].endsWith("…")).toBe(true);
+  });
+
+  it("spaces a large workflow's columns by its steps' labels, not their full names", () => {
+    const steps = workflow(JOBS, EACH);
+    const p = bigPlace(steps, 0, chartHeight(4) - 12, PX150);
+
+    // five columns: the jobs (39 characters at most) then four of labels (28 at most) need about 1500px; their full names (68) need about 3000
+    expect(p.span).toBeLessThan(1600);
+    expect(p.label["Apply merged changes through Dagu / Complete job"]).toBe("Complete job");
   });
 });
 

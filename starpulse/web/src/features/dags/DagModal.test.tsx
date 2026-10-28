@@ -226,6 +226,18 @@ describe("a DAG modal's step history and rerun safety", () => {
     expect(marks(hist()[1])).toEqual(["", "", "", "", ""]);
   });
 
+  it("names a job's step by what follows the job's name in the chart and the history, the full name in its tooltip", async () => {
+    const steps: DagStep[] = [step("Build the release directory"), step("Build the release directory / Set up job", ["Build the release directory"])];
+    await drawWith(withSteps("runs/pr-watch", steps), "pr-watch");
+
+    const star = all(".dgm .chart g.sd")[1];
+    expect(star.querySelector("text")!.textContent).toBe("Set up job");
+    expect(star.querySelector("title")!.textContent).toMatch(/^Build the release directory \/ Set up job: /);
+    expect(hist().map((li) => li.querySelector(".nm")!.textContent)).toEqual(["Build the release directory", "Set up job"]);
+    expect(hist()[1].querySelector(".nm")!.getAttribute("title")).toBe("Build the release directory / Set up job");
+    expect(hist()[1].classList.contains("sub")).toBe(true);
+  });
+
   it("shows a never-run DAG's history as an empty strip for every step", async () => {
     await draw();
     await click(row("never"));
