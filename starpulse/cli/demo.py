@@ -101,6 +101,73 @@ FINISHED_GAP_S = 1100
 #: What a step the demo seeds declares beyond its place in the graph: no precondition, no lock, no past outcomes.
 UNDECLARED = {"precondition": None, "lock": None, "last": []}
 FINISHED_STEPS = ("prepare", "run", "report")
+#: The finished DAG seeded as a GitHub workflow: each job, the jobs it needs, and the steps it took, so the DAG modal
+#: draws a graph the size of a real merge pipeline with the adapter's `job / step` names.
+GITHUB_DAG = "merge-apply"
+GITHUB_SETUP = ("Set up job", "Run actions/checkout@v5", "Install uv and the workspace dependencies")
+GITHUB_JOBS = (
+    (
+        "Detect changed components",
+        (),
+        ("Set up job", "Run actions/checkout@v5", "Compute the paths changed since the last apply"),
+    ),
+    (
+        "Apply Grafana dashboards",
+        ("Detect changed components",),
+        (*GITHUB_SETUP, "Build every changed dashboard and push it"),
+    ),
+    (
+        "Apply Grafana alerting",
+        ("Detect changed components",),
+        (*GITHUB_SETUP, "Render the alert rules and provision them"),
+    ),
+    (
+        "Apply container templates",
+        ("Detect changed components",),
+        (*GITHUB_SETUP, "Diff each template against the host"),
+    ),
+    (
+        "Apply scheduler jobs",
+        ("Detect changed components",),
+        (*GITHUB_SETUP, "Copy the changed jobs and reload the scheduler"),
+    ),
+    (
+        "Apply systemd units",
+        ("Detect changed components",),
+        (*GITHUB_SETUP, "Link the changed units and reload systemd"),
+    ),
+    (
+        "Report the applied commit",
+        (
+            "Apply Grafana dashboards",
+            "Apply Grafana alerting",
+            "Apply container templates",
+            "Apply scheduler jobs",
+            "Apply systemd units",
+        ),
+        ("Set up job", "Post the applied SHA to the deploy log"),
+    ),
+)
+
+
+def _as_github(dags: list[dict]) -> list[dict]:
+    """`dags` with a succeeded `GITHUB_DAG` drawn as the GitHub Actions adapter reads a finished run of `GITHUB_JOBS`:
+    each job a step on the jobs it needs, then its own steps in a chain after it."""
+    steps = []
+    for job, needs, taken in GITHUB_JOBS:
+        names = [job, *(f"{job} / {s}" for s in taken)]
+        steps += [
+            {
+                "name": n,
+                "depends": [names[i - 1]] if i else list(needs),
+                "status": "succeeded",
+                "kind": None,
+                **UNDECLARED,
+            }
+            for i, n in enumerate(names)
+        ]
+    github = {d["name"] for d in dags if d["name"].rpartition("/")[2] == GITHUB_DAG and d["status"] == "succeeded"}
+    return [{**d, "steps": steps} if d["name"] in github else d for d in dags]
 
 
 def _iso(at: float) -> str:
@@ -547,6 +614,7 @@ def scrub(live: dict) -> dict:
     catalog, run_safe = (
         ([], set()) if live.get("pools") else _seed_catalog(live["domains"], live["dags"] + seeded_dags, live["now"])
     )
+    seeded_dags, catalog = _as_github(seeded_dags), _as_github(catalog)
     history = _history(flows, live["now"])
     return {
         **{k: v for k, v in live.items() if k not in UNSCRUBBABLE},

@@ -225,9 +225,10 @@ export function took(a: number, b: number) {
 
 /** Steps placed by depth (longest path from a root): one column per depth, a wide fan folded into a small cluster of `rows`-high
  *  sub-columns `sub` apart, the columns spread `gap` apart at most so the whole fits `w`. With `px` (a label's width per character)
- *  each gap first makes room for its two columns' names: in full beside a stacked column, and in half between two single steps,
- *  whose names then alternate above and below (`up`). */
-export function place(steps: DagStep[], w: number, h: number, pad: number, rows: number, sub: number, gap: number, gy: number, px = 0) {
+ *  each gap first makes room for its two columns' names (a step's `label` where it has one): in full beside a stacked column, and in half between two single steps,
+ *  whose names then alternate above and below (`up`). Columns that would cross `wrap` continue on a band below, `LANE` lower so a link into it
+ *  runs along its top (`bus`); a lone band keeps its steps on `h / 2`, and `tall` is every band's `chartHeight` stacked. */
+export function place(steps: DagStep[], w: number, h: number, pad: number, rows: number, sub: number, gap: number, gy: number, px = 0, label: Record<string, string> = {}, wrap = Infinity) {
   const by = Object.fromEntries(steps.map((x) => [x.name, x]));
   const depth: Record<string, number> = {};
   const dep = (n: string, seen = new Set<string>()): number => {
@@ -240,26 +241,59 @@ export function place(steps: DagStep[], w: number, h: number, pad: number, rows:
   const cols: string[][] = [];
   for (const x of steps) (cols[depth[x.name]] ??= []).push(x.name);
   const span = cols.map((c) => (Math.ceil(c.length / rows) - 1) * sub);
-  const lw = cols.map((c) => px * Math.max(...c.map((n) => n.length)));
+  const lw = cols.map((c) => px * Math.max(...c.map((n) => (label[n] ?? n).length)));
   const lone = (d: number) => cols[d].length === 1;
   const floor = cols.slice(1).map((_, i) => !px ? sub : lone(i) && lone(i + 1) ? Math.max(9.5 * px, (lw[i] + lw[i + 1]) / 4 + 8) : (lw[i] + lw[i + 1]) / 2 + 14);
   const extra = Math.max(0, w - 2 * pad - span.reduce((a, b) => a + b, 0) - floor.reduce((a, b) => a + b, 0)) / Math.max(1, floor.length);
   const gx = floor.map((f) => f + Math.min(extra, Math.max(0, gap - f)));
   const alt = !!px && gx.some((g, i) => lone(i) && lone(i + 1) && g < (lw[i] + lw[i + 1]) / 2 + 8);
-  const at: Record<string, { x: number; y: number }> = {};
+  const colX: number[] = [], colBand: number[] = [], bandWide: number[] = [];
   let x0 = pad;
   cols.forEach((c, d) => {
-    c.forEach((name, i) => (at[name] = { x: x0 + Math.floor(i / rows) * sub, y: h / 2 + ((i % rows) - (Math.min(rows, c.length - Math.floor(i / rows) * rows) - 1) / 2) * gy }));
+    if (d && x0 + span[d] + pad > wrap + 0.5) x0 = pad;
+    colBand[d] = d && x0 === pad ? colBand[d - 1] + 1 : colBand[d - 1] ?? 0;
+    colX[d] = x0;
+    bandWide[colBand[d]] = Math.max(bandWide[colBand[d]] ?? 1, Math.min(rows, c.length));
     x0 += span[d] + (gx[d] ?? 0);
   });
+  const heights = bandWide.map((wide, b) => chartHeight(wide) + (b ? LANE : 0));
+  const tops = heights.map((_, b) => heights.slice(0, b).reduce((a, x) => a + x, 0));
+  const mid = (b: number) => (tops.length === 1 ? h / 2 : tops[b] + (b ? LANE : 0) + (chartHeight(bandWide[b]) - 12) / 2);
+  const at: Record<string, { x: number; y: number }> = {}, band: Record<string, number> = {};
+  cols.forEach((c, d) => c.forEach((name, i) => {
+    band[name] = colBand[d];
+    at[name] = { x: colX[d] + Math.floor(i / rows) * sub, y: mid(colBand[d]) + ((i % rows) - (Math.min(rows, c.length - Math.floor(i / rows) * rows) - 1) / 2) * gy };
+  }));
   const up = (name: string) => alt && lone(depth[name]) && depth[name] % 2 === 1;
-  return { at, up, cols: cols.length, wide: Math.max(1, ...cols.map((c) => Math.min(rows, c.length))), span: x0 + pad };
+  const ends = cols.map((_, d) => colX[d] + span[d] + pad);
+  return {
+    at, up, label, band, tops, tall: heights.reduce((a, x) => a + x, 0), bus: (b: number) => tops[b] + LANE / 2,
+    cols: cols.length, wide: Math.max(1, ...bandWide), span: Math.max(0, ...ends),
+  };
 }
 
-/** The modal's chart: a name `px` wide a character, a folded fan's sub-columns a longest name apart, at most five steps high. */
-export function bigPlace(steps: DagStep[], w: number, h: number, px: number) {
-  const lw = px * Math.max(0, ...steps.map((x) => x.name.length));
-  return place(steps, w, h, Math.max(44, lw / 2 + 6), 5, Math.max(92, lw + 16), 120, 40, px);
+/** The strip above a wrapped band that a link into it runs along. */
+const LANE = 16;
+
+/** The most characters a step's label in the modal shows; its full name stays in the step's tooltip. */
+export const LABEL_MAX = 32;
+
+/** Each step's label in the modal: what follows its parent's name and ` / ` when another step is that parent (a GitHub job's steps are
+ *  named `<job> / <step>`), cut to `LABEL_MAX` with an ellipsis, so a long prefix shared down a chain is said once. */
+export function stepLabels(steps: DagStep[]): Record<string, string> {
+  const names = new Set(steps.map((s) => s.name));
+  const label = (name: string) => {
+    const parent = [...name.matchAll(/ \/ /g)].map((m) => m.index).findLast((i) => names.has(name.slice(0, i)));
+    const tail = parent === undefined ? name : name.slice(parent + 3);
+    return tail.length <= LABEL_MAX ? tail : `${tail.slice(0, LABEL_MAX - 1)}…`;
+  };
+  return Object.fromEntries(steps.map((s) => [s.name, label(s.name)]));
+}
+
+/** The modal's chart: a label `px` wide a character, a folded fan's sub-columns a longest label apart, at most five steps high, wrapping at `wrap`. */
+export function bigPlace(steps: DagStep[], w: number, h: number, px: number, wrap = Infinity) {
+  const label = stepLabels(steps), lw = px * Math.max(0, ...Object.values(label).map((l) => l.length));
+  return place(steps, w, h, Math.max(44, lw / 2 + 6), 5, Math.max(92, lw + 16), 120, 40, px, label, wrap);
 }
 
 /** The modal chart's height: the five-high fan of a folded cluster, or room for one row of steps and their names. */

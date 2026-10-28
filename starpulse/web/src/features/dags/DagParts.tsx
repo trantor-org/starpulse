@@ -2,7 +2,7 @@
 // the last-run line, the pool text and a Board tie's chip. Steps and links are drawn as the Star Map draws a DAG body's (boardDraw drawStars), in DAG_COLOR.
 import type { CSSProperties, ReactNode } from "react";
 import type { DagStep, Rerun } from "../../api";
-import { ago, bigPlace, chartHeight, place, stepNote, took, type DagFacts, type Phase, type Row, type Tie } from "./dagsModel";
+import { ago, bigPlace, chartHeight, place, stepLabels, stepNote, took, type DagFacts, type Phase, type Row, type Tie } from "./dagsModel";
 import { DAG_COLOR } from "../../render/draw";
 import { orbiterLook } from "../../render/boardDraw";
 import { useId } from "react";
@@ -22,15 +22,19 @@ export function StepStar({ x, y, r, status }: { x: number; y: number; r: number;
 }
 
 /** A dependency as the Star Map draws one inside a DAG body: a dashed curve shaded from one step's colour to the next, streaming toward the step that waits
- *  in the row the pointer, keyboard or a Recent line rests on and in the open DAG's chart (style.css); brighter and heavier while either end runs. */
-function Link({ id, a, b, r, from, to }: { id: string; a: { x: number; y: number }; b: { x: number; y: number }; r: number; from: string; to: string }) {
+ *  in the row the pointer, keyboard or a Recent line rests on and in the open DAG's chart (style.css); brighter and heavier while either end runs. A link
+ *  into a wrapped band of the modal's chart drops beside its step to that band's `bus` line, runs along it and curves into the step from the left. */
+function Link({ id, a, b, r, from, to, bus }: { id: string; a: { x: number; y: number }; b: { x: number; y: number }; r: number; from: string; to: string; bus?: number }) {
   const hot = from === "running" || to === "running", dx = (b.x - a.x) / 2, [x0, x1] = [a.x + r, b.x - r];
+  const drop = a.x + r + 14, turn = b.x - r - 28;
+  const d = bus === undefined ? `M${x0} ${a.y}C${a.x + dx} ${a.y} ${b.x - dx} ${b.y} ${x1} ${b.y}`
+    : `M${x0} ${a.y}Q${drop} ${a.y} ${drop} ${a.y + 10}V${bus - 10}Q${drop} ${bus} ${drop - 10} ${bus}H${turn}C${turn + 18} ${bus} ${turn} ${b.y} ${x1} ${b.y}`;
   return (
     <>
       <linearGradient id={id} gradientUnits="userSpaceOnUse" x1={x0} y1={a.y} x2={x1} y2={b.y}>
         <stop offset="0" stopColor={ink(from)} /><stop offset="1" stopColor={ink(to)} />
       </linearGradient>
-      <path d={`M${x0} ${a.y}C${a.x + dx} ${a.y} ${b.x - dx} ${b.y} ${x1} ${b.y}`} fill="none" stroke={`url(#${id})`} strokeOpacity={hot ? 0.8 : 0.55}
+      <path d={d} fill="none" stroke={`url(#${id})`} strokeOpacity={hot ? 0.8 : 0.55}
         strokeWidth={hot ? 1.9 : 1} strokeDasharray="1.8 4.2" className={hot ? "link hot" : "link"} />
     </>
   );
@@ -60,25 +64,27 @@ const fit = (t: string, n: number) => (t.length <= n ? t : `${t.slice(0, Math.ma
  *  inline on `<html>`, which answers without the style recalculation `getComputedStyle` forces after every DOM change. */
 export const labelPx = () => 6.1 * (Number(document.documentElement.style.getPropertyValue("--fs")) || 1);
 
-/** The modal chart's size for a DAG: as wide as its steps and their names need, or as the steps spread when nothing squeezes them, and as high as
- *  its widest column. The modal's own width follows it. */
-export function chartBox(r: Row) {
-  const px = labelPx(), least = bigPlace(r.d.steps, 0, 100, px), spread = bigPlace(r.d.steps, 1e6, 100, px);
-  return { w: Math.max(least.span, spread.span), h: chartHeight(least.wide) };
+/** The modal chart's size for a DAG in `room` pixels: as wide as its steps and their names need, or as the steps spread when nothing squeezes them up
+ *  to `room`, and as high as its widest column; a DAG whose steps need more than `room` wraps onto bands below. The modal's own width follows it. */
+export function chartBox(r: Row, room = Infinity) {
+  const px = labelPx(), least = bigPlace(r.d.steps, 0, 100, px, room);
+  if (least.tops.length > 1) return { w: least.span, h: least.tall, room };
+  return { w: Math.min(room, Math.max(least.span, bigPlace(r.d.steps, 1e6, 100, px).span)), h: chartHeight(least.wide), room };
 }
 
 /** How many past runs a step's history strip has room for. */
 const SLOTS = 5;
 
-/** A DAG's step history: one line per step, its last runs as a strip of ticks oldest to newest in each run's status colour, an empty slot for a run not made. */
+/** A DAG's step history: one line per step, named by its chart label and indented under the step whose name it continues, its last runs as a strip of ticks oldest to newest in each run's status colour, an empty slot for a run not made. */
 export function StepHistory({ steps, rerun }: { steps: DagStep[]; rerun: Rerun | null }) {
+  const label = stepLabels(steps);
   return (
     <ul className="hist">
       {steps.map((s) => {
-        const runs = [...s.last].reverse(), note = stepNote(s, rerun);
+        const runs = [...s.last].reverse(), note = stepNote(s, rerun), sub = steps.some((o) => s.name.startsWith(`${o.name} / `));
         return (
-          <li key={s.name}>
-            <span className="nm">{s.name}</span>
+          <li key={s.name} className={sub ? "sub" : undefined}>
+            <span className="nm" title={s.name}>{label[s.name]}</span>
             <span className="runs" role="img" aria-label={runs.length ? `last runs, oldest first: ${runs.join(", ").replace(/_/g, " ")}` : "no runs yet"}>
               {Array.from({ length: SLOTS }, (_, i) => {
                 const v = runs[i - (SLOTS - runs.length)];
@@ -95,16 +101,16 @@ export function StepHistory({ steps, rerun }: { steps: DagStep[]; rerun: Rerun |
 
 /** A DAG's steps as a constellation: one star per step in its status colour, joined by its dependencies; the running step burns
  *  and an agent step is ringed. `big` is the modal's chart: larger stars, each named, a fan folded into sub-columns. */
-export function Strip({ r, w = 220, h = 20, big = false }: { r: Row; w?: number; h?: number; big?: boolean }) {
+export function Strip({ r, w = 220, h = 20, big = false, room = Infinity }: { r: Row; w?: number; h?: number; big?: boolean; room?: number }) {
   const st = r.d.steps;
   // a folded fan's sub-columns sit a small star's width and a gap apart, and a strip whose column stacks draws small stars
-  const p = big ? bigPlace(st, w, h - 12, labelPx()) : place(st, w, h, 7, 3, 8, 34, Math.min(7, (h - 6) / 2));
+  const p = big ? bigPlace(st, w, h - 12, labelPx(), room) : place(st, w, h, 7, 3, 8, 34, Math.min(7, (h - 6) / 2));
   const rr = big ? 6 : st.length > 9 || p.wide > 1 ? 3 : 4, uid = useId().replace(/:/g, "");
   const at = (n: string) => r.steps[n] ?? "not_started";
   return (
     <svg className={`dstrip${big ? " big" : ""}`} width={big ? w : "100%"} height={h} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="xMinYMid meet" aria-hidden={!big}>
       {st.flatMap((s) => s.depends.filter((d) => p.at[d]).map((d) => (
-        <Link key={d + ">" + s.name} id={`${uid}-${d}-${s.name}`.replace(/[^\w-]/g, "_")} a={p.at[d]} b={p.at[s.name]} r={rr} from={at(d)} to={at(s.name)} />
+        <Link key={d + ">" + s.name} id={`${uid}-${d}-${s.name}`.replace(/[^\w-]/g, "_")} a={p.at[d]} b={p.at[s.name]} r={rr} from={at(d)} to={at(s.name)} bus={p.band[s.name] > p.band[d] ? p.bus(p.band[s.name]) : undefined} />
       )))}
       {st.map((s) => {
         const v = at(s.name), { x, y } = p.at[s.name];
@@ -112,7 +118,7 @@ export function Strip({ r, w = 220, h = 20, big = false }: { r: Row; w?: number;
           <g key={s.name} className={`sd s-${v}`}>
             <StepStar x={x} y={y} r={rr} status={v} />
             {s.kind === "agent" && <circle cx={x} cy={y} r={rr + (big ? 4 : 2.5)} fill="none" stroke="var(--agent)" strokeWidth={big ? 1 : 0.7} />}
-            {big && <text x={x} y={y + (p.up(s.name) ? -14 : 22)} className={v === "running" ? "hot" : undefined}>{s.name}</text>}
+            {big && <text x={x} y={y + (p.up(s.name) ? -14 : 22)} className={v === "running" ? "hot" : undefined}>{p.label[s.name] ?? s.name}</text>}
             {big && <title>{`${s.name}: ${v.replace("_", " ")}${s.kind ? ` (${s.kind} step)` : ""}`}</title>}
           </g>
         );
