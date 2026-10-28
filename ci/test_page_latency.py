@@ -96,6 +96,15 @@ def test_the_snapshot_body_route_is_filled_from_the_reference_the_stream_sent():
     assert pl.fill(pl.READS["/api/events/body/<id>"], {"snapshot": "0123abcd"}) == "/api/events/body/0123abcd"
 
 
+def test_the_reference_stream_is_read_from_the_clients_own_base(monkeypatch):
+    bases = []
+    monkeypatch.setattr(pl, "first_snapshot", lambda base, path: bases.append(base))
+    monkeypatch.setattr(pl.Client, "json", lambda self, path: {})
+    monkeypatch.setattr(pl.Client, "get", lambda self, path: (200, b"", 0.0))
+    pl.time_reads(pl.Client("https://127.0.0.1:8766"), 1)
+    assert bases == ["https://127.0.0.1:8766"]
+
+
 def test_every_read_route_the_server_answers_is_timed():
     package = Path(__file__).resolve().parents[1] / "starpulse"
     server = "".join(module.read_text() for directory in ("views", "runtime") for module in (package / directory).glob("*.py"))
