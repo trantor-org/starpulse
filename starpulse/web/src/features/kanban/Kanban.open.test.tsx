@@ -72,7 +72,8 @@ describe("opening a task's modal", () => {
   });
 
   it("draws the held record's notes at once when it is past the fresh window, then reads it again", async () => {
-    hover(cardOf("TASK-1"));
+    // focus reads ahead without arming the pre-draw rest timer, which on a loaded runner would draw the modal before the click
+    act(() => cardOf("TASK-1").focus());
     await settle();
     const fresh = vi.spyOn(RecordCache.prototype, "fresh").mockReturnValue(undefined);
     try {
