@@ -402,7 +402,10 @@ def test_a_move_posted_to_the_server_reaches_the_writer_and_answers_json(tmp_pat
         with pytest.raises(urllib.error.HTTPError) as got:
             urllib.request.urlopen(_url(server, "/api/move"), timeout=5)
 
-    assert allowed == (200, {"task": "PROJ-3", "to": "in_progress"})
+    # the operator's drag of an unheld task also starts a session; this task names no profile, so none starts
+    assert allowed[0] == 200
+    assert {key: allowed[1][key] for key in ("task", "to")} == {"task": "PROJ-3", "to": "in_progress"}
+    assert "profile" in allowed[1]["startError"]
     assert refused == (409, {"error": "refused: Run the `x` skill", "skill": "x"})
     assert (got.value.code, got.value.headers["Allow"]) == (405, "POST")
     assert sent == [("PROJ-3", "In Progress"), ("PROJ-3", "Waiting")]
@@ -440,6 +443,61 @@ def test_a_start_posted_to_the_server_saves_the_assignee_starts_the_session_and_
     }
     assert (assigned, started) == ([("PROJ-3", "@agent-deep-high")], [("PROJ-3", "claude", "interactive")])
     assert (got.value.code, got.value.headers["Allow"]) == (405, "POST")
+
+
+def _starting_server(tmp_path: Path, feed: BoardFeed, started: list[tuple[str, str, str]]):
+    """A server whose writer moves anything and whose session-start service records each start."""
+
+    def start_session(task: str, *, harness: str = "claude", mode: str = "interactive") -> str:
+        started.append((task, harness, mode))
+        return "https://claude.ai/code/session_01"
+
+    def writer(task: str, status: str, actor: str = "operator", session: str | None = None) -> Written:
+        return Written(True, "ok")
+
+    return _serve(tmp_path, feed, bare_board(writer=writer), start_session=start_session)
+
+
+def test_an_operator_move_into_in_progress_starts_a_session_on_the_tasks_own_profile(tmp_path: Path) -> None:
+    started: list[tuple[str, str, str]] = []
+    feed = BoardFeed(roles=ROLES)
+    feed.put(task("PROJ-3", "Ready", profile="@agent-deep-high", moves={"in_progress": Move(allowed=True)}))
+    with _starting_server(tmp_path, feed, started) as server:
+        dragged = _post_move(server, {"task": "PROJ-3", "to": "in_progress", "actor": "operator"})
+
+    assert dragged == (200, {"task": "PROJ-3", "to": "in_progress", "url": "https://claude.ai/code/session_01"})
+    assert started == [("PROJ-3", "claude", "interactive")]
+
+
+def test_a_move_into_in_progress_starts_nothing_unless_the_operator_made_it_on_an_unheld_task(tmp_path: Path) -> None:
+    started: list[tuple[str, str, str]] = []
+    feed = BoardFeed(roles=ROLES)
+    moves = {"in_progress": Move(allowed=True)}
+    feed.put(task("PROJ-3", "Ready", profile="@agent-deep-high", moves=moves))
+    feed.put(task("PROJ-4", "Needs Attention", profile="@agent-deep-high", assignee="session-1", moves=moves))
+    with _starting_server(tmp_path, feed, started) as server:
+        by_an_agent = _post_move(server, {"task": "PROJ-3", "to": "in_progress", "session": "session-2"})
+        on_a_held_task = _post_move(server, {"task": "PROJ-4", "to": "in_progress", "actor": "operator"})
+
+    assert by_an_agent == (200, {"task": "PROJ-3", "to": "in_progress"})
+    assert on_a_held_task == (200, {"task": "PROJ-4", "to": "in_progress"})
+    assert started == []
+
+
+def test_a_start_on_an_in_progress_task_runs_when_no_session_holds_it_and_is_refused_when_one_does(
+    tmp_path: Path,
+) -> None:
+    started: list[tuple[str, str, str]] = []
+    feed = BoardFeed(roles=ROLES)
+    feed.put(task("PROJ-3", "In Progress", profile="@agent-deep-high"))  # its holder's claim was released
+    feed.put(task("PROJ-4", "In Progress", profile="@agent-deep-high", assignee="session-1"))
+    with _starting_server(tmp_path, feed, started) as server:
+        unheld = _post(server, "/api/start", {"task": "PROJ-3", "profile": "@agent-deep-high"})
+        held = _post(server, "/api/start", {"task": "PROJ-4", "profile": "@agent-deep-high"})
+
+    assert unheld[0] == 200
+    assert held == (409, {"error": "PROJ-4 is held by session-1: a session starts an In Progress task only once its claim is released"})
+    assert started == [("PROJ-3", "claude", "interactive")]
 
 
 def _post(server: PageServer, path: str, body: dict) -> tuple[int, dict]:

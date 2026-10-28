@@ -7,9 +7,14 @@ from starpulse.contracts.api.dto.errors import ApiError, SkillRefusal
 
 
 class Moved(_Api):
+    """A move's answer. The operator's move of an unheld task into the working state also starts its session: `url`
+    opens it, or `startError` says why none started."""
+
     task: str
     to: str
     advice: str | None = None
+    url: str | None = None
+    startError: str | None = None
 
 
 class MovedEach(_Api):

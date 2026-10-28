@@ -4,10 +4,11 @@ other front) calls the same ones."""
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, NamedTuple, Protocol
+from typing import TYPE_CHECKING, Any, NamedTuple, Protocol
 from urllib.parse import unquote
 
 from starpulse.board.model.seam import OPERATOR, Written
+from starpulse.contracts.api.dto.requests import StartRequest
 from starpulse.pulls.pull_refresh import MAX_BODY as MAX_REFRESH_BODY
 from starpulse.runs.ingest import MAX_BATCH_BODY
 from starpulse.views.encoding import encode
@@ -71,6 +72,7 @@ from starpulse.views.writes import (
     review_task,
     run_dag,
     scheduler,
+    start_requested,
     start_task,
     take_over_task,
     write_refusal,
@@ -124,6 +126,10 @@ class WriteRoutes:
         assign = board.assign or _no_writer
         read, edit, archive, create = board.read, board.edit, board.archive, board.create
         restore, complete, milestones = board.restore, board.complete, board
+
+        def start(request: StartRequest) -> tuple[int, dict[str, Any]]:
+            return start_requested(request, feed, assign, services.start_session, services.harnesses)
+
         self._feed = feed
         self._window = window
         self._starts = services.starts
@@ -133,7 +139,7 @@ class WriteRoutes:
         # Every write route, by path: the handler over the seams it needs and the kind of body it answers
         # (`contracts.api.registry.BODIES`). Each handler parses its body through the request model it is declared with.
         self._writes: dict[str, tuple[TaskWrite, str]] = {
-            _MOVE: (lambda client, raw: move_task(client, raw, feed, writer), "move"),
+            _MOVE: (lambda client, raw: move_task(client, raw, feed, writer, start), "move"),
             _START: (
                 lambda client, raw: start_task(client, raw, feed, assign, services.start_session, services.harnesses),
                 "start",
