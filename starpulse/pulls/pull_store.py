@@ -34,7 +34,7 @@ def _selection(number: int) -> str:
     """The alias reading PR `number`: its facts, its required checks at the head commit and its review threads."""
     return f"""
   p{number}: pullRequest(number: {number}) {{
-    number state isDraft mergeable baseRefName headRefName headRefOid body updatedAt createdAt mergedAt
+    number state isDraft mergeable baseRefName headRefName headRefOid title body updatedAt createdAt mergedAt
     mergeCommit {{ oid }}
     files(first: 100) {{ nodes {{ path }} }}
     headRef {{ compare(headRef: "main") {{ aheadBy }} }}
@@ -92,6 +92,7 @@ def _record(repo: str, node: dict, now: float) -> dict[str, Any]:
         "mergeable": node["mergeable"],
         "baseRefName": node["baseRefName"],
         "headRefOid": node["headRefOid"],
+        "title": node.get("title", ""),
         "body": node["body"] or "",
         "checks": checks,
         "requiredChecks": required,

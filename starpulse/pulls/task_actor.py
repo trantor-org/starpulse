@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import logging
 import queue
+import re
 import threading
 import time
 from collections import Counter
@@ -54,6 +55,7 @@ LINT_REFUSED = "Release to Ready refused by the task lint, repair the record to 
 _TERMINAL = ("MERGED", "CLOSED")
 #: The repository the board renders a bare `PR #N` against; another repo's pull request links its own URL.
 _BOARD_REPO = "trantor-org/trantor"
+_TASK_ID = re.compile(r"task-\d+")
 REFUSALS_METRIC = "starpulse_task_actor_refusals_total"
 CRITERIA_ERRORS_METRIC = "starpulse_task_actor_criteria_errors"
 PIN_HELD_METRIC = "starpulse_task_actor_pin_held"
@@ -443,6 +445,18 @@ class TaskActor:
         records = self._store.find(repo=found[1], number=int(found[2])) if found else []
         return records[0] if records else None
 
+    def _own_prs(self, agent: dict[str, Any]) -> list[str]:
+        """The cited pull requests that are not another task's delivery: one whose branch or title names tasks and not
+        this one is a reference, never proof of this task's work."""
+        own = []
+        for url in agent["prs"]:
+            record = self._record(url)
+            text = f"{record.get('headRefName', '')} {record.get('title', '')}" if record else ""
+            named = set(_TASK_ID.findall(text.lower()))
+            if not named or agent["id"].lower() in named:
+                own.append(url)
+        return own
+
     def _pull_state(self, url: str) -> tuple[str, str | None, bool]:
         record = self._record(url)
         return (record["state"], record["mergeSha"], record["isDraft"]) if record else ("", None, False)
@@ -522,7 +536,7 @@ class TaskActor:
     def _pr_terminal(self, agent: dict[str, Any]) -> tuple[str, str] | None:
         """The merge evidence when the task cites pull requests and every one has ended, else None."""
         parts = []
-        for url in agent["prs"]:
+        for url in self._own_prs(agent):
             record = self._record(url)
             if record is None or record["state"] not in _TERMINAL:
                 return None
@@ -542,13 +556,13 @@ class TaskActor:
         """The merge evidence when every pull request the task cites has ended and at least one merged, else None: a
         delivery closed unmerged is no proof of the work."""
         terminal = self._pr_terminal(agent)
-        merged = any((record := self._record(url)) and record["state"] == "MERGED" for url in agent["prs"])
+        merged = any((record := self._record(url)) and record["state"] == "MERGED" for url in self._own_prs(agent))
         return terminal if terminal and merged else None
 
     def _pr_ready(self, agent: dict[str, Any]) -> tuple[str, str] | None:
         """The ready or merged pull requests when the task cites one that is, else None."""
         parts = []
-        for url in agent["prs"]:
+        for url in self._own_prs(agent):
             record = self._record(url)
             if record is None:
                 continue
