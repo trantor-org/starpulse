@@ -17,6 +17,7 @@ from starpulse.pulls.task_actor import TaskActor
 
 PR_ONE = "https://github.com/acme/trantor/pull/1"
 PR_TWO = "https://github.com/acme/trantor/pull/2"
+PR_THREE = "https://github.com/acme/trantor/pull/3"
 SHA = "a" * 40
 WAITS = {
     "in_progress": {"pr_ready": "REVIEW"},
@@ -124,7 +125,8 @@ class Board:
         return [(name, str(comment)) for name, changes, comment, _ in self.writes if not changes]
 
 
-def pull(number: int, *, state: str, repo: str = "acme/trantor", sha: str = SHA, files: Sequence[str] = ()) -> dict:
+def pull(number: int, *, state: str, repo: str = "acme/trantor", sha: str = SHA, files: Sequence[str] = (), branch: str = "", title: str = ""
+) -> dict:
     at, sha = ("2026-10-12T09:00:00Z", sha) if state == "MERGED" else (None, None)
     return {
         "repo": repo,
@@ -134,6 +136,8 @@ def pull(number: int, *, state: str, repo: str = "acme/trantor", sha: str = SHA,
         "mergeable": "UNKNOWN",
         "baseRefName": "main",
         "headRefOid": f"{number:040x}",
+        "headRefName": branch,
+        "title": title,
         "body": "",
         "checks": "pass",
         "requiredChecks": [],
