@@ -87,9 +87,8 @@ def _create_after(base: Path, start: BarrierType, writer: int, count: int) -> No
 
 
 def test_creates_from_several_processes_on_one_board_never_share_an_id(tmp_path: Path) -> None:
-    # Writers fork from a server that imported this module once; a spawned writer re-imported starpulse (~0.9 s CPU).
-    context = multiprocessing.get_context("forkserver")
-    context.set_forkserver_preload([__name__])
+    # Fork: writers inherit this process's imports; a spawned or forkserver writer re-imported starpulse (~0.9 s CPU each).
+    context = multiprocessing.get_context("fork")
     start = context.Barrier(3)
     writers = [context.Process(target=_create_after, args=(tmp_path, start, writer, 5)) for writer in range(3)]
     for writer in writers:
