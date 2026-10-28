@@ -3,7 +3,8 @@
 A child is started by `spawn` (`starpulse.runtime.zygote.Forker`: a fork of one preloaded process, else
 `subprocess`) with a pipe it exits on when `serve` dies, restarted with a growing delay when it exits and stopped with
 `serve`. Past its soft memory limit a child is replaced (the new one starts, then the old one stops); past its hard
-limit it is killed and restarted. The run adapters are run by something outside `serve`, so they get no child here.
+limit it is killed and restarted. Each run adapter a `[[runs]]` instance configures (`dagu`, `github-actions`, `systemd`)
+gets a child of its own, from `adapter_contexts`, and is limited like the rest.
 
 `starpulse reload` (`starpulse.runtime.control`) calls `Supervisor.reload`: it reads each child's code and config
 again from the installed files (`starpulse.runtime.closure`) and replaces only the children something changed
@@ -27,7 +28,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from starpulse.runtime.config import Config, MemoryLimit
+from starpulse.runs import opt_in
+from starpulse.runtime.config import Config, MemoryLimit, runs_adapter
 from starpulse.runtime.closure import SELF, Reading, ReloadError
 from starpulse.runtime.control import Control
 from starpulse.runtime.hold import LISTEN_FD_ENV, READY_FD_ENV, supervised_env
@@ -37,18 +39,25 @@ logger = logging.getLogger(__name__)
 
 _HANGUP = getattr(signal, "SIGHUP", None)
 
-#: The `starpulse worker` contexts `serve` supervises, in start order.
+#: The `starpulse worker` contexts `serve` supervises, in start order; the adapter workers follow them (`adapter_contexts`).
 WORKER_CONTEXTS = ("api", "pulls", "scheduler", "runs", "flow-metrics", "search", "board")
 
 _MB = 1024 * 1024
 
 
+def adapter_contexts(config: Config) -> list[str]:
+    """The opt-in worker of each run adapter a `[[runs]]` instance of `config` names, once each, in config order."""
+    workers = [opt_in.worker_of(runs_adapter(instance.type)) for instance in config.runs if instance.type]
+    return list(dict.fromkeys(worker for worker in workers if worker))
+
+
 def worker_commands(config: Config, config_path: Path | None) -> dict[str, list[str]]:
-    """The command of each context `serve` supervises (`WORKER_CONTEXTS`).
+    """The command of each context `serve` supervises (`WORKER_CONTEXTS`), then of each adapter worker `config` names.
 
     Search has work only with an `embeddings_url`, so a config without one gets no search child.
     """
     tail = ["--config", str(config_path)] if config_path else []
+    contexts = [context for context in WORKER_CONTEXTS if context != "search" or config.search.embeddings_url]
     return {
         context: [
             sys.executable,
@@ -58,8 +67,7 @@ def worker_commands(config: Config, config_path: Path | None) -> dict[str, list[
             context,
             *tail,
         ]
-        for context in WORKER_CONTEXTS
-        if context != "search" or config.search.embeddings_url
+        for context in [*contexts, *adapter_contexts(config)]
     }
 
 

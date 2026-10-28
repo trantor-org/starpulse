@@ -25,6 +25,9 @@ from starpulse.runtime.config import Config, discover, load
 
 SELF = "serve"
 
+#: The module every run adapter's opt-in worker starts from, which reads what the runs worker reads.
+_ADAPTER_ENTRY = "starpulse.runs.bin.adapter_worker"
+
 #: The module each process starts from; its imports are what a change to the installed code can reach it through.
 ENTRIES = {
     SELF: "starpulse.runtime.server",
@@ -35,10 +38,15 @@ ENTRIES = {
     "flow-metrics": "starpulse.flow_metrics.bin.flow_metrics_worker",
     "search": "starpulse.board.bin.search_worker",
     "board": "starpulse.board.bin.board_worker",
+    "dagu": _ADAPTER_ENTRY,
+    "github-actions": _ADAPTER_ENTRY,
+    "systemd": _ADAPTER_ENTRY,
 }
 
 _CHILDREN = tuple(name for name in ENTRIES if name != SELF)
-_BOARD_READERS = ("pulls", "scheduler", "runs", "flow-metrics", "board")
+#: The run adapters' opt-in workers, which read the runs config and the board as the runs worker does.
+_ADAPTER_CONTEXTS = ("dagu", "github-actions", "systemd")
+_BOARD_READERS = ("pulls", "scheduler", "runs", "flow-metrics", "board", *_ADAPTER_CONTEXTS)
 
 
 #: The keys `serve` alone reads: each child's memory limit, its refresh token and its take-over command,
@@ -74,7 +82,7 @@ CONFIG_OWNERS: dict[str, tuple[str, ...]] = {
     "project": _owned_by(),
     "database_url": _CHILDREN,
     "board": _owned_by(*_BOARD_READERS),
-    "runs": _owned_by("runs"),
+    "runs": _owned_by("runs", *_ADAPTER_CONTEXTS),
     "search": _owned_by("search"),
     "read_model": (SELF,),
     "release": _owned_by("pulls"),
@@ -202,7 +210,7 @@ def _blocks(name: str, config: Config) -> tuple[object, object]:
         return pulls_fixed_blocks(config), pulls_delivery_blocks(config)
     if name == "scheduler":
         return scheduler_fixed_blocks(config), scheduler_live_blocks(config)
-    if name == "runs":
+    if name == "runs" or name in _ADAPTER_CONTEXTS:
         return runs_built_blocks(config), ()
     if name == "flow-metrics":
         return flow_metrics_built_blocks(config), ()

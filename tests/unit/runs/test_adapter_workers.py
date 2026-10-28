@@ -1,5 +1,6 @@
 """`starpulse worker <dagu|github-actions|systemd>` is each run Adapter as an opt-in process: `serve` starts none of it, and the page shows when it is down."""
 
+import sys
 import threading
 import time
 from collections.abc import Callable
@@ -124,14 +125,21 @@ def test_each_shipped_adapter_names_its_opt_in_worker(module: tuple) -> None:
     assert opt_in.worker_of(adapter) == WORKERS[kind]
 
 
-def test_serve_supervises_no_adapter_worker(kind: str, tmp_path: Path) -> None:
+def test_serve_supervises_a_child_for_each_configured_adapter(kind: str, tmp_path: Path) -> None:
     path = tmp_path / "starpulse.toml"
     path.write_text(config_of(kind))
 
     commands = supervisor.worker_commands(load(path), path)
 
-    assert WORKERS[kind] not in commands
-    assert all(WORKERS[kind] not in command[-3:] for command in commands.values())
+    assert commands[WORKERS[kind]] == [
+        sys.executable,
+        "-m",
+        "starpulse",
+        "worker",
+        WORKERS[kind],
+        "--config",
+        str(path),
+    ]
 
 
 def test_the_worker_follows_the_instance_and_keeps_its_workflows_in_the_log(

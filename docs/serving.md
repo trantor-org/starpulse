@@ -86,7 +86,7 @@ requests it took and closes.
 
 ### Worker processes
 
-`serve` is a supervisor over the contexts that run as their own `starpulse worker <context>` process: `api` (the Page API), `pulls` (Delivery), `scheduler`, `runs`, `flow-metrics`, `search` (with an `[search] embeddings_url`) and `board` (the Start Criteria dating). `serve` starts each as a child, restarts it with a growing delay (1 s, doubling to 60 s; a child that ran a minute restarts at once) when it exits, and stops it when `serve` stops on `SIGTERM` or Ctrl-C. The children read the same config and `database_url` and meet `serve` only in the event log. No unit file is needed to run StarPulse, and no setting turns a child off: `starpulse reload` picks the children whose code or config moved.
+`serve` is a supervisor over the contexts that run as their own `starpulse worker <context>` process: `api` (the Page API), `pulls` (Delivery), `scheduler`, `runs`, `flow-metrics`, `search` (with an `[search] embeddings_url`) `board` (the Start Criteria dating), and each run adapter a `[[runs]]` instance names (`dagu`, `github-actions`, `systemd`, one child per adapter). `serve` starts each as a child, restarts it with a growing delay (1 s, doubling to 60 s; a child that ran a minute restarts at once) when it exits, and stops it when `serve` stops on `SIGTERM` or Ctrl-C. The children read the same config and `database_url` and meet `serve` only in the event log. No unit file is needed to run StarPulse, and no setting turns a child off: `starpulse reload` picks the children whose code or config moved.
 
 The `api` child serves the page and the HTTP API. `serve` binds `--host` and `--port` once (or adopts the socket the service manager passes in), keeps that listening socket for the life of the process and starts `starpulse worker api` with it on the descriptor named by `STARPULSE_LISTEN_FD`. `serve` first builds the page's machines and board from the config and exits 1 with the reason when it cannot, so a bad `starpulse.toml` or `board.yaml` stops `serve` rather than a child that exits at every start; it also tells the child, in `STARPULSE_STATIC`, which page build it checked. The child reads the Board from the read model the `board` child folds and starts no adapter watcher. A reload of the child starts the new one on the same socket, waits until it reports (`STARPULSE_READY_FD`) it is about to serve, or 30 s (`warm`) at most, then stops the old: the old one stops accepting, finishes its in-flight requests (up to 8 s) and exits, so a connection made meanwhile queues in the backlog and none is refused.
 
@@ -471,10 +471,11 @@ applied_by = "pin-bump"
 ### Runs adapters
 
 A `[[runs]]` instance's `type` names one of the built-in adapters `dagu`, `github_actions` and `systemd`, or an installed
-package's module. Each built-in one is an opt-in worker: you run `starpulse worker dagu --config <this file>`
-(`github-actions` and `systemd` likewise); `serve` starts it nowhere (not in the `runs` worker, not as a child) and, with
-it down or never started, the page shows the instance with the error "the dagu worker has not reported" or "last
-reported Ns ago" (its beat is older than 60s).
+package's module. `serve` starts the worker of each built-in adapter that a configured instance names, as its own child
+(`starpulse worker dagu --config <this file>`, likewise `github-actions` and `systemd`), and restarts it if it stops, as
+it does its other workers. No OS service unit is needed for an adapter. With its worker down or not yet started, the
+page shows the instance with the error "the dagu worker has not reported" or "last reported Ns ago" (its beat is older
+than 60s).
 
 The Dagu Adapter reads a DAG's declared rerun safety from its Dagu labels (a value allows only `a-z A-Z 0-9 - _ . /`):
 `rerun=safe` (a rerun repeats nothing), `rerun-key=<key>` (effects keyed by `<key>`, so a rerun for the same key repeats
@@ -499,7 +500,7 @@ models in `starpulse/runtime/config_model.py`, which the loader takes its keys a
 - `event_log_archive_dir` (text, default `"starpulse-archive"`): Where `serve`'s History child writes each row it prunes, before it deletes the row (see Event log archive): a directory, relative to this file unless absolute.
 - `telemetry_loki_url` (text): The Loki base URL the harness adapters push each telemetry signal to, one log line per signal in `{job="starpulse-signals"}`, and the analytics views read back. Unset, the signals go to the event log. Give the stream its own Loki `retention_stream` rule to keep it as long as the event log.
 - `slow_read_seconds` (number, above 0, default `1.0`): The seconds a `GET /api/pulls` read may take, from accept to the last byte written, before `serve` logs a `slow_read` line for it: `queue_s`, `compute_s` and `write_s`, the seconds it waited for a handler thread, computed its answer and wrote it, `in_flight`, the `/api/pulls` reads running when it began, and `busy` and `streams`, the request workers in use (the read itself included) and the streams open when it was accepted. No other route is timed.
-- `worker_memory` (table of `[worker_memory.<context>]` table): The memory limits (proportional size on Linux, resident size on macOS) `serve` holds each worker child to, in megabytes (see Worker processes), set as `[worker_memory.<context>]` with either key left out. Past `soft_mb` it replaces the child, past `hard_mb` it kills and restarts it. Defaults, soft/hard: `pulls` 768/1536, `scheduler` 384/768, `runs` 512/1024, `flow-metrics` 384/768, `search` 384/768, `board` 768/1536.
+- `worker_memory` (table of `[worker_memory.<context>]` table): The memory limits (proportional size on Linux, resident size on macOS) `serve` holds each worker child to, in megabytes (see Worker processes), set as `[worker_memory.<context>]` with either key left out. Past `soft_mb` it replaces the child, past `hard_mb` it kills and restarts it. Defaults, soft/hard: `pulls` 768/1536, `scheduler` 384/768, `runs` 512/1024, `flow-metrics` 384/768, `search` 384/768, `board` 768/1536, `dagu` 256/512, `github-actions` 256/512, `systemd` 256/512.
 - `mode` (`"ic"`, default `"ic"`): `ic`, the one value: one person on one machine.
 - `host` (text, default `"127.0.0.1"`): The address `serve` and `worker api` listen on; the default answers this machine only, and `0.0.0.0` answers the network. The `--host` flag overrides it.
 - `port` (whole number, 1 or more, default `8766`): The port `serve` listens on. The `--port` flag overrides it.
@@ -559,7 +560,7 @@ models in `starpulse/runtime/config_model.py`, which the loader takes its keys a
 
 - `name` (text, required): The instance's name, unique; its workflows are drawn as `<name>/<workflow>`.
 - `type` (text, required): The runs adapter: a module under `starpulse` or the dotted path of one an installed package provides. It offers `start(url)` and `follow(url, runs, log)`, and optionally `rerun(url)` and `declared_params(url, workflow)`, the parameter names a workflow declares, which `doctor` reads. See Runs adapters for what a built-in adapter reads and serves.
-- `url` (text, required): What the adapter reads. A built-in adapter is an opt-in worker: you run `starpulse worker <adapter> --config <this file>`, `serve` starts it nowhere, and, with it down or never started, the page shows this instance with the error "the <adapter> worker has not reported" or "last reported Ns ago" (its beat is older than 60s).
+- `url` (text, required): What the adapter reads. A built-in adapter is an opt-in worker: you run `starpulse worker <adapter> --config <this file>` (`serve` starts it as a child), and, with it down or not yet started, the page shows this instance with the error "the <adapter> worker has not reported" or "last reported Ns ago" (its beat is older than 60s).
 - `run_safe` (list of text): The workflows the page's Run now may start.
 - `domains` (table of list of text or table of list of text): How the page groups this instance's workflows: each domain is a list of workflow names, or a table of process name to workflow list.
 - `commit` (`[runs.commit]` table): The run parameters that carry what a run applies, so the Ledger pairs a run with its merge for certain. Each key names a parameter; a key left out is a parameter this instance has none of.

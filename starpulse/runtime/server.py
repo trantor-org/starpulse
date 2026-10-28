@@ -540,7 +540,7 @@ class Prepared(NamedTuple):
     run_safe: list[str]
     producer_tokens: dict[str, str]
     opt_in_workers: list[str]
-    """The `[[runs]]` instances an opt-in worker runs (`starpulse.runs.opt_in`): none of them runs in `serve`."""
+    """The `[[runs]]` instances an adapter's own worker runs (`starpulse.runs.opt_in`): `serve` runs none of them itself."""
 
 
 def prepare(parser: argparse.ArgumentParser, args: argparse.Namespace, config: Config) -> Prepared:

@@ -10,8 +10,9 @@ from starpulse.runtime import closure
 from starpulse.runtime.closure import CONFIG_OWNERS, SELF, _blocks, restarts_serve
 from starpulse.runtime.config import _KEYS, Config, load
 from starpulse.runtime.supervisor import WORKER_CONTEXTS, Supervisor, worker_commands
+from starpulse.runtime.worker import OPT_IN
 
-CHILDREN = WORKER_CONTEXTS
+CHILDREN = (*WORKER_CONTEXTS, *OPT_IN)
 
 #: The `Config` attribute each top-level key fills; a key absent here is read through no single attribute.
 ATTRIBUTE = {
@@ -108,11 +109,12 @@ model = "small"
 """
 
 #: Each edit changes one table; the children it must replace are the ones that read that table, and the Page API beside
-#: them, which is built from the whole config and swaps behind its socket without dropping a request.
+#: them, which is built from the whole config and swaps behind its socket without dropping a request. CONFIG names a dagu
+#: run adapter, so its opt-in worker is a child that reads the runs and board tables too.
 EDITS = {
-    "runs": ('"nightly", "task-duplicate-retrain"', '"nightly"', {"api", "runs"}),
+    "runs": ('"nightly", "task-duplicate-retrain"', '"nightly"', {"api", "runs", "dagu"}),
     "search": ('model = "small"', 'model = "large"', {"api", "search"}),
-    "board": ("interval = 1", "interval = 2", {"api", "pulls", "scheduler", "runs", "flow-metrics", "board"}),
+    "board": ("interval = 1", "interval = 2", {"api", "pulls", "scheduler", "runs", "flow-metrics", "board", "dagu"}),
 }
 
 
