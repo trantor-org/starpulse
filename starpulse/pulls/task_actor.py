@@ -511,6 +511,13 @@ class TaskActor:
         proof = "; ".join(parts)
         return proof, f"{MERGE_EVIDENCE} {proof}"
 
+    def _pr_merged(self, agent: dict[str, Any]) -> tuple[str, str] | None:
+        """The merge evidence when every pull request the task cites has ended and at least one merged, else None: a
+        delivery closed unmerged is no proof of the work."""
+        terminal = self._pr_terminal(agent)
+        merged = any((record := self._record(url)) and record["state"] == "MERGED" for url in agent["prs"])
+        return terminal if terminal and merged else None
+
     def _pr_ready(self, agent: dict[str, Any]) -> tuple[str, str] | None:
         """The ready or merged pull requests when the task cites one that is, else None."""
         parts = []
@@ -596,6 +603,7 @@ class TaskActor:
 
     _facts: dict[str, Callable[[TaskActor, dict[str, Any]], tuple[Any, str] | None]] = {
         "pr_terminal": _pr_terminal,
+        "pr_merged": _pr_merged,
         "pr_ready": _pr_ready,
         "deps_done": _deps_done,
         "deps_unresolved": _deps_unresolved,
