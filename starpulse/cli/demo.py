@@ -122,14 +122,14 @@ GITHUB_JOBS = (
         (*GITHUB_SETUP, "Render the alert rules and provision them"),
     ),
     (
-        "Apply Unraid container templates",
+        "Apply container templates",
         ("Detect changed components",),
         (*GITHUB_SETUP, "Diff each template against the host"),
     ),
     (
-        "Apply Dagu DAGs",
+        "Apply scheduler jobs",
         ("Detect changed components",),
-        (*GITHUB_SETUP, "Copy the changed DAGs and reload the scheduler"),
+        (*GITHUB_SETUP, "Copy the changed jobs and reload the scheduler"),
     ),
     (
         "Apply systemd units",
@@ -141,8 +141,8 @@ GITHUB_JOBS = (
         (
             "Apply Grafana dashboards",
             "Apply Grafana alerting",
-            "Apply Unraid container templates",
-            "Apply Dagu DAGs",
+            "Apply container templates",
+            "Apply scheduler jobs",
             "Apply systemd units",
         ),
         ("Set up job", "Post the applied SHA to the deploy log"),
