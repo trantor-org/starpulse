@@ -22,6 +22,12 @@ def load(db: Connection, task_id: str) -> Row | None:
     }
 
 
+def after(db: Connection, seq: int, limit: int) -> list[tuple[Row, int]]:
+    """Up to `limit` rows folded past stream position `seq`, oldest first, each with the position it was folded to."""
+    found = db.execute(select(tasks.c.id, tasks.c.seq).where(tasks.c.seq > seq).order_by(tasks.c.seq).limit(limit))
+    return [(row, position) for task_id, position in found.all() if (row := load(db, task_id)) is not None]
+
+
 def save(db: Connection, row: Row, seq: int) -> None:
     """Replace the Task's row and criteria with `row`, folded up to stream position `seq`."""
     values = {key: value for key, value in row.items() if key != "criteria"} | {"seq": seq}

@@ -14,6 +14,11 @@ from starpulse.event_log.readmodel.tables import criteria, tasks
 from starpulse.event_log.store import EventStore, StoredEvent
 
 CHECKPOINT = "read-model:tasks"
+#: How far the search index holds the read model, apart from `CHECKPOINT`: any process may fold a row, and only the one
+#: holding the index writes its search row.
+SEARCH_CHECKPOINT = "read-model:search"
+#: The states in which a task has finished, as the search index dates it.
+_FINISHED = frozenset({"done", "archived"})
 BATCH = 500
 
 
@@ -56,6 +61,8 @@ class Projector:
                 self._fold(db, batch)
                 self._checkpoints.save(CHECKPOINT, position, conn=db)
             folded += len(batch)
+        if self._search is not None:
+            self._index_changed()
         return folded
 
     def rebuild(self) -> int:
@@ -64,6 +71,7 @@ class Projector:
             db.execute(delete(criteria))
             db.execute(delete(tasks))
             self._checkpoints.save(CHECKPOINT, 0, conn=db)
+            self._checkpoints.save(SEARCH_CHECKPOINT, 0, conn=db)
         return self.catch_up()
 
     def _fold(self, db, batch: list[StoredEvent]) -> None:
@@ -73,11 +81,24 @@ class Projector:
             touched[event.subject_id] = (fold(row, event), event.position)
         for row, seq in touched.values():
             rows.save(db, row, seq)
-            if self._search is not None:
-                self._index(db, row)
+
+    def _index_changed(self) -> None:
+        """Make the search index hold every row folded since it last did, by whichever process folded it."""
+        position, _ = self._checkpoints.load(SEARCH_CHECKPOINT)
+        while batch := self._read_after(position or 0):
+            position = batch[-1][1]
+            with self._engine.begin() as db:
+                for row, _ in batch:
+                    self._index(db, row)
+                self._checkpoints.save(SEARCH_CHECKPOINT, position, conn=db)
+
+    def _read_after(self, position: int) -> list[tuple[dict, int]]:
+        with self._engine.connect() as db:
+            return rows.after(db, position, BATCH)
 
     def _index(self, db: Connection, row: dict) -> None:
-        """Make the search index hold the Task's folded row: an archived Task is found in the archived lane."""
+        """Make the search index hold the Task's row: an archived Task is found in the archived lane."""
+        finished = row["archived"] or row["state"].lower() in _FINISHED
         self._search.index_fields(
             row["id"],
             title=row["title"],
@@ -86,5 +107,6 @@ class Projector:
             notes=row["notes"],
             lane="archived" if row["archived"] else row["state"],
             labels=row["labels"],
+            finished_at=row["updated_at"] if finished else None,
             connection=db,
         )
