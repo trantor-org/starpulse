@@ -18,6 +18,7 @@ from starpulse.runtime import server as server_module
 from starpulse.runtime.adapter_kit import serve as _serve
 from starpulse.runtime.adapter_kit import task
 from starpulse.runtime.adapter_kit import url as _url
+from starpulse.runtime.config import load
 from starpulse.views.page_server import PageServer
 
 _FOREIGN = "https://evil.example"
@@ -153,6 +154,10 @@ def test_a_json_content_type_with_a_charset_is_json(tmp_path: Path) -> None:
 
 def test_serve_listens_on_loopback_unless_a_host_is_given() -> None:
     parser = server_module.serve_parser()
+    default = parser.parse_args([])
+    given = parser.parse_args(["--host", "0.0.0.0"])
+    for args in (default, given):
+        server_module.resolve_listen(args, load(None))
 
-    assert parser.parse_args([]).host == "127.0.0.1"
-    assert parser.parse_args(["--host", "0.0.0.0"]).host == "0.0.0.0"
+    assert default.host == "127.0.0.1"
+    assert given.host == "0.0.0.0"

@@ -71,7 +71,7 @@ class RunsInstanceFile(_Table):
         description=(
             "What the adapter reads. A built-in adapter is an opt-in worker: you run `starpulse worker <adapter> "
             "--config <this file>`, `serve` starts it nowhere, and, with it down or never started, the page shows "
-            "this instance with the error \"the <adapter> worker has not reported\" or \"last reported Ns ago\" (its "
+            'this instance with the error "the <adapter> worker has not reported" or "last reported Ns ago" (its '
             "beat is older than 60s)."
         ),
     )
@@ -114,8 +114,7 @@ class ProducerFile(_Table):
         default=None,
         min_length=1,
         description=(
-            "A run adapter type whose own status labels its Step events carry, read through that adapter's "
-            "`status_of`."
+            "A run adapter type whose own status labels its Step events carry, read through that adapter's `status_of`."
         ),
     )
 
@@ -252,6 +251,25 @@ class ConfigFile(_Table):
         ),
     )
     mode: Literal["ic"] = Field(default="ic", description="`ic`, the one value: one person on one machine.")
+    host: str = Field(
+        default="127.0.0.1",
+        min_length=1,
+        description=(
+            "The address `serve` and `worker api` listen on; the default answers this machine only, and `0.0.0.0` "
+            "answers the network. The `--host` flag overrides it."
+        ),
+    )
+    port: int = Field(
+        default=8766, ge=1, le=65535, description="The port `serve` listens on. The `--port` flag overrides it."
+    )
+    hours: float = Field(
+        default=6.0,
+        gt=0,
+        description=(
+            "How far back a task's latest move on a machine counts; Admin's override replaces it. "
+            "The `--hours` flag overrides it."
+        ),
+    )
     tls_cert: str | None = Field(
         default=None,
         description="The TLS certificate, relative to this file's directory; set with `tls_key`, else both unset.",

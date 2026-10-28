@@ -64,6 +64,7 @@ def main(argv: list[str] | None = None) -> None:
             server._STATIC = Path(static)  # the page build `serve` checked, which `prepare` and the page app read
         host = api_worker.Host(
             config=server._config,
+            resolve_listen=server.resolve_listen,
             prepare=server.prepare,
             inherited_socket=server.inherited_socket,
             listen=server.listen,

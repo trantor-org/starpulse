@@ -49,6 +49,7 @@ class Host:
     so `runtime` passes these in. `probes` is the live health probes, `contract` the doctor's reading of them."""
 
     config: Callable[..., ApiConfig]
+    resolve_listen: Callable[..., None]
     prepare: Callable[..., tuple[Any, ...]]
     inherited_socket: Callable[[Any], socket.socket | None]
     listen: Callable[..., socket.socket]
@@ -68,6 +69,7 @@ class Host:
 def main(argv: list[str] | None, parser: argparse.ArgumentParser, *, host: Host) -> None:
     args = parser.parse_args(argv)
     config = host.config(parser, args.config)
+    host.resolve_listen(args, config)
     ready = host.prepare(parser, args, config)
     try:
         listening = host.inherited_socket(os.environ)
