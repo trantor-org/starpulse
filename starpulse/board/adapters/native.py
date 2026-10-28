@@ -16,6 +16,7 @@ import re
 import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -89,10 +90,11 @@ if TYPE_CHECKING:
 DEFAULT_PATH = ".starpulse/board"
 #: The `[board]` settings this adapter reads: `path` is the board's directory, `machine` a machine file for the Board,
 #: relative to the config, `criteria` the command that evaluates a task's Start Criteria (`{id}` is the task's id),
-#: `validate` the `module:function` that may refuse a task write before it lands, `guards` the record-level rules every
+#: `validate` the `module:function` that may refuse a task write before it lands, `python_path` the directories, relative
+#: to the config, put at the front of `sys.path` before `validate` is imported, `guards` the record-level rules every
 #: task write must satisfy (the `rules` module of `starpulse.board.model`), `task_file_name` the form of the name a created task's
 #: file is written under (`_FILE_NAMES`), `types` the names a task's `type` may take (any when absent).
-_SETTINGS = {"type", "path", "interval", "machine", "criteria", "holds", "validate", "guards", "task_file_name", "types"}
+_SETTINGS = {"type", "path", "interval", "machine", "criteria", "holds", "validate", "python_path", "guards", "task_file_name", "types"}
 #: The forms of a created task's file name: `title` is `<id> - <Title>.md`, as Backlog.md writes it (the default), `slug`
 #: is `<id>-<slug>.md`, lowercase and space-free, its slug capped at `_SLUG_MAX` characters.
 _FILE_NAMES = ("title", "slug")
@@ -219,6 +221,19 @@ def _state_of(root: Path, retired: _Retired) -> Callable[[str], str | None]:
         return lane_id(str(frontmatter.get("status") or "").strip()) if isinstance(frontmatter, dict) else None
 
     return state
+
+
+def _python_path(setting: object, base: Path) -> None:
+    """Put each directory the `python_path` setting lists, relative to `base`, at the front of `sys.path`."""
+    names = [setting] if isinstance(setting, str) else setting or []
+    if not isinstance(names, list) or not all(isinstance(name, str) for name in names):
+        raise ValueError("board: python_path must be a list of directory names")
+    found = [(base / name).resolve() for name in names]
+    if missing := [str(path) for path in found if not path.is_dir()]:
+        raise ValueError(f"board: python_path names no directory: {', '.join(missing)}")
+    for path in reversed(found):
+        if str(path) not in sys.path:
+            sys.path.insert(0, str(path))
 
 
 def _hook(setting: object) -> Validate | None:
@@ -1208,6 +1223,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
     file_name = str(settings.get("task_file_name", _FILE_NAMES[0]))
     if file_name not in _FILE_NAMES:
         raise ValueError(f"board: task_file_name {file_name!r} is not one of {', '.join(sorted(_FILE_NAMES))}")
+    _python_path(settings.get("python_path"), base)
     root = base / str(settings.get("path", DEFAULT_PATH))
     _create(root, base.resolve().name)
     link = _doc_linker(root, base)
