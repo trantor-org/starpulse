@@ -11,6 +11,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
+from starpulse.views.page_server import PageServer
 
 # The HTTP/3 client of `test_http3` is absent on the free-threaded build; see the skip there.
 pytest.importorskip("aioquic")
@@ -85,3 +86,11 @@ def test_serve_without_a_certificate_stays_cleartext_with_no_alt_svc(tmp_path: P
         answer = _await_answer(port, None)
 
     assert (answer.status, answer.getheader("alt-svc")) == (200, None)
+
+
+def test_serve_refuses_a_certificate_that_is_not_there_naming_it(tmp_path: Path) -> None:
+    cert, key = tmp_path / "cert.pem", tmp_path / "key.pem"
+    key.write_text("key")
+
+    with pytest.raises(FileNotFoundError, match=f"tls_cert {cert} does not exist"):
+        PageServer(lambda *_: None, ("127.0.0.1", 0), tls=(cert, key))
