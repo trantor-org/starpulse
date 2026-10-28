@@ -92,7 +92,10 @@ repository is size 3.
      context forecast alone never sizes it at 8, so size it by its other drivers.
 3. State kind, size, profile and a one-line reason in your reply before the `create`. Look
    the profile up in the project's table; an assignee that departs from it needs a comment
-   recording the evidence and the reason. A fast-tier profile goes only to unattended
+   recording the evidence and the reason. A pure move that rewrites more than about 30 files
+   or 500 changed lines, or that adds an import-linter contract, is never on a fast-tier
+   profile whatever its size label: its floor is `@agent-standard-high`, since a 95-file move
+   sized 5 under the pure-move rule needed it. A fast-tier profile goes only to unattended
    `kind-execute` or `kind-mechanical` work: an `attended` mode, a type that waits on the
    operator or judges live evidence, or an operator criterion lifts it to the standard tier at
    the same effort. A check or validate task's verdict is a judgement over live evidence,
