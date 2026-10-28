@@ -141,6 +141,23 @@ describe("the Star Map seen again", () => {
     r.stop();
   });
 
+  it("places what changed while another level was open as it stands on returning to the Board", async () => {
+    const r = await open();
+    // a level change snapshots the canvas onto a fresh one, which draws with the same stub
+    const cx = (document.getElementById("c") as HTMLCanvasElement).getContext("2d")!;
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(cx);
+    r.go([{ kind: "board" }, { kind: "state", id: "in_progress" }]);
+    await frames();
+    push.handlers!.snapshot(snap("in_progress"));
+    push.handlers!.snapshot(snap("review"));
+    expect(await frames()).not.toContain("place");
+    r.go([{ kind: "board" }]);
+    const did = await frames();
+    expect(did.indexOf("resync")).toBeGreaterThanOrEqual(0);
+    expect(did.indexOf("resync")).toBeLessThan(did.indexOf("place"));
+    r.stop();
+  });
+
   it("places what a dropped stream missed as it stands, from the reconnect's snapshot", async () => {
     const r = await open();
     push.handlers!.live(false);
