@@ -31,7 +31,7 @@ import {
 } from "./scene";
 import { SIM_PERIOD } from "./mockSky";
 import { Moves, PULSE, TRAVEL, hosted, merge, stateCount, withLedgers, type Move, type Sky } from "./sky";
-import { branchLines, drawBranches, placeBranches } from "./transit";
+import { branchLines, drawBranches, placeBranches, resyncBranches } from "./transit";
 import type { KanbanTask } from "../features/kanban/kanbanModel";
 import { foldRows, openStream, type Link } from "../api/stream";
 import { openLedger, type LedgerHead } from "../api/ledgerStream";
@@ -109,6 +109,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   const grown = sizes(), bends = new Map<string, Pt>(); // each bent Board path's last bend, so it keeps its route while that clears
   let T = Date.now() / 1000, clock = 0, liveTasks = new Set<string>(), hotEdge = new Set<string>(), ZS = 1, K = 1;
   let away = false, timer = 0, fanTimer = 0, stopped = false, saveT = 0, tick = 0;
+  /** The snapshot after a resync is still to come; then the next Board frame places the phase branches and dots as they stand, not from where they last drew. */
+  let resynced = false, replace = false;
   // a delta behind another view skips the Star Map layout nothing draws, and lays it out when the map is shown or asked for
   const relay = whenShown(() => layout(true)), publishLater = staged();
   // The stream the page reads its snapshot and every change after it from.
@@ -398,13 +400,18 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     if (e.key === "Escape" || e.key === "Backspace") back();
     if (e.key === "0" && scene) flyTo(fit);
   };
+  /** The next snapshot is read as a page load: the moves and the phase branches place everyone where it puts them, replaying nothing missed. */
+  const resync = () => {
+    moves.resync(Date.now() / 1000);
+    resynced = true;
+  };
   /** A hidden tab stops animating, so it drops the stream; on return the stream's fresh snapshot places everyone at once, replaying nothing missed. */
   const onVisibility = () => {
     if (demo) return;
     if (document.hidden) {
       stream?.close();
       stream = null;
-      moves.resync(Date.now() / 1000);
+      resync();
     } else stream ??= openStream(connection);
   };
 
@@ -434,7 +441,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     window.setTimeout(simTick, 250);
   };
   function onLive(on: boolean) {
-    if (!on) moves.resync(Date.now() / 1000); // the reconnect's snapshot places what the drop missed, as a returning tab's does
+    if (!on) resync(); // the reconnect's snapshot places what the drop missed, as a returning tab's does
   }
   /** The dot and its note follow what the stream says it is doing; a note keeps the time of the last data drawn, which the Board still shows. */
   function onLink(link: Link) {
@@ -468,6 +475,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     S = { ...merge(next), ledgers: ledgerRows };
     for (const d of S.dags) fans[d.name] = track(fans[d.name] ?? emptyFan(), d, T);
     moves.observe(S, T);
+    if (resynced) [resynced, replace] = [false, true];
     if (first) runEvents.resync(); // the runs already in flight when the page opens are not announced as new
     runEvents.observe(S.dags, T);
     if (first) {
@@ -606,6 +614,9 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     // the phase machines keep off every hangar's name and orbiters, drawn or not, so a DAG starting never moves a machine
     const orb = 7 / fit.k;
     if (board) sc.hangars = (ties()?.pivots ?? []).flatMap((h) => [{ of: `hangar:${h.state}`, x0: h.box[0], y0: h.box[1], x1: h.box[2], y1: h.box[3] }, ...h.orbs.map((o) => ({ of: `hangar:${o.dag}`, x0: o.x - orb, y0: o.y - orb, x1: o.x + orb, y1: o.y + orb }))]);
+    // the phase branches draw only on the Board: one shown again after it drew no frame stands as the sky now puts it
+    if (board && replace) resyncBranches();
+    replace = !board;
     gliding = board && placeBranches(sc, performance.now() / 1000);
     liveTasks = new Set(EVENTS().filter((e) => e.task && e.at <= T && T - e.at < TRAVEL).map((e) => e.task!));
   }
@@ -1363,8 +1374,13 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       if (scene) flyTo(fit);
     },
     show(on) {
+      const back = on && away;
       away = !on;
       relay.show(on);
+      if (!back) return;
+      // the Board drew no frame behind the other view: the next one shows the sky as it now stands, not the steps it missed
+      replace = true;
+      loop.wake();
     },
     spot(target, near = false) {
       spotted = target;

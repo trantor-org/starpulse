@@ -255,6 +255,24 @@ describe("placeBranches", () => {
     expect(line().ext).toBeCloseTo(upTo(line(), 2), 6);
   });
 
+  it("after a resync, shows the steps a task took while no frame was drawn as they stand, gliding and growing nothing", () => {
+    const scene = sc.build({ S: sky.merge(live()), moves: new sky.Moves(), W: 1920, H: 1080, T: 0, scale: 100 }, { kind: "board" });
+    const sun = (scene.tasks.find((k) => k.h)!.host as Galaxy).id, mine = scene.tasks.filter((k) => (k.host as Galaxy).id === sun);
+    const steps = Array.from({ length: 5 }, (_, i) => `s${i}`);
+    mine[0].h = { machine: "deliver", steps, j: 0, ring1: true };
+    run(scene, 0, 2);
+    // the tab is hidden, or another view is shown, while the task walks on through its phase and into a sub-machine
+    mine[0].h = { machine: "ci", steps: steps.slice(0, 4), j: 2, ring1: false, side: { machine: "deliver", steps, j: 3 } };
+    T.resyncBranches();
+    expect(T.placeBranches(scene, 60), "still animating").toBe(false);
+    expect(mine[0].moving).toBe(false);
+    const lines = T.branchLines(0), at = (key: string) => lines.find((l) => l.key === key)!;
+    expect(at(`${sun}|deliver`).ext).toBeCloseTo(upTo(at(`${sun}|deliver`), 3), 6);
+    const fork = at(`${sun}|deliver`).pts.find((p) => p.k === `${sun}|deliver:3`)!;
+    expect(at(`${sun}|deliver|ci`).ext).toBeCloseTo(upTo(at(`${sun}|deliver|ci`), 2, fork), 6);
+    expect(T.offLine(scene, 0.5)).toEqual([]);
+  });
+
   it("keeps a dot on the lines drawn under it as it rides out onto a sub-machine that is still growing", () => {
     vi.stubGlobal("location", { search: "?mock=1&extra=8&sim=3" });
     const clock = vi.spyOn(performance, "now").mockReturnValue(0);

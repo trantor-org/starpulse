@@ -417,6 +417,17 @@ function room(sc: Scene, sun: string) {
   const placed = [...branches.values()].filter((o) => o.sun === sun && !Number.isNaN(o.th));
   return [layout(sc, sun), ...placed.map((o) => `${o.key}@${o.th.toFixed(2)}:${o.lane}`)].join();
 }
+/**
+ * Read the next frame with tasks on it as a page load: every branch and dot stands where the sky puts it, none grown, torn down or glided from
+ * where it stood when frames stopped. A sky the page drew no frame of (a hidden tab, another view or level, a dropped stream) is the current
+ * state, not a queue of moves to play.
+ */
+export function resyncBranches() {
+  branches.clear();
+  mems.clear();
+  twins = [];
+  loaded = false;
+}
 /** Places every Board task with a phase place for this frame and grows or retracts the branches; true while anything still animates. */
 export function placeBranches(sc: Scene, now: number): boolean {
   const dt = Math.min(0.1, Math.max(0, now - lastNow)), tasks = sc.tasks.filter((k) => !k.today && sc.galaxies[(k.host as Galaxy).id] === k.host);
