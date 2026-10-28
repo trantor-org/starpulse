@@ -76,7 +76,7 @@ def test_an_edit_that_adds_a_start_criterion_holding_a_date_appends_it_as_text(s
     assert built.edit("task-5", {"description": description}, "", actor="adin").ok
 
     meta = store.read("task", "task-5")[-1].payload["meta"]
-    assert "2026-10-27 23:21:00" in json.dumps(meta)
+    assert meta["start_criteria"][0]["want"] == "2026-10-27 23:21:00"
 
 
 def test_a_move_appends_a_transition_naming_both_states(served) -> None:
