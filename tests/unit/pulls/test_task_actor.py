@@ -137,3 +137,16 @@ def test_a_waiting_task_with_no_dependencies_and_no_start_criteria_is_released(
     running(board, store, stop)
 
     assert until(lambda: board.moved() == [("TASK-1", "ready")])
+
+
+def test_a_waiting_task_whose_start_criteria_pass_stays_waiting_while_a_dependency_is_open(
+    store: PullStore, stop: threading.Event
+) -> None:
+    board = Board(
+        BoardFeed(roles=ROLES),
+        task("TASK-9", "Ready"),
+        task("TASK-1", "Waiting", description=GATED, dependencies=("TASK-9",)),
+    )
+    running(board, store, stop, evaluate=Criteria("met"))
+
+    assert not until(lambda: board.moved(), within=0.3)

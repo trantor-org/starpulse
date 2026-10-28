@@ -101,6 +101,14 @@ def seed(record: Record, at: float) -> dict[str, Any]:
     return seed
 
 
+def _held(store: EventStore, task: str, before: Record) -> Record:
+    """`before` with each own field the History holds otherwise, so a write after a lost append still records the file's
+    fields, and its move from where the History left it."""
+    row = replay(store.read(KIND, task))
+    filed = seed(before, 0.0)
+    return {**before, **{key: row[name] for key, name in _OWN.items() if row[name] != filed[name]}}
+
+
 def _field_changes(before: Record, after: Record) -> dict[str, Any]:
     changes = {}
     for key, name in _OWN.items():
@@ -234,8 +242,7 @@ class TaskHistory:
             if after is None and head and store.read(KIND, task, head - 1)[-1].type == "Archived":
                 return  # retiring an archived task leaves the board no more than it already has
             base = before if before is not None else after
-            # a status is diffed from the History's state, so a write whose earlier append was lost still records its move
-            held = {**before, "status": replay(store.read(KIND, task))["state"]} if head and before else before
+            held = _held(store, task, before) if head and before else before
             events = _events(held or {}, after, note)
             seeded = [("TaskImported", seed(base, 0.0))] if head == 0 and base else []
             if not events and not seeded:
