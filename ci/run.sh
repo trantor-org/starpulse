@@ -88,7 +88,7 @@ cmd_build() {
   dist=$(mktemp -d)
   uv build --out-dir "$dist"
   # grep -c reads the whole listing: under pipefail, grep -q closing the pipe early would fail the step.
-  [ "$(unzip -l "$dist"/*.whl | grep -c 'starpulse/static/index.html')" -gt 0 ]
+  [ "$(uv run python -m zipfile -l "$dist"/*.whl | grep -c 'starpulse/static/index.html')" -gt 0 ]
   rm -rf "$dist"
 }
 
