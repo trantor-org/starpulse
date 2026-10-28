@@ -30,7 +30,7 @@ import traceback
 from collections.abc import Callable, Sequence
 from typing import IO, Any, NoReturn
 
-from starpulse.runtime.hold import LISTEN_FD_ENV, SUPERVISED_ENV, watch_supervisor
+from starpulse.runtime.hold import LISTEN_FD_ENV, SUPERVISED_ENV, supervised_env, watch_supervisor
 from starpulse.runtime.supervisor import spawn_child
 
 logger = logging.getLogger(__name__)
@@ -257,7 +257,7 @@ class _Preloaded:
             self.proc = subprocess.Popen(
                 [sys.executable, "-m", __name__, str(theirs.fileno()), entry, *modules],
                 stdin=subprocess.PIPE,
-                env={**os.environ, SUPERVISED_ENV: "1"},
+                env=supervised_env(),
                 start_new_session=True,
                 pass_fds=[theirs.fileno(), *inherited],
             )

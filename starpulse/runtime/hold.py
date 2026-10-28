@@ -14,6 +14,16 @@ from collections.abc import Callable, MutableMapping
 #: Set in a supervised child's environment: its stdin is a pipe from `serve`.
 SUPERVISED_ENV = "STARPULSE_SUPERVISED"
 
+#: Freed pages stay resident on the free-threaded build until mimalloc's purge delay lapses; `0` returns them at once.
+PURGE_DELAY_ENV = "MIMALLOC_PURGE_DELAY"
+
+
+def supervised_env() -> dict[str, str]:
+    """The environment of a process `serve` supervises: `serve`'s own, marked supervised, with an immediate mimalloc
+    purge unless the operator's environment already names a delay."""
+    return {PURGE_DELAY_ENV: "0", **os.environ, SUPERVISED_ENV: "1"}
+
+
 #: Set to a descriptor number when the process was handed the page's listening socket on it: by `serve` to the Page API
 #: child, and by a `serve` that re-executes itself to its next image.
 LISTEN_FD_ENV = "STARPULSE_LISTEN_FD"
