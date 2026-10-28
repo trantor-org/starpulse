@@ -22,6 +22,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable, Collection, Mapping
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -377,12 +378,13 @@ def recent_runs(base_url: str, name: str, finished: dict | None = None) -> list[
     return out
 
 
-#: The window of a DAG's run statistics, how long they are kept before the DAG's runs are read again, and how long
-#: one listing may spend reading them. Dagu answers a DAG's week of runs slowly (seconds), so a listing reads the
-#: stalest first until the budget is spent and serves the rest as absent until a later listing gets to them.
+#: The window of a DAG's run statistics, how long they are kept before the DAG's runs are read again, and how many DAGs
+#: are read at once. Dagu answers a DAG's week of runs slowly (a busy DAG's takes a minute and more, each page costing a
+#: scan of the window) yet no slower for several at once, so `refresh_stats` reads the DAGs in parallel, off the
+#: listing: a listing serves what is kept and shows a DAG not read yet with no statistics.
 STATS_WINDOW = 7 * 86400
 STATS_TTL = 300.0
-STATS_BUDGET = 10.0
+STATS_WORKERS = 8
 
 #: The labels a DAG declares its rerun safety with: `rerun=safe`, `rerun-key=<key>` (its effects are keyed, so a rerun for
 #: the same key repeats none), or `rerun-repeats=<why>` with the `rerun-step=<step>` that repeats. Dagu allows only
@@ -529,26 +531,27 @@ def _graph(base_url: str, name: str, run: dict, graphs: dict, now: float) -> tup
     return graph
 
 
-def _refresh_stats(base_url: str, listed: list[dict], stats: dict, clock: Callable[[], float], budget: float) -> None:
-    """Read the run statistics of the DAGs in `listed` that have a latest run and whose kept read is older than `STATS_TTL`.
+def refresh_stats(base_url: str, stats: dict, clock: Callable[[], float] = time.monotonic) -> None:
+    """Read the run statistics of the DAGs Dagu lists with a latest run and whose kept read is older than `STATS_TTL`.
 
-    The stalest go first and none starts once `budget` seconds have passed; a read Dagu fails is tried again next time.
-    The DAGs `listed` no longer shows leave `stats`.
+    The DAGs are read `STATS_WORKERS` at a time, the unread ones first and then the stalest, and every one is read
+    however long that takes; a read Dagu fails is tried again next time. The DAGs Dagu no longer lists leave `stats`.
     """
+    listed = _get(f"{base_url}/api/v1/dags?perPage=200").get("dags", [])
     for gone in stats.keys() - {d["fileName"] for d in listed}:
         del stats[gone]
-    deadline = clock() + budget
     ran = [d["fileName"] for d in listed if d.get("latestDAGRun")]
-    for name in sorted(ran, key=lambda n: stats[n]["read"] if n in stats else -math.inf):
-        at = clock()
-        if at >= deadline:
-            return
-        if name in stats and at - stats[name]["read"] < STATS_TTL:
-            continue
+    stale = [n for n in ran if n not in stats or clock() - stats[n]["read"] >= STATS_TTL]
+    stale.sort(key=lambda n: stats[n]["read"] if n in stats else -math.inf)
+
+    def read(name: str) -> None:
         try:
-            stats[name] = _read_stats(base_url, name, stats.get(name), at, time.time())
+            stats[name] = _read_stats(base_url, name, stats.get(name), clock(), time.time())
         except OSError:
-            continue
+            pass
+
+    with ThreadPoolExecutor(STATS_WORKERS) as pool:
+        list(pool.map(read, stale))
 
 
 def dags(
@@ -559,16 +562,14 @@ def dags(
     graphs: dict | None = None,
     clock: Callable[[], float] = time.monotonic,
     stats: dict | None = None,
-    budget: float = STATS_BUDGET,
 ) -> list[dict]:
     """Every DAG on a Dagu instance, or just those in `only`, with its latest run, schedule, step graph, pool and run statistics.
 
     A full listing also reads each DAG's active runs; the listing of `only` leaves them out, as it serves a step read
     after one run entry. A DAG whose detail cannot be read is listed without steps or pool rather than failing the listing.
     `graphs` keeps each DAG's graph between listings (see `_graph`); a full listing drops the DAGs it no longer shows.
-    `stats` keeps each DAG's runs of the last `STATS_WINDOW` between listings: a full listing refreshes what is older than
-    `STATS_TTL` within `budget` seconds (see `_refresh_stats`), the listing of `only` serves what is kept. A DAG with no
-    run, or whose statistics have not been read yet, has `stats` None, never zeros.
+    `stats` keeps each DAG's runs of the last `STATS_WINDOW` between listings, as `refresh_stats` reads them; a listing
+    serves what is kept. A DAG with no run, or whose statistics have not been read yet, has `stats` None, never zeros.
     """
     graphs = {} if graphs is None else graphs
     stats = {} if stats is None else stats
@@ -577,7 +578,6 @@ def dags(
     if only is None:
         for gone in graphs.keys() - {d["fileName"] for d in listed}:
             del graphs[gone]
-        _refresh_stats(base_url, listed, stats, clock, budget)
     out = []
     for d in listed:
         if only is not None and d["fileName"] not in only:
@@ -872,6 +872,17 @@ def rerun(url: str) -> Callable[[str, Mapping[str, str]], str]:
     return rerunner(connect(url))
 
 
+def _refresh_stats_forever(url: str, stats: dict, stop: threading.Event) -> None:
+    """Read the run statistics of Dagu's DAGs every `RECONCILE_INTERVAL` seconds until `stop`; a refresh that fails is tried again."""
+    while True:
+        try:
+            refresh_stats(url, stats)
+        except (OSError, ValueError, KeyError, TypeError):  # Dagu unreachable or answering something else
+            pass
+        if stop.wait(RECONCILE_INTERVAL):
+            return
+
+
 def _reconcile_forever(runs: DaguRuns, stop: threading.Event) -> None:
     """List Dagu every `RECONCILE_INTERVAL` seconds until `stop`, so runs show with no `handler_on` hooks publishing them."""
     while True:
@@ -893,7 +904,8 @@ def follow(
     The head is read before the listing, so an entry the listing may not hold is still read and the retained ones,
     already in it, are not replayed; an entry stamped before the listing is dropped (`DaguRuns`). The listing
     repeats every `RECONCILE_INTERVAL` seconds, so runs show with no `handler_on` hooks publishing them. A sink with a `tied`
-    attribute (the workflows a Board event cues or that write one) also gets those workflows' recent runs. Both
+    attribute (the workflows a Board event cues or that write one) also gets those workflows' recent runs. A third thread
+    reads the DAGs' run statistics apart from the listing (`refresh_stats`), which serves them as they are read. The
     threads end when `stop` is set; the server passes none and they run for the process's life.
     """
     stop = stop or threading.Event()
@@ -910,3 +922,4 @@ def follow(
 
     threading.Thread(target=read, name="dagu-runs", daemon=True).start()
     threading.Thread(target=_reconcile_forever, args=(reader, stop), name="dagu-runs-reconcile", daemon=True).start()
+    threading.Thread(target=_refresh_stats_forever, args=(url, stats, stop), name="dagu-runs-stats", daemon=True).start()

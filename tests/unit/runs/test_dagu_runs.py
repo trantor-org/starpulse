@@ -17,6 +17,7 @@ import pytest
 from starpulse.board.board_feed import BoardFeed
 from starpulse.contracts.adapters import StartFailedError, TaskKeys
 from starpulse.event_log.event_log import EventLog
+from starpulse.runs import dagu as dagu_module
 from starpulse.runs import run_events
 from starpulse.runs.dagu import (
     _STATUS,
@@ -29,6 +30,7 @@ from starpulse.runs.dagu import (
     declared_params,
     domains,
     pools,
+    refresh_stats,
     rerun,
     rerunner,
     start,
@@ -569,8 +571,10 @@ def test_dags_reads_each_dags_latest_run_with_defaults_for_what_dagu_omits(monke
         return _Reply(details[url.rsplit("/", 1)[1]] if "perPage" not in url else listing)
 
     monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    stats: dict = {}
+    refresh_stats("http://dagu", stats)
 
-    assert dags("http://dagu") == [
+    assert dags("http://dagu", stats=stats) == [
         {
             "name": "ran",
             "status": "failed",
@@ -843,6 +847,7 @@ def test_following_an_instance_reads_its_listing_into_the_sink_on_daemon_threads
     assert [(t.name, t.daemon) for t in started if t.name.startswith("dagu-")] == [
         ("dagu-runs", True),
         ("dagu-runs-reconcile", True),
+        ("dagu-runs-stats", True),
     ]
     assert [d["name"] for d in feed.snapshot()["dags"]] == ["ci/d1"]
 
@@ -853,6 +858,7 @@ def test_a_run_appended_to_the_log_moves_its_dag_and_the_end_reads_the_steps_aga
     monkeypatch.setattr(
         "starpulse.runs.dagu._reconcile_forever", lambda runs, stop: None
     )  # only the entries move the DAG
+    monkeypatch.setattr("starpulse.runs.dagu._refresh_stats_forever", lambda url, stats, stop: None)
     feed = BoardFeed()
     with dagu({"d1": ["a"]}) as (base_url, calls):
         follow_instance(base_url, feed.runs("ci"), log, interval=0.01)
@@ -1505,7 +1511,7 @@ FAILED = Past(
 
 def recent(base_url: str, tied: set[str], **kwargs) -> list[dict]:
     """The recent runs of `apply`, the listing reading no statistics so its requests are the recent runs' alone."""
-    listed = dags(base_url, recent=tied, **{"stats": {}, "budget": 0.0, **kwargs})
+    listed = dags(base_url, recent=tied, **{"stats": {}, **kwargs})
     return next(d for d in listed if d["name"] == "apply").get("recent", [])
 
 
@@ -1891,7 +1897,11 @@ def _past(dag: str, run_id: str, label: str, began: float, lasted: float | None,
 
 
 def _listed(base_url: str, **kwargs) -> dict[str, dict]:
-    return {d["name"]: d for d in dags(base_url, **kwargs)}
+    """The DAGs listed once the statistics have been read, as the background refresh reads them between listings."""
+    stats = kwargs.pop("stats", None)
+    stats = {} if stats is None else stats
+    refresh_stats(base_url, stats)
+    return {d["name"]: d for d in dags(base_url, stats=stats, **kwargs)}
 
 
 def test_a_scheduled_dag_serves_its_schedule_and_a_manual_one_none() -> None:
@@ -1980,17 +1990,44 @@ def test_statistics_are_kept_until_their_ttl_passes_and_then_read_again() -> Non
     with dagu({"d": ["a"]}, history=[_past("d", "r1", "succeeded", 100, 50)]) as (base_url, calls):
         for at in (0.0, STATS_TTL - 1, STATS_TTL):
             now[0] = at
-            dags(base_url, stats=stats, clock=lambda: now[0])
+            refresh_stats(base_url, stats, clock=lambda: now[0])
 
     assert len([c for c in calls if "dag-runs?name=d" in c]) == 2
 
 
-def test_a_listing_reads_statistics_only_within_its_budget() -> None:
+def test_a_listing_reads_no_statistics_so_it_never_waits_on_them() -> None:
     with dagu({"d": ["a"]}, history=[_past("d", "r1", "succeeded", 100, 50)]) as (base_url, calls):
-        listed = _listed(base_url, stats={}, budget=0.0)
+        listed = {d["name"]: d for d in dags(base_url, stats={})}
 
     assert listed["d"]["stats"] is None
     assert not [c for c in calls if "dag-runs?name=d" in c]
+
+
+def test_one_refresh_reads_the_statistics_of_every_dag_that_has_run_however_many() -> None:
+    names = [f"d{i:02d}" for i in range(40)]
+    history = [_past(name, "r1", "succeeded", 100, 50) for name in names]
+    stats: dict = {}
+    with dagu({name: ["a"] for name in names}, history=history) as (base_url, _):
+        refresh_stats(base_url, stats)
+
+    assert sorted(stats) == names
+
+
+def test_a_refresh_reads_several_dags_at_once_so_a_heavy_one_does_not_hold_up_the_rest(monkeypatch) -> None:
+    both_started = threading.Barrier(2, timeout=5)
+    read = dagu_module._read_stats
+
+    def meeting(*args, **kwargs):
+        both_started.wait()  # returns only when a second DAG's read is under way
+        return read(*args, **kwargs)
+
+    monkeypatch.setattr(dagu_module, "_read_stats", meeting)
+    stats: dict = {}
+    history = [_past(name, "r1", "succeeded", 100, 50) for name in ("a", "b")]
+    with dagu({"a": ["x"], "b": ["x"]}, history=history) as (base_url, _):
+        refresh_stats(base_url, stats)
+
+    assert sorted(stats) == ["a", "b"]
 
 
 def test_a_listing_of_named_dags_serves_the_statistics_already_read_without_reading_more() -> None:
