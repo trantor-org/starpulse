@@ -18,7 +18,7 @@ PULL = ("acme/widgets", 7)
 T0 = 1_700_000_000.0
 
 
-def _entry(machine: str, event: str, key: str = "PROJ-1", at: float = T0, **extra: str) -> Entry:
+def _entry(machine: str, event: str, key: str = "PROJ-1", at: float = T0, **extra: object) -> Entry:
     fields = {"event_id": f"{machine}-{event}-{at}", "machine": machine, "event": event, "task": key, "time": str(at)}
     return Entry(1, "machine:events", fields["event_id"], fields | extra, at)
 
@@ -194,6 +194,26 @@ def test_a_close_of_a_pull_request_already_closed_does_not_close_the_last_open_o
     projection.handle(_entry("github-pull-request", "PR_CLOSED", at=T0 + 2, repository="acme/skills", pr="2"))
 
     assert {(r["repo"], r["state"]) for r in store.find()} == {("acme/widgets", "OPEN"), ("acme/skills", "CLOSED")}
+
+
+def test_a_close_whose_data_names_a_pull_request_the_task_does_not_cite_closes_none() -> None:
+    projection, store, _ = _projection()
+    projection.handle(_entry(*OPEN, at=T0))
+
+    data = {"repository": "acme/widgets", "pr": 8}
+    projection.handle(_entry("github-pull-request", "PR_CLOSED", at=T0 + 1, data=data))
+
+    assert _record(store)["state"] == "OPEN"
+
+
+def test_a_close_whose_data_names_the_cited_open_pull_request_closes_it() -> None:
+    projection, store, _ = _projection()
+    projection.handle(_entry(*OPEN, at=T0))
+
+    data = {"repository": "acme/widgets", "pr": 7}
+    projection.handle(_entry("github-pull-request", "PR_CLOSED", at=T0 + 1, data=data))
+
+    assert _record(store)["state"] == "CLOSED"
 
 
 def test_a_ready_event_reaches_every_pull_request_of_the_task() -> None:

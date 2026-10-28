@@ -169,16 +169,18 @@ class RecordProjection:
                 self._changed()
 
     def _targets(self, key: str, closing: bool, fields: Mapping[str, Any]) -> list[tuple[str, int]]:
-        """The task's pull requests an event applies to: those still open, and for a close the one it names, else only
-        a lone open one."""
+        """The task's pull requests an event applies to: those still open, and for a close the one it names, at the top
+        level or under `data`; a close naming none applies only to a lone open one."""
         pulls = self._cited(key)
         stored = {pull: self._store.find(repo=pull[0], number=pull[1]) for pull in pulls}
         opened = [pull for pull in pulls if not stored[pull] or stored[pull][0]["state"] == "OPEN"]
         if not closing:
             return opened
-        number = str(fields.get("pr", ""))
-        named = (str(fields.get("repository")), int(number) if number.isdigit() else 0)
-        if named in pulls:
+        data = fields.get("data")
+        naming = data if isinstance(data, Mapping) and "pr" in data else fields
+        number = str(naming.get("pr", ""))
+        if number.isdigit():
+            named = (str(naming.get("repository")), int(number))
             return [named] if named in opened else []
         return opened if len(opened) == 1 else []
 
