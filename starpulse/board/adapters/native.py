@@ -442,6 +442,7 @@ def _record_of(text: str, task: str, evaluate: Callable[[str, str], list[dict[st
         "references": list(_strings(frontmatter.get("references"))),
         "documentation": list(_strings(frontmatter.get("documentation"))),
         "modifiedFiles": list(_strings(frontmatter.get("modified_files"))),
+        "verifyPlan": list(_strings(frontmatter.get("verify_plan"))),
         "description": description,
         "start_criteria": evaluate(task, description),
         "plan": _section(_PLAN, body),
@@ -482,9 +483,10 @@ _LISTS = {
     "references": "references",
     "documentation": "documentation",
     "modifiedFiles": "modified_files",
+    "verifyPlan": "verify_plan",
 }
 #: The lists whose key a task file leaves out while it holds nothing.
-_OPTIONAL_LISTS = {"references", "documentation", "modified_files"}
+_OPTIONAL_LISTS = {"references", "documentation", "modified_files", "verify_plan"}
 _COMMENTS = re.compile(r"[ \t]*<!-- COMMENTS:END -->")
 
 
