@@ -1,9 +1,10 @@
-"""A done task goes cold at the first local midnight after it entered done: the feed holds its id, state and entered time only."""
+"""A done task goes cold at the first local midnight after it entered done: the feed holds its id, state, entered time
+and moves only."""
 
 from datetime import datetime
 
 from starpulse.board.board_feed import BoardFeed
-from starpulse.contracts.adapters import BoardTask
+from starpulse.contracts.adapters import BoardTask, Move
 
 DAY_S = 86400.0
 
@@ -30,9 +31,17 @@ def test_done_cold_a_done_task_before_midnight_holds_only_id_state_and_entered()
 
     feed.put(_task("PROJ-1", at=entered))
 
-    assert feed.held("PROJ-1") == {"id": "PROJ-1", "state": "done", "entered": entered}
+    assert feed.held("PROJ-1") == {"id": "PROJ-1", "state": "done", "entered": entered, "moves": {}}
     assert (_ids(feed), feed.snapshot()["cold_done"]) == ([], ["PROJ-1"])
     assert (feed.task("PROJ-1"), feed.open_tasks()) == (None, [])
+
+
+def test_done_cold_a_cold_done_task_keeps_the_moves_its_lane_offers() -> None:
+    feed = _live()
+
+    feed.put(_task("PROJ-1", at=NOW - DAY_S - 60, moves={"in_progress": Move(allowed=True)}))
+
+    assert feed.held("PROJ-1")["moves"] == {"in_progress": Move(allowed=True).model_dump()}
 
 
 def test_done_cold_a_done_task_since_local_midnight_keeps_its_record() -> None:

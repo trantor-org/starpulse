@@ -249,6 +249,14 @@ def test_a_lan_browser_moves_a_task_through_the_writer_to_the_status_the_column_
     assert writer.sent == [("PROJ-3", "In Progress")]
 
 
+def test_a_done_task_cold_since_an_earlier_day_moves_to_a_lane_its_reopen_offers() -> None:
+    feed, writer = _feed(), _Writer()
+    feed.put(task("PROJ-4", "Done", moves={"in_progress": Move(allowed=True)}, observed_at=1000.0))
+
+    assert _move({"task": "PROJ-4", "to": "in_progress"}, writer, feed=feed)[0] == 200
+    assert writer.sent == [("PROJ-4", "In Progress")]
+
+
 @pytest.mark.parametrize("source", ["203.0.113.5", _ip(172, 32, 0, 1), _ip(100, 64, 0, 1)])
 def test_a_source_outside_loopback_and_rfc_1918_is_refused_before_the_writer_is_asked(source: str) -> None:
     writer = _Writer()
