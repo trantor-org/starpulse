@@ -238,14 +238,17 @@ def test_a_move_the_machine_writes_to_one_actor_offers_only_that_actor(engine: E
     assert task["moves"]["in_progress"]["writers"] == ("operator",)
 
 
-def test_a_done_task_offers_no_moves(engine: Engine) -> None:
+def test_a_done_task_offers_the_board_machines_moves_out_of_done(engine: Engine) -> None:
     _append(engine, 1, "Done")
-    feed = _feed(engine, {"board": board_machine(("Ready", "In Progress", "Done"))})
+    machine = board_machine(("Ready", "In Progress", "Done"))
+    machine["transitions"] = [t for t in machine["transitions"] if t["source"] != "done" or t["target"] == "ready"]
+    feed = _feed(engine, {"board": machine})
 
     task = feed.task("TASK-1")
 
     assert task is not None
-    assert task["moves"] == {}
+    assert list(task["moves"]) == ["ready"]
+    assert task["moves"]["ready"]["allowed"] is True
 
 
 PULL = "https://github.com/acme/widgets/pull/7"

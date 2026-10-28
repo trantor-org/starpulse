@@ -33,9 +33,8 @@ class ReadMethods:
         return None if agent is not None and is_cold(agent) else agent
 
     def _read_model_moves(self, summary: Mapping[str, Any]) -> dict:
-        """The moves a read-model Task offers: the Board machine's out of its lane, none out of the done lane."""
-        lane = lane_id(summary["state"])
-        return {} if lane == self._roles.done else self._lane_moves.get(lane, {})
+        """The moves a read-model Task offers: the Board machine's out of its lane, a done Task's reopen among them."""
+        return self._lane_moves.get(lane_id(summary["state"]), {})
 
     def _guarded(self, task_id: str, moves: Mapping[str, dict]) -> dict[str, dict]:
         """`moves` with each one the board's rules refuse for the task as its file stands now marked refused."""
@@ -50,7 +49,9 @@ class ReadMethods:
         if row is None or row["archived"]:
             return None
         ready = task_id in self._read_model.ready(row["state"], self._roles.done)  # type: ignore[union-attr]
-        return self._expiring(summary_agent(row, ready, self._guarded(task_id, self._read_model_moves(row))) | read_model_detail(row))
+        return self._expiring(
+            summary_agent(row, ready, self._guarded(task_id, self._read_model_moves(row))) | read_model_detail(row)
+        )
 
     def follow_read_model(self, limit: int = 1000) -> int:
         """Publish a `task` delta for each Task the read model changed since the last call, an archived one as gone, and
