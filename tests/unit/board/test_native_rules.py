@@ -36,6 +36,7 @@ def test_a_rule_refuses_a_move_into_its_state_with_its_reason_and_skill_and_writ
     written = built.writer("task-1", "Done", "operator")
 
     assert (written.ok, written.output, written.skill) == (False, DONE_NEEDS_PR["reason"], "completing-tasks")
+    assert written.lint
     assert path.read_text() == before
 
 
@@ -100,7 +101,7 @@ def test_a_write_rule_judges_every_write_whatever_the_state_and_names_no_state_o
     assert built.assign is not None
     before = path.read_text()
 
-    assert built.edit("task-1", {"title": "lower"}, "") == Written(ok=False, output="A title starts with a capital")
+    assert built.edit("task-1", {"title": "lower"}, "") == Written(ok=False, output="A title starts with a capital", lint=True)
     assert path.read_text() == before
     assert built.edit("task-1", {"title": "Upper"}, "").ok
     assert not built.create("lower", {}).ok
@@ -476,7 +477,7 @@ unless_actor = ["dagu/reconciler"]
     assert built.writer is not None
 
     assert built.writer("task-1", "Done", "agent") == Written(
-        ok=False, output=DONE_NEEDS_PR["reason"], skill="completing-tasks"
+        ok=False, output=DONE_NEEDS_PR["reason"], skill="completing-tasks", lint=True
     )
     assert built.writer("task-1", "Done", "dagu/reconciler").ok
     assert "status: Done\n" in path.read_text()

@@ -139,7 +139,7 @@ def test_a_refused_edit_leaves_the_task_file_byte_identical(tmp_path: Path) -> N
 
     written = built.edit(task, {"plan": REFUSE}, "")
 
-    assert written == Written(False, "the hook refused it")
+    assert written == Written(False, "the hook refused it", lint=True)
     assert _snapshot(tmp_path) == held
     name, before, after = CALLS[-1]
     assert name in held and before == held[name].decode() and REFUSE in after
@@ -151,7 +151,7 @@ def test_a_refused_create_writes_no_file_and_leaves_its_id_free(tmp_path: Path) 
     refused = built.create("Draw the board", {"description": REFUSE})
     made = built.create("Draw the board", {})
 
-    assert refused == Written(False, "the hook refused it")
+    assert refused == Written(False, "the hook refused it", lint=True)
     assert CALLS[0][1] is None
     assert made.output == "task-1"
     assert [path.name for path in _tasks(tmp_path).iterdir()] == ["task-1 - Draw-the-board.md"]

@@ -95,6 +95,8 @@ class Board:
         self.refuse = False
         #: The refusal the board gives a status change into each lane named here.
         self.refusing: dict[str, str] = {}
+        #: The refusal a declared guard or validate hook gives a status change into each lane named here.
+        self.linting: dict[str, str] = {}
         for each in tasks:
             feed.put(each)
 
@@ -106,6 +108,8 @@ class Board:
         self.writes.append((name, changes, comment, actor))
         if self.refuse:
             return Written(False, f"{name}: refused")
+        if changes.get("status") in self.linting:
+            return Written(False, self.linting[changes["status"]], lint=True)
         if changes.get("status") in self.refusing:
             return Written(False, self.refusing[changes["status"]])
         if "status" in changes:
