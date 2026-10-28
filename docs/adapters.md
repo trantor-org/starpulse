@@ -71,6 +71,9 @@ to no function is a startup error) and calls it before every task write with the
 (`None` for a create) and the text about to be written. A returned string refuses the write: the writer answers with it
 as its refusal and writes nothing, so a refused create leaves no file and its id to the next create. `None` lets the
 write land.
+With `[board] python_path` set to a list of directories relative to the config file, the board puts each at the front
+of `sys.path` before it imports `validate`, so a hook that lives in the deployment's own source imports without the
+operator exporting `PYTHONPATH`; a directory that does not exist is a startup error naming the key.
 With `[[board.guards]]` set, the board judges each task write against those rules first, as the actor that makes it, and
 a rule broken refuses the write with its `reason` and `skill` before `validate` is asked (see Board guards in
 [public-surface.md](public-surface.md)); the `edit`, `archive`, `create` and `assign` writers take that actor as a
