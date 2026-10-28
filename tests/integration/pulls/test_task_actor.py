@@ -85,6 +85,31 @@ def test_a_review_task_whose_only_pr_merged_moves_to_done_and_no_other_task_is_d
     }
 
 
+def test_a_needs_attention_task_closes_once_every_pr_ended_and_one_merged_but_not_when_all_closed(
+    store: PullStore, stop: threading.Event
+) -> None:
+    waits = {**WAITS, "needs_attention": {"pr_merged": "MERGED"}}
+    moves = {**MOVES, ("needs_attention", "MERGED"): "done"}
+    board = Board(
+        BoardFeed(),
+        task("TASK-1", "Needs attention", references=(PR_ONE,)),
+        task("TASK-2", "Needs attention", references=(PR_TWO,)),
+        task("TASK-3", "Needs attention", references=(PR_ONE, PR_TWO)),
+    )
+    store.save([pull(1, state="OPEN"), pull(2, state="CLOSED")])
+    actor = TaskActor(board.feed, store, board.edit, waits, moves)
+    actor.start(stop)
+    assert actor.ready.wait(WITHIN_S)
+    assert board.moved() == []
+
+    store.save([pull(1, state="MERGED")])
+    actor.pulls_changed()
+
+    assert until(lambda: sorted(board.moved()) == [("TASK-1", "done"), ("TASK-3", "done")])
+    assert all(actor_name == ACTOR for _, _, _, actor_name in board.writes)
+    assert f"acme/trantor#1 merged as {SHA}" in str(board.writes[0][2])
+
+
 def test_a_closing_comment_for_a_pull_request_in_another_repo_links_that_repos_pull_url(
     store: PullStore, stop: threading.Event
 ) -> None:

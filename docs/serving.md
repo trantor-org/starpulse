@@ -777,6 +777,9 @@ move the machine declares. For a task in a state with `waits`, the first fact th
 - `pr_terminal`: every pull request the task cites is merged or closed in the PR store. A merged one is written with its
   merge commit as the proof in the edit's comment. A record that says merged with no merge time (an event's word, not
   a read of GitHub) is not terminal until the store's next read settles it.
+- `pr_merged`: `pr_terminal` holds and at least one cited pull request merged, so a task whose every pull request
+  closed unmerged stays. A state that parks work for a person may declare `waits: {pr_merged: MERGED}` to close a task
+  whose delivery merged while it waited there.
 - `pr_ready`: the task cites a pull request and any cited one is merged (with a merge time) or open and not a draft.
   The edit's comment names the ready and merged pull requests as the evidence. A state may declare
   `waits: {pr_ready: REVIEW}` to move its tasks to Review once a pull request is ready.
