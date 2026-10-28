@@ -323,7 +323,7 @@ def time_reads(client: Client, samples: int) -> list[Row]:
     ids = ids_of(
         snapshot if isinstance(snapshot, dict) else {}, client.json("/api/milestones"), client.json("/api/docs")
     )
-    if key := ref_key(first_snapshot(f"http://{client.host}:{client.port}", "/api/events?snapshot=ref") or ""):
+    if key := ref_key(first_snapshot(client.base, "/api/events?snapshot=ref") or ""):
         ids["snapshot"] = key
     rows = []
     for name, template in READS.items():
