@@ -94,7 +94,20 @@ DEFAULT_PATH = ".starpulse/board"
 #: to the config, put at the front of `sys.path` before `validate` is imported, `guards` the record-level rules every
 #: task write must satisfy (the `rules` module of `starpulse.board.model`), `task_file_name` the form of the name a created task's
 #: file is written under (`_FILE_NAMES`), `types` the names a task's `type` may take (any when absent).
-_SETTINGS = {"type", "path", "interval", "machine", "criteria", "holds", "validate", "python_path", "guards", "task_file_name", "types"}
+_SETTINGS = {
+    "type",
+    "path",
+    "interval",
+    "machine",
+    "criteria",
+    "holds",
+    "parked",
+    "validate",
+    "python_path",
+    "guards",
+    "task_file_name",
+    "types",
+}
 #: The forms of a created task's file name: `title` is `<id> - <Title>.md`, as Backlog.md writes it (the default), `slug`
 #: is `<id>-<slug>.md`, lowercase and space-free, its slug capped at `_SLUG_MAX` characters.
 _FILE_NAMES = ("title", "slug")
@@ -1210,6 +1223,23 @@ def _holds(command: object, base: Path) -> Callable[[str], list[str]] | None:
     return holds
 
 
+def _parked(command: object, base: Path) -> Callable[[str], None] | None:
+    """The `parked` command, run in `base` with `{id}` replaced by the task's id, after the task actor moves a task from
+    the working lane to Waiting. A nonzero exit raises with what the command said."""
+    if not command:
+        return None
+    parts = shlex.split(str(command))
+
+    def parked(task: str) -> None:
+        argv = [part.replace("{id}", task) for part in parts]
+        done = subprocess.run(argv, cwd=base, capture_output=True, text=True, timeout=criteria.TIMEOUT, check=False)
+        if done.returncode:
+            said = done.stderr.strip() or done.stdout.strip() or "printed nothing"
+            raise ValueError(f"{shlex.join(argv)}: exit {done.returncode}: {said}")
+
+    return parked
+
+
 def board(settings: Mapping[str, Any], base: Path) -> Board:
     """The native board at `settings["path"]` (default `.starpulse/board`), created empty when absent, as the project named for `base`'s directory, polled every `interval` seconds.
 
@@ -1261,6 +1291,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             "read": _reader(root, evaluate.latest if isinstance(evaluate, criteria.Evaluator) else evaluate),
             "evaluate": evaluate,
             "holds": _holds(settings.get("holds"), base),
+            "parked": _parked(settings.get("parked"), base),
             "edit": _editor(root, config.statuses, guard, link, roles.attention),
             "archive": _archiver(root, config.statuses, roles, guard),
             "restore": _restorer(root, retired, config.statuses, migrations, guard),

@@ -95,7 +95,7 @@ def test_the_server_publishes_the_exit_event_to_the_machine_events_log_as_the_ta
         "publish",
         lambda machine, event, *, actor, task, log: published.append((machine, event, actor, task)),
     )
-    delivery = SimpleNamespace(edit=board.edit, waits=WAITS, evaluate=None, holds=None)
+    delivery = SimpleNamespace(edit=board.edit, waits=WAITS, evaluate=None, holds=None, parked=None)
     config = replace(load(None), task_actor=True, pull_requests=False, release=None)
     actor, _ = server.start_delivery(config, delivery, feed, None, store, Pins(), stop)
     assert actor.ready.wait(5)

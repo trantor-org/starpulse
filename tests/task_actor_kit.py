@@ -158,9 +158,16 @@ def until(condition: Callable[[], bool], within: float = WITHIN_S) -> bool:
     return condition()
 
 
-def running(board: Board, store: PullStore, stop: threading.Event, **options: Any) -> TaskActor:
-    """An actor over `board` that has derived every open task once."""
-    actor = TaskActor(board.feed, store, board.edit, WAITS, MOVES, **options)
+def running(
+    board: Board,
+    store: PullStore,
+    stop: threading.Event,
+    waits: Mapping[str, Mapping[str, str]] = WAITS,
+    moves: Mapping[tuple[str, str], str] = MOVES,
+    **options: Any,
+) -> TaskActor:
+    """An actor over `board` that has derived every open task once, on `waits` and `moves` when given."""
+    actor = TaskActor(board.feed, store, board.edit, waits, moves, **options)
     actor.start(stop)
     assert actor.ready.wait(WITHIN_S)
     return actor
