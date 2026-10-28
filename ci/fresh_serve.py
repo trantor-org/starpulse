@@ -16,6 +16,7 @@ import json
 import os
 import re
 import socket
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -56,10 +57,14 @@ def live_children(parent: int, log: Path) -> dict[str, int]:
     }
 
 
-def check(port: int, parent: int, expected: set[str], log: Path) -> str | None:
-    """None when the page answers 200 and every expected context has a live child, else what is missing."""
+def check(port: int, parent: int, expected: set[str], log: Path, scheme: str = "http") -> str | None:
+    """None when the page answers 200 and every expected context has a live child, else what is missing.
+
+    Over `https` the probe asks about liveness, not trust: it takes any certificate.
+    """
+    tls = ssl._create_unverified_context() if scheme == "https" else None  # noqa: S323 - a liveness probe, not trust
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=5) as page:
+        with urllib.request.urlopen(f"{scheme}://127.0.0.1:{port}/", timeout=5, context=tls) as page:
             status = page.status
     except urllib.error.HTTPError as error:
         status = error.code

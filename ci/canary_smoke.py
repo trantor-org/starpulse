@@ -1,10 +1,12 @@
 """Canary smoke: boot StarPulse against a copy of live state and check its happy path.
 
-Usage: canary_smoke.py --url URL --config PATH --machines DIR --db PATH
+Usage: canary_smoke.py --url URL --config PATH --machines DIR --db PATH [--check COMMAND ...]
 
 The steps run in order: migrate the store to the wheel's head, serve, `starpulse reload` exits 0, then the workers hold
-for HOLD seconds without restarting while, inside that window, the board renders and a task modal opens. --db is a
-copy (`VACUUM INTO` of the live store) that migrate writes in place; the live file is never passed. A failed step
+for HOLD seconds without restarting while, inside that window, the board renders and a task modal opens, then each
+--check COMMAND runs with `STARPULSE_URL` set to --url and the canary's token placeholders in its environment: a client
+a project must keep working against the server it will serve. An `https` --url probes and browses without verifying the
+certificate; a config's `tls_cert` and `tls_key` resolve against the live config's directory. --db is a copy (`VACUUM INTO` of the live store) that migrate writes in place; the live file is never passed. A failed step
 prints `<step>: <problem>` and exits 1.
 """
 
@@ -13,6 +15,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -35,7 +38,7 @@ SECTION = re.compile(r"^\[+([\w.]+)\]+\s*$")
 ENTRY = re.compile(r'^(\w+) = "([^"]+)"\s*$')
 ENV_NAME = re.compile(r'^\w*_env = "(\w+)"', re.MULTILINE)
 # (section, key) of each relative path: "" is the top level. Reads resolve against the live config's directory.
-READS = {("", "harnesses_file"), ("board", "path"), ("board", "machine")}
+READS = {("", "harnesses_file"), ("", "tls_cert"), ("", "tls_key"), ("board", "path"), ("board", "machine")}
 WRITES = {("", "event_log_archive_dir"), ("scheduler", "state_dir")}
 # (section, key) of each board command. The canary drops them: `holds --record-evidence` writes comments to the live board.
 COMMANDS = {("board", "criteria"), ("board", "holds")}
@@ -82,19 +85,26 @@ def step_migrate(db: Path) -> str | None:
     return None
 
 
-def wait_ready(serve: subprocess.Popen[bytes], port: int, expected: set[str], log: Path) -> str | None:
+def wait_ready(
+    serve: subprocess.Popen[bytes], port: int, expected: set[str], log: Path, scheme: str = "http"
+) -> str | None:
     """None once the page answers 200 with every expected worker alive, else the last problem within DEADLINE."""
     problem = "serve did not start"
     end = time.monotonic() + DEADLINE
     while time.monotonic() < end and serve.poll() is None:
-        if (problem := check(port, serve.pid, expected, log)) is None:
+        if (problem := check(port, serve.pid, expected, log, scheme)) is None:
             return None
         time.sleep(0.5)
     return f"serve: {problem}" if serve.poll() is None else f"serve: exited {serve.returncode}"
 
 
 def hold(
-    serve: subprocess.Popen[bytes], port: int, expected: set[str], log: Path, during: Callable[[], str | None]
+    serve: subprocess.Popen[bytes],
+    port: int,
+    expected: set[str],
+    log: Path,
+    during: Callable[[], str | None],
+    scheme: str = "http",
 ) -> str | None:
     """None when `during` passes and the same workers stay alive and the page keeps answering for HOLD seconds.
 
@@ -110,7 +120,7 @@ def hold(
             return f"hold: serve exited {serve.returncode} within {HOLD:.0f}s"
         if live_children(serve.pid, log) != before:
             return f"hold: a child restarted within {HOLD:.0f}s"
-    return None if (problem := check(port, serve.pid, expected, log)) is None else f"hold: {problem}"
+    return None if (problem := check(port, serve.pid, expected, log, scheme)) is None else f"hold: {problem}"
 
 
 def step_reload(python: str, root: Path, config: Path, environ: dict[str, str]) -> str | None:
@@ -134,7 +144,7 @@ def step_board(url: str) -> str | None:
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch()
         try:
-            page = browser.new_page()
+            page = browser.new_page(ignore_https_errors=True)
             page.goto(f"{url}/?view=kanban", timeout=BROWSER_MS)
             card = page.locator("#cols .card").first
             card.wait_for(timeout=BROWSER_MS)
@@ -151,6 +161,22 @@ def step_board(url: str) -> str | None:
             return f"board: {error}"
         finally:
             browser.close()
+    return None
+
+
+def step_checks(commands: list[str], url: str, environ: dict[str, str], cwd: Path) -> str | None:
+    """None when every `--check` command exits 0 with `STARPULSE_URL` set to `url`, else the first one's exit and output tail."""
+    for command in commands:
+        done = subprocess.run(
+            shlex.split(command),
+            cwd=cwd,
+            env={**environ, "STARPULSE_URL": url},
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if done.returncode:
+            return f"check {command}: exited {done.returncode}: {(done.stdout + done.stderr)[-LOG_TAIL:]}"
     return None
 
 
@@ -174,6 +200,13 @@ def parser() -> argparse.ArgumentParser:
     cli.add_argument("--config", required=True, help="the live starpulse.toml; database_url is replaced")
     cli.add_argument("--machines", required=True, help="the live .starpulse/machines directory")
     cli.add_argument("--db", required=True, help="a copy of the live store, migrated in place")
+    cli.add_argument(
+        "--check",
+        action="append",
+        default=[],
+        metavar="COMMAND",
+        help="a command that must exit 0 against the running server in the hold window; repeatable",
+    )
     return cli
 
 
@@ -203,13 +236,17 @@ def main(argv: list[str]) -> int:
                 stderr=sink,
             )
         try:
-            if problem := wait_ready(serve, url.port, expected, log):
+            if problem := wait_ready(serve, url.port, expected, log, url.scheme):
                 print(f"{problem}\n--- serve stderr ---\n{log.read_text()[-LOG_TAIL:]}")
                 return 1
             if problem := step_reload(python, root, config, environ):
                 print(problem)
                 return 1
-            if problem := hold(serve, url.port, expected, log, lambda: step_board(args.url)):
+
+            def during() -> str | None:
+                return step_board(args.url) or step_checks(args.check, args.url, environ, root)
+
+            if problem := hold(serve, url.port, expected, log, during, url.scheme):
                 print(problem)
                 return 1
         finally:
@@ -218,7 +255,7 @@ def main(argv: list[str]) -> int:
                 serve.wait(10)
             except subprocess.TimeoutExpired:
                 serve.kill()
-    print("ok: migrate, serve, reload, hold and board")
+    print("ok: migrate, serve, reload, hold, board and checks")
     return 0
 
 
