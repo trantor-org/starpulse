@@ -629,9 +629,7 @@ def test_a_certificate_without_its_key_or_a_key_without_its_certificate_is_refus
     assert _refusal(tmp_path, 'tls_key = "key.pem"\n') == refusal
 
 
-def test_a_certificate_or_key_that_is_not_there_is_refused_naming_it(tmp_path: Path) -> None:
-    (tmp_path / "cert.pem").write_text("cert")
+def test_a_certificate_or_key_not_yet_issued_still_loads_for_a_client_of_the_server(tmp_path: Path) -> None:
+    config = load(_write(tmp_path, 'tls_cert = "cert.pem"\ntls_key = "key.pem"\n'))
 
-    assert _refusal(tmp_path, 'tls_cert = "cert.pem"\ntls_key = "key.pem"\n') == (
-        f"tls_key {tmp_path / 'key.pem'} does not exist"
-    )
+    assert config.tls == (tmp_path / "cert.pem", tmp_path / "key.pem")

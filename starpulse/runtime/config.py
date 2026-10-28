@@ -517,7 +517,8 @@ def _retention(value: object, key: str) -> int:
 
 
 def _tls(raw: dict, path: Path | None) -> tuple[Path, Path] | None:
-    """The certificate and key `raw` names, from beside the config file; both or neither, each a file that exists."""
+    """The certificate and key `raw` names, from beside the config file; both or neither. Whether they exist is `serve`'s to
+    check: a client reads the same config and never opens them, and a release can name them before the host issues them."""
     names = [raw.get("tls_cert"), raw.get("tls_key")]
     if names == [None, None]:
         return None
@@ -527,9 +528,7 @@ def _tls(raw: dict, path: Path | None) -> tuple[Path, Path] | None:
     for key, name in zip(("tls_cert", "tls_key"), names, strict=True):
         if not isinstance(name, str):
             raise ConfigError(f"{key} must be text")
-        if not (file := path.parent / name).is_file():
-            raise ConfigError(f"{key} {file} does not exist")
-        files.append(file)
+        files.append(path.parent / name)
     return files[0], files[1]
 
 

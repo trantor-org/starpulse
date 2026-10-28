@@ -59,6 +59,9 @@ class PageServer:
         stopping: Callable[[], None] | None = None,
         drain_s: float = DRAIN_S,
     ) -> None:
+        for key, file in zip(("tls_cert", "tls_key"), tls or (), strict=False):
+            if not file.is_file():
+                raise FileNotFoundError(f"{key} {file} does not exist")
         self.app, self.stopping, self._drain_s = app, stopping, drain_s
         self.socket = (
             listening if listening is not None else socket.create_server(address or ("127.0.0.1", 0), backlog=BACKLOG)
