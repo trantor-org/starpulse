@@ -3,8 +3,8 @@
 A child is started by `spawn` (`starpulse.runtime.zygote.Forker`: a fork of one preloaded process, else
 `subprocess`) with a pipe it exits on when `serve` dies, restarted with a growing delay when it exits and stopped with
 `serve`. Past its soft memory limit a child is replaced (the new one starts, then the old one stops); past its hard
-limit it is killed and restarted. Each run adapter a `[[runs]]` instance configures (`dagu`, `github-actions`, `systemd`)
-gets a child of its own, from `adapter_contexts`, and is limited like the rest.
+limit it is killed and restarted. Each run adapter a `[[runs]]` instance configures gets a child of its own, from
+`adapter_contexts`, and is limited like the rest.
 
 `starpulse reload` (`starpulse.runtime.control`) calls `Supervisor.reload`: it reads each child's code and config
 again from the installed files (`starpulse.runtime.closure`) and replaces only the children something changed

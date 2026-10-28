@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 
-from starpulse.board.model.adapter_types import module_name
+from starpulse.board.model.adapter_types import ADAPTER_CONTEXTS, module_name
 from starpulse.runtime.config import Config, discover, load
 
 SELF = "serve"
@@ -38,15 +38,12 @@ ENTRIES = {
     "flow-metrics": "starpulse.flow_metrics.bin.flow_metrics_worker",
     "search": "starpulse.board.bin.search_worker",
     "board": "starpulse.board.bin.board_worker",
-    "dagu": _ADAPTER_ENTRY,
-    "github-actions": _ADAPTER_ENTRY,
-    "systemd": _ADAPTER_ENTRY,
+    **dict.fromkeys(ADAPTER_CONTEXTS, _ADAPTER_ENTRY),
 }
 
 _CHILDREN = tuple(name for name in ENTRIES if name != SELF)
 #: The run adapters' opt-in workers, which read the runs config and the board as the runs worker does.
-_ADAPTER_CONTEXTS = ("dagu", "github-actions", "systemd")
-_BOARD_READERS = ("pulls", "scheduler", "runs", "flow-metrics", "board", *_ADAPTER_CONTEXTS)
+_BOARD_READERS = ("pulls", "scheduler", "runs", "flow-metrics", "board", *ADAPTER_CONTEXTS)
 
 
 #: The keys `serve` alone reads: each child's memory limit, its refresh token and its take-over command,
@@ -82,7 +79,7 @@ CONFIG_OWNERS: dict[str, tuple[str, ...]] = {
     "project": _owned_by(),
     "database_url": _CHILDREN,
     "board": _owned_by(*_BOARD_READERS),
-    "runs": _owned_by("runs", *_ADAPTER_CONTEXTS),
+    "runs": _owned_by("runs", *ADAPTER_CONTEXTS),
     "search": _owned_by("search"),
     "read_model": (SELF,),
     "release": _owned_by("pulls"),
@@ -210,7 +207,7 @@ def _blocks(name: str, config: Config) -> tuple[object, object]:
         return pulls_fixed_blocks(config), pulls_delivery_blocks(config)
     if name == "scheduler":
         return scheduler_fixed_blocks(config), scheduler_live_blocks(config)
-    if name == "runs" or name in _ADAPTER_CONTEXTS:
+    if name == "runs" or name in ADAPTER_CONTEXTS:
         return runs_built_blocks(config), ()
     if name == "flow-metrics":
         return flow_metrics_built_blocks(config), ()

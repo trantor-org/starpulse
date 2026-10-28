@@ -11,6 +11,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
+from starpulse.board.model.adapter_types import ADAPTER_CONTEXTS
 from starpulse.views.services import SLOW_READ_S
 
 #: An environment variable's name: the setting holds the name, never the value.
@@ -24,9 +25,7 @@ WORKER_MEMORY_MB = {
     "flow-metrics": (384, 768),
     "search": (384, 768),
     "board": (768, 1536),
-    "dagu": (256, 512),
-    "github-actions": (256, 512),
-    "systemd": (256, 512),
+    **dict.fromkeys(ADAPTER_CONTEXTS, (256, 512)),
 }
 
 
