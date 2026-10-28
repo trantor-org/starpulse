@@ -378,3 +378,20 @@ def test_replacing_the_listening_child_ends_the_old_one_after_the_bound_when_the
     Beside.made[1].close()
     assert Beside.made[0].ended
     assert time.monotonic() - started >= 0.3
+
+
+def _purge_delay_seen_by_child(tmp_path: Path) -> str:
+    seen = tmp_path / "env"
+    code = "import os, sys; open(sys.argv[1], 'w').write(os.environ['MIMALLOC_PURGE_DELAY'])"
+    assert spawn_child([sys.executable, "-c", code, str(seen)]).wait(20) == 0
+    return seen.read_text()
+
+
+def test_a_child_started_with_no_purge_delay_in_serves_env_sees_zero(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("MIMALLOC_PURGE_DELAY", raising=False)
+    assert _purge_delay_seen_by_child(tmp_path) == "0"
+
+
+def test_a_child_started_with_a_purge_delay_in_serves_env_keeps_the_operators_value(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("MIMALLOC_PURGE_DELAY", "500")
+    assert _purge_delay_seen_by_child(tmp_path) == "500"

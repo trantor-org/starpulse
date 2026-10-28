@@ -31,7 +31,7 @@ from typing import Any
 from starpulse.runtime.config import Config, MemoryLimit
 from starpulse.runtime.closure import SELF, Reading, ReloadError
 from starpulse.runtime.control import Control
-from starpulse.runtime.hold import LISTEN_FD_ENV, READY_FD_ENV, SUPERVISED_ENV
+from starpulse.runtime.hold import LISTEN_FD_ENV, READY_FD_ENV, supervised_env
 from starpulse.runtime.memory import memory_reader
 
 logger = logging.getLogger(__name__)
@@ -71,7 +71,7 @@ def spawn_child(
 
     A `listening` socket is handed to it on the same descriptor number, named by `LISTEN_FD_ENV`; a `ready` descriptor
     (the write end of a pipe), likewise by `READY_FD_ENV`."""
-    env = {**os.environ, SUPERVISED_ENV: "1"}
+    env = supervised_env()
     if listening is not None:
         env[LISTEN_FD_ENV] = str(listening.fileno())
     if ready is not None:
