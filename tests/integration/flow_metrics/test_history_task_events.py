@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 from starpulse.board.board_feed import BoardFeed
-from starpulse.flow_metrics.history import HistoryStore
+from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 from starpulse.runtime.adapter_kit import serve, url
 from starpulse.views.page_server import PageServer
 

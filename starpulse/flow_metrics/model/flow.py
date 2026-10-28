@@ -1,6 +1,6 @@
 """The branching directly-follows graph of a transition, read from the steps ledger.
 
-A *run* is one task's main-thread steps under one skill in force (`starpulse.flow_metrics.steps`) within the
+A *run* is one task's main-thread steps under one skill in force (`starpulse.flow_metrics.model.steps`) within the
 task's kind x size cell, its activities in the order the steps made them less the `[analytics]` `stop_activities`. A
 subagent's steps run beside the main thread and would only add edges that never happened, so the graph leaves them out.
 
@@ -23,11 +23,11 @@ from typing import Any, NamedTuple
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.contracts.analytics import Analytics, MachineStage, SkillMachine
 from starpulse.contracts.signals import CLAUDE_CODE, Signal
-from starpulse.flow_metrics.cells import MIN_N, cell_of
-from starpulse.flow_metrics.level import Level, Terminal
-from starpulse.flow_metrics.session_health import session_health, slice_health
-from starpulse.flow_metrics.steps import NO_SKILL, Owned, owned_steps
-from starpulse.flow_metrics.trajectories import absorb
+from starpulse.flow_metrics.model.cells import MIN_N, cell_of
+from starpulse.flow_metrics.model.level import Level, Terminal
+from starpulse.flow_metrics.model.session_health import session_health, slice_health
+from starpulse.flow_metrics.model.steps import NO_SKILL, Owned, owned_steps
+from starpulse.flow_metrics.model.trajectories import absorb
 
 __all__ = [
     "CUT_SHARE",

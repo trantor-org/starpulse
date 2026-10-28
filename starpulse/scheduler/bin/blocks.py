@@ -2,11 +2,12 @@
 importing the worker."""
 
 from __future__ import annotations
+
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
-    from starpulse.flow_metrics.level import Level
+    from starpulse.flow_metrics.model.level import Level
     from starpulse.scheduler.model.config import Scheduler
 
 

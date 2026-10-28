@@ -9,11 +9,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import starpulse.event_log.migrate as migrations
 from sqlalchemy import Engine, create_engine, event
 from starpulse.board.adapters import upstream_backlog
 from starpulse.event_log import event_log
-import starpulse.event_log.migrate as migrations
-from starpulse.flow_metrics.history import HistoryStore
+from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 
 from tests.machines import MACHINES
 
@@ -89,7 +89,7 @@ def stop_upstream_backlogs(timeout: float = 5.0) -> None:
         thread.join(timeout)
 
 
-_OPENERS = ("starpulse.event_log.event_log", "starpulse.flow_metrics.history", "starpulse.pulls.pulls")
+_OPENERS = ("starpulse.event_log.event_log", "starpulse.flow_metrics.adapters.outbound.history", "starpulse.pulls.pulls")
 _refuses_unmigrated = migrations.require_migrated
 
 

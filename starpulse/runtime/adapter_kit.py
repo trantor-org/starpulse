@@ -33,7 +33,6 @@ from typing import Any, ClassVar
 import jsonschema
 from pydantic import BaseModel
 
-from starpulse.runtime.config import Config
 from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.machine_tasks import MachineTasks
@@ -51,8 +50,9 @@ from starpulse.contracts.adapters import (
     TaskKeys,
 )
 from starpulse.event_log.event_log import EventLog
-from starpulse.flow_metrics.history import History, HistoryStore
+from starpulse.flow_metrics.adapters.outbound.history import History, HistoryStore
 from starpulse.runtime.assembly import assemble as _assemble
+from starpulse.runtime.config import Config
 from starpulse.runtime.store_migrate import maintain
 from starpulse.views.asgi_app import page_app
 from starpulse.views.gate_request import GateRequest

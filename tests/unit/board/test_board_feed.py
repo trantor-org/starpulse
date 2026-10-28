@@ -12,7 +12,7 @@ from starpulse.board.board_feed import BoardFeed
 from starpulse.board.machine_tasks import MachineTasks
 from starpulse.board.model.commit_keys import CommitKeys
 from starpulse.contracts.adapters import BoardTask, MachineEvent, TaskKeys
-from starpulse.flow_metrics.history import HistoryStore
+from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 
 from tests.machines import FLOWS, MACHINES, ROLES
 

@@ -8,7 +8,7 @@ import pytest
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.contracts.analytics import Analytics, Labeller
 from starpulse.contracts.api.dto.health import SessionHealth, SliceHealth
-from starpulse.flow_metrics import session_health as fold
+from starpulse.flow_metrics.model import session_health as fold
 from starpulse.harness_telemetry import activity, telemetry
 from starpulse.runtime.config import Config
 

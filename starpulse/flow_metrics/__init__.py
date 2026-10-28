@@ -4,13 +4,13 @@ import importlib
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from starpulse.flow_metrics.history import History, machine_steps
+    from starpulse.flow_metrics.adapters.outbound.history import History, machine_steps
 
 #: Each name and the module that defines it. They load on first use, so importing one submodule of the context does not
 #: load the schema validator, the state-machine library or the database stack the others need.
 _EXPORTS = {
-    "History": ("starpulse.flow_metrics.history", "History"),
-    "machine_steps": ("starpulse.flow_metrics.history", "machine_steps"),
+    "History": ("starpulse.flow_metrics.adapters.outbound.history", "History"),
+    "machine_steps": ("starpulse.flow_metrics.adapters.outbound.history", "machine_steps"),
 }
 
 __all__ = [

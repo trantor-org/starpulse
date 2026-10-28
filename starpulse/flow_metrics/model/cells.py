@@ -1,6 +1,6 @@
 """Per-transition cost and the cell report, for each kind x size cell of the board's tasks.
 
-`transition_cost` charges every model request to the skill in force on it (`starpulse.flow_metrics.steps`), inside
+`transition_cost` charges every model request to the skill in force on it (`starpulse.flow_metrics.model.steps`), inside
 the kind x size cell of the task it worked. A subagent's requests carry the parent's session and so count toward the
 task that spawned it (`side_steps` of `steps` are those); a compaction's own call is no step. A step is *wasted* when
 a call it owns failed, was refused by a guard or hook, or repeats the shell command of the call before it in its
@@ -10,7 +10,7 @@ tokens one request held. A step of a task with no kind or no size label, or of a
 The cell report: median steps per clean completion for each kind x size cell of the board's tasks.
 
 A cell is the tasks whose board labels are `kind-<kind>` and `size-<size>`. Its members are the task slices
-(`starpulse.flow_metrics.session_health.slice_health`) that completed, left out when a Codex session worked them, which
+(`starpulse.flow_metrics.model.session_health.slice_health`) that completed, left out when a Codex session worked them, which
 the steps ledger does not cover. A slice that completed *clean* counts toward the cell; the others only lower its
 `clean_rate`, completions that were clean over completions.
 
@@ -32,7 +32,7 @@ from typing import Any
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.contracts.analytics import Analytics
 from starpulse.contracts.signals import CLAUDE_CODE, Signal
-from starpulse.flow_metrics.steps import owned_steps
+from starpulse.flow_metrics.model.steps import owned_steps
 
 __all__ = ["MIN_N", "cell_of", "cell_report", "transition_cost"]
 

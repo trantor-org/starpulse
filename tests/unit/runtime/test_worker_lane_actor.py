@@ -9,7 +9,7 @@ from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model.seam import Written
 from starpulse.event_log import lane_events
 from starpulse.event_log.event_log import EventLog, Tail
-from starpulse.flow_metrics.history import HistoryStore
+from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 from starpulse.runtime import assembly, server, worker
 from starpulse.views.bin import api_worker
 from starpulse.views.writes import _record_written, _Who

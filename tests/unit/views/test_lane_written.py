@@ -10,7 +10,7 @@ from starpulse.board.model.seam import Written
 from starpulse.contracts import BoardTask
 from starpulse.event_log import lane_events
 from starpulse.event_log.event_log import EventLog, Tail
-from starpulse.flow_metrics.history import HistoryStore
+from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 from starpulse.views.writes import _record_written, _Who
 
 from tests.machines import MACHINES, ROLES

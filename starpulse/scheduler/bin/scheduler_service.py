@@ -13,15 +13,15 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
-from starpulse.flow_metrics.level import Level
-from starpulse.scheduler.bin.blocks import SchedulerConfig
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model.seam import Board, Written
 from starpulse.event_log.event_log import EventLog
-from starpulse.flow_metrics.history import History
+from starpulse.flow_metrics.adapters.outbound.history import History
+from starpulse.flow_metrics.model.level import Level
 from starpulse.scheduler.adapters.runtime import Runtime
 from starpulse.scheduler.adapters.runtime import build as build_scheduler
 from starpulse.scheduler.adapters.starter import builtin_starter
+from starpulse.scheduler.bin.blocks import SchedulerConfig
 from starpulse.scheduler.model.admission import ranks_from_trajectories_body
 
 #: How long the dispatch loop holds the trajectory chain it ranks on: the analytics read the whole history.

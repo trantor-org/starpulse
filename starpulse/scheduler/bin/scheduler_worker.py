@@ -23,7 +23,7 @@ from starpulse.board.model.seam import Board
 from starpulse.event_log import events as machine_events
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url
-from starpulse.flow_metrics.history import History
+from starpulse.flow_metrics.adapters.outbound.history import History
 from starpulse.scheduler.adapters.remote import follow_wakes, publisher
 from starpulse.scheduler.adapters.runtime import Runtime
 from starpulse.scheduler.bin.blocks import SchedulerConfig, scheduler_fixed_blocks, scheduler_live_blocks

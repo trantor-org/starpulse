@@ -11,8 +11,8 @@ from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 from starpulse.event_log import events
 from starpulse.event_log.event_log import EventLog
-from starpulse.flow_metrics.history import HistoryStore, record_machine_events
-from starpulse.flow_metrics.level_metrics import UNATTRIBUTED, Run
+from starpulse.flow_metrics.adapters.outbound.history import HistoryStore, record_machine_events
+from starpulse.flow_metrics.model.level_metrics import UNATTRIBUTED, Run
 
 from tests.machines import MACHINES
 from tests.summaries import assert_matches_rebuild

@@ -9,7 +9,7 @@ import pytest
 from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.board_feed import BoardFeed
 from starpulse.event_log.event_log import EventLog
-from starpulse.flow_metrics.history import HistoryStore
+from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 from starpulse.views.compression import Encoded
 from starpulse.views.reads import Arrival, ReadRoutes, Request, Response
 from starpulse.views.responses import cited_pulls

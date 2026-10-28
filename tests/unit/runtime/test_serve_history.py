@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy import text
 from starpulse.event_log import events
 from starpulse.event_log.event_log import EventLog
-from starpulse.flow_metrics.history import HistoryStore
+from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 from starpulse.runtime import server, worker
 
 from tests import fake_board

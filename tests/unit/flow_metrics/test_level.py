@@ -3,7 +3,7 @@
 from pathlib import Path
 
 import pytest
-from starpulse.flow_metrics.level import Activity, Facet, Level, LevelError, Orbit, Terminal
+from starpulse.flow_metrics.model.level import Activity, Facet, Level, LevelError, Orbit, Terminal
 from starpulse.runtime.assembly import assemble
 from starpulse.runtime.config import ConfigError, load
 

@@ -5,14 +5,14 @@ With no file the view runs as an individual-contributor view of its own
 Markdown board in `./.starpulse/board`, keeping its history in a SQLite file, with no runs adapter.
 
 The `[board]` table names the board adapter by `type` (`starpulse.board`); the rest of the table is that
-adapter's settings. `database_url` is the SQLAlchemy URL of the history store (`starpulse.flow_metrics.history`).
+adapter's settings. `database_url` is the SQLAlchemy URL of the history store (`starpulse.flow_metrics.adapters.outbound.history`).
 
 Each `[[runs]]` table is one instance of a runs adapter: its `name`, the adapter module `type` (a built-in name from
 `board.model.adapter_types`, or the dotted path of a module an installed package provides), the `url` it reads, the workflows Run now may start (`run_safe`) and the `domains` that
 group its workflows on the page. A workflow is shown as `<instance>/<workflow>`, so two instances can
 carry the same workflow name.
 
-The optional `[level]` table configures the flow graph drawn above the Board (`starpulse.flow_metrics.level`).
+The optional `[level]` table configures the flow graph drawn above the Board (`starpulse.flow_metrics.model.level`).
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ from starpulse.board.model.commit_keys import CommitKeys
 from starpulse.board.model.search_config import Search, SearchError, parse_search
 from starpulse.cli.project import Project, ProjectError, parse_project
 from starpulse.contracts.analytics import Analytics, AnalyticsError, parse_analytics
-from starpulse.flow_metrics.level import Level, LevelError, parse_level
+from starpulse.flow_metrics.model.level import Level, LevelError, parse_level
 from starpulse.harness_telemetry.cursor_context_config import (
     CursorContext,
     CursorContextError,

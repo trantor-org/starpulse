@@ -25,7 +25,7 @@ from typing import Any, NamedTuple
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.contracts.analytics import Analytics
 from starpulse.contracts.signals import Signal
-from starpulse.flow_metrics.session_health import attributed, grouped
+from starpulse.flow_metrics.model.session_health import attributed, grouped
 
 __all__ = ["NO_SKILL", "Owned", "owned_steps", "session_steps"]
 

@@ -183,21 +183,18 @@ from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING, Any, NamedTuple
 
-from starpulse.cli import doctor
-from starpulse.runtime.config import Config, ConfigError, discover, load, runs_adapter
-from starpulse.runs.config import RunsInstance
-from starpulse.flow_metrics.level import Level
-from starpulse.pulls.pins import GitHub, LiveBuild, running_commit
 from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.claim_refusals import CLAIMS_STREAM
 from starpulse.board.model.seam import (
     Board,
 )
+from starpulse.cli import doctor
 from starpulse.event_log import events as machine_events
 from starpulse.event_log import lane_events
 from starpulse.event_log.conformance_monitor import Conformance
-from starpulse.flow_metrics.level_metrics import RunWindow, WindowPastHistory
-from starpulse.flow_metrics.trajectories import trajectory_analytics
+from starpulse.flow_metrics.model.level import Level
+from starpulse.flow_metrics.model.level_metrics import RunWindow, WindowPastHistory
+from starpulse.flow_metrics.model.trajectories import trajectory_analytics
 from starpulse.harness_telemetry.telemetry import TelemetryLog
 from starpulse.pulls.delivery import (
     Projected,
@@ -207,6 +204,7 @@ from starpulse.pulls.delivery import (
     poller_problem,
     request_refresh,
 )
+from starpulse.pulls.pins import GitHub, LiveBuild, running_commit
 from starpulse.pulls.pull_refresh import PullRefresh
 from starpulse.pulls.pull_requests import PullRequests
 from starpulse.pulls.pull_store import PullSync
@@ -215,8 +213,10 @@ from starpulse.pulls.unblock import UNBLOCK_S, Unblocker
 from starpulse.runs import opt_in
 from starpulse.runs import projection as runs_projection
 from starpulse.runs.cloudevents import CloudEventsIngest
+from starpulse.runs.config import RunsInstance
 from starpulse.runs.ingest import tokens as ingest_tokens
 from starpulse.runtime.closure import ENTRIES, Reader
+from starpulse.runtime.config import Config, ConfigError, discover, load, runs_adapter
 from starpulse.runtime.control import control_file
 from starpulse.runtime.hold import LISTEN_FD_ENV, STATIC_ENV, announce_ready
 from starpulse.runtime.supervisor import Supervisor, worker_commands
@@ -241,7 +241,7 @@ _STATIC = _HERE / "static"
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     from starpulse.board.board_feed import BoardFeed
     from starpulse.event_log.event_log import EventLog
-    from starpulse.flow_metrics.history import History
+    from starpulse.flow_metrics.adapters.outbound.history import History
     from starpulse.pulls.pulls import PullStore
     from starpulse.scheduler.adapters.remote import Remote
 
@@ -251,7 +251,7 @@ def trajectories_response(
 ) -> tuple[bytes, int]:
     """The body and status of the trajectory analytics of the runs that ended in the last `hours` as of `now`, which
     the scheduler ranks tasks by; refused when `hours` is no positive number."""
-    from starpulse.flow_metrics.history import LevelHistory, SummarisedLevel  # noqa: PLC0415 - the database stack loads when a store does
+    from starpulse.flow_metrics.adapters.outbound.history import LevelHistory, SummarisedLevel  # noqa: PLC0415 - the database stack loads when a store does
 
     window = _hours(query, "hours", _HEALTH_HOURS)
     if window is None:
@@ -621,7 +621,7 @@ def stay_until_stopped() -> None:  # pragma: no mutate block — process boundar
 #: forks with it loaded.
 DATABASE_STACK = (
     "starpulse.event_log.event_log",
-    "starpulse.flow_metrics.history",
+    "starpulse.flow_metrics.adapters.outbound.history",
     "starpulse.board.board_feed",
     "starpulse.board.claim_refusals",
     "starpulse.board.machine_tasks",

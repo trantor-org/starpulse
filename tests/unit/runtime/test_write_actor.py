@@ -13,7 +13,7 @@ from starpulse.board.model.seam import Written
 from starpulse.contracts.adapters import Move
 from starpulse.event_log import lane_events
 from starpulse.event_log.event_log import EventLog, Tail
-from starpulse.flow_metrics.history import HistoryStore
+from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 from starpulse.runtime.adapter_kit import task
 from starpulse.views.writes import archive_task, create_task, edit_task, start_task
 

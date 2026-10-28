@@ -398,7 +398,7 @@ class ConfigFile(_Table):
         ),
     )
     level: dict[str, Any] | None = Field(
-        default=None, description="The flow graph drawn above the Board (`starpulse.flow_metrics.level`)."
+        default=None, description="The flow graph drawn above the Board (`starpulse.flow_metrics.model.level`)."
     )
     scheduler: dict[str, Any] | None = Field(
         default=None, description="The scheduler's policy; every key is optional (see Scheduler)."

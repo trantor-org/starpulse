@@ -50,7 +50,7 @@ from sqlalchemy import (
 )
 
 from starpulse.event_log.tables import metadata
-from starpulse.flow_metrics.level_metrics import UNATTRIBUTED
+from starpulse.flow_metrics.model.level_metrics import UNATTRIBUTED
 from starpulse.machine_engine.model.transitions import tables as transitions
 
 BOARD = "board"

@@ -129,10 +129,9 @@ from starpulse.cli.agent_keys import (
     TASK_KEYS,
     TRANSITION_KEYS,
 )
-from starpulse.runtime.config import Config, ConfigError, discover, load
-from starpulse.flow_metrics.cells import cell_of
 from starpulse.contracts.analytics import Analytics
-from starpulse.flow_metrics.scores import (
+from starpulse.flow_metrics.model.cells import cell_of
+from starpulse.flow_metrics.model.scores import (
     WEIGHTS,
     PullFacts,
     cell_task_scores,
@@ -140,8 +139,9 @@ from starpulse.flow_metrics.scores import (
     pull_facts,
     score_cells,
 )
-from starpulse.flow_metrics.verdicts import cell_verdicts
+from starpulse.flow_metrics.model.verdicts import cell_verdicts
 from starpulse.github import GitHubError, connect, repo_of
+from starpulse.runtime.config import Config, ConfigError, discover, load
 
 #: What each exit code means, as the manifest says it.
 EXIT_CODES = {0: "ok", 1: "refused or invalid", 2: "usage", 3: "unavailable", 4: "not found"}
@@ -588,7 +588,6 @@ def _unlisted_writers(config: Config, base: Path) -> list[str]:
     Only the built-in boards draw `.starpulse/machines/`; Jira draws its own workflow and a dotted type is unknown here.
     """
     from starpulse.board.adapters import project_machines  # noqa: PLC0415 - import cost, paid on first use
-    from starpulse.pulls.task_actor import ACTOR  # noqa: PLC0415 - import cost, paid on first use
     from starpulse.machine_engine.adapters.machine_loader import (  # noqa: PLC0415 - import cost, paid on first use
         load_machine,
     )
@@ -596,6 +595,7 @@ def _unlisted_writers(config: Config, base: Path) -> list[str]:
         MachineDefinitionError,
         refuse_unlisted,
     )
+    from starpulse.pulls.task_actor import ACTOR  # noqa: PLC0415 - import cost, paid on first use
 
     if config.reads_domains_at_start():
         return []  # an adapter reads this instance's domains from its workflows as `serve` starts, which this offline check cannot read

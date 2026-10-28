@@ -2,8 +2,8 @@
 equal hand-worked values, and a window longer than the history is refused with the history's length."""
 
 import pytest
-from starpulse.flow_metrics.level import Level, Terminal
-from starpulse.flow_metrics.level_metrics import UNATTRIBUTED, Run, WindowPastHistory, level_metrics
+from starpulse.flow_metrics.model.level import Level, Terminal
+from starpulse.flow_metrics.model.level_metrics import UNATTRIBUTED, Run, WindowPastHistory, level_metrics
 
 H = 3600.0
 NOW = 100 * H

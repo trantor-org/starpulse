@@ -34,9 +34,9 @@ from starlette.responses import Response as Reply
 from starlette.routing import Route
 from starlette.staticfiles import StaticFiles
 
-from starpulse.harness_telemetry.harnesses import Harnesses
 from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.model.seam import Board
+from starpulse.harness_telemetry.harnesses import Harnesses
 from starpulse.runs.cloudevents_grpc import PATH as CLOUDEVENTS_GRPC_PATH
 from starpulse.runs.cloudevents_grpc import cloudevents_grpc
 from starpulse.views.compression import Encoded, Gzip, accepts_gzip
@@ -53,7 +53,7 @@ if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler i
     from starlette.types import ASGIApp, Receive, Scope, Send
 
     from starpulse.board.board_feed import BoardFeed
-    from starpulse.flow_metrics.history import History
+    from starpulse.flow_metrics.adapters.outbound.history import History
 
 
 logger = logging.getLogger(__name__)

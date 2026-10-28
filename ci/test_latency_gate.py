@@ -13,7 +13,7 @@ from pathlib import Path
 import demo_workspace
 import pytest
 import seeded_server
-from starpulse.flow_metrics.history import HistoryStore
+from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 from starpulse.views.page_server import PageServer
 from tests.summaries import assert_matches_rebuild
 

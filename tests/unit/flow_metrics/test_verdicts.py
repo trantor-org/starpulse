@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from starpulse.flow_metrics.verdicts import cell_verdicts, verdict
+from starpulse.flow_metrics.model.verdicts import cell_verdicts, verdict
 
 
 def test_trial_matching_baseline_wins_non_inferiority() -> None:

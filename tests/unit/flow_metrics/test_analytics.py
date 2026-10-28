@@ -1,6 +1,6 @@
 """Board health from lane changes: dwell, WIP and throughput equal hand-computed values, an open stay counts to now."""
 
-from starpulse.flow_metrics.analytics import stay_health
+from starpulse.flow_metrics.model.analytics import stay_health
 from starpulse.machine_engine.model.stays import lane_stays
 
 from tests.machines import MACHINES

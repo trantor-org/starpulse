@@ -31,10 +31,6 @@ from dataclasses import replace
 from pathlib import Path
 
 from sqlalchemy import Engine, create_engine, event, insert
-
-import starpulse
-from starpulse.runtime.config import load
-from starpulse.scheduler.model.config import Scheduler
 from starpulse.board.adapters import native
 from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.board_feed import BoardFeed
@@ -48,13 +44,17 @@ from starpulse.event_log.readmodel.projector import Projector
 from starpulse.event_log.readmodel.read_model import ReadModel
 from starpulse.event_log.store import EventStore, NewEvent
 from starpulse.event_log.tables import machine_events
-from starpulse.flow_metrics.history import HistoryStore
+from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 from starpulse.runtime.assembly import assemble
+from starpulse.runtime.config import load
 from starpulse.scheduler.adapters.runtime import Runtime
 from starpulse.scheduler.adapters.runtime import build as build_scheduler
+from starpulse.scheduler.model.config import Scheduler
 from starpulse.views.asgi_app import page_app
 from starpulse.views.page_server import PageServer
 from starpulse.views.services import Services
+
+import starpulse
 
 PREVIEW = Path(__file__).with_name("preview.toml")
 STATIC = Path(starpulse.__file__).parent / "static"

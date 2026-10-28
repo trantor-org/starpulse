@@ -205,7 +205,7 @@ def test_a_put_or_delete_to_any_other_path_is_a_404_and_leaves_the_window(tmp_pa
 
 
 def test_a_history_with_lane_rows_and_no_gaps_can_feed_the_ledger_but_not_answer_health() -> None:
-    from starpulse.flow_metrics.history import HealthHistory, LaneHistory
+    from starpulse.flow_metrics.adapters.outbound.history import HealthHistory, LaneHistory
 
     class LanesOnly:
         def lane_path(self, task: str) -> list[dict]:

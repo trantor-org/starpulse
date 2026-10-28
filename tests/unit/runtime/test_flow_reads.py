@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, event, text
-from starpulse.flow_metrics import history
-from starpulse.flow_metrics.history import HistoryStore
-from starpulse.flow_metrics.level import Level, Orbit, Terminal
+from starpulse.flow_metrics.adapters.outbound import history
+from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
+from starpulse.flow_metrics.model.level import Level, Orbit, Terminal
 from starpulse.runtime import server
 from starpulse.runtime.server import health_response, trajectories_response
 

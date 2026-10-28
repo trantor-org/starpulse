@@ -16,7 +16,7 @@ from typing import NamedTuple
 
 import pytest
 from starpulse.event_log.opening import DEFAULT_FILE
-from starpulse.flow_metrics.history import HistoryStore
+from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 from starpulse.runtime import server
 
 from tests.page_stub import held

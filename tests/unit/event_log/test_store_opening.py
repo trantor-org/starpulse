@@ -4,10 +4,9 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, inspect
-
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.migrate import StoreNotMigrated, migrate
-from starpulse.flow_metrics.history import HistoryStore
+from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 
 
 @pytest.mark.parametrize("step", ["rebuild_summaries", "build_summaries"])

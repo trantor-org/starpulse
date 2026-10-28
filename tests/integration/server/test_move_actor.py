@@ -14,7 +14,7 @@ from starpulse.contracts import LaneEvent
 from starpulse.contracts.adapters import Move
 from starpulse.event_log import lane_events
 from starpulse.event_log.event_log import EventLog, Tail
-from starpulse.flow_metrics.history import HistoryStore
+from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 from starpulse.runtime.adapter_kit import serve, task, url
 
 from tests.machines import MACHINES, ROLES
