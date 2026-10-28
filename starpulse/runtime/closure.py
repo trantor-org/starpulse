@@ -41,8 +41,11 @@ _CHILDREN = tuple(name for name in ENTRIES if name != SELF)
 _BOARD_READERS = ("pulls", "scheduler", "runs", "flow-metrics", "board")
 
 
-#: The keys `serve` alone reads: whether each child runs, its memory limit, its refresh token and its take-over command.
+#: The keys `serve` alone reads: whether each child runs, its memory limit, its refresh token and its take-over command,
+#: and the certificate it wraps the shared listening socket in, which a hot swap behind that socket cannot change.
 _SERVE_KEYS = (
+    "tls_cert",
+    "tls_key",
     "mode",
     "refresh_token_env",
     "take_over_command",
@@ -66,8 +69,6 @@ def _owned_by(*contexts: str) -> tuple[str, ...]:
 CONFIG_OWNERS: dict[str, tuple[str, ...]] = {
     "tracker_url": _owned_by(),
     "harnesses_file": _owned_by(),
-    "tls_cert": _owned_by(),
-    "tls_key": _owned_by(),
     "analytics": _owned_by(),
     "telemetry_loki_url": _owned_by(),
     "cursor_context": _owned_by(),
