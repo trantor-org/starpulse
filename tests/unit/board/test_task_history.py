@@ -69,6 +69,16 @@ def test_an_edit_appends_the_fields_it_changed_and_each_comment(served) -> None:
     assert (events[1].actor, events[2].payload["text"]) == ("adin", "looks fine")
 
 
+def test_an_edit_that_adds_a_start_criterion_holding_a_date_appends_it_as_text(served) -> None:
+    built, _, store, _ = served
+    description = "Draw it.\n\n## Start Criteria\n\n```yaml\nstart_criteria:\n  - id: a\n    kind: file\n    path: x\n    since: 2026-10-27 23:21:00\n```"
+
+    assert built.edit("task-5", {"description": description}, "", actor="adin").ok
+
+    meta = store.read("task", "task-5")[-1].payload["meta"]
+    assert "2026-10-27 23:21:00" in json.dumps(meta)
+
+
 def test_a_move_appends_a_transition_naming_both_states(served) -> None:
     built, _, store, _ = served
 
