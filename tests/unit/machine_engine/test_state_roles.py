@@ -40,3 +40,18 @@ def test_a_board_of_statuses_alone_starts_at_the_first_works_in_the_second_and_e
     assert (roles.initial, roles.working, roles.done, roles.final) == ("to_do", "in_progress", "done", "done")
     assert (roles.ready, roles.waiting, roles.review, roles.attention) == (None, None, None, None)
     assert roles.startable == frozenset()
+
+
+def test_a_review_that_waits_on_a_merge_is_still_the_review_wait_and_a_person_waiting_on_a_merge_is_startable() -> None:
+    roles = StateRoles(
+        {"todo": "waiting_on_fact", "checking": "waiting_on_fact", "on_me": "waiting_on_person", "shipped": "resting"},
+        {
+            "todo": {"criteria_unmet": "CRITERIA_UNMET"},
+            "checking": {"pr_merged": "MERGED"},
+            "on_me": {"pr_merged": "MERGED"},
+        },
+        ("shipped",),
+    )
+
+    assert roles.review == "checking"
+    assert roles.startable == frozenset({"todo", "on_me"})
