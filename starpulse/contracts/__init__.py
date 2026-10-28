@@ -29,6 +29,7 @@ if TYPE_CHECKING:
         RunStatus,
         StartFailedError,
         Step,
+        VerdictEvent,
     )
 
 __all__ = [
@@ -51,6 +52,7 @@ __all__ = [
     "StartFailedError",
     "Step",
     "TaskKeys",
+    "VerdictEvent",
 ]
 
 

@@ -191,3 +191,18 @@ machine_events = Table(
     Index("ix_starpulse_machine_events_task", "task", "machine", "occurred_at"),
     Index("ix_starpulse_machine_events_run", "run", "machine", "occurred_at"),
 )
+
+#: Every qa verdict a lens gave a task, kept per round so a later PASS never hides an earlier CHANGES.
+task_verdicts = Table(
+    "starpulse_task_verdicts",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("event_id", String, nullable=False, unique=True),
+    Column("task", String, nullable=False),
+    Column("lens", String, nullable=False),
+    Column("round", Integer, nullable=False),
+    Column("outcome", String, nullable=False),
+    Column("reason", String, nullable=False),
+    Column("occurred_at", Float, nullable=False),
+    Index("ix_starpulse_task_verdicts_task", "task", "occurred_at"),
+)

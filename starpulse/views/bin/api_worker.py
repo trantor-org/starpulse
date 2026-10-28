@@ -26,7 +26,7 @@ from starpulse.views.bin.blocks import ApiConfig
 from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.claim_refusals import CLAIMS_STREAM
 from starpulse.event_log import events as machine_events
-from starpulse.event_log import lane_events
+from starpulse.event_log import lane_events, verdict_events
 from starpulse.event_log.conformance_monitor import Conformance
 from starpulse.harness_telemetry.telemetry import telemetry_log
 from starpulse.pulls.delivery import Projected, follow_saves, metrics_of, poller_problem, request_refresh
@@ -91,6 +91,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     from starpulse.board.adapters.search import SearchIndex  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.board.board_feed import follow  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.board.claim_refusals import ClaimRefusals  # noqa: PLC0415 - the database stack loads after the config is accepted
+    from starpulse.board.verdicts import Verdicts  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.board.machine_tasks import MachineTasks  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.event_log.event_log import EventLog  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.event_log.opening import database_url  # noqa: PLC0415 - the database stack loads after the config is accepted
@@ -144,6 +145,8 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     follow(tasks, log, machine_events.STREAM, tasks.handle_entry)
     refusals = ClaimRefusals(feed)
     follow(refusals, log, CLAIMS_STREAM, refusals.handle_entry)
+    verdicts = Verdicts(feed)
+    follow(verdicts, log, verdict_events.STREAM, verdicts.handle_entry)
     saved_after = log.head() or 0  # before the store loads: a save between the two is announced past it
     pulls = PullStore(log.engine)
     follow_saves(pulls, log, stop, saved_after)

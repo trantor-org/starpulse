@@ -7,7 +7,7 @@ from pathlib import Path
 
 import jsonschema
 import pytest
-from starpulse.event_log import events, lane_events, rating_events
+from starpulse.event_log import events, lane_events, rating_events, verdict_events
 from starpulse.event_log.event_log import EventLog, Tail
 from starpulse.runs import run_events
 
@@ -40,7 +40,7 @@ def _declared_streams() -> set[str]:
 def test_every_stream_a_producer_declares_has_a_contract_schema() -> None:
     declared = _declared_streams()
 
-    expected = {events.STREAM, run_events.STREAM, lane_events.STREAM, rating_events.STREAM}
+    expected = {events.STREAM, run_events.STREAM, lane_events.STREAM, rating_events.STREAM, verdict_events.STREAM}
     assert declared == expected, "a producer declared a new stream"
     assert sorted(declared - set(STREAMS)) == [], "declare the stream's record in starpulse.contracts.EVENT_STREAMS"
     assert sorted(set(STREAMS.values()) - set(contracts.CONTRACTS)) == []
@@ -61,9 +61,11 @@ def test_an_entry_each_producer_writes_validates_against_its_streams_schema(tmp_
         ),
     )
 
+    log.publish(verdict_events.STREAM, verdict_events.entry("T-1", "security", 1, "PASS", "no findings", 8.0, "qa"))
+
     entries = Tail.replay(log, "reader", streams=sorted(_declared_streams())).poll()
 
-    assert len(entries) == 4
+    assert len(entries) == 5
     assert [e.stream for e in entries if e.stream not in STREAMS] == []
     for entry in entries:
         name = STREAMS[entry.stream]

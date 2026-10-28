@@ -85,6 +85,7 @@ from starpulse.contracts.api.dto.snapshot import (
     RestartingEvent,
     Snapshot,
     TaskDelta,
+    VerdictDelta,
 )
 from starpulse.contracts.api.dto.trajectories import Trajectories
 from starpulse.contracts.api.dto.transitions import Cells, CostToGo, FlowGraph, RunDiffs, SubStages, Transitions
@@ -95,7 +96,7 @@ class ApiContract(_Api):
 
     snapshot: Snapshot
     events: list[
-        TaskDelta | MoveDelta | DagsDelta | PullsDelta | ClaimDelta | LedgersDelta | SchedulerStatus
+        TaskDelta | MoveDelta | DagsDelta | PullsDelta | ClaimDelta | VerdictDelta | LedgersDelta | SchedulerStatus
     ]
     build: BuildEvent
     restarting: RestartingEvent

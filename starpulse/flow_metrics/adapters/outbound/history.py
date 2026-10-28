@@ -43,7 +43,7 @@ from sqlalchemy.dialects import sqlite
 from sqlalchemy.exc import OperationalError
 
 from starpulse.event_log import events as machine_events
-from starpulse.event_log import lane_events
+from starpulse.event_log import lane_events, verdict_events
 from starpulse.event_log.checkpoints import Checkpoints
 from starpulse.event_log.event_log import EventLog, insert_event
 from starpulse.event_log.lane_import import Change
@@ -52,6 +52,7 @@ from starpulse.event_log.polling import DEFAULT_POLL_INTERVAL
 from starpulse.event_log.tables import gaps as _gaps
 from starpulse.event_log.tables import machine_events as _machine_events
 from starpulse.event_log.tables import metadata
+from starpulse.event_log.tables import task_verdicts as _task_verdicts
 from starpulse.flow_metrics.adapters.outbound.summaries import (
     BOARD,
     SUMMARY_TABLES,
@@ -340,6 +341,37 @@ class HistoryStore:
                 self.checkpoints.save(machine_events.STREAM, cursor, conn=db)
         if written:
             self._summaries_changed()
+
+    def record_verdict(self, entry_id: str, fields: dict, *, cursor: int | None = None) -> None:
+        """Write one qa verdict; one the store already holds is a no-op. `cursor`, the verdict's id in the log, is saved
+        in the same transaction."""
+        row = {
+            "event_id": entry_id,
+            "task": fields["task"],
+            "lens": fields["lens"],
+            "round": fields["round"],
+            "outcome": fields["outcome"],
+            "reason": fields["reason"],
+            "occurred_at": float(fields["time"]),
+        }
+        with self.engine.begin() as db:
+            db.execute(self._insert(_task_verdicts).values(row).on_conflict_do_nothing())
+            if cursor is not None:
+                self.checkpoints.save(verdict_events.STREAM, cursor, conn=db)
+
+    def verdicts(self, task: str) -> list[dict]:
+        """Every verdict given for `task`, oldest first: its `lens`, `round`, `outcome`, `reason` and `at`."""
+        columns = _task_verdicts.c
+        query = (
+            select(columns.lens, columns.round, columns.outcome, columns.reason, columns.occurred_at)
+            .where(columns.task == task)
+            .order_by(columns.occurred_at, columns.id)
+        )
+        with self.engine.connect() as db:
+            return [
+                {"lens": lens, "round": round, "outcome": outcome, "reason": reason, "at": at}
+                for lens, round, outcome, reason, at in db.execute(query)
+            ]
 
     def _summaries_changed(self) -> None:
         """Forget the level windows: called once a write to the summaries has committed, so a window read after it sees the
@@ -831,7 +863,24 @@ def record_machine_events(
     so a restart neither skips nor repeats one, and rows pruned unread are a gap (`Tail`). A database that cannot be
     reached is the sink down, not the entry bad, so the entry is read again on the next poll.
     """
-    stream = machine_events.STREAM
+    _copy(store, log, stop, machine_events.STREAM, store.record_machine, interval)
+
+
+def record_verdicts(
+    store: HistoryStore, log: EventLog, stop: threading.Event, *, interval: float = DEFAULT_POLL_INTERVAL
+) -> None:
+    """Copy the log's qa verdicts into `store` until `stop`, as `record_machine_events` does the machine events."""
+    _copy(store, log, stop, verdict_events.STREAM, store.record_verdict, interval)
+
+
+def _copy(
+    store: HistoryStore,
+    log: EventLog,
+    stop: threading.Event,
+    stream: str,
+    write: Callable[..., None],
+    interval: float,
+) -> None:
     while not stop.is_set():
         try:
             after = store.checkpoints.load(stream)[0]
@@ -842,9 +891,7 @@ def record_machine_events(
     else:
         return
     log.tail(stream, after=after, interval=interval).run(
-        lambda entry: store.record_machine(entry.event_id, entry.fields, cursor=entry.id),
+        lambda entry: write(entry.event_id, entry.fields, cursor=entry.id),
         stop,
         transient=(OperationalError,),
     )
-
-

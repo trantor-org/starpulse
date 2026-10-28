@@ -25,6 +25,7 @@ FEED_EVENT_RESEND = {
     "move": False,
     "pulls": False,
     "claim": False,
+    "verdict": False,
     "dags": False,
     "ledgers": False,
     "scheduler": False,

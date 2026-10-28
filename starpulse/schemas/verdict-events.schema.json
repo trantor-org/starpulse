@@ -1,0 +1,60 @@
+{
+  "additionalProperties": false,
+  "description": "One qa lens's verdict on a task in a round; the `task:verdicts` entry's fields. Every verdict is kept.",
+  "properties": {
+    "task": {
+      "description": "The task key the lens judged.",
+      "minLength": 1,
+      "title": "Task",
+      "type": "string"
+    },
+    "lens": {
+      "description": "The lens that judged it, such as `security`, `ux`, `ui` or `code`.",
+      "minLength": 1,
+      "title": "Lens",
+      "type": "string"
+    },
+    "round": {
+      "description": "The qa round the verdict belongs to, counted from 1.",
+      "minimum": 1,
+      "title": "Round",
+      "type": "integer"
+    },
+    "outcome": {
+      "description": "`PASS` accepts the task; `CHANGES` asks for another round.",
+      "enum": [
+        "PASS",
+        "CHANGES"
+      ],
+      "title": "Outcome",
+      "type": "string"
+    },
+    "reason": {
+      "default": "",
+      "description": "Why the lens gave it; empty when none was given.",
+      "title": "Reason",
+      "type": "string"
+    },
+    "time": {
+      "description": "When the verdict was given, in epoch seconds.",
+      "minimum": 0,
+      "title": "Time",
+      "type": "number"
+    },
+    "source": {
+      "default": "",
+      "description": "The producer that posted it through the CloudEvents ingest.",
+      "title": "Source",
+      "type": "string"
+    }
+  },
+  "required": [
+    "task",
+    "lens",
+    "round",
+    "outcome",
+    "time"
+  ],
+  "title": "VerdictEvent",
+  "type": "object"
+}

@@ -357,6 +357,12 @@ events add up to, and that graph is kept in the history store across restarts. E
 producer: a missing or wrong token answers 401, another producer's `source` 403, an event the contract does not allow
 400, and none of them writes anything; the other answers are the machine events' table below.
 
+A qa lens's verdict rides the route too: `type` `VerdictRecorded`, no `machine`, `subject` the task and `data` holding
+the `lens`, the `round` (an integer from 1), the `outcome` (`PASS` or `CHANGES`) and optionally a `reason`. A verdict
+missing a lens, round or outcome answers 400 and writes nothing. Every verdict is kept, per lens and round, by the
+history store, and `/api/events` sends each as a `verdict` event (`task`, `lens`, `round`, `outcome`, `reason`, `at`).
+A lens that has sent no verdict has no row, so a reader never counts it as `PASS`.
+
 ## Post machine events as CloudEvents
 
 A build job, a bot or any service that is not on the host posts a lifecycle machine's event over HTTP as a
