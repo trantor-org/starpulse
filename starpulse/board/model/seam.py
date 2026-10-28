@@ -89,6 +89,8 @@ class Written(NamedTuple):
     board that does not say), and the server then records nothing for it: the board's watch records the placement."""
     at: float | None = None
     """When the write put the task there, in epoch seconds; set with `lane`."""
+    lint: bool = False
+    """Whether a declared guard or the board's validate hook refused the write: a defect in the task record an editor of the record repairs."""
 
 
 class MoveWriter(Protocol):

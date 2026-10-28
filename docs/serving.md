@@ -818,7 +818,10 @@ it re-derives every open task once, so a pull request that merged while the serv
 the actor on, the 30-second pass of Release does not start; the actor settles and releases on the same rules, so
 `[release]` still names the settle rule.
 
-A write the board refuses is logged and counted, and is not retried until the task's facts change. `GET /metrics` carries:
+A write the board refuses is logged and counted, and is not retried until the task's facts change. A release to Ready
+that a declared guard or the `validate` hook refuses is a defect in the task record: the task stays in its lane with a
+comment naming the refusal, no operator question is minted, and the actor retries once the task's description, profile,
+labels or dependencies change. `GET /metrics` carries:
 
 - `starpulse_task_actor_refusals_total`: refused writes.
 - `starpulse_task_actor_latency_seconds`: a histogram of the seconds from the fact being observed to the write landing.

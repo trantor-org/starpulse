@@ -5,8 +5,10 @@ A machine state's `waits` name a fact kind and the event that leaves the state w
 touches only the tasks naming it, and when a task's pull request state, its own lane or a dependency's changes it
 re-derives that task's waits and writes the first that holds through the board's task editor as `starpulse/task-actor`.
 The board's rules and the machine's guards judge the write like any other. A write the board refuses is logged and
-counted, and not tried again until the task's facts change. A refused release to Ready also parks the task in Needs
-attention with the refusal as its reason, once per refusal, so the operator sees why it did not return. A start
+counted, and not tried again until the task's facts change. A release to Ready that the board's lint refuses (a
+declared guard or the validate hook) leaves the task in its lane with the lint's reason as a comment and no operator
+question, and the release is tried again when the task's description, profile, labels or dependencies change; any
+other refused release parks the task in Needs attention with the refusal as its reason, once per refusal. A start
 re-derives every open task once, which is the recovery for a change that happened while the server was down.
 
 A lifecycle machine whose phase state links a skill machine with `exits` (`submachines[].exits`) advances that phase
@@ -42,10 +44,12 @@ if TYPE_CHECKING:  # annotation only: the pull store opens the database stack
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["ACTOR", "TaskActor", "moves_of"]
+__all__ = ["ACTOR", "LINT_REFUSED", "TaskActor", "moves_of"]
 
 #: The actor every write of the task actor names.
 ACTOR = "starpulse/task-actor"
+#: What the task actor comments when the board's lint refuses a task's release to Ready, before the refusal.
+LINT_REFUSED = "Release to Ready refused by the task lint, repair the record to release it:"
 #: The pull request states that end a pull request.
 _TERMINAL = ("MERGED", "CLOSED")
 #: The repository the board renders a bare `PR #N` against; another repo's pull request links its own URL.
@@ -70,6 +74,11 @@ def _exit_links(machines: Mapping[str, Mapping[str, Any]]) -> dict[str, list[Map
     """Each lifecycle machine's links that exit on a skill machine's state: `{machine: [link]}`, the Board's apart."""
     found = {name: [link for link in drawn.get("submachines", ()) if link.get("exits")] for name, drawn in machines.items()}
     return {name: links for name, links in found.items() if links and name != "board"}
+
+
+def _lint_record(agent: Mapping[str, Any]) -> tuple[Any, ...]:
+    """The parts of a task's record the board's lint reads, which a repair changes and a comment does not."""
+    return agent["description"], agent["profile"], tuple(agent["labels"]), tuple(agent["dependencies"])
 
 
 def moves_of(machine: Mapping[str, Any]) -> dict[tuple[str, str], str]:
@@ -170,6 +179,8 @@ class TaskActor:
         self._tried: dict[str, tuple] = {}
         #: The refusal each task was last parked in Needs attention for, so the same refusal parks it once.
         self._parked: dict[str, str] = {}
+        #: The record each task's release was last refused on by the board's lint, so a repaired record is tried again.
+        self._lint_held: dict[str, tuple[Any, ...]] = {}
         self._metrics = threading.Lock()
         self._refusals = 0
         #: How many writes landed within each bound of `BUCKETS_S`, then how many in all, and their seconds summed.
@@ -361,7 +372,11 @@ class TaskActor:
                 self._forget(name)
                 self._derive_all(self._dependents(name), observed)
                 return
-            if before == (now := (agent["state"], tuple(agent["dependencies"]), tuple(agent["prs"]))):
+            repaired = name in self._lint_held and self._lint_held[name] != _lint_record(agent)
+            if repaired:
+                del self._lint_held[name]
+                self._tried.pop(name, None)
+            if before == (now := (agent["state"], tuple(agent["dependencies"]), tuple(agent["prs"]))) and not repaired:
                 return
             self._index(agent)
             touched = {name}
@@ -398,6 +413,7 @@ class TaskActor:
         for url in self._seen.pop(name, ("", (), ()))[2]:
             self._by_pr.get(url, set()).discard(name)
         self._tried.pop(name, None)
+        self._lint_held.pop(name, None)
 
     def _dependents(self, name: str) -> set[str]:
         return {other for other, (_, dependencies, _) in self._seen.items() if name in dependencies}
@@ -460,9 +476,20 @@ class TaskActor:
             return
         logger.warning("task actor: %s was not moved to %s: %s", name, target, written.output)
         if target == self._feed.roles.ready:
-            self._park(name, written.output)
+            if written.lint:
+                self._hold_for_repair(name, written.output)
+            else:
+                self._park(name, written.output)
         with self._metrics:
             self._refusals += 1
+
+    def _hold_for_repair(self, name: str, refusal: str) -> None:
+        """Leave a task whose release the board's lint refused in its lane and comment the lint's reason, no operator
+        question: any editor of the record repairs it, and the actor tries the release again when the record changes."""
+        self._lint_held[name] = _lint_record(self._feed.task(name))
+        written = self._apply(name, {}, f"{LINT_REFUSED} {refusal.rstrip('.')}.")
+        if not written.ok:
+            logger.warning("task actor: the lint refusal of %s was not commented: %s", name, written.output)
 
     def _park(self, name: str, refusal: str) -> None:
         """Write a task whose release to Ready was refused to Needs attention, with the refusal as its reason."""

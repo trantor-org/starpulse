@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy import create_engine
 from starpulse.board.board_feed import BoardFeed
 from starpulse.pulls.pulls import PullStore
+from starpulse.pulls.task_actor import LINT_REFUSED
 from starpulse.runtime.adapter_kit import task
 
 from tests.task_actor_kit import GATED, PR_ONE, ROLES, Board, Criteria, pull, running, until
@@ -150,3 +151,46 @@ def test_a_waiting_task_whose_start_criteria_pass_stays_waiting_while_a_dependen
     running(board, store, stop, evaluate=Criteria("met"))
 
     assert not until(lambda: board.moved(), within=0.3)
+
+
+LINT = "a fast kind-execute task names no mechanism"
+
+
+def test_a_release_the_task_lint_refuses_stays_in_waiting_with_the_lint_reason_and_no_operator_question(
+    store: PullStore, stop: threading.Event
+) -> None:
+    board = Board(BoardFeed(roles=ROLES), task("TASK-9", "Done"), task("TASK-1", "Waiting", dependencies=("TASK-9",)))
+    board.linting["ready"] = LINT
+    actor = running(board, store, stop)
+
+    assert until(lambda: len(board.writes) == 2)
+    assert board.moved() == [("TASK-1", "ready")]  # no move into Needs attention
+    assert all("description" not in changes for _, changes, _, _ in board.writes)  # no operator question written
+    assert board.comments() == [("TASK-1", f"{LINT_REFUSED} {LINT}.")]
+    assert _sample(actor.exposition(), "starpulse_task_actor_refusals_total") == 1
+
+
+def test_a_lint_refused_task_is_released_when_its_record_is_repaired(store: PullStore, stop: threading.Event) -> None:
+    board = Board(BoardFeed(roles=ROLES), task("TASK-9", "Done"), task("TASK-1", "Waiting", dependencies=("TASK-9",)))
+    board.linting["ready"] = LINT
+    running(board, store, stop)
+    assert until(lambda: len(board.writes) == 2)
+
+    board.linting.clear()
+    board.put(task("TASK-1", "Waiting", dependencies=("TASK-9",), description="Mechanism: x, checked against a.py:1"))
+
+    assert until(lambda: board.moved() == [("TASK-1", "ready"), ("TASK-1", "ready")])
+    assert len(board.comments()) == 1
+
+
+def test_an_unrelated_change_to_a_lint_refused_task_does_not_try_its_release_again(
+    store: PullStore, stop: threading.Event
+) -> None:
+    board = Board(BoardFeed(roles=ROLES), task("TASK-9", "Done"), task("TASK-1", "Waiting", dependencies=("TASK-9",)))
+    board.linting["ready"] = LINT
+    running(board, store, stop)
+    assert until(lambda: len(board.writes) == 2)
+
+    board.put(task("TASK-1", "Waiting", dependencies=("TASK-9",)))
+
+    assert not until(lambda: len(board.writes) > 2, within=0.5)

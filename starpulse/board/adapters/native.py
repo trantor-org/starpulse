@@ -315,9 +315,9 @@ class _Guard:
         if self.rules:
             earlier = None if before is None else rules.Record(*_split_record(before))
             if broken := rules.refusal(self.rules, earlier, rules.Record(frontmatter, body, self.state_of), actor):
-                return Written(False, broken.reason, broken.skill)
+                return Written(False, broken.reason, broken.skill, lint=True)
         if self.validate is not None and (reason := self.validate(path, before, text)):
-            return Written(False, reason)
+            return Written(False, reason, lint=True)
         return None
 
 
