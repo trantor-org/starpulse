@@ -5,14 +5,14 @@ const css = sheet.replace(/\/\*[\s\S]*?\*\//g, "");
 const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => ({ sel: m[1].trim(), body: m[2] }));
 const scrolls = (body: string) => /overflow(-[xy])?\s*:\s*(auto|scroll)/.test(body);
 
-/** The one box that scrolls sideways: an open DAG's chart, drawn at the size its step labels are read at however wide the DAG grows. */
+/** An open DAG's chart, which wraps a wide DAG onto bands below rather than scrolling. */
 const CHART = "#kbm .dgm .chart";
 
 describe("the page's scrolling boxes", () => {
-  it("scroll sideways in the open DAG's chart alone, which never scales its drawing down", () => {
+  it("never scroll sideways, the open DAG's chart included, whose drawing fits its box", () => {
     const sideways = rules.filter((r) => /overflow-x\s*:\s*(auto|scroll)/.test(r.body));
-    expect(sideways.map((r) => r.sel)).toEqual([CHART]);
-    expect(css).toMatch(/#kbm \.dgm \.chart svg \{[^}]*max-width:\s*none/);
+    expect(sideways.map((r) => r.sel)).toEqual([]);
+    expect(css).toMatch(/#kbm \.dgm \.chart svg \{[^}]*max-width:\s*100%/);
   });
 
   it("scroll in one rule only: vertically, never sideways, with the Kanban columns' thin scrollbar", () => {

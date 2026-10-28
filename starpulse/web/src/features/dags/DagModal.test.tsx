@@ -281,4 +281,18 @@ describe("a DAG modal's step history and rerun safety", () => {
     expect(small).toBeGreaterThan(0);
     expect(big).toBeGreaterThan(small);
   });
+
+  it("wraps a chain wider than the viewport's modal onto rows below, its chart no wider than the modal and its links into a new row dropping to it", async () => {
+    const was = innerWidth;
+    Object.defineProperty(window, "innerWidth", { value: 800, configurable: true });
+    const chain = Array.from({ length: 24 }, (_, i) => step(`stage-${i}`, i ? [`stage-${i - 1}`] : []));
+    await drawWith(withSteps("runs/fanout", chain), "fanout");
+    const chart = q("svg.dstrip.big");
+    const ys = new Set([...chart.querySelectorAll("text")].map((t) => t.getAttribute("y")));
+    Object.defineProperty(window, "innerWidth", { value: was, configurable: true });
+
+    expect(Number(chart.getAttribute("width"))).toBeLessThanOrEqual(800 - 28);
+    expect(ys.size).toBeGreaterThan(1);
+    expect([...chart.querySelectorAll("path.link")].some((l) => l.getAttribute("d")!.includes("V"))).toBe(true);
+  });
 });

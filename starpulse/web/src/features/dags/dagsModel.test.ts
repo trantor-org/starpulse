@@ -200,13 +200,33 @@ describe("the modal's step chart", () => {
   const PX150 = 6.1 * 1.5;
   /** Every pair of names that sit on one line of the chart: a name's width is `PX150` a character, centred on its step. */
   const overprints = (steps: DagStep[], p: ReturnType<typeof place>) => {
-    const h = chartHeight(p.wide);
+    const h = p.tall;
     const line = (n: string) => Math.round(p.at[n].y + (p.up(n) ? -14 : 22));
     const half = (n: string) => (PX150 * n.length) / 2;
     const names = steps.map((s) => s.name);
     return names.flatMap((a, i) => names.slice(i + 1).filter((b) => line(a) === line(b) && Math.abs(p.at[a].x - p.at[b].x) < half(a) + half(b)).map((b) => `${a} / ${b}`))
       .concat(names.filter((n) => line(n) < 0 || line(n) > h));
   };
+
+  it("wraps a chart wider than its room onto rows below, every step inside the room and no two names overprinting", () => {
+    const chain = Array.from({ length: 12 }, (_, i) => step(`stage-${i}`, i ? [`stage-${i - 1}`] : []));
+    const p = bigPlace(chain, 0, chartHeight(1) - 12, PX150, 600);
+    const bands = chain.map((s) => p.band?.[s.name]);
+
+    expect(p.span).toBeLessThanOrEqual(600);
+    expect(Math.max(...chain.map((s) => p.at[s.name].x))).toBeLessThan(600);
+    expect(p.tops?.length ?? 0).toBeGreaterThan(1);
+    expect(bands).toEqual([...bands].sort((a, b) => a - b));
+    expect(p.tall).toBeGreaterThan(chartHeight(1) * ((p.tops?.length ?? 1) - 1));
+    expect(chain.every((s) => p.at[s.name].y > (p.tops?.[p.band?.[s.name] ?? 0] ?? Infinity))).toBe(true);
+    expect(overprints(chain, p)).toEqual([]);
+  });
+
+  it("keeps a chart that fits its room on one row", () => {
+    const chain = Array.from({ length: 3 }, (_, i) => step(`stage-${i}`, i ? [`stage-${i - 1}`] : []));
+
+    expect(bigPlace(chain, 0, chartHeight(1) - 12, PX150, 600).tops).toEqual([0]);
+  });
 
   it("folds a fan wider than five into sub-columns of five, so a wide fan stays five steps high", () => {
     const fan = Array.from({ length: 12 }, (_, i) => step(`child-${i}`, ["root"]));
