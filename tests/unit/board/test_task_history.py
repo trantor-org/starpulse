@@ -275,3 +275,23 @@ def test_starting_the_board_gives_a_retired_row_without_history_its_imported_and
     built.start(feed, "test", log)
 
     assert _types(EventStore(log.engine), "TASK-9") == ["TaskImported", "Archived"]
+
+
+def test_a_lane_write_after_a_lost_append_reconciles_the_historys_dependencies_with_the_file(
+    served, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    built, _, store, _ = served
+    assert built.edit("task-5", {"dependencies": ["task-9"]}, [], actor="adin").ok
+    append = EventStore.append
+
+    def lost(self, *args, **kwargs):
+        monkeypatch.setattr(EventStore, "append", append)
+        raise OSError("unable to open database file")
+
+    monkeypatch.setattr(EventStore, "append", lost)
+    with pytest.raises(OSError):
+        built.edit("task-5", {"dependencies": []}, [], actor="adin")
+
+    assert built.writer("task-5", "In Progress", "starpulse/task-actor").ok
+
+    assert replay(store.read("task", "task-5"))["dependencies"] == built.read("task-5")["dependencies"] == []

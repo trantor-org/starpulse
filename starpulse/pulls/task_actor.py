@@ -587,7 +587,9 @@ class TaskActor:
         return result[1], [criterion for criterion, status in result[1] if status != "met"]
 
     def _criteria_met(self, agent: dict[str, Any]) -> tuple[Any, str] | None:
-        """The results when every Start Criterion was evaluated met."""
+        """The results when every Start Criterion was evaluated met and no dependency is open, which would hold it back."""
+        if any(not self._feed.is_done(dependency) for dependency in agent["dependencies"]):
+            return None
         found = self._criteria(agent)
         return (found[0], "Every Start Criterion passes.") if found and not found[1] else None
 
