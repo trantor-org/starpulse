@@ -28,6 +28,13 @@ EXTERNAL_ACTOR = "external"
 ARCHIVED = "archived"
 #: The lane a swept task enters where the Board has it: its file keeps the done status in the folder it was swept to.
 COMPLETED = "completed"
+
+
+def done_lanes(done: str) -> tuple[str, str]:
+    """The lanes in which a dependency is done to its dependents: the Board's done lane `done`, or `completed`."""
+    return done, COMPLETED
+
+
 UNATTRIBUTED_METRIC = "starpulse_board_lane_unattributed_total"
 UNATTRIBUTED_HELP = "Lane entries appended to board:lanes since start that name no actor."
 

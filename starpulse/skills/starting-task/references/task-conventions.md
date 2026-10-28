@@ -517,7 +517,7 @@ exporting the row count as a gauge, and its criterion is
 live and closes the task when it holds. No automated evaluator closes one.
 
 **A check task closes on a pass and waits on the fix of a miss.** A check task is one typed
-`check`, titled Validate, Verify or Check, or labelled `validation`. When it measures its
+`check`; a task labelled `validation` must be. When it measures its
 criterion, it records the verdict with `starpulse task verdict TASK CHECK pass` or
 `miss --evidence ... --fix PROJ-M`. A pass closes it; a miss parks it on its fix, whose `Done`
 returns it to `Ready` to measure again:

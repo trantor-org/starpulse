@@ -188,6 +188,13 @@ def test_a_task_is_done_when_the_read_model_has_it_in_the_done_state_archived_or
     assert [feed.is_done(f"TASK-{n}") for n in (1, 2, 3, 9)] == [False, True, True, False]
 
 
+def test_a_task_in_the_completed_lane_is_done(engine: Engine) -> None:
+    _append(engine, 1, "completed")
+    feed = _feed(engine)
+
+    assert feed.is_done("TASK-1")
+
+
 def _deltas(subscriber: object) -> list[tuple[str, dict]]:
     return [subscriber.get_nowait() for _ in range(subscriber.qsize())]  # type: ignore[attr-defined]
 
