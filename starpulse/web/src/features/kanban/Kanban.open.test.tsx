@@ -72,14 +72,15 @@ describe("opening a task's modal", () => {
   });
 
   it("draws the held record's notes at once when it is past the fresh window, then reads it again", async () => {
-    hover(cardOf("TASK-1"));
+    // focus reads ahead without arming the pre-draw rest timer, which on a loaded runner would draw the modal before the click
+    act(() => cardOf("TASK-1").focus());
     await settle();
     const fresh = vi.spyOn(RecordCache.prototype, "fresh").mockReturnValue(undefined);
     try {
       act(() => cardOf("TASK-1").click());
       expect(dialog()?.textContent).toContain("the full record's notes");
-      await settle();
-      expect(fetched).toHaveLength(2);
+      // the second read starts after the modal's effect runs, however many ticks a loaded runner takes to get there
+      await act(() => vi.waitFor(() => expect(fetched).toHaveLength(2)));
     } finally {
       fresh.mockRestore();
     }
