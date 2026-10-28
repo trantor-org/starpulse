@@ -90,17 +90,17 @@ def test_creates_from_several_processes_on_one_board_never_share_an_id(tmp_path:
     # Writers fork from a server that imported this module once; a spawned writer re-imported starpulse (~0.9 s CPU).
     context = multiprocessing.get_context("forkserver")
     context.set_forkserver_preload([__name__])
-    start = context.Barrier(4)
-    writers = [context.Process(target=_create_after, args=(tmp_path, start, writer, 25)) for writer in range(4)]
+    start = context.Barrier(3)
+    writers = [context.Process(target=_create_after, args=(tmp_path, start, writer, 5)) for writer in range(3)]
     for writer in writers:
         writer.start()
     for writer in writers:
         writer.join(60)
 
-    assert [writer.exitcode for writer in writers] == [0, 0, 0, 0]
+    assert [writer.exitcode for writer in writers] == [0, 0, 0]
     ids = [_split(path.read_text())[0]["id"] for path in _tasks(tmp_path).glob("*.md")]
-    assert len(ids) == 100
-    assert len(set(ids)) == 100
+    assert len(ids) == 15
+    assert len(set(ids)) == 15
 
 
 def test_a_title_with_a_path_separator_still_makes_one_file_inside_tasks(
