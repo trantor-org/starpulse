@@ -129,6 +129,16 @@ class Row:
         return self.judged and p95 is not None and p95 > self.budget
 
 
+def connection(base: str) -> http.client.HTTPConnection:
+    """A connection to the server `base` names. An `https://` base verifies the certificate against the system trust
+    store, or the file `SSL_CERT_FILE` names: the live server serves TLS only, under the private CA."""
+    parts = urllib.parse.urlsplit(base)
+    host = parts.hostname or "127.0.0.1"
+    if parts.scheme == "https":
+        return http.client.HTTPSConnection(host, parts.port or 443, timeout=60)
+    return http.client.HTTPConnection(host, parts.port or 80, timeout=60)
+
+
 def percentile(samples: Sequence[float], pct: float) -> float | None:
     """The nearest-rank percentile, or None for no samples."""
     if not samples:
@@ -288,9 +298,8 @@ class Client:
     """One kept-alive HTTP connection to the server, as the page's own fetches reuse one."""
 
     def __init__(self, base: str) -> None:
-        parts = urllib.parse.urlsplit(base)
-        self.host, self.port = parts.hostname or "127.0.0.1", parts.port or 80
-        self.conn = http.client.HTTPConnection(self.host, self.port, timeout=60)
+        self.base = base
+        self.conn = connection(base)
 
     def get(self, path: str) -> tuple[int, bytes, float]:
         start = time.perf_counter()
@@ -300,7 +309,7 @@ class Client:
             body = response.read()
         except http.client.HTTPException, OSError:
             self.conn.close()
-            self.conn = http.client.HTTPConnection(self.host, self.port, timeout=60)
+            self.conn = connection(self.base)
             raise
         return response.status, body, (time.perf_counter() - start) * 1000
 
@@ -343,8 +352,7 @@ def ref_key(data: str) -> str | None:
 
 def first_snapshot(base: str, path: str) -> str | None:
     """The data of the first `snapshot` event the stream at `path` sends."""
-    parts = urllib.parse.urlsplit(base)
-    conn = http.client.HTTPConnection(parts.hostname or "127.0.0.1", parts.port or 80, timeout=60)
+    conn = connection(base)
     try:
         conn.request("GET", path, headers={"accept": "text/event-stream"})
         response, event = conn.getresponse(), None
@@ -362,9 +370,8 @@ def first_snapshot(base: str, path: str) -> str | None:
 def time_stream(base: str, samples: int) -> Row:
     """Connect to the event stream and time its first `snapshot` event to the end of its data."""
     row = Row("/api/events", "connect", BUDGET_MS, note="connect to first snapshot")
-    parts = urllib.parse.urlsplit(base)
     for _ in range(samples):
-        conn = http.client.HTTPConnection(parts.hostname or "127.0.0.1", parts.port or 80, timeout=60)
+        conn = connection(base)
         start = time.perf_counter()
         conn.request("GET", "/api/events", headers={"accept": "text/event-stream"})
         response = conn.getresponse()
@@ -498,7 +505,8 @@ def time_page(
     rows: list[Row] = []
     with sync_playwright() as pw:
         browser = pw.chromium.launch(channel=channel, headless=True)
-        page = browser.new_page(viewport={"width": 1600, "height": 1000})
+        # The page is timed, not its certificate: the system Chrome does not read the system store the private CA is in.
+        page = browser.new_page(viewport={"width": 1600, "height": 1000}, ignore_https_errors=True)
         page.add_init_script(_PROBE)
         if assets is not None:  # a branch's own build, drawing the server's live data
             page.route(

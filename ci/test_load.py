@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import gzip
+import http.client
 import http.server
 import importlib.util
 import sys
@@ -58,6 +59,14 @@ def test_the_discovery_reads_are_not_judged():
     assert load.over_budget({load.DISCOVERY: 900.0}, {load.DISCOVERY: 2}) == []
 
 
+def test_the_server_a_base_names_is_dialled_over_the_scheme_it_gives():
+    plain, tls = load.connection("http://127.0.0.1:8766"), load.connection("https://127.0.0.1:8766")
+    assert (type(plain), plain.port) == (http.client.HTTPConnection, 8766)
+    assert (type(tls), tls.port) == (http.client.HTTPSConnection, 8766)
+    assert load.connection("https://starpulse").port == 443
+    assert load.connection("http://starpulse").port == 80
+
+
 def test_viewers_arriving_together_discover_once():
     made, started = [], threading.Barrier(5)
 
@@ -98,9 +107,9 @@ def test_the_snapshot_body_is_read_compressed_as_the_server_sent_it():
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
     try:
-        port = server.server_address[1]
-        assert load.compressed_body("127.0.0.1", port, "/api/events/body/abc") == (200, len(packed))
-        assert load.compressed_body("127.0.0.1", port, "/api/events/body/gone")[0] == 404
+        base = f"http://127.0.0.1:{server.server_address[1]}"
+        assert load.compressed_body(base, "/api/events/body/abc") == (200, len(packed))
+        assert load.compressed_body(base, "/api/events/body/gone")[0] == 404
     finally:
         server.shutdown()
         server.server_close()
