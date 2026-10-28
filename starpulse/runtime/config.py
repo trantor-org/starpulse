@@ -374,6 +374,12 @@ class Config:
     """The memory limits `serve` holds each worker child to: past `soft_mb` it replaces the child (starts a new one, then stops the old), past `hard_mb` it kills and restarts it. Keyed by context, `pulls`, `scheduler`, `runs`, `history` and `search`."""
     tls: tuple[Path, Path] | None = None
     """The certificate and key `tls_cert` and `tls_key` name: `serve` answers TLS, and HTTP/3 beside it; none is cleartext."""
+    host: str = _DEFAULTS.host
+    """The address `serve` and `worker api` listen on when no `--host` is given."""
+    port: int = _DEFAULTS.port
+    """The port they listen on when no `--port` is given."""
+    hours: float = _DEFAULTS.hours
+    """How far back a task's latest move on a machine counts when no `--hours` is given."""
     slow_read_seconds: float = _DEFAULTS.slow_read_seconds
     """`serve` logs a `slow_read` line for each `GET /api/pulls` that took this many seconds or more, from accept to the last byte written, with the seconds it waited for a handler thread, computed its answer and wrote it."""
     analytics: Analytics = field(default_factory=Analytics)
@@ -547,6 +553,27 @@ def _archive_dir(value: object) -> str:
     return value
 
 
+def _host(value: object) -> str:
+    """The address `serve` listens on; text, not empty."""
+    if not isinstance(value, str) or not value:
+        raise ConfigError("host must be an address")
+    return value
+
+
+def _port(value: object) -> int:
+    """The port `serve` listens on; a whole number from 1 to 65535."""
+    if not isinstance(value, int) or isinstance(value, bool) or not 1 <= value <= 65535:
+        raise ConfigError("port must be a whole number from 1 to 65535")
+    return value
+
+
+def _hours(value: object) -> float:
+    """How far back a task's latest move counts; a number of hours above zero."""
+    if not isinstance(value, int | float) or isinstance(value, bool) or not value > 0:
+        raise ConfigError("hours must be a number of hours above 0")
+    return float(value)
+
+
 def load(path: Path | None) -> Config:
     """The config in `path`, or the defaults when there is none."""
     raw = tomllib.loads(path.read_text()) if path else {}
@@ -673,4 +700,7 @@ def _config(
         worker_memory=_worker_memory(raw.get("worker_memory", {})),
         slow_read_seconds=_slow_read(raw.get("slow_read_seconds", _DEFAULTS.slow_read_seconds)),
         tls=tls,
+        host=_host(raw.get("host", _DEFAULTS.host)),
+        port=_port(raw.get("port", _DEFAULTS.port)),
+        hours=_hours(raw.get("hours", _DEFAULTS.hours)),
     )

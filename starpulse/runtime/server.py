@@ -385,16 +385,23 @@ def listen_options(parser: argparse.ArgumentParser) -> None:
     """Add what the Page API listens on and draws, to the `serve` and `worker api` command lines."""
     parser.add_argument(
         "--host",
-        default="127.0.0.1",
-        help="the address to listen on; the default answers this machine only, and 0.0.0.0 answers the network",
+        help="the address to listen on; default the config's `host`, else 127.0.0.1, which answers this machine only; "
+        "0.0.0.0 answers the network",
     )
-    parser.add_argument("--port", type=int, default=8766)
+    parser.add_argument("--port", type=int, help="the port to listen on; default the config's `port`, else 8766")
     parser.add_argument(
         "--hours",
         type=float,
-        default=6.0,
-        help="how far back a task's latest move on a machine counts; Admin's override replaces it",
+        help="how far back a task's latest move on a machine counts, Admin's override replaces it; "
+        "default the config's `hours`, else 6",
     )
+
+
+def resolve_listen(args: argparse.Namespace, config: Config) -> None:
+    """Fill each listen option no flag gave from `config`, whose own defaults are today's."""
+    for option in ("host", "port", "hours"):
+        if getattr(args, option) is None:
+            setattr(args, option, getattr(config, option))
 
 
 def serve_parser() -> argparse.ArgumentParser:
@@ -637,6 +644,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     parser = serve_parser()
     args = parser.parse_args(argv)
     config = _config(parser, args.config)
+    resolve_listen(args, config)
     try:
         listening = inherited_socket(os.environ)
     except ValueError as exc:

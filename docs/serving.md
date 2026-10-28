@@ -20,7 +20,9 @@ start, run, history window) is refused unless it is a JSON request (`Content-Typ
 `Origin`, as a script or `curl` does, or names this server's own, so a web page on another site cannot write through your browser.
 
 `starpulse serve --port 8800 --hours 24` changes the port and how far back a task's latest move counts toward
-where it is drawn (6 hours by default). Serve binds its address once the config is accepted and before it creates the board, opens the history or starts a
+where it is drawn (6 hours by default). The config's top-level `host`, `port` and `hours` set the same three, so a unit
+runs a bare `starpulse serve --config <path>`; a flag overrides its key, and with neither the defaults hold
+(`127.0.0.1`, `8766`, 6 hours). Serve binds its address once the config is accepted and before it creates the board, opens the history or starts a
 worker: when another process holds the port, it exits 1 with one line naming `--host:--port` and saying to pass `--port`,
 and prints no startup line.
 The Admin page's Server card overrides that window for everyone
@@ -496,6 +498,9 @@ models in `starpulse/runtime/config_model.py`, which the loader takes its keys a
 - `slow_read_seconds` (number, above 0, default `1.0`): The seconds a `GET /api/pulls` read may take, from accept to the last byte written, before `serve` logs a `slow_read` line for it: `queue_s`, `compute_s` and `write_s`, the seconds it waited for a handler thread, computed its answer and wrote it, `in_flight`, the `/api/pulls` reads running when it began, and `busy` and `streams`, the request workers in use (the read itself included) and the streams open when it was accepted. No other route is timed.
 - `worker_memory` (table of `[worker_memory.<context>]` table): The memory limits (proportional size on Linux, resident size on macOS) `serve` holds each worker child to, in megabytes (see Worker processes), set as `[worker_memory.<context>]` with either key left out. Past `soft_mb` it replaces the child, past `hard_mb` it kills and restarts it. Defaults, soft/hard: `pulls` 768/1536, `scheduler` 384/768, `runs` 512/1024, `flow-metrics` 384/768, `search` 384/768, `board` 768/1536.
 - `mode` (`"ic"`, default `"ic"`): `ic`, the one value: one person on one machine.
+- `host` (text, default `"127.0.0.1"`): The address `serve` and `worker api` listen on; the default answers this machine only, and `0.0.0.0` answers the network. The `--host` flag overrides it.
+- `port` (whole number, 1 or more, default `8766`): The port `serve` listens on. The `--port` flag overrides it.
+- `hours` (number, above 0, default `6.0`): How far back a task's latest move on a machine counts; Admin's override replaces it. The `--hours` flag overrides it.
 - `tls_cert` (text): The TLS certificate, relative to this file's directory; set with `tls_key`, else both unset.
 - `tls_key` (text): The TLS private key, relative to this file's directory; set with `tls_cert`.
 - `session_start_url` (text): The session-start service a started task is sent to (`POST <url>/start/TASK-N?harness=&mode=`); unset: nothing can be started.

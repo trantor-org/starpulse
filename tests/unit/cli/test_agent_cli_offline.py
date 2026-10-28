@@ -208,6 +208,9 @@ class TestConfigCheck:
             "pull_requests": True,
             "tls": None,
             "slow_read_seconds": 1.0,
+            "host": "127.0.0.1",
+            "port": 8766,
+            "hours": 6.0,
             "worker_memory": {
                 "pulls": {"soft_mb": 768, "hard_mb": 1536},
                 "scheduler": {"soft_mb": 384, "hard_mb": 768},
