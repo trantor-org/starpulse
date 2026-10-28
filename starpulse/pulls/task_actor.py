@@ -48,6 +48,8 @@ __all__ = ["ACTOR", "TaskActor", "moves_of"]
 ACTOR = "starpulse/task-actor"
 #: The pull request states that end a pull request.
 _TERMINAL = ("MERGED", "CLOSED")
+#: The repository the board renders a bare `PR #N` against; another repo's pull request links its own URL.
+_BOARD_REPO = "trantor-org/trantor"
 REFUSALS_METRIC = "starpulse_task_actor_refusals_total"
 CRITERIA_ERRORS_METRIC = "starpulse_task_actor_criteria_errors"
 PIN_HELD_METRIC = "starpulse_task_actor_pin_held"
@@ -502,7 +504,8 @@ class TaskActor:
             part = f"{record['repo']}#{record['number']} {record['state'].lower()}"
             if record["mergeSha"]:
                 part += f" as {record['mergeSha']}"
-            parts.append(f"{part} (PR #{record['number']})")
+            link = f"PR #{record['number']}" if record["repo"] == _BOARD_REPO else url
+            parts.append(f"{part} ({link})")
         if not parts:
             return None
         proof = "; ".join(parts)

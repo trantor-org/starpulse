@@ -85,6 +85,22 @@ def test_a_review_task_whose_only_pr_merged_moves_to_done_and_no_other_task_is_d
     }
 
 
+def test_a_closing_comment_for_a_pull_request_in_another_repo_links_that_repos_pull_url(
+    store: PullStore, stop: threading.Event
+) -> None:
+    board = Board(BoardFeed(), task("TASK-1", "Review", references=(CHILD_PR,)))
+    store.save([pull(10, state="OPEN", repo="acme/starpulse")])
+    actor = running(board, store, stop)
+    store.save([pull(10, state="MERGED", repo="acme/starpulse")])
+
+    actor.pulls_changed()
+
+    assert until(lambda: board.moved() == [("TASK-1", "done")])
+    _, _, comment, _ = board.writes[0]
+    assert f"({CHILD_PR})" in str(comment)
+    assert "(PR #10)" not in str(comment)
+
+
 def test_an_in_progress_task_citing_a_ready_or_merged_pull_request_moves_to_review_once(
     store: PullStore, stop: threading.Event
 ) -> None:
@@ -213,7 +229,7 @@ def test_criteria_move_a_gated_task_both_ways_each_time_the_evaluators_result_go
     board = Board(BoardFeed(), task("TASK-1", "Waiting", description=GATED), task("TASK-2", "Waiting"))
     evaluate = Criteria("unmet")
     running(board, store, stop, evaluate=evaluate, fresh_s=0.05)
-    assert ("TASK-1", "ready") not in board.moved()  # TASK-2 has no criteria and no dependency: released at once
+    assert ("TASK-1", "ready") not in board.moved()  # the second task has no criteria and no dependency: released at once
 
     evaluate.status = "met"
 
