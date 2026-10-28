@@ -14,7 +14,9 @@ if TYPE_CHECKING:
 __all__ = ["StateRoles"]
 
 #: The fact kind each point of the task lifecycle waits on: Start Criteria not yet met, met, and a pull request's end.
-_UNMET, _MET, _PULL_REQUEST = "criteria_unmet", "criteria_met", "pr_terminal"
+_UNMET, _MET = "criteria_unmet", "criteria_met"
+#: The facts a pull request's end can be: every cited one ended, or also at least one merged.
+_PULL_REQUEST = ("pr_terminal", "pr_merged")
 
 
 @dataclass(frozen=True)
@@ -93,7 +95,7 @@ class StateRoles:
     @property
     def review(self) -> str | None:
         """Where a task waits on its pull request."""
-        return self._waiting_on(_PULL_REQUEST)
+        return next((state for state in self.waits if self._waits_on_pull_request(state)), None)
 
     @property
     def attention(self) -> str | None:
@@ -105,5 +107,11 @@ class StateRoles:
         """The States a session starts a task from: those waiting on a person or on a fact other than a pull request."""
         waiting = {"waiting_on_fact", "waiting_on_person"}
         return frozenset(
-            state for state, role in self.roles.items() if role in waiting and _PULL_REQUEST not in self.waits.get(state, {})
+            state for state, role in self.roles.items() if role in waiting and not self._waits_on_pull_request(state)
+        )
+
+    def _waits_on_pull_request(self, state: str) -> bool:
+        """Whether `state` waits on a pull request's end; a person waiting on a merge is no review."""
+        return self.roles.get(state) == "waiting_on_fact" and any(
+            fact in self.waits.get(state, {}) for fact in _PULL_REQUEST
         )
