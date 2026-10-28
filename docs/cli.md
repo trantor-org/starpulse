@@ -435,8 +435,7 @@ process's config blocks with the last reading, taken when `serve` started or at 
 - **re-executed**: `serve` replaced itself, in place, because its own closure changed. Every child is ended first, so each
   is `replaced`: the new `serve` starts them again.
 
-A change to a `runs_worker` setting is read when `serve` starts and is not reconciled by
-`reload`. A closure that cannot be read, such as a half-written module, or a config that does not load, changes nothing.
+A closure that cannot be read, such as a half-written module, or a config that does not load, changes nothing.
 So does a machine definition change that drops a State holding live Tasks without a `migrations` mapping; the refusal
 names the States and Tasks ([the machine registry](serving.md#machine-registry)).
 

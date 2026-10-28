@@ -370,22 +370,12 @@ class Config:
     """The argv `POST /api/take-over` runs with the task id appended (exit 0 sent, 1 no workflow); none: the route answers 404."""
     pull_requests: bool = _DEFAULTS.pull_requests
     """`serve` keeps the pull request store, current from the lifecycle events (GitHub is read only for a pull request a refresh asks for); false: no store is kept, so an instance beside another that reads the same repositories keeps no second copy."""
-    runs_worker: bool = _DEFAULTS.runs_worker
-    """The Runs context (the run adapters and the pushed-runs follower) runs in `starpulse worker runs`, not in `serve`: `serve` starts none of them and draws the workflows the worker keeps in the event log; false: `serve` supervises that worker as a child."""
     worker_memory: Mapping[str, MemoryLimit] = field(default_factory=lambda: dict(WORKER_MEMORY))
     """The memory limits `serve` holds each worker child to: past `soft_mb` it replaces the child (starts a new one, then stops the old), past `hard_mb` it kills and restarts it. Keyed by context, `pulls`, `scheduler`, `runs`, `history` and `search`."""
     tls: tuple[Path, Path] | None = None
     """The certificate and key `tls_cert` and `tls_key` name: `serve` answers TLS, and HTTP/3 beside it; none is cleartext."""
     slow_read_seconds: float = _DEFAULTS.slow_read_seconds
     """`serve` logs a `slow_read` line for each `GET /api/pulls` that took this many seconds or more, from accept to the last byte written, with the seconds it waited for a handler thread, computed its answer and wrote it."""
-    flow_metrics_worker: bool = _DEFAULTS.flow_metrics_worker
-    """The Flow Metrics context (the recorder that copies the event log's machine events into the history store, and the hourly prune of the log) runs in `starpulse worker flow-metrics`, not in `serve`: `serve` starts neither thread; false: `serve` supervises that worker as a child."""
-    search_worker: bool = _DEFAULTS.search_worker
-    """The Search context's embedding catch-up (the thread that fills vectors for indexed task text) runs in `starpulse worker search`, not in `serve`: `serve` starts no thread; false: `serve` supervises that worker as a child when `[search]` names an `embeddings_url`."""
-    board_worker: bool = _DEFAULTS.board_worker
-    """The Board context's writer (the Start Criteria evaluation) runs in `starpulse worker board`, not in `serve`: `serve` starts no thread for it and reads the criteria results from the history store; false: `serve` supervises that worker as a child."""
-    api_worker: bool = _DEFAULTS.api_worker
-    """The Page API (the HTTP server for the page, its JSON and its event stream) runs in `starpulse worker api`, not in a child of `serve`: `serve` binds no socket and starts no API child; false: `serve` binds the listening socket, hands it to a `starpulse worker api` child it supervises and replaces that child behind the socket on a reload."""
     analytics: Analytics = field(default_factory=Analytics)
     """What the instance's agents' telemetry is read against (`[analytics]`); no table: no roots or stops."""
     release: Release | None = None
@@ -680,12 +670,7 @@ def _config(
         refresh_token_env=_refresh_token_env(raw.get("refresh_token_env")),
         take_over_command=_take_over_command(raw.get("take_over_command")),
         pull_requests=_flag(raw, "pull_requests", _DEFAULTS.pull_requests),
-        runs_worker=_flag(raw, "runs_worker", _DEFAULTS.runs_worker),
         worker_memory=_worker_memory(raw.get("worker_memory", {})),
-        flow_metrics_worker=_flag(raw, "flow_metrics_worker", _DEFAULTS.flow_metrics_worker),
-        search_worker=_flag(raw, "search_worker", _DEFAULTS.search_worker),
-        board_worker=_flag(raw, "board_worker", _DEFAULTS.board_worker),
-        api_worker=_flag(raw, "api_worker", _DEFAULTS.api_worker),
         slow_read_seconds=_slow_read(raw.get("slow_read_seconds", _DEFAULTS.slow_read_seconds)),
         tls=tls,
     )

@@ -81,8 +81,6 @@ def _await_page(proc: subprocess.Popen, port: int) -> None:
             time.sleep(0.2)
 
 
-# Top-level settings of a config come before its tables. The Flow Metrics child sizes history no test here reads.
-_NO_FLOW_METRICS = "flow_metrics_worker = true\n"
 _INGEST_CONFIG = '[[producers]]\nname = "cron"\ntoken_env = "CRON_INGEST_TOKEN"\n'
 
 # sd_listen_fds: the socket is fd 3 and LISTEN_PID is the server's own pid, which `exec` keeps
@@ -114,7 +112,7 @@ def served(build: None, tmp_path_factory: pytest.TempPathFactory) -> Iterator[Se
     """The server, started once: it is ~4 s of imports and workers, and each test below owns only the names, runs and events it sends."""
     home = tmp_path_factory.mktemp("plain")
     config = home / "starpulse.toml"
-    config.write_text(_NO_FLOW_METRICS + _INGEST_CONFIG)
+    config.write_text(_INGEST_CONFIG)
     history = HistoryStore(f"sqlite:///{home / DEFAULT_FILE}", {})
     day = 86400.0
     history.record_lane("l1", "T-1", "In Progress", time.time() - 3 * day)  # a first sighting: enters In Progress
@@ -138,10 +136,10 @@ def served(build: None, tmp_path_factory: pytest.TempPathFactory) -> Iterator[Se
 
 @pytest.fixture(scope="module")
 def activated(build: None, tmp_path_factory: pytest.TempPathFactory) -> Iterator[Activated]:
-    """The server on a passed socket, which serves the page and nothing else: it runs no worker."""
+    """The server on a passed socket, which serves the page on it and leaves the port `--port` names closed."""
     named = _free_port()  # what --port says of it; the server must leave it closed
     config = tmp_path_factory.mktemp("activated") / "starpulse.toml"
-    config.write_text(_NO_FLOW_METRICS + "board_worker = true\nruns_worker = true\n")
+    config.write_text("")
     migrate_config_store(config)
     with closing(socket.socket()) as passed:
         passed.bind(("127.0.0.1", 0))

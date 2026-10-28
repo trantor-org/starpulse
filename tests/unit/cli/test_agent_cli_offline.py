@@ -206,11 +206,6 @@ class TestConfigCheck:
             "refresh_token_env": None,
             "take_over_command": None,
             "pull_requests": True,
-            "runs_worker": False,
-            "flow_metrics_worker": False,
-            "search_worker": False,
-            "board_worker": False,
-            "api_worker": False,
             "tls": None,
             "slow_read_seconds": 1.0,
             "worker_memory": {
