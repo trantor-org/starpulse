@@ -133,6 +133,22 @@ def test_scrub_seeds_every_other_declared_dag_in_a_state_of_its_own_and_marks_so
         jsonschema.validate(Dag.model_validate(dag).model_dump(mode="json", by_alias=True), SCHEMAS["runs"])
 
 
+def test_scrub_seeds_merge_apply_with_a_github_workflows_job_and_step_graph() -> None:
+    """The DAG modal's large-graph layout shows on the demo: `merge-apply` runs as a GitHub workflow of fanned-out jobs."""
+    live = _with_deliver(_live())
+    live["domains"][0]["dags"].append({"name": "dagu/merge-apply", "runSafe": False})
+
+    dag = next(d for d in scrub(live)["dags"] if d["name"] == "dagu/merge-apply")
+
+    names = [s["name"] for s in dag["steps"]]
+    jobs = [n for n in names if " / " not in n]
+    assert len(names) >= 30 and len(jobs) >= 5
+    assert all(n.partition(" / ")[0] in jobs for n in names)
+    assert all(set(s["depends"]) <= set(names) for s in dag["steps"])
+    assert len([j for j in dag["steps"] if j["name"] in jobs and j["depends"] == [jobs[0]]]) >= 4
+    assert {s["status"] for s in dag["steps"]} == {"succeeded"}
+
+
 def test_scrub_seeds_no_catalog_when_the_capture_reports_pools() -> None:
     live = _with_catalog(_live())
     live["pools"] = [{"name": "dagu/deliver", "cap": 8, "running": 0, "queued": 0}]
