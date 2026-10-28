@@ -102,10 +102,16 @@ export interface ApiContract {
   transitions: Transitions;
   windowState: WindowState;
 }
+/**
+ * A move's answer. The operator's move of an unheld task into the working state also starts its session: `url`
+ * opens it, or `startError` says why none started.
+ */
 export interface Moved {
   advice?: string | null;
+  startError?: string | null;
   task: string;
   to: string;
+  url?: string | null;
 }
 /**
  * A batch move's answer: the tasks it moved, and each refused task with why.

@@ -4345,8 +4345,20 @@
     },
     "Moved": {
       "additionalProperties": false,
+      "description": "A move's answer. The operator's move of an unheld task into the working state also starts its session: `url`\nopens it, or `startError` says why none started.",
       "properties": {
         "advice": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "startError": {
           "anyOf": [
             {
               "type": "string"
@@ -4362,6 +4374,17 @@
         },
         "to": {
           "type": "string"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
