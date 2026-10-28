@@ -61,3 +61,18 @@ def test_an_archived_task_is_found_marked_archived_and_restore_brings_its_row_ba
         assert {k: v for k, v in after.items() if k not in _STAMPS} == {
             k: v for k, v in before.items() if k not in _STAMPS
         }
+
+
+def test_a_move_another_projector_folded_is_found_in_its_new_lane() -> None:
+    with _board() as (engine, store, index):
+        indexing = Projector(engine, store, search=index)
+        folding = Projector(engine, store)  # the board worker folds without the index and moves the shared checkpoint
+        _append(store, "TASK-1", _new("TaskCreated", title="Retire the cron", state="Review"))
+        indexing.catch_up()
+        assert _lanes(index, "cron") == {"TASK-1": "Review"}
+
+        _append(store, "TASK-1", _new("FieldsEdited", changes={"state": "Done"}))
+        folding.catch_up()
+        indexing.catch_up()
+
+        assert _lanes(index, "cron") == {"TASK-1": "Done"}
