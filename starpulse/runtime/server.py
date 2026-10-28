@@ -624,6 +624,7 @@ DATABASE_STACK = (
     "starpulse.flow_metrics.adapters.outbound.history",
     "starpulse.board.board_feed",
     "starpulse.board.claim_refusals",
+    "starpulse.board.verdicts",
     "starpulse.board.machine_tasks",
     "starpulse.board.adapters.search",
     "starpulse.pulls.pulls",

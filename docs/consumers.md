@@ -18,6 +18,7 @@ When a consumer needs a field the contract lacks, the field is added to the cont
 | `machine:events` | `machine-events` (`MachineEvent`) | a lifecycle machine's event for a task or run; a producer's CloudEvent over HTTP adds `source` and `data` (docs/sources.md) |
 | `board:lanes` | `lane-events` (`LaneEvent`) | a task entering a Board lane, with its team, milestone and labels, and the actor, session and harness of a server write that moved it |
 | `runs:events` | `run-events` (`RunEvent`) | a workflow run, or one of its steps, starting or ending; written through the CloudEvents ingest (docs/sources.md) |
+| `task:verdicts` | `verdict-events` (`VerdictEvent`) | a qa lens's `PASS` or `CHANGES` on a task in a round; written through the CloudEvents ingest (docs/sources.md) |
 
 A package test fails when a producer declares a stream that `EVENT_STREAMS` lacks, and when an entry a producer writes
 does not validate against its stream's schema. An `Entry`'s `fields` are the record: `Entry.event_id` is the entry's

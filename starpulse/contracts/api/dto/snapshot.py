@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import Field
 
 from starpulse.contracts.adapters import Cpu, Move, Pool
@@ -173,6 +175,17 @@ class PullsDelta(_Api):
 
 class ClaimDelta(_Api):
     task: str
+    reason: str
+    at: float
+
+
+class VerdictDelta(_Api):
+    """One qa lens's verdict on a task, as the ingest took it."""
+
+    task: str
+    lens: str
+    round: int
+    outcome: Literal["PASS", "CHANGES"]
     reason: str
     at: float
 

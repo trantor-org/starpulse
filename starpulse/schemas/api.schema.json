@@ -8533,6 +8533,44 @@
       "title": "Verdict",
       "type": "object"
     },
+    "VerdictDelta": {
+      "additionalProperties": false,
+      "description": "One qa lens's verdict on a task, as the ingest took it.",
+      "properties": {
+        "at": {
+          "type": "number"
+        },
+        "lens": {
+          "type": "string"
+        },
+        "outcome": {
+          "enum": [
+            "PASS",
+            "CHANGES"
+          ],
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "round": {
+          "type": "integer"
+        },
+        "task": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "lens",
+        "round",
+        "outcome",
+        "reason",
+        "at"
+      ],
+      "title": "VerdictDelta",
+      "type": "object"
+    },
     "VerdictRequest": {
       "additionalProperties": false,
       "description": "`POST /api/verdict`: record `verdict` (`pass` or `miss`) for `check` of `task`'s `## Post-merge Checks`.\n\nA `miss` names the task `fix` that repairs it; `evidence` is kept in the verdict's comment.",
@@ -8827,6 +8865,9 @@
           },
           {
             "$ref": "#/$defs/ClaimDelta"
+          },
+          {
+            "$ref": "#/$defs/VerdictDelta"
           },
           {
             "$ref": "#/$defs/LedgersDelta"

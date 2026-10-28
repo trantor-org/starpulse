@@ -20,7 +20,7 @@ from typing import Protocol
 
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url
-from starpulse.flow_metrics.adapters.outbound.history import HistoryStore, record_machine_events
+from starpulse.flow_metrics.adapters.outbound.history import HistoryStore, record_machine_events, record_verdicts
 from starpulse.flow_metrics.bin.blocks import FlowMetricsConfig, flow_metrics_built_blocks
 
 logger = logging.getLogger(__name__)
@@ -73,4 +73,5 @@ def main(
     stop = threading.Event()
     keep_event_log(log, config, base, stop=stop)
     threading.Thread(target=record_machine_events, args=(store, log, stop), name="machine-history", daemon=True).start()
+    threading.Thread(target=record_verdicts, args=(store, log, stop), name="verdict-history", daemon=True).start()
     hold(stop, lambda: reload(path, config, load))

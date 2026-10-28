@@ -82,6 +82,7 @@ from starpulse.contracts.api.dto.snapshot import (
     RestartingEvent,
     Snapshot,
     TaskDelta,
+    VerdictDelta,
 )
 from starpulse.contracts.api.dto.trajectories import Trajectories
 from starpulse.contracts.api.dto.transitions import Cells, CostToGo, FlowGraph, RunDiffs, SubStages, Transitions
@@ -96,6 +97,7 @@ EVENTS: dict[str, type[BaseModel]] = {
     "dags": DagsDelta,
     "pulls": PullsDelta,
     "claim": ClaimDelta,
+    "verdict": VerdictDelta,
     "ledgers": LedgersDelta,
 }
 EVENTS["scheduler"] = SchedulerStatus

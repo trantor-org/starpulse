@@ -134,7 +134,7 @@ def test_serve_runs_neither_the_recorder_nor_the_prune_thread_whatever_the_histo
 
     _serve(tmp_path, monkeypatch, "")
 
-    assert not {"machine-history", "event-log-prune"} & ({t.name for t in threading.enumerate()} - before)
+    assert not {"machine-history", "verdict-history", "event-log-prune"} & ({t.name for t in threading.enumerate()} - before)
 
 
 SEARCH = '[search]\nembeddings_url = "http://embeddings.test/v1/embeddings"\nmodel = "m"\n'

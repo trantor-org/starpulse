@@ -63,6 +63,7 @@ PUBLIC: dict[str, set[str]] = {
         "StartFailedError",
         "Step",
         "TaskKeys",
+        "VerdictEvent",
     },
     "starpulse.event_log": {"Entry", "EventLog", "Tail"},
     "starpulse.flow_metrics": {"History", "machine_steps"},

@@ -495,6 +495,18 @@ class RatingEvent(_Contract):
     harness: str = Field(default="", description="The harness of that session; empty when the write named none.")
 
 
+class VerdictEvent(_Contract):
+    """One qa lens's verdict on a task in a round; the `task:verdicts` entry's fields. Every verdict is kept."""
+
+    task: str = Field(min_length=1, description="The task key the lens judged.")
+    lens: str = Field(min_length=1, description="The lens that judged it, such as `security`, `ux`, `ui` or `code`.")
+    round: int = Field(ge=1, strict=True, description="The qa round the verdict belongs to, counted from 1.")
+    outcome: Literal["PASS", "CHANGES"] = Field(description="`PASS` accepts the task; `CHANGES` asks for another round.")
+    reason: str = Field(default="", description="Why the lens gave it; empty when none was given.")
+    time: float = Field(ge=0, allow_inf_nan=False, description="When the verdict was given, in epoch seconds.")
+    source: str = Field(default="", description="The producer that posted it through the CloudEvents ingest.")
+
+
 #: Each contract's model, by the name its checked-in schema file carries.
 CONTRACTS: dict[str, type[BaseModel]] = {
     "board": BoardTask,
@@ -502,6 +514,7 @@ CONTRACTS: dict[str, type[BaseModel]] = {
     "run-events": RunEvent,
     "lane-events": LaneEvent,
     "rating-events": RatingEvent,
+    "verdict-events": VerdictEvent,
     "runs": Dag,
     "pools": Pool,
 }
@@ -513,6 +526,7 @@ EVENT_STREAMS: dict[str, str] = {
     "runs:events": "run-events",
     "board:lanes": "lane-events",
     "task:ratings": "rating-events",
+    "task:verdicts": "verdict-events",
 }
 #: Each contract's JSON Schema, by the same names.
 SCHEMAS: dict[str, dict] = {name: model.model_json_schema() for name, model in CONTRACTS.items()}

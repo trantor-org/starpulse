@@ -45,7 +45,9 @@ export interface ApiContract {
   docShown: DocShown;
   docs: Docs;
   donePage: DonePage;
-  events: (TaskDelta | MoveDelta | DagsDelta | PullsDelta | ClaimDelta | LedgersDelta | SchedulerStatus)[];
+  events: (
+    TaskDelta | MoveDelta | DagsDelta | PullsDelta | ClaimDelta | VerdictDelta | LedgersDelta | SchedulerStatus
+  )[];
   graph: FlowGraph;
   harnesses: Harnesses;
   health: Health;
@@ -956,6 +958,17 @@ export interface Pull {
 export interface ClaimDelta {
   at: number;
   reason: string;
+  task: string;
+}
+/**
+ * One qa lens's verdict on a task, as the ingest took it.
+ */
+export interface VerdictDelta {
+  at: number;
+  lens: string;
+  outcome: "PASS" | "CHANGES";
+  reason: string;
+  round: number;
   task: string;
 }
 /**

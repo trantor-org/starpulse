@@ -15,6 +15,10 @@ A run's Step event rides the same route: `type` is `StepStarted` or `StepFinishe
 is the run id and `data` carries `workflow`, `status` and, for a step's entry, `step` and `depends`. It lands on the
 runs stream under the producer's name as its `instance`, and a producer needs no machines to post it.
 
+A qa lens's verdict does too: `type` is `VerdictRecorded`, there is no `machine`, `subject` is the task and `data`
+carries `lens`, `round`, `outcome` (`PASS` or `CHANGES`) and an optional `reason`. A verdict missing any of the three,
+or one with another outcome, is refused. It lands on the `task:verdicts` stream with the producer as its `source`.
+
 Answers 201, 400 (the entry is wrong), 401 (no known token), 403 (a machine, actor or source the producer may not
 use), 413 (`data` over the cap) or 503 (the log did not take an entry; every entry carries a stable id, so the sender
 posts the batch again).
@@ -31,10 +35,11 @@ from typing import TYPE_CHECKING, Any
 from pydantic import ValidationError
 
 from starpulse.board.model.adapter_types import module_name
-from starpulse.contracts.adapters import CloudEvent
+from starpulse.contracts.adapters import CloudEvent, VerdictEvent
 from starpulse.runs.config import MAX_BATCH
 from starpulse.runs import run_events
 from starpulse.runs.ingest import run_event, token_owner
+from starpulse.event_log import verdict_events
 from starpulse.event_log.events import STREAM
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
@@ -52,6 +57,11 @@ class _Refused(Exception):
     def __init__(self, status: int, reason: str) -> None:
         super().__init__(reason)
         self.status = status
+
+
+def _reason(invalid: ValidationError) -> str:
+    """Each field a model refused, as `field: why`."""
+    return "; ".join(f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in invalid.errors())
 
 
 class CloudEventsIngest:
@@ -112,15 +122,15 @@ class CloudEventsIngest:
         try:
             parsed = CloudEvent.model_validate(event)
         except ValidationError as invalid:
-            raise _Refused(
-                400, "; ".join(f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in invalid.errors())
-            ) from None
+            raise _Refused(400, _reason(invalid)) from None
         if parsed.source != producer.name:
             raise _Refused(403, f"source must be the producer's own name, {producer.name}")
         if parsed.data is not None and len(json.dumps(parsed.data)) > MAX_DATA:
             raise _Refused(413, f"data is at most {MAX_DATA} bytes")
         if parsed.machine is None and parsed.type in run_events.EVENTS:
             return run_events.STREAM, f"{producer.name}/{parsed.id}", self._run_entry(producer, parsed)
+        if parsed.machine is None and parsed.type == verdict_events.EVENT:
+            return verdict_events.STREAM, f"{producer.name}/{parsed.id}", self._verdict_entry(producer, parsed)
         fields = self._machine_entry(producer, parsed)
         return STREAM, fields["event_id"], fields
 
@@ -151,6 +161,26 @@ class CloudEventsIngest:
             depends=data.get("depends"),
             instance=producer.name,
         )
+
+    def _verdict_entry(self, producer: Producer, event: CloudEvent) -> dict[str, Any]:
+        """The `task:verdicts` fields of a verdict: a lens's `outcome` for the task in `round`."""
+        data = event.data
+        if data is None or event.subject is None:
+            raise _Refused(400, "a verdict carries a subject (the task) and data: lens, round, outcome and reason")
+        fields = verdict_events.entry(
+            event.subject,
+            data.get("lens"),
+            data.get("round"),
+            data.get("outcome"),
+            data.get("reason", ""),
+            self._at(event),
+            producer.name,
+        )
+        try:
+            VerdictEvent.model_validate(fields)
+        except ValidationError as invalid:
+            raise _Refused(400, _reason(invalid)) from None
+        return fields
 
     def _machine_entry(self, producer: Producer, event: CloudEvent) -> dict[str, Any]:
         """The `machine:events` fields of one machine CloudEvent."""
