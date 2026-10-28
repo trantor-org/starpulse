@@ -40,7 +40,7 @@ from starpulse.scheduler.model.admission import Decision, decide, demand, needs_
 from starpulse.scheduler.model.config import Scheduler
 from starpulse.scheduler.model.harness_setting import DEFAULT as DEFAULT_HARNESS
 from starpulse.scheduler.model.harness_setting import HarnessSetting
-from starpulse.scheduler.model.inputs import points
+from starpulse.scheduler.model.inputs import STALE_S, points
 from starpulse.scheduler.model.ledger import Ledger, RunRecord
 from starpulse.scheduler.model.quiet_hours import QuietHours
 from starpulse.scheduler.model.sampler import PERIOD, Reading, Sampler
@@ -154,11 +154,35 @@ class Loop:
 
     def sessions_by_harness(self) -> dict[str, dict[str, float]]:
         """Each harness's in-flight count against its session cap, for the capacity strip's hint."""
-        use: dict[str, float] = {}
-        for run in self._running.values():
-            use[run.harness] = use.get(run.harness, 0.0) + 1
+        use = self._sessions_used()
         names = set(use) | set(self._policy.session_limits) | {self.selected_harness()}
         return {name: {"use": use.get(name, 0.0), "limit": self._policy.session_limit(name)} for name in sorted(names)}
+
+    def _sessions_used(self) -> dict[str, float]:
+        """Live sessions per harness: the loop's runs, and each session it did not track, counted on the default harness
+        because the harness machine does not say which harness opened it."""
+        use: dict[str, float] = {}
+        for run in list(self._running.values()):
+            use[run.harness] = use.get(run.harness, 0.0) + 1
+        if outside := len(self._outside()):
+            use[DEFAULT_HARNESS] = use.get(DEFAULT_HARNESS, 0.0) + outside
+        return use
+
+    def _outside(self) -> dict[str, dict[str, Any]]:
+        """The In Progress tasks a live session holds that `_running` does not: one `POST /api/start` or the operator opened.
+
+        A session is live when its harness machine is `active` with an event inside `STALE_S`, as the sampler counts it.
+        """
+        now = self._clock()
+        found = {}
+        for agent in self._feed.open_tasks():
+            task = agent["id"]
+            if agent["state"] != self._feed.roles.working or task in self._running:
+                continue
+            seen = self._feed.machine_task(HARNESS.name, task)
+            if seen is not None and seen["state"] == "active" and now - seen["active"] <= STALE_S:
+                found[task] = {"agent": agent, "seen": seen}
+        return found
 
     def wants(self, kind: str, data: Mapping[str, Any]) -> bool:
         """Whether a feed event (or a `wake`) can free or fill capacity: a task entering the eligible lane, a running task's
@@ -232,7 +256,9 @@ class Loop:
         return [{"task": t["id"], "title": t["title"]} for t in tasks if t["state"] == self._lane and needs_operator(t)]
 
     def in_flight(self) -> list[dict[str, Any]]:
-        """The sessions this loop started whose tasks are still running, oldest first, for `GET /api/scheduler`.
+        """Every live session holding an In Progress task, oldest first, for `GET /api/scheduler`: the loop's runs, and
+        the sessions it did not track, whose address is unknown (`url` is empty) and whose start is the harness machine's
+        first move on the task.
 
         Read from another thread than the loop's: `list(...)` takes one snapshot of the runs a tick may be changing.
         """
@@ -249,7 +275,18 @@ class Loop:
                     "url": run.session,
                 }
             )
-        return sessions
+        for task, found in self._outside().items():
+            agent, seen = found["agent"], found["seen"]
+            sessions.append(
+                {
+                    "task": task,
+                    "title": agent["title"],
+                    "model": agent["model"] or "",
+                    "started": seen["trail"][0]["at"] if seen["trail"] else seen["active"],
+                    "url": "",
+                }
+            )
+        return sorted(sessions, key=lambda session: session["started"])
 
     def _restore(self) -> None:
         """Load in-flight runs and start times the last process saved; a missing or unreadable row is an empty set."""
@@ -382,7 +419,7 @@ class Loop:
                         continue  # sessions is the selected harness's own count, below
                     taken[name] = taken.get(name, 0.0) + need
         harness = self.selected_harness()
-        sessions_use = float(sum(1 for run in self._running.values() if run.harness == harness))
+        sessions_use = self._sessions_used().get(harness, 0.0)
         sessions_limit = self._policy.session_limit(harness)
         out: list[Reading] = []
         for reading in readings:
