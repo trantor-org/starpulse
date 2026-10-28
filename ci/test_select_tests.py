@@ -294,17 +294,15 @@ def _function(name: str) -> str:
 def test_the_nightly_schedule_and_a_dispatch_select_everything_once_in_a_job():
     workflow = yaml.safe_load(CI.read_text())
     # PyYAML reads the bare `on:` key as True.
-    assert set(workflow[True]) == {"push", "pull_request", "merge_group", "schedule", "workflow_dispatch"}
+    assert set(workflow[True]) == {"push", "schedule", "workflow_dispatch"}
     job = workflow["jobs"]["select"]
     assert job["if"] == "github.event_name != 'push'"
     assert job["outputs"] == {
         "PYTEST_TARGETS": "${{ steps.select.outputs.PYTEST_TARGETS }}",
         "PYTEST_SHARDS": "${{ steps.select.outputs.PYTEST_SHARDS }}",
-        "web": "${{ steps.select.outputs.web }}",
-        "static": "${{ steps.select.outputs.static }}",
     }
     select_step = next(s for s in job["steps"] if s.get("id") == "select")
-    # The nightly schedule and a dispatch have no base commit, so both select everything; a pull request selects from its diff.
+    # The nightly schedule and a dispatch have no base commit, so both select everything; the sp-ci DAG sets BASE for a pull request.
     assert select_step["run"] == 'ci/run.sh select >> "$GITHUB_OUTPUT"'
     script = _function("cmd_select")
     assert "python ci/select_tests.py --full" in script

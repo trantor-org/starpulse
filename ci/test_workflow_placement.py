@@ -14,10 +14,9 @@ import yaml
 WORKFLOWS = Path(__file__).resolve().parents[1] / ".github/workflows"
 AI_VM_1_LANE = ["self-hosted", "ai-vm-1"]
 HOSTED = "ubuntu-latest"
-#: The required checks a pull request and a merge candidate get from ci.yml.
-REQUIRED_CHECKS = ["python", "web", "static-checks", "build"]
-APP_CHECKS = REQUIRED_CHECKS
-CI_TEST_JOBS = ["select", "python-shard", "python", "build", "web", "static-checks", "fresh-serve"]
+#: The required checks' jobs, which moved to the sp-ci Dagu DAG and left ci.yml.
+MOVED_CHECKS = ["python", "web", "static-checks", "build"]
+CI_TEST_JOBS = ["select", "python-shard", "fresh-serve"]
 
 
 def job(workflow: str, name: str) -> dict:
@@ -40,16 +39,15 @@ def test_ci_test_job_runs_on_the_ai_vm_1_fleet(name):
     assert job("ci.yml", name)["runs-on"] == AI_VM_1_LANE
 
 
-def test_ci_runs_on_a_pull_request_a_merge_candidate_the_nightly_a_dispatch_and_a_push():
-    """This workflow defines the required checks: a pull request and a merge-queue candidate run them on the changed files."""
+def test_ci_runs_on_the_nightly_a_dispatch_and_a_push_only():
+    """A pull request and a merge-queue candidate get their checks from the sp-ci Dagu DAG, not from Actions."""
     document = yaml.safe_load((WORKFLOWS / "ci.yml").read_text())
-    assert set(document[True]) == {"push", "pull_request", "merge_group", "schedule", "workflow_dispatch"}
+    assert set(document[True]) == {"push", "schedule", "workflow_dispatch"}
 
 
-@pytest.mark.parametrize("name", REQUIRED_CHECKS)
-def test_every_required_check_is_a_ci_job(name):
-    """The job id is the check's context; `build` is the release build without its publishing."""
-    assert name in yaml.safe_load((WORKFLOWS / "ci.yml").read_text())["jobs"]
+@pytest.mark.parametrize("name", MOVED_CHECKS)
+def test_a_required_check_is_no_ci_job(name):
+    assert name not in yaml.safe_load((WORKFLOWS / "ci.yml").read_text())["jobs"]
 
 
 @pytest.mark.parametrize("name", ["coverage-map", "python-ft", "macos-fresh-serve", "clean-machine-ingest"])
@@ -78,8 +76,6 @@ def test_publishing_job_runs_on_a_hosted_runner(name):
 @pytest.mark.parametrize(
     ("workflow", "name"),
     [
-        ("ci.yml", "web"),
-        ("ci.yml", "static-checks"),
         ("release.yml", "build"),
         ("release.yml", "soak"),
         ("ui-preview.yml", "render"),
@@ -187,10 +183,6 @@ TEST_JOBS = [
     "python-shard",
     "coverage-map",
     "python-ft",
-    "python",
-    "build",
-    "web",
-    "static-checks",
     "fresh-serve",
 ]
 
@@ -207,22 +199,17 @@ def test_every_ci_job_but_the_macos_smoke_is_a_test_job():
     assert sorted(jobs) == sorted([*TEST_JOBS, "macos-fresh-serve", "clean-machine-ingest"])
 
 
-def test_the_coverage_map_is_published_only_by_a_green_nightly_and_is_no_required_check():
+def test_the_coverage_map_is_published_only_by_a_green_nightly():
     """A red shard's coverage data would leave tests out of the map the select step reads."""
     assert "python-shard" in needs("ci.yml", "coverage-map")
     assert "needs.python-shard.result == 'success'" in job("ci.yml", "coverage-map")["if"]
-    assert "coverage-map" not in needs("ci.yml", "python")
-    assert "coverage-map" not in APP_CHECKS
 
 
-def test_the_free_threaded_suite_runs_beside_the_shards_and_is_no_required_check():
-    """The live server runs on 3.14t, so a change that breaks that build must show in the nightly run. The job is
-    not a required check: `python` neither waits for it nor counts it."""
+def test_the_free_threaded_suite_runs_beside_the_shards():
+    """The live server runs on 3.14t, so a change that breaks that build must show in the nightly run."""
     ft = job("ci.yml", "python-ft")
     assert ft["runs-on"] == AI_VM_1_LANE
     assert "select" in needs("ci.yml", "python-ft")
-    assert "python-ft" not in needs("ci.yml", "python")
-    assert "python-ft" not in APP_CHECKS
 
 
 def test_the_free_threaded_suite_fails_when_the_gil_comes_back():
@@ -247,13 +234,9 @@ STATIC_SCRIPT = WORKFLOWS.parents[1] / "ci/static_checks.sh"
 RUN = WORKFLOWS.parents[1] / "ci/run.sh"
 
 
-def test_the_four_short_jobs_are_gone_and_static_checks_runs_every_check_they_ran():
-    """public-names and api-types share one job so a run starts fewer jobs."""
-    jobs = yaml.safe_load((WORKFLOWS / "ci.yml").read_text())["jobs"]
-    assert not {"ic", "public-names", "api-types", "tier-policy"} & jobs.keys()
+def test_static_checks_script_runs_every_check_the_short_jobs_ran():
+    """public-names, api-types and wire-pb2 share one script, which the sp-ci DAG reaches through ci/run.sh."""
     script = STATIC_SCRIPT.read_text()
-    runs = "\n".join(step["run"] for step in job("ci.yml", "static-checks")["steps"] if "run" in step)
-    assert "ci/run.sh static-checks" in runs
     assert "ci/static_checks.sh" in RUN.read_text()
     for command in (
         "ci/public_names.py",
@@ -350,20 +333,6 @@ def test_the_shard_count_is_the_size_of_the_matrix_the_selection_made():
     assert shard["env"]["SHARD_INDEX"] == "${{ matrix.shard }}"
 
 
-def test_the_python_check_waits_for_the_selection_and_the_shards_and_runs_behind_a_red_one():
-    aggregate = job("ci.yml", "python")
-    assert aggregate["needs"] == ["select", "python-shard"]
-    # A skipped aggregate reads as a missing required check; a push carries none, so it skips there with the shards.
-    assert aggregate["if"] == "always() && github.event_name != 'push'"
-    step = next(s for s in aggregate["steps"] if "run" in s)
-    assert step["run"] == "ci/run.sh python"
-    assert step["env"] == {
-        "SELECT_RESULT": "${{ needs.select.result }}",
-        "SHARDS_RESULT": "${{ needs.python-shard.result }}",
-        "LAUNCHED": "${{ needs.select.outputs.PYTEST_SHARDS }}",
-    }
-
-
 @pytest.mark.parametrize(
     ("select_result", "shards", "launched", "status"),
     [
@@ -380,7 +349,7 @@ def test_the_python_check_waits_for_the_selection_and_the_shards_and_runs_behind
 def test_the_python_check_passes_when_every_launched_shard_passed_or_none_was_needed(
     tmp_path, select_result, shards, launched, status
 ):
-    """The ruleset requires `python`: a red, cancelled or never-run shard must not leave it green or missing."""
+    """The sp-ci DAG's `python` check reads this: a red, cancelled or never-run shard must not leave it green or missing."""
     env = {"SELECT_RESULT": select_result, "SHARDS_RESULT": shards, "LAUNCHED": launched}
     assert run_ci("python", tmp_path, env) == status
 
@@ -407,7 +376,7 @@ def test_a_shard_with_no_selected_files_passes_but_a_failing_or_empty_full_run_d
 
 
 def test_release_runs_only_the_push_and_dispatch_events():
-    """A pull request and a merge-queue candidate get the required `build` from ci.yml, not from this workflow."""
+    """A pull request and a merge-queue candidate get no check from this workflow."""
     document = yaml.safe_load((WORKFLOWS / "release.yml").read_text())
     assert set(document[True]) == {"push", "workflow_dispatch"}
 

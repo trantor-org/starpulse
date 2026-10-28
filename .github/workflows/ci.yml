@@ -1,14 +1,11 @@
 name: CI
 
-# This workflow defines StarPulse's CI: a pull request and a merge-queue candidate run `python`, `web` and `static-checks`
-# on the changed files (ci/select_tests.py, ci/reach.py), with `build` beside them; the nightly
-# suite and a manual dispatch run every job in full. A push to main runs none: the merge queue tested its candidate.
+# The nightly suite and a manual dispatch run every job in full. A pull request and a merge-queue candidate get their
+# checks (`python`, `web`, `static-checks`, `build`) from the sp-ci Dagu DAG, not from this workflow. A push to main
+# runs none: the merge queue tested its candidate.
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
-  merge_group:
   schedule:
     - cron: "17 9 * * *" # 02:17 MST
   workflow_dispatch:
@@ -20,8 +17,8 @@ permissions:
 # pool. That runner group serves private repositories only: making this repository public strands these jobs.
 jobs:
   # Chooses the tests once for the shards: the nightly schedule and a manual dispatch select the whole suite
-  # (ci/select_tests.py --full); a pull request and a merge candidate select by the files changed since the base. Its output sizes the
-  # shard matrix. It also runs the import layers (pyproject's [tool.importlinter]).
+  # (ci/select_tests.py --full). Its output sizes the shard matrix. It also runs the import layers (pyproject's
+  # [tool.importlinter]).
   select:
     # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved.
     if: github.event_name != 'push'
@@ -30,20 +27,13 @@ jobs:
     outputs:
       PYTEST_TARGETS: ${{ steps.select.outputs.PYTEST_TARGETS }}
       PYTEST_SHARDS: ${{ steps.select.outputs.PYTEST_SHARDS }}
-      # Whether the change reaches each job below (ci/reach.py); true on the nightly schedule and a dispatch.
-      web: ${{ steps.select.outputs.web }}
-      static: ${{ steps.select.outputs.static }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           sparse-checkout: /*
           sparse-checkout-cone-mode: false
-          # The diff starts at the pull request's or the candidate's base, which a one-commit checkout lacks.
-          fetch-depth: 0
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       - id: select
-        env:
-          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
         run: ci/run.sh select >> "$GITHUB_OUTPUT"
 
   # The suite is split by test file across the shards `select` launches (ci/shard.py), each on its own runner: one to six. The matrix is its PYTEST_SHARDS output, and SHARD_COUNT the matrix's size.
@@ -134,7 +124,7 @@ jobs:
   # does not wait for it.
   python-ft:
     needs: select
-    # A nightly and dispatch check only: the pull request's `python` does not wait for it and the whole suite is its cost.
+    # A nightly and dispatch job only: the whole suite is its cost.
     if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && needs.select.outputs.PYTEST_SHARDS != '[]'
     runs-on: [self-hosted, ai-vm-1]
     timeout-minutes: 45
@@ -172,92 +162,6 @@ jobs:
           status=0
           uv run --no-sync pytest $PYTEST_TARGETS || status=$?
           [ "$status" -eq 0 ] || { [ "$status" -eq 5 ] && [ -n "$PYTEST_TARGETS" ]; }
-
-  # The nightly's counterpart of the required context `python` (the App's `ci-sp-python` check run): it passes when `select` did and every shard it launched did, or when it
-  # launched none because no test was selected, and fails when any shard failed, was cancelled or never ran. `always()`
-  # keeps it from being skipped behind a red job, which the merge queue would read as missing. A `select` that failed or
-  # was cancelled skips the shards and leaves its outputs empty, so the shards' skip alone proves nothing.
-  python:
-    needs: [select, python-shard]
-    if: always() && github.event_name != 'push'
-    runs-on: [self-hosted, ai-vm-1]
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          sparse-checkout: /*
-          sparse-checkout-cone-mode: false
-      - env:
-          SELECT_RESULT: ${{ needs.select.result }}
-          SHARDS_RESULT: ${{ needs.python-shard.result }}
-          LAUNCHED: ${{ needs.select.outputs.PYTEST_SHARDS }}
-        run: ci/run.sh python
-
-  # The release build without publishing (release.yml's `build`): the page, then the wheel that must ship it. A pull
-  # request that breaks either fails here instead of at the merge to main.
-  build:
-    if: github.event_name != 'push'
-    runs-on: [self-hosted, ai-vm-1]
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          sparse-checkout: /*
-          sparse-checkout-cone-mode: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 24
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-        with:
-          version: 12.6.0
-          dest: ${{ runner.temp }}/setup-pnpm
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-      - run: ci/run.sh build
-
-  web:
-    needs: select
-    # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved. A pull
-    # request the change does not reach skips the job, which a required check counts as passed.
-    if: github.event_name != 'push' && needs.select.outputs.web == 'true'
-    runs-on: [self-hosted, ai-vm-1]
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          sparse-checkout: /*
-          sparse-checkout-cone-mode: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 24
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-        with:
-          version: 12.6.0
-          # The self-hosted runners share one home, so the default ~/setup-pnpm collides between concurrent jobs.
-          dest: ${{ runner.temp }}/setup-pnpm
-      - run: ci/run.sh web
-
-  # The short static checks in one job (ci/static_checks.sh runs them at once): public-names, api-types and wire-pb2.
-  static-checks:
-    needs: select
-    # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved. A pull
-    # request the change does not reach skips the job, which a required check counts as passed.
-    if: github.event_name != 'push' && needs.select.outputs.static == 'true'
-    runs-on: [self-hosted, ai-vm-1]
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          sparse-checkout: /*
-          sparse-checkout-cone-mode: false
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 24
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-        with:
-          version: 12.6.0
-          dest: ${{ runner.temp }}/setup-pnpm
-      - run: ci/run.sh static-checks
 
   # The out-of-the-box install on Linux, the ai-vm-1 fleet's own platform: the wheel goes into an empty virtualenv and
   # `starpulse serve` starts from an empty directory with no config, then ci/fresh_serve.py fails unless the page answers
