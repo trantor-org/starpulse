@@ -150,9 +150,9 @@ GITHUB_JOBS = (
 )
 
 
-def _github_steps() -> list[dict]:
-    """`GITHUB_JOBS` as the GitHub Actions adapter reads a finished run: each job a step on the jobs it needs, then
-    its own steps in a chain after it, all succeeded."""
+def _as_github(dags: list[dict]) -> list[dict]:
+    """`dags` with a succeeded `GITHUB_DAG` drawn as the GitHub Actions adapter reads a finished run of `GITHUB_JOBS`:
+    each job a step on the jobs it needs, then its own steps in a chain after it."""
     steps = []
     for job, needs, taken in GITHUB_JOBS:
         names = [job, *(f"{job} / {s}" for s in taken)]
@@ -166,7 +166,8 @@ def _github_steps() -> list[dict]:
             }
             for i, n in enumerate(names)
         ]
-    return steps
+    github = {d["name"] for d in dags if d["name"].rpartition("/")[2] == GITHUB_DAG and d["status"] == "succeeded"}
+    return [{**d, "steps": steps} if d["name"] in github else d for d in dags]
 
 
 def _iso(at: float) -> str:
@@ -201,9 +202,7 @@ def _finished(domains: list[dict], deliver: str, prefix: str, now: float) -> tup
                     "runId": f"finished-demo-{k}",
                     "startedAt": _iso(end - 240),
                     "finishedAt": _iso(end),
-                    "steps": _github_steps()
-                    if name.rpartition("/")[2] == GITHUB_DAG and not failed
-                    else [
+                    "steps": [
                         {
                             "name": s,
                             "depends": [FINISHED_STEPS[i - 1]] if i else [],
@@ -615,6 +614,7 @@ def scrub(live: dict) -> dict:
     catalog, run_safe = (
         ([], set()) if live.get("pools") else _seed_catalog(live["domains"], live["dags"] + seeded_dags, live["now"])
     )
+    seeded_dags, catalog = _as_github(seeded_dags), _as_github(catalog)
     history = _history(flows, live["now"])
     return {
         **{k: v for k, v in live.items() if k not in UNSCRUBBABLE},

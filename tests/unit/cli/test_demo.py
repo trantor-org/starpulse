@@ -133,10 +133,16 @@ def test_scrub_seeds_every_other_declared_dag_in_a_state_of_its_own_and_marks_so
         jsonschema.validate(Dag.model_validate(dag).model_dump(mode="json", by_alias=True), SCHEMAS["runs"])
 
 
-def test_scrub_seeds_merge_apply_with_a_github_workflows_job_and_step_graph() -> None:
-    """The DAG modal's large-graph layout shows on the demo: `merge-apply` runs as a GitHub workflow of fanned-out jobs."""
+@pytest.mark.parametrize("deliver", [True, False], ids=["finished-run", "catalog"])
+def test_scrub_seeds_merge_apply_with_a_github_workflows_job_and_step_graph(deliver: bool) -> None:
+    """The DAG modal's large-graph layout shows on the demo: `merge-apply` runs as a GitHub workflow of fanned-out
+    jobs, whether the demo seeds it a finished run beside `deliver` or a catalog state."""
     live = _with_deliver(_live())
-    live["domains"][0]["dags"].append({"name": "dagu/merge-apply", "runSafe": False})
+    live["domains"][0]["dags"] = [
+        *live["domains"][0]["dags"][: int(deliver)],
+        {"name": "dagu/ci-gate", "runSafe": False},
+        {"name": "dagu/merge-apply", "runSafe": False},
+    ]
 
     dag = next(d for d in scrub(live)["dags"] if d["name"] == "dagu/merge-apply")
 
