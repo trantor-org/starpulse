@@ -9,6 +9,7 @@ from pathlib import Path
 
 from sqlalchemy import Engine
 from starpulse.board.adapters.search import SearchIndex
+from starpulse.event_log.checkpoints import Checkpoints
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.readmodel.projector import Projector
 from starpulse.event_log.readmodel.rows import load
@@ -74,5 +75,31 @@ def test_a_move_another_projector_folded_is_found_in_its_new_lane() -> None:
         _append(store, "TASK-1", _new("FieldsEdited", changes={"state": "Done"}))
         folding.catch_up()
         indexing.catch_up()
+
+        assert _lanes(index, "cron") == {"TASK-1": "Done"}
+
+
+def test_an_archived_done_task_is_found_in_the_done_lane() -> None:
+    with _board() as (engine, store, index):
+        projector = Projector(engine, store, search=index)
+        _append(store, "TASK-1", _new("TaskCreated", title="Retire the cron", state="Done"))
+        _append(store, "TASK-1", _new("Archived"))
+        projector.catch_up()
+
+        assert _lanes(index, "cron") == {"TASK-1": "Done"}
+
+
+def test_a_row_indexed_archived_before_the_done_lane_is_reindexed_on_the_next_run() -> None:
+    with _board() as (engine, store, index):
+        _append(store, "TASK-1", _new("TaskCreated", title="Retire the cron", state="Done"))
+        _append(store, "TASK-1", _new("Archived"))
+        Projector(engine, store).catch_up()
+        index.index_fields(
+            "TASK-1", title="Retire the cron", description="", criteria=[], notes="", lane="archived", labels=[]
+        )
+        with engine.begin() as db:
+            Checkpoints(engine).save("read-model:search", 1_000_000, conn=db)  # the checkpoint the old index left
+
+        Projector(engine, store, search=index).catch_up()
 
         assert _lanes(index, "cron") == {"TASK-1": "Done"}

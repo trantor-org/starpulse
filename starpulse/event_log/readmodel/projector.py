@@ -15,8 +15,8 @@ from starpulse.event_log.store import EventStore, StoredEvent
 
 CHECKPOINT = "read-model:tasks"
 #: How far the search index holds the read model, apart from `CHECKPOINT`: any process may fold a row, and only the one
-#: holding the index writes its search row.
-SEARCH_CHECKPOINT = "read-model:search"
+#: holding the index writes its search row. The name carries the lane rule, so a rule change reindexes every row.
+SEARCH_CHECKPOINT = "read-model:search-done-lane"
 #: The states in which a task has finished, as the search index dates it.
 _FINISHED = frozenset({"done", "archived"})
 BATCH = 500
@@ -97,7 +97,8 @@ class Projector:
             return rows.after(db, position, BATCH)
 
     def _index(self, db: Connection, row: dict) -> None:
-        """Make the search index hold the Task's row: an archived Task is found in the archived lane."""
+        """Make the search index hold the Task's row: an archived Task is found in the archived lane, unless it is Done."""
+        done = row["state"].lower() == "done"
         finished = row["archived"] or row["state"].lower() in _FINISHED
         self._search.index_fields(
             row["id"],
@@ -105,7 +106,7 @@ class Projector:
             description=row["description"],
             criteria=[item["text"] for item in row["criteria"] if item["kind"] == "ac"],
             notes=row["notes"],
-            lane="archived" if row["archived"] else row["state"],
+            lane="archived" if row["archived"] and not done else row["state"],
             labels=row["labels"],
             finished_at=row["updated_at"] if finished else None,
             connection=db,
