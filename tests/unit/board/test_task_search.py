@@ -238,14 +238,18 @@ def many(tmp_path_factory: pytest.TempPathFactory):
     engine = create_engine(f"sqlite:///{tmp_path_factory.mktemp('many') / 'search.sqlite'}")
     seeding = SearchIndex.open(engine)
     assert seeding is not None
-    for number in range(2500):
-        seeding.index(
-            _task(
+    with engine.begin() as connection:  # one commit, not 2,500: a commit each is what a loaded worker's disk made slow
+        for number in range(2500):
+            seeding.index_fields(
                 f"T-{number}",
                 title=f"drain item {number}",
+                description="",
+                criteria=[],
+                notes="",
+                lane="to_do",
                 labels=["disk"] if number % 2 == 0 else ["other"],
+                connection=connection,
             )
-        )
     return engine
 
 

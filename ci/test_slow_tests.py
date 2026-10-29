@@ -196,3 +196,34 @@ def test_the_gate_bound_stretches_with_host_load_per_cpu_and_never_shrinks_below
     import slow_tests
 
     assert slow_tests.gate_bound(15.0, load1, cpus) == pytest.approx(bound)
+
+
+STARVED = """\
+import os
+import subprocess
+import sys
+import time
+
+
+def test_starved():
+    cpu = min(os.sched_getaffinity(0))
+    os.sched_setaffinity(0, {cpu})
+    hogs = [subprocess.Popen([sys.executable, "-c", "while True: pass"]) for _ in range(6)]
+    try:
+        started = time.process_time()
+        while time.process_time() - started < 0.2:
+            pass
+    finally:
+        for hog in hogs:
+            hog.kill()
+            hog.wait()
+"""
+
+
+def test_without_test_cost_report_a_test_starved_of_cpu_is_not_failed_for_the_wall_time_it_waited(tmp_path):
+    """Six busy processes share the test's one CPU: its 0.2 CPU-s take over a second of wall, and the bound is 0.8 s."""
+    (tmp_path / "test_x.py").write_text(STARVED)
+
+    done = run(tmp_path, TEST_COST_REPORT="", SLOW_TEST_FAIL_SECONDS="0.8")
+
+    assert done.returncode == 0, done.stdout + done.stderr
