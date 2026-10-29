@@ -199,10 +199,14 @@ def test_every_ci_job_but_the_macos_smoke_is_a_test_job():
     assert sorted(jobs) == sorted([*TEST_JOBS, "macos-fresh-serve", "clean-machine-ingest"])
 
 
-def test_the_coverage_map_is_published_only_by_a_green_nightly():
-    """A red shard's coverage data would leave tests out of the map the select step reads."""
+def test_the_coverage_map_is_published_from_the_nightlys_data_green_or_red():
+    """A red shard still uploads its coverage data, and `coverage_map.py build` refuses a map missing too many tests, so one
+    flaky shard no longer freezes the map every pull request's selection reads."""
+    condition = job("ci.yml", "coverage-map")["if"]
     assert "python-shard" in needs("ci.yml", "coverage-map")
-    assert "needs.python-shard.result == 'success'" in job("ci.yml", "coverage-map")["if"]
+    assert "!cancelled()" in condition
+    assert "needs.select.result == 'success'" in condition
+    assert "needs.python-shard.result == 'success'" not in condition
 
 
 def test_the_free_threaded_suite_runs_beside_the_shards():

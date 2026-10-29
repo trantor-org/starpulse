@@ -511,3 +511,23 @@ def test_a_change_to_the_github_package_reaches_the_pulls_tests(repo: Path) -> N
     selection = select(repo, ["starpulse/github/__init__.py"], coverage)
 
     assert "tests/integration/pulls/test_github.py" in selection.tests
+
+
+def test_a_selection_reports_the_coverage_maps_sha_age_and_lost_files(monkeypatch, capsys, repo, tmp_path):
+    maps = tmp_path / "maps"
+    publish({"sha": "abc", "collected": 1, "tests": {TEST_LEAF: [LEAF, "starpulse/gone/moved.py"]}}, maps)
+    monkeypatch.setattr("select_tests.DEFAULT_DIR", maps)
+
+    printed = _printed(monkeypatch, capsys, repo, f"{LEAF}\n")
+
+    assert printed["COVERAGE_MAP_SHA"] == "abc"
+    assert float(printed["COVERAGE_MAP_AGE_HOURS"]) < 1
+    assert (printed["COVERAGE_MAP_FILES"], printed["COVERAGE_MAP_MISSING"]) == ("2", "1")
+
+
+def test_a_selection_without_a_coverage_map_reports_an_empty_sha(monkeypatch, capsys, repo, tmp_path):
+    monkeypatch.setattr("select_tests.DEFAULT_DIR", tmp_path / "no-maps")
+
+    printed = _printed(monkeypatch, capsys, repo, f"{LEAF}\n")
+
+    assert printed["COVERAGE_MAP_SHA"] == ""
