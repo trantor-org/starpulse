@@ -152,8 +152,7 @@ export function Card({ task, holds = 0, chain, stacked = 0, under = false, links
         </div>
       ) : queued ? (
         <div className="mach queued" title="Its scheduler run waits in the queue for a slot">
-          <span className="p" /><b>queued</b>
-          <a className="ago" href={queued.url} target="_blank" rel="noopener" title="Open run" onClick={stop} onPointerDown={stop}>↗</a>
+          <span className="p" /><a href={queued.url} target="_blank" rel="noopener" title="Open run" onClick={stop} onPointerDown={stop}><b>queued</b></a>
         </div>
       ) : task.released ? (
         <div className="mach released" title="Left Waiting when its dependencies finished">

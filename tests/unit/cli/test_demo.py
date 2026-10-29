@@ -5,7 +5,6 @@ import json
 import re
 import urllib.request
 from pathlib import Path
-from unittest.mock import ANY
 
 import jsonschema
 import pytest
@@ -226,7 +225,7 @@ def test_scrub_keeps_the_structure_and_replaces_every_task() -> None:
         "dependencies": [],
         "description": f"Synthetic demo task: {TITLES[0].lower()}.",
     }
-    assert board[8] == {
+    assert {k: v for k, v in board[8].items() if k != "runs"} == {  # the Ready column draws it first, so it is queued
         "id": "DEMO-9",
         "title": TITLES[8],
         "state": "ready",
@@ -579,8 +578,12 @@ def test_scrub_seeds_a_board_when_the_capture_has_none() -> None:
         "created": live["now"] - 900,
         "workable_since": live["now"] - 900,
         "moves": {"in_progress": {"allowed": True}},
-        "runs": [{"url": "#", "status": "queued", "startedAt": ANY}],
     }
+    ready = [a for a in board if a["state"] == "ready"]
+    queued = [a["id"] for a in ready if a.get("runs")]
+    top = max(int(a["milestone"].removeprefix("m-")) for a in ready if a["milestone"])
+    first = max((a for a in ready if a["milestone"] == f"m-{top}"), key=lambda a: int(a["id"].removeprefix("DEMO-")))
+    assert queued == [first["id"]]  # the card the Ready column draws first carries the queued line
     assert board[3]["dependencies"] == ["DEMO-1"] and board[3]["labels"] == ["size-5"]
     assert demo["pulls"]["DEMO-9"] == [
         {

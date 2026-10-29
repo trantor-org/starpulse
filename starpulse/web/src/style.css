@@ -667,6 +667,7 @@ body.dragging, body.dragging * { user-select: none; }
 #kb .mach.sess b, #kb .mach.sess .s { color: var(--run); }
 #kb .mach.sess .p { background: var(--run); box-shadow: 0 0 6px var(--run); }
 #kb .mach.queued b, #kb .mach.queued a { color: var(--run); text-decoration: none; }
+#kb .mach.queued a { display: flex; min-width: 0; }
 #kb .mach.queued .p { box-sizing: border-box; background: transparent; border: 1.5px solid var(--run); box-shadow: none; }
 #kb .mach.released b { color: var(--released); }
 #kb .mach.released .p { background: var(--released); box-shadow: 0 0 6px var(--released); }

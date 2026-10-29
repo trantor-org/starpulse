@@ -695,8 +695,8 @@ def _walk(machine: dict, state: str, i: int, now: float, via: str | None = None,
 
 def _seed_task_runs(flows: list[dict], working_state: str, ready_state: str, now: float) -> None:
     """Give the first In Progress Board task a failed run and the retry that succeeded, so its task view draws a Runs
-    section, and the first Ready one a run waiting in its queue, so its card draws the queued line; the capture's own
-    runs are dropped, as they link the live scheduler."""
+    section, and the Ready one its Kanban column draws first a run waiting in its queue, so that card draws the queued
+    line; the capture's own runs are dropped, as they link the live scheduler."""
     board = next(f for f in flows if f["name"] == "board")
     working = next((a for a in board["agents"] if a["state"] == working_state), None)
     if working is not None:
@@ -704,9 +704,17 @@ def _seed_task_runs(flows: list[dict], working_state: str, ready_state: str, now
             {"url": "#", "status": "failed", "startedAt": _iso(now - 7200)},
             {"url": "#", "status": "succeeded", "startedAt": _iso(now - 3600)},
         ]
-    ready = next((a for a in board["agents"] if a["state"] == ready_state), None)
-    if ready is not None:
+    readies = [a for a in board["agents"] if a["state"] == ready_state]
+    if readies:
+        ready = max(readies, key=_drawn_first)
         ready["runs"] = [{"url": "#", "status": "queued", "startedAt": _iso(now - 120)}]
+
+
+def _drawn_first(agent: dict) -> tuple[int, float, int]:
+    """The Kanban column's order, highest first: newest milestone (none below every one), latest entered, highest id."""
+    milestone = agent.get("milestone") or ""
+    number = int(milestone.removeprefix("m-")) if milestone.removeprefix("m-").isdigit() else -1
+    return number, agent.get("entered") or 0, int(re.sub(r"\D", "", agent["id"]) or 0)
 
 
 def _inner(machine: dict) -> list[str]:
