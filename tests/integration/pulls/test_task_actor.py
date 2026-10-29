@@ -842,3 +842,27 @@ def test_a_dod_tick_that_leaves_a_merged_review_task_fully_checked_makes_the_don
     feed.follow_read_model()  # the page's follow publishes the changed task to the actor, as the server does
 
     assert until(lambda: board.moved() == [("TASK-1", "done")] * 2)
+
+
+def test_a_review_task_whose_pr_merged_into_an_integration_branch_closes_only_once_that_branch_landed_on_main(
+    store: PullStore, stop: threading.Event
+) -> None:
+    board = Board(
+        BoardFeed(),
+        task("TASK-1", "Review", references=(PR_ONE,)),
+        task("TASK-2", "Review", references=(PR_TWO,)),
+    )
+    store.save([pull(1, state="OPEN"), pull(2, state="OPEN")])
+    actor = running(board, store, stop)
+    store.save(
+        [
+            pull(1, state="MERGED", base="agent/m-295-fixes"),
+            pull(2, state="MERGED", base="agent/m-5-fixes"),
+            pull(3, state="MERGED", branch="agent/m-5-fixes"),
+        ]
+    )
+
+    actor.pulls_changed()
+
+    assert until(lambda: board.moved() == [("TASK-2", "done")])
+    assert [name for name, *_ in board.writes] == ["TASK-2"]

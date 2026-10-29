@@ -15,14 +15,14 @@ URL = f"https://github.com/{REPO}/pull/7"
 STAMP = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _record(number: int, state: str, merged_at: str | None = None) -> dict:
+def _record(number: int, state: str, merged_at: str | None = None, base: str = "main") -> dict:
     return {
         "repo": REPO,
         "number": number,
         "state": state,
         "isDraft": False,
         "mergeable": "MERGEABLE",
-        "baseRefName": "main",
+        "baseRefName": base,
         "headRefOid": f"{number:040x}",
         "body": "",
         "checks": "none",
@@ -71,3 +71,17 @@ def test_repeated_asks_read_only_the_cited_rows(engine: Engine) -> None:
         own_pull_merged(log, _agent(URL))
 
     assert [statement for statement in statements if "number) IN" not in statement] == []
+
+
+def test_a_pull_request_merged_into_an_integration_branch_is_delivered_once_that_branch_landed_on_main(
+    engine: Engine,
+) -> None:
+    log = SimpleNamespace(engine=engine)
+    PullStore(engine).save([_record(7, "MERGED", STAMP, base="agent/m-1-fixes")])
+
+    assert own_pull_merged(log, _agent(URL)) is False
+
+    landing = {**_record(8, "MERGED", STAMP), "headRefName": "agent/m-1-fixes"}
+    PullStore(engine).save([landing])
+
+    assert own_pull_merged(log, _agent(URL)) is True

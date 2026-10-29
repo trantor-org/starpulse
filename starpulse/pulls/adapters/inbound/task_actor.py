@@ -39,7 +39,7 @@ from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model.markdown import section_set
 from starpulse.board.model.seam import HELD, MERGE_EVIDENCE, TaskCreator, TaskEditor, TaskReader, Written
 from starpulse.pulls.adapters.inbound.unblock import PinGate
-from starpulse.pulls.adapters.outbound.pull_requests import own_prs, pull_record
+from starpulse.pulls.adapters.outbound.pull_requests import landed, own_prs, pull_record
 from starpulse.pulls.model.pins import LiveBuild, Pins, Repo
 
 if TYPE_CHECKING:  # annotation only: the pull store opens the database stack
@@ -658,6 +658,8 @@ class TaskActor:
                 return None
             if record["state"] == "MERGED" and not record["mergedAt"]:
                 return None  # merged on an event's word alone: the next read of GitHub settles it
+            if record["state"] == "MERGED" and not landed(self._store, record):
+                return None  # merged into an integration branch not yet on main: the work is not delivered
             part = f"{record['repo']}#{record['number']} {record['state'].lower()}"
             if record["mergeSha"]:
                 part += f" as {record['mergeSha']}"
