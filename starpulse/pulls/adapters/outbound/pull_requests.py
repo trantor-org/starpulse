@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 _GH_TIMEOUT_S = 30
 PULL_URL = re.compile(r"https://github\.com/([^/\s]+/[^/\s]+)/pull/(\d+)/?")
 _TASK_ID = re.compile(r"task-\d+")
+DEFAULT_BASE = "main"
 
 
 def pull_record(store: PullStore, url: str) -> dict[str, Any] | None:
@@ -54,11 +55,21 @@ def own_prs(store: PullStore, agent: dict[str, Any]) -> list[str]:
     return [url for url in agent["prs"] if delivers(store, url, agent["id"])]
 
 
+def landed(store: PullStore, record: dict[str, Any]) -> bool:
+    """Whether a merged pull request's change is on `main`: it merged into `main`, or into a branch (a milestone's
+    integration branch) that another merged pull request has since carried to `main`."""
+    base = record["baseRefName"]
+    if base == DEFAULT_BASE:
+        return True
+    carriers = store.find(repo=record["repo"], state="MERGED")
+    return any(c["baseRefName"] == DEFAULT_BASE and c.get("headRefName") == base for c in carriers)
+
+
 def merged(store: PullStore, agent: dict[str, Any]) -> bool:
-    """Whether one of the task's own pull requests has merged."""
+    """Whether one of the task's own pull requests has merged and landed on `main`."""
     for url in own_prs(store, agent):
         found = pull_record(store, url)
-        if found and found["state"] == "MERGED" and found["mergedAt"]:
+        if found and found["state"] == "MERGED" and found["mergedAt"] and landed(store, found):
             return True
     return False
 

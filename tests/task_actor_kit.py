@@ -135,7 +135,7 @@ class Board:
         return [(name, str(comment)) for name, changes, comment, _ in self.writes if not changes]
 
 
-def pull(number: int, *, state: str, repo: str = "acme/trantor", sha: str = SHA, files: Sequence[str] = (), branch: str = "", title: str = ""
+def pull(number: int, *, state: str, repo: str = "acme/trantor", sha: str = SHA, files: Sequence[str] = (), branch: str = "", title: str = "", base: str = "main"
 ) -> dict:
     at, sha = ("2026-10-12T09:00:00Z", sha) if state == "MERGED" else (None, None)
     return {
@@ -144,7 +144,7 @@ def pull(number: int, *, state: str, repo: str = "acme/trantor", sha: str = SHA,
         "state": state,
         "isDraft": False,
         "mergeable": "UNKNOWN",
-        "baseRefName": "main",
+        "baseRefName": base,
         "headRefOid": f"{number:040x}",
         "headRefName": branch,
         "title": title,
