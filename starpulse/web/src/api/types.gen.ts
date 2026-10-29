@@ -938,6 +938,14 @@ export interface Pull {
    */
   checks: "pass" | "failing" | "pending" | "none";
   /**
+   * The PR closed without merging.
+   */
+  closed?: boolean;
+  /**
+   * The open PR conflicts with its base branch.
+   */
+  conflicting?: boolean;
+  /**
    * The merge commit's SHA; null until the PR merges.
    */
   merge_sha: string | null;

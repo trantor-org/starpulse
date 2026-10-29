@@ -146,6 +146,8 @@ class PullRequests:
                 "url": url,
                 "checks": record["checks"],
                 "merged": record["state"] == "MERGED",
+                "closed": record["state"] == "CLOSED",
+                "conflicting": record["state"] == "OPEN" and record["mergeable"] == "CONFLICTING",
                 "merge_sha": record["detail"]["mergeSha"],
                 "merged_at": record["detail"]["mergedAt"],
                 "files": record["detail"]["files"],

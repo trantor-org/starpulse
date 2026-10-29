@@ -4640,6 +4640,16 @@
           ],
           "type": "string"
         },
+        "closed": {
+          "default": false,
+          "description": "The PR closed without merging.",
+          "type": "boolean"
+        },
+        "conflicting": {
+          "default": false,
+          "description": "The open PR conflicts with its base branch.",
+          "type": "boolean"
+        },
         "merge_sha": {
           "anyOf": [
             {

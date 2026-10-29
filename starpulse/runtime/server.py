@@ -24,7 +24,7 @@ GET /api/events    server-sent events: a `snapshot` on connect ({graphs, dags, p
                    connect, so a page can tell it is not running the server's build; `restarting` ({at}) goes to every
                    open stream on `SIGTERM`, before the process exits.
                    `pulls` maps each open task that cites a pull request to [{number, repo (org/repo), url, checks
-                   (pass, failing, pending, none), merged, merge_sha, merged_at (null until merged), threads (unresolved), behind_main (commits main holds that the head lacks; null once the head branch is gone), stale}], read from
+                   (pass, failing, pending, none), merged, closed (unmerged), conflicting (open and conflicting with its base), merge_sha, merged_at (null until merged), threads (unresolved), behind_main (commits main holds that the head lacks; null once the head branch is gone), stale}], read from
                    GitHub through `gh` once a minute and held between reads; a failed read keeps the
                    last value with `stale` true.
                    Everything is held in memory: the Board from the configured board adapter, other machines' tasks

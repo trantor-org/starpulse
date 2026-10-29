@@ -36,6 +36,8 @@ class Pull(_Api):
     url: str
     checks: Literal["pass", "failing", "pending", "none"] = Field(description="The head commit's check rollup.")
     merged: bool
+    closed: bool = Field(default=False, description="The PR closed without merging.")
+    conflicting: bool = Field(default=False, description="The open PR conflicts with its base branch.")
     merge_sha: str | None = Field(description="The merge commit's SHA; null until the PR merges.")
     merged_at: str | None = Field(description="When the PR merged, ISO 8601 UTC; null until it does.")
     threads: int = Field(description="Unresolved review threads.")
