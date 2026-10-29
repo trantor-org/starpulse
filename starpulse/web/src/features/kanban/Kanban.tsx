@@ -128,7 +128,7 @@ export function Card({ task, holds = 0, chain, stacked = 0, under = false, links
   cross?: KanbanTask[]; onCross?: (id: string) => void; now: number; marks: Marks; names: Record<string, string>; roles: Roles; compact?: boolean; onOpen: () => void; onPress?: (e: React.PointerEvent<HTMLDivElement>) => void;
   onPlay?: () => void; onHover?: (on: boolean) => void; onAhead?: () => void; dismiss: () => void; dismissStart?: () => void; style?: CSSProperties;
 }) {
-  const live = task.live, claim = marks.claim;
+  const live = task.live, claim = marks.claim, queued = task.runs?.find((r) => r.status === "queued");
   const playing = onPlay && !claim && startLane(task, roles);
   const cls = ["card", chain && `chain-${chain}`, under && "under", compact && "compact", playing && "startable", marks.saving && "saving", (marks.refusal || marks.failed) && "bad", marks.lifted && "ghost", claim && "claiming"].filter(Boolean).join(" ");
   const finished = task.lane === roles.done;
@@ -150,6 +150,10 @@ export function Card({ task, holds = 0, chain, stacked = 0, under = false, links
         <div className="mach sess">
           <span className="p" /><b>session</b><span className="s">· {claim.phase === "starting" ? "starting" : "waiting for claim"}</span>
           {claim.url && <a className="ago" href={claim.url} target="_blank" rel="noopener" title="Open session" onClick={stop} onPointerDown={stop}>↗</a>}
+        </div>
+      ) : queued ? (
+        <div className="mach queued" title="Its scheduler run waits in the queue for a slot">
+          <span className="p" /><a href={queued.url} target="_blank" rel="noopener" title="Open run" onClick={stop} onPointerDown={stop}><b>queued</b></a>
         </div>
       ) : task.released ? (
         <div className="mach released" title="Left Waiting when its dependencies finished">
