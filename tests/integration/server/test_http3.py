@@ -25,6 +25,7 @@ from aioquic.quic.configuration import QuicConfiguration
 from aioquic.quic.events import QuicEvent
 from starpulse.board.board_feed import BoardFeed, follow
 from starpulse.board.machine_tasks import MachineTasks
+from starpulse.cli import doctor
 from starpulse.event_log.event_log import EventLog, Tail
 from starpulse.machine_engine.adapters.machine_loader import load_machine
 from starpulse.machine_engine.model.snapshot import describe
@@ -125,6 +126,33 @@ def test_a_quic_socket_on_the_servers_port_answers_an_http3_read(
     assert answer.status == 200
     assert answer.headers["content-type"] == "application/json"
     assert isinstance(json.loads(answer.body), dict)
+
+
+async def _cancel_requests(certificate: tuple[Path, Path], port: int, count: int) -> None:
+    """Open one connection, send `count` reads and cancel each as a browser closing its tab does, with a RESET_STREAM
+    and a STOP_SENDING, before the server answers."""
+    configuration = QuicConfiguration(is_client=True, alpn_protocols=H3_ALPN, cafile=str(certificate[0]), idle_timeout=5.0)
+    async with connect("127.0.0.1", port, configuration=configuration, create_protocol=_H3Client) as client:
+        for _ in range(count):
+            stream_id = client._quic.get_next_available_stream_id()  # type: ignore[attr-defined]
+            sent = [(b":method", b"GET"), (b":scheme", b"https"), (b":authority", f"127.0.0.1:{port}".encode())]
+            client._http.send_headers(stream_id, [*sent, (b":path", b"/api/history-window")], end_stream=True)  # type: ignore[attr-defined]
+            client.transmit()
+            client._quic.reset_stream(stream_id, 268)  # type: ignore[attr-defined]  # H3_REQUEST_CANCELLED
+            client._quic.stop_stream(stream_id, 268)  # type: ignore[attr-defined]
+            client.transmit()
+        await asyncio.sleep(0.5)  # the server takes the cancellations before the connection closes
+
+
+def test_a_client_cancelling_requests_leaves_the_quic_socket_answering(
+    tmp_path: Path, certificate: tuple[Path, Path]
+) -> None:
+    with serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES), tls=certificate) as server:
+        asyncio.run(_cancel_requests(certificate, server.server_port, 3))
+        answer = _h3(certificate, server.server_port, "GET", "/api/history-window", {})
+        probed = doctor.quic_answers("127.0.0.1", server.server_port)
+
+    assert (answer.status, probed) == (200, True)
 
 
 def test_a_cloudevent_posted_over_http3_reaches_the_event_log(tmp_path: Path, certificate: tuple[Path, Path]) -> None:

@@ -8,11 +8,14 @@ failure never stops the others, so a report names every fault at once.
 
 from __future__ import annotations
 
+import os
 import shutil
+import socket
 import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
 from starpulse.runs.config import RunsInstance
 from starpulse.runtime.config import Config, runs_adapter
@@ -20,12 +23,34 @@ from starpulse.runtime.config import Config, runs_adapter
 #: Seconds a `gh` command may take.
 _COMMAND_TIMEOUT = 10
 
+#: Seconds a QUIC socket may take to answer the probe.
+_QUIC_TIMEOUT = 2.0
+
+#: A version no QUIC server speaks (the reserved `0x?a?a?a?a` pattern of RFC 9000 section 15), so a live one answers
+#: with a Version Negotiation packet without any TLS handshake.
+_UNSUPPORTED_QUIC_VERSION = bytes.fromhex("1a2a3a4a")
+
 
 def _declared_params(instance: RunsInstance, workflow: str) -> list[str] | None:
     """The parameter names `workflow` declares, read through the instance's runs adapter; none when the adapter
     offers no `declared_params(url, workflow)`. Raises `OSError` when the scheduler cannot be read."""
     reader = getattr(runs_adapter(instance.type or ""), "declared_params", None)
     return reader(instance.url, workflow) if reader else None
+
+
+def quic_answers(host: str, port: int, timeout: float = _QUIC_TIMEOUT) -> bool:
+    """Whether the UDP socket at `host:port` replies to a 1200-byte long-header packet of a QUIC version no server
+    speaks: a live QUIC listener answers it with Version Negotiation, a wedged or absent one with silence."""
+    header = bytes([0xC0]) + _UNSUPPORTED_QUIC_VERSION + bytes([8]) + os.urandom(8) + bytes([8]) + os.urandom(8)
+    family, kind, proto, _, address = socket.getaddrinfo(host, port, type=socket.SOCK_DGRAM)[0]
+    try:
+        with socket.socket(family, kind, proto) as probe:
+            probe.settimeout(timeout)
+            probe.sendto(header.ljust(1200, b"\0"), address)
+            probe.recvfrom(2048)
+    except OSError:  # no reply in time, or an ICMP port-unreachable
+        return False
+    return True
 
 
 @dataclass(frozen=True)
@@ -37,6 +62,8 @@ class Probes:
     dag_params: Callable[[RunsInstance, str], list[str] | None] = _declared_params
     """The parameter names a workflow of a runs instance declares, none when its adapter cannot say; raises `OSError`
     when the scheduler cannot be read."""
+    quic: Callable[[str, int], bool] = quic_answers
+    """Whether the UDP socket at a host and port answers QUIC."""
     poller: Callable[[], str | None] | None = None
     """Why the pull poller is down, none while it beats; none here when this process cannot read its beat."""
 
@@ -122,6 +149,18 @@ def _cue(cue: dict[str, Any], listed: set[str], instances: dict[str, RunsInstanc
     return _result(name, True, f"{dag} declares {', '.join(sorted(named.values()))}")
 
 
+def _h3(probes: Probes, server: str) -> list[dict[str, str]]:
+    """A TLS server advertises HTTP/3 on its own port number over UDP: its QUIC socket must answer, since a client
+    holding the `alt-svc` offer tries QUIC first and waits out its idle timeout when nothing replies."""
+    address = urlsplit(server)
+    if address.scheme != "https" or not address.hostname:
+        return []
+    where = f"{address.hostname}:{address.port or 443}"
+    if probes.quic(address.hostname, address.port or 443):
+        return [_result("h3", True, f"UDP {where} answers QUIC")]
+    return [_result("h3", False, f"UDP {where} answers no QUIC packet while TCP serves; restarting `serve` clears it")]
+
+
 def _repo(path: str, name: str, probes: Probes) -> dict[str, str]:
     """One `[[repos]]` entry: the parent repository (the working directory) holds `path` as a submodule (git mode 160000)."""
     code, text = _command(probes, "git", "ls-files", "--stage", "--", path)
@@ -181,6 +220,7 @@ def run_checks(
             "config", *((False, config) if isinstance(config, str) else (True, f"{len(config.runs)} runs instances"))
         ),
         _result("server", *((False, snapshot) if isinstance(snapshot, str) else (True, f"{server} answers"))),
+        *([] if isinstance(snapshot, str) else _h3(probes, server)),
         *_adapters(snapshot, config),
         _gh(probes),
         *_contract(snapshot, config, probes),

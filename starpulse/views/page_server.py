@@ -15,6 +15,7 @@ import socket
 import threading
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from hypercorn.asyncio.run import worker_serve
 from hypercorn.config import Config, Sockets
@@ -37,6 +38,31 @@ NUDGE_S = 0.05
 
 #: Seconds a stopping server waits for the requests it took, under the 10 s a supervisor allows before it kills a child.
 DRAIN_S = 8.0
+
+
+def _survive_cancelled_streams() -> None:
+    """Make Hypercorn's HTTP/3 `stream_send` drop an event for a stream the client cancelled, once per process.
+
+    A browser closing a tab sends RESET_STREAM and STOP_SENDING, after which aioquic refuses every write to the stream
+    (`ValueError`, `RuntimeError`, `FrameUnexpected`). The refusal reaches the app's `send`, and `_handle`'s `finally`
+    then runs `send(None)`, which answers a stream still in its request state with a 500 through the same `stream_send`
+    and raises again outside the `try`. That second error leaves Hypercorn's `TaskGroup`, which cancels
+    `UDPServer.run`; `worker_serve` never awaits that task, so the QUIC socket stays bound and answers nothing."""
+    from aioquic.h3.connection import FrameUnexpected  # noqa: PLC0415 - aioquic is absent from the free-threaded venv
+    from hypercorn.protocol.h3 import H3Protocol  # noqa: PLC0415
+
+    send = H3Protocol.stream_send
+    if getattr(send, "drops_cancelled_streams", False):
+        return
+
+    async def stream_send(self: H3Protocol, event: Any) -> None:
+        try:
+            await send(self, event)
+        except (FrameUnexpected, RuntimeError, ValueError) as refused:
+            logger.info("dropped %s for a cancelled HTTP/3 stream: %s", type(event).__name__, refused)
+
+    stream_send.drops_cancelled_streams = True  # type: ignore[attr-defined]
+    H3Protocol.stream_send = stream_send  # type: ignore[method-assign]
 
 
 class PageServer:
@@ -85,6 +111,7 @@ class PageServer:
             self._quic = socket.socket(self.socket.family, socket.SOCK_DGRAM)
             self._quic.bind(self.server_address)
             self._config.alt_svc_headers = [f'h3=":{self.server_port}"; ma={ALT_SVC_MAX_AGE_S}']
+            _survive_cancelled_streams()
             self._sockets = Sockets([self.socket], [], [self._quic])
         self._stopped = threading.Event()
         self._wake: asyncio.Event | None = None
