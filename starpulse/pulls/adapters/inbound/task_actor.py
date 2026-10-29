@@ -39,7 +39,7 @@ from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model.markdown import section_set
 from starpulse.board.model.seam import HELD, MERGE_EVIDENCE, TaskCreator, TaskEditor, TaskReader, Written
 from starpulse.pulls.adapters.inbound.unblock import PinGate
-from starpulse.pulls.adapters.outbound.pull_requests import landed, own_prs, pull_record
+from starpulse.pulls.adapters.outbound.pull_requests import landed, own_prs, pull_record, pull_verdict
 from starpulse.pulls.model.pins import LiveBuild, Pins, Repo
 
 if TYPE_CHECKING:  # annotation only: the pull store opens the database stack
@@ -170,6 +170,7 @@ class TaskActor:
         parked: Callable[[str], None] | None = None,
         released: Callable[[str], None] | None = None,
         closed: Callable[[str], None] | None = None,
+        sent_back: Callable[[str], None] | None = None,
         fresh_s: float = criteria.CACHE_SECONDS,
         live: LiveBuild | None = None,
         advance: Callable[[str, str, str], None] | None = None,
@@ -199,6 +200,7 @@ class TaskActor:
         self._tell = parked
         self._released = released
         self._closed = closed
+        self._sent_back = sent_back
         self._fresh_s = fresh_s
         #: The lanes that wait on a task's Start Criteria.
         self._gated_lanes = {lane for lane, facts in waits.items() if facts.keys() & set(_CRITERIA_FACTS)}
@@ -212,7 +214,7 @@ class TaskActor:
         self._seen: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], tuple[bool, ...]]] = {}
         self._by_pr: dict[str, set[str]] = {}
         #: What each pull request last read as, so a refresh that changed nothing derives nothing.
-        self._pull_states: dict[str, tuple[str, str | None, bool]] = {}
+        self._pull_states: dict[str, tuple[str, str | None, bool, str, str]] = {}
         #: Tasks whose dependencies are done but wait for a pin bump, and the store revision last read for them.
         self._pin_held: set[str] = set()
         self._store_rev = store.rev
@@ -516,9 +518,11 @@ class TaskActor:
             return own
         return agent["prs"]
 
-    def _pull_state(self, url: str) -> tuple[str, str | None, bool]:
+    def _pull_state(self, url: str) -> tuple[str, str | None, bool, str, str]:
         record = self._record(url)
-        return (record["state"], record["mergeSha"], record["isDraft"]) if record else ("", None, False)
+        if record is None:
+            return "", None, False, "", ""
+        return record["state"], record["mergeSha"], record["isDraft"], record["mergeable"], record["checks"]
 
     def _derive_all(self, names: Any, observed: float) -> None:
         for name in sorted(names):
@@ -548,14 +552,19 @@ class TaskActor:
     def _write(
         self, name: str, target: str, comment: str, observed: float, source: str, stale: Mapping[str, Any] = {}
     ) -> bool:
-        written = self._apply(name, {"status": target, **stale}, comment)
+        roles = self._feed.roles
+        changes: dict[str, Any] = {"status": target, **stale}
+        if target == roles.attention:
+            changes["description"] = section_set(self._feed.task(name)["description"], "Needs attention", comment)
+        written = self._apply(name, changes, comment)
         if written.ok:
             self._landed(self._clock() - observed)
-            roles = self._feed.roles
             if self._tell and source == roles.working and target == roles.waiting:
                 self._notice(self._tell, name, "was parked but its holder was not told")
             if self._released and source == roles.waiting and target == roles.ready:
                 self._notice(self._released, name, "was released but its holder was not told")
+            if self._sent_back and source == roles.review and target == roles.working:
+                self._notice(self._sent_back, name, "was sent back but its holder was not told")
             if self._closed and target == roles.done:
                 self._notice(self._closed, name, "was closed but the board was not told")
             return True
@@ -616,7 +625,7 @@ class TaskActor:
             logger.warning("task actor: the lint refusal of %s was not commented: %s", name, written.output)
 
     def _notice(self, hook: Callable[[str], None], name: str, missed: str) -> None:
-        """Run the board's `parked`, `released` or `closed` hook for a task the actor just moved; a failure is logged only."""
+        """Run the board's `parked`, `released`, `sent_back` or `closed` hook for a task the actor just moved; a failure is logged only."""
         try:
             hook(name)
         except Exception:  # the move stands; a board hook is a notice, not part of the write
@@ -734,6 +743,24 @@ class TaskActor:
             return None
         proof = "; ".join(parts)
         return proof, f"Pull request ready: {proof}"
+
+    def _not_green(self, agent: dict[str, Any], verdicts: tuple[str, ...]) -> tuple[Any, str] | None:
+        """The first open own pull request whose `pull_verdict` is one of `verdicts`, with what is wrong with it."""
+        for url in self._own_prs(agent):
+            record = self._record(url)
+            found = pull_verdict(record) if record else None
+            if found and found[0] in verdicts:
+                said = f"{record['repo']}#{record['number']} {found[1]}"
+                return (url, found[0]), f"Pull request not green: {said}."
+        return None
+
+    def _pr_red(self, agent: dict[str, Any]) -> tuple[Any, str] | None:
+        """The failing or conflicting own pull request: the holding session's to fix."""
+        return self._not_green(agent, ("failure", "conflict"))
+
+    def _pr_pending(self, agent: dict[str, Any]) -> tuple[Any, str] | None:
+        """The own pull request whose checks are still running or that went back to draft: no work for a session yet."""
+        return self._not_green(agent, ("pending", "draft"))
 
     def _deps_done(self, agent: dict[str, Any]) -> tuple[Any, str] | None:
         """The dependencies once every one is done and merged, an empty tuple when the task has none, and no Start
@@ -861,6 +888,8 @@ class TaskActor:
         "pr_merged_planned": _pr_merged_planned,
         "pr_merged_unfinished": _pr_merged_unfinished,
         "pr_ready": _pr_ready,
+        "pr_red": _pr_red,
+        "pr_pending": _pr_pending,
         "deps_done": _deps_done,
         "deps_done_with_pr": _deps_done_with_pr,
         "deps_unresolved": _deps_unresolved,
