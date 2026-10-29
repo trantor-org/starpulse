@@ -397,6 +397,28 @@ def test_a_pin_bump_rule_holds_the_dependent_until_the_pin_bump_merge_projects(
     assert "\nstarpulse_task_actor_pin_held 0\n" in actor.exposition()
 
 
+def test_a_pin_hold_comments_the_pull_request_and_pin_it_waits_on_once(
+    store: PullStore, stop: threading.Event
+) -> None:
+    board = Board(
+        BoardFeed(),
+        task("TASK-1", "Done", references=(CHILD_PR,)),
+        task("TASK-2", "Waiting", dependencies=("TASK-1",)),
+    )
+    store.save([pull(10, state="MERGED", repo="acme/starpulse", sha=CHILD)])
+    actor = running(board, store, stop, repos=REPOS, pin_rule="pin-bump", pins=Pins())
+    assert board.moved() == []
+    assert board.comments() == [
+        ("TASK-2", f"Held from Ready: {CHILD_PR} is merged but no merged bump pins it at starpulse yet.")
+    ]
+
+    store.save([pull(11, state="MERGED", sha=PARENT, files=("starpulse",))])
+    actor.pulls_changed()
+
+    assert until(lambda: board.moved() == [("TASK-2", "ready")])
+    assert len(board.comments()) == 1
+
+
 def test_a_review_task_whose_pr_merged_while_the_server_was_down_moves_on_start(
     store: PullStore, stop: threading.Event
 ) -> None:

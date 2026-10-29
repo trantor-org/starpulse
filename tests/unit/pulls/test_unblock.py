@@ -64,7 +64,7 @@ def store(tmp_path: Path) -> PullStore:
     return PullStore(create_engine(f"sqlite:///{tmp_path / 'pulls.sqlite'}"))
 
 
-def _pull(repo: str, number: int, *, state: str, sha: str | None, at: str | None, files: Sequence[str] = ()) -> dict:
+def _pull(repo: str, number: int, *, state: str, sha: str | None, at: str | None, files: Sequence[str] = (), branch: str = "") -> dict:
     return {
         "repo": repo,
         "number": number,
@@ -73,6 +73,7 @@ def _pull(repo: str, number: int, *, state: str, sha: str | None, at: str | None
         "mergeable": "UNKNOWN",
         "baseRefName": "main",
         "headRefOid": f"{number:040x}",
+        "headRefName": branch,
         "body": "",
         "checks": "pass",
         "requiredChecks": [],
@@ -188,6 +189,19 @@ def test_a_pin_merged_dependency_waits_for_its_bump_merge(store: PullStore) -> N
     store.save([_pull("acme/trantor", 50, state="MERGED", sha=PARENT, at=LATER, files=["starpulse"])])
 
     assert _unblock(feed, store, "pin-bump") == ["TASK-2"]
+
+
+def test_a_pull_request_a_dependency_cites_for_another_task_never_holds_its_dependent(store: PullStore) -> None:
+    dependents_pr = "https://github.com/acme/starpulse/pull/11"
+    store.save(
+        [
+            _pull("acme/starpulse", 10, state="MERGED", sha=CHILD, at=WHEN, branch="claude/task-1-the-change"),
+            _pull("acme/starpulse", 11, state="OPEN", sha=None, at=None, branch="claude/task-2-the-dependents-change"),
+            _pull("acme/trantor", 50, state="MERGED", sha=PARENT, at=LATER, files=["starpulse"]),
+        ]
+    )
+
+    assert _unblock(_pinned(references=(CHILD_PR, dependents_pr)), store, "pin-bump") == ["TASK-2"]
 
 
 def test_an_unblock_pass_after_a_restart_reads_no_pin_answer_the_board_saved(
