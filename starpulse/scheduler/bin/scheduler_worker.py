@@ -48,11 +48,13 @@ class Scheduler:
         trajectories_response: Callable[..., tuple[bytes, int]],
         cached: Callable[[Callable[[], dict[str, Any]], float], Callable[[], dict[str, Any]]],
         starter: Callable[..., Any],
+        delivered: Callable[[EventLog, Mapping[str, Any]], bool],
     ) -> None:
         self._config = config
         self._trajectories_response = trajectories_response
         self._cached = cached
         self._starter = starter
+        self._delivered = delivered
         self._built = (base, board, feed, log, history)
         self._probe = probe
         self._stop = threading.Event()
@@ -78,6 +80,7 @@ class Scheduler:
             trajectories_response=self._trajectories_response,
             cached=self._cached,
             starter=self._starter,
+            delivered=self._delivered,
         )
         follow_wakes(log, self._wake, stop)
 
@@ -125,6 +128,7 @@ def main(
     trajectories_response: Callable[..., tuple[bytes, int]],
     cached: Callable[[Callable[[], dict[str, Any]], float], Callable[[], dict[str, Any]]],
     starter: Callable[..., Any],
+    delivered: Callable[[EventLog, Mapping[str, Any]], bool],
 ) -> None:
     """Run the Scheduler worker; `runtime` passes the collaborators it builds, as no context imports it."""
     args = parser.parse_args(argv)
@@ -152,6 +156,7 @@ def main(
         trajectories_response=trajectories_response,
         cached=cached,
         starter=starter,
+        delivered=delivered,
     )
     scheduler.start()
     hold(stop, lambda: scheduler.reload(path, load))

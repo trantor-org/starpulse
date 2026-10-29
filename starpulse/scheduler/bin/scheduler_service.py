@@ -18,8 +18,6 @@ from starpulse.board.model.seam import Board, Written
 from starpulse.event_log.event_log import EventLog
 from starpulse.flow_metrics.adapters.outbound.history import History
 from starpulse.flow_metrics.model.level import Level
-from starpulse.pulls.own_prs import merged
-from starpulse.pulls.pulls import PullStore
 from starpulse.scheduler.adapters.runtime import Runtime
 from starpulse.scheduler.adapters.runtime import build as build_scheduler
 from starpulse.scheduler.adapters.starter import builtin_starter
@@ -45,13 +43,14 @@ def start_scheduler(
     trajectories_response: Callable[..., tuple[bytes, int]],
     cached: Callable[[Callable[[], dict[str, Any]], float], Callable[[], dict[str, Any]]],
     starter: Callable[..., Any],
+    delivered: Callable[[EventLog, Mapping[str, Any]], bool],
 ) -> Runtime:
     """The scheduler's runtime with its sampler and dispatch loop running on daemon threads until `stop` is set.
 
     The loop admits from the lane `[scheduler] lane` names (else the board's initial lane), starts a session through
     `session_start_url` (else the built-in tmux starter in `base`), and settles a stuck one by moving it to Needs
     attention through the board's editor. Its chain and per-task P(goal) are the trajectory analytics' when this
-    server has a `[level]` table. `runtime` passes `trajectories_response`, `cached` and `starter`, as no context imports it.
+    server has a `[level]` table. `runtime` passes `trajectories_response`, `cached`, `starter` and `delivered`, as no context imports it.
     """
 
     def settle(task: str, reason: str) -> Written:
@@ -66,10 +65,8 @@ def start_scheduler(
             return Written(False, "this board has no editor", unavailable=True)
         return board.edit(task, {}, comment)
 
-    pulls = PullStore(log.engine)
-
-    def delivered(agent: Mapping[str, Any]) -> bool:
-        return merged(pulls, dict(agent))
+    def merged(agent: Mapping[str, Any]) -> bool:
+        return delivered(log, agent)
 
     initial = next(state["id"] for state in feed.machines["board"]["states"] if state.get("initial"))
     lane = config.scheduler.eligible_lane(initial)
@@ -98,7 +95,7 @@ def start_scheduler(
         start=starter(config.session_start_url, by="scheduler") or builtin_starter(base),
         settle=settle,
         claim=claim,
-        merged=delivered,
+        merged=merged,
         chain=lambda: ranks()["chain"],
         p_goals=lambda: ranks()["p_goals"],
         lane=lane,

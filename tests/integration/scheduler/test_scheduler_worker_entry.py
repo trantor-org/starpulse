@@ -40,6 +40,7 @@ def _worker(base: Path, url: str) -> Iterator[tuple[Scheduler, Remote]]:
         trajectories_response=server.trajectories_response,
         cached=server._cached,
         starter=starter,
+        delivered=lambda log, agent: False,
     )
     worker.start()
     try:
