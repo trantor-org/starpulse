@@ -15,7 +15,7 @@ from starpulse.board.model.seam import Written
 from starpulse.contracts.adapters import BoardTask, MachineEvent, StartFailedError
 from starpulse.event_log.event_log import EventLog
 from starpulse.harness_telemetry.harness import SESSION_MACHINES
-from starpulse.scheduler.adapters.loop import SETTLE_REFUSED, Loop
+from starpulse.scheduler.adapters.loop import IDLE_RETURNED, SETTLE_REFUSED, Loop
 from starpulse.scheduler.model.config import Scheduler
 from starpulse.scheduler.model.harness_setting import HarnessSetting
 from starpulse.scheduler.model.ledger import Ledger
@@ -37,7 +37,12 @@ class Rig:
     """
 
     def __init__(
-        self, tmp_path: Path, limits: Mapping[str, float] | None = None, quiet: QuietHours | None = None, **policy: Any
+        self,
+        tmp_path: Path,
+        limits: Mapping[str, float] | None = None,
+        quiet: QuietHours | None = None,
+        requeue: bool = False,
+        **policy: Any,
     ) -> None:
         self.now = START
         self.host = {"cpu": 5.0, "memory": 5.0}
@@ -61,6 +66,8 @@ class Rig:
         self.started_harness: list[str] = []
         self.settled: list[tuple[str, str]] = []
         self.refuse_settle = False
+        self.requeueing = requeue
+        self.requeued: list[tuple[str, str]] = []
         self.failing: set[str] = set()
         self.limit: str | None = None
         self.claims: list[tuple[str, str]] = []
@@ -93,6 +100,7 @@ class Rig:
             chain=lambda: {},
             lane="ready",
             claim=self._claim,
+            requeue=self._requeue if self.requeueing else None,
             merged=lambda agent: agent["id"] in self.merged,
             clock=lambda: self.now,
             quiet_hours=lambda: self.quiet,
@@ -103,6 +111,11 @@ class Rig:
     def _claim(self, task: str, text: str) -> Written:
         self.claims.append((task, text))
         return Written(self.claim_ok, task)
+
+    def _requeue(self, task: str, comment: str) -> Written:
+        self.requeued.append((task, comment))
+        self.put(task, "ready")
+        return Written(True, task)
 
     def _start(self, task: str, *, harness: str = "claude", mode: str = "interactive") -> str:
         _ = mode
@@ -354,26 +367,68 @@ ATTENTION_GUARDS = rules.load(
         },
         {
             "on": {"to": "needs_attention"},
-            "require": {"none_of": [{"section": {"heading": "Needs attention", "not_matching": r"\?"}}]},
+            "require": {"section": {"heading": "Needs attention", "not_matching": r"\?"}},
             "reason": "states no operator question",
         },
     ]
 )
 
 
-def test_the_settle_reason_passes_the_guards_on_a_move_to_needs_attention(rig: Rig) -> None:
+def test_the_settle_reason_passes_the_guards_on_a_move_to_needs_attention(tmp_path: Path) -> None:
+    rig = Rig(tmp_path, requeue=True)
     rig.put("TASK-1")
     rig.loop.tick()
     rig.put("TASK-1", lane="in_progress")
     rig.session("TASK-1")
     rig.after(31)
+    rig.loop.tick()  # returned to Ready on its first idle settle
+    rig.put("TASK-1", lane="in_progress")
+    rig.session("TASK-1")
+    rig.after(31)
 
-    rig.loop.tick()
+    rig.loop.tick()  # its second idle settle moves it to Needs attention
 
     [(task, reason)] = rig.settled
     front = {"id": task, "status": "in_progress"}
     refused = rules.standing_refusal(ATTENTION_GUARDS, front, f"## Needs attention\n{reason}\n", "needs_attention")
     assert refused is None, refused.reason
+
+
+def test_an_idle_task_with_no_pull_request_is_returned_to_ready_with_a_comment(tmp_path: Path) -> None:
+    rig = Rig(tmp_path, requeue=True)
+    rig.put("T-1")
+    rig.loop.tick()
+    rig.put("T-1", lane="in_progress")
+    rig.session("T-1")
+    rig.after(31)
+
+    rig.loop.tick()
+
+    [(task, comment)] = rig.requeued
+    assert task == "T-1" and "31 minutes" in comment
+    assert "Needs attention" not in comment and "?" not in comment
+    assert rig.settled == []
+    assert [run.outcome for run in rig.ledger.runs("T-1")] == [IDLE_RETURNED]
+
+
+def test_a_second_idle_settle_of_the_same_task_settles_it_with_a_reason_that_asks_no_question(tmp_path: Path) -> None:
+    rig = Rig(tmp_path, requeue=True)
+    rig.put("T-1")
+    rig.loop.tick()
+    rig.put("T-1", lane="in_progress")
+    rig.session("T-1")
+    rig.after(31)
+    rig.loop.tick()  # returned to Ready, then admitted again in the same pass
+    rig.put("T-1", lane="in_progress")
+    rig.session("T-1")
+    rig.after(31)
+
+    rig.loop.tick()
+
+    [(task, reason)] = rig.settled
+    assert task == "T-1" and "?" not in reason
+    assert rig.started == ["T-1", "T-1"]
+    assert [run.outcome for run in rig.ledger.runs("T-1")] == [IDLE_RETURNED, "needs_attention"]
 
 
 def test_a_session_that_keeps_working_is_not_settled(rig: Rig) -> None:

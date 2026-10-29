@@ -724,9 +724,11 @@ When a run's task leaves the eligible lane and `in_progress`, the loop writes it
 peak to the ledger. When the harness session stops while the task is still in those lanes, the run is written as
 `session-ended` and the task is held out of admission until a person or the sweep moves it; a later tool or start on the
 same session revives that run instead of starting another. A started session that has been idle longer than
-`idle_minutes` (the harness's last active event, or its start before any) with its task still open is settled once: the
-task moves to `needs_attention` with a comment saying why, which ends in the question whether it returns to Ready (a board
-guard may require the reason to ask one), and is never started again. A board with no editor, or no `needs_attention` lane, refuses the move; the loop logs the
+`idle_minutes` (the harness's last active event, or its start before any) with its task still open is returned once to the
+eligible lane with a comment, when the task cites no pull request (the run is written `idle-returned`, and the task's count
+is kept under `scheduler.idle_returns`). Any other idle session is settled once: the task moves to `needs_attention` with a
+comment saying why and is never started again; so is an idle session of a task already returned once, or one that cites a
+pull request. A board with no editor, or no `needs_attention` lane, refuses the move; the loop logs the
 refusal and retries on the next sampler period. The sampler period (60 seconds) is the only timer; it finishes and settles
 runs and never admits.
 
