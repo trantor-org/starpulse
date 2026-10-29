@@ -381,6 +381,14 @@ class ConfigFile(_Table):
     project: dict[str, Any] | None = Field(
         default=None, description="The project's own command line for each step a shipped skill names."
     )
+    sequences: dict[str, list[str]] | None = Field(
+        default=None,
+        description=(
+            "The phases a task goes through, in order, keyed by task type (`story`, `bug`), with `default` for a "
+            "type it does not name. A lifecycle machine link that lists `routes` sends a task to the route its "
+            "sequence names next."
+        ),
+    )
     cursor_context: dict[str, Any] | None = Field(
         default=None, description="Holds Cursor task sessions to a context limit (see docs/sources.md)."
     )

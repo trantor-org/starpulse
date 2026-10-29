@@ -20,6 +20,7 @@ class PullsConfig(Protocol):
     repos: tuple[Repo, ...]
     pull_requests: bool
     ci: tuple[str, ...]
+    sequences: Mapping[str, tuple[str, ...]]
 
 
 def pulls_fixed_blocks(config: PullsConfig) -> tuple:
@@ -29,4 +30,4 @@ def pulls_fixed_blocks(config: PullsConfig) -> tuple:
 
 def pulls_delivery_blocks(config: PullsConfig) -> tuple:
     """What of `config` the Delivery loops are built from; a change to anything else needs no rebuild."""
-    return (config.task_actor, config.release, config.repos, config.pull_requests, config.ci)
+    return (config.task_actor, config.release, config.repos, config.pull_requests, config.ci, config.sequences)

@@ -101,10 +101,14 @@ def _link(name: str, link: Mapping[str, Any], states: set[str], events: set[str]
     _known(f"{name} -> {machine}", "submachine exits", inner, link["exits"])
     if unknown := sorted(set(link["exits"].values()) - events):
         raise ValueError(f"{name}: submachine exits fire events the machine lacks: {unknown}")
-    return {
+    routes = dict(link.get("routes", {}))
+    if unknown := sorted(set(routes.values()) - events):
+        raise ValueError(f"{name}: submachine routes fire events the machine lacks: {unknown}")
+    drawn_link = {
         "state": link["state"],
         "machine": machine,
         "exits": dict(link["exits"]),
         "parent": name,
         "when": link.get("when", ""),
     }
+    return drawn_link | {"routes": routes} if routes else drawn_link

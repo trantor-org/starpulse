@@ -176,6 +176,12 @@
           "propertyNames": {"$ref": "#/$defs/identifier"},
           "additionalProperties": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$"}
         },
+        "routes": {
+          "description": "Per phase state that may follow this one in a task type's `[sequences]` entry, the event of this machine that leaves the state toward it instead of the exit's own.",
+          "type": "object",
+          "propertyNames": {"$ref": "#/$defs/identifier"},
+          "additionalProperties": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$"}
+        },
         "when": {"description": "What has to hold for the inner machine to run under the state.", "type": "string"}
       }
     },

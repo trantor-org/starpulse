@@ -23,7 +23,12 @@ from tests.task_actor_kit import MOVES, WAITS, Board, Pins, running, until
 PARENT = "in-progress"
 #: The phase machine links the way `.starpulse/machines/in-progress.yaml` declares them.
 LINKS = [
-    {"state": "build", "machine": "build", "exits": {"docs_reconciled": "BUILD_DONE"}},
+    {
+        "state": "build",
+        "machine": "build",
+        "exits": {"docs_reconciled": "BUILD_DONE"},
+        "routes": {"qa": "BUILD_QA"},
+    },
     {"state": "deliver", "machine": "deliver", "exits": {"pr_ready": "DELIVER_DONE"}},
     {"state": "review_fix", "machine": "review_fix", "exits": {"review_recorded": "REVIEW_RECORDED"}},
 ]
@@ -104,3 +109,50 @@ def test_the_server_publishes_the_exit_event_to_the_machine_events_log_as_the_ta
     place(board, "build", "TASK-1", "docs_reconciled")
 
     assert until(lambda: published == [(PARENT, "BUILD_DONE", ACTOR, "TASK-1")])
+
+
+def test_the_server_hands_the_configured_sequences_to_the_task_actor(
+    stop: threading.Event, store: PullStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    feed = BoardFeed(machines=DRAWN)
+    board = Board(feed, task("TASK-1", "In Progress", type="story"))
+    published: list[tuple[str, str, str, str | None]] = []
+    monkeypatch.setattr(server, "moves_of", lambda machine: MOVES)
+    monkeypatch.setattr(
+        server.machine_events,
+        "publish",
+        lambda machine, event, *, actor, task, log: published.append((machine, event, actor, task)),
+    )
+    delivery = SimpleNamespace(edit=board.edit, waits=WAITS, evaluate=None, holds=None, read=None, parked=None)
+    sequences = {"story": ("build", "qa", "deliver")}
+    config = replace(load(None), task_actor=True, pull_requests=False, release=None, sequences=sequences)
+    actor, _ = server.start_delivery(config, delivery, feed, None, store, Pins(), stop)
+    assert actor.ready.wait(5)
+    place(board, PARENT, "TASK-1", "build")
+
+    place(board, "build", "TASK-1", "docs_reconciled")
+
+    assert until(lambda: published == [(PARENT, "BUILD_QA", ACTOR, "TASK-1")])
+
+
+@pytest.mark.parametrize(
+    ("kind", "event"),
+    [("story", "BUILD_QA"), ("spike", "BUILD_DONE"), ("chore", "BUILD_QA"), ("retro", "BUILD_DONE")],
+)
+def test_a_phase_exits_on_the_route_its_task_types_sequence_names_next(
+    stop: threading.Event, store: PullStore, kind: str, event: str
+) -> None:
+    sequences = {
+        "story": ("build", "qa", "deliver"),
+        "chore": ("build", "qa", "deliver"),
+        "default": ("build", "deliver"),
+        "spike": ("build", "deliver"),
+    }
+    board = Board(BoardFeed(machines=DRAWN), task("TASK-1", "In Progress", type=kind))
+    fired: list[tuple[str, str, str]] = []
+    running(board, store, stop, advance=lambda *sent: fired.append(sent), sequences=sequences)
+    place(board, PARENT, "TASK-1", "build")
+
+    place(board, "build", "TASK-1", "docs_reconciled")
+
+    assert until(lambda: fired == [(PARENT, "TASK-1", event)])

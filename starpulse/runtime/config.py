@@ -60,6 +60,7 @@ _PRODUCER_KEYS = set(ProducerFile.model_fields)
 _MEMORY_KEYS = set(MemoryFile.model_fields)
 
 _ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_PHASE = re.compile(r"[a-z][a-z0-9]*([_-][a-z0-9]+)*")
 
 __all__ = [
     "Config",
@@ -392,6 +393,8 @@ class Config:
     """The `[board.actor]` table is present: `serve` runs the task actor, which moves a task on the facts its lane waits on and replaces the release pass."""
     search: Search = field(default_factory=Search)
     """The optional embeddings service that ranks search by meaning (`[search]`); no table: search is lexical only."""
+    sequences: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+    """The phases a task of each type goes through (`[sequences]`), with `default` for an unnamed type; no table: none."""
     project: Project = field(default_factory=Project)
     """The project's own command line for each step a shipped skill names (`[project.commands]`); no table: none is mapped."""
     cursor_context: CursorContext = field(default_factory=CursorContext)
@@ -437,6 +440,26 @@ def _analytics(raw: object) -> Analytics:
         return parse_analytics(raw)
     except AnalyticsError as exc:
         raise ConfigError(str(exc)) from exc
+
+
+def _sequences(raw: object) -> dict[str, tuple[str, ...]]:
+    """The `[sequences]` table: each task type's phase ids, distinct and in order."""
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise ConfigError("sequences must be a [sequences] table")
+    return {kind: _phases(kind, phases) for kind, phases in raw.items()}
+
+
+def _phases(kind: str, phases: object) -> tuple[str, ...]:
+    if not isinstance(phases, list) or not phases or not all(isinstance(phase, str) for phase in phases):
+        raise ConfigError(f"sequences: {kind} must be a list of phase ids")
+    for phase in phases:
+        if not _PHASE.fullmatch(phase):
+            raise ConfigError(f"sequences: {kind}: {phase!r} is not a phase id (lowercase words joined by _ or -)")
+    if repeated := next((phase for phase in phases if phases.count(phase) > 1), None):
+        raise ConfigError(f"sequences: {kind}: {repeated} is listed twice")
+    return tuple(phases)
 
 
 def _project(raw: object) -> Project:
@@ -693,6 +716,7 @@ def _config(
         release=_release(raw, repos),
         task_actor=task_actor,
         search=_search(raw.get("search")),
+        sequences=_sequences(raw.get("sequences")),
         project=_project(raw.get("project")),
         cursor_context=_cursor_context(raw.get("cursor_context")),
         refresh_token_env=_env_var_name("refresh_token_env", raw.get("refresh_token_env")),

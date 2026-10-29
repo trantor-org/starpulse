@@ -489,6 +489,7 @@ def start_delivery(
             advance=lambda machine, task, event: machine_events.publish(
                 machine, event, actor=ACTOR, task=task, log=log
             ),
+            sequences=config.sequences,
         )
         actor.start(stop)
     sync = None

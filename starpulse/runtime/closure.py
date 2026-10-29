@@ -87,6 +87,7 @@ CONFIG_OWNERS: dict[str, tuple[str, ...]] = {
     "repos": _owned_by("pulls"),
     "pull_requests": _owned_by("pulls"),
     "ci": _owned_by("pulls"),
+    "sequences": _owned_by("pulls"),
     "scheduler": _owned_by("scheduler"),
     "level": _owned_by("scheduler"),
     "session_start_url": _owned_by("scheduler"),
