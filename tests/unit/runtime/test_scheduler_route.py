@@ -214,7 +214,7 @@ def test_a_get_counts_a_session_started_outside_the_loop_beside_the_one_the_loop
     assert body["sessionsByHarness"]["claude"]["use"] == 2
 
 
-def test_a_session_idle_past_the_stale_bound_or_stopped_is_not_in_flight(tmp_path: Path) -> None:
+def test_a_session_idle_past_the_stale_bound_is_not_in_flight_but_a_stopped_one_inside_it_is(tmp_path: Path) -> None:
     tasks = [
         BoardTask(id=task, team="demo", title=task, lane="in_progress", labels=["size-1"], profile="@agent-standard-high")
         for task in ("T-7", "T-8")
@@ -226,7 +226,7 @@ def test_a_session_idle_past_the_stale_bound_or_stopped_is_not_in_flight(tmp_pat
     machine.put(MachineEvent(machine="harness", event="SESSION_STARTED", task="T-8", time=1000.0))
     machine.put(MachineEvent(machine="harness", event="SESSION_STOPPED", task="T-8", time=1000.0))
 
-    assert scheduler("127.0.0.1", "GET", b"", runtime)[1]["inFlight"] == []
+    assert [session["task"] for session in scheduler("127.0.0.1", "GET", b"", runtime)[1]["inFlight"]] == ["T-8"]
 
 
 def test_a_get_with_a_loop_names_a_harness_usage_pause(tmp_path: Path) -> None:

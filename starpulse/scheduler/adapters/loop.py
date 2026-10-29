@@ -174,10 +174,12 @@ class Loop:
             use[DEFAULT_HARNESS] = use.get(DEFAULT_HARNESS, 0.0) + outside
         return use
 
-    def _outside(self) -> dict[str, dict[str, Any]]:
+    def _outside(self, states: tuple[str, ...] = ("active",)) -> dict[str, dict[str, Any]]:
         """The In Progress tasks a live session holds that `_running` does not: one `POST /api/start` or the operator opened.
 
-        A session is live when its harness machine is `active` with an event inside `STALE_S`, as the sampler counts it.
+        A session is live when its harness machine is in `states` with an event inside `STALE_S`. Capacity counts only
+        `active`, as the sampler does; `in_flight` also takes `stopped`, which every mid-turn reply sets until the next
+        tool result, so a session running a tool or waiting on the model is `stopped` most of the time.
         """
         now = self._clock()
         found = {}
@@ -186,7 +188,7 @@ class Loop:
             if agent["state"] != self._feed.roles.working or task in self._running:
                 continue
             seen = self._feed.machine_task(HARNESS.name, task)
-            if seen is not None and seen["state"] == "active" and now - seen["active"] <= STALE_S:
+            if seen is not None and seen["state"] in states and now - seen["active"] <= STALE_S:
                 found[task] = {"agent": agent, "seen": seen}
         return found
 
@@ -263,7 +265,7 @@ class Loop:
 
     def in_flight(self) -> list[dict[str, Any]]:
         """Every live session holding an In Progress task, oldest first, for `GET /api/scheduler`: the loop's runs, and
-        the sessions it did not track, whose address is unknown (`url` is empty) and whose start is the harness machine's
+        the sessions it did not track (a stopped one included, within `STALE_S` of its last event), whose address is unknown (`url` is empty) and whose start is the harness machine's
         first move on the task.
 
         Read from another thread than the loop's: `list(...)` takes one snapshot of the runs a tick may be changing.
@@ -281,7 +283,7 @@ class Loop:
                     "url": run.session,
                 }
             )
-        for task, found in self._outside().items():
+        for task, found in self._outside(("active", "stopped")).items():
             agent, seen = found["agent"], found["seen"]
             sessions.append(
                 {

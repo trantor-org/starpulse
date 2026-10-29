@@ -863,6 +863,24 @@ def test_a_session_started_outside_the_loop_takes_a_session_slot(rig: Rig) -> No
     assert [session["task"] for session in rig.loop.in_flight()] == ["T-1"]
 
     rig.session("T-1", "SESSION_STOPPED")
+    assert [session["task"] for session in rig.loop.in_flight()] == ["T-1"]  # a mid-turn reply stops it, still live
+    rig.after(31)  # past STALE_S with no event: the session is gone
+    assert rig.loop.in_flight() == []
+
+
+def test_a_run_its_session_stopped_mid_turn_stays_in_flight_until_the_session_goes_quiet(rig: Rig) -> None:
+    rig.put("T-1")
+    rig.loop.tick()
+    rig.put("T-1", lane="in_progress")
+    rig.session("T-1")
+    rig.session("T-1", "SESSION_STOPPED")
+    rig.loop.tick()  # closes the run and holds the task
+
+    assert "T-1" not in rig.loop._running
+    assert [session["task"] for session in rig.loop.in_flight()] == ["T-1"]
+
+    rig.after(31)
+
     assert rig.loop.in_flight() == []
 
 
