@@ -135,7 +135,7 @@ interaction rows but can hold its routes and stream deliveries. An untimed reque
 Trantor's nightly `starpulse-latency` Dagu run on a dedicated worker runs `ci/latency_gate.sh` against main; pull requests do not, because on the shared `validate` lane it was the slowest job and
 red from host load alone. It builds the page, serves `ci/seeded_server.py` (`ci/preview.toml`'s workspace with the real
 request handler, a month of lane history for about 160 tasks, a level, 16 milestones and 24 docs on a native board,
-and an scheduler with one capacity sample), runs `page_latency.py --repeat 3 --fail-non-2xx` against it
+and an scheduler with one capacity sample), runs `page_latency.py --repeat 3 --fail-non-2xx` against it with two ceilings (the board's first paint at 450 ms, and the main-thread row at 250 ms because the page's startup JavaScript is one 50-85 ms task on every load)
 and fails on a row over budget, a non-2xx request row, or an untimed request. `ci/seeded_server.py` runs the same server by hand:
 
 ```sh

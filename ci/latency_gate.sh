@@ -5,6 +5,8 @@
 # Run from the repository root. Pull requests do not run it (it was the slowest job on each); trantor's nightly
 # `starpulse-latency` Dagu DAG clones main and runs it on a dedicated worker, and fails the whole-repo gate on a miss.
 # The board's first paint holds a 450 ms ceiling: startup JavaScript, not server time, keeps it over 50 ms on shared hardware.
+# The main-thread row holds a 250 ms one: that startup JavaScript is one 50-85 ms task on every page load, which is 1 to 4
+# entries in the row. A task past 250 ms still fails it.
 set -euo pipefail
 
 work="$(mktemp -d)"
@@ -33,4 +35,4 @@ if [ "$ready" != true ]; then
 fi
 
 uv run --no-sync python bench/page_latency.py "http://127.0.0.1:$port" --repeat 3 \
-  --ceiling "first paint of the board=450" --fail-non-2xx
+  --ceiling "first paint of the board=450" --ceiling "main-thread tasks over 50 ms=250" --fail-non-2xx
