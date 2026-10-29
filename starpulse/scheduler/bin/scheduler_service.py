@@ -18,6 +18,8 @@ from starpulse.board.model.seam import Board, Written
 from starpulse.event_log.event_log import EventLog
 from starpulse.flow_metrics.adapters.outbound.history import History
 from starpulse.flow_metrics.model.level import Level
+from starpulse.pulls.own_prs import merged
+from starpulse.pulls.pulls import PullStore
 from starpulse.scheduler.adapters.runtime import Runtime
 from starpulse.scheduler.adapters.runtime import build as build_scheduler
 from starpulse.scheduler.adapters.starter import builtin_starter
@@ -64,6 +66,11 @@ def start_scheduler(
             return Written(False, "this board has no editor", unavailable=True)
         return board.edit(task, {}, comment)
 
+    pulls = PullStore(log.engine)
+
+    def delivered(agent: Mapping[str, Any]) -> bool:
+        return merged(pulls, dict(agent))
+
     initial = next(state["id"] for state in feed.machines["board"]["states"] if state.get("initial"))
     lane = config.scheduler.eligible_lane(initial)
 
@@ -91,6 +98,7 @@ def start_scheduler(
         start=starter(config.session_start_url, by="scheduler") or builtin_starter(base),
         settle=settle,
         claim=claim,
+        merged=delivered,
         chain=lambda: ranks()["chain"],
         p_goals=lambda: ranks()["p_goals"],
         lane=lane,

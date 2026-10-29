@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import logging
 import queue
-import re
 import threading
 import time
 from collections import Counter
@@ -37,7 +36,7 @@ from starpulse.board.model.seam import HELD, MERGE_EVIDENCE, TaskEditor, Written
 from starpulse.pulls.pins import LiveBuild, Pins, Repo
 from starpulse.board import criteria
 from starpulse.board.board_feed import BoardFeed
-from starpulse.pulls.pull_requests import PULL_URL
+from starpulse.pulls.own_prs import own_prs, pull_record
 from starpulse.pulls.unblock import PinGate
 
 if TYPE_CHECKING:  # annotation only: the pull store opens the database stack
@@ -55,7 +54,6 @@ LINT_REFUSED = "Release to Ready refused by the task lint, repair the record to 
 _TERMINAL = ("MERGED", "CLOSED")
 #: The repository the board renders a bare `PR #N` against; another repo's pull request links its own URL.
 _BOARD_REPO = "trantor-org/trantor"
-_TASK_ID = re.compile(r"task-\d+")
 REFUSALS_METRIC = "starpulse_task_actor_refusals_total"
 CRITERIA_ERRORS_METRIC = "starpulse_task_actor_criteria_errors"
 PIN_HELD_METRIC = "starpulse_task_actor_pin_held"
@@ -443,21 +441,10 @@ class TaskActor:
         return touched
 
     def _record(self, url: str) -> dict[str, Any] | None:
-        found = PULL_URL.fullmatch(url)
-        records = self._store.find(repo=found[1], number=int(found[2])) if found else []
-        return records[0] if records else None
+        return pull_record(self._store, url)
 
     def _own_prs(self, agent: dict[str, Any]) -> list[str]:
-        """The cited pull requests that are not another task's delivery: one whose branch or title names tasks and not
-        this one is a reference, never proof of this task's work."""
-        own = []
-        for url in agent["prs"]:
-            record = self._record(url)
-            text = f"{record.get('headRefName', '')} {record.get('title', '')}" if record else ""
-            named = set(_TASK_ID.findall(text.lower()))
-            if not named or agent["id"].lower() in named:
-                own.append(url)
-        return own
+        return own_prs(self._store, agent)
 
     def _pull_state(self, url: str) -> tuple[str, str | None, bool]:
         record = self._record(url)

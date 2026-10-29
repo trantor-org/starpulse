@@ -111,7 +111,9 @@ class StateRoles:
         )
 
     def _waits_on_pull_request(self, state: str) -> bool:
-        """Whether `state` waits on a pull request's end; a person waiting on a merge is no review."""
-        return self.roles.get(state) == "waiting_on_fact" and any(
-            fact in self.waits.get(state, {}) for fact in _PULL_REQUEST
+        """Whether `state` waits on a pull request's end; a person waiting on a merge is no review, nor is the State
+        that waits on its Start Criteria being met, which a merge only closes."""
+        waits = self.waits.get(state, {})
+        return (
+            self.roles.get(state) == "waiting_on_fact" and _MET not in waits and any(fact in waits for fact in _PULL_REQUEST)
         )

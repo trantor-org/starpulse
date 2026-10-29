@@ -55,3 +55,17 @@ def test_a_review_that_waits_on_a_merge_is_still_the_review_wait_and_a_person_wa
 
     assert roles.review == "checking"
     assert roles.startable == frozenset({"todo", "on_me"})
+
+
+def test_a_waiting_state_that_also_waits_on_a_merge_is_still_startable_and_never_the_review_wait() -> None:
+    roles = StateRoles(
+        {"parked": "waiting_on_fact", "checking": "waiting_on_fact", "shipped": "resting"},
+        {
+            "parked": {"pr_merged": "MERGED", "criteria_met": "CRITERIA_MET"},
+            "checking": {"pr_merged": "MERGED"},
+        },
+        ("shipped",),
+    )
+
+    assert roles.review == "checking"
+    assert roles.startable == frozenset({"parked"})
