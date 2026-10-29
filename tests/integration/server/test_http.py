@@ -20,7 +20,7 @@ from starpulse.runtime.adapter_kit import next_event as _next_event
 from starpulse.runtime.adapter_kit import serve as _serve
 from starpulse.runtime.adapter_kit import task
 from starpulse.runtime.adapter_kit import url as _url
-from starpulse.views.page_server import PageServer
+from starpulse.views.adapters.inbound.page_server import PageServer
 
 from tests.fake_board import bare_board
 from tests.machines import MACHINES, ROLES
@@ -180,7 +180,7 @@ def test_a_change_is_encoded_once_however_many_pages_are_streaming(
     encoded: list[str] = []
     encode_event = server_module.event
     monkeypatch.setattr(
-        "starpulse.views.streams.event", lambda name, data: encoded.append(name) or encode_event(name, data)
+        "starpulse.views.adapters.inbound.streams.event", lambda name, data: encoded.append(name) or encode_event(name, data)
     )
     feed = BoardFeed()
     with _serve(tmp_path, feed) as server:
@@ -203,7 +203,7 @@ def test_a_change_is_encoded_once_however_many_pages_are_streaming(
 def test_an_idle_event_stream_sends_a_comment_so_a_dead_page_is_noticed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("starpulse.views.streams._PING_S", 0.05)
+    monkeypatch.setattr("starpulse.views.adapters.inbound.streams._PING_S", 0.05)
     with _serve(tmp_path) as server:
         with urllib.request.urlopen(_url(server, "/api/events"), timeout=5) as resp:
             lines = [resp.readline() for _ in range(8)]  # the snapshot and the build take six
@@ -212,7 +212,7 @@ def test_an_idle_event_stream_sends_a_comment_so_a_dead_page_is_noticed(
 
 
 def test_a_page_that_goes_away_is_unsubscribed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("starpulse.views.streams._PING_S", 0.05)
+    monkeypatch.setattr("starpulse.views.adapters.inbound.streams._PING_S", 0.05)
     feed = BoardFeed()
     with _serve(tmp_path, feed) as server:
         with urllib.request.urlopen(_url(server, "/api/events"), timeout=5) as resp:

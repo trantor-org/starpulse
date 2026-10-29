@@ -19,7 +19,7 @@ from starpulse.runtime.adapter_kit import serve as _serve
 from starpulse.runtime.adapter_kit import task
 from starpulse.runtime.adapter_kit import url as _url
 from starpulse.runtime.config import load
-from starpulse.views.page_server import PageServer
+from starpulse.views.adapters.inbound.page_server import PageServer
 
 _FOREIGN = "https://evil.example"
 #: Every route that writes, as (method, path, body): a refused request must reach none of their writers.

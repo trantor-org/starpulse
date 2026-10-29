@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from starpulse.views.gate_request import GateRequest
+from starpulse.views.adapters.inbound.gate_request import GateRequest
 
 MODULES = ("test_agent_cli.py",)
 _HOSTING: ContextVar[Any] = ContextVar("hosting", default=None)  # the `_Hosted` being built, for the kit's `serve`

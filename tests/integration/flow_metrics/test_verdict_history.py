@@ -15,7 +15,7 @@ from starpulse.flow_metrics.adapters.outbound.history import HistoryStore, recor
 from starpulse.runs.cloudevents import SINGLE, CloudEventsIngest
 from starpulse.runs.config import Producer
 from starpulse.runs.ingest import tokens as ingest_tokens
-from starpulse.views.encoding import event
+from starpulse.views.model.encoding import event
 
 from tests.machines import MACHINES
 

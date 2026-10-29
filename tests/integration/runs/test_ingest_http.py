@@ -23,7 +23,7 @@ from starpulse.runs.ingest import tokens as ingest_tokens
 from starpulse.runs.push_runs import PUSHED_INSTANCE, PushRuns
 from starpulse.runtime.adapter_kit import serve, url
 from starpulse.runtime.config import load
-from starpulse.views.page_server import PageServer
+from starpulse.views.adapters.inbound.page_server import PageServer
 
 TOKENS = {"cron": "cron-secret", "rundeck": "rundeck-secret"}
 PRODUCERS = tuple(Producer(name, f"{name.upper()}_TOKEN", machines=(), actors=()) for name in TOKENS)

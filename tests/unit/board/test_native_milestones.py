@@ -15,8 +15,8 @@ from starpulse.board.model.seam import Board
 from starpulse.cli import agent_cli as cli
 from starpulse.contracts.api.registry import RESPONSES
 from starpulse.runtime.adapter_kit import serve, url
-from starpulse.views.page_server import PageServer
-from starpulse.views.writes import create_milestone
+from starpulse.views.adapters.inbound.page_server import PageServer
+from starpulse.views.application.commands.writes import create_milestone
 
 FIXTURE = Path(__file__).resolve().parent.parent.parent / "fixtures" / "native_board" / "milestones"
 REAL = "m-106 - starpulse-gitlink-promotes-one-green-sha.md"

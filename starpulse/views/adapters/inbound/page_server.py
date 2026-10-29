@@ -22,7 +22,7 @@ from hypercorn.asyncio.run import worker_serve
 from hypercorn.config import Config, Sockets
 from hypercorn.utils import wrap_app
 
-from starpulse.views.asgi_app import PageApp
+from starpulse.views.adapters.inbound.asgi_app import PageApp
 
 logger = logging.getLogger(__name__)
 

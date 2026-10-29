@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 from starpulse.board.board_feed import BoardFeed
-from starpulse.views.reads import Request, Response
-from starpulse.views.snapshot_cache import SnapshotCache
-from starpulse.views.streams import Stream, Streams
+from starpulse.views.adapters.inbound.reads import Request, Response
+from starpulse.views.adapters.inbound.snapshot_cache import SnapshotCache
+from starpulse.views.adapters.inbound.streams import Stream, Streams
 
 from tests.unit.views.routing import answer
 
@@ -15,7 +15,7 @@ from tests.unit.views.routing import answer
 def streams(monkeypatch: pytest.MonkeyPatch) -> Streams:
     feed = BoardFeed()
     opened = Streams(feed, SnapshotCache(feed), lambda: "build-1")
-    monkeypatch.setattr("starpulse.views.streams._PING_S", 0.01)
+    monkeypatch.setattr("starpulse.views.adapters.inbound.streams._PING_S", 0.01)
     return opened
 
 

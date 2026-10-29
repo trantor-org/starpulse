@@ -10,7 +10,7 @@ import pytest
 from starpulse.board.board_feed import BoardFeed
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 from starpulse.runtime.adapter_kit import serve, url
-from starpulse.views.page_server import PageServer
+from starpulse.views.adapters.inbound.page_server import PageServer
 
 from tests.machines import MACHINES, ROLES
 

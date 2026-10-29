@@ -17,7 +17,7 @@ from starpulse.pulls.adapters.inbound.pull_refresh import PullRefresh
 from starpulse.pulls.adapters.outbound.pull_store import PullSync, refresh_pull
 from starpulse.pulls.adapters.outbound.pulls import PullStore
 from starpulse.runtime.adapter_kit import serve, url
-from starpulse.views.page_server import PageServer
+from starpulse.views.adapters.inbound.page_server import PageServer
 
 from tests.unit.pulls.test_pull_store import NEW, REPO, Github
 

@@ -99,7 +99,7 @@ The top level holds only the public modules the [Public surface](public-surface.
 The page's `web/src` is organized by feature: `api/` (types, `apiFetch`, the event stream), `features/<name>/` (a view with its
 pure model and colocated tests), `render/` (the canvas), `shared/` and `demo/`. oxlint's `no-restricted-imports` (`.oxlintrc.json`) holds a feature
 to `api/`, `render/`, `shared/` and its own folder, so a feature never reaches into another's.
-Every `/api` body is a pydantic model under `starpulse/contracts/api/dto/`, and the server builds each response through it (`starpulse/views/encoding.py`).
+Every `/api` body is a pydantic model under `starpulse/contracts/api/dto/`, and the server builds each response through it (`starpulse/views/model/encoding.py`).
 The page's types are generated from those models: after changing one, run `uv run python -m starpulse.contracts.api`
 (writes `starpulse/schemas/api.schema.json`) and `pnpm --dir starpulse/web run gen:types` (writes `starpulse/web/src/api/types.gen.ts`),
 and commit both. CI's `static-checks` job regenerates them and fails on any difference.

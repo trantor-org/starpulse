@@ -26,7 +26,7 @@ def _held(document: dict) -> list[tuple[str, str]]:
 def test_a_session_is_sent_its_tasks_then_only_a_change_to_them(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("starpulse.views.streams._HELD_SETTLE_S", 0)
+    monkeypatch.setattr("starpulse.views.adapters.inbound.streams._HELD_SETTLE_S", 0)
     feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.put(task("PROJ-1", "In Progress", assignee="session-1"))
     feed.put(task("PROJ-2", "In Progress", assignee="session-2"))
@@ -44,7 +44,7 @@ def test_a_session_is_sent_its_tasks_then_only_a_change_to_them(
 
 
 def test_a_held_task_carries_what_starpulse_board_prints_of_it(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("starpulse.views.streams._HELD_SETTLE_S", 0)
+    monkeypatch.setattr("starpulse.views.adapters.inbound.streams._HELD_SETTLE_S", 0)
     feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.put(task("PROJ-1", "In Progress", assignee="session-1", profile="@agent-standard-high", milestone="m-7"))
     with _serve(tmp_path, feed) as server:
@@ -66,7 +66,7 @@ def test_a_held_task_carries_what_starpulse_board_prints_of_it(tmp_path: Path, m
 def test_a_held_task_does_not_wait_on_a_dependency_that_went_cold_in_done(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("starpulse.views.streams._HELD_SETTLE_S", 0)
+    monkeypatch.setattr("starpulse.views.adapters.inbound.streams._HELD_SETTLE_S", 0)
     now = time.time()
     feed = BoardFeed(roles=ROLES, machines=MACHINES, clock=lambda: now)
     feed.expect("0-0")
@@ -95,7 +95,7 @@ def _lanes(document: dict) -> dict[str, list[str]]:
 def test_the_lanes_stream_sends_on_connect_and_again_only_on_a_change(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("starpulse.views.streams._HELD_SETTLE_S", 0)
+    monkeypatch.setattr("starpulse.views.adapters.inbound.streams._HELD_SETTLE_S", 0)
     feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.put(task("PROJ-1", "In Progress", assignee="session-1"))
     feed.put(task("PROJ-2", "Ready"))
@@ -125,14 +125,14 @@ def _builds_after_quiet(calls: list[int]) -> int:
 def test_held_and_lanes_streams_share_one_build_of_the_columns_per_change(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("starpulse.views.streams._HELD_SETTLE_S", 0)
+    monkeypatch.setattr("starpulse.views.adapters.inbound.streams._HELD_SETTLE_S", 0)
     calls: list[int] = []
 
     def counted(*args: object, **kwargs: object) -> dict:
         calls.append(1)
         return board_columns(*args, **kwargs)
 
-    monkeypatch.setattr("starpulse.views.column_stream.board_columns", counted)
+    monkeypatch.setattr("starpulse.views.adapters.inbound.column_stream.board_columns", counted)
     feed = BoardFeed(roles=ROLES, machines=MACHINES)
     sessions = [f"session-{n}" for n in range(4)]
     for n, session in enumerate(sessions):

@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from starpulse.board.model.view import board_columns
-from starpulse.views.snapshot_cache import Served
+from starpulse.views.adapters.inbound.snapshot_cache import Served
 
 
 class ColumnViews:

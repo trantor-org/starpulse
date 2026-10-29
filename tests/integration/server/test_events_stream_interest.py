@@ -23,7 +23,7 @@ def test_a_task_move_on_the_main_stream_does_not_call_board_columns(
         calls.append(1)
         return board_columns(*args, **kwargs)
 
-    monkeypatch.setattr("starpulse.views.column_stream.board_columns", counted)
+    monkeypatch.setattr("starpulse.views.adapters.inbound.column_stream.board_columns", counted)
     feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.put(task("PROJ-1", "To Do"))
     feed.put(task("PROJ-2", "To Do"))

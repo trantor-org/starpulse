@@ -11,7 +11,7 @@ from starpulse.board.board_feed import BoardFeed
 from starpulse.event_log.event_log import EventLog
 from starpulse.pulls.adapters.inbound import delivery
 from starpulse.pulls.adapters.outbound.pulls import PullStore
-from starpulse.views.reads import _PullReads
+from starpulse.views.adapters.inbound.reads import _PullReads
 
 PULLS = {
     "TASK-1": [{"number": 7, "repo": "acme/widgets", "url": "https://github.com/acme/widgets/pull/7", "checks": "pass"}]

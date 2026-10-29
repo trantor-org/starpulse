@@ -4,7 +4,7 @@ import json
 
 from starpulse.board.board_feed import BoardFeed
 from starpulse.runtime.adapter_kit import task
-from starpulse.views.encoding import encode, encode_snapshot, slim_snapshot
+from starpulse.views.model.encoding import encode, encode_snapshot, slim_snapshot
 
 from tests.machines import MACHINES, ROLES
 

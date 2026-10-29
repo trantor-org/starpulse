@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from starpulse.views.take_over import command_take_over
+from starpulse.views.adapters.outbound.take_over import command_take_over
 
 
 def _script(tmp_path: Path, body: str) -> list[str]:

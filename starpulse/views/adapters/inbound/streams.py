@@ -13,15 +13,15 @@ from urllib.parse import parse_qs, unquote
 
 from pydantic import ValidationError
 
-from starpulse.views.column_stream import ColumnViews, Interest
-from starpulse.views.encoding import encode, event
-from starpulse.views.reads import Request, Response
-from starpulse.views.responses import _error
-from starpulse.views.routes import _HELD, _LANES, _LEDGER, _SNAPSHOT_BODY
+from starpulse.views.adapters.inbound.column_stream import ColumnViews, Interest
+from starpulse.views.adapters.inbound.reads import Request, Response
+from starpulse.views.adapters.inbound.routes import _HELD, _LANES, _LEDGER, _SNAPSHOT_BODY
+from starpulse.views.application.queries.responses import _error
+from starpulse.views.model.encoding import encode, event
 
 if TYPE_CHECKING:  # annotation only: `snapshot_cache` and the feed are built by the caller
     from starpulse.board.board_feed import BoardFeed
-    from starpulse.views.snapshot_cache import SnapshotCache
+    from starpulse.views.adapters.inbound.snapshot_cache import SnapshotCache
 
 logger = logging.getLogger(__name__)
 

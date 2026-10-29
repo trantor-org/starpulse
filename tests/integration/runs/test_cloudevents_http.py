@@ -24,7 +24,7 @@ from starpulse.runs.config import Producer
 from starpulse.runs.ingest import MAX_BATCH_BODY
 from starpulse.runs.ingest import tokens as ingest_tokens
 from starpulse.runtime.adapter_kit import next_event, serve, url
-from starpulse.views.page_server import PageServer
+from starpulse.views.adapters.inbound.page_server import PageServer
 
 DELIVERY = """\
 name: delivery

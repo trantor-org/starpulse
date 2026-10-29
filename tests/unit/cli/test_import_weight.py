@@ -21,7 +21,8 @@ CONFIG = (
     "starpulse.runtime.config",
     "starpulse.runtime.config_model",
     "starpulse.views",
-    "starpulse.views.services",
+    "starpulse.views.ports",
+    "starpulse.views.ports.services",
 )
 
 UNREACHABLE = "http://127.0.0.1:1"

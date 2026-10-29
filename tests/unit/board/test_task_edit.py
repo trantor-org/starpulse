@@ -13,8 +13,8 @@ from starpulse.contracts.adapters import Move
 from starpulse.runtime.adapter_kit import task
 from starpulse.runtime.assembly import assemble
 from starpulse.runtime.config import load
-from starpulse.views import writes as server_writes
-from starpulse.views.writes import archive_task, edit_task, task_record
+from starpulse.views.application.commands import writes as server_writes
+from starpulse.views.application.commands.writes import archive_task, edit_task, task_record
 
 from tests import fake_board
 from tests.machines import MACHINES, ROLES

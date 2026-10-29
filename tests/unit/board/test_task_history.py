@@ -17,7 +17,7 @@ from starpulse.event_log.store import EventStore, NewEvent
 from starpulse.event_log.tables import retired_tasks
 from starpulse.runtime.assembly import assemble
 from starpulse.runtime.config import load
-from starpulse.views.writes import edit_task
+from starpulse.views.application.commands.writes import edit_task
 
 FILE = """---
 id: task-5

@@ -17,8 +17,8 @@ from starpulse.runtime.adapter_kit import next_event as _next_event
 from starpulse.runtime.adapter_kit import serve as _serve
 from starpulse.runtime.adapter_kit import task
 from starpulse.runtime.adapter_kit import url as _url
-from starpulse.views import snapshot_cache
-from starpulse.views.page_server import PageServer
+from starpulse.views.adapters.inbound import snapshot_cache
+from starpulse.views.adapters.inbound.page_server import PageServer
 
 from tests.fake_board import bare_board
 from tests.machines import MACHINES, ROLES

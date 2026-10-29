@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
-from starpulse.views.page_server import PageServer
+from starpulse.views.adapters.inbound.page_server import PageServer
 
 # The HTTP/3 client of `test_http3` is absent on the free-threaded build; see the skip there.
 pytest.importorskip("aioquic")

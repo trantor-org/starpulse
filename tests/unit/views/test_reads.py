@@ -10,11 +10,11 @@ from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.board_feed import BoardFeed
 from starpulse.event_log.event_log import EventLog
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
-from starpulse.views.compression import Encoded
-from starpulse.views.reads import Arrival, ReadRoutes, Request, Response
-from starpulse.views.responses import cited_pulls
-from starpulse.views.services import Services
-from starpulse.views.snapshot_cache import SnapshotCache
+from starpulse.views.adapters.inbound.compression import Encoded
+from starpulse.views.adapters.inbound.reads import Arrival, ReadRoutes, Request, Response
+from starpulse.views.adapters.inbound.snapshot_cache import SnapshotCache
+from starpulse.views.application.queries.responses import cited_pulls
+from starpulse.views.ports.services import Services
 
 from tests.fake_board import bare_board
 from tests.unit.views.routing import answer
