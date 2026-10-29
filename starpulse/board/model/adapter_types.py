@@ -21,6 +21,10 @@ BUILT_IN = {
 #: The run adapters' worker contexts. Each runs as a `starpulse worker <context>` child of `serve`.
 ADAPTER_CONTEXTS = ("dagu", "github-actions", "systemd")
 
+#: The (soft, hard) memory limit in MB of an adapter context that outgrows the 256/512 default: a Dagu of ~70 DAGs settles
+#: near 280 MB proportional after its first statistics pass.
+ADAPTER_MEMORY_MB = {"dagu": (384, 768)}
+
 
 def module_name(kind: str) -> str:
     """The module a `[board]` or `[[runs]]` type names: a dotted path as it is, a bare name through `BUILT_IN`."""

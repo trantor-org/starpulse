@@ -15,6 +15,7 @@ import math
 import os
 import re
 import shlex
+import queue
 import statistics
 import threading
 import time
@@ -22,7 +23,6 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable, Collection, Mapping
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -550,8 +550,24 @@ def refresh_stats(base_url: str, stats: dict, clock: Callable[[], float] = time.
         except OSError:
             pass
 
-    with ThreadPoolExecutor(STATS_WORKERS) as pool:
-        list(pool.map(read, stale))
+    unread: queue.SimpleQueue[str] = queue.SimpleQueue()
+    for name in stale:
+        unread.put(name)
+
+    def drain() -> None:
+        while True:
+            try:
+                read(unread.get_nowait())
+            except queue.Empty:
+                return
+
+    # daemon threads, not an executor: an executor's threads are joined at exit and first finish every queued read, which
+    # held a stopping worker for as long as a cold pass takes (minutes)
+    workers = [threading.Thread(target=drain, name="stats-read", daemon=True) for _ in range(STATS_WORKERS)]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join()
 
 
 def dags(

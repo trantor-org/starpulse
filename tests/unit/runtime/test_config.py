@@ -606,6 +606,10 @@ def test_each_worker_context_has_a_packaged_memory_limit_that_the_config_overrid
     assert tuned["scheduler"] == MemoryLimit(10, 20)
 
 
+def test_the_dagu_worker_limit_clears_its_measured_steady_state_of_about_280_mb_proportional() -> None:
+    assert load(None).worker_memory["dagu"] == MemoryLimit(384, 768)
+
+
 @pytest.mark.parametrize(
     ("text", "message"),
     [
