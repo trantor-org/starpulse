@@ -95,12 +95,13 @@ jobs:
           if-no-files-found: error
 
   # Combines the shards' coverage data into the per-test coverage map (ci/coverage_map.py) and publishes it on ai-vm-1, where
-  # the CI select step reads `latest.json`. Only a fully green nightly publishes: a red shard's data
-  # would leave tests out of the map.
+  # the CI select step reads `latest.json`. A red nightly publishes too, from the data every shard uploaded even when red
+  # (`!cancelled()` above): the map was frozen for days behind flaky shards. `coverage_map.py build` refuses a map that
+  # names under 90% of the collected tests, as when a shard crashed and uploaded nothing.
   coverage-map:
     needs: [select, python-shard]
     # Only the whole suite maps every test; a pull request's selection would publish a partial map.
-    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && needs.python-shard.result == 'success'
+    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && !cancelled() && needs.select.result == 'success'
     runs-on: [self-hosted, ai-vm-1]
     timeout-minutes: 10
     steps:

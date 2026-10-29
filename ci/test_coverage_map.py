@@ -96,3 +96,31 @@ def test_cli_build_publishes_and_latest_prints_sha_and_coverage(tmp_path, capsys
     coverage_map.main(["latest", "--out", str(out)])
 
     assert capsys.readouterr().out.splitlines()[-1] == "abc 2/2 tests 100.0%"
+
+
+def test_cli_build_publishes_nothing_when_the_data_names_too_few_of_the_collected_tests(tmp_path, capsys):
+    data = _data(tmp_path / ".coverage", tmp_path, {"t1|run": ["a.py"]})
+    out = tmp_path / "maps"
+    collected = tmp_path / "collected.txt"
+    collected.write_text("t1\nt2\nt3\nt4\nt5\n")
+
+    code = coverage_map.main(
+        ["build", str(data), "--root", str(tmp_path), "--sha", "abc", "--collected", str(collected), "--out", str(out)]
+    )
+
+    assert code == 1
+    assert coverage_map.latest(out) is None
+    assert "20.0%" in capsys.readouterr().err
+
+
+def test_facts_name_the_maps_sha_its_age_and_the_source_files_the_checkout_lost(tmp_path):
+    root = tmp_path / "checkout"
+    (root / "pkg").mkdir(parents=True)
+    (root / "pkg" / "kept.py").write_text("")
+    published = {"sha": "abc", "collected": 1, "tests": {"t": ["pkg/kept.py", "pkg/moved.py"]}}
+    coverage_map.publish(published, tmp_path / "maps")
+    stamp = (tmp_path / "maps" / "latest.json").stat().st_mtime
+
+    facts = coverage_map.facts(published, tmp_path / "maps", root, now=stamp + 5 * 3600)
+
+    assert facts == {"sha": "abc", "age_hours": 5.0, "files": 2, "missing": 1}

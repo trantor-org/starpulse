@@ -31,7 +31,7 @@ from fnmatch import fnmatch
 from functools import cache
 from pathlib import Path
 
-from coverage_map import DEFAULT_DIR, latest
+from coverage_map import DEFAULT_DIR, facts, latest
 from shard import SECONDS
 
 #: Read by every test, by pytest itself or by a loader the graph cannot follow (YAML, JSON, skill files).
@@ -384,6 +384,14 @@ def _file_at(root: Path, ref: str, path: str) -> str | None:
     return shown.stdout if shown.returncode == 0 else None
 
 
+def _print_map_facts(coverage: dict | None, root: Path) -> None:
+    """The coverage map this selection leaned on, for the run's facts: a map built from paths the checkout has since lost
+    is old or wrong, and says so here instead of the selection quietly widening to the import graph."""
+    found = facts(coverage, DEFAULT_DIR, root) if coverage else {"sha": "", "age_hours": "", "files": 0, "missing": 0}
+    for key, value in found.items():
+        print(f"COVERAGE_MAP_{key.upper()}={value}")
+
+
 def main(argv: list[str]) -> None:
     """Print the selection for the diff on stdin, or the whole suite for `--full` (the schedule, a dispatch: no diff).
 
@@ -398,7 +406,9 @@ def main(argv: list[str]) -> None:
     else:
         changed = [line.strip() for line in sys.stdin if line.strip()]
         before = _file_at(Path.cwd(), args.base, "pyproject.toml") if args.base else None
-        selection = select(Path.cwd(), changed, latest(DEFAULT_DIR), before)
+        coverage = latest(DEFAULT_DIR)
+        selection = select(Path.cwd(), changed, coverage, before)
+        _print_map_facts(coverage, Path.cwd())
     targets = selection.tests or []
     print(f"PYTEST_TARGETS={' '.join(targets)}")
     print(f"PYTEST_SHARDS={json.dumps(shards_for(selection))}")

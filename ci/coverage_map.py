@@ -16,6 +16,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 #: Where the CI runner host keeps the maps; the nightly's runner and the `ci-sp-python` DAG both run as the same user.
@@ -23,6 +24,10 @@ DEFAULT_DIR = Path(
     os.environ.get("STARPULSE_COVERAGE_MAP_DIR") or Path.home() / ".cache" / "starpulse-ci" / "coverage-map"
 )
 LATEST = "latest.json"
+
+#: The share of collected tests a map must name to be published: a red nightly's shards still upload their coverage data,
+#: so a shard that crashed outright (no data) must not leave a map every pull request's selection trusts.
+MIN_RATIO = 0.9
 
 
 def build(data_file: Path, root: Path, *, sha: str, collected: list[str]) -> dict:
@@ -79,6 +84,15 @@ def latest(directory: Path) -> dict | None:
     return json.loads(path.read_text()) if path.exists() else None
 
 
+def facts(coverage_map: dict, directory: Path, root: Path, *, now: float | None = None) -> dict:
+    """What a run's selection leaned on: the map's sha, its hours since publishing, and how many of the source files it
+    names the checkout at `root` no longer has (a module that moved leaves its tests unreachable through the map)."""
+    named = {file for files in coverage_map["tests"].values() for file in files}
+    age = (now or time.time()) - (directory / LATEST).stat().st_mtime
+    missing = sum(not (root / file).is_file() for file in named)
+    return {"sha": coverage_map["sha"], "age_hours": round(age / 3600, 1), "files": len(named), "missing": missing}
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -95,6 +109,10 @@ def main(argv: list[str]) -> int:
         built_map = build(
             args.data, args.root.resolve(), sha=args.sha, collected=args.collected.read_text().splitlines()
         )
+        if ratio(built_map) < MIN_RATIO:
+            share = f"{ratio(built_map):.1%} of the collected tests, under {MIN_RATIO:.0%}"
+            print(f"the map names {share}: not published", file=sys.stderr)
+            return 1
         publish(built_map, args.out)
         print(f"{built_map['sha']} {len(built_map['tests'])}/{built_map['collected']} tests {ratio(built_map):.1%}")
         return 0
