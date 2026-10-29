@@ -309,10 +309,11 @@ def test_the_nightly_schedule_and_a_dispatch_select_everything_once_in_a_job():
     assert '--base "$BASE"' in script
 
 
-def test_the_import_layers_are_checked_once_in_the_select_job_not_in_every_shard():
+def test_the_import_layers_are_checked_in_the_static_checks_not_in_select_or_every_shard():
     jobs = _ci()
     assert any("ci/run.sh select" in s.get("run", "") for s in jobs["select"]["steps"])
-    assert "lint-imports" in _function("cmd_select")
+    assert "lint-imports" not in _function("cmd_select")
+    assert "lint-imports" in (ROOT / "ci/static_checks.sh").read_text()
     assert not any("lint-imports" in s.get("run", "") for s in jobs["python-shard"]["steps"])
     assert "lint-imports" not in _function("cmd_python_shard")
 

@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
-from shard import SECONDS, assign, weigh
+from shard import SECONDS, SMALL_SHARD_SECONDS, UNMEASURED, assign, count_tests, is_small, weigh
 
 CI = Path(__file__).resolve().parent
 
@@ -79,3 +79,77 @@ def test_the_shards_of_a_tree_collect_exactly_the_tests_of_the_whole_tree(tmp_pa
         whole, *shards = pool.map(lambda env: collected(tmp_path, **env), [{}, *shard_envs])
     assert whole == 15
     assert sum(shards) == whole
+
+
+def _write(root: Path, name: str, source: str) -> str:
+    (root / name).parent.mkdir(parents=True, exist_ok=True)
+    (root / name).write_text(source)
+    return name
+
+
+def test_a_file_counts_its_tests_and_a_literal_parametrize_counts_its_cases(tmp_path):
+    name = _write(
+        tmp_path,
+        "test_x.py",
+        "import pytest\n\n\ndef helper(): ...\n\n\ndef test_a(): ...\n\n\nclass TestB:\n    def test_b(self): ...\n\n\n"
+        "@pytest.mark.parametrize('n', [1, 2, 3])\ndef test_c(n): ...\n",
+    )
+    assert count_tests(tmp_path / name) == 5
+
+
+def test_a_shard_of_under_thirty_unmeasured_tests_is_small_and_a_measured_slow_file_is_not(tmp_path):
+    few = _write(tmp_path, "tests/test_few.py", "".join(f"def test_{i}(): ...\n" for i in range(29)))
+    many = _write(tmp_path, "tests/test_many.py", "".join(f"def test_{i}(): ...\n" for i in range(31)))
+    slow = next(iter(SECONDS))
+    _write(tmp_path, slow, "def test_slow(): ...\n")
+    assert 29 * UNMEASURED <= SMALL_SHARD_SECONDS < 31 * UNMEASURED
+    assert is_small(1, 1, [few], tmp_path)
+    assert not is_small(1, 1, [many], tmp_path)
+    assert not is_small(1, 1, [few, slow], tmp_path)
+
+
+def test_a_shard_is_small_by_the_files_it_is_assigned_not_by_the_whole_selection(tmp_path):
+    big = _write(tmp_path, "tests/test_big.py", "".join(f"def test_{i}(): ...\n" for i in range(200)))
+    small = _write(tmp_path, "tests/test_small.py", "def test_a(): ...\n")
+    holders = [index for index in (1, 2) if is_small(index, 2, [big, small], tmp_path)]
+    assert len(holders) == 1
+    assert [i for i in (1, 2) if small in assign(weigh({big: 200, small: 1}), 2)[i - 1]] == holders
+
+
+@pytest.mark.parametrize("targets", [[], ["tests"], ["tests/test_a.py::test_x"], ["tests/test_missing.py"]])
+def test_no_target_a_directory_a_node_id_or_a_missing_file_is_not_small(tmp_path, targets):
+    _write(tmp_path, "tests/test_a.py", "def test_x(): ...\n")
+    assert not is_small(1, 1, targets, tmp_path)
+
+
+def _shard_job(tmp_path: Path, targets: list[str], shard: tuple[int, int] | None) -> str:
+    """The `PYTEST_ADDOPTS` ci/run.sh's `python-shard` hands pytest, with `uv` stubbed: `uv run ... python` runs the real
+    Python, `uv run ... pytest` records the options, and `uv sync` does nothing."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    seen = tmp_path / "addopts"
+    stub = bin_dir / "uv"
+    stub.write_text(
+        '#!/bin/sh\ncase "$*" in\n'
+        f'  *pytest*) echo "$PYTEST_ADDOPTS" > {seen} ;;\n'
+        f'  *"run --no-sync python"*) shift 3; exec {sys.executable} "$@" ;;\nesac\n'
+    )
+    stub.chmod(0o755)
+    env = {"PATH": f"{bin_dir}:/usr/bin:/bin", "PYTEST_TARGETS": " ".join(targets), "SHARD_LOG": str(tmp_path / "log")}
+    if shard:
+        env |= {"SHARD_INDEX": str(shard[0]), "SHARD_COUNT": str(shard[1])}
+    subprocess.run([str(CI / "run.sh"), "python-shard"], env=env, check=True, capture_output=True, text=True)
+    return seen.read_text().strip()
+
+
+def test_a_small_shard_runs_pytest_without_xdist_workers(tmp_path):
+    few = "ci/test_xdist_workers.py"
+    assert count_tests(CI.parent / few) * UNMEASURED <= SMALL_SHARD_SECONDS
+    assert _shard_job(tmp_path, [few], (1, 1)) == ""
+
+
+def test_a_heavy_shard_a_whole_suite_run_and_an_unsharded_run_keep_their_xdist_workers(tmp_path):
+    slow = next(iter(SECONDS))
+    assert _shard_job(tmp_path, [slow], (1, 1)).startswith("-n ")
+    assert _shard_job(tmp_path, [], (1, 1)).startswith("-n ")
+    assert _shard_job(tmp_path, ["ci/test_xdist_workers.py"], None).startswith("-n ")

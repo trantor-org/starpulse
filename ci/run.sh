@@ -10,7 +10,6 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 # BASE it selects the whole suite; with it, by the files changed since BASE (ci/select_tests.py, ci/reach.py).
 cmd_select() {
   uv sync --locked >&2
-  uv run --no-sync lint-imports >&2
   if [ -z "${BASE:-}" ]; then
     uv run --no-sync python ci/select_tests.py --full
     printf 'web=true\nstatic=true\n'
@@ -29,8 +28,11 @@ cmd_select() {
 # coverage data that ci/coverage_map.py combines.
 cmd_python_shard() {
   uv sync --locked
-  local addopts
-  addopts="-n $(uv run --no-sync python ci/xdist_workers.py) --dist worksteal"
+  # A shard of a few tests runs in one process (ci/shard.py `--small`): its two workers' startup outlasts the tests.
+  local addopts=""
+  if ! uv run --no-sync python ci/shard.py --small; then
+    addopts="-n $(uv run --no-sync python ci/xdist_workers.py) --dist worksteal"
+  fi
   if [ -n "${TEST_COST_REPORT:-}" ]; then
     addopts+=" -m 'not e2e'"
   fi
