@@ -73,14 +73,14 @@ def _scheduler_step(tmp_path: Path) -> tuple[Callable[[], None], list[int]]:
         starts[0] += 1
         return f"https://claude.ai/code/{task_id}"
 
-    toggle = Toggle(log, tmp_path / "toggle.json")
+    toggle = Toggle(log)
     toggle.set(True)
     loop = Loop(
         feed=feed,
         policy=policy,
         toggle=toggle,
         sampler=sampler,
-        ledger=Ledger(log, tmp_path / "runs.jsonl"),
+        ledger=Ledger(log),
         start=start,
         settle=lambda task_id, reason: Written(True, task_id),
         chain=lambda: {},
