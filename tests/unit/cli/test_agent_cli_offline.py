@@ -220,7 +220,7 @@ class TestConfigCheck:
                 "flow-metrics": {"soft_mb": 384, "hard_mb": 768},
                 "search": {"soft_mb": 384, "hard_mb": 768},
                 "board": {"soft_mb": 768, "hard_mb": 1536},
-                "dagu": {"soft_mb": 256, "hard_mb": 512},
+                "dagu": {"soft_mb": 384, "hard_mb": 768},
                 "github-actions": {"soft_mb": 256, "hard_mb": 512},
                 "systemd": {"soft_mb": 256, "hard_mb": 512},
             },
