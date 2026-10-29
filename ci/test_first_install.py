@@ -21,6 +21,7 @@ from pathlib import Path
 import pytest
 
 import starpulse
+from tests.page_stub import held
 
 SESSION = "11111111-1111-4111-8111-111111111111"
 BRANCH = "claude/task-1-first-install"
@@ -29,18 +30,9 @@ DEADLINE = 60.0
 
 @pytest.fixture
 def page_build():
-    """`serve` refuses to start without a page build, which the test job does not make; a stub index stands in for it."""
-    index = Path(starpulse.__file__).parent / "static" / "index.html"
-    if index.is_file():
+    """`serve` refuses to start without a page build, which the test job does not make; the shared stub stands in for it."""
+    with held(Path(starpulse.__file__).parent / "static"):
         yield
-        return
-    index.parent.mkdir(exist_ok=True)
-    index.write_text("<!doctype html><title>stub</title>")
-    try:
-        yield
-    finally:
-        index.unlink()
-        index.parent.rmdir()
 
 
 def _free_port() -> int:
@@ -58,10 +50,15 @@ def _get(url: str) -> dict:
         return json.loads(resp.read())
 
 
-def _until(probe, what: str):
-    """The first truthy `probe()` within the deadline; a probe that raises OSError or HTTPError has not answered yet."""
+def _until(probe, what: str, process: subprocess.Popen | None = None, log: Path | None = None):
+    """The first truthy `probe()` within the deadline; a probe that raises OSError or HTTPError has not answered yet.
+
+    A `process` that exits first fails at once with its `log`, rather than after the deadline.
+    """
     end = time.monotonic() + DEADLINE
     while time.monotonic() < end:
+        if process is not None and process.poll() is not None:
+            pytest.fail(f"{what}: process exited {process.returncode}\n{log.read_text() if log else ''}")
         try:
             if found := probe():
                 return found
@@ -146,7 +143,7 @@ def test_a_first_install_links_the_session_that_claims_a_task_to_it(tmp_path: Pa
         stderr=(tmp_path / "receiver.log").open("w"),
     )
     try:
-        _until(lambda: _get(f"{server}/api/snapshot"), "serve answering")
+        _until(lambda: _get(f"{server}/api/snapshot"), "serve answering", serve, tmp_path / "serve.log")
 
         created = _starpulse("task", "create", "First install", "--server", server, cwd=install, env=env)
         assert created.returncode == 0, created.stdout + created.stderr
