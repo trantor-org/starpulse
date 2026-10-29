@@ -1446,6 +1446,12 @@ export interface Submachine {
    * The machine the link opens under: `board`, or the machine whose `state` it hangs off.
    */
   parent: string;
+  /**
+   * Inner event to the Board event it fires; empty when the link routes none.
+   */
+  routes?: {
+    [k: string]: string;
+  };
   state: string;
   /**
    * What has to hold for the inner machine to run under `state`; empty when always.
