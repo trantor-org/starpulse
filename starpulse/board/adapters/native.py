@@ -468,6 +468,7 @@ def _record_of(text: str, task: str, evaluate: Callable[[str, str], list[dict[st
         "milestone": str(frontmatter.get("milestone") or ""),
         "source": str(frontmatter.get("source") or ""),
         "dependencies": list(_strings(frontmatter.get("dependencies"))),
+        "dependencyNeeds": list(_strings(frontmatter.get("dependency_needs"))),
         "references": list(_strings(frontmatter.get("references"))),
         "documentation": list(_strings(frontmatter.get("documentation"))),
         "modifiedFiles": list(_strings(frontmatter.get("modified_files"))),
@@ -509,13 +510,14 @@ _SCALARS = {
 _LISTS = {
     "labels": "labels",
     "dependencies": "dependencies",
+    "dependencyNeeds": "dependency_needs",
     "references": "references",
     "documentation": "documentation",
     "modifiedFiles": "modified_files",
     "verifyPlan": "verify_plan",
 }
 #: The lists whose key a task file leaves out while it holds nothing.
-_OPTIONAL_LISTS = {"references", "documentation", "modified_files", "verify_plan"}
+_OPTIONAL_LISTS = {"references", "documentation", "modified_files", "verify_plan", "dependency_needs"}
 _COMMENTS = re.compile(r"[ \t]*<!-- COMMENTS:END -->")
 
 
@@ -703,8 +705,10 @@ def _editor(
                 body = _comment(body, text, actor) if text.strip() and not recorded else body
             return body
 
+        # A comment changes no field a rule or the validate hook judges, and the comment that names a refusal must land.
+        judged = guard if changes else replace(guard, rules=(), validate=None)
         try:
-            written = _update(root, task, apply, guard, actor)
+            written = _update(root, task, apply, judged, actor)
         except ValueError as refusal:  # raised before the file is written, so a refusal writes nothing
             return Written(False, f"{task}: {refusal}")
         return _moved(written, spelled.get(lane_id(status), status)) if status else written
@@ -727,6 +731,11 @@ def _open_dependents(root: Path, task: str, done: str | None) -> list[str]:
     return found
 
 
+def _needs(need: str, task: str) -> bool:
+    """Whether the dependency need `TASK-N#K` is of `task`."""
+    return need.partition("#")[0].casefold() == task.casefold()
+
+
 def _unlinker(task: str, reason: str, ready: str | None, waiting: str | None) -> Callable[[dict, str], str]:
     """An edit that drops `task` from a task's dependencies and says why; a Waiting task left with no dependency and
     no Start Criteria moves to `ready`, since the release pass reads only Waiting tasks that still have one."""
@@ -735,6 +744,10 @@ def _unlinker(task: str, reason: str, ready: str | None, waiting: str | None) ->
     def edit(frontmatter: dict, body: str) -> str:
         kept = [name for name in _strings(frontmatter.get("dependencies")) if name.casefold() != task.casefold()]
         frontmatter["dependencies"] = kept
+        if needs := [need for need in _strings(frontmatter.get("dependency_needs")) if not _needs(need, task)]:
+            frontmatter["dependency_needs"] = needs
+        else:
+            frontmatter.pop("dependency_needs", None)
         held = lane_id(str(frontmatter.get("status") or "")) == waiting
         if held and not kept and ready is not None and not criteria.authored(body):
             frontmatter["status"] = ready

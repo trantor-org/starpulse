@@ -361,6 +361,11 @@ and `Needs attention` (human).
 
 - `--until-task TASK-X` (repeatable) waits on another task. The IDs land in the task's
   dependencies and the task is `Waiting` until every one is `Done`, then promoted to `Ready`.
+  `--until-task TASK-X#K` waits on one open criterion of `TASK-X` instead: the park records the
+  need (`dependency_needs`), refuses a criterion that is absent or already checked, and the task
+  actor releases the task once criterion K is checked, even while `TASK-X` stays open, with a
+  `Stale dependency` comment. Park on the criterion or a `--until` fact when the need is a
+  fact, not the whole task.
 - `--until '<criterion yaml>'` (repeatable) waits on a condition a check can observe. It writes
   the task's Start Criteria and the task is `Waiting` until every criterion passes; see
   Validation below.

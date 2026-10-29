@@ -4468,7 +4468,7 @@
     },
     "ParkRequest": {
       "additionalProperties": false,
-      "description": "`POST /api/park`: pause `task` on exactly one reason, which picks the lane: `untilTask` (tasks that must reach\nDone) and `until` (criteria a check can observe) wait; `operator` (what only the operator can do) needs attention.",
+      "description": "`POST /api/park`: pause `task` on exactly one reason, which picks the lane: `untilTask` (tasks that must reach\nDone, or `TASK-N#K` for one open criterion of a task) and `until` (criteria a check can observe) wait; `operator` (what only the operator can do) needs attention.",
       "properties": {
         "actor": {
           "anyOf": [

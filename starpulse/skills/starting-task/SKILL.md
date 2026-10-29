@@ -58,7 +58,7 @@ Done when `git -C <worktree> rev-parse --show-toplevel` prints the worktree.
 ## Keep the scope bounded
 
 - When the work cannot continue, park it with the one reason that holds: `starpulse task park PROJ-45` with
-  `--until-task PROJ-46`, `--until '<criterion>'` for a condition a check can observe, or
+  `--until-task PROJ-46` (`PROJ-46#2` for its criterion 2), `--until '<criterion>'` for a condition a check can observe, or
   `--operator '<what they decide>'` when only a person can continue. Verify a wait you can check now instead of
   parking on it.
 - When discovery turns up material work beyond the criteria, comment one recommendation to fork it as a separate
