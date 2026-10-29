@@ -599,9 +599,14 @@ class TaskActor:
             self._sum += seconds
 
     def _pr_terminal(self, agent: dict[str, Any]) -> tuple[str, str] | None:
-        """The merge evidence when the task cites pull requests and every one has ended, else None."""
+        """The merge evidence when the task cites pull requests and every one has ended, else None. A check task that
+        cites only other tasks' pull requests has no delivery of its own to wait for: its checked criteria close it."""
+        own = self._own_prs(agent)
+        if not own and agent["prs"] and agent["type"] == "check":
+            proof = f"no pull request of its own; cites {', '.join(agent['prs'])}"
+            return proof, f"{MERGE_EVIDENCE} {proof}"
         parts = []
-        for url in self._own_prs(agent):
+        for url in own:
             record = self._record(url)
             if record is None or record["state"] not in _TERMINAL:
                 return None
