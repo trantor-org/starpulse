@@ -21,7 +21,9 @@ A step named `starpulse command run NAME` is the project's own command. When it 
    paused or an earlier attempt failed.
 3. With no such hit, file one with `starpulse task create`: a title naming the outcome, the request in its
    description, and Acceptance Criteria that are independent completion gates, each checked by a command. A
-   criterion that only a merged change can prove belongs to a separate check task that waits on the merge.
+   criterion that only a merged change can prove, or that waits on time after the merge, belongs to a checkup task
+   filed now with `--type check` and waiting on the merge: the implementing task goes to Done on merge, and the
+   checkup never blocks it ([Checks after the merge](references/task-conventions.md#checks-after-the-merge)).
 4. When two or more tasks come from one plan, give them a milestone (`starpulse milestone add`) and a spec
    (`starpulse doc create`) before the tasks.
 

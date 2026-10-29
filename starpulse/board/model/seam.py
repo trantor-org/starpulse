@@ -276,6 +276,9 @@ class Board:
     parked: Callable[[str], None] | None = None
     """Tells whoever works a task that the task actor moved it from the working lane to Waiting, given its id; a raise is
     logged and the move stands. None tells no one."""
+    closed: Callable[[str], None] | None = None
+    """Tells the board that the task actor moved a task to Done, given its id, so it can file what follows the close; a
+    raise is logged and the close stands. None tells no one."""
     attach: Callable[[EventLog], None] | None = None
     """What a context that reads the Board from the read model, and so never calls `start`, needs of the event log the
     adapter would have been handed there; None needs nothing."""

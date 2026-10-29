@@ -20,7 +20,7 @@ project's agent instructions name the fallback.
 - Duplicate checks at creation
 - A Done task that needs more work
 - Pausing: name the reason, `park` picks the lane
-- Evidence only the merge produces
+- Checks after the merge
 - Validation: Start Criteria and check tasks
 
 ## Command syntax
@@ -131,7 +131,7 @@ does not authorize execution.
   task create` or `task edit`, and check each with `task edit --check-ac N` once its command has
   passed.
 - **Definition of Done** is the project checklist plus a few task-specific outcomes; it does not
-  repeat runnable commands.
+  repeat runnable commands, and it never waits on time after the merge (Checks after the merge).
 - **Implementation Plan** is the ordered current route; revise it when discovery changes the
   route.
 - **Implementation Notes** holds settled design decisions, rejected options and non-obvious
@@ -390,15 +390,28 @@ A `Waiting` task has either a dependency or Start Criteria, never both and never
 Creating a task with an unresolved dependency lands it `Waiting`, and starting it is refused
 until every dependency is `Done`.
 
-## Evidence only the merge produces
+## Checks after the merge
 
-A delivery task's Acceptance Criteria are what its pull request shows before the merge.
-Evidence only the merge can produce (a live row, a metric, a scheduled run, a latency on the
-deployed page) is a check task, created `Waiting` on Start Criteria that observe the merged
-change (Validation, below); a mechanism claim is proved before `Review` instead (Prove now,
-below). A check that needs operator approval to run, such as a load burst against a live
-service, or a person's judgement, such as a render on a device, is proved before `Review` or
-run with the operator.
+A task that implements a change goes to `Done` when its pull request merges. A check after a
+period of time is welcome, but it never blocks the task that did the work: its Acceptance
+Criteria and Definition of Done are what the pull request shows before the merge, plus the
+initial QA the task runs on itself. Evidence only the merge can produce (a live row, a metric,
+a scheduled run, a latency on the deployed page) is a checkup task, `--type check`, created
+`Waiting` on Start Criteria that observe the merged change (Validation, below), at the moment
+the implementing task is created or delivered. No window shortens this: a check due within
+24 hours of the merge is a checkup task too, never a Definition of Done item on the
+implementing task. A mechanism claim is proved before `Review` instead (Prove now, below). A
+check that needs operator approval to run, such as a load burst against a live service, or a
+person's judgement, such as a render on a device, is proved before `Review` or run with the
+operator.
+
+For example, a task that cuts a DAG's run time from 150 s to 33 s locally shows the cut in its
+pull request (a benchmark, a test) and goes to `Done` on merge. "p50 under 30 s over the 24 h
+after the merge" is a separate checkup task: `--type check`, its criterion that sentence, and a
+Start Criterion that opens once the 24 h have passed and the DAG has run, such as
+`{id: window-closed, kind: prom, expr: 'sum((time() > bool <merge + 24 h epoch>) *
+count(<the DAG's run counter>))', at_least: 1}`. A miss on that checkup files a fix task; it
+never reopens the implementing one.
 
 A check's gate must not be the live effect it checks, or a missing effect reads as waiting
 forever. A live check drives the actor along its ordinary path and never supplies by hand the

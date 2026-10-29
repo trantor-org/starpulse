@@ -517,7 +517,7 @@ def test_a_store_save_moves_the_task_while_the_projection_is_still_blocked(
     feed = BoardFeed(roles=ROLES, machines=MACHINES)
     board = Board(feed, task("TASK-1", "Review", references=(PR_ONE,)))
     store.save([pull(1, state="OPEN")])
-    delivery = SimpleNamespace(edit=board.edit, waits=WAITS, evaluate=None, holds=None, read=None, unfinished=None, create=None, parked=None)
+    delivery = SimpleNamespace(edit=board.edit, waits=WAITS, evaluate=None, holds=None, read=None, unfinished=None, create=None, parked=None, closed=None)
     monkeypatch.setattr(server.shutil, "which", lambda name: name)
     monkeypatch.setattr(server, "moves_of", lambda machine: MOVES)
     monkeypatch.setattr(server, "PullRequests", _BlockedProjection)
@@ -550,7 +550,7 @@ def test_a_merge_of_a_pr_added_after_startup_moves_the_task_to_done(
     feed = BoardFeed(roles=ROLES, machines=MACHINES, read_model=ReadModel(engine))
     board = Board(feed)
     store.save([pull(1, state="OPEN")])
-    delivery = SimpleNamespace(edit=board.edit, waits=WAITS, evaluate=None, holds=None, read=None, unfinished=None, create=None, parked=None)
+    delivery = SimpleNamespace(edit=board.edit, waits=WAITS, evaluate=None, holds=None, read=None, unfinished=None, create=None, parked=None, closed=None)
     monkeypatch.setattr(server.shutil, "which", lambda name: name)
     monkeypatch.setattr(server, "moves_of", lambda machine: MOVES)
     monkeypatch.setattr(server, "PullRequests", _BlockedProjection)
@@ -592,7 +592,7 @@ def test_a_read_model_task_whose_cited_pr_merged_before_startup_moves_to_done(
     feed = BoardFeed(roles=ROLES, machines=MACHINES, read_model=ReadModel(engine))
     board = Board(feed)
     store.save([pull(1, state="MERGED")])
-    delivery = SimpleNamespace(edit=board.edit, waits=WAITS, evaluate=None, holds=None, read=None, unfinished=None, create=None, parked=None)
+    delivery = SimpleNamespace(edit=board.edit, waits=WAITS, evaluate=None, holds=None, read=None, unfinished=None, create=None, parked=None, closed=None)
     monkeypatch.setattr(server.shutil, "which", lambda name: name)
     monkeypatch.setattr(server, "moves_of", lambda machine: MOVES)
     monkeypatch.setattr(server, "PullRequests", _BlockedProjection)
@@ -695,6 +695,33 @@ def test_a_review_task_given_an_open_dependency_tells_no_holder(store: PullStore
 
     assert until(lambda: board.moved() == [("TASK-2", "waiting")])
     assert told == []
+
+
+def test_a_task_the_actor_closes_is_handed_to_the_closed_hook(store: PullStore, stop: threading.Event) -> None:
+    closed: list[str] = []
+    board = Board(BoardFeed(roles=ROLES), task("TASK-1", "Review", references=(PR_ONE,)))
+    store.save([pull(1, state="OPEN")])
+    actor = running(board, store, stop, closed=closed.append)
+
+    store.save([pull(1, state="MERGED")])
+    actor.pulls_changed()
+
+    assert until(lambda: board.moved() == [("TASK-1", "done")])
+    assert until(lambda: closed == ["TASK-1"])
+
+
+def test_a_closed_hook_that_raises_leaves_the_task_done(store: PullStore, stop: threading.Event) -> None:
+    def closed(task: str) -> None:
+        raise ValueError("no checkup filed")
+
+    board = Board(BoardFeed(roles=ROLES), task("TASK-1", "Review", references=(PR_ONE,)))
+    store.save([pull(1, state="OPEN")])
+    actor = running(board, store, stop, closed=closed)
+
+    store.save([pull(1, state="MERGED")])
+    actor.pulls_changed()
+
+    assert until(lambda: board.moved() == [("TASK-1", "done")])
 
 
 MERGE_FIRST_WAITS = {**WAITS, "waiting": {"pr_merged": "MERGED", **WAITS["waiting"]}}
