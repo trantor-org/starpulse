@@ -82,6 +82,8 @@ interface Mem {
 const STEP1 = 0.236, D1 = 20, LANE = 14, PAD = 0.06, TAIL = 0.25, GAP = 0.12, CLEAR = 12, OFF = 5, FADE = 0.35, RING = 0.6, BOX = 16, NUDGE = 0.02;
 /** Seconds a branch takes to open in full, and to tear down, each on a smoothstep ease. */
 const OPEN = 0.6;
+/** Dots a station shows stacked out from it; any further one sits under the last of them, hidden once it arrives, so it never glides out past the branch. */
+const STACK = 3;
 const ease = (u: number) => u * u * (3 - 2 * u);
 const TAU = Math.PI * 2;
 /** A ring-1 branch is a phase machine, drawn blue; a ring-2 branch is a sub-machine, drawn teal. */
@@ -362,7 +364,7 @@ export function offLine(sc: Scene, tol = 2): string[] {
   const curves = sc.bEdges.filter((e) => e.p0 && e.c && e.p1).map((e) => Array.from({ length: 129 }, (_, i) => bez(e.p0!, e.c!, e.p1!, i / 128)));
   const rings = [...new Set([...branches.values()].map((b) => b.sun))].flatMap((s) => (sc.galaxies[s] ? [sc.galaxies[s]] : []));
   // the spur a stacked dot steps out along from its station (stacking is its own design) counts as on the line
-  const stations = [...branches.values()].flatMap((b) => b.st.map((i) => b.route[i])), spur = (p: Pt) => stations.some((s) => Math.hypot(p.x - s.x, p.y - s.y) <= 2 * OFF + tol);
+  const stations = [...branches.values()].flatMap((b) => b.st.map((i) => b.route[i])), spur = (p: Pt) => stations.some((s) => Math.hypot(p.x - s.x, p.y - s.y) <= (STACK - 1) * OFF + tol);
   const near = (p: Pt) => spur(p) || [...lines, ...curves].some((l) => l.some((q, i) => i > 0 && seg(p, l[i - 1], q) <= tol)) || rings.some((g) => Math.abs(Math.hypot(p.x - g.x, p.y - g.y) - g.edge) <= tol);
   return sc.tasks.flatMap((k) => {
     const m = mems.get(k.id);
@@ -550,7 +552,7 @@ export function placeBranches(sc: Scene, now: number): boolean {
       const i = stacks.get(`${w.b.key}#${w.j}`)!.indexOf(k.id);
       route = w.b.route.slice(0, w.b.st[w.j] + 1);
       // a later dot on the same station sits OFF further out from the sun per dot, where its label already steps out to
-      if (i) route.push(spot(sc, nodes, `${route.at(-1)!.k}+${i}`)!);
+      if (i) route.push(spot(sc, nodes, `${route.at(-1)!.k}+${Math.min(i, STACK - 1)}`)!);
       node = `${w.b.key}#${w.j}`;
       bks = w.b.parent ? [w.b.parent, w.b.key] : [w.b.key];
     } else {
@@ -614,7 +616,7 @@ export function placeBranches(sc: Scene, now: number): boolean {
     k.y = q.y;
     k.hop = undefined;
     k.moving = !done && !m.fade;
-    k.alpha = i >= 3 && done ? 0 : alpha;
+    k.alpha = i >= STACK && done ? 0 : alpha;
     k.arrive = w && age >= 0 && age < 1 && now - m.t0 < 9 ? { x: q.x, y: q.y, r: 6, col: MACHINE, age, grow: 18 } : null;
   }
   const ids = new Set([...tasks, ...dots].map((k) => k.id));
@@ -682,7 +684,7 @@ export function drawBranches(dc: DrawCtx, d: Drawing, sc: Scene, at: Pt | null) 
     if (!t) continue;
     taken.push(boxOf(t));
     d.text(l.s, t.x, t.y, h, rgba(LABEL, 0.85 * l.e), t.align, 300);
-    if (l.n > 3) d.text(`+${l.n - 3}`, t.x + Math.cos(l.a) * h * 4, t.y + Math.sin(l.a) * h * 4, d.labPx(8), rgba(LABEL, 0.6 * l.e));
+    if (l.n > STACK) d.text(`+${l.n - STACK}`, t.x + Math.cos(l.a) * h * 4, t.y + Math.sin(l.a) * h * 4, d.labPx(8), rgba(LABEL, 0.6 * l.e));
   }
   for (const k of twins) if (k.alpha !== 0) d.dot(k.x, k.y, 2.6 * (k.s ?? 1), rgba(tierColor(k.model), 0.8 * (k.alpha ?? 1)));
   for (const k of [...sc.tasks, ...twins]) {
