@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import threading
 import time
 from collections.abc import Callable, Mapping
@@ -130,12 +131,18 @@ def request_refresh(log: EventLog, tracked: Callable[[], list[str]]) -> Callable
 
 
 def follow_refreshes(log: EventLog, request: Callable[[str, int], Any], stop: threading.Event) -> threading.Thread:
-    """Hand each refresh asked from now on to `request` (the pull sync's), on a thread until `stop`."""
+    """Hand each refresh asked from now on to `request` (the pull sync's), on a thread until `stop`. A request asked
+    since the last poller's beat went unserved while no worker ran, so those replay: a restart must not drop the
+    close of a pull request that landed in the gap."""
+    _, beat = log.state(POLLER)
+    since = beat.get("at") if isinstance(beat, dict) else None
+    head = log.head() or 0
 
     def handle(entry: Entry) -> None:
-        request(entry.fields["repo"], int(entry.fields["number"]))
+        if entry.id > head or entry.at >= (since or math.inf):
+            request(entry.fields["repo"], int(entry.fields["number"]))
 
-    return _follow("pull-refresh", log, REFRESH_STREAM, log.head() or 0, handle, stop)
+    return _follow("pull-refresh", log, REFRESH_STREAM, head if since is None else 0, handle, stop)
 
 
 def follow_events(
