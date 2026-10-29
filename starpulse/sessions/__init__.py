@@ -2,7 +2,7 @@
 worked one task.
 
 `activities` is the classification every tool signal StarPulse stores carries
-(`starpulse.harness_telemetry.activity`): one tool call lifted to labels with no arguments, so the same work recurs
+(`starpulse.harness_telemetry.model.activity`): one tool call lifted to labels with no arguments, so the same work recurs
 across sessions. A non-shell tool is its bare name, `TOOL_OTHER` when its name is not one; each statement of a shell
 call (a tool in `SHELLS`) is its leading command, such as `bin/<script>`, `make <target>`, `git <subcommand>`,
 `gh <group> <verb>` or `ssh <host>`, with `SHELL_READ` and `SHELL_SEARCH` for a file read or a search and `SHELL_OTHER`
@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from starpulse.contracts.api.dto.health import SessionHealth, SliceHealth, TokenCounts
 from starpulse.flow_metrics.model import session_health as _sessions
-from starpulse.harness_telemetry.activity import (
+from starpulse.harness_telemetry.model.activity import (
     SHELL_OTHER,
     SHELL_READ,
     SHELL_SEARCH,
@@ -29,7 +29,7 @@ from starpulse.harness_telemetry.activity import (
     TOOL_OTHER,
     activities,
 )
-from starpulse.harness_telemetry.telemetry import held, signals
+from starpulse.harness_telemetry.adapters.inbound.telemetry import held, signals
 
 if TYPE_CHECKING:
     from starpulse.contracts.adapters import TaskKeys

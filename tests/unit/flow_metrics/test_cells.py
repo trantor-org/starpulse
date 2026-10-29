@@ -8,7 +8,7 @@ from starpulse.contracts.adapters import TaskKeys
 from starpulse.contracts.analytics import Analytics
 from starpulse.flow_metrics.model.cells import cell_report, transition_cost
 from starpulse.flow_metrics.model.session_health import session_health, slice_health
-from starpulse.harness_telemetry.telemetry import CLAUDE_CODE, CODEX, Signal
+from starpulse.harness_telemetry.adapters.inbound.telemetry import CLAUDE_CODE, CODEX, Signal
 
 KEYS = TaskKeys(
     key=re.compile(r"TASK-\d+"),

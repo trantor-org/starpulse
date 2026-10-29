@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 
     from starpulse.board.model.search_config import Search
     from starpulse.contracts.analytics import Analytics
-    from starpulse.harness_telemetry.harnesses import Harnesses
+    from starpulse.harness_telemetry.model.harnesses import Harnesses
     from starpulse.pulls.model.pins import Repo
     from starpulse.runs.config import Producer
 

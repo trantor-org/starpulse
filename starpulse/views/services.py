@@ -9,8 +9,8 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     from starpulse.board.adapters.search import SearchIndex
     from starpulse.contracts.analytics import Analytics
-    from starpulse.harness_telemetry.harnesses import Harnesses
-    from starpulse.harness_telemetry.telemetry import TelemetryLog
+    from starpulse.harness_telemetry.model.harnesses import Harnesses
+    from starpulse.harness_telemetry.adapters.inbound.telemetry import TelemetryLog
     from starpulse.pulls.adapters.inbound.pull_refresh import PullRefresh
     from starpulse.pulls.adapters.outbound.pulls import PullStore
     from starpulse.runs.cloudevents import CloudEventsIngest

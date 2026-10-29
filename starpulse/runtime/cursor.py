@@ -1,6 +1,6 @@
-"""The Cursor transcript reader's entry point, `python -m starpulse.runtime.cursor`: `starpulse.harness_telemetry.cursor` given the runtime's config loader."""
+"""The Cursor transcript reader's entry point, `python -m starpulse.runtime.cursor`: `starpulse.harness_telemetry.adapters.outbound.cursor` given the runtime's config loader."""
 
-from starpulse.harness_telemetry.cursor import main as _main
+from starpulse.harness_telemetry.adapters.outbound.cursor import main as _main
 from starpulse.runtime.config import discover, load
 
 __all__ = ["main"]

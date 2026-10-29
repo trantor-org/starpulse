@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 
 import pytest
-from starpulse.harness_telemetry.cursor_context_config import CursorContext
+from starpulse.harness_telemetry.model.cursor_context_config import CursorContext
 from starpulse.runtime.config import ConfigError, load
 
 

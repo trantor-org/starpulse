@@ -22,7 +22,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from starpulse.views.gate_request import GateRequest
 
 MODULES = ("test_agent_cli.py",)

@@ -9,7 +9,7 @@ from pathlib import Path
 from starpulse.board.board_feed import BoardFeed
 from starpulse.contracts.api.dto.scheduler import SchedulerStatus
 from starpulse.event_log.event_log import EventLog
-from starpulse.harness_telemetry.harness import SESSION_MACHINES
+from starpulse.harness_telemetry.model.harness import SESSION_MACHINES
 from starpulse.scheduler.adapters.runtime import Runtime, build
 from starpulse.scheduler.model.config import Scheduler
 from starpulse.views.writes import scheduler

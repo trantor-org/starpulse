@@ -6,8 +6,8 @@ from pathlib import Path
 
 from starpulse.contracts.analytics import Analytics
 from starpulse.event_log.event_log import EventLog
-from starpulse.harness_telemetry.cursor import ingest
-from starpulse.harness_telemetry.telemetry import TelemetryLog
+from starpulse.harness_telemetry.adapters.inbound.telemetry import TelemetryLog
+from starpulse.harness_telemetry.adapters.outbound.cursor import ingest
 
 from tests.unit.harness_telemetry.test_cursor import ANALYTICS, KEYS, SESSION, TRANSCRIPT
 

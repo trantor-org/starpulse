@@ -322,7 +322,7 @@ def run(
                 next_probe += interval
             try:
                 result = call()
-            except Exception as exc:  # noqa: BLE001 - whatever stopped the page is the finding
+            except Exception as exc:
                 errors.append(f"{kind} at {t:.0f} s failed: {type(exc).__name__}: {exc}")
                 in_a_row += 1
                 continue
@@ -333,9 +333,7 @@ def run(
                 probes.append(probe_record(t, result))
         if t >= duration:
             break
-        sleep(
-            max(0.0, min(next_sample, min(duration, next_probe), duration) - (clock() - start))
-        )
+        sleep(max(0.0, min(next_sample, min(duration, next_probe), duration) - (clock() - start)))
     found = trends(samples)
     return {
         "duration": duration,
@@ -376,7 +374,7 @@ class Page:
         self._pw = sync_playwright().start()
         self.browser = self._pw.chromium.launch(channel=channel, headless=True)
         self.page = self.browser.new_page(viewport={"width": 1600, "height": 1000})
-        self.page.add_init_script(pl._PROBE)  # noqa: SLF001 - the page driver beside this script
+        self.page.add_init_script(pl._PROBE)
         self.cdp = self.page.context.new_cdp_session(self.page)
         self.cdp.send("Performance.enable")
         self.page.goto(base, wait_until="domcontentloaded")
@@ -419,19 +417,19 @@ class Page:
         rows = [r for r in pl.time_reads(self.client, PROBE_SAMPLES) if r.samples]
         rows.append(pl.time_stream(self.base, PROBE_SAMPLES))
         modal = Row("open a task's modal", "interaction", pl.BUDGET_MS, note="click to the frame after its record")
-        self.page.evaluate(pl._CLICK, pl._nav("Kanban"))  # noqa: SLF001
+        self.page.evaluate(pl._CLICK, pl._nav("Kanban"))
         self.page.wait_for_selector("#cols .card[data-id]", timeout=30_000)
         ids = self.page.eval_on_selector_all("#cols .card[data-id]", "els => els.map(e => e.dataset.id)")
         for task in ids[:PROBE_SAMPLES]:
-            opened = self.page.evaluate(pl._OPEN, task)  # noqa: SLF001
+            opened = self.page.evaluate(pl._OPEN, task)
             if opened is not None:
                 modal.samples.append(opened["ms"])
             self.page.keyboard.press("Escape")
-            self.page.wait_for_function(pl._SHOWN_GONE, timeout=10_000)  # noqa: SLF001
+            self.page.wait_for_function(pl._SHOWN_GONE, timeout=10_000)
         rows.append(modal)
         pl.apply_ceilings(rows, self.ceilings)
         if self.home:
-            self.page.evaluate(pl._CLICK, pl._nav(self.home))  # noqa: SLF001
+            self.page.evaluate(pl._CLICK, pl._nav(self.home))
         print(
             f"probe {', '.join(f'{r.name} {r.p95:.1f}' for r in rows if r.over) or 'all under budget'}",
             file=sys.stderr,

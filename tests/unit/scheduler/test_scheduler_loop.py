@@ -14,7 +14,7 @@ from starpulse.board.model import rules
 from starpulse.board.model.seam import Written
 from starpulse.contracts.adapters import BoardTask, MachineEvent, StartFailedError
 from starpulse.event_log.event_log import EventLog
-from starpulse.harness_telemetry.harness import SESSION_MACHINES
+from starpulse.harness_telemetry.model.harness import SESSION_MACHINES
 from starpulse.scheduler.adapters.loop import IDLE_RETURNED, SETTLE_REFUSED, Loop
 from starpulse.scheduler.model.config import Scheduler
 from starpulse.scheduler.model.harness_setting import HarnessSetting

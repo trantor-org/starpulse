@@ -29,7 +29,7 @@ from starpulse.cli import agent_wire, doctor, skill_install
 from starpulse.contracts.adapters import Move, TaskKeys
 from starpulse.event_log.event_log import EventLog
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
-from starpulse.harness_telemetry.telemetry import TelemetryLog, signals
+from starpulse.harness_telemetry.adapters.inbound.telemetry import TelemetryLog, signals
 from starpulse.runtime.adapter_kit import serve as _real_serve
 from starpulse.runtime.adapter_kit import task
 from starpulse.runtime.adapter_kit import url as _url

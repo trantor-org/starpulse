@@ -1,6 +1,6 @@
-"""The Claude Code adapter's entry point, `python -m starpulse.runtime.claude_code`: `starpulse.harness_telemetry.claude_code` given the runtime's config loader."""
+"""The Claude Code adapter's entry point, `python -m starpulse.runtime.claude_code`: `starpulse.harness_telemetry.adapters.inbound.claude_code` given the runtime's config loader."""
 
-from starpulse.harness_telemetry.claude_code import main as _main
+from starpulse.harness_telemetry.adapters.inbound.claude_code import main as _main
 from starpulse.runtime.config import discover, load
 
 __all__ = ["main"]

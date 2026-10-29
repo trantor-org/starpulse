@@ -13,7 +13,7 @@ from starpulse.board.board_feed import BoardFeed
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.contracts.analytics import Analytics
 from starpulse.event_log.event_log import EventLog
-from starpulse.harness_telemetry.telemetry import TelemetryLog, signals
+from starpulse.harness_telemetry.adapters.inbound.telemetry import TelemetryLog, signals
 from starpulse.runtime.adapter_kit import serve, url
 from starpulse.views.page_server import PageServer
 

@@ -6,9 +6,9 @@ from pathlib import Path
 
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.event_log.event_log import EventLog, Tail
-from starpulse.harness_telemetry.claude_code import ClaudeCodeAdapter, publisher
-from starpulse.harness_telemetry.harness import SESSION_MACHINES
-from starpulse.harness_telemetry.otlp import BRANCH, LogEvent, parse
+from starpulse.harness_telemetry.adapters.inbound.claude_code import ClaudeCodeAdapter, publisher
+from starpulse.harness_telemetry.adapters.inbound.otlp import BRANCH, LogEvent, parse
+from starpulse.harness_telemetry.model.harness import SESSION_MACHINES
 from starpulse.machine_engine.model.transitions import Table
 from starpulse.runtime.adapter_kit import MachineEventsAdapterKit
 

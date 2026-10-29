@@ -6,7 +6,7 @@ import json
 from typing import Any
 
 import pytest
-from starpulse.harness_telemetry.otlp import LogEvent, parse
+from starpulse.harness_telemetry.adapters.inbound.otlp import LogEvent, parse
 
 
 def attr(key: str, value: Any) -> dict[str, Any]:

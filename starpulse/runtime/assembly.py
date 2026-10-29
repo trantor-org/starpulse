@@ -18,7 +18,7 @@ from starpulse.event_log.opening import database_url
 from starpulse.event_log.readmodel.declared import declared_fields
 from starpulse.event_log.readmodel.read_model import ReadModel
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
-from starpulse.harness_telemetry.harness import SESSION_MACHINES
+from starpulse.harness_telemetry.model.harness import SESSION_MACHINES
 from starpulse.machine_engine.model.snapshot import qualifier
 from starpulse.pulls.adapters.inbound.task_actor import ACTOR
 from starpulse.pulls.model.ci import CiError, attach
@@ -32,7 +32,9 @@ if TYPE_CHECKING:
 @functools.cache
 def _pull_store(engine: Engine) -> PullStore:
     """The scheduler's one store of pull requests: building it reads every open and recent row, so it is built once."""
-    from starpulse.pulls.adapters.outbound.pulls import PullStore  # only the scheduler worker needs it, not the `serve` supervisor
+    from starpulse.pulls.adapters.outbound.pulls import (
+        PullStore,
+    )  # only the scheduler worker needs it, not the `serve` supervisor
 
     return PullStore(engine)
 
@@ -66,7 +68,7 @@ def domains_of(config: Config) -> dict[str, tuple[str, ...]]:
             continue
         try:
             tagged = read(instance.url)
-        except (OSError, ValueError):
+        except OSError, ValueError:
             continue
         for domain, names in tagged.items():
             merged[domain] = (*merged.get(domain, ()), *(f"{instance.name}/{n}" for n in names))

@@ -27,7 +27,7 @@ from starpulse.board.claim_refusals import CLAIMS_STREAM
 from starpulse.event_log import events as machine_events
 from starpulse.event_log import lane_events, verdict_events
 from starpulse.event_log.conformance_monitor import Conformance
-from starpulse.harness_telemetry.telemetry import telemetry_log
+from starpulse.harness_telemetry.adapters.inbound.telemetry import telemetry_log
 from starpulse.pulls.adapters.inbound.delivery import (
     Projected,
     follow_saves,

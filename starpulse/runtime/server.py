@@ -195,7 +195,7 @@ from starpulse.event_log.conformance_monitor import Conformance
 from starpulse.flow_metrics.model.level import Level
 from starpulse.flow_metrics.model.level_metrics import RunWindow, WindowPastHistory
 from starpulse.flow_metrics.model.trajectories import trajectory_analytics
-from starpulse.harness_telemetry.telemetry import TelemetryLog
+from starpulse.harness_telemetry.adapters.inbound.telemetry import TelemetryLog
 from starpulse.pulls.adapters.inbound.delivery import (
     Projected,
     follow_saves,

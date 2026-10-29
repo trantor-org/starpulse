@@ -1,7 +1,7 @@
 """A tool call lifted to activities: a closed vocabulary that carries no argument, so a trace recurs across sessions."""
 
 import pytest
-from starpulse.harness_telemetry.activity import activities, paths, writes_file
+from starpulse.harness_telemetry.model.activity import activities, paths, writes_file
 
 
 def shell(command: str) -> list[str]:

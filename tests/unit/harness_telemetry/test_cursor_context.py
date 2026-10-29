@@ -1,6 +1,6 @@
 """A Cursor session's context use, read from the percent its agent pane footer shows."""
 
-from starpulse.harness_telemetry.cursor_context import context_tokens, cursor_task_sessions
+from starpulse.harness_telemetry.adapters.outbound.cursor_context import context_tokens, cursor_task_sessions
 
 PANE = """\
   ⏺ Read lib/x.py

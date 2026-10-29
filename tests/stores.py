@@ -3,7 +3,6 @@
 from pathlib import Path
 
 from sqlalchemy import create_engine
-
 from starpulse.event_log.migrate import migrate
 from starpulse.event_log.opening import database_url
 from starpulse.runtime.config import load

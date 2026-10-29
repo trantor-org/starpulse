@@ -16,7 +16,7 @@ from starpulse.board.model.seam import Written
 from starpulse.contracts.adapters import BoardTask, MachineEvent
 from starpulse.contracts.api.dto.scheduler import SchedulerStatus
 from starpulse.event_log.event_log import EventLog
-from starpulse.harness_telemetry.harness import SESSION_MACHINES
+from starpulse.harness_telemetry.model.harness import SESSION_MACHINES
 from starpulse.runtime.adapter_kit import serve, url
 from starpulse.scheduler.adapters.runtime import Runtime, build
 from starpulse.scheduler.model.config import Scheduler
@@ -199,11 +199,18 @@ def test_a_get_with_a_loop_lists_each_started_session_and_no_pick_once_nothing_i
 
 def test_a_get_counts_a_session_started_outside_the_loop_beside_the_one_the_loop_started(tmp_path: Path) -> None:
     held = BoardTask(
-        id="T-9", team="demo", title="Started by /api/start", lane="in_progress", labels=["size-1"], profile="@agent-standard-high"
+        id="T-9",
+        team="demo",
+        title="Started by /api/start",
+        lane="in_progress",
+        labels=["size-1"],
+        profile="@agent-standard-high",
     )
     runtime = _looping(tmp_path, held)
     assert runtime.loop is not None
-    MachineTasks(runtime.loop._feed).put(MachineEvent(machine="harness", event="SESSION_STARTED", task="T-9", time=1000.0))
+    MachineTasks(runtime.loop._feed).put(
+        MachineEvent(machine="harness", event="SESSION_STARTED", task="T-9", time=1000.0)
+    )
     runtime.set_enabled(True)
     assert runtime.loop.tick() == ["T-4"]
 
@@ -216,7 +223,9 @@ def test_a_get_counts_a_session_started_outside_the_loop_beside_the_one_the_loop
 
 def test_a_session_idle_past_the_stale_bound_is_not_in_flight_but_a_stopped_one_inside_it_is(tmp_path: Path) -> None:
     tasks = [
-        BoardTask(id=task, team="demo", title=task, lane="in_progress", labels=["size-1"], profile="@agent-standard-high")
+        BoardTask(
+            id=task, team="demo", title=task, lane="in_progress", labels=["size-1"], profile="@agent-standard-high"
+        )
         for task in ("T-7", "T-8")
     ]
     runtime = _looping(tmp_path, *tasks)

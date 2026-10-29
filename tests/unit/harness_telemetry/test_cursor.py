@@ -11,7 +11,7 @@ from pathlib import Path
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.contracts.analytics import Analytics
 from starpulse.flow_metrics.model.session_health import session_health
-from starpulse.harness_telemetry.cursor import CURSOR, transcript_signals
+from starpulse.harness_telemetry.adapters.outbound.cursor import CURSOR, transcript_signals
 
 SESSION = "33333333-3333-4333-8333-333333333333"
 TRANSCRIPT = Path(__file__).parents[2] / "fixtures/cursor/agent-transcripts" / SESSION / f"{SESSION}.jsonl"

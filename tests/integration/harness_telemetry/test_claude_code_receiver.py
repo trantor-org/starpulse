@@ -7,8 +7,8 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 from starpulse.event_log.event_log import EventLog
-from starpulse.harness_telemetry.claude_code import handler
-from starpulse.harness_telemetry.telemetry import CLAUDE_CODE, CODEX, TelemetryLog, signals
+from starpulse.harness_telemetry.adapters.inbound.claude_code import handler
+from starpulse.harness_telemetry.adapters.inbound.telemetry import CLAUDE_CODE, CODEX, TelemetryLog, signals
 
 from tests.unit.harness_telemetry.test_claude_code import adapter, exports, replay
 from tests.unit.harness_telemetry.test_telemetry import FIXTURES

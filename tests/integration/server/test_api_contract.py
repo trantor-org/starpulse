@@ -14,7 +14,7 @@ from starpulse.board.board_feed import BoardFeed
 from starpulse.contracts.api.registry import BODIES, RESPONSES
 from starpulse.event_log.event_log import EventLog
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
-from starpulse.harness_telemetry.telemetry import Signal, TelemetryLog, signals
+from starpulse.harness_telemetry.adapters.inbound.telemetry import Signal, TelemetryLog, signals
 from starpulse.runtime.adapter_kit import serve, task, url
 from starpulse.scheduler.adapters.runtime import build
 from starpulse.scheduler.model.config import Scheduler

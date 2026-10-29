@@ -188,6 +188,13 @@ type = "layers"
 layers = ["starpulse.board.adapters", "starpulse.board.model"]
 
 [[tool.importlinter.contracts]]
+id = "harness_telemetry-layers"
+name = "Harness telemetry's model imports no adapter"
+type = "layers"
+containers = []
+layers = ["starpulse.harness_telemetry.adapters", "starpulse.harness_telemetry.model"]
+
+[[tool.importlinter.contracts]]
 id = "pulls-layers"
 name = "Pulls' model imports no command or adapter"
 type = "layers"

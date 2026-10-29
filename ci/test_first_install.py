@@ -19,9 +19,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
+from tests.page_stub import held
 
 import starpulse
-from tests.page_stub import held
 
 SESSION = "11111111-1111-4111-8111-111111111111"
 BRANCH = "claude/task-1-first-install"
