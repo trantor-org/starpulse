@@ -64,6 +64,8 @@ Done when `git -C <worktree> rev-parse --show-toplevel` prints the worktree.
   `--until-task PROJ-46` (`PROJ-46#2` for its criterion 2), `--until '<criterion>'` for a condition a check can observe, or
   `--operator '<what they decide>'` when only a person can continue. Verify a wait you can check now instead of
   parking on it.
+- When a session is blocked by an issue another task owns, it files that task if none exists, parks immediately with `park --until-task <id>` without asking, and on wake resumes and redelivers automatically.
+  It never ends a turn with 'redeliver once X lands' while In Progress.
 - When discovery turns up material work beyond the criteria, comment one recommendation to fork it as a separate
   task. Do not grow the current task, and do not stop it unless the new work blocks a criterion.
 - After a reset, start from `starpulse task show PROJ-45` and the working doc's Next step, never from memory.
