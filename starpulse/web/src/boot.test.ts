@@ -107,26 +107,30 @@ describe("the page's boot", () => {
 
   it("mounts the page when no board arrives, so a stream that never answers still shows its status", async () => {
     vi.useFakeTimers();
-    const mount = vi.fn();
+    const mount = vi.fn(), preload = vi.fn();
     const { boot } = await import("./boot");
-    boot(mount);
+    boot(mount, preload);
 
     vi.advanceTimersByTime(2000);
 
+    expect(preload, "the Star Map is the Board's own frame, so no view loads ahead").not.toHaveBeenCalled();
     expect(mount).toHaveBeenCalledTimes(1);
     expect(marked()).toBe(false);
   });
 
-  it("hides the Star Map at once when the page opens on another view, and marks when that view's board arrives", async () => {
+  it("hides the Star Map at once when the page opens on another view, mounts that view without waiting for the board, and marks when the board arrives", async () => {
     history.replaceState(null, "", "/?view=kanban");
-    const mount = vi.fn();
+    const mount = vi.fn(), preload = vi.fn();
     const { boot } = await import("./boot");
-    boot(mount);
+    boot(mount, preload);
 
+    expect(preload, "the view's own chunk is asked for now, not once the page's first render reaches it").toHaveBeenCalledExactlyOnceWith("kanban");
     expect(made.calls[0][5]).toBeUndefined();
     expect(document.getElementById("c")!.classList.contains("off")).toBe(true);
     expect(document.getElementById("crumb")!.classList.contains("off")).toBe(true);
     expect(made.spy.show).toHaveBeenCalledWith(false);
+    expect(mount, "the view's chunks load beside the snapshot, not behind it").toHaveBeenCalledTimes(1);
+    expect(marked()).toBe(false);
 
     (await hud()).set({ tree: { states: ["ready"], subs: {}, children: {} } });
     frame();
