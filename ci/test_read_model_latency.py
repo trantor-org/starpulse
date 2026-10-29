@@ -4,6 +4,13 @@ server's start is budget-sized; `bench/page_latency.py --read-model` is the same
 
 A surface is judged on its fastest sample here: the work the server does for it. The slower samples carry the
 keep-alive round trip every surface pays alike, which is the harness's to judge (`ci/test_page_latency.py`).
+
+The nightly cost screen flags this test at ~65 s wall, ~59 CPU-s: that is the cold seed in the `served` fixture, not the
+test. The seed appends 20,000 Task streams through `EventStore` and folds them with the `Projector`, ~3 ms each, spread
+over SQLAlchemy statement building with no one hotspot. `seeded_server.cache_key` hashes every event_log source, which
+changes most days, so the first nightly test to need the board pays it and the other (`test_seeded_latency.py`) copies
+the cached store. Warm, this test's setup is ~2.4 s. A cheaper cold seed would bypass the write path whose rows this
+board measures, or hand-pick the key's sources and let a stale board pass; neither is worth the saved minute.
 """
 
 from __future__ import annotations
