@@ -10,7 +10,7 @@ import { Viewport, ViewportRow } from "../../shared/ViewportRows";
 import { ago } from "../../shared/clock";
 import type { HudState } from "../../render/hud";
 import {
-  CLOSED, applySuggestion, applyTaskRecord, assigneeOptions, chainOf, claimChip, clearFilters, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, labelSuggestions, layout, milestoneOptions, milestoneOutline, recent, show, showAll,
+  CLOSED, applySuggestion, ciTone, applyTaskRecord, assigneeOptions, chainOf, claimChip, clearFilters, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, labelSuggestions, layout, milestoneOptions, milestoneOutline, recent, show, showAll,
   stacked as stacksState, stackOf, stackStep, toggleFold, unheld, unheldShown, unstacked, whyHidden,
   type ClaimChip, type KanbanTask, type Prefs, type Stack, type StackEvent, type StackOpen,
 } from "./kanbanModel";
@@ -52,14 +52,15 @@ const worstClass = (pulls: Pull[]) => {
   return `${worst}${pulls.some((p) => p.conflicting && !p.merged && !p.closed) ? " conflict" : ""}`;
 };
 
-function PullChips({ pulls }: { pulls: Pull[] }) {
+/** Each pull request's chip; its checks dot only when the card's machine line is not CI, since a CI line carries the state. */
+function PullChips({ pulls, ci }: { pulls: Pull[]; ci: boolean }) {
   if (!pulls.length) return null;
   const rest = pulls.slice(SHOWN_PRS);
   return (
     <span className="prs">
       {pulls.slice(0, SHOWN_PRS).map((p) => (
         <span key={p.url} className={`pr ${pullClass(p)}`} title={`#${p.number} ${pullState(p)}`}>
-          <i />#{p.number}
+          {!ci && <i />}#{p.number}
           {p.threads > 0 && <span className="th"> ⌁{p.threads}</span>}
         </span>
       ))}
@@ -141,7 +142,7 @@ export function Card({ task, holds = 0, chain, stacked = 0, under = false, links
       onPointerEnter={onHover && (() => onHover(true))} onPointerLeave={onHover && (() => onHover(false))}
       onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen())}>
       <div className="top">
-        <span className="id">{task.id}</span><PullChips pulls={task.prs} />{compact && badge}
+        <span className="id">{task.id}</span><PullChips pulls={task.prs} ci={task.live?.machine === "ci"} />{compact && badge}
       </div>
       {links && links.length > 0 && <div className={`uw${finished ? " dn" : ""}`}><span className="nw">{finished ? "✓ unblocked" : "⧗ waits on"}</span>{" "}{links.map((id, i) => <Fragment key={id}>{i > 0 && ", "}<span className="nw">{id}</span></Fragment>)}</div>}
       <div className="t">{task.title}</div>
@@ -156,7 +157,7 @@ export function Card({ task, holds = 0, chain, stacked = 0, under = false, links
         </div>
       ) : live && (
         <div className={`mach${now - live.at < HOT_S ? " hot" : ""}`}>
-          <span className={live.source ? "p mapped" : "p"} title={live.source ? `mapped from ${live.source}` : undefined} /><b>{live.machine}</b><span className="s">· {live.state.replace(/_/g, " ")}</span><span className="ago">{ago(now - live.at)}</span>
+          <span className={["p", live.source && "mapped", live.machine === "ci" && ciTone(live.state) !== "phase" && ciTone(live.state)].filter(Boolean).join(" ")} title={live.source ? `mapped from ${live.source}` : undefined} /><b>{live.machine}</b><span className="s">· {live.state.replace(/_/g, " ")}</span><span className="ago">{ago(now - live.at)}</span>
         </div>
       )}
       {!compact && (

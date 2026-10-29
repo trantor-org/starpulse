@@ -415,13 +415,15 @@ describe("the task view's Pull requests section carries each pull request's CI h
     expect(railOf(html).split("o/r#12").length).toBe(2);
   });
 
-  it("gives each pull request row its checks, its CI state and its four counts", () => {
+  it("gives each pull request row one state, its CI state, and its four counts", () => {
     const html = draw({ task: { ...task, ...two } });
     const merged = rowOf(html, "o/r#12");
     const failing = rowOf(html, "o/r#15");
 
     expect(merged).toMatch(/merged[\s\S]*1 run[\s\S]*1 re-run[\s\S]*1 rebase[\s\S]*1 conflict/);
-    expect(failing).toMatch(/checks pass[\s\S]*failing[\s\S]*1 run[\s\S]*0 re-runs[\s\S]*0 rebases[\s\S]*0 conflicts/);
+    expect(merged.split("<i>").length).toBe(2);
+    expect(failing).toMatch(/failing[\s\S]*1 run[\s\S]*0 re-runs[\s\S]*0 rebases[\s\S]*0 conflicts/);
+    expect(failing).not.toContain("checks pass");
   });
 
   it("totals the task's counts at the top of the section, only when there are two pull requests to total", () => {
@@ -435,10 +437,29 @@ describe("the task view's Pull requests section carries each pull request's CI h
     expect(rowOf(draw({ task: { ...task, ...one } }), "o/r#12")).toContain("merged");
   });
 
-  it("draws the state in the mapped colour only when a third party moves the machine", () => {
-    expect(section(draw({ task: { ...task, ...two } }))).toContain("mapped");
-    expect(section(draw({ task: { ...task, prs: two.prs, machines: ci(null) } }))).not.toContain("mapped");
-    expect(styles).toMatch(/#kbm \.tvrail \.ci \.st\.mapped[^{]*\{[^}]*var\(--mapped\)/);
+  it("draws the CI state on the pull request's own line, its counts on the line below", () => {
+    const merged = rowOf(draw({ task: { ...task, ...two } }), "o/r#12");
+
+    expect(merged).toMatch(/↗<\/a><span class="chk merged"[^>]*><i><\/i>merged<\/span>/);
+    expect(merged.slice(merged.indexOf('class="ci"'))).not.toContain("<i>");
+  });
+
+  it("colours the CI state as the checks dots do, and every other phase blue", () => {
+    const at = (state: string) => rowOf(draw({ task: { ...task, prs: [pull(15)], machines: [{ ...ci()[0], state, trail: [step("PR_OPENED", state, 1)] }] } }), "o/r#15");
+
+    expect(at("merged")).toContain('class="chk merged"');
+    expect(at("failing")).toContain('class="chk fail"');
+    expect(at("conflicting")).toContain('class="chk fail"');
+    expect(at("passing")).toContain('class="chk pass"');
+    expect(at("queued")).toContain('class="chk pending"');
+    expect(at("running")).toContain('class="chk phase"');
+    expect(at("opened")).toContain('class="chk phase"');
+    expect(styles).toMatch(/#kbm \.chk\.phase i[^{]*\{[^}]*var\(--mapped\)/);
+  });
+
+  it("names the third party that moves the machine on the state", () => {
+    expect(section(draw({ task: { ...task, ...two } }))).toContain('title="mapped from GitHub"');
+    expect(section(draw({ task: { ...task, prs: two.prs, machines: ci(null) } }))).not.toContain("mapped from");
   });
 
   it("draws a CI entry that matches no pull request as its own row", () => {
@@ -452,6 +473,7 @@ describe("the task view's Pull requests section carries each pull request's CI h
     expect(section(draw({ task: { ...task, prs: [], machines: [] } }))).toContain("None yet");
     const html = section(draw({ task: { ...task, prs: [pull(12)], machines: [] } }));
     expect(html).toContain("o/r#12");
+    expect(html).toContain("checks pass");
     expect(html).not.toContain("run");
   });
 });

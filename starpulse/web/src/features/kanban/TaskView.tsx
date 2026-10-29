@@ -3,7 +3,7 @@ import { Fragment, useCallback, useEffect, useEffectEvent, useRef, useState, typ
 import { ago, fmtAt } from "../../shared/clock";
 import { usePhone } from "../../shared/usePhone";
 import { RatingControl } from "./RatingControl";
-import { columnsOf, prReadState, roleOf, type KanbanTask } from "./kanbanModel";
+import { ciTone, columnsOf, prReadState, roleOf, type KanbanTask } from "./kanbanModel";
 import { startLane, startable } from "./start";
 import { StartCriteria } from "./StartCriteria";
 import { DocReader, DocRows, useDocs } from "./DocReader";
@@ -120,15 +120,15 @@ const TRIAL = "trial-";
 
 const checkClass = (p: Pull) => (p.merged ? "merged" : p.checks === "failing" ? "fail" : p.checks);
 
-/** One pull request's row: its state, check result and unread review count, or "not read yet" with the reason; `ci` is its CI line. */
-function PullRow({ p, ci }: { p: Pull; ci?: ReactNode }) {
+/** One pull request's row: one state beside its link, the CI state when `ci` is recorded, and its unread review count, or "not read yet" with the reason; its CI counts go on the line below. */
+function PullRow({ p, ci, mapped }: { p: Pull; ci?: CiPull; mapped?: string | null }) {
   const read = prReadState(p);
   return (
     <div className="pull">
       <a href={p.url} target="_blank" rel="noopener">{p.repo}#{p.number} ↗</a>
       {read.read ? (
         <>
-          <span className={`chk ${checkClass(p)}`}><i />{read.state === "merged" ? "merged" : `checks ${read.checks}`}</span>
+          {ci ? <CiState c={ci} mapped={mapped} /> : <span className={`chk ${checkClass(p)}`}><i />{read.state === "merged" ? "merged" : `checks ${read.checks}`}</span>}
           {read.unreviewed > 0 && <span className="rd">{plural(read.unreviewed, "unread review")}</span>}
         </>
       ) : (
@@ -137,7 +137,7 @@ function PullRow({ p, ci }: { p: Pull; ci?: ReactNode }) {
           <span className="rd">{read.reason}</span>
         </>
       )}
-      {ci}
+      {ci && <CiLine c={ci} />}
     </div>
   );
 }
@@ -161,14 +161,14 @@ function CiCounts({ c }: { c: Pick<CiPull, "runs" | "reruns" | "rebases" | "conf
     .map((text, i) => <span key={i} className={text.startsWith("0 ") ? "c z" : "c"}>{text}</span>)}</>;
 }
 
-/** A pull request's CI: the state its trail left it in, blue when a third party moves the machine, then its counts. */
-function CiLine({ c, mapped }: { c: CiPull; mapped?: string | null }) {
-  return (
-    <div className="ci">
-      <span className={mapped ? "st mapped" : "st"} title={mapped ? `mapped from ${mapped}` : undefined}><i />{c.state.replace(/_/g, " ")}</span>
-      <span className="cnt"><CiCounts c={c} /></span>
-    </div>
-  );
+/** The state a pull request's CI trail left it in, coloured as the checks dots are, naming the third party that moves the machine. */
+function CiState({ c, mapped }: { c: CiPull; mapped?: string | null }) {
+  return <span className={`chk ${ciTone(c.state)}`} title={mapped ? `mapped from ${mapped}` : undefined}><i />{c.state.replace(/_/g, " ")}</span>;
+}
+
+/** A pull request's CI counts, on the line below its link. */
+function CiLine({ c }: { c: CiPull }) {
+  return <div className="ci"><span className="cnt"><CiCounts c={c} /></span></div>;
 }
 
 /** The task's pull requests, each with its CI line, under the task's CI totals when it has two or more; a CI entry no pull request matches is its own row. */
@@ -178,14 +178,13 @@ function PullRows({ task }: { task: KanbanTask }) {
   const ciOf = new Map((history?.pulls ?? []).map((c) => [c.number, c]));
   const unmatched = (history?.pulls ?? []).filter((c) => !task.prs.some((p) => p.number === c.number));
   if (!task.prs.length && !unmatched.length) return <span className="none">None yet</span>;
-  const line = (c: CiPull | undefined) => c && <CiLine c={c} mapped={mapped} />;
   return (
     <>
       {history && history.pulls.length > 1 && <div className="tot"><CiCounts c={history.total} /></div>}
       <Box>
         <div className="prs">
-          {task.prs.map((p) => <PullRow key={`${p.repo}#${p.number}`} p={p} ci={line(ciOf.get(p.number))} />)}
-          {unmatched.map((c, i) => <div key={i} className="pull"><span className="k">pull request</span>{line(c)}</div>)}
+          {task.prs.map((p) => <PullRow key={`${p.repo}#${p.number}`} p={p} ci={ciOf.get(p.number)} mapped={mapped} />)}
+          {unmatched.map((c, i) => <div key={i} className="pull"><span className="k">pull request</span><CiState c={c} mapped={mapped} /><CiLine c={c} /></div>)}
         </div>
       </Box>
     </>
