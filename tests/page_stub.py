@@ -7,10 +7,8 @@ breaks that server, so a holder registers a marker named for its process, and th
 from __future__ import annotations
 
 import fcntl
-import hashlib
 import os
 import shutil
-import tempfile
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -22,20 +20,25 @@ _STUB = "<!doctype html>"
 
 @contextmanager
 def _locked(static: Path) -> Iterator[None]:
-    name = f"starpulse-page-stub-{hashlib.sha1(str(static).encode()).hexdigest()[:16]}.lock"
-    with open(Path(tempfile.gettempdir()) / name, "a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    """Serialize holders on the checkout itself, so shards that do not share a `/tmp` still queue."""
+    fd = os.open(static.parent, os.O_RDONLY)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
         yield
+    finally:
+        os.close(fd)
 
 
 def _alive(marker: Path) -> bool:
+    """A holder keeps an exclusive lock on its marker, which a process in another PID namespace can still see."""
     try:
-        os.kill(int(marker.name.split("-")[0]), 0)
-    except ProcessLookupError:
+        with open(marker) as handle:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        return True
+    except FileNotFoundError:
         return False
-    except PermissionError:
-        pass
-    return True
+    return False
 
 
 def _prune(users: Path) -> list[Path]:
@@ -62,13 +65,14 @@ def _clear(static: Path, users: Path) -> None:
 def held(static: Path) -> Iterator[None]:
     """Stub `static/index.html` for the block unless the checkout has a real build; remove it with the last holder."""
     users = static / _USERS
+    marker = users / uuid.uuid4().hex
     with _locked(static):
         real = (static / "index.html").is_file() and not users.is_dir()
         if not real:
             _prune(users)
             users.mkdir(parents=True, exist_ok=True)
-            marker = users / f"{os.getpid()}-{uuid.uuid4().hex}"
-            marker.touch()
+            handle = open(marker, "w")
+            fcntl.flock(handle, fcntl.LOCK_EX)
             if not (static / "index.html").is_file():
                 (static / "index.html").write_text(_STUB)
     try:
@@ -77,5 +81,6 @@ def held(static: Path) -> Iterator[None]:
         if not real:
             with _locked(static):
                 marker.unlink(missing_ok=True)
+                handle.close()
                 if not _prune(users):
                     _clear(static, users)
