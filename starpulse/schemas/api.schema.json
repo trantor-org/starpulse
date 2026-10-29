@@ -6328,7 +6328,7 @@
           "type": "string"
         },
         "inFlight": {
-          "description": "The sessions the loop started and has not finished, oldest first.",
+          "description": "Every live session holding an In Progress task, oldest first; `url` is empty for one the loop did not start.",
           "items": {
             "$ref": "#/$defs/SchedulerSession"
           },

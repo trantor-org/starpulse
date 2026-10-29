@@ -1077,7 +1077,7 @@ export interface SchedulerStatus {
    */
   harness: string;
   /**
-   * The sessions the loop started and has not finished, oldest first.
+   * Every live session holding an In Progress task, oldest first; `url` is empty for one the loop did not start.
    */
   inFlight?: SchedulerSession[];
   /**

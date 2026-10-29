@@ -797,6 +797,20 @@ def test_each_harness_has_its_own_session_cap(rig: Rig) -> None:
     assert rig.started_harness == ["claude", "cursor"]
 
 
+def test_a_session_started_outside_the_loop_takes_a_session_slot(rig: Rig) -> None:
+    rig.policy = Scheduler(lane="ready", limits={**Scheduler().limits, "sessions": 1})
+    rig.loop = rig._bind(rig.sampler)
+    rig.put("T-1", lane="in_progress")
+    rig.session("T-1")  # opened by /api/start, so not one of the loop's runs
+    rig.put("T-2")
+
+    assert rig.loop.tick() == []
+    assert [session["task"] for session in rig.loop.in_flight()] == ["T-1"]
+
+    rig.session("T-1", "SESSION_STOPPED")
+    assert rig.loop.in_flight() == []
+
+
 def test_refused_settle_releases_run_from_inflight_set(rig: Rig) -> None:
     """A run whose settle is refused leaves the in-flight set and frees its session and demand, and is not retried."""
     rig.refuse_settle = True

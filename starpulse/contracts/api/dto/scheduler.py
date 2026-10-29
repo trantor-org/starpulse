@@ -86,7 +86,7 @@ class SchedulerStatus(_Api):
     sampledAt: float | None
     dimensions: list[SchedulerDimension]
     inFlight: list[SchedulerSession] = Field(
-        default_factory=list, description="The sessions the loop started and has not finished, oldest first."
+        default_factory=list, description="Every live session holding an In Progress task, oldest first; `url` is empty for one the loop did not start."
     )
     next: SchedulerNext | None = Field(default=None, description="Null when no task in the eligible lane is workable.")
     pauses: list[SchedulerPause] = Field(
