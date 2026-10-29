@@ -412,6 +412,37 @@ describe("placeBranches", () => {
     }
   });
 
+  it("keeps a dot past the third on a crowded station on its line, gliding in or out, never out beyond the branch", () => {
+    const scene = sc.build({ S: sky.merge(live()), moves: new sky.Moves(), W: 1920, H: 1080, T: 0, scale: 100 }, { kind: "board" });
+    const sun = (scene.tasks.find((k) => k.h)!.host as Galaxy).id, mine = scene.tasks.filter((k) => (k.host as Galaxy).id === sun);
+    const steps = Array.from({ length: 5 }, (_, i) => `s${i}`), crowd = [...mine].sort((a, b) => (a.id < b.id ? -1 : 1)).slice(0, 7);
+    expect(crowd).toHaveLength(7);
+    for (const k of mine) k.h = undefined;
+    crowd.forEach((k, i) => (k.h = { machine: "deliver", steps, j: i < 6 ? 1 : 3, ring1: true }));
+    run(scene, 0, 3);
+    const g = scene.galaxies[sun], line = () => T.branchLines().find((l) => l.key === `${sun}|deliver`)!;
+    const beyond = () => crowd.flatMap((k) => (Math.min(...stationsOf(line()).map((s) => dist(T.dotsOf(k.id)[0], s))) > 2 * 5 + 0.5 && !k.moving ? [k.id] : []));
+    expect(beyond(), "settled").toEqual([]);
+    const off = new Set<string>(), far = (k: (typeof crowd)[number]) => dist(T.dotsOf(k.id)[0], g);
+    let reach = 0;
+    // the last dot by id rides in onto the crowded station as its seventh, then the sixth leaves it for the far station
+    crowd[6].h = { machine: "deliver", steps, j: 1, ring1: true };
+    for (let t = 3; t <= 6; t += 1 / 60) {
+      T.placeBranches(scene, t);
+      for (const h of T.offLine(scene, 0.5)) off.add(h);
+      reach = Math.max(reach, far(crowd[6]));
+    }
+    crowd[5].h = { machine: "deliver", steps, j: 3, ring1: true };
+    for (let t = 6; t <= 9; t += 1 / 60) {
+      T.placeBranches(scene, t);
+      for (const h of T.offLine(scene, 0.5)) off.add(h);
+      reach = Math.max(reach, far(crowd[5]));
+    }
+    expect([...off]).toEqual([]);
+    expect(reach, "no further out than the third dot's spot").toBeLessThanOrEqual(Math.max(...stationsOf(line()).map((s) => dist(s, g))) + 2 * 5 + 0.5);
+    expect(beyond(), "settled again").toEqual([]);
+  });
+
   it("glides a dot from one station to the next at 98 px/s", () => {
     const scene = mock(), k = scene.tasks.find((t) => t.h?.ring1 && t.h.machine === "deliver")!, h = k.h!;
     const j = (h.j + 2) % h.steps.length;
