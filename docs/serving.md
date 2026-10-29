@@ -839,6 +839,12 @@ it re-derives every open task once, so a pull request that merged while the serv
 the actor on, the 30-second pass of Release does not start; the actor settles and releases on the same rules, so
 `[release]` still names the settle rule.
 
+A park that names `TASK-X#K` records the criterion the dependent needs (`dependency_needs`). A dependee's state change or
+a criterion it checks re-derives its dependents. Once every criterion a dependent needs of an open dependency is checked,
+that dependency counts as met: `deps_done` fires, and the release is one write that drops the dependency and its needs and
+comments `Stale dependency TASK-X`. A lint refusal of the release is commented once on the task (a comment-only edit skips
+the board's guards, so the comment lands) and the actor retries when the lint record changes.
+
 A move from the working lane (the first resting State the lifecycle does not end in) to Waiting runs the board's
 `parked` command once, with `{id}` replaced by the task's id, so a board can tell the session that holds the task. A
 command that exits nonzero is logged; the move stands.

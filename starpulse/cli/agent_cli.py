@@ -809,7 +809,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     park.add_argument("task", help="the task's key (`PROJ-45`)")
     park.add_argument(
-        "--until-task", action="append", default=[], help="a task that must reach Done first (repeatable)"
+        "--until-task", action="append", default=[], help="a task that must reach Done first, or TASK-N#K for one of its open criteria (repeatable)"
     )
     park.add_argument(
         "--until", action="append", default=[], help="a condition a check can observe, as YAML or JSON (repeatable)"

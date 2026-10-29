@@ -545,10 +545,14 @@ def _lifecycle_edit(
 
 
 def _wait_on_tasks(feed: BoardFeed, task: str, current: dict[str, Any], ids: Any) -> dict[str, Any]:
-    """The edit that makes the task wait on the tasks `ids` names, kept after the dependencies it has."""
+    """The edit that makes the task wait on the tasks `ids` names, kept after the dependencies it has.
+
+    An id `TASK-N#K` waits on the task for its criterion K alone: the edit records that need beside the dependency,
+    and the task actor releases the dependent once the criterion is checked, whatever the task still has open."""
     if not (isinstance(ids, list) and ids and all(isinstance(name, str) and name.strip() for name in ids)):
         raise _Refusal(400, {"error": 'untilTask needs a non-empty list of task ids: {"untilTask": ["TASK-N"]}'})
-    waits = list(dict.fromkeys(name.strip() for name in ids))
+    named = list(dict.fromkeys(name.strip() for name in ids))
+    waits = list(dict.fromkeys(name.partition("#")[0] for name in named))
     for name in waits:
         if name.casefold() == task.casefold():
             raise _Refusal(409, {"error": f"{task} cannot wait on itself"})
@@ -556,7 +560,23 @@ def _wait_on_tasks(feed: BoardFeed, task: str, current: dict[str, Any], ids: Any
             raise _Refusal(409, {"error": f"{name} is already Done: there is nothing to wait for"})
         if _held(feed, name) is None:
             raise _Refusal(*_not_held(feed, name))
-    return {"dependencies": list(dict.fromkeys([*current["dependencies"], *waits]))}
+    needs = [name for name in named if "#" in name]
+    for need in needs:
+        _open_criterion(feed, need)
+    return {
+        "dependencies": list(dict.fromkeys([*current["dependencies"], *waits])),
+        **({"dependencyNeeds": list(dict.fromkeys([*current.get("dependencyNeeds", []), *needs]))} if needs else {}),
+    }
+
+
+def _open_criterion(feed: BoardFeed, need: str) -> None:
+    """Refuse the dependency need `TASK-N#K` unless the task has a criterion K that is not yet checked."""
+    name, _, number = need.partition("#")
+    criteria = (feed.task(name) or {}).get("criteria", [])
+    if not (number.isdigit() and 0 < int(number) <= len(criteria)):
+        raise _Refusal(409, {"error": f"{name} has no criterion #{number} to wait for"})
+    if criteria[int(number) - 1]["checked"]:
+        raise _Refusal(409, {"error": f"{name} criterion #{number} is already checked: there is nothing to wait for"})
 
 
 def _wait_on_criteria(feed: BoardFeed, task: str, current: dict[str, Any], found: Any) -> dict[str, Any]:
@@ -612,7 +632,7 @@ def park_task(
 ) -> tuple[int, dict[str, Any]]:
     """Park the In Progress task `request` names for the one reason it names: the HTTP status and JSON body.
 
-    The reason picks the lane and writes its gate in the same edit: `untilTask` adds dependencies and `until` writes the
+    The reason picks the lane and writes its gate in the same edit: `untilTask` adds dependencies (a `TASK-N#K` entry also records the criterion needed) and `until` writes the
     Start Criteria block, both to Waiting, and `operator` writes the Needs attention section to Needs attention. The
     machine must offer the writer that lane, and the board's rules judge the record the edit makes.
     """

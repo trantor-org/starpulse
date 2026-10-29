@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import pytest
 from sqlalchemy import create_engine
 from starpulse.board.board_feed import BoardFeed
+from starpulse.contracts.adapters import BoardTask
 from starpulse.event_log.event_log import Entry, EventLog
 from starpulse.event_log.readmodel.projector import Projector
 from starpulse.event_log.readmodel.read_model import ReadModel
@@ -720,3 +721,64 @@ def test_a_waiting_task_whose_criteria_are_met_and_own_pr_merged_is_closed_not_r
 
     assert until(lambda: board.moved() == [("TASK-1", "done")])
     assert "ready" not in [lane for _, lane in board.moved()]
+
+
+def _owner(*checked: bool) -> BoardTask:
+    """TASK-9550: an open task whose criterion #1 states the fact a dependent waits on and #2 the rest of its work."""
+    return task(
+        "TASK-9550",
+        "In Progress",
+        acceptance_criteria=("a worker claims a Validate run", "cap-4 claim within 5 minutes")[: len(checked)],
+        acceptance_checked=checked,
+    )
+
+
+def _needing(*needs: str) -> Callable[[str], dict]:
+    return lambda name: {"dependencyNeeds": list(needs)} if name == "TASK-2" else {}
+
+
+def test_a_waiting_task_is_released_when_the_criterion_it_needs_of_an_open_dependency_is_checked(
+    store: PullStore, stop: threading.Event
+) -> None:
+    board = Board(BoardFeed(), _owner(False, False), task("TASK-2", "Waiting", dependencies=("TASK-9550",)))
+    running(board, store, stop, PARKING_WAITS, PARKING_MOVES, read=_needing("TASK-9550#1"))
+    assert board.moved() == []
+
+    board.put(_owner(True, False))
+
+    assert until(lambda: board.moved() == [("TASK-2", "ready")])
+    _, changes, comment, actor = board.writes[0]
+    assert changes == {"status": "ready", "dependencies": [], "dependencyNeeds": []}
+    assert "TASK-9550" in str(comment) and "stale" in str(comment).lower()
+    assert actor == ACTOR
+
+
+def test_a_waiting_task_stays_while_a_criterion_it_needs_is_open_or_it_names_none(
+    store: PullStore, stop: threading.Event
+) -> None:
+    board = Board(
+        BoardFeed(),
+        _owner(False, True),
+        task("TASK-2", "Waiting", dependencies=("TASK-9550",)),
+        task("TASK-3", "Waiting", dependencies=("TASK-9550",)),
+    )
+    running(board, store, stop, PARKING_WAITS, PARKING_MOVES, read=_needing("TASK-9550#1"))
+
+    board.put(_owner(False, True))  # a change of criteria that leaves #1 open
+    board.put(task("TASK-3", "Waiting", dependencies=("TASK-9550",), title="touched"))
+
+    time.sleep(0.2)
+    assert board.moved() == []
+
+
+def test_a_release_drops_only_the_dependencies_whose_needs_are_met(store: PullStore, stop: threading.Event) -> None:
+    board = Board(
+        BoardFeed(),
+        _owner(True, False),
+        task("TASK-1", "Done"),
+        task("TASK-2", "Waiting", dependencies=("TASK-1", "TASK-9550")),
+    )
+    running(board, store, stop, PARKING_WAITS, PARKING_MOVES, read=_needing("TASK-9550#1"))
+
+    assert until(lambda: board.moved() == [("TASK-2", "ready")])
+    assert board.writes[0][1] == {"status": "ready", "dependencies": ["TASK-1"], "dependencyNeeds": []}

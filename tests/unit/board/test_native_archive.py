@@ -52,6 +52,17 @@ def test_an_archive_removes_the_task_from_each_open_dependent_and_names_them(tmp
     assert (_front(kept)["status"], _front(emptied)["status"]) == ("In Progress", "Ready")
 
 
+def test_an_archive_drops_the_criteria_the_dependent_needed_of_the_archived_task(tmp_path: Path) -> None:
+    built = _board(tmp_path)
+    kept = write_task(
+        tmp_path, "task-8", "Waiting", dependencies="[task-5, task-2]", dependency_needs="[TASK-5#2, task-2#1]"
+    )
+
+    assert built.archive("task-5", "obsolete").ok
+
+    assert (_front(kept)["dependencies"], _front(kept)["dependency_needs"]) == (["task-2"], ["task-2#1"])
+
+
 def test_an_archive_leaves_done_and_archived_dependents_as_they_are(tmp_path: Path) -> None:
     built = _board(tmp_path)
     done = write_task(tmp_path, "task-8", "Done", dependencies="[task-5]")

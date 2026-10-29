@@ -295,7 +295,7 @@ def _criterion(text: str) -> dict[str, Any]:
 
 
 def task_park(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    """Park the task on one reason: `--until-task` and `--until` wait, `--operator` needs attention; the server picks the lane."""
+    """Park the task on one reason: `--until-task` (`TASK` or `TASK#K`) and `--until` wait, `--operator` needs attention; the server picks the lane."""
     fields = {
         "untilTask": args.until_task,
         "until": [_criterion(text) for text in args.until],

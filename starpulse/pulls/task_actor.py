@@ -86,6 +86,19 @@ def _lint_record(agent: Mapping[str, Any]) -> tuple[Any, ...]:
     return agent["description"], agent["profile"], tuple(agent["labels"]), tuple(agent["dependencies"])
 
 
+def _view(agent: Mapping[str, Any]) -> tuple[str, tuple[str, ...], tuple[str, ...], tuple[bool, ...]]:
+    """The parts of a task's record the actor re-derives on: its lane, dependencies, pull requests and checked criteria."""
+    ticks = tuple(criterion["checked"] for criterion in agent.get("criteria", ()))
+    return agent["state"], tuple(agent["dependencies"]), tuple(agent["prs"]), ticks
+
+
+def _need_of(need: str) -> tuple[str, int]:
+    """`(task, criterion number)` of a dependency need `TASK-N#K`; a need that names no number is number 0, which
+    no task has."""
+    task, _, number = need.partition("#")
+    return task, int(number) if number.isdigit() else 0
+
+
 def moves_of(machine: Mapping[str, Any]) -> dict[tuple[str, str], str]:
     """`{(lane, event): target lane}` for the transitions of a drawn machine (`snapshot.describe`)."""
     return {(move["source"], move["event"]): move["target"] for move in machine["transitions"]}
@@ -187,7 +200,7 @@ class TaskActor:
         self._gate = PinGate(feed, store, repos, pin_rule, pins, live)
         self._lock = threading.RLock()
         #: Each open task's lane, dependencies and pull requests as the actor last saw them.
-        self._seen: dict[str, tuple[str, tuple[str, ...], tuple[str, ...]]] = {}
+        self._seen: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], tuple[bool, ...]]] = {}
         self._by_pr: dict[str, set[str]] = {}
         #: What each pull request last read as, so a refresh that changed nothing derives nothing.
         self._pull_states: dict[str, tuple[str, str | None, bool]] = {}
@@ -376,17 +389,18 @@ class TaskActor:
                     logger.exception("task actor: cannot handle the change of %s", data.get("id"))
 
     def _index(self, agent: dict[str, Any]) -> None:
-        """Take `agent`'s lane, dependencies and pull requests into the indexes."""
+        """Take `agent`'s lane, dependencies, pull requests and checked criteria into the indexes."""
         name = agent["id"]
-        for url in self._seen.get(name, ("", (), ()))[2]:
+        for url in self._seen.get(name, ("", (), (), ()))[2]:
             self._by_pr.get(url, set()).discard(name)
-        self._seen[name] = (agent["state"], tuple(agent["dependencies"]), tuple(agent["prs"]))
+        self._seen[name] = _view(agent)
         for url in agent["prs"]:
             self._by_pr.setdefault(url, set()).add(name)
 
     def _changed(self, data: dict[str, Any]) -> None:
-        """Re-derive what a change of one task's record touches: the task itself when its lane, dependencies or pull
-        requests changed, and the tasks depending on it when its lane did."""
+        """Re-derive what a change of one task's record touches: the task itself when its lane, dependencies, pull
+        requests or checked criteria changed, and the tasks depending on it when its lane or checked criteria did: a
+        dependency stays open for criteria its dependent may not need."""
         observed = self._clock()
         name, agent = data["id"], data["agent"]
         with self._lock:
@@ -399,7 +413,7 @@ class TaskActor:
             if repaired:
                 del self._lint_held[name]
                 self._tried.pop(name, None)
-            if before == (now := (agent["state"], tuple(agent["dependencies"]), tuple(agent["prs"]))) and not repaired:
+            if before == (now := _view(agent)) and not repaired:
                 return
             self._index(agent)
             touched = {name}
@@ -407,6 +421,7 @@ class TaskActor:
                 touched |= self._held
             if before is None or before[0] != now[0]:
                 self._tried.pop(name, None)
+            if before is None or (before[0], before[3]) != (now[0], now[3]):
                 touched |= self._dependents(name)
             self._derive_all(touched, observed)
 
@@ -440,13 +455,13 @@ class TaskActor:
         return link.get("routes", {}).get(following[0]) if following else None
 
     def _forget(self, name: str) -> None:
-        for url in self._seen.pop(name, ("", (), ()))[2]:
+        for url in self._seen.pop(name, ("", (), (), ()))[2]:
             self._by_pr.get(url, set()).discard(name)
         self._tried.pop(name, None)
         self._lint_held.pop(name, None)
 
     def _dependents(self, name: str) -> set[str]:
-        return {other for other, (_, dependencies, _) in self._seen.items() if name in dependencies}
+        return {other for other, (_, dependencies, *_) in self._seen.items() if name in dependencies}
 
     def pulls_changed(self) -> None:
         """Re-derive the tasks whose pull requests read differently since the last call; the server calls it after each
@@ -507,11 +522,14 @@ class TaskActor:
             sent = (agent["state"], event, evidence)
             if self._tried.get(name) != sent:
                 self._tried[name] = sent
-                self._write(name, target, comment, observed, source=agent["state"])
+                stale = self._stale(agent) if fact.startswith("deps_done") else {}
+                self._write(name, target, comment, observed, source=agent["state"], stale=stale)
             return
 
-    def _write(self, name: str, target: str, comment: str, observed: float, source: str) -> None:
-        written = self._apply(name, {"status": target}, comment)
+    def _write(
+        self, name: str, target: str, comment: str, observed: float, source: str, stale: Mapping[str, Any] = {}
+    ) -> None:
+        written = self._apply(name, {"status": target, **stale}, comment)
         if written.ok:
             self._landed(self._clock() - observed)
             roles = self._feed.roles
@@ -697,7 +715,7 @@ class TaskActor:
         dependencies = tuple(agent["dependencies"])
         self._pin_held.discard(agent["id"])
         self._held.discard(agent["id"])
-        if not all(map(self._feed.is_done, dependencies)) or criteria.authored(agent["description"]):
+        if self._unmet(agent) or criteria.authored(agent["description"]):
             return None
         if waiting := self._gate.waiting_on(agent):
             self._pin_held.add(agent["id"])
@@ -707,7 +725,10 @@ class TaskActor:
             self._held.add(agent["id"])
             self._note_hold(agent, reasons)
             return None
-        return dependencies, "Every dependency has merged."
+        comment = "Every dependency has merged."
+        if stale := self._early(agent):
+            comment = f"Stale dependency {', '.join(stale)}: it stays open for criteria this task does not need. {comment}"
+        return dependencies, comment
 
     def _deps_done_with_pr(self, agent: dict[str, Any]) -> tuple[Any, str] | None:
         """`deps_done` for a task that cites a ready or merged pull request, which a state returns to Review rather than Ready."""
@@ -751,7 +772,7 @@ class TaskActor:
 
     def _criteria_met(self, agent: dict[str, Any]) -> tuple[Any, str] | None:
         """The results when every Start Criterion was evaluated met and no dependency is open, which would hold it back."""
-        if any(not self._feed.is_done(dependency) for dependency in agent["dependencies"]):
+        if self._unmet(agent):
             return None
         found = self._criteria(agent)
         return (found[0], "Every Start Criterion passes.") if found and not found[1] else None
@@ -763,8 +784,50 @@ class TaskActor:
 
     def _deps_unresolved(self, agent: dict[str, Any]) -> tuple[Any, str] | None:
         """The dependencies that are not done, when there are any."""
-        open_ = tuple(dependency for dependency in agent["dependencies"] if not self._feed.is_done(dependency))
+        open_ = self._unmet(agent)
         return (open_, f"Not done: {', '.join(open_)}.") if open_ else None
+
+    def _unmet(self, agent: dict[str, Any]) -> tuple[str, ...]:
+        """The dependencies that are neither done nor early: still open for what the task waits on."""
+        early = self._early(agent)
+        return tuple(
+            dependency
+            for dependency in agent["dependencies"]
+            if not self._feed.is_done(dependency) and dependency not in early
+        )
+
+    def _early(self, agent: dict[str, Any]) -> tuple[str, ...]:
+        """The open dependencies whose every criterion the task's record says it needs (`dependencyNeeds`, `TASK-N#K`)
+        is checked: the fact the task waited on holds, whatever the dependency still has open. A dependency with no
+        need names the whole task; a record the board cannot read names none."""
+        open_ = [dependency for dependency in agent["dependencies"] if not self._feed.is_done(dependency)]
+        if not open_ or self._read is None:
+            return ()
+        try:
+            needs = (self._read(agent["id"]) or {}).get("dependencyNeeds") or ()
+        except Exception as error:
+            logger.warning("task actor: cannot read the dependency needs of %s: %s", agent["id"], error)
+            return ()
+        wanted: dict[str, list[int]] = {}
+        for task, number in map(_need_of, needs):
+            wanted.setdefault(task, []).append(number)
+        return tuple(dependency for dependency in open_ if dependency in wanted and self._checked(dependency, wanted[dependency]))
+
+    def _checked(self, dependency: str, numbers: list[int]) -> bool:
+        """Whether every criterion `numbers` names (1-based) of `dependency` is checked."""
+        ticks = tuple(criterion["checked"] for criterion in (self._feed.task(dependency) or {}).get("criteria", ()))
+        return all(0 < number <= len(ticks) and ticks[number - 1] for number in numbers)
+
+    def _stale(self, agent: dict[str, Any]) -> dict[str, list[str]]:
+        """The record changes that drop the early dependencies and their needs, none when there are none."""
+        early = self._early(agent)
+        if not early:
+            return {}
+        needs = (self._read(agent["id"]) or {}).get("dependencyNeeds") or ()
+        return {
+            "dependencies": [dependency for dependency in agent["dependencies"] if dependency not in early],
+            "dependencyNeeds": [need for need in needs if _need_of(need)[0] not in early],
+        }
 
     _facts: dict[str, Callable[[TaskActor, dict[str, Any]], tuple[Any, str] | None]] = {
         "pr_terminal": _pr_terminal,

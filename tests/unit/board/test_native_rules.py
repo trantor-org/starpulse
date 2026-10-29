@@ -56,6 +56,23 @@ def test_a_rule_does_not_apply_to_a_move_into_another_state(tmp_path: Path) -> N
     assert "status: In Progress\n" in path.read_text()
 
 
+#: Every write needs a pull request among the task's references.
+EVERY_WRITE_NEEDS_PR: dict[str, Any] = {**DONE_NEEDS_PR, "on": {"write": True}, "reason": "every write needs a pull request"}
+
+
+def test_a_comment_lands_on_a_task_a_rule_would_refuse_and_an_edit_to_a_field_does_not(tmp_path: Path) -> None:
+    path, built = ruled(tmp_path, [EVERY_WRITE_NEEDS_PR])
+    assert built.edit is not None
+
+    commented = built.edit("task-1", {}, "The release was refused by the lint.", actor="task-actor")
+    refused = built.edit("task-1", {"labels": ["kind-execute"]}, "", actor="task-actor")
+
+    assert commented.ok
+    assert "The release was refused by the lint." in path.read_text()
+    assert (refused.ok, refused.output, refused.lint) == (False, EVERY_WRITE_NEEDS_PR["reason"], True)
+    assert "kind-execute" not in path.read_text()
+
+
 @pytest.mark.parametrize(
     ("rule", "complaint"),
     [

@@ -141,7 +141,7 @@ class ClaimRequest(_Writer):
 
 class ParkRequest(_Writer):
     """`POST /api/park`: pause `task` on exactly one reason, which picks the lane: `untilTask` (tasks that must reach
-    Done) and `until` (criteria a check can observe) wait; `operator` (what only the operator can do) needs attention."""
+    Done, or `TASK-N#K` for one open criterion of a task) and `until` (criteria a check can observe) wait; `operator` (what only the operator can do) needs attention."""
 
     task: str
     untilTask: list[str] | None = None

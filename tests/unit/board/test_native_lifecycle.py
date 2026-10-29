@@ -234,6 +234,44 @@ def test_parking_on_a_task_that_cannot_be_waited_for_is_refused_and_writes_nothi
     assert _text(tmp_path, "task-1") == before
 
 
+def _owner(base: Path, *marks: str) -> None:
+    """Gives `task-2` one acceptance criterion per mark (`x` checked, a space open)."""
+    items = "".join(f"- [{mark}] #{n} Criterion {n}\n" for n, mark in enumerate(marks, 1))
+    path = next((native_root(base) / "tasks").glob("task-2 - *.md"))
+    path.write_text(path.read_text() + f"\n## Acceptance Criteria\n<!-- AC:BEGIN -->\n{items}<!-- AC:END -->\n")
+
+
+def test_parking_on_an_open_criterion_of_a_task_records_the_need_beside_the_dependency(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    feed, built = _lifecycle(tmp_path, monkeypatch, {"task-1": ("In Progress", {}), "task-2": ("Ready", {})})
+    _owner(tmp_path, " ", " ")
+    _scan(tmp_path, feed)
+
+    assert _park(feed, built, task="task-1", untilTask=["task-2#1"]) == (200, {"task": "task-1", "to": "waiting"})
+
+    record = built.read("task-1") or {}
+    assert (record["dependencies"], record["dependencyNeeds"]) == (["task-2"], ["task-2#1"])
+
+
+@pytest.mark.parametrize(
+    ("need", "why"),
+    [("task-2#3", "has no criterion #3"), ("task-2#x", "has no criterion #x"), ("task-2#1", "already checked")],
+)
+def test_parking_on_a_criterion_that_is_absent_or_checked_is_refused_and_writes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, need: str, why: str
+) -> None:
+    feed, built = _lifecycle(tmp_path, monkeypatch, {"task-1": ("In Progress", {}), "task-2": ("Ready", {})})
+    _owner(tmp_path, "x", " ")
+    _scan(tmp_path, feed)
+    before = _text(tmp_path, "task-1")
+
+    status, body = _park(feed, built, task="task-1", untilTask=[need])
+
+    assert status == 409 and why in body["error"]
+    assert _text(tmp_path, "task-1") == before
+
+
 def test_parking_until_a_criterion_writes_the_start_criteria_block_the_board_reads_back(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
