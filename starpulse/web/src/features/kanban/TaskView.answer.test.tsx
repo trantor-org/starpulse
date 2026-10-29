@@ -44,10 +44,10 @@ describe("the Answer section of the task view", () => {
     const calls = stubWriter();
     const host = mount();
 
-    type(field(host), "use unraid");
+    type(field(host), "use staging");
     await click(send(host));
 
-    expect(calls()).toEqual([{ url: "/api/answer", task: asking.id, answer: "use unraid" }]);
+    expect(calls()).toEqual([{ url: "/api/answer", task: asking.id, answer: "use staging" }]);
     expect(field(host)?.value).toBe("");
     expect(section(host)?.querySelector(".ratemeta")?.textContent).toContain("Answered");
   });
@@ -56,10 +56,10 @@ describe("the Answer section of the task view", () => {
     stubWriter(() => new Response(JSON.stringify({ error: "An answer is the operator's" }), { status: 403 }));
     const host = mount();
 
-    type(field(host), "use unraid");
+    type(field(host), "use staging");
     await click(send(host));
 
-    expect(field(host)?.value).toBe("use unraid");
+    expect(field(host)?.value).toBe("use staging");
     expect(section(host)?.querySelector(".editrefusal")?.textContent).toContain("An answer is the operator's");
   });
 

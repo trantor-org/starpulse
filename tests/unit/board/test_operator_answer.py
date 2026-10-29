@@ -34,11 +34,11 @@ def test_an_answer_records_an_operator_answer_line_under_the_question_and_leaves
 ) -> None:
     feed, built = _asking(tmp_path, monkeypatch)
 
-    status, body = _answer(feed, built, task="task-1", answer="use unraid")
+    status, body = _answer(feed, built, task="task-1", answer="use staging")
 
     assert status == 200 and body["task"] == "task-1"
     found = ANSWER_LINE.search((built.read("task-1") or {})["description"])
-    assert found is not None and found["answer"] == "use unraid" and found["id"] == body["id"]
+    assert found is not None and found["answer"] == "use staging" and found["id"] == body["id"]
     assert "status: Needs attention\n" in _text(tmp_path, "task-1")
     assert (built.read("task-1") or {})["description"].count("## Needs attention") == 1
     assert QUESTION in (built.read("task-1") or {})["description"]
@@ -50,7 +50,7 @@ def test_an_answer_to_a_task_outside_needs_attention_is_refused_and_writes_nothi
     feed, built = _in_progress(tmp_path, monkeypatch)
     before = _text(tmp_path, "task-1")
 
-    status, body = _answer(feed, built, task="task-1", answer="use unraid")
+    status, body = _answer(feed, built, task="task-1", answer="use staging")
 
     assert status == 409 and "Needs attention" in body["error"]
     assert _text(tmp_path, "task-1") == before
@@ -71,12 +71,12 @@ def test_an_answer_writes_a_trajectory_event_naming_the_operator_the_question_an
 ) -> None:
     feed, built = _asking(tmp_path, monkeypatch)
 
-    assert _answer(feed, built, task="task-1", answer="use unraid")[0] == 200
+    assert _answer(feed, built, task="task-1", answer="use staging")[0] == 200
 
     store = EventStore(EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}").engine)
     last = store.read("task", "task-1")[-1]
     assert (last.type, last.actor) == ("CommentAdded", "operator")
-    assert QUESTION in last.payload["text"] and "use unraid" in last.payload["text"]
+    assert QUESTION in last.payload["text"] and "use staging" in last.payload["text"]
 
 
 @pytest.mark.parametrize(

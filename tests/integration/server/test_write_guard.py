@@ -138,7 +138,7 @@ def test_a_same_origin_json_post_is_written(tmp_path: Path) -> None:
     assert (status, answer, calls) == (200, {"task": "PROJ-3", "to": "in_progress"}, ["move"])
 
 
-_ANSWER = {"task": "PROJ-3", "answer": "use unraid"}
+_ANSWER = {"task": "PROJ-3", "answer": "use staging"}
 
 
 @pytest.mark.parametrize(

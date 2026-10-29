@@ -202,6 +202,7 @@ export const ROUTES: Record<string, string | null> = {
   ...Object.fromEntries(Object.keys(HANDLERS).map((r) => [r, null])),
   "/api/run": "This demo has no runs instance to start a run on.",
   "/api/start": "This demo has no session-start service to start a session with.",
+  "/api/answer": "This demo has no board to record an operator answer on.",
   "/api/history-window": "This demo has no server to keep a shared history window.",
 };
 
