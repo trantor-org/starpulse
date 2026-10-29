@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal, TypedDict
 
-from pydantic import ConfigDict, Field
+from pydantic import Field
 
 from starpulse.contracts.api._base import _Api
 from starpulse.contracts.api.dto.pages import MachineStep
@@ -55,8 +55,6 @@ class HealthThroughput(_Api):
 # A typed dict, not a model: a window lists thousands of stuck tasks and a model instance each costs more than the
 # rest of the read. Its schema is the model's (a comment, not a docstring, so the generated types do not change).
 class HealthStuck(TypedDict):
-    __pydantic_config__ = ConfigDict(extra="forbid")  # type: ignore[misc]
-
     task: str
     state: str
     since: float

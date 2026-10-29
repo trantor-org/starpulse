@@ -57,6 +57,13 @@ SUBPROCESS_IMPORTERS = {
     ),
 }
 
+#: Source paths and the contract test that pins their output to a DTO. No import or coverage line joins the producers in
+#: `starpulse/board/feed/` (`views.py`, `reads.py`) to `RawTask`, so a change there would pass without it.
+CONTRACT_GUARDS = {
+    "starpulse/board/feed/*": ("tests/unit/contracts/test_raw_task_feed_row.py",),
+    "starpulse/contracts/api/dto/*": ("tests/unit/contracts/test_raw_task_feed_row.py",),
+}
+
 #: Non-Python files and the Python files that open them by path; each reader counts as changed.
 READERS = {
     "README.md": ("starpulse/runtime/server.py", "ci/ui_preview.py"),
@@ -281,6 +288,12 @@ def _only_lint_tables(root: Path, before: str | None) -> bool:
         return False
 
 
+def _guards(path: str) -> set[str]:
+    """The contract tests that guard `path`, whatever else selects for it."""
+    guards = (tests for pattern, tests in CONTRACT_GUARDS.items() if fnmatch(path, pattern))
+    return set().union(*guards)
+
+
 def _route(
     root: Path,
     changed: list[str],
@@ -296,6 +309,7 @@ def _route(
     pending = list(changed)
     while pending:
         path = pending.pop()
+        covered |= _guards(path)
         if path in covering:  # the map names the tests that ran it; the rules below are for what it never saw
             covered |= covering[path] | set(SUBPROCESS_IMPORTERS.get(path, ()))
             if Path(path).name.startswith("test_") and path.endswith(".py"):

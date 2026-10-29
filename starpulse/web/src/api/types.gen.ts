@@ -101,6 +101,7 @@ export interface ApiContract {
   trajectories: Trajectories;
   transitions: Transitions;
   windowState: WindowState;
+  [k: string]: unknown;
 }
 /**
  * A move's answer. The operator's move of an unheld task into the working state also starts its session: `url`
@@ -112,6 +113,7 @@ export interface Moved {
   task: string;
   to: string;
   url?: string | null;
+  [k: string]: unknown;
 }
 /**
  * A batch move's answer: the tasks it moved, and each refused task with why.
@@ -121,13 +123,16 @@ export interface MovedEach {
   refused: {
     [k: string]: string;
   };
+  [k: string]: unknown;
 }
 export interface Edited {
   changed: string[];
   task: string;
+  [k: string]: unknown;
 }
 export interface Archived {
   task: string;
+  [k: string]: unknown;
 }
 /**
  * A batch archive's answer: the tasks it archived, and each refused task with why.
@@ -137,55 +142,68 @@ export interface ArchivedEach {
   refused: {
     [k: string]: string;
   };
+  [k: string]: unknown;
 }
 export interface Judged {
   check: string;
   fix?: string | null;
   task: string;
   verdict: string;
+  [k: string]: unknown;
 }
 export interface Rated {
   changes: number;
   reason: string;
   task: string;
   verdict: string;
+  [k: string]: unknown;
 }
 export interface Restored {
   task: string;
+  [k: string]: unknown;
 }
 export interface Retired {
   task: string;
+  [k: string]: unknown;
 }
 export interface TakenOver {
   task: string;
+  [k: string]: unknown;
 }
 export interface RetiredImported {
   task: string;
+  [k: string]: unknown;
 }
 export interface Completed {
   task: string;
+  [k: string]: unknown;
 }
 export interface Claimed {
   assignee: string;
   task: string;
   to: string;
+  [k: string]: unknown;
 }
 export interface Parked {
   task: string;
   to: string;
+  [k: string]: unknown;
 }
 export interface Reviewed {
   task: string;
   to: string;
+  [k: string]: unknown;
 }
 export interface Created {
   task: string;
+  [k: string]: unknown;
 }
 /**
  * A batch create's answer: each spec's new task, or why it was refused, in the order the specs came.
  */
 export interface CreatedEach {
   results: (Created | SkillRefusal | ApiError)[];
+  [k: string]: unknown;
 }
 /**
  * A refusal a skill satisfies: the skill that produces what the guard needs.
@@ -193,47 +211,59 @@ export interface CreatedEach {
 export interface SkillRefusal {
   error: string;
   skill: string;
+  [k: string]: unknown;
 }
 /**
  * Every refusal: what went wrong.
  */
 export interface ApiError {
   error: string;
+  [k: string]: unknown;
 }
 export interface MilestoneCreated {
   milestone: string;
+  [k: string]: unknown;
 }
 export interface MilestoneEdited {
   changed: string[];
   milestone: string;
+  [k: string]: unknown;
 }
 export interface MilestoneArchived {
   milestone: string;
+  [k: string]: unknown;
 }
 export interface DocCreated {
   doc: string;
+  [k: string]: unknown;
 }
 export interface DocEdited {
   changed: string[];
   doc: string;
+  [k: string]: unknown;
 }
 export interface DocArchived {
   doc: string;
+  [k: string]: unknown;
 }
 export interface DocRestored {
   doc: string;
+  [k: string]: unknown;
 }
 export interface Started {
   at: number;
   task: string;
   url: string;
+  [k: string]: unknown;
 }
 export interface RunStarted {
   runId: string;
+  [k: string]: unknown;
 }
 export interface Accepted {
   accepted: boolean;
   deprecated?: string | null;
+  [k: string]: unknown;
 }
 /**
  * An edit refused because a field changed since the page read it: those fields with their current values.
@@ -244,6 +274,7 @@ export interface StaleEdit {
   };
   error: string;
   stale: string[];
+  [k: string]: unknown;
 }
 /**
  * A level or telemetry window longer than its history, with the history's length.
@@ -251,6 +282,7 @@ export interface StaleEdit {
 export interface WindowTooLong {
   error: string;
   history_s: number;
+  [k: string]: unknown;
 }
 /**
  * The page build the server serves, sent right after each connect's snapshot: a hash of the built page's `index.html`,
@@ -258,6 +290,7 @@ export interface WindowTooLong {
  */
 export interface BuildEvent {
   id: string;
+  [k: string]: unknown;
 }
 /**
  * `GET /api/analytics/cells`: cells with at least 5 clean completions; a smaller cell reports nothing.
@@ -266,6 +299,7 @@ export interface Cells {
   cells: Cell[];
   now: number;
   window_s: number;
+  [k: string]: unknown;
 }
 /**
  * Median steps per clean completion of one kind and size, over its latest-fifth holdout.
@@ -298,6 +332,7 @@ export interface Cell {
    */
   n: number;
   size: number;
+  [k: string]: unknown;
 }
 /**
  * The contract checks `starpulse doctor` runs; `ok` is false when any fails.
@@ -305,6 +340,7 @@ export interface Cell {
 export interface ContractReport {
   checks: ContractCheck[];
   ok: boolean;
+  [k: string]: unknown;
 }
 /**
  * One check of the contract between the config and the machines' DAG cues.
@@ -316,6 +352,7 @@ export interface ContractCheck {
   check: string;
   reason: string;
   status: "pass" | "warn" | "fail";
+  [k: string]: unknown;
 }
 /**
  * `GET /api/analytics/cost-to-go`: every state of each skill machine, whatever its `n`; a consumer holds a cell with a small one.
@@ -324,6 +361,7 @@ export interface CostToGo {
   cost_to_go: StateCost[];
   now: number;
   window_s: number;
+  [k: string]: unknown;
 }
 /**
  * One skill-machine state's expected cost-to-go within a kind and size.
@@ -344,6 +382,7 @@ export interface StateCost {
    * A stage of the skill's machine, or `[start]` before its first.
    */
   state: string;
+  [k: string]: unknown;
 }
 /**
  * `GET /api/analytics/diff`: a transition with under 5 clean runs reports nothing; one with none that conforms has `conformant` 0.
@@ -352,6 +391,7 @@ export interface RunDiffs {
   diff: RunDiff[];
   now: number;
   window_s: number;
+  [k: string]: unknown;
 }
 /**
  * One transition's reference run against its slowest clean run.
@@ -381,6 +421,7 @@ export interface RunDiff {
    * Activities the slow run made more often than the reference.
    */
   slow_only: ActivityCount[];
+  [k: string]: unknown;
 }
 export interface RunRef {
   /**
@@ -388,10 +429,12 @@ export interface RunRef {
    */
   steps: number;
   task: string;
+  [k: string]: unknown;
 }
 export interface ActivityCount {
   activity: string;
   count: number;
+  [k: string]: unknown;
 }
 /**
  * The most-step clean run.
@@ -402,12 +445,14 @@ export interface RunRef1 {
    */
   steps: number;
   task: string;
+  [k: string]: unknown;
 }
 /**
  * `GET /api/docs/<id>`: one open doc.
  */
 export interface DocShown {
   doc: DocRecord;
+  [k: string]: unknown;
 }
 /**
  * A doc as the board's reader gives it: the summary and the text after its front matter.
@@ -420,12 +465,14 @@ export interface DocRecord {
   title: string;
   type: string;
   updated_date: string;
+  [k: string]: unknown;
 }
 /**
  * `GET /api/docs`: every open doc, by ascending number.
  */
 export interface Docs {
   docs: DocSummary[];
+  [k: string]: unknown;
 }
 /**
  * A doc as the board's lister gives it: its front matter and where it is filed, without its body.
@@ -437,6 +484,7 @@ export interface DocSummary {
   title: string;
   type: string;
   updated_date: string;
+  [k: string]: unknown;
 }
 /**
  * `GET /api/done`: the next page of done tasks past their hot day, newest first, and whether older ones remain.
@@ -444,6 +492,7 @@ export interface DocSummary {
 export interface DonePage {
   more: boolean;
   tasks: RawTask[];
+  [k: string]: unknown;
 }
 /**
  * A Backlog task. On the board its state is its lane; on every other machine, the state its latest machine event left it in.
@@ -559,6 +608,7 @@ export interface RawTask {
    * Since when a workable Board task has been, epoch seconds.
    */
   workable_since?: number | null;
+  [k: string]: unknown;
 }
 /**
  * One acceptance criterion of a Board task and whether it is checked.
@@ -566,6 +616,7 @@ export interface RawTask {
 export interface TaskCriterion {
   checked: boolean;
   text: string;
+  [k: string]: unknown;
 }
 /**
  * The verdict on moving a task to one column: allowed, or guarded by a declared rule.
@@ -628,6 +679,7 @@ export interface ClaimRelease {
    * The claim TTL, in seconds, the session missed.
    */
   ttl: number;
+  [k: string]: unknown;
 }
 /**
  * One scheduler run a task's id names, linked to the run's own page.
@@ -636,6 +688,7 @@ export interface TaskRun {
   startedAt: string;
   status: string;
   url: string;
+  [k: string]: unknown;
 }
 export interface HeldSkill {
   /**
@@ -654,6 +707,7 @@ export interface HeldSkill {
    * The skill machine's state ids, in declared order.
    */
   states: string[];
+  [k: string]: unknown;
 }
 export interface HeldNext {
   /**
@@ -664,11 +718,13 @@ export interface HeldNext {
    * The skill or operation the edge hands to.
    */
   name: string;
+  [k: string]: unknown;
 }
 export interface TrailStep {
   at: number;
   event: string;
   state: string;
+  [k: string]: unknown;
 }
 /**
  * A Board task that moved (`agent` null once it left the lanes).
@@ -677,6 +733,7 @@ export interface TaskDelta {
   agent: RawTask | null;
   id: string;
   settled: Settled | null;
+  [k: string]: unknown;
 }
 /**
  * A task that left the Board's lanes for good: where it settled, when, and the title, assignee, milestone and labels it settled with.
@@ -695,6 +752,7 @@ export interface Settled {
   model: string;
   state: string;
   title: string;
+  [k: string]: unknown;
 }
 /**
  * A task a machine event placed on another machine.
@@ -703,6 +761,7 @@ export interface MoveDelta {
   agent: RawTask;
   id: string;
   machine: string;
+  [k: string]: unknown;
 }
 /**
  * A runs instance's workflows.
@@ -714,6 +773,7 @@ export interface DagsDelta {
   dags: DagBody[];
   error: string | null;
   pools?: Pool[] | null;
+  [k: string]: unknown;
 }
 /**
  * The share of the host's CPU an instance's scheduler and workers used since the last reading.
@@ -762,6 +822,7 @@ export interface DagBody {
   stats: RunStats | null;
   status: "not_started" | "queued" | "running" | "succeeded" | "failed" | "aborted" | "skipped";
   steps: Step[];
+  [k: string]: unknown;
 }
 /**
  * One run of a DAG that is running or queued now.
@@ -928,6 +989,7 @@ export interface PullsDelta {
   pulls: {
     [k: string]: Pull[];
   };
+  [k: string]: unknown;
 }
 /**
  * One pull request a task cites, as GitHub last answered the server.
@@ -972,11 +1034,13 @@ export interface Pull {
    */
   threads: number;
   url: string;
+  [k: string]: unknown;
 }
 export interface ClaimDelta {
   at: number;
   reason: string;
   task: string;
+  [k: string]: unknown;
 }
 /**
  * One qa lens's verdict on a task, as the ingest took it.
@@ -988,6 +1052,7 @@ export interface VerdictDelta {
   reason: string;
   round: number;
   task: string;
+  [k: string]: unknown;
 }
 /**
  * The merge strip and pins since the last event, whole. A Ledger's rows are not here: a page that has one open
@@ -996,6 +1061,7 @@ export interface VerdictDelta {
 export interface LedgersDelta {
   mergePins: LedgerRow[];
   mergeStrip: MergeStrip | null;
+  [k: string]: unknown;
 }
 /**
  * One merge occurrence: its pull request and commit, the runs paired with it by DAG, and, for another repository's
@@ -1022,6 +1088,7 @@ export interface LedgerRow {
   };
   sha?: string | null;
   tasks: string[];
+  [k: string]: unknown;
 }
 /**
  * A failed run of a cue the merge row holds open: the step it stopped at, and how the failure clears.
@@ -1033,15 +1100,18 @@ export interface LedgerFail {
   runId: string;
   startedAt: string;
   step: string;
+  [k: string]: unknown;
 }
 export interface LedgerResolved {
   at: string;
   runId: string;
+  [k: string]: unknown;
 }
 export interface LedgerPull {
   number: number;
   repo: string;
   url: string;
+  [k: string]: unknown;
 }
 /**
  * One DAG run a merge row carries: `inferred` when time, not the commit, paired it, and `ambiguous` how many other merges landed in its window.
@@ -1061,6 +1131,7 @@ export interface LedgerRun {
   steps: {
     [k: string]: "not_started" | "queued" | "running" | "succeeded" | "failed" | "aborted" | "skipped";
   };
+  [k: string]: unknown;
 }
 /**
  * The 24-hour strip of the merge ledger: per bucket, the merges, the failed ones and the forced reruns.
@@ -1069,11 +1140,13 @@ export interface MergeStrip {
   bucket: number;
   buckets: StripBucket[];
   since: number;
+  [k: string]: unknown;
 }
 export interface StripBucket {
   failed: number;
   merges: number;
   reruns: number;
+  [k: string]: unknown;
 }
 /**
  * Whether the scheduler admits tasks, and the capacity strip's readings; no dimensions before the first sample.
@@ -1115,6 +1188,7 @@ export interface SchedulerStatus {
   sessionsByHarness?: {
     [k: string]: SchedulerHarnessSessions;
   };
+  [k: string]: unknown;
 }
 /**
  * One capacity dimension's use against its limit: percent for `cpu` and `memory`, a count for `sessions`, points for `review`.
@@ -1123,6 +1197,7 @@ export interface SchedulerDimension {
   limit: number;
   name: "cpu" | "memory" | "sessions" | "review";
   use: number;
+  [k: string]: unknown;
 }
 /**
  * A session the scheduler started whose task is still running: the strip's Sessions menu draws one row of it.
@@ -1142,6 +1217,7 @@ export interface SchedulerSession {
    * The session's address, as `start` answered it.
    */
   url: string;
+  [k: string]: unknown;
 }
 /**
  * A task in the eligible lane that waits on the operator's decision rather than on capacity.
@@ -1149,6 +1225,7 @@ export interface SchedulerSession {
 export interface SchedulerOperatorTask {
   task: string;
   title: string;
+  [k: string]: unknown;
 }
 /**
  * The task the loop would admit next, or, when none fits, the top-ranked one and what it waits on.
@@ -1165,6 +1242,7 @@ export interface SchedulerNext {
   task: string;
   title: string;
   verdict: "starting" | "waits";
+  [k: string]: unknown;
 }
 /**
  * A harness whose admission is paused until `until` after a usage or credit limit.
@@ -1176,6 +1254,7 @@ export interface SchedulerPause {
    * When admission for this harness may resume, in epoch seconds.
    */
   until: number;
+  [k: string]: unknown;
 }
 /**
  * A daily window in which the scheduler admits nothing: `start` up to `end`, `HH:MM` in `timezone`; an `end` before
@@ -1188,6 +1267,7 @@ export interface QuietHours {
    * The IANA zone the window's times are read in, such as America/Phoenix.
    */
   timezone: string;
+  [k: string]: unknown;
 }
 /**
  * One harness's scheduler sessions in flight against its own session cap.
@@ -1195,6 +1275,7 @@ export interface QuietHours {
 export interface SchedulerHarnessSessions {
   limit: number;
   use: number;
+  [k: string]: unknown;
 }
 /**
  * `GET /api/analytics/graph`: the branching directly-follows graph of each transition, Codex left out.
@@ -1203,6 +1284,7 @@ export interface FlowGraph {
   graph: FlowEdge[];
   now: number;
   window_s: number;
+  [k: string]: unknown;
 }
 /**
  * One directly-follows edge of a transition's graph.
@@ -1238,6 +1320,7 @@ export interface FlowEdge {
    * The activity that directly follows it, or `[end]`.
    */
   target: string;
+  [k: string]: unknown;
 }
 /**
  * `GET /api/harnesses`: the tiers in order and each harness with its models and efforts.
@@ -1245,6 +1328,7 @@ export interface FlowEdge {
 export interface Harnesses {
   harnesses: HarnessBody[];
   tiers: string[];
+  [k: string]: unknown;
 }
 export interface HarnessBody {
   label: string;
@@ -1254,6 +1338,7 @@ export interface HarnessBody {
   tiers: {
     [k: string]: HarnessTier;
   };
+  [k: string]: unknown;
 }
 export interface HarnessTier {
   efforts: string[];
@@ -1264,6 +1349,7 @@ export interface HarnessTier {
   run_efforts?: {
     [k: string]: string;
   } | null;
+  [k: string]: unknown;
 }
 /**
  * `GET /api/analytics/health`: the Board's flow health over a window.
@@ -1276,6 +1362,7 @@ export interface Health {
   throughput: HealthThroughput;
   warnings: (GapWarning | UnknownLaneWarning)[];
   window_s: number;
+  [k: string]: unknown;
 }
 export interface HealthState {
   final: boolean;
@@ -1286,6 +1373,7 @@ export interface HealthState {
   open?: number | null;
   visits?: number | null;
   wip: number;
+  [k: string]: unknown;
 }
 export interface HealthStuck {
   counted_to_now: boolean;
@@ -1293,10 +1381,12 @@ export interface HealthStuck {
   since: number;
   state: string;
   task: string;
+  [k: string]: unknown;
 }
 export interface HealthThroughput {
   count: number;
   per_day: number;
+  [k: string]: unknown;
 }
 /**
  * The history lost entries between two ids, so any number here may miss some.
@@ -1308,6 +1398,7 @@ export interface GapWarning {
   lost: number;
   message: string;
   stream: string;
+  [k: string]: unknown;
 }
 /**
  * A lane that is no Board state.
@@ -1316,6 +1407,7 @@ export interface UnknownLaneWarning {
   kind: "unknown_lane";
   lane: string;
   message: string;
+  [k: string]: unknown;
 }
 /**
  * `GET /api/history?task=`: a task's lane changes, oldest first.
@@ -1323,12 +1415,14 @@ export interface UnknownLaneWarning {
 export interface LaneHistory {
   path: LaneStep[];
   task: string;
+  [k: string]: unknown;
 }
 export interface LaneStep {
   at: number;
   by?: string | null;
   from: string | null;
   to: string;
+  [k: string]: unknown;
 }
 /**
  * `GET /api/ledger/<event>`, and the first event of `GET /api/ledger/<event>/events`: a Ledger's rows, newest first,
@@ -1337,12 +1431,14 @@ export interface LaneStep {
 export interface LedgerPage {
   more: boolean;
   rows: LedgerRow[];
+  [k: string]: unknown;
 }
 /**
  * A later event of `GET /api/ledger/<event>/events`: the rows that are new or differ; every other row stands.
  */
 export interface LedgerChange {
   rows: LedgerRow[];
+  [k: string]: unknown;
 }
 /**
  * `GET /api/history?task=&machine=`: a task's path on one machine, and how many steps it has taken.
@@ -1352,11 +1448,13 @@ export interface MachineHistory {
   path: MachineStep[];
   steps: number;
   task: string;
+  [k: string]: unknown;
 }
 export interface MachineStep {
   at: number;
   event: string;
   state: string;
+  [k: string]: unknown;
 }
 /**
  * `GET /api/machines`: the next page of machines entered from `open`.
@@ -1365,6 +1463,7 @@ export interface Machines {
   machines: MachineRow[];
   more: boolean;
   open: string | null;
+  [k: string]: unknown;
 }
 /**
  * A machine of `GET /api/machines`: whole, with its derivation.
@@ -1380,6 +1479,7 @@ export interface MachineRow {
   parent: string | null;
   stuck: Stuck | null;
   ties: Tie[];
+  [k: string]: unknown;
 }
 export interface Machine {
   /**
@@ -1420,6 +1520,7 @@ export interface Machine {
   writers?: {
     [k: string]: Writer[];
   } | null;
+  [k: string]: unknown;
 }
 /**
  * A runs workflow's launch: the skill it starts and the machine that skill draws, null when it has none.
@@ -1427,6 +1528,7 @@ export interface Machine {
 export interface Launch {
   machine: string | null;
   skill: string;
+  [k: string]: unknown;
 }
 export interface MachineState {
   final: boolean;
@@ -1437,6 +1539,7 @@ export interface MachineState {
    * The type the machine declares the state: `initial`, `final`, `resting`, `waiting_on_fact` or `waiting_on_person`; null when it declares none.
    */
   role?: string | null;
+  [k: string]: unknown;
 }
 /**
  * Where a Board state opens into another machine, and which Board event each inner final state fires.
@@ -1461,6 +1564,7 @@ export interface Submachine {
    * What has to hold for the inner machine to run under `state`; empty when always.
    */
   when: string;
+  [k: string]: unknown;
 }
 export interface Transition {
   /**
@@ -1470,6 +1574,7 @@ export interface Transition {
   event: string;
   source: string;
   target: string;
+  [k: string]: unknown;
 }
 /**
  * The sentence of a skill that sends a session down a transition.
@@ -1477,6 +1582,7 @@ export interface Transition {
 export interface Cite {
   quote: string;
   skill: string;
+  [k: string]: unknown;
 }
 /**
  * Who fires a Board event: a runs workflow (by `<instance>/<workflow>` name), `operator` or `agent`.
@@ -1484,6 +1590,7 @@ export interface Cite {
 export interface Writer {
   actor: string;
   trigger: string;
+  [k: string]: unknown;
 }
 /**
  * The longest-stuck task of a machine and every machine nested below it: idle over two hours outside a final state.
@@ -1495,6 +1602,7 @@ export interface Stuck {
    */
   since: number;
   state: string;
+  [k: string]: unknown;
 }
 /**
  * Where a lifecycle machine is entered from.
@@ -1513,12 +1621,14 @@ export interface Tie {
    * What has to hold for a declared tie to run; empty otherwise.
    */
   when: string;
+  [k: string]: unknown;
 }
 /**
  * `GET /api/milestones/<id>`: one open milestone.
  */
 export interface MilestoneShown {
   milestone: MilestoneRecord;
+  [k: string]: unknown;
 }
 /**
  * A milestone as the board's reader gives it: its sections as text and bullet lists, and its whole description.
@@ -1531,12 +1641,14 @@ export interface MilestoneRecord {
   retro: string;
   specs: string[];
   title: string;
+  [k: string]: unknown;
 }
 /**
  * `GET /api/milestones`: every open milestone, by ascending number.
  */
 export interface Milestones {
   milestones: MilestoneRecord[];
+  [k: string]: unknown;
 }
 /**
  * `GET /api/analytics/missed-loads`: per declared skill, the cases that ran its trigger without loading it.
@@ -1545,6 +1657,7 @@ export interface MissedLoads {
   now: number;
   skills: MissedSkill[];
   window_s: number;
+  [k: string]: unknown;
 }
 /**
  * A declared skill: the cases that performed what should load it, and those that did not load it.
@@ -1557,6 +1670,7 @@ export interface MissedSkill {
   missed: number;
   performed: number;
   skill: string;
+  [k: string]: unknown;
 }
 /**
  * One session's work on one task (`task` None: a branch that names none).
@@ -1566,12 +1680,14 @@ export interface CaseRef {
   last_at: number;
   session: string;
   task: string | null;
+  [k: string]: unknown;
 }
 /**
  * `GET /api/pulls`: the stored pull requests matching every filter given, by repository then number.
  */
 export interface Pulls {
   pulls: PullRecord[];
+  [k: string]: unknown;
 }
 /**
  * One pull request the PR store read from GitHub, as of `fetchedAt` (epoch seconds).
@@ -1596,10 +1712,12 @@ export interface PullRecord {
   threads: number;
   unresolvedThreads: PullThread[] | null;
   updatedAt: string;
+  [k: string]: unknown;
 }
 export interface RequiredCheck {
   name: string;
   result: "pass" | "failing" | "pending";
+  [k: string]: unknown;
 }
 /**
  * An unresolved review thread: its id and the login of its first comment's author, null for a deleted account.
@@ -1607,6 +1725,7 @@ export interface RequiredCheck {
 export interface PullThread {
   author: string | null;
   id: string;
+  [k: string]: unknown;
 }
 /**
  * `POST /api/move`: move `task`, or each of `tasks` in one call, to the column `to`.
@@ -1913,12 +2032,14 @@ export interface SchedulerRequest {
  */
 export interface RestartingEvent {
   at: number;
+  [k: string]: unknown;
 }
 /**
  * `GET /api/retired[?task=<id>]`: every retired task, or the one `task` names, by id.
  */
 export interface RetiredTasks {
   tasks: RetiredTask[];
+  [k: string]: unknown;
 }
 /**
  * A retired task as the board's history store keeps it: its id, its file name and the file's text, byte-for-byte.
@@ -1927,6 +2048,7 @@ export interface RetiredTask {
   name: string;
   task: string;
   text: string;
+  [k: string]: unknown;
 }
 /**
  * `GET /api/search?q=&limit=&label=&finished_within_days=`: the tasks holding every word of `q`, best match first,
@@ -1935,6 +2057,7 @@ export interface RetiredTask {
 export interface SearchResults {
   hits: SearchHit[];
   query: string;
+  [k: string]: unknown;
 }
 /**
  * One task a search found: where it is now, and the text around the match.
@@ -1945,6 +2068,7 @@ export interface SearchHit {
   snippet: string;
   task: string;
   title: string;
+  [k: string]: unknown;
 }
 /**
  * `GET /api/analytics/steps`: every model request of a window, oldest first.
@@ -1953,6 +2077,7 @@ export interface SessionSteps {
   now: number;
   steps: SessionStep[];
   window_s: number;
+  [k: string]: unknown;
 }
 /**
  * One model request of a harness session, with the skill in force when it ran and the calls it made.
@@ -1988,6 +2113,7 @@ export interface SessionStep {
   skill: string;
   task: string | null;
   tokens: TokenCounts;
+  [k: string]: unknown;
 }
 export interface TokenCounts {
   cache_read: number;
@@ -1995,6 +2121,7 @@ export interface TokenCounts {
   input: number;
   output: number;
   reasoning: number;
+  [k: string]: unknown;
 }
 /**
  * `GET /api/analytics/sessions`: session and slice health over a window.
@@ -2004,6 +2131,7 @@ export interface Sessions {
   sessions: SessionHealth[];
   slices: SliceHealth[];
   window_s: number;
+  [k: string]: unknown;
 }
 /**
  * One harness session's work on one task (`task` None: a branch that names none), from its OTLP signals.
@@ -2057,6 +2185,7 @@ export interface SessionHealth {
     [k: string]: number;
   };
   user_rejects: number;
+  [k: string]: unknown;
 }
 /**
  * What the sessions that worked one task did together.
@@ -2095,6 +2224,7 @@ export interface SliceHealth {
   tokens: TokenCounts;
   tool_calls: number;
   user_rejects: number;
+  [k: string]: unknown;
 }
 export interface Snapshot {
   /**
@@ -2195,6 +2325,7 @@ export interface Snapshot {
   settled: {
     [k: string]: Settled;
   };
+  [k: string]: unknown;
 }
 /**
  * What the board writes beyond moves: the page draws Edit, Archive… and New task only for what its board does.
@@ -2203,10 +2334,12 @@ export interface Capabilities {
   archive: boolean;
   create?: boolean | null;
   edit: boolean;
+  [k: string]: unknown;
 }
 export interface Claim {
   at: number;
   reason: string;
+  [k: string]: unknown;
 }
 /**
  * A DAG that runs on the same trigger as a Board event's writer but writes no lane itself.
@@ -2224,6 +2357,7 @@ export interface Cue {
    */
   resolves?: ("forced" | "next") | null;
   state: string;
+  [k: string]: unknown;
 }
 /**
  * A domain's DAGs, and whether each is declared safe to run from the page; `processes` package them when configured.
@@ -2232,10 +2366,12 @@ export interface Domain {
   dags: DomainDag[];
   name: string;
   processes?: DomainProcess[];
+  [k: string]: unknown;
 }
 export interface DomainDag {
   name: string;
   runSafe: boolean;
+  [k: string]: unknown;
 }
 /**
  * A named package of a domain's DAGs.
@@ -2243,6 +2379,7 @@ export interface DomainDag {
 export interface DomainProcess {
   dags: DomainDag[];
   name: string;
+  [k: string]: unknown;
 }
 export interface FlowSnapshot {
   agents: RawTask[];
@@ -2255,6 +2392,7 @@ export interface FlowSnapshot {
   parent?: string | null;
   stuck?: Stuck | null;
   ties?: Tie[] | null;
+  [k: string]: unknown;
 }
 /**
  * The first page of machines entered from `open`, by name; their bodies are in the snapshot's `flows`.
@@ -2263,12 +2401,14 @@ export interface MachinePage {
   machines: string[];
   more: boolean;
   open: string | null;
+  [k: string]: unknown;
 }
 /**
  * The last 24 hours of machine entries, counted over every machine.
  */
 export interface MachineStrip {
   entries: MachineEntry[];
+  [k: string]: unknown;
 }
 export interface MachineEntry {
   at: number;
@@ -2276,10 +2416,12 @@ export interface MachineEntry {
   from: MachineEntryFrom | null;
   machine: string;
   row: string;
+  [k: string]: unknown;
 }
 export interface MachineEntryFrom {
   machine: string;
   state: string;
+  [k: string]: unknown;
 }
 /**
  * A task's latest pass/fail rating: its verdict, the reason it names (empty when none), when it was set (epoch
@@ -2291,6 +2433,7 @@ export interface Rating {
   changes: number;
   reason: string;
   verdict: string;
+  [k: string]: unknown;
 }
 /**
  * Which of the board's States play which part, as its machine declares them: a client reads these and never a
@@ -2333,6 +2476,7 @@ export interface Roles {
    * Where a session works a task.
    */
   working?: string | null;
+  [k: string]: unknown;
 }
 /**
  * `GET /api/analytics/stages`: sub-stages and their stability from one window to the one before.
@@ -2341,6 +2485,7 @@ export interface SubStages {
   now: number;
   stages: SubStage[];
   window_s: number;
+  [k: string]: unknown;
 }
 /**
  * One stage mined at the judgement cuts of the stretches no skill governs, this week and the week before.
@@ -2366,6 +2511,7 @@ export interface SubStage {
    * The cut that opens the stage, `[start]` for the first.
    */
   stage: string;
+  [k: string]: unknown;
 }
 /**
  * `GET /api/history?task=&hours=`: every machine event of a task in the window, oldest first.
@@ -2374,6 +2520,7 @@ export interface TaskEventHistory {
   events: MachineEvent[];
   hours: number;
   task: string;
+  [k: string]: unknown;
 }
 export interface MachineEvent {
   at: number;
@@ -2381,6 +2528,7 @@ export interface MachineEvent {
   from: string;
   machine: string;
   to: string;
+  [k: string]: unknown;
 }
 /**
  * `GET /api/task/<id>`: the full record of a task from the board's reader, keyed by its editable fields.
@@ -2390,6 +2538,7 @@ export interface TaskRecord {
     [k: string]: unknown;
   };
   task: string;
+  [k: string]: unknown;
 }
 /**
  * `GET /api/analytics/trace-clusters`: recurring work, ranked by distinct sessions.
@@ -2408,6 +2557,7 @@ export interface TraceClusters {
   now: number;
   threshold: number;
   window_s: number;
+  [k: string]: unknown;
 }
 /**
  * Cases that did the same distinctive work, and the skills that covered it.
@@ -2446,6 +2596,7 @@ export interface TraceCluster {
    * Cases that loaded no skill beyond the lifecycle skills.
    */
   uncovered: number;
+  [k: string]: unknown;
 }
 /**
  * The case nearest every other by normalized LCS distance between traces, and the cluster's usual spread.
@@ -2454,11 +2605,13 @@ export interface ClusterMedoid {
   case: CaseRef;
   median_distance: number;
   trace: string[];
+  [k: string]: unknown;
 }
 export interface ClusterMissed {
   missed: number;
   performed: number;
   skill: string;
+  [k: string]: unknown;
 }
 /**
  * A case far from the medoid: `deletions` are the medoid's activities it lacks, `insertions` its own extra.
@@ -2468,10 +2621,12 @@ export interface ClusterOutlier {
   deletions: string[];
   distance: number;
   insertions: string[];
+  [k: string]: unknown;
 }
 export interface ClusterSkill {
   cases: number;
   skill: string;
+  [k: string]: unknown;
 }
 /**
  * The trajectory analytics: the paths of the runs that ended in a terminal over a window.
@@ -2498,10 +2653,12 @@ export interface Trajectories {
   runs: TrajectoryRun[];
   variants: Variant[];
   window_s: number;
+  [k: string]: unknown;
 }
 export interface Bottleneck {
   path_days: number;
   state: string;
+  [k: string]: unknown;
 }
 /**
  * The forecast scored on the latest fifth of the ended runs against a chain fitted on the others.
@@ -2513,6 +2670,7 @@ export interface Calibration {
   held_out: number;
   predictions: number;
   unscored: number;
+  [k: string]: unknown;
 }
 /**
  * One decile of forecast chance of the goal on the held-out runs: its forecasts' mean against the share of
@@ -2525,10 +2683,12 @@ export interface Decile {
   observed: number | null;
   predicted: number | null;
   runs: number;
+  [k: string]: unknown;
 }
 export interface ChainState {
   expected_days: number;
   p_goal: number;
+  [k: string]: unknown;
 }
 /**
  * One run still going: where it is, its loops so far, and from its state's row the chance of each terminal and
@@ -2547,6 +2707,7 @@ export interface Forecast {
   source: string;
   state: string;
   task: string;
+  [k: string]: unknown;
 }
 export interface GateSummary {
   bypassable: boolean;
@@ -2556,10 +2717,12 @@ export interface GateSummary {
   mandatory: number;
   runs: number;
   witness: GateWitness | null;
+  [k: string]: unknown;
 }
 export interface GateWitness {
   path: string[];
   task: string;
+  [k: string]: unknown;
 }
 /**
  * One back-edge across the runs that took it, summed from the runs' own figures.
@@ -2570,16 +2733,19 @@ export interface LevelLoop {
   runs: number;
   to: string;
   trips: number;
+  [k: string]: unknown;
 }
 export interface Norm {
   count: number;
   path: string[];
+  [k: string]: unknown;
 }
 export interface Outlier {
   distance: number;
   path: string[];
   source: string;
   task: string;
+  [k: string]: unknown;
 }
 export interface TrajectoryRun {
   back_edges: number;
@@ -2590,6 +2756,7 @@ export interface TrajectoryRun {
   sccs: number;
   source: string;
   task: string;
+  [k: string]: unknown;
 }
 export interface RunGate {
   crossed: boolean;
@@ -2598,6 +2765,7 @@ export interface RunGate {
   mandatory: boolean;
   post_dominators: string[];
   witness: string[] | null;
+  [k: string]: unknown;
 }
 /**
  * One back-edge a run took: its trips and the days they took, from the target's previous visit to each return.
@@ -2607,11 +2775,13 @@ export interface RunLoop {
   from: string;
   to: string;
   trips: number;
+  [k: string]: unknown;
 }
 export interface Variant {
   count: number;
   path: string[];
   share: number;
+  [k: string]: unknown;
 }
 /**
  * `GET /api/analytics/transitions`: what each skill cost within each kind and size, Codex left out.
@@ -2620,6 +2790,7 @@ export interface Transitions {
   now: number;
   transitions: TransitionCost[];
   window_s: number;
+  [k: string]: unknown;
 }
 /**
  * The cost of one skill in force, within one kind and size of task.
@@ -2659,6 +2830,7 @@ export interface TransitionCost {
    * Steps with a call that failed, was refused by a guard or hook, or repeats the command before it.
    */
   wasted_steps: number;
+  [k: string]: unknown;
 }
 /**
  * `/api/history-window`: the effective window, the declared default, and whether Admin's override is in effect.
@@ -2667,4 +2839,5 @@ export interface WindowState {
   default: number;
   hours: number;
   overridden: boolean;
+  [k: string]: unknown;
 }

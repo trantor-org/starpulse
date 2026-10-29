@@ -90,6 +90,23 @@ def test_a_changed_test_file_selects_itself(repo):
     assert select(repo, ["tests/unit/feed/test_lone.py"]) == Selection(["tests/unit/feed/test_lone.py"])
 
 
+CONTRACT_TEST = "tests/unit/contracts/test_raw_task_feed_row.py"
+CONTRACT_PRODUCERS = [
+    "starpulse/board/feed/views.py",
+    "starpulse/board/feed/reads.py",
+    "starpulse/board/feed/shared.py",
+    "starpulse/contracts/api/dto/task.py",
+    "starpulse/contracts/api/dto/machine.py",
+]
+
+
+@pytest.mark.parametrize("changed", CONTRACT_PRODUCERS)
+def test_a_feed_or_dto_change_selects_the_raw_task_contract_test_by_import_graph_and_by_map(changed):
+    other = "tests/unit/views/test_other.py"
+    assert CONTRACT_TEST in select(ROOT, [changed]).tests
+    assert CONTRACT_TEST in select(ROOT, [changed], mapped(**{other: [changed]})).tests
+
+
 def test_a_ci_script_selects_the_ci_test_that_imports_it_by_its_bare_name(repo):
     assert select(repo, ["ci/sizer.py"]) == Selection(["ci/test_sizer.py"])
 
