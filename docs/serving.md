@@ -609,7 +609,7 @@ harness lands in `pauses` and blocks admission for that harness only.
 `sampledAt` is epoch seconds, and `dimensions` is empty with `sampledAt` null until the first sample.
 
 - `cpu` and `memory` are the host's busy share and used share, in percent, read from `/proc`.
-- `sessions` counts the tasks with an active harness session; with a dispatch loop it counts the selected harness's `inFlight` sessions.
+- `sessions` counts the tasks with an active harness session; with a dispatch loop it counts the selected harness's `inFlight` sessions that are active, so a session stopped between a reply and its next tool result frees its slot.
 - `review` sums the `size-N` labels of the tasks in `review_lane`; a task without one counts `unsized_points`.
 
 `inFlight`, `next`, `pauses` and `needsOperator` come from the dispatch loop, so a server that runs none leaves them out.
@@ -617,7 +617,8 @@ harness lands in `pauses` and blocks admission for that harness only.
 - `inFlight` lists every live session holding an In Progress task, oldest first, each with its task, title, agent
   profile, start time in epoch seconds and session address (`url`); it is `[]` when none runs. It includes the
   sessions `POST /api/start` or the operator opened, which have no known address (`url` is `""`) and count against the
-  default harness's cap; a session is live while its harness machine is active with an event in the last 30 minutes.
+  default harness's cap; a session is live while its harness machine has an event in the last 30 minutes, active or stopped,
+  because every mid-turn reply stops the machine until the next tool result.
 - `next` is what the next pass would do, whatever the switch says: the task `decide` ranks first among those that fit, with
   `verdict` `starting` and `reason` `goes next`; when none fits, the top-ranked task with `verdict` `waits` and the first
   dimension it overfits as `reason`. Inside the quiet hours the top-ranked task `waits` with `reason` `quiet hours`,
