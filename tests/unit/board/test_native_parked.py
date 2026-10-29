@@ -36,7 +36,7 @@ def test_a_board_with_no_parked_command_tells_no_one(tmp_path: Path) -> None:
     assert native.board({}, tmp_path).parked is None
 
 
-@pytest.mark.parametrize("hook", ["parked", "closed"])
+@pytest.mark.parametrize("hook", ["parked", "closed", "released"])
 def test_each_notice_command_runs_for_the_task_it_is_given(tmp_path: Path, hook: str) -> None:
     script = tmp_path / "notice.py"
     script.write_text("import sys, pathlib\npathlib.Path('told').write_text(sys.argv[1])\n")

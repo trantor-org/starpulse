@@ -100,7 +100,7 @@ def test_the_server_publishes_the_exit_event_to_the_machine_events_log_as_the_ta
         "publish",
         lambda machine, event, *, actor, task, log: published.append((machine, event, actor, task)),
     )
-    delivery = SimpleNamespace(edit=board.edit, waits=WAITS, evaluate=None, holds=None, read=None, unfinished=None, create=None, parked=None, closed=None)
+    delivery = SimpleNamespace(edit=board.edit, waits=WAITS, evaluate=None, holds=None, read=None, unfinished=None, create=None, parked=None, closed=None, released=None)
     config = replace(load(None), task_actor=True, pull_requests=False, release=None)
     actor, _ = server.start_delivery(config, delivery, feed, None, store, Pins(), stop)
     assert actor.ready.wait(5)
@@ -123,7 +123,7 @@ def test_the_server_hands_the_configured_sequences_to_the_task_actor(
         "publish",
         lambda machine, event, *, actor, task, log: published.append((machine, event, actor, task)),
     )
-    delivery = SimpleNamespace(edit=board.edit, waits=WAITS, evaluate=None, holds=None, read=None, unfinished=None, create=None, parked=None, closed=None)
+    delivery = SimpleNamespace(edit=board.edit, waits=WAITS, evaluate=None, holds=None, read=None, unfinished=None, create=None, parked=None, closed=None, released=None)
     sequences = {"story": ("build", "qa", "deliver")}
     config = replace(load(None), task_actor=True, pull_requests=False, release=None, sequences=sequences)
     actor, _ = server.start_delivery(config, delivery, feed, None, store, Pins(), stop)

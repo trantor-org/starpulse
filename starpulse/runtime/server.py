@@ -493,6 +493,7 @@ def start_delivery(
             unfinished=board.unfinished,
             create=board.create,
             parked=board.parked,
+            released=board.released,
             closed=board.closed,
             live=live,
             advance=lambda machine, task, event: machine_events.publish(

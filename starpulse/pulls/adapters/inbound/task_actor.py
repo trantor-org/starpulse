@@ -168,6 +168,7 @@ class TaskActor:
         evaluate: Callable[[str, str], list[dict[str, Any]]] | None = None,
         holds: Callable[[str], Sequence[str]] | None = None,
         parked: Callable[[str], None] | None = None,
+        released: Callable[[str], None] | None = None,
         closed: Callable[[str], None] | None = None,
         fresh_s: float = criteria.CACHE_SECONDS,
         live: LiveBuild | None = None,
@@ -196,6 +197,7 @@ class TaskActor:
         self._evaluate = evaluate
         self._holds = holds
         self._tell = parked
+        self._released = released
         self._closed = closed
         self._fresh_s = fresh_s
         #: The lanes that wait on a task's Start Criteria.
@@ -550,6 +552,8 @@ class TaskActor:
             roles = self._feed.roles
             if self._tell and source == roles.working and target == roles.waiting:
                 self._notice(self._tell, name, "was parked but its holder was not told")
+            if self._released and source == roles.waiting and target == roles.ready:
+                self._notice(self._released, name, "was released but its holder was not told")
             if self._closed and target == roles.done:
                 self._notice(self._closed, name, "was closed but the board was not told")
             return
@@ -609,7 +613,7 @@ class TaskActor:
             logger.warning("task actor: the lint refusal of %s was not commented: %s", name, written.output)
 
     def _notice(self, hook: Callable[[str], None], name: str, missed: str) -> None:
-        """Run the board's `parked` or `closed` hook for a task the actor just moved; a failure is logged only."""
+        """Run the board's `parked`, `released` or `closed` hook for a task the actor just moved; a failure is logged only."""
         try:
             hook(name)
         except Exception:  # the move stands; a board hook is a notice, not part of the write

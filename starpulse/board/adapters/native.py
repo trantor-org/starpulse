@@ -103,6 +103,7 @@ _SETTINGS = {
     "holds",
     "unfinished",
     "parked",
+    "released",
     "closed",
     "validate",
     "python_path",
@@ -1240,8 +1241,8 @@ def _holds(command: object, base: Path) -> Callable[[str], list[str]] | None:
 
 
 def _notice(command: object, base: Path) -> Callable[[str], None] | None:
-    """The `parked` or `closed` command, run in `base` with `{id}` replaced by the task's id, after the task actor moves
-    a task from the working lane to Waiting or to Done. A nonzero exit raises with what the command said."""
+    """The `parked`, `released` or `closed` command, run in `base` with `{id}` replaced by the task's id, after the task
+    actor moves a task from the working lane to Waiting, from Waiting to Ready or to Done. A nonzero exit raises with what the command said."""
     if not command:
         return None
     parts = shlex.split(str(command))
@@ -1309,6 +1310,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             "holds": _holds(settings.get("holds"), base),
             "unfinished": _holds(settings.get("unfinished"), base),
             "parked": _notice(settings.get("parked"), base),
+            "released": _notice(settings.get("released"), base),
             "closed": _notice(settings.get("closed"), base),
             "edit": _editor(root, config.statuses, guard, link, roles.attention),
             "archive": _archiver(root, config.statuses, roles, guard),
