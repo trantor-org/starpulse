@@ -6,7 +6,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import AfterValidator, Field, ValidationInfo, field_validator, model_validator
 
-from starpulse.contracts.api._base import _Api
+from starpulse.contracts.api._base import _Request
 from starpulse.contracts.api.dto.scheduler import QuietHours
 
 #: The details a create takes besides its title, as one text value or a list of them. A create takes every one in its
@@ -39,7 +39,7 @@ def _nonblank(value: str) -> str:
 NonBlank = Annotated[str, AfterValidator(_nonblank)]
 
 
-class _Writer(_Api):
+class _Writer(_Request):
     """The writer a board write names: `actor` is `operator` from the page and `agent` from a session; a write naming
     neither is `anonymous`. The `session` and `harness` it names land on the change's `board:lanes` row."""
 
@@ -62,7 +62,7 @@ class MoveRequest(_Writer):
         return self
 
 
-class StartRequest(_Api):
+class StartRequest(_Request):
     """`POST /api/start`: start a session for `task` on `profile`; `harness` defaults to `claude`.
 
     `assignee` is the legacy name of `profile` and is read when `profile` is absent.
@@ -107,26 +107,26 @@ class RestoreRequest(_Writer):
     task: str
 
 
-class TakeOverRequest(_Api):
+class TakeOverRequest(_Request):
     """`POST /api/take-over`: flip the unattended task `task` to interactive; its workflow types nothing more."""
 
     task: str
 
 
-class RetireRequest(_Api):
+class RetireRequest(_Request):
     """`POST /api/retire`: take the finished task `task` off the board into the history store's retired tasks."""
 
     task: str
 
 
-class RetiredImportRequest(_Api):
+class RetiredImportRequest(_Request):
     """`POST /api/retired/import`: keep the retired task file `name`, holding `text`, in the history store."""
 
     name: str
     text: str
 
 
-class CompleteRequest(_Api):
+class CompleteRequest(_Request):
     """`POST /api/complete`: move the Done task `task` into the board's completed tasks."""
 
     task: str
@@ -160,7 +160,7 @@ class ReviewRequest(_Writer):
     comment: str | None = None
 
 
-class CreateSpec(_Api):
+class CreateSpec(_Request):
     """One task a create files: its `title` and details, and an optional `ref` that a sibling in the same batch names
     as `ref:<label>` in its `dependencies`.
 
@@ -261,7 +261,7 @@ class MissRequest(_Writer):
     reason: str | None = None
 
 
-class MilestoneCreateRequest(_Api):
+class MilestoneCreateRequest(_Request):
     """`POST /api/milestones`: open a milestone; only the title is required."""
 
     title: str
@@ -271,20 +271,20 @@ class MilestoneCreateRequest(_Api):
     retro: str | None = None
 
 
-class MilestoneEditRequest(_Api):
+class MilestoneEditRequest(_Request):
     """`POST /api/milestones/edit`: replace the `title`, `outcome`, `specs`, `adrs` or `retro` `changes` names."""
 
     milestone: str
     changes: dict[str, Any]
 
 
-class MilestoneArchiveRequest(_Api):
+class MilestoneArchiveRequest(_Request):
     """`POST /api/milestones/archive`: archive `milestone`."""
 
     milestone: str
 
 
-class DocCreateRequest(_Api):
+class DocCreateRequest(_Request):
     """`POST /api/docs`: file a doc; only the title is required. `type` is `specification`, `guide`, `readme` or `other`."""
 
     title: str
@@ -293,20 +293,20 @@ class DocCreateRequest(_Api):
     body: str | None = None
 
 
-class DocEditRequest(_Api):
+class DocEditRequest(_Request):
     """`POST /api/docs/edit`: replace the `title`, `type` or `body` `changes` names."""
 
     doc: str
     changes: dict[str, Any]
 
 
-class DocArchiveRequest(_Api):
+class DocArchiveRequest(_Request):
     """`POST /api/docs/archive`: archive `doc`."""
 
     doc: str
 
 
-class DocRestoreRequest(_Api):
+class DocRestoreRequest(_Request):
     """`POST /api/docs/restore`: return the archived doc `doc` to `folder` under the board's docs (the docs folder
     itself when absent), unchanged."""
 
@@ -314,13 +314,13 @@ class DocRestoreRequest(_Api):
     folder: str | None = None
 
 
-class WindowRequest(_Api):
+class WindowRequest(_Request):
     """`PUT /api/history-window`: set the shared history window."""
 
     hours: float
 
 
-class SchedulerRequest(_Api):
+class SchedulerRequest(_Request):
     """`PUT /api/scheduler`: whether the scheduler admits tasks, which harness it starts on, and/or its quiet hours."""
 
     enabled: bool | None = None

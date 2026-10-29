@@ -1,7 +1,6 @@
 {
   "$defs": {
     "Accepted": {
-      "additionalProperties": false,
       "properties": {
         "accepted": {
           "type": "boolean"
@@ -98,7 +97,6 @@
       "type": "object"
     },
     "ActivityCount": {
-      "additionalProperties": false,
       "properties": {
         "activity": {
           "type": "string"
@@ -115,7 +113,6 @@
       "type": "object"
     },
     "ApiError": {
-      "additionalProperties": false,
       "description": "Every refusal: what went wrong.",
       "properties": {
         "error": {
@@ -207,7 +204,6 @@
       "type": "object"
     },
     "Archived": {
-      "additionalProperties": false,
       "properties": {
         "task": {
           "type": "string"
@@ -220,7 +216,6 @@
       "type": "object"
     },
     "ArchivedEach": {
-      "additionalProperties": false,
       "description": "A batch archive's answer: the tasks it archived, and each refused task with why.",
       "properties": {
         "archived": {
@@ -244,7 +239,6 @@
       "type": "object"
     },
     "Bottleneck": {
-      "additionalProperties": false,
       "properties": {
         "path_days": {
           "type": "number"
@@ -261,7 +255,6 @@
       "type": "object"
     },
     "BuildEvent": {
-      "additionalProperties": false,
       "description": "The page build the server serves, sent right after each connect's snapshot: a hash of the built page's `index.html`,\nwhich names every chunk it loads by its digest. A page that holds another build than the one it is named is out of date.",
       "properties": {
         "id": {
@@ -275,7 +268,6 @@
       "type": "object"
     },
     "Calibration": {
-      "additionalProperties": false,
       "description": "The forecast scored on the latest fifth of the ended runs against a chain fitted on the others.",
       "properties": {
         "calibrated": {
@@ -319,7 +311,6 @@
       "type": "object"
     },
     "Capabilities": {
-      "additionalProperties": false,
       "description": "What the board writes beyond moves: the page draws Edit, Archive\u2026 and New task only for what its board does.",
       "properties": {
         "archive": {
@@ -348,7 +339,6 @@
       "type": "object"
     },
     "CaseRef": {
-      "additionalProperties": false,
       "description": "One session's work on one task (`task` None: a branch that names none).",
       "properties": {
         "harness": {
@@ -381,7 +371,6 @@
       "type": "object"
     },
     "Cell": {
-      "additionalProperties": false,
       "description": "Median steps per clean completion of one kind and size, over its latest-fifth holdout.",
       "properties": {
         "clean_rate": {
@@ -440,7 +429,6 @@
       "type": "object"
     },
     "Cells": {
-      "additionalProperties": false,
       "description": "`GET /api/analytics/cells`: cells with at least 5 clean completions; a smaller cell reports nothing.",
       "properties": {
         "cells": {
@@ -465,7 +453,6 @@
       "type": "object"
     },
     "ChainState": {
-      "additionalProperties": false,
       "properties": {
         "expected_days": {
           "type": "number"
@@ -482,7 +469,6 @@
       "type": "object"
     },
     "Cite": {
-      "additionalProperties": false,
       "description": "The sentence of a skill that sends a session down a transition.",
       "properties": {
         "quote": {
@@ -500,7 +486,6 @@
       "type": "object"
     },
     "Claim": {
-      "additionalProperties": false,
       "properties": {
         "at": {
           "type": "number"
@@ -517,7 +502,6 @@
       "type": "object"
     },
     "ClaimDelta": {
-      "additionalProperties": false,
       "properties": {
         "at": {
           "type": "number"
@@ -538,7 +522,6 @@
       "type": "object"
     },
     "ClaimRelease": {
-      "additionalProperties": false,
       "description": "The claim a Board task's claim-TTL sweep released: when, and the session, last renewal and TTL it released.",
       "properties": {
         "at": {
@@ -614,7 +597,6 @@
       "type": "object"
     },
     "Claimed": {
-      "additionalProperties": false,
       "properties": {
         "assignee": {
           "type": "string"
@@ -635,7 +617,6 @@
       "type": "object"
     },
     "ClusterMedoid": {
-      "additionalProperties": false,
       "description": "The case nearest every other by normalized LCS distance between traces, and the cluster's usual spread.",
       "properties": {
         "case": {
@@ -660,7 +641,6 @@
       "type": "object"
     },
     "ClusterMissed": {
-      "additionalProperties": false,
       "properties": {
         "missed": {
           "type": "integer"
@@ -681,7 +661,6 @@
       "type": "object"
     },
     "ClusterOutlier": {
-      "additionalProperties": false,
       "description": "A case far from the medoid: `deletions` are the medoid's activities it lacks, `insertions` its own extra.",
       "properties": {
         "case": {
@@ -713,7 +692,6 @@
       "type": "object"
     },
     "ClusterSkill": {
-      "additionalProperties": false,
       "properties": {
         "cases": {
           "type": "integer"
@@ -744,7 +722,6 @@
       "type": "object"
     },
     "Completed": {
-      "additionalProperties": false,
       "properties": {
         "task": {
           "type": "string"
@@ -757,7 +734,6 @@
       "type": "object"
     },
     "ContractCheck": {
-      "additionalProperties": false,
       "description": "One check of the contract between the config and the machines' DAG cues.",
       "properties": {
         "check": {
@@ -785,7 +761,6 @@
       "type": "object"
     },
     "ContractReport": {
-      "additionalProperties": false,
       "description": "The contract checks `starpulse doctor` runs; `ok` is false when any fails.",
       "properties": {
         "checks": {
@@ -806,7 +781,6 @@
       "type": "object"
     },
     "CostToGo": {
-      "additionalProperties": false,
       "description": "`GET /api/analytics/cost-to-go`: every state of each skill machine, whatever its `n`; a consumer holds a cell with a small one.",
       "properties": {
         "cost_to_go": {
@@ -1411,7 +1385,6 @@
       "type": "object"
     },
     "Created": {
-      "additionalProperties": false,
       "properties": {
         "task": {
           "type": "string"
@@ -1424,7 +1397,6 @@
       "type": "object"
     },
     "CreatedEach": {
-      "additionalProperties": false,
       "description": "A batch create's answer: each spec's new task, or why it was refused, in the order the specs came.",
       "properties": {
         "results": {
@@ -1451,7 +1423,6 @@
       "type": "object"
     },
     "Cue": {
-      "additionalProperties": false,
       "description": "A DAG that runs on the same trigger as a Board event's writer but writes no lane itself.",
       "properties": {
         "dag": {
@@ -1498,7 +1469,6 @@
       "type": "object"
     },
     "DagBody": {
-      "additionalProperties": false,
       "description": "A runs workflow as the page draws it: the latest run, the runs in flight and the pool it runs on.",
       "properties": {
         "active": {
@@ -1615,7 +1585,6 @@
       "type": "object"
     },
     "DagsDelta": {
-      "additionalProperties": false,
       "description": "A runs instance's workflows.",
       "properties": {
         "cpu": {
@@ -1671,7 +1640,6 @@
       "type": "object"
     },
     "Decile": {
-      "additionalProperties": false,
       "description": "One decile of forecast chance of the goal on the held-out runs: its forecasts' mean against the share of\ntheir runs that reached the goal, null when it holds none.",
       "properties": {
         "high": {
@@ -1733,7 +1701,6 @@
       "type": "object"
     },
     "DocArchived": {
-      "additionalProperties": false,
       "properties": {
         "doc": {
           "type": "string"
@@ -1793,7 +1760,6 @@
       "type": "object"
     },
     "DocCreated": {
-      "additionalProperties": false,
       "properties": {
         "doc": {
           "type": "string"
@@ -1825,7 +1791,6 @@
       "type": "object"
     },
     "DocEdited": {
-      "additionalProperties": false,
       "properties": {
         "changed": {
           "items": {
@@ -1845,7 +1810,6 @@
       "type": "object"
     },
     "DocRecord": {
-      "additionalProperties": false,
       "description": "A doc as the board's reader gives it: the summary and the text after its front matter.",
       "properties": {
         "body": {
@@ -1908,7 +1872,6 @@
       "type": "object"
     },
     "DocRestored": {
-      "additionalProperties": false,
       "properties": {
         "doc": {
           "type": "string"
@@ -1921,7 +1884,6 @@
       "type": "object"
     },
     "DocShown": {
-      "additionalProperties": false,
       "description": "`GET /api/docs/<id>`: one open doc.",
       "properties": {
         "doc": {
@@ -1935,7 +1897,6 @@
       "type": "object"
     },
     "DocSummary": {
-      "additionalProperties": false,
       "description": "A doc as the board's lister gives it: its front matter and where it is filed, without its body.",
       "properties": {
         "created_date": {
@@ -1969,7 +1930,6 @@
       "type": "object"
     },
     "Docs": {
-      "additionalProperties": false,
       "description": "`GET /api/docs`: every open doc, by ascending number.",
       "properties": {
         "docs": {
@@ -1986,7 +1946,6 @@
       "type": "object"
     },
     "Domain": {
-      "additionalProperties": false,
       "description": "A domain's DAGs, and whether each is declared safe to run from the page; `processes` package them when configured.",
       "properties": {
         "dags": {
@@ -2013,7 +1972,6 @@
       "type": "object"
     },
     "DomainDag": {
-      "additionalProperties": false,
       "properties": {
         "name": {
           "type": "string"
@@ -2030,7 +1988,6 @@
       "type": "object"
     },
     "DomainProcess": {
-      "additionalProperties": false,
       "description": "A named package of a domain's DAGs.",
       "properties": {
         "dags": {
@@ -2051,7 +2008,6 @@
       "type": "object"
     },
     "DonePage": {
-      "additionalProperties": false,
       "description": "`GET /api/done`: the next page of done tasks past their hot day, newest first, and whether older ones remain.",
       "properties": {
         "more": {
@@ -2144,7 +2100,6 @@
       "type": "object"
     },
     "Edited": {
-      "additionalProperties": false,
       "properties": {
         "changed": {
           "items": {
@@ -2164,7 +2119,6 @@
       "type": "object"
     },
     "FlowEdge": {
-      "additionalProperties": false,
       "description": "One directly-follows edge of a transition's graph.",
       "properties": {
         "count": {
@@ -2217,7 +2171,6 @@
       "type": "object"
     },
     "FlowGraph": {
-      "additionalProperties": false,
       "description": "`GET /api/analytics/graph`: the branching directly-follows graph of each transition, Codex left out.",
       "properties": {
         "graph": {
@@ -2242,7 +2195,6 @@
       "type": "object"
     },
     "FlowSnapshot": {
-      "additionalProperties": false,
       "properties": {
         "agents": {
           "items": {
@@ -2352,7 +2304,6 @@
       "type": "object"
     },
     "Forecast": {
-      "additionalProperties": false,
       "description": "One run still going: where it is, its loops so far, and from its state's row the chance of each terminal and\nof the goal and its expected days to finish, with `n`, the times that row was seen leave. Null with no row.",
       "properties": {
         "expected_days": {
@@ -2426,7 +2377,6 @@
       "type": "object"
     },
     "GapWarning": {
-      "additionalProperties": false,
       "description": "The history lost entries between two ids, so any number here may miss some.",
       "properties": {
         "after_id": {
@@ -2461,7 +2411,6 @@
       "type": "object"
     },
     "GateSummary": {
-      "additionalProperties": false,
       "properties": {
         "bypassable": {
           "type": "boolean"
@@ -2505,7 +2454,6 @@
       "type": "object"
     },
     "GateWitness": {
-      "additionalProperties": false,
       "properties": {
         "path": {
           "items": {
@@ -2525,7 +2473,6 @@
       "type": "object"
     },
     "HarnessBody": {
-      "additionalProperties": false,
       "properties": {
         "label": {
           "type": "string"
@@ -2564,7 +2511,6 @@
       "type": "object"
     },
     "HarnessTier": {
-      "additionalProperties": false,
       "properties": {
         "efforts": {
           "items": {
@@ -2612,7 +2558,6 @@
       "type": "object"
     },
     "Harnesses": {
-      "additionalProperties": false,
       "description": "`GET /api/harnesses`: the tiers in order and each harness with its models and efforts.",
       "properties": {
         "harnesses": {
@@ -2636,7 +2581,6 @@
       "type": "object"
     },
     "Health": {
-      "additionalProperties": false,
       "description": "`GET /api/analytics/health`: the Board's flow health over a window.",
       "properties": {
         "now": {
@@ -2697,7 +2641,6 @@
       "type": "object"
     },
     "HealthState": {
-      "additionalProperties": false,
       "properties": {
         "final": {
           "type": "boolean"
@@ -2766,7 +2709,6 @@
       "type": "object"
     },
     "HealthStuck": {
-      "additionalProperties": false,
       "properties": {
         "counted_to_now": {
           "type": "boolean"
@@ -2795,7 +2737,6 @@
       "type": "object"
     },
     "HealthThroughput": {
-      "additionalProperties": false,
       "properties": {
         "count": {
           "type": "integer"
@@ -2812,7 +2753,6 @@
       "type": "object"
     },
     "HeldNext": {
-      "additionalProperties": false,
       "properties": {
         "kind": {
           "description": "Whether the next edge runs a skill or an operation.",
@@ -2835,7 +2775,6 @@
       "type": "object"
     },
     "HeldSkill": {
-      "additionalProperties": false,
       "properties": {
         "current": {
           "anyOf": [
@@ -2881,7 +2820,6 @@
       "type": "object"
     },
     "Judged": {
-      "additionalProperties": false,
       "properties": {
         "check": {
           "type": "string"
@@ -2913,7 +2851,6 @@
       "type": "object"
     },
     "LaneHistory": {
-      "additionalProperties": false,
       "description": "`GET /api/history?task=`: a task's lane changes, oldest first.",
       "properties": {
         "path": {
@@ -2934,7 +2871,6 @@
       "type": "object"
     },
     "LaneStep": {
-      "additionalProperties": false,
       "properties": {
         "at": {
           "type": "number"
@@ -2973,7 +2909,6 @@
       "type": "object"
     },
     "Launch": {
-      "additionalProperties": false,
       "description": "A runs workflow's launch: the skill it starts and the machine that skill draws, null when it has none.",
       "properties": {
         "machine": {
@@ -2998,7 +2933,6 @@
       "type": "object"
     },
     "LedgerChange": {
-      "additionalProperties": false,
       "description": "A later event of `GET /api/ledger/<event>/events`: the rows that are new or differ; every other row stands.",
       "properties": {
         "rows": {
@@ -3015,7 +2949,6 @@
       "type": "object"
     },
     "LedgerFail": {
-      "additionalProperties": false,
       "description": "A failed run of a cue the merge row holds open: the step it stopped at, and how the failure clears.",
       "properties": {
         "finishedAt": {
@@ -3067,7 +3000,6 @@
       "type": "object"
     },
     "LedgerPage": {
-      "additionalProperties": false,
       "description": "`GET /api/ledger/<event>`, and the first event of `GET /api/ledger/<event>/events`: a Ledger's rows, newest first,\nand whether older ones remain.",
       "properties": {
         "more": {
@@ -3088,7 +3020,6 @@
       "type": "object"
     },
     "LedgerPull": {
-      "additionalProperties": false,
       "properties": {
         "number": {
           "type": "integer"
@@ -3109,7 +3040,6 @@
       "type": "object"
     },
     "LedgerResolved": {
-      "additionalProperties": false,
       "properties": {
         "at": {
           "type": "string"
@@ -3126,7 +3056,6 @@
       "type": "object"
     },
     "LedgerRow": {
-      "additionalProperties": false,
       "description": "One merge occurrence: its pull request and commit, the runs paired with it by DAG, and, for another repository's\nmerge, the parent merge that pinned it.",
       "properties": {
         "appliedBy": {
@@ -3218,7 +3147,6 @@
       "type": "object"
     },
     "LedgerRun": {
-      "additionalProperties": false,
       "description": "One DAG run a merge row carries: `inferred` when time, not the commit, paired it, and `ambiguous` how many other merges landed in its window.",
       "properties": {
         "ambiguous": {
@@ -3293,7 +3221,6 @@
       "type": "object"
     },
     "LedgersDelta": {
-      "additionalProperties": false,
       "description": "The merge strip and pins since the last event, whole. A Ledger's rows are not here: a page that has one open\nreads `GET /api/ledger/<event>/events`.",
       "properties": {
         "mergePins": {
@@ -3321,7 +3248,6 @@
       "type": "object"
     },
     "LevelLoop": {
-      "additionalProperties": false,
       "description": "One back-edge across the runs that took it, summed from the runs' own figures.",
       "properties": {
         "days": {
@@ -3351,7 +3277,6 @@
       "type": "object"
     },
     "Machine": {
-      "additionalProperties": false,
       "properties": {
         "dagActors": {
           "anyOf": [
@@ -3494,7 +3419,6 @@
       "type": "object"
     },
     "MachineEntry": {
-      "additionalProperties": false,
       "properties": {
         "at": {
           "type": "number"
@@ -3537,7 +3461,6 @@
       "type": "object"
     },
     "MachineEntryFrom": {
-      "additionalProperties": false,
       "properties": {
         "machine": {
           "type": "string"
@@ -3554,7 +3477,6 @@
       "type": "object"
     },
     "MachineEvent": {
-      "additionalProperties": false,
       "properties": {
         "at": {
           "type": "number"
@@ -3583,7 +3505,6 @@
       "type": "object"
     },
     "MachineHistory": {
-      "additionalProperties": false,
       "description": "`GET /api/history?task=&machine=`: a task's path on one machine, and how many steps it has taken.",
       "properties": {
         "machine": {
@@ -3612,7 +3533,6 @@
       "type": "object"
     },
     "MachinePage": {
-      "additionalProperties": false,
       "description": "The first page of machines entered from `open`, by name; their bodies are in the snapshot's `flows`.",
       "properties": {
         "machines": {
@@ -3644,7 +3564,6 @@
       "type": "object"
     },
     "MachineRow": {
-      "additionalProperties": false,
       "description": "A machine of `GET /api/machines`: whole, with its derivation.",
       "properties": {
         "agents": {
@@ -3727,7 +3646,6 @@
       "type": "object"
     },
     "MachineState": {
-      "additionalProperties": false,
       "properties": {
         "final": {
           "type": "boolean"
@@ -3764,7 +3682,6 @@
       "type": "object"
     },
     "MachineStep": {
-      "additionalProperties": false,
       "properties": {
         "at": {
           "type": "number"
@@ -3785,7 +3702,6 @@
       "type": "object"
     },
     "MachineStrip": {
-      "additionalProperties": false,
       "description": "The last 24 hours of machine entries, counted over every machine.",
       "properties": {
         "entries": {
@@ -3802,7 +3718,6 @@
       "type": "object"
     },
     "Machines": {
-      "additionalProperties": false,
       "description": "`GET /api/machines`: the next page of machines entered from `open`.",
       "properties": {
         "machines": {
@@ -3834,7 +3749,6 @@
       "type": "object"
     },
     "MergeStrip": {
-      "additionalProperties": false,
       "description": "The 24-hour strip of the merge ledger: per bucket, the merges, the failed ones and the forced reruns.",
       "properties": {
         "bucket": {
@@ -3873,7 +3787,6 @@
       "type": "object"
     },
     "MilestoneArchived": {
-      "additionalProperties": false,
       "properties": {
         "milestone": {
           "type": "string"
@@ -3950,7 +3863,6 @@
       "type": "object"
     },
     "MilestoneCreated": {
-      "additionalProperties": false,
       "properties": {
         "milestone": {
           "type": "string"
@@ -3982,7 +3894,6 @@
       "type": "object"
     },
     "MilestoneEdited": {
-      "additionalProperties": false,
       "properties": {
         "changed": {
           "items": {
@@ -4002,7 +3913,6 @@
       "type": "object"
     },
     "MilestoneRecord": {
-      "additionalProperties": false,
       "description": "A milestone as the board's reader gives it: its sections as text and bullet lists, and its whole description.",
       "properties": {
         "adrs": {
@@ -4046,7 +3956,6 @@
       "type": "object"
     },
     "MilestoneShown": {
-      "additionalProperties": false,
       "description": "`GET /api/milestones/<id>`: one open milestone.",
       "properties": {
         "milestone": {
@@ -4060,7 +3969,6 @@
       "type": "object"
     },
     "Milestones": {
-      "additionalProperties": false,
       "description": "`GET /api/milestones`: every open milestone, by ascending number.",
       "properties": {
         "milestones": {
@@ -4154,7 +4062,6 @@
       "type": "object"
     },
     "MissedLoads": {
-      "additionalProperties": false,
       "description": "`GET /api/analytics/missed-loads`: per declared skill, the cases that ran its trigger without loading it.",
       "properties": {
         "now": {
@@ -4179,7 +4086,6 @@
       "type": "object"
     },
     "MissedSkill": {
-      "additionalProperties": false,
       "description": "A declared skill: the cases that performed what should load it, and those that did not load it.",
       "properties": {
         "listed": {
@@ -4249,7 +4155,6 @@
       "type": "object"
     },
     "MoveDelta": {
-      "additionalProperties": false,
       "description": "A task a machine event placed on another machine.",
       "properties": {
         "agent": {
@@ -4344,7 +4249,6 @@
       "type": "object"
     },
     "Moved": {
-      "additionalProperties": false,
       "description": "A move's answer. The operator's move of an unheld task into the working state also starts its session: `url`\nopens it, or `startError` says why none started.",
       "properties": {
         "advice": {
@@ -4395,7 +4299,6 @@
       "type": "object"
     },
     "MovedEach": {
-      "additionalProperties": false,
       "description": "A batch move's answer: the tasks it moved, and each refused task with why.",
       "properties": {
         "moved": {
@@ -4419,7 +4322,6 @@
       "type": "object"
     },
     "Norm": {
-      "additionalProperties": false,
       "properties": {
         "count": {
           "type": "integer"
@@ -4439,7 +4341,6 @@
       "type": "object"
     },
     "Outlier": {
-      "additionalProperties": false,
       "properties": {
         "distance": {
           "type": "integer"
@@ -4565,7 +4466,6 @@
       "type": "object"
     },
     "Parked": {
-      "additionalProperties": false,
       "properties": {
         "task": {
           "type": "string"
@@ -4615,7 +4515,6 @@
       "type": "object"
     },
     "Pull": {
-      "additionalProperties": false,
       "description": "One pull request a task cites, as GitHub last answered the server.",
       "properties": {
         "behind_main": {
@@ -4709,7 +4608,6 @@
       "type": "object"
     },
     "PullRecord": {
-      "additionalProperties": false,
       "description": "One pull request the PR store read from GitHub, as of `fetchedAt` (epoch seconds).\n\n`headRefName` and `unresolvedThreads` (the first 100 threads) are null for a record saved before they were kept.",
       "properties": {
         "baseRefName": {
@@ -4832,7 +4730,6 @@
       "type": "object"
     },
     "PullThread": {
-      "additionalProperties": false,
       "description": "An unresolved review thread: its id and the login of its first comment's author, null for a deleted account.",
       "properties": {
         "author": {
@@ -4857,7 +4754,6 @@
       "type": "object"
     },
     "Pulls": {
-      "additionalProperties": false,
       "description": "`GET /api/pulls`: the stored pull requests matching every filter given, by repository then number.",
       "properties": {
         "pulls": {
@@ -4874,7 +4770,6 @@
       "type": "object"
     },
     "PullsDelta": {
-      "additionalProperties": false,
       "properties": {
         "pulls": {
           "additionalProperties": {
@@ -4893,7 +4788,6 @@
       "type": "object"
     },
     "QuietHours": {
-      "additionalProperties": false,
       "description": "A daily window in which the scheduler admits nothing: `start` up to `end`, `HH:MM` in `timezone`; an `end` before\n`start` runs past midnight.",
       "properties": {
         "end": {
@@ -4916,7 +4810,6 @@
       "type": "object"
     },
     "Rated": {
-      "additionalProperties": false,
       "properties": {
         "changes": {
           "type": "integer"
@@ -4941,7 +4834,6 @@
       "type": "object"
     },
     "Rating": {
-      "additionalProperties": false,
       "description": "A task's latest pass/fail rating: its verdict, the reason it names (empty when none), when it was set (epoch\nseconds), who set it (`actor`, empty when the write named none) and how many changes the task's rating has had.",
       "properties": {
         "actor": {
@@ -5039,7 +4931,6 @@
       "type": "object"
     },
     "RawTask": {
-      "additionalProperties": false,
       "description": "A Backlog task. On the board its state is its lane; on every other machine, the state its latest machine event left it in.",
       "properties": {
         "active": {
@@ -5433,7 +5324,6 @@
       "type": "object"
     },
     "RequiredCheck": {
-      "additionalProperties": false,
       "properties": {
         "name": {
           "type": "string"
@@ -5501,7 +5391,6 @@
       "type": "object"
     },
     "RestartingEvent": {
-      "additionalProperties": false,
       "description": "The server was told to stop and will not answer after this: sent to every open stream before it exits.",
       "properties": {
         "at": {
@@ -5562,7 +5451,6 @@
       "type": "object"
     },
     "Restored": {
-      "additionalProperties": false,
       "properties": {
         "task": {
           "type": "string"
@@ -5589,7 +5477,6 @@
       "type": "object"
     },
     "Retired": {
-      "additionalProperties": false,
       "properties": {
         "task": {
           "type": "string"
@@ -5620,7 +5507,6 @@
       "type": "object"
     },
     "RetiredImported": {
-      "additionalProperties": false,
       "properties": {
         "task": {
           "type": "string"
@@ -5633,7 +5519,6 @@
       "type": "object"
     },
     "RetiredTask": {
-      "additionalProperties": false,
       "description": "A retired task as the board's history store keeps it: its id, its file name and the file's text, byte-for-byte.",
       "properties": {
         "name": {
@@ -5655,7 +5540,6 @@
       "type": "object"
     },
     "RetiredTasks": {
-      "additionalProperties": false,
       "description": "`GET /api/retired[?task=<id>]`: every retired task, or the one `task` names, by id.",
       "properties": {
         "tasks": {
@@ -5755,7 +5639,6 @@
       "type": "object"
     },
     "Reviewed": {
-      "additionalProperties": false,
       "properties": {
         "task": {
           "type": "string"
@@ -5772,7 +5655,6 @@
       "type": "object"
     },
     "Roles": {
-      "additionalProperties": false,
       "description": "Which of the board's States play which part, as its machine declares them: a client reads these and never a\nState's name.",
       "properties": {
         "attention": {
@@ -5883,7 +5765,6 @@
       "type": "object"
     },
     "RunDiff": {
-      "additionalProperties": false,
       "description": "One transition's reference run against its slowest clean run.",
       "properties": {
         "conformant": {
@@ -5948,7 +5829,6 @@
       "type": "object"
     },
     "RunDiffs": {
-      "additionalProperties": false,
       "description": "`GET /api/analytics/diff`: a transition with under 5 clean runs reports nothing; one with none that conforms has `conformant` 0.",
       "properties": {
         "diff": {
@@ -5973,7 +5853,6 @@
       "type": "object"
     },
     "RunGate": {
-      "additionalProperties": false,
       "properties": {
         "crossed": {
           "type": "boolean"
@@ -6022,7 +5901,6 @@
       "type": "object"
     },
     "RunLoop": {
-      "additionalProperties": false,
       "description": "One back-edge a run took: its trips and the days they took, from the target's previous visit to each return.",
       "properties": {
         "days": {
@@ -6048,7 +5926,6 @@
       "type": "object"
     },
     "RunRef": {
-      "additionalProperties": false,
       "properties": {
         "steps": {
           "description": "Model requests, a subagent's included.",
@@ -6066,7 +5943,6 @@
       "type": "object"
     },
     "RunStarted": {
-      "additionalProperties": false,
       "properties": {
         "runId": {
           "type": "string"
@@ -6139,7 +6015,6 @@
       "type": "object"
     },
     "SchedulerDimension": {
-      "additionalProperties": false,
       "description": "One capacity dimension's use against its limit: percent for `cpu` and `memory`, a count for `sessions`, points for `review`.",
       "properties": {
         "limit": {
@@ -6167,7 +6042,6 @@
       "type": "object"
     },
     "SchedulerHarnessSessions": {
-      "additionalProperties": false,
       "description": "One harness's scheduler sessions in flight against its own session cap.",
       "properties": {
         "limit": {
@@ -6185,7 +6059,6 @@
       "type": "object"
     },
     "SchedulerNext": {
-      "additionalProperties": false,
       "description": "The task the loop would admit next, or, when none fits, the top-ranked one and what it waits on.",
       "properties": {
         "priority": {
@@ -6221,7 +6094,6 @@
       "type": "object"
     },
     "SchedulerOperatorTask": {
-      "additionalProperties": false,
       "description": "A task in the eligible lane that waits on the operator's decision rather than on capacity.",
       "properties": {
         "task": {
@@ -6239,7 +6111,6 @@
       "type": "object"
     },
     "SchedulerPause": {
-      "additionalProperties": false,
       "description": "A harness whose admission is paused until `until` after a usage or credit limit.",
       "properties": {
         "harness": {
@@ -6303,7 +6174,6 @@
       "type": "object"
     },
     "SchedulerSession": {
-      "additionalProperties": false,
       "description": "A session the scheduler started whose task is still running: the strip's Sessions menu draws one row of it.",
       "properties": {
         "model": {
@@ -6336,7 +6206,6 @@
       "type": "object"
     },
     "SchedulerStatus": {
-      "additionalProperties": false,
       "description": "Whether the scheduler admits tasks, and the capacity strip's readings; no dimensions before the first sample.\n\n`inFlight`, `next`, `sessionsByHarness` and `needsOperator` are served only by a server that runs a dispatch loop; without one they\nare absent.",
       "properties": {
         "dimensions": {
@@ -6425,7 +6294,6 @@
       "type": "object"
     },
     "SearchHit": {
-      "additionalProperties": false,
       "description": "One task a search found: where it is now, and the text around the match.",
       "properties": {
         "lane": {
@@ -6455,7 +6323,6 @@
       "type": "object"
     },
     "SearchResults": {
-      "additionalProperties": false,
       "description": "`GET /api/search?q=&limit=&label=&finished_within_days=`: the tasks holding every word of `q`, best match first,\neach carrying every `label` and, with `finished_within_days`, open or finished within that many days.",
       "properties": {
         "hits": {
@@ -6476,7 +6343,6 @@
       "type": "object"
     },
     "SessionHealth": {
-      "additionalProperties": false,
       "description": "One harness session's work on one task (`task` None: a branch that names none), from its OTLP signals.",
       "properties": {
         "agent_s": {
@@ -6694,7 +6560,6 @@
       "type": "object"
     },
     "SessionStep": {
-      "additionalProperties": false,
       "description": "One model request of a harness session, with the skill in force when it ran and the calls it made.",
       "properties": {
         "activities": {
@@ -6776,7 +6641,6 @@
       "type": "object"
     },
     "SessionSteps": {
-      "additionalProperties": false,
       "description": "`GET /api/analytics/steps`: every model request of a window, oldest first.",
       "properties": {
         "now": {
@@ -6801,7 +6665,6 @@
       "type": "object"
     },
     "Sessions": {
-      "additionalProperties": false,
       "description": "`GET /api/analytics/sessions`: session and slice health over a window.",
       "properties": {
         "now": {
@@ -6833,7 +6696,6 @@
       "type": "object"
     },
     "Settled": {
-      "additionalProperties": false,
       "description": "A task that left the Board's lanes for good: where it settled, when, and the title, assignee, milestone and labels it settled with.",
       "properties": {
         "at": {
@@ -6889,7 +6751,6 @@
       "type": "object"
     },
     "SkillRefusal": {
-      "additionalProperties": false,
       "description": "A refusal a skill satisfies: the skill that produces what the guard needs.",
       "properties": {
         "error": {
@@ -6907,7 +6768,6 @@
       "type": "object"
     },
     "SliceHealth": {
-      "additionalProperties": false,
       "description": "What the sessions that worked one task did together.",
       "properties": {
         "active_s": {
@@ -7062,7 +6922,6 @@
       "type": "object"
     },
     "Snapshot": {
-      "additionalProperties": false,
       "properties": {
         "boardUrl": {
           "anyOf": [
@@ -7394,7 +7253,6 @@
       "type": "object"
     },
     "StaleEdit": {
-      "additionalProperties": false,
       "description": "An edit refused because a field changed since the page read it: those fields with their current values.",
       "properties": {
         "current": {
@@ -7500,7 +7358,6 @@
       "type": "object"
     },
     "Started": {
-      "additionalProperties": false,
       "properties": {
         "at": {
           "type": "number"
@@ -7521,7 +7378,6 @@
       "type": "object"
     },
     "StateCost": {
-      "additionalProperties": false,
       "description": "One skill-machine state's expected cost-to-go within a kind and size.",
       "properties": {
         "cost_to_go": {
@@ -7661,7 +7517,6 @@
       "type": "object"
     },
     "StripBucket": {
-      "additionalProperties": false,
       "properties": {
         "failed": {
           "type": "integer"
@@ -7682,7 +7537,6 @@
       "type": "object"
     },
     "Stuck": {
-      "additionalProperties": false,
       "description": "The longest-stuck task of a machine and every machine nested below it: idle over two hours outside a final state.",
       "properties": {
         "machine": {
@@ -7705,7 +7559,6 @@
       "type": "object"
     },
     "SubStage": {
-      "additionalProperties": false,
       "description": "One stage mined at the judgement cuts of the stretches no skill governs, this week and the week before.",
       "properties": {
         "kind": {
@@ -7772,7 +7625,6 @@
       "type": "object"
     },
     "SubStages": {
-      "additionalProperties": false,
       "description": "`GET /api/analytics/stages`: sub-stages and their stability from one window to the one before.",
       "properties": {
         "now": {
@@ -7797,7 +7649,6 @@
       "type": "object"
     },
     "Submachine": {
-      "additionalProperties": false,
       "description": "Where a Board state opens into another machine, and which Board event each inner final state fires.",
       "properties": {
         "exits": {
@@ -7853,7 +7704,6 @@
       "type": "object"
     },
     "TakenOver": {
-      "additionalProperties": false,
       "properties": {
         "task": {
           "type": "string"
@@ -7866,7 +7716,6 @@
       "type": "object"
     },
     "TaskCriterion": {
-      "additionalProperties": false,
       "description": "One acceptance criterion of a Board task and whether it is checked.",
       "properties": {
         "checked": {
@@ -7884,7 +7733,6 @@
       "type": "object"
     },
     "TaskDelta": {
-      "additionalProperties": false,
       "description": "A Board task that moved (`agent` null once it left the lanes).",
       "properties": {
         "agent": {
@@ -7920,7 +7768,6 @@
       "type": "object"
     },
     "TaskEventHistory": {
-      "additionalProperties": false,
       "description": "`GET /api/history?task=&hours=`: every machine event of a task in the window, oldest first.",
       "properties": {
         "events": {
@@ -7945,7 +7792,6 @@
       "type": "object"
     },
     "TaskRecord": {
-      "additionalProperties": false,
       "description": "`GET /api/task/<id>`: the full record of a task from the board's reader, keyed by its editable fields.",
       "properties": {
         "record": {
@@ -7964,7 +7810,6 @@
       "type": "object"
     },
     "TaskRun": {
-      "additionalProperties": false,
       "description": "One scheduler run a task's id names, linked to the run's own page.",
       "properties": {
         "startedAt": {
@@ -7986,7 +7831,6 @@
       "type": "object"
     },
     "Tie": {
-      "additionalProperties": false,
       "description": "Where a lifecycle machine is entered from.\n\n`declared` is a Submachine on `machine`'s `state`; `observed` is the state the task held on `machine` when its session\nentered this one; `dag` is a launch by `dag`, which names no machine or state. `count` is the sessions entered\nthrough it, null for a launch.",
       "properties": {
         "count": {
@@ -8054,7 +7898,6 @@
       "type": "object"
     },
     "TokenCounts": {
-      "additionalProperties": false,
       "properties": {
         "cache_read": {
           "type": "integer"
@@ -8083,7 +7926,6 @@
       "type": "object"
     },
     "TraceCluster": {
-      "additionalProperties": false,
       "description": "Cases that did the same distinctive work, and the skills that covered it.",
       "properties": {
         "cases": {
@@ -8196,7 +8038,6 @@
       "type": "object"
     },
     "TraceClusters": {
-      "additionalProperties": false,
       "description": "`GET /api/analytics/trace-clusters`: recurring work, ranked by distinct sessions.",
       "properties": {
         "cases": {
@@ -8239,7 +8080,6 @@
       "type": "object"
     },
     "TrailStep": {
-      "additionalProperties": false,
       "properties": {
         "at": {
           "type": "number"
@@ -8260,7 +8100,6 @@
       "type": "object"
     },
     "Trajectories": {
-      "additionalProperties": false,
       "description": "The trajectory analytics: the paths of the runs that ended in a terminal over a window.",
       "properties": {
         "betweenness": {
@@ -8376,7 +8215,6 @@
       "type": "object"
     },
     "TrajectoryRun": {
-      "additionalProperties": false,
       "properties": {
         "back_edges": {
           "type": "integer"
@@ -8426,7 +8264,6 @@
       "type": "object"
     },
     "Transition": {
-      "additionalProperties": false,
       "properties": {
         "cite": {
           "anyOf": [
@@ -8459,7 +8296,6 @@
       "type": "object"
     },
     "TransitionCost": {
-      "additionalProperties": false,
       "description": "The cost of one skill in force, within one kind and size of task.",
       "properties": {
         "agent_s": {
@@ -8517,7 +8353,6 @@
       "type": "object"
     },
     "Transitions": {
-      "additionalProperties": false,
       "description": "`GET /api/analytics/transitions`: what each skill cost within each kind and size, Codex left out.",
       "properties": {
         "now": {
@@ -8542,7 +8377,6 @@
       "type": "object"
     },
     "UnknownLaneWarning": {
-      "additionalProperties": false,
       "description": "A lane that is no Board state.",
       "properties": {
         "kind": {
@@ -8565,7 +8399,6 @@
       "type": "object"
     },
     "Variant": {
-      "additionalProperties": false,
       "properties": {
         "count": {
           "type": "integer"
@@ -8614,7 +8447,6 @@
       "type": "object"
     },
     "VerdictDelta": {
-      "additionalProperties": false,
       "description": "One qa lens's verdict on a task, as the ingest took it.",
       "properties": {
         "at": {
@@ -8743,7 +8575,6 @@
       "type": "object"
     },
     "WindowState": {
-      "additionalProperties": false,
       "description": "`/api/history-window`: the effective window, the declared default, and whether Admin's override is in effect.",
       "properties": {
         "default": {
@@ -8765,7 +8596,6 @@
       "type": "object"
     },
     "WindowTooLong": {
-      "additionalProperties": false,
       "description": "A level or telemetry window longer than its history, with the history's length.",
       "properties": {
         "error": {
@@ -8783,7 +8613,6 @@
       "type": "object"
     },
     "Writer": {
-      "additionalProperties": false,
       "description": "Who fires a Board event: a runs workflow (by `<instance>/<workflow>` name), `operator` or `agent`.",
       "properties": {
         "actor": {
@@ -8801,7 +8630,6 @@
       "type": "object"
     }
   },
-  "additionalProperties": false,
   "description": "The root of `api.schema.json`: every body as a property, so the generated types name each one.",
   "properties": {
     "answers": {
