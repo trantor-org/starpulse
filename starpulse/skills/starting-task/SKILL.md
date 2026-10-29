@@ -25,7 +25,8 @@ A step named `starpulse command run NAME` is the project's own command. When it 
    filed now with `--type check` and waiting on the merge: the implementing task goes to Done on merge, and the
    checkup never blocks it ([Checks after the merge](references/task-conventions.md#checks-after-the-merge)).
 4. When two or more tasks come from one plan, give them a milestone (`starpulse milestone add`) and a spec
-   (`starpulse doc create`) before the tasks.
+   (`starpulse doc create`) before the tasks; before writing that spec or slicing it, read
+   [references/specs-and-slicing.md](references/specs-and-slicing.md).
 
 Done when you can name one task whose criteria each name the command that proves it.
 
