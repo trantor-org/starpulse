@@ -190,6 +190,18 @@ tasks share scope. Search matches every word as literal text, in title, descript
 notes. A non-terminal hit with the same requested outcome is the duplicate: resume it or depend
 on it, never create a replacement. Record the queries in the new task's Description.
 
+## Issues found along the way
+
+Any bug, regression or doc/code mismatch an agent discovers gets filed as a board task
+immediately, deduplicated against existing tasks, and named in the report by id. Never only
+described in a report. Filing a discovered bug is not scope creep; fixing it outside your task
+is. The same holds for any issue an agent notices: a flaky or slow test, a doc mismatch, a
+confusing guard, a stale task, a missing sanctioned path, tech debt it worked around. A context
+that cannot file suggests the task in its report with a ready-to-file title and why.
+
+Filing is not selecting: a filed task waits for the normal start path (the operator, autopilot,
+or a standing rule), and no agent writes code, pushes or opens a pull request for it unselected.
+
 ## A Done task that needs more work
 
 A finished task that needs more work gets a linked follow-up, not a reopen: create it with
