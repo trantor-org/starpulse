@@ -13,7 +13,9 @@ re-derives every open task once, which is the recovery for a change that happene
 
 A lifecycle machine whose phase state links a skill machine with `exits` (`submachines[].exits`) advances that phase
 too: when the skill machine reaches an exit state the actor calls `advance(machine, task, event)` with the exit's event,
-once per visit to the phase, and only for the skill machine the task's current phase links.
+once per visit to the phase, and only for the skill machine the task's current phase links. A link that lists `routes`
+(phase state to event) sends instead the event for the phase that follows it in the `sequences` entry of the task's
+type (`default` for a type it does not name), when one is listed; the exit's own event serves every other sequence.
 
 A task whose lane waits on its Start Criteria is evaluated on a thread of its own when it has no result or its result is
 older than `fresh_s`, and re-derived when the result changes; a criterion that cannot be evaluated is exported, not
@@ -29,6 +31,7 @@ import threading
 import time
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 from starpulse.board.model.markdown import section_set
@@ -148,9 +151,12 @@ class TaskActor:
         live: LiveBuild | None = None,
         advance: Callable[[str, str, str], None] | None = None,
         read: TaskReader | None = None,
+        sequences: Mapping[str, Sequence[str]] = MappingProxyType({}),
     ) -> None:
         self._read = read
         self._advance = advance
+        #: The phases a task of each type goes through, in order (`[sequences]`); `default` serves an unnamed type.
+        self._sequences = sequences
         #: Each non-Board machine's links that exit on a skill machine's state, when there is somewhere to send the exit.
         self._links = _exit_links(feed.machines) if advance else {}
         #: The exit last sent for each `(machine, task)`, with the phase's step count, so one exit is sent once.
@@ -412,8 +418,15 @@ class TaskActor:
         for link in links:
             placed = self._feed.machine_task(link["machine"], task) if link["state"] == phase else None
             if placed and link["exits"].get(placed["state"]):
-                return link["exits"][placed["state"]]
+                return self._route(link, task) or link["exits"][placed["state"]]
         return None
+
+    def _route(self, link: Mapping[str, Any], task: str) -> str | None:
+        """The event of the link's route to the phase after it in the sequence of `task`'s type, when the link draws one."""
+        kind = (self._feed.task(task) or {}).get("type", "").lower()
+        sequence = self._sequences.get(kind) or self._sequences.get("default", ())
+        following = sequence[sequence.index(link["state"]) + 1 :][:1] if link["state"] in sequence else ()
+        return link.get("routes", {}).get(following[0]) if following else None
 
     def _forget(self, name: str) -> None:
         for url in self._seen.pop(name, ("", (), ()))[2]:

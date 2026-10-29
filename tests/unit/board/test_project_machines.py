@@ -84,6 +84,16 @@ def test_a_state_that_opens_a_sibling_machine_draws_the_link_with_the_event_each
     assert "submachines" not in machines["in-progress"]
 
 
+def test_a_link_draws_the_routes_it_lists_and_refuses_one_that_fires_an_event_the_machine_lacks(tmp_path: Path) -> None:
+    link = "submachines:\n  - {{state: in_progress, machine: in-progress, exits: {{shipped: to_done}}, routes: {{qa: {event}}}}}\n"
+
+    routed = project(tmp_path, board=BOARD + link.format(event="to_done"), in_progress=DELIVERY)
+
+    assert routed["board"]["submachines"][0]["routes"] == {"qa": "to_done"}
+    with pytest.raises(ValueError, match=r"submachine routes fire events the machine lacks: \['to_qa'\]"):
+        project(tmp_path / "lacking", board=BOARD + link.format(event="to_qa"), in_progress=DELIVERY)
+
+
 def test_a_launching_workflow_is_drawn_as_the_page_names_it_beside_the_flow_it_starts(tmp_path: Path) -> None:
     declared = BOARD + "launches:\n  nightly: {skill: shipping, machine: in-progress}\n  weekly: {skill: auditing}\n"
 

@@ -524,6 +524,7 @@ models in `starpulse/runtime/config_model.py`, which the loader takes its keys a
 - `analytics` (table): What harness telemetry is read against for missed skill loads and trace clusters (see docs/sources.md).
 - `search` (table): Ranks search by meaning as well as by words (see `search` in docs/cli.md).
 - `project` (table): The project's own command line for each step a shipped skill names.
+- `sequences` (table of list of text): The phases a task goes through, in order, keyed by task type (`story`, `bug`), with `default` for a type it does not name. A lifecycle machine link that lists `routes` sends a task to the route its sequence names next.
 - `cursor_context` (table): Holds Cursor task sessions to a context limit (see docs/sources.md).
 - `read_model` (any value, retired): Retired: the read model is the only board reader; accepted so a config that still names it loads.
 
