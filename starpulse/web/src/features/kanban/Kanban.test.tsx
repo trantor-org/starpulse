@@ -113,6 +113,13 @@ describe("a Kanban card's machine line", () => {
     expect(html).toContain('title="mapped from GitHub"');
   });
 
+  it("colours a CI line's dot as the checks dots do, leaving its phases blue", () => {
+    expect(line({ machine: "ci", state: "failing", at: 100, source: "GitHub" })).toContain('class="p mapped fail"');
+    expect(line({ machine: "ci", state: "merged", at: 100, source: "GitHub" })).toContain('class="p mapped merged"');
+    expect(line({ machine: "ci", state: "running", at: 100, source: "GitHub" })).toContain('class="p mapped"');
+    expect(line({ machine: "deliver", state: "failing", at: 100 })).toContain('class="p"');
+  });
+
   it("leaves a local machine's dot unmarked", () => {
     const html = line({ machine: "in-progress", state: "red_proven", at: 100 });
 
