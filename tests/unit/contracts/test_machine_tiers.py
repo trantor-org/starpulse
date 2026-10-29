@@ -4,7 +4,7 @@ import json
 
 import pytest
 from pydantic import ValidationError
-from starpulse.contracts.api.dto.machine import Machine
+from starpulse.contracts.api.dto.machine import Machine, Submachine
 from starpulse.contracts.api.schema import SCHEMA
 
 STATES = [
@@ -31,3 +31,10 @@ def test_the_checked_in_schema_names_tiers_on_the_machine() -> None:
 
     assert machine["tiers"]["description"]
     assert "mainLine" in machine
+
+
+def test_a_submachine_link_carries_routes_and_none_by_default() -> None:
+    link = {"state": "ready", "machine": "inner", "exits": {"done": "finish"}, "parent": "board", "when": ""}
+
+    assert Submachine.model_validate(link | {"routes": {"a": "b"}}).routes == {"a": "b"}
+    assert Submachine.model_validate(link).routes == {}

@@ -7788,6 +7788,13 @@
           "description": "The machine the link opens under: `board`, or the machine whose `state` it hangs off.",
           "type": "string"
         },
+        "routes": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Inner event to the Board event it fires; empty when the link routes none.",
+          "type": "object"
+        },
         "state": {
           "type": "string"
         },
