@@ -131,12 +131,26 @@ describe("the page's boot", () => {
     expect(made.spy.show).toHaveBeenCalledWith(false);
     expect(mount, "the view's chunks load beside the snapshot, not behind it").toHaveBeenCalledTimes(1);
     expect(marked()).toBe(false);
+    expect(document.getElementById("root")!.style.visibility, "the page's empty counts are not painted ahead of the snapshot").toBe("hidden");
 
     (await hud()).set({ tree: { states: ["ready"], subs: {}, children: {} } });
     frame();
 
     expect(marked()).toBe(true);
+    expect(document.getElementById("root")!.style.visibility).toBe("");
     expect(mount).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the page of another view when no board arrives, so a stream that never answers still shows its status", async () => {
+    vi.useFakeTimers();
+    history.replaceState(null, "", "/?view=kanban");
+    const { boot } = await import("./boot");
+    boot(vi.fn(), vi.fn());
+    expect(document.getElementById("root")!.style.visibility).toBe("hidden");
+
+    vi.advanceTimersByTime(2000);
+
+    expect(document.getElementById("root")!.style.visibility).toBe("");
   });
 
   it.each([

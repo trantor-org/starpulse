@@ -69,7 +69,10 @@ export function boot(mount: () => void, preload?: (view: ViewName) => void): Boo
     for (const el of [canvas, tip, panel, frameOf("crumb")]) el.classList.add("off");
     r.show(false);
     // no Star Map frame is in the way, so the page and the view's chunk load beside the snapshot rather than a round trip behind it;
-    // the chunk is asked for here because the page's first render reaches it only after the page has mounted
+    // the chunk is asked for here because the page's first render reaches it only after the page has mounted.
+    // The page stays unseen until the first frame is marked, so its empty counts are never painted ahead of the snapshot
+    const root = document.getElementById("root"), reveal = () => root?.style.removeProperty("visibility");
+    root?.style.setProperty("visibility", "hidden");
     open();
     preload?.(shown);
     const unsubscribe = store.subscribe(() => {
@@ -77,9 +80,11 @@ export function boot(mount: () => void, preload?: (view: ViewName) => void): Boo
       unsubscribe();
       requestAnimationFrame(() => {
         markDrawn();
+        reveal();
         void loadLateFonts();
       });
     });
+    setTimeout(reveal, NO_BOARD_MS);
   }
   setTimeout(open, NO_BOARD_MS);
   return held;
