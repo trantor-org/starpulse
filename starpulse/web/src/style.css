@@ -405,10 +405,10 @@ button.node { all: unset; box-sizing: border-box; display: grid; grid-template-c
 #kbm .tvleft .ev .out { grid-column: 2; margin-top: 4px; } #kbm .tvleft .ev .out summary { cursor: pointer; color: var(--faint); font-size: calc(11px * var(--fs)); }
 #kbm .tvleft .ev .out pre { margin: 4px 0 0; padding: 6px 8px; border-radius: 6px; background: color-mix(in srgb, var(--slate) 8%, transparent); color: var(--ink-2); font: calc(11px * var(--fs)) "JetBrains Mono", ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 #kbm .tvleft .ritem.flash, #kbm .tvleft .ev.flash { background: color-mix(in srgb, var(--agent) 14%, transparent); transition: background .6s; }
-#kbm .tvleft .compose { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin-top: 8px; }
-#kbm .tvleft .compose textarea { align-self: stretch; min-height: calc(34px * var(--fs)); resize: vertical; box-sizing: border-box; padding: 6px 9px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--slate) 18%, transparent); background: var(--field); color: var(--ink); font: inherit; font-size: calc(12px * var(--fs)); }
-#kbm .tvleft .compose button { all: unset; cursor: pointer; align-self: flex-end; padding: 5px 12px; border-radius: 6px; font-size: calc(11.5px * var(--fs)); color: var(--ink); border: 1px solid color-mix(in srgb, var(--agent) 45%, transparent); background: color-mix(in srgb, var(--agent) 12%, transparent); }
-#kbm .tvleft .compose button:disabled { opacity: .4; cursor: default; }
+#kbm :is(.tvleft, .tvrail) .compose { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin-top: 8px; }
+#kbm :is(.tvleft, .tvrail) .compose textarea { align-self: stretch; min-height: calc(34px * var(--fs)); resize: vertical; box-sizing: border-box; padding: 6px 9px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--slate) 18%, transparent); background: var(--field); color: var(--ink); font: inherit; font-size: calc(12px * var(--fs)); }
+#kbm :is(.tvleft, .tvrail) .compose button { all: unset; cursor: pointer; align-self: flex-end; padding: 5px 12px; border-radius: 6px; font-size: calc(11.5px * var(--fs)); color: var(--ink); border: 1px solid color-mix(in srgb, var(--agent) 45%, transparent); background: color-mix(in srgb, var(--agent) 12%, transparent); }
+#kbm :is(.tvleft, .tvrail) .compose button:disabled { opacity: .4; cursor: default; }
 #kbm .tvrail { padding: 16px 20px 24px; gap: 16px; background: color-mix(in srgb, var(--slate) 3%, transparent); border-left: 1px solid color-mix(in srgb, var(--slate) 10%, transparent); }
 #kbm .tv table { margin-top: 0; }
 /* The right rail (approved mockup): live state first, one hairline between sections, a label column beside each Details value. */
