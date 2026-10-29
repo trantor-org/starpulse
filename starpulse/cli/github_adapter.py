@@ -1,7 +1,7 @@
-"""The GitHub adapter's entry point, `python -m starpulse.cli.github_adapter`: `starpulse.pulls.github` given the
+"""The GitHub adapter's entry point, `python -m starpulse.cli.github_adapter`: `starpulse.pulls.adapters.outbound.github` given the
 runtime's config loader, which no context imports (spec doc-966, D6)."""
 
-from starpulse.pulls.github import main as _main
+from starpulse.pulls.adapters.outbound.github import main as _main
 from starpulse.runtime.config import discover, load
 
 __all__ = ["main"]

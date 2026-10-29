@@ -9,7 +9,7 @@ from urllib.parse import unquote
 
 from starpulse.board.model.seam import OPERATOR, Written
 from starpulse.contracts.api.dto.requests import StartRequest
-from starpulse.pulls.pull_refresh import MAX_BODY as MAX_REFRESH_BODY
+from starpulse.pulls.adapters.inbound.pull_refresh import MAX_BODY as MAX_REFRESH_BODY
 from starpulse.runs.ingest import MAX_BATCH_BODY
 from starpulse.views.encoding import encode
 from starpulse.views.reads import Response

@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     from starpulse.event_log.event_log import Entry, EventLog
-    from starpulse.pulls.pulls import PullStore
+    from starpulse.pulls.adapters.outbound.pulls import PullStore
 
 logger = logging.getLogger(__name__)
 

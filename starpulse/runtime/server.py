@@ -196,7 +196,7 @@ from starpulse.flow_metrics.model.level import Level
 from starpulse.flow_metrics.model.level_metrics import RunWindow, WindowPastHistory
 from starpulse.flow_metrics.model.trajectories import trajectory_analytics
 from starpulse.harness_telemetry.telemetry import TelemetryLog
-from starpulse.pulls.delivery import (
+from starpulse.pulls.adapters.inbound.delivery import (
     Projected,
     follow_saves,
     keep_beating,
@@ -204,12 +204,12 @@ from starpulse.pulls.delivery import (
     poller_problem,
     request_refresh,
 )
-from starpulse.pulls.pins import GitHub, LiveBuild, running_commit
-from starpulse.pulls.pull_refresh import PullRefresh
-from starpulse.pulls.pull_requests import PullRequests
-from starpulse.pulls.pull_store import PullSync
-from starpulse.pulls.task_actor import ACTOR, TaskActor, moves_of
-from starpulse.pulls.unblock import UNBLOCK_S, Unblocker
+from starpulse.pulls.adapters.inbound.pull_refresh import PullRefresh
+from starpulse.pulls.adapters.inbound.task_actor import ACTOR, TaskActor, moves_of
+from starpulse.pulls.adapters.inbound.unblock import UNBLOCK_S, Unblocker
+from starpulse.pulls.adapters.outbound.pull_requests import PullRequests
+from starpulse.pulls.adapters.outbound.pull_store import PullSync
+from starpulse.pulls.model.pins import GitHub, LiveBuild, running_commit
 from starpulse.runs import opt_in
 from starpulse.runs import projection as runs_projection
 from starpulse.runs.cloudevents import CloudEventsIngest
@@ -242,7 +242,7 @@ if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler i
     from starpulse.board.board_feed import BoardFeed
     from starpulse.event_log.event_log import EventLog
     from starpulse.flow_metrics.adapters.outbound.history import History
-    from starpulse.pulls.pulls import PullStore
+    from starpulse.pulls.adapters.outbound.pulls import PullStore
     from starpulse.scheduler.adapters.remote import Remote
 
 
@@ -463,7 +463,7 @@ def start_delivery(
     The actor records the lane of each write it makes on `feed` (`BoardFeed.record_written`); `after_project` runs
     after each projection. Raises `ValueError` naming a table the board cannot serve.
     """
-    from starpulse.pulls.ci_trail import CiTrail  # noqa: PLC0415 - the database stack loads when a store does
+    from starpulse.pulls.application.commands.ci_trail import CiTrail  # noqa: PLC0415 - the database stack loads when a store does
 
     # without the GitHub CLI there is no source, and a task simply carries no PR state; a config can turn the store off
     release = config.release
@@ -648,7 +648,7 @@ DATABASE_STACK = (
     "starpulse.board.verdicts",
     "starpulse.board.machine_tasks",
     "starpulse.board.adapters.search",
-    "starpulse.pulls.pulls",
+    "starpulse.pulls.adapters.outbound.pulls",
     "starpulse.runtime.assembly",
 )
 

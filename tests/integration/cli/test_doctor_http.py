@@ -6,7 +6,7 @@ from pathlib import Path
 
 from starpulse.board.board_feed import BoardFeed
 from starpulse.cli.doctor import contract
-from starpulse.pulls.pins import Repo
+from starpulse.pulls.model.pins import Repo
 from starpulse.runs.config import RunsInstance
 from starpulse.runtime.adapter_kit import serve, url
 from starpulse.runtime.config import Config

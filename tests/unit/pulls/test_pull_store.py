@@ -9,10 +9,10 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine, event
 from starpulse.board.board_feed import BoardFeed
-from starpulse.pulls.pins import Repo
-from starpulse.pulls.pull_requests import query_github
-from starpulse.pulls.pull_store import PullSync, refresh_pull
-from starpulse.pulls.pulls import PullStore
+from starpulse.pulls.adapters.outbound.pull_requests import query_github
+from starpulse.pulls.adapters.outbound.pull_store import PullSync, refresh_pull
+from starpulse.pulls.adapters.outbound.pulls import PullStore
+from starpulse.pulls.model.pins import Repo
 from starpulse.runtime.adapter_kit import task
 
 REPO = "acme/widgets"
@@ -307,7 +307,7 @@ def test_each_query_logs_the_rate_limit_cost_github_returned(
 
     monkeypatch.setattr(subprocess, "run", gh)
 
-    with caplog.at_level(logging.INFO, logger="starpulse.pulls.pull_requests"):
+    with caplog.at_level(logging.INFO, logger="starpulse.pulls.adapters.outbound.pull_requests"):
         refresh_pull(REPO, 1, store, 100.0)
 
     logged = [record.getMessage() for record in caplog.records if "cost" in record.getMessage()]

@@ -18,14 +18,14 @@ import logging
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
-from starpulse.board.model.seam import TaskEditor
-from starpulse.pulls.pins import GitHub, LiveBuild, Pins, Repo, link
 from starpulse.board import criteria
 from starpulse.board.board_feed import BoardFeed
-from starpulse.pulls.pull_requests import PULL_URL, delivers
+from starpulse.board.model.seam import TaskEditor
+from starpulse.pulls.adapters.outbound.pull_requests import PULL_URL, delivers
+from starpulse.pulls.model.pins import GitHub, LiveBuild, Pins, Repo, link
 
 if TYPE_CHECKING:  # annotation only: the pull store opens the database stack
-    from starpulse.pulls.pulls import PullStore
+    from starpulse.pulls.adapters.outbound.pulls import PullStore
 
 logger = logging.getLogger(__name__)
 

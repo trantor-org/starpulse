@@ -13,7 +13,8 @@ from tests.stores import migrate_config_store
 # Loading the database stack is the second a start spends: the Page API child pays it, and `serve` checks the config
 # against it only once the children run.
 _NOT_YET = ("sqlalchemy", "alembic", "starpulse.runtime.assembly")
-_STARPULSE_MODULES = 150
+# Package `__init__` modules count: each role subpackage of a context adds one to what a start loads.
+_STARPULSE_MODULES = 156
 
 _FIRST_CHILD = """
 import json, sys

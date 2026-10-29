@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from starpulse.board.model.commit_keys import CommitKeys
 from starpulse.harness_telemetry.harnesses import HarnessError
-from starpulse.pulls.pins import Repo
+from starpulse.pulls.model.pins import Repo
 from starpulse.runs.config import Producer
 from starpulse.runtime.config import Config, ConfigError, MemoryLimit, load, runs_adapter
 

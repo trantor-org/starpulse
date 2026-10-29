@@ -35,7 +35,7 @@ if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler i
     from starpulse.board.adapters.search import SearchIndex
     from starpulse.board.board_feed import BoardFeed
     from starpulse.flow_metrics.adapters.outbound.history import History
-    from starpulse.pulls.pulls import PullStore
+    from starpulse.pulls.adapters.outbound.pulls import PullStore
 
 
 #: The most rows `/api/ledger/<event>` and `/api/machines` serve at once.

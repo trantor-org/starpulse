@@ -4,8 +4,8 @@ import threading
 
 from sqlalchemy import create_engine
 from starpulse.board.board_feed import BoardFeed
-from starpulse.pulls.pull_store import PullSync
-from starpulse.pulls.pulls import PullStore
+from starpulse.pulls.adapters.outbound.pull_store import PullSync
+from starpulse.pulls.adapters.outbound.pulls import PullStore
 from starpulse.runtime import server
 from starpulse.runtime.adapter_kit import task
 

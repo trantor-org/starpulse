@@ -9,11 +9,11 @@ from starpulse.board.board_feed import BoardFeed
 from starpulse.board.machine_tasks import MachineTasks
 from starpulse.event_log import events
 from starpulse.event_log.event_log import Entry, EventLog, Tail
-from starpulse.pulls.ci import CI_MACHINES
-from starpulse.pulls.ci_trail import CiTrail, parse
-from starpulse.pulls.github import GITHUB_MACHINES
-from starpulse.pulls.pull_events import RecordProjection
-from starpulse.pulls.pulls import PullStore
+from starpulse.pulls.adapters.outbound.github import GITHUB_MACHINES
+from starpulse.pulls.adapters.outbound.pull_events import RecordProjection
+from starpulse.pulls.adapters.outbound.pulls import PullStore
+from starpulse.pulls.application.commands.ci_trail import CiTrail, parse
+from starpulse.pulls.model.ci import CI_MACHINES
 from starpulse.runs.cloudevents import CloudEventsIngest
 from starpulse.runs.config import Producer
 from starpulse.runtime.adapter_kit import task

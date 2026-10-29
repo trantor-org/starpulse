@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 import pytest
-from starpulse.pulls.pull_refresh import PullRefresh
+from starpulse.pulls.adapters.inbound.pull_refresh import PullRefresh
 
 TOKEN = "refresh-secret"
 TRACKED = {"acme/widgets"}
