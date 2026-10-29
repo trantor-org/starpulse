@@ -56,6 +56,7 @@ _SERVE_KEYS = (
     "tls_key",
     "mode",
     "refresh_token_env",
+    "github_token_env",
     "take_over_command",
     "slow_read_seconds",
     "worker_memory",

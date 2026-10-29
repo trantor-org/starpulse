@@ -543,6 +543,14 @@ class Prepared(NamedTuple):
     """The `[[runs]]` instances an adapter's own worker runs (`starpulse.runs.opt_in`): `serve` runs none of them itself."""
 
 
+def export_github_token(config: Config) -> None:
+    """Export the token `github_token_env` names as `GITHUB_TOKEN`, so the GitHub reads and every worker sign in with it;
+    unset, or the variable unset, `GITHUB_TOKEN` is left as it was."""
+    token = os.environ.get(config.github_token_env or "")
+    if token:
+        os.environ["GITHUB_TOKEN"] = token
+
+
 def prepare(parser: argparse.ArgumentParser, args: argparse.Namespace, config: Config) -> Prepared:
     """Check `config` and the environment for serving, exiting with the reason when they cannot serve."""
     try:
@@ -645,6 +653,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     parser = serve_parser()
     args = parser.parse_args(argv)
     config = _config(parser, args.config)
+    export_github_token(config)
     resolve_listen(args, config)
     try:
         listening = inherited_socket(os.environ)

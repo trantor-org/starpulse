@@ -221,9 +221,9 @@ def _repos(raw: object) -> tuple[Repo, ...]:
     return repos
 
 
-def _refresh_token_env(raw: object) -> str | None:
+def _env_var_name(key: str, raw: object) -> str | None:
     if raw is not None and not (isinstance(raw, str) and _ENV_NAME.fullmatch(raw)):
-        raise ConfigError("refresh_token_env must be the name of an environment variable")
+        raise ConfigError(f"{key} must be the name of an environment variable")
     return raw
 
 
@@ -366,6 +366,8 @@ class Config:
     """The policy the scheduler runs under (`[scheduler]`); every key is optional, so no block is the defaults."""
     refresh_token_env: str | None = None
     """The environment variable holding the token `POST /api/pulls/refresh` accepts; none: the route answers 404."""
+    github_token_env: str | None = None
+    """The environment variable whose value `serve` exports as `GITHUB_TOKEN` before any worker starts; unset, `GITHUB_TOKEN` is left as it was."""
     take_over_command: tuple[str, ...] | None = None
     """The argv `POST /api/take-over` runs with the task id appended (exit 0 sent, 1 no workflow); none: the route answers 404."""
     pull_requests: bool = _DEFAULTS.pull_requests
@@ -693,7 +695,8 @@ def _config(
         search=_search(raw.get("search")),
         project=_project(raw.get("project")),
         cursor_context=_cursor_context(raw.get("cursor_context")),
-        refresh_token_env=_refresh_token_env(raw.get("refresh_token_env")),
+        refresh_token_env=_env_var_name("refresh_token_env", raw.get("refresh_token_env")),
+        github_token_env=_env_var_name("github_token_env", raw.get("github_token_env")),
         take_over_command=_take_over_command(raw.get("take_over_command")),
         pull_requests=_flag(raw, "pull_requests", _DEFAULTS.pull_requests),
         worker_memory=_worker_memory(raw.get("worker_memory", {})),

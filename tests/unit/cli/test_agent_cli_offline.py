@@ -204,6 +204,7 @@ class TestConfigCheck:
             "level": None,
             "producers": [],
             "refresh_token_env": None,
+            "github_token_env": None,
             "take_over_command": None,
             "pull_requests": True,
             "tls": None,
