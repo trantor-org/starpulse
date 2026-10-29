@@ -1,6 +1,7 @@
 """ci/coverage_map.py: the per-test coverage map the nightly suite publishes and the select step reads."""
 
 import json
+import subprocess
 from pathlib import Path
 
 import coverage
@@ -124,3 +125,23 @@ def test_facts_name_the_maps_sha_its_age_and_the_source_files_the_checkout_lost(
     facts = coverage_map.facts(published, tmp_path / "maps", root, now=stamp + 5 * 3600)
 
     assert facts == {"sha": "abc", "age_hours": 5.0, "files": 2, "missing": 1}
+
+
+def test_facts_count_a_file_that_moved_since_the_maps_sha_as_present_and_a_deleted_one_as_missing(tmp_path):
+    root = tmp_path / "checkout"
+    (root / "pkg").mkdir(parents=True)
+    (root / "pkg" / "moved.py").write_text("x = 1\n" * 20)
+    (root / "pkg" / "deleted.py").write_text("y = 2\n" * 20)
+    git = ["git", "-C", str(root), "-c", "user.name=t", "-c", "user.email=t@t"]
+    subprocess.run([*git, "init", "-q"], check=True)
+    subprocess.run([*git, "add", "-A"], check=True)
+    subprocess.run([*git, "commit", "-qm", "map built"], check=True)
+    built_at = subprocess.run([*git, "rev-parse", "HEAD"], check=True, capture_output=True, text=True).stdout.strip()
+    (root / "sub").mkdir()
+    subprocess.run([*git, "mv", "pkg/moved.py", "sub/moved.py"], check=True)
+    subprocess.run([*git, "rm", "-q", "pkg/deleted.py"], check=True)
+    subprocess.run([*git, "commit", "-qm", "move and delete"], check=True)
+    published = {"sha": built_at, "collected": 1, "tests": {"t": ["pkg/moved.py", "pkg/deleted.py"]}}
+    coverage_map.publish(published, tmp_path / "maps")
+
+    assert coverage_map.facts(published, tmp_path / "maps", root)["missing"] == 1

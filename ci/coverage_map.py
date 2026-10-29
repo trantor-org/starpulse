@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -84,12 +85,22 @@ def latest(directory: Path) -> dict | None:
     return json.loads(path.read_text()) if path.exists() else None
 
 
+def renamed_since(root: Path, sha: str) -> dict[str, str]:
+    """Old path -> new path for the files git sees renamed between `sha` and HEAD; empty when git cannot tell."""
+    diff = subprocess.run(
+        ["git", "-C", str(root), "diff", "-M", "--name-status", sha, "HEAD"], capture_output=True, text=True
+    )
+    rows = [line.split("\t") for line in diff.stdout.splitlines()] if diff.returncode == 0 else []
+    return {row[1]: row[2] for row in rows if row[0].startswith("R") and len(row) == 3}
+
+
 def facts(coverage_map: dict, directory: Path, root: Path, *, now: float | None = None) -> dict:
     """What a run's selection leaned on: the map's sha, its hours since publishing, and how many of the source files it
-    names the checkout at `root` no longer has (a module that moved leaves its tests unreachable through the map)."""
+    names the checkout at `root` lost without a rename (a module that moved keeps its tests; one deleted does not)."""
     named = {file for files in coverage_map["tests"].values() for file in files}
     age = (now or time.time()) - (directory / LATEST).stat().st_mtime
-    missing = sum(not (root / file).is_file() for file in named)
+    moved = renamed_since(root, coverage_map["sha"])
+    missing = sum(not (root / moved.get(file, file)).is_file() for file in named)
     return {"sha": coverage_map["sha"], "age_hours": round(age / 3600, 1), "files": len(named), "missing": missing}
 
 

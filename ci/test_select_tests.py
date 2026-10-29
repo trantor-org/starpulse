@@ -417,6 +417,23 @@ def test_a_coverage_map_test_that_no_longer_exists_is_not_selected(repo):
     assert select(repo, [LEAF], coverage) == Selection([TEST_LEAF])
 
 
+def _commit(root: Path, message: str) -> str:
+    git = ["git", "-C", str(root), "-c", "user.name=t", "-c", "user.email=t@t"]
+    subprocess.run([*git, "add", "-A"], check=True)
+    subprocess.run([*git, "commit", "-qm", message], check=True)
+    return subprocess.run([*git, "rev-parse", "HEAD"], check=True, capture_output=True, text=True).stdout.strip()
+
+
+def test_a_module_moved_since_the_maps_sha_keeps_the_tests_the_map_recorded_for_its_old_path(repo):
+    subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True)
+    built_at = _commit(repo, "map built")
+    moved = "starpulse/event_log/leaf.py"
+    subprocess.run(["git", "-C", str(repo), "mv", LEAF, moved], check=True)
+    _commit(repo, "move leaf")
+    coverage = mapped(**{TEST_LEAF: [LEAF]}) | {"sha": built_at}
+    assert select(repo, [moved], coverage) == Selection([TEST_LEAF])
+
+
 def test_main_selects_by_the_newest_published_map(monkeypatch, capsys, repo, tmp_path):
     monkeypatch.chdir(repo)
     maps = tmp_path / "maps"

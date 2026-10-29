@@ -31,7 +31,7 @@ from fnmatch import fnmatch
 from functools import cache
 from pathlib import Path
 
-from coverage_map import DEFAULT_DIR, facts, latest
+from coverage_map import DEFAULT_DIR, facts, latest, renamed_since
 from shard import SECONDS
 
 #: Read by every test, by pytest itself or by a loader the graph cannot follow (YAML, JSON, skill files).
@@ -252,12 +252,15 @@ def _is_adapter(path: Path) -> bool:
     return "board" in defined or {"start", "follow"} <= defined
 
 
-def _covering(coverage: dict | None) -> dict[str, set[str]]:
-    """Source file -> the test files with a test that ran it, from the nightly coverage map (`ci/coverage_map.py`)."""
+def _covering(coverage: dict | None, moved: dict[str, str]) -> dict[str, set[str]]:
+    """Source file -> the test files with a test that ran it, from the nightly coverage map (`ci/coverage_map.py`).
+
+    `moved` is old path -> new path for the renames since the map's sha: a moved file keeps the tests the map recorded."""
     covering: dict[str, set[str]] = {}
     for nodeid, files in (coverage or {"tests": {}})["tests"].items():
+        test = nodeid.partition("::")[0]
         for file in files:
-            covering.setdefault(file, set()).add(nodeid.partition("::")[0])
+            covering.setdefault(moved.get(file, file), set()).add(moved.get(test, test))
     return covering
 
 
@@ -328,7 +331,7 @@ def select(
     root: Path, changed: list[str], coverage: dict | None = None, pyproject_before: str | None = None
 ) -> Selection:
     modules = _modules(root)
-    covering = _covering(coverage)
+    covering = _covering(coverage, renamed_since(root, coverage.get("sha", "")) if coverage else {})
     routed = _route(root, changed, covering, modules, pyproject_before)
     if routed is None:
         return FULL
