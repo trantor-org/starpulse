@@ -99,6 +99,11 @@ def _need_of(need: str) -> tuple[str, int]:
     return task, int(number) if number.isdigit() else 0
 
 
+def _dod_ticks(agent: Mapping[str, Any]) -> tuple[bool, ...]:
+    """Which of a task's Definition of Done items are checked; empty when its record carries none."""
+    return tuple(item["checked"] for item in agent.get("definition_of_done", ()))
+
+
 def moves_of(machine: Mapping[str, Any]) -> dict[tuple[str, str], str]:
     """`{(lane, event): target lane}` for the transitions of a drawn machine (`snapshot.describe`)."""
     return {(move["source"], move["event"]): move["target"] for move in machine["transitions"]}
@@ -213,6 +218,8 @@ class TaskActor:
         self._parked: dict[str, str] = {}
         #: The record each task's release was last refused on by the board's lint, so a repaired record is tried again.
         self._lint_held: dict[str, tuple[Any, ...]] = {}
+        #: Each open task's Definition of Done ticks as the actor last saw them, so a tick that completes them is seen.
+        self._ticks: dict[str, tuple[bool, ...]] = {}
         #: The passes in a row each gated task had a criterion in error, so the second re-gates it.
         self._error_passes: dict[str, int] = {}
         self._metrics = threading.Lock()
@@ -394,6 +401,7 @@ class TaskActor:
         for url in self._seen.get(name, ("", (), (), ()))[2]:
             self._by_pr.get(url, set()).discard(name)
         self._seen[name] = _view(agent)
+        self._ticks[name] = _dod_ticks(agent)
         for url in agent["prs"]:
             self._by_pr.setdefault(url, set()).add(name)
 
@@ -413,7 +421,11 @@ class TaskActor:
             if repaired:
                 del self._lint_held[name]
                 self._tried.pop(name, None)
-            if before == (now := _view(agent)) and not repaired:
+            ticks = _dod_ticks(agent)
+            ticked = all(ticks) and ticks != self._ticks.get(name, ticks)  # the last item checked: a refused Done move may now pass
+            if ticked:
+                self._tried.pop(name, None)
+            if before == (now := _view(agent)) and not repaired and not ticked:
                 return
             self._index(agent)
             touched = {name}
@@ -458,6 +470,7 @@ class TaskActor:
         for url in self._seen.pop(name, ("", (), (), ()))[2]:
             self._by_pr.get(url, set()).discard(name)
         self._tried.pop(name, None)
+        self._ticks.pop(name, None)
         self._lint_held.pop(name, None)
 
     def _dependents(self, name: str) -> set[str]:

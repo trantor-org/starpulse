@@ -152,12 +152,15 @@ def summary_agent(summary: Mapping[str, Any], workable: bool = False, moves: Map
 
 
 def read_model_detail(row: Mapping[str, Any]) -> dict:
-    """The fields a summary leaves out that a Task's record draws: its pull requests, description and criteria."""
+    """The fields a summary leaves out that a Task's record draws: its pull requests, description, criteria and
+    Definition of Done items."""
     acceptance = [item for item in row["criteria"] if item["kind"] == "ac"]
+    done = [item for item in row["criteria"] if item["kind"] == "dod"]
     return {
         "prs": pull_links(row["references"]),
         "description": row["description"],
         "criteria": [{"text": item["text"], "checked": item["checked"]} for item in acceptance],
+        "definition_of_done": [{"text": item["text"], "checked": item["checked"]} for item in done],
     }
 
 
