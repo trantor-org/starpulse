@@ -5,6 +5,7 @@ import json
 import socket
 import ssl
 import subprocess
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -121,3 +122,21 @@ def test_a_tls_client_offering_h2_in_alpn_is_negotiated_to_http2(
 
     assert negotiated == "h2"
     assert answer.status == 200
+
+
+def test_a_tls_server_without_aioquic_serves_http2_and_advertises_no_http3(
+    tmp_path: Path, certificate: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The free-threaded build installs no aioquic: the TLS port serves h2 and offers no `h3` it cannot answer."""
+    monkeypatch.setitem(sys.modules, "aioquic", None)
+    monkeypatch.setitem(sys.modules, "aioquic.h3.connection", None)
+    context = ssl.create_default_context(cafile=str(certificate[0]))
+    context.set_alpn_protocols(["h2", "http/1.1"])
+    with serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES), tls=certificate) as server:
+        port: Any = server.server_port
+        with socket.create_connection(("127.0.0.1", port), timeout=5) as raw:
+            with context.wrap_socket(raw, server_hostname="127.0.0.1") as connection:
+                answer = _h2_request(connection, f"127.0.0.1:{port}", "GET", "/", {})
+
+    assert answer.status == 200
+    assert "alt-svc" not in answer.headers
