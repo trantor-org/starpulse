@@ -474,6 +474,16 @@ class TaskActor:
     def _own_prs(self, agent: dict[str, Any]) -> list[str]:
         return own_prs(self._store, agent)
 
+    def _proof_prs(self, agent: dict[str, Any]) -> list[str]:
+        """The pull requests whose ends prove a task's work. In Review, a task with no own pull request merged takes
+        every cited one: another task's delivery may have superseded its own, which closed unmerged or never existed."""
+        own = self._own_prs(agent)
+        if agent["state"] != "review":
+            return own
+        if any((record := self._record(url)) and record["state"] == "MERGED" for url in own):
+            return own
+        return agent["prs"]
+
     def _pull_state(self, url: str) -> tuple[str, str | None, bool]:
         record = self._record(url)
         return (record["state"], record["mergeSha"], record["isDraft"]) if record else ("", None, False)
@@ -600,13 +610,14 @@ class TaskActor:
 
     def _pr_terminal(self, agent: dict[str, Any]) -> tuple[str, str] | None:
         """The merge evidence when the task cites pull requests and every one has ended, else None. A check task that
-        cites only other tasks' pull requests has no delivery of its own to wait for: its checked criteria close it."""
+        cites only other tasks' pull requests has no delivery of its own to wait for: its checked criteria close it.
+        Review proves its work on `_proof_prs`; every other lane still waits on its own pull requests only."""
         own = self._own_prs(agent)
         if not own and agent["prs"] and agent["type"] == "check":
             proof = f"no pull request of its own; cites {', '.join(agent['prs'])}"
             return proof, f"{MERGE_EVIDENCE} {proof}"
         parts = []
-        for url in own:
+        for url in self._proof_prs(agent):
             record = self._record(url)
             if record is None or record["state"] not in _TERMINAL:
                 return None
@@ -638,7 +649,7 @@ class TaskActor:
         """The merge evidence when every pull request the task cites has ended and at least one merged, and the task's
         Verify plan is present exactly when `planned`, else None: a delivery closed unmerged is no proof of the work."""
         terminal = self._pr_terminal(agent)
-        merged = any((record := self._record(url)) and record["state"] == "MERGED" for url in self._own_prs(agent))
+        merged = any((record := self._record(url)) and record["state"] == "MERGED" for url in self._proof_prs(agent))
         return terminal if terminal and merged and self._planned(agent) is planned else None
 
     def _pr_merged(self, agent: dict[str, Any]) -> tuple[str, str] | None:
