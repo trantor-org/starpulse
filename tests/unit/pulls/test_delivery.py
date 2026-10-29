@@ -261,3 +261,24 @@ def test_a_query_the_server_answered_empty_is_answered_with_the_record_the_worke
 
     assert refreshed.wait(WAIT_S)
     assert [pull["checks"] for pull in json.loads(reads(query)[0].body)["pulls"]] == ["pass"]
+
+
+def test_a_refresh_asked_while_no_worker_ran_replays_but_one_the_last_worker_beat_after_does_not(
+    log: EventLog, stop: threading.Event
+) -> None:
+    ask = delivery.request_refresh(log, lambda: ["acme/widgets"])
+    ask("acme/widgets", 1)
+    time.sleep(0.02)
+    log.put_state(delivery.POLLER, {"at": time.time()})
+    time.sleep(0.02)
+    ask("acme/widgets", 2)  # the close that landed in the gap: after the last beat, before the new worker
+    asked: list[tuple[str, int]] = []
+    seen = threading.Event()
+    delivery.follow_refreshes(log, lambda repo, number: (asked.append((repo, number)), seen.set()), stop)
+
+    assert seen.wait(WAIT_S)
+    ask("acme/widgets", 3)
+    deadline = time.time() + WAIT_S
+    while len(asked) < 2 and time.time() < deadline:
+        time.sleep(0.01)
+    assert asked == [("acme/widgets", 2), ("acme/widgets", 3)]
