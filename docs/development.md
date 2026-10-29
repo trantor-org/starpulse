@@ -52,7 +52,7 @@ The same nightly and dispatch runs record which source files each test executes:
 `--cov --cov-context=test` (line coverage of `starpulse` and `ci`, `[tool.coverage.run]`) and uploads its data as
 `coverage-data-<shard>`. The `coverage-map` job, once the select job passed and whether the shards were green or red (a
 red nightly still uploads its data, and a map frozen behind it goes stale), combines them
-and `ci/coverage_map.py build` writes `<sha>.json` and `latest.json` (`{sha, collected, tests: {node id: [files]}}`) to
+and `ci/coverage_map.py build` writes `<sha>.json` and `latest.json` (`{sha, collected, tests: {node id: [files]}, shards, shard_count}`: the shards whose data it combined out of the run's) to
 `$STARPULSE_COVERAGE_MAP_DIR`, default `~/.cache/starpulse-ci/coverage-map` of the CI runner user, which the
 `ci-sp-python` select step also runs as. A parametrized case with no context of its own takes its function's files; a
 collected test with no files is left out. `uv run python ci/coverage_map.py latest` prints the newest map's sha and how

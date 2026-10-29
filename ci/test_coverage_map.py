@@ -99,6 +99,22 @@ def test_cli_build_publishes_and_latest_prints_sha_and_coverage(tmp_path, capsys
     assert capsys.readouterr().out.splitlines()[-1] == "abc 2/2 tests 100.0%"
 
 
+def test_cli_build_records_the_contributing_shards_beside_the_sha(tmp_path):
+    data = _data(tmp_path / ".coverage", tmp_path, {"t1|run": ["a.py"], "t2|run": ["a.py"]})
+    out = tmp_path / "maps"
+    collected = tmp_path / "collected.txt"
+    collected.write_text("t1\nt2\n")
+
+    coverage_map.main(
+        ["build", str(data), "--root", str(tmp_path), "--sha", "abc", "--collected", str(collected), "--out", str(out)]
+        + ["--shards", "0", "2", "--shard-count", "3"]
+    )
+
+    published = coverage_map.latest(out)
+    assert (published["sha"], published["shards"], published["shard_count"]) == ("abc", ["0", "2"], 3)
+    assert published["tests"] == {"t1": ["a.py"], "t2": ["a.py"]}
+
+
 def test_cli_build_publishes_nothing_when_the_data_names_too_few_of_the_collected_tests(tmp_path, capsys):
     data = _data(tmp_path / ".coverage", tmp_path, {"t1|run": ["a.py"]})
     out = tmp_path / "maps"

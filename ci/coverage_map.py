@@ -2,11 +2,13 @@
 
 The nightly shards run pytest with `--cov-context=test`; each writes a coverage data file, and the `coverage-map` job
 combines them. `build` turns the combined file into `{"sha", "collected", "tests": {node id: [source files]}}`, the
-files relative to the checkout, a test's setup, call and teardown merged. `publish` writes it as `<sha>.json` plus
+files relative to the checkout, a test's setup, call and teardown merged, plus the `shards` whose data it combined out
+of the run's `shard_count` (a red shard that uploaded data still counts; one that crashed does not). `publish` writes it as `<sha>.json` plus
 `latest.json` in `--out` (default: a directory in the CI runner user's cache, where the `ci-sp-python` select step
 reads it). `latest` prints the newest map's sha and how many of the collected tests it covers.
 
-  build DATA --sha SHA --collected FILE [--root DIR] [--out DIR]   write the map of the combined coverage file DATA
+  build DATA --sha SHA --collected FILE [--root DIR] [--out DIR] [--shards N ...] [--shard-count N]
+                                                                write the map of the combined coverage file DATA
   latest [--out DIR]                                            print the newest published map: sha, tests, share
 """
 
@@ -112,6 +114,8 @@ def main(argv: list[str]) -> int:
     built.add_argument("--sha", required=True)
     built.add_argument("--collected", type=Path, required=True, help="file of the collected node ids, one per line")
     built.add_argument("--root", type=Path, default=Path.cwd())
+    built.add_argument("--shards", nargs="*", default=[], help="the shards whose coverage data the combined file holds")
+    built.add_argument("--shard-count", type=int, default=0, help="how many shards the run had, red or green")
     commands.add_parser("latest")
     for sub in commands.choices.values():
         sub.add_argument("--out", type=Path, default=DEFAULT_DIR)
@@ -120,6 +124,7 @@ def main(argv: list[str]) -> int:
         built_map = build(
             args.data, args.root.resolve(), sha=args.sha, collected=args.collected.read_text().splitlines()
         )
+        built_map |= {"shards": args.shards, "shard_count": args.shard_count}
         if ratio(built_map) < MIN_RATIO:
             share = f"{ratio(built_map):.1%} of the collected tests, under {MIN_RATIO:.0%}"
             print(f"the map names {share}: not published", file=sys.stderr)
