@@ -1,7 +1,6 @@
 """The history store keeps step, case and lane-interval summaries as it records, so a read need not fold every row."""
 
 import threading
-import time
 from pathlib import Path
 
 import pytest
@@ -361,27 +360,31 @@ def test_a_writer_commits_while_the_summaries_rebuild_and_its_row_is_summarised(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A rebuild on a large history outlasts the busy timeout, so it must not hold the write lock while it folds: the
-    timeout is shortened and the fold slowed until the rebuild is several times longer than a writer waits."""
+    timeout is shortened and the fold held until the writer has committed, so no clock decides the outcome."""
     monkeypatch.setattr(history, "_SQLITE_BUSY_TIMEOUT", 0.3)
     store = HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", MACHINES)
-    for n in range(300):
+    for n in range(20):
         _event(store, f"e{n}", "WORKTREE_READY", float(n), task=f"PROJ-{n}")
     folding = threading.Event()
+    written = threading.Event()
     fold = Summariser.event_step
 
-    def slow_step(self, *args):
-        folding.set()
-        time.sleep(0.003)
+    def held_step(self, *args):
+        if threading.current_thread().name == "rebuild":  # the writer folds its own row too, and must not wait
+            folding.set()
+            written.wait(10)
         return fold(self, *args)
 
-    monkeypatch.setattr(Summariser, "event_step", slow_step)
-    rebuild = threading.Thread(target=store.rebuild_summaries)
+    monkeypatch.setattr(Summariser, "event_step", held_step)
+    rebuild = threading.Thread(target=store.rebuild_summaries, name="rebuild")
     rebuild.start()
-    assert folding.wait(10)
-
-    _event(
-        store, "live-1", "WORKTREE_READY", 1000.0, task="LIVE-1"
-    )  # raises `database is locked` if the rebuild holds it
+    try:
+        assert folding.wait(10)
+        _event(
+            store, "live-1", "WORKTREE_READY", 1000.0, task="LIVE-1"
+        )  # raises `database is locked` if the rebuild holds it
+    finally:
+        written.set()
 
     rebuild.join(30)
     assert not rebuild.is_alive()

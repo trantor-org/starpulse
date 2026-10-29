@@ -28,7 +28,9 @@ A test that runs past 120 s (`timeout` in `[tool.pytest.ini_options]`, from pyte
 a test that needs longer carries `@pytest.mark.timeout(<seconds>)` with the reason beside it.
 A test's ceiling is 5 s for setup, call and teardown together (`SLOW_TEST_SECONDS` overrides it). In every run but the
 nightly, the pull-request gate and a local run included, a test fails at teardown past three times that
-(`SLOW_TEST_FAIL_SECONDS` overrides it; `ci/slow_tests.py`), stretched by the host's 1-minute load per CPU when that is above 1 (`SLOW_TEST_LOAD_SCALE=0` turns it off): the gate's host is shared, and one 0.7 s test took 9.4 s at a
+(`SLOW_TEST_FAIL_SECONDS` overrides it; `ci/slow_tests.py`) once the seconds the process's threads waited on a CPU run
+queue (the scheduler's `run_delay`) are taken off, so a host at its CPU cap does not fail a test it kept off a CPU; the
+wait of a child process is not counted. The bound is stretched by the host's 1-minute load per CPU when that is above 1 (`SLOW_TEST_LOAD_SCALE=0` turns it off): the gate's host is shared, and one 0.7 s test took 9.4 s at a
 load of 4.6 per CPU. A test that already failed or errored is not failed again. Make a slow test faster, or keep it slow with `@pytest.mark.slow` and a `# Stays slow: <reason>`
 comment directly above it naming what the test must pay for (a server process, a container, a cold import).
 `OVER_CEILING` there lists the tests at or over 4 s when the bound landed, each with the slice that brings it under; that

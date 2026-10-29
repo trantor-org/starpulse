@@ -5,7 +5,7 @@ A run without it is the gate (the `python` shards, a local run): a test whose wa
 or an `OVER_CEILING` entry, and the run prints no section, no annotation and no summary row and writes no report. The
 bound keeps the gate's test window inside its budget (a 30 s budget for the gate's test window: no selected test over
 ~15 s) and sits above the ceiling because the gate's host is shared: one 0.7 s test took 9.4 s at a load of 4.6 per CPU.
-The bound is stretched by the host's 1-minute load per CPU when that exceeds 1 (`gate_bound`); `SLOW_TEST_LOAD_SCALE=0` turns this off. The nightly names every test over the ceiling itself. A budget test that cannot fit is marked `nightly`, which the gate
+The wall time the bound judges has the seconds the process's threads waited on a run queue taken off (`_waited`), so a host at its CPU cap fails the test that is slow, not the one that was kept off a CPU. The bound is stretched by the host's 1-minute load per CPU when that exceeds 1 (`gate_bound`); `SLOW_TEST_LOAD_SCALE=0` turns this off. The nightly names every test over the ceiling itself. A budget test that cannot fit is marked `nightly`, which the gate
 deselects. With `TEST_COST_REPORT=1`, the flagged tests' node id, wall seconds, CPU seconds and peak-RSS growth in MB
 are also written to the JSON file `TEST_COST_REPORT_PATH` (default `test-cost.json`) as `{"tests": [...]}`, empty when
 nothing was flagged; ci/memray_flagged.py reruns exactly them.
@@ -57,14 +57,28 @@ _cost: defaultdict[str, list[float]] = defaultdict(lambda: [0.0, 0.0, 0.0])
 _line: dict[str, tuple[str, int]] = {}
 _wall: defaultdict[str, float] = defaultdict(float)
 _failed: set[str] = set()
-_last = [0.0, 0.0]
+_waits: defaultdict[str, float] = defaultdict(float)
+_last = [0.0, 0.0, 0.0]
 
 
-def _now() -> tuple[float, float]:
-    """CPU seconds so far (self and waited-for children) and the process's peak RSS in MB."""
+def _now() -> tuple[float, float, float]:
+    """CPU seconds so far (self and waited-for children), the process's peak RSS in MB and the seconds its live threads
+    have spent runnable but not running."""
     own, kids = resource.getrusage(resource.RUSAGE_SELF), resource.getrusage(resource.RUSAGE_CHILDREN)
     cpu = own.ru_utime + own.ru_stime + kids.ru_utime + kids.ru_stime
-    return cpu, own.ru_maxrss / 1024
+    return cpu, own.ru_maxrss / 1024, _waited()
+
+
+def _waited() -> float:
+    """Seconds this process's live threads have waited on a run queue (`run_delay`, the second `schedstat` field): time
+    the host kept a ready test off a CPU. Zero where the kernel keeps no schedstat."""
+    total = 0
+    for path in Path("/proc/self/task").glob("*/schedstat"):
+        try:
+            total += int(path.read_text().split()[1])
+        except OSError, IndexError, ValueError:
+            continue  # the thread exited between the listing and the read
+    return total / 1e9
 
 
 def pytest_runtest_logstart(nodeid, location):
@@ -74,18 +88,19 @@ def pytest_runtest_logstart(nodeid, location):
 @pytest.hookimpl(wrapper=True)
 def pytest_runtest_makereport(item, call):
     report = yield
-    cpu, peak = _now()
+    cpu, peak, waited = _now()
     report.user_properties += [("cpu_s", cpu - _last[0]), ("peak_mb", max(0.0, peak - _last[1]))]
-    _last[:] = cpu, peak
+    _waits[item.nodeid] += max(0.0, waited - _last[2])  # a thread that exited since the last read took its wait with it
+    _last[:] = cpu, peak, waited
     _wall[item.nodeid] += report.duration
-    wall = _wall[item.nodeid]
+    wall = _wall[item.nodeid] - _waits[item.nodeid]
     if report.failed:
         _failed.add(item.nodeid)
     exempt = item.get_closest_marker("slow") or f"{item.nodeid.split('::')[0]}::{item.originalname}" in OVER_CEILING
     over = call.when == "teardown" and wall > _bound() and not exempt
     if over and os.environ.get("TEST_COST_REPORT") != "1" and item.nodeid not in _failed:
         report.outcome = "failed"
-        report.longrepr = f"{item.nodeid} took {wall:.1f} s, over the gate's {FAIL_SECONDS:g} s bound: make it faster, mark it slow or nightly"
+        report.longrepr = f"{item.nodeid} took {wall:.1f} s once its CPU wait is taken off, over the gate's {FAIL_SECONDS:g} s bound: make it faster, mark it slow or nightly"
     return report
 
 
