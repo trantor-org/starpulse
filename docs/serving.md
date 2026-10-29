@@ -850,7 +850,9 @@ A move from the working lane (the first resting State the lifecycle does not end
 `parked` command once, with `{id}` replaced by the task's id, so a board can tell the session that holds the task. A
 command that exits nonzero is logged; the move stands.
 
-A write the board refuses is logged and counted, and is not retried until the task's facts change. A release to Ready
+A write the board refuses is logged and counted, and is not retried until the task's facts change; checking the last
+Definition of Done item of a task (`definition_of_done` in its record) is such a change, so a Done move a guard refused
+for an unchecked item is tried again. A release to Ready
 that a declared guard or the `validate` hook refuses is a defect in the task record: the task stays in its lane with a
 comment naming the refusal, no operator question is minted, and the actor retries once the task's description, profile,
 labels or dependencies change. `GET /metrics` carries:

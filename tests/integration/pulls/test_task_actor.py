@@ -782,3 +782,36 @@ def test_a_release_drops_only_the_dependencies_whose_needs_are_met(store: PullSt
 
     assert until(lambda: board.moved() == [("TASK-2", "ready")])
     assert board.writes[0][1] == {"status": "ready", "dependencies": ["TASK-1"], "dependencyNeeds": []}
+
+
+def test_a_dod_tick_that_leaves_a_merged_review_task_fully_checked_makes_the_done_move_the_guard_refused(
+    tmp_path: Path, store: PullStore, stop: threading.Event
+) -> None:
+    engine = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}").engine
+    events = EventStore(engine)
+    created = NewEvent(
+        type="TaskCreated", payload={"title": "Task", "state": "Review"}, actor="adin", writer="operator"
+    )
+    referenced = NewEvent(
+        type="FieldsEdited", payload={"changes": {"references": [PR_ONE]}}, actor="adin", writer="operator"
+    )
+    item = NewEvent(type="CriterionAdded", payload={"kind": "dod", "text": "Verify"}, actor="adin", writer="operator")
+    events.append("task", "TASK-1", 0, [created, referenced, item])
+    projector = Projector(engine, events)
+    projector.catch_up()
+    feed = BoardFeed(roles=ROLES, machines=MACHINES, read_model=ReadModel(engine))
+    board = Board(feed)
+    board.refusing["done"] = "Done needs every Definition of Done item checked"
+    store.save([pull(1, state="MERGED")])
+    running(board, store, stop)
+    assert until(lambda: board.moved() == [("TASK-1", "done")])  # the merge's own attempt, refused
+
+    board.refusing.clear()
+    ticked = NewEvent(
+        type="CriterionChecked", payload={"kind": "dod", "n": 1, "checked": True}, actor="adin", writer="operator"
+    )
+    events.append("task", "TASK-1", 3, [ticked])
+    projector.catch_up()
+    feed.follow_read_model()  # the page's follow publishes the changed task to the actor, as the server does
+
+    assert until(lambda: board.moved() == [("TASK-1", "done")] * 2)
