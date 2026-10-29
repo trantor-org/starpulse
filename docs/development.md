@@ -21,7 +21,7 @@ on any worker: tests that stub the checkout's `static` directory share it throug
 CI splits the suite by test file across the `python-shard` matrix (`ci/shard.py`: `SHARD_INDEX` of `SHARD_COUNT`, both unset
 locally). A `select` job runs `ci/select_tests.py` once and sizes the matrix from the selection: no shard when it selects no
 test, one shard per minute of the selected files' test time (never more than the files), and all six for the nightly and a
-manual dispatch. `select` also runs `lint-imports` on every pull request. The `python` job, the ruleset's required check,
+manual dispatch. The `static-checks` job runs `lint-imports` beside the other short checks. The `python` job, the ruleset's required check,
 passes when `select` did and every shard it launched did, including when it launched none; a failed, cancelled or never-run
 shard fails it.
 A test that runs past 120 s (`timeout` in `[tool.pytest.ini_options]`, from pytest-timeout) fails with a timeout error;

@@ -33,11 +33,17 @@ wire_pb2() {
     git diff --exit-code -- starpulse/runs/wire
 }
 
+# The import tiers in pyproject.toml: `lint-imports` fails when a module imports across a layer it may not. It runs here, beside
+# the other short checks, so `select` does not hold every shard back for it.
+import_layers() {
+  uv run --no-sync lint-imports
+}
+
 # `uv sync` creates .venv, which the checks below read: it runs once here, before any of them starts, so no two uv
 # invocations race to create .venv/bin (a concurrent sync once broke a check with a missing .venv/bin temp file).
 uv sync --locked || exit 1
 
-checks=(api_types public_names config_reference wire_pb2)
+checks=(api_types public_names config_reference wire_pb2 import_layers)
 pids=()
 for check in "${checks[@]}"; do
   "$check" >"$logs/$check.log" 2>&1 &
