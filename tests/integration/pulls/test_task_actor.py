@@ -108,7 +108,7 @@ def test_a_merge_routes_on_verify_plan_a_planned_review_task_to_in_progress_and_
     assert all(name != "TASK-3" for name, *_ in board.writes)  # closed unmerged: neither route
 
 
-def test_a_review_task_citing_another_tasks_merged_pr_stays_and_one_citing_its_own_closes(
+def test_a_review_task_citing_only_another_tasks_merged_pr_closes_and_one_citing_its_own_closes(
     store: PullStore, stop: threading.Event
 ) -> None:
     board = Board(
@@ -129,9 +129,8 @@ def test_a_review_task_citing_another_tasks_merged_pr_stays_and_one_citing_its_o
 
     actor.pulls_changed()
 
-    assert until(lambda: sorted(board.moved()) == [("TASK-2", "done"), ("TASK-3", "done")])
+    assert until(lambda: sorted(board.moved()) == [("TASK-1", "done"), ("TASK-2", "done"), ("TASK-3", "done")])
     assert [name for name, _ in board.comments()] == []
-    assert all(name != "TASK-1" for name, *_ in board.writes)
 
 
 def test_a_review_check_task_citing_only_other_tasks_prs_closes_and_a_feature_task_doing_so_stays(
@@ -141,7 +140,7 @@ def test_a_review_check_task_citing_only_other_tasks_prs_closes_and_a_feature_ta
         BoardFeed(),
         task("TASK-1", "Review", type="check", references=(PR_ONE,)),
         task("TASK-2", "Review", type="check", references=(PR_TWO, PR_THREE)),
-        task("TASK-3", "Review", type="story", references=(PR_ONE,)),
+        task("TASK-3", "Ready", type="story", references=(PR_ONE,)),
     )
     store.save([pull(1, state="OPEN", branch="claude/task-9-other"), pull(2, state="OPEN"), pull(3, state="OPEN")])
     actor = running(board, store, stop)
@@ -158,6 +157,31 @@ def test_a_review_check_task_citing_only_other_tasks_prs_closes_and_a_feature_ta
     assert until(lambda: board.moved() == [("TASK-1", "done")])
     assert "no pull request of its own; cites " + PR_ONE in str(board.writes[0][2])
     assert all(name == "TASK-1" for name, *_ in board.writes)
+
+
+def test_a_ready_or_in_progress_task_citing_another_tasks_merged_pr_derives_nothing(
+    store: PullStore, stop: threading.Event
+) -> None:
+    board = Board(
+        BoardFeed(),
+        task("TASK-1", "Ready", references=(PR_ONE,)),
+        task("TASK-2", "In Progress", references=(PR_TWO,)),
+    )
+    store.save(
+        [pull(1, state="OPEN", branch="claude/task-9-other"), pull(2, state="OPEN", branch="claude/task-8-other")]
+    )
+    actor = running(board, store, stop)
+    store.save(
+        [
+            pull(1, state="MERGED", branch="claude/task-9-other"),
+            pull(2, state="MERGED", branch="claude/task-8-other"),
+        ]
+    )
+
+    actor.pulls_changed()
+
+    assert board.moved() == []
+    assert board.writes == []
 
 
 def test_a_needs_attention_task_closes_once_every_pr_ended_and_one_merged_but_not_when_all_closed(
