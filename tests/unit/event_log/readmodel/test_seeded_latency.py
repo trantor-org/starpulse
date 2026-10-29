@@ -48,6 +48,9 @@ def _p95_ms(call: Callable[[], object]) -> float:
     return min(_round_p95_ms(call) for _ in range(3))
 
 
+# Slow: the first run after an event-log source change seeds 20,000 Tasks through the real `EventStore` and `Projector`
+# (~3 CPU-ms a Task, nearly all SQLAlchemy statement building); later runs copy the cached store. The setup is billed to
+# the first test that asks for the board; the three tests' own calls cost ~6 s.
 @pytest.fixture(scope="module")
 def board(tmp_path_factory: pytest.TempPathFactory) -> Iterator[tuple[ReadModel, int, int]]:
     rss_before = _rss()
