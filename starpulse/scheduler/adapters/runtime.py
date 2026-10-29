@@ -158,6 +158,7 @@ def build(
     chain: Callable[[], Mapping[str, Mapping[str, Any]]] = dict,
     p_goals: Callable[[], Mapping[str, float]] = dict,
     lane: str = "",
+    transcript: Callable[[str], float | None] = lambda session: None,
 ) -> Runtime:
     """The switch kept in `log`'s store and a sampler of `policy`'s limits over `feed`, on the local probe unless given another.
 
@@ -213,5 +214,6 @@ def build(
             quiet_hours=quiet_hours.get,
             log=log,
             harness=harness,
+            transcript=transcript,
         )
     return Runtime(toggle, sampler, quiet_hours, harness, policy, loop)

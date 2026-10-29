@@ -73,6 +73,7 @@ class Rig:
         self.claims: list[tuple[str, str]] = []
         self.claim_ok = True
         self.merged: set[str] = set()
+        self.transcripts: dict[str, float] = {}
         self.quiet = quiet
         self.loop = self._bind(self.sampler)
 
@@ -106,6 +107,7 @@ class Rig:
             quiet_hours=lambda: self.quiet,
             log=self.log,
             harness=self.harness_setting,
+            transcript=self.transcripts.get,
         )
 
     def _claim(self, task: str, text: str) -> Written:
@@ -145,6 +147,7 @@ class Rig:
         impact: str = "",
         urgency: str = "",
         labels: tuple[str, ...] = (),
+        assignee: str = "",
     ) -> None:
         self.feed.put(
             BoardTask(
@@ -154,6 +157,7 @@ class Rig:
                 lane=lane,
                 labels=[f"size-{size}", *labels],
                 profile=PROFILE,
+                assignee=assignee,
                 dependencies=deps,
                 impact=impact,
                 urgency=urgency,
@@ -865,6 +869,26 @@ def test_a_session_started_outside_the_loop_takes_a_session_slot(rig: Rig) -> No
     rig.session("T-1", "SESSION_STOPPED")
     assert [session["task"] for session in rig.loop.in_flight()] == ["T-1"]  # a mid-turn reply stops it, still live
     rig.after(31)  # past STALE_S with no event: the session is gone
+    assert rig.loop.in_flight() == []
+
+
+def test_in_flight_lists_an_in_progress_task_whose_assignee_session_wrote_a_transcript_within_stale_s(rig: Rig) -> None:
+    rig.put("T-1", lane="in_progress", assignee="b55dc5cc")
+    rig.session("T-9")  # the harness machine keyed the session by the branch it opened on, not the task it claimed
+    rig.transcripts["b55dc5cc"] = rig.now
+
+    assert [session["task"] for session in rig.loop.in_flight()] == ["T-1"]
+    assert rig.loop.in_flight()[0]["url"] == ""
+
+    rig.after(31)  # past STALE_S with no transcript write: the session is gone
+    assert rig.loop.in_flight() == []
+
+
+def test_in_flight_ignores_a_transcript_of_a_session_that_holds_no_in_progress_task(rig: Rig) -> None:
+    rig.put("T-1", lane="ready", assignee="b55dc5cc")
+    rig.put("T-2", lane="in_progress", assignee="other")
+    rig.transcripts["b55dc5cc"] = rig.now
+
     assert rig.loop.in_flight() == []
 
 

@@ -104,7 +104,8 @@ class Loop:
     to `lane` with a comment, `merged` says whether a task's
     own pull request has merged, which leaves the task unstarted whatever its lane, `clock` is the loop's notion
     of now, `quiet_hours` answers the window in which it admits nothing, read on every pass so Admin's change holds, and
-    `log` is the history store a restart restores in-flight runs and start times from.
+    `log` is the history store a restart restores in-flight runs and start times from, and `transcript` answers when a
+    session's transcript was last written, which lists a session the harness machine does not key to its task.
     """
 
     def __init__(
@@ -127,6 +128,7 @@ class Loop:
         p_goals: Callable[[], Mapping[str, float]] = dict,
         log: EventLog | None = None,
         harness: HarnessSetting | None = None,
+        transcript: Callable[[str], float | None] = lambda session: None,
     ) -> None:
         self._feed = feed
         self._policy = policy
@@ -144,6 +146,7 @@ class Loop:
         self._clock = clock
         self._quiet_hours = quiet_hours
         self._harness = harness
+        self._transcript = transcript
         self._state = SchedulerState(log) if log is not None else None
         self._running: dict[str, _Run] = {}
         self._starts: dict[str, float] = {}
@@ -190,6 +193,20 @@ class Loop:
             seen = self._feed.machine_task(HARNESS.name, task)
             if seen is not None and seen["state"] in states and now - seen["active"] <= STALE_S:
                 found[task] = {"agent": agent, "seen": seen}
+        return found
+
+    def _transcribed(self, seen: Mapping[str, Any]) -> dict[str, tuple[dict[str, Any], float]]:
+        """The In Progress tasks neither `_running` nor `seen` holds whose assignee session wrote its transcript inside
+        `STALE_S`: a session the harness machine keys to the branch it opened on, not the task it claimed since."""
+        now = self._clock()
+        found = {}
+        for agent in self._feed.open_tasks():
+            task = agent["id"]
+            if agent["state"] != self._feed.roles.working or task in self._running or task in seen:
+                continue
+            written = self._transcript(agent.get("assignee") or "")
+            if written is not None and now - written <= STALE_S:
+                found[task] = (agent, written)
         return found
 
     def wants(self, kind: str, data: Mapping[str, Any]) -> bool:
@@ -266,7 +283,8 @@ class Loop:
     def in_flight(self) -> list[dict[str, Any]]:
         """Every live session holding an In Progress task, oldest first, for `GET /api/scheduler`: the loop's runs, and
         the sessions it did not track (a stopped one included, within `STALE_S` of its last event), whose address is unknown (`url` is empty) and whose start is the harness machine's
-        first move on the task.
+        first move on the task, and the assignee sessions that wrote a transcript inside `STALE_S` with no harness machine row
+        on the task, started when the task entered In Progress.
 
         Read from another thread than the loop's: `list(...)` takes one snapshot of the runs a tick may be changing.
         """
@@ -283,7 +301,8 @@ class Loop:
                     "url": run.session,
                 }
             )
-        for task, found in self._outside(("active", "stopped")).items():
+        outside = self._outside(("active", "stopped"))
+        for task, found in outside.items():
             agent, seen = found["agent"], found["seen"]
             sessions.append(
                 {
@@ -291,6 +310,16 @@ class Loop:
                     "title": agent["title"],
                     "model": agent["model"] or "",
                     "started": seen["trail"][0]["at"] if seen["trail"] else seen["active"],
+                    "url": "",
+                }
+            )
+        for task, (agent, written) in self._transcribed(outside).items():
+            sessions.append(
+                {
+                    "task": task,
+                    "title": agent["title"],
+                    "model": agent["model"] or "",
+                    "started": agent["entered"] or written,
                     "url": "",
                 }
             )
