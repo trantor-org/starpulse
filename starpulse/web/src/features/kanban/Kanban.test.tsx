@@ -123,15 +123,20 @@ describe("a Kanban card's machine line", () => {
 
 describe("a Kanban card's pull request chip", () => {
   const pull = { number: 12, repo: "o/r", url: "http://pr/12", checks: "pass" as const, merged: true, merge_sha: null, merged_at: null, threads: 0, stale: false };
-  const chip = (machines: KanbanTask["machines"]) =>
-    renderToStaticMarkup(<Card task={{ ...task, prs: [pull], machines }} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} />).match(/<span class="pr[^"]*"[^>]*>[\s\S]*?<\/span>/)?.[0] ?? "";
+  const ci = { machine: "ci", state: "merged", at: 100, source: "GitHub", trail: [] };
+  const chip = (machines: KanbanTask["machines"], live: KanbanTask["live"]) =>
+    renderToStaticMarkup(<Card task={{ ...task, prs: [pull], machines, live }} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} />).match(/<span class="pr[^"]*"[^>]*>[\s\S]*?<\/span>/)?.[0] ?? "";
 
-  it("leaves the status dot to the machine line when the task's CI is recorded", () => {
-    expect(chip([{ machine: "ci", state: "merged", at: 100, source: "GitHub", trail: [] }])).not.toContain("<i>");
+  it("leaves the status dot to the machine line when the card's line is the CI machine", () => {
+    expect(chip([ci], { machine: "ci", state: "merged", at: 100 })).not.toContain("<i>");
+  });
+
+  it("draws its own status dot when the card's line is another machine, though CI is recorded", () => {
+    expect(chip([ci], { machine: "harness", state: "active", at: 150 })).toContain("<i>");
   });
 
   it("draws its own status dot when no CI is recorded", () => {
-    expect(chip([])).toContain("<i>");
+    expect(chip([], null)).toContain("<i>");
   });
 });
 
