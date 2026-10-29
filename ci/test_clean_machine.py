@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import socket
 import sqlite3
+import subprocess
 import sys
 import threading
 import time
@@ -14,7 +15,7 @@ from pathlib import Path
 import clean_machine
 import pytest
 import select_tests
-from clean_machine import Placed, cloudevent, logged, publish_grpc, redis_answering, smoke
+from clean_machine import Placed, cloudevent, logged, migrate, publish_grpc, redis_answering, smoke, wait_for_page
 
 
 @pytest.fixture
@@ -49,6 +50,31 @@ def test_the_proof_fails_before_serving_when_a_redis_port_answers(listener, monk
 
 def test_publish_grpc_names_the_status_of_a_call_that_reached_no_server():
     assert publish_grpc(sys.executable, closed_port(), "BUILT", "r1") == "UNAVAILABLE"
+
+
+def test_a_serve_that_exits_is_reported_with_what_it_wrote_to_stderr(tmp_path):
+    log = tmp_path / "serve.log"
+    with log.open("w") as sink:
+        serve = subprocess.Popen([sys.executable, "-c", "import sys; sys.exit('store is not migrated')"], stderr=sink)
+        serve.wait()
+
+    assert wait_for_page(closed_port(), serve, 5, log) == "serve exited 1: store is not migrated"
+
+
+def test_a_migrate_that_fails_is_reported_with_what_it_wrote_to_stderr(tmp_path):
+    failing = tmp_path / "python"
+    failing.write_text(f"#!{sys.executable}\nimport sys\nsys.exit('no such schema')\n")
+    failing.chmod(0o755)
+
+    assert migrate(str(failing), tmp_path, {}) == "starpulse migrate exited 1: no such schema"
+
+
+def test_a_migrate_that_succeeds_is_not_a_problem(tmp_path):
+    passing = tmp_path / "python"
+    passing.write_text(f"#!{sys.executable}\n")
+    passing.chmod(0o755)
+
+    assert migrate(str(passing), tmp_path, {}) is None
 
 
 def write_log(directory, *entries):
