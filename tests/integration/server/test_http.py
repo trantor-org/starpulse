@@ -500,6 +500,17 @@ def test_a_start_on_an_in_progress_task_runs_when_no_session_holds_it_and_is_ref
     assert started == [("PROJ-3", "claude", "interactive")]
 
 
+def test_a_start_on_an_in_progress_task_whose_assignee_is_the_released_marker_runs(tmp_path: Path) -> None:
+    started: list[tuple[str, str, str]] = []
+    feed = BoardFeed(roles=ROLES)
+    feed.put(task("PROJ-3", "In Progress", profile="@agent-deep-high", assignee="released"))
+    with _starting_server(tmp_path, feed, started) as server:
+        answered = _post(server, "/api/start", {"task": "PROJ-3", "profile": "@agent-deep-high"})
+
+    assert answered[0] == 200
+    assert started == [("PROJ-3", "claude", "interactive")]
+
+
 def _post(server: PageServer, path: str, body: dict) -> tuple[int, dict]:
     request = urllib.request.Request(
         _url(server, path), data=json.dumps(body).encode(), headers={"Content-Type": "application/json"}, method="POST"

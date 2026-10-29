@@ -186,6 +186,7 @@ Starter = Callable[[StartRequest], tuple[int, dict[str, Any]]]
 
 #: Modes `POST /api/start` accepts; `interactive` is the Start-session default.
 _START_MODES = frozenset({"interactive", "headless"})
+_RELEASED_ASSIGNEE = "released"  # the assignee a release leaves; it names no session
 
 #: Who may press Run now, loopback and the RFC 1918 ranges as (octets, prefix): the page is never
 #: exposed to the internet, so a LAN browser needs no token (the React/Vite ADR).
@@ -1237,7 +1238,8 @@ def start_requested(
     profile from the task. `harness` selects which configured harness opens the session; `mode` defaults to
     `interactive`. `at` is when the start began, so the page applies only a refused claim made after it.
 
-    A task In Progress starts only when no session holds it: its claim was never made or the claim TTL released it.
+    A task In Progress starts only when no session holds it: its claim was never made, the claim TTL released it, or
+    its assignee is the released marker a release leaves.
     """
     task = request.task
     profile = request.profile if request.profile is not None else request.assignee
@@ -1261,7 +1263,7 @@ def start_requested(
         return _not_held(feed, task)
     startable = feed.roles.startable
     if agent["state"] == feed.roles.working:
-        if holder := agent.get("assignee"):
+        if (holder := agent.get("assignee")) and holder != _RELEASED_ASSIGNEE:
             return 409, {
                 "error": f"{task} is held by {holder}: a session starts an In Progress task only once its claim is released"
             }
