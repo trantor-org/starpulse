@@ -87,7 +87,7 @@ READERS = {
     "ci/static_checks.sh": ("ci/test_workflow_placement.py",),
     "starpulse/machines/*": (
         "starpulse/pulls/model/ci.py",
-        "starpulse/harness_telemetry/harness.py",
+        "starpulse/harness_telemetry/model/harness.py",
         "starpulse/pulls/adapters/outbound/github.py",
         "tests/unit/machine_engine/test_github_pull_request_machine.py",
     ),

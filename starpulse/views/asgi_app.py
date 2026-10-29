@@ -36,7 +36,7 @@ from starlette.staticfiles import StaticFiles
 
 from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.model.seam import Board
-from starpulse.harness_telemetry.harnesses import Harnesses
+from starpulse.harness_telemetry.model.harnesses import Harnesses
 from starpulse.runs.cloudevents_grpc import PATH as CLOUDEVENTS_GRPC_PATH
 from starpulse.runs.cloudevents_grpc import cloudevents_grpc
 from starpulse.views.compression import Encoded, Gzip, accepts_gzip

@@ -4,8 +4,8 @@ import importlib
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from starpulse.harness_telemetry.harnesses import Harness, HarnessError, Harnesses, Tier, load_harnesses
-    from starpulse.harness_telemetry.otlp import (
+    from starpulse.harness_telemetry.model.harnesses import Harness, HarnessError, Harnesses, Tier, load_harnesses
+    from starpulse.harness_telemetry.adapters.inbound.otlp import (
         ASSISTANT_RESPONSE,
         BRANCH,
         SKILL_ACTIVATED,
@@ -19,19 +19,19 @@ if TYPE_CHECKING:
 #: Each name and the module that defines it. They load on first use, so importing one submodule of the context does not
 #: load the schema validator, the state-machine library or the database stack the others need.
 _EXPORTS = {
-    "Harness": ("starpulse.harness_telemetry.harnesses", "Harness"),
-    "HarnessError": ("starpulse.harness_telemetry.harnesses", "HarnessError"),
-    "Harnesses": ("starpulse.harness_telemetry.harnesses", "Harnesses"),
-    "Tier": ("starpulse.harness_telemetry.harnesses", "Tier"),
-    "load_harnesses": ("starpulse.harness_telemetry.harnesses", "load_harnesses"),
-    "ASSISTANT_RESPONSE": ("starpulse.harness_telemetry.otlp", "ASSISTANT_RESPONSE"),
-    "BRANCH": ("starpulse.harness_telemetry.otlp", "BRANCH"),
-    "SKILL_ACTIVATED": ("starpulse.harness_telemetry.otlp", "SKILL_ACTIVATED"),
-    "TOOL_RESULT": ("starpulse.harness_telemetry.otlp", "TOOL_RESULT"),
-    "USER_PROMPT": ("starpulse.harness_telemetry.otlp", "USER_PROMPT"),
-    "LogEvent": ("starpulse.harness_telemetry.otlp", "LogEvent"),
-    "parse": ("starpulse.harness_telemetry.otlp", "parse"),
-    "receiver": ("starpulse.harness_telemetry.otlp", "receiver"),
+    "Harness": ("starpulse.harness_telemetry.model.harnesses", "Harness"),
+    "HarnessError": ("starpulse.harness_telemetry.model.harnesses", "HarnessError"),
+    "Harnesses": ("starpulse.harness_telemetry.model.harnesses", "Harnesses"),
+    "Tier": ("starpulse.harness_telemetry.model.harnesses", "Tier"),
+    "load_harnesses": ("starpulse.harness_telemetry.model.harnesses", "load_harnesses"),
+    "ASSISTANT_RESPONSE": ("starpulse.harness_telemetry.adapters.inbound.otlp", "ASSISTANT_RESPONSE"),
+    "BRANCH": ("starpulse.harness_telemetry.adapters.inbound.otlp", "BRANCH"),
+    "SKILL_ACTIVATED": ("starpulse.harness_telemetry.adapters.inbound.otlp", "SKILL_ACTIVATED"),
+    "TOOL_RESULT": ("starpulse.harness_telemetry.adapters.inbound.otlp", "TOOL_RESULT"),
+    "USER_PROMPT": ("starpulse.harness_telemetry.adapters.inbound.otlp", "USER_PROMPT"),
+    "LogEvent": ("starpulse.harness_telemetry.adapters.inbound.otlp", "LogEvent"),
+    "parse": ("starpulse.harness_telemetry.adapters.inbound.otlp", "parse"),
+    "receiver": ("starpulse.harness_telemetry.adapters.inbound.otlp", "receiver"),
 }
 
 __all__ = [

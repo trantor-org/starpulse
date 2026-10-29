@@ -14,6 +14,7 @@ from starpulse.event_log.store.machine_registry import MachineRegistry
 from starpulse.machine_engine.model.machine_definition import MachineDefinitionError
 from starpulse.runtime.config import Config
 from starpulse.runtime.machine_sync import sync_definitions
+
 from tests.stores import migrate_config_store
 
 BOARD = {

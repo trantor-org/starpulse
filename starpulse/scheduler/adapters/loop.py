@@ -35,7 +35,7 @@ from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model.seam import Written
 from starpulse.contracts.adapters import StartFailedError
 from starpulse.event_log.event_log import EventLog
-from starpulse.harness_telemetry.harness import HARNESS
+from starpulse.harness_telemetry.model.harness import HARNESS
 from starpulse.scheduler.model.admission import Decision, decide, demand, needs_operator, tier_of
 from starpulse.scheduler.model.config import Scheduler
 from starpulse.scheduler.model.harness_setting import DEFAULT as DEFAULT_HARNESS
@@ -400,7 +400,10 @@ class Loop:
             returns = self._kept_state(IDLE_KEY) or {}
             if self._requeue is not None and not returns.get(task) and not (self._feed.task(task) or {}).get("prs"):
                 self._keep_state(IDLE_KEY, {**returns, task: 1})
-                written, outcome = self._requeue(task, f"Scheduler returned {task} to Ready: {minutes}. It has no pull request."), IDLE_RETURNED
+                written, outcome = (
+                    self._requeue(task, f"Scheduler returned {task} to Ready: {minutes}. It has no pull request."),
+                    IDLE_RETURNED,
+                )
             else:
                 reason = f"Scheduler settled {task}: {minutes}. It is not started again; a settle after a return, or one with a pull request, needs agent triage."
                 written, outcome = self._settle(task, reason), self._feed.roles.attention or "settled"

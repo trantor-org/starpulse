@@ -10,7 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
 from starpulse.contracts.analytics import Analytics, Labeller
-from starpulse.harness_telemetry.telemetry import signals
+from starpulse.harness_telemetry.adapters.inbound.telemetry import signals
 
 from tests.unit.harness_telemetry.test_telemetry import claude, export
 

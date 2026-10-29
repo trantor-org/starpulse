@@ -13,7 +13,7 @@ from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model.seam import Written
 from starpulse.contracts.adapters import BoardTask
 from starpulse.event_log.event_log import EventLog
-from starpulse.harness_telemetry.harness import SESSION_MACHINES
+from starpulse.harness_telemetry.model.harness import SESSION_MACHINES
 from starpulse.scheduler.adapters.runtime import build
 from starpulse.scheduler.model.config import Scheduler
 

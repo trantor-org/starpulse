@@ -9,10 +9,9 @@ from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
-
-from starpulse.harness_telemetry import loki as loki_module
-from starpulse.harness_telemetry.loki import LokiSignals
-from starpulse.harness_telemetry.telemetry import CLAUDE_CODE, Signal, TelemetryLog, telemetry_log
+from starpulse.harness_telemetry.adapters.inbound.telemetry import CLAUDE_CODE, Signal, TelemetryLog, telemetry_log
+from starpulse.harness_telemetry.adapters.outbound import loki as loki_module
+from starpulse.harness_telemetry.adapters.outbound.loki import LokiSignals
 
 
 def signal(n: int, at: float) -> Signal:

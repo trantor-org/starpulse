@@ -27,7 +27,7 @@ from starpulse.scheduler.model.sampler import Crossing, Reading, Sampler
 from starpulse.scheduler.model.state import SchedulerState
 from starpulse.scheduler.model.toggle import Toggle
 from starpulse.event_log.event_log import EventLog
-from starpulse.harness_telemetry.harness import HARNESS
+from starpulse.harness_telemetry.model.harness import HARNESS
 
 logger = logging.getLogger(__name__)
 

@@ -5,7 +5,6 @@ import threading
 from pathlib import Path
 
 import pytest
-
 from starpulse.runtime.write_instance import write_instance
 
 

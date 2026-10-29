@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import pytest
 from pydantic import ValidationError
-
 from starpulse.board.feed.shared import read_model_detail, summary_agent, task_agent
 from starpulse.contracts.adapters import BoardTask, Move
 from starpulse.contracts.api.dto.requests import WindowRequest

@@ -120,7 +120,7 @@ from urllib.parse import urlsplit
 import yaml
 from pydantic import BaseModel, ValidationError
 
-from starpulse.harness_telemetry.harnesses import Harnesses
+from starpulse.harness_telemetry.model.harnesses import Harnesses
 from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model import post_merge_checks
@@ -795,7 +795,9 @@ def archive_task(request: ArchiveRequest, feed: BoardFeed, archive: TaskArchiver
     return 200, {"archived": archived, "refused": refused}
 
 
-def _archive_one(feed: BoardFeed, archive: TaskArchiver, task: str, reason: str, who: _Who) -> tuple[int, dict[str, Any]]:
+def _archive_one(
+    feed: BoardFeed, archive: TaskArchiver, task: str, reason: str, who: _Who
+) -> tuple[int, dict[str, Any]]:
     """Archive one `task` for `archive_task`: the HTTP status and JSON body a single-task request answers."""
     if _held(feed, task) is None:
         return _not_held(feed, task)
@@ -837,7 +839,12 @@ def record_rating(request: RatingRequest, feed: BoardFeed) -> tuple[int, dict[st
     rated = feed.rate(fields)
     if rated is None:
         return 503, {"error": "rating not saved"}
-    return 200, {"task": request.task, "verdict": request.verdict, "reason": rated["reason"], "changes": rated["changes"]}
+    return 200, {
+        "task": request.task,
+        "verdict": request.verdict,
+        "reason": rated["reason"],
+        "changes": rated["changes"],
+    }
 
 
 @_write(VerdictRequest, "Recording a verdict")

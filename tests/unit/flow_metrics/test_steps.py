@@ -6,7 +6,7 @@ import re
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.contracts.analytics import Analytics
 from starpulse.flow_metrics.model.steps import session_steps
-from starpulse.harness_telemetry.telemetry import signals
+from starpulse.harness_telemetry.adapters.inbound.telemetry import signals
 
 from tests.unit.harness_telemetry.test_telemetry import claude, codex, export
 

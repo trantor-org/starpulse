@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 from starpulse.contracts.api.dto.harnesses import Harnesses
-from starpulse.harness_telemetry.harnesses import HarnessError, load_harnesses
+from starpulse.harness_telemetry.model.harnesses import HarnessError, load_harnesses
 
 _CLAUDE = """
 tiers = ["fast", "standard", "deep"]

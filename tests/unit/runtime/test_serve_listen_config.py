@@ -3,7 +3,6 @@
 from pathlib import Path
 
 import pytest
-
 from starpulse.runtime.config import load
 from starpulse.runtime.server import resolve_listen, serve_parser
 from starpulse.runtime.worker import worker_parser

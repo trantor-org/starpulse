@@ -12,7 +12,6 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, text
-
 from starpulse.board.adapters.history_window import KEY as WINDOW_KEY
 from starpulse.board.adapters.history_window import SETTINGS_FILE
 from starpulse.event_log.event_log import EventLog
@@ -25,7 +24,9 @@ from starpulse.scheduler.model.toggle import TOGGLE_FILE
 
 def _schema(url: str) -> list[tuple[str]]:
     with create_engine(url).connect() as db:
-        return [tuple(row) for row in db.execute(text("SELECT sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY name"))]
+        return [
+            tuple(row) for row in db.execute(text("SELECT sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY name"))
+        ]
 
 
 def test_migrate_brings_a_fresh_store_up_and_a_second_run_exits_zero_with_no_schema_change(tmp_path: Path) -> None:

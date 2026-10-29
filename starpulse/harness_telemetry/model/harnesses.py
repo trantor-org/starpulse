@@ -114,13 +114,13 @@ def _harness(name: str, raw: dict[str, Any], tiers: tuple[str, ...]) -> Harness:
     return Harness(name, raw.get("label", name), bool(sessions), reason, parsed)
 
 
-def _per_effort(
-    harness: str, tier: str, key: str, raw: object, efforts: tuple[str, ...]
-) -> dict[str, str]:
+def _per_effort(harness: str, tier: str, key: str, raw: object, efforts: tuple[str, ...]) -> dict[str, str]:
     """A per-effort table (`models` or `run_efforts`), or empty when the tier declares none."""
     if raw is None:
         return {}
-    if not isinstance(raw, dict) or not all(isinstance(k, str) and isinstance(v, str) and k and v for k, v in raw.items()):
+    if not isinstance(raw, dict) or not all(
+        isinstance(k, str) and isinstance(v, str) and k and v for k, v in raw.items()
+    ):
         raise HarnessError(f"harness {harness} tier {tier} {key} must be a table of effort = name")
     named = tuple(raw)
     if set(named) != set(efforts):

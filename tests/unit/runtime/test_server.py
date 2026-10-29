@@ -18,7 +18,7 @@ from starpulse.board.model.seam import MoveWriter, Written
 from starpulse.contracts.adapters import Move, StartFailedError
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.tables import events
-from starpulse.harness_telemetry.harnesses import Harness, Harnesses, Tier, load_harnesses
+from starpulse.harness_telemetry.model.harnesses import Harness, Harnesses, Tier, load_harnesses
 from starpulse.runs.config import RunsInstance
 from starpulse.runtime.adapter_kit import serve, task, url
 from starpulse.runtime.assembly import keep_event_log

@@ -11,7 +11,7 @@ from starpulse.contracts.adapters import TaskKeys
 from starpulse.contracts.analytics import Analytics
 from starpulse.contracts.signals import claim_key
 from starpulse.flow_metrics.model.session_health import grouped, session_health, session_rows, slice_health
-from starpulse.harness_telemetry.telemetry import CLAUDE_CODE, CODEX, Signal, signals
+from starpulse.harness_telemetry.adapters.inbound.telemetry import CLAUDE_CODE, CODEX, Signal, signals
 
 from tests.unit.harness_telemetry.test_telemetry import FIXTURES, claude, export, recorded
 

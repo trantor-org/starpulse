@@ -12,8 +12,8 @@ from pathlib import Path
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.contracts.analytics import Analytics, Labeller
 from starpulse.event_log.event_log import EventLog
-from starpulse.harness_telemetry.claude_code import ClaudeCodeAdapter, handler, publisher
-from starpulse.harness_telemetry.telemetry import CLAUDE_CODE, Signal, TelemetryLog, signals
+from starpulse.harness_telemetry.adapters.inbound.claude_code import ClaudeCodeAdapter, handler, publisher
+from starpulse.harness_telemetry.adapters.inbound.telemetry import CLAUDE_CODE, Signal, TelemetryLog, signals
 
 from tests.integration.harness_telemetry.test_intent_classification import answer, stub
 from tests.unit.harness_telemetry.test_telemetry import claude, export

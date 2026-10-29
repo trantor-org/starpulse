@@ -25,7 +25,7 @@ from starpulse.flow_metrics.model.session_health import session_health, slice_he
 from starpulse.flow_metrics.model.steps import session_steps
 from starpulse.flow_metrics.model.traces import Case, missed_loads
 from starpulse.flow_metrics.model.traces import cases as trace_cases
-from starpulse.harness_telemetry.telemetry import Signal, TelemetryLog
+from starpulse.harness_telemetry.adapters.inbound.telemetry import Signal, TelemetryLog
 from starpulse.machine_engine.model.stays import lane_stays
 from starpulse.views.encoding import encode
 

@@ -44,10 +44,10 @@ from starpulse.contracts.signals import Signal
 from starpulse.event_log import events as machine_events
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import open_event_log
-from starpulse.harness_telemetry import step_seconds
-from starpulse.harness_telemetry.harness import HARNESS
-from starpulse.harness_telemetry.otlp import TOOL_RESULT, LogEvent, receiver
-from starpulse.harness_telemetry.telemetry import redactor, signals, telemetry_log
+from starpulse.harness_telemetry.adapters.outbound import step_seconds
+from starpulse.harness_telemetry.model.harness import HARNESS
+from starpulse.harness_telemetry.adapters.inbound.otlp import TOOL_RESULT, LogEvent, receiver
+from starpulse.harness_telemetry.adapters.inbound.telemetry import redactor, signals, telemetry_log
 
 ACTOR = "claude-code"
 DEFAULT_PORT = 4318

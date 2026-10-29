@@ -32,12 +32,12 @@ from starpulse.board.model.search_config import Search, SearchError, parse_searc
 from starpulse.cli.project import Project, ProjectError, parse_project
 from starpulse.contracts.analytics import Analytics, AnalyticsError, parse_analytics
 from starpulse.flow_metrics.model.level import Level, LevelError, parse_level
-from starpulse.harness_telemetry.cursor_context_config import (
+from starpulse.harness_telemetry.model.cursor_context_config import (
     CursorContext,
     CursorContextError,
     parse_cursor_context,
 )
-from starpulse.harness_telemetry.harnesses import Harnesses, load_harnesses
+from starpulse.harness_telemetry.model.harnesses import Harnesses, load_harnesses
 from starpulse.pulls.model.pins import Repo
 from starpulse.runs.config import Producer, RunsInstance
 from starpulse.runtime.config_model import (

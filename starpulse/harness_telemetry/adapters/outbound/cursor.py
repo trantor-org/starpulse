@@ -30,9 +30,9 @@ from starpulse.contracts.adapters import TaskKeys
 from starpulse.contracts.analytics import Analytics
 from starpulse.contracts.signals import CURSOR, Signal, claim_key, claimed
 from starpulse.event_log.opening import open_event_log
-from starpulse.harness_telemetry.activity import SHELLS, activities, elide_heredocs, paths
-from starpulse.harness_telemetry.intent_classification import intent_label
-from starpulse.harness_telemetry.telemetry import _SWITCH, TelemetryLog, redactor, telemetry_log
+from starpulse.harness_telemetry.model.activity import SHELLS, activities, elide_heredocs, paths
+from starpulse.harness_telemetry.model.intent_classification import intent_label
+from starpulse.harness_telemetry.adapters.inbound.telemetry import _SWITCH, TelemetryLog, redactor, telemetry_log
 
 __all__ = ["CURSOR", "ingest", "main", "transcript_signals"]
 
