@@ -7,9 +7,9 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 # Chooses the tests and the checks a change reaches, as `KEY=value` lines on stdout (the rest goes to stderr). Without
-# BASE it selects the whole suite; with it, by the files changed since BASE (ci/select_tests.py, ci/reach.py).
+# BASE it selects the whole suite; with it, by the files changed since BASE (ci/select_tests.py, ci/reach.py). Both import
+# only the standard library, so it syncs nothing: `--no-sync` runs them in whatever environment the project resolves to.
 cmd_select() {
-  uv sync --locked >&2
   if [ -z "${BASE:-}" ]; then
     uv run --no-sync python ci/select_tests.py --full
     printf 'web=true\nstatic=true\n'
