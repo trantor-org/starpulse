@@ -5,7 +5,8 @@ Usage: python3 -I ci/clean_machine.py PYTHON   (PYTHON is the interpreter of a v
 Fails unless every step holds, in order:
 
 1. no Redis port answers on 127.0.0.1 (6379 and the TLS port 6380), so what follows cannot lean on one;
-2. `starpulse serve` starts in an empty directory holding one `.starpulse/machines/` file and one `[[producers]]` entry;
+2. `starpulse migrate`, then `starpulse serve`, start in an empty directory holding one `.starpulse/machines/` file and
+   one `[[producers]]` entry (serve refuses a store migrate has not brought to its schema);
 3. the declared events, POSTed to `/api/machine-events` with the producer's token, answer 201;
 4. they come back from the event log (the sqlite history file beside the config) and from the SSE stream `/api/events`;
 5. an event the machine does not declare is refused 4xx and never reaches the log;
@@ -32,6 +33,7 @@ import urllib.request
 from pathlib import Path
 
 DEADLINE = 60.0
+STDERR_TAIL = 2000
 REDIS_PORTS = (6379, 6380)
 TOKEN = "clean-machine-token"
 PRODUCER = "builder"
@@ -200,7 +202,22 @@ class Placed:
             pass  # the server went down at the end of the run
 
 
-def wait_for_page(port: int, serve: subprocess.Popen, deadline: float) -> str | None:
+def migrate(python: str, base: Path, env: dict[str, str]) -> str | None:
+    """Bring the store in `base` to its schema, as a clean install does before `serve`; the problem, or None."""
+    done = subprocess.run(
+        [python, "-m", "starpulse", "migrate"],
+        cwd=base,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    return f"starpulse migrate exited {done.returncode}: {done.stderr.strip()[-STDERR_TAIL:]}" if done.returncode else None
+
+
+def wait_for_page(port: int, serve: subprocess.Popen, deadline: float, log: Path) -> str | None:
+    """None once the page answers; else why not, with the tail of `log`, where `serve` wrote its stderr."""
     end = time.monotonic() + deadline
     while time.monotonic() < end and serve.poll() is None:
         try:
@@ -210,7 +227,9 @@ def wait_for_page(port: int, serve: subprocess.Popen, deadline: float) -> str | 
             return None
         except OSError:
             time.sleep(0.5)
-    return f"serve exited {serve.returncode}" if serve.poll() is not None else "serve never answered"
+    if serve.poll() is None:
+        return "serve never answered"
+    return f"serve exited {serve.returncode}: {log.read_text().strip()[-STDERR_TAIL:]}"
 
 
 def grpc_problem(python: str, port: int, base: Path, sent: list[tuple[str, str]]) -> str | None:
@@ -241,12 +260,15 @@ def smoke(python: str, deadline: float) -> str | None:
         (base / "starpulse.toml").write_text(CONFIG)
         port = free_port()
         env = {"PATH": os.environ["PATH"], "HOME": empty, "CLEAN_MACHINE_TOKEN": TOKEN}
-        with (base / "serve.log").open("w") as sink:
+        if problem := migrate(python, base, env):
+            return problem
+        log = base / "serve.log"
+        with log.open("w") as sink:
             serve = subprocess.Popen(
                 [python, "-m", "starpulse", "serve", "--port", str(port)], cwd=empty, env=env, stderr=sink
             )
         try:
-            if problem := wait_for_page(port, serve, deadline):
+            if problem := wait_for_page(port, serve, deadline, log):
                 return problem
             stream = Placed(port)
             if not stream.opened.wait(deadline):
