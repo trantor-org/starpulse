@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import contextlib
 import http.server
+import ssl
 import sys
 import threading
+import types
 
 import fresh_serve
 import pytest
@@ -120,3 +123,15 @@ def test_check_reports_a_dead_pulls_worker_as_down(table, log, page):
     assert problem is not None
     assert "pulls" in problem
     assert "down" in problem.lower()
+
+
+def test_check_over_https_takes_any_certificate(table, log, tmp_path, monkeypatch):
+    seen = {}
+
+    def urlopen(url, timeout, context):
+        seen.update(url=url, verify=context.verify_mode)
+        return contextlib.nullcontext(types.SimpleNamespace(status=200))
+
+    monkeypatch.setattr(fresh_serve.urllib.request, "urlopen", urlopen)
+    assert check(8766, 100, {"pulls", "board", "api"}, log, "https") is None
+    assert seen == {"url": "https://127.0.0.1:8766/", "verify": ssl.CERT_NONE}

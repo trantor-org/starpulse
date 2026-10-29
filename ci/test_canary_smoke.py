@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import sys
 import time
 from pathlib import Path
 
@@ -131,7 +133,7 @@ def test_hold_runs_the_board_check_inside_its_window(tmp_path: Path, monkeypatch
     monkeypatch.setattr(canary_smoke, "HOLD", 0.2)
     monkeypatch.setattr(canary_smoke, "SAMPLE", 0.05)
     monkeypatch.setattr(canary_smoke, "live_children", lambda parent, log: {"web": 10})
-    monkeypatch.setattr(canary_smoke, "check", lambda port, parent, expected, log: None)
+    monkeypatch.setattr(canary_smoke, "check", lambda port, parent, expected, log, scheme: None)
     start = time.monotonic()
     ran: list[float] = []
 
@@ -147,7 +149,7 @@ def test_hold_reports_a_restart_after_the_board_check(tmp_path: Path, monkeypatc
     monkeypatch.setattr(canary_smoke, "HOLD", 0.3)
     monkeypatch.setattr(canary_smoke, "SAMPLE", 0.05)
     monkeypatch.setattr(canary_smoke, "live_children", lambda parent, log: next(children, {"web": 11}))
-    monkeypatch.setattr(canary_smoke, "check", lambda port, parent, expected, log: None)
+    monkeypatch.setattr(canary_smoke, "check", lambda port, parent, expected, log, scheme: None)
 
     problem = canary_smoke.hold(Serve(), 1, {"web"}, tmp_path / "log", during=lambda: None)
 
@@ -160,3 +162,28 @@ def test_hold_returns_the_board_problem(tmp_path: Path, monkeypatch: pytest.Monk
     problem = canary_smoke.hold(Serve(), 1, {"web"}, tmp_path / "log", during=lambda: "board: no card")
 
     assert problem == "board: no card"
+
+
+def test_anchor_paths_reads_tls_files_from_the_live_config_directory(tmp_path: Path) -> None:
+    config = 'tls_cert = "starpulse-state/tls/starpulse.crt"\ntls_key = "starpulse-state/tls/starpulse.key"\n'
+    live = tmp_path / "infra" / "ai-vm-1"
+    anchored = anchor_paths(config, live, tmp_path / "scratch")
+    assert f'tls_cert = "{live / "starpulse-state/tls/starpulse.crt"}"' in anchored
+    assert f'tls_key = "{live / "starpulse-state/tls/starpulse.key"}"' in anchored
+
+
+def test_step_checks_passes_each_command_the_url_and_stops_at_the_first_failure(tmp_path: Path) -> None:
+    ran = tmp_path / "ran"
+    record = f"{sys.executable} -c \"import os, pathlib; pathlib.Path('{ran}').open('a').write(os.environ['STARPULSE_URL'])\""
+    fail = f"{sys.executable} -c \"import sys; print('boom'); sys.exit(3)\""
+    problem = canary_smoke.step_checks(
+        [record, fail, record], "https://127.0.0.1:8766", {"PATH": os.environ["PATH"]}, tmp_path
+    )
+    assert problem is not None
+    assert "exited 3" in problem
+    assert "boom" in problem
+    assert ran.read_text() == "https://127.0.0.1:8766"
+
+
+def test_step_checks_passes_with_no_command(tmp_path: Path) -> None:
+    assert canary_smoke.step_checks([], "http://127.0.0.1:1", {}, tmp_path) is None
