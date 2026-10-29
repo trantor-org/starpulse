@@ -99,6 +99,23 @@ describe("opening a task's modal", () => {
     expect(fetched).toEqual(["/api/task/TASK-1"]);
   });
 
+  it("draws a record the boot read ahead at once, with no second request", async () => {
+    const boot = new RecordCache();
+    boot.readAhead("TASK-1");
+    await settle();
+    fetched.length = 0;
+    act(() => root.unmount());
+    root = createRoot(host);
+    const moves = new MoveStore(async () => ({ ok: true }) as never);
+    act(() => root.render(<Kanban hud={hud} moves={moves} starts={new StartStore((async () => ({})) as never, moves)} compact={false} constellation={() => {}} searchSlot={null} outlineSlot={null} records={boot} />));
+
+    act(() => cardOf("TASK-1").click());
+
+    expect(dialog()?.textContent).toContain("the full record's notes");
+    await settle();
+    expect(fetched).toEqual([]);
+  });
+
   it("marks the modal busy until a record no hover read ahead arrives", async () => {
     act(() => cardOf("TASK-2").click());
 

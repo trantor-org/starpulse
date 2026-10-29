@@ -50,10 +50,17 @@ describe("index.html's early stream", () => {
       for (const fn of this.listeners.get(type) ?? []) fn({ type, data });
     }
   }
-  const run = () => {
-    const win: { __earlyStream?: { src: Source; events: { type: string; data: string }[]; adopted?: boolean; bodies: Record<string, unknown> } } = {};
+  const start = (search = "") => {
+    const win: {
+      location: { search: string }; __earlyRecord?: { id: string; read: unknown };
+      __earlyStream?: { src: Source; events: { type: string; data: string }[]; adopted?: boolean; bodies: Record<string, unknown> };
+    } = { location: { search } };
     const asked: string[] = [];
     new Function("window", "EventSource", "fetch", inline[0])(win, Source, (url: string) => (asked.push(url), `read ${url}`));
+    return { win, asked };
+  };
+  const run = () => {
+    const { win, asked } = start();
     return Object.assign(win.__earlyStream!, { asked });
   };
 
@@ -78,6 +85,18 @@ describe("index.html's early stream", () => {
     early.src.send("snapshot", "ref /api/events/body/0123abcd");
 
     expect([early.asked, early.bodies]).toEqual([["/api/events/body/0123abcd"], { "/api/events/body/0123abcd": "read /api/events/body/0123abcd" }]);
+  });
+
+  it("asks for the record of the task the address names while the bundle loads, and holds the answer for the boot", () => {
+    const { win, asked } = start("?view=kanban&task=TASK-9");
+
+    expect(asked).toEqual(["/api/task/TASK-9"]);
+    expect(win.__earlyRecord).toEqual({ id: "TASK-9", read: "read /api/task/TASK-9" });
+  });
+
+  it("asks for no record when the address names no task or is a demo", () => {
+    expect(start("?view=kanban").asked).toEqual([]);
+    expect(start("?demo&task=TASK-9").asked).toEqual([]);
   });
 
   it("stops holding events once the page listens itself", () => {

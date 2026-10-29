@@ -4,6 +4,8 @@
 import { AdminStore } from "./features/admin/adminPrefs";
 import { applyTheme } from "./features/admin/theme/apply";
 import { ThemeStore } from "./features/admin/theme/themeStore";
+import { linkedTask } from "./features/kanban/kanbanPrefs";
+import { RecordCache } from "./features/kanban/taskViewModel";
 import { HudStore } from "./render/hud";
 import { loadLateFonts } from "./render/fonts";
 import { renderer } from "./render/renderer";
@@ -16,6 +18,8 @@ export interface Booted {
   store: HudStore;
   admin: AdminStore;
   theme: ThemeStore;
+  /** The records read ahead, among them the one the address names, which the boot asks for before anything else. */
+  records: RecordCache;
   renderer: Renderer;
   canvas: HTMLCanvasElement;
   tip: HTMLDivElement;
@@ -34,6 +38,13 @@ export function boot(mount: () => void): Booted {
   const canvas = frameOf<HTMLCanvasElement>("c"), tip = frameOf<HTMLDivElement>("tip"), panel = frameOf<HTMLDivElement>("panel");
   // the saved theme goes on :root here, before the first paint
   const admin = new AdminStore(), store = new HudStore(), theme = new ThemeStore(applyTheme);
+  // a task the address names has its record read already, by index.html's head; failing that it is read now, not when its modal mounts
+  // behind the snapshot and the page's other fetches
+  const records = new RecordCache(), linked = linkedTask(location.search);
+  const w = globalThis as { __earlyRecord?: { id: string; read: Promise<Response> } };
+  const early = w.__earlyRecord;
+  delete w.__earlyRecord;
+  if (linked) records.readAhead(linked, early?.id === linked ? () => early.read : undefined);
   // a bare address opens the view the Admin chose; one that names a view opens that, and a view that covers the map leaves it undrawn;
   // a phone width has no Star Map, so it opens the Kanban whatever the address or the Admin chose
   const wanted = viewOf(location.search, retired(location.pathname, location.hash) ? "constellation" : admin.get().view);
@@ -51,7 +62,7 @@ export function boot(mount: () => void): Booted {
     requestAnimationFrame(open);
   };
   const r = renderer(canvas, store, { tip, panel }, new URLSearchParams(location.search).has("demo"), admin.get, star ? drawn : undefined);
-  held = { store, admin, theme, renderer: r, canvas, tip, panel };
+  held = { store, admin, theme, records, renderer: r, canvas, tip, panel };
   r.start();
   if (!star) {
     for (const el of [canvas, tip, panel, frameOf("crumb")]) el.classList.add("off");

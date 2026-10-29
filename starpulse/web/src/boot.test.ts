@@ -53,6 +53,43 @@ describe("the page's boot", () => {
     expect(mount).not.toHaveBeenCalled();
   });
 
+  it("reads the record of a task the address names at boot, before the renderer's snapshot or any React fetch", async () => {
+    history.replaceState(null, "", "/?view=kanban&task=TASK-9");
+    const asked: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => { asked.push(url); return new Response(JSON.stringify({ record: { id: "TASK-9" } })); }));
+    const { boot } = await import("./boot");
+    const started = made.calls.length;
+
+    const held = boot(vi.fn());
+
+    expect(made.calls.length).toBe(started + 1);
+    expect(asked).toEqual(["/api/task/TASK-9"]);
+    expect(held.records.fresh("TASK-9")).toBeDefined();
+  });
+
+  it("adopts the record read the page's head started, instead of asking for it again", async () => {
+    history.replaceState(null, "", "/?view=kanban&task=TASK-9");
+    const fetched = vi.fn();
+    vi.stubGlobal("fetch", fetched);
+    vi.stubGlobal("__earlyRecord", { id: "TASK-9", read: Promise.resolve(new Response(JSON.stringify({ record: { title: "early" } }))) });
+    const { boot } = await import("./boot");
+
+    const held = boot(vi.fn());
+
+    expect(await held.records.fresh("TASK-9")!.read).toEqual({ title: "early" });
+    expect(fetched).not.toHaveBeenCalled();
+  });
+
+  it("reads no record when the address names no task", async () => {
+    const fetched = vi.fn();
+    vi.stubGlobal("fetch", fetched);
+    const { boot } = await import("./boot");
+
+    boot(vi.fn());
+
+    expect(fetched).not.toHaveBeenCalled();
+  });
+
   it("marks in the frame the renderer first draws, then mounts the page a frame behind it", async () => {
     const mount = vi.fn();
     const { boot } = await import("./boot");

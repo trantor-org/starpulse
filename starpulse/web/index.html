@@ -17,6 +17,10 @@
       if (type === "snapshot" && e.data.slice(0, 4) === "ref ") early.bodies[e.data.slice(4)] = fetch(e.data.slice(4));
     });
   });
+  // A task the address names: its record is asked for now as well, so its modal does not wait for the bundle, the snapshot or the page's other
+  // fetches. src/boot.ts takes the answer over.
+  var query = new URLSearchParams(window.location.search), task = query.get("task");
+  if (task && !query.has("demo")) window.__earlyRecord = { id: task, read: fetch("/api/task/" + encodeURIComponent(task)) };
 })();
 </script>
 <!-- Only the faces the Board's first canvas draw measures: Inter 500 and JetBrains load after starpulse:board-drawn. -->
