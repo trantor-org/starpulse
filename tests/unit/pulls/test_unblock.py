@@ -49,6 +49,9 @@ class Pins:
     def __init__(self, tip: str | None = None) -> None:
         self.tip = tip
 
+    def failing(self) -> list[str]:
+        return []
+
     def head(self, repo: str) -> str | None:
         return self.tip if repo == "acme/trantor" else None
 

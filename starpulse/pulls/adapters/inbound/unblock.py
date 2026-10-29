@@ -8,6 +8,7 @@ closed, unmerged one never reaches the pin and is ignored. A task that Start Cri
 The bump is looked for among the merged pull requests of the child's owner in repositories that are not pinned, so
 one a task never cited still counts as merged; one older than the store's records is not found and holds it.
 A pin pushed to the parent's default branch with no pull request counts too: the branch head's pointer is read.
+While a GitHub read of those fails, the hold names the failed call, never "no bump pins it".
 With the `[release]` release rule a dependency that cites a merged pull request in the `repo` it names is merged only
 once the running build's commit contains the merge commit (`PinGate._built`); a build with no commit holds it.
 """
@@ -92,6 +93,8 @@ class PinGate:
                 projected = {record["url"]: record for record in map(_projected, [child, *bumps])}
                 applied = link(projected, self._repos, self._pins.pointer, self._pins.reaches)[url].get("applied_by")
                 if not applied and not self._at_head(found[1], child["mergeSha"], path):
+                    if failing := self._pins.failing():
+                        return f"{url} is merged; a GitHub read failed, so a pin at {path} is unknown: {', '.join(failing)}"
                     return f"{url} is merged but no merged bump pins it at {path} yet"
         return None
 

@@ -121,6 +121,25 @@ def test_a_default_branch_head_is_reused_within_its_ttl_then_read_again(monkeypa
     assert github.answers() == {"pointers": [], "reaches": []}
 
 
+def test_a_failed_read_is_named_by_failing_until_a_later_read_of_it_answers(monkeypatch: pytest.MonkeyPatch) -> None:
+    head, contents = "repos/trantor-org/trantor/commits/HEAD", "repos/trantor-org/trantor/contents/skills?ref=p1"
+    gh = Gh({})
+    monkeypatch.setattr(subprocess, "run", gh)
+    clock = [1000.0]
+    monkeypatch.setattr(time, "monotonic", lambda: clock[0])
+    github = GitHub()
+
+    github.head("trantor-org/trantor")
+    github.pointer("trantor-org/trantor", "p1", "skills")
+    assert github.failing() == [head, contents]
+
+    gh.answers = {head: NEW_POINTER, contents: NEW_POINTER}
+    clock[0] += 301
+    github.head("trantor-org/trantor")
+    github.pointer("trantor-org/trantor", "p1", "skills")
+    assert github.failing() == []
+
+
 NOT_FOUND = '{"message":"Not Found","status":"404"}'
 
 

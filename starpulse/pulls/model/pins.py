@@ -82,6 +82,8 @@ class Pins(Protocol):
 
     def head(self, repo: str) -> str | None: ...
 
+    def failing(self) -> list[str]: ...
+
 
 def link(
     pulls: Mapping[str, Mapping],
@@ -155,6 +157,20 @@ class GitHub:
         self._saved: Callable[[], Mapping[str, list[list]]] | None = saved
         self._heads: dict[str, tuple[float, str | None]] = {}
         self._unreadable: dict[tuple[str, ...], float] = {}
+        self._failing: dict[str, None] = {}
+
+    def failing(self) -> list[str]:
+        """The endpoints whose latest read failed, oldest first: a False or None answer that is a failed call."""
+        return list(self._failing)
+
+    def _read(self, endpoint: str, jq: str, missing: str | None = None) -> str | None:
+        """`_api`, noting whether the call failed so `failing` names it until a later read of it answers."""
+        found = _api(endpoint, jq, missing)
+        if found:
+            self._failing.pop(endpoint, None)
+        else:
+            self._failing[endpoint] = None
+        return found
 
     def _retry(self, key: tuple[str, ...]) -> bool:
         """Whether `key` may be asked: it has not failed within `_RETRY_WAIT_S`. A failing read is not re-asked every pass."""
@@ -170,7 +186,7 @@ class GitHub:
         self._restored()
         key = (repo, sha, path)
         if key not in self._pointers and self._retry(("pointer", *key)):
-            found = _api(f"repos/{repo}/contents/{path}?ref={sha}", ".sha", missing=_MISSING)
+            found = self._read(f"repos/{repo}/contents/{path}?ref={sha}", ".sha", missing=_MISSING)
             if found:
                 self._pointers[key] = None if found == _MISSING else found
             else:
@@ -181,7 +197,7 @@ class GitHub:
         self._restored()
         key = (repo, sha, pointer)
         if key not in self._reaches and self._retry(("reaches", *key)):
-            status = _api(f"repos/{repo}/compare/{sha}...{pointer}", ".status")
+            status = self._read(f"repos/{repo}/compare/{sha}...{pointer}", ".status")
             if status:
                 self._reaches[key] = status in _CONTAINS
             else:
@@ -193,7 +209,7 @@ class GitHub:
         now = time.monotonic()
         read_at, sha = self._heads.get(repo, (-_HEAD_TTL_S, None))
         if now - read_at >= _HEAD_TTL_S:
-            sha = _api(f"repos/{repo}/commits/HEAD", ".sha")
+            sha = self._read(f"repos/{repo}/commits/HEAD", ".sha")
             self._heads[repo] = (now, sha)
         return sha
 

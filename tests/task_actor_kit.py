@@ -86,6 +86,9 @@ class Pins:
     def head(self, repo: str) -> str | None:
         return None
 
+    def failing(self) -> list[str]:
+        return []
+
 
 class Board:
     """A board whose editor applies each status change to the feed, as the board's poll places a written file."""
