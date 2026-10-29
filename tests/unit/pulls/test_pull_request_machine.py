@@ -2,7 +2,7 @@
 
 import pytest
 from starpulse.machine_engine.model.machine_definition import writers_of
-from starpulse.pulls.github import PULL_REQUEST
+from starpulse.pulls.adapters.outbound.github import PULL_REQUEST
 
 OPEN_STATES = ["open", "checks_failed", "checks_passed"]
 

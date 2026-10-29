@@ -2,11 +2,12 @@
 importing the worker."""
 
 from __future__ import annotations
+
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
-    from starpulse.pulls.pins import Repo
+    from starpulse.pulls.model.pins import Repo
 
 
 class PullsConfig(Protocol):

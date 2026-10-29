@@ -20,19 +20,19 @@ from starpulse.event_log.readmodel.read_model import ReadModel
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 from starpulse.harness_telemetry.harness import SESSION_MACHINES
 from starpulse.machine_engine.model.snapshot import qualifier
-from starpulse.pulls.ci import CiError, attach
-from starpulse.pulls.task_actor import ACTOR
+from starpulse.pulls.adapters.inbound.task_actor import ACTOR
+from starpulse.pulls.model.ci import CiError, attach
 from starpulse.runtime import read_model_follow
 from starpulse.runtime.config import Config, ConfigError, runs_adapter
 
 if TYPE_CHECKING:
-    from starpulse.pulls.pulls import PullStore
+    from starpulse.pulls.adapters.outbound.pulls import PullStore
 
 
 @functools.cache
 def _pull_store(engine: Engine) -> PullStore:
     """The scheduler's one store of pull requests: building it reads every open and recent row, so it is built once."""
-    from starpulse.pulls.pulls import PullStore  # only the scheduler worker needs it, not the `serve` supervisor
+    from starpulse.pulls.adapters.outbound.pulls import PullStore  # only the scheduler worker needs it, not the `serve` supervisor
 
     return PullStore(engine)
 
@@ -41,7 +41,7 @@ def own_pull_merged(log: EventLog, agent: Mapping[str, Any]) -> bool:
     """Whether a pull request `agent` owns has merged; the scheduler reads it through `runtime`, as no context imports another.
 
     Asked of every Ready task on every tick, so it reads only the rows of the pull requests `agent` cites (TASK-9620)."""
-    from starpulse.pulls.pull_requests import PULL_URL, merged  # only the scheduler worker needs them
+    from starpulse.pulls.adapters.outbound.pull_requests import PULL_URL, merged  # only the scheduler worker needs them
 
     if not agent["prs"]:
         return False

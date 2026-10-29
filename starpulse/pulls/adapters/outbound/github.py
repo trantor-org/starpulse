@@ -28,10 +28,10 @@ import os
 import re
 import time
 from collections.abc import Callable
-from typing import Any
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 from urllib.parse import quote
 
 from starpulse.contracts.adapters import TaskKeys
@@ -43,7 +43,7 @@ from starpulse.machine_engine.adapters.machine_loader import load_machine
 from starpulse.machine_engine.model.snapshot import describe
 
 #: The machine files beside the package: `adapters/runs/` is two levels below them.
-MACHINES = Path(__file__).parents[1] / "machines"
+MACHINES = Path(__file__).parents[3] / "machines"
 PULL_REQUEST = load_machine(MACHINES / "github-pull-request.yaml")
 COPILOT = load_machine(MACHINES / "copilot.yaml")
 CI_JOB = load_machine(MACHINES / "ci-job.yaml")

@@ -11,9 +11,9 @@ from starpulse.board.criteria import authored
 from starpulse.board.model.seam import Written
 from starpulse.contracts.adapters import BoardTask
 from starpulse.machine_engine.model.state_roles import StateRoles
-from starpulse.pulls.pins import Repo
-from starpulse.pulls.pulls import PullStore
-from starpulse.pulls.task_actor import TaskActor
+from starpulse.pulls.adapters.inbound.task_actor import TaskActor
+from starpulse.pulls.adapters.outbound.pulls import PullStore
+from starpulse.pulls.model.pins import Repo
 from starpulse.runtime.adapter_kit import task
 
 PR_ONE = "https://github.com/acme/trantor/pull/1"

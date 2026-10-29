@@ -54,11 +54,11 @@ def repo(tmp_path: Path) -> Path:
         "starpulse/machine_engine/adapters/machine_loader.py": "",
         "tests/unit/contracts/test_contracts.py": "from starpulse.contracts import adapters\nfrom starpulse.contracts.api import schema\n",
         "tests/unit/machine_engine/test_machine_definition.py": "from starpulse.machine_engine.adapters import machine_loader\n",
-        "starpulse/pulls/ci.py": "",
+        "starpulse/pulls/model/ci.py": "",
         "starpulse/harness_telemetry/harness.py": "",
-        "starpulse/pulls/github.py": "",
+        "starpulse/pulls/adapters/outbound/github.py": "",
         "starpulse/cli/skill_install.py": "",
-        "tests/unit/pulls/test_github.py": "from starpulse.pulls import github\n",
+        "tests/unit/pulls/test_github.py": "from starpulse.pulls.adapters.outbound import github\n",
         "tests/unit/machine_engine/test_github_pull_request_machine.py": "import starpulse\n",
         "tests/integration/cli/test_agent_cli.py": "from starpulse.cli import skill_install\n",
         "ci/sizer.py": "",
@@ -448,7 +448,7 @@ def test_a_pyproject_with_no_earlier_version_to_compare_runs_the_full_suite(repo
 
 
 def test_a_non_python_file_selects_a_mapped_reader_by_the_map_not_the_import_graph(repo):
-    reader = "starpulse/pulls/github.py"
+    reader = "starpulse/pulls/adapters/outbound/github.py"
     ran = "tests/unit/machine_engine/test_github_pull_request_machine.py"
     coverage = mapped(**{ran: [reader]})
     assert select(repo, ["starpulse/machines/copilot.yaml"], coverage) == Selection([ran])

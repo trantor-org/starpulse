@@ -15,9 +15,9 @@ from starpulse.event_log.event_log import Entry, EventLog
 from starpulse.event_log.readmodel.projector import Projector
 from starpulse.event_log.readmodel.read_model import ReadModel
 from starpulse.event_log.store import EventStore, NewEvent
-from starpulse.pulls.pull_events import RecordProjection
-from starpulse.pulls.pulls import PullStore
-from starpulse.pulls.task_actor import ACTOR, TaskActor
+from starpulse.pulls.adapters.inbound.task_actor import ACTOR, TaskActor
+from starpulse.pulls.adapters.outbound.pull_events import RecordProjection
+from starpulse.pulls.adapters.outbound.pulls import PullStore
 from starpulse.runtime import server
 from starpulse.runtime.adapter_kit import task
 from starpulse.runtime.assembly import assemble
@@ -31,8 +31,8 @@ from tests.task_actor_kit import (
     MOVES,
     PARENT,
     PR_ONE,
-    PR_TWO,
     PR_THREE,
+    PR_TWO,
     REPOS,
     SHA,
     WAITS,

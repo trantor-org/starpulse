@@ -6,8 +6,8 @@ from pathlib import Path
 
 from sqlalchemy import create_engine
 from starpulse.board.board_feed import BoardFeed
-from starpulse.pulls.pulls import PullStore
-from starpulse.pulls.task_actor import TaskActor
+from starpulse.pulls.adapters.inbound.task_actor import TaskActor
+from starpulse.pulls.adapters.outbound.pulls import PullStore
 from starpulse.runtime.adapter_kit import serve, url
 
 from tests.machines import MACHINES, ROLES

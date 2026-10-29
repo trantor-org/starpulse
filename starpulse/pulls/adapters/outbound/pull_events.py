@@ -24,12 +24,12 @@ from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from starpulse.pulls.pull_requests import PULL_URL
+from starpulse.pulls.adapters.outbound.pull_requests import PULL_URL
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     from starpulse.board.board_feed import BoardFeed
-    from starpulse.pulls.pulls import PullStore
     from starpulse.event_log.event_log import Entry
+    from starpulse.pulls.adapters.outbound.pulls import PullStore
 
 JOBS_STREAM = "ci:jobs"
 MACHINE_STREAM = "machine:events"

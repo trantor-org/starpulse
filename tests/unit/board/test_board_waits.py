@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from starpulse.board.adapters import native
-from starpulse.pulls.task_actor import moves_of
+from starpulse.pulls.adapters.inbound.task_actor import moves_of
 
 MACHINE = """\
 name: board

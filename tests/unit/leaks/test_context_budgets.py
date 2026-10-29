@@ -14,8 +14,8 @@ from starpulse.board.model.seam import Written
 from starpulse.contracts.adapters import BoardTask
 from starpulse.event_log.event_log import Entry, EventLog
 from starpulse.harness_telemetry.harness import SESSION_MACHINES
-from starpulse.pulls.pull_events import RecordProjection
-from starpulse.pulls.pulls import PullStore
+from starpulse.pulls.adapters.outbound.pull_events import RecordProjection
+from starpulse.pulls.adapters.outbound.pulls import PullStore
 from starpulse.runtime.adapter_kit import task
 from starpulse.scheduler.adapters.loop import Loop
 from starpulse.scheduler.model.config import Scheduler

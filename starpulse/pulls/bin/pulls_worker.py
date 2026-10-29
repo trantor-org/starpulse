@@ -2,7 +2,7 @@
 
 It is the pull request store's projection from the machine events and its manual refresh, the task actor and the
 release of dependents. It reads the config and the history database `serve` does and meets `serve` only in the event log
-(`starpulse.pulls.delivery`): it keeps the pull request projection there, takes the refreshes a page asked and relays the
+(`starpulse.pulls.adapters.inbound.delivery`): it keeps the pull request projection there, takes the refreshes a page asked and relays the
 actor's metrics. `SIGTERM` stops it; `SIGHUP` re-reads the config and, when a Delivery setting changed, rebuilds the
 loops in the same process.
 """
@@ -16,13 +16,11 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
-from starpulse.pulls.pins import GitHub
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model.seam import Board
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url
-from starpulse.pulls.bin.blocks import PullsConfig, pulls_delivery_blocks, pulls_fixed_blocks
-from starpulse.pulls.delivery import (
+from starpulse.pulls.adapters.inbound.delivery import (
     Projected,
     Publisher,
     announce_saves,
@@ -30,8 +28,10 @@ from starpulse.pulls.delivery import (
     follow_refreshes,
     keep_metrics,
 )
-from starpulse.pulls.pull_events import JOBS_STREAM, MACHINE_STREAM, RecordProjection
-from starpulse.pulls.pulls import PullStore
+from starpulse.pulls.adapters.outbound.pull_events import JOBS_STREAM, MACHINE_STREAM, RecordProjection
+from starpulse.pulls.adapters.outbound.pulls import PullStore
+from starpulse.pulls.bin.blocks import PullsConfig, pulls_delivery_blocks, pulls_fixed_blocks
+from starpulse.pulls.model.pins import GitHub
 
 logger = logging.getLogger(__name__)
 

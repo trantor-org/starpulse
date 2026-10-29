@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 from starpulse.event_log.event_log import EventLog
-from starpulse.pulls import delivery
+from starpulse.pulls.adapters.inbound import delivery
 from starpulse.pulls.bin import pulls_worker
 from starpulse.runtime import server, worker
 from starpulse.runtime.config import load

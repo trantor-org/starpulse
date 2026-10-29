@@ -11,8 +11,8 @@ import pytest
 from sqlalchemy import create_engine
 from starpulse.board.board_feed import BoardFeed
 from starpulse.machine_engine.model.transitions import board_machine
-from starpulse.pulls.pulls import PullStore
-from starpulse.pulls.task_actor import ACTOR
+from starpulse.pulls.adapters.inbound.task_actor import ACTOR
+from starpulse.pulls.adapters.outbound.pulls import PullStore
 from starpulse.runtime import server
 from starpulse.runtime.adapter_kit import task
 from starpulse.runtime.config import load

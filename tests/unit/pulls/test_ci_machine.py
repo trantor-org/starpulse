@@ -1,7 +1,7 @@
 """The CI machine StarPulse ships: a pull request's pushes, checks, re-runs, conflicts and merges, moved by GitHub."""
 
 import pytest
-from starpulse.pulls.ci import CI, CI_MACHINES
+from starpulse.pulls.model.ci import CI, CI_MACHINES
 
 #: Every row of the approved transition table (starpulse PR 96), one per source state: (from, event, to).
 TABLE = [

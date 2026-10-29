@@ -8,11 +8,11 @@ import pytest
 from sqlalchemy import create_engine
 from starpulse.board.board_feed import BoardFeed
 from starpulse.event_log.event_log import Entry
-from starpulse.pulls.ci_trail import parse
-from starpulse.pulls.pins import GitHub, Repo
-from starpulse.pulls.pull_events import RecordProjection
-from starpulse.pulls.pull_requests import GhUnavailableError, PullRequests, query_github
-from starpulse.pulls.pulls import PullStore
+from starpulse.pulls.adapters.outbound.pull_events import RecordProjection
+from starpulse.pulls.adapters.outbound.pull_requests import GhUnavailableError, PullRequests, query_github
+from starpulse.pulls.adapters.outbound.pulls import PullStore
+from starpulse.pulls.application.commands.ci_trail import parse
+from starpulse.pulls.model.pins import GitHub, Repo
 from starpulse.runtime.adapter_kit import task
 
 REPO = "https://github.com/acme/widgets/pull"

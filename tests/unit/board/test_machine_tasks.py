@@ -15,7 +15,7 @@ from starpulse.contracts.adapters import BoardTask, TaskKeys
 from starpulse.event_log import events as machine_events
 from starpulse.event_log.event_log import EventLog
 from starpulse.machine_engine.model.transitions import Table
-from starpulse.pulls.ci import CI_MACHINES
+from starpulse.pulls.model.ci import CI_MACHINES
 
 from tests.machines import FLOWS, MACHINES, ROLES
 

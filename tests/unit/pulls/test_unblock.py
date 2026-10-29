@@ -9,9 +9,9 @@ import pytest
 from sqlalchemy import create_engine
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model.seam import Written
-from starpulse.pulls.pins import LiveBuild, Repo
-from starpulse.pulls.pulls import PullStore
-from starpulse.pulls.unblock import Unblocker
+from starpulse.pulls.adapters.inbound.unblock import Unblocker
+from starpulse.pulls.adapters.outbound.pulls import PullStore
+from starpulse.pulls.model.pins import LiveBuild, Repo
 from starpulse.runtime.adapter_kit import task
 
 from tests.machines import ROLES

@@ -20,7 +20,7 @@ A workflow's latest failed run of an occurrence is an *open failure*, and pins t
 on the next successful run of that workflow, `forced` only on a successful forced run (the instance's `force`
 parameter set) that covers the occurrence, that is one that names a commit (or task) no older than it, or none.
 
-A merge in a repository the parent pins (`[[repos]]`, see `starpulse.pulls.pins`) is a *child* merge: it takes no run of its
+A merge in a repository the parent pins (`[[repos]]`, see `starpulse.pulls.model.pins`) is a *child* merge: it takes no run of its
 own and does not count toward a parent merge's ambiguity. Its row names `appliedBy`, the parent merge whose pin bump
 includes it (None until one does), and that merge's row lists it in `applies`.
 """

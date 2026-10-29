@@ -11,8 +11,8 @@ if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler i
     from starpulse.contracts.analytics import Analytics
     from starpulse.harness_telemetry.harnesses import Harnesses
     from starpulse.harness_telemetry.telemetry import TelemetryLog
-    from starpulse.pulls.pull_refresh import PullRefresh
-    from starpulse.pulls.pulls import PullStore
+    from starpulse.pulls.adapters.inbound.pull_refresh import PullRefresh
+    from starpulse.pulls.adapters.outbound.pulls import PullStore
     from starpulse.runs.cloudevents import CloudEventsIngest
     from starpulse.scheduler.adapters.remote import Remote
     from starpulse.scheduler.adapters.runtime import Runtime

@@ -9,8 +9,8 @@ from starpulse.event_log.event_log import Entry, EventLog
 from starpulse.event_log.readmodel.projector import Projector
 from starpulse.event_log.readmodel.read_model import ReadModel
 from starpulse.event_log.store import EventStore, NewEvent
-from starpulse.pulls.pull_events import RecordProjection
-from starpulse.pulls.pulls import PullStore
+from starpulse.pulls.adapters.outbound.pull_events import RecordProjection
+from starpulse.pulls.adapters.outbound.pulls import PullStore
 from starpulse.runtime.adapter_kit import task
 
 URL = "https://github.com/acme/widgets/pull/7"

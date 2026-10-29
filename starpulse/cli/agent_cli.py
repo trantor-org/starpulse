@@ -595,7 +595,7 @@ def _unlisted_writers(config: Config, base: Path) -> list[str]:
         MachineDefinitionError,
         refuse_unlisted,
     )
-    from starpulse.pulls.task_actor import ACTOR  # noqa: PLC0415 - import cost, paid on first use
+    from starpulse.pulls.adapters.inbound.task_actor import ACTOR  # noqa: PLC0415 - import cost, paid on first use
 
     if config.reads_domains_at_start():
         return []  # an adapter reads this instance's domains from its workflows as `serve` starts, which this offline check cannot read

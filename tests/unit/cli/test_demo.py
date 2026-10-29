@@ -25,7 +25,7 @@ from starpulse.cli.demo import (
 )
 from starpulse.contracts.adapters import SCHEMAS, Dag, Pool
 from starpulse.contracts.api.dto.snapshot import Snapshot
-from starpulse.pulls.ci import CI_MACHINES
+from starpulse.pulls.model.ci import CI_MACHINES
 
 SECRET = "Rotate the router admin password"
 

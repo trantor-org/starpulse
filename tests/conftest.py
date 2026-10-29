@@ -89,7 +89,7 @@ def stop_upstream_backlogs(timeout: float = 5.0) -> None:
         thread.join(timeout)
 
 
-_OPENERS = ("starpulse.event_log.event_log", "starpulse.flow_metrics.adapters.outbound.history", "starpulse.pulls.pulls")
+_OPENERS = ("starpulse.event_log.event_log", "starpulse.flow_metrics.adapters.outbound.history", "starpulse.pulls.adapters.outbound.pulls")
 _refuses_unmigrated = migrations.require_migrated
 
 

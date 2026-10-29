@@ -9,7 +9,7 @@ from starpulse.board.adapters.task_history import KIND
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.readmodel.projector import Projector
 from starpulse.event_log.store import EventStore, NewEvent
-from starpulse.pulls.task_actor import ACTOR
+from starpulse.pulls.adapters.inbound.task_actor import ACTOR
 from starpulse.runtime.assembly import worker_board
 from starpulse.runtime.config import load
 
