@@ -538,3 +538,29 @@ def test_a_review_task_given_an_open_dependency_tells_no_holder(store: PullStore
 
     assert until(lambda: board.moved() == [("TASK-2", "waiting")])
     assert told == []
+
+
+MERGE_FIRST_WAITS = {**WAITS, "waiting": {"pr_merged": "MERGED", **WAITS["waiting"]}}
+MERGE_FIRST_MOVES = {**MOVES, ("waiting", "MERGED"): "done"}
+
+
+def test_a_waiting_task_whose_dependency_is_done_and_own_pr_merged_is_closed_not_released(
+    store: PullStore, stop: threading.Event
+) -> None:
+    store.save([pull(1, state="MERGED")])
+    board = Board(BoardFeed(), task("TASK-1", "Done"), task("TASK-2", "Waiting", references=(PR_ONE,), dependencies=("TASK-1",)))
+    running(board, store, stop, MERGE_FIRST_WAITS, MERGE_FIRST_MOVES)
+
+    assert until(lambda: board.moved() == [("TASK-2", "done")])
+    assert "ready" not in [lane for _, lane in board.moved()]
+
+
+def test_a_waiting_task_whose_criteria_are_met_and_own_pr_merged_is_closed_not_released(
+    store: PullStore, stop: threading.Event
+) -> None:
+    store.save([pull(1, state="MERGED")])
+    board = Board(BoardFeed(), task("TASK-1", "Waiting", description=GATED, references=(PR_ONE,)))
+    running(board, store, stop, MERGE_FIRST_WAITS, MERGE_FIRST_MOVES, evaluate=Criteria("met"))
+
+    assert until(lambda: board.moved() == [("TASK-1", "done")])
+    assert "ready" not in [lane for _, lane in board.moved()]

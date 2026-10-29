@@ -97,7 +97,8 @@ class Loop:
     `start` takes a task id and answers the session's address, raising `StartFailedError` when it cannot; `settle` moves a
     task to Needs attention with the reason and says whether it did; `chain` is the trajectory chain `decide` ranks on
     and `p_goals` each task's forecast chance of the goal in `lane`.
-    `lane` is the eligible lane, `claim` comments a started session's address on its task, `clock` is the loop's notion
+    `lane` is the eligible lane, `claim` comments a started session's address on its task, `merged` says whether a task's
+    own pull request has merged, which leaves the task unstarted whatever its lane, `clock` is the loop's notion
     of now, `quiet_hours` answers the window in which it admits nothing, read on every pass so Admin's change holds, and
     `log` is the history store a restart restores in-flight runs and start times from.
     """
@@ -115,6 +116,7 @@ class Loop:
         chain: Callable[[], Mapping[str, Mapping[str, Any]]],
         lane: str,
         claim: Callable[[str, str], Written] | None = None,
+        merged: Callable[[Mapping[str, Any]], bool] = lambda agent: False,
         clock: Callable[[], float] = time.time,
         quiet_hours: Callable[[], QuietHours | None] = lambda: None,
         p_goals: Callable[[], Mapping[str, float]] = dict,
@@ -132,6 +134,7 @@ class Loop:
         self._p_goals = p_goals
         self._lane = lane
         self._claim = claim
+        self._merged = merged
         self._clock = clock
         self._quiet_hours = quiet_hours
         self._harness = harness
@@ -394,17 +397,25 @@ class Loop:
     def _decide(
         self, readings: list[Reading], skipped: set[str], log: bool = True
     ) -> tuple[list[dict[str, Any]], list[Decision]]:
-        """The open tasks with the running and `skipped` ones unworkable, and `decide`'s verdict on them over `readings`."""
+        """The open tasks with the running, `skipped` and merged ones unworkable, and `decide`'s verdict on them over
+        `readings`."""
         now = self._clock()
         cooling = {task for task in self._starts if self._cooling(task, now)}
         held = set(self._running) | skipped | cooling | self._held
-        tasks = [{**agent, "workable": False} if agent["id"] in held else agent for agent in self._feed.open_tasks()]
+        tasks = [
+            {**agent, "workable": False} if agent["id"] in held or self._delivered(agent) else agent
+            for agent in self._feed.open_tasks()
+        ]
         decisions = decide(
             tasks, self._lane, readings, self._policy, self._chain(), self._ledger, log=log, p_goals=self._p_goals()
         )
         if log:
             self._count(decisions)
         return tasks, decisions
+
+    def _delivered(self, agent: Mapping[str, Any]) -> bool:
+        """Whether the eligible task's own pull request has merged: its work is done, so a session would only close it."""
+        return agent["state"] == self._lane and agent["workable"] and self._merged(agent)
 
     def _count(self, decisions: list[Decision]) -> None:
         """Add this pass's verdicts to the store's tally, which the server's `/metrics` reads."""

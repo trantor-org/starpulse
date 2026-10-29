@@ -65,6 +65,7 @@ class Rig:
         self.limit: str | None = None
         self.claims: list[tuple[str, str]] = []
         self.claim_ok = True
+        self.merged: set[str] = set()
         self.quiet = quiet
         self.loop = self._bind(self.sampler)
 
@@ -92,6 +93,7 @@ class Rig:
             chain=lambda: {},
             lane="ready",
             claim=self._claim,
+            merged=lambda agent: agent["id"] in self.merged,
             clock=lambda: self.now,
             quiet_hours=lambda: self.quiet,
             log=self.log,
@@ -198,6 +200,16 @@ def test_a_tick_starts_a_ready_task_once_and_leaves_it_alone_until_it_finishes(r
     assert rig.loop.tick() == []  # the board still shows it Ready until the session claims it
 
     assert rig.started == ["T-1"]
+
+
+def test_a_ready_task_whose_own_pull_request_merged_is_not_started(rig: Rig) -> None:
+    rig.put("T-1")
+    rig.put("T-2")
+    rig.merged.add("T-1")
+
+    assert rig.loop.tick() == ["T-2"]
+    assert rig.started == ["T-2"]
+    assert (rig.loop.next_pick() or {}).get("task") != "T-1"
 
 
 def test_nothing_is_started_while_the_scheduler_is_off(rig: Rig) -> None:

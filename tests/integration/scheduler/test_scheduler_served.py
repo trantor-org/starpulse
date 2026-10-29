@@ -131,6 +131,7 @@ def _served(base: Path, config_text: str = "") -> Iterator[tuple[BoardFeed, Runt
         trajectories_response=server.trajectories_response,
         cached=server._cached,
         starter=starter,
+        delivered=lambda log, agent: False,
     )
     started = [t for t in threading.enumerate() if t not in before and t.name.startswith("scheduler-")]
     try:

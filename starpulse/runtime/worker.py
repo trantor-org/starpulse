@@ -81,7 +81,7 @@ def main(argv: list[str] | None = None) -> None:
             listen_fd_env=LISTEN_FD_ENV,
         )
         return api_worker.main(argv, parser, host=host)
-    from starpulse.runtime.assembly import history_store, worker_board
+    from starpulse.runtime.assembly import history_store, own_pull_merged, worker_board
     from starpulse.runtime.config import discover, load
     from starpulse.runtime.hold import hold
 
@@ -103,6 +103,7 @@ def main(argv: list[str] | None = None) -> None:
             trajectories_response=trajectories_response,
             cached=_cached,
             starter=starter,
+            delivered=own_pull_merged,
         )
     if args.context == "runs":
         from starpulse.runs.bin import runs_worker
