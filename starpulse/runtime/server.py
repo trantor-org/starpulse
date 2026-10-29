@@ -549,11 +549,12 @@ class Prepared(NamedTuple):
 
 
 def export_github_token(config: Config) -> None:
-    """Export the token `github_token_env` names as `GITHUB_TOKEN`, so the GitHub reads and every worker sign in with it;
-    unset, or the variable unset, `GITHUB_TOKEN` is left as it was."""
+    """Export the token `github_token_env` names as `GITHUB_TOKEN` and `GH_TOKEN`, so the GitHub reads and every worker
+    sign in with it; `gh` reads `GH_TOKEN` first, which systemd's `EnvironmentFile=` may leave a literal `$VAR` alias.
+    Unset, or the variable unset, both are left as they were."""
     token = os.environ.get(config.github_token_env or "")
     if token:
-        os.environ["GITHUB_TOKEN"] = token
+        os.environ["GITHUB_TOKEN"] = os.environ["GH_TOKEN"] = token
 
 
 def prepare(parser: argparse.ArgumentParser, args: argparse.Namespace, config: Config) -> Prepared:
