@@ -80,16 +80,22 @@ cmd_static_checks() {
   bash ci/static_checks.sh
 }
 
-# The release build without publishing (release.yml's `build`): the page, then the wheel that must ship it.
+# The release build without publishing (release.yml's `build`): the page, then the wheel that must ship it. It builds in a
+# scratch checkout: vite empties starpulse/static, which the python shards of the same sp-ci clone read while they run.
 cmd_build() {
-  pnpm --dir starpulse/web install --frozen-lockfile
-  pnpm --dir starpulse/web run build
-  local dist
+  local work dist
+  work=$(mktemp -d)
   dist=$(mktemp -d)
-  uv build --out-dir "$dist"
-  # grep -c reads the whole listing: under pipefail, grep -q closing the pipe early would fail the step.
-  [ "$(uv run python -m zipfile -l "$dist"/*.whl | grep -c 'starpulse/static/index.html')" -gt 0 ]
-  rm -rf "$dist"
+  trap 'git worktree remove --force "$work"; rm -rf "$dist"' RETURN
+  git worktree add --detach "$work" HEAD >&2
+  (
+    cd "$work"
+    pnpm --dir starpulse/web install --frozen-lockfile
+    pnpm --dir starpulse/web run build
+    uv build --out-dir "$dist"
+    # grep -c reads the whole listing: under pipefail, grep -q closing the pipe early would fail the step.
+    [ "$(uv run python -m zipfile -l "$dist"/*.whl | grep -c 'starpulse/static/index.html')" -gt 0 ]
+  )
 }
 
 case "${1:-}" in

@@ -434,3 +434,10 @@ def test_ci_proves_the_ingest_on_a_hosted_runner_with_no_redis():
     assert proof["runs-on"] == "ubuntu-latest"
     assert "github.event_name == 'schedule'" in proof["if"]
     assert any("ci/clean_machine.py" in step.get("run", "") for step in proof["steps"])
+
+
+def test_the_build_job_builds_in_a_scratch_checkout_so_it_never_empties_the_clones_static_under_a_running_shard():
+    """vite empties starpulse/static; the python shards of the same sp-ci clone hold a stub there while they run."""
+    body = RUN.read_text().split("cmd_build() {")[1].split("\n}\n")[0]
+    assert "git worktree add --detach" in body
+    assert body.index("git worktree add") < body.index("pnpm --dir starpulse/web run build")

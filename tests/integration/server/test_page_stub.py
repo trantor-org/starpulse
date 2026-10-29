@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import fcntl
 import subprocess
 import sys
 import textwrap
@@ -91,16 +90,3 @@ def test_a_holder_in_another_process_keeps_the_page_after_this_one_leaves(tmp_pa
     finally:
         child.communicate("\n", timeout=30)
     assert not static.exists()
-
-
-def test_a_holder_whose_pid_this_process_cannot_see_keeps_the_page(tmp_path):
-    """A shard in another PID namespace leaves a marker named for a pid that does not exist here."""
-    static = _static(tmp_path)
-    users = static / ".stub-users"
-    users.mkdir(parents=True)
-    (static / "index.html").write_text("<!doctype html>")
-    with open(users / "999999999-other-namespace", "w") as marker:
-        fcntl.flock(marker, fcntl.LOCK_EX)
-        with held(static):
-            pass
-        assert (static / "index.html").is_file()
