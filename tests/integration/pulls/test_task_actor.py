@@ -134,6 +134,32 @@ def test_a_review_task_citing_another_tasks_merged_pr_stays_and_one_citing_its_o
     assert all(name != "TASK-1" for name, *_ in board.writes)
 
 
+def test_a_review_check_task_citing_only_other_tasks_prs_closes_and_a_feature_task_doing_so_stays(
+    store: PullStore, stop: threading.Event
+) -> None:
+    board = Board(
+        BoardFeed(),
+        task("TASK-1", "Review", type="check", references=(PR_ONE,)),
+        task("TASK-2", "Review", type="check", references=(PR_TWO, PR_THREE)),
+        task("TASK-3", "Review", type="story", references=(PR_ONE,)),
+    )
+    store.save([pull(1, state="OPEN", branch="claude/task-9-other"), pull(2, state="OPEN"), pull(3, state="OPEN")])
+    actor = running(board, store, stop)
+    store.save(
+        [
+            pull(1, state="MERGED", branch="claude/task-9-other"),
+            pull(2, state="OPEN", branch="claude/task-2-own"),
+            pull(3, state="MERGED", branch="claude/task-8-other"),
+        ]
+    )
+
+    actor.pulls_changed()
+
+    assert until(lambda: board.moved() == [("TASK-1", "done")])
+    assert "no pull request of its own; cites " + PR_ONE in str(board.writes[0][2])
+    assert all(name == "TASK-1" for name, *_ in board.writes)
+
+
 def test_a_needs_attention_task_closes_once_every_pr_ended_and_one_merged_but_not_when_all_closed(
     store: PullStore, stop: threading.Event
 ) -> None:
