@@ -92,6 +92,9 @@ class RawTask(_Api):
     criteria: list[TaskCriterion] | None = Field(
         default=None, description="A Board task's acceptance criteria in file order; absent off the Board."
     )
+    definition_of_done: list[TaskCriterion] | None = Field(
+        default=None, description="A Board task's Definition of Done items in file order; absent off the Board."
+    )
     pause_reason: str | None = Field(
         default=None,
         description="Why a paused Board task waits for a person; empty when it is not paused, absent off the Board.",

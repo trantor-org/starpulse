@@ -467,6 +467,10 @@ export interface RawTask {
    */
   criteria?: TaskCriterion[] | null;
   /**
+   * A Board task's Definition of Done items in file order; absent off the Board.
+   */
+  definition_of_done?: TaskCriterion[] | null;
+  /**
    * A task's dependencies, as task ids.
    */
   dependencies?: string[] | null;
