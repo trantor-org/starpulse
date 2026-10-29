@@ -15,6 +15,7 @@ from starpulse.contracts.api.dto.pages import DonePage, LaneHistory, LedgerChang
 from starpulse.contracts.api.dto.pulls import Pulls
 from starpulse.contracts.api.dto.report import ContractReport
 from starpulse.contracts.api.dto.requests import (
+    AnswerRequest,
     ArchiveRequest,
     ClaimRequest,
     CompleteRequest,
@@ -43,6 +44,7 @@ from starpulse.contracts.api.dto.requests import (
 )
 from starpulse.contracts.api.dto.results import (
     Accepted,
+    Answered,
     Archived,
     ArchivedEach,
     Claimed,
@@ -149,6 +151,7 @@ REQUESTS: dict[str, type[BaseModel]] = {
     "/api/complete": CompleteRequest,
     "/api/claim": ClaimRequest,
     "/api/park": ParkRequest,
+    "/api/answer": AnswerRequest,
     "/api/review": ReviewRequest,
     "/api/tasks": CreateRequest,
     "/api/milestones": MilestoneCreateRequest,
@@ -204,6 +207,7 @@ BODIES: dict[str, Any] = {
     "complete": Completed | SkillRefusal | ApiError,
     "claim": Claimed | SkillRefusal | ApiError,
     "park": Parked | SkillRefusal | ApiError,
+    "answer": Answered | ApiError,
     "review": Reviewed | SkillRefusal | ApiError,
     "create": Created | CreatedEach | SkillRefusal | ApiError,
     "milestones": Milestones | ApiError,

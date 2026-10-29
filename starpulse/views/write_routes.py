@@ -14,6 +14,7 @@ from starpulse.runs.ingest import MAX_BATCH_BODY
 from starpulse.views.encoding import encode
 from starpulse.views.reads import Response
 from starpulse.views.routes import (
+    _ANSWER,
     _ARCHIVE,
     _CLAIM,
     _COMPLETE,
@@ -47,6 +48,7 @@ from starpulse.views.routes import (
 )
 from starpulse.views.writes import (
     RETRY_AFTER_S,
+    answer_task,
     archive_doc,
     archive_milestone,
     archive_task,
@@ -61,6 +63,7 @@ from starpulse.views.writes import (
     history_window,
     import_retired,
     move_task,
+    operator_refusal,
     park_task,
     record_miss,
     record_rating,
@@ -131,6 +134,7 @@ class WriteRoutes:
             return start_requested(request, feed, assign, services.start_session, services.harnesses)
 
         self._feed = feed
+        self._read, self._edit = read, edit
         self._window = window
         self._starts = services.starts
         self._reruns = services.reruns or {}
@@ -179,6 +183,7 @@ class WriteRoutes:
         ]
         return [
             *guarded,
+            (_ANSWER, ("POST",), self._guarded("answer", self._answer)),
             (f"{_RUN}{{name:path}}", ("POST",), self._guarded("run", self._run)),
             (f"{_RERUN}{{instance}}/{{workflow}}{_RERUN_TAIL}", ("POST",), self._guarded("run", self._rerun)),
             (_PULL_REFRESH, ("POST",), self._push),
@@ -201,6 +206,16 @@ class WriteRoutes:
 
     def _body(self, handler: TaskWrite) -> Callable[[WriteRequest], tuple[int, dict]]:
         return lambda request: handler(request.client, self._whole(request))
+
+    def _answer(self, request: WriteRequest) -> tuple[int, dict]:
+        """An answer, which only the board page in the operator's browser may send."""
+        headers = request.headers
+        refusal = operator_refusal(
+            headers.get("Origin"), headers.get("Host"), headers.get("Sec-Fetch-Site"), headers.get("Authorization")
+        )
+        if refusal is not None:
+            return refusal
+        return answer_task(request.client, self._whole(request), self._feed, self._read, self._edit)
 
     def _run(self, request: WriteRequest) -> tuple[int, dict]:
         name = unquote(request.path.removeprefix(_RUN))

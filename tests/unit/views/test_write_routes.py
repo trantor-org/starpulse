@@ -89,7 +89,10 @@ _PUT_ROUTES = {"/api/scheduler", "/api/history-window"}
 
 @pytest.mark.parametrize("path", [path for path in REQUESTS if path != "/api/insights"])
 def test_a_body_its_request_model_rejects_is_a_400_naming_the_field(routes: WriteRoutes, path: str) -> None:
-    response = _write(routes, "PUT" if path in _PUT_ROUTES else "POST", path, body=b'{"unexpected": 1}')
+    headers = {**_JSON, "Origin": "http://h", "Host": "h", "Sec-Fetch-Site": "same-origin"}
+    response = _write(
+        routes, "PUT" if path in _PUT_ROUTES else "POST", path, body=b'{"unexpected": 1}', headers=headers
+    )
 
     assert response is not None
     assert response.status == 400

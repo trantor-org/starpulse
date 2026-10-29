@@ -33,6 +33,10 @@ POST /api/park     {task, untilTask | until | operator[, comment, session, actor
                    `operator` (text only the operator can answer) to Needs attention. {task, to}; refusals as for an
                    edit, 409 when the task is not In Progress, a task waited on is itself, unknown or Done, or the task
                    has an open dependency and is given criteria
+POST /api/answer   {task, answer}: record the operator's answer to the question of a task in Needs attention as an
+                   `Operator answer (board:operator#<id>): <answer>` line under its `## Needs attention` section and a
+                   comment by the operator; the task stays in its lane. 403 unless the request is the board page's own
+                   (same origin, no `Authorization`), 409 when the task is not in Needs attention. {task, id}
 POST /api/review   {task, references, summary, comment[, session, actor, harness]}: move the task to Review with the
                    pull requests and final summary it ships in the same write, so the configured rules judge the
                    evidence and a refusal writes nothing. {task, to}; refusals as for an edit
@@ -113,6 +117,7 @@ import ipaddress
 import logging
 import threading
 import time
+import uuid
 from collections.abc import Callable, Collection, Mapping
 from typing import TYPE_CHECKING, Any, Concatenate, NamedTuple
 from urllib.parse import urlsplit
@@ -124,7 +129,7 @@ from starpulse.harness_telemetry.harnesses import Harnesses
 from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model import post_merge_checks
-from starpulse.board.model.markdown import section_set
+from starpulse.board.model.markdown import section_get, section_set
 from starpulse.board.model.seam import (
     AGENT,
     ANONYMOUS,
@@ -144,6 +149,7 @@ from starpulse.contracts.adapters import Move, StartFailedError
 from starpulse.contracts.api.dto.requests import (
     CREATE_LISTS,
     CREATE_TEXT,
+    AnswerRequest,
     ArchiveRequest,
     ClaimRequest,
     CompleteRequest,
@@ -638,6 +644,62 @@ def park_task(
         "operator": lambda current: _wait_on_operator(current, value),
     }
     return _lifecycle_edit(feed, task, column, who, comment, read, edit, plans[reason])
+
+
+def operator_refusal(
+    origin: str | None, host: str | None, fetch_site: str | None, authorization: str | None
+) -> tuple[int, dict[str, str]] | None:
+    """The refusal of an answer that is not the operator's, or None.
+
+    The operator is the board page in a browser: a request that names this server's own origin and that the browser
+    marks `Sec-Fetch-Site: same-origin`, carrying no `Authorization`. The CLI sends no origin and an agent's producer
+    token is an `Authorization` header, so neither is the operator. Like every page write this holds against a caller
+    that is not forging the browser's headers: the server has no operator login.
+    """
+    if authorization is not None:
+        return 403, {"error": "An answer is the operator's: a request carrying a token is not the operator"}
+    if origin is None or urlsplit(origin).netloc != host or fetch_site != "same-origin":
+        return 403, {"error": "An answer is the operator's: it answers only a request from the board page"}
+    return None
+
+
+#: How much of an answer the line under the question keeps; the whole answer is in the comment.
+_ANSWER_EXCERPT = 200
+
+
+@_write(AnswerRequest, "Answering a task")
+def answer_task(
+    request: AnswerRequest, feed: BoardFeed, read: TaskReader | None, edit: TaskEditor | None
+) -> tuple[int, dict[str, Any]]:
+    """Record the operator's answer to the question of the Needs attention task `request` names: the HTTP status and
+    JSON body.
+
+    The answer is one `Operator answer (board:operator#<id>): <answer>` line under the `## Needs attention` question,
+    and a comment by the operator holding the question, the whole answer and the `<id>`, which is the task's event
+    that names them. The task stays in its lane: any session re-queues it, or the session holding it resumes, as for
+    `backlog-task answer`. The caller's right to answer is `operator_refusal`'s to judge.
+    """
+    task = request.task
+    if read is None or edit is None:
+        return 404, {"error": "this board does not edit tasks"}
+    if (agent := _held(feed, task)) is None:
+        return _not_held(feed, task)
+    if agent["state"] != feed.roles.attention:
+        return 409, {"error": f"only a task in Needs attention can be answered: {task} is {agent['state']}"}
+    answer, given = request.answer.strip(), uuid.uuid4().hex[:12]
+    with _EDIT_LOCK:
+        if (current := read(task)) is None:
+            return 404, {"error": f"{task} has no record to read"}
+        question = section_get(current["description"], "Needs attention")
+        if not question:
+            return 409, {"error": f"{task} is in Needs attention with no `## Needs attention` question to answer"}
+        line = f"Operator answer (board:{OPERATOR}#{given}): {' '.join(answer.split())[:_ANSWER_EXCERPT]}"
+        changes = {"description": section_set(current["description"], "Needs attention", f"{question}\n\n{line}")}
+        comment = f"Operator answered {task} (board:{OPERATOR}#{given}).\nQuestion: {question}\nAnswer: {answer}"
+        written = edit(task, changes, comment, actor=OPERATOR)
+    if not written.ok:
+        return 409, {"error": written.output, "skill": written.skill}
+    return 200, {"task": task, "id": given}
 
 
 _BAD_REVIEW = {"error": "references must each be a nonblank pull request link"}

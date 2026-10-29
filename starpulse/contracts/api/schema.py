@@ -18,6 +18,7 @@ from starpulse.contracts.api.dto.pages import DonePage, LaneHistory, LedgerChang
 from starpulse.contracts.api.dto.pulls import Pulls
 from starpulse.contracts.api.dto.report import ContractReport
 from starpulse.contracts.api.dto.requests import (
+    AnswerRequest,
     ArchiveRequest,
     ClaimRequest,
     CompleteRequest,
@@ -46,6 +47,7 @@ from starpulse.contracts.api.dto.requests import (
 )
 from starpulse.contracts.api.dto.results import (
     Accepted,
+    Answered,
     Archived,
     ArchivedEach,
     Claimed,
@@ -146,6 +148,7 @@ class ApiContract(_Api):
         | CompleteRequest
         | ClaimRequest
         | ParkRequest
+        | AnswerRequest
         | ReviewRequest
         | CreateRequest
         | MilestoneCreateRequest
@@ -173,6 +176,7 @@ class ApiContract(_Api):
         | Completed
         | Claimed
         | Parked
+        | Answered
         | Reviewed
         | Created
         | CreatedEach

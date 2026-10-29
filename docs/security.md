@@ -5,6 +5,11 @@ only on a network you trust. A write is refused unless it is a JSON request with
 another site cannot write through your browser. `/api/move` is unauthenticated on the LAN: machine `writers` stop an
 agent's accident, not an adversary.
 
+`POST /api/answer` is the operator's alone: it takes the answer to a Needs attention question only from the board page
+in a browser (an `Origin` that is this server's own, `Sec-Fetch-Site: same-origin`, no `Authorization` header) and
+refuses everything else with 403, so the CLI and an agent's token cannot answer for the operator. A local process that
+forges those headers can, as it can make any page write: the server has no sign-in.
+
 `POST /api/pulls/refresh` is the exception: with `refresh_token_env` set it takes a bearer token and refuses a missing or
 wrong one (401) and a repository the instance does not track (403). It only brings forward one read of a pull request the
 instance already tracks, so the token guards GitHub's rate budget, not data.

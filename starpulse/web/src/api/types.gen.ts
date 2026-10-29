@@ -19,6 +19,7 @@ export interface ApiContract {
     | Completed
     | Claimed
     | Parked
+    | Answered
     | Reviewed
     | Created
     | CreatedEach
@@ -75,6 +76,7 @@ export interface ApiContract {
     | CompleteRequest
     | ClaimRequest
     | ParkRequest
+    | AnswerRequest
     | ReviewRequest
     | CreateRequest
     | MilestoneCreateRequest
@@ -173,6 +175,10 @@ export interface Claimed {
 export interface Parked {
   task: string;
   to: string;
+}
+export interface Answered {
+  id: string;
+  task: string;
 }
 export interface Reviewed {
   task: string;
@@ -1774,6 +1780,14 @@ export interface ParkRequest {
       }[]
     | null;
   untilTask?: string[] | null;
+}
+/**
+ * `POST /api/answer`: the operator's `answer` to the question a task in Needs attention waits on. It names no
+ * actor, session or harness: the page that sends it is the operator.
+ */
+export interface AnswerRequest {
+  answer: string;
+  task: string;
 }
 /**
  * `POST /api/review`: move `task` to Review, adding `references` and `summary` first so the configured rules judge

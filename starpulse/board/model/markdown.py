@@ -75,6 +75,12 @@ def _sections(text: str) -> tuple[str, dict[str, str]]:
     return "\n".join(head), {heading: "\n".join(body).strip("\n") for heading, body in sections.items()}
 
 
+def section_get(description: str, heading: str) -> str | None:
+    """The body of `description`'s `## <heading>` section, or None when it has none."""
+    found = re.search(rf"^## {re.escape(heading)}\s*$(.*?)(?=^## |\Z)", description, flags=re.M | re.S)
+    return None if found is None else found[1].strip()
+
+
 def section_set(description: str, heading: str, content: str) -> str:
     """`description` with its `## <heading>` section replaced by `content`, or ending with it when it had none."""
     kept = re.sub(rf"^## {re.escape(heading)}\s*$.*?(?=^## |\Z)", "", description, flags=re.M | re.S)

@@ -114,6 +114,41 @@
       "title": "ActivityCount",
       "type": "object"
     },
+    "AnswerRequest": {
+      "additionalProperties": false,
+      "description": "`POST /api/answer`: the operator's `answer` to the question a task in Needs attention waits on. It names no\nactor, session or harness: the page that sends it is the operator.",
+      "properties": {
+        "answer": {
+          "type": "string"
+        },
+        "task": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "answer"
+      ],
+      "title": "AnswerRequest",
+      "type": "object"
+    },
+    "Answered": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "task": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "id"
+      ],
+      "title": "Answered",
+      "type": "object"
+    },
     "ApiError": {
       "additionalProperties": false,
       "description": "Every refusal: what went wrong.",
@@ -8818,6 +8853,9 @@
             "$ref": "#/$defs/Parked"
           },
           {
+            "$ref": "#/$defs/Answered"
+          },
+          {
             "$ref": "#/$defs/Reviewed"
           },
           {
@@ -9007,6 +9045,9 @@
           },
           {
             "$ref": "#/$defs/ParkRequest"
+          },
+          {
+            "$ref": "#/$defs/AnswerRequest"
           },
           {
             "$ref": "#/$defs/ReviewRequest"

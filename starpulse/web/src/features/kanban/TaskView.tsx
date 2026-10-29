@@ -2,6 +2,7 @@
 import { Fragment, useCallback, useEffect, useEffectEvent, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { ago, fmtAt } from "../../shared/clock";
 import { usePhone } from "../../shared/usePhone";
+import { AnswerForm } from "./AnswerForm";
 import { RatingControl } from "./RatingControl";
 import { columnsOf, prReadState, roleOf, type KanbanTask } from "./kanbanModel";
 import { startLane, startable } from "./start";
@@ -579,6 +580,7 @@ export function TaskView(p: TaskViewProps) {
               <div className="row"><LanePill lane={p.task.lane} role={roleOf(roles, p.task.lane)} name={p.lane} small />{p.task.entered > 0 && <span className="k">{`for ${ago(p.now - p.task.entered)}`}</span>}</div>
               {p.stack && <table className="props"><tbody><tr className="ro"><td>{p.task.lane === roles.done ? "done chain" : "waiting stack"}</td><td className="stacklist">{p.stack}</td></tr></tbody></table>}
             </RailSection>
+            {p.task.lane === roles.attention && <RailSection name="Answer"><AnswerForm key={p.task.id} task={p.task.id} /></RailSection>}
             {p.task.labels.some((l) => l.startsWith(TRIAL)) && <RailSection name="Rating"><RatingControl key={p.task.id} task={p.task.id} rating={p.task.rating} now={p.now} trial={p.task.labels.find((l) => l.startsWith(TRIAL)) ?? ""} drew={p.task.profile ?? ""} /></RailSection>}
             <RailSection name="Session"><SessionRows session={sessionOf(p.task, p.record, p.now, startLane(p.task, roles))} assignee={p.task.assignee} worked={p.task.lane === roles.working} startLane={startLane(p.task, roles)} /></RailSection>
             {criteria.length > 0 && <RailSection name="Start Criteria" count={`${metCount(criteria)}/${criteria.length} met`}><StartCriteria criteria={criteria} now={p.now} /></RailSection>}

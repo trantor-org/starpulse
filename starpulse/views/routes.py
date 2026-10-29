@@ -81,6 +81,9 @@ _CLAIM = "/api/claim"
 _PARK = "/api/park"
 
 
+_ANSWER = "/api/answer"
+
+
 _REVIEW = "/api/review"
 
 

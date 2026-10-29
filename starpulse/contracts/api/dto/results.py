@@ -85,6 +85,11 @@ class Parked(_Api):
     to: str
 
 
+class Answered(_Api):
+    task: str
+    id: str
+
+
 class Reviewed(_Api):
     task: str
     to: str

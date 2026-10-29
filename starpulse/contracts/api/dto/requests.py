@@ -150,6 +150,14 @@ class ParkRequest(_Writer):
     comment: str | None = None
 
 
+class AnswerRequest(_Api):
+    """`POST /api/answer`: the operator's `answer` to the question a task in Needs attention waits on. It names no
+    actor, session or harness: the page that sends it is the operator."""
+
+    task: str
+    answer: NonBlank
+
+
 class ReviewRequest(_Writer):
     """`POST /api/review`: move `task` to Review, adding `references` and `summary` first so the configured rules judge
     the record the move would leave."""

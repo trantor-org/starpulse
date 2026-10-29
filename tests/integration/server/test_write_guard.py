@@ -35,6 +35,7 @@ _WRITES = [
     ("POST", "/api/complete", {"task": "PROJ-3"}),
     ("POST", "/api/claim", {"task": "PROJ-3", "session": "s-1"}),
     ("POST", "/api/park", {"task": "PROJ-3", "operator": "needs a decision"}),
+    ("POST", "/api/answer", {"task": "PROJ-3", "answer": "yes"}),
     ("POST", "/api/review", {"task": "PROJ-3", "references": ["https://example.test/pr/1"]}),
     ("POST", "/api/tasks", {"title": "from a stranger"}),
     ("PUT", "/api/history-window", {"hours": 24}),
@@ -135,6 +136,42 @@ def test_a_same_origin_json_post_is_written(tmp_path: Path) -> None:
         )
 
     assert (status, answer, calls) == (200, {"task": "PROJ-3", "to": "in_progress"}, ["move"])
+
+
+_ANSWER = {"task": "PROJ-3", "answer": "use unraid"}
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {},
+        {"Sec-Fetch-Site": "same-origin", "Authorization": "Bearer agent-token"},
+        {"Sec-Fetch-Site": "cross-site"},
+    ],
+)
+def test_an_answer_that_is_not_the_boards_page_is_refused_with_a_403(tmp_path: Path, headers: dict[str, str]) -> None:
+    with _recording(tmp_path) as (server, calls, _):
+        own = {"Origin": f"http://127.0.0.1:{server.server_port}"}
+        status, answer = _send(
+            server, "POST", "/api/answer", _ANSWER, {"Content-Type": "application/json", **own, **headers}
+        )
+        bare, _ = _send(server, "POST", "/api/answer", _ANSWER, {"Content-Type": "application/json", **headers})
+
+    assert (status, bare, calls) == (403, 403, [])
+    assert "operator" in answer["error"].lower()
+
+
+def test_an_answer_from_the_boards_own_page_reaches_the_answer_handler(tmp_path: Path) -> None:
+    with _recording(tmp_path) as (server, calls, _):
+        headers = {
+            "Content-Type": "application/json",
+            "Origin": f"http://127.0.0.1:{server.server_port}",
+            "Sec-Fetch-Site": "same-origin",
+        }
+        status, answer = _send(server, "POST", "/api/answer", _ANSWER, headers)
+
+    assert (status, calls) == (409, [])
+    assert "Needs attention" in answer["error"]
 
 
 def test_a_json_post_with_no_origin_header_is_written_as_the_cli_sends_it(tmp_path: Path) -> None:
