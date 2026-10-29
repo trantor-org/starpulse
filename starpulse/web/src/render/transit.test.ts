@@ -44,7 +44,8 @@ const upTo = (l: ReturnType<typeof T.branchLines>[number], s: number, fork?: (ty
 const dist = (a: Pt, b: Pt) => Math.hypot(a.x - b.x, a.y - b.y);
 const stationsOf = (l: ReturnType<typeof T.branchLines>[number]) => l.pts.filter((p) => new RegExp(`^${l.key.replace(/[|]/g, "\\|")}:\\d+$`).test(p.k));
 
-describe("placeBranches", () => {
+// each case steps hundreds of 60 fps frames of a 700-task scene, CPU-bound: 2-9 s alone, so a CI runner at its share of the host overruns the 15 s default
+describe("placeBranches", { timeout: 60_000 }, () => {
   it("draws a branch on its sun for every phase machine a live task is in, and only those", () => {
     const scene = board(live()), lines = T.branchLines();
     const phased = scene.tasks.filter((k) => k.h).map((k) => `${(k.host as Galaxy).id}|${k.h!.machine}`);
@@ -478,10 +479,10 @@ describe("placeBranches", () => {
       scene.tasks.forEach((k, i) => Object.assign(k, home[i]));
       T.placeBranches(scene, t);
       gliding.push(scene.tasks.some((k) => k.moving));
-      onLine.push(riders.some((k) => old.some((o) => dist(o, T.dotsOf(k.id)[0]) < 8)));
+      const dots = riders.map((k) => T.dotsOf(k.id)[0]);
+      onLine.push(dots.some((d) => old.some((o) => dist(o, d) < 8)));
       ext.push(T.branchLines(0).find((l) => l.key === line.key)?.ext ?? 0);
-      riders.forEach((k, i) => {
-        const d = T.dotsOf(k.id)[0];
+      dots.forEach((d, i) => {
         jumps.push(dist(d, prev[i]));
         prev[i] = d;
       });
