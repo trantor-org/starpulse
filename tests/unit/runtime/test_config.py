@@ -204,7 +204,7 @@ def test_a_mode_other_than_ic_is_not_a_config_setting(tmp_path: Path) -> None:
 
 def test_unknown_keys_are_refused_by_name_beside_the_known_ones(tmp_path: Path) -> None:
     assert _refusal(tmp_path, 'zeta = 1\ntrakcer_url = "http://x.test"\n') == (
-        "unknown config key(s) trakcer_url, zeta; known: analytics, board, ci, cursor_context, database_url, event_log_archive_dir, event_log_retention_days, "
+        "unknown config key(s) trakcer_url, zeta; known: analytics, board, ci, cursor_context, database_url, event_log_archive_dir, event_log_retention_days, github_token_env, "
         "harnesses_file, host, hours, level, mode, port, producers, project, pull_requests, read_model, refresh_token_env, release, repos, runs, scheduler, search, session_start_url, slow_read_seconds, take_over_command, telemetry_loki_url, tls_cert, tls_key, tracker_url, worker_memory"
     )
 
@@ -385,6 +385,16 @@ def test_the_pull_request_refresh_credential_is_the_name_of_an_environment_varia
     assert load(_write(tmp_path, 'refresh_token_env = "PULLS_TOKEN"\n')).refresh_token_env == "PULLS_TOKEN"
     assert _refusal(tmp_path, 'refresh_token_env = "not a name"\n') == (
         "refresh_token_env must be the name of an environment variable"
+    )
+
+
+def test_the_github_token_is_the_name_of_an_environment_variable(tmp_path: Path) -> None:
+    assert load(None).github_token_env is None
+    assert load(_write(tmp_path, 'github_token_env = "GITHUB_PERSONAL_ACCESS_TOKEN"\n')).github_token_env == (
+        "GITHUB_PERSONAL_ACCESS_TOKEN"
+    )
+    assert _refusal(tmp_path, 'github_token_env = "not a name"\n') == (
+        "github_token_env must be the name of an environment variable"
     )
 
 
