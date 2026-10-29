@@ -159,6 +159,25 @@ def test_a_review_check_task_citing_only_other_tasks_prs_closes_and_a_feature_ta
     assert all(name == "TASK-1" for name, *_ in board.writes)
 
 
+def test_a_review_task_whose_own_pr_closed_unmerged_and_superseded_by_another_tasks_merged_pr_closes(
+    store: PullStore, stop: threading.Event
+) -> None:
+    board = Board(BoardFeed(), task("TASK-1", "Review", references=(PR_ONE, PR_TWO)))
+    store.save([pull(1, state="OPEN", branch="claude/task-1-own"), pull(2, state="OPEN", branch="claude/task-9-other")])
+    actor = running(board, store, stop)
+    store.save(
+        [
+            pull(1, state="CLOSED", branch="claude/task-1-own"),
+            pull(2, state="MERGED", branch="claude/task-9-other"),
+        ]
+    )
+
+    actor.pulls_changed()
+
+    assert until(lambda: board.moved() == [("TASK-1", "done")])
+    assert PR_TWO in str(board.writes[0][2])
+
+
 def test_a_ready_or_in_progress_task_citing_another_tasks_merged_pr_derives_nothing(
     store: PullStore, stop: threading.Event
 ) -> None:
