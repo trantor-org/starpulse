@@ -103,6 +103,7 @@ _SETTINGS = {
     "holds",
     "unfinished",
     "parked",
+    "closed",
     "validate",
     "python_path",
     "guards",
@@ -1238,21 +1239,21 @@ def _holds(command: object, base: Path) -> Callable[[str], list[str]] | None:
     return holds
 
 
-def _parked(command: object, base: Path) -> Callable[[str], None] | None:
-    """The `parked` command, run in `base` with `{id}` replaced by the task's id, after the task actor moves a task from
-    the working lane to Waiting. A nonzero exit raises with what the command said."""
+def _notice(command: object, base: Path) -> Callable[[str], None] | None:
+    """The `parked` or `closed` command, run in `base` with `{id}` replaced by the task's id, after the task actor moves
+    a task from the working lane to Waiting or to Done. A nonzero exit raises with what the command said."""
     if not command:
         return None
     parts = shlex.split(str(command))
 
-    def parked(task: str) -> None:
+    def notice(task: str) -> None:
         argv = [part.replace("{id}", task) for part in parts]
         done = subprocess.run(argv, cwd=base, capture_output=True, text=True, timeout=criteria.TIMEOUT, check=False)
         if done.returncode:
             said = done.stderr.strip() or done.stdout.strip() or "printed nothing"
             raise ValueError(f"{shlex.join(argv)}: exit {done.returncode}: {said}")
 
-    return parked
+    return notice
 
 
 def board(settings: Mapping[str, Any], base: Path) -> Board:
@@ -1307,7 +1308,8 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             "evaluate": evaluate,
             "holds": _holds(settings.get("holds"), base),
             "unfinished": _holds(settings.get("unfinished"), base),
-            "parked": _parked(settings.get("parked"), base),
+            "parked": _notice(settings.get("parked"), base),
+            "closed": _notice(settings.get("closed"), base),
             "edit": _editor(root, config.statuses, guard, link, roles.attention),
             "archive": _archiver(root, config.statuses, roles, guard),
             "restore": _restorer(root, retired, config.statuses, migrations, guard),

@@ -163,6 +163,7 @@ class TaskActor:
         evaluate: Callable[[str, str], list[dict[str, Any]]] | None = None,
         holds: Callable[[str], Sequence[str]] | None = None,
         parked: Callable[[str], None] | None = None,
+        closed: Callable[[str], None] | None = None,
         fresh_s: float = criteria.CACHE_SECONDS,
         live: LiveBuild | None = None,
         advance: Callable[[str, str, str], None] | None = None,
@@ -190,6 +191,7 @@ class TaskActor:
         self._evaluate = evaluate
         self._holds = holds
         self._tell = parked
+        self._closed = closed
         self._fresh_s = fresh_s
         #: The lanes that wait on a task's Start Criteria.
         self._gated_lanes = {lane for lane, facts in waits.items() if facts.keys() & set(_CRITERIA_FACTS)}
@@ -534,7 +536,9 @@ class TaskActor:
             self._landed(self._clock() - observed)
             roles = self._feed.roles
             if self._tell and source == roles.working and target == roles.waiting:
-                self._tell_parked(name)
+                self._notice(self._tell, name, "was parked but its holder was not told")
+            if self._closed and target == roles.done:
+                self._notice(self._closed, name, "was closed but the board was not told")
             return
         logger.warning("task actor: %s was not moved to %s: %s", name, target, written.output)
         if target == self._feed.roles.ready:
@@ -591,12 +595,12 @@ class TaskActor:
         if not written.ok:
             logger.warning("task actor: the lint refusal of %s was not commented: %s", name, written.output)
 
-    def _tell_parked(self, name: str) -> None:
-        """Tell whoever works a task the actor just moved from the working lane to Waiting; a failure is logged only."""
+    def _notice(self, hook: Callable[[str], None], name: str, missed: str) -> None:
+        """Run the board's `parked` or `closed` hook for a task the actor just moved; a failure is logged only."""
         try:
-            self._tell(name)
-        except Exception:  # the move stands; the board's `parked` hook is a notice, not part of the write
-            logger.exception("task actor: %s was parked but its holder was not told", name)
+            hook(name)
+        except Exception:  # the move stands; a board hook is a notice, not part of the write
+            logger.exception("task actor: %s %s", name, missed)
 
     def _park(self, name: str, refusal: str) -> None:
         """Write a task whose release to Ready was refused to Needs attention, with the refusal as its reason."""
