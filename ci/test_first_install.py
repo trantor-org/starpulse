@@ -27,6 +27,13 @@ SESSION = "11111111-1111-4111-8111-111111111111"
 BRANCH = "claude/task-1-first-install"
 DEADLINE = 60.0
 
+# Nightly: ~10 s wall and ~11 CPU-s warm, almost all of it interpreter start-up and imports, one per process a first
+# install runs: `init` 0.6, `migrate` 1.8, `task create` 0.6, `task claim` 0.65, the receiver 1.1 and `serve` with its
+# `machine_sync` and API worker ~5. `migrate` is a step of the install (opening a store runs no maintenance) and each
+# process is what the test proves works together, so none can be merged or run in-process. A first install changes
+# rarely, so the nightly suite runs it and no pull request does.
+pytestmark = pytest.mark.nightly
+
 
 @pytest.fixture
 def page_build():
