@@ -26,6 +26,8 @@ WORKER_MEMORY_MB = {
     "search": (384, 768),
     "board": (768, 1536),
     **dict.fromkeys(ADAPTER_CONTEXTS, (256, 512)),
+    # a Dagu of ~70 DAGs settles near 280 MB proportional after its first statistics pass, past the adapter default
+    "dagu": (384, 768),
 }
 
 

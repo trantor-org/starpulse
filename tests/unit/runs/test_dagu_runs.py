@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
 import queue
 import re
+import subprocess
+import sys
 import threading
 import time
 import urllib.request
@@ -2028,6 +2031,26 @@ def test_a_refresh_reads_several_dags_at_once_so_a_heavy_one_does_not_hold_up_th
         refresh_stats(base_url, stats)
 
     assert sorted(stats) == ["a", "b"]
+
+
+_EXIT_MID_REFRESH = """
+import threading, time
+from starpulse.runs import dagu
+
+dagu._get = lambda url: {"dags": [{"fileName": f"d{i}", "latestDAGRun": {"status": 1}} for i in range(8)]}
+dagu._read_stats = lambda *args, **kwargs: time.sleep(0.5) or {}
+dagu.STATS_WORKERS = 1
+threading.Thread(target=dagu.refresh_stats, args=("http://dagu", {}), daemon=True).start()
+time.sleep(0.2)
+"""
+
+
+def test_a_process_that_exits_mid_refresh_does_not_wait_for_the_dags_still_queued() -> None:
+    started = time.monotonic()
+    tree = str(Path(dagu_module.__file__).parents[2])  # the child must import this tree's starpulse, not an installed copy
+    subprocess.run([sys.executable, "-c", _EXIT_MID_REFRESH], check=True, timeout=30, env={**os.environ, "PYTHONPATH": tree})
+
+    assert time.monotonic() - started < 3  # eight 0.5 s reads queued behind one worker would take 4 s past the start
 
 
 def test_a_listing_of_named_dags_serves_the_statistics_already_read_without_reading_more() -> None:
