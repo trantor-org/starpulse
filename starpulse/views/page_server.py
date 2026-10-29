@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import importlib.util
 import logging
 import signal
 import socket
@@ -48,7 +49,7 @@ def _survive_cancelled_streams() -> None:
     then runs `send(None)`, which answers a stream still in its request state with a 500 through the same `stream_send`
     and raises again outside the `try`. That second error leaves Hypercorn's `TaskGroup`, which cancels
     `UDPServer.run`; `worker_serve` never awaits that task, so the QUIC socket stays bound and answers nothing."""
-    from aioquic.h3.connection import FrameUnexpected  # noqa: PLC0415 - aioquic is absent from the free-threaded venv
+    from aioquic.h3.connection import FrameUnexpected  # noqa: PLC0415
     from hypercorn.protocol.h3 import H3Protocol  # noqa: PLC0415
 
     send = H3Protocol.stream_send
@@ -107,6 +108,9 @@ class PageServer:
         self._quic: socket.socket | None = None
         if tls is None:
             self._sockets = Sockets([], [self.socket], [])
+        elif importlib.util.find_spec("aioquic") is None:
+            # The free-threaded build installs no aioquic: its TLS port serves h2 and http/1.1 and advertises no `h3`.
+            self._sockets = Sockets([self.socket], [], [])
         else:
             self._quic = socket.socket(self.socket.family, socket.SOCK_DGRAM)
             self._quic.bind(self.server_address)
