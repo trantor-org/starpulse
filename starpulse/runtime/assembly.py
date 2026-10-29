@@ -18,8 +18,6 @@ from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 from starpulse.harness_telemetry.harness import SESSION_MACHINES
 from starpulse.machine_engine.model.snapshot import qualifier
 from starpulse.pulls.ci import CiError, attach
-from starpulse.pulls.own_prs import merged
-from starpulse.pulls.pulls import PullStore
 from starpulse.pulls.task_actor import ACTOR
 from starpulse.runtime import read_model_follow
 from starpulse.runtime.config import Config, ConfigError, runs_adapter
@@ -27,6 +25,9 @@ from starpulse.runtime.config import Config, ConfigError, runs_adapter
 
 def own_pull_merged(log: EventLog, agent: Mapping[str, Any]) -> bool:
     """Whether a pull request `agent` owns has merged; the scheduler reads it through `runtime`, as no context imports another."""
+    from starpulse.pulls.pull_requests import merged  # only the scheduler worker needs them, not the `serve` supervisor
+    from starpulse.pulls.pulls import PullStore
+
     return merged(PullStore(log.engine), dict(agent))
 
 

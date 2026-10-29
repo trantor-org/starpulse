@@ -34,9 +34,9 @@ from typing import TYPE_CHECKING, Any
 from starpulse.board.model.markdown import section_set
 from starpulse.board.model.seam import HELD, MERGE_EVIDENCE, TaskEditor, Written
 from starpulse.pulls.pins import LiveBuild, Pins, Repo
+from starpulse.pulls.pull_requests import own_prs, pull_record
 from starpulse.board import criteria
 from starpulse.board.board_feed import BoardFeed
-from starpulse.pulls.own_prs import own_prs, pull_record
 from starpulse.pulls.unblock import PinGate
 
 if TYPE_CHECKING:  # annotation only: the pull store opens the database stack
