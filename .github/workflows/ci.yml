@@ -115,10 +115,15 @@ jobs:
         with:
           pattern: coverage-data-*
           merge-multiple: true
-      - run: |
+      # The map records the shards whose data it holds (read before `combine` consumes the files) out of the run's shards.
+      - env:
+          RUN_SHARDS: ${{ join(fromJSON(needs.select.outputs.PYTEST_SHARDS), ' ') }}
+        run: |
+          shards=$(ls coverage-*.data | sed 's/^coverage-//; s/\.data$//' | sort -n)
           uv run --no-sync coverage combine coverage-*.data
           uv run --no-sync pytest --collect-only -q | grep '::' > collected.txt
-          uv run --no-sync python ci/coverage_map.py build .coverage --sha "$GITHUB_SHA" --collected collected.txt
+          uv run --no-sync python ci/coverage_map.py build .coverage --sha "$GITHUB_SHA" --collected collected.txt \
+            --shards $shards --shard-count "$(wc -w <<<"$RUN_SHARDS")"
 
   # The same selected tests on the free-threaded build (3.14t). The live server runs on 3.14t, so a change that
   # breaks that build shows in the nightly suite. One job, not a shard matrix. It is not a required check and `python`
