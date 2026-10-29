@@ -14,6 +14,7 @@ from starpulse.machine_engine.model.state_roles import StateRoles
 from starpulse.pulls.pins import Repo
 from starpulse.pulls.pulls import PullStore
 from starpulse.pulls.task_actor import TaskActor
+from starpulse.runtime.adapter_kit import task
 
 PR_ONE = "https://github.com/acme/trantor/pull/1"
 PR_TWO = "https://github.com/acme/trantor/pull/2"
@@ -93,6 +94,8 @@ class Board:
         self.feed = feed
         self.tasks = {each.id: each for each in tasks}
         self.writes: list[tuple[str, Mapping[str, Any], str | Sequence[str], str]] = []
+        #: The tasks the actor filed through `create`, as their title and details.
+        self.created: list[tuple[str, dict[str, Any]]] = []
         self.refuse = False
         #: The refusal the board gives a status change into each lane named here.
         self.refusing: dict[str, str] = {}
@@ -115,6 +118,13 @@ class Board:
             return Written(False, self.refusing[changes["status"]])
         if "status" in changes:
             self.put(self.tasks[name].model_copy(update={"lane": changes["status"]}))
+        return Written(True, name)
+
+    def create(self, title: str, details: Mapping[str, Any], /, actor: str = "") -> Written:
+        """Files a task in Draft, the starting lane here, under the next free id, as the board's create does."""
+        name = f"TASK-{101 + len(self.created)}"
+        self.created.append((title, dict(details)))
+        self.put(task(name, "Draft", description=str(details.get("description", ""))))
         return Written(True, name)
 
     def moved(self) -> list[tuple[str, str]]:
@@ -167,7 +177,7 @@ def running(
     **options: Any,
 ) -> TaskActor:
     """An actor over `board` that has derived every open task once, on `waits` and `moves` when given."""
-    actor = TaskActor(board.feed, store, board.edit, waits, moves, **options)
+    actor = TaskActor(board.feed, store, board.edit, waits, moves, **{"create": board.create, **options})
     actor.start(stop)
     assert actor.ready.wait(WITHIN_S)
     return actor
