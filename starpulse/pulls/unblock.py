@@ -22,7 +22,7 @@ from starpulse.board.model.seam import TaskEditor
 from starpulse.pulls.pins import GitHub, LiveBuild, Pins, Repo, link
 from starpulse.board import criteria
 from starpulse.board.board_feed import BoardFeed
-from starpulse.pulls.pull_requests import PULL_URL
+from starpulse.pulls.pull_requests import PULL_URL, delivers
 
 if TYPE_CHECKING:  # annotation only: the pull store opens the database stack
     from starpulse.pulls.pulls import PullStore
@@ -54,8 +54,9 @@ class PinGate:
         self._repos = repos
         self._pins = pins or GitHub(lambda: feed.pull_answers().get("pins", {}))
 
-    def unapplied(self, agent: dict[str, Any]) -> bool:
-        """Whether a dependency's merged change is not in the parent's pin, or the running build, yet."""
+    def waiting_on(self, agent: dict[str, Any]) -> str | None:
+        """Why a dependency's merged change is not in the parent's pin, or the running build, yet; None when it is.
+        Only a pull request that can be the dependency's own delivery counts: one naming another task is a reference."""
         merges: list[dict] | None = None  # read once, and only for a task that needs the evidence
         for dependency in agent["dependencies"]:
             for url in self._feed.cited(dependency):
@@ -66,17 +67,19 @@ class PinGate:
                 path = self._pinned.get(name)
                 if path is None and (self._live is None or self._live.repo != name):
                     continue
+                if not delivers(self._store, url, dependency):
+                    continue
                 records = self._store.find(repo=found[1], number=int(found[2]))
                 if not records:
-                    return True
+                    return f"{url} is not in the pull store"
                 child = records[0]
                 if child["state"] == "CLOSED":
                     continue
                 if child["state"] != "MERGED" or not child["mergeSha"] or not child["mergedAt"]:
-                    return True
+                    return f"{url} is not merged"
                 if path is None:
                     if not self._built(found[1], child["mergeSha"]):
-                        return True
+                        return f"the running build does not contain {url}"
                     continue
                 if merges is None:
                     merges = self._merges()
@@ -89,8 +92,8 @@ class PinGate:
                 projected = {record["url"]: record for record in map(_projected, [child, *bumps])}
                 applied = link(projected, self._repos, self._pins.pointer, self._pins.reaches)[url].get("applied_by")
                 if not applied and not self._at_head(found[1], child["mergeSha"], path):
-                    return True
-        return False
+                    return f"{url} is merged but no merged bump pins it at {path} yet"
+        return None
 
     def _built(self, repo: str, sha: str) -> bool:
         """Whether the running build contains `sha`: a build with no commit contains nothing."""
@@ -154,7 +157,7 @@ class Unblocker:
             name = agent["id"]
             if name in self._sent or not agent["workable"] or criteria.authored(agent["description"]):
                 continue
-            if self._gate.unapplied(agent):
+            if self._gate.waiting_on(agent):
                 continue
             try:
                 written = self._edit(name, {"status": self._feed.roles.ready}, COMMENT)

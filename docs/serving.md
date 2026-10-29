@@ -855,7 +855,9 @@ labels or dependencies change. `GET /metrics` carries:
 - `starpulse_task_actor_criteria_errors{task}`: the Start Criteria of a gated task that could not be evaluated; such a
   gate never passes.
 - `starpulse_task_actor_pin_held`: a gauge of Waiting tasks whose dependencies are done but wait for a pin bump to
-  merge (`PinGate.unapplied`); one that stays above 0 is a pin that never merges.
+  merge (`PinGate.waiting_on`); one that stays above 0 is a pin that never merges. Each such hold comments the pull request
+  and pin it waits on once. Only a cited pull request that can be the dependency's own delivery counts: one whose
+  branch or title names another task is a reference.
 
 Each move the actor writes names `starpulse/task-actor` on its `board:lanes` entry: the Delivery worker records the lane
 change when it writes it, in the history and the log in one transaction, and the file scan that places the change

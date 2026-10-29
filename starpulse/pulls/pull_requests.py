@@ -39,17 +39,19 @@ def pull_record(store: PullStore, url: str) -> dict[str, Any] | None:
     return records[0] if records else None
 
 
+def delivers(store: PullStore, url: str, task_id: str) -> bool:
+    """Whether the pull request at `url` can be `task_id`'s delivery: one whose branch or title names tasks and not this
+    one is another task's, a reference only."""
+    found = pull_record(store, url)
+    text = f"{found.get('headRefName', '')} {found.get('title', '')}" if found else ""
+    named = set(_TASK_ID.findall(text.lower()))
+    return not named or task_id.lower() in named
+
+
 def own_prs(store: PullStore, agent: dict[str, Any]) -> list[str]:
     """The cited pull requests that are not another task's delivery: one whose branch or title names tasks and not
     this one is a reference, never proof of this task's work."""
-    own = []
-    for url in agent["prs"]:
-        found = pull_record(store, url)
-        text = f"{found.get('headRefName', '')} {found.get('title', '')}" if found else ""
-        named = set(_TASK_ID.findall(text.lower()))
-        if not named or agent["id"].lower() in named:
-            own.append(url)
-    return own
+    return [url for url in agent["prs"] if delivers(store, url, agent["id"])]
 
 
 def merged(store: PullStore, agent: dict[str, Any]) -> bool:

@@ -699,8 +699,9 @@ class TaskActor:
         self._held.discard(agent["id"])
         if not all(map(self._feed.is_done, dependencies)) or criteria.authored(agent["description"]):
             return None
-        if self._gate.unapplied(agent):
+        if waiting := self._gate.waiting_on(agent):
             self._pin_held.add(agent["id"])
+            self._note_hold(agent, (waiting,))
             return None
         if reasons := self._held_by(agent["id"]):
             self._held.add(agent["id"])
