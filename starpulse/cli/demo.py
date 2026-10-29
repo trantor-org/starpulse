@@ -595,7 +595,7 @@ def scrub(live: dict) -> dict:
         demo_pulls,
         live["now"],
     )
-    _seed_task_runs(flows, live["roles"]["working"], live["now"])
+    _seed_task_runs(flows, live["roles"]["working"], live["roles"]["ready"], live["now"])
 
     def settled_task(id_: str, entry: dict) -> tuple[str, dict]:
         name = names.setdefault(id_, f"DEMO-{len(names) + 1}")
@@ -693,9 +693,10 @@ def _walk(machine: dict, state: str, i: int, now: float, via: str | None = None,
     return [{"state": t, "event": e, "at": at} for (_, e, t), at in zip(steps, _times(len(steps), i, now))]
 
 
-def _seed_task_runs(flows: list[dict], working_state: str, now: float) -> None:
+def _seed_task_runs(flows: list[dict], working_state: str, ready_state: str, now: float) -> None:
     """Give the first In Progress Board task a failed run and the retry that succeeded, so its task view draws a Runs
-    section; the capture's own runs are dropped, as they link the live scheduler."""
+    section, and the first Ready one a run waiting in its queue, so its card draws the queued line; the capture's own
+    runs are dropped, as they link the live scheduler."""
     board = next(f for f in flows if f["name"] == "board")
     working = next((a for a in board["agents"] if a["state"] == working_state), None)
     if working is not None:
@@ -703,6 +704,9 @@ def _seed_task_runs(flows: list[dict], working_state: str, now: float) -> None:
             {"url": "#", "status": "failed", "startedAt": _iso(now - 7200)},
             {"url": "#", "status": "succeeded", "startedAt": _iso(now - 3600)},
         ]
+    ready = next((a for a in board["agents"] if a["state"] == ready_state), None)
+    if ready is not None:
+        ready["runs"] = [{"url": "#", "status": "queued", "startedAt": _iso(now - 120)}]
 
 
 def _inner(machine: dict) -> list[str]:

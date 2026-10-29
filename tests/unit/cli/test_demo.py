@@ -5,6 +5,7 @@ import json
 import re
 import urllib.request
 from pathlib import Path
+from unittest.mock import ANY
 
 import jsonschema
 import pytest
@@ -484,17 +485,19 @@ def test_the_seeded_board_has_a_review_task_with_two_pulls_and_a_task_holding_th
     assert [a["state"] for a in held] == ["waiting"] * 3
 
 
-def test_scrub_drops_live_runs_and_seeds_one_in_progress_task_with_a_failed_then_a_succeeded_run() -> None:
+def test_scrub_drops_live_runs_and_seeds_an_in_progress_task_with_a_retried_run_and_a_ready_task_with_a_queued_one() -> None:
     live = _live()
     live["flows"][0]["agents"][0]["runs"] = [{"url": "http://dagu.lan/r", "status": "failed", "startedAt": ""}]
+    live["flows"][0]["agents"].append({**live["flows"][0]["agents"][0], "id": "PROJ-2202", "state": "ready", "runs": []})
 
     demo = scrub(live)
 
     board = demo["flows"][0]["agents"]
-    ran = [a for a in board if a.get("runs")]
-    assert [a["state"] for a in ran] == ["in_progress"]
-    runs = ran[0]["runs"]
-    assert [r["status"] for r in runs] == ["failed", "succeeded"] and {r["url"] for r in runs} == {"#"}
+    ran = sorted((a for a in board if a.get("runs")), key=lambda a: a["state"] != "ready")
+    assert [a["state"] for a in ran] == ["ready", "in_progress"]
+    queued, runs = ran[0]["runs"], ran[1]["runs"]
+    assert [r["status"] for r in queued] == ["queued"] and queued[0]["startedAt"] < _iso(live["now"])
+    assert [r["status"] for r in runs] == ["failed", "succeeded"] and {r["url"] for r in runs + queued} == {"#"}
     assert runs[0]["startedAt"] < runs[1]["startedAt"] < _iso(live["now"])
     assert "dagu.lan" not in json.dumps(demo)
 
@@ -576,6 +579,7 @@ def test_scrub_seeds_a_board_when_the_capture_has_none() -> None:
         "created": live["now"] - 900,
         "workable_since": live["now"] - 900,
         "moves": {"in_progress": {"allowed": True}},
+        "runs": [{"url": "#", "status": "queued", "startedAt": ANY}],
     }
     assert board[3]["dependencies"] == ["DEMO-1"] and board[3]["labels"] == ["size-5"]
     assert demo["pulls"]["DEMO-9"] == [
