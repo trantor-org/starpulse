@@ -107,7 +107,7 @@ def test_the_reference_stream_is_read_from_the_clients_own_base(monkeypatch):
 
 def test_every_read_route_the_server_answers_is_timed():
     package = Path(__file__).resolve().parents[1] / "starpulse"
-    server = "".join(module.read_text() for directory in ("views", "runtime") for module in (package / directory).glob("*.py"))
+    server = "".join(module.read_text() for directory in ("views", "runtime") for module in (package / directory).rglob("*.py"))
     for route in pl.READS:
         assert route.split("?")[0].removesuffix("/<id>") in server, route
 

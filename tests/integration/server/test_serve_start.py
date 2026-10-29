@@ -14,7 +14,7 @@ from tests.stores import migrate_config_store
 # against it only once the children run.
 _NOT_YET = ("sqlalchemy", "alembic", "starpulse.runtime.assembly")
 # Package `__init__` modules count: each role subpackage of a context adds one to what a start loads.
-_STARPULSE_MODULES = 160
+_STARPULSE_MODULES = 168
 
 _FIRST_CHILD = """
 import json, sys

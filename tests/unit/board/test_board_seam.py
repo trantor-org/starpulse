@@ -134,10 +134,10 @@ def test_a_board_type_whose_module_builds_no_board_is_refused_by_name(tmp_path: 
 SEAM_FILES = (
     "board/model/seam.py",
     "runtime/adapter_kit.py",
-    "views/asgi_app.py",
-    "views/reads.py",
-    "views/write_routes.py",
-    "views/services.py",
+    "views/adapters/inbound/asgi_app.py",
+    "views/adapters/inbound/reads.py",
+    "views/adapters/inbound/write_routes.py",
+    "views/ports/services.py",
 )
 MOST_PARAMETERS = 12
 
