@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import functools
 import threading
 from collections.abc import Collection, Mapping
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+from sqlalchemy import Engine
 
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model.seam import Board
@@ -22,13 +25,30 @@ from starpulse.pulls.task_actor import ACTOR
 from starpulse.runtime import read_model_follow
 from starpulse.runtime.config import Config, ConfigError, runs_adapter
 
-
-def own_pull_merged(log: EventLog, agent: Mapping[str, Any]) -> bool:
-    """Whether a pull request `agent` owns has merged; the scheduler reads it through `runtime`, as no context imports another."""
-    from starpulse.pulls.pull_requests import merged  # only the scheduler worker needs them, not the `serve` supervisor
+if TYPE_CHECKING:
     from starpulse.pulls.pulls import PullStore
 
-    return merged(PullStore(log.engine), dict(agent))
+
+@functools.cache
+def _pull_store(engine: Engine) -> PullStore:
+    """The scheduler's one store of pull requests: building it reads every open and recent row, so it is built once."""
+    from starpulse.pulls.pulls import PullStore  # only the scheduler worker needs it, not the `serve` supervisor
+
+    return PullStore(engine)
+
+
+def own_pull_merged(log: EventLog, agent: Mapping[str, Any]) -> bool:
+    """Whether a pull request `agent` owns has merged; the scheduler reads it through `runtime`, as no context imports another.
+
+    Asked of every Ready task on every tick, so it reads only the rows of the pull requests `agent` cites (TASK-9620)."""
+    from starpulse.pulls.pull_requests import PULL_URL, merged  # only the scheduler worker needs them
+
+    if not agent["prs"]:
+        return False
+    store = _pull_store(log.engine)
+    cited = [PULL_URL.fullmatch(url) for url in agent["prs"]]
+    store.refresh([(found[1], int(found[2])) for found in cited if found])
+    return merged(store, dict(agent))
 
 
 def domains_of(config: Config) -> dict[str, tuple[str, ...]]:
