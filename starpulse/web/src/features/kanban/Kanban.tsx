@@ -52,14 +52,15 @@ const worstClass = (pulls: Pull[]) => {
   return `${worst}${pulls.some((p) => p.conflicting && !p.merged && !p.closed) ? " conflict" : ""}`;
 };
 
-function PullChips({ pulls }: { pulls: Pull[] }) {
+/** Each pull request's chip; its checks dot only when no CI is recorded, since the machine line then carries the state. */
+function PullChips({ pulls, ci }: { pulls: Pull[]; ci: boolean }) {
   if (!pulls.length) return null;
   const rest = pulls.slice(SHOWN_PRS);
   return (
     <span className="prs">
       {pulls.slice(0, SHOWN_PRS).map((p) => (
         <span key={p.url} className={`pr ${pullClass(p)}`} title={`#${p.number} ${pullState(p)}`}>
-          <i />#{p.number}
+          {!ci && <i />}#{p.number}
           {p.threads > 0 && <span className="th"> ⌁{p.threads}</span>}
         </span>
       ))}
@@ -141,7 +142,7 @@ export function Card({ task, holds = 0, chain, stacked = 0, under = false, links
       onPointerEnter={onHover && (() => onHover(true))} onPointerLeave={onHover && (() => onHover(false))}
       onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen())}>
       <div className="top">
-        <span className="id">{task.id}</span><PullChips pulls={task.prs} />{compact && badge}
+        <span className="id">{task.id}</span><PullChips pulls={task.prs} ci={task.machines.some((m) => m.machine === "ci")} />{compact && badge}
       </div>
       {links && links.length > 0 && <div className={`uw${finished ? " dn" : ""}`}><span className="nw">{finished ? "✓ unblocked" : "⧗ waits on"}</span>{" "}{links.map((id, i) => <Fragment key={id}>{i > 0 && ", "}<span className="nw">{id}</span></Fragment>)}</div>}
       <div className="t">{task.title}</div>

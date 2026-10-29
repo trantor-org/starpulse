@@ -415,13 +415,15 @@ describe("the task view's Pull requests section carries each pull request's CI h
     expect(railOf(html).split("o/r#12").length).toBe(2);
   });
 
-  it("gives each pull request row its checks, its CI state and its four counts", () => {
+  it("gives each pull request row one state, its CI state, and its four counts", () => {
     const html = draw({ task: { ...task, ...two } });
     const merged = rowOf(html, "o/r#12");
     const failing = rowOf(html, "o/r#15");
 
     expect(merged).toMatch(/merged[\s\S]*1 run[\s\S]*1 re-run[\s\S]*1 rebase[\s\S]*1 conflict/);
-    expect(failing).toMatch(/checks pass[\s\S]*failing[\s\S]*1 run[\s\S]*0 re-runs[\s\S]*0 rebases[\s\S]*0 conflicts/);
+    expect(merged.split("<i>").length).toBe(2);
+    expect(failing).toMatch(/failing[\s\S]*1 run[\s\S]*0 re-runs[\s\S]*0 rebases[\s\S]*0 conflicts/);
+    expect(failing).not.toContain("checks pass");
   });
 
   it("totals the task's counts at the top of the section, only when there are two pull requests to total", () => {
@@ -452,6 +454,7 @@ describe("the task view's Pull requests section carries each pull request's CI h
     expect(section(draw({ task: { ...task, prs: [], machines: [] } }))).toContain("None yet");
     const html = section(draw({ task: { ...task, prs: [pull(12)], machines: [] } }));
     expect(html).toContain("o/r#12");
+    expect(html).toContain("checks pass");
     expect(html).not.toContain("run");
   });
 });

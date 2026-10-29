@@ -120,7 +120,7 @@ const TRIAL = "trial-";
 
 const checkClass = (p: Pull) => (p.merged ? "merged" : p.checks === "failing" ? "fail" : p.checks);
 
-/** One pull request's row: its state, check result and unread review count, or "not read yet" with the reason; `ci` is its CI line. */
+/** One pull request's row: its state, check result and unread review count, or "not read yet" with the reason; `ci` is its CI line, whose state replaces the row's own. */
 function PullRow({ p, ci }: { p: Pull; ci?: ReactNode }) {
   const read = prReadState(p);
   return (
@@ -128,7 +128,7 @@ function PullRow({ p, ci }: { p: Pull; ci?: ReactNode }) {
       <a href={p.url} target="_blank" rel="noopener">{p.repo}#{p.number} ↗</a>
       {read.read ? (
         <>
-          <span className={`chk ${checkClass(p)}`}><i />{read.state === "merged" ? "merged" : `checks ${read.checks}`}</span>
+          {!ci && <span className={`chk ${checkClass(p)}`}><i />{read.state === "merged" ? "merged" : `checks ${read.checks}`}</span>}
           {read.unreviewed > 0 && <span className="rd">{plural(read.unreviewed, "unread review")}</span>}
         </>
       ) : (
