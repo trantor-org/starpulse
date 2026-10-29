@@ -157,6 +157,18 @@ describe("the cards drawn from a snapshot", () => {
     expect(cards).toMatchObject({ "PROJ-1": allowed, "PROJ-2": guarded, "PROJ-3": {} });
   });
 
+  it("carry the numbered criteria and Definition of Done a snapshot entry keeps, and none it slimmed off", () => {
+    const snap = snapshot();
+    const [first] = snap.flows[0].agents;
+    snap.flows[0].agents[0] = { ...first, criteria: [{ text: "Ships", checked: true }], definition_of_done: [{ text: "Docs", checked: false }] };
+
+    const [kept, slimmed] = kanbanTasks(merge(snap));
+
+    expect(kept).toMatchObject({ acceptanceCriteria: [{ n: 1, text: "Ships", checked: true }], definitionOfDone: [{ n: 1, text: "Docs", checked: false }] });
+    expect(slimmed.acceptanceCriteria).toBeUndefined();
+    expect(slimmed.definitionOfDone).toBeUndefined();
+  });
+
   it("carry the milestone, profile, labels, pull requests and the machine that last placed the task", () => {
     const [t] = kanbanTasks(merge(snapshot())).filter((x) => x.id === "PROJ-1");
 

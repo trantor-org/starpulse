@@ -66,7 +66,7 @@ describe("the task view in read mode", () => {
     const html = draw({ record: null });
 
     expect(html).toContain("from the snapshot");
-    expect(html).not.toContain("Implementation plan");
+    expect(html).toContain('<section class="sec skel" aria-label="Implementation plan">');
   });
 });
 

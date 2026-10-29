@@ -463,6 +463,11 @@ button.node { all: unset; box-sizing: border-box; display: grid; grid-template-c
 #kbm .tv td:first-child { width: 104px; }
 #kbm .tv tr.ro td:last-child { color: var(--ink-3); }
 #kbm .tv .sec { display: flex; flex-direction: column; gap: 6px; }
+/* A section the task's record has yet to fill: placeholder bars that pulse while it loads. */
+#kbm .tv .sec.skel .bar { height: calc(10px * var(--fs)); width: 72%; border-radius: 4px; background: color-mix(in srgb, var(--slate) 14%, transparent); animation: skel 1.4s ease-in-out infinite; }
+#kbm .tv .sec.skel .bar.short { width: 44%; }
+@keyframes skel { 50% { opacity: 0.45; } }
+@media (prefers-reduced-motion: reduce) { #kbm .tv .sec.skel .bar { animation: none; } }
 #kbm .ask .sh, #kbm .tv .sh { display: flex; align-items: center; gap: 8px; font-size: calc(10px * var(--fs)); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
 #kbm .tv .sh .n { letter-spacing: 0; text-transform: none; color: var(--slate-4); }
 /* Per-section editing (approved mockup, starpulse#90): a faint ✎ beside each heading, and the open section outlined with its bar. */

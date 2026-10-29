@@ -40,6 +40,9 @@ export interface KanbanTask {
   /** The scheduler runs whose run id names the task, each linked to the run's page. */
   runs?: { url: string; status: string; startedAt: string }[];
   description: string;
+  /** The task's acceptance criteria and Definition of Done as the snapshot carries them; absent when the snapshot slims them off. */
+  acceptanceCriteria?: { n: number; text: string; checked: boolean }[];
+  definitionOfDone?: { n: number; text: string; checked: boolean }[];
   /** The lifecycle machine that last placed the task, the state it left it in and when (epoch seconds). */
   live: { machine: string; state: string; at: number; source?: string | null } | null;
   /** The pass/fail verdict on the task, drawn in the task view only; absent when it was never rated or the rating was cleared. */
@@ -144,6 +147,8 @@ export interface Outline {
  * `settled`, so it is counted in `completed`, each milestone's count of them, done, or finishing a task would shrink its milestone's total
  * instead of raising its done count.
  */
+const numbered = (items: { text: string; checked: boolean }[]) => items.map((item, i) => ({ n: i + 1, text: item.text, checked: item.checked }));
+
 export function milestoneOutline(tasks: KanbanTask[], roles: Roles, completed: Record<string, number> = {}): Outline[] {
   const counts = new Map<string, Outline>();
   const count = (milestone: string, done: boolean, n = 1) => {
@@ -379,6 +384,8 @@ export function kanbanTasks(sky: Sky): KanbanTask[] {
       released: a.state === roles.ready && a.previous === roles.waiting, release: a.released ?? null, claimExpiresAt: a.claim_expires_at ?? null, moves: a.moves ?? (a.move_set ? sky.moveSets[a.move_set] : undefined) ?? {}, entered: a.entered ?? 0, created: a.created ?? null, workableSince: a.workable_since ?? null,
       machines: sessions.get(a.id) ?? [],
       rating: sky.ratings?.[a.id],
+      ...(a.criteria ? { acceptanceCriteria: numbered(a.criteria) } : {}),
+      ...(a.definition_of_done ? { definitionOfDone: numbered(a.definition_of_done) } : {}),
     };
   });
 }

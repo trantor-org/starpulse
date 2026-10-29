@@ -275,7 +275,7 @@ function MoveMenu({ items, disabled, move }: { items: { to: string; text: string
 const fromSnapshot = (task: KanbanTask): TaskRecord => ({
   title: task.title, profile: task.profile ?? "", priority: "", labels: task.labels, milestone: task.milestone,
   dependencies: task.dependencies, description: task.description.split("\n## ")[0], plan: "", notes: "",
-  acceptanceCriteria: [], definitionOfDone: [],
+  acceptanceCriteria: task.acceptanceCriteria ?? [], definitionOfDone: task.definitionOfDone ?? [],
 });
 const priorityValue = (value: string) => PRIORITIES.find((v) => v.toLowerCase() === value.toLowerCase()) ?? value;
 
@@ -494,6 +494,8 @@ export function TaskView(p: TaskViewProps) {
       evidenceFor={editing === section ? evidenceFor : null} evidence={evidence} tried={tried} change={(value) => change(section, value)} toggle={toggle(section)}
       setEvidence={(n, value) => setEvidence((all) => ({ ...all, [n]: value }))} open={p.open} />,`${items.filter((i) => i.checked).length}/${items.length}`);
   };
+  // A section the record has yet to fill: a placeholder while it loads, nothing once the read failed.
+  const loading = (name: string) => p.readNote ? null : <section className="sec skel" aria-label={name}><div className="sh"><span className="t">{name}</span></div><div className="bar" /><div className="bar short" /></section>;
   const prose = (section: "plan" | "notes", name: string) => {
     const shown = section === "notes" ? taskBody(draft).notes : draft.plan;
     // An empty plan has no section to show: only an entry point to write one.
@@ -542,10 +544,10 @@ export function TaskView(p: TaskViewProps) {
               <div className="tabs" role="tablist">{tab(false, "Write")}{tab(true, "Preview")}<span className="k">Markdown</span></div>
               {preview ? <Md text={draft.description} className="md prev" drawn={criteria.length > 0} open={p.open} /> : <Txt {...fp("description")} value={draft.description} label="Description" long focus onChange={(value) => change("description", value)} />}
             </> : <Md text={taskBody(draft).description} drawn={criteria.length > 0} open={p.open} />)}
-            {p.record && checks("acceptanceCriteria", "Acceptance criteria")}
-            {p.record && checks("definitionOfDone", "Definition of done")}
-            {p.record && prose("plan", "Implementation plan")}
-            {p.record && prose("notes", "Notes")}
+            {p.record || p.task.acceptanceCriteria ? checks("acceptanceCriteria", "Acceptance criteria") : loading("Acceptance criteria")}
+            {p.record || p.task.definitionOfDone ? checks("definitionOfDone", "Definition of done") : loading("Definition of done")}
+            {p.record ? prose("plan", "Implementation plan") : loading("Implementation plan")}
+            {p.record ? prose("notes", "Notes") : loading("Notes")}
             <section className="sec" id="activity">
               <div className="sh"><span className="t">Activity</span>{activity.length > 0 && <span className="n">{activity.length}</span>}</div>
               {activity.length > 0 && <div className="acts2">{activity.map(ev)}</div>}

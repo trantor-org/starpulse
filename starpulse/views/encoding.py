@@ -51,8 +51,9 @@ def _dump_all(
 
 
 #: The fields of a Board task the page reads from `/api/task/<id>` when it opens one, so a snapshot leaves them out.
-_TASK_DETAIL = ("description", "criteria", "moves")
-#: What an In Progress task's card keeps: its live description and criteria, which the page shows without a fetch.
+_TASK_DETAIL = ("description", "criteria", "definition_of_done", "moves")
+#: What an In Progress task's card keeps: its live description, criteria and Definition of Done, which the page
+#: shows without a fetch.
 _LIVE_DETAIL = ("moves",)
 
 
