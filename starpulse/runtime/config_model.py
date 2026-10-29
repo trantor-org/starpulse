@@ -319,8 +319,8 @@ class ConfigFile(_Table):
         default=None,
         description=(
             "The name of an environment variable holding a GitHub token. `serve` exports its value as `GITHUB_TOKEN` "
-            "before it starts any worker, so the GitHub reads and the child processes sign in with it; unset, or naming "
-            "an unset variable, leaves `GITHUB_TOKEN` as it was. The value is the name, never the token."
+            "and `GH_TOKEN` before it starts any worker, so the GitHub reads and the child processes sign in with it; unset, "
+            "or naming an unset variable, leaves both as they were. The value is the name, never the token."
         ),
     )
     take_over_command: list[str] | None = Field(

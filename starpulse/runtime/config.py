@@ -368,7 +368,7 @@ class Config:
     refresh_token_env: str | None = None
     """The environment variable holding the token `POST /api/pulls/refresh` accepts; none: the route answers 404."""
     github_token_env: str | None = None
-    """The environment variable whose value `serve` exports as `GITHUB_TOKEN` before any worker starts; unset, `GITHUB_TOKEN` is left as it was."""
+    """The environment variable whose value `serve` exports as `GITHUB_TOKEN` and `GH_TOKEN` before any worker starts; unset, both are left as they were."""
     take_over_command: tuple[str, ...] | None = None
     """The argv `POST /api/take-over` runs with the task id appended (exit 0 sent, 1 no workflow); none: the route answers 404."""
     pull_requests: bool = _DEFAULTS.pull_requests
