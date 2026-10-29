@@ -1,11 +1,8 @@
 # Delivery Verdicts Other Than Green
 
-Read when `starpulse command run deliver` prints red, blocked or crashed, or when a criterion only the merge or its
+Read when `starpulse command run deliver` prints blocked or crashed, or when a criterion only the merge or its
 deploy can prove.
 
-## Red
-
-Read the failing check, fix the cause in the worktree, rerun the final gates, and deliver again.
 ## Blocked
 
 The checks cannot finish without a person or another board task. When the blocker is a board task, park this task on it with `starpulse task park <task> --until-task <blocker>` and end the turn, or `--until-task <blocker>#<K>` when only that task's open criterion K is needed (the park releases once K is checked, though the blocker stays open) or `--until '<criterion naming the fact>'` when the need is a fact a check can observe; a background watcher is for waits that are not tasks. Otherwise park it on the person with `starpulse task park <task> --operator '<what blocks, ending with the question>'`, ask that question in the reply, and end the turn; a task waiting on a person is never left In Progress.

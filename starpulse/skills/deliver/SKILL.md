@@ -49,8 +49,10 @@ body=<file>`. It commits, pushes, opens the task's PR or updates the one already
 prints a verdict.
 
 - green: the checks passed; go to step 5.
-- red, blocked, crashed, or a criterion only the merge can prove: read
-  [references/verdicts.md](references/verdicts.md) and follow that verdict's section.
+- red: read the failing check, fix the cause in the worktree, rerun the final gates, and deliver again.
+- blocked, crashed, or a criterion only the merge can prove: read
+  [references/verdicts.md](references/verdicts.md) and follow that verdict's section;
+  a task waiting on a person is never left In Progress.
 
 Done when the delivery prints green.
 
