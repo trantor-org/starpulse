@@ -196,6 +196,7 @@ class TestConfigCheck:
             "mode": "ic",
             "runs": [],
             "repos": [],
+            "sequences": {},
             "harnesses": None,
             "board_type": "native",
             "board": {},
