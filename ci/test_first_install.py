@@ -103,6 +103,11 @@ def _stub_harness(install: Path, receiver_port: int, ago_s: float) -> None:
         assert resp.status == 200
 
 
+# Slow: ~10 s wall and ~11 CPU-s warm, almost all of it interpreter start-up and imports, one per process a first install
+# runs: `init` 0.6, `migrate` 1.8, `task create` 0.6, `task claim` 0.65, the receiver 1.1 and `serve` with its
+# `machine_sync` and API worker ~5. The wall in the nightly report is the host's load, not the test. `migrate` is a step
+# of the install (opening a store runs no maintenance) and each process is the thing the test proves works together, so
+# none can be merged or run in-process without the test no longer being a first install.
 def test_a_first_install_links_the_session_that_claims_a_task_to_it(tmp_path: Path, page_build: None) -> None:
     install = tmp_path / "demo"
     package_root = str(
