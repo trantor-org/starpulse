@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { Card, HeldBy, StackList, StackView, Stacks } from "./Kanban";
 import { CLOSED, NO_PREFS, layout, stackOf, stackStep, stacksOf, type KanbanTask, type StackEvent } from "./kanbanModel";
+import type { Pull } from "../../api/types.gen";
 import { place } from "./move";
 import { LIFECYCLE_ROLES } from "../../tests/lifecycleRoles";
 import { TaskView } from "./TaskView";
@@ -48,6 +49,48 @@ describe("a Kanban card's size estimate", () => {
       expect(html).not.toContain("size-5");
       expect(html).not.toContain("area-starpulse");
     }
+  });
+});
+
+describe("a Kanban card's pull request chips", () => {
+  const pull = (number: number, over: Partial<Pull> = {}): Pull => ({ number, repo: "o/r", url: `http://pr/${number}`, checks: "pass", merged: false, merge_sha: null, merged_at: null, threads: 0, stale: false, ...over });
+  const drawPulls = (prs: Pull[]) => renderToStaticMarkup(<Card task={{ ...task, prs }} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} compact={false} />);
+  const chips = (html: string) => [...html.matchAll(/<span class="pr ([^"]*)"[^>]*title="([^"]*)"[^>]*>(.*?)<\/span>(?=<span class="pr |<\/span>)/g)].map((m) => ({ cls: m[1], title: m[2], text: m[3] }));
+
+  it("draws each of up to three PRs as its own chip in the order the task cites them", () => {
+    const html = drawPulls([pull(11), pull(12), pull(13)]);
+
+    expect(html).toContain('class="prs"');
+    expect(chips(html).map((c) => c.text.replace(/<[^>]+>/g, ""))).toEqual(["#11", "#12", "#13"]);
+  });
+
+  it("draws the first three and a +N chip whose hover lists every PR past them with its state", () => {
+    const html = drawPulls([pull(11), pull(12), pull(13), pull(14, { merged: true }), pull(15, { closed: true })]);
+    const drawn = chips(html);
+
+    expect(drawn.map((c) => c.text.replace(/<[^>]+>/g, ""))).toEqual(["#11", "#12", "#13", "+2"]);
+    expect(drawn[3].title).toContain("#14 merged");
+    expect(drawn[3].title).toContain("#15 closed");
+    expect(drawn[3].title).not.toContain("#11");
+  });
+
+  it("draws merged, closed, conflicting and failing PRs each in its own state", () => {
+    const drawn = chips(drawPulls([pull(1, { merged: true }), pull(2, { closed: true }), pull(3, { conflicting: true })]));
+    const failing = chips(drawPulls([pull(4, { checks: "failing" })]));
+
+    expect(drawn.map((c) => c.cls.split(" ")[0])).toEqual(["merged", "closed", "pass"]);
+    expect(drawn[1].title).toContain("closed");
+    expect(drawn[2].cls).toContain("conflict");
+    expect(drawn[2].title).toContain("merge conflict");
+    expect(failing[0].cls).toBe("fail");
+    expect(failing[0].title).toContain("checks failing");
+  });
+
+  it("marks the +N chip with the worst state among the PRs it hides, so a failure past the third is never lost", () => {
+    const drawn = chips(drawPulls([pull(1), pull(2), pull(3), pull(4, { merged: true }), pull(5, { checks: "failing", conflicting: true })]));
+
+    expect(drawn[3].cls).toContain("fail");
+    expect(drawn[3].cls).toContain("conflict");
   });
 });
 

@@ -54,6 +54,7 @@ def _stored(
     checks: str = "pass",
     *,
     state: str = "OPEN",
+    mergeable: str = "MERGEABLE",
     threads: int = 0,
     fetched: float = NOW,
     merge_sha: str | None = None,
@@ -69,7 +70,7 @@ def _stored(
         "number": number,
         "state": state,
         "isDraft": False,
-        "mergeable": "MERGEABLE",
+        "mergeable": mergeable,
         "baseRefName": "main",
         "headRefOid": f"{number:040x}",
         "body": "",
@@ -95,6 +96,8 @@ def _record(
     checks: str,
     *,
     merged: bool = False,
+    closed: bool = False,
+    conflicting: bool = False,
     threads: int = 0,
     stale: bool = False,
     merge_sha: str | None = None,
@@ -110,6 +113,8 @@ def _record(
         "url": f"https://github.com/{repo}/pull/{number}",
         "checks": checks,
         "merged": merged,
+        "closed": closed,
+        "conflicting": conflicting,
         "merge_sha": merge_sha,
         "merged_at": merged_at,
         "files": files or [],
@@ -146,6 +151,29 @@ def test_the_snapshot_carries_each_tasks_pr_number_check_rollup_merged_state_and
     assert _pulls(feed) == {
         "PROJ-7": [_record(1750, "failing", threads=2)],
         "PROJ-8": [_record(1751, "pass", merged=True)],
+    }
+
+
+def test_a_record_says_whether_its_pr_closed_unmerged_and_whether_an_open_pr_conflicts_with_its_base(
+    store: PullStore,
+) -> None:
+    store.save(
+        [
+            _stored(1750, state="CLOSED"),
+            _stored(1751, "failing", mergeable="CONFLICTING"),
+            _stored(1752, state="MERGED", mergeable="CONFLICTING"),
+        ]
+    )
+    feed = _feed(proj_7=[FIRST, SECOND, f"{REPO}/1752"])
+
+    PullRequests(feed, store).refresh()
+
+    assert _pulls(feed) == {
+        "PROJ-7": [
+            _record(1750, "pass", closed=True),
+            _record(1751, "failing", conflicting=True),
+            _record(1752, "pass", merged=True),
+        ]
     }
 
 
