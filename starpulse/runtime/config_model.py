@@ -11,6 +11,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
+from starpulse.board.model.adapter_types import ADAPTER_CONTEXTS
 from starpulse.views.services import SLOW_READ_S
 
 #: An environment variable's name: the setting holds the name, never the value.
@@ -24,6 +25,7 @@ WORKER_MEMORY_MB = {
     "flow-metrics": (384, 768),
     "search": (384, 768),
     "board": (768, 1536),
+    **dict.fromkeys(ADAPTER_CONTEXTS, (256, 512)),
 }
 
 
@@ -70,8 +72,8 @@ class RunsInstanceFile(_Table):
     url: str = Field(
         description=(
             "What the adapter reads. A built-in adapter is an opt-in worker: you run `starpulse worker <adapter> "
-            "--config <this file>`, `serve` starts it nowhere, and, with it down or never started, the page shows "
-            'this instance with the error "the <adapter> worker has not reported" or "last reported Ns ago" (its '
+            "--config <this file>` (`serve` starts it as a child), and, with it down or not yet started, the page shows "
+            "this instance with the error \"the <adapter> worker has not reported\" or \"last reported Ns ago\" (its "
             "beat is older than 60s)."
         ),
     )

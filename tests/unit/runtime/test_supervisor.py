@@ -140,6 +140,23 @@ def test_killing_a_child_yields_a_replacement_with_a_new_pid() -> None:
         supervisor.stop()
 
 
+def test_killing_an_adapter_child_restarts_it_and_leaves_the_page_running() -> None:
+    supervisor = Supervisor({"api": SLEEP, "dagu": SLEEP}, first_delay=0.05, poll=0.02)
+    supervisor.start()
+    try:
+        page = _wait_for(lambda: running_pids(supervisor).get("api"))
+        adapter = _wait_for(lambda: running_pids(supervisor).get("dagu"))
+        subprocess.run(["kill", "-9", str(adapter)], check=True)
+
+        restarted = _wait_for(lambda: (pid := running_pids(supervisor).get("dagu")) not in (None, adapter) and pid)
+
+        assert _alive(restarted)
+        assert running_pids(supervisor)["api"] == page
+        assert _alive(page)
+    finally:
+        supervisor.stop()
+
+
 def test_stopping_the_supervisor_leaves_no_child_running() -> None:
     supervisor = Supervisor({"pulls": SLEEP, "scheduler": SLEEP}, poll=0.02)
     supervisor.start()

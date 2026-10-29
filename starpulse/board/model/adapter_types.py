@@ -18,6 +18,9 @@ BUILT_IN = {
     "systemd": "starpulse.runs.systemd",
 }
 
+#: The run adapters' worker contexts. Each runs as a `starpulse worker <context>` child of `serve`.
+ADAPTER_CONTEXTS = ("dagu", "github-actions", "systemd")
+
 
 def module_name(kind: str) -> str:
     """The module a `[board]` or `[[runs]]` type names: a dotted path as it is, a bare name through `BUILT_IN`."""

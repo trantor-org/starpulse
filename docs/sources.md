@@ -452,7 +452,7 @@ url = "https://github.com/trantor-org/starpulse"   # or `owner/name`
 run_safe = ["ui-preview.yml"]
 ```
 
-- **Opt-in worker.** `serve` starts none of this adapter: run `starpulse worker github-actions --config <this file>`. It
+- **Adapter worker.** `serve` starts it as a child for each instance that names this adapter (`starpulse worker github-actions --config <this file>`). It
   beats into the event log, and with the worker down or never started the page shows the instance with the error "the
   `<name>` worker has not reported" or "last reported Ns ago" (a beat older than 60 s).
 - **Credentials** come from the environment: `GITHUB_TOKEN` or `GH_TOKEN` (read and `actions: write` on the repository),
@@ -477,9 +477,9 @@ type = "systemd"
 url = "systemd-tmpfiles-clean, apt-daily.timer, user/claude-sessions-snapshot"
 ```
 
-- **Opt-in worker.** `serve` starts none of this adapter: run `starpulse worker systemd --config <this file>` on the
-  host whose timers it reads. The page shows an instance whose worker never reported or stopped, as for the other
-  opt-in workers.
+- **Adapter worker.** `serve` starts it as a child for each instance that names this adapter (`starpulse worker systemd
+  --config <this file>`), on the host whose timers it reads. The page shows an instance whose worker never reported or
+  stopped, as for the other adapter workers.
 - **`url` is the allowlist:** comma-separated timer units. A bare name reads the system manager and a `user/` prefix
   reads `systemctl --user`; a name without `.timer` means `<name>.timer`. Two timers with one stem are refused.
 - **Status** comes from the service's `systemctl show`: an `ActiveState` of `activating`, `active`, `reloading` or

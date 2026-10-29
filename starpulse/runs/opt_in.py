@@ -1,9 +1,10 @@
 """The run adapters that run as opt-in workers, and the Liveness of each: a beat the worker keeps in the event log.
 
-An adapter module whose `WORKER` names a context (`starpulse worker <context>`) runs there and nowhere in `serve`: not in
-the supervised `runs` worker, and `serve` supervises no child for it. Nothing starts it but the operator, so an adapter
-that never started or stopped silently is the failure to show: the worker writes the time to the log every `BEAT_S`, and
-`problem` says why `serve` counts it as down, which the page draws as the instance's error.
+An adapter module whose `WORKER` names a context (`starpulse worker <context>`) runs there and not in the supervised
+`runs` worker: `serve` supervises one child for each such context a `[[runs]]` instance configures, and restarts it like
+any other context worker. An adapter that stopped or never started silently is the failure to show: the worker writes
+the time to the log every `BEAT_S`, and `problem` says why `serve` counts it as down, which the page draws as the
+instance's error.
 """
 
 from __future__ import annotations

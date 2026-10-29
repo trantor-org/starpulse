@@ -1,6 +1,6 @@
 """The Runs context's seam with `serve`: the workflows each run adapter instance reports, kept in the event log.
 
-`starpulse worker runs` runs the adapters, so `serve` never sees what they report directly. A `Publisher` stands in the
+`starpulse worker runs` and each adapter's own worker run the adapters, so `serve` never sees what they report directly. A `Publisher` stands in the
 adapters' sink: it keeps what each instance last reported as its own entry of one worker state, which another process's
 `Publisher` never overwrites, and `serve` applies that state to its feed (`Projected`) as the page's workflows, pools and
 startable workflows when its version moves. A new `serve` or worker process reads the state, so neither restart blanks

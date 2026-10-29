@@ -580,7 +580,17 @@ def test_each_worker_context_has_a_packaged_memory_limit_that_the_config_overrid
     text = "[worker_memory.pulls]\nsoft_mb = 100\n[worker_memory.scheduler]\nsoft_mb = 10\nhard_mb = 20\n"
     tuned = load(_write(tmp_path, text)).worker_memory
 
-    assert set(packaged) == {"pulls", "scheduler", "runs", "flow-metrics", "search", "board"}
+    assert set(packaged) == {
+        "pulls",
+        "scheduler",
+        "runs",
+        "flow-metrics",
+        "search",
+        "board",
+        "dagu",
+        "github-actions",
+        "systemd",
+    }
     assert all(0 < limit.soft_mb < limit.hard_mb for limit in packaged.values())
     assert tuned["pulls"] == MemoryLimit(100, packaged["pulls"].hard_mb)
     assert tuned["scheduler"] == MemoryLimit(10, 20)
@@ -591,7 +601,7 @@ def test_each_worker_context_has_a_packaged_memory_limit_that_the_config_overrid
     [
         (
             "[worker_memory.pulss]\nsoft_mb = 1\n",
-            "worker_memory: unknown context(s) pulss; known: board, flow-metrics, pulls, runs, scheduler, search",
+            "worker_memory: unknown context(s) pulss; known: board, dagu, flow-metrics, github-actions, pulls, runs, scheduler, search, systemd",
         ),
         ("[worker_memory.pulls]\nsoft_mb = 900\nhard_mb = 900\n", "worker_memory.pulls: soft_mb must be below hard_mb"),
         ("[worker_memory.pulls]\nsoft_mb = 5000\n", "worker_memory.pulls: soft_mb must be below hard_mb"),

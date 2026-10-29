@@ -35,7 +35,7 @@ from starpulse.event_log.polling import DEFAULT_POLL_INTERVAL
 
 #: Seconds between two listings of a followed Dagu instance.
 RECONCILE_INTERVAL = 30.0
-#: The opt-in worker that runs this adapter (`starpulse.runs.opt_in`): `serve` runs none of it.
+#: The worker that runs this adapter (`starpulse.runs.opt_in`): `serve` supervises it as a child.
 WORKER = "dagu"
 
 #: Each status label Dagu reports (plus `skipped` for a step) and the status it becomes.
