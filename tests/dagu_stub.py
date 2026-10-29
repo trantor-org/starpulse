@@ -47,10 +47,6 @@ class Past:
     nodes: tuple[tuple[str, str], ...] = ()
 
 
-#: Dagu's numeric run statuses, as `/dag-runs?status=` filters by them.
-_STATUS_OF = {"running": 1, "queued": 5}
-
-
 @contextmanager
 def dagu(
     steps: dict[str, list[str]],
@@ -60,7 +56,6 @@ def dagu(
     queues: dict[str, Queue] | None = None,
     queue_of: dict[str, str] | None = None,
     in_flight: tuple[InFlight, ...] = (),
-    listed_since: str = "",
     history: Sequence[Past] = (),
     page: int = 100,
     params: Mapping[str, list[str]] = MappingProxyType({}),
@@ -74,9 +69,9 @@ def dagu(
     A step reports `succeeded` in the latest run unless `labels` (read at each request) names its label.
     The listing gives every DAG the `latest` run (a dict the caller may change while the server runs), a
     succeeded `r0` unless given. `queues` are the queues `/queues` reports (a Dagu without them answers 404),
-    `queue_of` the queue each DAG declares, and `in_flight` the runs `/dag-runs` lists as running or queued.
-    Like Dagu, whose listing starts at UTC midnight unless asked for a `fromDate`, a listing with no `fromDate` leaves
-    out the runs that began before `listed_since`. `history` (read at each request, so a caller may add to it) are the runs `/dag-runs?name=` lists, `page` at a time with
+    `queue_of` the queue each DAG declares, and `in_flight` the runs those queues hold: `/queues` lists the running ones,
+    `/queues/<name>/items` the queued ones.
+    `history` (read at each request, so a caller may add to it) are the runs `/dag-runs?name=` lists, `page` at a time with
     a `nextCursor` while more remain; their detail is served like an in-flight run's. `params` are the `NAME=default`
     words each DAG declares, as its detail reports them. `dag_labels` are the labels a DAG's listing entry carries, and `schedules` the cron expressions it
     carries, `preconditions` the `(condition, expected)` a step named by key declares, and `unrun` the DAGs the
@@ -136,6 +131,13 @@ def dagu(
         nodes = [{"step": {"name": n}, "statusLabel": label} for n, label in r.nodes]
         return {"dagRunDetails": {**past_summary(r), "nodes": nodes}}
 
+    #: Runs in flight sit in queues, so a Dagu given runs and no queues reports the ones they sit in.
+    served = queues if queues is not None else {(queue_of or {}).get(r.dag, r.dag): Queue(cap=1) for r in in_flight}
+
+    def held(queue: str, label: str) -> list[InFlight]:
+        """The `in_flight` runs of `label` in `queue`: the one a DAG declares, else the one named for it, as Dagu files them."""
+        return [r for r in in_flight if r.label == label and (queue_of or {}).get(r.dag, r.dag) == queue]
+
     def answer(path: str) -> tuple[int, dict]:
         url = urlsplit(path)
         parts = url.path.removeprefix("/api/v1/").split("/")
@@ -158,14 +160,22 @@ def dagu(
             mine = [r for r in history if r.dag == parts[1]]
             return 200, {"dagRuns": [past_detail(r)["dagRunDetails"] for r in mine[:30]], "gridData": []}
         if parts == ["queues"]:
-            if queues is None:
+            if not served:
                 return 404, {}
             return 200, {
                 "queues": [
-                    {"name": n, "maxConcurrency": q.cap, "runningCount": q.running, "queuedCount": q.queued}
-                    for n, q in queues.items()
+                    {
+                        "name": n,
+                        "maxConcurrency": q.cap,
+                        "running": [summary(r) for r in held(n, "running")],
+                        "runningCount": max(q.running, len(held(n, "running"))),
+                        "queuedCount": max(q.queued, len(held(n, "queued"))),
+                    }
+                    for n, q in served.items()
                 ]
             }
+        if len(parts) == 3 and parts[0] == "queues" and parts[2] == "items":
+            return 200, {"items": [summary(r) for r in held(parts[1], "queued")]}
         if parts == ["dag-runs"] and "name" in parse_qs(url.query):
             query = parse_qs(url.query)
             mine = [r for r in history if r.dag == query["name"][0]]
@@ -175,12 +185,6 @@ def dagu(
                 "dagRuns": [past_summary(r) for r in mine[first : first + page]],
                 **({"nextCursor": str(first + page)} if more else {}),
             }
-        if parts == ["dag-runs"]:
-            query = parse_qs(url.query)
-            status = int(query["status"][0])
-            since = "" if "fromDate" in query else listed_since
-            listed = [r for r in in_flight if _STATUS_OF[r.label] == status and (r.started_at or r.queued_at) >= since]
-            return 200, {"dagRuns": [summary(r) for r in listed]}
         if parts[0] == "dag-runs":
             if found := next((r for r in history if (r.dag, r.run_id) == (parts[1], parts[2])), None):
                 return 200, past_detail(found)

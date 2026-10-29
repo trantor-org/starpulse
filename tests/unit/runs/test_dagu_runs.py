@@ -33,6 +33,7 @@ from starpulse.runs.dagu import (
     declared_params,
     domains,
     pools,
+    recent_runs,
     refresh_stats,
     rerun,
     rerunner,
@@ -105,7 +106,7 @@ QUEUED = InFlight(
 
 def deliver(*, in_flight: tuple[InFlight, ...], **stub) -> dict:
     """The `deliver` DAG as the adapter lists it while Dagu runs `in_flight`."""
-    with dagu(DELIVER, **LANE, in_flight=in_flight, **stub) as (base_url, _):
+    with dagu(DELIVER, **LANE, queues={"deliver": Queue(cap=8)}, in_flight=in_flight, **stub) as (base_url, _):
         return next(d for d in dags(base_url) if d["name"] == "deliver")
 
 
@@ -456,7 +457,7 @@ def test_a_dag_carries_its_step_edges_each_steps_latest_status_and_declared_kind
 
     def urlopen(url: str, timeout: float) -> _Reply:
         asked.append(url)
-        if url.endswith("/dag-runs"):
+        if url.endswith(("/dag-runs", "/queues")):
             return _Reply({"dagRuns": []})
         return _Reply(detail if url.endswith("/dags/alert-investigation") else listing)
 
@@ -569,7 +570,7 @@ def test_dags_reads_each_dags_latest_run_with_defaults_for_what_dagu_omits(monke
 
     def urlopen(url: str, timeout: float) -> _Reply:
         timeouts.append(timeout)
-        if url.endswith("/dag-runs"):
+        if url.endswith(("/dag-runs", "/queues")):
             return _Reply({"dagRuns": []})
         return _Reply(details[url.rsplit("/", 1)[1]] if "perPage" not in url else listing)
 
@@ -670,7 +671,7 @@ def test_dags_reads_each_dags_latest_run_with_defaults_for_what_dagu_omits(monke
             "pool": "",
         },
     ]
-    assert set(timeouts) == {5}
+    assert set(timeouts) == {5, 60}  # a read, and the scan of a window of runs
 
 
 def test_dags_asks_for_step_detail_only_of_the_dags_it_is_told_to_keep(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1257,12 +1258,6 @@ def test_a_queued_run_follows_the_running_ones_and_starts_when_it_was_queued() -
     ]
 
 
-def test_a_run_that_began_before_dagus_listing_day_is_still_active() -> None:
-    listed = deliver(in_flight=(LINTING, QUEUED), listed_since="2026-10-06T00:00:00Z")
-
-    assert [a["runId"] for a in listed.get("active", [])] == ["r1", "r3"]
-
-
 def test_a_run_between_steps_has_no_current_step() -> None:
     between = InFlight(
         "deliver",
@@ -1282,11 +1277,29 @@ def test_a_run_of_another_dag_is_not_active_on_this_one() -> None:
     other = InFlight(
         "other", "r9", started_at="2026-10-05T23:00:00Z", nodes=(("a", "running", "2026-10-05T23:00:01Z"),)
     )
-    with dagu({**DELIVER, "other": ["a"]}, **LANE, in_flight=(LINTING, other)) as (base_url, _):
+    queues = {"deliver": Queue(cap=8), "other": Queue(cap=8)}
+    with dagu({**DELIVER, "other": ["a"]}, **LANE, queues=queues, in_flight=(LINTING, other)) as (base_url, _):
         listed = {d["name"]: d for d in dags(base_url)}
 
     assert [a["runId"] for a in listed["deliver"].get("active", [])] == ["r1"]
     assert [a["runId"] for a in listed["other"].get("active", [])] == ["r9"]
+
+
+def test_the_runs_in_flight_are_read_from_the_queues_not_from_a_scan_of_every_run_in_a_window() -> None:
+    queues = {"deliver": Queue(cap=8)}
+    with dagu(DELIVER, **LANE, queues=queues, in_flight=(LINTING, QUEUED)) as (base_url, calls):
+        dags(base_url)
+
+    assert not [c for c in calls if c.startswith("/api/v1/dag-runs?")]
+    assert "/api/v1/queues/deliver/items" in calls
+
+
+def test_a_queue_with_nothing_queued_is_not_asked_for_its_items() -> None:
+    queues = {"deliver": Queue(cap=8), "idle": Queue(cap=8)}
+    with dagu(DELIVER, **LANE, queues=queues, in_flight=(LINTING,)) as (base_url, calls):
+        dags(base_url)
+
+    assert not [c for c in calls if c.endswith("/items")]
 
 
 def test_a_dag_names_the_queue_it_declares_as_its_pool() -> None:
@@ -1561,6 +1574,24 @@ def test_recent_runs_are_asked_for_within_the_last_day_of_the_named_dag_only() -
     assert int(listing.split("fromDate=")[1].split("&")[0]) > time.time() - 86400 - 60
 
 
+def test_a_second_read_of_recent_runs_lists_only_since_the_first_and_keeps_what_the_first_read() -> None:
+    now = datetime.now(UTC)
+
+    def ran(run_id: str, ago: timedelta) -> Past:
+        return Past("apply", run_id, started_at=(now - ago).isoformat(), finished_at=(now - ago).isoformat())
+
+    history = [ran("r1", timedelta(hours=3))]
+    cache: dict = {}
+    with dagu(APPLY, history=history) as (base_url, calls):
+        recent(base_url, {"apply"}, finished=cache)
+        history[:] = [ran("r2", timedelta(minutes=1))]
+        runs = recent(base_url, {"apply"}, finished=cache)
+
+    first, second = (int(re.search(r"fromDate=(\d+)", c)[1]) for c in calls if "name=apply" in c)
+    assert [r["runId"] for r in runs] == ["r2", "r1"]
+    assert second - first > 12 * 3600
+
+
 def test_a_finished_runs_steps_are_read_once_and_a_running_runs_every_time() -> None:
     running = Past("apply", "r3", label="running", started_at="2026-10-05T23:20:00Z", nodes=(("validate", "running"),))
     cache: dict = {}
@@ -1776,7 +1807,7 @@ def _graph_listing(monkeypatch: pytest.MonkeyPatch, runs: dict[str, dict]) -> li
     def urlopen(url: str, timeout: float) -> _Reply:
         asked.append(url)
         listing = {"dags": [{"fileName": n, "latestDAGRun": r} for n, r in runs.items()]}
-        if url.endswith("/dag-runs"):
+        if url.endswith(("/dag-runs", "/queues")):
             return _Reply({"dagRuns": []})
         return _Reply(
             listing
@@ -1789,7 +1820,7 @@ def _graph_listing(monkeypatch: pytest.MonkeyPatch, runs: dict[str, dict]) -> li
 
 
 def _details(asked: list[str]) -> list[str]:
-    return [u for u in asked if "perPage" not in u and not u.endswith("/dag-runs")]
+    return [u for u in asked if "perPage" not in u and not u.endswith(("/dag-runs", "/queues"))]
 
 
 def test_step_cache_reads_a_finished_dags_graph_once_while_its_latest_run_is_unchanged(
@@ -1996,6 +2027,37 @@ def test_statistics_are_kept_until_their_ttl_passes_and_then_read_again() -> Non
             refresh_stats(base_url, stats, clock=lambda: now[0])
 
     assert len([c for c in calls if "dag-runs?name=d" in c]) == 2
+
+
+def test_statistics_dagu_fails_to_give_are_not_asked_for_again_until_the_ttl_passes(monkeypatch) -> None:
+    read = []
+
+    def failing(base_url: str, name: str, *rest) -> dict:
+        read.append(name)
+        raise OSError("504")
+
+    monkeypatch.setattr(dagu_module, "_read_stats", failing)
+    now, tried = [0.0], {}
+    with dagu({"d": ["a"]}, history=[_past("d", "r1", "succeeded", 100, 50)]) as (base_url, _):
+        for at in (0.0, dagu_module.RECONCILE_INTERVAL, STATS_TTL):
+            now[0] = at
+            refresh_stats(base_url, {}, clock=lambda: now[0], tried=tried)
+
+    assert read == ["d", "d"]
+
+
+def test_a_window_scan_is_given_longer_to_answer_than_a_single_read(monkeypatch) -> None:
+    waited: list[tuple[str, float]] = []
+
+    def urlopen(url: str, timeout: float) -> _Raw:
+        waited.append((url, timeout))
+        return _Raw(b'{"dagRuns": []}')
+
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    recent_runs("http://dagu", "apply")
+
+    (scan,) = [timeout for url, timeout in waited if "dag-runs?name=apply" in url]
+    assert scan >= 30
 
 
 def test_a_listing_reads_no_statistics_so_it_never_waits_on_them() -> None:
