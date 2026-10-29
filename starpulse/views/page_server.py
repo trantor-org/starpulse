@@ -42,7 +42,7 @@ DRAIN_S = 8.0
 class PageServer:
     """Serves `app` on its own thread until `stop`.
 
-    Given `listening`, it serves on that socket as passed, its backlog and options untouched, and binds nothing; given
+    Given `listening`, it serves on that socket as passed, its backlog untouched, and binds nothing; given
     `tls` (a certificate and its key), it serves TLS on it and HTTP/3 on a UDP socket bound to the same address.
     `stopping`, when set, is called once as the server stops
     and before its streams end, so a page learns the server is restarting before it loses the stream.
@@ -66,6 +66,9 @@ class PageServer:
         self.socket = (
             listening if listening is not None else socket.create_server(address or ("127.0.0.1", 0), backlog=BACKLOG)
         )
+        # asyncio sets TCP_NODELAY on a connection only when its listener's protocol is TCP, and `socket.create_server`
+        # leaves it 0: without this each response's body waits out the client's 40 ms delayed ACK behind its head.
+        self.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         self.server_address = self.socket.getsockname()
         self.server_port: int = self.server_address[1]
         self._config = Config()
