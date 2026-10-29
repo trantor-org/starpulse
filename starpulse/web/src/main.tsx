@@ -8,7 +8,7 @@ void loadFonts();
 /** An embedded fixture or `?demo` loads the demo tree before the Board starts; a plain served page never does. */
 function start(): void {
   // the Board draws from this chunk; the React page (navigator, rail, the other views) is a chunk that mounts after that frame
-  boot(() => void import("./mount"));
+  boot(() => void import("./mount"), (view) => view === "kanban" && void import("./features/kanban/Kanban"));
 }
 
 const wantsDemo = embedded() || new URLSearchParams(location.search).has("demo");

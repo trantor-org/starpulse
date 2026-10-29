@@ -11,7 +11,7 @@ import { loadLateFonts } from "./render/fonts";
 import { renderer } from "./render/renderer";
 import type { Renderer } from "./render/rendererTypes";
 import { NO_BOARD_MS, markDrawn } from "./shared/boardMark";
-import { onPhone, retired, shownView, viewOf } from "./shared/nav";
+import { onPhone, retired, shownView, viewOf, type ViewName } from "./shared/nav";
 
 /** What the page adopts from its boot. */
 export interface Booted {
@@ -33,8 +33,9 @@ export const booted = () => held;
 
 const frameOf = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
-/** Starts the Board and calls `mount` to bring up the React page once the first frame has been marked, or when no board comes. */
-export function boot(mount: () => void): Booted {
+/** Starts the Board and calls `mount` to bring up the React page once the first frame has been marked, or when no board comes.
+ *  A page that opens on another view than the Star Map mounts at once and has `preload` fetch that view's chunk, beside the snapshot. */
+export function boot(mount: () => void, preload?: (view: ViewName) => void): Booted {
   const canvas = frameOf<HTMLCanvasElement>("c"), tip = frameOf<HTMLDivElement>("tip"), panel = frameOf<HTMLDivElement>("panel");
   // the saved theme goes on :root here, before the first paint
   const admin = new AdminStore(), store = new HudStore(), theme = new ThemeStore(applyTheme);
@@ -48,7 +49,7 @@ export function boot(mount: () => void): Booted {
   // a bare address opens the view the Admin chose; one that names a view opens that, and a view that covers the map leaves it undrawn;
   // a phone width has no Star Map, so it opens the Kanban whatever the address or the Admin chose
   const wanted = viewOf(location.search, retired(location.pathname, location.hash) ? "constellation" : admin.get().view);
-  const star = shownView(wanted, onPhone()) === "constellation";
+  const shown = shownView(wanted, onPhone()), star = shown === "constellation";
   let mounted = false;
   const open = () => {
     if (mounted) return;
@@ -67,15 +68,23 @@ export function boot(mount: () => void): Booted {
   if (!star) {
     for (const el of [canvas, tip, panel, frameOf("crumb")]) el.classList.add("off");
     r.show(false);
+    // no Star Map frame is in the way, so the page and the view's chunk load beside the snapshot rather than a round trip behind it;
+    // the chunk is asked for here because the page's first render reaches it only after the page has mounted.
+    // The page stays unseen until the first frame is marked, so its empty counts are never painted ahead of the snapshot
+    const root = document.getElementById("root"), reveal = () => root?.style.removeProperty("visibility");
+    root?.style.setProperty("visibility", "hidden");
+    open();
+    preload?.(shown);
     const unsubscribe = store.subscribe(() => {
       if (store.get().tree === null) return;
       unsubscribe();
       requestAnimationFrame(() => {
         markDrawn();
+        reveal();
         void loadLateFonts();
-        open();
       });
     });
+    setTimeout(reveal, NO_BOARD_MS);
   }
   setTimeout(open, NO_BOARD_MS);
   return held;
