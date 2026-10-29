@@ -2,6 +2,7 @@
 
 import dataclasses
 import json
+import socket
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -46,6 +47,34 @@ def test_every_check_passes_against_a_healthy_host_and_server() -> None:
     assert report["ok"] is True
     assert [c["check"] for c in report["checks"]] == CHECKS
     assert all(c["status"] == "pass" and c["reason"] for c in report["checks"])
+
+
+def test_the_h3_check_fails_when_a_tls_server_answers_tcp_but_no_quic_datagram() -> None:
+    probes = dataclasses.replace(FakeHost().probes(), quic=lambda host, port: False)
+
+    report = doctor.run_checks(snapshot(), CONFIG, probes, "https://localhost:8766")
+
+    assert report["ok"] is False
+    assert check(report, "h3")["status"] == "fail"
+    assert "localhost:8766" in check(report, "h3")["reason"]
+
+
+def test_the_h3_check_passes_when_the_quic_socket_answers() -> None:
+    asked: list[tuple[str, int]] = []
+
+    def quic(host: str, port: int) -> bool:
+        asked.append((host, port))
+        return True
+
+    report = doctor.run_checks(snapshot(), CONFIG, dataclasses.replace(FakeHost().probes(), quic=quic), "https://localhost:8766")
+
+    assert (report["ok"], check(report, "h3")["status"], asked) == (True, "pass", [("localhost", 8766)])
+
+
+def test_a_silent_udp_port_does_not_answer_the_quic_probe() -> None:
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as silent:
+        silent.bind(("127.0.0.1", 0))
+        assert doctor.quic_answers("127.0.0.1", silent.getsockname()[1], timeout=0.2) is False
 
 
 FAULTS: list[tuple[str, str, Callable[[], tuple[Any, ...]], str]] = [
