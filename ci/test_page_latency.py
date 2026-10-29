@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import re
 import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -230,6 +231,14 @@ def test_a_ceiling_still_fails_a_row_that_passes_it():
 def test_a_ceiling_naming_no_row_is_refused():
     with pytest.raises(ValueError, match="no row named first paintt"):
         pl.apply_ceilings([pl.Row("first paint", "interaction", 50.0, [1.0])], ["first paintt=120"])
+
+
+def test_every_ceiling_the_nightly_gate_passes_names_a_row_the_harness_emits():
+    gate = (_PATH.parents[1] / "ci" / "latency_gate.sh").read_text()
+    named = re.findall(r'--ceiling "([^"=]+)=\d+"', gate)
+    assert named == ["first paint of the board", "main-thread tasks over 50 ms"]
+    for row in named:
+        assert f'"{row}"' in _PATH.read_text()
 
 
 def test_the_cpu_throttle_reaches_the_page_timing(monkeypatch):
