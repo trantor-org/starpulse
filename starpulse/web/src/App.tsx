@@ -169,7 +169,7 @@ export function App() {
       <Kept name="kanban" on={view === "kanban"} warm={drawn}>
         <Suspense fallback={null}>
           <Kanban hud={hud} moves={moves} starts={starts} compact={prefs.density === "compact"} searchSlot={searchSlot} outlineSlot={outlineSlot} constellation={flyToLane}
-            spot={spotted} note={setWhy} opening={opening} />
+            spot={spotted} note={setWhy} opening={opening} records={held?.records} />
         </Suspense>
       </Kept>
       <Kept name="dags" on={view === "dags"} warm={drawn}><Suspense fallback={null}><Dags data={hud.dagData} openPath={open} spot={spottedDag} opening={openingDag} filterSlot={dgSlot} /></Suspense></Kept>

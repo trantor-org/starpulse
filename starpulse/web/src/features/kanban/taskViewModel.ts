@@ -336,10 +336,10 @@ export class RecordCache {
   private held = new Map<string, HeldRecord>();
   constructor(private fetcher: typeof apiFetch = apiFetch, private clock: () => number = Date.now) {}
 
-  /** Read `id`'s record ahead, unless a fresh read of it is already held. */
-  readAhead(id: string): void {
+  /** Read `id`'s record ahead with `fetcher`, unless a fresh read of it is already held. */
+  readAhead(id: string, fetcher: typeof apiFetch = this.fetcher): void {
     if (this.fresh(id)) return;
-    const held: HeldRecord = { at: this.clock(), read: fetchRecord(id, this.fetcher) };
+    const held: HeldRecord = { at: this.clock(), read: fetchRecord(id, fetcher) };
     void held.read.then((record) => { held.got = record; });
     this.held.set(id, held);
   }

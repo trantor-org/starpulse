@@ -511,9 +511,11 @@ const LIFT_PX = 5;
  * `searchSlot` is the navigator's search slot, where the text search draws; `onQuery` hears what it holds.
  * `outlineSlot` is the navigator's outline slot, where the milestone outline draws and sets the Milestone filter.
  */
-function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, outlineSlot, onQuery, spot = null, note, opening = null }: {
+function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, outlineSlot, onQuery, spot = null, note, opening = null, records: adopted }: {
   hud: HudState; moves: MoveStore; starts: StartStore; compact: boolean; constellation: (lane: string) => void; searchSlot: HTMLElement | null; outlineSlot: HTMLElement | null; onQuery?: (query: string) => void;
   spot?: string | null; note?: (why: string | null) => void; opening?: { id: string } | null;
+  /** The records the boot read ahead, which this keeps rather than starting its own. */
+  records?: RecordCache;
 }) {
   // the view stays mounted behind the one showing: its navigator slots, dialogs, keys and clock rest until it shows again
   const active = useViewActive();
@@ -521,7 +523,7 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
   const [prefs, setPrefs] = useState<Prefs>(() => loadPrefs(storage, location.search));
   const [openTask] = useState(() => new OpenTask(linkedTask(location.search)));
   const setOpen = openTask.set;
-  const [records] = useState(() => new RecordCache());
+  const [records] = useState(() => adopted ?? new RecordCache());
   // the card the pointer rests on, and the timer that draws its modal hidden once it has rested; the record read on hover
   // fills that modal when it lands, so a slow server delays the record, never the drawing
   const resting = useRef<{ id: string | null; timer?: ReturnType<typeof setTimeout> }>({ id: null });
