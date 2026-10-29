@@ -517,7 +517,7 @@ def test_a_store_save_moves_the_task_while_the_projection_is_still_blocked(
     feed = BoardFeed(roles=ROLES, machines=MACHINES)
     board = Board(feed, task("TASK-1", "Review", references=(PR_ONE,)))
     store.save([pull(1, state="OPEN")])
-    delivery = SimpleNamespace(edit=board.edit, waits=WAITS, evaluate=None, holds=None, read=None, unfinished=None, create=None, parked=None, closed=None)
+    delivery = SimpleNamespace(edit=board.edit, waits=WAITS, evaluate=None, holds=None, read=None, unfinished=None, create=None, parked=None, closed=None, released=None)
     monkeypatch.setattr(server.shutil, "which", lambda name: name)
     monkeypatch.setattr(server, "moves_of", lambda machine: MOVES)
     monkeypatch.setattr(server, "PullRequests", _BlockedProjection)
@@ -550,7 +550,7 @@ def test_a_merge_of_a_pr_added_after_startup_moves_the_task_to_done(
     feed = BoardFeed(roles=ROLES, machines=MACHINES, read_model=ReadModel(engine))
     board = Board(feed)
     store.save([pull(1, state="OPEN")])
-    delivery = SimpleNamespace(edit=board.edit, waits=WAITS, evaluate=None, holds=None, read=None, unfinished=None, create=None, parked=None, closed=None)
+    delivery = SimpleNamespace(edit=board.edit, waits=WAITS, evaluate=None, holds=None, read=None, unfinished=None, create=None, parked=None, closed=None, released=None)
     monkeypatch.setattr(server.shutil, "which", lambda name: name)
     monkeypatch.setattr(server, "moves_of", lambda machine: MOVES)
     monkeypatch.setattr(server, "PullRequests", _BlockedProjection)
@@ -592,7 +592,7 @@ def test_a_read_model_task_whose_cited_pr_merged_before_startup_moves_to_done(
     feed = BoardFeed(roles=ROLES, machines=MACHINES, read_model=ReadModel(engine))
     board = Board(feed)
     store.save([pull(1, state="MERGED")])
-    delivery = SimpleNamespace(edit=board.edit, waits=WAITS, evaluate=None, holds=None, read=None, unfinished=None, create=None, parked=None, closed=None)
+    delivery = SimpleNamespace(edit=board.edit, waits=WAITS, evaluate=None, holds=None, read=None, unfinished=None, create=None, parked=None, closed=None, released=None)
     monkeypatch.setattr(server.shutil, "which", lambda name: name)
     monkeypatch.setattr(server, "moves_of", lambda machine: MOVES)
     monkeypatch.setattr(server, "PullRequests", _BlockedProjection)
@@ -722,6 +722,45 @@ def test_a_closed_hook_that_raises_leaves_the_task_done(store: PullStore, stop: 
     actor.pulls_changed()
 
     assert until(lambda: board.moved() == [("TASK-1", "done")])
+
+
+def test_a_task_parked_on_a_dependency_is_handed_to_the_released_hook_once_it_returns_to_ready(
+    store: PullStore, stop: threading.Event
+) -> None:
+    released: list[str] = []
+    board = Board(BoardFeed(roles=ROLES), task("TASK-1", "Ready"), task("TASK-2", "In Progress"))
+    running(board, store, stop, PARKING_WAITS, PARKING_MOVES, released=released.append)
+    board.put(task("TASK-2", "In Progress", dependencies=("TASK-1",)))
+    assert until(lambda: board.moved() == [("TASK-2", "waiting")])
+    assert released == []
+
+    board.put(task("TASK-1", "Done"))
+
+    assert until(lambda: board.moved() == [("TASK-2", "waiting"), ("TASK-2", "ready")])
+    assert until(lambda: released == ["TASK-2"])
+
+
+def test_a_released_hook_that_raises_leaves_the_task_ready(store: PullStore, stop: threading.Event) -> None:
+    def released(task: str) -> None:
+        raise ValueError("no session to wake")
+
+    board = Board(BoardFeed(roles=ROLES), task("TASK-1", "In Progress"), task("TASK-2", "Waiting", dependencies=("TASK-1",)))
+    running(board, store, stop, PARKING_WAITS, PARKING_MOVES, released=released)
+
+    board.put(task("TASK-1", "Done"))
+
+    assert until(lambda: board.moved() == [("TASK-2", "ready")])
+
+
+def test_a_move_that_does_not_end_in_ready_calls_no_released_hook(store: PullStore, stop: threading.Event) -> None:
+    released: list[str] = []
+    board = Board(BoardFeed(roles=ROLES), task("TASK-1", "Ready"), task("TASK-2", "In Progress"))
+    running(board, store, stop, PARKING_WAITS, PARKING_MOVES, released=released.append)
+
+    board.put(task("TASK-2", "In Progress", dependencies=("TASK-1",)))
+
+    assert until(lambda: board.moved() == [("TASK-2", "waiting")])
+    assert released == []
 
 
 MERGE_FIRST_WAITS = {**WAITS, "waiting": {"pr_merged": "MERGED", **WAITS["waiting"]}}
