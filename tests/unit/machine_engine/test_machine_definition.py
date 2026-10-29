@@ -182,6 +182,15 @@ class TestWaits:
 
         assert compiled.waits == {"review": {"pr_ready": "MERGED"}}
 
+    def test_a_review_state_routing_a_merge_on_the_verify_plan_reads_both_facts_back(self, tmp_path: Path) -> None:
+        machine = _review({"pr_merged_planned": "MERGED_VERIFY", "pr_merged": "MERGED"})
+        machine["states"]["verifying"] = {"final": True}
+        machine["events"]["MERGED_VERIFY"] = [{"from": "review", "to": "verifying"}]
+
+        compiled = load_machine(_written(tmp_path, machine))
+
+        assert compiled.waits == {"review": {"pr_merged_planned": "MERGED_VERIFY", "pr_merged": "MERGED"}}
+
     def test_a_machine_whose_states_wait_on_nothing_has_no_waits(self, tmp_path: Path) -> None:
         assert load_machine(_written(tmp_path, _doc())).waits == {}
 

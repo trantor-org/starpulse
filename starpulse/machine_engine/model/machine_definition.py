@@ -57,10 +57,11 @@ __all__ = [
 
 #: The top-level keys that only change how the page draws a machine.
 DRAWING = ("tiers", "main_line", "rests", "submachines", "launches", "next")
-#: The fact kinds a state's `waits` may name: what the task actor derives from a task's pull request, dependencies and criteria.
+#: The fact kinds a state's `waits` may name: what the task actor derives from a task's pull request, Verify plan, dependencies and criteria.
 WAIT_FACTS = (
     "pr_terminal",
     "pr_merged",
+    "pr_merged_planned",
     "pr_ready",
     "deps_done",
     "deps_done_with_pr",

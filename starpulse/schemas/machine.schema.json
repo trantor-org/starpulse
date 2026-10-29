@@ -116,7 +116,7 @@
           "enum": ["resting", "waiting_on_fact", "waiting_on_person"]
         },
         "waits": {
-          "description": "The facts this state waits on, each a fact kind (pr_terminal, pr_merged, pr_ready, deps_done, deps_unresolved, criteria_met, criteria_unmet) mapped to the event that leaves this state when the fact holds. The loader refuses an unknown fact kind and an event that is not a transition out of this state.",
+          "description": "The facts this state waits on, each a fact kind (pr_terminal, pr_merged, pr_merged_planned, pr_ready, deps_done, deps_unresolved, criteria_met, criteria_unmet) mapped to the event that leaves this state when the fact holds. The loader refuses an unknown fact kind and an event that is not a transition out of this state.",
           "type": "object",
           "minProperties": 1,
           "additionalProperties": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$"}
