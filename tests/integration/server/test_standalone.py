@@ -134,7 +134,7 @@ def served(build: None, tmp_path_factory: pytest.TempPathFactory) -> Iterator[Se
         proc.wait(timeout=30)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def activated(build: None, tmp_path_factory: pytest.TempPathFactory) -> Iterator[Activated]:
     """The server on a passed socket, which serves the page on it and leaves the port `--port` names closed."""
     named = _free_port()  # what --port says of it; the server must leave it closed
@@ -154,56 +154,6 @@ def activated(build: None, tmp_path_factory: pytest.TempPathFactory) -> Iterator
         finally:
             proc.terminate()
             proc.wait(timeout=30)
-
-
-def test_without_a_cache_server_or_any_tool_on_the_path_the_server_serves_history(
-    served: Served,
-) -> None:
-    assert _get(served.plain_port, "/api/history?task=PROJ-1") == (200, {"task": "PROJ-1", "path": []})
-    assert (served.home / DEFAULT_FILE).is_file()
-    assert (served.home / ".starpulse" / "board" / "config.yml").is_file()  # the first serve made its own board
-
-
-def test_the_served_snapshot_sizes_each_suns_share_from_the_history_the_server_keeps(served: Served) -> None:
-    status, _snapshot = _get(served.plain_port, "/api/snapshot")  # the history `served` wrote before the server started
-
-    assert status == 200
-
-
-def test_an_event_posted_with_the_token_in_the_environment_reaches_the_snapshot_and_a_wrong_token_does_not(
-    served: Served,
-) -> None:
-    event = json.dumps(
-        {
-            "specversion": "1.0",
-            "id": "e1",
-            "source": "cron",
-            "type": "StepStarted",
-            "subject": "r1",
-            "data": {"workflow": "nightly", "status": "running"},
-        }
-    ).encode()
-
-    def post(token: str) -> int:
-        request = urllib.request.Request(
-            f"http://127.0.0.1:{served.plain_port}/api/machine-events",
-            data=event,
-            method="POST",
-            headers={"Authorization": token, "Content-Type": "application/cloudevents+json"},
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=5) as resp:
-                return resp.status
-        except urllib.error.HTTPError as exc:
-            return exc.code
-
-    assert post("Bearer wrong") == 401
-    assert post(f"Bearer {_INGEST_TOKEN}") == 201
-    deadline = time.monotonic() + 30
-    while "pushed/cron/nightly" not in [d["name"] for d in _get(served.plain_port, "/api/snapshot")[1]["dags"]]:
-        assert served.plain_proc.poll() is None, "the server exited"
-        assert time.monotonic() < deadline, "the ingested run never reached the snapshot"
-        time.sleep(0.2)
 
 
 @pytest.mark.usefixtures("build")
@@ -254,3 +204,53 @@ def test_serve_refuses_to_pick_one_of_several_passed_sockets() -> None:
 
     with pytest.raises(ValueError, match="2 sockets"):
         server.inherited_socket(environ)
+
+
+def test_without_a_cache_server_or_any_tool_on_the_path_the_server_serves_history(
+    served: Served,
+) -> None:
+    assert _get(served.plain_port, "/api/history?task=PROJ-1") == (200, {"task": "PROJ-1", "path": []})
+    assert (served.home / DEFAULT_FILE).is_file()
+    assert (served.home / ".starpulse" / "board" / "config.yml").is_file()  # the first serve made its own board
+
+
+def test_the_served_snapshot_sizes_each_suns_share_from_the_history_the_server_keeps(served: Served) -> None:
+    status, _snapshot = _get(served.plain_port, "/api/snapshot")  # the history `served` wrote before the server started
+
+    assert status == 200
+
+
+def test_an_event_posted_with_the_token_in_the_environment_reaches_the_snapshot_and_a_wrong_token_does_not(
+    served: Served,
+) -> None:
+    event = json.dumps(
+        {
+            "specversion": "1.0",
+            "id": "e1",
+            "source": "cron",
+            "type": "StepStarted",
+            "subject": "r1",
+            "data": {"workflow": "nightly", "status": "running"},
+        }
+    ).encode()
+
+    def post(token: str) -> int:
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{served.plain_port}/api/machine-events",
+            data=event,
+            method="POST",
+            headers={"Authorization": token, "Content-Type": "application/cloudevents+json"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=5) as resp:
+                return resp.status
+        except urllib.error.HTTPError as exc:
+            return exc.code
+
+    assert post("Bearer wrong") == 401
+    assert post(f"Bearer {_INGEST_TOKEN}") == 201
+    deadline = time.monotonic() + 30
+    while "pushed/cron/nightly" not in [d["name"] for d in _get(served.plain_port, "/api/snapshot")[1]["dags"]]:
+        assert served.plain_proc.poll() is None, "the server exited"
+        assert time.monotonic() < deadline, "the ingested run never reached the snapshot"
+        time.sleep(0.2)
