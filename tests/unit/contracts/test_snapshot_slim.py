@@ -69,6 +69,20 @@ def test_snapshot_slim_leaves_a_flow_agents_description_and_criteria_to_the_task
     assert all("description" not in a and "criteria" not in a for a in agents)
 
 
+def test_snapshot_slim_encodes_definition_of_done_and_keeps_it_only_on_an_in_progress_task() -> None:
+    feed = _feed()
+    feed.put(task("PROJ-11", "In Progress", moves=OPEN))
+    data = feed.snapshot()
+    done = [{"text": "Docs reconciled", "checked": False}]
+    agents = [{**agent, "definition_of_done": done} for agent in data["flows"][0]["agents"]]
+    data = {**data, "flows": [{**data["flows"][0], "agents": agents}, *data["flows"][1:]]}
+
+    sent = {a["id"]: a for a in json.loads(encode_snapshot(data, {}))["flows"][0]["agents"]}
+
+    assert sent["PROJ-11"]["definition_of_done"] == done
+    assert "definition_of_done" not in sent["PROJ-1"]
+
+
 def test_snapshot_slim_carries_only_open_and_under_24h_done_tasks_and_never_the_cold_ids() -> None:
     feed = BoardFeed(roles=ROLES, machines=MACHINES, clock=lambda: NOW)
     feed.expect("0-0")
