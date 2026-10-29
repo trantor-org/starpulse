@@ -232,24 +232,25 @@ def _append_read_model(directory: Path, total: int, archived: int) -> None:
     engine = EventLog(f"sqlite:///{directory / 'events.sqlite'}").engine
     ensure_columns(engine, READ_MODEL_DECLARED)
     store = EventStore(engine)
-    for number in range(1, total + 1):
-        old = number <= archived
-        events = [
-            _read_model_event(
-                "TaskCreated",
-                title=f"Task {number} does a piece of the work",
-                description="A paragraph of the kind of text a Task carries. " * 6,
-                state="Done" if old else READ_MODEL_STATES[number % len(READ_MODEL_STATES)],
-                labels=["kind-execute", "size-3"],
-                dependencies=[f"TASK-{number - 1}"] if number % 10 == 0 else [],
-                fields={"area": f"area-{number % 20}"},
-            )
-        ]
-        if old:
-            events.append(_read_model_event("Archived"))
-        else:
-            events += [_read_model_event("CriterionAdded", kind="ac", text=f"criterion {n}") for n in range(2)]
-        store.append("task", f"TASK-{number}", 0, events)
+    with engine.begin() as db:  # one commit, not one per Task: the journal sync dominated the append
+        for number in range(1, total + 1):
+            old = number <= archived
+            events = [
+                _read_model_event(
+                    "TaskCreated",
+                    title=f"Task {number} does a piece of the work",
+                    description="A paragraph of the kind of text a Task carries. " * 6,
+                    state="Done" if old else READ_MODEL_STATES[number % len(READ_MODEL_STATES)],
+                    labels=["kind-execute", "size-3"],
+                    dependencies=[f"TASK-{number - 1}"] if number % 10 == 0 else [],
+                    fields={"area": f"area-{number % 20}"},
+                )
+            ]
+            if old:
+                events.append(_read_model_event("Archived"))
+            else:
+                events += [_read_model_event("CriterionAdded", kind="ac", text=f"criterion {n}") for n in range(2)]
+            store.append("task", f"TASK-{number}", 0, events, connection=db)
     Projector(engine, store).catch_up()
     engine.dispose()
 
