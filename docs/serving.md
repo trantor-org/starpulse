@@ -620,7 +620,8 @@ harness lands in `pauses` and blocks admission for that harness only.
   profile, start time in epoch seconds and session address (`url`); it is `[]` when none runs. It includes the
   sessions `POST /api/start` or the operator opened, which have no known address (`url` is `""`) and count against the
   default harness's cap; a session is live while its harness machine has an event in the last 30 minutes, active or stopped,
-  because every mid-turn reply stops the machine until the next tool result.
+  because every mid-turn reply stops the machine until the next tool result. A task whose assignee session wrote a transcript under `[board] transcripts` in the last 30 minutes is listed too when no harness
+  row is on the task (a session opened on another branch keys its events there); it has no `url`, and is not counted against a cap.
 - `next` is what the next pass would do, whatever the switch says: the task `decide` ranks first among those that fit, with
   `verdict` `starting` and `reason` `goes next`; when none fits, the top-ranked task with `verdict` `waits` and the first
   dimension it overfits as `reason`. Inside the quiet hours the top-ranked task `waits` with `reason` `quiet hours`,

@@ -13,6 +13,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
+from starpulse.board.adapters.claim_ttl import DEFAULT_TRANSCRIPTS
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model.seam import Board, Written
 from starpulse.event_log.event_log import EventLog
@@ -21,6 +22,7 @@ from starpulse.flow_metrics.model.level import Level
 from starpulse.scheduler.adapters.runtime import Runtime
 from starpulse.scheduler.adapters.runtime import build as build_scheduler
 from starpulse.scheduler.adapters.starter import builtin_starter
+from starpulse.scheduler.adapters.transcripts import transcript_written
 from starpulse.scheduler.bin.blocks import SchedulerConfig
 from starpulse.scheduler.model.admission import ranks_from_trajectories_body
 
@@ -105,6 +107,7 @@ def start_scheduler(
         chain=lambda: ranks()["chain"],
         p_goals=lambda: ranks()["p_goals"],
         lane=lane,
+        transcript=transcript_written(Path(DEFAULT_TRANSCRIPTS).expanduser()),
     )
     runtime.wire_status(publish or feed.publish)
     threading.Thread(target=runtime.sampler.run_forever, args=(stop,), name="scheduler-sampler", daemon=True).start()
