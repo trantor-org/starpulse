@@ -154,8 +154,14 @@ def rerunner(transport: Transport) -> Callable[[str, Mapping[str, str]], str]:
     return rerun
 
 
-def _get(url: str) -> dict:
-    with urllib.request.urlopen(url, timeout=5) as resp:
+#: How long a single read of Dagu may take, and a scan of a window of runs: Dagu answers the latter in seconds, each page
+#: costing a scan of the whole window, and a client that gives up first leaves Dagu scanning for nobody.
+_READ_TIMEOUT = 5
+_SCAN_TIMEOUT = 60
+
+
+def _get(url: str, timeout: float = _READ_TIMEOUT) -> dict:
+    with urllib.request.urlopen(url, timeout=timeout) as resp:
         return json.load(resp)
 
 
@@ -224,8 +230,6 @@ def _kind(step: dict) -> str | None:
 
 #: Dagu's numeric run statuses, as `/dag-runs?status=` filters by them.
 _RUNNING, _QUEUED = 1, 5
-#: How far back `/dag-runs` looks for runs still in flight; without a `fromDate` it starts at UTC midnight.
-_IN_FLIGHT_LOOKBACK = 7 * 86400
 #: How far back a start looks for the DAG's active runs. It reads on every start, and Dagu answers a week's
 #: window about four times slower than a day's; a run older than this is not seen, so its DAG starts again.
 _START_LOOKBACK = 86400
@@ -265,16 +269,25 @@ def pools(base_url: str) -> list[dict]:
 
 
 def _in_flight(base_url: str) -> dict[str, list[dict]]:
-    """Each DAG's running runs, longest-running first, then its queued ones, oldest first; none when Dagu cannot list them."""
-    out: dict[str, list[dict]] = {}
-    since = int(time.time()) - _IN_FLIGHT_LOOKBACK
+    """Each DAG's running runs, longest-running first, then its queued ones, oldest first; none when Dagu cannot list them.
+
+    The queues hold them: `/queues` carries each queue's running runs, and `/queues/<name>/items` the queued ones of a
+    queue that has any. Listing runs by status instead makes Dagu scan every run of the window, which a poll of seconds
+    kept it doing around the clock.
+    """
+    running: list[dict] = []
+    queued: list[dict] = []
     try:
-        for status, begun in ((_RUNNING, "startedAt"), (_QUEUED, "queuedAt")):
-            listed = _get(f"{base_url}/api/v1/dag-runs?status={status}&perPage=200&fromDate={since}").get("dagRuns", [])
-            for run in sorted(listed, key=lambda r: r.get(begun, "")):
-                out.setdefault(run["name"], []).append(run)
+        for held in _get(f"{base_url}/api/v1/queues").get("queues", []):
+            running += held.get("running", [])
+            if held.get("queuedCount"):
+                queued += _get(f"{base_url}/api/v1/queues/{urllib.parse.quote(held['name'])}/items").get("items", [])
     except OSError:
         return {}
+    out: dict[str, list[dict]] = {}
+    for runs, begun in ((running, "startedAt"), (queued, "queuedAt")):
+        for run in sorted(runs, key=lambda r: r.get(begun, "")):
+            out.setdefault(run["name"], []).append(run)
     return out
 
 
@@ -348,31 +361,50 @@ def _listed(base_url: str, name: str, since: int) -> list[dict]:
     while True:
         more = f"&cursor={urllib.parse.quote(cursor)}" if cursor else ""
         page = _get(
-            f"{base_url}/api/v1/dag-runs?name={urllib.parse.quote(name)}&perPage={_PAGE}&fromDate={since}{more}"
+            f"{base_url}/api/v1/dag-runs?name={urllib.parse.quote(name)}&perPage={_PAGE}&fromDate={since}{more}",
+            _SCAN_TIMEOUT,
         )
         runs += page.get("dagRuns", [])
         if not (cursor := page.get("nextCursor") or ""):
             return runs
 
 
+def _began(run: dict) -> float:
+    """The epoch second a listed run began, or was queued; 0 when Dagu gives no readable time."""
+    return _epoch(run.get("startedAt") or run.get("queuedAt") or "") or 0.0
+
+
 def recent_runs(base_url: str, name: str, finished: dict | None = None) -> list[dict]:
     """The last day's runs of DAG `name` as `RecentRun` records, in the order Dagu lists them (newest first).
 
     A run that is over keeps the steps it was read with in `finished`, so only runs in flight cost a detail read; the
-    entries of `name` that Dagu no longer lists leave it. A listing Dagu cannot give is none.
+    entries of `name` that Dagu no longer lists leave it. `finished` also keeps the listing under `(name, "")`: a read
+    lists only the runs since the last, or since the oldest run then still open when that is earlier, so a read costs a
+    short window rather than a day's. A listing Dagu cannot give serves what was kept, none when nothing is.
     """
     cache = {} if finished is None else finished
+    now = time.time()
+    window = now - _RECENT_LOOKBACK
+    seen = cache.get((name, ""), {"wall": None, "runs": []})
+    runs = seen["runs"]
+    open_since = [_began(run) for run in runs if status_of(run["statusLabel"]) in _OPEN]
+    since = window if seen["wall"] is None else max(window, min([seen["wall"], *open_since]) - 60)
     try:
-        runs = _listed(base_url, name, int(time.time()) - _RECENT_LOOKBACK)
+        listed = _listed(base_url, name, int(since))
     except OSError:
-        return []
+        pass
+    else:
+        relisted = {run["dagRunId"] for run in listed}
+        kept = [run for run in runs if run["dagRunId"] not in relisted and _began(run) >= window]
+        runs = listed + kept
+        cache[(name, "")] = {"wall": now, "runs": runs}
     out = []
     for run in runs:
         key = (name, run["dagRunId"])
         out.append(cache[key] if key in cache else _recent_run(base_url, run))
         if out[-1]["status"] not in _OPEN:
             cache[key] = out[-1]
-    live = {(name, run["dagRunId"]) for run in runs}
+    live = {(name, run["dagRunId"]) for run in runs} | {(name, "")}
     for key in [k for k in cache if k[0] == name and k not in live]:
         del cache[key]
     return out
@@ -531,20 +563,27 @@ def _graph(base_url: str, name: str, run: dict, graphs: dict, now: float) -> tup
     return graph
 
 
-def refresh_stats(base_url: str, stats: dict, clock: Callable[[], float] = time.monotonic) -> None:
+def refresh_stats(
+    base_url: str, stats: dict, clock: Callable[[], float] = time.monotonic, tried: dict | None = None
+) -> None:
     """Read the run statistics of the DAGs Dagu lists with a latest run and whose kept read is older than `STATS_TTL`.
 
     The DAGs are read `STATS_WORKERS` at a time, the unread ones first and then the stalest, and every one is read
-    however long that takes; a read Dagu fails is tried again next time. The DAGs Dagu no longer lists leave `stats`.
+    however long that takes. A read Dagu fails is tried again once `STATS_TTL` has passed since it was tried (`tried`
+    keeps when, between refreshes): a read that fails at once again keeps Dagu scanning the whole window for nobody.
+    The DAGs Dagu no longer lists leave `stats`.
     """
+    asked = {} if tried is None else tried
     listed = _get(f"{base_url}/api/v1/dags?perPage=200").get("dags", [])
     for gone in stats.keys() - {d["fileName"] for d in listed}:
         del stats[gone]
     ran = [d["fileName"] for d in listed if d.get("latestDAGRun")]
     stale = [n for n in ran if n not in stats or clock() - stats[n]["read"] >= STATS_TTL]
+    stale = [n for n in stale if clock() - asked.get(n, -math.inf) >= STATS_TTL]
     stale.sort(key=lambda n: stats[n]["read"] if n in stats else -math.inf)
 
     def read(name: str) -> None:
+        asked[name] = clock()
         try:
             stats[name] = _read_stats(base_url, name, stats.get(name), clock(), time.time())
         except OSError:
@@ -889,10 +928,11 @@ def rerun(url: str) -> Callable[[str, Mapping[str, str]], str]:
 
 
 def _refresh_stats_forever(url: str, stats: dict, stop: threading.Event) -> None:
-    """Read the run statistics of Dagu's DAGs every `RECONCILE_INTERVAL` seconds until `stop`; a refresh that fails is tried again."""
+    """Read the run statistics of Dagu's DAGs every `RECONCILE_INTERVAL` seconds until `stop`; a read that fails is tried again after `STATS_TTL`."""
+    tried: dict = {}
     while True:
         try:
-            refresh_stats(url, stats)
+            refresh_stats(url, stats, tried=tried)
         except (OSError, ValueError, KeyError, TypeError):  # Dagu unreachable or answering something else
             pass
         if stop.wait(RECONCILE_INTERVAL):
