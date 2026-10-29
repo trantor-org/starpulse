@@ -326,6 +326,11 @@ def test_the_nightly_schedule_and_a_dispatch_select_everything_once_in_a_job():
     assert '--base "$BASE"' in script
 
 
+def test_select_runs_in_a_bare_environment_without_syncing_the_project():
+    """Its scripts import only the standard library, so a locked sync is seconds on the merge queue's critical path."""
+    assert "uv sync" not in _function("cmd_select")
+
+
 def test_the_import_layers_are_checked_in_the_static_checks_not_in_select_or_every_shard():
     jobs = _ci()
     assert any("ci/run.sh select" in s.get("run", "") for s in jobs["select"]["steps"])
