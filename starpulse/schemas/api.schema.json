@@ -5104,6 +5104,21 @@
           "default": null,
           "description": "A Board task's acceptance criteria in file order; absent off the Board."
         },
+        "definition_of_done": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/TaskCriterion"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A Board task's Definition of Done items in file order; absent off the Board."
+        },
         "dependencies": {
           "anyOf": [
             {
