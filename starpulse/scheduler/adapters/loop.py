@@ -7,8 +7,8 @@ status of a sample that leaves room for a task admission turned away. Each wake 
 1. a run whose task left the eligible lane and In Progress is finished and written to the ledger (its outcome is the
    lane it went to, its duration and its resource peak); a session that stops while the task is still in those lanes is
    finished as `session-ended` and held out of admission until the task leaves them;
-2. a session idle past `idle_minutes` with its task still open is settled to Needs attention once, with a reason, and is
-   never started again;
+2. a session idle past `idle_minutes` with its task still open is returned to the eligible lane once, with a comment, when
+   it has no pull request; any other idle session is settled to Needs attention with a reason and is never started again;
 3. while the switch is on and the clock is outside the quiet hours, `decide` ranks the Ready tasks and the loop starts the first admitted, then decides again over
    readings that carry that run's demand, until none is admitted.
 
@@ -52,6 +52,9 @@ logger = logging.getLogger(__name__)
 
 SESSION_ENDED = "session-ended"
 SETTLE_REFUSED = "settle-refused"
+IDLE_RETURNED = "idle-returned"
+#: Idle returns counted per task, `{task: n}`, so a task that idles again after a return is settled, not returned again.
+IDLE_KEY = "scheduler.idle_returns"
 HELD_KEY = "scheduler.held"
 PAUSES_KEY = "scheduler.harness_pauses"
 #: Admission verdicts counted so far, `{"admitted": n, "refused": n}`, kept in the worker state for `/metrics`.
@@ -97,7 +100,8 @@ class Loop:
     `start` takes a task id and answers the session's address, raising `StartFailedError` when it cannot; `settle` moves a
     task to Needs attention with the reason and says whether it did; `chain` is the trajectory chain `decide` ranks on
     and `p_goals` each task's forecast chance of the goal in `lane`.
-    `lane` is the eligible lane, `claim` comments a started session's address on its task, `merged` says whether a task's
+    `lane` is the eligible lane, `claim` comments a started session's address on its task, `requeue` moves an idle task back
+    to `lane` with a comment, `merged` says whether a task's
     own pull request has merged, which leaves the task unstarted whatever its lane, `clock` is the loop's notion
     of now, `quiet_hours` answers the window in which it admits nothing, read on every pass so Admin's change holds, and
     `log` is the history store a restart restores in-flight runs and start times from.
@@ -116,6 +120,7 @@ class Loop:
         chain: Callable[[], Mapping[str, Mapping[str, Any]]],
         lane: str,
         claim: Callable[[str, str], Written] | None = None,
+        requeue: Callable[[str, str], Written] | None = None,
         merged: Callable[[Mapping[str, Any]], bool] = lambda agent: False,
         clock: Callable[[], float] = time.time,
         quiet_hours: Callable[[], QuietHours | None] = lambda: None,
@@ -134,6 +139,7 @@ class Loop:
         self._p_goals = p_goals
         self._lane = lane
         self._claim = claim
+        self._requeue = requeue
         self._merged = merged
         self._clock = clock
         self._quiet_hours = quiet_hours
@@ -378,23 +384,28 @@ class Loop:
             logger.exception("StarPulse scheduler: cannot record the run of %s", task)
 
     def _reap(self, now: float) -> None:
-        """Settle each run idle past the limit with its task still open: once, to Needs attention, never back to Ready.
+        """Settle each run idle past the limit with its task still open. A task with no pull request is returned to the
+        eligible lane once, with a comment; any other settle moves it to Needs attention and it is never started again.
 
-        A settle the board refuses closes the run too, so its slot and demand free and it is not retried each tick."""
+        A write the board refuses closes the run too, so its slot and demand free and it is not retried each tick."""
         limit = self._policy.idle_minutes * 60
         for task, run in list(self._running.items()):
             seen = self._feed.machine_task(HARNESS.name, task)
             idle = now - max(run.started_at, seen["active"] if seen else 0.0)
             if idle <= limit:
                 continue
-            reason = (
-                f"Scheduler settled {task}: its session was idle for {idle / 60:.0f} minutes (limit "
-                f"{self._policy.idle_minutes:g}) with the task still open. It is not started again. Should it return to Ready for a new session?"
-            )
-            if (written := self._settle(task, reason)).ok:
-                self._close(task, run, self._feed.roles.attention or "settled", now)
+            minutes = f"its session was idle for {idle / 60:.0f} minutes (limit {self._policy.idle_minutes:g}) with the task still open"
+            returns = self._kept_state(IDLE_KEY) or {}
+            if self._requeue is not None and not returns.get(task) and not (self._feed.task(task) or {}).get("prs"):
+                self._keep_state(IDLE_KEY, {**returns, task: 1})
+                written, outcome = self._requeue(task, f"Scheduler returned {task} to Ready: {minutes}. It has no pull request."), IDLE_RETURNED
             else:
-                logger.warning("StarPulse scheduler: cannot settle %s, releasing its run: %s", task, written.output)
+                reason = f"Scheduler settled {task}: {minutes}. It is not started again; a settle after a return, or one with a pull request, needs agent triage."
+                written, outcome = self._settle(task, reason), self._feed.roles.attention or "settled"
+            if written.ok:
+                self._close(task, run, outcome, now)
+            else:
+                logger.warning("StarPulse scheduler: cannot move %s, releasing its run: %s", task, written.output)
                 self._close(task, run, SETTLE_REFUSED, now)
 
     def _counted(self, task: str) -> bool:

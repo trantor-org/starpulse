@@ -71,6 +71,11 @@ def start_scheduler(
     initial = next(state["id"] for state in feed.machines["board"]["states"] if state.get("initial"))
     lane = config.scheduler.eligible_lane(initial)
 
+    def requeue(task: str, comment: str) -> Written:
+        if board.edit is None:
+            return Written(False, "this board has no editor", unavailable=True)
+        return board.edit(task, {"status": lane}, comment)
+
     def read_ranks() -> dict[str, Any]:
         empty: dict[str, Any] = {"chain": {}, "p_goals": {}}
         if level is None:
@@ -95,6 +100,7 @@ def start_scheduler(
         start=starter(config.session_start_url, by="scheduler") or builtin_starter(base),
         settle=settle,
         claim=claim,
+        requeue=requeue,
         merged=merged,
         chain=lambda: ranks()["chain"],
         p_goals=lambda: ranks()["p_goals"],
