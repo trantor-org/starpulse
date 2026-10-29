@@ -67,6 +67,7 @@ def _surfaces(model: ReadModel, cursor: int) -> dict[str, Callable[[], object]]:
     }
 
 
+# Slow: whichever test runs first seeds 20,000 Tasks through the real write path, ~55 s CPU on a seed-cache miss, ~1 s warm.
 def test_every_query_is_within_the_page_budget_on_twenty_thousand_tasks_with_eighteen_thousand_archived(board) -> None:
     model, _, cursor = board
     p95 = {name: _p95_ms(call) for name, call in _surfaces(model, cursor).items()}
@@ -74,6 +75,7 @@ def test_every_query_is_within_the_page_budget_on_twenty_thousand_tasks_with_eig
     assert {name: ms for name, ms in p95.items() if ms > _BUDGET_MS} == {}, p95
 
 
+# Slow: whichever test runs first seeds 20,000 Tasks through the real write path, ~55 s CPU on a seed-cache miss, ~1 s warm.
 def test_the_board_context_stays_under_its_memory_soft_limit_after_every_query(board) -> None:
     model, rss_before, cursor = board
     for call in _surfaces(model, cursor).values():
@@ -83,6 +85,7 @@ def test_the_board_context_stays_under_its_memory_soft_limit_after_every_query(b
     assert _rss() - rss_before < _RSS_SOFT_LIMIT
 
 
+# Slow: whichever test runs first seeds 20,000 Tasks through the real write path, ~55 s CPU on a seed-cache miss, ~1 s warm.
 def test_loading_every_task_to_filter_in_python_is_over_the_budget_so_this_run_can_fail(board) -> None:
     model, _, _ = board
 
