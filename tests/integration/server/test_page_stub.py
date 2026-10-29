@@ -39,6 +39,15 @@ def test_a_real_build_is_left_in_place(tmp_path):
     assert (static / "index.html").read_text() == "<html>real</html>"
 
 
+def test_a_build_that_replaces_the_stub_while_held_survives_the_last_holder(tmp_path):
+    static = _static(tmp_path)
+    with held(static):
+        (static / "index.html").write_text("<html>real</html>")
+        (static / "assets").mkdir()
+    assert (static / "index.html").read_text() == "<html>real</html>"
+    assert (static / "assets").is_dir()
+
+
 def test_a_holder_that_died_does_not_keep_the_page(tmp_path):
     static = _static(tmp_path)
     dead = subprocess.Popen([sys.executable, "-c", "pass"])

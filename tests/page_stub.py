@@ -17,6 +17,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 _USERS = ".stub-users"
+_STUB = "<!doctype html>"
 
 
 @contextmanager
@@ -48,6 +49,15 @@ def _prune(users: Path) -> list[Path]:
     return alive
 
 
+def _clear(static: Path, users: Path) -> None:
+    """Remove the stub; a build that replaced it while held (a release build in the same clone) stays."""
+    index = static / "index.html"
+    if index.is_file() and index.read_text() != _STUB:
+        shutil.rmtree(users, ignore_errors=True)
+    else:
+        shutil.rmtree(static, ignore_errors=True)
+
+
 @contextmanager
 def held(static: Path) -> Iterator[None]:
     """Stub `static/index.html` for the block unless the checkout has a real build; remove it with the last holder."""
@@ -60,7 +70,7 @@ def held(static: Path) -> Iterator[None]:
             marker = users / f"{os.getpid()}-{uuid.uuid4().hex}"
             marker.touch()
             if not (static / "index.html").is_file():
-                (static / "index.html").write_text("<!doctype html>")
+                (static / "index.html").write_text(_STUB)
     try:
         yield
     finally:
@@ -68,4 +78,4 @@ def held(static: Path) -> Iterator[None]:
             with _locked(static):
                 marker.unlink(missing_ok=True)
                 if not _prune(users):
-                    shutil.rmtree(static, ignore_errors=True)
+                    _clear(static, users)
