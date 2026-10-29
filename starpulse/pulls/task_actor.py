@@ -32,7 +32,7 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 from starpulse.board.model.markdown import section_set
-from starpulse.board.model.seam import HELD, MERGE_EVIDENCE, TaskEditor, Written
+from starpulse.board.model.seam import HELD, MERGE_EVIDENCE, TaskEditor, TaskReader, Written
 from starpulse.pulls.pins import LiveBuild, Pins, Repo
 from starpulse.pulls.pull_requests import own_prs, pull_record
 from starpulse.board import criteria
@@ -125,7 +125,9 @@ class TaskActor:
     Board machine's transitions. `edit` is the board's task editor. `repos`, `pin_rule` and `pins` are the `[release]`
     pin-bump rule (`unblock.PinGate`): a dependency in a pinned repository is merged on the parent's pin bump.
     `evaluate` is the board's Start Criteria evaluator (`Board.evaluate`; None: no criteria fact ever holds) and `holds`
-    the reasons the board adapter withholds a task's `deps_done` (`Board.holds`; None: it holds none).
+    the reasons the board adapter withholds a task's `deps_done` (`Board.holds`; None: it holds none). `read` is the
+    board's task reader (`Board.read`), which tells `pr_merged` and `pr_merged_planned` apart by the task's Verify plan
+    (None: no task has one).
     """
 
     def __init__(
@@ -145,7 +147,9 @@ class TaskActor:
         fresh_s: float = criteria.CACHE_SECONDS,
         live: LiveBuild | None = None,
         advance: Callable[[str, str, str], None] | None = None,
+        read: TaskReader | None = None,
     ) -> None:
+        self._read = read
         self._advance = advance
         #: Each non-Board machine's links that exit on a skill machine's state, when there is somewhere to send the exit.
         self._links = _exit_links(feed.machines) if advance else {}
@@ -551,12 +555,32 @@ class TaskActor:
         proof = "; ".join(parts)
         return proof, f"{MERGE_EVIDENCE} {proof}"
 
-    def _pr_merged(self, agent: dict[str, Any]) -> tuple[str, str] | None:
-        """The merge evidence when every pull request the task cites has ended and at least one merged, else None: a
-        delivery closed unmerged is no proof of the work."""
+    def _planned(self, agent: dict[str, Any]) -> bool | None:
+        """Whether the task's record carries a Verify plan; None when the board's read raises, which settles neither
+        route until the task is derived again."""
+        if self._read is None:
+            return False
+        try:
+            record = self._read(agent["id"])
+        except Exception as error:
+            logger.warning("task actor: cannot read the Verify plan of %s: %s", agent["id"], error)
+            return None
+        return bool(record and record.get("verifyPlan"))
+
+    def _merged(self, agent: dict[str, Any], planned: bool) -> tuple[str, str] | None:
+        """The merge evidence when every pull request the task cites has ended and at least one merged, and the task's
+        Verify plan is present exactly when `planned`, else None: a delivery closed unmerged is no proof of the work."""
         terminal = self._pr_terminal(agent)
         merged = any((record := self._record(url)) and record["state"] == "MERGED" for url in self._own_prs(agent))
-        return terminal if terminal and merged else None
+        return terminal if terminal and merged and self._planned(agent) is planned else None
+
+    def _pr_merged(self, agent: dict[str, Any]) -> tuple[str, str] | None:
+        """`_merged` for a task with no Verify plan."""
+        return self._merged(agent, planned=False)
+
+    def _pr_merged_planned(self, agent: dict[str, Any]) -> tuple[str, str] | None:
+        """`_merged` for a task with a Verify plan."""
+        return self._merged(agent, planned=True)
 
     def _pr_ready(self, agent: dict[str, Any]) -> tuple[str, str] | None:
         """The ready or merged pull requests when the task cites one that is, else None."""
@@ -650,6 +674,7 @@ class TaskActor:
     _facts: dict[str, Callable[[TaskActor, dict[str, Any]], tuple[Any, str] | None]] = {
         "pr_terminal": _pr_terminal,
         "pr_merged": _pr_merged,
+        "pr_merged_planned": _pr_merged_planned,
         "pr_ready": _pr_ready,
         "deps_done": _deps_done,
         "deps_done_with_pr": _deps_done_with_pr,

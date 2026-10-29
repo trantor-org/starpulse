@@ -786,9 +786,14 @@ move the machine declares. For a task in a state with `waits`, the first fact th
 - `pr_terminal`: every pull request the task cites is merged or closed in the PR store. A merged one is written with its
   merge commit as the proof in the edit's comment. A record that says merged with no merge time (an event's word, not
   a read of GitHub) is not terminal until the store's next read settles it.
-- `pr_merged`: `pr_terminal` holds and at least one cited pull request merged, so a task whose every pull request
+- `pr_merged`: `pr_terminal` holds, at least one cited pull request merged, and the task's record carries no Verify
+  plan (`verifyPlan`, read through `Board.read`; a board with no reader has none), so a task whose every pull request
   closed unmerged stays. A state that parks work for a person may declare `waits: {pr_merged: MERGED}` to close a task
   whose delivery merged while it waited there.
+- `pr_merged_planned`: `pr_merged` without the plan condition, and the record carries a non-empty Verify plan. A state
+  lists it before `pr_merged` to route a merge by plan, as in `waits: {pr_merged_planned: MERGED_VERIFY, pr_merged:
+  MERGED}`: a planned task takes `MERGED_VERIFY`, an unplanned one `MERGED`. A read of the record that raises holds
+  neither until the task is derived again.
 - `pr_ready`: the task cites a pull request and any cited one is merged (with a merge time) or open and not a draft.
   The edit's comment names the ready and merged pull requests as the evidence. A state may declare
   `waits: {pr_ready: REVIEW}` to move its tasks to Review once a pull request is ready.
