@@ -6,6 +6,7 @@ import argparse
 import subprocess
 import time
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 from starpulse.cli.agent_wire import CliError
@@ -45,6 +46,20 @@ def _argv(template: tuple[str, ...], values: _Values, extra: list[str]) -> list[
     return argv
 
 
+def _superproject_hint(path: Path, name: str) -> str:
+    """Where a child worktree's step runs instead: the nearest enclosing checkout whose config maps `name`."""
+    path = path.resolve()
+    for parent in path.parent.parents:
+        candidate = parent / "starpulse.toml"
+        try:
+            mapped = candidate.is_file() and name in load(candidate).project.commands
+        except ConfigError, OSError, ValueError:
+            continue
+        if mapped:
+            return f"; run it from the superproject {parent} with --arg worktree={path.parent}"
+    return ""
+
+
 def run(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """Run one named command; the child's output streams to stderr and the document is its name, argv, exit and seconds."""
     path = discover(args.config)
@@ -54,7 +69,9 @@ def run(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
         raise CliError("refused", f"config: {exc}") from exc
     if args.name not in commands:
         raise CliError(
-            "not_found", f"no [project.commands] entry {args.name}; do the step as {FALLBACK} says", fallback=FALLBACK
+            "not_found",
+            f"no [project.commands] entry {args.name}{_superproject_hint(path, args.name)}; do the step as {FALLBACK} says",
+            fallback=FALLBACK,
         )
     values = _Values()
     if args.task is not None:
