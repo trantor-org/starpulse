@@ -202,6 +202,23 @@ def test_a_tick_starts_a_ready_task_once_and_leaves_it_alone_until_it_finishes(r
     assert rig.started == ["T-1"]
 
 
+def test_a_tick_reads_the_board_once_however_many_runs_are_in_flight(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rig = Rig(tmp_path, limits={"cpu": 100, "memory": 100, "sessions": 10})
+    for number in range(5):
+        rig.put(f"T-{number}", size=1)
+    assert len(rig.loop.tick()) == 5
+    looked_up: list[str] = []
+    lookup = rig.feed.task
+    monkeypatch.setattr(rig.feed, "task", lambda task: looked_up.append(task) or lookup(task))
+
+    rig.loop.tick()
+    rig.loop.in_flight()
+
+    assert looked_up == []  # each lookup is a read-model query: a tick works from the one list of open tasks
+
+
 def test_a_ready_task_whose_own_pull_request_merged_is_not_started(rig: Rig) -> None:
     rig.put("T-1")
     rig.put("T-2")
@@ -632,6 +649,19 @@ def test_a_session_stop_with_the_task_still_open_closes_the_run_and_does_not_sta
     assert rig.started == ["T-1", "T-2"]
     assert rig.loop.tick() == []  # T-1 stays Ready and is not admitted again
     assert rig.settled == []
+
+
+def test_a_ready_task_waiting_on_a_full_slot_starts_on_the_first_tick_after_the_slot_frees(tmp_path: Path) -> None:
+    rig = Rig(tmp_path, limits={"sessions": 1})
+    rig.put("T-1")
+    rig.put("T-2")
+    assert rig.loop.tick() == ["T-1"]
+    rig.session("T-1")
+    assert rig.loop.tick() == []  # the one slot is T-1's; T-2 waits
+
+    rig.session("T-1", "SESSION_STOPPED")
+
+    assert rig.loop.tick() == ["T-2"]  # one tick after the wake that freed the slot, none later
 
 
 def test_a_stopped_session_that_becomes_active_again_is_not_admitted_as_a_new_run(rig: Rig) -> None:

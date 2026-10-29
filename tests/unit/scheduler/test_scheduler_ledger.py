@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import pytest
+from sqlalchemy import Connection, event
 from starpulse.event_log.event_log import EventLog
 from starpulse.scheduler.model.ledger import Ledger, RunRecord
 
@@ -56,3 +57,46 @@ def test_an_unreadable_store_measures_nothing(tmp_path: Path) -> None:
     unreadable = EventLog(f"sqlite:///{tmp_path / 'missing-dir' / 'history.sqlite'}")
 
     assert Ledger(unreadable).measured("standard", 8, min_runs=1) is None
+
+
+def _peak_reads(log: EventLog) -> list[str]:
+    """The statements the store receives that read a run's `peak`, filled as the test goes on."""
+    seen: list[str] = []
+
+    @event.listens_for(log.engine, "before_cursor_execute")
+    def note(conn: Connection, cursor: object, statement: str, *rest: object) -> None:
+        if "peak" in statement and statement.lstrip().upper().startswith("SELECT"):
+            seen.append(statement)
+
+    return seen
+
+
+def test_measured_demand_is_read_once_until_another_run_is_recorded(log: EventLog) -> None:
+    ledger = Ledger(log)
+    for cpu in (10, 20, 30):
+        ledger.record(_run(cpu=cpu))
+    first = ledger.measured("standard", 8, min_runs=3)
+    reads = _peak_reads(log)
+
+    again = ledger.measured("standard", 8, min_runs=3)
+
+    assert again == first
+    assert reads == []  # the second ask is answered from what the first read
+
+    Ledger(log).record(_run(cpu=60))  # another ledger over the same store: a run this one did not record
+
+    assert ledger.measured("standard", 8, min_runs=3) == {"cpu": 30, "memory": 6, "sessions": 1, "review": 8}
+    assert len(reads) == 1
+
+
+def test_measured_demand_reads_only_the_runs_of_that_tier_and_size(log: EventLog) -> None:
+    ledger = Ledger(log)
+    for _ in range(3):
+        ledger.record(_run())
+        ledger.record(_run(tier="deep", points=2))
+    reads = _peak_reads(log)
+
+    ledger.measured("standard", 8, min_runs=3)
+
+    assert len(reads) == 1
+    assert "tier" in reads[0] and "WHERE" in reads[0]

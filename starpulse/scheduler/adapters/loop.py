@@ -190,10 +190,11 @@ class Loop:
     def tick(self, admit: bool = True) -> list[str]:
         """Finish and settle runs, then (with `admit` and the switch on) start every task capacity allows; the ids started."""
         now = self._clock()
+        agents = self._open_agents()
         self._observe()
-        self._finish(now)
-        self._revive(now)
-        self._release(now)
+        self._finish(now, agents)
+        self._revive(now, agents)
+        self._release(now, agents)
         self._reap(now)
         if not admit or not self._toggle.get() or self._quiet(now) or self._selected_paused(now):
             return []
@@ -236,8 +237,9 @@ class Loop:
         Read from another thread than the loop's: `list(...)` takes one snapshot of the runs a tick may be changing.
         """
         sessions = []
+        agents = self._open_agents()
         for task, run in list(self._running.items()):
-            agent = self._feed.task(task)
+            agent = agents.get(task)
             sessions.append(
                 {
                     "task": task,
@@ -305,11 +307,15 @@ class Loop:
                     rise = max(0.0, use[name] - run.baseline.get(name, use[name])) / len(self._running)
                     run.peak[name] = max(run.peak.get(name, 0.0), rise)
 
-    def _finish(self, now: float) -> None:
+    def _open_agents(self) -> dict[str, dict[str, Any]]:
+        """Every open task by id: one read, where `feed.task` is a read-model query for each task asked of it."""
+        return {agent["id"]: agent for agent in self._feed.open_tasks()}
+
+    def _finish(self, now: float, agents: Mapping[str, Mapping[str, Any]]) -> None:
         """Record each run whose task has left the eligible lane and In Progress, or whose session stopped with the task
         still there, and free its capacity."""
         for task, run in list(self._running.items()):
-            agent = self._feed.task(task)
+            agent = agents.get(task)
             state = agent["state"] if agent else None
             if state not in (self._lane, self._feed.roles.working):
                 self._close(task, run, state or "closed", now)
@@ -496,7 +502,7 @@ class Loop:
         self._held.add(task)
         self._save_held()
 
-    def _revive(self, now: float) -> None:
+    def _revive(self, now: float, agents: Mapping[str, Mapping[str, Any]]) -> None:
         """A held task whose harness is active again is the same run, not a new admission."""
         revived = False
         for task in list(self._held):
@@ -507,12 +513,12 @@ class Loop:
             revived = True
             if task not in self._running:
                 parked = self._parked.pop(task, None)
-                self._running[task] = parked if parked is not None else self._stub(task, now)
+                self._running[task] = parked if parked is not None else self._stub(task, now, agents)
         if revived:
             self._save_held()
 
-    def _stub(self, task: str, now: float) -> _Run:
-        agent = self._feed.task(task) or {"labels": (), "model": ""}
+    def _stub(self, task: str, now: float, agents: Mapping[str, Mapping[str, Any]]) -> _Run:
+        agent = agents.get(task) or {"labels": (), "model": ""}
         return _Run(
             "",
             tier_of(agent),
@@ -523,12 +529,12 @@ class Loop:
             harness=self.selected_harness(),
         )
 
-    def _release(self, now: float) -> None:
+    def _release(self, now: float, agents: Mapping[str, Mapping[str, Any]]) -> None:
         """Drop a hold once the task leaves Ready and In Progress, or once it is Ready and its stopped run has cooled:
         a person or the sweep moved it, or the cooldown that guards a restart has passed."""
         kept = set()
         for task in self._held:
-            agent = self._feed.task(task)
+            agent = agents.get(task)
             if agent is None:
                 continue
             if agent["state"] == self._feed.roles.working or (
