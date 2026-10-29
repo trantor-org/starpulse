@@ -62,6 +62,7 @@ WAIT_FACTS = (
     "pr_terminal",
     "pr_merged",
     "pr_merged_planned",
+    "pr_merged_unfinished",
     "pr_ready",
     "deps_done",
     "deps_done_with_pr",

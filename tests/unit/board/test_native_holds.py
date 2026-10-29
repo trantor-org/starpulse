@@ -36,3 +36,14 @@ def test_a_command_that_prints_no_reason_list_raises_so_the_actor_holds_the_task
 
 def test_a_board_without_the_setting_holds_nothing(tmp_path: Path) -> None:
     assert native.board({}, tmp_path).holds is None
+
+
+def test_the_unfinished_command_prints_the_work_a_merged_task_still_has(tmp_path: Path) -> None:
+    script = tmp_path / "unfinished.py"
+    script.write_text("import json, sys\nprint(json.dumps([f'{sys.argv[1]} lacks a PR'] if sys.argv[1] == 'TASK-2' else []))\n")
+    built = native.board({"unfinished": f"{shlex.quote(sys.executable)} {shlex.quote(str(script))} {{id}}"}, tmp_path)
+
+    assert built.unfinished is not None
+    assert built.unfinished("TASK-2") == ["TASK-2 lacks a PR"]
+    assert built.unfinished("TASK-3") == []
+    assert native.board({}, tmp_path).unfinished is None

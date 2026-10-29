@@ -130,7 +130,8 @@ class TaskActor:
     `evaluate` is the board's Start Criteria evaluator (`Board.evaluate`; None: no criteria fact ever holds) and `holds`
     the reasons the board adapter withholds a task's `deps_done` (`Board.holds`; None: it holds none). `read` is the
     board's task reader (`Board.read`), which tells `pr_merged` and `pr_merged_planned` apart by the task's Verify plan
-    (None: no task has one).
+    (None: no task has one). `unfinished` is the work a task whose pull requests merged still has (`Board.unfinished`;
+    None: it has none).
     """
 
     def __init__(
@@ -152,11 +153,13 @@ class TaskActor:
         advance: Callable[[str, str, str], None] | None = None,
         read: TaskReader | None = None,
         sequences: Mapping[str, Sequence[str]] = MappingProxyType({}),
+        unfinished: Callable[[str], Sequence[str]] | None = None,
     ) -> None:
         self._read = read
         self._advance = advance
         #: The phases a task of each type goes through, in order (`[sequences]`); `default` serves an unnamed type.
         self._sequences = sequences
+        self._unfinished = unfinished
         #: Each non-Board machine's links that exit on a skill machine's state, when there is somewhere to send the exit.
         self._links = _exit_links(feed.machines) if advance else {}
         #: The exit last sent for each `(machine, task)`, with the phase's step count, so one exit is sent once.
@@ -595,6 +598,22 @@ class TaskActor:
         """`_merged` for a task with a Verify plan."""
         return self._merged(agent, planned=True)
 
+    def _pr_merged_unfinished(self, agent: dict[str, Any]) -> tuple[str, str] | None:
+        """The merge evidence and what is left when the task's pull requests merged and the board reports work
+        unfinished, else None. A command that fails reports its error: the task returns to its holder, never closes."""
+        merged = self._pr_merged(agent)
+        if merged is None or self._unfinished is None:
+            return None
+        try:
+            left = tuple(self._unfinished(agent["id"]))
+        except Exception as error:
+            logger.warning("task actor: cannot read the unfinished work of %s: %s", agent["id"], error)
+            left = (f"the board's unfinished work cannot be read: {error}",)
+        if not left:
+            return None
+        proof, comment = merged
+        return (proof, left), f"{comment} Unfinished: {'; '.join(left)}."
+
     def _pr_ready(self, agent: dict[str, Any]) -> tuple[str, str] | None:
         """The ready or merged pull requests when the task cites one that is, else None."""
         parts = []
@@ -688,6 +707,7 @@ class TaskActor:
         "pr_terminal": _pr_terminal,
         "pr_merged": _pr_merged,
         "pr_merged_planned": _pr_merged_planned,
+        "pr_merged_unfinished": _pr_merged_unfinished,
         "pr_ready": _pr_ready,
         "deps_done": _deps_done,
         "deps_done_with_pr": _deps_done_with_pr,

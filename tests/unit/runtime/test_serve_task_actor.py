@@ -81,7 +81,7 @@ def test_the_actor_is_given_the_boards_criteria_evaluator_and_holds(
 ) -> None:
     _serve(tmp_path, monkeypatch, f"{BOARD}[board.actor]\n")
 
-    assert {"evaluate", "holds"} <= Actor.built[0].kwargs.keys()
+    assert {"evaluate", "holds", "unfinished"} <= Actor.built[0].kwargs.keys()
 
 
 def test_without_the_table_unblockers_thread_starts_and_no_actor_does(

@@ -74,13 +74,13 @@ internal and can change in any release.
   never a deployment's state names. The snapshot serves it as the `role` of each `Machine.states` entry in
   `api.schema.json` (`null` when none), and the Kanban draws it on each column header. A state the machine's `rests`
   names ends the lifecycle though an event leaves it, so it is served as `final`.
-- A machine state's optional `waits` key: a map from a fact kind (`pr_terminal`, `pr_merged`, `pr_merged_planned`, `pr_ready`, `deps_done`,
+- A machine state's optional `waits` key: a map from a fact kind (`pr_terminal`, `pr_merged`, `pr_merged_planned`, `pr_merged_unfinished`, `pr_ready`, `deps_done`,
   `deps_done_with_pr`, `deps_unresolved`, `criteria_met` or `criteria_unmet`) to the event that leaves the state when that fact holds. The loader refuses an
   unknown fact kind and an event that is not a transition out of the declaring state, naming the state and event, and
   exposes the declared map as `Compiled.waits` (`{state id: {fact kind: event}}`; a child flow's states carry their
   `<state>_<child state>` id). Declaring `waits` fires nothing by itself: a board adapter hands the Board machine's map
 to the server as `Board.waits`, and the task actor (`[board.actor]`, [Task actor](serving.md#task-actor)) fires the event
-when the fact holds; `Board.holds` withholds `deps_done` with reasons. The actor's series on `GET /metrics` are
+when the fact holds; `Board.holds` withholds `deps_done` with reasons; `Board.unfinished` lists the work a merged task still has, which holds `pr_merged_unfinished`. The actor's series on `GET /metrics` are
 `starpulse_task_actor_refusals_total`, `starpulse_task_actor_latency_seconds`, `starpulse_task_actor_projection_seconds`,
 `starpulse_task_actor_handoff_seconds`, `starpulse_task_actor_criteria_errors` and `starpulse_task_actor_pin_held`.
 `starpulse_board_lane_unattributed_total` counts the `board:lanes` entries appended since `serve` started that name no actor.

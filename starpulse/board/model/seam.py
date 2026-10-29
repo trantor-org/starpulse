@@ -270,6 +270,9 @@ class Board:
     holds: Callable[[str], Sequence[str]] | None = None
     """Why the board withholds a task's `deps_done` from the task actor, given its id; empty when nothing does, and an
     exception holds the task. None holds no task."""
+    unfinished: Callable[[str], Sequence[str]] | None = None
+    """The work a task whose pull requests merged still has, given its id; empty when none, and an exception reports
+    the error as the work left. None reports none."""
     parked: Callable[[str], None] | None = None
     """Tells whoever works a task that the task actor moved it from the working lane to Waiting, given its id; a raise is
     logged and the move stands. None tells no one."""

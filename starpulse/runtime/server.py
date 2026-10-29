@@ -484,6 +484,7 @@ def start_delivery(
             evaluate=board.evaluate,
             holds=board.holds,
             read=board.read,
+            unfinished=board.unfinished,
             parked=board.parked,
             live=live,
             advance=lambda machine, task, event: machine_events.publish(

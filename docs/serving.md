@@ -296,6 +296,7 @@ type = "native"
 # machine = "board.yaml"     # a machine file for the Board: its transitions and `writers` decide which moves are offered, and to whom; every other file in `.starpulse/machines/` is drawn as a flow. Every lane must be one of its states; a state that is not a lane must be `initial` or `final`, is drawn, and is never offered as a move (a creation or archive state), else `serve` refuses to start
 # criteria = "my-evaluator {id}"  # evaluates a task's Start Criteria; {id} is the task's id (see docs/adapters.md)
 # holds = "my-holds {id}"    # prints a JSON array of reasons the task actor withholds the task's `deps_done` (see Task actor)
+# unfinished = "my-unfinished {id}"  # prints a JSON array of the work a task whose pull requests merged still has; the task actor routes it to Ready instead of closing it (see Task actor)
 # parked = "my-parked {id}"  # runs after the task actor moves a task from the working lane to Waiting, to tell the session that holds it (see Task actor)
 # validate = "my_checks:task_write"  # may refuse a task write before it lands (see docs/adapters.md)
 # claim_ttl = 1800   # seconds a claim lives without an Event by its session or a machine event of its run (harness telemetry keyed by the session id); past it StarPulse appends `Released` (naming the last renewal) and the Task keeps its State with no Assignee, free for any session to claim; the sweep reads the board feed, and a release is refused when the task file has since left that State or another session holds it
@@ -795,6 +796,11 @@ move the machine declares. For a task in a state with `waits`, the first fact th
   lists it before `pr_merged` to route a merge by plan, as in `waits: {pr_merged_planned: MERGED_VERIFY, pr_merged:
   MERGED}`: a planned task takes `MERGED_VERIFY`, an unplanned one `MERGED`. A read of the record that raises holds
   neither until the task is derived again.
+- `pr_merged_unfinished`: `pr_merged` holds and the board's `unfinished` command prints a non-empty JSON array of the
+  work the merge leaves, so a task whose planned pull request in another repo never opened does not close. The edit's
+  comment names the merge proof and the work left. A state lists it before `pr_merged` and maps it to a move into
+  Ready. With no `unfinished` command, or an empty array, it never holds. A command that fails or prints no array
+  holds it, with the error as the work left: a task is not closed on a board that cannot say what is unfinished.
 - `pr_ready`: the task cites a pull request and any cited one is merged (with a merge time) or open and not a draft.
   The edit's comment names the ready and merged pull requests as the evidence. A state may declare
   `waits: {pr_ready: REVIEW}` to move its tasks to Review once a pull request is ready.
