@@ -111,6 +111,30 @@ def test_the_server_publishes_the_exit_event_to_the_machine_events_log_as_the_ta
     assert until(lambda: published == [(PARENT, "BUILD_DONE", ACTOR, "TASK-1")])
 
 
+def test_the_server_hands_the_configured_sequences_to_the_task_actor(
+    stop: threading.Event, store: PullStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    feed = BoardFeed(machines=DRAWN)
+    board = Board(feed, task("TASK-1", "In Progress", type="story"))
+    published: list[tuple[str, str, str, str | None]] = []
+    monkeypatch.setattr(server, "moves_of", lambda machine: MOVES)
+    monkeypatch.setattr(
+        server.machine_events,
+        "publish",
+        lambda machine, event, *, actor, task, log: published.append((machine, event, actor, task)),
+    )
+    delivery = SimpleNamespace(edit=board.edit, waits=WAITS, evaluate=None, holds=None, read=None, parked=None)
+    sequences = {"story": ("build", "qa", "deliver")}
+    config = replace(load(None), task_actor=True, pull_requests=False, release=None, sequences=sequences)
+    actor, _ = server.start_delivery(config, delivery, feed, None, store, Pins(), stop)
+    assert actor.ready.wait(5)
+    place(board, PARENT, "TASK-1", "build")
+
+    place(board, "build", "TASK-1", "docs_reconciled")
+
+    assert until(lambda: published == [(PARENT, "BUILD_QA", ACTOR, "TASK-1")])
+
+
 @pytest.mark.parametrize(
     ("kind", "event"),
     [("story", "BUILD_QA"), ("spike", "BUILD_DONE"), ("chore", "BUILD_QA"), ("retro", "BUILD_DONE")],
