@@ -159,6 +159,49 @@ def test_a_needs_attention_task_closes_once_every_pr_ended_and_one_merged_but_no
     assert f"acme/trantor#1 merged as {SHA}" in str(board.writes[0][2])
 
 
+def test_a_needs_attention_task_whose_pr_merged_with_work_unfinished_returns_to_ready_and_one_without_closes(
+    store: PullStore, stop: threading.Event
+) -> None:
+    waits = {**WAITS, "needs_attention": {"pr_merged_unfinished": "MERGED_UNFINISHED", "pr_merged": "MERGED"}}
+    moves = {**MOVES, ("needs_attention", "MERGED"): "done", ("needs_attention", "MERGED_UNFINISHED"): "ready"}
+    unfinished = {"TASK-1": ["acme/starpulse has no merged pull request"], "TASK-2": [], "TASK-3": ["criterion #2 open"]}
+    board = Board(
+        BoardFeed(),
+        task("TASK-1", "Needs attention", references=(PR_ONE,)),
+        task("TASK-2", "Needs attention", references=(PR_TWO,)),
+        task("TASK-3", "Needs attention", references=(PR_THREE,)),
+    )
+    store.save([pull(1, state="OPEN"), pull(2, state="OPEN"), pull(3, state="OPEN")])
+    actor = running(board, store, stop, waits, moves, unfinished=lambda name: unfinished[name])
+    assert board.moved() == []
+
+    store.save([pull(1, state="MERGED"), pull(2, state="MERGED"), pull(3, state="CLOSED")])
+    actor.pulls_changed()
+
+    assert until(lambda: sorted(board.moved()) == [("TASK-1", "ready"), ("TASK-2", "done")])
+    assert "acme/starpulse has no merged pull request" in str(board.writes[0][2])
+
+
+def test_a_needs_attention_task_returns_to_ready_with_the_error_when_the_unfinished_command_fails(
+    store: PullStore, stop: threading.Event
+) -> None:
+    waits = {**WAITS, "needs_attention": {"pr_merged_unfinished": "MERGED_UNFINISHED", "pr_merged": "MERGED"}}
+    moves = {**MOVES, ("needs_attention", "MERGED"): "done", ("needs_attention", "MERGED_UNFINISHED"): "ready"}
+
+    def broken(name: str) -> list[str]:
+        raise ValueError("unfinished printed nothing")
+
+    board = Board(BoardFeed(), task("TASK-1", "Needs attention", references=(PR_ONE,)))
+    store.save([pull(1, state="OPEN")])
+    actor = running(board, store, stop, waits, moves, unfinished=broken)
+
+    store.save([pull(1, state="MERGED")])
+    actor.pulls_changed()
+
+    assert until(lambda: board.moved() == [("TASK-1", "ready")])
+    assert "unfinished printed nothing" in str(board.writes[0][2])
+
+
 def test_a_closing_comment_for_a_pull_request_in_another_repo_links_that_repos_pull_url(
     store: PullStore, stop: threading.Event
 ) -> None:
@@ -382,7 +425,7 @@ def test_a_store_save_moves_the_task_while_the_projection_is_still_blocked(
     feed = BoardFeed(roles=ROLES, machines=MACHINES)
     board = Board(feed, task("TASK-1", "Review", references=(PR_ONE,)))
     store.save([pull(1, state="OPEN")])
-    delivery = SimpleNamespace(edit=board.edit, waits=WAITS, evaluate=None, holds=None, read=None, parked=None)
+    delivery = SimpleNamespace(edit=board.edit, waits=WAITS, evaluate=None, holds=None, read=None, unfinished=None, parked=None)
     monkeypatch.setattr(server.shutil, "which", lambda name: name)
     monkeypatch.setattr(server, "moves_of", lambda machine: MOVES)
     monkeypatch.setattr(server, "PullRequests", _BlockedProjection)
@@ -415,7 +458,7 @@ def test_a_merge_of_a_pr_added_after_startup_moves_the_task_to_done(
     feed = BoardFeed(roles=ROLES, machines=MACHINES, read_model=ReadModel(engine))
     board = Board(feed)
     store.save([pull(1, state="OPEN")])
-    delivery = SimpleNamespace(edit=board.edit, waits=WAITS, evaluate=None, holds=None, read=None, parked=None)
+    delivery = SimpleNamespace(edit=board.edit, waits=WAITS, evaluate=None, holds=None, read=None, unfinished=None, parked=None)
     monkeypatch.setattr(server.shutil, "which", lambda name: name)
     monkeypatch.setattr(server, "moves_of", lambda machine: MOVES)
     monkeypatch.setattr(server, "PullRequests", _BlockedProjection)
@@ -457,7 +500,7 @@ def test_a_read_model_task_whose_cited_pr_merged_before_startup_moves_to_done(
     feed = BoardFeed(roles=ROLES, machines=MACHINES, read_model=ReadModel(engine))
     board = Board(feed)
     store.save([pull(1, state="MERGED")])
-    delivery = SimpleNamespace(edit=board.edit, waits=WAITS, evaluate=None, holds=None, read=None, parked=None)
+    delivery = SimpleNamespace(edit=board.edit, waits=WAITS, evaluate=None, holds=None, read=None, unfinished=None, parked=None)
     monkeypatch.setattr(server.shutil, "which", lambda name: name)
     monkeypatch.setattr(server, "moves_of", lambda machine: MOVES)
     monkeypatch.setattr(server, "PullRequests", _BlockedProjection)

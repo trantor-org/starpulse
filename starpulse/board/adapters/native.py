@@ -101,6 +101,7 @@ _SETTINGS = {
     "machine",
     "criteria",
     "holds",
+    "unfinished",
     "parked",
     "validate",
     "python_path",
@@ -1202,8 +1203,9 @@ def _creator(
 
 
 def _holds(command: object, base: Path) -> Callable[[str], list[str]] | None:
-    """The `holds` command, run in `base` with `{id}` replaced by the task's id, as the board's holds: it prints a JSON
-    array of the reasons the task's `deps_done` is withheld. Output that is no such array raises, which holds the task."""
+    """The `holds` or `unfinished` command, run in `base` with `{id}` replaced by the task's id: it prints a JSON array
+    of the reasons the task's `deps_done` is withheld, or of the work a merged task has left. Output that is no such array
+    raises, which holds the task."""
     if not command:
         return None
     parts = shlex.split(str(command))
@@ -1291,6 +1293,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             "read": _reader(root, evaluate.latest if isinstance(evaluate, criteria.Evaluator) else evaluate),
             "evaluate": evaluate,
             "holds": _holds(settings.get("holds"), base),
+            "unfinished": _holds(settings.get("unfinished"), base),
             "parked": _parked(settings.get("parked"), base),
             "edit": _editor(root, config.statuses, guard, link, roles.attention),
             "archive": _archiver(root, config.statuses, roles, guard),
