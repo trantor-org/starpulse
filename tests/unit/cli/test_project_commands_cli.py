@@ -96,3 +96,17 @@ def test_a_literal_brace_in_an_argv_element_exits_2_as_a_usage_error(
     assert code == 2
     assert document["code"] == "usage"
     assert "{{" in document["error"]
+
+
+def test_an_unknown_name_in_a_child_worktree_names_the_superproject_that_maps_it(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    (tmp_path / "starpulse.toml").write_text('[project.commands]\ndeliver = ["true"]\n')
+    child = tmp_path / ".tmp" / "child-task-1"
+    child.mkdir(parents=True)
+
+    code, document = _run(capsys, child, _table(["true"]), ["deliver"])
+
+    assert code == 4
+    assert str(tmp_path) in document["error"]
+    assert f"--arg worktree={child}" in document["error"]
