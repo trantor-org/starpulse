@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy import create_engine
 from starpulse.board.board_feed import BoardFeed
 from starpulse.pulls.pulls import PullStore
-from starpulse.pulls.task_actor import LINT_REFUSED
+from starpulse.pulls.task_actor import LINT_REFUSED, REGATE
 from starpulse.runtime.adapter_kit import task
 
 from tests.task_actor_kit import GATED, PR_ONE, ROLES, Board, Criteria, pull, running, until
@@ -111,6 +111,26 @@ def test_a_criterion_that_cannot_be_evaluated_is_exported_and_not_evaluated_agai
     assert "# TYPE starpulse_task_actor_criteria_errors gauge" in exposition
     assert _sample(exposition, 'starpulse_task_actor_criteria_errors{task="TASK-1"}') == 1
     assert not until(lambda: evaluate.asked["TASK-1"] > 1, within=0.3)
+
+
+def test_a_criterion_in_error_for_two_passes_re_gates_the_task_once_without_parking_it(
+    store: PullStore, stop: threading.Event
+) -> None:
+    board = Board(BoardFeed(roles=ROLES), task("TASK-1", "Waiting", description=GATED))
+    evaluate = Criteria("error")
+
+    running(board, store, stop, evaluate=evaluate, fresh_s=0.05)
+
+    assert until(lambda: evaluate.asked["TASK-1"] >= 3)
+    assert [title for title, _ in board.created] == [
+        "Re-gate TASK-1: re-park it on Start Criteria that can be evaluated"
+    ]
+    comments = [text for name, text in board.comments() if name == "TASK-1"]
+    assert len(comments) == 1
+    assert comments[0].startswith(REGATE)
+    assert "cannot reach prometheus" in comments[0]
+    assert board.moved() == [("TASK-101", "ready")]
+    assert not any(name == "TASK-1" for name, _ in board.moved())
 
 
 def test_the_projection_and_the_store_to_actor_handoff_are_exported_as_histograms(

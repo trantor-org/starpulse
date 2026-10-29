@@ -35,7 +35,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 from starpulse.board.model.markdown import section_set
-from starpulse.board.model.seam import HELD, MERGE_EVIDENCE, TaskEditor, TaskReader, Written
+from starpulse.board.model.seam import HELD, MERGE_EVIDENCE, TaskCreator, TaskEditor, TaskReader, Written
 from starpulse.pulls.pins import LiveBuild, Pins, Repo
 from starpulse.pulls.pull_requests import own_prs, pull_record
 from starpulse.board import criteria
@@ -53,6 +53,8 @@ __all__ = ["ACTOR", "LINT_REFUSED", "TaskActor", "moves_of"]
 ACTOR = "starpulse/task-actor"
 #: What the task actor comments when the board's lint refuses a task's release to Ready, before the refusal.
 LINT_REFUSED = "Release to Ready refused by the task lint, repair the record to release it:"
+#: What the task actor comments on a task whose Start Criteria stayed in error for two passes, before the errors.
+REGATE = "Start Criteria could not be evaluated for two passes, an agent re-gates the task:"
 #: The pull request states that end a pull request.
 _TERMINAL = ("MERGED", "CLOSED")
 #: The repository the board renders a bare `PR #N` against; another repo's pull request links its own URL.
@@ -154,8 +156,10 @@ class TaskActor:
         read: TaskReader | None = None,
         sequences: Mapping[str, Sequence[str]] = MappingProxyType({}),
         unfinished: Callable[[str], Sequence[str]] | None = None,
+        create: TaskCreator | None = None,
     ) -> None:
         self._read = read
+        self._create = create
         self._advance = advance
         #: The phases a task of each type goes through, in order (`[sequences]`); `default` serves an unnamed type.
         self._sequences = sequences
@@ -196,6 +200,8 @@ class TaskActor:
         self._parked: dict[str, str] = {}
         #: The record each task's release was last refused on by the board's lint, so a repaired record is tried again.
         self._lint_held: dict[str, tuple[Any, ...]] = {}
+        #: The passes in a row each gated task had a criterion in error, so the second re-gates it.
+        self._error_passes: dict[str, int] = {}
         self._metrics = threading.Lock()
         self._refusals = 0
         #: How many writes landed within each bound of `BUCKETS_S`, then how many in all, and their seconds summed.
@@ -321,6 +327,7 @@ class TaskActor:
         with self._lock:
             for name in self._results.keys() - gated.keys():  # no longer gated: its result and its errors go
                 del self._results[name]
+                self._error_passes.pop(name, None)
             now = self._clock()
             due = [
                 name
@@ -340,6 +347,7 @@ class TaskActor:
                 self._results[name] = (observed, statuses)
                 if before is None or before[1] != statuses:
                     self._derive(name, observed)
+                self._count_error_passes(name, evaluated)
 
     def _run(self, stop: threading.Event) -> None:
         self._feed.wait_replayed()
@@ -508,6 +516,44 @@ class TaskActor:
                 self._park(name, written.output)
         with self._metrics:
             self._refusals += 1
+
+    def _count_error_passes(self, name: str, evaluated: list[dict[str, Any]]) -> None:
+        """Count the passes whose Start Criteria stayed in error; the second in a row re-gates the task."""
+        errors = [each for each in evaluated if each["status"] == "error"]
+        if not errors:
+            self._error_passes.pop(name, None)
+            return
+        self._error_passes[name] = self._error_passes.get(name, 0) + 1
+        if self._error_passes[name] == 2:
+            self._regate(name, errors)
+
+    def _regate(self, name: str, errors: list[dict[str, Any]]) -> None:
+        """Comment the errors on a task whose criteria cannot be evaluated and file an unattended Ready task to re-park
+        it on criteria that can. No operator question and no Needs attention: the task stays in its lane."""
+        reasons = "; ".join(f"{each['id']}: {each.get('error') or 'error'}" for each in errors)
+        written = self._apply(name, {}, f"{REGATE} {reasons}.")
+        if not written.ok:
+            logger.warning("task actor: the re-gate of %s was not commented: %s", name, written.output)
+        if self._create is None:
+            return
+        try:
+            filed = self._create(
+                f"Re-gate {name}: re-park it on Start Criteria that can be evaluated",
+                {
+                    "description": f"{REGATE} {reasons}.\n\nRe-park {name} on Start Criteria the evaluator can answer, then move it back to Waiting.",
+                    "acceptanceCriteria": [f"{name} is back in Waiting on Start Criteria the evaluator can answer"],
+                    "labels": ["kind-execute", "size-1", "mode-unattended"],
+                },
+                actor=ACTOR,
+            )
+        except Exception as error:  # a board that raises refuses like one that answers no
+            filed = Written(False, str(error))
+        if not filed.ok:
+            logger.warning("task actor: the re-gate task for %s was not filed: %s", name, filed.output)
+            return
+        ready = self._apply(filed.output, {"status": self._feed.roles.ready}, f"Re-gate of {name}.")
+        if not ready.ok:
+            logger.warning("task actor: the re-gate task %s was not released to Ready: %s", filed.output, ready.output)
 
     def _hold_for_repair(self, name: str, refusal: str) -> None:
         """Leave a task whose release the board's lint refused in its lane and comment the lint's reason, no operator
