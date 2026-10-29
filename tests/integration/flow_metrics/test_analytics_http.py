@@ -17,7 +17,7 @@ from starpulse.contracts.analytics import Analytics, SkillLoad
 from starpulse.event_log.event_log import EventLog
 from starpulse.harness_telemetry.adapters.inbound.telemetry import TelemetryLog, signals
 from starpulse.runtime.adapter_kit import serve, url
-from starpulse.views.page_server import PageServer
+from starpulse.views.adapters.inbound.page_server import PageServer
 
 from tests.machines import MACHINES, ROLES
 

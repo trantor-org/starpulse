@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 import shared_servers
-from starpulse.views.gate_request import GateRequest
+from starpulse.views.adapters.inbound.gate_request import GateRequest
 
 
 def _server(tmp_path: Path):

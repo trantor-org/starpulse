@@ -18,7 +18,7 @@ from starpulse.runtime.adapter_kit import BoardAdapterKit
 from starpulse.runtime.assembly import assemble
 from starpulse.runtime.config import load
 from starpulse.runtime.server import announce
-from starpulse.views.writes import move_task
+from starpulse.views.application.commands.writes import move_task
 
 LANES = ["To Do", "In Progress", "Done"]
 _OPERATOR_ONLY = """\

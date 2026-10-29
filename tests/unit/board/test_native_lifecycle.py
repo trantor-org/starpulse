@@ -12,7 +12,7 @@ from starpulse.board.adapters.upstream_backlog import UpstreamBacklog
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model.seam import Board
 from starpulse.event_log.event_log import EventLog
-from starpulse.views.writes import claim_task, park_task, review_task
+from starpulse.views.application.commands.writes import claim_task, park_task, review_task
 
 from tests.unit.board.test_native import native_root, write_task
 

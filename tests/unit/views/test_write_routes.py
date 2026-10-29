@@ -11,10 +11,10 @@ from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.board_feed import BoardFeed
 from starpulse.contracts.api.registry import REQUESTS
 from starpulse.event_log.event_log import EventLog
-from starpulse.views import writes as server_writes
-from starpulse.views.reads import Response
-from starpulse.views.services import Services
-from starpulse.views.write_routes import WriteRequest, WriteRoutes
+from starpulse.views.adapters.inbound.reads import Response
+from starpulse.views.adapters.inbound.write_routes import WriteRequest, WriteRoutes
+from starpulse.views.application.commands import writes as server_writes
+from starpulse.views.ports.services import Services
 
 from tests.fake_board import bare_board
 from tests.unit.views.routing import answer, handler_for

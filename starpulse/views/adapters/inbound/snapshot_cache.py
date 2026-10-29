@@ -18,8 +18,8 @@ from collections.abc import Callable
 from typing import Any, NamedTuple
 
 from starpulse.board.board_feed import BoardFeed
-from starpulse.views.compression import Encoded
-from starpulse.views.encoding import encode_snapshot
+from starpulse.views.adapters.inbound.compression import Encoded
+from starpulse.views.model.encoding import encode_snapshot
 
 logger = logging.getLogger(__name__)
 

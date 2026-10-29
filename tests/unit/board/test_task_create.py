@@ -16,7 +16,7 @@ from starpulse.event_log.event_log import EventLog
 from starpulse.runtime.adapter_kit import serve, url
 from starpulse.runtime.assembly import assemble
 from starpulse.runtime.config import load
-from starpulse.views.writes import create_task, task_record
+from starpulse.views.application.commands.writes import create_task, task_record
 
 LAN = "192.168.0.42"
 

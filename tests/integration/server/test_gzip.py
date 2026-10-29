@@ -11,7 +11,7 @@ from starpulse.board.board_feed import BoardFeed
 from starpulse.runtime.adapter_kit import serve as _serve
 from starpulse.runtime.adapter_kit import task
 from starpulse.runtime.adapter_kit import url as _url
-from starpulse.views.page_server import PageServer
+from starpulse.views.adapters.inbound.page_server import PageServer
 
 from tests.machines import MACHINES, ROLES
 

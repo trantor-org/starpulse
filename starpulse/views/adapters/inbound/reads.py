@@ -15,10 +15,29 @@ from urllib.parse import parse_qs, unquote
 
 from starpulse.contracts.analytics import Analytics
 from starpulse.harness_telemetry.model.harnesses import Harnesses
-from starpulse.views.compression import Encoded
-from starpulse.views.encoding import encode, full_snapshot
-from starpulse.views.process_metrics import process_gauges
-from starpulse.views.responses import (
+from starpulse.views.adapters.inbound.compression import Encoded
+from starpulse.views.adapters.inbound.routes import (
+    _DOCS,
+    _LEDGER,
+    _MILESTONES,
+    _RETIRED,
+    _SCHEDULER,
+    _SNAPSHOT_BODY,
+    _TASK,
+    _WINDOW,
+)
+from starpulse.views.adapters.outbound.process_metrics import process_gauges
+from starpulse.views.application.commands.writes import (
+    doc_record,
+    docs_list,
+    history_window,
+    milestone_record,
+    milestones_list,
+    retired_list,
+    scheduler,
+    task_record,
+)
+from starpulse.views.application.queries.responses import (
     _error,
     cells_response,
     cited_pulls,
@@ -39,26 +58,7 @@ from starpulse.views.responses import (
     trace_clusters_response,
     transitions_response,
 )
-from starpulse.views.routes import (
-    _DOCS,
-    _LEDGER,
-    _MILESTONES,
-    _RETIRED,
-    _SCHEDULER,
-    _SNAPSHOT_BODY,
-    _TASK,
-    _WINDOW,
-)
-from starpulse.views.writes import (
-    doc_record,
-    docs_list,
-    history_window,
-    milestone_record,
-    milestones_list,
-    retired_list,
-    scheduler,
-    task_record,
-)
+from starpulse.views.model.encoding import encode, full_snapshot
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     from starpulse.board.adapters.history_window import HistoryWindow
@@ -66,8 +66,8 @@ if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler i
     from starpulse.board.model.seam import Board
     from starpulse.flow_metrics.adapters.outbound.history import History
     from starpulse.pulls.adapters.outbound.pulls import PullStore
-    from starpulse.views.services import Services
-    from starpulse.views.snapshot_cache import SnapshotCache
+    from starpulse.views.adapters.inbound.snapshot_cache import SnapshotCache
+    from starpulse.views.ports.services import Services
 
 logger = logging.getLogger(__name__)
 

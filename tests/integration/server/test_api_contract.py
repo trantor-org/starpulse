@@ -18,7 +18,7 @@ from starpulse.harness_telemetry.adapters.inbound.telemetry import Signal, Telem
 from starpulse.runtime.adapter_kit import serve, task, url
 from starpulse.scheduler.adapters.runtime import build
 from starpulse.scheduler.model.config import Scheduler
-from starpulse.views.page_server import PageServer
+from starpulse.views.adapters.inbound.page_server import PageServer
 
 from tests.fake_board import bare_board
 from tests.machines import MACHINES, ROLES

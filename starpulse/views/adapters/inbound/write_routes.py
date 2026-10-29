@@ -11,9 +11,8 @@ from starpulse.board.model.seam import OPERATOR, Written
 from starpulse.contracts.api.dto.requests import StartRequest
 from starpulse.pulls.adapters.inbound.pull_refresh import MAX_BODY as MAX_REFRESH_BODY
 from starpulse.runs.ingest import MAX_BATCH_BODY
-from starpulse.views.encoding import encode
-from starpulse.views.reads import Response
-from starpulse.views.routes import (
+from starpulse.views.adapters.inbound.reads import Response
+from starpulse.views.adapters.inbound.routes import (
     _ARCHIVE,
     _CLAIM,
     _COMPLETE,
@@ -45,7 +44,7 @@ from starpulse.views.routes import (
     _VERDICT,
     _WINDOW,
 )
-from starpulse.views.writes import (
+from starpulse.views.application.commands.writes import (
     RETRY_AFTER_S,
     archive_doc,
     archive_milestone,
@@ -77,12 +76,13 @@ from starpulse.views.writes import (
     take_over_task,
     write_refusal,
 )
+from starpulse.views.model.encoding import encode
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     from starpulse.board.adapters.history_window import HistoryWindow
     from starpulse.board.board_feed import BoardFeed
     from starpulse.board.model.seam import Board
-    from starpulse.views.services import Services
+    from starpulse.views.ports.services import Services
 
 
 class Headers(Protocol):

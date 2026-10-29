@@ -15,7 +15,7 @@ from starpulse.event_log import lane_events
 from starpulse.event_log.event_log import EventLog, Tail
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 from starpulse.runtime.adapter_kit import task
-from starpulse.views.writes import archive_task, create_task, edit_task, start_task
+from starpulse.views.application.commands.writes import archive_task, create_task, edit_task, start_task
 
 from tests.machines import MACHINES, ROLES
 

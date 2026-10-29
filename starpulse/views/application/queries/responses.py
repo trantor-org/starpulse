@@ -27,7 +27,7 @@ from starpulse.flow_metrics.model.traces import Case, missed_loads
 from starpulse.flow_metrics.model.traces import cases as trace_cases
 from starpulse.harness_telemetry.adapters.inbound.telemetry import Signal, TelemetryLog
 from starpulse.machine_engine.model.stays import lane_stays
-from starpulse.views.encoding import encode
+from starpulse.views.model.encoding import encode
 
 logger = logging.getLogger(__name__)
 

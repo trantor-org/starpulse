@@ -39,15 +39,15 @@ from starpulse.board.model.seam import Board
 from starpulse.harness_telemetry.model.harnesses import Harnesses
 from starpulse.runs.cloudevents_grpc import PATH as CLOUDEVENTS_GRPC_PATH
 from starpulse.runs.cloudevents_grpc import cloudevents_grpc
-from starpulse.views.compression import Encoded, Gzip, accepts_gzip
-from starpulse.views.encoding import encode, event
-from starpulse.views.gate_request import GateRequest
-from starpulse.views.reads import Arrival, Handler, ReadRoutes, Request, Response
-from starpulse.views.routes import _PAGES
-from starpulse.views.services import Services
-from starpulse.views.snapshot_cache import SnapshotCache
-from starpulse.views.streams import Stream, StreamHandler, Streams
-from starpulse.views.write_routes import WriteHandler, WriteRequest, WriteRoutes
+from starpulse.views.adapters.inbound.compression import Encoded, Gzip, accepts_gzip
+from starpulse.views.adapters.inbound.gate_request import GateRequest
+from starpulse.views.adapters.inbound.reads import Arrival, Handler, ReadRoutes, Request, Response
+from starpulse.views.adapters.inbound.routes import _PAGES
+from starpulse.views.adapters.inbound.snapshot_cache import SnapshotCache
+from starpulse.views.adapters.inbound.streams import Stream, StreamHandler, Streams
+from starpulse.views.adapters.inbound.write_routes import WriteHandler, WriteRequest, WriteRoutes
+from starpulse.views.model.encoding import encode, event
+from starpulse.views.ports.services import Services
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     from starlette.types import ASGIApp, Receive, Scope, Send

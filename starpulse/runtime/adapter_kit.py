@@ -54,11 +54,11 @@ from starpulse.flow_metrics.adapters.outbound.history import History, HistorySto
 from starpulse.runtime.assembly import assemble as _assemble
 from starpulse.runtime.config import Config
 from starpulse.runtime.store_migrate import maintain
-from starpulse.views.asgi_app import page_app
-from starpulse.views.gate_request import GateRequest
-from starpulse.views.page_server import PageServer
-from starpulse.views.services import Services
-from starpulse.views.writes import move_task
+from starpulse.views.adapters.inbound.asgi_app import page_app
+from starpulse.views.adapters.inbound.gate_request import GateRequest
+from starpulse.views.adapters.inbound.page_server import PageServer
+from starpulse.views.application.commands.writes import move_task
+from starpulse.views.ports.services import Services
 
 __all__ = [
     "BoardAdapterKit",

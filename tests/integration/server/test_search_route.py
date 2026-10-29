@@ -11,7 +11,7 @@ import pytest
 from sqlalchemy import create_engine
 from starpulse.board.adapters.search import SearchIndex
 from starpulse.runtime.adapter_kit import serve, task, url
-from starpulse.views.page_server import PageServer
+from starpulse.views.adapters.inbound.page_server import PageServer
 
 
 def _get(server: PageServer, path: str) -> tuple[int, dict | None]:

@@ -14,7 +14,7 @@ import demo_workspace
 import pytest
 import seeded_server
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
-from starpulse.views.page_server import PageServer
+from starpulse.views.adapters.inbound.page_server import PageServer
 from tests.summaries import assert_matches_rebuild
 
 # Each test starts the seeded server, a budget-sized start; they run in the nightly only.

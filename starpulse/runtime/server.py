@@ -222,11 +222,17 @@ from starpulse.runtime.hold import LISTEN_FD_ENV, STATIC_ENV, announce_ready
 from starpulse.runtime.supervisor import Supervisor, worker_commands
 from starpulse.runtime.zygote import Forker
 from starpulse.sessions.session_start import starter
-from starpulse.views.asgi_app import _CONTRACT_TTL_S, _cached, page_app
-from starpulse.views.encoding import encode, event
-from starpulse.views.page_server import BACKLOG, DRAIN_S, PageServer
-from starpulse.views.responses import _HEALTH_HOURS, _error, _hours, health_response, history_response  # noqa: F401 - the read routes stay importable from here
-from starpulse.views.services import Services
+from starpulse.views.adapters.inbound.asgi_app import _CONTRACT_TTL_S, _cached, page_app
+from starpulse.views.adapters.inbound.page_server import BACKLOG, DRAIN_S, PageServer
+from starpulse.views.application.queries.responses import (  # noqa: F401 - the read routes stay importable from here
+    _HEALTH_HOURS,
+    _error,
+    _hours,
+    health_response,
+    history_response,
+)
+from starpulse.views.model.encoding import encode, event
+from starpulse.views.ports.services import Services
 
 logger = logging.getLogger(__name__)
 

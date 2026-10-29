@@ -23,7 +23,7 @@ from pathlib import Path
 import pytest
 import seeded_server
 from starpulse.runtime.config import WORKER_MEMORY
-from starpulse.views.page_server import PageServer
+from starpulse.views.adapters.inbound.page_server import PageServer
 
 pytestmark = [pytest.mark.nightly, pytest.mark.slow]
 

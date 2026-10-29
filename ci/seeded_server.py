@@ -50,9 +50,9 @@ from starpulse.runtime.config import load
 from starpulse.scheduler.adapters.runtime import Runtime
 from starpulse.scheduler.adapters.runtime import build as build_scheduler
 from starpulse.scheduler.model.config import Scheduler
-from starpulse.views.asgi_app import page_app
-from starpulse.views.page_server import PageServer
-from starpulse.views.services import Services
+from starpulse.views.adapters.inbound.asgi_app import page_app
+from starpulse.views.adapters.inbound.page_server import PageServer
+from starpulse.views.ports.services import Services
 
 import starpulse
 

@@ -120,7 +120,6 @@ from urllib.parse import urlsplit
 import yaml
 from pydantic import BaseModel, ValidationError
 
-from starpulse.harness_telemetry.model.harnesses import Harnesses
 from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model import post_merge_checks
@@ -128,10 +127,10 @@ from starpulse.board.model.markdown import section_set
 from starpulse.board.model.seam import (
     AGENT,
     ANONYMOUS,
+    OPERATOR,
     AssigneeWriter,
     Board,
     MoveWriter,
-    OPERATOR,
     TaskArchiver,
     TaskCompleter,
     TaskCreator,
@@ -174,6 +173,7 @@ from starpulse.contracts.api.dto.requests import (
     _Writer,
 )
 from starpulse.event_log import rating_events
+from starpulse.harness_telemetry.model.harnesses import Harnesses
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     from starpulse.scheduler.adapters.remote import Remote

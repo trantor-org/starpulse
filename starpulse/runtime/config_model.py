@@ -12,7 +12,7 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from starpulse.board.model.adapter_types import ADAPTER_CONTEXTS, ADAPTER_MEMORY_MB
-from starpulse.views.services import SLOW_READ_S
+from starpulse.views.ports.services import SLOW_READ_S
 
 #: An environment variable's name: the setting holds the name, never the value.
 EnvName = Annotated[str, StringConstraints(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")]

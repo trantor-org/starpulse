@@ -5,7 +5,7 @@ from __future__ import annotations
 import socket
 from typing import Any, cast
 
-from starpulse.views.page_server import PageServer
+from starpulse.views.adapters.inbound.page_server import PageServer
 
 
 def _nodelay(sock: socket.socket) -> int:

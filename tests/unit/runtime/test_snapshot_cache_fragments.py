@@ -2,7 +2,7 @@
 
 from starpulse.board.board_feed import BoardFeed
 from starpulse.runtime.adapter_kit import task
-from starpulse.views.snapshot_cache import SnapshotCache
+from starpulse.views.adapters.inbound.snapshot_cache import SnapshotCache
 
 from tests.machines import MACHINES, ROLES
 

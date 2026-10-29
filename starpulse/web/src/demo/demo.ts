@@ -456,7 +456,7 @@ export class DemoServer {
   }
 
   /**
-   * `/api/scheduler` as starpulse.views.writes.scheduler answers it, with the sessions in flight and the next pick the
+   * `/api/scheduler` as starpulse.views.application.commands.writes.scheduler answers it, with the sessions in flight and the next pick the
    * strip also draws: the Board's In Progress cards are the sessions and its first unblocked Ready card is the pick.
    */
   scheduler(method: string, raw: string): Response {
