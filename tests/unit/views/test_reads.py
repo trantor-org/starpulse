@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 
@@ -10,14 +11,16 @@ from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.board_feed import BoardFeed
 from starpulse.event_log.event_log import EventLog
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
-from starpulse.views.adapters.inbound.api.neutral import Arrival, ReadRoute, Request, Response
+from starpulse.views.adapters.inbound.api.neutral import Request, Response
 from starpulse.views.adapters.inbound.api.routing import Api, api_routes
+from starpulse.views.adapters.inbound.asgi_app import PageApp
 from starpulse.views.adapters.inbound.compression import Encoded
 from starpulse.views.adapters.inbound.snapshot_cache import SnapshotCache
 from starpulse.views.application.queries.responses import cited_pulls
 from starpulse.views.ports.services import Services
 
 from tests.fake_board import bare_board
+from tests.unit.views.asgi import call
 from tests.unit.views.routing import answer, reads
 
 
@@ -134,13 +137,12 @@ def test_a_get_of_a_milestone_write_path_is_the_milestone_read_of_that_id(routes
     assert response.status == 404
 
 
-def test_the_pulls_read_is_timed_and_any_other_is_not(routes, caplog: pytest.LogCaptureFixture) -> None:
+def test_the_pulls_read_is_timed_and_any_other_is_not(routes, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
     caplog.set_level("WARNING")
-    watches = {route.path: route.watch for route in api_routes(routes) if isinstance(route, ReadRoute)}
-    assert watches["/doctor"] is None
+    app = PageApp(api_routes(routes), [], routes.snapshots, tmp_path, ())
 
-    watch = watches["/pulls"]
-    assert watch is not None
-    with watch(Request("/api/pulls", "", "127.0.0.1"), 0.0, Arrival(0.0)) as timing:
-        timing.computed()
+    assert asyncio.run(call(app, "/api/doctor")).status == 200
+    assert "slow_read" not in caplog.text
+
+    assert asyncio.run(call(app, "/api/pulls")).status == 200
     assert "slow_read route=/api/pulls" in caplog.text

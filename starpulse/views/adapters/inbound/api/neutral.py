@@ -74,9 +74,10 @@ Admit = Callable[[], bool]
 Handler = Callable[[Request], Response]
 WriteHandler = Callable[[WriteRequest], Response | None]
 StreamHandler = Callable[[Request, Admit], Stream | Response]
-#: Times a read: given the request, the seconds it queued and its arrival, a context the server holds open across the
-#: send; the value it yields has a `computed()` the handler's caller calls once the answer is made.
-Watch = Callable[[Request, float, Arrival], AbstractContextManager[Any]]
+#: Times a read: given the request and its arrival, a context the server holds open from that arrival to the last byte
+#: sent; the value it yields has a `ran()` the server calls once a worker thread has taken the read and a `computed()` it
+#: calls as the answer begins to be sent.
+Watch = Callable[[Request, Arrival], AbstractContextManager[Any]]
 
 
 class ReadRoute(NamedTuple):

@@ -18,7 +18,6 @@ import os
 import threading
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Collection, MutableMapping
-from contextlib import nullcontext
 from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -212,6 +211,106 @@ class _Gated:
         return answer
 
 
+_PLACE = "starpulse.place"  # in a request's scope: its `_Place`
+_RAN = "starpulse.ran"  # in a timed request's scope: what its worker thread calls once it has the request
+_BUSY_RETRY_S = 1
+
+
+def _nothing() -> None:
+    pass
+
+
+class _Streams:
+    """The streams open, at most `STREAM_LIMIT`."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self.open = 0
+
+    def take(self) -> bool:
+        with self._lock:
+            if self.open >= STREAM_LIMIT:
+                return False
+            self.open += 1
+            return True
+
+    def give(self) -> None:
+        with self._lock:
+            self.open -= 1
+
+
+class _Place:
+    """One request's place among the streams open: taken when its handler admits it, given back once when the request
+    ends, and never taken after that, so a handler left running on an abandoned thread cannot leak it."""
+
+    def __init__(self, streams: _Streams) -> None:
+        self._streams = streams
+        self._lock = threading.Lock()
+        self._taken = False
+        self._ended = False
+
+    def take(self) -> bool:
+        with self._lock:
+            if self._ended:
+                return False
+            if not self._taken:
+                self._taken = self._streams.take()
+            return self._taken
+
+    def give(self) -> None:
+        with self._lock:
+            self._ended = True
+            if self._taken:
+                self._taken = False
+                self._streams.give()
+
+
+class _Admitted:
+    """Refuses every request with a 503 while no request worker is free, and gives each request the `_Place` its stream
+    would take, which it gives back whenever the request ends."""
+
+    def __init__(self, app: ASGIApp, workers: CapacityLimiter, streams: _Streams) -> None:
+        self.app, self._workers, self._streams = app, workers, streams
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        if not self._workers.available_tokens:
+            busy = encode("error", {"error": "too many requests in flight; retry shortly"})
+            headers = {"content-type": "application/json", "cache-control": "no-store"}
+            await Reply(busy, 503, {**headers, "retry-after": str(_BUSY_RETRY_S)})(scope, receive, send)
+            return
+        place = scope[_PLACE] = _Place(self._streams)
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            place.give()
+
+
+class _Timed:
+    """Times each read of its route with its `Watch`, from the request's arrival to the last byte sent."""
+
+    def __init__(self, app: ASGIApp, watch: Watch, workers: CapacityLimiter, streams: _Streams) -> None:
+        self.app, self._watch, self._workers, self._streams = app, watch, workers, streams
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        request = Incoming(scope)
+        arrival = Arrival(
+            time.monotonic(), self._workers.borrowed_tokens + 1, self._streams.open
+        )  # busy counts this one
+        asked = Request(_target(request), request.url.query, _client(request), request.path_params)
+        with self._watch(asked, arrival) as timing:
+            scope[_RAN] = timing.ran
+
+            async def answering(message: MutableMapping[str, Any]) -> None:
+                if message["type"] == "http.response.start":
+                    timing.computed()
+                await send(message)
+
+            await self.app(scope, receive, answering)
+
+
 class _Events(StreamingResponse):
     """An open stream's response: the frames the page reads, until it leaves or the server ends the stream."""
 
@@ -227,20 +326,12 @@ class _Events(StreamingResponse):
             with contextlib.suppress(ValueError):  # a frame still being made on an abandoned thread: its generator is
                 self._stream.frames.close()  # closed once that frame is dropped
             self._stream.release()
-            self._app.closed_stream()
 
 
 _EVENT_HEADERS = {"content-type": "text/event-stream", "cache-control": "no-store"}
 
 Endpoint = Callable[[Incoming], Awaitable[Reply]]
-Work = Callable[[Incoming, Arrival, _Body], Reply]
-
-
-class _Untimed:
-    """The timing of a read no `Watch` times."""
-
-    def computed(self) -> None:
-        pass
+Work = Callable[[Incoming, _Body], Reply]
 
 
 class PageApp:
@@ -266,8 +357,7 @@ class PageApp:
         self._frames = CapacityLimiter(
             math.inf
         )  # a stream's wait for its next frame is a thread the limit above counts
-        self._lock = threading.Lock()
-        self.open_streams = 0  # streams open
+        self._streams = _Streams()
         self._scopes: set[CancelScope] = set()  # the wait for a frame of each stream open, so a stop can end it
         self._ending = False
         self._pending = (
@@ -285,7 +375,12 @@ class PageApp:
             Route("/{path:served}", self._file, methods=["GET"]),
         ]
         gated = [] if gate is None else [Middleware(_Gated, gate=gate, workers=self._workers)]
-        self._app = Starlette(routes=table, middleware=[Middleware(Gzip), *gated])
+        admitted = Middleware(_Admitted, workers=self._workers, streams=self._streams)
+        self._app = Starlette(routes=table, middleware=[Middleware(Gzip), admitted, *gated])
+
+    @property
+    def open_streams(self) -> int:
+        return self._streams.open
 
     async def __call__(self, scope: MutableMapping[str, Any], receive: Any, send: Any) -> None:
         if scope["type"] != "http":
@@ -368,28 +463,16 @@ class PageApp:
                 return
             yield frame
 
-    def closed_stream(self) -> None:
-        with self._lock:
-            self.open_streams -= 1
-
-    def _admit(self) -> bool:
-        with self._lock:
-            if self.open_streams >= STREAM_LIMIT:
-                return False
-            self.open_streams += 1
-            return True
-
     async def _worker(self, request: Incoming, work: Work) -> Reply:
         """Run `work` for `request` on a worker thread; a body its model refuses is a logged 500, since the page reads only
         what a model names."""
-        arrival = Arrival(
-            time.monotonic(), self._workers.borrowed_tokens + 1, self.open_streams
-        )  # busy counts this request
         body = _Body(request)
+        ran = request.scope.get(_RAN, _nothing)
 
         def run() -> Reply:
+            ran()
             try:
-                return work(request, arrival, body)
+                return work(request, body)
             except ClientDisconnect:
                 return Reply(status_code=400)  # the client left mid-body; nobody reads this
             except ValidationError:
@@ -404,26 +487,26 @@ class PageApp:
         at = route.path if path is None else path
         match route:
             case ReadRoute(_, handler, watch):
-                return Route(at, self._read(handler, watch), methods=["GET"])
+                timed = (
+                    []
+                    if watch is None
+                    else [Middleware(_Timed, watch=watch, workers=self._workers, streams=self._streams)]
+                )
+                return Route(at, self._read(handler), methods=["GET"], middleware=timed)
             case WriteRoute(_, methods, handler):
                 return Route(at, self._written(handler), methods=list(methods))
             case StreamRoute(_, handler):
                 return Route(at, self._streamed(handler), methods=["GET"])
 
-    def _read(self, handler: Handler, watch: Watch | None = None) -> Endpoint:
-        def read(request: Incoming, arrival: Arrival, body: _Body) -> Reply:
-            queued_s = time.monotonic() - arrival.at
+    def _read(self, handler: Handler) -> Endpoint:
+        def read(request: Incoming, body: _Body) -> Reply:
             asked = Request(_target(request), request.url.query, _client(request), request.path_params)
-            timed = nullcontext(_Untimed()) if watch is None else watch(asked, queued_s, arrival)
-            with timed as timing:
-                response = handler(asked)
-                timing.computed()
-                return self._json(request, response)
+            return self._json(request, handler(asked))
 
         return self._wrapped(handler, self._endpoint(read))
 
     def _written(self, handler: WriteHandler) -> Endpoint:
-        def write(request: Incoming, arrival: Arrival, body: _Body) -> Reply:
+        def write(request: Incoming, body: _Body) -> Reply:
             asked = WriteRequest(
                 request.method, _target(request), _client(request), request.headers, body, request.path_params
             )
@@ -437,26 +520,10 @@ class PageApp:
         return self._wrapped(handler, self._endpoint(write))
 
     def _streamed(self, handler: StreamHandler) -> Endpoint:
-        def open_stream(request: Incoming, arrival: Arrival, body: _Body) -> Reply:
+        def open_stream(request: Incoming, body: _Body) -> Reply:
             asked = Request(_target(request), request.url.query, _client(request), request.path_params)
-            took = False
-
-            def admit() -> bool:
-                nonlocal took
-                took = self._admit()
-                return took
-
-            try:
-                stream = handler(asked, admit)
-            except BaseException:
-                if took:
-                    self.closed_stream()
-                raise
-            if isinstance(stream, Stream):
-                return _Events(self, stream)
-            if took:  # admitted, then refused (a ledger that does not exist)
-                self.closed_stream()
-            return self._json(request, stream)
+            stream = handler(asked, request.scope[_PLACE].take)
+            return _Events(self, stream) if isinstance(stream, Stream) else self._json(request, stream)
 
         opening = self._endpoint(open_stream)
 
