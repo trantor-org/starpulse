@@ -7,3 +7,5 @@ design
 bench
 **/__pycache__
 starpulse.egg-info
+# starpulse/web/node_modules is 344 MB, COPYed into the image and unused there: the page is built into starpulse/static first.
+**/node_modules
