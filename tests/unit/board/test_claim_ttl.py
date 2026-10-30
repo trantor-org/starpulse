@@ -13,6 +13,7 @@ from types import SimpleNamespace
 import pytest
 from starpulse.board.adapters import claim_ttl
 from starpulse.board.adapters.claim_ttl import sweep, transcript_halt
+from starpulse.board.adapters.running_workflows import running_tasks
 from starpulse.board.adapters.upstream_backlog import UpstreamBacklog
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model.seam import Board
@@ -360,3 +361,45 @@ def test_a_failing_released_notice_leaves_the_release_standing(served) -> None:
         raise ValueError("no start")
 
     assert sweep(replace(built, released=refuse), store, _rows(built), ttl=1800, now=claimed + 1801) == ["task-5"]
+
+
+def test_a_task_with_a_running_workflow_keeps_its_claim_past_the_ttl_and_loses_it_once_the_workflow_ends(served) -> None:
+    """A lifecycle workflow waiting on CI emits nothing for its task, yet its session is alive."""
+    built, _, store, _ = served
+    claimed = _claim(built, store)
+
+    seen = {"task-5": claimed + 5000}  # the workflow was last seen running 83 minutes into the claim
+
+    assert sweep(built, store, _rows(built), ttl=1800, now=claimed + 5000, seen_running=seen) == []
+    assert sweep(built, store, _rows(built), ttl=1800, now=claimed + 6799, seen_running=seen) == []
+    assert sweep(built, store, _rows(built), ttl=1800, now=claimed + 6800, seen_running=seen) == ["task-5"]
+
+
+def test_running_tasks_names_each_task_of_a_running_workflow_across_pages() -> None:
+    pages = {
+        "": {"executions": [{"execution": {"workflowId": "task-lifecycle/TASK-9902"}}], "nextPageToken": "next"},
+        "next": {"executions": [{"execution": {"workflowId": "task-lifecycle/TASK-9013"}}]},
+    }
+
+    def get(url: str) -> dict:
+        assert "query=ExecutionStatus%3D%22Running%22" in url
+        return pages["next" if "nextPageToken=next" in url else ""]
+
+    assert running_tasks("http://temporal:8233/", get=get) == {"task-9902", "task-9013"}
+
+
+def test_a_sweep_pass_that_cannot_read_temporal_releases_nothing(served, monkeypatch) -> None:
+    built, feed, store, log = served
+    claimed = _claim(built, store)
+    passes = []
+    monkeypatch.setattr(BoardFeed, "spawn", lambda self, target, name: passes.append(target))
+    monkeypatch.setattr(claim_ttl, "running_tasks", lambda *_args: (_ for _ in ()).throw(OSError("down")))
+    monkeypatch.setattr(claim_ttl.time, "time", lambda: claimed + 99999)
+    saved: list[dict] = []
+
+    claim_ttl.start(built, feed, log, {"workflows": "http://temporal:8233"}, persist=saved.append)
+    waits = iter([False, True])
+    passes[-1](SimpleNamespace(wait=lambda _timeout: next(waits)))
+
+    assert saved == []
+    assert [event for event in store.read("task", "task-5") if event.type == "Released"] == []
