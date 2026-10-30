@@ -25,7 +25,7 @@ cmd_select() {
 
 # The suite in one pytest session over PYTEST_TARGETS (empty is the whole suite): work-stealing xdist workers
 # (`--dist worksteal`) sized to the `tests.slice` budget on the build host (ci/xdist_workers.py --slice), or to the
-# runner's memory limit anywhere else. TEST_COST_REPORT set is the nightly or a dispatch: it adds the nightly-marked tests
+# runner's memory limit anywhere else. `-rA` ends the log with one PASSED/FAILED line per test, so a log names each test's outcome. TEST_COST_REPORT set is the nightly or a dispatch: it adds the nightly-marked tests
 # and, as `1`, the coverage data that ci/coverage_map.py combines.
 cmd_python_tests() {
   uv sync --locked
@@ -34,7 +34,7 @@ cmd_python_tests() {
     sizing=--slice
   fi
   # shellcheck disable=SC2086 # sizing is empty or one flag
-  local addopts="-n $(uv run --no-sync python ci/xdist_workers.py $sizing) --dist worksteal"
+  local addopts="-n $(uv run --no-sync python ci/xdist_workers.py $sizing) --dist worksteal -rA"
   if [ -n "${TEST_COST_REPORT:-}" ]; then
     addopts+=" -m 'not e2e'"
   fi
