@@ -55,11 +55,12 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     if args.context == "api":
         from starpulse.cli import doctor
-        from starpulse.runtime import read_model_follow, server
+        from starpulse.runtime import read_model_follow, sched, server
         from starpulse.runtime.assembly import assemble, history_store
         from starpulse.runtime.hold import LISTEN_FD_ENV, STATIC_ENV, announce_ready
         from starpulse.views.bin import api_worker
 
+        sched.shorten_slice()  # before the page-server and request-worker threads start, which inherit it
         if static := os.environ.get(STATIC_ENV):
             server._STATIC = Path(static)  # the page build `serve` checked, which `prepare` and the page app read
         host = api_worker.Host(
