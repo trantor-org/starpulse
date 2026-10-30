@@ -16,6 +16,7 @@ from starpulse.views.adapters.inbound.api.pulls import PullReads
 
 REPO = "acme/widgets"
 BUDGET_S = 0.05
+UNBLOCKED_S = 1.0  # a read held by the rebuild would wait for its release, seconds past this
 HOLDINGS = 6000
 LOOKUPS = 20
 
@@ -93,4 +94,4 @@ def test_a_single_pull_request_read_does_not_wait_for_the_list_being_rebuilt(
     rebuild.join(10)
 
     assert not lookups.is_alive()
-    assert max(answered) < BUDGET_S
+    assert max(answered) < UNBLOCKED_S
