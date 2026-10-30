@@ -163,6 +163,10 @@ def _create(root: Path, project: str) -> None:
 #: Where `_find` last found each task, so a repeat lookup reads that one file instead of listing the board.
 _FOUND: dict[tuple[Path, str, tuple[str, ...]], Path] = {}
 
+#: The `*.md` names `_md_names` last listed in each folder, so a first lookup of a task the board already held when it
+#: was listed does not list the folder again.
+_LISTED: dict[Path, list[str]] = {}
+
 
 def _find(root: Path, task: str, folders: tuple[str, ...] = ("tasks", "completed")) -> Path | None:
     """The file under `tasks/`, or `completed/` once it is completed, whose front matter holds `id: <task>` in any case;
@@ -171,21 +175,38 @@ def _find(root: Path, task: str, folders: tuple[str, ...] = ("tasks", "completed
     A file named for the id is checked first; any other is parsed only when its raw front matter has an `id:` line
     spelling the id, so a lookup parses the file it returns rather than every file on the board. The file found last
     time is tried before the folders are listed; one that was renamed, moved or rewritten for another task is a miss.
+    A file named for the id is first looked for in the folders as last listed; a miss there lists them again, so a
+    file added or renamed since is found, and the others are only ever checked against a fresh listing.
     """
     key = (root, task.casefold(), folders)
-    if (path := _FOUND.get(key)) is not None and _has_id(path, task, _id_line(task), False):
-        return path
-    paths = [path for folder in folders for path in sorted((root / folder).glob("*.md"))]
-    named = [path for path in paths if _named_for(path, task)]
-    others = [path for path in paths if not _named_for(path, task)]
     spelled = _id_line(task)
-    for candidates, prefilter in ((named, False), (others, True)):
-        for path in candidates:
-            if _has_id(path, task, spelled, prefilter):
-                _FOUND[key] = path
-                return path
+    if (path := _FOUND.get(key)) is not None and _has_id(path, task, spelled, False):
+        return path
+    for fresh in (False, True):
+        listed = [(directory, _md_names(directory, fresh)) for directory in (root / folder for folder in folders)]
+        named = (directory / name for directory, names in listed for name in names if _named_for(name, task))
+        others = (directory / name for directory, names in listed for name in names if not _named_for(name, task))
+        for candidates, prefilter in ((named, False), (others if fresh else (), True)):
+            for path in candidates:
+                if _has_id(path, task, spelled, prefilter):
+                    _FOUND[key] = path
+                    return path
     _FOUND.pop(key, None)
     return None
+
+
+def _md_names(directory: Path, fresh: bool) -> list[str]:
+    """The names of the `*.md` files in `directory`, in order, as last listed unless `fresh`; a `Path` is built only
+    for a name worth opening."""
+    if not fresh and (names := _LISTED.get(directory)) is not None:
+        return names
+    try:
+        with os.scandir(directory) as entries:
+            names = sorted(entry.name for entry in entries if entry.name.endswith(".md"))
+    except FileNotFoundError:
+        names = []
+    _LISTED[directory] = names
+    return names
 
 
 def _has_id(path: Path, task: str, spelled: re.Pattern[str], prefilter: bool) -> bool:
@@ -200,9 +221,8 @@ def _has_id(path: Path, task: str, spelled: re.Pattern[str], prefilter: bool) ->
     return isinstance(frontmatter, dict) and str(frontmatter.get("id") or "").strip().casefold() == task.casefold()
 
 
-def _named_for(path: Path, task: str) -> bool:
+def _named_for(name: str, task: str) -> bool:
     """Whether the file's name starts with the id, as `task-5 - Title.md` does for `task-5` but not for `task-50`."""
-    name = path.name
     return name[: len(task)].lower() == task.lower() and not name[len(task) : len(task) + 1].isalnum()
 
 
