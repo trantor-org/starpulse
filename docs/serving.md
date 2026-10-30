@@ -300,6 +300,7 @@ type = "native"
 # unfinished = "my-unfinished {id}"  # prints a JSON array of the work a task whose pull requests merged still has; the task actor routes it to Ready instead of closing it (see Task actor)
 # parked = "my-parked {id}"  # runs after the task actor moves a task from the working lane to Waiting, to tell the session that holds it (see Task actor)
 # released = "my-released {id}"  # runs after the task actor moves a task from Waiting to Ready, so a session parked mid-work is resumed whether or not anything admits Ready tasks (see Task actor)
+# returned = "my-returned {id}"  # runs after the task actor moves a task from Review back to the working lane (its pull request turned draft or conflicting), so the session that delivered it is woken to fix it
 # closed = "my-closed {id}"  # runs after the task actor moves a task to Done, so the board can file what follows the close (see Task actor)
 # validate = "my_checks:task_write"  # may refuse a task write before it lands (see docs/adapters.md)
 # claim_ttl = 1800   # seconds a claim lives without an Event by its session or a machine event of its run (harness telemetry keyed by the session id); past it StarPulse appends `Released` (naming the last renewal) and the Task keeps its State with no Assignee, free for any session to claim; the sweep reads the board feed, and a release is refused when the task file has since left that State or another session holds it
@@ -813,6 +814,13 @@ move the machine declares. For a task in a state with `waits`, the first fact th
 - `pr_ready`: the task cites a pull request and any cited one is merged (with a merge time) or open and not a draft.
   The edit's comment names the ready and merged pull requests as the evidence. A state may declare
   `waits: {pr_ready: REVIEW}` to move its tasks to Review once a pull request is ready.
+- `pr_failing`: any pull request the task cites as its own delivery is open with a failing required-check rollup
+  (`checks` is `failing`). The comment names the pull requests. A move into the waiting-on-a-person lane also writes the
+  comment, with a question, as the task's `## Needs attention` reason. A state may declare `waits: {pr_failing: DEMOTE}`.
+- `pr_draft`: any pull request the task cites as its own delivery is open and a draft. A state may declare
+  `waits: {pr_draft: SEND_BACK}` to return its tasks to the working lane, which runs the board's `returned` command.
+- `pr_conflicting`: any pull request the task cites as its own delivery is open and conflicts with its base. The same
+  `SEND_BACK` move serves it.
 - `deps_done`: the task has dependencies, every one is Done, its description declares no Start Criteria, and, under
   `[release] settle = "pin-bump"`, every dependency's pin bump has merged (the rule in Release).
 - `deps_done_with_pr`: `deps_done` holds and `pr_ready` holds (the task cites a ready or merged pull request). A state lists it before `deps_done` to
@@ -853,7 +861,8 @@ the board's guards, so the comment lands) and the actor retries when the lint re
 A move from the working lane (the first resting State the lifecycle does not end in) to Waiting runs the board's
 `parked` command once, with `{id}` replaced by the task's id, so a board can tell the session that holds the task. A
 move from Waiting to Ready runs the board's `released` command the same way, so a board can resume the session that
-parked the task. A move to Done runs the board's `closed` command once the same way, so a board can file what follows the close, such as a
+parked the task. A move from Review back to the working lane runs the board's `returned` command the same way, so a board
+can wake the session that delivered a pull request that turned draft or conflicting. A move to Done runs the board's `closed` command once the same way, so a board can file what follows the close, such as a
 check that waits on time after the merge. A command that exits nonzero is logged; the move stands.
 
 A write the board refuses is logged and counted, and is not retried until the task's facts change; checking the last
