@@ -7,6 +7,7 @@ import { ThemeStore } from "./features/admin/theme/themeStore";
 import { linkedTask } from "./features/kanban/kanbanPrefs";
 import { RecordCache } from "./features/kanban/taskViewModel";
 import { HudStore } from "./render/hud";
+import { loadHudViews } from "./render/hudViews";
 import { loadLateFonts } from "./render/fonts";
 import { renderer } from "./render/renderer";
 import type { Renderer } from "./render/rendererTypes";
@@ -62,19 +63,22 @@ export function boot(mount: () => void, preload?: (view: ViewName) => void): Boo
     void loadLateFonts(); // Inter 500 and JetBrains: chrome after the board, not on the critical path
     requestAnimationFrame(open);
   };
+  // no Star Map frame is in the way of another view, so the page, the view's chunk and the card models are asked for before the
+  // renderer is built: their fetches run while it builds, not a round trip behind it
+  if (!star) {
+    open();
+    preload?.(shown);
+    void loadHudViews();
+  }
   const r = renderer(canvas, store, { tip, panel }, new URLSearchParams(location.search).has("demo"), admin.get, star ? drawn : undefined);
   held = { store, admin, theme, records, renderer: r, canvas, tip, panel };
   r.start();
   if (!star) {
     for (const el of [canvas, tip, panel, frameOf("crumb")]) el.classList.add("off");
     r.show(false);
-    // no Star Map frame is in the way, so the page and the view's chunk load beside the snapshot rather than a round trip behind it;
-    // the chunk is asked for here because the page's first render reaches it only after the page has mounted.
     // The page stays unseen until the first frame is marked, so its empty counts are never painted ahead of the snapshot
     const root = document.getElementById("root"), reveal = () => root?.style.removeProperty("visibility");
     root?.style.setProperty("visibility", "hidden");
-    open();
-    preload?.(shown);
     const unsubscribe = store.subscribe(() => {
       if (store.get().tree === null) return;
       unsubscribe();
