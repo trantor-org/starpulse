@@ -15,7 +15,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from starpulse.contracts.api.dto.requests import StartRequest
-from starpulse.views.adapters.inbound.api.answering import answer, query, reading, seams
+from starpulse.views.adapters.inbound.api.answering import answer, on_loop, on_worker, query, reading, seams
 from starpulse.views.adapters.inbound.api.neutral import ApiRoute, Arrival, ReadRoute, WriteRoute
 from starpulse.views.adapters.inbound.api.slow_reads import SlowReads
 from starpulse.views.adapters.inbound.api.writing import TaskWrite, guarded, no_writer, whole_body
@@ -36,21 +36,40 @@ from starpulse.views.application.commands.tasks import (
     take_over_task,
     task_record,
 )
-from starpulse.views.application.queries.responses import cited_pulls
+from starpulse.views.application.queries.responses import cited_pulls, resident_pulls
 from starpulse.views.model.encoding import encode
 
 if TYPE_CHECKING:  # annotation only
     from starpulse.views.adapters.inbound.api.routing import Api
 
 
-@reading
-def task(request: Request) -> Response:
-    api = seams(request)
-    services = api.services
-    status, body = task_record(api.feed, api.board.read, request.path_params["id"])
-    if status == 200 and (cited := cited_pulls(services.pulls, body["record"].get("references", []))):
+def _answer_task(request: Request, status: int, body: dict[str, Any], cited: list[dict[str, Any]]) -> Response:
+    if status == 200 and cited:
         body["record"]["pulls"] = cited
     return answer(request, encode("task", body), status)
+
+
+def _resident_task(request: Request) -> Response | None:
+    """The task's answer when memory holds all of it, with no query; None when it needs a worker."""
+    api = seams(request)
+    name = request.path_params["id"]
+    if api.board.read is None or not api.feed.is_resident(name) or (record := api.board.read(name)) is None:
+        return None
+    if (cited := resident_pulls(api.services.pulls, record.get("references", []))) is None:
+        return None
+    return _answer_task(request, 200, {"task": name, "record": record}, cited)
+
+
+def _stored_task(request: Request) -> Response:
+    api = seams(request)
+    status, body = task_record(api.feed, api.board.read, request.path_params["id"])
+    cited = cited_pulls(api.services.pulls, body["record"].get("references", [])) if status == 200 else []
+    return _answer_task(request, status, body, cited)
+
+
+async def task(request: Request) -> Response:
+    """A task the feed holds in memory, citing only pull requests memory holds, is answered on the event loop."""
+    return on_loop(request, lambda: _resident_task(request)) or await on_worker(request, lambda: _stored_task(request))
 
 
 @reading

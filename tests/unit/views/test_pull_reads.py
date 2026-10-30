@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from starpulse.pulls.adapters.outbound.pulls import PullStore
 from starpulse.views.adapters.inbound.api import pulls as pulls_route
 from starpulse.views.adapters.inbound.api.pulls import PullReads
@@ -95,3 +95,33 @@ def test_a_single_pull_request_read_does_not_wait_for_the_list_being_rebuilt(
 
     assert not lookups.is_alive()
     assert max(answered) < UNBLOCKED_S
+
+
+def test_a_pull_request_only_the_database_holds_is_resident_once_a_read_has_found_it(tmp_path: Path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'pulls.sqlite'}")
+    PullStore(engine).save([_record(1)])
+    store = PullStore(engine)
+    queries: list[str] = []
+    event.listen(engine, "before_cursor_execute", lambda _c, _cur, statement, *_: queries.append(statement))
+    before = store.resident(REPO, 1)
+
+    found = store.find(REPO, 1)
+    after = store.resident(REPO, 1)
+    asked = len(queries)
+    store.find(REPO, 1)
+
+    assert before is None
+    assert after == found
+    assert len(queries) == asked
+
+
+def test_a_resident_pull_request_follows_the_store_when_it_is_saved_again(tmp_path: Path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'pulls.sqlite'}")
+    store = PullStore(engine)
+    store.save([_record(1)])
+    store.find(REPO, 1)
+
+    store.save([{**_record(1), "checks": "failing"}])
+
+    assert [record["checks"] for record in store.find(REPO, 1)] == ["failing"]
+    assert [record["checks"] for record in store.resident(REPO, 1) or []] == ["failing"]

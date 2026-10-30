@@ -70,6 +70,13 @@ class ReadMethods:
             return self._read_model_agent(task_id)
         return self._open.get(task_id) or self._open.get(self._keys.canonical(task_id) if self._keys else task_id)
 
+    def is_resident(self, task_id: str) -> bool:
+        """Whether the feed holds the open task in memory, so asking runs no query: a read model's live task as the
+        board was last drawn, which says nothing of one opened since; False is no answer, `is_open` is."""
+        if self._read_model is not None:
+            return task_id in self._hot_ids
+        return self.held(task_id) is not None
+
     def is_open(self, task_id: str) -> bool:
         """Whether `held` finds the task, without building the moves and standing verdicts (one read of the task's file
         for each lane) that its answer carries."""
