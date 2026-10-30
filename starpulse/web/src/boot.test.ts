@@ -8,6 +8,8 @@ import { BOARD_DRAWN } from "./shared/boardMark";
 
 // the renderer needs a browser's 2D context; this one records how the page started it
 const made = vi.hoisted(() => ({ calls: [] as unknown[][], spy: {} as Record<string, ReturnType<typeof vi.fn>> }));
+const views = vi.hoisted(() => ({ load: vi.fn() }));
+vi.mock("./render/hudViews", () => ({ loadHudViews: views.load }));
 vi.mock("./render/renderer", () => ({
   renderer: (...args: unknown[]) => {
     made.calls.push(args);
@@ -27,6 +29,7 @@ const hud = async () => (await import("./boot")).booted()!.store;
 beforeEach(() => {
   vi.resetModules();
   made.calls.length = 0;
+  views.load.mockReset();
   rafs = [];
   vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => rafs.push(cb));
   performance.clearMarks(BOARD_DRAWN);
@@ -139,6 +142,17 @@ describe("the page's boot", () => {
     expect(marked()).toBe(true);
     expect(document.getElementById("root")!.style.visibility).toBe("");
     expect(mount).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks for the page, the view's chunk and the card models before it builds the renderer, so their fetches run while it builds", async () => {
+    history.replaceState(null, "", "/?view=kanban");
+    const built: number[] = [], note = () => built.push(made.calls.length);
+    const mount = vi.fn(note), preload = vi.fn(note);
+    views.load.mockImplementation(note);
+    const { boot } = await import("./boot");
+    boot(mount, preload);
+
+    expect(built).toEqual([0, 0, 0]);
   });
 
   it("shows the page of another view when no board arrives, so a stream that never answers still shows its status", async () => {
