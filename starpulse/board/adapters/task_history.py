@@ -190,13 +190,16 @@ class TaskHistory:
         *,
         actor_at: int | None = None,
         reason_at: int | None = None,
+        also: Callable[[str], Iterable[str]] | None = None,
     ) -> Callable[..., Written]:
         """`write` (a verb taking a task id first) that appends what it changed once it succeeds.
 
-        `actor_at` is the index in the arguments after the task of an actor passed positionally; `reason_at` that of an archive's reason."""
+        `actor_at` is the index in the arguments after the task of an actor passed positionally; `reason_at` that of an archive's reason.
+        `also` names the other tasks the write edits, so an archive's removal of itself from its dependents is recorded too."""
 
         def run(task: str, *args: Any, **kwargs: Any) -> Written:
             before = read(task)
+            others = {name: read(name) for name in also(task)} if also else {}
             written = write(task, *args, **kwargs)
             if written.ok:
                 actor = kwargs.get("actor") or (
@@ -204,6 +207,8 @@ class TaskHistory:
                 )
                 note = args[reason_at] if reason_at is not None and len(args) > reason_at else ""
                 self._append(task, before, read(task), actor, note.strip())
+                for name, was in others.items():
+                    self._append(name, was, read(name), actor, "")
             return written
 
         return run

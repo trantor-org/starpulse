@@ -295,3 +295,14 @@ def test_a_lane_write_after_a_lost_append_reconciles_the_historys_dependencies_w
     assert built.writer("task-5", "In Progress", "starpulse/task-actor").ok
 
     assert replay(store.read("task", "task-5"))["dependencies"] == built.read("task-5")["dependencies"] == []
+
+
+def test_an_archive_appends_the_dependency_it_removed_from_each_dependent(served, tmp_path: Path) -> None:
+    built, _, store, _ = served
+    dependent = FILE.replace("id: task-5", "id: task-6").replace("labels:", "dependencies:\n  - task-5\nlabels:")
+    (tmp_path / ".starpulse" / "board" / "tasks" / "task-6 - Wire.md").write_text(dependent)
+    assert built.read("task-6")["dependencies"] == ["task-5"]
+
+    assert built.archive("task-5", "superseded", actor="adin").ok
+
+    assert replay(store.read("task", "task-6"))["dependencies"] == []

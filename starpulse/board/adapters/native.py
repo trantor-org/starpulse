@@ -1334,7 +1334,9 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         "assign": history.recorded(made.assign, read),
         "release": history.recorded(made.release, read, actor_at=1),
         "edit": history.recorded(made.edit, read),
-        "archive": history.recorded(made.archive, read, reason_at=0),
+        "archive": history.recorded(
+            made.archive, read, reason_at=0, also=lambda task: _open_dependents(root, task, None)
+        ),
         "restore": history.recorded(made.restore, read),
         "complete": history.recorded(made.complete, read),
         "retire": history.recorded(made.retire, read),
