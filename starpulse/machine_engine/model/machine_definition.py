@@ -31,6 +31,7 @@ The compiled class is an ordinary `StateChart`, so `board_client`'s paths,
 conformance and guard replay run on it unchanged.
 """
 
+import logging
 import re
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, field
@@ -41,6 +42,8 @@ from typing import Any
 from statemachine import StateChart
 from statemachine.exceptions import InvalidDefinition
 from statemachine.io import create_machine_class_from_definition
+
+_LOG = logging.getLogger(__name__)
 
 __all__ = [
     "Compiled",
@@ -115,9 +118,18 @@ class Cue:
 
 
 def refuse_unlisted(machine: str, writers: Mapping[str, tuple[Writer, ...]], listed: Collection[str]) -> None:
-    """Refuse a machine whose writers name a workflow (`<instance>/<workflow>`) that `listed` lacks, by name."""
-    if missing := sorted({w.actor for ws in writers.values() for w in ws if "/" in w.actor} - set(listed)):
-        raise MachineDefinitionError(f"{machine}: writers name workflows no configured adapter lists: {missing}")
+    """Refuse a machine whose writers name a workflow (`<instance>/<workflow>`) that `listed` lacks, by name.
+
+    A `<instance>/*` entry of `listed` stands for an instance whose workflows are read live and may be read short:
+    its missing workflows are warned about, not refused.
+    """
+    named = {w.actor for ws in writers.values() for w in ws if "/" in w.actor}
+    missing = sorted(named - set(listed))
+    unread = [name for name in missing if f"{name.split('/')[0]}/*" in listed]
+    if unread:
+        _LOG.warning("%s: writers name workflows the adapter did not list: %s", machine, unread)
+    if refused := [name for name in missing if name not in unread]:
+        raise MachineDefinitionError(f"{machine}: writers name workflows no configured adapter lists: {refused}")
 
 
 @dataclass(frozen=True)

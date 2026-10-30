@@ -53,6 +53,15 @@ def own_pull_merged(log: EventLog, agent: Mapping[str, Any]) -> bool:
     return merged(store, dict(agent))
 
 
+def live_instances(config: Config) -> list[str]:
+    """The runs instances whose workflows `domains_of` reads from the adapter: a read can come back short."""
+    return [
+        instance.name
+        for instance in config.runs
+        if instance.url and not instance.domains and hasattr(runs_adapter(instance.type), "domains")
+    ]
+
+
 def domains_of(config: Config) -> dict[str, tuple[str, ...]]:
     """The config's domains plus those a runs adapter reads from its workflows (`domains(url)`, optional), as
     `<instance>/<workflow>`, for an instance whose config lists no domains of its own; read once as the server starts.
@@ -91,7 +100,8 @@ def assemble(
     domains = domains_of(config)
     qualify = qualifier(domains)
     # `[board.actor]` makes the task actor a writer the machine may name beside the adapters' workflows.
-    listed = [name for names in domains.values() for name in names]
+    # An instance read live at startup may list short, so its writers are warned about, not refused (`<instance>/*`).
+    listed = [*(name for names in domains.values() for name in names), *(f"{name}/*" for name in live_instances(config))]
     drawn = board.machines(qualify, [*listed, ACTOR] if config.task_actor else listed)
     # Every harness adapter writes this one machine, so the page draws it unless the board declares a machine of that name.
     machines = {**drawn, **{name: m for name, m in SESSION_MACHINES.items() if name not in drawn}}

@@ -20,6 +20,7 @@ from starpulse.runtime.assembly import assemble
 from starpulse.runtime.config import load
 from starpulse.runtime.server import announce
 from starpulse.views.application.commands.moves import move_task
+from tests.dagu_stub import dagu
 
 LANES = ["To Do", "In Progress", "Done"]
 _OPERATOR_ONLY = """\
@@ -397,6 +398,23 @@ def test_a_machine_may_name_the_task_actor_as_a_writer_when_the_board_runs_it(tm
 def test_a_machine_naming_the_task_actor_is_refused_when_the_board_runs_none(tmp_path: Path) -> None:
     with pytest.raises(Exception, match=r"no configured adapter lists: \['starpulse/task-actor'\]"):
         _served_naming_the_task_actor(tmp_path, "")
+
+
+def test_a_machine_naming_a_workflow_a_live_read_instance_omitted_is_served_with_a_warning(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    (tmp_path / "board.yaml").write_text(_NAMING_THE_TASK_ACTOR.replace("starpulse/task-actor", "dagu/waiting-overdue"))
+    native_root(tmp_path).mkdir(parents=True)
+    (native_root(tmp_path) / "config.yml").write_text(
+        yaml.safe_dump({"project_name": "demo", "statuses": LANES, "task_prefix": "task"})
+    )
+    with dagu({"board-hourly": ["s"]}) as (url, _):  # the listing lacks `waiting-overdue`
+        (tmp_path / "starpulse.toml").write_text(
+            f'[board]\ntype = "native"\nmachine = "board.yaml"\n[[runs]]\nname = "dagu"\ntype = "dagu"\nurl = "{url}"\n'
+        )
+        assemble(load(tmp_path / "starpulse.toml"), tmp_path, None, ())
+
+    assert "did not list: ['dagu/waiting-overdue']" in caplog.text
 
 
 def test_a_native_write_records_the_lane_and_the_moment_it_was_written(tmp_path: Path) -> None:
