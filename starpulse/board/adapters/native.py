@@ -23,7 +23,7 @@ import time
 import uuid
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -32,29 +32,8 @@ import yaml
 from sqlalchemy import delete, func, insert, select
 from sqlalchemy.engine import Engine
 
-from starpulse.board.adapters import native_docs
-from starpulse.board.adapters import native_milestones
-from starpulse.board.model import rules
-from starpulse.board.model.claims import assignee_of, released, unreleased
-from starpulse.board.model.seam import (
-    ANONYMOUS,
-    HELD,
-    MERGE_EVIDENCE,
-    OPERATOR,
-    Board,
-    MoveWriter,
-    RetiredImporter,
-    RetiredReader,
-    TaskArchiver,
-    TaskCompleter,
-    TaskCreator,
-    TaskEditor,
-    TaskReader,
-    TaskReleaser,
-    TaskRestorer,
-    TaskRetirer,
-    Written,
-)
+from starpulse.board import criteria
+from starpulse.board.adapters import native_docs, native_milestones
 from starpulse.board.adapters.task_history import TaskHistory
 from starpulse.board.adapters.upstream_backlog import (
     _CRITERIA,
@@ -77,7 +56,28 @@ from starpulse.board.adapters.upstream_backlog import (
 from starpulse.board.adapters.upstream_backlog import (
     _profile as _profile_of,
 )
-from starpulse.board import criteria
+from starpulse.board.model import rules
+from starpulse.board.model.claims import assignee_of, released, unreleased
+from starpulse.board.model.guard import Guard, Validate
+from starpulse.board.model.seam import (
+    ANONYMOUS,
+    HELD,
+    MERGE_EVIDENCE,
+    OPERATOR,
+    Board,
+    MoveWriter,
+    RetiredImporter,
+    RetiredReader,
+    TaskArchiver,
+    TaskCompleter,
+    TaskCreator,
+    TaskEditor,
+    TaskReader,
+    TaskReleaser,
+    TaskRestorer,
+    TaskRetirer,
+    Written,
+)
 from starpulse.event_log.lane_events import ARCHIVED, COMPLETED
 from starpulse.event_log.tables import retired_tasks
 from starpulse.machine_engine.model.state_roles import StateRoles
@@ -123,9 +123,6 @@ _SLUG_DATE = re.compile(r"-\d{4}-\d{2}-\d{2}$")
 _SLUG_STOPWORDS = frozenset(
     {"a", "an", "and", "at", "by", "for", "from", "in", "into", "of", "on", "onto", "or", "the", "to", "with"}
 )
-#: A task write's check: the file's path, its text before (None for a create) and the text about to be written; it
-#: returns why the write is refused, or None to let it land.
-Validate = Callable[[Path, "str | None", str], "str | None"]
 #: The stamps' format, read as UTC.
 _STAMP = "%Y-%m-%d %H:%M"
 _NOTES_END = re.compile(r"\s*<!-- SECTION:NOTES:END -->")
@@ -287,73 +284,6 @@ def _stamped(frontmatter: dict, *, created: bool = False) -> dict:
     return stamped
 
 
-#: The actor that moves a Waiting task to Ready once its dependencies are Done (`pulls.adapters.inbound.task_actor.ACTOR`).
-_TASK_ACTOR = "starpulse/task-actor"
-
-
-@dataclass(frozen=True)
-class _Guard:
-    """What a task write must pass before it lands: the declared `types`, the board's rules, then its `validate` hook."""
-
-    rules: tuple[rules.Rule, ...] = ()
-    validate: Validate | None = None
-    #: The state of another task (a dependency a rule reads), or None when the board has none.
-    state_of: Callable[[str], str | None] = lambda _: None
-    #: The names a task's `type` may take; empty accepts any.
-    types: tuple[str, ...] = ()
-    #: The Waiting lane id and the Ready status, which a write leaving a task in Waiting must be able to move on to.
-    waiting: str | None = None
-    ready: str = ""
-
-    def standing(self, front: Mapping[str, Any], body: str, lane: str) -> dict[str, Any] | None:
-        """The move update of the board rule that refuses moving the task to `lane`, or None when none does.
-
-        It is the verdict as an actor no rule exempts meets it, with the verdict of each actor some rule exempts that
-        differs, so a reader lifts the refusal for an actor the write lets through (`rules.standing_refusal`)."""
-
-        def verdict(actor: str) -> dict[str, Any]:
-            broken = rules.standing_refusal(self.rules, front, body, lane, actor)
-            return {"allowed": True, "reason": "", "skill": ""} if broken is None else {
-                "allowed": False,
-                "reason": broken.explain(rules.Record(front, body)),
-                "skill": broken.skill,
-            }
-
-        own = verdict("")
-        if own["allowed"]:
-            return None
-        apart = {actor: verdict(actor) for actor in sorted({actor for rule in self.rules for actor in rule.exempt})}
-        return {**own, "actors": {actor: found for actor, found in apart.items() if found != own}}
-
-    def readable(self, front: Mapping[str, Any], body: str) -> str:
-        """What the board's `readable` rules find broken in the description of the task, or "" when it reads well."""
-        return rules.readable_verdict(self.rules, front, body)
-
-    def refusal(
-        self, path: Path, before: str | None, frontmatter: dict, body: str, text: str, actor: str
-    ) -> Written | None:
-        """Why the write of `text` over `before` (None for a create) by `actor` is refused, or None to let it land."""
-        kind = str(frontmatter.get("type") or "")
-        was = str(
-            _split_record(before or "")[0].get("type") or ""
-        )  # a write that leaves the type alone is not refused for it
-        if self.types and kind and kind != was and kind not in self.types:
-            return Written(False, f"type {kind!r} is not one of this board's types: {', '.join(self.types)}")
-        if self.rules:
-            earlier = None if before is None else rules.Record(*_split_record(before))
-            after = rules.Record(frontmatter, body, self.state_of)
-            if broken := rules.refusal(self.rules, earlier, after, actor):
-                return Written(False, broken.explain(after), broken.skill, lint=True)
-        staying = lane_id(str(frontmatter.get("status") or "")) == self.waiting
-        if self.waiting and self.ready and staying and actor != _TASK_ACTOR:
-            released = rules.standing_refusal(self.rules, frontmatter, body, self.ready, _TASK_ACTOR)
-            if released:  # the task actor would never release it: a Waiting task nothing can ready is a stuck one
-                return Written(False, released.explain(rules.Record(frontmatter, body)), released.skill, lint=True)
-        if self.validate is not None and (reason := self.validate(path, before, text)):
-            return Written(False, reason, lint=True)
-        return None
-
-
 def _split_record(text: str) -> tuple[dict, str]:
     frontmatter, body = _split(text)
     return (frontmatter if isinstance(frontmatter, dict) else {}), body
@@ -365,11 +295,12 @@ _STALE = Written(False, "the task file changed while it was being written")
 _ATTEMPTS = 5
 
 
-def _land(path: Path, before: str | None, frontmatter: dict, body: str, guard: _Guard, actor: str) -> Written | None:
+def _land(path: Path, before: str | None, frontmatter: dict, body: str, guard: Guard, actor: str) -> Written | None:
     """Write the task file at `path` in one rename, unless `guard` refuses `actor`'s write or the file no longer holds
     `before`: the refusal (`_STALE` for a changed file), or None once it landed."""
     text = f"---\n{yaml.safe_dump(frontmatter, sort_keys=False, allow_unicode=True)}---{body}"
-    if refused := guard.refusal(path, before, frontmatter, body, text, actor):
+    earlier = None if before is None else rules.Record(*_split_record(before))
+    if refused := guard.refusal(path, before, earlier, frontmatter, body, text, actor):
         return refused
     if before is not None and path.read_text() != before:
         return _STALE
@@ -381,7 +312,7 @@ def _land(path: Path, before: str | None, frontmatter: dict, body: str, guard: _
 
 
 def _update(
-    root: Path, task: str, edit: Callable[[dict, str], str], guard: _Guard = _Guard(), actor: str = OPERATOR
+    root: Path, task: str, edit: Callable[[dict, str], str], guard: Guard = Guard(), actor: str = OPERATOR
 ) -> Written:
     """Rewrite the file of `task` with its front matter edited in place, its body as `edit` returns it and a new
     `updated_date`, as `actor`.
@@ -695,7 +626,7 @@ def _doc_linker(root: Path, base: Path) -> _Linker:
 def _editor(
     root: Path,
     statuses: tuple[str, ...],
-    guard: _Guard = _Guard(),
+    guard: Guard = Guard(),
     link: _Linker = _unlinked,
     attention: str | None = None,
 ) -> TaskEditor:
@@ -776,7 +707,7 @@ def _unlinker(task: str, reason: str, ready: str | None, waiting: str | None) ->
     return edit
 
 
-def _archiver(root: Path, statuses: tuple[str, ...], roles: StateRoles, guard: _Guard = _Guard()) -> TaskArchiver:
+def _archiver(root: Path, statuses: tuple[str, ...], roles: StateRoles, guard: Guard = Guard()) -> TaskArchiver:
     """A board writer that moves a task's file to `archive/tasks/`, from any lane, after recording a non-blank reason as a comment.
 
     An archived task never reaches Done, so each open task that depends on it has that dependency removed first, with
@@ -967,7 +898,7 @@ def _importer(root: Path, retired: _Retired) -> RetiredImporter:
 
 
 def _restorer(
-    root: Path, retired: _Retired, statuses: tuple[str, ...], migrations: Mapping[str, str], guard: _Guard
+    root: Path, retired: _Retired, statuses: tuple[str, ...], migrations: Mapping[str, str], guard: Guard
 ) -> TaskRestorer:
     """A board writer that returns an archived or retired task's file to `tasks/` under its own name.
 
@@ -1039,7 +970,7 @@ def _moved(written: Written, lane: str) -> Written:
 
 
 def _writer(
-    root: Path, statuses: tuple[str, ...], roles: StateRoles, guard: _Guard = _Guard(), claims: _Claims = _Claims()
+    root: Path, statuses: tuple[str, ...], roles: StateRoles, guard: Guard = Guard(), claims: _Claims = _Claims()
 ) -> MoveWriter:
     """A board writer that sets a status in the task's file. A lane's status is the board's own spelling of it.
 
@@ -1067,7 +998,7 @@ class _Unheld(Exception):
     """The task file no longer holds the claim a release judged."""
 
 
-def _releaser(root: Path, guard: _Guard = _Guard()) -> TaskReleaser:
+def _releaser(root: Path, guard: Guard = Guard()) -> TaskReleaser:
     """A board writer that ends `session`'s claim on a task still in `status`: its notes lose the `**Assignee:**`
     marker and its State stays. A file another writer moved off `status` or whose claim `session` no longer holds is
     refused untouched, so a release judged from a stale row cannot undo a later move."""
@@ -1202,7 +1133,7 @@ def _creator(
     root: Path,
     config: BacklogConfig,
     retired: _Retired,
-    guard: _Guard = _Guard(),
+    guard: Guard = Guard(),
     file_name: str = "title",
     link: _Linker = _unlinked,
 ) -> TaskCreator:
@@ -1301,7 +1232,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         migrations = _read(base / str(settings["machine"])).get("migrations", {})
     retired = _Retired()
     claims = _Claims()
-    guard = _Guard(
+    guard = Guard(
         rules.load(settings.get("guards")), _hook(settings.get("validate")), _state_of(root, retired), _types(settings)
     )
 
@@ -1392,7 +1323,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
     return replace(made, start=start, sweep=sweep, attach=attach, standing=_standing(root, guard), **recorded)
 
 
-def _standing(root: Path, guard: _Guard) -> Callable[[str, str], dict[str, Any] | None]:
+def _standing(root: Path, guard: Guard) -> Callable[[str, str], dict[str, Any] | None]:
     """The board rules' verdict on moving the task `task` to `lane` as its file stands now, or None for a task with no
     file or no refusing rule."""
 

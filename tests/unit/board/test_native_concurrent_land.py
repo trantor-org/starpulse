@@ -4,7 +4,8 @@ import threading
 from pathlib import Path
 
 from starpulse.board.adapters import native
-from starpulse.board.adapters.native import OPERATOR, _Guard, _land
+from starpulse.board.adapters.native import OPERATOR, _land
+from starpulse.board.model.guard import Guard
 
 
 def test_two_concurrent_writes_of_one_task_file_both_land(tmp_path: Path, monkeypatch) -> None:
@@ -22,7 +23,7 @@ def test_two_concurrent_writes_of_one_task_file_both_land(tmp_path: Path, monkey
 
     def write(n: int) -> None:
         try:
-            _land(path, None, {"id": "TASK-1", "writer": n}, "\n", _Guard(), OPERATOR)
+            _land(path, None, {"id": "TASK-1", "writer": n}, "\n", Guard(), OPERATOR)
         except BaseException as error:
             errors.append(error)
 
