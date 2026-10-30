@@ -59,6 +59,7 @@ def dagu(
     history: Sequence[Past] = (),
     page: int = 100,
     params: Mapping[str, list[str]] = MappingProxyType({}),
+    param_defs: Mapping[str, list[str]] = MappingProxyType({}),
     schedules: Mapping[str, list[str]] = MappingProxyType({}),
     dag_labels: Mapping[str, list[str]] = MappingProxyType({}),
     preconditions: Mapping[str, tuple[str, str]] = MappingProxyType({}),
@@ -73,7 +74,8 @@ def dagu(
     `/queues/<name>/items` the queued ones.
     `history` (read at each request, so a caller may add to it) are the runs `/dag-runs?name=` lists, `page` at a time with
     a `nextCursor` while more remain; their detail is served like an in-flight run's. `params` are the `NAME=default`
-    words each DAG declares, as its detail reports them. `dag_labels` are the labels a DAG's listing entry carries, and `schedules` the cron expressions it
+    words each DAG declares, as its detail reports them; `param_defs` the names of a schema-declared DAG's `paramDefs`, which
+    Dagu reports apart from `params` and lists there only the ones with a default. `dag_labels` are the labels a DAG's listing entry carries, and `schedules` the cron expressions it
     carries, `preconditions` the `(condition, expected)` a step named by key declares, and `unrun` the DAGs the
     listing gives no latest run. `/dags/<name>/dag-runs` lists the `history` of a DAG with its steps, as Dagu does.
     Yields the base URL and the list of every request path received, in order.
@@ -191,6 +193,7 @@ def dagu(
             return 200, run_detail(next(r for r in in_flight if (r.dag, r.run_id) == (parts[1], parts[2])))
         body = detail(parts[1])
         body["dag"]["params"] = params.get(parts[1], [])
+        body["dag"]["paramDefs"] = [{"name": n, "type": "string"} for n in param_defs.get(parts[1], [])]
         return 200, body
 
     class Handler(BaseHTTPRequestHandler):
