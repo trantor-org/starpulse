@@ -30,8 +30,9 @@ def job(workflow: str, name: str) -> dict:
         ("ui-preview.yml", "leak-scan"),
     ],
 )
-def test_pull_request_job_runs_on_the_ai_vm_1_fleet(workflow, name):
-    assert job(workflow, name)["runs-on"] == AI_VM_1_LANE
+def test_pull_request_job_runs_on_a_hosted_runner(workflow, name):
+    """No online org runner carries the `ai-vm-1` label, so a job naming it queues forever."""
+    assert job(workflow, name)["runs-on"] == HOSTED
 
 
 @pytest.mark.parametrize("name", CI_TEST_JOBS)
