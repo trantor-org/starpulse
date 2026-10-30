@@ -500,6 +500,10 @@ export interface DonePage {
 export interface RawTask {
   active?: number | null;
   /**
+   * Why a Board task needs an ADR; empty or absent when it needs none.
+   */
+  adr_needed?: string | null;
+  /**
    * The session that last claimed a Board task; empty when none has, absent off the Board.
    */
   assignee?: string | null;
@@ -527,6 +531,14 @@ export interface RawTask {
    * A task's Backlog description.
    */
   description?: string | null;
+  /**
+   * How a Board task's duplicate search resolved its candidates; empty or absent when none.
+   */
+  duplicate_resolution?: string | null;
+  /**
+   * The queries a Board task's duplicate search ran; empty or absent when none.
+   */
+  duplicate_search?: string | null;
   /**
    * When a Board task entered its lane, epoch seconds; absent when the server holds no time for it.
    */
@@ -1833,11 +1845,14 @@ export interface MissRequest {
  */
 export interface CreateSpec {
   acceptanceCriteria?: string[] | null;
+  adrNeeded?: string | null;
   assignee?: string | null;
   definitionOfDone?: string[] | null;
   dependencies?: string[] | null;
   description?: string | null;
   documentation?: string[] | null;
+  duplicateResolution?: string | null;
+  duplicateSearch?: string | null;
   impact?: string | null;
   labels?: string[] | null;
   milestone?: string | null;
@@ -1936,11 +1951,14 @@ export interface ReviewRequest {
 export interface CreateRequest {
   acceptanceCriteria?: string[] | null;
   actor?: string | null;
+  adrNeeded?: string | null;
   assignee?: string | null;
   definitionOfDone?: string[] | null;
   dependencies?: string[] | null;
   description?: string | null;
   documentation?: string[] | null;
+  duplicateResolution?: string | null;
+  duplicateSearch?: string | null;
   harness?: string | null;
   impact?: string | null;
   labels?: string[] | null;

@@ -211,6 +211,24 @@
       "title": "Urgency",
       "type": "string"
     },
+    "adr_needed": {
+      "default": "",
+      "description": "Why the task needs an ADR; empty when it needs none.",
+      "title": "Adr Needed",
+      "type": "string"
+    },
+    "duplicate_search": {
+      "default": "",
+      "description": "The queries the task's duplicate search ran; empty when none.",
+      "title": "Duplicate Search",
+      "type": "string"
+    },
+    "duplicate_resolution": {
+      "default": "",
+      "description": "How the task's duplicate search resolved its candidates; empty when none.",
+      "title": "Duplicate Resolution",
+      "type": "string"
+    },
     "type": {
       "default": "",
       "description": "The task's type, a name the deployment chooses (`spike`, `bug`); empty when it has none. StarPulse names no type.",

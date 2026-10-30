@@ -22,8 +22,11 @@ CREATE_TEXT = (
     "status",
     "type",
     "source",
+    "adrNeeded",
+    "duplicateSearch",
+    "duplicateResolution",
 )
-CREATE_LISTS = ("labels", "dependencies", "acceptanceCriteria", "references", "documentation", "definitionOfDone")
+CREATE_LISTS =("labels", "dependencies", "acceptanceCriteria", "references", "documentation", "definitionOfDone")
 #: The lists whose every item must be nonblank, rather than dropped when blank.
 _CREATE_NONBLANK = ("acceptanceCriteria", "definitionOfDone")
 _PRIORITIES = frozenset({"high", "medium", "low"})  # also the levels of Impact and Urgency
@@ -180,6 +183,9 @@ class CreateSpec(_Request):
     status: str | None = None
     type: str | None = None
     source: str | None = None
+    adrNeeded: str | None = None
+    duplicateSearch: str | None = None
+    duplicateResolution: str | None = None
     task: str | None = None
     size: str | None = None
     skill: str | None = None

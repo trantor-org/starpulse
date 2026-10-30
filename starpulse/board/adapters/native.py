@@ -468,6 +468,8 @@ _CHECKLISTS = {
     "acceptanceCriteria": ("AC", "Acceptance Criteria", _CRITERIA),
     "definitionOfDone": ("DOD", "Definition of Done", _DONE),
 }
+#: The creation bookkeeping a detail names in camelCase and the task file keeps under a snake_case front matter key.
+_FRONT_KEYS = {"adrNeeded": "adr_needed", "duplicateSearch": "duplicate_search", "duplicateResolution": "duplicate_resolution"}
 _SCALARS = {
     "title": "title",
     "type": "type",
@@ -476,6 +478,7 @@ _SCALARS = {
     "urgency": "urgency",
     "milestone": "milestone",
     "source": "source",
+    **_FRONT_KEYS,
 }
 _LISTS = {
     "labels": "labels",
@@ -557,12 +560,13 @@ def _append_notes(body: str, text: str) -> str:
 def _set_front(frontmatter: dict, field: str, value: Any, spelled: Mapping[str, str]) -> bool:
     """Set `field` in `frontmatter` and say so, or say it is no front matter field, leaving `frontmatter` as it was."""
     if field in _SCALARS:
+        key = _SCALARS[field]
         text = _text(field, value)
         if not text and field == "title":
             raise ValueError("title cannot be empty")
-        frontmatter[field] = text
+        frontmatter[key] = text
         if not text:
-            del frontmatter[field]
+            del frontmatter[key]
     elif field == "profile":
         frontmatter.pop("assignee", None)
         frontmatter["profile"] = [_text(field, value)]
@@ -1092,6 +1096,7 @@ _NEW_TASK_DETAILS = {
     "description",
     "acceptanceCriteria",
     "created_by",
+    *_FRONT_KEYS,
 }
 
 
@@ -1102,6 +1107,7 @@ def _new_task(task: str, title: str, status: str, details: Mapping[str, Any]) ->
         frontmatter["profile"] = [profile]
     keys = ("labels", "milestone", "dependencies", "priority", "impact", "urgency", "created_by")
     frontmatter |= {key: details[key] for key in keys if key in details}
+    frontmatter |= {_FRONT_KEYS[field]: details[field] for field in _FRONT_KEYS if field in details}
     text = f"---\n{yaml.safe_dump(frontmatter, sort_keys=False, allow_unicode=True)}---\n"
     if description := details.get("description"):
         text += (
