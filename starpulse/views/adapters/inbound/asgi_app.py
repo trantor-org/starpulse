@@ -8,7 +8,6 @@ HTTP/1.1 or HTTP/2.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import functools
 import hashlib
 import logging
@@ -22,13 +21,12 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from anyio import CancelScope, CapacityLimiter, from_thread, to_thread
+from anyio import CancelScope, CapacityLimiter, to_thread
 from starlette.applications import Starlette
 from starlette.convertors import PathConvertor, register_url_convertor
 from starlette.middleware import Middleware
-from starlette.requests import ClientDisconnect
 from starlette.requests import Request as Incoming
-from starlette.responses import PlainTextResponse, StreamingResponse
+from starlette.responses import PlainTextResponse
 from starlette.responses import Response as Reply
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
@@ -39,21 +37,8 @@ from starpulse.harness_telemetry.model.harnesses import Harnesses
 from starpulse.runs.cloudevents_grpc import PATH as CLOUDEVENTS_GRPC_PATH
 from starpulse.runs.cloudevents_grpc import cloudevents_grpc
 from starpulse.views.adapters.inbound.api import metrics
-from starpulse.views.adapters.inbound.api.answering import RAN, answer, client, on_worker, target
-from starpulse.views.adapters.inbound.api.neutral import (
-    ApiRoute,
-    Arrival,
-    Endpoint,
-    ReadRoute,
-    Request,
-    Stream,
-    StreamHandler,
-    StreamRoute,
-    Watch,
-    WriteHandler,
-    WriteRequest,
-    WriteRoute,
-)
+from starpulse.views.adapters.inbound.api.answering import PLACE, RAN, target
+from starpulse.views.adapters.inbound.api.neutral import ApiRoute, Arrival, ReadRoute, StreamRoute, Watch, WriteRoute
 from starpulse.views.adapters.inbound.api.routing import Api, api_routes
 from starpulse.views.adapters.inbound.compression import Gzip
 from starpulse.views.adapters.inbound.gate_request import GateRequest
@@ -152,25 +137,6 @@ def _cached(
     return get
 
 
-class _Body:
-    """A request's body, read by a worker thread only as much as a route asks for: a push over its limit is refused
-    without the body being taken off the wire."""
-
-    def __init__(self, request: Incoming) -> None:
-        self._chunks = request.stream()
-        self._held = bytearray()
-
-    async def _read(self, size: int) -> bytes:
-        while len(self._held) < size and (chunk := await anext(self._chunks, b"")):
-            self._held += chunk
-        taken = bytes(self._held[:size])
-        del self._held[:size]
-        return taken
-
-    def __call__(self, size: int) -> bytes:
-        return from_thread.run(self._read, size) if size > 0 else b""
-
-
 class _Build(StaticFiles):
     """The build's files; one under `/assets/` is kept by the browser for good."""
 
@@ -210,7 +176,6 @@ class _Gated:
         return answer
 
 
-_PLACE = "starpulse.place"  # in a request's scope: its `_Place`
 _BUSY_RETRY_S = 1
 
 
@@ -275,7 +240,7 @@ class _Admitted:
             headers = {"content-type": "application/json", "cache-control": "no-store"}
             await Reply(busy, 503, {**headers, "retry-after": str(_BUSY_RETRY_S)})(scope, receive, send)
             return
-        place = scope[_PLACE] = _Place(self._streams)
+        place = scope[PLACE] = _Place(self._streams)
         try:
             await self.app(scope, receive, send)
         finally:
@@ -302,28 +267,6 @@ class _Timed:
                 await send(message)
 
             await self.app(scope, receive, answering)
-
-
-class _Events(StreamingResponse):
-    """An open stream's response: the frames the page reads, until it leaves or the server ends the stream."""
-
-    def __init__(self, app: PageApp, stream: Stream) -> None:
-        super().__init__(app.pump(stream.frames), headers=_EVENT_HEADERS)
-        self._app = app
-        self._stream = stream
-
-    async def __call__(self, scope: MutableMapping[str, Any], receive: Any, send: Any) -> None:
-        try:
-            await super().__call__(scope, receive, send)
-        finally:
-            with contextlib.suppress(ValueError):  # a frame still being made on an abandoned thread: its generator is
-                self._stream.frames.close()  # closed once that frame is dropped
-            self._stream.release()
-
-
-_EVENT_HEADERS = {"content-type": "text/event-stream", "cache-control": "no-store"}
-
-Work = Callable[[Incoming, _Body], Reply]
 
 
 class PageApp:
@@ -372,6 +315,8 @@ class PageApp:
         self._app = Starlette(routes=table, middleware=[Middleware(Gzip), admitted, *gated])
         self._app.state.api = seams  # what the read endpoints take their seams from
         self._app.state.workers = self._workers  # and the threads they run on
+        self._app.state.snapshots = snapshots  # a write waits on these
+        self._app.state.pump = self.pump  # and a stream writes its frames through this
 
     @property
     def open_streams(self) -> int:
@@ -458,18 +403,6 @@ class PageApp:
                 return
             yield frame
 
-    async def _worker(self, request: Incoming, work: Work) -> Reply:
-        """Run `work` for `request` on a worker thread."""
-        body = _Body(request)
-
-        def run() -> Reply:
-            try:
-                return work(request, body)
-            except ClientDisconnect:
-                return Reply(status_code=400)  # the client left mid-body; nobody reads this
-
-        return await on_worker(request, run)
-
     def _route(self, route: ApiRoute, path: str | None = None) -> Route:
         """`route` as a Starlette route: at its own path, or at `path` where it is not under `/api`."""
         at = route.path if path is None else path
@@ -482,49 +415,9 @@ class PageApp:
                 )
                 return Route(at, handler, methods=["GET"], middleware=timed)
             case WriteRoute(_, methods, handler):
-                return Route(at, self._written(handler), methods=list(methods))
+                return Route(at, handler, methods=list(methods))
             case StreamRoute(_, handler):
-                return Route(at, self._streamed(handler), methods=["GET"])
-
-    def _written(self, handler: WriteHandler) -> Endpoint:
-        def write(request: Incoming, body: _Body) -> Reply:
-            asked = WriteRequest(
-                request.method, target(request), client(request), request.headers, body, request.path_params
-            )
-            response = handler(asked)
-            if response is None:
-                return _not_found()  # a push this deployment leaves unconfigured
-            reply = answer(request, *response)
-            self._snapshots.require_current()  # a write is answered once the snapshot read after it holds what it published
-            return reply
-
-        return self._wrapped(handler, self._endpoint(write))
-
-    def _streamed(self, handler: StreamHandler) -> Endpoint:
-        def open_stream(request: Incoming, body: _Body) -> Reply:
-            asked = Request(target(request), request.url.query, client(request), request.path_params)
-            stream = handler(asked, request.scope[_PLACE].take)
-            return _Events(self, stream) if isinstance(stream, Stream) else answer(request, *stream)
-
-        opening = self._endpoint(open_stream)
-
-        async def endpoint(request: Incoming) -> Reply:
-            if request.method == "HEAD":
-                return Reply(headers=_EVENT_HEADERS)  # the headers a GET sends, without opening a stream
-            return await opening(request)
-
-        return self._wrapped(handler, endpoint)
-
-    @staticmethod
-    def _wrapped(handler: Callable[..., Any], endpoint: Endpoint) -> Endpoint:
-        """`endpoint` named for the `handler` it runs, so a route table says which module answers a path."""
-        return functools.wraps(handler)(endpoint)
-
-    def _endpoint(self, work: Work) -> Endpoint:
-        async def endpoint(request: Incoming) -> Reply:
-            return await self._worker(request, work)
-
-        return endpoint
+                return Route(at, handler, methods=["GET"])
 
     async def _page(self, request: Incoming) -> Reply:
         return await self._files.get_response("index.html", request.scope)

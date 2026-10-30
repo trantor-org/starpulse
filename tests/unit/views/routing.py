@@ -53,13 +53,3 @@ def handler_for(table: Sequence[tuple], path: str, method: str = "GET") -> Calla
     `method` at `path`, or None."""
     matched = _match(table, path, method)
     return None if matched is None else matched[0]
-
-
-def answer(table: Sequence[tuple], request: Any, *extra: Any) -> Any:
-    """What the route `request` reaches answers it with, its path template's values in `path_params`, or None where it
-    reaches no route."""
-    matched = _match(table, request.path, getattr(request, "method", "GET"))
-    if matched is None:
-        return None
-    handler, params = matched
-    return handler(request._replace(path_params=params), *extra)

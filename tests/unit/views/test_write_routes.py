@@ -1,25 +1,29 @@
-"""The write routes answer a `WriteRequest` with a `Response` and no socket, so any server can call them."""
+"""The write routes are Starlette endpoints over the app's seams: a request reaches them through the app, and they answer
+with the status, headers and body the page reads."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
+from starlette.testclient import TestClient
 from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.board_feed import BoardFeed
 from starpulse.contracts.api.registry import REQUESTS
 from starpulse.event_log.event_log import EventLog
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
-from starpulse.views.adapters.inbound.api.neutral import Response, WriteRequest
-from starpulse.views.adapters.inbound.api.routing import Api
+from starpulse.views.adapters.inbound.api import metrics
+from starpulse.views.adapters.inbound.api.routing import Api, api_routes
+from starpulse.views.adapters.inbound.asgi_app import PageApp
 from starpulse.views.adapters.inbound.snapshot_cache import SnapshotCache
 from starpulse.views.application.commands import guard as server_writes
 from starpulse.views.ports.services import Services
 
 from tests.fake_board import bare_board
-from tests.unit.views.routing import answer, handler_for, writes
+from tests.unit.views.routing import handler_for, writes
 
 _JSON = {"Content-Type": "application/json"}
 
@@ -53,13 +57,10 @@ def _write(
     body: bytes = b"{}",
     headers: dict[str, str] | None = None,
     client: str = "127.0.0.1",
-) -> Response | None:
+) -> Any:
+    app = PageApp(api_routes(routes), metrics.routes, routes.snapshots, Path(__file__).parent, (), seams=routes)
     sent = {"Content-Length": str(len(body)), **(headers if headers is not None else _JSON)}
-    return answer(writes(routes), WriteRequest(method, path, client, sent, lambda size: body[:size]))
-
-
-def _json(response: Response) -> dict:
-    return json.loads(response.body)
+    return TestClient(app, client=(client, 50000)).request(method, path, content=body, headers=sent)
 
 
 def test_a_write_from_another_page_is_refused_as_an_error_body(routes: Api) -> None:
@@ -67,23 +68,20 @@ def test_a_write_from_another_page_is_refused_as_an_error_body(routes: Api) -> N
 
     response = _write(routes, "POST", "/api/move", headers=headers)
 
-    assert response is not None
-    assert response.status == 403
-    assert "error" in _json(response)
+    assert response.status_code == 403
+    assert "error" in response.json()
 
 
 def test_a_write_that_is_not_json_is_a_415(routes: Api) -> None:
     response = _write(routes, "POST", "/api/move", headers={"Content-Type": "text/plain"})
 
-    assert response is not None
-    assert response.status == 415
+    assert response.status_code == 415
 
 
 def test_a_write_from_outside_the_lan_is_a_403(routes: Api) -> None:
     response = _write(routes, "POST", "/api/move", client="8.8.8.8")
 
-    assert response is not None
-    assert response.status == 403
+    assert response.status_code == 403
 
 
 _PUT_ROUTES = {"/api/scheduler", "/api/history-window"}
@@ -93,16 +91,14 @@ _PUT_ROUTES = {"/api/scheduler", "/api/history-window"}
 def test_a_body_its_request_model_rejects_is_a_400_naming_the_field(routes: Api, path: str) -> None:
     response = _write(routes, "PUT" if path in _PUT_ROUTES else "POST", path, body=b'{"unexpected": 1}')
 
-    assert response is not None
-    assert response.status == 400
-    assert _json(response) == {"error": "invalid request: unexpected: Extra inputs are not permitted"}
+    assert response.status_code == 400
+    assert response.json() == {"error": "invalid request: unexpected: Extra inputs are not permitted"}
 
 
 def test_a_task_write_answers_its_status(routes: Api) -> None:
     response = _write(routes, "POST", "/api/move", body=b"not json")
 
-    assert response is not None
-    assert response.status == 400
+    assert response.status_code == 400
 
 
 def test_a_put_of_the_history_window_is_guarded_like_a_post(routes: Api) -> None:
@@ -110,8 +106,7 @@ def test_a_put_of_the_history_window_is_guarded_like_a_post(routes: Api) -> None
 
     response = _write(routes, "PUT", "/api/history-window", headers=headers)
 
-    assert response is not None
-    assert response.status == 403
+    assert response.status_code == 403
 
 
 @pytest.mark.parametrize(
@@ -127,7 +122,7 @@ def test_a_put_of_the_history_window_is_guarded_like_a_post(routes: Api) -> None
     ],
 )
 def test_a_method_and_path_that_are_no_write_route_are_left_to_the_server(routes: Api, method: str, path: str) -> None:
-    assert _write(routes, method, path) is None
+    assert _write(routes, method, path).status_code in {404, 405}
 
 
 def test_a_push_reaches_its_ingest_with_the_token_and_the_whole_body(feed: BoardFeed, tmp_path: Path) -> None:
@@ -135,36 +130,26 @@ def test_a_push_reaches_its_ingest_with_the_token_and_the_whole_body(feed: Board
 
     response = _write(routes, "POST", "/api/pulls/refresh", body=b"payload", headers={"Authorization": "Bearer t"})
 
-    assert response is not None
-    assert response.status == 401
-    assert response.close is False
-    assert _json(response) == {"error": "auth=Bearer t body=payload"}
+    assert response.status_code == 401
+    assert "connection" not in response.headers
+    assert response.json() == {"error": "auth=Bearer t body=payload"}
 
 
 def test_a_push_over_its_limit_is_refused_unread_and_closes_the_connection(feed: BoardFeed, tmp_path: Path) -> None:
     routes = _routes(feed, tmp_path, pull_refresh=_unauthorised)
 
-    def unread(size: int) -> bytes:
-        raise AssertionError("an oversized body is not read")
+    response = _write(routes, "POST", "/api/pulls/refresh", body=b"x", headers={"Content-Length": str(10**9)})
 
-    request = WriteRequest("POST", "/api/pulls/refresh", "127.0.0.1", {"Content-Length": str(10**9)}, unread)
-    response = answer(writes(routes), request)
-
-    assert response is not None
-    assert response.status == 413
-    assert response.close is True
+    assert response.status_code == 413
+    assert response.headers["connection"] == "close"
 
 
 def test_an_unreadable_length_on_a_push_is_read_as_empty(feed: BoardFeed, tmp_path: Path) -> None:
     routes = _routes(feed, tmp_path, pull_refresh=_unauthorised)
-    request = WriteRequest(
-        "POST", "/api/pulls/refresh", "127.0.0.1", {"Content-Length": "many"}, lambda size: b"x" * size
-    )
 
-    response = answer(writes(routes), request)
+    response = _write(routes, "POST", "/api/pulls/refresh", body=b"x", headers={"Content-Length": "many"})
 
-    assert response is not None
-    assert _json(response) == {"error": "auth=None body="}
+    assert response.json() == {"error": "auth=None body="}
 
 
 @pytest.mark.parametrize(
@@ -196,8 +181,7 @@ def test_a_take_over_post_sends_the_update_to_the_tasks_workflow(feed: BoardFeed
 
     response = _write(_routes(feed, tmp_path, take_over=take_over), "POST", "/api/take-over", b'{"task": "TASK-7"}')
 
-    assert response is not None
-    assert (response.status, _json(response), sent) == (200, {"task": "TASK-7"}, ["TASK-7"])
+    assert (response.status_code, response.json(), sent) == (200, {"task": "TASK-7"}, ["TASK-7"])
 
 
 def test_a_take_over_for_a_task_with_no_workflow_is_a_409(feed: BoardFeed, tmp_path: Path) -> None:
@@ -205,16 +189,14 @@ def test_a_take_over_for_a_task_with_no_workflow_is_a_409(feed: BoardFeed, tmp_p
 
     response = _write(routes, "POST", "/api/take-over", b'{"task": "TASK-7"}')
 
-    assert response is not None
-    assert response.status == 409
-    assert "TASK-7" in _json(response)["error"]
+    assert response.status_code == 409
+    assert "TASK-7" in response.json()["error"]
 
 
 def test_a_take_over_on_a_board_without_workflows_is_a_404(feed: BoardFeed, tmp_path: Path) -> None:
     response = _write(_routes(feed, tmp_path), "POST", "/api/take-over", b'{"task": "TASK-7"}')
 
-    assert response is not None
-    assert response.status == 404
+    assert response.status_code == 404
 
 
 def test_a_write_the_replay_has_not_reached_is_a_503_asking_the_client_to_wait(
@@ -228,13 +210,11 @@ def test_a_write_the_replay_has_not_reached_is_a_503_asking_the_client_to_wait(
 
     response = _write(routes, "POST", "/api/edit", body=body)
 
-    assert response is not None
-    assert response.status == 503
-    assert response.retry_after == server_writes.RETRY_AFTER_S
+    assert response.status_code == 503
+    assert response.headers["retry-after"] == str(server_writes.RETRY_AFTER_S)
 
 
 def test_a_write_the_server_refuses_for_another_reason_asks_for_no_retry(routes: Api) -> None:
     response = _write(routes, "POST", "/api/move", body=b"not json")
 
-    assert response is not None
-    assert response.retry_after is None
+    assert "retry-after" not in response.headers

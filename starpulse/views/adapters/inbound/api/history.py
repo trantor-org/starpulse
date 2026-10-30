@@ -19,7 +19,6 @@ from starpulse.views.application.queries.responses import history_response
 from starpulse.views.model.encoding import encode
 
 if TYPE_CHECKING:  # annotation only
-    from starpulse.views.adapters.inbound.api.neutral import WriteRequest
     from starpulse.views.adapters.inbound.api.routing import Api
 
 
@@ -39,8 +38,8 @@ def read_window(request: Request) -> Response:
 def routes(api: Api) -> list[ApiRoute]:
     window = api.window
 
-    def write_window(request: WriteRequest) -> tuple[int, dict]:
-        return history_window(request.client, request.method, whole(request), window)
+    def write_window(request: Request) -> tuple[int, dict]:
+        return history_window(client(request), request.method, whole(request), window)
 
     return [
         ReadRoute("/history", history),

@@ -1,14 +1,10 @@
-"""The request-in, response-out types every route handler is written against: no socket and no web framework, so the
-ASGI app (and any other front) calls the same handlers."""
+"""The route tables' types: each route is a path and the Starlette endpoint that answers it."""
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Generator, Mapping
+from collections.abc import Awaitable, Callable, Generator
 from contextlib import AbstractContextManager
-from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, NamedTuple, Protocol
-
-from starpulse.views.adapters.inbound.compression import Encoded
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 if TYPE_CHECKING:  # annotation only
     from starlette.requests import Request as Incoming
@@ -24,47 +20,6 @@ class Arrival(NamedTuple):
     streams: int = 0
 
 
-class Request(NamedTuple):
-    """A GET as a server hands it over: the path, the raw query string, the client's address and the values its route's
-    path template named."""
-
-    path: str
-    query: str
-    client: str
-    path_params: Mapping[str, str] = MappingProxyType({})
-
-
-class Response(NamedTuple):
-    """What a route answers, in the order a server's `_send` takes it. `retry_after` is the seconds a refused client is
-    asked to wait; `close` ends the connection after the answer, since a request body was left unread."""
-
-    body: bytes | Encoded
-    status: int = 200
-    cache: str = "no-store"
-    content_type: str = "application/json"
-    retry_after: int | None = None
-    close: bool = False
-
-
-class Headers(Protocol):
-    """The request headers a write reads: a lookup by name that ignores case."""
-
-    def get(self, name: str) -> str | None: ...
-
-
-class WriteRequest(NamedTuple):
-    """A POST, PUT or DELETE as a server hands it over: the method, the path, the client's address, the headers,
-    `body`, which reads the given number of bytes of the request body (a server reads it only once a route wants it),
-    and the values its route's path template named."""
-
-    method: str
-    path: str
-    client: str
-    headers: Headers
-    body: Callable[[int], bytes]
-    path_params: Mapping[str, str] = MappingProxyType({})
-
-
 class Stream(NamedTuple):
     """An open stream: `frames` are the bytes to write, in order, until the client leaves (the caller then closes the
     generator); `release` detaches the stream from the feed once it ends."""
@@ -74,10 +29,7 @@ class Stream(NamedTuple):
 
 
 Query = dict[str, list[str]]
-Admit = Callable[[], bool]
 Endpoint = Callable[["Incoming"], Awaitable["Reply"]]
-WriteHandler = Callable[[WriteRequest], Response | None]
-StreamHandler = Callable[[Request, Admit], Stream | Response]
 #: Times a read: given the request and its arrival, a context the server holds open from that arrival to the last byte
 #: sent; the value it yields has a `ran()` the server calls once a worker thread has taken the read and a `computed()` it
 #: calls as the answer begins to be sent.
@@ -94,20 +46,19 @@ class ReadRoute(NamedTuple):
 
 
 class WriteRoute(NamedTuple):
-    """The `methods` at `path` (under `/api`), answered by `handler`, which answers None where a deployment leaves the
-    route unconfigured."""
+    """The `methods` at `path` (under `/api`), answered by the Starlette endpoint `handler`."""
 
     path: str
     methods: tuple[str, ...]
-    handler: WriteHandler
+    handler: Endpoint
 
 
 class StreamRoute(NamedTuple):
-    """A GET at `path` (under `/api`) that opens a stream, or is refused with a response. `handler` takes the request
-    and `admit`, which moves the connection's worker into the stream pool and says whether there was room."""
+    """A GET at `path` (under `/api`) that opens a stream, or is refused with a response, answered by the Starlette
+    endpoint `handler`."""
 
     path: str
-    handler: StreamHandler
+    handler: Endpoint
 
 
 ApiRoute = ReadRoute | WriteRoute | StreamRoute
