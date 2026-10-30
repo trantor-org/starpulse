@@ -447,6 +447,7 @@ def test_a_write_leaving_a_task_in_waiting_is_refused_with_the_reason_its_releas
 
     refused = adapter.create("Twice kinded", {"labels": ["kind-execute", "kind-decide"]}, "agent")
     made = adapter.create("Once kinded", {"labels": ["kind-execute"]}, "agent")
+    released = adapter.create("Task actor", {"labels": ["kind-execute", "kind-decide"]}, "starpulse/task-actor")
 
     assert (refused.ok, "a Ready task takes one kind" in refused.output) == (False, True)
-    assert made.ok
+    assert (made.ok, released.ok) == (True, True)
