@@ -83,3 +83,21 @@ def test_a_raw_task_row_carrying_an_unknown_field_validates() -> None:
 def test_a_request_body_carrying_an_unknown_field_is_refused() -> None:
     with pytest.raises(ValidationError, match="extra_forbidden"):
         WindowRequest.model_validate({"hours": 1.0, "hour": 2.0})
+
+
+@pytest.mark.parametrize(
+    ("state", "description", "reason"),
+    [
+        ("Needs attention", "Why\n\n## Needs attention\n\nPick one\nor the other\n", "Pick one"),
+        ("Needs attention", "Why\n\n## Needs attention\n\nPick one\n\n## Plan\nlater", "Pick one"),
+        ("Needs attention", "No such section", ""),
+        ("In Progress", "Why\n\n## Needs attention\n\nStale reason\n", ""),
+    ],
+    ids=["first line", "stops at next heading", "no section", "not in the attention lane"],
+)
+def test_a_read_model_task_in_the_attention_lane_carries_its_reason_section(
+    state: str, description: str, reason: str
+) -> None:
+    row = ROW | {"state": state, "description": description}
+
+    assert read_model_detail(row, "Needs attention")["pause_reason"] == reason

@@ -13,6 +13,7 @@ from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.readmodel.projector import Projector
 from starpulse.event_log.readmodel.read_model import ReadModel
 from starpulse.event_log.store import EventStore, NewEvent
+from starpulse.machine_engine.model.state_roles import StateRoles
 from starpulse.machine_engine.model.transitions import board_machine
 
 
@@ -368,3 +369,22 @@ def test_the_pull_requests_to_read_are_the_live_tasks_citations(engine: Engine) 
     _append(engine, 3, "Done", archived=True)
 
     assert _feed(engine).pull_requests() == {"TASK-1": [pull]}
+
+
+def test_a_read_model_task_in_needs_attention_serves_the_reason_its_description_gives_in_the_record_and_snapshot(
+    engine: Engine,
+) -> None:
+    reason = "Which one do you want?"
+    description = f"Why\n\n## Needs attention\n\n{reason}\nmore"
+    EventStore(engine).append(
+        "task", "TASK-1", 0, [_new("TaskCreated", title="T", description=description, state="Needs attention", labels=[])]
+    )
+    Projector(engine, EventStore(engine)).catch_up()
+    roles = StateRoles({"needs_attention": "waiting_on_person"}, {})
+    feed = BoardFeed(read_model=ReadModel(engine), roles=roles)
+
+    served = feed.task("TASK-1")
+    listed = next(agent for agent in _board(feed)["agents"] if agent["id"] == "TASK-1")
+
+    assert served is not None
+    assert (served["pause_reason"], listed["pause_reason"]) == (reason, reason)

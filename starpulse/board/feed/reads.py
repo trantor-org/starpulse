@@ -50,7 +50,7 @@ class ReadMethods:
             return None
         ready = task_id in self._read_model.ready(row["state"], self._roles.done)  # type: ignore[union-attr]
         return self._expiring(
-            summary_agent(row, ready, self._guarded(task_id, self._read_model_moves(row))) | read_model_detail(row)
+            summary_agent(row, ready, self._guarded(task_id, self._read_model_moves(row))) | read_model_detail(row, self._roles.attention)
         )
 
     def follow_read_model(self, limit: int = 1000) -> int:

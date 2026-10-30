@@ -32,6 +32,7 @@ except ImportError:
     from yaml import SafeLoader as _FrontmatterLoader
 
 from starpulse.board.adapters import project_machines
+from starpulse.board.model.markdown import needs_attention_reason
 from starpulse.board.model.seam import Board, MoveWriter, Written
 from starpulse.contracts.task_keys import TaskKeys
 from starpulse.machine_engine.model.state_roles import StateRoles
@@ -65,9 +66,6 @@ _NOTES = re.compile(r"<!-- SECTION:NOTES:BEGIN -->(.*?)<!-- SECTION:NOTES:END --
 _ASSIGNEE = re.compile(r"^\*\*Assignee:\*\* (\S+)[ \t]*$", re.M)
 _CRITERIA = re.compile(r"<!-- AC:BEGIN -->(.*?)<!-- AC:END -->", re.S)
 _ITEM = re.compile(r"^- \[([ xX])\] #(\d+) (.*?)[ \t]*$", re.M)
-_NEEDS_ATTENTION = re.compile(
-    r"^## Needs attention[ \t]*\n(.*?)(?=^## |<!-- SECTION:DESCRIPTION:END -->|\Z)", re.S | re.M
-)
 
 
 @dataclass(frozen=True)
@@ -175,8 +173,7 @@ def _criteria(body: str) -> list[tuple[bool, str]]:
 
 def _pause_reason(body: str, lane: str, attention: str | None) -> str:
     """The first line of a `Needs attention` task's `## Needs attention` section, else empty."""
-    found = _NEEDS_ATTENTION.search(body) if lane == attention else None
-    return next((line.strip() for line in found.group(1).splitlines() if line.strip()), "") if found else ""
+    return needs_attention_reason(body) if lane == attention else ""
 
 
 def _notes(body: str) -> str:
