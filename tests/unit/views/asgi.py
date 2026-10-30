@@ -12,11 +12,13 @@ class Answer(NamedTuple):
     body: bytes
 
 
-async def call(app: Any, path: str, method: str = "GET", *, leave_at_first_frame: bool = False) -> Answer:
-    """What `app` answers `method` `path`; with `leave_at_first_frame`, the client disconnects once it has been sent
-    its first chunk of body."""
+async def call(
+    app: Any, path: str, method: str = "GET", *, query: str = "", leave_after: int = 0, client: str = "127.0.0.1"
+) -> Answer:
+    """What `app` answers `method` `path`; with `leave_after`, the client disconnects once it has been sent that many
+    chunks of body."""
     sent: list[dict[str, Any]] = []
-    left, asked = asyncio.Event(), False
+    left, asked, chunks = asyncio.Event(), False, 0
 
     async def receive() -> dict[str, Any]:
         nonlocal asked
@@ -27,20 +29,23 @@ async def call(app: Any, path: str, method: str = "GET", *, leave_at_first_frame
         return {"type": "http.disconnect"}
 
     async def send(message: dict[str, Any]) -> None:
+        nonlocal chunks
         sent.append(message)
-        if leave_at_first_frame and message["type"] == "http.response.body":
-            left.set()
+        if message["type"] == "http.response.body":
+            chunks += 1
+            if leave_after and chunks >= leave_after:
+                left.set()
 
     scope = {
         "type": "http",
         "method": method,
         "path": path,
         "raw_path": path.encode(),
-        "query_string": b"",
+        "query_string": query.encode(),
         "headers": [],
         "scheme": "http",
         "server": ("testserver", 80),
-        "client": ("127.0.0.1", 1),
+        "client": (client, 1),
         "root_path": "",
         "http_version": "1.1",
     }

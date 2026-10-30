@@ -1,19 +1,22 @@
-"""The event streams as frame generators: no socket and no web framework, so the ASGI app (and any
-other front) writes the same frames. The snapshot and ledger modules route them."""
+"""The event streams as Starlette endpoints over frame generators. The snapshot and ledger modules route them."""
 
 from __future__ import annotations
 
+import contextlib
+import functools
 import logging
 import queue
 import threading
 import time
-from collections.abc import Callable, Generator, Sequence
+from collections.abc import Awaitable, Callable, Generator, Sequence
 from typing import TYPE_CHECKING, Any
-from urllib.parse import parse_qs
 
 from pydantic import ValidationError
+from starlette.requests import Request
+from starlette.responses import Response, StreamingResponse
 
-from starpulse.views.adapters.inbound.api.neutral import Admit, Request, Response, Stream
+from starpulse.views.adapters.inbound.api.answering import PLACE, answer, query, reading
+from starpulse.views.adapters.inbound.api.neutral import Stream
 from starpulse.views.adapters.inbound.column_stream import ColumnViews, Interest
 from starpulse.views.application.queries.responses import _error
 from starpulse.views.model.encoding import encode, event
@@ -66,14 +69,47 @@ class EventText:
             return text
 
 
+#: The headers of a stream's response, which a HEAD request is answered with alone.
+EVENT_HEADERS = {"content-type": "text/event-stream", "cache-control": "no-store"}
+
+
+class Events(StreamingResponse):
+    """An open stream's response: the frames the page reads, until it leaves or the server ends the stream."""
+
+    def __init__(self, request: Request, stream: Stream) -> None:
+        super().__init__(request.app.state.pump(stream.frames), headers=EVENT_HEADERS)
+        self._stream = stream
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            with contextlib.suppress(ValueError):  # a frame still being made on an abandoned thread: its generator is
+                self._stream.frames.close()  # closed once that frame is dropped
+            self._stream.release()
+
+
+def streaming(work: Callable[[Request], Response]) -> Callable[[Request], Awaitable[Response]]:
+    """`work`, which blocks while it opens a stream, as a Starlette endpoint that runs it on a worker thread."""
+    opening = reading(work)
+
+    @functools.wraps(work)
+    async def endpoint(request: Request) -> Response:
+        if request.method == "HEAD":
+            return Response(headers=EVENT_HEADERS)  # the headers a GET sends, without opening a stream
+        return await opening(request)
+
+    return endpoint
+
+
 def _frame(name: str, data: str) -> bytes:
     return f"event: {name}\ndata: {data}\n\n".encode()
 
 
 class Streams:
     """The streams the page holds open: the Board's events, a session's held tasks, the lanes and one Ledger's rows. Each
-    handler answers a `Request` with the `Stream` to write, or a `Response` where it refuses to open one; `admit` moves
-    the connection's worker into the stream pool and says whether there was room."""
+    handler answers a `Request` with the `Events` to write, or a `Response` where it refuses to open one; it takes its
+    place among the streams open from the request's `Place`."""
 
     def __init__(
         self,
@@ -87,28 +123,29 @@ class Streams:
         self._event_text = EventText()
         self._column_views = ColumnViews()
 
-    def board(self, request: Request, admit: Admit) -> Stream | Response:
-        by_ref = parse_qs(request.query).get("snapshot") == ["ref"]
-        return self._admitted(admit, lambda: self._events(by_ref))
+    def board(self, request: Request) -> Response:
+        by_ref = query(request).get("snapshot") == ["ref"]
+        return self._admitted(request, lambda: self._events(by_ref))
 
-    def held(self, request: Request, admit: Admit) -> Stream | Response:
-        assignee = (parse_qs(request.query).get("assignee") or [""])[0]
+    def held(self, request: Request) -> Response:
+        assignee = (query(request).get("assignee") or [""])[0]
         if not assignee:
-            return Response(_error("name the session: /api/held?assignee=<session>"), 400)
-        return self._admitted(admit, lambda: self._columns("held", assignee))
+            return answer(request, _error("name the session: /api/held?assignee=<session>"), 400)
+        return self._admitted(request, lambda: self._columns("held", assignee))
 
-    def lanes(self, request: Request, admit: Admit) -> Stream | Response:
-        states = parse_qs(request.query).get("state", [])
-        return self._admitted(admit, lambda: self._columns("lanes", None, states))
+    def lanes(self, request: Request) -> Response:
+        states = query(request).get("state", [])
+        return self._admitted(request, lambda: self._columns("lanes", None, states))
 
-    def ledger_rows(self, request: Request, admit: Admit) -> Stream | Response:
+    def ledger_rows(self, request: Request) -> Response:
         event = request.path_params["rest"].partition("/")[0]
-        return self._admitted(admit, lambda: self._ledger(event))
+        return self._admitted(request, lambda: self._ledger(request, event))
 
-    def _admitted(self, admit: Admit, open_stream: Callable[[], Stream | Response]) -> Stream | Response:
-        if not admit():
-            return Response(_error("too many open streams; retry shortly"), 503, retry_after=_STREAM_RETRY_S)
-        return open_stream()
+    def _admitted(self, request: Request, open_stream: Callable[[], Stream | Response]) -> Response:
+        if not request.scope[PLACE].take():
+            return answer(request, _error("too many open streams; retry shortly"), 503, retry_after=_STREAM_RETRY_S)
+        stream = open_stream()
+        return Events(request, stream) if isinstance(stream, Stream) else stream
 
     def _events(self, by_ref: bool) -> Stream:
         """The Board's snapshot, then each change as it happens. `by_ref` sends the snapshot as `ref <path>`, the path its
@@ -144,11 +181,11 @@ class Streams:
     def _event(self, name: str, data: dict) -> bytes:
         return _frame(name, self._event_text(name, data))
 
-    def _ledger(self, event: str) -> Stream | Response:
+    def _ledger(self, request: Request, event: str) -> Stream | Response:
         """`event`'s newest rows as a `page` event (`{rows, more}`), then a `rows` event (`{rows}`) each time rows of that
         Ledger change. A page reads this while it has the Ledger open; the main stream carries no row."""
         if (watched := self._feed.watch_ledger(event)) is None:
-            return Response(_error(f"no ledger for {event}"), 404)
+            return answer(request, _error(f"no ledger for {event}"), 404)
         rows, more, changes = watched
         return Stream(self._ledger_frames(rows, more, changes), lambda: self._feed.unwatch_ledger(changes))
 

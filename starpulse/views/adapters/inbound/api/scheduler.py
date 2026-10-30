@@ -18,7 +18,6 @@ from starpulse.views.application.commands.settings import scheduler as scheduler
 from starpulse.views.model.encoding import encode
 
 if TYPE_CHECKING:  # annotation only
-    from starpulse.views.adapters.inbound.api.neutral import WriteRequest
     from starpulse.views.adapters.inbound.api.routing import Api
 
 
@@ -31,7 +30,7 @@ def status(request: Request) -> Response:
 def routes(api: Api) -> list[ApiRoute]:
     scheduler = api.services.scheduler
 
-    def switch(request: WriteRequest) -> tuple[int, dict]:
-        return scheduler_command(request.client, "PUT", whole(request), scheduler)
+    def switch(request: Request) -> tuple[int, dict]:
+        return scheduler_command(client(request), "PUT", whole(request), scheduler)
 
     return [ReadRoute("/scheduler", status), WriteRoute("/scheduler", ("PUT",), guarded("scheduler", switch))]

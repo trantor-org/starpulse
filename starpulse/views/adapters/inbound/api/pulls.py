@@ -22,11 +22,9 @@ from starpulse.views.adapters.inbound.api.neutral import (
     ApiRoute,
     Arrival,
     ReadRoute,
-    WriteRequest,
     WriteRoute,
 )
-from starpulse.views.adapters.inbound.api.neutral import Response as Answer
-from starpulse.views.adapters.inbound.api.writing import pushed
+from starpulse.views.adapters.inbound.api.writing import pushed, writing
 from starpulse.views.adapters.inbound.compression import Encoded
 from starpulse.views.application.queries.responses import pulls_response
 
@@ -91,7 +89,7 @@ def timed(request: Request, arrival: Arrival) -> AbstractContextManager[Any]:
 def routes(api: Api) -> list[ApiRoute]:
     refresh = api.services.pull_refresh
 
-    def push(request: WriteRequest) -> Answer | None:
+    def push(request: Request) -> Response | None:
         return None if refresh is None else pushed(request, "ingest", refresh, MAX_REFRESH_BODY)
 
-    return [ReadRoute("/pulls", pulls, timed), WriteRoute("/pulls/refresh", ("POST",), push)]
+    return [ReadRoute("/pulls", pulls, timed), WriteRoute("/pulls/refresh", ("POST",), writing(push))]

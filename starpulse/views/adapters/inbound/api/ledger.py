@@ -13,6 +13,7 @@ from starlette.responses import Response
 
 from starpulse.views.adapters.inbound.api.answering import answer, query, reading, seams, target
 from starpulse.views.adapters.inbound.api.neutral import ApiRoute, ReadRoute, StreamRoute
+from starpulse.views.adapters.inbound.api.streams import streaming
 from starpulse.views.application.queries.responses import _error, ledger_response
 
 if TYPE_CHECKING:  # annotation only
@@ -30,6 +31,6 @@ def ledger(request: Request) -> Response:
 def routes(api: Api) -> list[ApiRoute]:
     # The stream first: its path is also the read's, whose `{rest:path}` takes the `/events` too.
     return [
-        StreamRoute("/ledger/{rest:path}/events", api.streams.ledger_rows),
+        StreamRoute("/ledger/{rest:path}/events", streaming(api.streams.ledger_rows)),
         ReadRoute("/ledger/{rest:path}", ledger),
     ]

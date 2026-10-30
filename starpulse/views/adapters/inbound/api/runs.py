@@ -8,9 +8,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from starlette.requests import Request
+from starlette.responses import Response
+
 from starpulse.runs.ingest import MAX_BATCH_BODY
-from starpulse.views.adapters.inbound.api.neutral import ApiRoute, Response, WriteRequest, WriteRoute
-from starpulse.views.adapters.inbound.api.writing import guarded, pushed
+from starpulse.views.adapters.inbound.api.answering import client
+from starpulse.views.adapters.inbound.api.neutral import ApiRoute, WriteRoute
+from starpulse.views.adapters.inbound.api.writing import guarded, pushed, writing
 from starpulse.views.application.commands.runs import rerun_dag, run_dag
 
 if TYPE_CHECKING:  # annotation only
@@ -21,14 +25,14 @@ def routes(api: Api) -> list[ApiRoute]:
     feed, services = api.feed, api.services
     reruns = services.reruns or {}
 
-    def run(request: WriteRequest) -> tuple[int, dict]:
-        return run_dag(request.client, request.path_params["name"], services.starts, services.run_safe)
+    def run(request: Request) -> tuple[int, dict]:
+        return run_dag(client(request), request.path_params["name"], services.starts, services.run_safe)
 
-    def rerun(request: WriteRequest) -> tuple[int, dict]:
+    def rerun(request: Request) -> tuple[int, dict]:
         name = f"{request.path_params['instance']}/{request.path_params['workflow']}"
-        return rerun_dag(request.client, name, feed, reruns, services.run_safe)
+        return rerun_dag(client(request), name, feed, reruns, services.run_safe)
 
-    def machine_events(request: WriteRequest) -> Response | None:
+    def machine_events(request: Request) -> Response | None:
         events = services.events
         if events is None:
             return None
@@ -38,5 +42,5 @@ def routes(api: Api) -> list[ApiRoute]:
     return [
         WriteRoute("/run/{name:path}", ("POST",), guarded("run", run)),
         WriteRoute("/runs/{instance}/{workflow}/rerun", ("POST",), guarded("run", rerun)),
-        WriteRoute("/machine-events", ("POST",), machine_events),
+        WriteRoute("/machine-events", ("POST",), writing(machine_events)),
     ]
