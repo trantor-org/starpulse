@@ -79,4 +79,4 @@ def test_the_pytest_session_runs_the_worker_count_its_caller_hands_it(tmp_path):
         capture_output=True,
         check=True,
     )
-    assert (tmp_path / "addopts").read_text().split() == ["-n", "3", "--dist", "worksteal"]
+    assert (tmp_path / "addopts").read_text().split() == ["-n", "3", "--dist", "worksteal", "-rA"]
