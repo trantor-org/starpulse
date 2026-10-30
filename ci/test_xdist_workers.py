@@ -38,7 +38,8 @@ def test_the_pytest_job_sizes_its_workers_before_it_runs_pytest():
     assert "ci/run.sh python-tests" in runs
     script = (CI.parents[2] / "ci/run.sh").read_text()
     body = script.split("cmd_python_tests() {")[1].split("\n}\n")[0]
-    assert 'addopts="-n $(uv run --no-sync python ci/xdist_workers.py $sizing)' in body
+    assert 'workers="${PYTEST_WORKERS:-$(uv run --no-sync python ci/xdist_workers.py $sizing)}"' in body
+    assert 'addopts="-n $workers' in body
     assert "sizing=--slice" in body  # the build host's tests.slice budget, not a runner's memory limit
     assert "--dist worksteal" in body  # idle workers take queued tests, so a long file spreads over them
     assert "--dist worksteal -rA" in body  # the log names every test's outcome, not just totals
@@ -66,3 +67,16 @@ def test_slice_flag_prints_the_slice_worker_count():
         check=True,
     )
     assert ran.stdout.strip() == str(SLICE_WORKERS)
+
+
+def test_the_pytest_session_runs_the_worker_count_its_caller_hands_it(tmp_path):
+    """A caller that shares tests.slice with other CI runs passes its share as PYTEST_WORKERS; the session uses it, not the whole-slice count."""
+    (tmp_path / "uv").write_text(f'#!/usr/bin/env bash\n[[ "$*" == *pytest* ]] && echo "$PYTEST_ADDOPTS" > {tmp_path}/addopts\nexit 0\n')
+    (tmp_path / "uv").chmod(0o755)
+    subprocess.run(
+        [str(Path(__file__).with_name("run.sh")), "python-tests"],
+        env={"PATH": f"{tmp_path}:/usr/bin:/bin", "PYTEST_WORKERS": "3", "PYTEST_LOG": str(tmp_path / "pytest.log")},
+        capture_output=True,
+        check=True,
+    )
+    assert (tmp_path / "addopts").read_text().split() == ["-n", "3", "--dist", "worksteal"]
