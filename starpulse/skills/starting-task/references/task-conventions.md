@@ -339,6 +339,14 @@ to wait 14 days. Only a check whose data does not exist yet parks, on the event 
 such as `--until '{id: peak-day, kind: prom, expr: "max_over_time(node_load1[1d])", at_most:
 150}'` with a comment naming the query and the baseline.
 
+**A check that needs N samples parks once on their count.** Count the samples the verdict needs
+from the window's fixed start, gate on that count, and claim the check once with every sample
+present. Never park on the next single run, wake, take one sample and park again: each sample then
+costs a release, a claim and a park. Worked example: a check that three merge-queue CI runs after
+an apply start their shards within 12 s, with one run in so far, parks once on `--until '{id:
+three-ci-runs, kind: dagu_run, dag: ci, since: "<apply instant>", at_least: 3}'`, not on the next
+run. Any count kind serves the same way, such as a SQL or metric query's `at_least: N`.
+
 **After two consecutive misses on the same duration or latency Outcome target where
 a diagnosis has already named a path floor, the next slice is `kind-decide` (architecture change
 or Outcome revise), never another fix/check pair that re-measures the same target.**
@@ -418,8 +426,12 @@ chooses one. This table is the whole park rule for a check task.
 | Threshold a prior diagnosis showed unreachable on its path | `starpulse task park PROJ-45 --operator '<threshold decision>'` |
 | Data not landed, a kind observes it | `starpulse task park PROJ-45 --until '<criterion>' --comment '<query>'` |
 | Data not landed, no kind observes it | create the task that publishes it (above), then the previous row |
-| Waits on another task | `starpulse task park PROJ-45 --until-task PROJ-46` |
+| Waits on another task | `starpulse task park PROJ-45 --until-task PROJ-46#K`, the criterion the wait needs |
 | Only a person can act: a credential, an irreversible action, a decision | `starpulse task park PROJ-45 --operator '<what they do>'` |
+
+A park on a check task, by any task, names the check's criterion (`--until-task PROJ-46#K`) or
+the run or data it observes (`--until`), never the check's `Done`: that waits on every criterion
+of the check, so one late criterion holds each task parked behind it.
 
 A miss never parks `--operator`: the fix's `Done` releases the check, and a person is needed
 only when a row above names one. A wait for data, a run or time is never `--operator`.
