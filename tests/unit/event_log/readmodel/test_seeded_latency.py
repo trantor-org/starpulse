@@ -36,23 +36,29 @@ def _timed_ms(call: Callable[[], object]) -> float:
     return (time.perf_counter() - started) * 1000
 
 
-def _floor_ms(call: Callable[[], object]) -> float:
-    """The fastest of `_RUNS` calls by the thread's own CPU time. ai-vm-1 runs the nightly's workers at a load average of
-    100+, so a wall clock bills the call for its wait in the run queue (snapshot: 195-674 ms for ~65 CPU-ms) and even the
-    p95 of CPU time inflates 3x from hyperthread and cache contention; the fastest call is the cost the code adds."""
-    for _ in range(3):
-        call()
-    samples = []
+def _floor_ms(call: Callable[[], object], budget_ms: float) -> float:
+    """The fastest of up to `_RUNS` calls by the thread's own CPU time, stopping at the first one inside `budget_ms`: a
+    minimum only falls, so that call already settles the verdict, and the snapshot reads (~65 CPU-ms) would otherwise
+    spend 33 calls proving it. ai-vm-1 runs the nightly's workers at a load average of 100+, so a wall clock bills the
+    call for its wait in the run queue (snapshot: 195-674 ms for ~65 CPU-ms) and even the p95 of CPU time inflates 3x from
+    hyperthread and cache contention; the fastest call is the cost the code adds."""
+    floor = float("inf")
     for _ in range(_RUNS):
         started = time.thread_time()
         call()
-        samples.append((time.thread_time() - started) * 1000)
-    return min(samples)
+        floor = min(floor, (time.thread_time() - started) * 1000)
+        if floor <= budget_ms:
+            break
+    return floor
+
+
+def _budget_ms(name: str) -> float:
+    return _SNAPSHOT_BUDGET_MS if name in _SNAPSHOT_SURFACES else _BUDGET_MS
 
 
 # Slow: the first run after an event-log source change seeds 20,000 Tasks through the real `EventStore` and `Projector`
 # (~3 CPU-ms a Task, nearly all SQLAlchemy statement building); later runs copy the cached store. The setup is billed to
-# the first test that asks for the board; the three tests' own calls cost ~6 s.
+# the first test that asks for the board; the three tests' own calls cost ~6 s, ~1.5 s of it this test's.
 @pytest.fixture(scope="module")
 def board(tmp_path_factory: pytest.TempPathFactory) -> Iterator[tuple[ReadModel, int, int]]:
     rss_before = _rss()
@@ -75,13 +81,9 @@ def _surfaces(model: ReadModel, cursor: int) -> dict[str, Callable[[], object]]:
 # Slow: whichever test runs first seeds 20,000 Tasks through the real write path, ~55 s CPU on a seed-cache miss, ~1 s warm.
 def test_every_query_is_within_the_page_budget_on_twenty_thousand_tasks_with_eighteen_thousand_archived(board) -> None:
     model, _, cursor = board
-    floor = {name: _floor_ms(call) for name, call in _surfaces(model, cursor).items()}
+    floor = {name: _floor_ms(call, _budget_ms(name)) for name, call in _surfaces(model, cursor).items()}
 
-    over = {
-        name: ms
-        for name, ms in floor.items()
-        if ms > (_SNAPSHOT_BUDGET_MS if name in _SNAPSHOT_SURFACES else _BUDGET_MS)
-    }
+    over = {name: ms for name, ms in floor.items() if ms > _budget_ms(name)}
     assert over == {}, floor
 
 
