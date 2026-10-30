@@ -135,10 +135,9 @@ SEAM_FILES = (
     "board/model/seam.py",
     "runtime/adapter_kit.py",
     "views/adapters/inbound/asgi_app.py",
-    "views/adapters/inbound/reads.py",
-    "views/adapters/inbound/write_routes.py",
     "views/ports/services.py",
 )
+API = "views/adapters/inbound/api"
 MOST_PARAMETERS = 12
 
 
@@ -146,7 +145,8 @@ def _seam_functions() -> list[tuple[str, int]]:
     """Every function the Board seam and its server side define, with the number of parameters it takes."""
     root = Path(__file__).parents[3] / "starpulse"
     rows = []
-    for name in SEAM_FILES:
+    api = sorted(path.relative_to(root).as_posix() for path in (root / API).glob("*.py"))
+    for name in (*SEAM_FILES, *api):
         for node in ast.walk(ast.parse((root / name).read_text())):
             if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
                 args = node.args

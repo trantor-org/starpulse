@@ -53,7 +53,7 @@ def _feed() -> BoardFeed:
 
 
 def _serve_crowd(directory: str, conn: Connection) -> None:
-    import starpulse.views.adapters.inbound.streams as streams_mod
+    import starpulse.views.adapters.inbound.api.streams as streams_mod
 
     streams_mod._PING_S = 0.05
     with serve(Path(directory), _feed()) as server:

@@ -11,7 +11,7 @@ from starpulse.event_log import lane_events
 from starpulse.event_log.event_log import EventLog, Tail
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 from starpulse.runtime import assembly, server, worker
-from starpulse.views.application.commands.writes import _record_written, _Who
+from starpulse.views.application.commands.guard import Who, record_written
 from starpulse.views.bin import api_worker
 
 from tests import fake_board
@@ -36,7 +36,7 @@ def _config(tmp_path: Path, url: str, extra: str = "") -> Path:
 def _native_write(feed: BoardFeed) -> None:
     """A write made through the views, as a request names its actor."""
     written = Written(True, "Updated task T-1", lane="ready", at=110.0)
-    _record_written(feed, "T-1", _Who("agent", "s1", "claude"), lambda: written)
+    record_written(feed, "T-1", Who("agent", "s1", "claude"), lambda: written)
 
 
 def _assert_actor_recorded(url: str) -> None:

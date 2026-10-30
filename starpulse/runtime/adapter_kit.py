@@ -57,7 +57,7 @@ from starpulse.runtime.store_migrate import maintain
 from starpulse.views.adapters.inbound.asgi_app import page_app
 from starpulse.views.adapters.inbound.gate_request import GateRequest
 from starpulse.views.adapters.inbound.page_server import PageServer
-from starpulse.views.application.commands.writes import move_task
+from starpulse.views.application.commands.moves import move_task
 from starpulse.views.ports.services import Services
 
 __all__ = [

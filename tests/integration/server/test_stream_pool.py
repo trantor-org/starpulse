@@ -80,7 +80,7 @@ def test_a_stream_over_the_cap_is_refused_with_retry_after_and_holds_no_request_
 
 
 def test_a_closed_stream_frees_its_place_in_the_pool(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("starpulse.views.adapters.inbound.streams._PING_S", 0.05)
+    monkeypatch.setattr("starpulse.views.adapters.inbound.api.streams._PING_S", 0.05)
     with _small_pools(tmp_path, monkeypatch, requests=1, streams=1) as server:
         with ExitStack() as first:
             _open(server, first)

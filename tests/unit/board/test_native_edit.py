@@ -14,8 +14,8 @@ from starpulse.runtime.adapter_kit import serve
 from starpulse.runtime.assembly import assemble
 from starpulse.runtime.config import load
 from starpulse.views.adapters.inbound.page_server import PageServer
-from starpulse.views.application.commands import writes
-from starpulse.views.application.commands.writes import archive_task, edit_task, task_record
+from starpulse.views.application.commands import tasks as writes
+from starpulse.views.application.commands.tasks import archive_task, edit_task, task_record
 
 LAN = "192.168.0.42"
 FILE = """---

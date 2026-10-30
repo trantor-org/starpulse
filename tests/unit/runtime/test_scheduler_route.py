@@ -22,7 +22,7 @@ from starpulse.scheduler.adapters.runtime import Runtime, build
 from starpulse.scheduler.model.config import Scheduler
 from starpulse.scheduler.model.sampler import Crossing
 from starpulse.views.adapters.inbound.page_server import PageServer
-from starpulse.views.application.commands.writes import scheduler
+from starpulse.views.application.commands.settings import scheduler
 
 from tests.machines import MACHINES, ROLES
 

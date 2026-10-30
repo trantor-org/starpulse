@@ -67,7 +67,9 @@ def store(tmp_path: Path) -> PullStore:
     return PullStore(create_engine(f"sqlite:///{tmp_path / 'pulls.sqlite'}"))
 
 
-def _pull(repo: str, number: int, *, state: str, sha: str | None, at: str | None, files: Sequence[str] = (), branch: str = "") -> dict:
+def _pull(
+    repo: str, number: int, *, state: str, sha: str | None, at: str | None, files: Sequence[str] = (), branch: str = ""
+) -> dict:
     return {
         "repo": repo,
         "number": number,

@@ -6,6 +6,35 @@ from typing import Any
 from urllib.parse import unquote
 
 from starlette.routing import compile_path
+from starpulse.views.adapters.inbound.api import metrics
+from starpulse.views.adapters.inbound.api.neutral import ReadRoute, StreamRoute, WriteRoute
+from starpulse.views.adapters.inbound.api.routing import Api, api_routes
+
+
+def table(api: Api, *kinds: type) -> list[tuple]:
+    """The routes of `api` in match order as `(path, handler)` (a read or a stream) or `(path, methods, handler)` (a
+    write), the `/api` mount in front of each path, limited to the `kinds` of route given (all by default)."""
+    mounted = [
+        *((route, "/api" + route.path) for route in api_routes(api)),
+        *((route, route.path) for route in metrics.routes(api)),
+    ]
+    return [
+        (path, route.methods, route.handler) if isinstance(route, WriteRoute) else (path, route.handler)
+        for route, path in mounted
+        if not kinds or isinstance(route, kinds)
+    ]
+
+
+def reads(api: Api) -> list[tuple]:
+    return table(api, ReadRoute)
+
+
+def writes(api: Api) -> list[tuple]:
+    return table(api, WriteRoute)
+
+
+def streams(api: Api) -> list[tuple]:
+    return table(api, StreamRoute)
 
 
 def _match(table: Sequence[tuple], path: str, method: str) -> tuple[Callable[..., Any], dict[str, str]] | None:

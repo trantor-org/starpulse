@@ -24,8 +24,9 @@ from starpulse.runtime.adapter_kit import serve, task, url
 from starpulse.runtime.assembly import keep_event_log
 from starpulse.runtime.config import Config, load
 from starpulse.runtime.server import _adapter, _config
-from starpulse.views.adapters.inbound.write_routes import _no_writer
-from starpulse.views.application.commands.writes import move_task, rerun_dag, run_dag, start_task
+from starpulse.views.adapters.inbound.api.writing import no_writer as _no_writer
+from starpulse.views.application.commands.moves import move_task, start_task
+from starpulse.views.application.commands.runs import rerun_dag, run_dag
 
 from tests.machines import MACHINES, ROLES
 

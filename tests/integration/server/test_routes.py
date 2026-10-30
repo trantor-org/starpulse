@@ -42,7 +42,12 @@ def test_a_head_of_a_read_is_the_headers_of_its_get_and_no_body(server: PageServ
 def test_a_head_of_a_stream_answers_its_headers_and_opens_none(server: PageServer) -> None:
     status, headers, body = _ask(server, "/api/events", "HEAD")
 
-    assert (status, headers["Content-Type"], headers["Cache-Control"], body) == (200, "text/event-stream", "no-store", b"")
+    assert (status, headers["Content-Type"], headers["Cache-Control"], body) == (
+        200,
+        "text/event-stream",
+        "no-store",
+        b"",
+    )
 
 
 def test_a_method_no_route_takes_is_a_405_naming_the_ones_it_does(server: PageServer) -> None:

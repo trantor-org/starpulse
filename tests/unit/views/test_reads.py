@@ -10,21 +10,22 @@ from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.board_feed import BoardFeed
 from starpulse.event_log.event_log import EventLog
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
+from starpulse.views.adapters.inbound.api.neutral import Arrival, ReadRoute, Request, Response
+from starpulse.views.adapters.inbound.api.routing import Api, api_routes
 from starpulse.views.adapters.inbound.compression import Encoded
-from starpulse.views.adapters.inbound.reads import Arrival, ReadRoutes, Request, Response
 from starpulse.views.adapters.inbound.snapshot_cache import SnapshotCache
 from starpulse.views.application.queries.responses import cited_pulls
 from starpulse.views.ports.services import Services
 
 from tests.fake_board import bare_board
-from tests.unit.views.routing import answer
+from tests.unit.views.routing import answer, reads
 
 
 @pytest.fixture
-def routes(tmp_path: Path):
+def routes(tmp_path: Path) -> Api:
     feed = BoardFeed()
     log = EventLog(f"sqlite:///{tmp_path / 'settings.sqlite'}")
-    return ReadRoutes(
+    return Api(
         feed=feed,
         history=HistoryStore("sqlite://", feed.machines),
         snapshots=SnapshotCache(feed),
@@ -35,7 +36,7 @@ def routes(tmp_path: Path):
 
 
 def _get(routes, path: str, query: str = "") -> Response | None:
-    return answer(routes.routes(), Request(path, query, "127.0.0.1"))
+    return answer(reads(routes), Request(path, query, "127.0.0.1"))
 
 
 def _json(response: Response) -> dict:
@@ -135,10 +136,11 @@ def test_a_get_of_a_milestone_write_path_is_the_milestone_read_of_that_id(routes
 
 def test_the_pulls_read_is_timed_and_any_other_is_not(routes, caplog: pytest.LogCaptureFixture) -> None:
     caplog.set_level("WARNING")
-    with routes.watch(Request("/api/doctor", "", "127.0.0.1"), 0.0, Arrival(0.0)) as timing:
-        timing.computed()
-    assert "slow_read" not in caplog.text
+    watches = {route.path: route.watch for route in api_routes(routes) if isinstance(route, ReadRoute)}
+    assert watches["/doctor"] is None
 
-    with routes.watch(Request("/api/pulls", "", "127.0.0.1"), 0.0, Arrival(0.0)) as timing:
+    watch = watches["/pulls"]
+    assert watch is not None
+    with watch(Request("/api/pulls", "", "127.0.0.1"), 0.0, Arrival(0.0)) as timing:
         timing.computed()
     assert "slow_read route=/api/pulls" in caplog.text

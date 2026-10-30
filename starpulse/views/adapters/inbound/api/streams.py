@@ -1,5 +1,5 @@
 """The event streams as frame generators: no socket and no web framework, so the ASGI app (and any
-other front) writes the same frames."""
+other front) writes the same frames. The snapshot and ledger modules route them."""
 
 from __future__ import annotations
 
@@ -8,13 +8,13 @@ import queue
 import threading
 import time
 from collections.abc import Callable, Generator, Sequence
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs
 
 from pydantic import ValidationError
 
+from starpulse.views.adapters.inbound.api.neutral import Admit, Request, Response, Stream
 from starpulse.views.adapters.inbound.column_stream import ColumnViews, Interest
-from starpulse.views.adapters.inbound.reads import Request, Response
 from starpulse.views.application.queries.responses import _error
 from starpulse.views.model.encoding import encode, event
 
@@ -66,25 +66,14 @@ class EventText:
             return text
 
 
-Admit = Callable[[], bool]
-StreamHandler = Callable[[Request, Admit], "Stream | Response"]
-
-
-class Stream(NamedTuple):
-    """An open stream: `frames` are the bytes to write, in order, until the client leaves (the caller then closes the
-    generator); `release` detaches the stream from the feed once it ends."""
-
-    frames: Generator[bytes]
-    release: Callable[[], None]
-
-
 def _frame(name: str, data: str) -> bytes:
     return f"event: {name}\ndata: {data}\n\n".encode()
 
 
 class Streams:
-    """The streams the page holds open: the Board's events, a session's held tasks, the lanes and one Ledger's rows. A
-    route answers a `Request` with the `Stream` to write, or a `Response` where it refuses to open one."""
+    """The streams the page holds open: the Board's events, a session's held tasks, the lanes and one Ledger's rows. Each
+    handler answers a `Request` with the `Stream` to write, or a `Response` where it refuses to open one; `admit` moves
+    the connection's worker into the stream pool and says whether there was room."""
 
     def __init__(
         self,
@@ -98,32 +87,21 @@ class Streams:
         self._event_text = EventText()
         self._column_views = ColumnViews()
 
-    def routes(self) -> list[tuple[str, StreamHandler]]:
-        """Every stream as its path template (`ReadRoutes.routes` says how it is written) and its handler, which takes
-        the request and `admit`, which moves the connection's worker into the stream pool and says whether there was
-        room."""
-        return [
-            ("/api/events", self._board),
-            ("/api/held", self._held),
-            ("/api/lanes", self._lanes),
-            ("/api/ledger/{rest:path}/events", self._ledger_rows),
-        ]
-
-    def _board(self, request: Request, admit: Admit) -> Stream | Response:
+    def board(self, request: Request, admit: Admit) -> Stream | Response:
         by_ref = parse_qs(request.query).get("snapshot") == ["ref"]
         return self._admitted(admit, lambda: self._events(by_ref))
 
-    def _held(self, request: Request, admit: Admit) -> Stream | Response:
+    def held(self, request: Request, admit: Admit) -> Stream | Response:
         assignee = (parse_qs(request.query).get("assignee") or [""])[0]
         if not assignee:
             return Response(_error("name the session: /api/held?assignee=<session>"), 400)
         return self._admitted(admit, lambda: self._columns("held", assignee))
 
-    def _lanes(self, request: Request, admit: Admit) -> Stream | Response:
+    def lanes(self, request: Request, admit: Admit) -> Stream | Response:
         states = parse_qs(request.query).get("state", [])
         return self._admitted(admit, lambda: self._columns("lanes", None, states))
 
-    def _ledger_rows(self, request: Request, admit: Admit) -> Stream | Response:
+    def ledger_rows(self, request: Request, admit: Admit) -> Stream | Response:
         event = request.path_params["rest"].partition("/")[0]
         return self._admitted(admit, lambda: self._ledger(event))
 

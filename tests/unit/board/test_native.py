@@ -18,7 +18,7 @@ from starpulse.runtime.adapter_kit import BoardAdapterKit
 from starpulse.runtime.assembly import assemble
 from starpulse.runtime.config import load
 from starpulse.runtime.server import announce
-from starpulse.views.application.commands.writes import move_task
+from starpulse.views.application.commands.moves import move_task
 
 LANES = ["To Do", "In Progress", "Done"]
 _OPERATOR_ONLY = """\
@@ -146,7 +146,9 @@ def test_a_machine_may_declare_an_initial_and_a_final_state_that_are_not_lanes(
 
     flow = feed.snapshot()["flows"][0]
     assert [state["id"] for state in flow["machine"]["states"]] == ["new", "to_do", "in_progress", "done", "archived"]
-    assert flow["agents"][0]["moves"] == {"in_progress": {"allowed": True, "reason": "", "skill": "", "writers": (), "actors": {}}}
+    assert flow["agents"][0]["moves"] == {
+        "in_progress": {"allowed": True, "reason": "", "skill": "", "writers": (), "actors": {}}
+    }
 
 
 def test_a_move_a_board_rule_refuses_is_offered_as_refused_with_the_rules_reason(

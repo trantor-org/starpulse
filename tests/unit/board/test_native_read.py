@@ -9,7 +9,7 @@ from starpulse.board.model.seam import Board
 from starpulse.event_log.event_log import EventLog
 from starpulse.runtime.assembly import assemble
 from starpulse.runtime.config import load
-from starpulse.views.application.commands.writes import create_task, task_record
+from starpulse.views.application.commands.tasks import create_task, task_record
 
 LAN = "127.0.0.1"
 FILE = """---

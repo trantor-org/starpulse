@@ -11,7 +11,7 @@ from starpulse.board.board_feed import BoardFeed
 from starpulse.event_log.event_log import EventLog
 from starpulse.pulls.adapters.inbound import delivery
 from starpulse.pulls.adapters.outbound.pulls import PullStore
-from starpulse.views.adapters.inbound.reads import _PullReads
+from starpulse.views.adapters.inbound.api.pulls import PullReads
 
 PULLS = {
     "TASK-1": [{"number": 7, "repo": "acme/widgets", "url": "https://github.com/acme/widgets/pull/7", "checks": "pass"}]
@@ -248,7 +248,7 @@ def test_a_query_the_server_answered_empty_is_answered_with_the_record_the_worke
     log: EventLog, stop: threading.Event
 ) -> None:
     serving = PullStore(log.engine)
-    reads = _PullReads(serving)
+    reads = PullReads(serving)
     query = "repo=acme%2Fwidgets&number=7"
     refreshed = threading.Event()
     serving.subscribe(refreshed.set)

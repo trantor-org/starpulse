@@ -131,7 +131,9 @@ def test_a_quic_socket_on_the_servers_port_answers_an_http3_read(
 async def _cancel_requests(certificate: tuple[Path, Path], port: int, count: int) -> None:
     """Open one connection, send `count` reads and cancel each as a browser closing its tab does, with a RESET_STREAM
     and a STOP_SENDING, before the server answers."""
-    configuration = QuicConfiguration(is_client=True, alpn_protocols=H3_ALPN, cafile=str(certificate[0]), idle_timeout=5.0)
+    configuration = QuicConfiguration(
+        is_client=True, alpn_protocols=H3_ALPN, cafile=str(certificate[0]), idle_timeout=5.0
+    )
     async with connect("127.0.0.1", port, configuration=configuration, create_protocol=_H3Client) as client:
         for _ in range(count):
             stream_id = client._quic.get_next_available_stream_id()  # type: ignore[attr-defined]

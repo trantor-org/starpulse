@@ -16,7 +16,7 @@ from starpulse.board.model.view import board_flow, task_view
 from starpulse.event_log.event_log import EventLog
 from starpulse.runtime.assembly import assemble
 from starpulse.runtime.config import load
-from starpulse.views.application.commands import writes
+from starpulse.views.application.commands import tasks as writes
 
 from tests.unit.board.test_native import native_root, write_task
 from tests.unit.board.test_native_rules import done_needs

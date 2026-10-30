@@ -11,13 +11,15 @@ from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.board_feed import BoardFeed
 from starpulse.contracts.api.registry import REQUESTS
 from starpulse.event_log.event_log import EventLog
-from starpulse.views.adapters.inbound.reads import Response
-from starpulse.views.adapters.inbound.write_routes import WriteRequest, WriteRoutes
-from starpulse.views.application.commands import writes as server_writes
+from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
+from starpulse.views.adapters.inbound.api.neutral import Response, WriteRequest
+from starpulse.views.adapters.inbound.api.routing import Api
+from starpulse.views.adapters.inbound.snapshot_cache import SnapshotCache
+from starpulse.views.application.commands import guard as server_writes
 from starpulse.views.ports.services import Services
 
 from tests.fake_board import bare_board
-from tests.unit.views.routing import answer, handler_for
+from tests.unit.views.routing import answer, handler_for, writes
 
 _JSON = {"Content-Type": "application/json"}
 
@@ -31,21 +33,21 @@ def feed() -> BoardFeed:
     return BoardFeed()
 
 
-def _routes(feed: BoardFeed, tmp_path: Path, **pushes) -> WriteRoutes:
+def _routes(feed: BoardFeed, tmp_path: Path, **pushes) -> Api:
     log = EventLog(f"sqlite:///{tmp_path / 'settings.sqlite'}")
     window = HistoryWindow(feed, 6, log)
     unwritten = lambda *args, **kwargs: None  # noqa: E731 - a writer that answers nothing
     board = bare_board(writer=unwritten, assign=unwritten, read=unwritten, edit=unwritten)
-    return WriteRoutes(feed, window, board, Services(**pushes))
+    return Api(feed, HistoryStore("sqlite://", feed.machines), SnapshotCache(feed), window, board, Services(**pushes))
 
 
 @pytest.fixture
-def routes(feed: BoardFeed, tmp_path: Path) -> WriteRoutes:
+def routes(feed: BoardFeed, tmp_path: Path) -> Api:
     return _routes(feed, tmp_path, scheduler=SimpleNamespace())
 
 
 def _write(
-    routes: WriteRoutes,
+    routes: Api,
     method: str,
     path: str,
     body: bytes = b"{}",
@@ -53,14 +55,14 @@ def _write(
     client: str = "127.0.0.1",
 ) -> Response | None:
     sent = {"Content-Length": str(len(body)), **(headers if headers is not None else _JSON)}
-    return answer(routes.routes(), WriteRequest(method, path, client, sent, lambda size: body[:size]))
+    return answer(writes(routes), WriteRequest(method, path, client, sent, lambda size: body[:size]))
 
 
 def _json(response: Response) -> dict:
     return json.loads(response.body)
 
 
-def test_a_write_from_another_page_is_refused_as_an_error_body(routes: WriteRoutes) -> None:
+def test_a_write_from_another_page_is_refused_as_an_error_body(routes: Api) -> None:
     headers = {**_JSON, "Origin": "http://evil.example", "Host": "starpulse.lan"}
 
     response = _write(routes, "POST", "/api/move", headers=headers)
@@ -70,14 +72,14 @@ def test_a_write_from_another_page_is_refused_as_an_error_body(routes: WriteRout
     assert "error" in _json(response)
 
 
-def test_a_write_that_is_not_json_is_a_415(routes: WriteRoutes) -> None:
+def test_a_write_that_is_not_json_is_a_415(routes: Api) -> None:
     response = _write(routes, "POST", "/api/move", headers={"Content-Type": "text/plain"})
 
     assert response is not None
     assert response.status == 415
 
 
-def test_a_write_from_outside_the_lan_is_a_403(routes: WriteRoutes) -> None:
+def test_a_write_from_outside_the_lan_is_a_403(routes: Api) -> None:
     response = _write(routes, "POST", "/api/move", client="8.8.8.8")
 
     assert response is not None
@@ -88,7 +90,7 @@ _PUT_ROUTES = {"/api/scheduler", "/api/history-window"}
 
 
 @pytest.mark.parametrize("path", [path for path in REQUESTS if path != "/api/insights"])
-def test_a_body_its_request_model_rejects_is_a_400_naming_the_field(routes: WriteRoutes, path: str) -> None:
+def test_a_body_its_request_model_rejects_is_a_400_naming_the_field(routes: Api, path: str) -> None:
     response = _write(routes, "PUT" if path in _PUT_ROUTES else "POST", path, body=b'{"unexpected": 1}')
 
     assert response is not None
@@ -96,14 +98,14 @@ def test_a_body_its_request_model_rejects_is_a_400_naming_the_field(routes: Writ
     assert _json(response) == {"error": "invalid request: unexpected: Extra inputs are not permitted"}
 
 
-def test_a_task_write_answers_its_status(routes: WriteRoutes) -> None:
+def test_a_task_write_answers_its_status(routes: Api) -> None:
     response = _write(routes, "POST", "/api/move", body=b"not json")
 
     assert response is not None
     assert response.status == 400
 
 
-def test_a_put_of_the_history_window_is_guarded_like_a_post(routes: WriteRoutes) -> None:
+def test_a_put_of_the_history_window_is_guarded_like_a_post(routes: Api) -> None:
     headers = {**_JSON, "Origin": "http://evil.example", "Host": "starpulse.lan"}
 
     response = _write(routes, "PUT", "/api/history-window", headers=headers)
@@ -124,9 +126,7 @@ def test_a_put_of_the_history_window_is_guarded_like_a_post(routes: WriteRoutes)
         ("DELETE", "/api/insights/abc"),  # removed with it: the window's DELETE, which is no such path
     ],
 )
-def test_a_method_and_path_that_are_no_write_route_are_left_to_the_server(
-    routes: WriteRoutes, method: str, path: str
-) -> None:
+def test_a_method_and_path_that_are_no_write_route_are_left_to_the_server(routes: Api, method: str, path: str) -> None:
     assert _write(routes, method, path) is None
 
 
@@ -148,7 +148,7 @@ def test_a_push_over_its_limit_is_refused_unread_and_closes_the_connection(feed:
         raise AssertionError("an oversized body is not read")
 
     request = WriteRequest("POST", "/api/pulls/refresh", "127.0.0.1", {"Content-Length": str(10**9)}, unread)
-    response = answer(routes.routes(), request)
+    response = answer(writes(routes), request)
 
     assert response is not None
     assert response.status == 413
@@ -161,7 +161,7 @@ def test_an_unreadable_length_on_a_push_is_read_as_empty(feed: BoardFeed, tmp_pa
         "POST", "/api/pulls/refresh", "127.0.0.1", {"Content-Length": "many"}, lambda size: b"x" * size
     )
 
-    response = answer(routes.routes(), request)
+    response = answer(writes(routes), request)
 
     assert response is not None
     assert _json(response) == {"error": "auth=None body="}
@@ -180,8 +180,8 @@ def test_an_unreadable_length_on_a_push_is_read_as_empty(feed: BoardFeed, tmp_pa
         ("/", False),
     ],
 )
-def test_a_get_reaches_no_write_route(routes: WriteRoutes, path: str, post_only: bool) -> None:
-    table = routes.routes()
+def test_a_get_reaches_no_write_route(routes: Api, path: str, post_only: bool) -> None:
+    table = writes(routes)
 
     assert handler_for(table, path, "GET") is None
     assert (handler_for(table, path, "POST") is not None) is post_only
@@ -233,7 +233,7 @@ def test_a_write_the_replay_has_not_reached_is_a_503_asking_the_client_to_wait(
     assert response.retry_after == server_writes.RETRY_AFTER_S
 
 
-def test_a_write_the_server_refuses_for_another_reason_asks_for_no_retry(routes: WriteRoutes) -> None:
+def test_a_write_the_server_refuses_for_another_reason_asks_for_no_retry(routes: Api) -> None:
     response = _write(routes, "POST", "/api/move", body=b"not json")
 
     assert response is not None
