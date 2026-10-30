@@ -42,7 +42,6 @@ from starpulse.runs.cloudevents_grpc import cloudevents_grpc
 from starpulse.views.adapters.inbound.compression import Encoded, Gzip, accepts_gzip
 from starpulse.views.adapters.inbound.gate_request import GateRequest
 from starpulse.views.adapters.inbound.reads import Arrival, Handler, ReadRoutes, Request, Response
-from starpulse.views.adapters.inbound.routes import _PAGES
 from starpulse.views.adapters.inbound.snapshot_cache import SnapshotCache
 from starpulse.views.adapters.inbound.streams import Stream, StreamHandler, Streams
 from starpulse.views.adapters.inbound.write_routes import WriteHandler, WriteRequest, WriteRoutes
@@ -260,7 +259,7 @@ class PageApp:
             *(Route(path, self._streamed(handler), methods=["GET"]) for path, handler in streams.routes()),
             *(Route(path, self._read(handler), methods=["GET"]) for path, handler in routes.routes()),
             *(Route(path, self._written(handler), methods=list(methods)) for path, methods, handler in writes.routes()),
-            *(Route(path, self._page, methods=["GET"]) for path in _PAGES),
+            *(Route(path, self._page, methods=["GET"]) for path in ("/", "/board", "/runs")),
             Route("/flow/{flow}", self._flow, methods=["GET"]),
             Route("/{path:served}", self._file, methods=["GET"]),
         ]
@@ -382,7 +381,7 @@ class PageApp:
     def _read(self, handler: Handler) -> Endpoint:
         def read(request: Incoming, arrival: Arrival, body: _Body) -> Reply:
             queued_s = time.monotonic() - arrival.at
-            asked = Request(_target(request), request.url.query, _client(request))
+            asked = Request(_target(request), request.url.query, _client(request), request.path_params)
             with self._routes.watch(asked, queued_s, arrival) as timing:
                 response = handler(asked)
                 timing.computed()
@@ -392,7 +391,9 @@ class PageApp:
 
     def _written(self, handler: WriteHandler) -> Endpoint:
         def write(request: Incoming, arrival: Arrival, body: _Body) -> Reply:
-            asked = WriteRequest(request.method, _target(request), _client(request), request.headers, body)
+            asked = WriteRequest(
+                request.method, _target(request), _client(request), request.headers, body, request.path_params
+            )
             response = handler(asked)
             if response is None:
                 return _not_found()  # a push this deployment leaves unconfigured
@@ -404,7 +405,7 @@ class PageApp:
 
     def _streamed(self, handler: StreamHandler) -> Endpoint:
         def open_stream(request: Incoming, arrival: Arrival, body: _Body) -> Reply:
-            asked = Request(_target(request), request.url.query, _client(request))
+            asked = Request(_target(request), request.url.query, _client(request), request.path_params)
             took = False
 
             def admit() -> bool:
