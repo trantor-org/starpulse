@@ -37,7 +37,7 @@ def _timed_ms(call: Callable[[], object]) -> float:
 
 
 def _floor_ms(call: Callable[[], object]) -> float:
-    """The fastest of `_RUNS` calls by the thread's own CPU time. ai-vm-1 runs the nightly's shards at a load average of
+    """The fastest of `_RUNS` calls by the thread's own CPU time. ai-vm-1 runs the nightly's workers at a load average of
     100+, so a wall clock bills the call for its wait in the run queue (snapshot: 195-674 ms for ~65 CPU-ms) and even the
     p95 of CPU time inflates 3x from hyperthread and cache contention; the fastest call is the cost the code adds."""
     for _ in range(3):

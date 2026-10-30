@@ -14,9 +14,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-#: Absent from the rerun's environment: xdist workers (memray does not profile them), the shard split (the ids are already
-#: this shard's) and the screen itself (it would overwrite the report being read).
-DROPPED = ("PYTEST_ADDOPTS", "SHARD_COUNT", "SHARD_INDEX", "TEST_COST_REPORT")
+#: Absent from the rerun's environment: xdist workers (memray does not profile them) and the screen itself (it would
+#: overwrite the report being read).
+DROPPED = ("PYTEST_ADDOPTS", "TEST_COST_REPORT")
 
 
 def rerun(nodeid: str, out: Path, number: int) -> str | None:

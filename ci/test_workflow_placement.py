@@ -16,7 +16,7 @@ AI_VM_1_LANE = ["self-hosted", "ai-vm-1"]
 HOSTED = "ubuntu-latest"
 #: The required checks' jobs, which moved to the sp-ci Dagu DAG and left ci.yml.
 MOVED_CHECKS = ["python", "web", "static-checks", "build"]
-CI_TEST_JOBS = ["select", "python-shard", "fresh-serve"]
+CI_TEST_JOBS = ["select", "python-tests", "fresh-serve"]
 
 
 def job(workflow: str, name: str) -> dict:
@@ -180,7 +180,7 @@ def test_no_job_or_check_reaches_a_checkout_of_another_repository():
 #: Every ci.yml job but the macOS smoke: the jobs that test a tree.
 TEST_JOBS = [
     "select",
-    "python-shard",
+    "python-tests",
     "coverage-map",
     "python-ft",
     "fresh-serve",
@@ -200,16 +200,16 @@ def test_every_ci_job_but_the_macos_smoke_is_a_test_job():
 
 
 def test_the_coverage_map_is_published_from_the_nightlys_data_green_or_red():
-    """A red shard still uploads its coverage data, and `coverage_map.py build` refuses a map missing too many tests, so one
-    flaky shard no longer freezes the map every pull request's selection reads."""
+    """A red run still uploads its coverage data, and `coverage_map.py build` refuses a map missing too many tests, so one
+    flaky test no longer freezes the map every pull request's selection reads."""
     condition = job("ci.yml", "coverage-map")["if"]
-    assert "python-shard" in needs("ci.yml", "coverage-map")
+    assert "python-tests" in needs("ci.yml", "coverage-map")
     assert "!cancelled()" in condition
     assert "needs.select.result == 'success'" in condition
-    assert "needs.python-shard.result == 'success'" not in condition
+    assert "needs.python-tests.result == 'success'" not in condition
 
 
-def test_the_free_threaded_suite_runs_beside_the_shards():
+def test_the_free_threaded_suite_runs_beside_the_python_tests():
     """The live server runs on 3.14t, so a change that breaks that build must show in the nightly run."""
     ft = job("ci.yml", "python-ft")
     assert ft["runs-on"] == AI_VM_1_LANE
@@ -222,7 +222,7 @@ def test_the_free_threaded_suite_fails_when_the_gil_comes_back():
     runs = "\n".join(step["run"] for step in job("ci.yml", "python-ft")["steps"] if "run" in step)
     assert "uv sync --locked --python 3.14t" in runs
     assert "sys._is_gil_enabled()" in runs
-    assert "PYTEST_TARGETS" in runs  # the same selected tests as the shards
+    assert "PYTEST_TARGETS" in runs  # the same selected tests as the python-tests job
 
 
 def test_the_free_threaded_environment_lives_outside_the_checkout_and_is_set_in_a_step():
@@ -323,7 +323,7 @@ def run_ci(command: str, tmp_path, env: dict[str, str], *, pytest_exit: int = 0)
     stub.chmod(0o755)
     shell = subprocess.run(
         [str(RUN), command],
-        env={"PATH": f"{tmp_path}:/usr/bin:/bin", "SHARD_LOG": str(tmp_path / "pytest-shard.log"), **env},
+        env={"PATH": f"{tmp_path}:/usr/bin:/bin", "PYTEST_LOG": str(tmp_path / "pytest.log"), **env},
         capture_output=True,
         text=True,
         check=False,
@@ -331,35 +331,8 @@ def run_ci(command: str, tmp_path, env: dict[str, str], *, pytest_exit: int = 0)
     return shell.returncode
 
 
-def test_the_shard_count_is_the_size_of_the_matrix_the_selection_made():
-    shard = job("ci.yml", "python-shard")
-    assert shard["env"]["SHARD_COUNT"] == "${{ strategy.job-total }}"
-    assert shard["env"]["SHARD_INDEX"] == "${{ matrix.shard }}"
-
-
-@pytest.mark.parametrize(
-    ("select_result", "shards", "launched", "status"),
-    [
-        ("success", "success", "[1, 2, 3]", 0),
-        ("success", "skipped", "[]", 0),  # no test selected: no shard launched, none failed
-        ("success", "failure", "[1, 2, 3]", 1),
-        ("success", "cancelled", "[1, 2, 3]", 1),
-        ("success", "skipped", "[1, 2, 3]", 1),  # shards were wanted and never ran
-        ("failure", "skipped", "", 1),  # a failed selection or lint skips the shards and leaves its outputs empty
-        ("cancelled", "skipped", "[]", 1),
-        ("failure", "success", "[1]", 1),
-    ],
-)
-def test_the_python_check_passes_when_every_launched_shard_passed_or_none_was_needed(
-    tmp_path, select_result, shards, launched, status
-):
-    """The sp-ci DAG's `python` check reads this: a red, cancelled or never-run shard must not leave it green or missing."""
-    env = {"SELECT_RESULT": select_result, "SHARDS_RESULT": shards, "LAUNCHED": launched}
-    assert run_ci("python", tmp_path, env) == status
-
-
-def test_a_shard_runs_ci_run_sh_python_shard():
-    assert "ci/run.sh python-shard" in [step.get("run") for step in job("ci.yml", "python-shard")["steps"]]
+def test_the_python_tests_job_runs_ci_run_sh_python_tests():
+    assert "ci/run.sh python-tests" in [step.get("run") for step in job("ci.yml", "python-tests")["steps"]]
 
 
 @pytest.mark.parametrize(
@@ -370,13 +343,13 @@ def test_a_shard_runs_ci_run_sh_python_shard():
         ("", 5, 1),  # a full run that collects nothing is broken
         ("ci/test_a.py", 0, 0),
         ("ci/test_a.py", 1, 1),
-        ("ci/test_a.py", 5, 0),  # this shard drew none of the selected files
+        ("ci/test_a.py", 5, 0),  # the selected files collect no test
     ],
 )
-def test_a_shard_with_no_selected_files_passes_but_a_failing_or_empty_full_run_does_not(
+def test_a_targeted_run_collecting_no_test_passes_but_a_failing_or_empty_full_run_does_not(
     tmp_path, targets, pytest_exit, status
 ):
-    assert run_ci("python-shard", tmp_path, {"PYTEST_TARGETS": targets}, pytest_exit=pytest_exit) == status
+    assert run_ci("python-tests", tmp_path, {"PYTEST_TARGETS": targets}, pytest_exit=pytest_exit) == status
 
 
 def test_release_runs_only_the_push_and_dispatch_events():
@@ -440,8 +413,8 @@ def test_ci_proves_the_ingest_on_a_hosted_runner_with_no_redis():
     assert any("ci/clean_machine.py" in step.get("run", "") for step in proof["steps"])
 
 
-def test_the_build_job_builds_in_a_scratch_checkout_so_it_never_empties_the_clones_static_under_a_running_shard():
-    """vite empties starpulse/static; the python shards of the same sp-ci clone hold a stub there while they run."""
+def test_the_build_job_builds_in_a_scratch_checkout_so_it_never_empties_the_clones_static_under_the_running_python_step():
+    """vite empties starpulse/static; the python step of the same sp-ci clone holds a stub there while it runs."""
     body = RUN.read_text().split("cmd_build() {")[1].split("\n}\n")[0]
     assert "git worktree add --detach" in body
     assert body.index("git worktree add") < body.index("pnpm --dir starpulse/web run build")

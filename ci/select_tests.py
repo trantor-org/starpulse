@@ -12,16 +12,14 @@ Python files that read it (`READERS`), each reader as changed as the file it ope
 know) runs everything. A push to main selects the same way; the nightly scheduled run is the full suite, so what a
 selection misses fails there.
 
-Prints `PYTEST_TARGETS` (empty means the whole suite) and `PYTEST_SHARDS` (a JSON list of the shard indexes to launch:
-empty when no test is selected, all six for a full run). `--full` prints the whole suite without reading a diff;
-`--base REF` names the commit the diff starts from.
+Prints `PYTEST_TARGETS` (empty means the whole suite) and `python` (`false` when no test is selected, else `true`).
+`--full` prints the whole suite without reading a diff; `--base REF` names the commit the diff starts from.
 """
 
 from __future__ import annotations
 
 import argparse
 import ast
-import json
 import re
 import subprocess
 import sys
@@ -32,7 +30,6 @@ from functools import cache
 from pathlib import Path
 
 from coverage_map import DEFAULT_DIR, facts, latest, renamed_since
-from shard import SECONDS
 
 #: Read by every test, by pytest itself or by a loader the graph cannot follow (YAML, JSON, skill files).
 FULL_SUITE = (
@@ -144,25 +141,6 @@ class Selection:
 
 
 FULL = Selection(None)
-
-#: Shards a full run splits the suite across (`ci/shard.py`).
-SHARD_COUNT = 6
-
-#: Seconds of tests a selected shard should hold, about what its checkout and `uv sync` cost: a smaller share does not
-#: pay for the runner it holds. A selected file `ci/shard.py` has not weighed counts `FILE_SECONDS`.
-SHARD_SECONDS = 60
-FILE_SECONDS = 5
-
-
-def shards_for(selection: Selection) -> list[int]:
-    """The 1-based shard indexes to launch: all of them for a full run, none for no test, else by the files' weight.
-
-    Never more than the files: `ci/shard.py` never splits one.
-    """
-    if selection.tests is None:
-        return list(range(1, SHARD_COUNT + 1))
-    seconds = sum(SECONDS.get(test, FILE_SECONDS) for test in selection.tests)
-    return list(range(1, min(SHARD_COUNT, len(selection.tests), -(-seconds // SHARD_SECONDS)) + 1))
 
 
 def _modules(root: Path) -> dict[str, Path]:
@@ -428,7 +406,7 @@ def main(argv: list[str]) -> None:
         _print_map_facts(coverage, Path.cwd())
     targets = selection.tests or []
     print(f"PYTEST_TARGETS={' '.join(targets)}")
-    print(f"PYTEST_SHARDS={json.dumps(shards_for(selection))}")
+    print(f"python={'true' if selection.tests is None or selection.tests else 'false'}")
 
 
 if __name__ == "__main__":
