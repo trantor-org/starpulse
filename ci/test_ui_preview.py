@@ -9,7 +9,6 @@ from pathlib import Path
 
 import pytest
 import ui_preview
-import yaml
 from starpulse.cli import demo
 from ui_preview import (
     DEMO_BRANCH,
@@ -20,7 +19,6 @@ from ui_preview import (
     MOCKUP,
     PAGES,
     STARPULSE,
-    UI_GLOBS,
     DemoLeakError,
     comment_body,
     demo_note,
@@ -55,7 +53,6 @@ ROOT = Path(__file__).resolve().parents[1]
         (["ci/demo_workspace.py"], [STARPULSE]),
         (["ci/workspace/board.yaml"], [STARPULSE]),
         (["ci/select_tests.py", "ci/test_ui_preview.py", "ci/seeded_server.py"], []),
-        ([".github/workflows/ui-preview.yml"], [STARPULSE]),
         (["starpulse/cli/demo.py"], [STARPULSE]),
         (["design/admin/index.html"], [MOCKUP]),
         (["design/elements/index.html"], [MOCKUP, ELEMENTS]),
@@ -164,15 +161,6 @@ def test_a_push_the_comparison_cannot_vouch_for_renders() -> None:
     # GitHub lists at most 300 files, so a full page may hide a UI path
     assert push_touches_ui(compare(*[f"docs/{n}.md" for n in range(300)]))
     assert not push_touches_ui(compare(*[f"docs/{n}.md" for n in range(299)]))
-
-
-def test_the_workflow_filters_pull_requests_and_main_pushes_on_the_scripts_globs() -> None:
-    workflow = yaml.safe_load((ROOT / ".github/workflows/ui-preview.yml").read_text())
-    # PyYAML reads the `on:` key as True.
-    on = workflow[True]
-    assert tuple(on["pull_request"]["paths"]) == UI_GLOBS
-    assert on["push"] == {"branches": ["main"], "paths": list(UI_GLOBS)}
-    assert "workflow_dispatch" in on
 
 
 def test_the_shipped_mockup_builds_a_demo_that_leaks_nothing() -> None:
@@ -674,13 +662,6 @@ def test_a_failed_render_edits_the_earlier_preview_comment_in_place() -> None:
     gh = FakeGh([OLD])
     publish_failure(gh, "o/r", 7, "failed", author="bot")
     assert gh.comments[5]["body"] == "failed"
-
-
-def test_the_workflow_reports_a_failed_pull_request_render() -> None:
-    steps = yaml.safe_load((ROOT / ".github/workflows/ui-preview.yml").read_text())["jobs"]["render"]["steps"]
-    step = next(s for s in steps if s.get("name") == "Report a failed render")
-    assert "failure()" in step["if"] and "pull_request" in step["if"]
-    assert "--failed" in step["run"]
 
 
 def _fake_run(calls: list[tuple[str, ...]], failures: int, monkeypatch: pytest.MonkeyPatch) -> None:

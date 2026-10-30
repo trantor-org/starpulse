@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # One entry point per required CI context: `ci/run.sh python|web|static-checks|build`. Each runs from any directory,
-# installs what it reads and exits 0 only when its context is green, so ci.yml and any other runner share one definition.
-# `select` and `python-tests` are the two pieces `python` is built from; ci.yml's `select` and `python-tests` jobs and sp-ci's
-# `select` and `python` steps run them apart.
+# installs what it reads and exits 0 only when its context is green, so the sp-ci and starpulse-nightly Dagu DAGs and any other runner share one definition.
+# `select` and `python-tests` are the two pieces `python` is built from; sp-ci's `select` and `python` steps run them apart.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 

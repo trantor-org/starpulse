@@ -1,6 +1,6 @@
 """Render a pull request's StarPulse UI and post the screenshots as one PR comment; publish main's live demo.
 
-`.github/workflows/ui-preview.yml` runs this on every pull request that touches the page (`starpulse/web/**`), the
+The `starpulse-ui-preview` Dagu DAG runs this on every pull request that touches the page (`starpulse/web/**`), the
 design mockup and element sheet (`design/**`) or this preview. A push that changed no such path since the commit the
 comment was rendered from leaves the comment and demos as they are. It builds each changed surface's scrubbed
 one-file demo with `starpulse.cli.demo`, and each changed sub-mockup (`design/<dir>/index.html`) as `mockup-<dir>.html` with its scripts
@@ -48,13 +48,11 @@ SURFACE_GLOBS = {
         "ci/preview.toml",
         "ci/demo_workspace.py",
         "ci/workspace/**",
-        ".github/workflows/ui-preview.yml",
     ),
     MOCKUP: ("design/**",),
     # the sheet draws the real stylesheet, so a palette change re-renders it too
     ELEMENTS: ("design/elements/**", "starpulse/web/src/style.css"),
 }
-UI_GLOBS = tuple(dict.fromkeys(g for globs in SURFACE_GLOBS.values() for g in globs))
 PREVIEW_CONFIG = "ci/preview.toml"
 DESIGN = "design"
 #: Each surface's screenshots: a name and the query string the demo file opens with.

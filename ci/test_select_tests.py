@@ -280,19 +280,8 @@ def _function(name: str) -> str:
     return re.search(rf"^{name}\(\) \{{\n(.*?)^\}}$", script, re.DOTALL | re.MULTILINE).group(1)
 
 
-def test_the_nightly_schedule_and_a_dispatch_select_everything_once_in_a_job():
-    workflow = yaml.safe_load(CI.read_text())
-    # PyYAML reads the bare `on:` key as True.
-    assert set(workflow[True]) == {"push", "schedule", "workflow_dispatch"}
-    job = workflow["jobs"]["select"]
-    assert job["if"] == "github.event_name != 'push'"
-    assert job["outputs"] == {
-        "PYTEST_TARGETS": "${{ steps.select.outputs.PYTEST_TARGETS }}",
-        "python": "${{ steps.select.outputs.python }}",
-    }
-    select_step = next(s for s in job["steps"] if s.get("id") == "select")
-    # The nightly schedule and a dispatch have no base commit, so both select everything; the sp-ci DAG sets BASE for a pull request.
-    assert select_step["run"] == 'ci/run.sh select >> "$GITHUB_OUTPUT"'
+def test_without_a_base_select_chooses_everything_and_a_base_narrows_it():
+    """The nightly DAG and a dispatch have no base commit, so both select everything; the sp-ci DAG sets BASE for a pull request."""
     script = _function("cmd_select")
     assert "python ci/select_tests.py --full" in script
     assert '--base "$BASE"' in script
@@ -304,22 +293,12 @@ def test_select_runs_in_a_bare_environment_without_syncing_the_project():
 
 
 def test_the_import_layers_are_checked_in_the_static_checks_not_in_select_or_the_python_tests():
-    jobs = _ci()
-    assert any("ci/run.sh select" in s.get("run", "") for s in jobs["select"]["steps"])
     assert "lint-imports" not in _function("cmd_select")
     assert "lint-imports" in (ROOT / "ci/static_checks.sh").read_text()
-    assert not any("lint-imports" in s.get("run", "") for s in jobs["python-tests"]["steps"])
     assert "lint-imports" not in _function("cmd_python_tests")
 
 
-def test_the_python_job_is_skipped_on_an_empty_selection_and_runs_the_targets_it_was_given():
-    job = _ci()["python-tests"]
-    assert job["if"] == "github.event_name != 'push' && needs.select.outputs.python == 'true'"
-    assert "strategy" not in job
-    assert job["env"]["PYTEST_TARGETS"] == "${{ needs.select.outputs.PYTEST_TARGETS }}"
-    assert not any("select_tests" in s.get("run", "") for s in job["steps"])
-    python_step = next(s for s in job["steps"] if s.get("run") == "ci/run.sh python-tests")
-    assert "if" not in python_step
+def test_the_python_tests_run_the_targets_they_were_given():
     assert "pytest ${PYTEST_TARGETS:-}" in _function("cmd_python_tests")
 
 
