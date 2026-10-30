@@ -589,17 +589,19 @@ export function TaskView(p: TaskViewProps) {
               </RailSection>
             )}
             <RailSection name="Pull requests" count={p.task.prs.length}><PullRows task={p.task} /></RailSection>
-            <RailSection name="Dependencies" count={deps.dependsOn.length + deps.holds.length + deps.more}>
+            {deps.dependsOn.length + deps.holds.length > 0 && <RailSection name="Dependencies" count={deps.dependsOn.length + deps.holds.length + deps.more}>
               <div className="deps">
-                <div className="lb">Depends on</div>
-                {deps.dependsOn.length ? <Box><DepRows rows={deps.dependsOn} names={names} roles={roles} open={p.open} /></Box> : <span className="none">—</span>}
+                {deps.dependsOn.length > 0 && <>
+                  <div className="lb">Depends on</div>
+                  <Box><DepRows rows={deps.dependsOn} names={names} roles={roles} open={p.open} /></Box>
+                </>}
                 {deps.holds.length > 0 && <>
                   <div className="lb">Holds</div>
                   <Box><DepRows rows={deps.holds} names={names} roles={roles} open={p.open} /></Box>
                   {deps.more > 0 && <div className="k">+{deps.more} more</div>}
                 </>}
               </div>
-            </RailSection>
+            </RailSection>}
             {docs.links.length > 0 && <RailSection name="Docs" count={docs.links.length}>
               <DocRows links={docs.links} reading={readDoc?.id ?? null} open={(doc) => setReading({ task: p.task.id, doc })} />
             </RailSection>}

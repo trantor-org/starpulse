@@ -263,6 +263,16 @@ describe("the task view's right rail", () => {
     expect(rows(draw({ task: { ...task, dependencies: ["TASK-404"] } }), "Dependencies")).toContain("not on the board");
   });
 
+  it("leaves out Depends on when the task has none, and the whole section when it holds nothing either", () => {
+    const free = { ...task, dependencies: [] };
+    const html = rows(draw({ task: free, tasks: many }), "Dependencies");
+
+    expect(html).not.toContain("Depends on");
+    expect(html).not.toContain("—");
+    expect(html).toContain("Holds");
+    expect(headings(draw({ task: free }))).not.toContain("Dependencies");
+  });
+
   it("caps Holds at six rows and counts the rest", () => {
     const html = rows(draw({ tasks: many }), "Dependencies");
 
