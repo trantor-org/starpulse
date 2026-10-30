@@ -4,7 +4,7 @@
 which writes it judges, `require` is one primitive the task as it will be after the write must satisfy, and `reason`
 is the refusal every writer, the CLI's and the page's, answers with. A primitive is a one-key table naming its kind:
 `{field: {...}}`, `{label: {...}}`, `{section: {...}}`, `{body: {...}}`, `{block: {...}}`,
-`{post_merge_checks: {}}`, `{dependencies: {...}}` or `{checklist: {...}}`, or a
+`{post_merge_checks: {}}`, `{dependencies: {...}}`, `{checklist: {...}}` or `{readable: {...}}`, or a
 combinator, `all_of`, `any_of`, `exactly_one` and `none_of`, over a list of primitives; `{before: <primitive>}` reads
 the task as it was before the write (a create had none, so it holds). A write carries the actor that makes it
 (`operator`, `agent`, or `<instance>/<workflow>` as a machine's `writers` spell it), which `unless_actor` exempts.
@@ -17,11 +17,11 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from typing import Any
 
-from starpulse.board.model import post_merge_checks
+from starpulse.board.model import post_merge_checks, readable
 from starpulse.board.model.sections import fenced_list, under
 from starpulse.machine_engine.model.transitions import lane_id
 
-__all__ = ["Record", "Rule", "load", "refusal", "standing_refusal"]
+__all__ = ["Record", "Rule", "load", "readable_verdict", "refusal", "standing_refusal"]
 
 
 @dataclass(frozen=True)
@@ -85,6 +85,11 @@ class Rule:
         if self.origin and (before is None or before.state not in self.origin):
             return False
         return self.staying or before is None or before.state != after.state
+
+    def explain(self, record: Record) -> str:
+        """The refusal text for `record`: the reason, then what a `readable` requirement found broken, when it is one."""
+        found = _found(self.require, record)
+        return f"{self.reason}: {found}" if found else self.reason
 
 
 def _states(spec: object, where: str) -> frozenset[str]:
@@ -282,6 +287,28 @@ def _checklist(spec: Mapping[str, Any], where: str) -> Primitive:
     return holds
 
 
+def _found(primitive: Primitive, record: Record) -> str:
+    """What a `readable` primitive finds broken in `record`, "" for any other primitive or a description that reads well."""
+    return primitive.broken(record) if isinstance(primitive, _Readable) else ""
+
+
+class _Readable:
+    """A `readable` primitive: holds when the description reads well, and `broken` says what it found otherwise."""
+
+    def __init__(self, template: readable.Template) -> None:
+        self._template = template
+
+    def broken(self, record: Record) -> str:
+        return readable.broken(self._template, record.body)
+
+    def __call__(self, record: Record) -> bool:
+        return not self.broken(record)
+
+
+def _readable(spec: Mapping[str, Any], where: str) -> Primitive:
+    return _Readable(readable.parse(spec, where))
+
+
 #: The combinators: how many of the nested primitives, of `total`, must hold.
 _COMBINATORS: dict[str, Callable[[int, int], bool]] = {
     "all_of": lambda held, total: held == total,
@@ -298,6 +325,7 @@ _KINDS: dict[str, Callable[[Mapping[str, Any], str], Primitive]] = {
     "post_merge_checks": _post_merge_checks,
     "dependencies": _dependencies,
     "checklist": _checklist,
+    "readable": _readable,
 }
 _NAMES = ", ".join([*_KINDS, "before", *_COMBINATORS])
 
@@ -386,3 +414,11 @@ def standing_refusal(
         if rule.judges(before, after, actor) and not rule.require(after) and not read:
             return rule
     return None
+
+
+def readable_verdict(rules: tuple[Rule, ...], front: Mapping[str, Any], body: str) -> str:
+    """What the first `readable` rule finds broken in the description of `body`, or "" when each reads well.
+
+    It judges the description, not a write, so no actor exempts it and a state a rule names does not narrow it."""
+    record = Record(front, body)
+    return next((found for rule in rules if (found := _found(rule.require, record))), "")

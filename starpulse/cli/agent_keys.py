@@ -73,6 +73,7 @@ TASK_KEYS = (
     "waiting_on",
     "criteria",
     "pause_reason",
+    "readable",
     "prs",
     "moves",
     "rating",

@@ -584,6 +584,7 @@ def test_the_board_lists_each_column_with_its_tasks_dependencies_prs_and_moves(
         "waiting_on": ["PROJ-2"],
         "criteria": [],
         "pause_reason": "",
+        "readable": "",
         "prs": [
             {
                 "number": 5,
@@ -748,6 +749,7 @@ def test_task_show_reports_a_settled_task_by_where_it_settled(base: str, capsys:
         "waiting_on": [],
         "criteria": [],
         "pause_reason": "",
+        "readable": "",
         "prs": [],
         "moves": {},
         "description": "",

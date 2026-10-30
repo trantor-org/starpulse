@@ -5183,6 +5183,18 @@
           "default": null,
           "description": "A task's pull requests: the PR URLs among its references."
         },
+        "readable": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The first `readable` guard rule a Board task's description breaks, with its line; empty when it reads well, absent off the Board."
+        },
         "released": {
           "anyOf": [
             {

@@ -573,6 +573,10 @@ export interface RawTask {
    */
   prs?: string[] | null;
   /**
+   * The first `readable` guard rule a Board task's description breaks, with its line; empty when it reads well, absent off the Board.
+   */
+  readable?: string | null;
+  /**
    * The claim-TTL release a Board task's claim ended in; null when none ended it.
    */
   released?: ClaimRelease | null;

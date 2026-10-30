@@ -103,6 +103,7 @@ def task_agent(task: BoardTask) -> dict:
         "description": task.description,
         "criteria": [{"text": text, "checked": checked} for text, checked in zip(task.acceptance_criteria, ticks)],
         "pause_reason": task.pause_reason,
+        "readable": task.readable,
         "moves": {column: move.model_dump() for column, move in task.moves.items()},
         "created": task.created_at,
     }

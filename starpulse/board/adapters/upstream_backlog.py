@@ -220,6 +220,7 @@ class UpstreamBacklog:
         retired: Callable[[bool], Iterable[str] | None] = lambda _force=False: None,
         refusal: Callable[[Mapping[str, Any], str, str], Mapping[str, Any] | None] = lambda *_: None,
         roles: StateRoles | None = None,
+        readable: Callable[[Mapping[str, Any], str], str] = lambda *_: "",
     ) -> None:
         """`files` are the fingerprints a saved Board was placed from (`files`), so the first scan reads only the files
         changed since; `kept` is handed them after each scan that placed or retracted a task. `retired` streams the
@@ -237,6 +238,7 @@ class UpstreamBacklog:
         self._settled_retired: set[str] = set()
         self._retired_done: set[str] = set()
         self._refusal = refusal
+        self._readable = readable
         self._moves = moves if moves is not None else board_moves(board_machine(self.config.statuses))
         self._lanes = {lane_id(status) for status in self.config.statuses}
         self._roles = roles or StateRoles.of_statuses(self.config.statuses)
@@ -385,6 +387,7 @@ class UpstreamBacklog:
             pause_reason=_pause_reason(body, lane, self._roles.attention),
             notes=_notes(body),
             moves={} if settled else self._offered(lane, frontmatter, body),
+            readable="" if settled else self._readable(frontmatter, body),
         )
 
     def _offered(self, lane: str, frontmatter: dict, body: str) -> dict[str, Move]:
@@ -495,12 +498,14 @@ def project_board(
     writers: Callable[[BacklogConfig, StateRoles], Mapping[str, Any]],
     retired: Callable[[bool], Iterable[str] | None] = lambda _force=False: None,
     refusal: Callable[[Mapping[str, Any], str, str], Mapping[str, Any] | None] = lambda *_: None,
+    readable: Callable[[Mapping[str, Any], str], str] = lambda *_: "",
 ) -> Board:
     """The Board of the Markdown project in `root`, polled every `settings["interval"]` seconds, with the writers `writers` builds.
 
     Any lane reaches any other unless `settings["machine"]` names a machine file (relative to `base`), whose transitions
     and `writers` then decide which moves are offered and to whom. `retired` is the scan's reader of retired task text;
-    `refusal` is the update a board rule that refuses a task's move to a lane makes to the move.
+    `refusal` is the update a board rule that refuses a task's move to a lane makes to the move; `readable` answers
+    what the board's `readable` rules find broken in a task's description, "" when it reads well.
     """
     interval = float(settings.get("interval", POLL_INTERVAL))
     config = read_config(root)
@@ -546,6 +551,7 @@ def project_board(
             retired=retired,
             refusal=refusal,
             roles=roles,
+            readable=readable,
         ).start(interval, scanned=lambda: feed.expect("0-0"))
         feed.spawn(feed.keep_saved, "board-state")
 
