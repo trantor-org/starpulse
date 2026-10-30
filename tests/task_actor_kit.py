@@ -22,7 +22,7 @@ PR_THREE = "https://github.com/acme/trantor/pull/3"
 SHA = "a" * 40
 WAITS = {
     "in_progress": {"pr_ready": "REVIEW"},
-    "review": {"pr_terminal": "MERGED"},
+    "review": {"pr_terminal": "MERGED", "pr_failing": "DEMOTE", "pr_conflicting": "SEND_BACK", "pr_draft": "SEND_BACK"},
     "waiting": {"deps_done_with_pr": "DEPS_DONE_REVIEW", "deps_done": "DEPS_DONE", "criteria_met": "CRITERIA_MET"},
     "ready": {"deps_unresolved": "WAIT_ON_DEPS", "criteria_unmet": "CRITERIA_UNMET"},
 }
@@ -43,6 +43,8 @@ ROLES = StateRoles(
 MOVES = {
     ("in_progress", "REVIEW"): "review",
     ("review", "MERGED"): "done",
+    ("review", "DEMOTE"): "needs_attention",
+    ("review", "SEND_BACK"): "in_progress",
     ("waiting", "DEPS_DONE_REVIEW"): "review",
     ("waiting", "DEPS_DONE"): "ready",
     ("ready", "WAIT_ON_DEPS"): "waiting",
@@ -139,21 +141,33 @@ class Board:
         return [(name, str(comment)) for name, changes, comment, _ in self.writes if not changes]
 
 
-def pull(number: int, *, state: str, repo: str = "acme/trantor", sha: str = SHA, files: Sequence[str] = (), branch: str = "", title: str = "", base: str = "main"
+def pull(
+    number: int,
+    *,
+    state: str,
+    repo: str = "acme/trantor",
+    sha: str = SHA,
+    files: Sequence[str] = (),
+    branch: str = "",
+    title: str = "",
+    base: str = "main",
+    checks: str = "pass",
+    mergeable: str = "UNKNOWN",
+    draft: bool = False,
 ) -> dict:
     at, sha = ("2026-10-12T09:00:00Z", sha) if state == "MERGED" else (None, None)
     return {
         "repo": repo,
         "number": number,
         "state": state,
-        "isDraft": False,
-        "mergeable": "UNKNOWN",
+        "isDraft": draft,
+        "mergeable": mergeable,
         "baseRefName": base,
         "headRefOid": f"{number:040x}",
         "headRefName": branch,
         "title": title,
         "body": "",
-        "checks": "pass",
+        "checks": checks,
         "requiredChecks": [],
         "threads": 0,
         "updatedAt": at or "2026-10-12T08:00:00Z",
