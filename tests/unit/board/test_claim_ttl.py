@@ -4,6 +4,7 @@ claimed by another session, and the release names the last renewal (D6)."""
 import json
 import threading
 import time
+from dataclasses import replace
 from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
@@ -339,3 +340,23 @@ def test_a_halt_before_the_bounded_transcript_tail_is_not_read(served, tmp_path:
     halted = partial(transcript_halt, tmp_path / "projects", tail=4096)
 
     assert sweep(built, store, _rows(built), ttl=1800, now=claimed + 60, halted=halted) == []
+
+
+def test_a_released_claim_fires_the_boards_released_notice_for_its_task(served) -> None:
+    built, _, store, _ = served
+    claimed = _claim(built, store)
+    noticed: list[str] = []
+
+    assert sweep(replace(built, released=noticed.append), store, _rows(built), ttl=1800, now=claimed + 1801) == ["task-5"]
+
+    assert noticed == ["task-5"]
+
+
+def test_a_failing_released_notice_leaves_the_release_standing(served) -> None:
+    built, _, store, _ = served
+    claimed = _claim(built, store)
+
+    def refuse(_task: str) -> None:
+        raise ValueError("no start")
+
+    assert sweep(replace(built, released=refuse), store, _rows(built), ttl=1800, now=claimed + 1801) == ["task-5"]
