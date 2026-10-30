@@ -111,7 +111,7 @@ def _stub_harness(install: Path, receiver_port: int, ago_s: float) -> None:
 
 
 # Slow: the six processes of a first install are what it proves; cost note above `pytestmark`.
-# Re-timed in TASK-10008: `migrate` alone runs 37 alembic revisions on a fresh store, ~1.5 CPU-s.
+# Re-timed in TASK-10008: `migrate` is ~1.5 CPU-s, ~1.3 of it imports (`migrate --help` costs the same).
 def test_a_first_install_links_the_session_that_claims_a_task_to_it(tmp_path: Path, page_build: None) -> None:
     install = tmp_path / "demo"
     package_root = str(
