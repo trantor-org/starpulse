@@ -131,6 +131,7 @@ def test_a_criterion_in_error_for_two_passes_re_gates_the_task_once_without_park
     assert "cannot reach prometheus" in comments[0]
     assert board.moved() == [("TASK-101", "ready")]
     assert not any(name == "TASK-1" for name, _ in board.moved())
+    assert board.created[0][1]["priority"] == "medium"
 
 
 def test_the_projection_and_the_store_to_actor_handoff_are_exported_as_histograms(

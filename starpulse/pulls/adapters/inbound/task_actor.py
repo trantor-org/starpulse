@@ -595,6 +595,7 @@ class TaskActor:
                     "description": f"{REGATE} {reasons}.\n\nRe-park {name} on Start Criteria the evaluator can answer, then move it back to Waiting.",
                     "acceptanceCriteria": [f"{name} is back in Waiting on Start Criteria the evaluator can answer"],
                     "labels": ["kind-execute", "size-1", "mode-unattended"],
+                    "priority": "medium",
                 },
                 actor=ACTOR,
             )
