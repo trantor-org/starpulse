@@ -36,7 +36,7 @@ from starpulse.board.model.seam import Written
 from starpulse.contracts.adapters import StartFailedError
 from starpulse.event_log.event_log import EventLog
 from starpulse.harness_telemetry.model.harness import HARNESS
-from starpulse.scheduler.model.admission import Decision, decide, demand, needs_operator, tier_of
+from starpulse.scheduler.model.admission import REGRESSION, Decision, decide, demand, needs_operator, tier_of
 from starpulse.scheduler.model.config import Scheduler
 from starpulse.scheduler.model.harness_setting import DEFAULT as DEFAULT_HARNESS
 from starpulse.scheduler.model.harness_setting import HarnessSetting
@@ -222,7 +222,7 @@ class Loop:
             return fresh and data["enabled"] and (data.get("next") or {}).get("verdict") == "starting"
         if kind == "task":
             agent = data["agent"]
-            return data["id"] in self._running or (agent is not None and agent["state"] == self._lane)
+            return data["id"] in self._running or (agent is not None and self._may_enter(agent))
         if kind == "move":
             if data["machine"] != HARNESS.name:
                 return False
@@ -230,6 +230,12 @@ class Loop:
                 return True
             return data["id"] in self._held
         return False
+
+    def _may_enter(self, agent: Mapping[str, Any]) -> bool:
+        """Whether the task is in the eligible lane, or In Progress with the `regression` label a verify miss sets."""
+        if agent["state"] == self._lane:
+            return True
+        return agent["state"] == self._feed.roles.working and REGRESSION in agent.get("labels", ())
 
     def wake(self) -> None:
         """Run a tick on the loop's thread: the toggle turned on, or a capacity dimension crossed its limit."""
@@ -490,16 +496,27 @@ class Loop:
         now = self._clock()
         cooling = {task for task in self._starts if self._cooling(task, now)}
         held = set(self._running) | skipped | cooling | self._held
-        tasks = [
-            {**agent, "workable": False} if agent["id"] in held or self._delivered(agent) else agent
-            for agent in self._feed.open_tasks()
-        ]
+        live = self._live()
+        tasks = [self._candidate(agent, held, live) for agent in self._feed.open_tasks()]
         decisions = decide(
             tasks, self._lane, readings, self._policy, self._chain(), self._ledger, log=log, p_goals=self._p_goals()
         )
         if log:
             self._count(decisions)
         return tasks, decisions
+
+    def _live(self) -> set[str]:
+        """The In Progress tasks a session outside `_running` holds: one the harness or its transcript shows at work."""
+        outside = self._outside(("active", "stopped"))
+        return {*outside, *self._transcribed(outside)}
+
+    def _candidate(self, agent: dict[str, Any], held: set[str], live: set[str]) -> dict[str, Any]:
+        """`agent` as `decide` sees it: unworkable when held or delivered, and a task a verify miss sent back to In
+        Progress (the `regression` label) with no live session in the eligible lane, where it is picked as Ready work."""
+        if agent["id"] in held or self._delivered(agent):
+            return {**agent, "workable": False}
+        sent_back = agent["state"] == self._feed.roles.working and REGRESSION in agent["labels"]
+        return {**agent, "state": self._lane} if sent_back and agent["id"] not in live else agent
 
     def _delivered(self, agent: Mapping[str, Any]) -> bool:
         """Whether the eligible task's own pull request has merged: its work is done, so a session would only close it."""

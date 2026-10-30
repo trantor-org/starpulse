@@ -1,7 +1,7 @@
 """Admission: whether a Ready task fits the capacity left, and in what order the tasks that fit go.
 
 A task's demand is priced by what a task of its tier and size has drawn. A `kind-decide` task is never admitted: it
-waits on the operator. The tasks that fit rank two ways. The enforced order puts first a bug another open task waits on,
+waits on the operator. The tasks that fit rank two ways. The enforced order puts first the tasks labelled `regression`, then a bug another open task waits on,
 then the other bugs (type `bug`, or labelled `board-state` or `regression`), then the tasks labelled `leverage`, and
 within each the most open tasks waiting on it directly, then the deepest critical path, the heaviest Priority weight and
 the id. The shadow order is `value / dominant share` (Dominant Resource
@@ -34,8 +34,10 @@ PERCENT_PER_UNIT = 1.0
 NO_PROFILE = "no agent profile"
 #: Why a `kind-decide` task is refused: only the operator can make the decision it asks for.
 NEEDS_OPERATOR = "needs_operator"
+#: The label a post-merge QA miss puts on the task it sends back to In Progress: its fix goes before any other work.
+REGRESSION = "regression"
 #: The labels that mark a task a bug whatever its type: a board that shows the wrong state, or a behavior that regressed.
-BUG_LABELS = frozenset({"board-state", "regression"})
+BUG_LABELS = frozenset({"board-state", REGRESSION})
 
 logger = logging.getLogger(__name__)
 
@@ -100,10 +102,12 @@ def _dependents(tasks: Collection[Mapping[str, Any]]) -> dict[str, int]:
 
 
 def _enforced_key(task: Mapping[str, Any], dependents: int, decision: Decision) -> tuple[Any, ...]:
-    """Where `task` goes in the enforced order: blocking bugs, bugs, leverage, then dependents, depth, weight and id."""
+    """Where `task` goes in the enforced order: regressions, blocking bugs, bugs, leverage, then dependents, depth, weight
+    and id."""
     bug = task.get("type") == "bug" or not BUG_LABELS.isdisjoint(task["labels"])
     leverage = "leverage" in task["labels"]
     return (
+        REGRESSION not in task["labels"],
         not (bug and dependents > 0),
         not bug,
         not leverage,
