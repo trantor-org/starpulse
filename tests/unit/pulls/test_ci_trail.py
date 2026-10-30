@@ -14,8 +14,8 @@ from starpulse.pulls.adapters.outbound.pull_events import RecordProjection
 from starpulse.pulls.adapters.outbound.pulls import PullStore
 from starpulse.pulls.application.commands.ci_trail import CiTrail, parse
 from starpulse.pulls.model.ci import CI_MACHINES
-from starpulse.runs.cloudevents import CloudEventsIngest
-from starpulse.runs.config import Producer
+from starpulse.runs.adapters.inbound.cloudevents import CloudEventsIngest
+from starpulse.runs.model.config import Producer
 from starpulse.runtime.adapter_kit import task
 
 from tests.machines import MACHINES

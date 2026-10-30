@@ -151,7 +151,7 @@ def test_a_reader_left_behind_by_the_prune_timer_records_a_gap(database_url: str
 _FORMER_TAIL_CALLERS = (
     "event_log/lane_events.py",
     "event_log/conformance_monitor.py",
-    "runs/projection.py",
+    "runs/application/queries/projection.py",
     "flow_metrics/adapters/outbound/history.py",
 )
 

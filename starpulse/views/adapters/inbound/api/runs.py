@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 from starlette.requests import Request
 from starlette.responses import Response
 
-from starpulse.runs.ingest import MAX_BATCH_BODY
+from starpulse.runs.adapters.inbound.ingest import MAX_BATCH_BODY
 from starpulse.views.adapters.inbound.api.answering import client
 from starpulse.views.adapters.inbound.api.table import ApiRoute, WriteRoute
 from starpulse.views.adapters.inbound.api.writing import guarded, pushed, writing

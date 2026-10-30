@@ -9,7 +9,7 @@ from starpulse.board.adapters.task_history import KIND, WRITER
 from starpulse.board.model.seam import OPERATOR
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.store import EventStore, NewEvent
-from starpulse.runs.run_streams import RunStreams
+from starpulse.runs.application.commands.run_streams import RunStreams
 
 _RECORD = {"title": "Cut over", "status": "Review", "labels": ["a"], "session": "s1"}
 _LANES = [("e1", "TASK-1", "Ready", 10.0), ("e2", "TASK-1", "In Progress", 20.0), ("e3", "TASK-1", "Review", 30.0)]

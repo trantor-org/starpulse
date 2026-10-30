@@ -12,7 +12,7 @@ from starpulse.board import criteria
 from starpulse.board.bin import board_worker
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.events import STREAM as MACHINE_STREAM
-from starpulse.runs.run_events import STREAM as RUNS_STREAM
+from starpulse.runs.model.run_events import STREAM as RUNS_STREAM
 
 WITHIN_S = 5.0
 DESCRIPTION = """## Start Criteria

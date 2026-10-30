@@ -13,9 +13,9 @@ BUILT_IN = {
     "machines": "starpulse.board.adapters.machines_only",
     "upstream_backlog": "starpulse.board.adapters.upstream_backlog",
     "jira": "starpulse.board.adapters.jira",
-    "dagu": "starpulse.runs.dagu",
-    "github_actions": "starpulse.runs.github_actions",
-    "systemd": "starpulse.runs.systemd",
+    "dagu": "starpulse.runs.adapters.outbound.dagu",
+    "github_actions": "starpulse.runs.adapters.outbound.github_actions",
+    "systemd": "starpulse.runs.adapters.outbound.systemd",
 }
 
 #: The run adapters' worker contexts. Each runs as a `starpulse worker <context>` child of `serve`.

@@ -11,7 +11,7 @@ import time
 import pytest
 from starpulse.board.model.adapter_types import BUILT_IN, module_name
 from starpulse.contracts.adapters import TaskKeys
-from starpulse.runs import systemd
+from starpulse.runs.adapters.outbound import systemd
 from starpulse.runtime.adapter_kit import RunsAdapterKit
 
 STARTED = "Thu 2026-10-08 20:00:01 UTC"
@@ -96,8 +96,8 @@ class TestSystemdAdapter(RunsAdapterKit):
 
 
 def test_the_systemd_type_is_built_in() -> None:
-    assert BUILT_IN["systemd"] == "starpulse.runs.systemd"
-    assert module_name("systemd") == "starpulse.runs.systemd"
+    assert BUILT_IN["systemd"] == "starpulse.runs.adapters.outbound.systemd"
+    assert module_name("systemd") == "starpulse.runs.adapters.outbound.systemd"
 
 
 def test_a_timer_is_a_workflow_named_by_its_stem_with_one_step_for_its_service() -> None:

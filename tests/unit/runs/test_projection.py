@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from starpulse.board.board_feed import BoardFeed
 from starpulse.event_log.event_log import EventLog
-from starpulse.runs import projection
+from starpulse.runs.application.queries import projection
 
 DAGS = [
     {

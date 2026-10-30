@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlsplit
 
-from starpulse.runs.config import RunsInstance
+from starpulse.runs.model.config import RunsInstance
 from starpulse.runtime.config import Config, runs_adapter
 
 #: Seconds a `gh` command may take.
@@ -227,4 +227,3 @@ def run_checks(
         *beat,
     ]
     return _report(checks)
-

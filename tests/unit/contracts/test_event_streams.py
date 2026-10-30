@@ -9,7 +9,7 @@ import jsonschema
 import pytest
 from starpulse.event_log import events, lane_events, rating_events, verdict_events
 from starpulse.event_log.event_log import EventLog, Tail
-from starpulse.runs import run_events
+from starpulse.runs.model import run_events
 
 import starpulse
 from starpulse import contracts

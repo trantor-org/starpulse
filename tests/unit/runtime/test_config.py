@@ -7,7 +7,7 @@ import pytest
 from starpulse.board.model.commit_keys import CommitKeys
 from starpulse.harness_telemetry.model.harnesses import HarnessError
 from starpulse.pulls.model.pins import Repo
-from starpulse.runs.config import Producer
+from starpulse.runs.model.config import Producer
 from starpulse.runtime.config import Config, ConfigError, MemoryLimit, load, runs_adapter
 
 

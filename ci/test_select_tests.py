@@ -24,8 +24,8 @@ def repo(tmp_path: Path) -> Path:
         "starpulse/leaf.py": "X = 1\n",
         "starpulse/lone.py": "Y = 2\n",
         "starpulse/board/model/seam.py": "import importlib\nfrom starpulse.board.model.adapter_types import module_name\n",
-        "starpulse/runs/dagu.py": "def start(): ...\ndef follow(): ...\n",
-        "starpulse/board/model/adapter_types.py": 'BUILT_IN = {"dagu": "starpulse.runs.dagu", "jira": "x"}\n',
+        "starpulse/runs/adapters/outbound/dagu.py": "def start(): ...\ndef follow(): ...\n",
+        "starpulse/board/model/adapter_types.py": 'BUILT_IN = {"dagu": "starpulse.runs.adapters.outbound.dagu", "jira": "x"}\n',
         "starpulse/event_log/__init__.py": "",
         "starpulse/runtime/server.py": "",
         "starpulse/event_log/event_log.py": "from starpulse import leaf\n",
@@ -303,7 +303,7 @@ def test_the_python_tests_run_the_targets_they_were_given():
 
 
 def test_an_adapter_no_test_names_is_not_selected_through_the_loader_even_though_the_type_table_lists_it(repo):
-    assert select(repo, ["starpulse/runs/dagu.py"]) == Selection([])
+    assert select(repo, ["starpulse/runs/adapters/outbound/dagu.py"]) == Selection([])
 
 
 def test_a_module_a_conftest_fixture_uses_selects_the_tests_that_request_the_fixture(repo):

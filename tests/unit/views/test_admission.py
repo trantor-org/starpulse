@@ -6,7 +6,7 @@ import asyncio
 from pathlib import Path
 
 import pytest
-from starpulse.runs.cloudevents_grpc import PATH as CLOUDEVENTS_GRPC_PATH
+from starpulse.runs.adapters.inbound.cloudevents_grpc import PATH as CLOUDEVENTS_GRPC_PATH
 from starpulse.views.adapters.inbound import asgi_app
 from starpulse.views.adapters.inbound.api.answering import answer, reading
 from starpulse.views.adapters.inbound.api.table import ReadRoute, StreamRoute, WriteRoute
