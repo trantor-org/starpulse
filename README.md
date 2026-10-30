@@ -4,7 +4,7 @@
 
 <h1 align="center">StarPulse</h1>
 
-<p align="center"><strong>State machines for agent work: declare the lifecycle, and every task, workflow run and agent moves through it on one live page.</strong></p>
+<p align="center"><strong>Declarative state machines for agent work, with an enforced task board and a live view of every task, workflow run and agent session.</strong></p>
 
 <p align="center">
   <a href="https://github.com/trantor-org/starpulse/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/trantor-org/starpulse/ci.yml?branch=main&style=flat-square&label=ci" alt="CI status"></a>
@@ -15,54 +15,65 @@
 
 <p align="center">
   <a href="https://trantor-org.github.io/starpulse/main/starpulse.html">Live demo</a> ·
-  <a href="https://github.com/trantor-org/starpulse/blob/main/docs/serving.md">Configure</a> ·
-  <a href="https://github.com/trantor-org/starpulse/blob/main/docs/sources.md">Sources</a> ·
-  <a href="https://github.com/trantor-org/starpulse/blob/main/docs/cli.md">Agent CLI</a> ·
-  <a href="https://github.com/trantor-org/starpulse/blob/main/docs/adapters.md">Adapters</a> ·
-  <a href="https://github.com/trantor-org/starpulse/blob/main/docs/consumers.md">Consumers</a> ·
-  <a href="https://github.com/trantor-org/starpulse/blob/main/docs/security.md">Security</a> ·
-  <a href="https://github.com/trantor-org/starpulse/blob/main/docs/public-surface.md">Compatibility</a> ·
-  <a href="https://github.com/trantor-org/starpulse/blob/main/docs/development-loop.md">Development loop</a> ·
+  <a href="docs/serving.md">Documentation</a> ·
+  <a href="docs/cli.md">CLI reference</a> ·
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
-## What it is and why
+---
 
-I wanted to see where my agents were in their sessions and which skills they
-were using. Then I watched a video that mapped agent actions onto state
-machines, and I wanted to map the whole agent lifecycle and pair it with the
-Dagu workflows I already run, so scripts and DAGs could take over manual AI
-commands and cut the step count.
+StarPulse models each lifecycle in a project (a task board, a delivery pipeline, a skill's steps, a pull request's CI)
+as a state machine declared in YAML: its states, its transitions, and which writers (the operator, an agent, a named
+workflow) may make each move. Every move is recorded against its machine in an append-only event store and refused when
+the machine forbids it, whether it arrives from the CLI, the HTTP API or the web UI. A single page draws every machine
+live, with tasks, workflow runs and agent sessions moving through it.
 
-StarPulse is what I built: a state-machine tool for agent work. You declare each
-lifecycle as a machine, as data: its states, its transitions and who may make each
-move (the operator, an agent or a named workflow). StarPulse records every move
-against its machine and draws the machines live, with tasks, workflow runs and
-agents moving through them on one page. The board's writer refuses a move its
-machine forbids, the same way for the command line and the page.
+## Highlights
 
-A Kanban board is one shape a machine takes, not what StarPulse is. The Board
-machine's states become the lanes, and its transitions and `writers` decide which
-moves are offered, and to whom. Every other machine, such as a task's delivery
-phases, a skill's steps or a pull request's CI, is drawn as a flow beside it.
-StarPulse is not tied to one agent harness or one lifecycle, and it produces data
-and leaves what to do with that data to you.
+- **Machines as data.** Lifecycles, guards and writer permissions are declared in YAML and validated with
+  `starpulse machine validate`; a Kanban board is one machine, its states rendered as lanes.
+- **Enforced writes.** One write path for the CLI, the API and the page; a forbidden transition is refused, not drawn.
+- **Event-sourced state.** Append-only streams with optimistic concurrency, a transactional outbox and schema
+  upcasters, in a single portable SQLite database.
+- **Agent-native CLI.** Every verb prints JSON with documented exit codes; `starpulse help --agent` emits the full verb
+  manifest for an agent's context.
+- **Pluggable sources.** Adapters for task trackers, workflow schedulers and agent harnesses, plus a CloudEvents
+  ingest (HTTP and gRPC) for anything else.
+- **Built-in scheduler.** Admission, quiet hours and dispatch of Ready tasks to agent sessions.
+- **Observable.** Prometheus `/metrics`, OTLP intake for agent telemetry, and flow and session analytics.
+
+## Installation
+
+StarPulse requires Python 3.14 or later.
+
+```sh
+uv tool install starpulse    # or: pipx install starpulse
+```
+
+Or run it without installing, with `uvx starpulse`.
 
 ## Quick start
 
 ```sh
-uvx starpulse init    # writes starpulse.toml, board.yaml, .starpulse/board/ and .claude/settings.json (--harness, --dir)
-export STARPULSE_TOKEN=$(openssl rand -hex 16)
-uvx starpulse serve   # then open http://localhost:8766
+starpulse init                                  # scaffold starpulse.toml, board.yaml and .starpulse/board/
+export STARPULSE_TOKEN=$(openssl rand -hex 16)  # producer token read by the scaffolded config
+starpulse serve                                 # open http://localhost:8766
+starpulse task create "First task"
 ```
 
-`init` scaffolds a board machine with its roles declared, a `[[board.guards]]` rule, a `[scheduler]` table, a producer
-whose token is read from `STARPULSE_TOKEN`, and the Claude Code telemetry export settings; it refuses to overwrite an
-existing file. The board starts empty, with the lanes the machine's states name, ready for `uvx starpulse task create`.
+`init` writes a board machine with its roles declared, an example `[[board.guards]]` rule, a `[scheduler]` table and
+Claude Code telemetry export settings (`--harness`, `--dir` to change them). It never overwrites an existing file.
+`starpulse doctor` checks the config, the server and each adapter.
 
-### Working with AI agents
+## Using StarPulse with agents
 
-An agent works the board through the `starpulse` CLI, every verb printing JSON ([Agent CLI](https://github.com/trantor-org/starpulse/blob/main/docs/cli.md)). `uvx starpulse skills install --claude --codex` copies the bundled skills into the project. For any other agent, add a section to `AGENTS.md` or `CLAUDE.md`:
+Install the bundled skills into a project:
+
+```sh
+starpulse skills install --claude --codex
+```
+
+For any other harness, point the agent at the CLI from `AGENTS.md` or `CLAUDE.md`:
 
 ```md
 ## Tasks
@@ -72,9 +83,18 @@ arguments and exit codes. Read the board with `uvx starpulse board` and open a t
 `uvx starpulse task create "<title>"`.
 ```
 
-### Working without AI agents
+The same verbs work by hand, and **New task** on the Kanban view writes to the same board.
 
-The same verbs work typed by hand, and **New task** on the Kanban adds a task from the page. Both write the same board.
+## Integrations
+
+| Kind | Supported |
+|---|---|
+| Task trackers | Native Markdown board, Backlog.md, Jira |
+| Workflow runs | Dagu, GitHub Actions, systemd timers, any scheduler via CloudEvents |
+| Agent sessions | Claude Code (OTLP), GitHub Copilot cloud agent and code review |
+
+New trackers and producers are written against the board, machine-events and runs contracts; see
+[Adapters](docs/adapters.md).
 
 ## Views
 
@@ -82,22 +102,33 @@ The same verbs work typed by hand, and **New task** on the Kanban adds a task fr
 |---|---|---|
 | <img src="https://trantor-org.github.io/starpulse/main/starpulse-kanban.png" alt="Kanban view"> | <img src="https://trantor-org.github.io/starpulse/main/starpulse-star-map.png" alt="Star Map view"> | <img src="https://trantor-org.github.io/starpulse/main/starpulse-dags.png" alt="Workflow runs view"> |
 
-Reads tasks from its own Markdown board, Backlog.md or Jira; runs from Dagu, GitHub Actions or systemd; agents from Claude Code and Copilot.
+## Documentation
+
+| Guide | Covers |
+|---|---|
+| [Serve and configure](docs/serving.md) | Server, workers, config file, event store, scheduler, releases |
+| [Connect sources](docs/sources.md) | Agent telemetry, runs adapters, CloudEvents ingest, pull requests |
+| [CLI reference](docs/cli.md) | Every verb, its arguments, JSON output and exit codes |
+| [Write an adapter](docs/adapters.md) | Board, machine-events and runs contracts, and the adapter kit |
+| [Build a consumer](docs/consumers.md) | Dashboards, alerts and reports built on the event log export |
+| [Security](docs/security.md) | Network exposure, request checks and the trust model |
+| [Compatibility](docs/public-surface.md) | The public surface and how releases keep it compatible |
+| [Development](docs/development.md) | Building and testing StarPulse from source |
+| [Development loop](docs/development-loop.md) | How StarPulse fits a workflow with many concurrent agent sessions |
 
 ## Status
 
-StarPulse is early. This is my first open source project, and I am still
-learning how to run one. What is rough today:
+StarPulse is pre-1.0 and under active development; minor releases may change the config, CLI and API. The
+[public surface](docs/public-surface.md) lists what is covered by compatibility guarantees. Known gaps:
 
-- The UI is messy and not fully implemented.
-- The data it captures is not yet acted on in full; the feedback loop from
-  captured signal to changed behavior is incomplete.
-- Performance is good but could be better.
+- Parts of the web UI are incomplete.
+- Captured signals are recorded and reported but not yet fed back into scheduling decisions.
 
-## Feedback
+## Contributing
 
-Something broke, confused you or is missing? [Open an issue](https://github.com/trantor-org/starpulse/issues/new).
-Say what you ran and what you expected. A confusing first run is a bug I want to
-hear about.
+Bug reports and pull requests are welcome. Open an [issue](https://github.com/trantor-org/starpulse/issues/new) with
+the command you ran and what you expected, and read [CONTRIBUTING.md](CONTRIBUTING.md) before sending a change.
 
-MIT licensed.
+## License
+
+[MIT](LICENSE)
