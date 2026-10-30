@@ -1185,6 +1185,11 @@ def _creator(
     return create
 
 
+#: Seconds a `holds`, `unfinished` or notice hook may run. Each starts a Python process and reads the board over HTTP, which takes
+#: 20 s on ai-vm-1 under load where the evaluator's `criteria.TIMEOUT` gives up at 10 s; a timeout holds the task until the next pass.
+HOOK_TIMEOUT = 60.0
+
+
 def _holds(command: object, base: Path) -> Callable[[str], list[str]] | None:
     """The `holds` or `unfinished` command, run in `base` with `{id}` replaced by the task's id: it prints a JSON array
     of the reasons the task's `deps_done` is withheld, or of the work a merged task has left. Output that is no such array
@@ -1195,7 +1200,7 @@ def _holds(command: object, base: Path) -> Callable[[str], list[str]] | None:
 
     def holds(task: str) -> list[str]:
         argv = [part.replace("{id}", task) for part in parts]
-        done = subprocess.run(argv, cwd=base, capture_output=True, text=True, timeout=criteria.TIMEOUT, check=False)
+        done = subprocess.run(argv, cwd=base, capture_output=True, text=True, timeout=HOOK_TIMEOUT, check=False)
         try:
             printed = json.loads(done.stdout)
         except ValueError:
@@ -1217,7 +1222,7 @@ def _notice(command: object, base: Path) -> Callable[[str], None] | None:
 
     def notice(task: str) -> None:
         argv = [part.replace("{id}", task) for part in parts]
-        done = subprocess.run(argv, cwd=base, capture_output=True, text=True, timeout=criteria.TIMEOUT, check=False)
+        done = subprocess.run(argv, cwd=base, capture_output=True, text=True, timeout=HOOK_TIMEOUT, check=False)
         if done.returncode:
             said = done.stderr.strip() or done.stdout.strip() or "printed nothing"
             raise ValueError(f"{shlex.join(argv)}: exit {done.returncode}: {said}")

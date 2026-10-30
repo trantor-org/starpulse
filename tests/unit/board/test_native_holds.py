@@ -1,10 +1,12 @@
 """The native board's `[board] holds` command: the reasons it prints withhold a task's `deps_done` from the task actor."""
 
 import shlex
+import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+from starpulse.board import criteria
 from starpulse.board.adapters import native
 
 
@@ -47,3 +49,20 @@ def test_the_unfinished_command_prints_the_work_a_merged_task_still_has(tmp_path
     assert built.unfinished("TASK-2") == ["TASK-2 lacks a PR"]
     assert built.unfinished("TASK-3") == []
     assert native.board({}, tmp_path).unfinished is None
+
+
+def test_a_holds_read_slower_than_the_criteria_timeout_still_returns(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The hook starts a Python process and reads the board over HTTP, which takes longer than an evaluator under load."""
+    monkeypatch.setattr(criteria, "TIMEOUT", 0.2)
+    monkeypatch.setattr(native, "HOOK_TIMEOUT", 5.0)
+    holds = _holds(tmp_path, "import time\ntime.sleep(0.6)\nprint('[]')\n")
+
+    assert holds("TASK-2") == []
+
+
+def test_a_holds_read_past_the_hook_timeout_raises_so_the_next_pass_retries(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(native, "HOOK_TIMEOUT", 0.2)
+    holds = _holds(tmp_path, "import time\ntime.sleep(2)\nprint('[]')\n")
+
+    with pytest.raises(subprocess.TimeoutExpired):
+        holds("TASK-2")
