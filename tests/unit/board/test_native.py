@@ -3,6 +3,7 @@
 import json
 import re
 import shutil
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -414,3 +415,38 @@ def test_a_native_write_records_the_lane_and_the_moment_it_was_written(tmp_path:
     assert moved.at is not None
     assert (edited.ok, edited.lane) == (True, "Done")
     assert edited.at is not None
+
+
+_RELEASABLE = """\
+name: board
+states:
+  waiting: {initial: true, waits: {criteria_met: CRITERIA_MET}}
+  ready: {role: waiting_on_fact, waits: {criteria_unmet: CRITERIA_UNMET}}
+  done: {final: true}
+events:
+  CRITERIA_MET: [{from: waiting, to: ready}]
+  CRITERIA_UNMET: [{from: ready, to: waiting}]
+  FINISH: [{from: ready, to: done}]
+"""
+
+
+def test_a_write_leaving_a_task_in_waiting_is_refused_with_the_reason_its_release_to_ready_would_meet(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "board.yaml").write_text(_RELEASABLE)
+    (native_root(tmp_path) / "tasks").mkdir(parents=True)
+    (native_root(tmp_path) / "config.yml").write_text(
+        yaml.safe_dump({"project_name": "demo", "statuses": ["Waiting", "Ready", "Done"], "task_prefix": "task"})
+    )
+    guard = (
+        '[[board.guards]]\non = { to = "Ready", while = true }\n'
+        'require = { none_of = [{ field = { field = "labels", matches = "^kind-", min = 2 } }] }\n'
+        'reason = "a Ready task takes one kind"\n'
+    )
+    adapter = board({"machine": "board.yaml", "guards": tomllib.loads(guard)["board"]["guards"]}, tmp_path)
+
+    refused = adapter.create("Twice kinded", {"labels": ["kind-execute", "kind-decide"]}, "agent")
+    made = adapter.create("Once kinded", {"labels": ["kind-execute"]}, "agent")
+
+    assert (refused.ok, "a Ready task takes one kind" in refused.output) == (False, True)
+    assert made.ok
