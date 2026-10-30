@@ -388,3 +388,19 @@ def test_a_read_model_task_in_needs_attention_serves_the_reason_its_description_
 
     assert served is not None
     assert (served["pause_reason"], listed["pause_reason"]) == (reason, reason)
+
+
+def test_a_live_task_is_resident_once_the_feed_has_drawn_the_board_and_an_archived_one_never_is(engine: Engine) -> None:
+    _append(engine, 1, "Ready")
+    _append(engine, 2, "Done", archived=True)
+    feed = _feed(engine)
+    before = feed.is_resident("TASK-1")
+
+    feed.snapshot()
+
+    assert (before, feed.is_resident("TASK-1"), feed.is_resident("TASK-2"), feed.is_resident("TASK-3")) == (
+        False,
+        True,
+        False,
+        False,
+    )

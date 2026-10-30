@@ -77,20 +77,29 @@ def answer(
     return Response(body, status, headers)
 
 
+def _built[T](request: Request, work: Callable[[], T]) -> T | Response:
+    """What `work` returns, once the timing knows the request has it; a body its model refuses is a logged 500, since
+    the page reads only what a model names."""
+    request.scope.get(RAN, _nothing)()
+    try:
+        return work()
+    except ValidationError:
+        logger.exception("StarPulse: %s %s built a body its model refuses", request.method, request.url.path)
+        return answer(request, encode("error", {"error": "the server built a body its contract refuses"}), 500)
+
+
 async def on_worker(request: Request, work: Callable[[], Response]) -> Response:
-    """Run `work` for `request` on a worker thread; a body its model refuses is a logged 500, since the page reads only
-    what a model names."""
-    ran = request.scope.get(RAN, _nothing)
+    """Run `work` for `request` on a worker thread."""
+    return await to_thread.run_sync(
+        lambda: _built(request, work), abandon_on_cancel=True, limiter=request.app.state.workers
+    )
 
-    def run() -> Response:
-        ran()
-        try:
-            return work()
-        except ValidationError:
-            logger.exception("StarPulse: %s %s built a body its model refuses", request.method, request.url.path)
-            return answer(request, encode("error", {"error": "the server built a body its contract refuses"}), 500)
 
-    return await to_thread.run_sync(run, abandon_on_cancel=True, limiter=request.app.state.workers)
+def on_loop(request: Request, work: Callable[[], Response | None]) -> Response | None:
+    """Run `work` for `request` on the event loop, which `work` must not block: a read that needs only what is in
+    memory. Each hop to a worker thread and back is two wakeups, and on a busy host each waits its turn to run; `work`
+    answers None for a request that needs a worker."""
+    return _built(request, work)
 
 
 def reading(work: Callable[[Request], Response]) -> Callable[[Request], Awaitable[Response]]:

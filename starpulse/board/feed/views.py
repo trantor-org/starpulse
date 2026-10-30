@@ -62,6 +62,7 @@ class ViewMethods:
                     for summary in summaries
                 ],
             )
+            self._hot_ids = frozenset(agent["id"] for agent in self._hot_cache[1])
         return [self._expiring(agent) for agent in self._hot_cache[1]]
 
     def _flows(self, now: float) -> tuple[list[dict], dict[str, dict]]:

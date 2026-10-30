@@ -4,14 +4,18 @@ with the status, headers and body the page reads."""
 from __future__ import annotations
 
 import re
+import threading
 from pathlib import Path
 
 import pytest
+from sqlalchemy import create_engine, event
 from starlette.testclient import TestClient
 from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.board_feed import BoardFeed
 from starpulse.event_log.event_log import EventLog
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
+from starpulse.pulls.adapters.outbound.pulls import PullStore
+from starpulse.runtime.adapter_kit import task
 from starpulse.views.adapters.inbound.api import metrics
 from starpulse.views.adapters.inbound.api.routing import Api, api_routes
 from starpulse.views.adapters.inbound.asgi_app import PageApp
@@ -190,3 +194,66 @@ def test_a_slow_task_read_logs_its_queue_and_compute_seconds(
     (line,) = [r.getMessage() for r in caplog.records if "slow_read" in r.getMessage()]
     assert line.startswith("slow_read route=/api/task query=PROJ-404 queue_s=")
     assert " compute_s=" in line
+
+
+def _task_client(tmp_path: Path, board: object, services: Services) -> TestClient:
+    feed = BoardFeed()
+    feed.put(task("PROJ-3", "Ready"))
+    history = HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", feed.machines)
+    api = Api(
+        feed=feed,
+        history=history,
+        snapshots=SnapshotCache(feed),
+        window=HistoryWindow(feed, 6, EventLog(f"sqlite:///{tmp_path / 'settings.sqlite'}")),
+        board=board,
+        services=services,
+    )
+    app = PageApp(api_routes(api), metrics.routes, api.snapshots, tmp_path, (), seams=api)
+    return TestClient(app, client=("127.0.0.1", 50000))
+
+
+def _worker(name: str) -> bool:
+    return name.startswith("AnyIO worker thread")
+
+
+def test_a_task_the_feed_holds_is_read_without_a_worker_thread(tmp_path: Path) -> None:
+    readers: list[str] = []
+
+    def read(_task: str) -> dict:
+        readers.append(threading.current_thread().name)
+        return {"title": "t"}
+
+    response = _task_client(tmp_path, bare_board(read=read), Services()).get("/api/task/PROJ-3")
+
+    assert (response.status_code, response.json()) == (200, {"task": "PROJ-3", "record": {"title": "t"}})
+    assert [_worker(name) for name in readers] == [False]
+
+
+def test_a_task_citing_a_pull_request_only_the_database_holds_reads_it_on_a_worker_once(tmp_path: Path) -> None:
+    pulls_engine = create_engine(f"sqlite:///{tmp_path / 'pulls.sqlite'}")
+    PullStore(pulls_engine).save([{**_old_pull(1)}])
+    queries: list[str] = []
+    pulls = PullStore(pulls_engine)
+    event.listen(
+        pulls_engine, "before_cursor_execute", lambda *_: queries.append(threading.current_thread().name)
+    )
+    board = bare_board(read=lambda _task: {"title": "t", "references": ["https://github.com/acme/widgets/pull/1"]})
+    client = _task_client(tmp_path, board, Services(pulls=pulls))
+
+    first = client.get("/api/task/PROJ-3")
+    asked = list(queries)
+    second = client.get("/api/task/PROJ-3")
+
+    assert [pull["number"] for pull in first.json()["record"]["pulls"]] == [1]
+    assert second.json() == first.json()
+    assert [_worker(name) for name in asked] == [True]
+    assert queries == asked
+
+
+def _old_pull(number: int) -> dict:
+    return {
+        "repo": "acme/widgets", "number": number, "state": "MERGED", "isDraft": False, "mergeable": "MERGEABLE",
+        "baseRefName": "main", "headRefOid": f"{number:040x}", "body": "x", "checks": "none", "requiredChecks": [],
+        "threads": 0, "updatedAt": "2020-01-01T00:00:00Z", "mergedAt": "2020-01-01T00:00:00Z", "mergeSha": None,
+        "fetchedAt": 900.0, "detail": None,
+    }

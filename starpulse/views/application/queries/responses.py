@@ -7,7 +7,7 @@ import math
 import re
 import time
 from collections import Counter
-from collections.abc import Callable, Collection, Mapping
+from collections.abc import Callable, Collection, Iterable, Mapping
 from typing import TYPE_CHECKING, Any
 
 from starpulse.board.ledger import PAGE
@@ -155,17 +155,32 @@ def pulls_response(pulls: PullStore | None, query: dict[str, list[str]]) -> tupl
 _PULL_URL = re.compile(r"https://github\.com/([^/\s]+/[^/\s]+)/pull/(\d+)/?")
 
 
+def _cited(references: list[str]) -> list[tuple[str, int]]:
+    """The (repository, number) of each pull request `references` cites."""
+    return [(match[1], int(match[2])) for match in map(_PULL_URL.fullmatch, references) if match]
+
+
+def _without_bodies(records: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [{key: value for key, value in record.items() if key != "body"} for record in records]
+
+
 def cited_pulls(pulls: PullStore | None, references: list[str]) -> list[dict[str, Any]]:
     """The stored pull requests `references` cite, without their bodies: each one's state and checks, so a task
     record shows them as the pull requests page does."""
     if not pulls:
         return []
-    cited = [match for ref in references if (match := _PULL_URL.fullmatch(ref))]
-    return [
-        {key: value for key, value in record.items() if key != "body"}
-        for match in cited
-        for record in pulls.find(match[1], int(match[2]))
-    ]
+    return _without_bodies(record for repo, number in _cited(references) for record in pulls.find(repo, number))
+
+
+def resident_pulls(pulls: PullStore | None, references: list[str]) -> list[dict[str, Any]] | None:
+    """`cited_pulls` when memory holds what every cited pull request answers, so no query runs; None when only the
+    database can say."""
+    if not pulls:
+        return []
+    held = [pulls.resident(repo, number) for repo, number in _cited(references)]
+    if any(records is None for records in held):
+        return None
+    return _without_bodies(record for records in held for record in records or [])
 
 
 #: `/api/search`'s default and largest number of hits.

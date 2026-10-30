@@ -44,7 +44,7 @@ class PullStore:
     """Pull request records by (repository, number), in the database `engine` opens.
 
     Reads are served from memory: `sqlite3` gives up the GIL at every row step, and beside a thread that computes, each
-    step waits its turn again, so a 1,968-row read took 12-45 s on a busy server (TASK-5076). Memory holds the open
+    step waits its turn again, so a 1,968-row read took 12-45 s on a busy server. Memory holds the open
     records, those updated within `window` and each one saved since; `find` reads the rest from the database only when
     a query can reach them. Every write passes through `save`, which keeps the copy current; a record a caller changes
     in place changes what a later read serves."""
@@ -58,6 +58,8 @@ class PullStore:
         self._save_listeners: list[Callable[[list[tuple[str, int]]], None]] = []
         require_migrated(engine)
         self._held: dict[tuple[str, int], dict[str, Any]] = {}
+        #: The records only the database held that a read of one pull request found, until the next save or refresh.
+        self._found: dict[tuple[str, int], list[dict[str, Any]]] = {}
         since = (datetime.now(UTC) - window).strftime("%Y-%m-%dT%H:%M:%SZ")
         self._hold(
             select(pull_requests).where(or_(pull_requests.c.state == "OPEN", pull_requests.c.updated_at >= since))
@@ -76,6 +78,7 @@ class PullStore:
         rows = self._read(query)
         with self._lock:
             self._held.update({(row["repo"], row["number"]): row for row in rows})
+            self._found = {}
 
     def save(self, records: Iterable[dict[str, Any]]) -> None:
         """Replace each record (served names, as `find` returns them, and a `detail` when it has one) by its repository
@@ -155,6 +158,12 @@ class PullStore:
             for record in sorted(found, key=lambda record: (record["repo"], record["number"]))
         ]
 
+    def resident(self, repo: str, number: int) -> list[dict[str, Any]] | None:
+        """What `find(repo, number)` answers when memory can say, with no query: None when only the database can."""
+        with self._lock:
+            known = (repo, number) in self._held or (repo, number) in self._found
+        return self.find(repo, number) if known else None
+
     def _stored(
         self,
         held: dict[tuple[str, int], dict[str, Any]],
@@ -163,11 +172,19 @@ class PullStore:
         state: str | None,
         needle: str | None,
     ) -> list[dict[str, Any]]:
-        """The records in the database matching the filters that are not in `held`."""
+        """The records in the database matching the filters that are not in `held`; a read of one pull request is kept
+        until the next save or refresh, since an old pull request is read again for as long as a task cites it."""
+        memo, key = self._found, (repo, number)
+        one = repo is not None and number is not None and state is None and not needle
+        if one and key in memo:
+            return memo[key]
         filters = {"repo": repo, "number": number, "state": state}
         query = select(pull_requests).where(
             *(pull_requests.c[key] == value for key, value in filters.items() if value is not None)
         )
         if needle:
             query = query.where(pull_requests.c.body.contains(needle, autoescape=True))
-        return [record for record in self._read(query) if (record["repo"], record["number"]) not in held]
+        stored = [record for record in self._read(query) if (record["repo"], record["number"]) not in held]
+        if one:
+            memo[key] = stored  # the dict read before the query: a refresh since has swapped it for a new one
+        return stored
