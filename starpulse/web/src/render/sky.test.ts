@@ -160,6 +160,23 @@ describe("the moves", () => {
     ]);
   });
 
+  it("reads a task's trail once while the task stays the same object, and again when a delta replaces it", () => {
+    const m = new Moves();
+    const S = merge(snap(1000, [], [placed("PROJ-1", [["worktree_ready", "WORKTREE_READY", 900]])]));
+    const agent = S.flows["in-progress"].agents[0];
+    const trail = agent.trail;
+    let reads = 0;
+    Object.defineProperty(agent, "trail", { get: () => (reads++, trail) });
+
+    m.observe(S, 1000);
+    m.observe({ ...S }, 1001);
+    expect(reads).toBe(1);
+
+    const next = { ...agent, trail: [...trail!, { state: "pr_opened", event: "PR_OPENED", at: 1002 }] };
+    m.observe({ ...S, now: 1004, flows: { ...S.flows, "in-progress": { ...S.flows["in-progress"], agents: [next] } } }, 1004);
+    expect(m.events.map((e) => e.to)).toEqual(["worktree_ready", "pr_opened"]);
+  });
+
   it("turns a task's Board state change between snapshots into the transition's event", () => {
     const m = new Moves();
     m.observe(merge(snap(1000, [task("PROJ-1", "ready")], [])), 1000);

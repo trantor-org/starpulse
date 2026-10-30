@@ -431,7 +431,7 @@ describe("openStream", () => {
   describe("a snapshot the server sends by reference", () => {
     afterEach(() => vi.unstubAllGlobals());
 
-    it("is read from the path it names, and the deltas that arrived while it was read are folded into it in order", async () => {
+    it("is read from the path it names, and the deltas that arrived while it was read are folded into it in order and handed over once", async () => {
       const reads = fetchStub();
       openStream(handlers, open);
 
@@ -443,8 +443,8 @@ describe("openStream", () => {
       await flush();
 
       expect(reads.map((r) => r.url)).toEqual([BODY]);
-      expect(seen.map(ids)).toEqual([["PROJ-1:to_do"], ["PROJ-1:in_progress"], ["PROJ-1:in_progress"]]);
-      expect([kinds, seen[2].error]).toEqual([[undefined, "task", "dags"], "ci: down"]);
+      expect(seen.map(ids)).toEqual([["PROJ-1:in_progress"]]);
+      expect([kinds, seen[0].error]).toEqual([[undefined], "ci: down"]);
     });
 
     it("is read once when index.html's connection already asked for it", async () => {

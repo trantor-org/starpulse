@@ -242,6 +242,8 @@ export class Moves {
   /** The rings the steps of DAG glyphs are showing, on the page's clock: a run entering a step, or ending in it. */
   rings: StepMove[] = [];
   private seen = new Set<string>();
+  /** The agents whose trails `seen` already holds: a delta replaces only the agents it changes, so the rest are not read again. */
+  private scanned = new WeakSet<object>();
   private last: Record<string, number> = {};
   private prev: Sky | null = null;
   /** The snapshot clock last read and the page's clock less it; a delta keeps its snapshot's clock, so it keeps the offset taken then. */
@@ -269,7 +271,9 @@ export class Moves {
     const queue = (key: string) => Math.min(Math.max(t, (this.last[key] ?? -Infinity) + TRAVEL), t + TRAVEL);
     for (const f of Object.values(S.flows)) {
       if (f.name === "board") continue;
-      for (const s of f.agents)
+      for (const s of f.agents) {
+        if (this.scanned.has(s)) continue;
+        this.scanned.add(s);
         (s.trail ?? []).forEach((st, i, trail) => {
           const id = `${f.name}|${s.id}|${st.at}|${st.event}`;
           if (this.seen.has(id)) return;
@@ -277,6 +281,7 @@ export class Moves {
           const fresh = prev !== null && st.at > prev.now;
           add({ machine: f.name, task: s.id, at: fresh ? queue(s.id) : st.at + off, event: st.event, to: st.state, from: i ? trail[i - 1].state : null }, s.id);
         });
+      }
     }
     if (prev) {
       const was = Object.fromEntries(prev.board.agents.map((a) => [a.id, a.state]));
