@@ -214,3 +214,22 @@ def test_an_unrelated_change_to_a_lint_refused_task_does_not_try_its_release_aga
     board.put(task("TASK-1", "Waiting", dependencies=("TASK-9",)))
 
     assert not until(lambda: len(board.writes) > 2, within=0.5)
+
+
+def test_a_waiting_task_whose_return_to_review_is_refused_moves_to_ready_when_its_last_dependency_is_done(
+    store: PullStore, stop: threading.Event
+) -> None:
+    board = Board(
+        BoardFeed(roles=ROLES),
+        task("TASK-8", "Ready"),
+        task("TASK-9", "Ready"),
+        task("TASK-1", "Waiting", references=(PR_ONE,), dependencies=("TASK-8", "TASK-9")),
+    )
+    board.refusing["review"] = "Review needs every Acceptance Criterion checked"
+    store.save([pull(1, state="OPEN")])
+    running(board, store, stop)
+
+    board.put(task("TASK-8", "Done"))
+    board.put(task("TASK-9", "Done"))
+
+    assert until(lambda: ("TASK-1", "ready") in board.moved())

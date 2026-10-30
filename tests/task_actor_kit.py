@@ -23,7 +23,7 @@ SHA = "a" * 40
 WAITS = {
     "in_progress": {"pr_ready": "REVIEW"},
     "review": {"pr_terminal": "MERGED"},
-    "waiting": {"deps_done": "DEPS_DONE", "criteria_met": "CRITERIA_MET"},
+    "waiting": {"deps_done_with_pr": "DEPS_DONE_REVIEW", "deps_done": "DEPS_DONE", "criteria_met": "CRITERIA_MET"},
     "ready": {"deps_unresolved": "WAIT_ON_DEPS", "criteria_unmet": "CRITERIA_UNMET"},
 }
 ROLES = StateRoles(
@@ -43,6 +43,7 @@ ROLES = StateRoles(
 MOVES = {
     ("in_progress", "REVIEW"): "review",
     ("review", "MERGED"): "done",
+    ("waiting", "DEPS_DONE_REVIEW"): "review",
     ("waiting", "DEPS_DONE"): "ready",
     ("ready", "WAIT_ON_DEPS"): "waiting",
     ("waiting", "CRITERIA_MET"): "ready",
