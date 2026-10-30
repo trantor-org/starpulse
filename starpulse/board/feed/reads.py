@@ -136,7 +136,7 @@ class ReadMethods:
     def machine_task(self, flow: str, task_id: str) -> dict | None:
         """The task as `flow`'s machine last placed it, or None when it has not been placed there."""
         with self._lock:
-            return self._machines[flow].get(task_id)
+            return self._machines.get(flow, {}).get(task_id)
 
     def move(self, flow: str, agent: dict, *, publish: bool = True) -> None:
         """Place a task on a machine other than the Board and publish the move, unless `publish` is false: a replayed
