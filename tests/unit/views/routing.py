@@ -8,19 +8,29 @@ from urllib.parse import unquote
 from starlette.routing import compile_path
 
 
-def handler_for(table: Sequence[tuple], path: str, method: str = "GET") -> Callable[..., Any] | None:
-    """The handler of the first route of `table` (`(path, handler)` or `(path, methods, handler)`) that answers
-    `method` at `path`, or None."""
+def _match(table: Sequence[tuple], path: str, method: str) -> tuple[Callable[..., Any], dict[str, str]] | None:
     for route in table:
         template, handler = route[0], route[-1]
         methods = route[1] if len(route) == 3 else ("GET",)
-        regex, _, _ = compile_path(template)
-        if method in methods and regex.match(unquote(path)):
-            return handler
+        regex, _, convertors = compile_path(template)
+        found = regex.match(unquote(path))
+        if method in methods and found:
+            return handler, {name: convertors[name].convert(value) for name, value in found.groupdict().items()}
     return None
 
 
+def handler_for(table: Sequence[tuple], path: str, method: str = "GET") -> Callable[..., Any] | None:
+    """The handler of the first route of `table` (`(path, handler)` or `(path, methods, handler)`) that answers
+    `method` at `path`, or None."""
+    matched = _match(table, path, method)
+    return None if matched is None else matched[0]
+
+
 def answer(table: Sequence[tuple], request: Any, *extra: Any) -> Any:
-    """What the route `request` reaches answers it with, or None where it reaches no route."""
-    handler = handler_for(table, request.path, getattr(request, "method", "GET"))
-    return None if handler is None else handler(request, *extra)
+    """What the route `request` reaches answers it with, its path template's values in `path_params`, or None where it
+    reaches no route."""
+    matched = _match(table, request.path, getattr(request, "method", "GET"))
+    if matched is None:
+        return None
+    handler, params = matched
+    return handler(request._replace(path_params=params), *extra)

@@ -7,25 +7,15 @@ import logging
 import threading
 import time
 from collections import OrderedDict
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
-from types import SimpleNamespace
+from types import MappingProxyType, SimpleNamespace
 from typing import TYPE_CHECKING, Any, NamedTuple
-from urllib.parse import parse_qs, unquote
+from urllib.parse import parse_qs
 
 from starpulse.contracts.analytics import Analytics
 from starpulse.harness_telemetry.model.harnesses import Harnesses
 from starpulse.views.adapters.inbound.compression import Encoded
-from starpulse.views.adapters.inbound.routes import (
-    _DOCS,
-    _LEDGER,
-    _MILESTONES,
-    _RETIRED,
-    _SCHEDULER,
-    _SNAPSHOT_BODY,
-    _TASK,
-    _WINDOW,
-)
 from starpulse.views.adapters.outbound.process_metrics import process_gauges
 from starpulse.views.application.commands.writes import (
     doc_record,
@@ -168,11 +158,13 @@ class Arrival(NamedTuple):
 
 
 class Request(NamedTuple):
-    """A GET as a server hands it over: the path, the raw query string and the client's address."""
+    """A GET as a server hands it over: the path, the raw query string, the client's address and the values its route's
+    path template named."""
 
     path: str
     query: str
     client: str
+    path_params: Mapping[str, str] = MappingProxyType({})
 
 
 class Response(NamedTuple):
@@ -257,12 +249,12 @@ class ReadRoutes:
             "/api/analytics/diff": self._titled(diff_response),
             "/api/analytics/missed-loads": self._ranked(missed_loads_response),
             "/api/analytics/trace-clusters": self._ranked(trace_clusters_response),
-            _MILESTONES: self._milestone_list,
-            _DOCS: self._doc_list,
-            _RETIRED: self._retired,
+            "/api/milestones": self._milestone_list,
+            "/api/docs": self._doc_list,
+            "/api/retired": self._retired,
             "/api/harnesses": lambda request, query: Response(self._harnesses),
-            _WINDOW: self._history_window,
-            _SCHEDULER: self._scheduler_status,
+            "/api/history-window": self._history_window,
+            "/api/scheduler": self._scheduler_status,
         }
 
     @contextmanager
@@ -279,11 +271,11 @@ class ReadRoutes:
         """Every read route as its path template (`{name}` is a segment, `{name:path}` the rest of the path) and its
         handler, in the order they match. A ledger's stream is `Streams`' and a write is `WriteRoutes`'."""
         records: list[tuple[str, Handler]] = [
-            (f"{_SNAPSHOT_BODY}{{key:path}}", self._snapshot_body),
-            (f"{_LEDGER}{{rest:path}}", self._ledger),
-            (f"{_TASK}{{id:path}}", self._task),
-            (f"{_MILESTONES}/{{id:path}}", self._milestone),
-            (f"{_DOCS}/{{id:path}}", self._doc),
+            ("/api/events/body/{key:path}", self._snapshot_body),
+            ("/api/ledger/{rest:path}", self._ledger),
+            ("/api/task/{id:path}", self._task),
+            ("/api/milestones/{id:path}", self._milestone),
+            ("/api/docs/{id:path}", self._doc),
         ]
         return [*records, *((path, self._queried(route)) for path, route in self._exact.items())]
 
@@ -291,30 +283,30 @@ class ReadRoutes:
         return lambda request: route(request, parse_qs(request.query))
 
     def _snapshot_body(self, request: Request) -> Response:
-        key = request.path.removeprefix(_SNAPSHOT_BODY)
+        key = request.path_params["key"]
         body = self._snapshots.body(key)
         if body is None:
             return Response(encode("error", {"error": f"no snapshot {key} is held"}), 404)
         return Response(body, cache="max-age=3600, immutable")
 
     def _ledger(self, request: Request) -> Response:
-        event, _, tail = request.path.removeprefix(_LEDGER).partition("/")
+        event, _, tail = request.path_params["rest"].partition("/")
         if tail:
             return Response(_error(f"unknown route {request.path}"), 404)
-        return Response(*ledger_response(self._feed, unquote(event), parse_qs(request.query)))
+        return Response(*ledger_response(self._feed, event, parse_qs(request.query)))
 
     def _task(self, request: Request) -> Response:
-        status, body = task_record(self._feed, self._read, unquote(request.path.removeprefix(_TASK)))
+        status, body = task_record(self._feed, self._read, request.path_params["id"])
         if status == 200 and (cited := cited_pulls(self._pull_store, body["record"].get("references", []))):
             body["record"]["pulls"] = cited
         return Response(encode("task", body), status)
 
     def _milestone(self, request: Request) -> Response:
-        status, body = milestone_record(self._milestones, unquote(request.path.removeprefix(f"{_MILESTONES}/")))
+        status, body = milestone_record(self._milestones, request.path_params["id"])
         return Response(encode("milestone", body), status)
 
     def _doc(self, request: Request) -> Response:
-        status, body = doc_record(self._milestones, unquote(request.path.removeprefix(f"{_DOCS}/")))
+        status, body = doc_record(self._milestones, request.path_params["id"])
         return Response(encode("doc", body), status)
 
     def _snapshot(self, request: Request, query: Query) -> Response:

@@ -9,13 +9,12 @@ import threading
 import time
 from collections.abc import Callable, Generator, Sequence
 from typing import TYPE_CHECKING, Any, NamedTuple
-from urllib.parse import parse_qs, unquote
+from urllib.parse import parse_qs
 
 from pydantic import ValidationError
 
 from starpulse.views.adapters.inbound.column_stream import ColumnViews, Interest
 from starpulse.views.adapters.inbound.reads import Request, Response
-from starpulse.views.adapters.inbound.routes import _HELD, _LANES, _LEDGER, _SNAPSHOT_BODY
 from starpulse.views.application.queries.responses import _error
 from starpulse.views.model.encoding import encode, event
 
@@ -105,9 +104,9 @@ class Streams:
         room."""
         return [
             ("/api/events", self._board),
-            (_HELD, self._held),
-            (_LANES, self._lanes),
-            (f"{_LEDGER}{{rest:path}}/events", self._ledger_rows),
+            ("/api/held", self._held),
+            ("/api/lanes", self._lanes),
+            ("/api/ledger/{rest:path}/events", self._ledger_rows),
         ]
 
     def _board(self, request: Request, admit: Admit) -> Stream | Response:
@@ -117,7 +116,7 @@ class Streams:
     def _held(self, request: Request, admit: Admit) -> Stream | Response:
         assignee = (parse_qs(request.query).get("assignee") or [""])[0]
         if not assignee:
-            return Response(_error(f"name the session: {_HELD}?assignee=<session>"), 400)
+            return Response(_error("name the session: /api/held?assignee=<session>"), 400)
         return self._admitted(admit, lambda: self._columns("held", assignee))
 
     def _lanes(self, request: Request, admit: Admit) -> Stream | Response:
@@ -125,7 +124,7 @@ class Streams:
         return self._admitted(admit, lambda: self._columns("lanes", None, states))
 
     def _ledger_rows(self, request: Request, admit: Admit) -> Stream | Response:
-        event = unquote(request.path.removeprefix(_LEDGER).partition("/")[0])
+        event = request.path_params["rest"].partition("/")[0]
         return self._admitted(admit, lambda: self._ledger(event))
 
     def _admitted(self, admit: Admit, open_stream: Callable[[], Stream | Response]) -> Stream | Response:
@@ -146,7 +145,7 @@ class Streams:
 
     def _event_frames(self, served, by_ref: bool, missed: Sequence, changes: queue.Queue) -> Generator[bytes]:
         try:
-            yield _frame("snapshot", f"ref {_SNAPSHOT_BODY}{served.key}" if by_ref else served.body.decode())
+            yield _frame("snapshot", f"ref /api/events/body/{served.key}" if by_ref else served.body.decode())
             if (build := self._build()) is not None:
                 yield _frame("build", build)  # a page holding another build than this one is out of date
             for change in missed:

@@ -3,47 +3,15 @@ other front) calls the same ones."""
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, NamedTuple, Protocol
-from urllib.parse import unquote
 
 from starpulse.board.model.seam import OPERATOR, Written
 from starpulse.contracts.api.dto.requests import StartRequest
 from starpulse.pulls.adapters.inbound.pull_refresh import MAX_BODY as MAX_REFRESH_BODY
 from starpulse.runs.ingest import MAX_BATCH_BODY
 from starpulse.views.adapters.inbound.reads import Response
-from starpulse.views.adapters.inbound.routes import (
-    _ARCHIVE,
-    _CLAIM,
-    _COMPLETE,
-    _DOC_ARCHIVE,
-    _DOC_EDIT,
-    _DOC_RESTORE,
-    _DOCS,
-    _EDIT,
-    _MACHINE_EVENTS,
-    _MILESTONE_ARCHIVE,
-    _MILESTONE_EDIT,
-    _MILESTONES,
-    _MISS,
-    _MOVE,
-    _PARK,
-    _PULL_REFRESH,
-    _RATING,
-    _RERUN,
-    _RERUN_TAIL,
-    _RESTORE,
-    _RETIRE,
-    _RETIRED_IMPORT,
-    _REVIEW,
-    _RUN,
-    _SCHEDULER,
-    _START,
-    _TAKE_OVER,
-    _TASKS,
-    _VERDICT,
-    _WINDOW,
-)
 from starpulse.views.application.commands.writes import (
     RETRY_AFTER_S,
     archive_doc,
@@ -92,14 +60,16 @@ class Headers(Protocol):
 
 
 class WriteRequest(NamedTuple):
-    """A POST, PUT or DELETE as a server hands it over: the method, the path, the client's address, the headers and
-    `body`, which reads the given number of bytes of the request body (a server reads it only once a route wants it)."""
+    """A POST, PUT or DELETE as a server hands it over: the method, the path, the client's address, the headers,
+    `body`, which reads the given number of bytes of the request body (a server reads it only once a route wants it),
+    and the values its route's path template named."""
 
     method: str
     path: str
     client: str
     headers: Headers
     body: Callable[[int], bytes]
+    path_params: Mapping[str, str] = MappingProxyType({})
 
 
 def _no_writer(task: str, status: str, actor: str = OPERATOR) -> Written:
@@ -139,32 +109,35 @@ class WriteRoutes:
         # Every write route, by path: the handler over the seams it needs and the kind of body it answers
         # (`contracts.api.registry.BODIES`). Each handler parses its body through the request model it is declared with.
         self._writes: dict[str, tuple[TaskWrite, str]] = {
-            _MOVE: (lambda client, raw: move_task(client, raw, feed, writer, start), "move"),
-            _START: (
+            "/api/move": (lambda client, raw: move_task(client, raw, feed, writer, start), "move"),
+            "/api/start": (
                 lambda client, raw: start_task(client, raw, feed, assign, services.start_session, services.harnesses),
                 "start",
             ),
-            _EDIT: (lambda client, raw: edit_task(client, raw, feed, read, edit), "edit"),
-            _ARCHIVE: (lambda client, raw: archive_task(client, raw, feed, archive), "archive"),
-            _VERDICT: (lambda client, raw: record_verdict(client, raw, feed, read, edit), "verdict"),
-            _RATING: (lambda client, raw: record_rating(client, raw, feed), "rating"),
-            _MISS: (lambda client, raw: record_miss(client, raw, feed, read, edit, archive, create), "verdict"),
-            _RESTORE: (lambda client, raw: restore_task(client, raw, feed, restore), "restore"),
-            _TAKE_OVER: (lambda client, raw: take_over_task(client, raw, services.take_over, feed), "take_over"),
-            _RETIRE: (lambda client, raw: retire_task(client, raw, milestones), "retire"),
-            _RETIRED_IMPORT: (lambda client, raw: import_retired(client, raw, milestones), "retired_import"),
-            _CLAIM: (lambda client, raw: claim_task(client, raw, feed, writer), "claim"),
-            _PARK: (lambda client, raw: park_task(client, raw, feed, read, edit), "park"),
-            _REVIEW: (lambda client, raw: review_task(client, raw, feed, read, edit), "review"),
-            _COMPLETE: (lambda client, raw: complete_task(client, raw, feed, complete), "complete"),
-            _TASKS: (lambda client, raw: create_task(client, raw, create, feed), "create"),
-            _MILESTONES: (lambda client, raw: create_milestone(client, raw, milestones), "milestone_create"),
-            _MILESTONE_EDIT: (lambda client, raw: edit_milestone(client, raw, milestones), "milestone_edit"),
-            _MILESTONE_ARCHIVE: (lambda client, raw: archive_milestone(client, raw, milestones), "milestone_archive"),
-            _DOCS: (lambda client, raw: create_doc(client, raw, milestones), "doc_create"),
-            _DOC_EDIT: (lambda client, raw: edit_doc(client, raw, milestones), "doc_edit"),
-            _DOC_ARCHIVE: (lambda client, raw: archive_doc(client, raw, milestones), "doc_archive"),
-            _DOC_RESTORE: (lambda client, raw: restore_doc(client, raw, milestones), "doc_restore"),
+            "/api/edit": (lambda client, raw: edit_task(client, raw, feed, read, edit), "edit"),
+            "/api/archive": (lambda client, raw: archive_task(client, raw, feed, archive), "archive"),
+            "/api/verdict": (lambda client, raw: record_verdict(client, raw, feed, read, edit), "verdict"),
+            "/api/rating": (lambda client, raw: record_rating(client, raw, feed), "rating"),
+            "/api/miss": (lambda client, raw: record_miss(client, raw, feed, read, edit, archive, create), "verdict"),
+            "/api/restore": (lambda client, raw: restore_task(client, raw, feed, restore), "restore"),
+            "/api/take-over": (lambda client, raw: take_over_task(client, raw, services.take_over, feed), "take_over"),
+            "/api/retire": (lambda client, raw: retire_task(client, raw, milestones), "retire"),
+            "/api/retired/import": (lambda client, raw: import_retired(client, raw, milestones), "retired_import"),
+            "/api/claim": (lambda client, raw: claim_task(client, raw, feed, writer), "claim"),
+            "/api/park": (lambda client, raw: park_task(client, raw, feed, read, edit), "park"),
+            "/api/review": (lambda client, raw: review_task(client, raw, feed, read, edit), "review"),
+            "/api/complete": (lambda client, raw: complete_task(client, raw, feed, complete), "complete"),
+            "/api/tasks": (lambda client, raw: create_task(client, raw, create, feed), "create"),
+            "/api/milestones": (lambda client, raw: create_milestone(client, raw, milestones), "milestone_create"),
+            "/api/milestones/edit": (lambda client, raw: edit_milestone(client, raw, milestones), "milestone_edit"),
+            "/api/milestones/archive": (
+                lambda client, raw: archive_milestone(client, raw, milestones),
+                "milestone_archive",
+            ),
+            "/api/docs": (lambda client, raw: create_doc(client, raw, milestones), "doc_create"),
+            "/api/docs/edit": (lambda client, raw: edit_doc(client, raw, milestones), "doc_edit"),
+            "/api/docs/archive": (lambda client, raw: archive_doc(client, raw, milestones), "doc_archive"),
+            "/api/docs/restore": (lambda client, raw: restore_doc(client, raw, milestones), "doc_restore"),
         }
         # The pushes a deployment may leave unconfigured: a POST of one answers 404.
         self._pull_refresh = services.pull_refresh
@@ -179,12 +152,12 @@ class WriteRoutes:
         ]
         return [
             *guarded,
-            (f"{_RUN}{{name:path}}", ("POST",), self._guarded("run", self._run)),
-            (f"{_RERUN}{{instance}}/{{workflow}}{_RERUN_TAIL}", ("POST",), self._guarded("run", self._rerun)),
-            (_PULL_REFRESH, ("POST",), self._push),
-            (_MACHINE_EVENTS, ("POST",), self._machine_events),
-            (_SCHEDULER, ("PUT",), self._guarded("scheduler", self._scheduled)),
-            (_WINDOW, ("PUT", "DELETE"), self._guarded("window", self._windowed)),
+            ("/api/run/{name:path}", ("POST",), self._guarded("run", self._run)),
+            ("/api/runs/{instance}/{workflow}/rerun", ("POST",), self._guarded("run", self._rerun)),
+            ("/api/pulls/refresh", ("POST",), self._push),
+            ("/api/machine-events", ("POST",), self._machine_events),
+            ("/api/scheduler", ("PUT",), self._guarded("scheduler", self._scheduled)),
+            ("/api/history-window", ("PUT", "DELETE"), self._guarded("window", self._windowed)),
         ]
 
     def _guarded(self, kind: str, answer: Callable[[WriteRequest], tuple[int, dict]]) -> WriteHandler:
@@ -203,11 +176,10 @@ class WriteRoutes:
         return lambda request: handler(request.client, self._whole(request))
 
     def _run(self, request: WriteRequest) -> tuple[int, dict]:
-        name = unquote(request.path.removeprefix(_RUN))
-        return run_dag(request.client, name, self._starts, self._run_safe)
+        return run_dag(request.client, request.path_params["name"], self._starts, self._run_safe)
 
     def _rerun(self, request: WriteRequest) -> tuple[int, dict]:
-        name = unquote(request.path.removeprefix(_RERUN).removesuffix(_RERUN_TAIL))
+        name = f"{request.path_params['instance']}/{request.path_params['workflow']}"
         return rerun_dag(request.client, name, self._feed, self._reruns, self._run_safe)
 
     def _scheduled(self, request: WriteRequest) -> tuple[int, dict]:

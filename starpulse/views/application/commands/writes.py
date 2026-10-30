@@ -1037,8 +1037,7 @@ def _create(
     details = _create_details(spec)
     if "dependencies" in details:
         dependencies = [
-            siblings.get(item.removeprefix(_REF), item) if item.startswith(_REF) else item
-            for item in details["dependencies"]
+            siblings.get(item[len(_REF) :], item) if item.startswith(_REF) else item for item in details["dependencies"]
         ]
         if unresolved := [item for item in dependencies if item.startswith(_REF)]:
             return 409, {"error": f"depends on {', '.join(unresolved)}, which no earlier task in the batch created"}
