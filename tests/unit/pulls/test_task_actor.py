@@ -131,6 +131,21 @@ def test_a_criterion_in_error_for_two_passes_re_gates_the_task_once_without_park
     assert "cannot reach prometheus" in comments[0]
     assert board.moved() == [("TASK-101", "ready")]
     assert not any(name == "TASK-1" for name, _ in board.moved())
+    assert board.created[0][1]["priority"] == "medium"  # the board holds none for TASK-1: the fallback
+
+
+def test_the_re_gate_task_carries_the_priority_of_the_task_it_unblocks(
+    store: PullStore, stop: threading.Event, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    feed = BoardFeed(roles=ROLES)
+    board = Board(feed, task("TASK-1", "Waiting", description=GATED))
+    held = feed.task
+    monkeypatch.setattr(feed, "task", lambda name: {**(held(name) or {}), "priority": "high"})
+
+    running(board, store, stop, evaluate=Criteria("error"), fresh_s=0.05)
+
+    assert until(lambda: bool(board.created))
+    assert board.created[0][1]["priority"] == "high"
 
 
 def test_the_projection_and_the_store_to_actor_handoff_are_exported_as_histograms(
