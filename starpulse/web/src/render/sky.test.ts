@@ -177,6 +177,20 @@ describe("the moves", () => {
     expect(m.events.map((e) => e.to)).toEqual(["worktree_ready", "pr_opened"]);
   });
 
+  it("passes over a step older than the hour it plays without building its id", () => {
+    const m = new Moves();
+    const S = merge(snap(30_000, [], [placed("PROJ-1", [["worktree_ready", "WORKTREE_READY", 100], ["pr_opened", "PR_OPENED", 29_900]])]));
+    const [old, recent] = S.flows["in-progress"].agents[0].trail!;
+    let reads = 0;
+    Object.defineProperty(old, "event", { get: () => (reads++, "WORKTREE_READY") });
+    Object.defineProperty(recent, "event", { value: "PR_OPENED" });
+
+    m.observe(S, 30_000);
+
+    expect(reads).toBe(0);
+    expect(m.events.map((e) => e.to)).toEqual(["pr_opened"]);
+  });
+
   it("turns a task's Board state change between snapshots into the transition's event", () => {
     const m = new Moves();
     m.observe(merge(snap(1000, [task("PROJ-1", "ready")], [])), 1000);

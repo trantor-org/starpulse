@@ -2,6 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Kept } from "../../../shared/Kept";
 import { Preview } from "./Preview";
 
 let host: HTMLDivElement, root: Root, ctx: Record<string, ReturnType<typeof vi.fn>>, raf: ReturnType<typeof vi.fn>;
@@ -45,6 +46,17 @@ describe("the Admin Preview", () => {
     await act(async () => root.render(<Preview scale={100} compact={false} motion />));
 
     expect(raf).toHaveBeenCalled();
+  });
+
+  it("stops its loop while the Admin view is left, so a kept hidden Admin costs the shown view no frames", async () => {
+    const cancel = vi.mocked(cancelAnimationFrame);
+    const show = (on: boolean) => act(async () => root.render(<Kept on={on}><Preview scale={100} compact={false} motion /></Kept>));
+    await show(true);
+    expect(raf).toHaveBeenCalled();
+
+    await show(false);
+
+    expect(cancel).toHaveBeenCalled();
   });
 
   it("redraws its still frame when the theme changes", async () => {

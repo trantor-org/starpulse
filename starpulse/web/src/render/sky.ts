@@ -267,6 +267,7 @@ export class Moves {
       if (m.at >= t - HOUR) this.events.push(m);
       this.last[key] = Math.max(this.last[key] ?? -Infinity, m.at);
     };
+    const horizon = t - HOUR - off;
     // a move waits for the task's last one to land, but never more than one travel: a burst shows its latest state, not a replay
     const queue = (key: string) => Math.min(Math.max(t, (this.last[key] ?? -Infinity) + TRAVEL), t + TRAVEL);
     for (const f of Object.values(S.flows)) {
@@ -275,10 +276,11 @@ export class Moves {
         if (this.scanned.has(s)) continue;
         this.scanned.add(s);
         (s.trail ?? []).forEach((st, i, trail) => {
+          const fresh = prev !== null && st.at > prev.now;
+          if (!fresh && st.at < horizon) return; // past the hour it plays, and too old to hold a task's queue back
           const id = `${f.name}|${s.id}|${st.at}|${st.event}`;
           if (this.seen.has(id)) return;
           this.seen.add(id);
-          const fresh = prev !== null && st.at > prev.now;
           add({ machine: f.name, task: s.id, at: fresh ? queue(s.id) : st.at + off, event: st.event, to: st.state, from: i ? trail[i - 1].state : null }, s.id);
         });
       }
