@@ -83,9 +83,12 @@ class SlowReads:
     the phase, and the occupant of the pool, that held the time."""
 
     class _Read:
-        def __init__(self, started: float) -> None:
-            self.started = started
+        def __init__(self) -> None:
+            self.ran_at: float | None = None
             self.computed_at: float | None = None
+
+        def ran(self) -> None:
+            self.ran_at = time.monotonic()
 
         def computed(self) -> None:
             self.computed_at = time.monotonic()
@@ -96,19 +99,20 @@ class SlowReads:
         self._in_flight = 0
 
     @contextmanager
-    def watch(self, query: str, queued_s: float, arrival: Arrival) -> Iterator[_Read]:
+    def watch(self, query: str, arrival: Arrival) -> Iterator[_Read]:
         with self._lock:
             self._in_flight += 1
             in_flight = self._in_flight
-        read = self._Read(time.monotonic())
+        read = self._Read()
         try:
             yield read
         finally:  # a write that fails on a closed socket is the slow read most worth the line
             ended = time.monotonic()
             with self._lock:
                 self._in_flight -= 1
+            ran_at = read.ran_at if read.ran_at is not None else ended
             computed_at = read.computed_at if read.computed_at is not None else ended
-            compute_s, write_s = computed_at - read.started, ended - computed_at
+            queued_s, compute_s, write_s = ran_at - arrival.at, computed_at - ran_at, ended - computed_at
             if queued_s + compute_s + write_s >= self._threshold_s:
                 logger.warning(
                     "slow_read route=/api/pulls query=%s queue_s=%.3f compute_s=%.3f write_s=%.3f in_flight=%d"
@@ -132,8 +136,8 @@ def routes(api: Api) -> list[ApiRoute]:
     def pulls(request: Request) -> Response:
         return Response(*held(request.query))
 
-    def timed(request: Request, queued_s: float, arrival: Arrival) -> AbstractContextManager[Any]:
-        return slow.watch(request.query, queued_s, arrival)
+    def timed(request: Request, arrival: Arrival) -> AbstractContextManager[Any]:
+        return slow.watch(request.query, arrival)
 
     def push(request: WriteRequest) -> Response | None:
         return None if refresh is None else pushed(request, "ingest", refresh, MAX_REFRESH_BODY)

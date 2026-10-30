@@ -55,7 +55,9 @@ file that is not there, stops `serve` at start with the reason. With neither, th
 Page API child on `starpulse reload`; a client's certificate trust is its own, so `curl --cacert <cert>` or a browser that trusts the certificate reaches the HTTPS and HTTP/3 port.
 
 The handlers are blocking, so each request runs on a pooled worker thread (`REQUEST_THREADS`, 128, the listen backlog)
-and a crowd of pages queues for a worker rather than starting a thread each. The pooled workers keep the default thread
+and a crowd of pages queues for a worker rather than starting a thread each, until every worker is busy: the admission
+middleware then answers any request, whatever its route, `503` with `Retry-After: 1` before a route sees it (the gRPC
+ingest path, which has its own token, is outside it). The pooled workers keep the default thread
 stack size, where the previous server gave them 256 KiB: the free-threaded build's RSS check (`test_crowd_rss.py`) runs
 only on 3.14t. On that build mimalloc keeps freed pages resident until its purge delay lapses (3.6 GB resident
 against about 1 GB live in one deployment, 1.5-1.7 GB with no delay), so `serve` sets `MIMALLOC_PURGE_DELAY=0` in every
@@ -63,7 +65,9 @@ child it supervises, the zygote included, unless its own environment already nam
 
 An event stream (`/api/events`, `/api/lanes`, `/api/held`) leaves that pool for as long as it stays open and is counted
 against `STREAM_LIMIT` (256) instead, so a crowd of long-lived streams never takes the worker a short request needs. A
-stream past the limit gets `503` with `Retry-After: 5` and the client reconnects.
+stream past the limit gets `503` with `Retry-After: 5` and the client reconnects. The same middleware owns the
+stream's place: it is taken when the handler admits the stream and given back once, when the request ends, whether the
+client left, the server stopped the stream or the handler refused it after admitting.
 
 A request answered without reading its body, such as a push refused for its size or sent to a route that does not exist,
 has the rest of the body read and discarded as the response starts, so a stop is never held by a client still sending.
