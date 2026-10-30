@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from starpulse.contracts.analytics import Analytics
     from starpulse.harness_telemetry.model.harnesses import Harnesses
     from starpulse.pulls.model.pins import Repo
-    from starpulse.runs.config import Producer
+    from starpulse.runs.model.config import Producer
 
 
 class ApiConfig(Protocol):

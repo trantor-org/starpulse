@@ -1,7 +1,7 @@
 """`starpulse worker <dagu|github-actions|systemd|temporal>`: a run Adapter as its own process, which `serve` starts as a child for each `[[runs]]` instance that names it.
 
-It follows each `[[runs]]` instance whose adapter names this worker (`starpulse.runs.opt_in`) and keeps the
-workflows it reports in the event log (`starpulse.runs.projection`), where `serve` reads them for the page.
+It follows each `[[runs]]` instance whose adapter names this worker (`starpulse.runs.model.opt_in`) and keeps the
+workflows it reports in the event log (`starpulse.runs.application.queries.projection`), where `serve` reads them for the page.
 A source that offers its own push (Dagu's handlers, GitHub's `workflow_run` webhook) pushes through the ingest; this
 worker reads the rest from the source. It beats into the log while it runs, so `serve` shows the page an instance whose
 worker stopped. `SIGTERM` stops it; `SIGHUP` re-reads the config and, as the adapters are built once, only says whether
@@ -18,10 +18,10 @@ from typing import Any
 
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url
-from starpulse.runs import opt_in
+from starpulse.runs.application.queries.projection import Publisher
 from starpulse.runs.bin.blocks import RunsConfig
 from starpulse.runs.bin.runs_worker import reload
-from starpulse.runs.projection import Publisher
+from starpulse.runs.model import opt_in
 
 
 def start(

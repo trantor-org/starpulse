@@ -20,10 +20,10 @@ from starpulse.event_log.readmodel.read_model import ReadModel
 from starpulse.machine_engine.adapters.machine_loader import load_machine
 from starpulse.machine_engine.model.snapshot import describe
 from starpulse.machine_engine.model.transitions import board_machine
-from starpulse.runs.cloudevents import BATCH, MAX_DATA, SINGLE, CloudEventsIngest
-from starpulse.runs.config import Producer
-from starpulse.runs.ingest import MAX_BATCH_BODY
-from starpulse.runs.ingest import tokens as ingest_tokens
+from starpulse.runs.adapters.inbound.cloudevents import BATCH, MAX_DATA, SINGLE, CloudEventsIngest
+from starpulse.runs.adapters.inbound.ingest import MAX_BATCH_BODY
+from starpulse.runs.adapters.inbound.ingest import tokens as ingest_tokens
+from starpulse.runs.model.config import Producer
 from starpulse.runtime.adapter_kit import next_event, serve, url
 from starpulse.views.adapters.inbound.page_server import PageServer
 

@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     from starpulse.event_log.event_log import EventLog
-    from starpulse.runs.config import RunsInstance
+    from starpulse.runs.model.config import RunsInstance
 
 logger = logging.getLogger(__name__)
 

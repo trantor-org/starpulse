@@ -28,8 +28,8 @@ from starpulse.event_log.event_log import Tail
 from starpulse.machine_engine.adapters.machine_loader import load_machine
 from starpulse.machine_engine.model.snapshot import describe
 from starpulse.machine_engine.model.transitions import board_machine
-from starpulse.runs.cloudevents import SINGLE, CloudEventsIngest
-from starpulse.runs.ingest import tokens as ingest_tokens
+from starpulse.runs.adapters.inbound.cloudevents import SINGLE, CloudEventsIngest
+from starpulse.runs.adapters.inbound.ingest import tokens as ingest_tokens
 from starpulse.runtime.adapter_kit import serve
 
 from tests.integration.runs.test_cloudevents_http import DELIVERY, PRODUCERS, TOKENS, cloudevent

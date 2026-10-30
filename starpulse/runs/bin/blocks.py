@@ -2,11 +2,12 @@
 importing the worker."""
 
 from __future__ import annotations
+
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
-    from starpulse.runs.config import RunsInstance
+    from starpulse.runs.model.config import RunsInstance
 
 
 class RunsConfig(Protocol):
