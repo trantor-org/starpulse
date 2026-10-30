@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # One entry point per required CI context: `ci/run.sh python|web|static-checks|build`. Each runs from any directory,
 # installs what it reads and exits 0 only when its context is green, so ci.yml and any other runner share one definition.
-# `select` and `python-shard` are the two pieces `python` is built from; ci.yml's `select` and `python-shard` jobs run them
-# apart to fan the suite out over runners.
+# `select` and `python-tests` are the two pieces `python` is built from; ci.yml's `select` and `python-tests` jobs and sp-ci's
+# `select` and `python` steps run them apart.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
@@ -23,16 +23,18 @@ cmd_select() {
   rm -f "$changed"
 }
 
-# One shard of the suite: SHARD_INDEX of SHARD_COUNT (ci/shard.py; both unset runs every test) over PYTEST_TARGETS (empty is
-# the whole suite). TEST_COST_REPORT set is the nightly or a dispatch: it adds the nightly-marked tests and, as `1`, the
-# coverage data that ci/coverage_map.py combines.
-cmd_python_shard() {
+# The suite in one pytest session over PYTEST_TARGETS (empty is the whole suite): work-stealing xdist workers
+# (`--dist worksteal`) sized to the `tests.slice` budget on the build host (ci/xdist_workers.py --slice), or to the
+# runner's memory limit anywhere else. TEST_COST_REPORT set is the nightly or a dispatch: it adds the nightly-marked tests
+# and, as `1`, the coverage data that ci/coverage_map.py combines.
+cmd_python_tests() {
   uv sync --locked
-  # A shard of a few tests runs in one process (ci/shard.py `--small`): its two workers' startup outlasts the tests.
-  local addopts=""
-  if ! uv run --no-sync python ci/shard.py --small; then
-    addopts="-n $(uv run --no-sync python ci/xdist_workers.py) --dist worksteal"
+  local sizing=""
+  if [ -d /sys/fs/cgroup/tests.slice ]; then
+    sizing=--slice
   fi
+  # shellcheck disable=SC2086 # sizing is empty or one flag
+  local addopts="-n $(uv run --no-sync python ci/xdist_workers.py $sizing) --dist worksteal"
   if [ -n "${TEST_COST_REPORT:-}" ]; then
     addopts+=" -m 'not e2e'"
   fi
@@ -40,37 +42,25 @@ cmd_python_shard() {
     addopts+=" --cov --cov-context=test --cov-report="
   fi
   export PYTEST_ADDOPTS=$addopts
-  # A selected run can leave a shard no test file: pytest exits 5 for it, which is a pass only while targets were selected.
+  # Pytest exits 5 when it collects no test, which is a pass only while targets were selected.
   # The full log is kept: an xdist worker crash (INTERNALERROR) prints its traceback only into this output.
   local status=0
   # shellcheck disable=SC2086 # PYTEST_TARGETS is a list of paths
-  uv run --no-sync pytest ${PYTEST_TARGETS:-} 2>&1 | tee "${SHARD_LOG:-pytest-shard.log}" || status=$?
+  uv run --no-sync pytest ${PYTEST_TARGETS:-} 2>&1 | tee "${PYTEST_LOG:-pytest.log}" || status=$?
   [ "$status" -eq 0 ] || { [ "$status" -eq 5 ] && [ -n "${PYTEST_TARGETS:-}" ]; }
 }
 
-# ci.yml fans the suite out over runners and reads the verdict here: SELECT_RESULT and SHARDS_RESULT are the `select` and
-# `python-shard` jobs' results, LAUNCHED the shard indexes `select` launched. It passes when `select` did and every shard
-# did, or when none launched because no test was selected; a shard that failed, was cancelled or never ran fails it.
-cmd_python_verdict() {
-  test "$SELECT_RESULT" = success
-  test "${SHARDS_RESULT:-}" = success || { test "${SHARDS_RESULT:-}" = skipped && test "${LAUNCHED:-}" = '[]'; }
-}
-
-# The whole context on this machine: select, then every selected test in one unsharded run.
+# The whole context on this machine: select, then every selected test in one run.
 cmd_python() {
-  if [ -n "${SELECT_RESULT:-}" ]; then
-    cmd_python_verdict
-    return
-  fi
-  local selected targets shards
+  local selected targets python
   selected=$(cmd_select)
   targets=$(sed -n 's/^PYTEST_TARGETS=//p' <<<"$selected")
-  shards=$(sed -n 's/^PYTEST_SHARDS=//p' <<<"$selected")
-  if [ "$shards" = '[]' ]; then
+  python=$(sed -n 's/^python=//p' <<<"$selected")
+  if [ "$python" = false ]; then
     echo "no test selected"
     return
   fi
-  PYTEST_TARGETS=$targets cmd_python_shard
+  PYTEST_TARGETS=$targets cmd_python_tests
 }
 
 cmd_web() {
@@ -83,7 +73,7 @@ cmd_static_checks() {
 }
 
 # The release build without publishing (release.yml's `build`): the page, then the wheel that must ship it. It builds in a
-# scratch checkout: vite empties starpulse/static, which the python shards of the same sp-ci clone read while they run.
+# scratch checkout: vite empties starpulse/static, which the python step of the same sp-ci clone reads while it runs.
 cmd_build() {
   local work dist
   work=$(mktemp -d)
@@ -101,11 +91,11 @@ cmd_build() {
 }
 
 case "${1:-}" in
-  select | python-shard | python | web | static-checks | build)
+  select | python-tests | python | web | static-checks | build)
     "cmd_${1//-/_}"
     ;;
   *)
-    echo "usage: ci/run.sh python|web|static-checks|build (or select|python-shard)" >&2
+    echo "usage: ci/run.sh python|web|static-checks|build (or select|python-tests)" >&2
     exit 2
     ;;
 esac

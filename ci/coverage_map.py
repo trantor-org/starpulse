@@ -1,13 +1,12 @@
 """Record which source files each test executes during the nightly full suite, and publish the map for the select step.
 
-The nightly shards run pytest with `--cov-context=test`; each writes a coverage data file, and the `coverage-map` job
-combines them. `build` turns the combined file into `{"sha", "collected", "tests": {node id: [source files]}}`, the
-files relative to the checkout, a test's setup, call and teardown merged, plus the `shards` whose data it combined out
-of the run's `shard_count` (a red shard that uploaded data still counts; one that crashed does not). `publish` writes it as `<sha>.json` plus
+The nightly run pytest with `--cov-context=test` and writes a coverage data file, which the `coverage-map` job
+combines. `build` turns the combined file into `{"sha", "collected", "tests": {node id: [source files]}}`, the
+files relative to the checkout, a test's setup, call and teardown merged. `publish` writes it as `<sha>.json` plus
 `latest.json` in `--out` (default: a directory in the CI runner user's cache, where the `ci-sp-python` select step
 reads it). `latest` prints the newest map's sha and how many of the collected tests it covers.
 
-  build DATA --sha SHA --collected FILE [--root DIR] [--out DIR] [--shards N ...] [--shard-count N]
+  build DATA --sha SHA --collected FILE [--root DIR] [--out DIR]
                                                                 write the map of the combined coverage file DATA
   latest [--out DIR]                                            print the newest published map: sha, tests, share
 """
@@ -28,8 +27,8 @@ DEFAULT_DIR = Path(
 )
 LATEST = "latest.json"
 
-#: The share of collected tests a map must name to be published: a red nightly's shards still upload their coverage data,
-#: so a shard that crashed outright (no data) must not leave a map every pull request's selection trusts.
+#: The share of collected tests a map must name to be published: a red nightly still uploads its coverage data,
+#: so a run that crashed outright (no data) must not leave a map every pull request's selection trusts.
 MIN_RATIO = 0.9
 
 
@@ -45,7 +44,7 @@ def build(data_file: Path, root: Path, *, sha: str, collected: list[str]) -> dic
     data.read()
     ran: dict[str, set[str]] = {}
     for path in data.measured_files():
-        # `relative_files` makes shard data portable across runners; an absolute path outside `root` is not ours.
+        # `relative_files` makes the data portable across runners; an absolute path outside `root` is not ours.
         measured = Path(path)
         if measured.is_absolute() and not measured.is_relative_to(root):
             continue
@@ -114,8 +113,6 @@ def main(argv: list[str]) -> int:
     built.add_argument("--sha", required=True)
     built.add_argument("--collected", type=Path, required=True, help="file of the collected node ids, one per line")
     built.add_argument("--root", type=Path, default=Path.cwd())
-    built.add_argument("--shards", nargs="*", default=[], help="the shards whose coverage data the combined file holds")
-    built.add_argument("--shard-count", type=int, default=0, help="how many shards the run had, red or green")
     commands.add_parser("latest")
     for sub in commands.choices.values():
         sub.add_argument("--out", type=Path, default=DEFAULT_DIR)
@@ -124,7 +121,6 @@ def main(argv: list[str]) -> int:
         built_map = build(
             args.data, args.root.resolve(), sha=args.sha, collected=args.collected.read_text().splitlines()
         )
-        built_map |= {"shards": args.shards, "shard_count": args.shard_count}
         if ratio(built_map) < MIN_RATIO:
             share = f"{ratio(built_map):.1%} of the collected tests, under {MIN_RATIO:.0%}"
             print(f"the map names {share}: not published", file=sys.stderr)

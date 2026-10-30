@@ -34,11 +34,12 @@ def test_a_runner_with_no_cgroup_memory_file_gets_two(tmp_path):
 
 
 def test_the_pytest_job_sizes_its_workers_before_it_runs_pytest():
-    runs = [step.get("run", "") for step in yaml.safe_load(CI.read_text())["jobs"]["python-shard"]["steps"]]
-    assert "ci/run.sh python-shard" in runs
+    runs = [step.get("run", "") for step in yaml.safe_load(CI.read_text())["jobs"]["python-tests"]["steps"]]
+    assert "ci/run.sh python-tests" in runs
     script = (CI.parents[2] / "ci/run.sh").read_text()
-    body = script.split("cmd_python_shard() {")[1].split("\n}\n")[0]
-    assert 'addopts="-n $(uv run --no-sync python ci/xdist_workers.py)' in body
+    body = script.split("cmd_python_tests() {")[1].split("\n}\n")[0]
+    assert 'addopts="-n $(uv run --no-sync python ci/xdist_workers.py $sizing)' in body
+    assert "sizing=--slice" in body  # the build host's tests.slice budget, not a runner's memory limit
     assert "--dist worksteal" in body  # idle workers take queued tests, so a long file spreads over them
     assert body.index("ci/xdist_workers.py") < body.index("pytest ${PYTEST_TARGETS")
 

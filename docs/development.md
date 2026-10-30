@@ -18,12 +18,13 @@ The build also writes `starpulse/static/one-file`, the same page as a single scr
 lets an idle worker take tests queued behind a busy one, so one slow file spreads across workers. Tests are safe to run
 on any worker: tests that stub the checkout's `static` directory share it through
 `tests/page_stub.py`. CI sizes `-n` to its runner's memory with `ci/xdist_workers.py`.
-CI splits the suite by test file across the `python-shard` matrix (`ci/shard.py`: `SHARD_INDEX` of `SHARD_COUNT`, both unset
-locally). A `select` job runs `ci/select_tests.py` once and sizes the matrix from the selection: no shard when it selects no
-test, one shard per minute of the selected files' test time (never more than the files), and all six for the nightly and a
-manual dispatch. The `static-checks` job runs `lint-imports` beside the other short checks. The `python` job, the ruleset's required check,
-passes when `select` did and every shard it launched did, including when it launched none; a failed, cancelled or never-run
-shard fails it.
+CI runs the suite as one pytest session: `ci/run.sh python-tests` syncs one locked venv and starts work-stealing xdist
+workers (`-n <workers> --dist worksteal`). On the build host the count fits the `tests.slice` memory budget
+(`ci/xdist_workers.py --slice`); on any other runner it follows the runner's memory limit. A `select` job runs
+`ci/select_tests.py` once and prints `python=false` when it selects no test, which skips the run, and `python=true` with
+the targets otherwise (the nightly and a manual dispatch select the whole suite). The `static-checks` job runs
+`lint-imports` beside the other short checks. The `python` job, the ruleset's required check, passes when `select` did and
+the one run did, including when `select` chose no test.
 A test that runs past 120 s (`timeout` in `[tool.pytest.ini_options]`, from pytest-timeout) fails with a timeout error;
 a test that needs longer carries `@pytest.mark.timeout(<seconds>)` with the reason beside it.
 A test's ceiling is 5 s for setup, call and teardown together (`SLOW_TEST_SECONDS` overrides it). In every run but the
@@ -36,7 +37,7 @@ comment directly above it naming what the test must pay for (a server process, a
 `OVER_CEILING` there lists the tests at or over 4 s when the bound landed, each with the slice that brings it under; that
 slice removes its entry. A budget test (leak, latency, soak) carries
 `@pytest.mark.nightly`: `addopts` deselects it, and only the nightly suite and a manual dispatch run it (`-m "not e2e"`
-in `ci.yml`'s `python-shard`).
+in `ci.yml`'s `python-tests`).
 The screen below runs only in the nightly full suite and a manual `workflow_dispatch`, where `ci.yml` sets `TEST_COST_REPORT=1`
 (and on `python-ft`, which reports and never fails the ceiling); any other run prints no section, annotation or summary row
 and writes no report. A test over 5 s is named at the end of the run, slowest first; in CI each is also a warning annotation
@@ -45,19 +46,19 @@ is named beside them with its CPU seconds and the growth of its worker's peak RS
 CPU s and Peak MB columns. Containers a test starts run outside the process tree, so their CPU
 and memory are not counted. None of the screen fails the run.
 With `TEST_COST_REPORT=1` the flagged tests' node id, wall s, CPU s and peak MB also go to `test-cost.json`
-(`TEST_COST_REPORT_PATH` moves it), and each shard reruns exactly those tests one by one under `pytest --memray`
+(`TEST_COST_REPORT_PATH` moves it), and the run reruns exactly those tests one by one under `pytest --memray`
 (`ci/memray_flagged.py`), then uploads the report and `memray/` (one allocation report per test plus `stats.json`) as the
-`test-cost-<shard>` artifact; a test whose rerun left no report is named in `stats.json` and a `::warning`.
-The same nightly and dispatch runs record which source files each test executes: every shard runs
+`test-cost-python` artifact; a test whose rerun left no report is named in `stats.json` and a `::warning`.
+The same nightly and dispatch runs record which source files each test executes: the run adds
 `--cov --cov-context=test` (line coverage of `starpulse` and `ci`, `[tool.coverage.run]`) and uploads its data as
-`coverage-data-<shard>`. The `coverage-map` job, once the select job passed and whether the shards were green or red (a
-red nightly still uploads its data, and a map frozen behind it goes stale), combines them
-and `ci/coverage_map.py build` writes `<sha>.json` and `latest.json` (`{sha, collected, tests: {node id: [files]}, shards, shard_count}`: the shards whose data it combined out of the run's) to
+`coverage-data`. The `coverage-map` job, once the select job passed and whether the run was green or red (a
+red nightly still uploads its data, and a map frozen behind it goes stale), combines it
+and `ci/coverage_map.py build` writes `<sha>.json` and `latest.json` (`{sha, collected, tests: {node id: [files]}}`) to
 `$STARPULSE_COVERAGE_MAP_DIR`, default `~/.cache/starpulse-ci/coverage-map` of the CI runner user, which the
 `ci-sp-python` select step also runs as. A parametrized case with no context of its own takes its function's files; a
 collected test with no files is left out. `uv run python ci/coverage_map.py latest` prints the newest map's sha and how
 many collected tests it names; it exits 1 before the first nightly published one. `build` publishes nothing and exits 1
-when the map names under 90% of the collected tests (a shard that crashed outright uploaded no data). The select step
+when the map names under 90% of the collected tests (a run that crashed outright uploaded no data). The select step
 prints `COVERAGE_MAP_SHA`, `COVERAGE_MAP_AGE_HOURS`, `COVERAGE_MAP_FILES` and `COVERAGE_MAP_MISSING` (the named source
 files the checkout no longer has, which a moved module causes); sp-ci records them in the run's `ci-run-facts` as
 `coverage_map`.

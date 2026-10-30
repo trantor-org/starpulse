@@ -54,7 +54,7 @@ def test_a_parametrized_case_with_no_context_of_its_own_takes_its_functions_file
     assert built["tests"] == {nodeid: ["pkg/a.py"] for nodeid in collected}
 
 
-def test_build_keeps_the_relative_paths_of_combined_shard_data_and_skips_files_outside_the_root(tmp_path):
+def test_build_keeps_the_relative_paths_of_combined_data_and_skips_files_outside_the_root(tmp_path):
     data = coverage.CoverageData(str(tmp_path / ".coverage"))
     data.set_context("ci/test_a.py::test_one|run")
     data.add_lines({"pkg/a.py": [1], "/elsewhere/site.py": [1]})
@@ -99,7 +99,7 @@ def test_cli_build_publishes_and_latest_prints_sha_and_coverage(tmp_path, capsys
     assert capsys.readouterr().out.splitlines()[-1] == "abc 2/2 tests 100.0%"
 
 
-def test_cli_build_records_the_contributing_shards_beside_the_sha(tmp_path):
+def test_cli_build_publishes_the_sha_and_the_tests(tmp_path):
     data = _data(tmp_path / ".coverage", tmp_path, {"t1|run": ["a.py"], "t2|run": ["a.py"]})
     out = tmp_path / "maps"
     collected = tmp_path / "collected.txt"
@@ -107,11 +107,10 @@ def test_cli_build_records_the_contributing_shards_beside_the_sha(tmp_path):
 
     coverage_map.main(
         ["build", str(data), "--root", str(tmp_path), "--sha", "abc", "--collected", str(collected), "--out", str(out)]
-        + ["--shards", "0", "2", "--shard-count", "3"]
     )
 
     published = coverage_map.latest(out)
-    assert (published["sha"], published["shards"], published["shard_count"]) == ("abc", ["0", "2"], 3)
+    assert published["sha"] == "abc"
     assert published["tests"] == {"t1": ["a.py"], "t2": ["a.py"]}
 
 

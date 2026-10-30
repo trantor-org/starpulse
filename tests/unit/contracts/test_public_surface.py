@@ -217,7 +217,7 @@ def _at_root(package: Path) -> set[str]:
     """The Python modules and packages directly under `package`, and the data directories the wheel ships.
 
     `static` is the page build, not a context: `ci/test_first_install.py` stubs it for the length of a test, and a
-    worker of the same shard may list the package then.
+    worker of the same run may list the package then.
     """
     return {path.stem for path in package.glob("*.py")} | {
         path.name for path in package.iterdir() if path.is_dir() and path.name not in {"__pycache__", "static"}

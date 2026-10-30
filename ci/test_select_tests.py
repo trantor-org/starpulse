@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import io
-import json
 import re
 import subprocess
 from pathlib import Path
@@ -11,7 +10,7 @@ from pathlib import Path
 import pytest
 import yaml
 from coverage_map import publish
-from select_tests import FULL, READERS, SHARD_COUNT, Selection, main, select, shards_for
+from select_tests import FULL, READERS, Selection, main, select
 
 CI = Path(__file__).resolve().parents[1] / ".github/workflows/ci.yml"
 ROOT = Path(__file__).resolve().parents[1]
@@ -232,38 +231,11 @@ def test_every_file_the_readers_map_names_exists_in_the_real_repository():
     assert not missing
 
 
-def test_a_diff_touching_a_python_source_file_selects_a_target_and_so_launches_a_shard(repo):
-    """The blind spot of sizing the matrix from the selection: a selector that finds nothing turns a real change green."""
+def test_a_diff_touching_a_python_source_file_selects_a_target(repo):
+    """The blind spot of skipping the python step on an empty selection: a selector that finds nothing turns a real change green."""
     for changed in ("ci/sizer.py", "starpulse/__init__.py"):
         selection = select(repo, [changed])
         assert selection.tests
-        assert shards_for(selection)
-
-
-@pytest.mark.parametrize(
-    ("tests", "shards"),
-    [
-        ([], []),
-        (["ci/test_a.py"], [1]),
-        ([f"ci/test_{i}.py" for i in range(12)], [1]),  # 12 files at 5 s: one shard's worth of tests
-        ([f"ci/test_{i}.py" for i in range(50)], [1, 2, 3, 4, 5]),
-        ([f"ci/test_{i}.py" for i in range(500)], list(range(1, SHARD_COUNT + 1))),
-        (["tests/integration/cli/test_agent_cli.py"], [1]),  # one heavy file fills one shard, never two
-        (
-            [
-                "tests/integration/cli/test_agent_cli.py",
-                "tests/integration/flow_metrics/test_history.py",
-            ],
-            [1, 2],
-        ),
-    ],
-)
-def test_a_selection_launches_a_shard_per_minute_of_its_tests_and_never_more_than_it_has_files(tests, shards):
-    assert shards_for(Selection(tests)) == shards
-
-
-def test_the_full_suite_launches_every_shard():
-    assert shards_for(FULL) == list(range(1, SHARD_COUNT + 1)) == [1, 2, 3, 4, 5, 6]
 
 
 def _printed(monkeypatch, capsys, repo, stdin: str, *args: str) -> dict[str, str]:
@@ -273,29 +245,29 @@ def _printed(monkeypatch, capsys, repo, stdin: str, *args: str) -> dict[str, str
     return dict(line.split("=", 1) for line in capsys.readouterr().out.splitlines())
 
 
-def test_a_diff_selecting_no_test_prints_no_target_and_no_shard(monkeypatch, capsys, repo):
+def test_a_diff_selecting_no_test_prints_no_target_and_no_python_step(monkeypatch, capsys, repo):
     printed = _printed(monkeypatch, capsys, repo, "CONTRIBUTING.md\n")
     assert printed["PYTEST_TARGETS"] == ""
-    assert json.loads(printed["PYTEST_SHARDS"]) == []
+    assert printed["python"] == "false"
 
 
-def test_a_diff_selecting_a_test_prints_its_target_and_the_shards_it_needs(monkeypatch, capsys, repo):
+def test_a_diff_selecting_a_test_prints_its_target_and_runs_the_python_step(monkeypatch, capsys, repo):
     printed = _printed(monkeypatch, capsys, repo, "ci/sizer.py\n")
     assert "ci/test_sizer.py" in printed["PYTEST_TARGETS"].split()
-    assert json.loads(printed["PYTEST_SHARDS"])
+    assert printed["python"] == "true"
 
 
-def test_a_diff_that_runs_the_full_suite_prints_no_target_and_every_shard(monkeypatch, capsys, repo):
+def test_a_diff_that_runs_the_full_suite_prints_no_target_and_runs_the_python_step(monkeypatch, capsys, repo):
     printed = _printed(monkeypatch, capsys, repo, "pyproject.toml\n")
     assert printed["PYTEST_TARGETS"] == ""
-    assert json.loads(printed["PYTEST_SHARDS"]) == [1, 2, 3, 4, 5, 6]
+    assert printed["python"] == "true"
 
 
-def test_full_prints_every_shard_whatever_the_diff(monkeypatch, capsys, repo):
+def test_full_runs_the_python_step_whatever_the_diff(monkeypatch, capsys, repo):
     """The nightly schedule and a manual dispatch have no diff: they read none and run everything."""
     printed = _printed(monkeypatch, capsys, repo, "", "--full")
     assert printed["PYTEST_TARGETS"] == ""
-    assert json.loads(printed["PYTEST_SHARDS"]) == [1, 2, 3, 4, 5, 6]
+    assert printed["python"] == "true"
 
 
 def _ci() -> dict:
@@ -316,7 +288,7 @@ def test_the_nightly_schedule_and_a_dispatch_select_everything_once_in_a_job():
     assert job["if"] == "github.event_name != 'push'"
     assert job["outputs"] == {
         "PYTEST_TARGETS": "${{ steps.select.outputs.PYTEST_TARGETS }}",
-        "PYTEST_SHARDS": "${{ steps.select.outputs.PYTEST_SHARDS }}",
+        "python": "${{ steps.select.outputs.python }}",
     }
     select_step = next(s for s in job["steps"] if s.get("id") == "select")
     # The nightly schedule and a dispatch have no base commit, so both select everything; the sp-ci DAG sets BASE for a pull request.
@@ -331,27 +303,24 @@ def test_select_runs_in_a_bare_environment_without_syncing_the_project():
     assert "uv sync" not in _function("cmd_select")
 
 
-def test_the_import_layers_are_checked_in_the_static_checks_not_in_select_or_every_shard():
+def test_the_import_layers_are_checked_in_the_static_checks_not_in_select_or_the_python_tests():
     jobs = _ci()
     assert any("ci/run.sh select" in s.get("run", "") for s in jobs["select"]["steps"])
     assert "lint-imports" not in _function("cmd_select")
     assert "lint-imports" in (ROOT / "ci/static_checks.sh").read_text()
-    assert not any("lint-imports" in s.get("run", "") for s in jobs["python-shard"]["steps"])
-    assert "lint-imports" not in _function("cmd_python_shard")
+    assert not any("lint-imports" in s.get("run", "") for s in jobs["python-tests"]["steps"])
+    assert "lint-imports" not in _function("cmd_python_tests")
 
 
-def test_the_shard_matrix_is_the_selections_and_a_shard_runs_the_targets_it_was_given():
-    job = _ci()["python-shard"]
-    assert job["needs"] == "select"
-    # An empty matrix is an error, so no shard job is the job being skipped.
-    assert job["if"] == "github.event_name != 'push' && needs.select.outputs.PYTEST_SHARDS != '[]'"
-    assert job["strategy"]["matrix"] == {"shard": "${{ fromJSON(needs.select.outputs.PYTEST_SHARDS) }}"}
-    assert job["env"]["SHARD_COUNT"] == "${{ strategy.job-total }}"
+def test_the_python_job_is_skipped_on_an_empty_selection_and_runs_the_targets_it_was_given():
+    job = _ci()["python-tests"]
+    assert job["if"] == "github.event_name != 'push' && needs.select.outputs.python == 'true'"
+    assert "strategy" not in job
     assert job["env"]["PYTEST_TARGETS"] == "${{ needs.select.outputs.PYTEST_TARGETS }}"
     assert not any("select_tests" in s.get("run", "") for s in job["steps"])
-    shard_step = next(s for s in job["steps"] if s.get("run") == "ci/run.sh python-shard")
-    assert "if" not in shard_step
-    assert "pytest ${PYTEST_TARGETS:-}" in _function("cmd_python_shard")
+    python_step = next(s for s in job["steps"] if s.get("run") == "ci/run.sh python-tests")
+    assert "if" not in python_step
+    assert "pytest ${PYTEST_TARGETS:-}" in _function("cmd_python_tests")
 
 
 def test_an_adapter_no_test_names_is_not_selected_through_the_loader_even_though_the_type_table_lists_it(repo):

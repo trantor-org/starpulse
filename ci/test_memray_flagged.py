@@ -13,7 +13,7 @@ import pytest
 import yaml
 
 CI = Path(__file__).resolve().parent
-SHARD = yaml.safe_load((CI.parent / ".github/workflows/ci.yml").read_text())["jobs"]["python-shard"]
+PYTHON_JOB = yaml.safe_load((CI.parent / ".github/workflows/ci.yml").read_text())["jobs"]["python-tests"]
 
 
 @pytest.mark.skipif(
@@ -49,16 +49,16 @@ def test_each_reported_test_gets_memray_stats_and_one_that_leaves_none_is_named_
     assert json.loads(report.read_text()) == {"tests": rows}
 
 
-def test_the_shard_job_turns_the_screen_on_only_for_the_nightly_and_a_dispatch_and_uploads_its_stats_per_shard():
+def test_the_python_job_turns_the_screen_on_only_for_the_nightly_and_a_dispatch_and_uploads_its_stats():
     events = {
         event
         for event in ("pull_request", "merge_group", "push", "schedule", "workflow_dispatch")
-        if event in SHARD["env"]["TEST_COST_REPORT"]
+        if event in PYTHON_JOB["env"]["TEST_COST_REPORT"]
     }
-    uploads = [step for step in SHARD["steps"] if step.get("uses", "").startswith("actions/upload-artifact@")]
+    uploads = [step for step in PYTHON_JOB["steps"] if step.get("uses", "").startswith("actions/upload-artifact@")]
     upload = next(step for step in uploads if step["with"]["name"].startswith("test-cost-"))
 
     assert events == {"schedule", "workflow_dispatch"}
-    assert upload["with"]["name"] == "test-cost-${{ matrix.shard }}"
+    assert upload["with"]["name"] == "test-cost-python"
     assert "test-cost.json" in upload["with"]["path"] and "memray/" in upload["with"]["path"]
     assert upload["if"] == "${{ !cancelled() && env.TEST_COST_REPORT == '1' }}"
