@@ -36,6 +36,9 @@ events:
     - {from: pr_opened, to: blocked, cite: {skill: deliver, quote: "a task waiting on a person is never left In Progress."}}
   PR_READY:
     - {from: ci_green, to: pr_ready, cite: {skill: deliver, quote: "Done when `starpulse command run pr-status --arg pr=<number>` reports the PR ready with green checks"}}
+  # Only a self-loop: the run's end leaves the task where it is, and the board resumes the holder with its verdict.
+  DELIVER_FINISHED:
+    - {from: pr_opened, to: pr_opened, cite: {skill: deliver, quote: "when it finishes, the board resumes the session with that verdict"}}
 writers:
   GREEN:
     - {actor: agent, trigger: "starpulse command run test"}
@@ -61,3 +64,5 @@ writers:
     - {actor: agent, trigger: "starpulse command run deliver"}
   PR_READY:
     - {actor: agent, trigger: "starpulse command run pr-status"}
+  DELIVER_FINISHED:
+    - {actor: agent, trigger: "starpulse command run deliver"}

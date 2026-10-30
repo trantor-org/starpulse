@@ -56,6 +56,8 @@ ACTOR = "starpulse/task-actor"
 LINT_REFUSED = "Release to Ready refused by the task lint, repair the record to release it:"
 #: What the task actor comments on a task whose Start Criteria stayed in error for two passes, before the errors.
 REGATE = "Start Criteria could not be evaluated for two passes, an agent re-gates the task:"
+#: The machine event a delivery run publishes when it ends, its verdict in the event's data.
+DELIVER_FINISHED = "DELIVER_FINISHED"
 #: The pull request states that end a pull request.
 _TERMINAL = ("MERGED", "CLOSED")
 #: The repository the board renders a bare `PR #N` against; another repo's pull request links its own URL.
@@ -80,7 +82,9 @@ _EVALUATIONS = 8
 
 def _exit_links(machines: Mapping[str, Mapping[str, Any]]) -> dict[str, list[Mapping[str, Any]]]:
     """Each lifecycle machine's links that exit on a skill machine's state: `{machine: [link]}`, the Board's apart."""
-    found = {name: [link for link in drawn.get("submachines", ()) if link.get("exits")] for name, drawn in machines.items()}
+    found = {
+        name: [link for link in drawn.get("submachines", ()) if link.get("exits")] for name, drawn in machines.items()
+    }
     return {name: links for name, links in found.items() if links and name != "board"}
 
 
@@ -172,6 +176,7 @@ class TaskActor:
         holds: Callable[[str], Sequence[str]] | None = None,
         parked: Callable[[str], None] | None = None,
         released: Callable[[str], None] | None = None,
+        delivered: Callable[[str, str], None] | None = None,
         closed: Callable[[str], None] | None = None,
         fresh_s: float = criteria.CACHE_SECONDS,
         live: LiveBuild | None = None,
@@ -201,6 +206,9 @@ class TaskActor:
         self._holds = holds
         self._tell = parked
         self._released = released
+        self._delivered = delivered
+        #: The step count of each task's last finished delivery handed to `delivered`, so one run's end is told once.
+        self._told: dict[str, int] = {}
         self._closed = closed
         self._fresh_s = fresh_s
         #: The lanes that wait on a task's Start Criteria.
@@ -411,7 +419,7 @@ class TaskActor:
             if kind in ("task", "move"):
                 handle = self._changed if kind == "task" else self._moved
                 try:
-                    handle(data if kind == "task" else data["id"])
+                    handle(data)
                 except Exception:  # one change must not end the actor
                     logger.exception("task actor: cannot handle the change of %s", data.get("id"))
 
@@ -442,7 +450,9 @@ class TaskActor:
                 del self._lint_held[name]
                 self._tried.pop(name, None)
             ticks = _dod_ticks(agent)
-            ticked = all(ticks) and ticks != self._ticks.get(name, ticks)  # the last item checked: a refused Done move may now pass
+            ticked = all(ticks) and ticks != self._ticks.get(
+                name, ticks
+            )  # the last item checked: a refused Done move may now pass
             if ticked:
                 self._tried.pop(name, None)
             if before == (now := _view(agent)) and not repaired and not ticked:
@@ -457,9 +467,24 @@ class TaskActor:
                 touched |= self._dependents(name)
             self._derive_all(touched, observed)
 
-    def _moved(self, task: str) -> None:
+    def _moved(self, data: dict[str, Any]) -> None:
         with self._lock:
-            self._exit_phase(task)
+            self._exit_phase(data["id"])
+        self._finished(data["id"], data["agent"])
+
+    def _finished(self, task: str, placed: Mapping[str, Any]) -> None:
+        """Hand `delivered` the task and verdict of a move whose last step is a delivery run's end, `DELIVER_FINISHED`,
+        so the session that holds the task resumes on the verdict without waiting on the run."""
+        last = placed["trail"][-1] if placed.get("trail") else {}
+        if not self._delivered or last.get("event") != DELIVER_FINISHED or self._told.get(task) == placed["steps"]:
+            return
+        self._told[task] = placed["steps"]
+        data = last.get("data") or {}
+        verdict = " ".join(part for part in (data.get("verdict"), data.get("step")) if part)
+        try:
+            self._delivered(task, verdict)
+        except Exception:  # the move stands; a board hook is a notice, not part of the write
+            logger.exception("task actor: %s finished its delivery but its holder was not told", task)
 
     def _exit_phase(self, task: str) -> None:
         """Send the exit event of the phase `task` is in when that phase's skill machine sits in the state its link exits
@@ -771,7 +796,9 @@ class TaskActor:
             return None
         comment = "Every dependency has merged."
         if stale := self._early(agent):
-            comment = f"Stale dependency {', '.join(stale)}: it stays open for criteria this task does not need. {comment}"
+            comment = (
+                f"Stale dependency {', '.join(stale)}: it stays open for criteria this task does not need. {comment}"
+            )
         return dependencies, comment
 
     def _deps_done_with_pr(self, agent: dict[str, Any]) -> tuple[Any, str] | None:
@@ -855,7 +882,9 @@ class TaskActor:
         wanted: dict[str, list[int]] = {}
         for task, number in map(_need_of, needs):
             wanted.setdefault(task, []).append(number)
-        return tuple(dependency for dependency in open_ if dependency in wanted and self._checked(dependency, wanted[dependency]))
+        return tuple(
+            dependency for dependency in open_ if dependency in wanted and self._checked(dependency, wanted[dependency])
+        )
 
     def _checked(self, dependency: str, numbers: list[int]) -> bool:
         """Whether every criterion `numbers` names (1-based) of `dependency` is checked."""
