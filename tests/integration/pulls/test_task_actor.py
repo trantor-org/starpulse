@@ -658,6 +658,7 @@ def test_a_store_save_moves_the_task_while_the_projection_is_still_blocked(
         closed=None,
         released=None,
         delivered=None,
+        returned=None,
     )
     monkeypatch.setattr(server.shutil, "which", lambda name: name)
     monkeypatch.setattr(server, "moves_of", lambda machine: MOVES)
@@ -703,6 +704,7 @@ def test_a_merge_of_a_pr_added_after_startup_moves_the_task_to_done(
         closed=None,
         released=None,
         delivered=None,
+        returned=None,
     )
     monkeypatch.setattr(server.shutil, "which", lambda name: name)
     monkeypatch.setattr(server, "moves_of", lambda machine: MOVES)
@@ -757,6 +759,7 @@ def test_a_read_model_task_whose_cited_pr_merged_before_startup_moves_to_done(
         closed=None,
         released=None,
         delivered=None,
+        returned=None,
     )
     monkeypatch.setattr(server.shutil, "which", lambda name: name)
     monkeypatch.setattr(server, "moves_of", lambda machine: MOVES)
