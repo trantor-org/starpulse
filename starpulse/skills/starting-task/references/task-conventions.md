@@ -260,6 +260,17 @@ Start Criterion that opens once the 24 h have passed and the DAG has run, such a
 count(<the DAG's run counter>))', at_least: 1}`. A miss on that checkup files a fix task; it
 never reopens the implementing one.
 
+A check whose criterion names a time window (`24h`, `3 days`) takes a start criterion that observes
+data past the window end, never the merge alone: a `file_changed_since` or `pr_merged` start opens the
+check at the merge, hours before the window's data exists, and the session then idles `In Progress`
+or asks the operator to wait. Look for a series or table whose samples cover the window end (a
+metric's `updated_timestamp_seconds` gauge, a table's newest row) and gate on it, for example
+`{id: window-closed, kind: prom, expr: 'max(<exporter>_updated_timestamp_seconds)', at_least: <merge
++ window epoch>}`. The task lint refuses a check whose Acceptance Criterion names an hour or day
+window while every Start Criterion is `file_changed_since` or `pr_merged`; a data kind beside the
+merge one clears it. A session on an unattended check never parks `--operator` for such a wait: it
+parks `--until` the data kind.
+
 A check's gate must not be the live effect it checks, or a missing effect reads as waiting
 forever. A live check drives the actor along its ordinary path and never supplies by hand the
 key that path derives: a criterion that passes only because the skill args named the task proves
