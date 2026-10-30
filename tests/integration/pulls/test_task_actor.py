@@ -13,13 +13,13 @@ from sqlalchemy import create_engine
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.machine_tasks import MachineTasks
 from starpulse.contracts.adapters import BoardTask, MachineEvent
-from starpulse.machine_engine.adapters.machine_loader import load_machine
-from starpulse.machine_engine.model.snapshot import describe
-from starpulse.machine_engine.model.transitions import board_machine
 from starpulse.event_log.event_log import Entry, EventLog
 from starpulse.event_log.readmodel.projector import Projector
 from starpulse.event_log.readmodel.read_model import ReadModel
 from starpulse.event_log.store import EventStore, NewEvent
+from starpulse.machine_engine.adapters.machine_loader import load_machine
+from starpulse.machine_engine.model.snapshot import describe
+from starpulse.machine_engine.model.transitions import board_machine
 from starpulse.pulls.adapters.inbound.task_actor import ACTOR, TaskActor
 from starpulse.pulls.adapters.outbound.pull_events import RecordProjection
 from starpulse.pulls.adapters.outbound.pulls import PullStore
@@ -989,7 +989,10 @@ def test_a_pr_merged_during_the_start_derivation_moves_its_task_to_done_before_t
                 time.sleep(0.1)
             return super().edit(name, changes, comment, actor=actor)
 
-    backlog = [task(f"TASK-{100 + n}", "Review", references=(f"https://github.com/acme/trantor/pull/{100 + n}",)) for n in range(30)]
+    backlog = [
+        task(f"TASK-{100 + n}", "Review", references=(f"https://github.com/acme/trantor/pull/{100 + n}",))
+        for n in range(30)
+    ]
     late = "https://github.com/acme/trantor/pull/999"
     board = SlowBoard(BoardFeed(), *backlog, task("TASK-999", "Review", references=(late,)))
     store.save([pull(100 + n, state="MERGED") for n in range(30)] + [pull(999, state="OPEN")])
@@ -1006,7 +1009,6 @@ def test_a_pr_merged_during_the_start_derivation_moves_its_task_to_done_before_t
     assert not actor.ready.is_set()
 
 
-#: A delivery machine whose run's end, `DELIVER_FINISHED`, leaves the task where it is.
 #: The portable deliver machine, whose run ends on `DELIVER_FINISHED`.
 DELIVERING = {
     "deliver": describe(
