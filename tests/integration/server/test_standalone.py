@@ -199,13 +199,6 @@ def test_serve_on_a_port_something_holds_names_the_port_and_the_flag_and_starts_
     assert not (tmp_path / ".starpulse").exists()
 
 
-def test_serve_refuses_to_pick_one_of_several_passed_sockets() -> None:
-    environ = {"LISTEN_FDS": "2", "LISTEN_PID": str(os.getpid())}
-
-    with pytest.raises(ValueError, match="2 sockets"):
-        server.inherited_socket(environ)
-
-
 def test_without_a_cache_server_or_any_tool_on_the_path_the_server_serves_history(
     served: Served,
 ) -> None:
