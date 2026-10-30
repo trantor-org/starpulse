@@ -287,6 +287,10 @@ def _stamped(frontmatter: dict, *, created: bool = False) -> dict:
     return stamped
 
 
+#: The actor that moves a Waiting task to Ready once its dependencies are Done (`pulls.adapters.inbound.task_actor.ACTOR`).
+_TASK_ACTOR = "starpulse/task-actor"
+
+
 @dataclass(frozen=True)
 class _Guard:
     """What a task write must pass before it lands: the declared `types`, the board's rules, then its `validate` hook."""
@@ -297,6 +301,9 @@ class _Guard:
     state_of: Callable[[str], str | None] = lambda _: None
     #: The names a task's `type` may take; empty accepts any.
     types: tuple[str, ...] = ()
+    #: The Waiting lane id and the Ready status, which a write leaving a task in Waiting must be able to move on to.
+    waiting: str | None = None
+    ready: str = ""
 
     def standing(self, front: Mapping[str, Any], body: str, lane: str) -> dict[str, Any] | None:
         """The move update of the board rule that refuses moving the task to `lane`, or None when none does.
@@ -337,6 +344,11 @@ class _Guard:
             after = rules.Record(frontmatter, body, self.state_of)
             if broken := rules.refusal(self.rules, earlier, after, actor):
                 return Written(False, broken.explain(after), broken.skill, lint=True)
+        staying = lane_id(str(frontmatter.get("status") or "")) == self.waiting
+        if self.waiting and self.ready and staying and actor != _TASK_ACTOR:
+            released = rules.standing_refusal(self.rules, frontmatter, body, self.ready, _TASK_ACTOR)
+            if released:  # the task actor would never release it: a Waiting task nothing can ready is a stuck one
+                return Written(False, released.explain(rules.Record(frontmatter, body)), released.skill, lint=True)
         if self.validate is not None and (reason := self.validate(path, before, text)):
             return Written(False, reason, lint=True)
         return None
@@ -1301,41 +1313,46 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
 
         return _update(root, task, edit, guard, actor)
 
+    def surfaces(config: BacklogConfig, roles: StateRoles) -> dict[str, Any]:
+        ready = next((status for status in config.statuses if lane_id(status) == roles.ready), "")
+        gate = replace(guard, waiting=roles.waiting, ready=ready)
+        return {
+                "writer": _writer(root, config.statuses, roles, gate, claims),
+                "release": _releaser(root, gate),
+                "assign": assign,
+                "create": _creator(root, config, retired, gate, file_name, link),
+                "read": _reader(root, evaluate.latest if isinstance(evaluate, criteria.Evaluator) else evaluate),
+                "evaluate": evaluate,
+                "holds": _holds(settings.get("holds"), base),
+                "unfinished": _holds(settings.get("unfinished"), base),
+                "parked": _notice(settings.get("parked"), base),
+                "released": _notice(settings.get("released"), base),
+                "closed": _notice(settings.get("closed"), base),
+                "edit": _editor(root, config.statuses, gate, link, roles.attention),
+                "archive": _archiver(root, config.statuses, roles, gate),
+                "restore": _restorer(root, retired, config.statuses, migrations, gate),
+                "complete": _completer(root, config.statuses, roles),
+                "retire": _retirer(root, retired, roles),
+                "retired": _retired_reader(retired),
+                "import_retired": _importer(root, retired),
+                "docs": native_docs.lister(root),
+                "read_doc": native_docs.reader(root),
+                "create_doc": native_docs.creator(root),
+                "edit_doc": native_docs.editor(root),
+                "archive_doc": native_docs.archiver(root),
+                "restore_doc": native_docs.restorer(root),
+                "milestones": native_milestones.lister(root),
+                "read_milestone": native_milestones.reader(root),
+                "create_milestone": native_milestones.creator(root),
+                "edit_milestone": native_milestones.editor(root),
+                "archive_milestone": native_milestones.archiver(root),
+        }
+
     made = project_board(
         root,
         settings,
         base,
-        lambda config, roles: {
-            "writer": _writer(root, config.statuses, roles, guard, claims),
-            "release": _releaser(root, guard),
-            "assign": assign,
-            "create": _creator(root, config, retired, guard, file_name, link),
-            "read": _reader(root, evaluate.latest if isinstance(evaluate, criteria.Evaluator) else evaluate),
-            "evaluate": evaluate,
-            "holds": _holds(settings.get("holds"), base),
-            "unfinished": _holds(settings.get("unfinished"), base),
-            "parked": _notice(settings.get("parked"), base),
-            "released": _notice(settings.get("released"), base),
-            "closed": _notice(settings.get("closed"), base),
-            "edit": _editor(root, config.statuses, guard, link, roles.attention),
-            "archive": _archiver(root, config.statuses, roles, guard),
-            "restore": _restorer(root, retired, config.statuses, migrations, guard),
-            "complete": _completer(root, config.statuses, roles),
-            "retire": _retirer(root, retired, roles),
-            "retired": _retired_reader(retired),
-            "import_retired": _importer(root, retired),
-            "docs": native_docs.lister(root),
-            "read_doc": native_docs.reader(root),
-            "create_doc": native_docs.creator(root),
-            "edit_doc": native_docs.editor(root),
-            "archive_doc": native_docs.archiver(root),
-            "restore_doc": native_docs.restorer(root),
-            "milestones": native_milestones.lister(root),
-            "read_milestone": native_milestones.reader(root),
-            "create_milestone": native_milestones.creator(root),
-            "edit_milestone": native_milestones.editor(root),
-            "archive_milestone": native_milestones.archiver(root),
-        },
+        surfaces,
         retired.changes(),
         guard.standing,
         guard.readable,
