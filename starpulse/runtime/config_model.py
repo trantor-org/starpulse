@@ -20,7 +20,7 @@ EnvName = Annotated[str, StringConstraints(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")]
 #: The memory limit, in megabytes, of each `starpulse worker` context when `worker_memory` does not name one.
 WORKER_MEMORY_MB = {
     "pulls": (768, 1536),
-    "scheduler": (384, 768),
+    "scheduler": (512, 1024),
     "runs": (512, 1024),
     "flow-metrics": (384, 768),
     "search": (384, 768),

@@ -215,7 +215,7 @@ class TestConfigCheck:
             "hours": 6.0,
             "worker_memory": {
                 "pulls": {"soft_mb": 768, "hard_mb": 1536},
-                "scheduler": {"soft_mb": 384, "hard_mb": 768},
+                "scheduler": {"soft_mb": 512, "hard_mb": 1024},
                 "runs": {"soft_mb": 512, "hard_mb": 1024},
                 "flow-metrics": {"soft_mb": 384, "hard_mb": 768},
                 "search": {"soft_mb": 384, "hard_mb": 768},
