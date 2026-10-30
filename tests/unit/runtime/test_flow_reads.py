@@ -1,7 +1,9 @@
 """Flow health and the level answer from the summaries the history store keeps, and say the same as the row scan."""
 
+import gc
 import json
 import threading
+import weakref
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -317,6 +319,16 @@ def test_a_summary_write_between_two_level_windows_forces_a_fresh_read(
     _window(store)
 
     assert _interval_reads(statements)
+
+
+def test_a_later_minutes_level_window_drops_the_earlier_one_of_the_same_span(store: HistoryStore) -> None:
+    earlier = weakref.ref(_window(store))
+    other_span = weakref.ref(store.level_window(LEVEL, now=NOW, window_s=24 * H))
+
+    _window(store, NOW + 300)
+    gc.collect()
+
+    assert (earlier(), other_span() is not None) == (None, True)
 
 
 def test_the_level_a_cached_window_answers_is_the_bytes_a_fresh_store_gives(store: HistoryStore) -> None:
