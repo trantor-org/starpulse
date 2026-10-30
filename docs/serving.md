@@ -682,8 +682,8 @@ forecast P(goal), and the run ledger.
   A task whose profile names no tier with a weight is refused as `no agent profile`, since its session would
   run on whatever model the harness defaults to. Any other task is admitted only if its demand is at most the headroom
   (limit less use) on every dimension; otherwise the decision names the first dimension it overfits.
-- **Order.** The admitted tasks go first by class: a bug another open task waits on, then the other bugs (type `bug`, or
-  labelled `board-state` or `regression`), then the tasks labelled `leverage`, then the rest. Within a class they go by
+- **Order.** The admitted tasks go first by class: the tasks labelled `regression`, then a bug another open task waits on,
+  then the other bugs (type `bug`, or labelled `board-state` or `regression`), then the tasks labelled `leverage`, then the rest. Within a class they go by
   the most open tasks waiting on them directly, then the deepest critical path (the task itself plus the longest chain
   of open tasks waiting on it), then the heaviest Priority weight, the lowest id breaking a tie. The weight is the `[scheduler.priority_matrix]`
   cell of the task's `<impact>/<urgency>` (`high/low`), 1 to 9 by default as the product of the two levels' places
@@ -705,9 +705,11 @@ the store cannot be read the ledger measures nothing, so admission prices every 
 
 ### Dispatch
 
-While the switch is on, the loop calls `decide` and starts the admitted tasks. It runs on events, never on a dispatch timer:
+While the switch is on, the loop calls `decide` and starts the admitted tasks. A task a post-merge QA miss sent back to
+`in_progress` (it carries the `regression` label) with no live session counts as eligible-lane work, so it is picked and
+ranked first; once its run ends it is held until the task leaves `in_progress`. The loop runs on events, never on a dispatch timer:
 
-- a task enters the eligible lane (or a task there becomes workable);
+- a task enters the eligible lane (or a task there becomes workable), or enters `in_progress` labelled `regression`;
 - a harness session stops, or a started task changes;
 - the switch turns on;
 - the sampler's reading of a dimension crosses its limit;

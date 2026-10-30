@@ -377,3 +377,13 @@ def test_a_board_like_todays_starts_the_bugs_then_the_widest_stories_and_never_a
     assert set(order[:3]) == {"TASK-9430", "TASK-9416", "TASK-9399"}
     assert order[3:6] == ["TASK-9266", "TASK-9273", "TASK-9363"]
     assert {d.task for d in decisions if d.blocked_by == NEEDS_OPERATOR} == {"TASK-9280", "TASK-9381", "TASK-9407"}
+
+
+def test_send_back_repick_ranks_a_regression_ahead_of_a_bug_another_task_waits_on(ledger: Ledger) -> None:
+    tasks = [
+        _task("BLOCKING", type="bug"),
+        _task("AFTER", deps=("BLOCKING",), state="waiting"),
+        _task("FIX", labels=["size-8", "regression"]),
+    ]
+
+    assert _by_rank(_decide(tasks, ledger), "enforced_rank") == ["FIX", "BLOCKING"]

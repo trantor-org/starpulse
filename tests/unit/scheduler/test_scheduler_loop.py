@@ -923,3 +923,44 @@ def test_refused_settle_releases_run_from_inflight_set(rig: Rig) -> None:
     assert [task for task, _ in rig.settled] == ["T-1"]  # refused once, not retried each tick
     assert "T-1" not in rig.loop._running
     assert [run.outcome for run in rig.ledger.runs("T-1")] == [SETTLE_REFUSED]
+
+
+def test_send_back_repick_starts_a_regression_task_in_progress_that_no_session_holds(rig: Rig) -> None:
+    rig.put("T-1", lane="in_progress", labels=("regression",))
+    rig.put("T-2", lane="in_progress")  # sent back by a demote, not by a verify miss: no one is woken
+
+    assert rig.loop.tick() == ["T-1"]
+    assert rig.loop.tick() == []  # its run now holds it
+
+
+def test_send_back_repick_leaves_a_regression_task_a_live_session_holds(rig: Rig) -> None:
+    rig.put("T-1", lane="in_progress", labels=("regression",))
+    rig.session("T-1")
+
+    assert rig.loop.tick() == []
+
+
+def test_send_back_repick_starts_the_regression_task_before_a_ready_bug_with_dependents(tmp_path: Path) -> None:
+    rig = Rig(tmp_path, limits={"sessions": 1})  # one slot: the first pick is the only start
+    rig.put("BUG", labels=("board-state",))
+    rig.put("AFTER", lane="waiting", deps=("BUG",))
+    rig.put("T-1", lane="in_progress", labels=("regression",))
+
+    assert rig.loop.tick() == ["T-1"]
+
+
+def test_send_back_repick_does_not_start_a_regression_task_again_once_its_session_stops(rig: Rig) -> None:
+    rig.put("T-1", lane="in_progress", labels=("regression",))
+    rig.loop.tick()
+    rig.session("T-1", "SESSION_STOPPED")
+    rig.after(60)
+
+    assert rig.loop.tick() == []
+    assert rig.started == ["T-1"]
+
+
+def test_send_back_repick_wakes_the_loop_when_a_task_enters_in_progress_with_the_label(rig: Rig) -> None:
+    sent_back = {"state": "in_progress", "labels": ["size-3", "regression"]}
+
+    assert rig.loop.wants("task", {"id": "T-1", "agent": sent_back})
+    assert not rig.loop.wants("task", {"id": "T-1", "agent": {**sent_back, "labels": ["size-3"]}})
