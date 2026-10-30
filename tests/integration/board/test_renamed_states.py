@@ -16,7 +16,8 @@ from starpulse.flow_metrics.model.level import Level, Terminal
 from starpulse.flow_metrics.model.level_metrics import Run, level_metrics
 from starpulse.scheduler.model.config import Scheduler
 from starpulse.scheduler.model.inputs import review_points
-from starpulse.views.application.commands.writes import claim_task, park_task, review_task
+from starpulse.views.application.commands.lifecycle import park_task, review_task
+from starpulse.views.application.commands.moves import claim_task
 
 from tests.unit.board.test_native import native_root, write_task
 

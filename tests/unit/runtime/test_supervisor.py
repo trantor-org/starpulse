@@ -409,6 +409,8 @@ def test_a_child_started_with_no_purge_delay_in_serves_env_sees_zero(tmp_path: P
     assert _purge_delay_seen_by_child(tmp_path) == "0"
 
 
-def test_a_child_started_with_a_purge_delay_in_serves_env_keeps_the_operators_value(tmp_path: Path, monkeypatch) -> None:
+def test_a_child_started_with_a_purge_delay_in_serves_env_keeps_the_operators_value(
+    tmp_path: Path, monkeypatch
+) -> None:
     monkeypatch.setenv("MIMALLOC_PURGE_DELAY", "500")
     assert _purge_delay_seen_by_child(tmp_path) == "500"

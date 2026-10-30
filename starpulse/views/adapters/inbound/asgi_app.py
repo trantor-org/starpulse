@@ -18,6 +18,7 @@ import os
 import threading
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Collection, MutableMapping
+from contextlib import nullcontext
 from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -31,7 +32,7 @@ from starlette.requests import ClientDisconnect
 from starlette.requests import Request as Incoming
 from starlette.responses import PlainTextResponse, StreamingResponse
 from starlette.responses import Response as Reply
-from starlette.routing import Route
+from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from starpulse.board.adapters.history_window import HistoryWindow
@@ -39,12 +40,26 @@ from starpulse.board.model.seam import Board
 from starpulse.harness_telemetry.model.harnesses import Harnesses
 from starpulse.runs.cloudevents_grpc import PATH as CLOUDEVENTS_GRPC_PATH
 from starpulse.runs.cloudevents_grpc import cloudevents_grpc
+from starpulse.views.adapters.inbound.api import metrics
+from starpulse.views.adapters.inbound.api.neutral import (
+    ApiRoute,
+    Arrival,
+    Handler,
+    ReadRoute,
+    Request,
+    Response,
+    Stream,
+    StreamHandler,
+    StreamRoute,
+    Watch,
+    WriteHandler,
+    WriteRequest,
+    WriteRoute,
+)
+from starpulse.views.adapters.inbound.api.routing import Api, api_routes
 from starpulse.views.adapters.inbound.compression import Encoded, Gzip, accepts_gzip
 from starpulse.views.adapters.inbound.gate_request import GateRequest
-from starpulse.views.adapters.inbound.reads import Arrival, Handler, ReadRoutes, Request, Response
 from starpulse.views.adapters.inbound.snapshot_cache import SnapshotCache
-from starpulse.views.adapters.inbound.streams import Stream, StreamHandler, Streams
-from starpulse.views.adapters.inbound.write_routes import WriteHandler, WriteRequest, WriteRoutes
 from starpulse.views.model.encoding import encode, event
 from starpulse.views.ports.services import Services
 
@@ -221,22 +236,29 @@ Endpoint = Callable[[Incoming], Awaitable[Reply]]
 Work = Callable[[Incoming, Arrival, _Body], Reply]
 
 
+class _Untimed:
+    """The timing of a read no `Watch` times."""
+
+    def computed(self) -> None:
+        pass
+
+
 class PageApp:
-    """The ASGI app of the page: `routes` answer reads, `writes` answer changes, `streams` open the event streams and
-    the rest is the build's static files. `gate`, when set, answers or admits each request before any route sees it."""
+    """The ASGI app of the page: `api` are the routes under `/api` (one module a resource, mounted together), `metrics`
+    the route beside them and the rest is the build's static files. `gate`, when set, answers or admits each request
+    before any route sees it."""
 
     def __init__(
         self,
-        routes: ReadRoutes,
-        writes: WriteRoutes,
-        streams: Streams,
+        api: list[ApiRoute],
+        metrics: list[ApiRoute],
         snapshots: SnapshotCache,
         static: Path,
         flows: Collection[str],
         gate: Callable[[GateRequest], bool] | None = None,
         grpc: ASGIApp | None = None,
     ) -> None:
-        self._routes, self._snapshots = routes, snapshots
+        self._snapshots = snapshots
         self._grpc = grpc
         self._flows = flows
         self._files = _Build(directory=static, check_dir=False)
@@ -253,12 +275,11 @@ class PageApp:
         )
         self._quiet = asyncio.Event()
         self._quiet.set()
-        # In match order: a ledger's stream before the ledger's read, and the files last, since a request a route
-        # matches by path alone is that route's 405 only while no later route matches it in full.
+        # In match order: `/api` and `/metrics` first, the pages, and the files last, since a request a route matches
+        # by path alone is that route's 405 only while no later route matches it in full.
         table = [
-            *(Route(path, self._streamed(handler), methods=["GET"]) for path, handler in streams.routes()),
-            *(Route(path, self._read(handler), methods=["GET"]) for path, handler in routes.routes()),
-            *(Route(path, self._written(handler), methods=list(methods)) for path, methods, handler in writes.routes()),
+            Mount("/api", routes=[self._route(route) for route in api]),
+            *(self._route(route, "/metrics") for route in metrics),
             *(Route(path, self._page, methods=["GET"]) for path in ("/", "/board", "/runs")),
             Route("/flow/{flow}", self._flow, methods=["GET"]),
             Route("/{path:served}", self._file, methods=["GET"]),
@@ -378,16 +399,28 @@ class PageApp:
 
         return await to_thread.run_sync(run, abandon_on_cancel=True, limiter=self._workers)
 
-    def _read(self, handler: Handler) -> Endpoint:
+    def _route(self, route: ApiRoute, path: str | None = None) -> Route:
+        """`route` as a Starlette route: at its own path, or at `path` where it is not under `/api`."""
+        at = route.path if path is None else path
+        match route:
+            case ReadRoute(_, handler, watch):
+                return Route(at, self._read(handler, watch), methods=["GET"])
+            case WriteRoute(_, methods, handler):
+                return Route(at, self._written(handler), methods=list(methods))
+            case StreamRoute(_, handler):
+                return Route(at, self._streamed(handler), methods=["GET"])
+
+    def _read(self, handler: Handler, watch: Watch | None = None) -> Endpoint:
         def read(request: Incoming, arrival: Arrival, body: _Body) -> Reply:
             queued_s = time.monotonic() - arrival.at
             asked = Request(_target(request), request.url.query, _client(request), request.path_params)
-            with self._routes.watch(asked, queued_s, arrival) as timing:
+            timed = nullcontext(_Untimed()) if watch is None else watch(asked, queued_s, arrival)
+            with timed as timing:
                 response = handler(asked)
                 timing.computed()
                 return self._json(request, response)
 
-        return self._endpoint(read)
+        return self._wrapped(handler, self._endpoint(read))
 
     def _written(self, handler: WriteHandler) -> Endpoint:
         def write(request: Incoming, arrival: Arrival, body: _Body) -> Reply:
@@ -401,7 +434,7 @@ class PageApp:
             self._snapshots.require_current()  # a write is answered once the snapshot read after it holds what it published
             return reply
 
-        return self._endpoint(write)
+        return self._wrapped(handler, self._endpoint(write))
 
     def _streamed(self, handler: StreamHandler) -> Endpoint:
         def open_stream(request: Incoming, arrival: Arrival, body: _Body) -> Reply:
@@ -432,7 +465,12 @@ class PageApp:
                 return Reply(headers=_EVENT_HEADERS)  # the headers a GET sends, without opening a stream
             return await opening(request)
 
-        return endpoint
+        return self._wrapped(handler, endpoint)
+
+    @staticmethod
+    def _wrapped(handler: Callable[..., Any], endpoint: Endpoint) -> Endpoint:
+        """`endpoint` named for the `handler` it runs, so a route table says which module answers a path."""
+        return functools.wraps(handler)(endpoint)
 
     def _endpoint(self, work: Work) -> Endpoint:
         async def endpoint(request: Incoming) -> Reply:
@@ -497,15 +535,21 @@ def page_app(
 ) -> PageApp:
     services = replace(services, harnesses=services.harnesses or Harnesses((), {}))
     snapshots = SnapshotCache(feed)
-    routes = ReadRoutes(
-        feed, history, snapshots, window, board, services, clock=clock, page_gauge=lambda: build_gauge(static)
-    )
-    writes = WriteRoutes(feed, window, board, services)
 
     def build_frame() -> str | None:
         build = page_build(static)
         return None if build is None else _build_text(build)
 
-    streams = Streams(feed, snapshots, build_frame)
+    api = Api(
+        feed,
+        history,
+        snapshots,
+        window,
+        board,
+        services,
+        clock=clock,
+        build=build_frame,
+        page_gauge=lambda: build_gauge(static),
+    )
     grpc = None if services.events is None else cloudevents_grpc(services.events)
-    return PageApp(routes, writes, streams, snapshots, static, feed.machines.keys(), gate, grpc)
+    return PageApp(api_routes(api), metrics.routes(api), snapshots, static, feed.machines.keys(), gate, grpc)

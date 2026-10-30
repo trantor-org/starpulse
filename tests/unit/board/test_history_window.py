@@ -12,7 +12,7 @@ from starpulse.board.board_feed import BoardFeed
 from starpulse.board.machine_tasks import MachineTasks
 from starpulse.event_log.event_log import EventLog
 from starpulse.runtime.adapter_kit import serve, url
-from starpulse.views.application.commands.writes import history_window
+from starpulse.views.application.commands.settings import history_window
 
 from tests.machines import MACHINES
 from tests.unit.board.test_machine_tasks import _entry

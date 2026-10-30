@@ -180,7 +180,8 @@ def test_a_change_is_encoded_once_however_many_pages_are_streaming(
     encoded: list[str] = []
     encode_event = server_module.event
     monkeypatch.setattr(
-        "starpulse.views.adapters.inbound.streams.event", lambda name, data: encoded.append(name) or encode_event(name, data)
+        "starpulse.views.adapters.inbound.api.streams.event",
+        lambda name, data: encoded.append(name) or encode_event(name, data),
     )
     feed = BoardFeed()
     with _serve(tmp_path, feed) as server:
@@ -203,7 +204,7 @@ def test_a_change_is_encoded_once_however_many_pages_are_streaming(
 def test_an_idle_event_stream_sends_a_comment_so_a_dead_page_is_noticed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("starpulse.views.adapters.inbound.streams._PING_S", 0.05)
+    monkeypatch.setattr("starpulse.views.adapters.inbound.api.streams._PING_S", 0.05)
     with _serve(tmp_path) as server:
         with urllib.request.urlopen(_url(server, "/api/events"), timeout=5) as resp:
             lines = [resp.readline() for _ in range(8)]  # the snapshot and the build take six
@@ -212,7 +213,7 @@ def test_an_idle_event_stream_sends_a_comment_so_a_dead_page_is_noticed(
 
 
 def test_a_page_that_goes_away_is_unsubscribed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("starpulse.views.adapters.inbound.streams._PING_S", 0.05)
+    monkeypatch.setattr("starpulse.views.adapters.inbound.api.streams._PING_S", 0.05)
     feed = BoardFeed()
     with _serve(tmp_path, feed) as server:
         with urllib.request.urlopen(_url(server, "/api/events"), timeout=5) as resp:
@@ -496,7 +497,10 @@ def test_a_start_on_an_in_progress_task_runs_when_no_session_holds_it_and_is_ref
         held = _post(server, "/api/start", {"task": "PROJ-4", "profile": "@agent-deep-high"})
 
     assert unheld[0] == 200
-    assert held == (409, {"error": "PROJ-4 is held by session-1: a session starts an In Progress task only once its claim is released"})
+    assert held == (
+        409,
+        {"error": "PROJ-4 is held by session-1: a session starts an In Progress task only once its claim is released"},
+    )
     assert started == [("PROJ-3", "claude", "interactive")]
 
 

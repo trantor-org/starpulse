@@ -6,8 +6,8 @@ from typing import Any
 
 import pytest
 from starpulse.board.adapters.native import board
-from starpulse.board.board_feed import BoardFeed
 from starpulse.board.adapters.upstream_backlog import UpstreamBacklog
+from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model import rules
 from starpulse.event_log.event_log import EventLog
 
@@ -28,7 +28,19 @@ TEMPLATE: dict[str, Any] = {
         {"name": "Stop Conditions"},
         {"name": "Open Questions", "optional": True},
     ],
-    "commands": ["uv run", "./.venv/bin/", "git", "rg", "starpulse", "gh", "docker", "ssh", "make", "sudo", "systemctl"],
+    "commands": [
+        "uv run",
+        "./.venv/bin/",
+        "git",
+        "rg",
+        "starpulse",
+        "gh",
+        "docker",
+        "ssh",
+        "make",
+        "sudo",
+        "systemctl",
+    ],
     "max_paths_per_sentence": 2,
     "blast_radius": {"heading": "Blast Radius", "stops": "Stop Conditions", "rollback": "Rollback"},
 }
@@ -73,7 +85,9 @@ def test_a_readable_description_has_an_empty_verdict() -> None:
 @pytest.mark.parametrize(
     ("body", "named"),
     [
-        pytest.param(swapped("## Why\n", "## Reason\n"), "expected heading `Why`, found `Reason` (line 4)", id="headings"),
+        pytest.param(
+            swapped("## Why\n", "## Reason\n"), "expected heading `Why`, found `Reason` (line 4)", id="headings"
+        ),
         pytest.param(
             swapped("## Scope\n", "## Example\nA before.\n\n## Terms\nA word.\n\n## Scope\n"),
             "expected heading `Scope`, found `Terms` (line 13)",
@@ -128,7 +142,9 @@ def test_a_readable_option_refuses_its_negative_case_naming_the_rule_and_line(bo
 def test_a_readable_description_names_what_the_axis_3_stop_condition_and_rollback_must_hold() -> None:
     stops = swapped("- The card stops loading", "- The data is lost")
     assert verdict(swapped("reach 1 · data 0", "reach 1 · data 3", stops)) == ""
-    rolled = swapped("## Stop Conditions", "## Rollback\nRevert, then rerun.\n\n## Stop Conditions", swapped("undo 0", "undo 2"))
+    rolled = swapped(
+        "## Stop Conditions", "## Rollback\nRevert, then rerun.\n\n## Stop Conditions", swapped("undo 0", "undo 2")
+    )
     assert verdict(rolled) == ""
 
 
@@ -171,7 +187,9 @@ def test_the_snapshot_carries_each_tasks_readable_verdict(tmp_path: Path, monkey
     built = board({"guards": [GUARD]}, tmp_path)
     for name, body in (("task-1", swapped("## Why\n", "## Reason\n")), ("task-2", GOOD)):
         path = write_task(tmp_path, name, "To Do")
-        text = path.read_text().replace("Why\n<!-- SECTION:DESCRIPTION:END -->", f"{body}<!-- SECTION:DESCRIPTION:END -->")
+        text = path.read_text().replace(
+            "Why\n<!-- SECTION:DESCRIPTION:END -->", f"{body}<!-- SECTION:DESCRIPTION:END -->"
+        )
         path.write_text(text)
     feed = BoardFeed()
     with tempfile.TemporaryDirectory() as directory:

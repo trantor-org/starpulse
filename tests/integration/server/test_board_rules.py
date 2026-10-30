@@ -166,7 +166,9 @@ def test_the_page_is_refused_the_ready_profile_it_names_for_a_task_with_none(tmp
     assert "status: Needs attention\n" in next(native_root(tmp_path).glob("tasks/*.md")).read_text()
 
 
-def test_task_moves_refuses_the_agent_ready_as_task_move_does(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_task_moves_refuses_the_agent_ready_as_task_move_does(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     with _asking(tmp_path, profile="'@agent-standard-high'") as server:
         assert cli.main(["task", "moves", "task-1", "--server", server], {}) == 0
         offered = json.loads(capsys.readouterr().out)["moves"]["ready"]

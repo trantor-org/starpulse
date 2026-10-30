@@ -12,7 +12,7 @@ from starpulse.event_log.event_log import EventLog
 from starpulse.harness_telemetry.model.harness import SESSION_MACHINES
 from starpulse.scheduler.adapters.runtime import Runtime, build
 from starpulse.scheduler.model.config import Scheduler
-from starpulse.views.application.commands.writes import scheduler
+from starpulse.views.application.commands.settings import scheduler
 
 from tests.machines import MACHINES, ROLES
 from tests.unit.runtime.test_scheduler_route import HOST, _feed

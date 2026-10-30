@@ -17,7 +17,7 @@ from tests.machines import MACHINES, ROLES
 
 
 def test_a_stream_never_builds_the_snapshot_on_its_own_thread(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("starpulse.views.adapters.inbound.streams._HELD_SETTLE_S", 0)
+    monkeypatch.setattr("starpulse.views.adapters.inbound.api.streams._HELD_SETTLE_S", 0)
     builders: list[str] = []
     build = SnapshotCache._build
 

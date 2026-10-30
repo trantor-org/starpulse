@@ -30,7 +30,7 @@ from starpulse.event_log.event_log import EventLog
 from starpulse.machine_engine.model.machine_definition import Writer
 from starpulse.machine_engine.model.state_roles import StateRoles
 from starpulse.runtime.adapter_kit import BoardAdapterKit
-from starpulse.views.application.commands.writes import move_task
+from starpulse.views.application.commands.moves import move_task
 
 from tests.conftest import stop_upstream_backlogs
 

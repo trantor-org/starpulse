@@ -33,7 +33,7 @@ from starpulse.harness_telemetry.adapters.inbound.telemetry import TelemetryLog,
 from starpulse.runtime.adapter_kit import serve as _real_serve
 from starpulse.runtime.adapter_kit import task
 from starpulse.runtime.adapter_kit import url as _url
-from starpulse.views.adapters.inbound.write_routes import _no_writer
+from starpulse.views.adapters.inbound.api.writing import no_writer as _no_writer
 
 from tests.fake_board import bare_board
 from tests.hosts import FakeHost
