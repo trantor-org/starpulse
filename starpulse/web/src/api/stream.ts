@@ -141,8 +141,10 @@ export function openStream(
   let state: Snapshot | null = null;
   /** A restarted server's partial Board is not handed over once the page has drawn one: the page keeps its own until the server has read its board. */
   let shown = false;
+  /** Set while a snapshot and the events queued behind it fold into one state: each hand is a full pass over the sky, so they cost one. */
+  let folding = false;
   const hand = (kind?: Delta["kind"]) => {
-    if (shown && state!.reading) return;
+    if (folding || (shown && state!.reading)) return;
     shown = true;
     handlers.snapshot(state!, kind);
   };
@@ -226,8 +228,14 @@ export function openStream(
         .then(
           (snap) => {
             if (waiting !== mine) return; // a newer snapshot or connection took its place
-            take(snap);
-            for (const run of mine) run();
+            folding = true;
+            try {
+              take(snap);
+              for (const run of mine) run();
+            } finally {
+              folding = false;
+              if (state) hand();
+            }
           },
           () => {
             if (waiting !== mine) return;
