@@ -1323,6 +1323,11 @@ def test_the_declared_params_are_the_names_of_the_words_dagu_reports() -> None:
         assert declared_params(base_url, "deliver") == ["WORKTREE", "AFTER"]
 
 
+def test_a_schema_declared_dag_reports_its_params_as_definitions_beside_the_defaulted_words() -> None:
+    with dagu(DELIVER, params={"deliver": ["FORCE=false"]}, param_defs={"deliver": ["AFTER", "BEFORE", "FORCE"]}) as (base_url, _):
+        assert declared_params(base_url, "deliver") == ["FORCE", "AFTER", "BEFORE"]
+
+
 def test_a_dag_that_declares_no_params_has_none() -> None:
     with dagu(DELIVER) as (base_url, _):
         assert declared_params(base_url, "deliver") == []
