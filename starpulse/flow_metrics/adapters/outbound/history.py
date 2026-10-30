@@ -83,7 +83,8 @@ _CHUNK = 5000
 #: How many tasks one statement asks the lane intervals for, under every dialect's limit on bound parameters.
 _TASKS_PER_QUERY = 500
 
-#: How long one read of the level's window serves requests, and how many windows (one per level and span asked) are kept.
+#: How long one read of the level's window serves requests, and how many windows (one per level and span asked, the
+#: latest minute's) are kept.
 _WINDOW_BUCKET_S = 60.0
 _WINDOWS_KEPT = 8
 
@@ -734,6 +735,8 @@ class HistoryStore:
             held = self._read_level_window(level, now=bucket, window_s=window_s)
             with self._windows_lock:
                 if self._summaries_version == version:  # a write that committed meanwhile may be missing from it
+                    for stale in [k for k in self._windows if k[:2] == key[:2] and k[2] < bucket]:
+                        del self._windows[stale]  # a later minute never asks for an earlier bucket again
                     if len(self._windows) >= _WINDOWS_KEPT:
                         del self._windows[next(iter(self._windows))]
                     self._windows[key] = held
