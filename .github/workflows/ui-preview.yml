@@ -48,7 +48,7 @@ jobs:
     # describes. On main a failed build or publish turns the run red; the previous main/ demo keeps serving.
     continue-on-error: ${{ github.event_name == 'pull_request' }}
     # The server uses an isolated SQLite database for the preview.
-    runs-on: [self-hosted, ai-vm-1]
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     # The run's own token writes the gh-pages branch; the ruleset protects only the default branch.
     permissions:
@@ -131,7 +131,7 @@ jobs:
     name: Scan the demos for leaks
     needs: render
     if: ${{ !cancelled() && needs.render.result == 'success' && github.event.action != 'closed' }}
-    runs-on: [self-hosted, ai-vm-1]
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
