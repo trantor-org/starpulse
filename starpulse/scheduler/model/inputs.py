@@ -1,7 +1,6 @@
-"""The capacity inputs the board and the harness events feed: the review load and the sessions in flight.
+"""The capacity inputs the board feeds: the review load and the sessions held.
 
-Both read the feed's agents (`BoardFeed.open_tasks`, `BoardFeed.machine_tasks("harness")`), so the sampler stays
-independent of the feed.
+Both read the feed's open tasks (`BoardFeed.open_tasks`), so the sampler stays independent of the feed.
 """
 
 import re
@@ -24,11 +23,11 @@ def review_points(tasks: Iterable[Mapping[str, Any]], lane: str | None, unsized:
     return sum(points(task["labels"], unsized) for task in tasks if task["state"] == lane)
 
 
-def sessions_in_flight(agents: Iterable[Mapping[str, Any]], now: float, stale_s: float = STALE_S) -> int:
-    """The harness sessions running now: each task whose harness machine is `active` and had an event within `stale_s`.
+def sessions_held(tasks: Iterable[Mapping[str, Any]], working: str) -> int:
+    """The sessions the Board says are running: each task in the `working` lane.
 
-    It counts every harness session on a task, the operator's own beside the scheduler's, because each takes the host's CPU
-    and memory alike. A session killed mid-tool never gets its Stop, so its machine reads `active` until the history window
-    drops it; the bound stops that session holding a slot.
+    A held task counts whether its session is mid-turn or idle on a wake (a PR's checks, a dependency), because the
+    session stays a resident process either way. Counting only mid-turn sessions let a stalled downstream pile
+    In Progress with no sessions use to stop new starts.
     """
-    return sum(agent["state"] == "active" and now - agent["active"] <= stale_s for agent in agents)
+    return sum(task["state"] == working for task in tasks)

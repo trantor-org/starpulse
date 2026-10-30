@@ -168,21 +168,35 @@ class Loop:
         return {name: {"use": use.get(name, 0.0), "limit": self._policy.session_limit(name)} for name in sorted(names)}
 
     def _sessions_used(self) -> dict[str, float]:
-        """Live sessions per harness: the loop's runs, and each session it did not track, counted on the default harness
-        because the harness machine does not say which harness opened it."""
+        """Sessions per harness: the loop's runs, and each task held In Progress outside them, counted on the default
+        harness because the harness machine does not say which harness opened it."""
         use: dict[str, float] = {}
         for run in list(self._running.values()):
             use[run.harness] = use.get(run.harness, 0.0) + 1
-        if outside := len(self._outside()):
+        if outside := len(self._held_outside()):
             use[DEFAULT_HARNESS] = use.get(DEFAULT_HARNESS, 0.0) + outside
         return use
 
-    def _outside(self, states: tuple[str, ...] = ("active",)) -> dict[str, dict[str, Any]]:
+    def _held_outside(self) -> set[str]:
+        """The In Progress tasks `_running` does not hold that a session holds, idle on a wake or mid-turn: an idle session
+        is still a resident process, so a stalled downstream fills the sessions cap instead of piling up In Progress. A
+        task a verify miss sent back with no live session is Ready work (`_candidate`), not a held one."""
+        live = self._live()
+        working = self._feed.roles.working
+        return {
+            agent["id"]
+            for agent in self._feed.open_tasks()
+            if agent["state"] == working
+            and agent["id"] not in self._running
+            and (agent["id"] in live or REGRESSION not in agent["labels"])
+        }
+
+    def _outside(self, states: tuple[str, ...] = ("active", "stopped")) -> dict[str, dict[str, Any]]:
         """The In Progress tasks a live session holds that `_running` does not: one `POST /api/start` or the operator opened.
 
-        A session is live when its harness machine is in `states` with an event inside `STALE_S`. Capacity counts only
-        `active`, as the sampler does; `in_flight` also takes `stopped`, which every mid-turn reply sets until the next
-        tool result, so a session running a tool or waiting on the model is `stopped` most of the time.
+        A session is live when its harness machine is in `states` with an event inside `STALE_S`. `stopped` is
+        live too: every mid-turn reply sets it until the next tool result, so a session running a tool or waiting on the
+        model is `stopped` most of the time.
         """
         now = self._clock()
         found = {}
@@ -307,7 +321,7 @@ class Loop:
                     "url": run.session,
                 }
             )
-        outside = self._outside(("active", "stopped"))
+        outside = self._outside()
         for task, found in outside.items():
             agent, seen = found["agent"], found["seen"]
             sessions.append(
@@ -507,7 +521,7 @@ class Loop:
 
     def _live(self) -> set[str]:
         """The In Progress tasks a session outside `_running` holds: one the harness or its transcript shows at work."""
-        outside = self._outside(("active", "stopped"))
+        outside = self._outside()
         return {*outside, *self._transcribed(outside)}
 
     def _candidate(self, agent: dict[str, Any], held: set[str], live: set[str]) -> dict[str, Any]:
