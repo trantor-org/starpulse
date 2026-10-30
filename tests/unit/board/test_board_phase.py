@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from starpulse.board.model.view import task_view
+from starpulse.board.model.view import board_columns, task_view
 
 from tests.machines import ROLES
 
@@ -92,3 +92,25 @@ def test_done_task_reports_done_at_and_no_phase() -> None:
 def test_task_held_only_by_a_subflow_reports_that_subflows_phase_and_state() -> None:
     view = _view("T-4")
     assert (view["phase"], view["substate"]) == ("deliver", "pr_opened")
+
+
+def _view_of(snapshot: dict[str, Any], task: str) -> dict[str, Any]:
+    agent = next(a for a in snapshot["flows"][0]["agents"] if a["id"] == task)
+    return task_view(agent, snapshot, set())
+
+
+def test_a_task_whose_phase_is_parked_reads_in_the_waiting_lane_and_not_the_in_progress_column() -> None:
+    snapshot = _snapshot()
+    snapshot["flows"][0]["agents"].append(_agent("T-5", "in_progress"))
+    snapshot["flows"][0]["machine"]["states"] = [
+        {"id": "in_progress", "name": "In Progress"},
+        {"id": "waiting", "name": "Waiting"},
+    ]
+    snapshot["flows"][1]["agents"].append(_agent("T-5", "parked"))
+
+    columns = {c["state"]: [t["id"] for t in c["tasks"]] for c in board_columns(snapshot, lambda agent: True)["columns"]}
+
+    assert _view_of(snapshot, "T-5")["lane"] == "waiting"
+    assert "T-5" not in columns["in_progress"]
+    assert columns["waiting"] == ["T-5"]
+    assert _view("T-1")["lane"] == "in_progress"

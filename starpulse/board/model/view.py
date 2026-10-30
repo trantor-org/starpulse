@@ -104,6 +104,11 @@ def _skill(substate: str | None, flow: dict[str, Any] | None) -> dict[str, Any] 
     }
 
 
+def _lane(agent: dict[str, Any], phase: str | None) -> str:
+    """The lane a task reads in: a task whose In Progress phase is `parked` waits, whatever lane the board still holds."""
+    return "waiting" if agent["state"] == "in_progress" and phase == "parked" else agent["state"]
+
+
 def task_view(agent: dict[str, Any], snapshot: dict[str, Any], done: set[str] | None = None) -> dict[str, Any]:
     """A Board task as a verb reports it. It waits on each dependency not in `done`, read from `snapshot` when absent:
     a caller viewing many tasks passes it once rather than rescanning the board per task."""
@@ -115,7 +120,7 @@ def task_view(agent: dict[str, Any], snapshot: dict[str, Any], done: set[str] | 
     return {
         "id": agent["id"],
         "title": agent["title"],
-        "lane": agent["state"],
+        "lane": _lane(agent, phase),
         "phase": phase,
         "substate": substate,
         "skill": _skill(substate, flow),
@@ -150,7 +155,11 @@ def board_columns(
                 "state": column["id"],
                 "name": column["name"],
                 "tasks": [
-                    task_view(a, snapshot, done) for a in board["agents"] if a["state"] == column["id"] and kept(a)
+                    view
+                    for a in board["agents"]
+                    if kept(a)
+                    for view in [task_view(a, snapshot, done)]
+                    if view["lane"] == column["id"]
                 ],
             }
             for column in board["machine"]["states"]

@@ -304,6 +304,24 @@ def test_a_runs_capacity_stays_taken_until_its_task_leaves_in_progress(tmp_path:
     assert rig.loop.tick() == ["T-2"]
 
 
+def test_a_run_frees_its_capacity_once_its_tasks_phase_is_parked_though_the_board_lane_is_in_progress(tmp_path: Path) -> None:
+    rig = Rig(tmp_path, limits={"cpu": 30})
+    rig.put("T-1")
+    rig.put("T-2")
+    assert rig.loop.tick() == ["T-1"]
+    rig.put("T-1", lane="in_progress")
+    rig.session("T-1")
+    rig.host = {"cpu": 20.0, "memory": 20.0}
+    rig.sampler.sample()
+    assert rig.loop.tick() == []
+
+    rig.feed.move("in-progress", {"id": "T-1", "task": "T-1", "state": "parked", "active": rig.now}, publish=False)
+    rig.host = {"cpu": 5.0, "memory": 5.0}
+    rig.sampler.sample()
+
+    assert rig.loop.tick() == ["T-2"]
+
+
 def test_a_finished_run_is_recorded_with_its_outcome_duration_and_peak(rig: Rig) -> None:
     rig.put("T-1")
     rig.loop.tick()

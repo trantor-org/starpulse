@@ -397,6 +397,9 @@ class Loop:
         for task, run in list(self._running.items()):
             agent = agents.get(task)
             state = agent["state"] if agent else None
+            phase = self._feed.machine_task("in-progress", task)
+            if phase and phase["state"] == "parked":  # a parked phase waits whatever lane the board still holds
+                state = "waiting"
             if state not in (self._lane, self._feed.roles.working):
                 self._close(task, run, state or "closed", now)
                 continue
