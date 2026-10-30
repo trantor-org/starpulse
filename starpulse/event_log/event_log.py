@@ -34,7 +34,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, NamedTuple
 
-from sqlalchemy import Engine, create_engine, delete, event, func, select
+from sqlalchemy import Engine, bindparam, create_engine, delete, event, func, select
 from sqlalchemy.dialects import sqlite
 from sqlalchemy.engine import Connection, make_url
 
@@ -63,6 +63,11 @@ _PRAGMA_ATTEMPTS = 20
 
 #: How many rows a prune archives and deletes at a time, so a long backlog is never held in memory at once.
 _PRUNE_BATCH = 1000
+# Built once: a statement made per poll recompiles its lazy attributes every time, which dominated the server's CPU
+# at ~45 live sessions (every commit wakes every tail).
+# Scalar subqueries: SQLite answers a lone min or max from the primary key, but scans an index for both.
+_OLDEST_AND_HEAD = select(select(func.min(events.c.id)).scalar_subquery(), select(func.max(events.c.id)).scalar_subquery())
+_WORKER_VERSION = select(worker_state.c.version).where(worker_state.c.name == bindparam("name"))
 
 
 class Entry(NamedTuple):
@@ -240,7 +245,7 @@ class EventLog:
     def _version_or(self, name: str, default: int) -> int:
         try:
             with self.engine.connect() as db:
-                return db.execute(select(worker_state.c.version).where(worker_state.c.name == name)).scalar() or 0
+                return db.execute(_WORKER_VERSION, {"name": name}).scalar() or 0
         except Exception:  # an unreadable store changes nothing, and the next look tries again
             logger.warning("EventLog: reading the version of %s failed", name, exc_info=True)
             return default
@@ -429,10 +434,7 @@ class Tail:
         """
         engine = self.log.engine
         with engine.connect() as db:
-            # Scalar subqueries: SQLite answers a lone min or max from the primary key, but scans an index for both.
-            oldest, head = db.execute(
-                select(select(func.min(events.c.id)).scalar_subquery(), select(func.max(events.c.id)).scalar_subquery())
-            ).one()
+            oldest, head = db.execute(_OLDEST_AND_HEAD).one()
             cursor = self.cursor
             if head is None or head == cursor:  # idle: the one query above is the whole poll
                 return []

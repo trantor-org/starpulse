@@ -57,6 +57,19 @@ def test_an_idle_poll_reads_the_oldest_and_newest_id_without_scanning_the_table(
     assert not [step for step in plan if step.startswith("SCAN starpulse_events")], plan
 
 
+def test_an_idle_poll_executes_one_prebuilt_statement_each_time(database_url: str) -> None:
+    log = EventLog(database_url)
+    tail = Tail.replay(log, "machine:events")
+    seen: list[int] = []
+    event.listen(log.engine, "before_execute", lambda _conn, clause, *_: seen.append(id(clause)))
+
+    tail.poll()
+    tail.poll()
+
+    assert len(seen) == 2
+    assert seen[0] == seen[1]
+
+
 def test_a_running_tail_hands_over_what_another_process_appends(
     database_url: str, processes: ProcessPoolExecutor
 ) -> None:
