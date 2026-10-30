@@ -25,6 +25,8 @@ from starpulse.runtime.adapter_kit import serve, url
 from starpulse.runtime.config import load
 from starpulse.views.adapters.inbound.page_server import PageServer
 
+#: A refusal answers in milliseconds; 5 s was a wall-clock bound a CPU-starved shard overran.
+REQUEST_TIMEOUT_S = 30
 TOKENS = {"cron": "cron-secret", "rundeck": "rundeck-secret"}
 PRODUCERS = tuple(Producer(name, f"{name.upper()}_TOKEN", machines=(), actors=()) for name in TOKENS)
 
@@ -56,7 +58,7 @@ class Stack:
         if token is not None:
             request.add_header("Authorization", f"Bearer {token}")
         try:
-            with urllib.request.urlopen(request, timeout=5) as resp:
+            with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_S) as resp:
                 return resp.status, json.load(resp)
         except urllib.error.HTTPError as exc:
             body = exc.read()
@@ -153,7 +155,7 @@ def test_the_same_workflow_name_posted_by_two_producers_stays_two_workflows(stac
 
 def test_a_body_larger_than_the_limit_answers_413_and_writes_nothing(stack: Stack) -> None:
     # The server answers on the declared length and closes unread, so sending the body would race that close.
-    connection = http.client.HTTPConnection("127.0.0.1", stack.server.server_port, timeout=5)
+    connection = http.client.HTTPConnection("127.0.0.1", stack.server.server_port, timeout=REQUEST_TIMEOUT_S)
     try:
         connection.putrequest("POST", "/api/machine-events")
         connection.putheader("Authorization", "Bearer cron-secret")
@@ -171,7 +173,7 @@ def test_a_body_larger_than_the_limit_answers_413_and_writes_nothing(stack: Stac
 def test_a_get_answers_405(stack: Stack) -> None:
     request = urllib.request.Request(url(stack.server, "/api/machine-events"))
     with pytest.raises(urllib.error.HTTPError) as got:
-        urllib.request.urlopen(request, timeout=5)
+        urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_S)
 
     assert (got.value.code, got.value.headers["Allow"]) == (405, "POST")
 
