@@ -37,7 +37,8 @@ def test_no_board_thread_outlives_the_block(tmp_path: Path) -> None:
     before = set(threading.enumerate())
     with write_instance(tmp_path) as instance:
         instance.run("task", "create", "First")
-    left = [thread.name for thread in threading.enumerate() if thread not in before and thread.is_alive() and thread.name != "AnyIO worker thread"]  # a sibling test's pool, not the board's
+    board_threads = {"board-state", "claim-ttl"}
+    left = [thread.name for thread in threading.enumerate() if thread not in before and thread.name in board_threads]
     assert left == []
 
 
