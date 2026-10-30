@@ -1,6 +1,6 @@
 // The Kanban view: the Board's open tasks as six columns of milestone buckets, with drag and modal moves and sessions started from a card.
 // The model is kanban.ts, move.ts and start.ts; this draws them.
-import { Fragment, memo, startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
+import { Fragment, memo, startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useDeferredValue, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { archiveDialogKey, withoutArchived } from "./archive";
 import { ChoiceMenu } from "../../shared/ChoiceMenu";
@@ -548,6 +548,8 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
   const [prefs, setPrefs] = useState<Prefs>(() => loadPrefs(storage, location.search));
   const [openTask] = useState(() => new OpenTask(linkedTask(location.search)));
   const setOpen = openTask.set;
+  // a direct link commits its modal first: the cards follow in a render of their own, which the modal's first paint does not wait on
+  const drawBoard = useDeferredValue(true, openTask.get() === null);
   const [records] = useState(() => adopted ?? new RecordCache());
   // the card the pointer rests on, and the timer that draws its modal hidden once it has rested; the record read on hover
   // fills that modal when it lands, so a slow server delays the record, never the drawing
@@ -874,7 +876,7 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
         ))}
       </div>
       <div id="cols" ref={columns} data-warm-parts="" style={{ "--cols": view.columns.length } as CSSProperties}>
-        {view.columns.map((col) => {
+        {drawBoard && view.columns.map((col) => {
           let row = 0;
           const target = lift?.kinds[col.id];
           const inChain = chain ? col.buckets.flatMap((b) => b.tasks).filter((t) => chain(t.id) === "holds" || chain(t.id) === "waits").length : 0;
