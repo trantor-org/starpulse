@@ -1186,7 +1186,7 @@ def _creator(
 
 
 #: Seconds a `holds`, `unfinished` or notice hook may run. Each starts a Python process and reads the board over HTTP, which takes
-#: 20 s on ai-vm-1 under load where the evaluator's `criteria.TIMEOUT` gives up at 10 s; a timeout holds the task until the next pass.
+#: 20 s under load where the evaluator's `criteria.TIMEOUT` gives up at 10 s; a timeout holds the task until the next pass.
 HOOK_TIMEOUT = 60.0
 
 
