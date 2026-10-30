@@ -6,12 +6,14 @@ import hashlib
 import logging
 import os
 import resource
+import signal
 import socket
 import subprocess
 import sys
 import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 from starpulse.runtime import zygote
@@ -33,6 +35,18 @@ def _wait_for(check: Callable[[], object], timeout: float = 10.0) -> object:
             return found
         time.sleep(0.02)
     raise AssertionError("condition not reached")
+
+
+def _terminable(child: Any) -> Any:
+    """Wait until the child's `hold` caught `SIGTERM`: sent before, it ends the child by the signal (-15), not with 0."""
+
+    def caught() -> bool:
+        status = Path(f"/proc/{child.pid}/status").read_text()
+        mask = next(line for line in status.splitlines() if line.startswith("SigCgt:"))
+        return bool(int(mask.split()[1], 16) >> (signal.SIGTERM - 1) & 1)
+
+    _wait_for(caught)
+    return child
 
 
 def _parent(pid: int) -> int:
@@ -73,7 +87,7 @@ def test_the_zygote_serves_a_fork_when_its_socket_is_past_the_select_limit(fds_p
 
 
 def test_a_forked_child_is_not_a_child_of_serve_and_ends_when_it_is_terminated(forker: Forker) -> None:
-    child = forker([*PREFIX, "hold"])
+    child = _terminable(forker([*PREFIX, "hold"]))
 
     assert child.poll() is None
     assert _parent(child.pid) not in (os.getpid(), 1)
@@ -89,7 +103,7 @@ def test_a_preloaded_process_serve_forked_itself_forks_children_and_ends_with_th
     forked.start(forked=True)
     preloaded = forked._current.proc
     try:
-        child = forked([*PREFIX, "hold"])
+        child = _terminable(forked([*PREFIX, "hold"]))
 
         assert _parent(child.pid) == preloaded.pid
         assert preloaded.poll() is None
@@ -186,7 +200,7 @@ def test_a_child_handed_the_socket_the_forker_holds_forks_with_it_named_in_its_e
     try:
         child = held([*PREFIX, "port", str(report)], listening)
 
-        assert _wait_for(report.exists)
+        assert _wait_for(lambda: report.exists() and report.read_text())  # `write_text` truncates before it writes
         assert report.read_text() == str(listening.getsockname()[1])
         assert held._current is not None  # the preloaded process, not a subprocess, started it
         child.kill()
