@@ -8,7 +8,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from starpulse.views.adapters.inbound.api.neutral import ApiRoute, ReadRoute, Request, Response, WriteRoute
+from starlette.requests import Request
+from starlette.responses import Response
+
+from starpulse.views.adapters.inbound.api.answering import answer, client, reading, seams
+from starpulse.views.adapters.inbound.api.neutral import ApiRoute, ReadRoute, WriteRoute
 from starpulse.views.adapters.inbound.api.writing import guarded, whole
 from starpulse.views.application.commands.settings import scheduler as scheduler_command
 from starpulse.views.model.encoding import encode
@@ -18,12 +22,14 @@ if TYPE_CHECKING:  # annotation only
     from starpulse.views.adapters.inbound.api.routing import Api
 
 
+@reading
+def status(request: Request) -> Response:
+    code, body = scheduler_command(client(request), "GET", b"", seams(request).services.scheduler)
+    return answer(request, encode("scheduler", body), code)
+
+
 def routes(api: Api) -> list[ApiRoute]:
     scheduler = api.services.scheduler
-
-    def status(request: Request) -> Response:
-        code, body = scheduler_command(request.client, "GET", b"", scheduler)
-        return Response(encode("scheduler", body), code)
 
     def switch(request: WriteRequest) -> tuple[int, dict]:
         return scheduler_command(request.client, "PUT", whole(request), scheduler)

@@ -7,38 +7,47 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-from urllib.parse import parse_qs
+from starlette.requests import Request
+from starlette.responses import Response
 
 from starpulse.harness_telemetry.model.harnesses import Harnesses
-from starpulse.views.adapters.inbound.api.neutral import ApiRoute, ReadRoute, Request, Response
+from starpulse.views.adapters.inbound.api.answering import answer, query, reading, seams
+from starpulse.views.adapters.inbound.api.neutral import ApiRoute, ReadRoute
 from starpulse.views.application.queries.responses import done_response, machines_response, search_response
 from starpulse.views.model.encoding import encode
 
-if TYPE_CHECKING:  # annotation only
-    from starpulse.views.adapters.inbound.api.routing import Api
+
+@reading
+def doctor(request: Request) -> Response:
+    contract = seams(request).services.contract
+    return answer(request, encode("doctor", contract() if contract else {"ok": True, "checks": []}))
 
 
-def routes(api: Api) -> list[ApiRoute]:
-    feed, services = api.feed, api.services
-    harnesses = Response(encode("harnesses", (services.harnesses or Harnesses((), {})).as_json()))
+@reading
+def machines(request: Request) -> Response:
+    return answer(request, *machines_response(seams(request).feed, query(request)))
 
-    def doctor(request: Request) -> Response:
-        return Response(encode("doctor", services.contract() if services.contract else {"ok": True, "checks": []}))
 
-    def machines(request: Request) -> Response:
-        return Response(*machines_response(feed, parse_qs(request.query)))
+@reading
+def done(request: Request) -> Response:
+    api = seams(request)
+    return answer(request, *done_response(api.feed, api.board.read, query(request)))
 
-    def done(request: Request) -> Response:
-        return Response(*done_response(feed, api.board.read, parse_qs(request.query)))
 
-    def search(request: Request) -> Response:
-        return Response(*search_response(services.search, parse_qs(request.query)))
+@reading
+def search(request: Request) -> Response:
+    return answer(request, *search_response(seams(request).services.search, query(request)))
 
-    return [
-        ReadRoute("/doctor", doctor),
-        ReadRoute("/machines", machines),
-        ReadRoute("/done", done),
-        ReadRoute("/search", search),
-        ReadRoute("/harnesses", lambda request: harnesses),
-    ]
+
+@reading
+def harnesses(request: Request) -> Response:
+    return answer(request, encode("harnesses", (seams(request).services.harnesses or Harnesses((), {})).as_json()))
+
+
+routes: list[ApiRoute] = [
+    ReadRoute("/doctor", doctor),
+    ReadRoute("/machines", machines),
+    ReadRoute("/done", done),
+    ReadRoute("/search", search),
+    ReadRoute("/harnesses", harnesses),
+]

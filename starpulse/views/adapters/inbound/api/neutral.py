@@ -3,12 +3,16 @@ ASGI app (and any other front) calls the same handlers."""
 
 from __future__ import annotations
 
-from collections.abc import Callable, Generator, Mapping
+from collections.abc import Awaitable, Callable, Generator, Mapping
 from contextlib import AbstractContextManager
 from types import MappingProxyType
-from typing import Any, NamedTuple, Protocol
+from typing import TYPE_CHECKING, Any, NamedTuple, Protocol
 
 from starpulse.views.adapters.inbound.compression import Encoded
+
+if TYPE_CHECKING:  # annotation only
+    from starlette.requests import Request as Incoming
+    from starlette.responses import Response as Reply
 
 
 class Arrival(NamedTuple):
@@ -71,20 +75,21 @@ class Stream(NamedTuple):
 
 Query = dict[str, list[str]]
 Admit = Callable[[], bool]
-Handler = Callable[[Request], Response]
+Endpoint = Callable[["Incoming"], Awaitable["Reply"]]
 WriteHandler = Callable[[WriteRequest], Response | None]
 StreamHandler = Callable[[Request, Admit], Stream | Response]
 #: Times a read: given the request and its arrival, a context the server holds open from that arrival to the last byte
 #: sent; the value it yields has a `ran()` the server calls once a worker thread has taken the read and a `computed()` it
 #: calls as the answer begins to be sent.
-Watch = Callable[[Request, Arrival], AbstractContextManager[Any]]
+Watch = Callable[["Incoming", Arrival], AbstractContextManager[Any]]
 
 
 class ReadRoute(NamedTuple):
-    """A GET at `path` (under `/api`), answered by `handler`; `watch`, when set, times each read."""
+    """A GET at `path` (under `/api`), answered by the Starlette endpoint `handler`; `watch`, when set, times each
+    read."""
 
     path: str
-    handler: Handler
+    handler: Endpoint
     watch: Watch | None = None
 
 

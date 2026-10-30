@@ -13,17 +13,19 @@ from contextlib import AbstractContextManager
 from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs
 
+from starlette.requests import Request
+from starlette.responses import Response
+
 from starpulse.pulls.adapters.inbound.pull_refresh import MAX_BODY as MAX_REFRESH_BODY
+from starpulse.views.adapters.inbound.api.answering import answer, reading, seams
 from starpulse.views.adapters.inbound.api.neutral import (
     ApiRoute,
     Arrival,
     ReadRoute,
-    Request,
-    Response,
     WriteRequest,
     WriteRoute,
 )
-from starpulse.views.adapters.inbound.api.slow_reads import SlowReads
+from starpulse.views.adapters.inbound.api.neutral import Response as Answer
 from starpulse.views.adapters.inbound.api.writing import pushed
 from starpulse.views.adapters.inbound.compression import Encoded
 from starpulse.views.application.queries.responses import pulls_response
@@ -77,19 +79,19 @@ class PullReads:
         return held[1], held[2]
 
 
+@reading
+def pulls(request: Request) -> Response:
+    return answer(request, *seams(request).pull_reads(request.url.query))
+
+
+def timed(request: Request, arrival: Arrival) -> AbstractContextManager[Any]:
+    return seams(request).slow_reads.watch(request.url.query, arrival)
+
+
 def routes(api: Api) -> list[ApiRoute]:
-    services = api.services
-    held = PullReads(services.pulls)
-    slow = SlowReads("/api/pulls", services.slow_read_s)
-    refresh = services.pull_refresh
+    refresh = api.services.pull_refresh
 
-    def pulls(request: Request) -> Response:
-        return Response(*held(request.query))
-
-    def timed(request: Request, arrival: Arrival) -> AbstractContextManager[Any]:
-        return slow.watch(request.query, arrival)
-
-    def push(request: WriteRequest) -> Response | None:
+    def push(request: WriteRequest) -> Answer | None:
         return None if refresh is None else pushed(request, "ingest", refresh, MAX_REFRESH_BODY)
 
     return [ReadRoute("/pulls", pulls, timed), WriteRoute("/pulls/refresh", ("POST",), push)]
