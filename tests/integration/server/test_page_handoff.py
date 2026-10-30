@@ -48,6 +48,11 @@ def test_the_service_manager_protocol_still_adopts_its_socket_for_this_process_o
     assert inherited_socket({}) is None
 
 
+def test_the_service_manager_protocol_refuses_to_pick_one_of_several_passed_sockets() -> None:
+    with pytest.raises(ValueError, match="2 sockets"):
+        inherited_socket({"LISTEN_FDS": "2", "LISTEN_PID": str(os.getpid())})
+
+
 def test_a_serve_that_re_executes_keeps_the_page_socket_open_for_its_next_image(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
