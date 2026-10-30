@@ -285,3 +285,76 @@ def test_the_criteria_setting_is_a_known_board_setting(tmp_path: Path) -> None:
 
     assert built.read is not None
     assert json.loads(json.dumps(built.read("task-404"))) is None
+
+
+NIGHTLY = TASK.replace(
+    "- id: soak-24h\n  kind: prom\n  expr: time()\n  at_least: 1790000000\n- id: rows\n  kind: sql\n  query: select count(*) from runs\n  equals: 3\n",
+    "- id: nightly\n  kind: dagu_run\n  dag: nightly\n  since: 2026-10-01\n",
+)
+
+
+def _hinted(on: list[str], interval: int = 900) -> str:
+    """An evaluator that counts its runs in `runs.txt` and prints one criterion `refresh`ing on `on`."""
+    result = {"id": "nightly", "kind": "dagu_run", "status": "not-met", "refresh": {"interval": interval, "on": on}}
+    return f"import json\nopen('runs.txt', 'a').write('x')\nprint(json.dumps([{result!r}]))\n"
+
+
+def _count(tmp_path: Path) -> int:
+    return len((tmp_path / "runs.txt").read_text()) if (tmp_path / "runs.txt").exists() else 0
+
+
+def test_a_criterion_that_names_its_interval_is_not_evaluated_again_inside_it(tmp_path: Path, monkeypatch) -> None:
+    now = [100.0]
+    monkeypatch.setattr(criteria, "_clock", lambda: now[0])
+    evaluate = criteria.Evaluator(_script(tmp_path, _hinted([])), tmp_path)
+
+    evaluate("task-7", NIGHTLY)
+    now[0] += criteria.CACHE_SECONDS + 1
+    evaluate("task-7", NIGHTLY)
+    assert _count(tmp_path) == 1
+
+    now[0] += 900
+    evaluate("task-7", NIGHTLY)
+    assert _count(tmp_path) == 2
+
+
+def test_an_event_a_criterion_names_makes_its_next_evaluation_run_at_once(tmp_path: Path) -> None:
+    evaluate = criteria.Evaluator(_script(tmp_path, _hinted(["run:nightly"])), tmp_path)
+    evaluate("task-7", NIGHTLY)
+
+    assert evaluate.invalidate("merge") is False
+    evaluate("task-7", NIGHTLY)
+    assert _count(tmp_path) == 1
+
+    assert evaluate.invalidate("run:nightly") is True
+    evaluate("task-7", NIGHTLY)
+    assert _count(tmp_path) == 2
+
+
+def test_an_invalidated_task_still_reads_its_last_results_while_they_refresh(tmp_path: Path) -> None:
+    evaluate = criteria.Evaluator(_script(tmp_path, _hinted(["run:nightly"])), tmp_path)
+    evaluate("task-7", NIGHTLY)
+
+    evaluate.invalidate("run:nightly")
+
+    assert [c["status"] for c in evaluate.latest("task-7", NIGHTLY)] == ["unmet"]
+
+
+def _spawns_in_an_hour(tmp_path: Path, monkeypatch, script: str) -> int:
+    tmp_path.mkdir()
+    """Evaluator runs for one idle gated task whose feed pass calls it every 30 s for an hour."""
+    now = [100.0]
+    monkeypatch.setattr(criteria, "_clock", lambda: now[0])
+    evaluate = criteria.Evaluator(_script(tmp_path, script), tmp_path)
+    for _ in range(120):
+        evaluate("task-7", NIGHTLY)
+        now[0] += 30
+    return _count(tmp_path)
+
+
+def test_hinted_criteria_spawn_at_least_ten_times_less_than_unhinted_ones(tmp_path: Path, monkeypatch) -> None:
+    unhinted = _hinted([]).replace(", 'refresh': {'interval': 900, 'on': []}", "")
+    before = _spawns_in_an_hour(tmp_path / "before", monkeypatch, unhinted)
+    after = _spawns_in_an_hour(tmp_path / "after", monkeypatch, _hinted(["run:nightly"]))
+
+    assert (before, after) == (120, 4)

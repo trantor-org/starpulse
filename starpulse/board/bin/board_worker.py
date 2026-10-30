@@ -22,8 +22,10 @@ from typing import Protocol
 
 from starpulse.board.bin.blocks import BoardConfig, board_built_blocks
 from starpulse.board.board_feed import BoardFeed, CriteriaStore, ExpiriesStore, LaneRecorder
+from starpulse.board.criteria import Evaluator
 from starpulse.board.model.seam import Board
-from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.event_log import Entry, EventLog, Tail
+from starpulse.event_log.events import STREAM as MACHINE_STREAM
 from starpulse.event_log.opening import database_url
 from starpulse.event_log.readmodel.declared import declared_fields
 from starpulse.event_log.readmodel.projector import Projector
@@ -77,6 +79,46 @@ def start_writers(
     return criteria
 
 
+#: The runs adapter's stream (`runs.run_events.STREAM`), named here because the Board imports no other context.
+RUNS_STREAM = "runs:events"
+ENDED = frozenset({"succeeded", "failed", "aborted", "skipped"})
+PULL_REQUEST_MACHINE = "github-pull-request"
+EVENT_POLL_S = 0.5
+
+
+def criteria_topic(entry: Entry) -> str | None:
+    """The topic a criterion's `refresh.on` names that `entry` announces: `run:<dag>` for a run that ended, `merge` for a
+    merged pull request, else None."""
+    fields = entry.fields
+    if entry.stream == RUNS_STREAM:
+        ended = "step" not in fields and fields.get("status") in ENDED
+        return f"run:{fields.get('workflow')}" if ended else None
+    merged = fields.get("machine") == PULL_REQUEST_MACHINE and fields.get("event") == "PR_MERGED"
+    return "merge" if entry.stream == MACHINE_STREAM and merged else None
+
+
+def follow_criteria_events(
+    feed: BoardFeed,
+    evaluate: Callable[[str, str], list[dict]] | None,
+    log: EventLog,
+    stop: threading.Event,
+) -> threading.Thread | None:
+    """Evaluate the Start Criteria again within seconds of the event they await, so they poll only as a net. Each run
+    that ends or pull request that merges after this call invalidates the results that name it and wakes `feed`'s
+    criteria pass. None when `evaluate` keeps no hints to invalidate."""
+    if not isinstance(evaluate, Evaluator):
+        return None
+
+    def handle(entry: Entry) -> None:
+        if (topic := criteria_topic(entry)) and evaluate.invalidate(topic):
+            feed.evaluate_criteria()
+
+    tail = Tail.live(log, RUNS_STREAM, streams=[RUNS_STREAM, MACHINE_STREAM], interval=EVENT_POLL_S)
+    thread = threading.Thread(target=tail.run, args=(handle, stop), name="board-criteria-events", daemon=True)
+    thread.start()
+    return thread
+
+
 def main(
     argv: list[str] | None,
     parser: argparse.ArgumentParser,
@@ -107,6 +149,7 @@ def main(
     stop = threading.Event()
     feed.ready.set()
     start_writers(feed, store, board.evaluate, stop, live=False, log=log)
+    follow_criteria_events(feed, board.evaluate, log, stop)
     if board.attach is not None:
         board.attach(log)  # the sweep's releases append the History events the read model folds
     if board.sweep is not None:

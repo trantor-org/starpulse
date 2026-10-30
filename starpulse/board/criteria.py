@@ -27,7 +27,7 @@ __all__ = ["CACHE_SECONDS", "TIMEOUT", "Evaluator", "authored", "unevaluated"]
 
 #: Seconds the evaluator command may run before every criterion is marked `error`.
 TIMEOUT = 10.0
-#: Seconds a task's evaluated criteria are reused before the command runs again.
+#: Seconds a task's evaluated criteria are reused before the command runs again, unless they name their own interval.
 CACHE_SECONDS = 30.0
 _clock = time.monotonic
 
@@ -64,8 +64,14 @@ def authored(description: str) -> list[dict[str, Any]]:
     return found
 
 
-def _outcome(status: str, observed: Any = None, error: str | None = None, checked: str | None = None) -> dict[str, Any]:
-    return {"status": status, "observed": observed, "error": error, "checked": checked}
+def _outcome(
+    status: str,
+    observed: Any = None,
+    error: str | None = None,
+    checked: str | None = None,
+    refresh: Any = None,
+) -> dict[str, Any]:
+    return {"status": status, "observed": observed, "error": error, "checked": checked, "refresh": refresh}
 
 
 def _failed(criteria: list[dict[str, Any]], message: str) -> list[dict[str, Any]]:
@@ -97,6 +103,7 @@ def _run(command: list[str], cwd: Path, criteria: list[dict[str, Any]]) -> list[
                     item.get("observed"),
                     item.get("error"),
                     item.get("checked_at"),
+                    item.get("refresh"),
                 )
                 if (item := results.get(criterion["id"]))
                 else _outcome("error", error=f"the evaluator returned no result for {criterion['id']}")
@@ -106,17 +113,31 @@ def _run(command: list[str], cwd: Path, criteria: list[dict[str, Any]]) -> list[
     ]
 
 
-class Evaluator:
-    """Evaluates a task's criteria with `command`, run in `cwd`, reusing a task's result for `CACHE_SECONDS`.
+def _interval(results: list[dict[str, Any]]) -> float:
+    """Seconds `results` stay current: the shortest `interval` a criterion's `refresh` hint names, else `CACHE_SECONDS`."""
+    named = [
+        hint["interval"]
+        for result in results
+        if isinstance(hint := result.get("refresh"), dict) and isinstance(hint.get("interval"), int | float)
+    ]
+    return float(min(named)) if named else CACHE_SECONDS
 
-    Calling it waits for a result no older than that, as the feed's pass does; `latest` never waits, for a task read.
+
+class Evaluator:
+    """Evaluates a task's criteria with `command`, run in `cwd`, reusing a task's result while it is current.
+
+    A result is current for the shortest `refresh.interval` its criteria print (`CACHE_SECONDS` for one that prints
+    none) until `invalidate` names an event one of them awaits (`refresh.on`).
+
+    Calling it waits for a current result, as the feed's pass does; `latest` never waits, for a task read.
     Each task's command runs on its own thread, one at a time per task, so no task waits on another's."""
 
     def __init__(self, command: str, cwd: Path) -> None:
         self._command = shlex.split(command)
         self._cwd = cwd
-        self._cache: dict[tuple[str, str], tuple[float, list[dict[str, Any]]]] = {}
+        self._cache: dict[tuple[str, str], tuple[float, list[dict[str, Any]], float]] = {}
         self._running: dict[tuple[str, str], Future[list[dict[str, Any]]]] = {}
+        self._stale: set[tuple[str, str]] = set()
         self._lock = threading.Lock()
 
     def __call__(self, task: str, description: str) -> list[dict[str, Any]]:
@@ -124,21 +145,43 @@ class Evaluator:
             return []
         key = (task, json.dumps(criteria, sort_keys=True, default=str))
         with self._lock:
-            if (cached := self._cache.get(key)) and _clock() - cached[0] < CACHE_SECONDS:
+            if (cached := self._cache.get(key)) and self._current(cached):
                 return cached[1]
             running = self._refresh(key, task, criteria)
         return running.result()
 
     def latest(self, task: str, description: str) -> list[dict[str, Any]]:
         """The task's last results however old, each `not evaluated` before its first, refreshed behind the read once
-        older than `CACHE_SECONDS`."""
+        they are no longer current."""
         if not (criteria := authored(description)):
             return []
         key = (task, json.dumps(criteria, sort_keys=True, default=str))
         with self._lock:
-            if not (cached := self._cache.get(key)) or _clock() - cached[0] >= CACHE_SECONDS:
+            if not (cached := self._cache.get(key)) or not self._current(cached):
                 self._refresh(key, task, criteria)
         return cached[1] if cached else [{**criterion, **_outcome(NOT_EVALUATED)} for criterion in criteria]
+
+    def invalidate(self, event: str) -> bool:
+        """Make every task whose criteria await `event` evaluate again on its next call; whether any does. A run in
+        flight is a read from before the event, so its result is not current either."""
+        with self._lock:
+            hit = {
+                key
+                for key, (_, results, _) in self._cache.items()
+                if any(
+                    event in (hint.get("on") or ())
+                    for result in results
+                    if isinstance(hint := result.get("refresh"), dict)
+                )
+            }
+            self._stale |= hit & self._running.keys()
+            for key in hit - self._running.keys():
+                self._cache[key] = (float("-inf"), self._cache[key][1], 0.0)
+        return bool(hit)
+
+    @staticmethod
+    def _current(cached: tuple[float, list[dict[str, Any]], float]) -> bool:
+        return _clock() - cached[0] < cached[2]
 
     def _refresh(self, key: tuple[str, str], task: str, criteria: list[dict[str, Any]]) -> Future[list[dict[str, Any]]]:
         """The run evaluating `key`, started unless one is already running; the caller holds the lock."""
@@ -148,16 +191,21 @@ class Evaluator:
             threading.Thread(target=self._evaluate, args=(key, command, criteria, running), daemon=True).start()
         return running
 
-    def _evaluate(self, key: tuple[str, str], command: list[str], criteria: list[dict[str, Any]], running: Future) -> None:
+    def _evaluate(
+        self, key: tuple[str, str], command: list[str], criteria: list[dict[str, Any]], running: Future
+    ) -> None:
         try:
             evaluated = _run(command, self._cwd, criteria)
         except BaseException as error:  # handed to every waiter instead of lost with the thread
             with self._lock:
                 del self._running[key]
+                self._stale.discard(key)
             running.set_exception(error)
             return
         with self._lock:
-            self._cache[key] = (_clock(), evaluated)
+            stale = key in self._stale
+            self._stale.discard(key)
+            self._cache[key] = (float("-inf") if stale else _clock(), evaluated, _interval(evaluated))
             del self._running[key]
         running.set_result(evaluated)
 
