@@ -5,7 +5,7 @@
 #   check.sh --changed FILE...     the gate: FILE are the change's repo-root paths; vitest runs only the tests that
 #                                  import a changed web source file (`vitest related` follows the import graph), the
 #                                  whole suite when the change reaches config, lockfile, scripts or the page shell,
-#                                  and no test when it touches nothing under starpulse/web; one build, the page
+#                                  and no test when it touches nothing under starpulse/web; no build (the `build` job has it)
 #   check.sh --plan ...            print the test and build choice and exit
 mode=full
 if [ "$1" = --plan ]; then plan=1; shift; fi
@@ -14,7 +14,7 @@ if [ "$1" = --changed ]; then mode=changed; shift; fi
 tests=all
 build="pnpm run build"
 if [ "$mode" = changed ]; then
-  build="pnpm exec vite build"
+  build=true
   tests=none
   related=
   for file in "$@"; do

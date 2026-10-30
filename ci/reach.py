@@ -13,9 +13,10 @@ from fnmatch import fnmatch
 #: A change to any of these runs every check: a dependency pin or the CI config can change what each one does.
 FULL = ("uv.lock", "pyproject.toml", "starpulse/web/pnpm-lock.yaml", ".github/*")
 #: check -> (the changed paths it reads, those of them it does not). Paths are relative to the repository root.
-#: `web` runs in `starpulse/web`; `static` includes `public_names`, which reads every tracked file, so any change reaches it.
+#: `web` runs in `starpulse/web`; `build` is the release build, whose page comes from the same paths; `static` includes `public_names`, which reads every tracked file, so any change reaches it.
 READS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "web": (("starpulse/web/*", "starpulse/schemas/api.schema.json"), ()),
+    "build": (("starpulse/web/*", "starpulse/schemas/api.schema.json"), ()),
     "static": (("*",), ()),
 }
 
