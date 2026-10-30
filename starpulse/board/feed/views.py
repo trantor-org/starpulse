@@ -58,7 +58,7 @@ class ViewMethods:
                 position,
                 [
                     summary_agent(summary, summary["id"] in ready, self._read_model_moves(summary))
-                    | read_model_detail(summary)
+                    | read_model_detail(summary, self._roles.attention)
                     for summary in summaries
                 ],
             )

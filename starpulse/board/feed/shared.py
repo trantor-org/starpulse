@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, Protocol
 
 from starpulse.board import criteria
+from starpulse.board.model.markdown import needs_attention_reason
 from starpulse.contracts.adapters import BoardTask
 from starpulse.machine_engine.model.machine_definition import Writer
 from starpulse.machine_engine.model.transitions import board_moves, lane_id
@@ -152,16 +153,18 @@ def summary_agent(summary: Mapping[str, Any], workable: bool = False, moves: Map
     }
 
 
-def read_model_detail(row: Mapping[str, Any]) -> dict:
-    """The fields a summary leaves out that a Task's record draws: its pull requests, description, criteria and
-    Definition of Done items."""
+def read_model_detail(row: Mapping[str, Any], attention: str | None = None) -> dict:
+    """The fields a summary leaves out that a Task's record draws: its pull requests, description, criteria,
+    Definition of Done items and, in the `attention` lane, the reason its description's Needs attention section gives."""
     acceptance = [item for item in row["criteria"] if item["kind"] == "ac"]
     done = [item for item in row["criteria"] if item["kind"] == "dod"]
+    waits_on_person = attention is not None and lane_id(row["state"]) == lane_id(attention)
     return {
         "prs": pull_links(row["references"]),
         "description": row["description"],
         "criteria": [{"text": item["text"], "checked": item["checked"]} for item in acceptance],
         "definition_of_done": [{"text": item["text"], "checked": item["checked"]} for item in done],
+        "pause_reason": needs_attention_reason(row["description"]) if waits_on_person else "",
     }
 
 

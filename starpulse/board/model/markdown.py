@@ -81,6 +81,17 @@ def section_set(description: str, heading: str, content: str) -> str:
     return f"{kept.strip()}\n\n## {heading}\n\n{content.strip()}".strip()
 
 
+_NEEDS_ATTENTION = re.compile(
+    r"^## Needs attention[ \t]*\n(.*?)(?=^## |<!-- SECTION:DESCRIPTION:END -->|\Z)", re.S | re.M
+)
+
+
+def needs_attention_reason(text: str) -> str:
+    """The first line of `text`'s `## Needs attention` section, else empty."""
+    found = _NEEDS_ATTENTION.search(text)
+    return next((line.strip() for line in found.group(1).splitlines() if line.strip()), "") if found else ""
+
+
 def _checklist(body: str, heading: str) -> list[dict[str, Any]]:
     """The items `body` lists, each numbered as it was or new when it has no number; a line that is no item is refused."""
     items = []
