@@ -70,6 +70,14 @@ class ReadMethods:
             return self._read_model_agent(task_id)
         return self._open.get(task_id) or self._open.get(self._keys.canonical(task_id) if self._keys else task_id)
 
+    def is_open(self, task_id: str) -> bool:
+        """Whether `held` finds the task, without building the moves and standing verdicts (one read of the task's file
+        for each lane) that its answer carries."""
+        if self._read_model is not None:
+            row = self._read_model.task(task_id)
+            return row is not None and not row["archived"]
+        return self.held(task_id) is not None
+
     def cited(self, task_id: str) -> list[str]:
         """The pull request links the task cites, open or settled; none for a task the Board does not hold."""
         if self._read_model is not None:
