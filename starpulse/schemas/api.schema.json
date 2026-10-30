@@ -6078,7 +6078,7 @@
           "type": "string"
         },
         "reason": {
-          "description": "`goes next`, `quiet hours` while the quiet hours hold admission, `<harness> usage limit` while that harness is paused, or the first dimension the task overfits, which the strip shows after `waits:`.",
+          "description": "`goes next`, `quiet hours` while the quiet hours hold admission, `<harness> usage limit` or `<harness> start halted: ...` while that harness is paused, or the first dimension the task overfits, which the strip shows after `waits:`.",
           "type": "string"
         },
         "task": {

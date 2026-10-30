@@ -1240,7 +1240,7 @@ export interface SchedulerNext {
    */
   priority: string;
   /**
-   * `goes next`, `quiet hours` while the quiet hours hold admission, `<harness> usage limit` while that harness is paused, or the first dimension the task overfits, which the strip shows after `waits:`.
+   * `goes next`, `quiet hours` while the quiet hours hold admission, `<harness> usage limit` or `<harness> start halted: ...` while that harness is paused, or the first dimension the task overfits, which the strip shows after `waits:`.
    */
   reason: string;
   task: string;
