@@ -394,6 +394,7 @@ def test_a_board_task_an_adapter_wrote_is_an_agent_in_its_lane() -> None:
             "description": "Draw it.",
             "criteria": [],
             "pause_reason": "",
+            "readable": "",
             "moves": {},  # an adapter that writes no verdicts offers no guarded column
             "entered": 7.0,
             "created": None,  # an adapter that does not say when a task was created

@@ -130,6 +130,7 @@ def task_view(agent: dict[str, Any], snapshot: dict[str, Any], done: set[str] | 
         "waiting_on": [dependency for dependency in agent["dependencies"] if dependency not in done],
         "criteria": agent.get("criteria", []),
         "pause_reason": agent.get("pause_reason", ""),
+        "readable": agent.get("readable", ""),
         "prs": [pulls.get(url, {"url": url}) for url in agent["prs"]],
         "moves": _agent_moves(agent),
         "rating": snapshot.get("ratings", {}).get(agent["id"]),

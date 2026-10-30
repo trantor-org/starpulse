@@ -168,6 +168,11 @@ class BoardTask(_Contract):
         default="",
         description="The task's running notes, searched with the title and description; empty when the board keeps none.",
     )
+    readable: str = Field(
+        default="",
+        description="The first rule the task's description breaks among the board's `readable` guards, with its line; "
+        "empty when it reads well or the board keeps no such guard.",
+    )
     moves: dict[str, Move] = Field(
         default_factory=dict,
         description="The verdict on each Board column the task may move to, by state id; empty for a settled task.",

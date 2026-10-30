@@ -253,6 +253,12 @@
       "title": "Notes",
       "type": "string"
     },
+    "readable": {
+      "default": "",
+      "description": "The first rule the task's description breaks among the board's `readable` guards, with its line; empty when it reads well or the board keeps no such guard.",
+      "title": "Readable",
+      "type": "string"
+    },
     "moves": {
       "additionalProperties": {
         "$ref": "#/$defs/Move"

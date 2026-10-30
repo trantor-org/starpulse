@@ -308,7 +308,7 @@ class _Guard:
             broken = rules.standing_refusal(self.rules, front, body, lane, actor)
             return {"allowed": True, "reason": "", "skill": ""} if broken is None else {
                 "allowed": False,
-                "reason": broken.reason,
+                "reason": broken.explain(rules.Record(front, body)),
                 "skill": broken.skill,
             }
 
@@ -317,6 +317,10 @@ class _Guard:
             return None
         apart = {actor: verdict(actor) for actor in sorted({actor for rule in self.rules for actor in rule.exempt})}
         return {**own, "actors": {actor: found for actor, found in apart.items() if found != own}}
+
+    def readable(self, front: Mapping[str, Any], body: str) -> str:
+        """What the board's `readable` rules find broken in the description of the task, or "" when it reads well."""
+        return rules.readable_verdict(self.rules, front, body)
 
     def refusal(
         self, path: Path, before: str | None, frontmatter: dict, body: str, text: str, actor: str
@@ -330,8 +334,9 @@ class _Guard:
             return Written(False, f"type {kind!r} is not one of this board's types: {', '.join(self.types)}")
         if self.rules:
             earlier = None if before is None else rules.Record(*_split_record(before))
-            if broken := rules.refusal(self.rules, earlier, rules.Record(frontmatter, body, self.state_of), actor):
-                return Written(False, broken.reason, broken.skill, lint=True)
+            after = rules.Record(frontmatter, body, self.state_of)
+            if broken := rules.refusal(self.rules, earlier, after, actor):
+                return Written(False, broken.explain(after), broken.skill, lint=True)
         if self.validate is not None and (reason := self.validate(path, before, text)):
             return Written(False, reason, lint=True)
         return None
@@ -1333,6 +1338,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         },
         retired.changes(),
         guard.standing,
+        guard.readable,
     )
 
     history = TaskHistory()

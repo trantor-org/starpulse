@@ -99,6 +99,11 @@ class RawTask(_Api):
         default=None,
         description="Why a paused Board task waits for a person; empty when it is not paused, absent off the Board.",
     )
+    readable: str | None = Field(
+        default=None,
+        description="The first `readable` guard rule a Board task's description breaks, with its line; empty when it "
+        "reads well, absent off the Board.",
+    )
     skill: HeldSkill | None = Field(
         default=None, description="The skill machine an In Progress task is held in; absent off the held view."
     )
