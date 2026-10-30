@@ -18,6 +18,7 @@ from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from starpulse.board.adapters.running_workflows import DEFAULT_QUERY, running_tasks
 from starpulse.board.model.seam import Board
 from starpulse.event_log.store import EventStore, NewEvent, StoredEvent
 from starpulse.machine_engine.model.transitions import lane_id
@@ -107,6 +108,7 @@ def sweep(
     activity: Callable[[str, str], float | None] = lambda _session, _task: None,
     expiries: dict[str, float] | None = None,
     halted: Callable[[str], tuple[float, str] | None] = lambda _session: None,
+    seen_running: Mapping[str, float] | None = None,
 ) -> list[str]:
     """Releases each working Task in `rows` whose Assignee renewed nothing for `ttl`; the ids released.
 
@@ -114,7 +116,8 @@ def sweep(
     a session working in its worktree renews its claim that way without a Task Event. `expiries`, when given, is filled with each
     held working Task's claim expiry, its renewal plus `ttl`; a Task this pass releases has none. `halted` is the moment
     and text of the terminal halt a session's harness wrote as its last turn, None when it wrote none; a claim with no
-    renewal after its session's halt is released before `ttl`.
+    renewal after its session's halt is released before `ttl`. `seen_running` is when a workflow was last seen running for each Task, by lowercased id: it renews that Task's claim,
+    since the workflow emits nothing while it waits.
     """
     now = time.time() if now is None else now
     expiries = {} if expiries is None else expiries
@@ -126,7 +129,8 @@ def sweep(
         session = row.get("assignee") or ""
         if not session or lane_id(row.get("state") or "") != working:
             continue
-        renewals = (last_renewal(store.read("task", row["id"]), session), activity(session, row["id"]))
+        workflow = (seen_running or {}).get(row["id"].lower())
+        renewals = (last_renewal(store.read("task", row["id"]), session), activity(session, row["id"]), workflow)
         renewed = max((at for at in renewals if at is not None), default=None)
         if renewed is None:
             continue
@@ -157,18 +161,29 @@ def start(
 ) -> None:
     """Sweeps the feed's open tasks on a daemon thread every sixth of the TTL, at most every minute, for `[board]
     claim_ttl` seconds, until the feed stops. The feed holds the board's tasks whether or not a read model folds them.
-    `persist` keeps each pass's expiries where the serving process reads them."""
+    `persist` keeps each pass's expiries where the serving process reads them. `[board] workflows` is a Temporal
+    server's URL: a Task that `[board] workflows_query` matches a running workflow for keeps its claim, and a pass that
+    cannot read the server judges no claim."""
     from starpulse.event_log.opening import last_run_event  # noqa: PLC0415 — keeps the board's import light
 
     ttl = float(settings.get("claim_ttl", DEFAULT_TTL))
     store = EventStore(log.engine)
     activity = partial(last_run_event, log.engine)
     halted = partial(transcript_halt, Path(settings.get("transcripts", DEFAULT_TRANSCRIPTS)).expanduser())
+    workflows = str(settings.get("workflows", ""))
+    query = str(settings.get("workflows_query", DEFAULT_QUERY))
+    seen: dict[str, float] = {}
 
     def run(stop: threading.Event) -> None:
         while not stop.wait(min(60.0, ttl / 6)):
             expiries: dict[str, float] = {}
-            sweep(board, store, feed.open_tasks(), ttl=ttl, activity=activity, expiries=expiries, halted=halted)
+            try:
+                seen.update(dict.fromkeys(running_tasks(workflows, query) if workflows else (), time.time()))
+            except (OSError, ValueError, KeyError):
+                continue  # Temporal unread: a claim its workflow may be holding is not judged this pass
+            sweep(
+                board, store, feed.open_tasks(), ttl=ttl, activity=activity, expiries=expiries, halted=halted, seen_running=seen
+            )
             persist(expiries)
             feed.serve_expiries(expiries)
 
