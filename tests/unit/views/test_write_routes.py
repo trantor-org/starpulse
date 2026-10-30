@@ -6,8 +6,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
-import httpx
 import pytest
 from starlette.testclient import TestClient
 from starpulse.board.adapters.history_window import HistoryWindow
@@ -57,7 +57,7 @@ def _write(
     body: bytes = b"{}",
     headers: dict[str, str] | None = None,
     client: str = "127.0.0.1",
-) -> httpx.Response:
+) -> Any:
     app = PageApp(api_routes(routes), metrics.routes, routes.snapshots, Path(__file__).parent, (), seams=routes)
     sent = {"Content-Length": str(len(body)), **(headers if headers is not None else _JSON)}
     return TestClient(app, client=(client, 50000)).request(method, path, content=body, headers=sent)
