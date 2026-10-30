@@ -588,6 +588,7 @@ class TaskActor:
             logger.warning("task actor: the re-gate of %s was not commented: %s", name, written.output)
         if self._create is None:
             return
+        priority = (self._feed.task(name) or {}).get("priority") or "medium"  # the re-gate is as urgent as the task it unblocks
         try:
             filed = self._create(
                 f"Re-gate {name}: re-park it on Start Criteria that can be evaluated",
@@ -595,7 +596,7 @@ class TaskActor:
                     "description": f"{REGATE} {reasons}.\n\nRe-park {name} on Start Criteria the evaluator can answer, then move it back to Waiting.",
                     "acceptanceCriteria": [f"{name} is back in Waiting on Start Criteria the evaluator can answer"],
                     "labels": ["kind-execute", "size-1", "mode-unattended"],
-                    "priority": "medium",
+                    "priority": priority,
                 },
                 actor=ACTOR,
             )
