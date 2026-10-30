@@ -3,6 +3,8 @@
 StarPulse appends `Released` and a comment naming the last renewal. The Task keeps its State, so a Task still in
 progress is never offered to another agent as Ready; it only has no Assignee, and any session may claim it.
 
+A released claim whose session acts again before another session holds the Task is re-attached to it.
+
 A session whose harness wrote a terminal halt as its last turn, with nothing renewing the claim after it, has stopped
 for good: its claim is released at once, before the TTL, and the comment names the halt."""
 
@@ -98,6 +100,22 @@ def _announce(board: Board, task: str) -> None:
         logger.exception("claim-ttl: the released notice for %s failed", task)
 
 
+def _reattach(
+    board: Board, store: EventStore, row: Mapping[str, Any], activity: Callable[[str, str], float | None]
+) -> bool:
+    """Gives an unheld working Task back to the session this sweep released it from, once that session acts again."""
+    events = store.read("task", row["id"])
+    swept = [i for i, event in enumerate(events) if event.type == "Released" and "ttl" in event.payload]
+    if not swept or any(event.type == "Claimed" for event in events[swept[-1] :]):
+        return False
+    release = events[swept[-1]]
+    session = release.payload["session"]
+    later = (event for event in events[swept[-1] :] if event.at > release.at and event.actor != ACTOR)
+    acted = (last_renewal(later, session), activity(session, row["id"]))
+    renewed = max((at for at in acted if at is not None), default=0.0)
+    return renewed > release.at and board.writer(row["id"], row["state"], ACTOR, session).ok
+
+
 def sweep(
     board: Board,
     store: EventStore,
@@ -127,7 +145,10 @@ def sweep(
     released = []
     for row in rows:
         session = row.get("assignee") or ""
-        if not session or lane_id(row.get("state") or "") != working:
+        if lane_id(row.get("state") or "") != working:
+            continue
+        if not session:
+            _reattach(board, store, row, activity)
             continue
         workflow = (seen_running or {}).get(row["id"].lower())
         renewals = (last_renewal(store.read("task", row["id"]), session), activity(session, row["id"]), workflow)

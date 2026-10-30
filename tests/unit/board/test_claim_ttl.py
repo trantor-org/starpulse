@@ -403,3 +403,46 @@ def test_a_sweep_pass_that_cannot_read_temporal_releases_nothing(served, monkeyp
 
     assert saved == []
     assert [event for event in store.read("task", "task-5") if event.type == "Released"] == []
+
+
+def _released(built: Board, store: EventStore, claimed: float) -> float:
+    released_at = claimed + 1801
+    assert sweep(built, store, _rows(built), ttl=1800, now=released_at) == ["task-5"]
+    return released_at
+
+
+def _unheld() -> list[dict]:
+    return [{"id": "task-5", "state": "In Progress", "assignee": ""}]
+
+
+def test_a_session_whose_claim_was_released_holds_the_task_again_once_it_acts(served) -> None:
+    built, _, store, _ = served
+    released_at = _released(built, store, _claim(built, store))
+    resumed = released_at + 30
+
+    assert sweep(built, store, _unheld(), ttl=1800, now=resumed + 1, activity=lambda _s, _t: resumed) == []
+
+    last = store.read("task", "task-5")[-1]
+    assert (last.type, last.payload["assignee"]) == ("Claimed", "session-1")
+
+
+def test_a_released_claim_whose_session_has_not_acted_since_stays_released(served) -> None:
+    built, _, store, _ = served
+    claimed = _claim(built, store)
+    released_at = _released(built, store, claimed)
+    head = store.head("task", "task-5")
+
+    sweep(built, store, _unheld(), ttl=1800, now=released_at + 60, activity=lambda _s, _t: released_at - 1)
+
+    assert store.head("task", "task-5") == head
+
+
+def test_a_released_claim_is_not_taken_back_from_the_session_that_holds_the_task(served) -> None:
+    built, _, store, _ = served
+    released_at = _released(built, store, _claim(built, store))
+    held = [{"id": "task-5", "state": "In Progress", "assignee": "session-2"}]
+    head = store.head("task", "task-5")
+
+    sweep(built, store, held, ttl=1800, now=released_at + 60, activity=lambda _s, _t: released_at + 30)
+
+    assert store.head("task", "task-5") == head
