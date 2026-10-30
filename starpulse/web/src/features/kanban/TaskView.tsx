@@ -142,14 +142,18 @@ function PullRow({ p, ci, mapped }: { p: Pull; ci?: CiPull; mapped?: string | nu
   );
 }
 
-/** A rail list that scrolls inside a capped height, fading its lower edge until the last row is in view. */
+/** A rail list that scrolls inside a capped height, fading its lower edge until the last row is in view. The fade is read a frame after
+ *  the commit, where the layout the paint needs is read once, not forced inside the commit's effects against a document the commit just changed. */
 function Box({ children }: { children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   const fade = useCallback(() => {
     const box = ref.current;
     if (box) box.classList.toggle("end", box.scrollTop + box.clientHeight >= box.scrollHeight - 2);
   }, []);
-  useEffect(fade);
+  useEffect(() => {
+    const frame = requestAnimationFrame(fade);
+    return () => cancelAnimationFrame(frame);
+  });
   return <div ref={ref} className="box" onScroll={fade}>{children}</div>;
 }
 
