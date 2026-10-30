@@ -906,7 +906,7 @@ def test_a_followed_instance_reads_only_the_named_dag_when_an_entry_names_a_new_
     monkeypatch.setattr(
         "starpulse.runs.adapters.outbound.dagu._reconcile_forever", lambda runs, stop: None
     )  # its listings would skew the count
-    monkeypatch.setattr("starpulse.runs.dagu._refresh_stats_forever", lambda url, stats, stop: None)  # so would its stats
+    monkeypatch.setattr("starpulse.runs.adapters.outbound.dagu._refresh_stats_forever", lambda url, stats, stop: None)  # so would its stats
     steps = {"d1": ["a"], "d2": ["b"]}
     feed = BoardFeed()
     with dagu(steps) as (base_url, calls):
