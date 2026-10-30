@@ -5,6 +5,9 @@ from pathlib import Path
 import yaml
 from starpulse.board.adapters.native import board
 from starpulse.board.adapters.upstream_backlog import _split
+from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.readmodel.fold import replay
+from starpulse.event_log.store import EventStore
 
 from tests.unit.board.test_native import native_root, write_task
 
@@ -88,3 +91,15 @@ def test_an_archive_releases_a_waiting_dependent_it_left_with_no_dependency_and_
     assert built.archive("task-5", "").ok
 
     assert [_front(path)["status"] for path in (released, still_gated, criteria)] == ["Ready", "Waiting", "Waiting"]
+
+
+def test_an_archive_records_the_release_of_a_waiting_dependent_in_its_history(tmp_path: Path) -> None:
+    built = _board(tmp_path)
+    write_task(tmp_path, "task-7", "Waiting", dependencies="[task-5]")
+    log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
+    built.attach(log)
+
+    assert built.archive("task-5", "").ok
+
+    row = replay(EventStore(log.engine).read("task", "task-7"))
+    assert (row["dependencies"], row["state"]) == ([], "Ready")
