@@ -7,11 +7,13 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING
-from urllib.parse import parse_qs
+
+from starlette.requests import Request
+from starlette.responses import Response
 
 from starpulse.contracts.analytics import Analytics
-from starpulse.views.adapters.inbound.api.neutral import ApiRoute, Handler, ReadRoute, Request, Response
+from starpulse.views.adapters.inbound.api.answering import answer, query, reading, seams
+from starpulse.views.adapters.inbound.api.neutral import ApiRoute, Endpoint, ReadRoute
 from starpulse.views.application.queries.responses import (
     cells_response,
     cost_to_go_response,
@@ -26,42 +28,72 @@ from starpulse.views.application.queries.responses import (
     transitions_response,
 )
 
-if TYPE_CHECKING:  # annotation only
-    from starpulse.views.adapters.inbound.api.routing import Api
-
 _Respond = Callable[..., tuple[bytes, int]]
 
 
-def routes(api: Api) -> list[ApiRoute]:
-    feed, services, clock = api.feed, api.services, api.clock
-    telemetry, analytics = services.telemetry, services.analytics
+@reading
+def health(request: Request) -> Response:
+    api = seams(request)
+    return answer(request, *health_response(api.history, query(request), api.feed.machines, api.clock()))
 
-    def health(request: Request) -> Response:
-        return Response(*health_response(api.history, parse_qs(request.query), feed.machines, clock()))
 
-    def sessions(respond: _Respond) -> Handler:
-        return lambda request: Response(*respond(telemetry, parse_qs(request.query), feed.keys, clock(), analytics))
-
-    def titled(respond: _Respond) -> Handler:
-        return lambda request: Response(
-            *respond(telemetry, parse_qs(request.query), feed.keys, feed.titled, clock(), analytics)
+def _sessions(respond: _Respond) -> Endpoint:
+    @reading
+    def endpoint(request: Request) -> Response:
+        api = seams(request)
+        services = api.services
+        return answer(
+            request, *respond(services.telemetry, query(request), api.feed.keys, api.clock(), services.analytics)
         )
 
-    def ranked(respond: _Respond) -> Handler:
-        return lambda request: Response(
-            *respond(telemetry, parse_qs(request.query), feed.keys, feed.titled, analytics or Analytics(), clock())
+    return endpoint
+
+
+def _titled(respond: _Respond) -> Endpoint:
+    @reading
+    def endpoint(request: Request) -> Response:
+        api = seams(request)
+        services = api.services
+        feed = api.feed
+        return answer(
+            request,
+            *respond(services.telemetry, query(request), feed.keys, feed.titled, api.clock(), services.analytics),
         )
 
-    return [
-        ReadRoute("/analytics/health", health),
-        ReadRoute("/analytics/sessions", sessions(sessions_response)),
-        ReadRoute("/analytics/steps", sessions(steps_response)),
-        ReadRoute("/analytics/transitions", titled(transitions_response)),
-        ReadRoute("/analytics/cells", titled(cells_response)),
-        ReadRoute("/analytics/graph", titled(graph_response)),
-        ReadRoute("/analytics/stages", titled(stages_response)),
-        ReadRoute("/analytics/cost-to-go", titled(cost_to_go_response)),
-        ReadRoute("/analytics/diff", titled(diff_response)),
-        ReadRoute("/analytics/missed-loads", ranked(missed_loads_response)),
-        ReadRoute("/analytics/trace-clusters", ranked(trace_clusters_response)),
-    ]
+    return endpoint
+
+
+def _ranked(respond: _Respond) -> Endpoint:
+    @reading
+    def endpoint(request: Request) -> Response:
+        api = seams(request)
+        services = api.services
+        feed = api.feed
+        return answer(
+            request,
+            *respond(
+                services.telemetry,
+                query(request),
+                feed.keys,
+                feed.titled,
+                services.analytics or Analytics(),
+                api.clock(),
+            ),
+        )
+
+    return endpoint
+
+
+routes: list[ApiRoute] = [
+    ReadRoute("/analytics/health", health),
+    ReadRoute("/analytics/sessions", _sessions(sessions_response)),
+    ReadRoute("/analytics/steps", _sessions(steps_response)),
+    ReadRoute("/analytics/transitions", _titled(transitions_response)),
+    ReadRoute("/analytics/cells", _titled(cells_response)),
+    ReadRoute("/analytics/graph", _titled(graph_response)),
+    ReadRoute("/analytics/stages", _titled(stages_response)),
+    ReadRoute("/analytics/cost-to-go", _titled(cost_to_go_response)),
+    ReadRoute("/analytics/diff", _titled(diff_response)),
+    ReadRoute("/analytics/missed-loads", _ranked(missed_loads_response)),
+    ReadRoute("/analytics/trace-clusters", _ranked(trace_clusters_response)),
+]

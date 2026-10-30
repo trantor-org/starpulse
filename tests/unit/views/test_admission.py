@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from starpulse.runs.cloudevents_grpc import PATH as CLOUDEVENTS_GRPC_PATH
 from starpulse.views.adapters.inbound import asgi_app
+from starpulse.views.adapters.inbound.api.answering import answer, reading
 from starpulse.views.adapters.inbound.api.neutral import ReadRoute, Response, StreamRoute, WriteRoute
 from starpulse.views.adapters.inbound.asgi_app import PageApp
 
@@ -17,7 +18,7 @@ from tests.unit.views.asgi import Answer, call
 def _app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, grpc=None) -> PageApp:
     monkeypatch.setattr(asgi_app, "REQUEST_THREADS", 1)
     routes = [
-        ReadRoute("/read", lambda request: Response(b"{}")),
+        ReadRoute("/read", reading(lambda request: answer(request, b"{}"))),
         WriteRoute("/write", ("POST",), lambda request: Response(b"{}")),
         StreamRoute("/held", lambda request, admit: Response(b"{}")),
     ]

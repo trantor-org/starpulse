@@ -17,13 +17,12 @@ import mimetypes
 import os
 import threading
 import time
-from collections.abc import AsyncIterator, Awaitable, Callable, Collection, MutableMapping
+from collections.abc import AsyncIterator, Callable, Collection, MutableMapping
 from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from anyio import CancelScope, CapacityLimiter, from_thread, to_thread
-from pydantic import ValidationError
 from starlette.applications import Starlette
 from starlette.convertors import PathConvertor, register_url_convertor
 from starlette.middleware import Middleware
@@ -40,13 +39,13 @@ from starpulse.harness_telemetry.model.harnesses import Harnesses
 from starpulse.runs.cloudevents_grpc import PATH as CLOUDEVENTS_GRPC_PATH
 from starpulse.runs.cloudevents_grpc import cloudevents_grpc
 from starpulse.views.adapters.inbound.api import metrics
+from starpulse.views.adapters.inbound.api.answering import RAN, answer, client, on_worker, target
 from starpulse.views.adapters.inbound.api.neutral import (
     ApiRoute,
     Arrival,
-    Handler,
+    Endpoint,
     ReadRoute,
     Request,
-    Response,
     Stream,
     StreamHandler,
     StreamRoute,
@@ -56,7 +55,7 @@ from starpulse.views.adapters.inbound.api.neutral import (
     WriteRoute,
 )
 from starpulse.views.adapters.inbound.api.routing import Api, api_routes
-from starpulse.views.adapters.inbound.compression import Encoded, Gzip, accepts_gzip
+from starpulse.views.adapters.inbound.compression import Gzip
 from starpulse.views.adapters.inbound.gate_request import GateRequest
 from starpulse.views.adapters.inbound.snapshot_cache import SnapshotCache
 from starpulse.views.model.encoding import encode, event
@@ -203,7 +202,7 @@ class _Gated:
     def _refusal(self, request: Incoming) -> Reply | None:
         """The gate's answer when it refuses the request, or None when it admits it."""
         query = request.url.query
-        asked = GateRequest(request.method, _target(request) + (f"?{query}" if query else ""), request.headers)
+        asked = GateRequest(request.method, target(request) + (f"?{query}" if query else ""), request.headers)
         if self._gate(asked):
             return None
         answer = Reply(asked.wfile.getvalue(), asked.status)
@@ -212,12 +211,7 @@ class _Gated:
 
 
 _PLACE = "starpulse.place"  # in a request's scope: its `_Place`
-_RAN = "starpulse.ran"  # in a timed request's scope: what its worker thread calls once it has the request
 _BUSY_RETRY_S = 1
-
-
-def _nothing() -> None:
-    pass
 
 
 class _Streams:
@@ -299,9 +293,8 @@ class _Timed:
         arrival = Arrival(
             time.monotonic(), self._workers.borrowed_tokens + 1, self._streams.open
         )  # busy counts this one
-        asked = Request(_target(request), request.url.query, _client(request), request.path_params)
-        with self._watch(asked, arrival) as timing:
-            scope[_RAN] = timing.ran
+        with self._watch(request, arrival) as timing:
+            scope[RAN] = timing.ran
 
             async def answering(message: MutableMapping[str, Any]) -> None:
                 if message["type"] == "http.response.start":
@@ -330,7 +323,6 @@ class _Events(StreamingResponse):
 
 _EVENT_HEADERS = {"content-type": "text/event-stream", "cache-control": "no-store"}
 
-Endpoint = Callable[[Incoming], Awaitable[Reply]]
 Work = Callable[[Incoming, _Body], Reply]
 
 
@@ -348,6 +340,7 @@ class PageApp:
         flows: Collection[str],
         gate: Callable[[GateRequest], bool] | None = None,
         grpc: ASGIApp | None = None,
+        seams: Api | None = None,
     ) -> None:
         self._snapshots = snapshots
         self._grpc = grpc
@@ -377,6 +370,8 @@ class PageApp:
         gated = [] if gate is None else [Middleware(_Gated, gate=gate, workers=self._workers)]
         admitted = Middleware(_Admitted, workers=self._workers, streams=self._streams)
         self._app = Starlette(routes=table, middleware=[Middleware(Gzip), admitted, *gated])
+        self._app.state.api = seams  # what the read endpoints take their seams from
+        self._app.state.workers = self._workers  # and the threads they run on
 
     @property
     def open_streams(self) -> int:
@@ -464,23 +459,16 @@ class PageApp:
             yield frame
 
     async def _worker(self, request: Incoming, work: Work) -> Reply:
-        """Run `work` for `request` on a worker thread; a body its model refuses is a logged 500, since the page reads only
-        what a model names."""
+        """Run `work` for `request` on a worker thread."""
         body = _Body(request)
-        ran = request.scope.get(_RAN, _nothing)
 
         def run() -> Reply:
-            ran()
             try:
                 return work(request, body)
             except ClientDisconnect:
                 return Reply(status_code=400)  # the client left mid-body; nobody reads this
-            except ValidationError:
-                logger.exception("StarPulse: %s %s built a body its model refuses", request.method, request.url.path)
-                error = encode("error", {"error": "the server built a body its contract refuses"})
-                return self._json(request, Response(error, 500))
 
-        return await to_thread.run_sync(run, abandon_on_cancel=True, limiter=self._workers)
+        return await on_worker(request, run)
 
     def _route(self, route: ApiRoute, path: str | None = None) -> Route:
         """`route` as a Starlette route: at its own path, or at `path` where it is not under `/api`."""
@@ -492,28 +480,21 @@ class PageApp:
                     if watch is None
                     else [Middleware(_Timed, watch=watch, workers=self._workers, streams=self._streams)]
                 )
-                return Route(at, self._read(handler), methods=["GET"], middleware=timed)
+                return Route(at, handler, methods=["GET"], middleware=timed)
             case WriteRoute(_, methods, handler):
                 return Route(at, self._written(handler), methods=list(methods))
             case StreamRoute(_, handler):
                 return Route(at, self._streamed(handler), methods=["GET"])
 
-    def _read(self, handler: Handler) -> Endpoint:
-        def read(request: Incoming, body: _Body) -> Reply:
-            asked = Request(_target(request), request.url.query, _client(request), request.path_params)
-            return self._json(request, handler(asked))
-
-        return self._wrapped(handler, self._endpoint(read))
-
     def _written(self, handler: WriteHandler) -> Endpoint:
         def write(request: Incoming, body: _Body) -> Reply:
             asked = WriteRequest(
-                request.method, _target(request), _client(request), request.headers, body, request.path_params
+                request.method, target(request), client(request), request.headers, body, request.path_params
             )
             response = handler(asked)
             if response is None:
                 return _not_found()  # a push this deployment leaves unconfigured
-            reply = self._json(request, response)
+            reply = answer(request, *response)
             self._snapshots.require_current()  # a write is answered once the snapshot read after it holds what it published
             return reply
 
@@ -521,9 +502,9 @@ class PageApp:
 
     def _streamed(self, handler: StreamHandler) -> Endpoint:
         def open_stream(request: Incoming, body: _Body) -> Reply:
-            asked = Request(_target(request), request.url.query, _client(request), request.path_params)
+            asked = Request(target(request), request.url.query, client(request), request.path_params)
             stream = handler(asked, request.scope[_PLACE].take)
-            return _Events(self, stream) if isinstance(stream, Stream) else self._json(request, stream)
+            return _Events(self, stream) if isinstance(stream, Stream) else answer(request, *stream)
 
         opening = self._endpoint(open_stream)
 
@@ -556,34 +537,6 @@ class PageApp:
 
     async def _file(self, request: Incoming) -> Reply:
         return await self._files.get_response(request.path_params["path"], request.scope)
-
-    def _json(self, request: Incoming, response: Response) -> Reply:
-        """`response` as it says: JSON unless told otherwise; an `Encoded` body is sent as the gzip it already holds to a
-        page that accepts gzip, and any other is left to the `Gzip` middleware."""
-        body, status, cache, content_type, retry_after, close = response
-        headers = {"content-type": content_type, "cache-control": cache}
-        if isinstance(body, Encoded):
-            gzipped = body.gzipped if accepts_gzip(request.headers.get("accept-encoding")) else None
-            body = body.body if gzipped is None else gzipped
-            if gzipped is not None:
-                headers["content-encoding"] = "gzip"
-        if retry_after is not None:
-            headers["retry-after"] = str(retry_after)
-        if close and request.scope["http_version"] != "2":  # HTTP/2 has no connection header, and a stream ends alone
-            headers["connection"] = "close"
-        if request.method == "HEAD":
-            return Reply(b"", status, headers | {"content-length": str(len(body))})
-        return Reply(body, status, headers)
-
-
-def _target(request: Incoming) -> str:
-    """The path as the client sent it, still percent-encoded: a route decodes what it takes from it."""
-    raw = request.scope.get("raw_path")
-    return raw.decode("ascii", "replace") if raw else request.scope["path"]
-
-
-def _client(request: Incoming) -> str:
-    return request.client.host if request.client else ""
 
 
 def _not_found() -> Reply:
@@ -619,4 +572,4 @@ def page_app(
         page_gauge=lambda: build_gauge(static),
     )
     grpc = None if services.events is None else cloudevents_grpc(services.events)
-    return PageApp(api_routes(api), metrics.routes(api), snapshots, static, feed.machines.keys(), gate, grpc)
+    return PageApp(api_routes(api), metrics.routes, snapshots, static, feed.machines.keys(), gate, grpc, api)

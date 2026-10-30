@@ -10,10 +10,13 @@ from __future__ import annotations
 
 from contextlib import AbstractContextManager
 from typing import TYPE_CHECKING, Any
-from urllib.parse import parse_qs
+
+from starlette.requests import Request
+from starlette.responses import Response
 
 from starpulse.contracts.api.dto.requests import StartRequest
-from starpulse.views.adapters.inbound.api.neutral import ApiRoute, Arrival, ReadRoute, Request, Response, WriteRoute
+from starpulse.views.adapters.inbound.api.answering import answer, query, reading, seams
+from starpulse.views.adapters.inbound.api.neutral import ApiRoute, Arrival, ReadRoute, WriteRoute
 from starpulse.views.adapters.inbound.api.slow_reads import SlowReads
 from starpulse.views.adapters.inbound.api.writing import TaskWrite, guarded, no_writer, whole_body
 from starpulse.views.application.commands.lifecycle import park_task, review_task
@@ -40,6 +43,23 @@ if TYPE_CHECKING:  # annotation only
     from starpulse.views.adapters.inbound.api.routing import Api
 
 
+@reading
+def task(request: Request) -> Response:
+    api = seams(request)
+    services = api.services
+    status, body = task_record(api.feed, api.board.read, request.path_params["id"])
+    if status == 200 and (cited := cited_pulls(services.pulls, body["record"].get("references", []))):
+        body["record"]["pulls"] = cited
+    return answer(request, encode("task", body), status)
+
+
+@reading
+def retired(request: Request) -> Response:
+    asked = query(request)
+    status, body = retired_list(seams(request).board, asked.get("task", [""])[0], asked.get("milestone", [""])[0])
+    return answer(request, encode("retired", body), status)
+
+
 def routes(api: Api) -> list[ApiRoute]:
     feed, board, services = api.feed, api.board, api.services
     writer = board.writer or no_writer
@@ -50,21 +70,10 @@ def routes(api: Api) -> list[ApiRoute]:
     def start(request: StartRequest) -> tuple[int, dict[str, Any]]:
         return start_requested(request, feed, assign, services.start_session, services.harnesses)
 
-    def task(request: Request) -> Response:
-        status, body = task_record(feed, read, request.path_params["id"])
-        if status == 200 and (cited := cited_pulls(services.pulls, body["record"].get("references", []))):
-            body["record"]["pulls"] = cited
-        return Response(encode("task", body), status)
-
     slow = SlowReads("/api/task", services.slow_read_s)
 
     def timed(request: Request, arrival: Arrival) -> AbstractContextManager[Any]:
         return slow.watch(request.path_params["id"], arrival)
-
-    def retired(request: Request) -> Response:
-        query = parse_qs(request.query)
-        status, body = retired_list(board, query.get("task", [""])[0], query.get("milestone", [""])[0])
-        return Response(encode("retired", body), status)
 
     # Every write route, by path: the handler over the seams it needs and the kind of body it answers
     # (`contracts.api.registry.BODIES`). Each handler parses its body through the request model it is declared with.

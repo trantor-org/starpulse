@@ -16,7 +16,7 @@ def table(api: Api, *kinds: type) -> list[tuple]:
     write), the `/api` mount in front of each path, limited to the `kinds` of route given (all by default)."""
     mounted = [
         *((route, "/api" + route.path) for route in api_routes(api)),
-        *((route, route.path) for route in metrics.routes(api)),
+        *((route, route.path) for route in metrics.routes),
     ]
     return [
         (path, route.methods, route.handler) if isinstance(route, WriteRoute) else (path, route.handler)

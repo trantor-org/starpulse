@@ -8,7 +8,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from starpulse.views.adapters.inbound.api.neutral import ApiRoute, ReadRoute, Request, Response, WriteRoute
+from starlette.requests import Request
+from starlette.responses import Response
+
+from starpulse.views.adapters.inbound.api.answering import answer, reading, seams
+from starpulse.views.adapters.inbound.api.neutral import ApiRoute, ReadRoute, WriteRoute
 from starpulse.views.adapters.inbound.api.writing import guarded, whole_body
 from starpulse.views.application.commands.milestones import (
     archive_milestone,
@@ -23,16 +27,20 @@ if TYPE_CHECKING:  # annotation only
     from starpulse.views.adapters.inbound.api.routing import Api
 
 
+@reading
+def record(request: Request) -> Response:
+    status, body = milestone_record(seams(request).board, request.path_params["id"])
+    return answer(request, encode("milestone", body), status)
+
+
+@reading
+def listed(request: Request) -> Response:
+    status, body = milestones_list(seams(request).board)
+    return answer(request, encode("milestones", body), status)
+
+
 def routes(api: Api) -> list[ApiRoute]:
     board = api.board
-
-    def record(request: Request) -> Response:
-        status, body = milestone_record(board, request.path_params["id"])
-        return Response(encode("milestone", body), status)
-
-    def listed(request: Request) -> Response:
-        status, body = milestones_list(board)
-        return Response(encode("milestones", body), status)
 
     return [
         ReadRoute("/milestones/{id:path}", record),

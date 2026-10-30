@@ -9,30 +9,37 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
-from urllib.parse import parse_qs
 
-from starpulse.views.adapters.inbound.api.neutral import ApiRoute, ReadRoute, Request, Response, StreamRoute
+from starlette.requests import Request
+from starlette.responses import Response
+
+from starpulse.views.adapters.inbound.api.answering import answer, query, reading, seams
+from starpulse.views.adapters.inbound.api.neutral import ApiRoute, ReadRoute, StreamRoute
 from starpulse.views.model.encoding import encode, full_snapshot
 
 if TYPE_CHECKING:  # annotation only
     from starpulse.views.adapters.inbound.api.routing import Api
 
 
+@reading
+def body(request: Request) -> Response:
+    key = request.path_params["key"]
+    held = seams(request).snapshots.body(key)
+    if held is None:
+        return answer(request, encode("error", {"error": f"no snapshot {key} is held"}), 404)
+    return answer(request, held, cache="max-age=3600, immutable")
+
+
+@reading
+def snapshot(request: Request) -> Response:
+    snapshots = seams(request).snapshots
+    if query(request).get("view") == ["full"]:
+        return answer(request, encode("snapshot", full_snapshot(snapshots.read().snapshot)))
+    return answer(request, snapshots.read().encoded)
+
+
 def routes(api: Api) -> list[ApiRoute]:
-    streams, snapshots = api.streams, api.snapshots
-
-    def body(request: Request) -> Response:
-        key = request.path_params["key"]
-        held = snapshots.body(key)
-        if held is None:
-            return Response(encode("error", {"error": f"no snapshot {key} is held"}), 404)
-        return Response(held, cache="max-age=3600, immutable")
-
-    def snapshot(request: Request) -> Response:
-        if parse_qs(request.query).get("view") == ["full"]:
-            return Response(encode("snapshot", full_snapshot(snapshots.read().snapshot)))
-        return Response(snapshots.read().encoded)
-
+    streams = api.streams
     return [
         StreamRoute("/events", streams.board),
         StreamRoute("/held", streams.held),
