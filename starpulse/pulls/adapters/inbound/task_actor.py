@@ -239,6 +239,8 @@ class TaskActor:
         self._saved_at = 0.0
         #: Set once the start's derivation of every open task is done.
         self.ready = threading.Event()
+        #: Set once the start sweep has indexed the open tasks and read their pull requests, before it derives them.
+        self.indexed = threading.Event()
         #: How many times each task's waits were derived, for the tests and a diagnosis.
         self.derivations: Counter[str] = Counter()
 
@@ -316,7 +318,7 @@ class TaskActor:
     def _follow_store(self, stop: threading.Event) -> None:
         """Re-derive the tasks whose pull requests changed as soon as the store saves, ahead of the projection that
         saved it finishing its pin walk."""
-        self.ready.wait()
+        self.indexed.wait()
         while not stop.is_set():
             if not self._saved.wait(_POLL_S):
                 continue
@@ -382,7 +384,11 @@ class TaskActor:
             for agent in tasks:
                 self._index(agent)
             self._read_pulls()
-            self._derive_all([agent["id"] for agent in tasks], observed)
+        self.indexed.set()
+        for name in sorted(agent["id"] for agent in tasks):  # per task, so a store save waits one derivation
+            with self._lock:
+                self._derive(name, observed)
+        with self._lock:
             for parent in self._links:
                 for placed in self._feed.machine_tasks(parent):
                     self._exit_phase(placed["id"])

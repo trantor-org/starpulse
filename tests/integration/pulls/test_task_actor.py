@@ -905,3 +905,33 @@ def test_a_review_task_whose_pr_merged_into_an_integration_branch_closes_only_on
 
     assert until(lambda: board.moved() == [("TASK-2", "done")])
     assert [name for name, *_ in board.writes] == ["TASK-2"]
+
+
+def test_a_pr_merged_during_the_start_derivation_moves_its_task_to_done_before_that_derivation_ends(
+    store: PullStore, stop: threading.Event
+) -> None:
+    """A restart derives every open task serially; a merge landing in that pass waits one task, not the pass."""
+    started = threading.Event()
+
+    class SlowBoard(Board):
+        def edit(self, name, changes, comment, /, actor=""):  # type: ignore[no-untyped-def]
+            started.set()
+            if name != "TASK-999":
+                time.sleep(0.1)
+            return super().edit(name, changes, comment, actor=actor)
+
+    backlog = [task(f"TASK-{100 + n}", "Review", references=(f"https://github.com/acme/trantor/pull/{100 + n}",)) for n in range(30)]
+    late = "https://github.com/acme/trantor/pull/999"
+    board = SlowBoard(BoardFeed(), *backlog, task("TASK-999", "Review", references=(late,)))
+    store.save([pull(100 + n, state="MERGED") for n in range(30)] + [pull(999, state="OPEN")])
+    actor = TaskActor(board.feed, store, board.edit, WAITS, MOVES, create=board.create)
+    actor.start(stop)
+    assert started.wait(WITHIN_S)
+
+    store.save([pull(999, state="MERGED")])
+    merged = time.monotonic()
+    actor.pulls_changed()
+
+    assert until(lambda: ("TASK-999", "done") in board.moved())
+    assert time.monotonic() - merged < WITHIN_S
+    assert not actor.ready.is_set()
