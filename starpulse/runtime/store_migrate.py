@@ -15,20 +15,12 @@ import json
 import logging
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import Engine, create_engine, insert, select
-from sqlalchemy.engine import make_url
+if TYPE_CHECKING:
+    from sqlalchemy import Engine
 
-from starpulse.board.adapters import history_window
-from starpulse.event_log.event_log import EventLog
-from starpulse.event_log.migrate import migrate
-from starpulse.event_log.opening import database_url
-from starpulse.event_log.tables import scheduler_runs
-from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
-from starpulse.runtime.assembly import assemble
-from starpulse.runtime.config import ConfigError, discover, load
-from starpulse.scheduler.model import ledger, toggle
+    from starpulse.event_log.event_log import EventLog
 
 __all__ = ["RETIRED_SUFFIX", "main", "maintain"]
 
@@ -43,6 +35,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="starpulse migrate", description="bring the store to its current schema")
     parser.add_argument("--config", type=Path, help="the TOML config the server runs with (default starpulse.toml)")
     args = parser.parse_args(argv)
+    # The store, the board and the config cost over a second to import: `--help` and a flag error pay none of it.
+    from sqlalchemy.engine import make_url  # noqa: PLC0415 - import cost, paid only by a run that migrates
+
+    from starpulse.event_log.opening import database_url  # noqa: PLC0415 - import cost, paid only by a run that migrates
+    from starpulse.runtime.assembly import assemble  # noqa: PLC0415 - import cost, paid only by a run that migrates
+    from starpulse.runtime.config import ConfigError, discover, load  # noqa: PLC0415 - import cost, paid only by a run that migrates
+
     logging.basicConfig(level=logging.INFO)
     path = discover(args.config)
     try:
@@ -72,6 +71,12 @@ def maintain(
 
     With a `base` (the config's directory) it also imports the operator files found there, and in `state_dir` under it.
     """
+    from sqlalchemy import create_engine  # noqa: PLC0415 - import cost, paid only by a run that migrates
+
+    from starpulse.event_log.event_log import EventLog  # noqa: PLC0415 - import cost, paid only by a run that migrates
+    from starpulse.event_log.migrate import migrate  # noqa: PLC0415 - import cost, paid only by a run that migrates
+    from starpulse.flow_metrics.adapters.outbound.history import HistoryStore  # noqa: PLC0415 - import cost, paid only by a run that migrates
+
     engine = create_engine(url)
     try:
         migrate(engine)
@@ -88,6 +93,9 @@ def import_files(log: EventLog, base: Path, state_dir: Path) -> None:
     A setting a store already holds wins over its file, and a store that already holds runs ignores the ledger file; the
     file is retired either way, so an old one cannot come back after a reset.
     """
+    from starpulse.board.adapters import history_window  # noqa: PLC0415 - import cost, paid only by a run that migrates
+    from starpulse.scheduler.model import ledger, toggle  # noqa: PLC0415 - import cost, paid only by a run that migrates
+
     _import_setting(log, toggle.KEY, state_dir / toggle.TOGGLE_FILE, "enabled")
     _import_setting(log, history_window.KEY, base / history_window.SETTINGS_FILE, "history_hours")
     _import_runs(log.engine, state_dir / ledger.LEDGER_FILE)
@@ -110,6 +118,10 @@ def _import_setting(log: EventLog, key: str, file: Path, field: str) -> None:
 
 
 def _import_runs(engine: Engine, file: Path) -> None:
+    from sqlalchemy import insert, select  # noqa: PLC0415 - import cost, paid only by a run that migrates
+
+    from starpulse.event_log.tables import scheduler_runs  # noqa: PLC0415 - import cost, paid only by a run that migrates
+
     try:
         text = file.read_text()
         written = file.stat().st_mtime
