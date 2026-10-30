@@ -34,8 +34,8 @@ class SchedulerNext(_Api):
     title: str
     verdict: Literal["starting", "waits"]
     reason: str = Field(
-        description="`goes next`, `quiet hours` while the quiet hours hold admission, `<harness> usage limit` while "
-        "that harness is paused, or the first dimension the task overfits, which the strip shows after `waits:`."
+        description="`goes next`, `quiet hours` while the quiet hours hold admission, `<harness> usage limit` or `<harness> start halted: ...` "
+        "while that harness is paused, or the first dimension the task overfits, which the strip shows after `waits:`."
     )
     priority: str = Field(
         description="The Priority matrix cell the task ranked by, `<impact>/<urgency>`, or `default` when it has no Impact or Urgency."

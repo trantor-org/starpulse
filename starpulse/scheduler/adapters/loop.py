@@ -44,6 +44,7 @@ from starpulse.scheduler.model.inputs import STALE_S, points
 from starpulse.scheduler.model.ledger import Ledger, RunRecord
 from starpulse.scheduler.model.quiet_hours import QuietHours
 from starpulse.scheduler.model.sampler import PERIOD, Reading, Sampler
+from starpulse.scheduler.model.start_failure import permanent
 from starpulse.scheduler.model.state import START_COOLDOWN, SchedulerState
 from starpulse.scheduler.model.toggle import Toggle
 from starpulse.scheduler.model.usage_limit import until as usage_until
@@ -57,6 +58,11 @@ IDLE_RETURNED = "idle-returned"
 IDLE_KEY = "scheduler.idle_returns"
 HELD_KEY = "scheduler.held"
 PAUSES_KEY = "scheduler.harness_pauses"
+#: Seconds a task whose start failed waits before its first retry; each further failure doubles it, up to `START_BACKOFF_MAX`.
+START_BACKOFF = 30.0
+START_BACKOFF_MAX = 30 * 60.0
+#: Seconds admission for a harness halts after a start failure no retry can cure, before one start tries again.
+START_HALT = 60 * 60.0
 #: Admission verdicts counted so far, `{"admitted": n, "refused": n}`, kept in the worker state for `/metrics`.
 TALLY_KEY = "scheduler.decisions"
 #: The dimensions a host reading measures, so a run's peak is how far they rose while it ran.
@@ -153,6 +159,7 @@ class Loop:
         self._parked: dict[str, _Run] = {}
         self._held: set[str] = self._load_held()
         self._paused: dict[str, dict[str, Any]] = self._load_pauses()
+        self._failed: dict[str, tuple[int, float]] = {}  # a task whose start failed: its failures so far, when to retry
         self._events: queue.Queue | None = None
         self._sampled_at: float | None = None  # the sample of the last `scheduler` status the loop was offered
         self._restore()
@@ -569,7 +576,7 @@ class Loop:
         elif self._quiet(now):
             reason = "quiet hours"
         elif pause is not None:
-            reason = f"{pause} usage limit"
+            reason = f"{pause} {self._paused[pause]['reason']}"
         else:
             reason = "goes next"
         return {
@@ -582,7 +589,7 @@ class Loop:
 
     def _admit(self, now: float) -> list[str]:
         started: list[str] = []
-        skipped: set[str] = set()  # a start that failed this pass, tried again on the next wake
+        skipped = {task for task, (_, retry_at) in self._failed.items() if retry_at > now}  # still backing off
         while readings := self._readings():
             tasks, decisions = self._decide(readings, skipped)
             if (picked := next((d for d in decisions if d.admitted), None)) is None:
@@ -594,10 +601,13 @@ class Loop:
             except StartFailedError as exc:
                 logger.warning("StarPulse scheduler: cannot start %s: %s", picked.task, exc)
                 self._note_limit(str(exc), now, harness)
+                self._note_halt(str(exc), now, harness)
                 if self._selected_paused(now):
                     break
                 skipped.add(picked.task)
+                self._back_off(picked.task, now)
                 continue
+            self._failed.pop(picked.task, None)
             self._starts[picked.task] = now
             self._running[picked.task] = _Run(
                 session,
@@ -673,6 +683,18 @@ class Loop:
             return
         self._paused[harness] = {"until": resume, "reason": "usage limit"}
         self._save_pauses()
+
+    def _note_halt(self, text: str, now: float, harness: str) -> None:
+        """Halt admission for `harness` on a failure only a host change cures, raising it once for the whole halt."""
+        if not permanent(text) or harness in self._paused:
+            return
+        self._paused[harness] = {"until": now + START_HALT, "reason": f"start halted: {text}"}
+        self._save_pauses()
+        logger.error("StarPulse scheduler: admission for %s halted for %d minutes: %s", harness, START_HALT // 60, text)
+
+    def _back_off(self, task: str, now: float) -> None:
+        failures = self._failed.get(task, (0, 0.0))[0] + 1
+        self._failed[task] = (failures, now + min(START_BACKOFF * 2 ** (failures - 1), START_BACKOFF_MAX))
 
     def _selected_paused(self, now: float) -> str | None:
         """The selected harness when its credit pause is still live; other harnesses keep admitting."""

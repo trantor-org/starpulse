@@ -632,11 +632,12 @@ harness lands in `pauses` and blocks admission for that harness only.
 - `next` is what the next pass would do, whatever the switch says: the task `decide` ranks first among those that fit, with
   `verdict` `starting` and `reason` `goes next`; when none fits, the top-ranked task with `verdict` `waits` and the first
   dimension it overfits as `reason`. Inside the quiet hours the top-ranked task `waits` with `reason` `quiet hours`,
-  whatever room the host has. While a harness usage pause holds, it `waits` with `reason` `<harness> usage limit`. It is
+  whatever room the host has. While a harness pause holds, it `waits` with `reason` `<harness> <pause reason>`, such as `<harness> usage limit`. It is
   `null` before the first sample or with no workable task in the eligible lane. Reading it logs no decision. Its `priority`
   names the Priority matrix cell the task ranked by (`high/low`, or `default`).
 - `pauses` lists each harness whose admission is paused until `until` (epoch seconds) after a usage or credit-limit
-  start, with `reason` `usage limit`. The key is absent when none are paused.
+  start, with `reason` `usage limit`, or an hour after a start halted on a missing binary, with `reason` `start halted: <the
+  refusal, which names the path>`. The key is absent when none are paused.
 - `needsOperator` lists the `kind-decide` tasks in the eligible lane, each with its task and title. Admission never starts
   one, since only the operator can make the decision it asks for; it is `[]` when there are none.
 
@@ -720,10 +721,13 @@ ranked first; once its run ends it is held until the task leaves `in_progress`. 
 Each pass starts the first admitted task, then decides again over readings that carry that task's demand, so two tasks that
 do not fit together are never both started in one pass. A run holds its capacity from its start until its task leaves
 `in_progress`; until the harness reports the session active the loop adds that demand to the sampler's readings itself.
-A start that fails (`StartFailedError`) is logged and skipped until the next pass, unless the refusal names a usage or
-credit limit: admission for that harness then pauses until the reset clock the message names (or five hours when it
-names none), `GET /api/scheduler` lists it under `pauses`, and the next pick `waits` with `reason` `<harness> usage
-limit`. A start that succeeds comments
+A start that fails (`StartFailedError`) is logged and its task skipped for a backoff of 30 seconds that doubles with
+each further failure, up to 30 minutes, unless the refusal names a usage or credit limit: admission for that harness then
+pauses until the reset clock the message names (or five hours when it names none), `GET /api/scheduler` lists it under
+`pauses`, and the next pick `waits` with `reason` `<harness> usage limit`. A refusal that names a missing binary
+(`the starpulse binary is missing: <path>`, `needs <binary> on PATH`) fails again until the host changes, so it halts
+admission for that harness for an hour after the first occurrence: one `ERROR` journal line names the refusal and path, `pauses`
+lists it with `reason` `start halted: <refusal>`, and one start tries again when the hour ends. A start that succeeds comments
 `Scheduler started <task>: <session address>` on the task; a board that refuses the comment leaves the session started.
 
 A session starts through `session_start_url` when the config sets it; the loop's request is

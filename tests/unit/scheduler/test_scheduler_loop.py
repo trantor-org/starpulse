@@ -15,7 +15,7 @@ from starpulse.board.model.seam import Written
 from starpulse.contracts.adapters import BoardTask, MachineEvent, StartFailedError
 from starpulse.event_log.event_log import EventLog
 from starpulse.harness_telemetry.model.harness import SESSION_MACHINES
-from starpulse.scheduler.adapters.loop import IDLE_RETURNED, SETTLE_REFUSED, Loop
+from starpulse.scheduler.adapters.loop import IDLE_RETURNED, SETTLE_REFUSED, START_BACKOFF, START_HALT, Loop
 from starpulse.scheduler.model.config import Scheduler
 from starpulse.scheduler.model.harness_setting import HarnessSetting
 from starpulse.scheduler.model.ledger import Ledger
@@ -69,6 +69,7 @@ class Rig:
         self.requeueing = requeue
         self.requeued: list[tuple[str, str]] = []
         self.failing: set[str] = set()
+        self.attempts: list[str] = []
         self.limit: str | None = None
         self.claims: list[tuple[str, str]] = []
         self.claim_ok = True
@@ -121,6 +122,7 @@ class Rig:
 
     def _start(self, task: str, *, harness: str = "claude", mode: str = "interactive") -> str:
         _ = mode
+        self.attempts.append(task)
         if self.limit is not None:
             raise StartFailedError(self.limit)
         if task in self.failing:
@@ -283,6 +285,60 @@ def test_a_task_that_cannot_start_is_skipped_and_the_next_still_starts(rig: Rig)
 
     assert started == ["T-2"]
     assert rig.settled == []  # a start that failed settles nothing and requeues nothing
+
+
+def test_a_start_that_cannot_work_until_the_host_is_fixed_halts_admission_and_is_raised_once(
+    rig: Rig, caplog: pytest.LogCaptureFixture
+) -> None:
+    path = "/srv/trantor/releases/abc/.venv/bin/starpulse"
+    rig.limit = f"T-1 could not be read: the starpulse binary is missing: {path}"
+    rig.put("T-1")
+    rig.put("T-2")
+
+    assert rig.loop.tick() == []
+    rig.after(1)
+    assert rig.loop.tick() == []
+
+    assert rig.attempts == ["T-1"]  # the second wake and the second task never reach Start
+    (pause,) = rig.loop.pauses()
+    assert pause["harness"] == "claude"
+    assert path in pause["reason"]
+    raised = [r for r in caplog.records if r.levelname == "ERROR" and path in r.getMessage()]
+    assert len(raised) == 1
+
+
+def test_a_halted_admission_tries_one_start_again_once_the_halt_ends(rig: Rig) -> None:
+    rig.limit = "T-1 could not be read: the starpulse binary is missing: /srv/old/starpulse"
+    rig.put("T-1")
+    rig.loop.tick()
+    rig.limit = None
+    rig.now += START_HALT + 1
+
+    assert rig.loop.tick() == ["T-1"]
+    assert rig.loop.pauses() == []
+
+
+def test_a_start_that_may_work_later_is_retried_with_a_growing_backoff(rig: Rig) -> None:
+    rig.failing = {"T-1"}
+    rig.put("T-1")
+
+    rig.loop.tick()
+    rig.now += START_BACKOFF / 2
+    rig.loop.tick()
+    assert rig.attempts == ["T-1"]  # still inside the first backoff
+
+    rig.now += START_BACKOFF
+    rig.loop.tick()
+    assert rig.attempts == ["T-1", "T-1"]
+
+    rig.now += START_BACKOFF * 1.5
+    rig.loop.tick()
+    assert rig.attempts == ["T-1", "T-1"]  # the second backoff is longer than the first
+
+    rig.now += START_BACKOFF
+    rig.loop.tick()
+    assert rig.attempts == ["T-1", "T-1", "T-1"]
+    assert rig.loop.pauses() == []  # a transient failure halts nothing
 
 
 def test_a_runs_capacity_stays_taken_until_its_task_leaves_in_progress(tmp_path: Path) -> None:
