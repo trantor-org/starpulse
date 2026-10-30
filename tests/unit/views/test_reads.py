@@ -146,3 +146,16 @@ def test_the_pulls_read_is_timed_and_any_other_is_not(routes, tmp_path: Path, ca
 
     assert asyncio.run(call(app, "/api/pulls")).status == 200
     assert "slow_read route=/api/pulls" in caplog.text
+
+
+def test_a_slow_task_read_logs_its_queue_and_compute_seconds(
+    routes, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level("WARNING")
+    app = PageApp(api_routes(routes), [], routes.snapshots, tmp_path, ())
+
+    assert asyncio.run(call(app, "/api/task/PROJ-404")).status == 404
+
+    (line,) = [r.getMessage() for r in caplog.records if "slow_read" in r.getMessage()]
+    assert line.startswith("slow_read route=/api/task query=PROJ-404 queue_s=")
+    assert " compute_s=" in line

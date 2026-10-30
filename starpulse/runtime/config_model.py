@@ -236,9 +236,10 @@ class ConfigFile(_Table):
         default=SLOW_READ_S,
         gt=0,
         description=(
-            "The seconds a `GET /api/pulls` read may take, from accept to the last byte written, before `serve` logs "
-            "a `slow_read` line for it: `queue_s`, `compute_s` and `write_s`, the seconds it waited for a handler "
-            "thread, computed its answer and wrote it, `in_flight`, the `/api/pulls` reads running when it began, "
+            "The seconds a `GET /api/pulls` or `GET /api/task/<id>` read may take, from accept to the last byte "
+            "written, before `serve` logs a `slow_read` line for it: `queue_s`, `compute_s` and `write_s`, the "
+            "seconds it waited for a handler thread, computed its answer and wrote it, `in_flight`, the reads of "
+            "the same route running when it began, "
             "and `busy` and `streams`, the request workers in use (the read itself included) and the streams open "
             "when it was accepted. No other route is timed."
         ),

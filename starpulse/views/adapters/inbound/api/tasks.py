@@ -1,6 +1,6 @@
 """Tasks: a task's record and every write that changes one, and the retired tasks.
 
-- `GET /api/task/{id}`: a task's record, with the pull requests it cites.
+- `GET /api/task/{id}`: a task's record, with the pull requests it cites; a read that takes long is logged.
 - `GET /api/retired`: the retired tasks, filtered by `task` and `milestone`.
 - `POST /api/move`, `start`, `edit`, `archive`, `verdict`, `rating`, `miss`, `restore`, `take-over`, `retire`,
   `retired/import`, `claim`, `park`, `review`, `complete` and `tasks`: a task's writes, each over the seams it needs.
@@ -8,11 +8,13 @@
 
 from __future__ import annotations
 
+from contextlib import AbstractContextManager
 from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs
 
 from starpulse.contracts.api.dto.requests import StartRequest
-from starpulse.views.adapters.inbound.api.neutral import ApiRoute, ReadRoute, Request, Response, WriteRoute
+from starpulse.views.adapters.inbound.api.neutral import ApiRoute, Arrival, ReadRoute, Request, Response, WriteRoute
+from starpulse.views.adapters.inbound.api.slow_reads import SlowReads
 from starpulse.views.adapters.inbound.api.writing import TaskWrite, guarded, no_writer, whole_body
 from starpulse.views.application.commands.lifecycle import park_task, review_task
 from starpulse.views.application.commands.moves import claim_task, move_task, start_requested, start_task
@@ -54,6 +56,11 @@ def routes(api: Api) -> list[ApiRoute]:
             body["record"]["pulls"] = cited
         return Response(encode("task", body), status)
 
+    slow = SlowReads("/api/task", services.slow_read_s)
+
+    def timed(request: Request, arrival: Arrival) -> AbstractContextManager[Any]:
+        return slow.watch(request.path_params["id"], arrival)
+
     def retired(request: Request) -> Response:
         query = parse_qs(request.query)
         status, body = retired_list(board, query.get("task", [""])[0], query.get("milestone", [""])[0])
@@ -83,7 +90,7 @@ def routes(api: Api) -> list[ApiRoute]:
         "/tasks": (lambda client, raw: create_task(client, raw, create, feed), "create"),
     }
     return [
-        ReadRoute("/task/{id:path}", task),
+        ReadRoute("/task/{id:path}", task, timed),
         ReadRoute("/retired", retired),
         *(WriteRoute(path, ("POST",), guarded(kind, whole_body(handler))) for path, (handler, kind) in writes.items()),
     ]

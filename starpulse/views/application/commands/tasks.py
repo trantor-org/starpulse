@@ -40,6 +40,7 @@ from starpulse.views.application.commands.guard import (
     EDIT_LOCK,
     Who,
     held_task,
+    is_held,
     not_held,
     record_written,
     who_of,
@@ -69,7 +70,7 @@ def task_record(feed: BoardFeed, read: TaskReader | None, task: str) -> tuple[in
     """
     if read is None:
         return 404, {"error": "this board cannot read a task's full record"}
-    if held_task(feed, task) is None:
+    if not is_held(feed, task):
         return not_held(feed, task)
     if (record := read(task)) is None:
         return 404, {"error": f"{task} has no record to read"}

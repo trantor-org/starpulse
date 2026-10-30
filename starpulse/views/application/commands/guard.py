@@ -75,6 +75,12 @@ def held_task(feed: BoardFeed, task: str) -> dict | None:
     return agent
 
 
+def is_held(feed: BoardFeed, task: str) -> bool:
+    """Whether the feed holds the open task `task`, as `held_task` finds it but without building the moves it offers,
+    which a read of the task's record does not use."""
+    return feed.is_open(task) or (feed.wait_replayed(REPLAY_WAIT_S) and feed.is_open(task))
+
+
 def not_held(feed: BoardFeed, task: str) -> tuple[int, dict[str, str]]:
     """The refusal for a task `held_task` did not find: 503, which a client sends again, while the replay has not ended,
     else 404."""
