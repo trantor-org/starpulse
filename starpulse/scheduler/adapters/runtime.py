@@ -27,6 +27,7 @@ from starpulse.scheduler.model.sampler import Crossing, Reading, Sampler
 from starpulse.scheduler.model.state import SchedulerState
 from starpulse.scheduler.model.toggle import Toggle
 from starpulse.event_log.event_log import EventLog
+from starpulse.harness_telemetry.model.harness import HARNESS
 
 logger = logging.getLogger(__name__)
 
@@ -179,7 +180,9 @@ def build(
     sampler = Sampler(
         policy.limits,
         probe or LocalProbe(),
-        sessions=lambda: sessions_held(feed.open_tasks(), feed.roles.working),
+        sessions=lambda: sessions_held(
+            feed.open_tasks(), feed.roles.working, feed.machine_tasks(HARNESS.name), clock()
+        ),
         review=lambda: review_points(feed.open_tasks(), policy.reviewed_lane(feed.roles.review), policy.unsized_points),
         on_crossing=crossed,
         clock=clock,
