@@ -251,26 +251,36 @@ until every dependency is `Done`.
 
 ## Checks after the merge
 
-A task that implements a change goes to `Done` when its pull request merges. A check after a
-period of time is welcome, but it never blocks the task that did the work: its Acceptance
-Criteria and Definition of Done are what the pull request shows before the merge, plus the
-initial QA the task runs on itself. Evidence only the merge can produce (a live row, a metric,
-a scheduled run, a latency on the deployed page) is a checkup task, `--type check`, created
-`Waiting` on Start Criteria that observe the merged change (Validation, below), at the moment
-the implementing task is created or delivered. No window shortens this: a check due within
-24 hours of the merge is a checkup task too, never a Definition of Done item on the
-implementing task. A mechanism claim is proved before `Review` instead (Prove now, below). A
-check that needs operator approval to run, such as a load burst against a live service, or a
-person's judgement, such as a render on a device, is proved before `Review` or run with the
-operator.
+A check after the merge never blocks the task that did the work. Its Acceptance Criteria and
+Definition of Done are what the pull request shows before the merge, plus the initial QA the task
+runs on itself, and each check after the merge goes in one of two buckets:
+
+- **On merge.** A check the merge itself answers (the deploy applied, a pin moved, the merged
+  commit's CI is green, a live endpoint answers after the apply) stays on the implementing task as
+  a post-merge QA item: a criterion the task's QA plan names. Where the board's machine declares a
+  post-merge QA phase in `Review`, that phase runs the items on the merge's own events (the
+  merge, an apply finishing, a pin moving), never on a timer or a poll; a pass takes the task to
+  `Done`.
+- **Long wait.** A check that waits long on something else (a span of hours or days, a nightly, a
+  scheduled run, a percentile over real traffic) is its own checkup task, `--type check`, filed
+  at the moment the implementing task is created or delivered and parked
+  `--until '<criterion>'` on an observable: the value the check reads, a run, or a lane move
+  (Validation, below). Never a clock: a gate that compares the time against a deadline is a
+  poll, and it opens whether or not the evidence exists. No window shortens this: a check due
+  within 24 hours of the merge is a checkup task too, never a Definition of Done item on the
+  implementing task.
+
+A mechanism claim is proved before `Review` instead (Prove now, below). A check that needs
+operator approval to run, such as a load burst against a live service, or a person's judgement,
+such as a render on a device, is proved before `Review` or run with the operator.
 
 For example, a task that cuts a DAG's run time from 150 s to 33 s locally shows the cut in its
-pull request (a benchmark, a test) and goes to `Done` on merge. "p50 under 30 s over the 24 h
-after the merge" is a separate checkup task: `--type check`, its criterion that sentence, and a
-Start Criterion that opens once the 24 h have passed and the DAG has run, such as
-`{id: window-closed, kind: prom, expr: 'sum((time() > bool <merge + 24 h epoch>) *
-count(<the DAG's run counter>))', at_least: 1}`. A miss on that checkup files a fix task; it
-never reopens the implementing one.
+pull request (a benchmark, a test), and "the merged commit's deploy applied" is its post-merge QA
+item. "p50 under 30 s over the 24 h after the merge" is a separate checkup task: `--type check`,
+its criterion that sentence, and a Start Criterion on the value the check reads, the DAG's runs
+since the merge, such as `{id: runs-since-merge, kind: prom, expr: 'sum(increase(<the DAG's run
+counter>[24h]))', at_least: 24}`. It opens once that many runs exist, not when a date passes. A
+miss on that checkup files a fix task; it never reopens the implementing one.
 
 A check's gate must not be the live effect it checks, or a missing effect reads as waiting
 forever. A live check drives the actor along its ordinary path and never supplies by hand the
