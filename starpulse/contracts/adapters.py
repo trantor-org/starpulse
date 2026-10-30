@@ -145,6 +145,11 @@ class BoardTask(_Contract):
         default="",
         description="How soon the work matters (`low`, `medium` or `high`); empty when the board keeps none.",
     )
+    adr_needed: str = Field(default="", description="Why the task needs an ADR; empty when it needs none.")
+    duplicate_search: str = Field(default="", description="The queries the task's duplicate search ran; empty when none.")
+    duplicate_resolution: str = Field(
+        default="", description="How the task's duplicate search resolved its candidates; empty when none."
+    )
     type: str = Field(
         default="",
         description="The task's type, a name the deployment chooses (`spike`, `bug`); empty when it has none. StarPulse names no type.",

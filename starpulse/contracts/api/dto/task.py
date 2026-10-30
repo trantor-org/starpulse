@@ -89,7 +89,16 @@ class RawTask(_Api):
     urgency: str | None = Field(
         default=None, description="A Board task's Urgency (low, medium or high); empty or absent when it has none."
     )
-    criteria: list[TaskCriterion] | None = Field(
+    adr_needed: str | None = Field(
+        default=None, description="Why a Board task needs an ADR; empty or absent when it needs none."
+    )
+    duplicate_search: str | None = Field(
+        default=None, description="The queries a Board task's duplicate search ran; empty or absent when none."
+    )
+    duplicate_resolution: str | None = Field(
+        default=None, description="How a Board task's duplicate search resolved its candidates; empty or absent when none."
+    )
+    criteria:list[TaskCriterion] | None = Field(
         default=None, description="A Board task's acceptance criteria in file order; absent off the Board."
     )
     definition_of_done: list[TaskCriterion] | None = Field(
