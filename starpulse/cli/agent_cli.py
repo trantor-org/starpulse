@@ -101,6 +101,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import functools
+import importlib
 import json
 import os
 import re
@@ -109,9 +110,9 @@ import urllib.parse
 import urllib.request
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
-from typing import Any, NoReturn
+from typing import TYPE_CHECKING, Any, NoReturn
 
-from starpulse.cli import agent_commands, agent_tasks, agent_wire, demo, doctor, skill_install
+from starpulse.cli import agent_flags, agent_wire
 from starpulse.cli.agent_keys import (
     CELL_KEYS,
     CLAIM_KEYS,
@@ -129,19 +130,9 @@ from starpulse.cli.agent_keys import (
     TASK_KEYS,
     TRANSITION_KEYS,
 )
-from starpulse.contracts.analytics import Analytics
-from starpulse.flow_metrics.model.cells import cell_of
-from starpulse.flow_metrics.model.scores import (
-    WEIGHTS,
-    PullFacts,
-    cell_task_scores,
-    merged_pulls,
-    pull_facts,
-    score_cells,
-)
-from starpulse.flow_metrics.model.verdicts import cell_verdicts
-from starpulse.github import GitHubError, connect, repo_of
-from starpulse.runtime.config import Config, ConfigError, discover, load
+
+if TYPE_CHECKING:
+    from starpulse.runtime.config import Config
 
 #: What each exit code means, as the manifest says it.
 EXIT_CODES = {0: "ok", 1: "refused or invalid", 2: "usage", 3: "unavailable", 4: "not found"}
@@ -153,6 +144,19 @@ _STREAM_TIMEOUT_S = 45.0
 
 #: A verb answers with one document, or with the stream of documents `watch` writes as they arrive.
 Verb = Callable[[argparse.Namespace, Mapping[str, str]], dict[str, Any] | Iterator[dict[str, Any]]]
+
+
+def _later(module: str, name: str) -> Verb:
+    """A verb's handler, imported when it runs: the parser lists every verb, yet one run pays for only its own module."""
+
+    def run(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any] | Iterator[dict[str, Any]]:
+        return getattr(importlib.import_module(module), name)(args, environ)
+
+    return run
+
+
+def _in_tasks(name: str) -> Verb:
+    return _later("starpulse.cli.agent_tasks", name)
 
 
 class _AnyName(Mapping[str, Callable[..., Any]]):
@@ -390,6 +394,20 @@ def _scores(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, A
     `/api/analytics/sessions`, the labels of the snapshot's settled tasks and, for each task's merged pull request in
     `--repo`, the commits after it was ready and its time to merge from GitHub; refusals as `analytics transitions`. `verdicts` judges each cell's other profiles against its busiest
     (`level.verdicts`)."""
+    from starpulse.contracts.analytics import Analytics  # noqa: PLC0415 - import cost, paid on first use
+    from starpulse.flow_metrics.model.cells import cell_of  # noqa: PLC0415 - import cost, paid on first use
+    from starpulse.flow_metrics.model.scores import (  # noqa: PLC0415 - import cost, paid on first use
+        WEIGHTS,
+        PullFacts,
+        cell_task_scores,
+        merged_pulls,
+        pull_facts,
+        score_cells,
+    )
+    from starpulse.flow_metrics.model.verdicts import cell_verdicts  # noqa: PLC0415 - import cost, paid on first use
+    from starpulse.github import GitHubError, connect, repo_of  # noqa: PLC0415 - import cost, paid on first use
+    from starpulse.runtime.config import discover, load  # noqa: PLC0415 - import cost, paid on first use
+
     window = _window_read(args, environ, "/api/analytics/sessions", ("now", "window_s", "slices"))
     settled = agent_wire.get_snapshot(agent_wire.server_url(args.server, environ))["settled"]
     tasks = {task: {"labels": found.get("labels", [])} for task, found in settled.items()}
@@ -441,6 +459,9 @@ def _diff(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any
 
 def _doctor(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """Every install check of `starpulse.cli.doctor`; `ok` is false, and the exit code 1, when any fails."""
+    from starpulse.cli import doctor  # noqa: PLC0415 - import cost, paid on first use
+    from starpulse.runtime.config import discover, load  # noqa: PLC0415 - import cost, paid on first use
+
     base = agent_wire.server_url(args.server, environ)
     path = discover(args.config)
     try:
@@ -463,6 +484,8 @@ def _skills_root(args: argparse.Namespace, environ: Mapping[str, str]) -> tuple[
 
 
 def _skills_list(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    from starpulse.cli import skill_install  # noqa: PLC0415 - import cost, paid on first use
+
     scope, root = _skills_root(args, environ)
     return {
         "scope": scope,
@@ -478,6 +501,8 @@ def _skills_list(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[s
 
 
 def _skills_install(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    from starpulse.cli import skill_install  # noqa: PLC0415 - import cost, paid on first use
+
     harnesses = [harness for harness in skill_install.HARNESS_DIRS if getattr(args, harness)]
     if not harnesses:
         raise agent_wire.CliError("usage", "choose the harness to install for: --claude, --codex or both")
@@ -530,6 +555,7 @@ def _validate(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str,
     """
     from starpulse.event_log.opening import open_event_log  # noqa: PLC0415 - import cost, paid on first use
     from starpulse.event_log.readmodel.read_model import ReadModel  # noqa: PLC0415 - import cost, paid on first use
+    from starpulse.runtime.config import discover, load  # noqa: PLC0415 - import cost, paid on first use
 
     machines = [_checked(path) for path in args.paths]
     if args.config is not None:
@@ -568,6 +594,8 @@ def _plain(value: object) -> Any:
 
 def _config_check(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """The config as it would run, every default filled in; `ok` is false, and the exit code 1, when it would not."""
+    from starpulse.runtime.config import ConfigError, discover, load  # noqa: PLC0415 - import cost, paid on first use
+
     path = discover(args.config)
     checked: dict[str, Any] = {"file": str(path) if path else None, "unknown_keys": [], "errors": [], "config": None}
     try:
@@ -618,6 +646,8 @@ def _unlisted_writers(config: Config, base: Path) -> list[str]:
 
 
 def _demo(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    from starpulse.cli import demo  # noqa: PLC0415 - import cost, paid on first use
+
     try:
         return {"written": str(demo.build(args.out, agent_wire.server_url(args.server, environ), args.mockup))}
     except urllib.error.URLError as exc:
@@ -731,7 +761,7 @@ def _parser() -> argparse.ArgumentParser:
         verbs,
         "board",
         "the Board's tasks per column, each with its dependencies, pull requests and legal moves",
-        agent_tasks.board,
+        _in_tasks("board"),
         ("columns",),
         (0, 2, 3),
     )
@@ -745,7 +775,7 @@ def _parser() -> argparse.ArgumentParser:
         verbs,
         "search",
         "the tasks whose title, description, acceptance criteria or notes hold every word, best match first",
-        agent_tasks.search,
+        _in_tasks("search"),
         ("query", "hits"),
         (0, 1, 2, 3),
     )
@@ -763,7 +793,7 @@ def _parser() -> argparse.ArgumentParser:
         task_verbs,
         "show",
         "one task: its lane, dependencies and what it still waits on, pull requests and legal moves",
-        agent_tasks.show,
+        _in_tasks("show"),
         TASK_KEYS,
         (0, 2, 3, 4),
     )
@@ -773,7 +803,7 @@ def _parser() -> argparse.ArgumentParser:
         task_verbs,
         "moves",
         "every column a task may move to, each allowed or refused to the agent with its reason and skill",
-        agent_tasks.moves,
+        _in_tasks("moves"),
         ("task", "lane", "moves"),
         (0, 2, 3, 4),
     )
@@ -782,46 +812,49 @@ def _parser() -> argparse.ArgumentParser:
         task_verbs,
         "move",
         "move a task to a column as the agent; a refusal is the guard's verdict with its reason and skill; several tasks move in one call",
-        agent_tasks.move,
+        _in_tasks("move"),
         MOVE_KEYS,
         (0, 1, 2, 3, 4),
     )
     move.add_argument("task", nargs="+", help="each task's key (`PROJ-45`); several move in one call")
     move.add_argument("to", help="the column's state id (`review`), as `task moves` lists")
-    agent_tasks.writer_flags(move)
+    agent_flags.writer_flags(move)
     claim = leaf(
         task_verbs,
         "claim",
         "claim a task for a session: it moves to In Progress holding that session; refused when another session holds it or this one holds another",
-        agent_tasks.task_claim,
+        _in_tasks("task_claim"),
         CLAIM_KEYS,
         (0, 1, 2, 3, 4),
     )
     claim.add_argument("task", help="the task's key (`PROJ-45`)")
-    agent_tasks.writer_flags(claim)
+    agent_flags.writer_flags(claim)
     park = leaf(
         task_verbs,
         "park",
         "pause a task on one typed reason that picks the lane: --until-task or --until waits, --operator needs attention",
-        agent_tasks.task_park,
+        _in_tasks("task_park"),
         LIFECYCLE_KEYS,
         (0, 1, 2, 3, 4),
     )
     park.add_argument("task", help="the task's key (`PROJ-45`)")
     park.add_argument(
-        "--until-task", action="append", default=[], help="a task that must reach Done first, or TASK-N#K for one of its open criteria (repeatable)"
+        "--until-task",
+        action="append",
+        default=[],
+        help="a task that must reach Done first, or TASK-N#K for one of its open criteria (repeatable)",
     )
     park.add_argument(
         "--until", action="append", default=[], help="a condition a check can observe, as YAML or JSON (repeatable)"
     )
     park.add_argument("--operator", help="what only the operator can do or decide")
     park.add_argument("--comment", help="what is outstanding, recorded with the move")
-    agent_tasks.writer_flags(park)
+    agent_flags.writer_flags(park)
     review = leaf(
         task_verbs,
         "review",
         "move a task to Review with its evidence; the configured rules judge the record, a refusal names the rule and its skill",
-        agent_tasks.task_review,
+        _in_tasks("task_review"),
         LIFECYCLE_KEYS,
         (0, 1, 2, 3, 4),
     )
@@ -834,7 +867,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     review.add_argument("--summary", help="the task's final summary")
     review.add_argument("--comment", help="a comment recorded with the move")
-    agent_tasks.writer_flags(review)
+    agent_flags.writer_flags(review)
     trace = leaf(
         task_verbs,
         "trace",
@@ -849,11 +882,11 @@ def _parser() -> argparse.ArgumentParser:
         task_verbs,
         "create",
         "open a task, whole, in one write, in the board's first lane or the one --status names, and return its new id",
-        agent_tasks.task_create,
+        _in_tasks("task_create"),
         ("task",),
         (0, 1, 2, 3),
     )
-    agent_tasks.writer_flags(create)
+    agent_flags.writer_flags(create)
     create.add_argument("title", nargs="?", help="the task's title; omit with --batch")
     create.add_argument(
         "--batch",
@@ -861,16 +894,16 @@ def _parser() -> argparse.ArgumentParser:
         help="a JSON list of task specs (`title`, details, optional `ref`) to create in one write, `-` for stdin; "
         "a dependency `ref:<label>` names the earlier spec with that `ref`",
     )
-    agent_tasks.create_flags(create)
+    agent_flags.create_flags(create)
     edit = leaf(
         task_verbs,
         "edit",
         "replace the fields given on a task in one write and return those that changed; refused whole when a field's value has changed since it was read",
-        agent_tasks.task_edit,
+        _in_tasks("task_edit"),
         ("task", "changed"),
         (0, 1, 2, 3, 4),
     )
-    agent_tasks.writer_flags(edit)
+    agent_flags.writer_flags(edit)
     edit.add_argument("task", help="the task's key (`PROJ-45`)")
     edit.add_argument(
         "--editor",
@@ -935,33 +968,33 @@ def _parser() -> argparse.ArgumentParser:
         task_verbs,
         "profile",
         "set the task's agent profile, refused when the board's writer refuses it",
-        agent_tasks.task_assign,
+        _in_tasks("task_assign"),
         ("task", "profile", "changed"),
         (0, 1, 2, 3, 4),
     )
-    agent_tasks.writer_flags(assign)
+    agent_flags.writer_flags(assign)
     assign.add_argument("task", help="the task's key (`PROJ-45`)")
     assign.add_argument("profile", help="the agent profile it is routed to (`@agent-standard-high`); blank clears")
     archive = leaf(
         task_verbs,
         "archive",
         "move tasks from any lane to the board's archive in one write, recording the reason when given",
-        agent_tasks.task_archive,
+        _in_tasks("task_archive"),
         ("archived",),
         (0, 1, 2, 3, 4),
     )
-    agent_tasks.writer_flags(archive)
+    agent_flags.writer_flags(archive)
     archive.add_argument("task", nargs="+", help="each task's key (`PROJ-45`); several archive in one call")
     archive.add_argument("--reason", default="", help="why it is archived, recorded as a comment on the task")
     verdict = leaf(
         task_verbs,
         "verdict",
         "record a post-merge check's verdict as a comment on its task; a verdict is final",
-        agent_tasks.task_verdict,
+        _in_tasks("task_verdict"),
         ("task", "check", "verdict"),
         (0, 1, 2, 3, 4),
     )
-    agent_tasks.writer_flags(verdict)
+    agent_flags.writer_flags(verdict)
     verdict.add_argument("task", help="the task whose `## Post-merge Checks` block declares the check")
     verdict.add_argument("check", help="the check's id")
     verdict.add_argument("verdict", choices=("pass", "miss"), help="`pass`, or `miss` with --fix")
@@ -971,11 +1004,11 @@ def _parser() -> argparse.ArgumentParser:
         task_verbs,
         "rate",
         "set a task's pass/fail rating: each change is kept and the latest one counts",
-        agent_tasks.task_rate,
+        _in_tasks("task_rate"),
         ("task", "verdict", "reason", "changes"),
         (0, 1, 2, 3),
     )
-    agent_tasks.writer_flags(rate)
+    agent_flags.writer_flags(rate)
     rate.add_argument("task", help="the task's key (`PROJ-45`)")
     rate.add_argument(
         "verdict", choices=("pass", "fail", "clear"), help="`pass`, `fail`, or `clear` to drop the rating"
@@ -985,31 +1018,31 @@ def _parser() -> argparse.ArgumentParser:
         task_verbs,
         "miss",
         "file the fix task for a missed post-merge check and record the MISS verdict naming it, both or neither",
-        agent_tasks.task_miss,
+        _in_tasks("task_miss"),
         ("task", "check", "verdict", "fix"),
         (0, 1, 2, 3, 4),
     )
-    agent_tasks.writer_flags(miss)
+    agent_flags.writer_flags(miss)
     miss.add_argument("task", help="the task whose `## Post-merge Checks` block declares the check")
     miss.add_argument("check", help="the check's id")
     miss.add_argument("--evidence", default="", help="what the criterion showed, recorded with the verdict")
     miss.add_argument("--title", required=True, help="the fix task's title")
-    agent_tasks.create_flags(miss)
+    agent_flags.create_flags(miss)
     restore = leaf(
         task_verbs,
         "restore",
         "return an archived task to the board's tasks, unchanged; refused when its number is open or its file name is taken",
-        agent_tasks.task_restore,
+        _in_tasks("task_restore"),
         ("task",),
         (0, 1, 2, 3),
     )
-    agent_tasks.writer_flags(restore)
+    agent_flags.writer_flags(restore)
     restore.add_argument("task", help="the archived or retired task's key (`PROJ-45`)")
     retire = leaf(
         task_verbs,
         "retire",
         "take a finished task off the board into the history store, kept byte-for-byte; refused when it is open",
-        agent_tasks.task_retire,
+        _in_tasks("task_retire"),
         ("task",),
         (0, 1, 2, 3),
     )
@@ -1018,7 +1051,7 @@ def _parser() -> argparse.ArgumentParser:
         task_verbs,
         "retired",
         "the retired tasks the history store keeps, or the one named, each with its file name and text",
-        agent_tasks.task_retired,
+        _in_tasks("task_retired"),
         ("tasks",),
         (0, 2, 3),
     )
@@ -1028,7 +1061,7 @@ def _parser() -> argparse.ArgumentParser:
         task_verbs,
         "import-retired",
         "keep retired task files a client held in the history store; the same file again is accepted",
-        agent_tasks.task_import_retired,
+        _in_tasks("task_import_retired"),
         ("tasks",),
         (0, 1, 2, 3),
     )
@@ -1037,7 +1070,7 @@ def _parser() -> argparse.ArgumentParser:
         task_verbs,
         "complete",
         "move a Done task to the board's completed tasks; refused when it is not Done",
-        agent_tasks.task_complete,
+        _in_tasks("task_complete"),
         ("task",),
         (0, 1, 2, 3, 4),
     )
@@ -1046,11 +1079,11 @@ def _parser() -> argparse.ArgumentParser:
         task_verbs,
         "checkpoint-ac",
         "check one Acceptance Criterion and record its evidence in one write; refused when the task lacks it",
-        agent_tasks.task_checkpoint_ac,
+        _in_tasks("task_checkpoint_ac"),
         ("task", "criterion", "changed"),
         (0, 1, 2, 3, 4),
     )
-    agent_tasks.writer_flags(checkpoint)
+    agent_flags.writer_flags(checkpoint)
     checkpoint.add_argument("task", help="the task's key (`PROJ-45`)")
     checkpoint.add_argument("criterion", type=int, help="the criterion's number (`2` for `#2`)")
     checkpoint.add_argument("evidence", help="what shows it holds, recorded as `Verified AC #N: <evidence>`")
@@ -1115,7 +1148,7 @@ def _parser() -> argparse.ArgumentParser:
         milestone_verbs,
         "list",
         "every open milestone with its title, outcome, specs and ADRs",
-        agent_tasks.milestone_list,
+        _in_tasks("milestone_list"),
         ("milestones",),
         (0, 2, 3),
     )
@@ -1124,7 +1157,7 @@ def _parser() -> argparse.ArgumentParser:
         milestone_verbs,
         "show",
         "one open milestone: its title, outcome, specs, ADRs, retro and whole description",
-        agent_tasks.milestone_show,
+        _in_tasks("milestone_show"),
         MILESTONE_KEYS,
         (0, 2, 3, 4),
     )
@@ -1133,7 +1166,7 @@ def _parser() -> argparse.ArgumentParser:
         milestone_verbs,
         "add",
         "open a milestone and return its new id",
-        agent_tasks.milestone_add,
+        _in_tasks("milestone_add"),
         ("milestone",),
         (0, 1, 2, 3),
     )
@@ -1142,7 +1175,7 @@ def _parser() -> argparse.ArgumentParser:
         milestone_verbs,
         "edit",
         "replace the fields given on an open milestone and return those that changed",
-        agent_tasks.milestone_edit,
+        _in_tasks("milestone_edit"),
         ("milestone", "changed"),
         (0, 1, 2, 3, 4),
     )
@@ -1161,7 +1194,7 @@ def _parser() -> argparse.ArgumentParser:
         milestone_verbs,
         "archive",
         "move an open milestone to the board's archive",
-        agent_tasks.milestone_archive,
+        _in_tasks("milestone_archive"),
         ("milestone",),
         (0, 1, 2, 3, 4),
     )
@@ -1172,7 +1205,7 @@ def _parser() -> argparse.ArgumentParser:
         doc_verbs,
         "list",
         "every open doc with its title, type, dates and path",
-        agent_tasks.doc_list,
+        _in_tasks("doc_list"),
         ("docs",),
         (0, 2, 3),
     )
@@ -1181,24 +1214,24 @@ def _parser() -> argparse.ArgumentParser:
         doc_verbs,
         "show",
         "one open doc: its title, type, dates, path and whole body",
-        agent_tasks.doc_show,
+        _in_tasks("doc_show"),
         DOC_KEYS,
         (0, 2, 3, 4),
     )
     doc_show.add_argument("doc", help="the doc's id (`doc-116`), as `doc list` shows it")
     doc_show.add_argument("--json", action="store_true", help="accepted for clarity: every verb prints JSON")
     doc_create = leaf(
-        doc_verbs, "create", "file a doc and return its new id", agent_tasks.doc_create, ("doc",), (0, 1, 2, 3)
+        doc_verbs, "create", "file a doc and return its new id", _in_tasks("doc_create"), ("doc",), (0, 1, 2, 3)
     )
     doc_create.add_argument("title", help="the doc's title")
     doc_create.add_argument("--folder", help="a folder under the board's docs (`specs`); default: docs itself")
     doc_create.add_argument("--task", help="also link the new doc in this task's documentation (`PROJ-45`)")
-    agent_tasks.writer_flags(doc_create)
+    agent_flags.writer_flags(doc_create)
     doc_update = leaf(
         doc_verbs,
         "update",
         "replace the fields given on an open doc and return those that changed",
-        agent_tasks.doc_update,
+        _in_tasks("doc_update"),
         ("doc", "changed"),
         (0, 1, 2, 3, 4),
     )
@@ -1211,7 +1244,7 @@ def _parser() -> argparse.ArgumentParser:
         doc_verbs,
         "archive",
         "move an open doc to the board's archive",
-        agent_tasks.doc_archive,
+        _in_tasks("doc_archive"),
         ("doc",),
         (0, 1, 2, 3, 4),
     )
@@ -1220,7 +1253,7 @@ def _parser() -> argparse.ArgumentParser:
         doc_verbs,
         "restore",
         "return an archived doc to the board's docs, unchanged; refused when it is open or its destination exists",
-        agent_tasks.doc_restore,
+        _in_tasks("doc_restore"),
         ("doc",),
         (0, 1, 2, 3),
     )
@@ -1347,7 +1380,7 @@ def _parser() -> argparse.ArgumentParser:
         "run",
         "run the argv `[project.commands]` maps NAME to, offline, in this directory; its output goes to stderr. "
         "An unknown NAME exits 4 with a `fallback`: do the step as the project's AGENTS.md says",
-        agent_commands.run,
+        _later("starpulse.cli.agent_commands", "run"),
         ("name", "argv", "exit", "seconds", "ok"),
         (0, 1, 2, 3, 4),
         reads_server=False,

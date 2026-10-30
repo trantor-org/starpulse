@@ -42,3 +42,20 @@ def test_a_read_verb_leaves_the_server_and_database_layer_unimported(verb: list[
     done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
 
     assert done.stdout.strip().splitlines()[-1] == "[]"
+
+
+@pytest.mark.parametrize("argv", [["task", "create", "--help"], ["migrate", "--help"]])
+def test_help_imports_neither_the_store_nor_the_board_assembly(argv: list[str]) -> None:
+    code = (
+        "import sys\n"
+        "from starpulse.__main__ import main\n"
+        "try:\n"
+        f"    main({argv!r})\n"
+        "except SystemExit:\n"
+        "    pass\n"
+        "print(sorted(name for name in ('sqlalchemy', 'alembic', 'starpulse.runtime.assembly') if name in sys.modules))\n"
+    )
+
+    done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
+
+    assert done.stdout.strip().splitlines()[-1] == "[]"
