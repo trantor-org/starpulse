@@ -9,6 +9,7 @@ for good: its claim is released at once, before the TTL, and the comment names t
 from __future__ import annotations
 
 import json
+import logging
 import threading
 import time
 from collections.abc import Callable, Iterable, Mapping
@@ -31,6 +32,7 @@ DEFAULT_TTL = 30 * 60
 """Seconds a claim lives without an Event by its session: `[board] claim_ttl`."""
 DEFAULT_TRANSCRIPTS = "~/.claude/projects"
 """Where Claude Code writes each session's transcript, read for a terminal halt: `[board] transcripts`."""
+logger = logging.getLogger(__name__)
 ACTOR = "starpulse"
 WRITER = "claim-ttl"
 
@@ -85,6 +87,16 @@ def _halt_note(session: str, at: float, text: str) -> str:
     return f"Released: session {session}'s transcript ends in a terminal halt at {stamp}: {text}"
 
 
+def _announce(board: Board, task: str) -> None:
+    """Runs the board's `released` notice for a task the sweep released, so a session starts on it; a raise is logged."""
+    if board.released is None:
+        return
+    try:
+        board.released(task)
+    except Exception:
+        logger.exception("claim-ttl: the released notice for %s failed", task)
+
+
 def sweep(
     board: Board,
     store: EventStore,
@@ -132,6 +144,7 @@ def sweep(
             store.append("task", row["id"], store.head("task", row["id"]), events, at=now)
             released.append(row["id"])
             del expiries[row["id"]]
+            _announce(board, row["id"])
     return released
 
 
