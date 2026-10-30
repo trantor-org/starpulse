@@ -62,17 +62,26 @@ def watch_supervisor() -> None:  # pragma: no mutate block — process boundary
 
 
 def hold(stop: threading.Event, reload: Callable[[], None]) -> None:  # pragma: no mutate block — process boundary
-    """Block until `SIGTERM`, running `reload` for each `SIGHUP`, one at a time."""
-    reloads = threading.Event()
-    signal.signal(signal.SIGTERM, lambda *_: (stop.set(), reloads.set()))
-    signal.signal(signal.SIGHUP, lambda *_: reloads.set())
-    watch_supervisor()
-    while True:
-        reloads.wait()
-        reloads.clear()
-        if stop.is_set():
-            return
-        reload()
+    """Block until `SIGTERM`, running `reload` for each `SIGHUP`, one at a time.
+
+    The wait is a read of the signal wakeup pipe, not an `Event`: a handler runs between two bytecodes of the main
+    thread, and `Event.set` takes a lock that a wait interrupted there still holds."""
+    woken, wake = os.pipe()
+    os.set_blocking(wake, False)
+    signal.set_wakeup_fd(wake)
+    signal.signal(signal.SIGTERM, lambda *_: stop.set())
+    signal.signal(signal.SIGHUP, lambda *_: None)
+    try:
+        watch_supervisor()
+        while True:
+            os.read(woken, 4096)
+            if stop.is_set():
+                return
+            reload()
+    finally:
+        signal.set_wakeup_fd(-1)
+        os.close(woken)
+        os.close(wake)
 
 
 def _term_at_eof() -> None:  # pragma: no mutate block — process boundary
