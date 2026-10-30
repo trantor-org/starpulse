@@ -1,6 +1,7 @@
 // The Admin's Preview card: a small Star Map and a Kanban card drawn at the chosen scale, density and motion in the theme's tokens, so a
 // pack and a background are judged on the page's own shapes. The canvas reads the tokens at each frame; Motion off draws one still frame.
 import { useEffect, useRef } from "react";
+import { useViewActive } from "../../../shared/Kept";
 import { labelPx } from "../adminPrefs";
 import { easeO, rgba } from "../../../render/draw";
 import { BUILTIN, SLATE, build } from "./scheme";
@@ -115,7 +116,7 @@ function drawPreview(c: HTMLCanvasElement, scale: number, t: number) {
 }
 
 export function Preview({ scale, compact, motion }: { scale: number; compact: boolean; motion: boolean }) {
-  const canvas = useRef<HTMLCanvasElement>(null);
+  const canvas = useRef<HTMLCanvasElement>(null), active = useViewActive();
   useEffect(() => {
     const c = canvas.current;
     if (!c) return;
@@ -126,7 +127,7 @@ export function Preview({ scale, compact, motion }: { scale: number; compact: bo
       draw();
       raf = requestAnimationFrame(loop);
     };
-    if (motion) loop();
+    if (motion && active) loop();
     else draw();
     // the card's width also changes when the navigator folds, not only with the window; a theme change repaints the still
     const watch = new ResizeObserver(draw);
@@ -137,7 +138,7 @@ export function Preview({ scale, compact, motion }: { scale: number; compact: bo
       watch.disconnect();
       window.removeEventListener("sp:theme", draw);
     };
-  }, [scale, motion]);
+  }, [scale, motion, active]);
   return (
     <section className="card pvw">
       <h2>Preview</h2>

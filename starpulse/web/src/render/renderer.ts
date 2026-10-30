@@ -111,8 +111,14 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   let away = false, timer = 0, fanTimer = 0, stopped = false, saveT = 0, tick = 0;
   /** The snapshot after a resync is still to come; then the next Board frame places the phase branches and dots as they stand, not from where they last drew. */
   let resynced = false, replace = false;
-  // a delta behind another view skips the Star Map layout nothing draws, and lays it out when the map is shown or asked for
-  const relay = whenShown(() => layout(true)), publishLater = staged();
+  // a snapshot or delta behind another view skips the Star Map layout nothing draws, and lays it out when the map is shown or asked for
+  let unlaid = false;
+  const relay = whenShown(() => {
+    const first = unlaid;
+    unlaid = false;
+    layout(!first);
+    if (first) restoreFocus();
+  }), publishLater = staged();
   // The stream the page reads its snapshot and every change after it from.
   let stream: { close(): void } | null = null, last = 0;
   // The open Ledger's rows and the stream that feeds them: the snapshot carries none, so they are held here and put back into every sky `merge` builds.
@@ -287,6 +293,12 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     if (fixture || !S) return;
     const open = path[path.length - 1].kind === "machine" ? topFlow(S.tree.subs, path) : null;
     replaceSearch(location, levelSearch(location.search, { open, focus: pickedRow }), (url) => history.replaceState(null, "", url));
+  }
+  /** The address restores the row picked out, if the level just laid out still has it. */
+  function restoreFocus() {
+    const named = levelParams(location.search).focus;
+    pickedRow = named && scene?.top?.rows.some((r) => r.name === named) ? named : null;
+    syncUrl();
   }
   const setFocus = (name: string | null) => {
     pickedRow = name;
@@ -485,12 +497,9 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       if (!fixture && retired(location.pathname, location.hash)) history.replaceState(null, "", "/" + viewSearch(location.search, viewOf(location.search), prefs().view));
       keep("fv.path", path);
     }
-    if (first) layout(false);
-    else relay.request();
+    if (first) unlaid = true;
+    relay.request();
     if (first) {
-      const named = levelParams(location.search).focus;
-      pickedRow = named && scene?.top?.rows.some((r) => r.name === named) ? named : null; // the address restores the row picked out, if this level still has it
-      syncUrl();
       // Away-first open (Kanban/DAGs) never paints the canvas, so HUD cards/dagData cannot wait on first paint.
       void loadHudViews().then(() => { if (!stopped) publish(); });
     }
