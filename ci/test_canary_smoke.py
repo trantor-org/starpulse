@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import sys
-import time
 from pathlib import Path
 
 import canary_smoke
@@ -129,19 +128,36 @@ class Serve:
         return None
 
 
+class StepClock:
+    """Stands for `time` on a clock only `sleep` and the test move, so a loaded host stretches no bound."""
+
+    now = 0.0
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.now += seconds
+
+
 def test_hold_runs_the_board_check_inside_its_window(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    clock = StepClock()
+    monkeypatch.setattr(canary_smoke, "time", clock)
     monkeypatch.setattr(canary_smoke, "HOLD", 0.2)
     monkeypatch.setattr(canary_smoke, "SAMPLE", 0.05)
     monkeypatch.setattr(canary_smoke, "live_children", lambda parent, log: {"web": 10})
     monkeypatch.setattr(canary_smoke, "check", lambda port, parent, expected, log, scheme: None)
-    start = time.monotonic()
     ran: list[float] = []
 
-    problem = canary_smoke.hold(Serve(), 1, {"web"}, tmp_path / "log", during=lambda: ran.append(time.monotonic()))
+    def during() -> None:
+        ran.append(clock.now)
+        clock.now += 0.15  # the board check takes most of the window
+
+    problem = canary_smoke.hold(Serve(), 1, {"web"}, tmp_path / "log", during=during)
 
     assert problem is None
-    assert ran and ran[0] - start < 0.1
-    assert time.monotonic() - start < 0.4
+    assert ran == [0.0]
+    assert clock.now < 0.3  # its time counts toward the window; the window is not held again after it
 
 
 def test_hold_reports_a_restart_after_the_board_check(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -36,10 +36,38 @@ def test_a_read_after_a_write_includes_the_change_the_write_published() -> None:
     assert served.rev == feed.rev
 
 
+class _QuietFeedWait:
+    """Stands for `feed.revised` with no change published: once `go` is set the first wait ends on its timeout, the
+    clock having moved that long, so the test reads no wall clock a loaded host could stretch."""
+
+    def __init__(self, clock: list[float]) -> None:
+        self.go = threading.Event()
+        self.waited: list[float] = []
+        self._clock = clock
+
+    def wait(self, timeout: float) -> bool:
+        if not self.waited:
+            self.go.wait(5)
+            self._clock[0] += timeout
+        self.waited.append(timeout)
+        if len(self.waited) > 1:
+            threading.Event().wait(5)  # a second wait would be a second rebuild: end the test first
+        return False
+
+    def clear(self) -> None:
+        pass
+
+
 def test_the_background_rebuilds_before_the_ttl_so_no_request_finds_it_expired() -> None:
-    _, cache = _cache(ttl_s=0.4, settle_s=0)
+    clock = [0.0]
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
+    feed.put(task("PROJ-1", "To Do"))
+    cache = SnapshotCache(feed, ttl_s=0.4, settle_s=0, clock=lambda: clock[0])
+    quiet = _QuietFeedWait(clock)
+    feed.revised = quiet  # type: ignore[assignment]
     first = cache.get()
-    deadline = time.monotonic() + 5
+    quiet.go.set()
+    deadline = time.monotonic() + 30
 
     while cache._held is first and time.monotonic() < deadline:
         time.sleep(0.02)
