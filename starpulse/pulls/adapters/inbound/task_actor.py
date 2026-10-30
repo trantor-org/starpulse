@@ -525,7 +525,8 @@ class TaskActor:
             self._derive(name, observed)
 
     def _derive(self, name: str, observed: float) -> None:
-        """Write the first move the task's lane waits on whose fact holds."""
+        """Write the first move the task's lane waits on whose fact holds. A move already tried on these facts, or one the
+        board refuses, leaves the next fact its turn: a Waiting task whose return to Review is refused still reaches Ready."""
         agent = self._feed.task(name)
         if agent is None:
             return
@@ -537,15 +538,16 @@ class TaskActor:
                 continue
             evidence, comment = held
             sent = (agent["state"], event, evidence)
-            if self._tried.get(name) != sent:
-                self._tried[name] = sent
-                stale = self._stale(agent) if fact.startswith("deps_done") else {}
-                self._write(name, target, comment, observed, source=agent["state"], stale=stale)
-            return
+            if self._tried.get(name) == sent:
+                continue
+            self._tried[name] = sent
+            stale = self._stale(agent) if fact.startswith("deps_done") else {}
+            if self._write(name, target, comment, observed, source=agent["state"], stale=stale):
+                return
 
     def _write(
         self, name: str, target: str, comment: str, observed: float, source: str, stale: Mapping[str, Any] = {}
-    ) -> None:
+    ) -> bool:
         written = self._apply(name, {"status": target, **stale}, comment)
         if written.ok:
             self._landed(self._clock() - observed)
@@ -556,7 +558,7 @@ class TaskActor:
                 self._notice(self._released, name, "was released but its holder was not told")
             if self._closed and target == roles.done:
                 self._notice(self._closed, name, "was closed but the board was not told")
-            return
+            return True
         logger.warning("task actor: %s was not moved to %s: %s", name, target, written.output)
         if target == self._feed.roles.ready:
             if written.lint:
@@ -565,6 +567,7 @@ class TaskActor:
                 self._park(name, written.output)
         with self._metrics:
             self._refusals += 1
+        return False
 
     def _count_error_passes(self, name: str, evaluated: list[dict[str, Any]]) -> None:
         """Count the passes whose Start Criteria stayed in error; the second in a row re-gates the task."""
