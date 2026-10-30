@@ -6,6 +6,7 @@ from collections.abc import Callable, Iterator
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from sqlalchemy import create_engine
@@ -418,6 +419,27 @@ def test_a_pin_hold_comments_the_pull_request_and_pin_it_waits_on_once(
 
     assert until(lambda: board.moved() == [("TASK-2", "ready")])
     assert len(board.comments()) == 1
+
+
+def test_a_gated_task_is_released_while_another_tasks_evaluation_is_still_running(
+    store: PullStore, stop: threading.Event
+) -> None:
+    board = Board(BoardFeed(), task("TASK-1", "Waiting", description=GATED), task("TASK-2", "Waiting", description=GATED))
+    answer = Criteria("met")
+    hung = threading.Event()
+
+    def evaluate(name: str, description: str) -> list[dict[str, Any]]:
+        if name == "TASK-1":  # a prom query that has not answered; TASK-2 sorts after it
+            hung.wait(5)
+        return answer(name, description)
+
+    try:
+        running(board, store, stop, evaluate=evaluate)
+
+        assert until(lambda: ("TASK-2", "ready") in board.moved())
+        assert ("TASK-1", "ready") not in board.moved()
+    finally:
+        hung.set()
 
 
 def test_a_review_task_whose_pr_merged_while_the_server_was_down_moves_on_start(

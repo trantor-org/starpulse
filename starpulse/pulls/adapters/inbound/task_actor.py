@@ -30,6 +30,7 @@ import queue
 import threading
 import time
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections.abc import Callable, Mapping, Sequence
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
@@ -73,6 +74,8 @@ HANDOFF_METRIC = "starpulse_task_actor_handoff_seconds"
 SLOW_BUCKETS_S = (0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0)
 #: Seconds the event loop waits for a change before it looks at its stop flag.
 _POLL_S = 0.5
+#: Start Criteria evaluated at once: each is a subprocess, so the pass is bounded rather than one thread per gated task.
+_EVALUATIONS = 8
 
 
 def _exit_links(machines: Mapping[str, Mapping[str, Any]]) -> dict[str, list[Mapping[str, Any]]]:
@@ -360,20 +363,27 @@ class TaskActor:
                 for name in sorted(gated)
                 if name not in self._results or now - self._results[name][0] >= self._fresh_s
             ]
-        for name in due:
-            try:
-                evaluated = self._evaluate(name, gated[name])
-            except Exception as error:  # an evaluator returns errors as results; this one raised
-                logger.warning("task actor: cannot evaluate the Start Criteria of %s: %s", name, error)
-                evaluated = [{"id": each["id"], "status": "error"} for each in criteria.authored(gated[name])]
-            statuses = tuple((str(each["id"]), str(each["status"])) for each in evaluated)
-            observed = self._clock()
-            with self._lock:
-                before = self._results.get(name)
-                self._results[name] = (observed, statuses)
-                if before is None or before[1] != statuses:
-                    self._derive(name, observed)
-                self._count_error_passes(name, evaluated)
+        with ThreadPoolExecutor(max_workers=_EVALUATIONS) as pool:  # a slow task must not hold up the ones sorted after it
+            running = {pool.submit(self._evaluated, name, gated[name]): name for name in due}
+            for finished in as_completed(running):
+                self._keep_result(running[finished], finished.result())
+
+    def _evaluated(self, name: str, description: str) -> list[dict[str, Any]]:
+        try:
+            return self._evaluate(name, description)
+        except Exception as error:  # an evaluator returns errors as results; this one raised
+            logger.warning("task actor: cannot evaluate the Start Criteria of %s: %s", name, error)
+            return [{"id": each["id"], "status": "error"} for each in criteria.authored(description)]
+
+    def _keep_result(self, name: str, evaluated: list[dict[str, Any]]) -> None:
+        statuses = tuple((str(each["id"]), str(each["status"])) for each in evaluated)
+        observed = self._clock()
+        with self._lock:
+            before = self._results.get(name)
+            self._results[name] = (observed, statuses)
+            if before is None or before[1] != statuses:
+                self._derive(name, observed)
+            self._count_error_passes(name, evaluated)
 
     def _run(self, stop: threading.Event) -> None:
         self._feed.wait_replayed()
