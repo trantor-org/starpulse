@@ -279,6 +279,10 @@ class Board:
     released: Callable[[str], None] | None = None
     """Tells whoever held a task that the task actor moved it from Waiting to Ready, given its id, so a task that was
     parked mid-work is resumed whatever admits Ready tasks; a raise is logged and the move stands. None tells no one."""
+    delivered: Callable[[str, str], None] | None = None
+    """Tells whoever holds a task that its delivery run finished, given its id and the run's verdict (`green`, or
+    `<red|blocked> <step>`), so the session resumes on the verdict without waiting on the run; a raise is logged. None
+    tells no one."""
     closed: Callable[[str], None] | None = None
     """Tells the board that the task actor moved a task to Done, given its id, so it can file what follows the close; a
     raise is logged and the close stands. None tells no one."""

@@ -104,6 +104,7 @@ _SETTINGS = {
     "unfinished",
     "parked",
     "released",
+    "delivered",
     "closed",
     "validate",
     "python_path",
@@ -1214,14 +1215,15 @@ def _holds(command: object, base: Path) -> Callable[[str], list[str]] | None:
 
 
 def _notice(command: object, base: Path) -> Callable[[str], None] | None:
-    """The `parked`, `released` or `closed` command, run in `base` with `{id}` replaced by the task's id, after the task
-    actor moves a task from the working lane to Waiting, from Waiting to Ready or to Done. A nonzero exit raises with what the command said."""
+    """The `parked`, `released`, `delivered` or `closed` command, run in `base` with `{id}` replaced by the task's id, after
+    the task actor moves a task from the working lane to Waiting, from Waiting to Ready, sees its delivery finish (with
+    `{verdict}` replaced by the run's verdict) or moves it to Done. A nonzero exit raises with what the command said."""
     if not command:
         return None
     parts = shlex.split(str(command))
 
-    def notice(task: str) -> None:
-        argv = [part.replace("{id}", task) for part in parts]
+    def notice(task: str, verdict: str = "") -> None:
+        argv = [part.replace("{id}", task).replace("{verdict}", verdict) for part in parts]
         done = subprocess.run(argv, cwd=base, capture_output=True, text=True, timeout=HOOK_TIMEOUT, check=False)
         if done.returncode:
             said = done.stderr.strip() or done.stdout.strip() or "printed nothing"
@@ -1283,6 +1285,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
                 "unfinished": _holds(settings.get("unfinished"), base),
                 "parked": _notice(settings.get("parked"), base),
                 "released": _notice(settings.get("released"), base),
+                "delivered": _notice(settings.get("delivered"), base),
                 "closed": _notice(settings.get("closed"), base),
                 "edit": _editor(root, config.statuses, gate, link, roles.attention),
                 "archive": _archiver(root, config.statuses, roles, gate),

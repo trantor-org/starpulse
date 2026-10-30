@@ -11,7 +11,11 @@ from typing import Any
 import pytest
 from sqlalchemy import create_engine
 from starpulse.board.board_feed import BoardFeed
-from starpulse.contracts.adapters import BoardTask
+from starpulse.board.machine_tasks import MachineTasks
+from starpulse.contracts.adapters import BoardTask, MachineEvent
+from starpulse.machine_engine.adapters.machine_loader import load_machine
+from starpulse.machine_engine.model.snapshot import describe
+from starpulse.machine_engine.model.transitions import board_machine
 from starpulse.event_log.event_log import Entry, EventLog
 from starpulse.event_log.readmodel.projector import Projector
 from starpulse.event_log.readmodel.read_model import ReadModel
@@ -24,7 +28,7 @@ from starpulse.runtime.adapter_kit import task
 from starpulse.runtime.assembly import assemble
 from starpulse.runtime.config import load
 
-from tests.machines import MACHINES, ROLES
+from tests.machines import MACHINES, ROLES, STATUSES
 from tests.task_actor_kit import (
     CHILD,
     CHILD_PR,
@@ -235,7 +239,11 @@ def test_a_needs_attention_task_whose_pr_merged_with_work_unfinished_returns_to_
 ) -> None:
     waits = {**WAITS, "needs_attention": {"pr_merged_unfinished": "MERGED_UNFINISHED", "pr_merged": "MERGED"}}
     moves = {**MOVES, ("needs_attention", "MERGED"): "done", ("needs_attention", "MERGED_UNFINISHED"): "ready"}
-    unfinished = {"TASK-1": ["acme/starpulse has no merged pull request"], "TASK-2": [], "TASK-3": ["criterion #2 open"]}
+    unfinished = {
+        "TASK-1": ["acme/starpulse has no merged pull request"],
+        "TASK-2": [],
+        "TASK-3": ["criterion #2 open"],
+    }
     board = Board(
         BoardFeed(),
         task("TASK-1", "Needs attention", references=(PR_ONE,)),
@@ -399,9 +407,7 @@ def test_a_pin_bump_rule_holds_the_dependent_until_the_pin_bump_merge_projects(
     assert "\nstarpulse_task_actor_pin_held 0\n" in actor.exposition()
 
 
-def test_a_pin_hold_comments_the_pull_request_and_pin_it_waits_on_once(
-    store: PullStore, stop: threading.Event
-) -> None:
+def test_a_pin_hold_comments_the_pull_request_and_pin_it_waits_on_once(store: PullStore, stop: threading.Event) -> None:
     board = Board(
         BoardFeed(),
         task("TASK-1", "Done", references=(CHILD_PR,)),
@@ -460,7 +466,10 @@ def test_criteria_move_a_gated_task_both_ways_each_time_the_evaluators_result_go
     board = Board(BoardFeed(), task("TASK-1", "Waiting", description=GATED), task("TASK-2", "Waiting"))
     evaluate = Criteria("unmet")
     running(board, store, stop, evaluate=evaluate, fresh_s=0.05)
-    assert ("TASK-1", "ready") not in board.moved()  # the second task has no criteria and no dependency: released at once
+    assert (
+        "TASK-1",
+        "ready",
+    ) not in board.moved()  # the second task has no criteria and no dependency: released at once
 
     evaluate.status = "met"
 
@@ -539,7 +548,19 @@ def test_a_store_save_moves_the_task_while_the_projection_is_still_blocked(
     feed = BoardFeed(roles=ROLES, machines=MACHINES)
     board = Board(feed, task("TASK-1", "Review", references=(PR_ONE,)))
     store.save([pull(1, state="OPEN")])
-    delivery = SimpleNamespace(edit=board.edit, waits=WAITS, evaluate=None, holds=None, read=None, unfinished=None, create=None, parked=None, closed=None, released=None)
+    delivery = SimpleNamespace(
+        edit=board.edit,
+        waits=WAITS,
+        evaluate=None,
+        holds=None,
+        read=None,
+        unfinished=None,
+        create=None,
+        parked=None,
+        closed=None,
+        released=None,
+        delivered=None,
+    )
     monkeypatch.setattr(server.shutil, "which", lambda name: name)
     monkeypatch.setattr(server, "moves_of", lambda machine: MOVES)
     monkeypatch.setattr(server, "PullRequests", _BlockedProjection)
@@ -572,7 +593,19 @@ def test_a_merge_of_a_pr_added_after_startup_moves_the_task_to_done(
     feed = BoardFeed(roles=ROLES, machines=MACHINES, read_model=ReadModel(engine))
     board = Board(feed)
     store.save([pull(1, state="OPEN")])
-    delivery = SimpleNamespace(edit=board.edit, waits=WAITS, evaluate=None, holds=None, read=None, unfinished=None, create=None, parked=None, closed=None, released=None)
+    delivery = SimpleNamespace(
+        edit=board.edit,
+        waits=WAITS,
+        evaluate=None,
+        holds=None,
+        read=None,
+        unfinished=None,
+        create=None,
+        parked=None,
+        closed=None,
+        released=None,
+        delivered=None,
+    )
     monkeypatch.setattr(server.shutil, "which", lambda name: name)
     monkeypatch.setattr(server, "moves_of", lambda machine: MOVES)
     monkeypatch.setattr(server, "PullRequests", _BlockedProjection)
@@ -614,7 +647,19 @@ def test_a_read_model_task_whose_cited_pr_merged_before_startup_moves_to_done(
     feed = BoardFeed(roles=ROLES, machines=MACHINES, read_model=ReadModel(engine))
     board = Board(feed)
     store.save([pull(1, state="MERGED")])
-    delivery = SimpleNamespace(edit=board.edit, waits=WAITS, evaluate=None, holds=None, read=None, unfinished=None, create=None, parked=None, closed=None, released=None)
+    delivery = SimpleNamespace(
+        edit=board.edit,
+        waits=WAITS,
+        evaluate=None,
+        holds=None,
+        read=None,
+        unfinished=None,
+        create=None,
+        parked=None,
+        closed=None,
+        released=None,
+        delivered=None,
+    )
     monkeypatch.setattr(server.shutil, "which", lambda name: name)
     monkeypatch.setattr(server, "moves_of", lambda machine: MOVES)
     monkeypatch.setattr(server, "PullRequests", _BlockedProjection)
@@ -707,9 +752,7 @@ def test_an_in_progress_task_given_an_open_dependency_waits_and_its_holder_is_to
 
 def test_a_review_task_given_an_open_dependency_tells_no_holder(store: PullStore, stop: threading.Event) -> None:
     told: list[str] = []
-    board = Board(
-        BoardFeed(roles=ROLES), task("TASK-1", "Ready"), task("TASK-2", "Review", references=(PR_ONE,))
-    )
+    board = Board(BoardFeed(roles=ROLES), task("TASK-1", "Ready"), task("TASK-2", "Review", references=(PR_ONE,)))
     store.save([pull(1, state="OPEN")])
     running(board, store, stop, PARKING_WAITS, PARKING_MOVES, parked=told.append)
 
@@ -766,7 +809,9 @@ def test_a_released_hook_that_raises_leaves_the_task_ready(store: PullStore, sto
     def released(task: str) -> None:
         raise ValueError("no session to wake")
 
-    board = Board(BoardFeed(roles=ROLES), task("TASK-1", "In Progress"), task("TASK-2", "Waiting", dependencies=("TASK-1",)))
+    board = Board(
+        BoardFeed(roles=ROLES), task("TASK-1", "In Progress"), task("TASK-2", "Waiting", dependencies=("TASK-1",))
+    )
     running(board, store, stop, PARKING_WAITS, PARKING_MOVES, released=released)
 
     board.put(task("TASK-1", "Done"))
@@ -793,7 +838,9 @@ def test_a_waiting_task_whose_dependency_is_done_and_own_pr_merged_is_closed_not
     store: PullStore, stop: threading.Event
 ) -> None:
     store.save([pull(1, state="MERGED")])
-    board = Board(BoardFeed(), task("TASK-1", "Done"), task("TASK-2", "Waiting", references=(PR_ONE,), dependencies=("TASK-1",)))
+    board = Board(
+        BoardFeed(), task("TASK-1", "Done"), task("TASK-2", "Waiting", references=(PR_ONE,), dependencies=("TASK-1",))
+    )
     running(board, store, stop, MERGE_FIRST_WAITS, MERGE_FIRST_MOVES)
 
     assert until(lambda: board.moved() == [("TASK-2", "done")])
@@ -957,3 +1004,32 @@ def test_a_pr_merged_during_the_start_derivation_moves_its_task_to_done_before_t
     assert until(lambda: ("TASK-999", "done") in board.moved())
     assert time.monotonic() - merged < WITHIN_S
     assert not actor.ready.is_set()
+
+
+#: A delivery machine whose run's end, `DELIVER_FINISHED`, leaves the task where it is.
+#: The portable deliver machine, whose run ends on `DELIVER_FINISHED`.
+DELIVERING = {
+    "deliver": describe(
+        load_machine(Path(__file__).parents[3] / "starpulse" / "skills" / "deliver" / "machine.yaml").machine
+    )
+}
+
+
+def test_a_finished_delivery_hands_its_task_and_verdict_to_the_delivered_hook_once(
+    store: PullStore, stop: threading.Event
+) -> None:
+    feed = BoardFeed(roles=ROLES, machines={"board": board_machine(STATUSES), **DELIVERING})
+    board = Board(feed, task("TASK-1", "In Progress"))
+    delivered: list[tuple[str, str]] = []
+    running(board, store, stop, delivered=lambda name, verdict: delivered.append((name, verdict)))
+    tasks = MachineTasks(feed)
+
+    def post(event: str, data: dict | None = None) -> None:
+        tasks.put(MachineEvent(machine="deliver", event=event, task="TASK-1", time=time.time(), data=data))
+
+    post("PR_OPENED")
+    post("DELIVER_FINISHED", {"verdict": "red", "step": "test"})
+    post("PR_OPENED")
+
+    assert until(lambda: delivered == [("TASK-1", "red test")])
+    assert not until(lambda: len(delivered) > 1, within=0.2)

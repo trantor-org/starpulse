@@ -81,7 +81,8 @@ class MachineTasks:
         state = table.target(before["state"] if before else None, event.event)
         if state is None:
             return
-        trail = [*(before["trail"] if before else []), {"state": state, "event": event.event, "at": event.time}]
+        step = {"state": state, "event": event.event, "at": event.time} | ({"data": event.data} if event.data else {})
+        trail = [*(before["trail"] if before else []), step]
         self._feed.move(
             flow,
             {

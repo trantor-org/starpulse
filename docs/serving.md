@@ -304,6 +304,7 @@ type = "native"
 # unfinished = "my-unfinished {id}"  # prints a JSON array of the work a task whose pull requests merged still has; the task actor routes it to Ready instead of closing it (see Task actor)
 # parked = "my-parked {id}"  # runs after the task actor moves a task from the working lane to Waiting, to tell the session that holds it (see Task actor)
 # released = "my-released {id}"  # runs after the task actor moves a task from Waiting to Ready, so a session parked mid-work is resumed whether or not anything admits Ready tasks (see Task actor)
+# delivered = "my-delivered {id} {verdict}"  # runs once when a delivery run ends (its DELIVER_FINISHED event), with the run's verdict such as `green` or `red test`, so the session holding the task resumes on it (see Task actor)
 # closed = "my-closed {id}"  # runs after the task actor moves a task to Done, so the board can file what follows the close (see Task actor)
 # validate = "my_checks:task_write"  # may refuse a task write before it lands (see docs/adapters.md)
 # claim_ttl = 1800   # seconds a claim lives without an Event by its session or a machine event of its run (harness telemetry keyed by the session id); past it StarPulse appends `Released` (naming the last renewal) and the Task keeps its State with no Assignee, free for any session to claim, and the sweep gives it back to the released session, as a `Claimed`, when that session acts again (an Event or machine event after the release) while no session holds it; the sweep reads the board feed, and a release is refused when the task file has since left that State or another session holds it
@@ -861,7 +862,9 @@ the board's guards, so the comment lands) and the actor retries when the lint re
 A move from the working lane (the first resting State the lifecycle does not end in) to Waiting runs the board's
 `parked` command once, with `{id}` replaced by the task's id, so a board can tell the session that holds the task. A
 move from Waiting to Ready runs the board's `released` command the same way, so a board can resume the session that
-parked the task. A move to Done runs the board's `closed` command once the same way, so a board can file what follows the close, such as a
+parked the task. A move whose last event is `DELIVER_FINISHED`, the machine event a delivery run publishes when it
+ends, runs the board's `delivered` command once per run, with `{id}` and `{verdict}` (the event's `verdict` and `step`,
+such as `red test`) replaced, so a board can resume the session that holds the task on the verdict. A move to Done runs the board's `closed` command once the same way, so a board can file what follows the close, such as a
 check that waits on time after the merge. A command that exits nonzero is logged; the move stands.
 
 A write the board refuses is logged and counted, and is not retried until the task's facts change; checking the last

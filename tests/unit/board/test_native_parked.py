@@ -45,3 +45,14 @@ def test_each_notice_command_runs_for_the_task_it_is_given(tmp_path: Path, hook:
     getattr(built, hook)("TASK-3")
 
     assert (tmp_path / "told").read_text() == "TASK-3"
+
+
+def test_the_delivered_command_runs_for_the_task_and_the_verdict_it_is_given(tmp_path: Path) -> None:
+    script = tmp_path / "notice.py"
+    script.write_text("import sys, pathlib\npathlib.Path('told').write_text(' '.join(sys.argv[1:]))\n")
+    command = f"{shlex.quote(sys.executable)} {shlex.quote(str(script))} {{id}} {{verdict}}"
+    built = native.board({"delivered": command}, tmp_path)
+
+    built.delivered("TASK-3", "red test")
+
+    assert (tmp_path / "told").read_text() == "TASK-3 red test"
