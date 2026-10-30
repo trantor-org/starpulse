@@ -6,7 +6,7 @@ import pytest
 from reach import reaches, scope
 
 
-@pytest.mark.parametrize("check", ["web", "static"])
+@pytest.mark.parametrize("check", ["web", "build", "static"])
 @pytest.mark.parametrize(
     "path", ["uv.lock", "pyproject.toml", "starpulse/web/pnpm-lock.yaml", ".github/workflows/ci.yml"]
 )
@@ -19,11 +19,11 @@ def test_a_change_of_no_files_reaches_nothing():
 
 
 def test_a_docs_edit_reaches_only_the_static_checks():
-    assert scope(["docs/ci.md"]) == {"web": False, "static": True}
+    assert scope(["docs/ci.md"]) == {"web": False, "build": False, "static": True}
 
 
 def test_a_python_module_reaches_static_but_not_web():
-    assert scope(["starpulse/board.py"]) == {"web": False, "static": True}
+    assert scope(["starpulse/board.py"]) == {"web": False, "build": False, "static": True}
 
 
 def test_the_api_schema_reaches_web():
@@ -32,3 +32,11 @@ def test_the_api_schema_reaches_web():
 
 def test_a_change_to_the_github_package_reaches_static():
     assert reaches("static", ["starpulse/github/__init__.py"])
+
+
+def test_a_python_only_change_skips_build():
+    assert not reaches("build", ["starpulse/board.py"])
+
+
+def test_a_web_source_change_reaches_build():
+    assert reaches("build", ["starpulse/web/src/a.ts"])

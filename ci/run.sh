@@ -12,7 +12,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 cmd_select() {
   if [ -z "${BASE:-}" ]; then
     uv run --no-sync python ci/select_tests.py --full
-    printf 'web=true\nstatic=true\n'
+    printf 'web=true\nbuild=true\nstatic=true\n'
     return
   fi
   local changed
