@@ -199,15 +199,18 @@ def _counting_store(tmp_path: Path, seconds: float = 0.0) -> tuple[PullStore, li
     return store, calls
 
 
-def test_a_save_computes_the_unfiltered_answer_before_any_reader_asks(tmp_path: Path) -> None:
+def test_a_save_computes_the_unfiltered_answer_only_once_a_reader_has_asked_for_it(tmp_path: Path) -> None:
     store, calls = _counting_store(tmp_path)
     with serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES), pulls=store) as server:
         store.save([_pull("acme/widgets", 2, "OPEN", "Session: bbb-222", 101.0)])
+        computed_before_any_read = len(calls)
+        _get(server, "")
+        store.save([_pull("acme/widgets", 3, "OPEN", "Session: ccc-333", 102.0)])
         computed_by_save = len(calls)
         status, body = _get(server, "")
 
-    assert (computed_by_save, len(calls), status) == (1, 1, 200)
-    assert [pull["number"] for pull in body["pulls"]] == [1, 2]
+    assert (computed_before_any_read, computed_by_save, len(calls), status) == (0, 2, 2, 200)
+    assert [pull["number"] for pull in body["pulls"]] == [1, 2, 3]
 
 
 def test_readers_asking_together_for_an_answer_nobody_holds_share_one_computation(tmp_path: Path) -> None:
