@@ -1,6 +1,6 @@
 ---
 name: review-fix
-description: Takes a StarPulse task's ready pull request through its review threads, merge conflicts and checks until nothing actionable remains, then moves the task to review. Use when a task's PR is ready, when review comments, a conflict or a red check arrive on an open task PR, or when a move to review is refused. Not for the first delivery of a change, and not for merging, which a person does.
+description: Takes a StarPulse task's ready pull request through its review threads, merge conflicts and checks until nothing actionable remains, then moves the task to review. Use when a task's PR is ready, when review comments, a conflict or a red check arrive on an open task PR, when a person pushes back on a task in review, or when a move to review is refused. Not for the first delivery of a change, and not for merging, which a person does.
 machine: machine.yaml
 ---
 
@@ -12,14 +12,22 @@ PR, or when a fix sends the change back through delivery.
 A step named `starpulse command run NAME` is the project's own command. When it exits 4 the project maps no
 `NAME`: do that step as the project's `AGENTS.md` says.
 
-## 1. Read what the PR needs
+## 1. Send a pushed-back task back first
+
+When a person pushes back on a task in review, your first board write, before any edit, moves it back to in
+progress with the send-back the project's `AGENTS.md` names, recording their words. Rework never happens while the
+board still says review.
+
+Done when `starpulse task show PROJ-45` shows the task in progress, or no one pushed back.
+
+## 2. Read what the PR needs
 
 Run `starpulse command run pr-status --arg pr=<number>`. It reports merge conflicts, failing checks and unresolved
 review threads.
 
 Done when you hold the list of conflicts, red checks and open threads, or know it is empty.
 
-## 2. Answer each finding
+## 3. Answer each finding
 
 1. For each thread, decide whether it is correct. A correct finding that changes behavior gets a failing test
    first, then the fix; rerun with `starpulse command run test --task PROJ-45 -- <test paths>`.
@@ -29,14 +37,14 @@ Done when you hold the list of conflicts, red checks and open threads, or know i
 
 Done when every thread has a fix or a reasoned reply.
 
-## 3. Send fixes back through delivery
+## 4. Send fixes back through delivery
 
 When the fixes changed a tracked file, run `starpulse command run check -- <changed paths>`; once it passes, the
-change goes back to delivery, which pushes it and waits for green checks again. Return to step 1 after it.
+change goes back to delivery, which pushes it and waits for green checks again. Return to step 2 after it.
 
 Done when the PR's head holds every fix and its checks are green.
 
-## 4. Move the task to review
+## 5. Move the task to review
 
 When nothing actionable remains, run `starpulse task review PROJ-45 --ref <PR URL> --summary '<outcome>'`. A
 refusal names the rule that failed and the step that satisfies it: do that step, then run the move again. Never
