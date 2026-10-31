@@ -315,6 +315,8 @@ def _active(base_url: str, run: dict, steps: list[dict]) -> dict | None:
 #: How far back a tied DAG's recent runs reach, and how many `/dag-runs` returns per page.
 _RECENT_LOOKBACK = 86400
 _PAGE = 100
+#: The runs Dagu's per-DAG listing returns, newest first.
+_NEWEST = 30
 #: The statuses of a run that is not over; the steps of any other are final once read.
 _OPEN = {"running", "queued"}
 
@@ -356,8 +358,24 @@ def _recent_run(base_url: str, run: dict) -> dict:
     }
 
 
+def _newest(base_url: str, name: str, since: int) -> list[dict] | None:
+    """The runs of DAG `name` since `since` that its 30 newest runs show, or None when those do not reach back to `since`.
+
+    One cheap read of Dagu's per-DAG listing, where the `name=` query costs Dagu a scan of the day's runs.
+    """
+    try:
+        newest = _get(f"{base_url}/api/v1/dags/{urllib.parse.quote(name)}/dag-runs").get("dagRuns", [])
+    except OSError:
+        return None
+    if len(newest) < _NEWEST or _began(newest[-1]) < since:
+        return [run for run in newest if _began(run) >= since]
+    return None
+
+
 def _listed(base_url: str, name: str, since: int) -> list[dict]:
-    """The runs of DAG `name` that began at or after epoch second `since`, newest first, read page by page; an `OSError` if Dagu cannot list them."""
+    """The runs of DAG `name` that began at or after epoch second `since`, newest first: its newest 30 when they reach back that far, else read page by page; an `OSError` if Dagu cannot list them."""
+    if (newest := _newest(base_url, name, since)) is not None:
+        return newest
     cursor, runs = "", []
     while True:
         more = f"&cursor={urllib.parse.quote(cursor)}" if cursor else ""
