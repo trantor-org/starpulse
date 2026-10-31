@@ -41,6 +41,7 @@
     starpulse analytics graph --hours 168
     starpulse analytics stages --hours 168
     starpulse analytics diff --hours 168
+    starpulse analytics verdict --kind execute --size 3 --profile sonnet-low
     starpulse doctor
     starpulse skills install --claude --codex
     starpulse help --agent
@@ -129,6 +130,7 @@ from starpulse.cli.agent_keys import (
     STEP_KEYS,
     TASK_KEYS,
     TRANSITION_KEYS,
+    VERDICT_KEYS,
 )
 
 if TYPE_CHECKING:
@@ -136,6 +138,8 @@ if TYPE_CHECKING:
 
 #: What each exit code means, as the manifest says it.
 EXIT_CODES = {0: "ok", 1: "refused or invalid", 2: "usage", 3: "unavailable", 4: "not found"}
+#: Seconds an analytics read may take: the sessions route computes over the telemetry window and answers in ~15.
+_ANALYTICS_TIMEOUT_S = 60.0
 #: The exit code of each error `code`.
 _ERROR_EXIT = {"refused": 1, "usage": 2, "unavailable": 3, "not_found": 4}
 
@@ -361,7 +365,7 @@ def _window_read(
     base = agent_wire.server_url(args.server, environ)
     query = urllib.parse.urlencode({**({} if args.hours is None else {"hours": args.hours}), **(params or {})})
     path = f"{route}?{query}"
-    status, document = agent_wire.get(base, path)
+    status, document = agent_wire.get(base, path, timeout=_ANALYTICS_TIMEOUT_S)
     if status in {400, 404, 501} and isinstance(document, dict) and "error" in document:
         raise agent_wire.CliError("refused" if status == 400 else "unavailable", document["error"])
     if status != 200 or not isinstance(document, dict) or not document.keys() >= set(keys):
@@ -437,6 +441,16 @@ def _scores(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, A
         "scores": score_cells(window["slices"], tasks, facts, weights=weights),
         "verdicts": cell_verdicts(cell_task_scores(window["slices"], tasks, facts, weights=weights)),
     }
+
+
+def _verdict(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """The `analytics scores` verdict row of the trial cell `--kind`, `--size`, `--profile`: `win`, `lose` or `continue`;
+    a cell with no trial is `not_found`."""
+    cell = (args.kind, args.size, args.profile)
+    for row in _scores(args, environ)["verdicts"]:
+        if (row["kind"], row["size"], row["profile"]) == cell:
+            return row
+    raise agent_wire.CliError("not_found", f"no trial cell {args.kind} size {args.size} profile {args.profile}")
 
 
 def _graph(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
@@ -1374,6 +1388,23 @@ def _parser() -> argparse.ArgumentParser:
         "--repo", help="the repository whose pull requests to read, `owner/name` (default the config's default_repo)"
     )
     scores.add_argument("--config", type=Path, help="the TOML config file; default starpulse.toml when it exists")
+    verdict = leaf(
+        analytics_verbs,
+        "verdict",
+        "win, lose or continue for one trial cell: its profile's score against the cell's busiest profile, at 90 percent "
+        "posterior confidence within 10 points",
+        _verdict,
+        VERDICT_KEYS,
+        (0, 1, 2, 3, 4),
+    )
+    verdict.add_argument("--kind", required=True, help="the cell's kind (`execute`)")
+    verdict.add_argument("--size", required=True, type=int, help="the cell's size (`3`)")
+    verdict.add_argument("--profile", required=True, help="the trial profile, `model-effort` (`sonnet-low`)")
+    verdict.add_argument("--hours", type=float, help="the window to read, in hours (default 168)")
+    verdict.add_argument(
+        "--repo", help="the repository whose pull requests to read, `owner/name` (default the config's default_repo)"
+    )
+    verdict.add_argument("--config", type=Path, help="the TOML config file; default starpulse.toml when it exists")
     command = verbs.add_parser("command", description="the project's commands", help="the project's commands")
     command_run = leaf(
         command.add_subparsers(dest="verb", required=True, metavar="verb"),

@@ -1500,6 +1500,7 @@ def test_the_manifest_describes_every_verb_and_each_of_its_arguments(capsys: pyt
         "analytics stages",
         "analytics diff",
         "analytics scores",
+        "analytics verdict",
         "command run",
         "config check",
         "demo",
@@ -1969,6 +1970,10 @@ CASES = {
     ("analytics scores", 1): ["analytics", "scores", "--hours", "0", "--repo", "o/r", "--server", "{stepped}"],
     ("analytics scores", 2): ["analytics", "scores", "--hours", "soon", "--repo", "o/r"],
     ("analytics scores", 3): ["analytics", "scores", "--repo", "o/r", "--server", "{down}"],
+    ("analytics verdict", 1): ["analytics", "verdict", "--kind", "execute", "--size", "3", "--profile", "sonnet-low", "--repo", "o/r", "--hours", "0", "--server", "{stepped}"],
+    ("analytics verdict", 2): ["analytics", "verdict", "--kind", "execute", "--size", "3", "--profile", "sonnet-low", "--repo", "o/r", "--hours", "soon"],
+    ("analytics verdict", 3): ["analytics", "verdict", "--kind", "execute", "--size", "3", "--profile", "sonnet-low", "--repo", "o/r", "--server", "{down}"],
+    ("analytics verdict", 4): ["analytics", "verdict", "--kind", "execute", "--size", "3", "--profile", "sonnet-low", "--repo", "o/r", "--hours", "1.06", "--server", "{stepped}"],
     ("analytics cells", 0): ["analytics", "cells", "--hours", "1.06", "--server", "{stepped}"],
     ("analytics cells", 1): ["analytics", "cells", "--hours", "0", "--server", "{stepped}"],
     ("analytics cells", 2): ["analytics", "cells", "--hours", "soon"],
@@ -2203,12 +2208,14 @@ def _manifest(capsys: pytest.CaptureFixture[str]) -> list[dict]:
 
 # A verb that ends only when interrupted has no case that writes one document; its own test covers that exit.
 INTERRUPTED = {("watch", 0)}
+# A verdict needs scored trial profiles, which these servers do not hold; `test_analytics_verdict.py` covers exit 0.
+SCORED_ELSEWHERE = {("analytics verdict", 0)}
 
 
 def test_every_manifest_verb_and_exit_code_has_a_case(capsys: pytest.CaptureFixture[str]) -> None:
     declared = {(v["verb"], code) for v in _manifest(capsys) for code in v["exit_codes"]}
 
-    assert declared - INTERRUPTED == set(CASES)
+    assert declared - INTERRUPTED - SCORED_ELSEWHERE == set(CASES)
 
 
 def _case_files(root: Path) -> Path:

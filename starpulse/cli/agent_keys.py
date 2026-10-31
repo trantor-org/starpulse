@@ -44,6 +44,7 @@ TRANSITION_KEYS = ("now", "window_s", "transitions")
 
 CELL_KEYS = ("now", "window_s", "cells")
 SCORE_KEYS = ("now", "window_s", "scores", "verdicts")
+VERDICT_KEYS = ("kind", "size", "baseline", "profile", "n", "baseline_n", "verdict", "p_non_inferior", "p_worse")
 
 
 GRAPH_KEYS = ("now", "window_s", "graph")
