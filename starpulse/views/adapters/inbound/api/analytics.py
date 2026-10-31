@@ -20,13 +20,12 @@ from starpulse.views.application.queries.responses import (
     diff_response,
     graph_response,
     health_response,
-    missed_loads_response,
     sessions_response,
     stages_response,
     steps_response,
-    trace_clusters_response,
     transitions_response,
 )
+from starpulse.views.application.queries.trace_responses import missed_loads_response, trace_clusters_response
 
 _Respond = Callable[..., tuple[bytes, int]]
 
