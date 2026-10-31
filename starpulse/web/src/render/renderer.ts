@@ -13,7 +13,7 @@ import { RunEvents } from "../features/fanout/fanoutModel";
 import type { FeedLine, HudState, HudStore } from "./hud";
 import { MACHINE, MUTED, token } from "./palette";
 import { DAG_COLOR, drawing, ease, easeO, rgba, type DrawCtx, type Hover, type LTask } from "./draw";
-import { animating, frameLoop, framePace } from "./idle";
+import { animating, frameLoop, framePace, STALL_MS } from "./idle";
 import { BOARD, hostOf, pathKey, pathLedger, pathTo, startPath, taskKicker, topFlow, type Level, type Path } from "./levels";
 import { optionalSteps } from "../features/level/ledger";
 import type { DoctorBox, PanelCtx } from "../features/level/ledgerPanel";
@@ -31,7 +31,7 @@ import {
 } from "./scene";
 import { SIM_PERIOD } from "./mockSky";
 import { Moves, PULSE, TRAVEL, hosted, merge, stateCount, withLedgers, type Move, type Sky } from "./sky";
-import { branchLines, drawBranches, placeBranches, resyncBranches } from "./transit";
+import { branchLines, drawBranches, offLine, placeBranches, resyncBranches } from "./transit";
 import type { KanbanTask } from "../features/kanban/kanbanModel";
 import { foldRows, openStream, type Link } from "../api/stream";
 import { openLedger, type LedgerHead } from "../api/ledgerStream";
@@ -121,7 +121,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     if (first) restoreFocus();
   }), publishLater = staged();
   // The stream the page reads its snapshot and every change after it from.
-  let stream: { close(): void } | null = null, last = 0;
+  let stream: { close(): void } | null = null, last = 0, requestedAt = 0;
   // The open Ledger's rows and the stream that feeds them: the snapshot carries none, so they are held here and put back into every sky `merge` builds.
   let ledgerRows: Sky["ledgers"] = {}, ledgerOpen: { event: string; stream: { close(): void } } | null = null;
   /** The clock time of the last data drawn, a note's "as of"; whether a newer page build is waiting for the page to be idle; and the wait's cancel. */
@@ -1212,6 +1212,11 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     if (away) return; // the canvas is hidden behind another view
     // The ambient clock (orbits, twinkle, dash drift) advances only across frames drawn back to back, so it freezes at rest and resumes where it stopped.
     clock += last ? Math.min(now - last, 100) / 1000 : 0;
+    // A window that stayed visible but ran a requested frame long late (occluded, throttled, blurred) kept its stream open and banked every move; its first frame back places them as they stand.
+    if (requestedAt && now - requestedAt > STALL_MS) {
+      [replace, requestedAt] = [true, 0];
+      moves.resync(Date.now() / 1000);
+    }
     last = now;
     T = Date.now() / 1000;
     if (scene && (grown.growing() || ((scene.fold || scene.top) && laidScale !== prefs().scale))) layout(true); // a state easing to a new size moves its neighbours, paths and the fit with it, frame by frame
@@ -1291,7 +1296,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   };
   // with Motion off the loop idles at one frame a second, except for a moment after any input
   let lastInput = -Infinity;
-  const loop = frameLoop({ draw: frame, animating: busy, idle: settle, pace: () => framePace(prefs().motion, performance.now() - lastInput) });
+  const loop = frameLoop({ draw: frame, animating: busy, idle: settle, request: (cb) => ((requestedAt = performance.now()), requestAnimationFrame(cb)), pace: () => framePace(prefs().motion, performance.now() - lastInput) });
   /** Every input that can change what the canvas shows wakes it; the handlers run first, so the frame sees their result. */
   const wakers: [EventTarget, string][] = [
     [window, "resize"], [window, "mousemove"], [window, "mouseup"], [window, "keydown"], [document, "visibilitychange"],
@@ -1326,7 +1331,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     const board = l.kind === "board";
     const states = board ? Object.values(sc.galaxies).map((g) => ({ id: g.id, ...toScreen(view, g), r: g.R * view.k, sun: g.r * view.k, edge: g.edge * view.k })) : [];
     const edges = board ? sc.bEdges.filter((e) => e.p0 && e.c && e.p1).map((e) => ({ s: e.source, t: e.target, pts: Array.from({ length: 21 }, (_, i) => toScreen(view, bez(e.p0!, e.c!, e.p1!, i / 20))) })) : [];
-    return { path: pathKey(path), ready: !trans && !anim, canvas, panel: open, centre: toScreen(view, { x: (x0 + x1) / 2, y: (y0 + y1) / 2 }), zoomed: zoomedIn(view, fit), targets, fit: fit.k, states, edges, branches: board ? branchLines().map((b) => ({ ...b, pts: b.pts.map((p) => toScreen(view, p)) })) : [], tasks: sc.tasks.filter((t) => !t.gone).map((t) => ({ id: t.id, ...toScreen(view, t) })) };
+    return { path: pathKey(path), ready: !trans && !anim, canvas, panel: open, centre: toScreen(view, { x: (x0 + x1) / 2, y: (y0 + y1) / 2 }), zoomed: zoomedIn(view, fit), targets, fit: fit.k, states, edges, branches: board ? branchLines().map((b) => ({ ...b, pts: b.pts.map((p) => toScreen(view, p)) })) : [], off: board ? offLine(sc, 2) : [], tasks: sc.tasks.filter((t) => !t.gone).map((t) => ({ id: t.id, moving: t.moving, ...toScreen(view, t) })) };
   };
 
   return {

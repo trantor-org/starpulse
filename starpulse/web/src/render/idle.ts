@@ -13,6 +13,8 @@ export interface FrameLoop {
 export const INPUT_MS = 600;
 /** With motion off and no recent input, the wait between frames, in ms. */
 export const STILL_MS = 1000;
+/** A requested frame that runs this long late belongs to a window that painted none meanwhile. */
+export const STALL_MS = 3 * STILL_MS;
 
 /** The wait before the next frame: none with motion on or while input is recent, else one idle redraw per `STILL_MS`. */
 export const framePace = (motion: boolean, sinceInput: number): number => (motion || sinceInput < INPUT_MS ? 0 : STILL_MS);

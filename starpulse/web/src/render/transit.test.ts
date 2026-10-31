@@ -529,4 +529,35 @@ describe("placeBranches", { timeout: 60_000 }, () => {
       expect(Math.min(...pts.map((p) => dist(p, o))), o.dag).toBeGreaterThan(orb);
     }
   });
+  it("draws a moving dot's glowing head only on a drawn ring or line, never over the open space between a sun's ring and its orbiting dots", () => {
+    const snap = live();
+    snap.flows[0].machine.transitions = [{ event: "start", source: "ready", target: "in_progress" }];
+    const scene = board(snap, { secs: 3 });
+    const orbiters = () => scene.tasks.filter((k) => !k.h && !k.gone);
+    // the renderer puts a dot on its orbit before each frame's placement
+    const orbit = (t: number) =>
+      orbiters().forEach((k) => {
+        const a = k.a0 + k.w * t;
+        [k.x, k.y] = [k.host.x + Math.cos(a) * k.R, k.host.y + Math.sin(a) * k.R];
+      });
+    for (let t = 0; t <= 3; t += 1 / 60) {
+      orbit(t);
+      T.placeBranches(scene, t);
+    }
+    const e = scene.bEdges.find((x) => x.p0 && orbiters().some((k) => (k.host as Galaxy).id === x.source))!, mover = orbiters().find((k) => (k.host as Galaxy).id === e.source)!;
+    mover.host = scene.galaxies[e.target];
+    const heads: Pt[] = [], cx = new Proxy({}, { get: (_, p) => (p === "createRadialGradient" ? (x: number, y: number) => (heads.push({ x, y }), { addColorStop() {} }) : () => {}), set: () => true }) as unknown as CanvasRenderingContext2D;
+    const d = { circle() {}, dot() {}, text() {}, labPx: (n: number) => n } as unknown as Drawing;
+    let glowed = 0;
+    for (let t = 3; t <= 14; t += 1 / 60) {
+      orbit(t);
+      T.placeBranches(scene, t);
+      heads.length = 0;
+      T.drawBranches({ cx, K: 1, ZS: 1, clock: t, scale: 100, hover: null } as never, d, scene, null);
+      const near = T.onLines(scene, 0.5);
+      glowed += heads.length;
+      expect(heads.filter((h) => !near(h)), `t=${t.toFixed(2)}`).toEqual([]);
+    }
+    expect(glowed, "the move glowed somewhere along its way").toBeGreaterThan(0);
+  });
 });

@@ -343,6 +343,12 @@ function seg(p: Pt, a: Pt, b: Pt) {
 function stretch(p: Pt[], cum: number[], d0: number, d1: number): Pt[] {
   return [along(p, cum, d0), ...p.filter((_, i) => cum[i] > d0 && cum[i] < d1), along(p, cum, d1)];
 }
+/** The stretch of a moving dot's way a comet may ride, `[from, to]` along it: a way out of or into an orbit crosses open space between the sun's ring
+ *  and the slot the dot orbits in, where no line is drawn, so the glow starts at the ring and ends there and the dot itself glides the rest. */
+function lit(m: Mem): [number, number] {
+  const n = m.path.length, slot = (p: Node) => p.k.startsWith("orbit:") && !p.k.endsWith(":h");
+  return n < 2 ? [0, 0] : [slot(m.path[0]) ? m.cum[1] : 0, slot(m.path[n - 1]) ? m.cum[n - 2] : m.cum[n - 1]];
+}
 /** How far back along its way a moving dot's comet tail reaches. */
 const tailOf = (m: Mem) => Math.min(60, 0.27 * m.cum.at(-1)!) * Math.min(1, m.gone / m.cum.at(-1)! + 0.05);
 /** The share of `b`'s own line out to its station `s`; none before its first. */
@@ -354,23 +360,29 @@ function share(b: Branch, s: number) {
 // how far a branch is out of the leg it is on, 0 to 1: rising to where it stops, falling back to the hub
 const full = (b: Branch) => (b.ext > 0 ? Math.min(1, b.ext / Math.max(b.to, b.from)) : 0);
 const reached = (b: Branch, s: number) => b.route.length > b.own + 1 && b.ext >= share(b, s) - 1e-6;
-/** Each dot on a branch or on its way, bar one stacked out from its station, that sits, or whose comet tail runs, further than `tol` off every
- *  line drawn this frame (a branch's grown line, a hub ring, a Board curve), as `id@node`: what the ride check counts. */
-export function offLine(sc: Scene, tol = 2): string[] {
+/** Whether a point sits within `tol` of a line drawn this frame: a branch's grown line, a hub ring, a Board curve, or the spur a stacked dot steps out along. */
+export function onLines(sc: Scene, tol = 2): (p: Pt) => boolean {
   const lines = [...branches.values()].flatMap((b) => {
     const own = b.route.slice(b.own), cum = lengths(own), reach = b.ext * (cum.at(-1) ?? 0), n = cum.filter((c) => c <= reach).length;
     return own.length < 2 ? [] : [[...own.slice(0, n), along(own, cum, reach)]];
   });
   const curves = sc.bEdges.filter((e) => e.p0 && e.c && e.p1).map((e) => Array.from({ length: 129 }, (_, i) => bez(e.p0!, e.c!, e.p1!, i / 128)));
-  const rings = [...new Set([...branches.values()].map((b) => b.sun))].flatMap((s) => (sc.galaxies[s] ? [sc.galaxies[s]] : []));
+  const rings = Object.values(sc.galaxies);
   // the spur a stacked dot steps out along from its station (stacking is its own design) counts as on the line
   const stations = [...branches.values()].flatMap((b) => b.st.map((i) => b.route[i])), spur = (p: Pt) => stations.some((s) => Math.hypot(p.x - s.x, p.y - s.y) <= (STACK - 1) * OFF + tol);
-  const near = (p: Pt) => spur(p) || [...lines, ...curves].some((l) => l.some((q, i) => i > 0 && seg(p, l[i - 1], q) <= tol)) || rings.some((g) => Math.abs(Math.hypot(p.x - g.x, p.y - g.y) - g.edge) <= tol);
+  return (p) => spur(p) || [...lines, ...curves].some((l) => l.some((q, i) => i > 0 && seg(p, l[i - 1], q) <= tol)) || rings.some((g) => Math.abs(Math.hypot(p.x - g.x, p.y - g.y) - g.edge) <= tol);
+}
+/** Each dot on a branch or on its way, bar one stacked out from its station, that sits, or whose comet tail runs, further than `tol` off every
+ *  line drawn this frame, as `id@node`: what the ride check counts. */
+export function offLine(sc: Scene, tol = 2): string[] {
+  const near = onLines(sc, tol);
   return sc.tasks.flatMap((k) => {
     const m = mems.get(k.id);
     const stacked = !k.moving && m?.route.at(-1)!.k.includes("+");
     if (!m || !(k.moving || m.node.includes("#")) || m.fade || stacked) return [];
-    const tail = k.moving && m.path.length > 1 ? stretch(m.path, m.cum, Math.max(0, m.gone - tailOf(m)), m.gone) : [];
+    const [from, to] = lit(m);
+    if (k.moving && (m.gone < from || m.gone > to)) return [];
+    const tail = k.moving && m.path.length > 1 ? stretch(m.path, m.cum, Math.max(from, m.gone - tailOf(m)), m.gone) : [];
     const mids = tail.slice(1).map((q, i) => ({ x: (q.x + tail[i].x) / 2, y: (q.y + tail[i].y) / 2 }));
     return [k, ...mids].every(near) ? [] : [`${k.id}@${m.node}`];
   });
@@ -690,9 +702,10 @@ export function drawBranches(dc: DrawCtx, d: Drawing, sc: Scene, at: Pt | null) 
   for (const k of [...sc.tasks, ...twins]) {
     const m = mems.get(k.id);
     if (!k.moving || !m || m.path.length < 2) continue;
-    const head = m.gone, tail = tailOf(m), col = tierColor(k.model);
+    const head = m.gone, tail = tailOf(m), col = tierColor(k.model), [from, to] = lit(m);
+    if (head < from || head > to) continue;
     for (let i = 1; i <= 14; i++) {
-      const piece = stretch(m.path, m.cum, Math.max(0, head - tail * (1 - (i - 1) / 14)), Math.max(0, head - tail * (1 - i / 14)));
+      const piece = stretch(m.path, m.cum, Math.max(from, head - tail * (1 - (i - 1) / 14)), Math.max(from, head - tail * (1 - i / 14)));
       cx.strokeStyle = rgba(col, (i / 14) * 0.6);
       cx.lineWidth = ((i / 14) * 2.6) / Math.max(1, dc.ZS * 0.8);
       cx.beginPath();
