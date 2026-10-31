@@ -162,9 +162,16 @@ def test_stopping_removes_the_control_file(config: Path, running: Control) -> No
     assert not control.control_file(config).exists()
 
 
-def test_stopping_returns_well_inside_the_default_half_second_poll(config: Path, running: Control) -> None:
-    """`shutdown` waits out the serving loop's poll; every supervisor stop and every test that starts one pays it."""
-    started = time.monotonic()
-    running.stop()
+def test_stopping_returns_well_inside_the_default_half_second_poll(config: Path, supervisor: FakeSupervisor) -> None:
+    """`shutdown` waits out the serving loop's poll; every supervisor stop and every test that starts one pays it.
 
-    assert time.monotonic() - started < 0.25
+    The fastest of a few stops is judged: a loaded runner can delay one, but never all of them past the poll."""
+    took = []
+    for _ in range(5):
+        endpoint = Control(control.control_file(config), supervisor)
+        endpoint.start()
+        started = time.monotonic()
+        endpoint.stop()
+        took.append(time.monotonic() - started)
+
+    assert min(took) < 0.25

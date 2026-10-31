@@ -231,6 +231,8 @@ def _fork_preloaded(ours: socket.socket, theirs: socket.socket, entry: str, modu
         return _Forkproc(pid, os.fdopen(writer, "wb"))
     try:  # pragma: no mutate block — process boundary
         os.setsid()
+        for inherited in (signal.SIGTERM, signal.SIGHUP):  # `serve`'s handlers must not stand in for the child's own
+            signal.signal(inherited, signal.SIG_DFL)
         os.dup2(reader, 0)
         os.close(reader)
         os.close(writer)

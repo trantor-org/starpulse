@@ -40,13 +40,13 @@ def _wait_for(check: Callable[[], object], timeout: float = 10.0) -> object:
 def _terminable(child: Any) -> Any:
     """Wait until the child's `hold` caught `SIGTERM`: sent before, it ends the child by the signal (-15), not with 0."""
 
-    def caught() -> bool:
-        status = Path(f"/proc/{child.pid}/status").read_text()
-        mask = next(line for line in status.splitlines() if line.startswith("SigCgt:"))
-        return bool(int(mask.split()[1], 16) >> (signal.SIGTERM - 1) & 1)
-
-    _wait_for(caught)
+    _wait_for(lambda: _term_caught(Path(f"/proc/{child.pid}/status").read_text()))
     return child
+
+
+def _term_caught(status: str) -> bool:
+    mask = next(line for line in status.splitlines() if line.startswith("SigCgt:"))
+    return bool(int(mask.split()[1], 16) >> (signal.SIGTERM - 1) & 1)
 
 
 def _parent(pid: int) -> int:
@@ -112,6 +112,19 @@ def test_a_preloaded_process_serve_forked_itself_forks_children_and_ends_with_th
     finally:
         forked.close()
     assert preloaded.poll() is not None
+
+
+def test_a_preloaded_process_serve_forked_itself_drops_the_term_handler_serve_had() -> None:
+    previous = signal.signal(signal.SIGTERM, lambda *_: None)
+    forked = Forker([], entry=ENTRY)
+    try:
+        forked.start(forked=True)
+        status = Path(f"/proc/{forked._current.proc.pid}/status")
+
+        _wait_for(lambda: not _term_caught(status.read_text()), timeout=3)
+    finally:
+        forked.close()
+        signal.signal(signal.SIGTERM, previous)
 
 
 def test_a_forked_child_still_starting_ends_when_serve_closes_its_pipe_without_a_signal() -> None:
