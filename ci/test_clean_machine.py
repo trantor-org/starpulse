@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib.metadata
 import json
 import socket
 import sqlite3
@@ -20,7 +19,8 @@ from clean_machine import Placed, cloudevent, logged, migrate, publish_grpc, red
 
 # sp-ci syncs with `--no-install-project`, so a fresh interpreter there cannot import `starpulse`; ci.yml proves it installed.
 NOT_INSTALLED = pytest.mark.skipif(
-    not list(importlib.metadata.distributions(name="starpulse")), reason="the project is not installed in this venv"
+    subprocess.run([sys.executable, "-I", "-c", "import starpulse"], capture_output=True).returncode != 0,
+    reason="a fresh interpreter in this venv cannot import the project",
 )
 
 

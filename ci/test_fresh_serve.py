@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import contextlib
 import http.server
-import importlib.metadata
 import ssl
+import subprocess
 import sys
 import threading
 import types
@@ -16,7 +16,8 @@ from fresh_serve import check, live_children, worker_contexts
 
 # sp-ci syncs with `--no-install-project`, so a fresh interpreter there cannot import `starpulse`; ci.yml proves it installed.
 NOT_INSTALLED = pytest.mark.skipif(
-    not list(importlib.metadata.distributions(name="starpulse")), reason="the project is not installed in this venv"
+    subprocess.run([sys.executable, "-I", "-c", "import starpulse"], capture_output=True).returncode != 0,
+    reason="a fresh interpreter in this venv cannot import the project",
 )
 
 # A serve (pid 100) whose zygote (pid 200) forks the workers: their ps rows carry the zygote's argv, so the supervisor's
