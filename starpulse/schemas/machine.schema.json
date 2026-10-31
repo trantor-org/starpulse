@@ -112,8 +112,8 @@
           "minLength": 1
         },
         "role": {
-          "description": "What this state is for, so StarPulse code reads the role and never the state's name: resting (a task rests here), waiting_on_fact (it leaves when a fact holds) or waiting_on_person (it leaves when a person acts). A state flagged initial or final has that role already.",
-          "enum": ["resting", "waiting_on_fact", "waiting_on_person"]
+          "description": "What this state is for, so StarPulse code reads the role and never the state's name: resting (a task rests here), waiting_on_fact (it leaves when a fact holds) waiting_on_person (it leaves when a person acts) or proposed (a task waits here off the lanes, never admitted, until it is promoted to the state waiting on criteria_unmet or dropped to a final state). A state flagged initial or final has that role already.",
+          "enum": ["resting", "waiting_on_fact", "waiting_on_person", "proposed"]
         },
         "waits": {
           "description": "The facts this state waits on, each a fact kind (pr_terminal, pr_merged, pr_merged_planned, pr_merged_unfinished, pr_ready, deps_done, deps_unresolved, criteria_met, criteria_unmet) mapped to the event that leaves this state when the fact holds. The loader refuses an unknown fact kind and an event that is not a transition out of this state.",

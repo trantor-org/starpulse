@@ -146,7 +146,7 @@ def task_view(agent: dict[str, Any], snapshot: dict[str, Any], done: set[str] | 
 def board_columns(
     snapshot: dict[str, Any], kept: Callable[[dict[str, Any]], bool], state: str | None = None
 ) -> dict[str, Any]:
-    """Each Board column, or only `state`'s, with the tasks in it that `kept` keeps."""
+    """Each Board column, or only `state`'s, with the tasks in it that `kept` keeps; a proposed State is no column."""
     board = board_flow(snapshot)
     done = done_ids(snapshot)
     return {
@@ -163,6 +163,6 @@ def board_columns(
                 ],
             }
             for column in board["machine"]["states"]
-            if not state or column["id"] == state
+            if column.get("role") != "proposed" and (not state or column["id"] == state)
         ]
     }

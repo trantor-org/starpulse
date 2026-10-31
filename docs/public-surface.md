@@ -71,8 +71,10 @@ internal and can change in any release.
   `activities`, `ok`), and the `[search]` table's optional `embeddings_url`, `model` and
   `token_env` ([Config file](serving.md#config-file)),
   and the machine YAML with its JSON Schema (`machine.schema.json`).
-- A machine state's optional `role` key: `resting`, `waiting_on_fact` or `waiting_on_person`; a state flagged `initial`
-  or `final` has that role already. `Compiled.roles` maps every state id to its role (`None` when it declares none) and
+- A machine state's optional `role` key: `resting`, `waiting_on_fact`, `waiting_on_person` or `proposed`; a state flagged
+  `initial` or `final` has that role already. A `proposed` state is entered only from the initial state and left only
+  to a final state or the state waiting on `criteria_unmet`; the kanban draws no column for it, admission never takes
+  its tasks, and a trajectory starts at promotion. `Compiled.roles` maps every state id to its role (`None` when it declares none) and
   `role_of(compiled, state)` answers it, raising `KeyError` for a state the machine lacks. StarPulse code reads roles,
   never a deployment's state names. The snapshot serves it as the `role` of each `Machine.states` entry in
   `api.schema.json` (`null` when none), and the Kanban draws it on each column header. A state the machine's `rests`

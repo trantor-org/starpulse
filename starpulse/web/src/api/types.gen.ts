@@ -1681,7 +1681,7 @@ export interface MachineState {
   initial: boolean;
   name: string;
   /**
-   * The type the machine declares the state: `initial`, `final`, `resting`, `waiting_on_fact` or `waiting_on_person`; null when it declares none.
+   * The type the machine declares the state: `initial`, `final`, `resting`, `waiting_on_fact`, `waiting_on_person` or `proposed`; null when it declares none.
    */
   role?: string | null;
   [k: string]: unknown;
@@ -2612,6 +2612,10 @@ export interface Roles {
    * Where a task starts.
    */
   initial?: string | null;
+  /**
+   * Where a task waits, off the lanes, until it is promoted.
+   */
+  proposed?: string | null;
   /**
    * Where a task waits to be picked up.
    */

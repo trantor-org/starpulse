@@ -35,6 +35,7 @@ class Roles(_Api):
     waiting: str | None = Field(default=None, description="Where a task waits on its Start Criteria or dependencies.")
     review: str | None = Field(default=None, description="Where a task waits on its pull request.")
     attention: str | None = Field(default=None, description="Where a task waits on a person.")
+    proposed: str | None = Field(default=None, description="Where a task waits, off the lanes, until it is promoted.")
     startable: list[str] = Field(default_factory=list, description="The States a session starts a task from.")
 
 

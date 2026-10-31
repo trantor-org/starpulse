@@ -222,6 +222,7 @@ def _compile(
                 states[source].setdefault("on", {}).setdefault(event, []).append(target)
 
     waits = _waits(declared, document["events"], path)
+    _refuse_proposed_leaks(declared, document["events"], path)
     return states, bindings, waits
 
 
@@ -274,6 +275,24 @@ def _waits(declared: Mapping[str, Any], events: Mapping[str, Any], path: Path) -
         if "waits" in state:
             waits[name] = dict(state["waits"])
     return waits
+
+
+def _refuse_proposed_leaks(declared: Mapping[str, Any], events: Mapping[str, Any], path: Path) -> None:
+    """Refuse a `proposed` state that is entered from anywhere but the initial state, or left to anywhere but a final
+    state (dropped) or the state that waits for its Start Criteria (promoted)."""
+    proposed = {name for name, state in declared.items() if state.get("role") == "proposed"}
+    for event, transitions in events.items():
+        for transition in transitions:
+            sources, target = _sources(transition), declared[transition["to"]]
+            entered = transition["to"] in proposed and not all(declared[s].get("initial") for s in sources)
+            promoted = "criteria_unmet" in target.get("waits", {})
+            left = bool(proposed.intersection(sources)) and not (target.get("final") or promoted)
+            if entered or left:
+                raise MachineDefinitionError(
+                    f"{path}: event {event} breaks a proposed state's edges: it is entered only from the initial"
+                    " state and left only to a final state or the state waiting on criteria_unmet",
+                    path,
+                )
 
 
 def _role(declared: Mapping[str, Any]) -> str | None:
