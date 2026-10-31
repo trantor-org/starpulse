@@ -1,6 +1,7 @@
 """The native board: StarPulse's own Markdown tasks under `.starpulse/board/`, created on first serve and written in Python."""
 
 import json
+import os
 import re
 import shutil
 import tomllib
@@ -8,6 +9,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from starpulse.board.adapters import native
 from starpulse.board.adapters.native import board
 from starpulse.board.adapters.upstream_backlog import UpstreamBacklog, board_moves, upstream_keys
 from starpulse.board.board_feed import BoardFeed
@@ -20,6 +22,7 @@ from starpulse.runtime.assembly import assemble
 from starpulse.runtime.config import load
 from starpulse.runtime.server import announce
 from starpulse.views.application.commands.moves import move_task
+
 from tests.dagu_stub import dagu
 
 LANES = ["To Do", "In Progress", "Done"]
@@ -299,6 +302,65 @@ def test_a_task_file_reads_its_profile_and_assignee_from_the_profile_field_and_t
     path.write_text(path.read_text() + notes)
 
     assert [(task.profile, task.assignee) for task in scanned(tmp_path)] == [("@agent-deep-high", "0d617371")]
+
+
+def _settled(path: Path) -> None:
+    """Date the file ten seconds back, as a task nobody has written for a while is."""
+    stamp = path.stat().st_mtime_ns - 10_000_000_000
+    os.utime(path, ns=(stamp, stamp))
+
+
+def test_a_task_file_unchanged_since_it_was_read_is_not_parsed_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path, built = project(tmp_path)
+    _settled(path)
+    assert built.read is not None
+    first = built.read("task-1")
+    parses: list[str] = []
+    split = native._split
+    monkeypatch.setattr(native, "_split", lambda text: parses.append(text) or split(text))
+
+    assert built.read("task-1") == first
+    assert parses == []
+
+
+def test_a_settled_task_file_rewritten_to_the_same_size_is_read_afresh(tmp_path: Path) -> None:
+    path, built = project(tmp_path, "To Do")
+    _settled(path)
+    assert built.read is not None
+    assert built.read("task-1") is not None
+
+    path.write_text(path.read_text().replace("To Do", "Doing"))
+    _settled(path)
+
+    record = built.read("task-1")
+    assert record is not None and record["status"] == "Doing"
+
+
+def test_a_task_file_written_a_moment_ago_is_read_afresh_when_rewritten_to_the_same_size(tmp_path: Path) -> None:
+    path, built = project(tmp_path, "To Do")
+    assert built.read is not None
+    assert built.read("task-1") is not None
+
+    stamp = path.stat().st_mtime_ns
+    path.write_text(path.read_text().replace("To Do", "Doing"))
+    os.utime(path, ns=(stamp, stamp))
+
+    record = built.read("task-1")
+    assert record is not None and record["status"] == "Doing"
+
+
+def test_a_record_a_caller_adds_a_field_to_does_not_carry_it_into_the_next_read(tmp_path: Path) -> None:
+    path, built = project(tmp_path)
+    _settled(path)
+    assert built.read is not None
+    record = built.read("task-1")
+    assert record is not None
+    record["pulls"] = [{"number": 1}]
+
+    again = built.read("task-1")
+    assert again is not None and "pulls" not in again
 
 
 def test_a_task_the_board_does_not_hold_is_refused_by_both_writers(tmp_path: Path) -> None:
