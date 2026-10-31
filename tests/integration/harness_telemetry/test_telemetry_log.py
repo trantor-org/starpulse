@@ -14,6 +14,7 @@ from starpulse.contracts.analytics import Analytics, Labeller
 from starpulse.event_log.event_log import EventLog
 from starpulse.harness_telemetry.adapters.inbound.claude_code import ClaudeCodeAdapter, handler, publisher
 from starpulse.harness_telemetry.adapters.inbound.telemetry import CLAUDE_CODE, Signal, TelemetryLog, signals
+from starpulse.views.application.queries.responses import cells_response
 
 from tests.integration.harness_telemetry.test_intent_classification import answer, stub
 from tests.unit.harness_telemetry.test_telemetry import claude, export
@@ -67,6 +68,19 @@ def test_signals_older_than_the_hold_before_the_newest_are_dropped(tmp_path: Pat
     telemetry.publish([signal(1, 100.0), signal(2, 250.0), signal(3, 300.0)])
 
     assert [s.key for s in telemetry.read()] == ["k2", "k3"]
+
+
+def test_the_default_hold_keeps_a_signal_a_whole_default_window_older_than_the_newest(tmp_path: Path) -> None:
+    """The default `hours` is 168: a window the history must cover, so the hold reaches past it (live: a 7 d hold
+    left the oldest signal inside the window and `cells` answered 400)."""
+    now = 1_000_000_000.0
+    week = 168 * 3600.0
+    telemetry = TelemetryLog(log_at(tmp_path))
+    telemetry.publish([signal(1, now - week - 3600.0), signal(2, now - 3600.0), signal(3, now)])
+
+    body, status = cells_response(telemetry, {"hours": ["168"]}, None, dict, now)
+
+    assert (status, [s.key for s in telemetry.read()]) == (200, ["k1", "k2", "k3"])
 
 
 def test_reads_share_one_hydrated_snapshot_and_a_later_publish_adds_only_its_own_signals(tmp_path: Path) -> None:

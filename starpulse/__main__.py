@@ -3,8 +3,9 @@
 `serve` runs the view (`starpulse.runtime.server`), `init` scaffolds a first install (`starpulse.cli.init`),
 `event emit` posts one CloudEvent to the ingest (`starpulse.cli.event`), `connect` writes the
 config's `[board]` for a tracker after checking it answers (`starpulse.cli.connect`), `migrate` brings the store to its
-schema (`starpulse.runtime.store_migrate`) and `import-history` adds a
-board's earlier lane changes to the store (`starpulse.runtime.history_import`) and `conform` replays the recorded
+schema (`starpulse.runtime.store_migrate`), `import-history` adds a
+board's earlier lane changes to the store (`starpulse.runtime.history_import`), `backfill-telemetry` copies the event
+log's telemetry signals into Loki (`starpulse.runtime.telemetry_backfill`) and `conform` replays the recorded
 history against the machines the project declares (`starpulse.runtime.conform`); each reads the rest of the
 line with its own flags, so `starpulse serve --help` lists the server's. Any other word is a verb that reads the
 running server as JSON (`starpulse.cli.agent_cli`), and `starpulse help --agent` lists them.
@@ -36,6 +37,7 @@ COMMANDS: dict[str, Callable[[list[str]], int | None]] = {
     "conform": _lazy("starpulse.runtime.conform"),
     "reload": _lazy("starpulse.runtime.control"),
     "backup": _lazy("starpulse.runtime.backup"),
+    "backfill-telemetry": _lazy("starpulse.runtime.telemetry_backfill"),
 }
 
 
