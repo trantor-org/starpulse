@@ -268,7 +268,11 @@ class RecordsMixin:
 
     def _workable(self, agent: dict) -> tuple[bool, float | None]:
         """Whether the task can be worked, and since when; the caller holds the lock."""
-        if not self._unblocked(agent) or (agent["id"] in self._gated and agent["id"] not in self._met):
+        if (
+            agent["state"] == self._roles.proposed
+            or not self._unblocked(agent)
+            or (agent["id"] in self._gated and agent["id"] not in self._met)
+        ):
             return False, None
         since = max(
             [agent["entered"], self._met.get(agent["id"], 0.0)]
