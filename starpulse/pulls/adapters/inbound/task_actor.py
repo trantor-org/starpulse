@@ -638,6 +638,7 @@ class TaskActor:
                     "acceptanceCriteria": [f"{name} is back in Waiting on Start Criteria the evaluator can answer"],
                     "labels": ["kind-execute", "size-1", "mode-unattended"],
                     "priority": priority,
+                    "type": "chore",
                 },
                 actor=ACTOR,
             )
