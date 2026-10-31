@@ -208,7 +208,7 @@ import time
 def test_starved():
     cpu = min(os.sched_getaffinity(0))
     os.sched_setaffinity(0, {cpu})
-    hogs = [subprocess.Popen([sys.executable, "-c", "while True: pass"]) for _ in range(6)]
+    hogs = [subprocess.Popen([sys.executable, "-c", "while True: pass"]) for _ in range(10)]
     try:
         started = time.process_time()
         while time.process_time() - started < 0.2:
@@ -221,9 +221,13 @@ def test_starved():
 
 
 def test_without_test_cost_report_a_test_starved_of_cpu_is_not_failed_for_the_wall_time_it_waited(tmp_path):
-    """Six busy processes share the test's one CPU: its 0.2 CPU-s take over a second of wall, and the bound is 0.8 s."""
+    """Ten busy processes share the test's one CPU: its 0.2 CPU-s take over two seconds of wall, and the bound is 1.5 s.
+
+    The bound sits well under the starved wall and well over the 0.2 CPU-s plus the sleeping time of forking ten hogs
+    on a loaded host, which the run-queue wait does not cover.
+    """
     (tmp_path / "test_x.py").write_text(STARVED)
 
-    done = run(tmp_path, TEST_COST_REPORT="", SLOW_TEST_FAIL_SECONDS="0.8")
+    done = run(tmp_path, TEST_COST_REPORT="", SLOW_TEST_FAIL_SECONDS="1.5")
 
     assert done.returncode == 0, done.stdout + done.stderr
