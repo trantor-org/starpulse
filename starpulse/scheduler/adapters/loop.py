@@ -541,7 +541,7 @@ class Loop:
         `readings`, for `lane` (the eligible lane by default)."""
         now = self._clock()
         cooling = {task for task in self._starts if self._cooling(task, now)}
-        held = set(self._running) | skipped | cooling | self._held
+        held = set(self._running) | skipped | cooling | self._held | self._resident()
         live = self._live()
         tasks = [self._candidate(agent, held, live) for agent in self._feed.open_tasks()]
         decisions = decide(
@@ -550,6 +550,18 @@ class Loop:
         if log:
             self._count(decisions)
         return tasks, decisions
+
+    def _resident(self) -> set[str]:
+        """The eligible-lane tasks a live session still holds: a park wake returns a Waiting task to Ready while the
+        session that was parked runs on, and a second session would work the same branch beside it. Only `active` counts:
+        a `stopped` session on a Ready task is one that ended its turn, which the start cooldown already covers."""
+        now = self._clock()
+        resident = set()
+        for agent in self._feed.open_tasks():
+            seen = self._feed.machine_task(HARNESS.name, agent["id"]) if agent["state"] == self._lane else None
+            if seen is not None and seen["state"] == "active" and now - seen["active"] <= STALE_S:
+                resident.add(agent["id"])
+        return resident
 
     def _live(self) -> set[str]:
         """The In Progress tasks a session outside `_running` holds: one the harness or its transcript shows at work."""
