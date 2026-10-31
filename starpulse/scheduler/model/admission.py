@@ -1,9 +1,11 @@
 """Admission: whether a Ready task fits the capacity left, and in what order the tasks that fit go.
 
-A task's demand is priced by what a task of its tier and size has drawn. A `kind-decide` task is never admitted: it
-waits on the operator. The tasks that fit rank two ways. The enforced order puts first the tasks labelled `regression`, then a bug another open task waits on,
-then the other bugs (type `bug`, or labelled `board-state` or `regression`), then the tasks labelled `leverage`, and
-within each the most open tasks waiting on it directly, then the deepest critical path, the heaviest Priority weight and
+A task's demand is priced by what a task of its tier and size has drawn. A `kind-decide` task is admitted last: it fits
+only the room left after every other task that fits, and ranks after them all, so it never takes a slot mitigation or bug
+work needs. Its session frames the choice and parks for the operator. The tasks that fit rank two ways. The enforced
+order puts first the tasks labelled `regression`, then a bug another open task waits on,
+then the other bugs (type `bug`, or labelled `board-state` or `regression`), then the tasks labelled `leverage`, then
+the rest, a `kind-decide` task after them all, and within each the most open tasks waiting on it directly, then the deepest critical path, the heaviest Priority weight and
 the id. The shadow order is `value / dominant share` (Dominant Resource
 Fairness), where value is that weight times depth times the chance of the goal. The shadow order is only logged beside the enforced one until a calibration
 report earns it the enforced place (`shadow=False`).
@@ -32,8 +34,6 @@ MIN_RUNS = 3
 PERCENT_PER_UNIT = 1.0
 #: Why a task whose profile names no tier the policy weighs is refused: a session needs a profile to run on.
 NO_PROFILE = "no agent profile"
-#: Why a `kind-decide` task is refused: only the operator can make the decision it asks for.
-NEEDS_OPERATOR = "needs_operator"
 #: The label a post-merge QA miss puts on the task it sends back to In Progress: its fix goes before any other work.
 REGRESSION = "regression"
 #: The labels that mark a task a bug whatever its type: a board that shows the wrong state, or a behavior that regressed.
@@ -88,7 +88,7 @@ class Decision:
 
 
 def needs_operator(task: Mapping[str, Any]) -> bool:
-    """Whether `task` asks the operator for a decision, which no unattended session can make."""
+    """Whether `task` asks the operator for a decision, which a session can only frame and park."""
     return "kind-decide" in task["labels"]
 
 
@@ -102,11 +102,12 @@ def _dependents(tasks: Collection[Mapping[str, Any]]) -> dict[str, int]:
 
 
 def _enforced_key(task: Mapping[str, Any], dependents: int, decision: Decision) -> tuple[Any, ...]:
-    """Where `task` goes in the enforced order: regressions, blocking bugs, bugs, leverage, then dependents, depth, weight
-    and id."""
+    """Where `task` goes in the enforced order: every `kind-decide` task last, else regressions, blocking bugs, bugs,
+    leverage, then dependents, depth, weight and id."""
     bug = task.get("type") == "bug" or not BUG_LABELS.isdisjoint(task["labels"])
     leverage = "leverage" in task["labels"]
     return (
+        needs_operator(task),
         REGRESSION not in task["labels"],
         not (bug and dependents > 0),
         not bug,
@@ -164,8 +165,8 @@ def _score(predictor: Callable[[str], float] | None, task: Mapping[str, Any]) ->
 
 
 def _why(blocked_by: str | None) -> str:
-    """The refusal a log line gives: the dimension that is full, the missing profile, or the operator's decision."""
-    return blocked_by if blocked_by in (NO_PROFILE, NEEDS_OPERATOR) else f"{blocked_by} full"
+    """The refusal a log line gives: the dimension that is full or the missing profile."""
+    return blocked_by if blocked_by == NO_PROFILE else f"{blocked_by} full"
 
 
 def decide(
@@ -183,8 +184,9 @@ def decide(
 ) -> list[Decision]:
     """A decision for each workable task of `tasks` in `lane`, the admitted first in enforced order, then the refused.
 
-    A task whose profile names no tier in the policy's weights is refused `NO_PROFILE`, and a `kind-decide` task
-    `NEEDS_OPERATOR`, whatever room is left.
+    A task whose profile names no tier in the policy's weights is refused `NO_PROFILE`, whatever room is left. A
+    `kind-decide` task is priced against the headroom less the demand of every other task admitted, so it starts only
+    when nothing else needs the room, and ranks after them.
 
     `tasks` are all the open tasks, because a task's depth counts the ones waiting on it in other lanes. `chain` is the
     trajectory analytics' chain (`trajectory_analytics(...)["chain"]`); `p_goals` is each task's forecast chance of the
@@ -198,16 +200,17 @@ def decide(
     lane_p_goal = chain.get(lane, {}).get("p_goal", 1.0)
     chances = p_goals or {}
     decisions, values, keys = [], {}, {}
-    for task in tasks:
-        if task["state"] != lane or not task["workable"]:
-            continue
+    reserved = dict.fromkeys(DIMENSIONS, 0.0)
+    workable = [task for task in tasks if task["state"] == lane and task["workable"]]
+    for task in sorted(workable, key=needs_operator):  # the decisions last, after the room the others take is known
         need = demand(task, policy, ledger)
-        if needs_operator(task):
-            blocked_by: str | None = NEEDS_OPERATOR
-        elif tier_of(task) not in policy.tier_weights:
-            blocked_by = NO_PROFILE
+        room = {name: headroom[name] - (reserved[name] if needs_operator(task) else 0) for name in DIMENSIONS}
+        if tier_of(task) not in policy.tier_weights:
+            blocked_by: str | None = NO_PROFILE
         else:
-            blocked_by = next((name for name in DIMENSIONS if need[name] > headroom[name]), None)
+            blocked_by = next((name for name in DIMENSIONS if need[name] > room[name]), None)
+        if blocked_by is None and not needs_operator(task):
+            reserved = {name: reserved[name] + need[name] for name in DIMENSIONS}
         score = _score(predictor, task)
         p_goal = chances.get(task["id"], lane_p_goal)
         priority, weight = policy.priority_of(task)

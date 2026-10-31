@@ -8,7 +8,6 @@ import pytest
 from starpulse.event_log.event_log import EventLog
 from starpulse.scheduler.model.admission import (
     MIN_RUNS,
-    NEEDS_OPERATOR,
     NO_PROFILE,
     decide,
     demand,
@@ -330,17 +329,41 @@ def test_with_equal_dependents_the_deeper_chain_goes_first_then_the_heavier_weig
     assert _by_rank(_decide(tasks, ledger), "enforced_rank") == ["LONG", "SHALLOW", "HEAVY", "A-LEAF", "B-LEAF"]
 
 
-def test_a_kind_decide_task_is_never_admitted_and_waits_on_the_operator(
+def test_a_kind_decide_task_is_admitted_and_ranks_after_every_other_task(ledger: Ledger) -> None:
+    tasks = [
+        _task("ASK", labels=["size-1", "kind-decide", "regression"], type="bug", impact="high", urgency="high"),
+        *(_task(f"W{n}", deps=("ASK",), state="waiting") for n in range(3)),
+        _task("PLAIN"),
+        _task("FIX", type="bug"),
+        _task("MITIGATE", labels=["size-1", "regression"]),
+    ]
+
+    decisions = _decide(tasks, ledger)
+
+    assert _by_rank(decisions, "enforced_rank") == ["MITIGATE", "FIX", "PLAIN", "ASK"]
+    assert all(d.admitted for d in decisions)
+
+
+def test_a_kind_decide_task_is_admitted_only_with_room_left_after_the_other_tasks_that_fit(ledger: Ledger) -> None:
+    # Two sessions: the two mitigation tasks take both, so the decide task waits however small it is.
+    tasks = [_task("ASK", labels=["size-1", "kind-decide"]), _task("A", type="bug"), _task("B", type="bug")]
+
+    decisions = {d.task: d for d in decide(tasks, "ready", _readings(), POLICY, {}, ledger)}
+
+    assert (decisions["A"].admitted, decisions["B"].admitted) == (True, True)
+    assert (decisions["ASK"].admitted, decisions["ASK"].blocked_by) == (False, "sessions")
+
+
+def test_a_kind_decide_task_takes_the_room_no_other_task_needs(
     ledger: Ledger, caplog: pytest.LogCaptureFixture
 ) -> None:
-    with caplog.at_level(logging.INFO, logger="starpulse.scheduler.model.admission"):
-        decisions = _decide([_task("ASK", labels=["size-1", "kind-decide"], type="bug"), _task("OK")], ledger)
+    tasks = [_task("ASK", labels=["size-1", "kind-decide"]), _task("A", type="bug")]
 
-    assert [(d.task, d.admitted, d.blocked_by) for d in decisions] == [
-        ("OK", True, None),
-        ("ASK", False, NEEDS_OPERATOR),
-    ]
-    assert any("ASK refused (needs_operator)" in r.getMessage() for r in caplog.records)
+    with caplog.at_level(logging.INFO, logger="starpulse.scheduler.model.admission"):
+        decisions = decide(tasks, "ready", _readings(), POLICY, {}, ledger)
+
+    assert [(d.task, d.admitted) for d in decisions] == [("A", True), ("ASK", True)]
+    assert not any("needs_operator" in r.getMessage() for r in caplog.records)
 
 
 def test_the_bug_and_leverage_rules_leave_the_shadow_order_as_it_was(ledger: Ledger) -> None:
@@ -351,7 +374,7 @@ def test_the_bug_and_leverage_rules_leave_the_shadow_order_as_it_was(ledger: Led
     assert _by_rank(_decide(marked, ledger), "shadow_rank") == _by_rank(plain, "shadow_rank") == ["CHEAP", "DEAR"]
 
 
-def test_a_board_like_todays_starts_the_bugs_then_the_widest_stories_and_never_a_decision(ledger: Ledger) -> None:
+def test_a_board_like_todays_starts_the_bugs_and_stories_and_no_decision_they_leave_no_room_for(ledger: Ledger) -> None:
     """The Ready lane of 2026-10-28: two board-state bugs, stories four and two tasks wait on, and decisions to make."""
 
     def waiting(on: str, count: int) -> list[dict[str, Any]]:
@@ -376,7 +399,7 @@ def test_a_board_like_todays_starts_the_bugs_then_the_widest_stories_and_never_a
 
     assert set(order[:3]) == {"TASK-9430", "TASK-9416", "TASK-9399"}
     assert order[3:6] == ["TASK-9266", "TASK-9273", "TASK-9363"]
-    assert {d.task for d in decisions if d.blocked_by == NEEDS_OPERATOR} == {"TASK-9280", "TASK-9381", "TASK-9407"}
+    assert {d.task for d in decisions if d.blocked_by == "cpu"} == {"TASK-9280", "TASK-9381", "TASK-9407"}
 
 
 def test_send_back_repick_ranks_a_regression_ahead_of_a_bug_another_task_waits_on(ledger: Ledger) -> None:

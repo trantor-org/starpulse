@@ -640,8 +640,9 @@ harness lands in `pauses` and blocks admission for that harness only.
 - `pauses` lists each harness whose admission is paused until `until` (epoch seconds) after a usage or credit-limit
   start, with `reason` `usage limit`, or an hour after a start halted on a missing binary, with `reason` `start halted: <the
   refusal, which names the path>`. The key is absent when none are paused.
-- `needsOperator` lists the `kind-decide` tasks in the eligible lane, each with its task and title. Admission never starts
-  one, since only the operator can make the decision it asks for; it is `[]` when there are none.
+- `needsOperator` lists the `kind-decide` tasks in the eligible lane, each with its task and title. Admission starts one
+  last (see Fit and Order); its session frames the choice and parks for the operator's answer. It is `[]` when there
+  are none.
 
 `PUT /api/scheduler` with `{"enabled": true}` or `{"enabled": false}` sets the switch, and with
 `{"quietHours": {"start": "HH:MM", "end": "HH:MM", "timezone": "<IANA zone>"}}` or `{"quietHours": null}` sets or clears
@@ -681,12 +682,13 @@ forecast P(goal), and the run ledger.
   review. The tier is the middle word of its profile (`@agent-standard-high` is `standard`); a tier with no weight, or no
   profile, prices at the dearest weight. Once 3 runs of the same tier and size are in the ledger, their mean peak replaces
   that prior.
-- **Fit.** A task labelled `kind-decide` is refused as `needs_operator`, since only the operator can make its decision.
-  A task whose profile names no tier with a weight is refused as `no agent profile`, since its session would
+- **Fit.** A task whose profile names no tier with a weight is refused as `no agent profile`, since its session would
   run on whatever model the harness defaults to. Any other task is admitted only if its demand is at most the headroom
-  (limit less use) on every dimension; otherwise the decision names the first dimension it overfits.
+  (limit less use) on every dimension; otherwise the decision names the first dimension it overfits. A task labelled
+  `kind-decide` fits against the headroom less the demand of every other admitted task, so it never takes room a
+  mitigation, bug or story task needs.
 - **Order.** The admitted tasks go first by class: the tasks labelled `regression`, then a bug another open task waits on,
-  then the other bugs (type `bug`, or labelled `board-state` or `regression`), then the tasks labelled `leverage`, then the rest. Within a class they go by
+  then the other bugs (type `bug`, or labelled `board-state` or `regression`), then the tasks labelled `leverage`, then the rest, then the `kind-decide` tasks. Within a class they go by
   the most open tasks waiting on them directly, then the deepest critical path (the task itself plus the longest chain
   of open tasks waiting on it), then the heaviest Priority weight, the lowest id breaking a tie. The weight is the `[scheduler.priority_matrix]`
   cell of the task's `<impact>/<urgency>` (`high/low`), 1 to 9 by default as the product of the two levels' places
