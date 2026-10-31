@@ -2,6 +2,7 @@
 claimed by another session, and the release names the last renewal (D6)."""
 
 import json
+import os
 import threading
 import time
 from dataclasses import replace
@@ -12,7 +13,7 @@ from types import SimpleNamespace
 
 import pytest
 from starpulse.board.adapters import claim_ttl
-from starpulse.board.adapters.claim_ttl import sweep, transcript_halt
+from starpulse.board.adapters.claim_ttl import live_session, sweep, transcript_halt
 from starpulse.board.adapters.running_workflows import running_tasks
 from starpulse.board.adapters.upstream_backlog import UpstreamBacklog
 from starpulse.board.board_feed import BoardFeed
@@ -373,6 +374,59 @@ def test_a_task_with_a_running_workflow_keeps_its_claim_past_the_ttl_and_loses_i
     assert sweep(built, store, _rows(built), ttl=1800, now=claimed + 5000, seen_running=seen) == []
     assert sweep(built, store, _rows(built), ttl=1800, now=claimed + 6799, seen_running=seen) == []
     assert sweep(built, store, _rows(built), ttl=1800, now=claimed + 6800, seen_running=seen) == ["task-5"]
+
+
+def test_a_claim_whose_session_is_alive_is_kept_past_the_ttl_and_lost_once_the_session_ends(served) -> None:
+    """A session that ended its turn on a background CI watch emits nothing, yet its process is alive."""
+    built, _, store, _ = served
+    claimed = _claim(built, store)
+    alive = {"session-1"}
+
+    assert sweep(built, store, _rows(built), ttl=1800, now=claimed + 5000, alive=lambda s: s in alive) == []
+    alive.clear()
+    assert sweep(built, store, _rows(built), ttl=1800, now=claimed + 5000, alive=lambda s: s in alive) == ["task-5"]
+
+
+def test_a_kept_claim_serves_a_claim_expiry_of_now_plus_the_ttl(served) -> None:
+    built, _, store, _ = served
+    claimed = _claim(built, store)
+    expiries: dict[str, float] = {}
+
+    sweep(built, store, _rows(built), ttl=1800, now=claimed + 5000, alive=lambda _s: True, expiries=expiries)
+
+    assert expiries == {"task-5": claimed + 5000 + 1800}
+
+
+def _register(root: Path, pid: int, session: str, *, proc_start: str | None = None, bridge: str = "") -> None:
+    """A Claude Code session registry entry, `<root>/<pid>.json`, for the process `pid`."""
+    if proc_start is None:
+        proc_start = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[19]
+    entry = {"pid": pid, "sessionId": session, "bridgeSessionId": bridge, "procStart": proc_start}
+    (root / f"{pid}.json").write_text(json.dumps(entry))
+
+
+def test_live_session_is_true_for_a_registered_session_or_bridge_id_whose_process_runs(tmp_path: Path) -> None:
+    _register(tmp_path, os.getpid(), "uuid-1", bridge="session_abc")
+
+    assert live_session(tmp_path, "uuid-1")
+    assert live_session(tmp_path, "session_abc")
+    assert not live_session(tmp_path, "uuid-2")
+    assert not live_session(tmp_path, "")
+
+
+def test_live_session_is_false_for_a_process_that_ended_or_whose_pid_was_reused(tmp_path: Path) -> None:
+    _register(tmp_path, 2**22 + 7, "gone", proc_start="1")
+    _register(tmp_path, os.getpid(), "reused", proc_start="1")
+
+    assert not live_session(tmp_path, "gone")
+    assert not live_session(tmp_path, "reused")
+
+
+def test_live_session_ignores_a_missing_registry_and_unreadable_entries(tmp_path: Path) -> None:
+    (tmp_path / "1.json").write_text("{not json")
+
+    assert not live_session(tmp_path, "uuid-1")
+    assert not live_session(tmp_path / "absent", "uuid-1")
 
 
 def test_running_tasks_names_each_task_of_a_running_workflow_across_pages() -> None:
