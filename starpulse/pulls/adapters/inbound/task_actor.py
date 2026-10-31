@@ -421,7 +421,7 @@ class TaskActor:
         with ThreadPoolExecutor(max_workers=_EVALUATIONS) as pool:  # a slow task must not hold up the ones sorted after it
             running = {pool.submit(self._evaluated, name, gated[name]): name for name in due}
             for finished in as_completed(running):
-                self._keep_result(running[finished], finished.result())
+                self._keep_result(running[finished], gated[running[finished]], finished.result())
 
     def _evaluated(self, name: str, description: str) -> list[dict[str, Any]]:
         try:
@@ -430,10 +430,13 @@ class TaskActor:
             logger.warning("task actor: cannot evaluate the Start Criteria of %s: %s", name, error)
             return [{"id": each["id"], "status": "error"} for each in criteria.authored(description)]
 
-    def _keep_result(self, name: str, evaluated: list[dict[str, Any]]) -> None:
+    def _keep_result(self, name: str, description: str, evaluated: list[dict[str, Any]]) -> None:
         statuses = tuple((str(each["id"]), str(each["status"])) for each in evaluated)
         observed = self._clock()
         with self._lock:
+            current = self._feed.task(name)
+            if not current or criteria.authored(current["description"]) != criteria.authored(description):
+                return  # parked again on other criteria, or gone, while it ran: the result is not this park's
             before = self._results.get(name)
             self._results[name] = (observed, statuses)
             if before is None or before[1] != statuses:

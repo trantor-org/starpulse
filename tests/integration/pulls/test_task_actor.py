@@ -457,21 +457,23 @@ def test_a_task_parked_again_on_new_criteria_is_not_released_on_the_result_of_it
         task("TASK-2", "Waiting", description=GATED.replace("soak", "slow")),
     )
     hung = threading.Event()
-    answer = Criteria("met")
+    met, unmet = Criteria("met"), Criteria("unmet")
 
     def evaluate(name: str, description: str) -> list[dict[str, Any]]:
         if name == "TASK-2":  # a slow evaluation holds the pass, so its sweep of finished tasks does not run
             hung.wait(5)
-        return answer(name, description)
+        return (met if "soak" in description else unmet)(name, description)  # only the first park's criterion is met
 
     try:
         running(board, store, stop, evaluate=evaluate, fresh_s=0.05)
-        assert until(lambda: board.moved() == [("TASK-1", "ready")])
+        assert until(lambda: board.moved()[:1] == [("TASK-1", "ready")] and board.tasks["TASK-1"].lane == "ready")
+        until(lambda: False, within=0.2)  # the first release's own re-derivation lands before the task is parked again
+        released = len(board.moved())
 
         board.put(task("TASK-1", "In Progress", description=GATED))
         board.put(task("TASK-1", "Waiting", description=GATED.replace("soak", "merged")))
 
-        assert not until(lambda: board.moved().count(("TASK-1", "ready")) > 1, within=0.3)
+        assert not until(lambda: len(board.moved()) > released, within=0.3)
     finally:
         hung.set()
 
