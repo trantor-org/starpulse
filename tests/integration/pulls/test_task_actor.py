@@ -973,7 +973,27 @@ def test_a_review_task_whose_pr_merged_into_an_integration_branch_closes_only_on
     actor.pulls_changed()
 
     assert until(lambda: board.moved() == [("TASK-2", "done")])
-    assert [name for name, *_ in board.writes] == ["TASK-2"]
+    assert [name for name, _ in board.comments()] == ["TASK-1"]  # the hold's comment, no move
+
+
+def test_a_review_task_whose_pr_merged_into_a_non_default_base_is_held_out_of_done_naming_the_pr_once(
+    store: PullStore, stop: threading.Event
+) -> None:
+    board = Board(BoardFeed(), task("TASK-1", "Review", references=(PR_ONE,)))
+    store.save([pull(1, state="OPEN")])
+    actor = running(board, store, stop)
+    store.save([pull(1, state="MERGED", base="agent/m-295-fixes")])
+
+    actor.pulls_changed()
+    actor.pulls_changed()
+
+    assert until(lambda: len(board.comments()) == 1)
+    assert board.moved() == []
+    [(name, comment)] = board.comments()
+    assert name == "TASK-1"
+    assert "Held from Done:" in comment
+    assert PR_ONE in comment
+    assert "agent/m-295-fixes" in comment
 
 
 def test_a_pr_merged_during_the_start_derivation_moves_its_task_to_done_before_that_derivation_ends(
