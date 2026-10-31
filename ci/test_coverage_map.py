@@ -2,6 +2,7 @@
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 import coverage
@@ -160,3 +161,31 @@ def test_facts_count_a_file_that_moved_since_the_maps_sha_as_present_and_a_delet
     coverage_map.publish(published, tmp_path / "maps")
 
     assert coverage_map.facts(published, tmp_path / "maps", root)["missing"] == 1
+
+
+def test_the_projects_coverage_config_credits_a_line_to_every_test_that_runs_it(tmp_path):
+    """`sysmon`, CPython 3.14+'s default core, credits a line to the first context that runs it and drops the rest."""
+    (tmp_path / "pkg.py").write_text("def covered():\n    return 1\n")
+    config = Path(__file__).resolve().parent.parent / "pyproject.toml"
+    measure = tmp_path / "measure.py"
+    measure.write_text(
+        "import sys\n"
+        "import coverage\n"
+        f"sys.path.insert(0, {str(tmp_path)!r})\n"
+        f"cov = coverage.Coverage(config_file={str(config)!r}, data_file={str(tmp_path / '.coverage')!r},\n"
+        f"                        source=[{str(tmp_path)!r}])\n"
+        "cov.start()\n"
+        "import pkg\n"
+        "for name in ('first', 'second'):\n"
+        "    cov.switch_context(name)\n"
+        "    pkg.covered()\n"
+        "cov.stop()\n"
+        "cov.save()\n"
+    )
+    subprocess.run([sys.executable, "-I", str(measure)], check=True, cwd=tmp_path)
+
+    data = coverage.CoverageData(str(tmp_path / ".coverage"))
+    data.read()
+
+    contexts = {c for path in data.measured_files() for lines in data.contexts_by_lineno(path).values() for c in lines}
+    assert {"first", "second"} <= contexts

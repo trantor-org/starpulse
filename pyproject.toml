@@ -355,9 +355,10 @@ pythonpath = ["ci", "."]
 
 # The nightly's per-test coverage map (ci/coverage_map.py) records which source files each test runs: line coverage only,
 # test files included so a test that runs no package code still leaves its own file under its context, and relative
-# paths so the data combines across runners. The default core stays: `core = "sysmon"` is cheaper but records no
-# per-test contexts.
+# paths so the data combines across runners. The core is pinned to `ctrace`: CPython 3.14+ defaults to `sysmon`,
+# which records no per-test contexts, so the nightly's map named ~60% of the collected tests and was never published.
 [tool.coverage.run]
+core = "ctrace"
 source = ["starpulse", "ci"]
 relative_files = true
 
