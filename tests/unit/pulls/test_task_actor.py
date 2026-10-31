@@ -132,6 +132,7 @@ def test_a_criterion_in_error_for_two_passes_re_gates_the_task_once_without_park
     assert board.moved() == [("TASK-101", "ready")]
     assert not any(name == "TASK-1" for name, _ in board.moved())
     assert board.created[0][1]["priority"] == "medium"  # the board holds none for TASK-1: the fallback
+    assert board.created[0][1]["type"] == "chore"  # the board refuses a task with no type
 
 
 def test_the_re_gate_task_carries_the_priority_of_the_task_it_unblocks(
