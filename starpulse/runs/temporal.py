@@ -96,7 +96,7 @@ class Poller:
 
     def _list(self, query: str, limit: int) -> list[dict]:
         types = ",".join(f'"{name}"' for name in TYPES)
-        params = urllib.parse.urlencode({"query": f"WorkflowType IN ({types}) AND {query}", "maximumPageSize": limit})
+        params = urllib.parse.urlencode({"query": f"WorkflowType IN ({types}) AND {query}", "pageSize": limit})
         return self.fetch(f"{self.base}{_NAMESPACE}/workflows?{params}").get("executions") or []
 
     def _history(self, execution: dict) -> dict:
