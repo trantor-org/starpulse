@@ -60,16 +60,22 @@ class PullStore:
         self._held: dict[tuple[str, int], dict[str, Any]] = {}
         #: The records only the database held that a read of one pull request found, until the next save or refresh.
         self._found: dict[tuple[str, int], list[dict[str, Any]]] = {}
+        #: The records only the database held that a listing of a repository (or all) in a state found, without their
+        #: `detail`, once `keep_listings` says every save reaches this store: a record saved or refreshed since is
+        #: held, which the listing leaves out, so a save needs no re-read.
+        self._listed: dict[tuple[str | None, str | None], list[dict[str, Any]]] = {}
+        self._keep_listings = False
         since = (datetime.now(UTC) - window).strftime("%Y-%m-%dT%H:%M:%SZ")
         self._hold(
             select(pull_requests).where(or_(pull_requests.c.state == "OPEN", pull_requests.c.updated_at >= since))
         )
 
     def _read(self, query: Any) -> list[dict[str, Any]]:
-        """The records of the rows `query` selects, with their `detail`."""
+        """The records of the rows `query` selects, with their `detail` when the query selects it (None otherwise)."""
         with self._engine.connect() as db:
             return [
-                {name: row[column] for column, name in (_FIELDS | _LATER).items()} | {"detail": row["detail"]}
+                {name: row[column] for column, name in (_FIELDS | _LATER).items()}
+                | {"detail": row["detail"] if "detail" in row else None}
                 for row in db.execute(query).mappings()
             ]
 
@@ -112,6 +118,11 @@ class PullStore:
         for listener in self._listeners:
             listener()
 
+    def keep_listings(self) -> None:
+        """Keep each listing of the records only the database holds until the process ends, for a store that refreshes
+        every save another process makes (`follow_saves`): a store that does not would miss a row written since."""
+        self._keep_listings = True
+
     def subscribe(self, listener: Callable[[], None]) -> None:
         """Call `listener` in the refreshing thread after each save or refresh, so an answer built from the store is
         ready before a reader asks for it."""
@@ -152,7 +163,7 @@ class PullStore:
             and (needle is None or needle in record["body"].lower())
         ]
         if not held_only and state != "OPEN" and (repo is None or number is None or (repo, number) not in held):
-            found += self._stored(held, repo, number, state, needle)
+            found += self._stored(held, repo, number, state, needle, detailed)
         return [
             {name: value for name, value in record.items() if detailed or name != "detail"}
             for record in sorted(found, key=lambda record: (record["repo"], record["number"]))
@@ -171,20 +182,30 @@ class PullStore:
         number: int | None,
         state: str | None,
         needle: str | None,
+        detailed: bool,
     ) -> list[dict[str, Any]]:
         """The records in the database matching the filters that are not in `held`; a read of one pull request is kept
-        until the next save or refresh, since an old pull request is read again for as long as a task cites it."""
+        until the next save or refresh, since an old pull request is read again for as long as a task cites it, and a
+        listing without `detail` or a body filter is kept for good: a save or refresh holds each record it changes.
+        Only a read of `detail` pays to decode it."""
         memo, key = self._found, (repo, number)
         one = repo is not None and number is not None and state is None and not needle
         if one and key in memo:
             return memo[key]
-        filters = {"repo": repo, "number": number, "state": state}
-        query = select(pull_requests).where(
-            *(pull_requests.c[key] == value for key, value in filters.items() if value is not None)
-        )
-        if needle:
-            query = query.where(pull_requests.c.body.contains(needle, autoescape=True))
-        stored = [record for record in self._read(query) if (record["repo"], record["number"]) not in held]
+        listing = self._keep_listings and number is None and not needle and not detailed
+        rows = self._listed.get((repo, state)) if listing else None
+        if rows is None:
+            filters = {"repo": repo, "number": number, "state": state}
+            columns = [column for column in pull_requests.c if detailed or one or column.name != "detail"]
+            query = select(*columns).where(
+                *(pull_requests.c[name] == value for name, value in filters.items() if value is not None)
+            )
+            if needle:
+                query = query.where(pull_requests.c.body.contains(needle, autoescape=True))
+            rows = self._read(query)
+            if listing:
+                self._listed[(repo, state)] = rows
+        stored = [record for record in rows if (record["repo"], record["number"]) not in held]
         if one:
             memo[key] = stored  # the dict read before the query: a refresh since has swapped it for a new one
         return stored
