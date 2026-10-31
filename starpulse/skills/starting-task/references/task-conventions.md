@@ -14,6 +14,7 @@ project's agent instructions name the fallback.
 - No resolution label
 - Kind and size
 - Free-form labels
+- Description template
 - Execution-ready
 - Structured fields
 - Milestones (spec writing and slicing: [specs-and-slicing.md](specs-and-slicing.md))
@@ -108,12 +109,68 @@ hash: `follow-up`, not `weekly-code-audit-2026-10-25-follow-up`. The `kind-`, `s
 idempotency key goes in the task's `source` field, never a label. A board may refuse a label
 that breaks the rule; its refusal names the rule.
 
+## Description template
+
+A task's Description is a short brief in this template, which `starpulse task create` takes as
+`--description` and a board with a `readable` guard refuses to store otherwise. A project may
+print it, as trantor's `backlog-task create --template` does; the copy below is the one source.
+
+```markdown
+## Outcome
+
+<One sentence: what is true once the task is done.>
+
+## Why
+
+<At most two sentences: what breaks, or who waits, while it is not.>
+
+## Current State
+
+<At most two sentences on what is true today, a path in backticks.>
+
+## Scope
+
+- <A change the task makes, in domain words and no paths.>
+
+## Out of Scope
+
+- <A neighbouring change it leaves to another task.>
+
+## Blast Radius
+
+reach 1 · data 0 · undo 0 · detect 0. <One sentence on the worst axis.>
+
+## Stop Conditions
+
+- <What makes the work stop and ask.>
+```
+
+- **Order.** The seven headings come in this order. Four more are allowed in their place:
+  `Follows` after `Why` (the done task this one picks up from), `Terms` and `Example` after
+  `Current State` (a glossary-missing word; a fenced before and after), `Rollback` after
+  `Blast Radius`, and `Open Questions` last, on a `decide` task only.
+- **Length.** `Outcome` is one sentence; `Why` and `Current State` at most two each. Long
+  background and constraints go in the milestone spec; a standalone task states a constraint as
+  a stop condition.
+- **Paths.** A path in prose is in backticks, at most two to a sentence; `Scope` and
+  `Out of Scope` name none, since paths belong in the Implementation Plan. A command goes in a
+  fenced block, never at the start of a prose line, and a fenced block is not read as prose.
+- **Blast Radius.** One line, `reach N · data N · undo N · detect N.` and a sentence on the worst
+  axis, each axis scored 0 to 3. reach: module, service, shared platform, host. data: none,
+  additive, mutating, destructive. undo: revert, revert plus a manual step, fix forward, none.
+  detect: CI, an alert within minutes, manual, silent. An axis at 3 needs a `Stop Conditions`
+  bullet that names it; `undo` at 2 or more needs a `Rollback` section.
+- **Board-written sections.** A section the board writes itself, such as `Needs attention` or
+  `Start Criteria`, is no part of the brief and is never judged.
+
+A program that files tasks writes the same template; raw evidence it carries, such as a log tail,
+goes in a fenced block under `Current State`.
+
 ## Execution-ready
 
 `execution-ready` says discovery and decomposition are complete enough to execute from the
-brief; it buys no model and no extra attempt. A conforming task has six planning headings in its
-Description (`Why This Matters`, `Current State`, `Scope`, `Constraints`, `Stop Conditions`,
-`ADR Needed`), a non-empty Implementation Plan, and at least three Acceptance Criteria. A label
+brief; it buys no model and no extra attempt. A conforming task has a Description in the
+template above, a non-empty Implementation Plan, and at least three Acceptance Criteria. A label
 on sparse prose is a defect. Create roots as `Ready` and each slice with an unresolved
 dependency as `Waiting` in the same call (`--status waiting --dependency PROJ-N`). Task creation
 does not authorize execution.
