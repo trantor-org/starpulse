@@ -83,13 +83,16 @@ def test_the_url_comes_from_the_write_url_variable_and_a_refusal_exits_one(
     assert _Ingest.seen[0]["event"]["machine"] == "m"
 
 
-def test_a_missing_token_variable_is_named_on_stderr(
+def test_a_missing_token_variable_is_named_with_the_next_step_on_stderr(
     ingest: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.delenv("STARPULSE_PRODUCER_DAGU_TOKEN", raising=False)
 
     code = main(["event", "emit", "--url", ingest, "--source", "dagu", "--type", "StepStarted", "--subject", "r"])
 
+    err = capsys.readouterr().err
     assert code == 1
-    assert "STARPULSE_PRODUCER_DAGU_TOKEN" in capsys.readouterr().err
+    assert "STARPULSE_PRODUCER_DAGU_TOKEN" in err
+    assert "never ask a person for it" in err
+    assert "--until-task" in err
     assert _Ingest.seen == []

@@ -73,7 +73,12 @@ def main(argv: Sequence[str], environ: Mapping[str, str] = os.environ) -> int:
     args = _parser().parse_args(argv[1:])
     token_env = args.token_env or f"STARPULSE_PRODUCER_{args.source.upper().replace('-', '_')}_TOKEN"
     if not (token := environ.get(token_env)):
-        print(f"the token variable {token_env} is not set", file=sys.stderr)
+        print(
+            f"the token variable {token_env} is not set: a producer token belongs to the process that emits, so never"
+            " ask a person for it. A session missing a path to emit files that gap as a task and parks on it:"
+            " starpulse task park <task> --until-task <gap task>",
+            file=sys.stderr,
+        )
         return 1
     fields = {
         k: v
