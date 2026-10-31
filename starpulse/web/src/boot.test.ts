@@ -56,6 +56,15 @@ describe("the page's boot", () => {
     expect(mount).not.toHaveBeenCalled();
   });
 
+  it("rewrites a retired ?view=dags address to ?view=jobs before anything reads it", async () => {
+    history.replaceState(null, "", "/?view=dags&demo");
+    const { boot } = await import("./boot");
+
+    boot(vi.fn());
+
+    expect(location.search).toBe("?demo&view=jobs");
+  });
+
   it("reads the record of a task the address names at boot, before the renderer's snapshot or any React fetch", async () => {
     history.replaceState(null, "", "/?view=kanban&task=TASK-9");
     const asked: string[] = [];

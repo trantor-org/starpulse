@@ -89,7 +89,7 @@ describe("the phone-width view bar", () => {
     await viewport.resize(true);
     await mount();
 
-    expect(buttons().map((b) => b.textContent)).toEqual(["Star Map", "Kanban", "DAGs", "Admin", "More"]);
+    expect(buttons().map((b) => b.textContent)).toEqual(["Star Map", "Kanban", "Jobs", "Admin", "More"]);
     expect(button("Star Map").disabled).toBe(true);
     expect(buttons().filter((b) => b.disabled)).toHaveLength(1);
   });
@@ -112,20 +112,20 @@ describe("the phone-width view bar", () => {
     await viewport.resize(true);
     await mount();
     expect(button("Kanban").getAttribute("aria-current")).toBe("page");
-    expect(button("DAGs").getAttribute("aria-current")).toBeNull();
+    expect(button("Jobs").getAttribute("aria-current")).toBeNull();
 
-    tap("DAGs");
+    tap("Jobs");
     await frames();
 
-    expect(button("DAGs").getAttribute("aria-current")).toBe("page");
+    expect(button("Jobs").getAttribute("aria-current")).toBe("page");
     expect(button("Kanban").getAttribute("aria-current")).toBeNull();
-    expect(location.search).toBe("?view=dags");
+    expect(location.search).toBe("?view=jobs");
   });
 
   it("keeps the Star Map button on a page wider than the phone", async () => {
     await mount();
 
-    expect(buttons().map((b) => b.textContent)).toEqual(["Star Map", "Kanban", "DAGs", "Admin", "More"]);
+    expect(buttons().map((b) => b.textContent)).toEqual(["Star Map", "Kanban", "Jobs", "Admin", "More"]);
   });
 
   it("refits the Board on a tap on the Star Map while it shows, as the navigator's entry does", async () => {
@@ -171,11 +171,11 @@ describe("phone width disables the Star Map", () => {
   });
 
   it("keeps a view the address names other than the Star Map", async () => {
-    history.replaceState(null, "", "/?view=dags");
+    history.replaceState(null, "", "/?view=jobs");
     await viewport.resize(true);
     await mount();
 
-    expect(button("DAGs").getAttribute("aria-current")).toBe("page");
+    expect(button("Jobs").getAttribute("aria-current")).toBe("page");
   });
 });
 

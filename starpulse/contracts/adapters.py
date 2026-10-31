@@ -373,6 +373,12 @@ class RecentRun(_Contract):
         description="The `KEY=value` parameters the run started with, by name; empty when it had none."
     )
     steps: dict[str, RunStatus] = Field(description="Each step the run reached by name with its status in this run.")
+    attempt: int | None = Field(
+        default=None, ge=1, description="The attempt of the step the run is on (or failed on); None when the engine counts none."
+    )
+    failure: str | None = Field(
+        default=None, description="The last failure's message (the step's, or the run's); None when nothing failed."
+    )
 
 
 class ActiveRun(_Contract):
@@ -394,6 +400,15 @@ class ActiveRun(_Contract):
         alias="stepStartedAt", description="When the run entered `step`, ISO 8601 UTC; empty when `step` is."
     )
     steps: dict[str, RunStatus] = Field(description="Each of the DAG's steps by name with its status in this run.")
+    task: str | None = Field(
+        default=None, description="The Board task the run works on (`TASK-N`); None when it names none."
+    )
+    attempt: int | None = Field(
+        default=None, ge=1, description="The attempt of the step the run is on (or failed on); None when the engine counts none."
+    )
+    failure: str | None = Field(
+        default=None, description="The last failure's message (the step's, or the run's); None when nothing failed."
+    )
 
 
 class Pool(_Contract):

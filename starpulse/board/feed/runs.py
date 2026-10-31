@@ -13,6 +13,16 @@ from starpulse.board.feed.shared import (
 )
 
 
+#: How many of a workflow's newest failed runs the page draws.
+FAILED_SHOWN = 10
+
+
+def _failed(dag: dict) -> dict:
+    """`{"failed": [...]}` with the newest failed runs of `dag`'s recent runs (listed newest first), else nothing."""
+    failed = [run for run in dag.get("recent") or [] if run.get("status") == "failed"][:FAILED_SHOWN]
+    return {"failed": failed} if failed else {}
+
+
 class RunMethods:
     def runs(self, instance: str) -> InstanceRuns:
         """Where the runs adapter instance `instance` publishes its workflows."""
@@ -120,6 +130,7 @@ class RunMethods:
         return [
             {**{key: value for key, value in dag.items() if key != "recent"}, "name": f"{instance}/{dag['name']}"}
             | ({"pool": f"{instance}/{dag['pool']}"} if dag.get("pool") else {})
+            | _failed(dag)
             for instance, dags in self._dags.items()
             for dag in dags
             if instance != PUSHED_INSTANCE or dag["name"] not in listed

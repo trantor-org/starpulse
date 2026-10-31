@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FRESH, LABEL_MAX, bigPlace, captions, chartHeight, cpuPercent, dagData, dagFacts, filterRows, order, panes, place, places, refusal, rows, runHours, stepLabels, ties, type DagData } from "./dagsModel";
+import { FRESH, LABEL_MAX, bigPlace, captions, chartHeight, cpuPercent, dagData, dagFacts, filterRows, order, panes, place, places, refusal, rows, runHours, runNote, stepLabels, ties, type DagData } from "./dagsModel";
 import type { Dag, DagStep, Machine, RunStatus } from "../../api";
 
 const step = (name: string, depends: string[] = [], status: RunStatus = "succeeded"): DagStep => ({ name, depends, status, kind: null, precondition: null, lock: null, last: [] });
@@ -406,5 +406,31 @@ describe("the run pressure the navigator draws", () => {
 
   it("reads no CPU when the server served none, never zero", () => {
     expect(cpuPercent({})).toBeNull();
+  });
+});
+
+describe("runNote", () => {
+  const running = { runId: "r1", status: "running", startedAt: "", step: "ci_head", stepStartedAt: "", steps: {}, task: "TASK-9", attempt: 2, failure: "ci_head exited 2" } as const;
+  const failed = { runId: "r0", status: "failed", startedAt: "", finishedAt: "", params: {}, steps: { park_task: "failed" }, task: "TASK-8", attempt: 3, failure: "park exited 4" } as const;
+
+  it("says the task, the activity, the attempt and the last failure of the run a job is in", () => {
+    expect(runNote(dag("temporal/task_lifecycle", "running", { active: [running] }))).toBe("TASK-9 · ci_head · attempt 2 · ci_head exited 2");
+  });
+
+  it("picks the run that is on an activity and counts the others", () => {
+    const waiting = { ...running, runId: "r0", step: "", task: "TASK-1", attempt: null, failure: null };
+    expect(runNote(dag("temporal/task_lifecycle", "running", { active: [waiting, running] }))).toBe("TASK-9 · ci_head · attempt 2 · ci_head exited 2 · +1 more");
+  });
+
+  it("leaves a run that names no task, attempt or failure to the default line", () => {
+    expect(runNote(dag("dagu/build", "running", { active: [{ ...running, task: null, attempt: null, failure: null }] }))).toBe("");
+  });
+
+  it("says the newest failed run of a job that is not running, with the activity it failed on", () => {
+    expect(runNote(dag("temporal/task_phases", "succeeded", { failed: [failed] }))).toBe("failed TASK-8 · park_task · attempt 3 · park exited 4");
+  });
+
+  it("is empty for a job with nothing running or failed", () => {
+    expect(runNote(dag("dagu/build", "succeeded"))).toBe("");
   });
 });

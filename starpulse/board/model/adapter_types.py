@@ -16,10 +16,11 @@ BUILT_IN = {
     "dagu": "starpulse.runs.dagu",
     "github_actions": "starpulse.runs.github_actions",
     "systemd": "starpulse.runs.systemd",
+    "temporal": "starpulse.runs.temporal",
 }
 
 #: The run adapters' worker contexts. Each runs as a `starpulse worker <context>` child of `serve`.
-ADAPTER_CONTEXTS = ("dagu", "github-actions", "systemd")
+ADAPTER_CONTEXTS = ("dagu", "github-actions", "systemd", "temporal")
 
 #: The (soft, hard) memory limit in MB of an adapter context that outgrows the 256/512 default: a Dagu of ~70 DAGs settles
 #: near 280 MB proportional after its first statistics pass.

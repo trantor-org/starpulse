@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { backStep, canvasSpace, levelParams, levelSearch, replaceSearch, retired, viewOf, viewSearch, type Back } from "./nav";
+import { backStep, canvasSpace, levelParams, levelSearch, replaceSearch, renamedView, retired, viewOf, viewSearch, type Back } from "./nav";
 import { fitLevel, toScreen } from "../render/zoom";
 
 describe("the canvas beside the panel", () => {
@@ -24,9 +24,17 @@ describe("the view in the address", () => {
     expect(viewOf("?view=nonsense")).toBe("constellation");
   });
 
+  it("names the address a retired ?view=dags becomes, and none for any other", () => {
+    expect(renamedView("?view=dags")).toBe("?view=jobs");
+    expect(renamedView("?demo&view=dags&open=scan")).toBe("?demo&open=scan&view=jobs");
+    expect(renamedView("?view=jobs")).toBeNull();
+    expect(renamedView("")).toBeNull();
+  });
+
   it("opens the Admin view for ?view=admin, beside the other parameters", () => {
     expect(viewOf("?view=admin")).toBe("admin");
-    expect(viewOf("?view=dags")).toBe("dags");
+    expect(viewOf("?view=jobs")).toBe("jobs");
+    expect(viewOf("?view=dags")).toBe("jobs");
     expect(viewOf("?demo&view=admin")).toBe("admin");
     expect(viewSearch("?demo", "admin")).toBe("?demo&view=admin");
     expect(viewSearch("?view=admin&demo", "kanban")).toBe("?demo&view=kanban");
@@ -92,13 +100,13 @@ describe("stepping out with Escape, Backspace or a right-click", () => {
 
 describe("the address that reproduces a machine level", () => {
   it("reads `open=` and `focus=`, each absent as null", () => {
-    expect(levelParams("?view=dags&open=scan&focus=lint")).toEqual({ open: "scan", focus: "lint" });
+    expect(levelParams("?view=jobs&open=scan&focus=lint")).toEqual({ open: "scan", focus: "lint" });
     expect(levelParams("")).toEqual({ open: null, focus: null });
   });
 
   it("writes them beside the other parameters and drops each that has no value", () => {
-    expect(levelSearch("?view=dags", { open: "scan", focus: "lint" })).toBe("?view=dags&open=scan&focus=lint");
-    expect(levelSearch("?open=scan&focus=lint&view=dags", { open: "scan", focus: null })).toBe("?view=dags&open=scan");
+    expect(levelSearch("?view=jobs", { open: "scan", focus: "lint" })).toBe("?view=jobs&open=scan&focus=lint");
+    expect(levelSearch("?open=scan&focus=lint&view=jobs", { open: "scan", focus: null })).toBe("?view=jobs&open=scan");
     expect(levelSearch("?open=scan&focus=lint", { open: null, focus: null })).toBe("");
   });
 });
