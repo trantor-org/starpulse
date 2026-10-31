@@ -115,6 +115,7 @@ def follow_saves(store: PullStore, log: EventLog, stop: threading.Event, after: 
     def handle(entry: Entry) -> None:
         store.refresh([(repo, int(number)) for repo, number in json.loads(entry.fields["keys"])])
 
+    store.keep_listings()
     return _follow("pull-saved", log, SAVED_STREAM, after, handle, stop)
 
 

@@ -128,3 +128,30 @@ def test_a_resident_pull_request_follows_the_store_when_it_is_saved_again(tmp_pa
 
     assert [record["checks"] for record in store.find(REPO, 1)] == ["failing"]
     assert [record["checks"] for record in store.resident(REPO, 1) or []] == ["failing"]
+
+
+def test_a_save_rebuilds_the_list_only_when_a_reader_has_asked_for_the_last_one(
+    store: PullStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    builds: list[str] = []
+    real: Callable[..., Any] = pulls_route.pulls_response
+
+    def counted(pulls: PullStore | None, query: dict[str, list[str]]) -> Any:
+        builds.append("list" if "number" not in query else "one")
+        return real(pulls, query)
+
+    monkeypatch.setattr(pulls_route, "pulls_response", counted)
+    reads = PullReads(store)
+
+    store.save([_record(1)])
+    assert builds == []  # no reader has asked yet
+
+    reads("")
+    store.save([_record(2)])
+    assert builds == ["list", "list"]  # the answer read once is built again before the next reader asks
+
+    store.save([_record(3)])
+    assert builds == ["list", "list"]  # the rebuilt answer was not read, so a save leaves it stale
+
+    reads("")
+    assert builds == ["list", "list", "list"]

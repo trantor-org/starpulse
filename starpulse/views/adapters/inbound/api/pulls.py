@@ -36,7 +36,8 @@ if TYPE_CHECKING:  # annotation only
 class PullReads:
     """`/api/pulls`' answers, by query, held until the store saves: the unfiltered list is ~1 MB to read, encode and
     gzip, and every page asks for it. A save builds the unfiltered answer itself, in the poller's thread, so a reader
-    finds it held; readers asking together for any other answer share one computation, since each extra one only
+    finds it held, unless no reader asked for the last one built (a save every second would otherwise keep a core
+    encoding an answer nobody reads); readers asking together for any other answer share one computation, since each extra one only
     waits behind the rest for the GIL. A read of one pull request (`repo` and `number`) is a lookup of microseconds:
     it takes neither the computation lock, which a rebuild of the list holds for seconds, nor a held slot."""
 
@@ -48,8 +49,14 @@ class PullReads:
         self._held: OrderedDict[str, tuple[int, Encoded, int]] = OrderedDict()
         self._lock = threading.Lock()
         self._computing = threading.Lock()
+        self._asked = False  # a reader has taken the unfiltered answer since a save last built it
         if pulls:
-            pulls.subscribe(lambda: self(""))
+            pulls.subscribe(self._rebuild)
+
+    def _rebuild(self) -> None:
+        if self._asked:
+            self._asked = False
+            self._answer("")
 
     def _current(self, query: str) -> tuple[int, Encoded, int] | None:
         rev = self._pulls.rev if self._pulls else 0
@@ -58,6 +65,10 @@ class PullReads:
         return held if held and held[0] == rev else None
 
     def __call__(self, query: str) -> tuple[Encoded, int]:
+        self._asked = self._asked or not query
+        return self._answer(query)
+
+    def _answer(self, query: str) -> tuple[Encoded, int]:
         asked = parse_qs(query)
         if "repo" in asked and "number" in asked:
             body, status = pulls_response(self._pulls, asked)

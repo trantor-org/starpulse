@@ -106,3 +106,47 @@ def test_held_only_leaves_out_what_a_read_of_the_database_would_add(engine: Engi
 
     assert [r["number"] for r in store.find(repo=REPO, held_only=True)] == [1, 2]
     assert not seen
+
+
+def test_a_listing_leaves_out_the_detail_it_does_not_serve_and_a_detailed_one_still_reads_it(engine: Engine) -> None:
+    store = PullStore(engine, window=timedelta(days=7))
+    seen = _queries(engine)
+
+    assert [r["number"] for r in store.find()] == [1, 2, 3]
+    assert seen
+    assert not [statement for statement in seen if "detail" in statement]
+
+    detailed = {r["number"]: r["detail"] for r in store.find(detailed=True)}
+    assert detailed[3] == {"files": ["a.py"]}
+
+
+def test_a_listing_is_read_from_the_database_once_until_a_save_changes_a_record(engine: Engine) -> None:
+    store = PullStore(engine, window=timedelta(days=7))
+    store.keep_listings()
+    store.find()
+    seen = _queries(engine)
+
+    store.save([_record(3, "MERGED", timedelta(days=60), body="rewritten")])
+    store.save([_record(4, "OPEN", timedelta(days=1), body="new")])
+    saved = len(seen)
+    listing = store.find()
+    assert len(seen) == saved
+
+    assert [(r["number"], r["body"]) for r in listing] == [
+        (1, "stale but open"),
+        (2, "recent"),
+        (3, "rewritten"),
+        (4, "new"),
+    ]
+    assert [r["number"] for r in store.find(state="MERGED")] == [2, 3]
+
+
+def test_a_store_that_does_not_hear_every_save_reads_a_listing_again(engine: Engine) -> None:
+    store = PullStore(engine, window=timedelta(days=7))
+    store.find()
+    seen = _queries(engine)
+
+    PullStore(engine, window=timedelta(days=7)).save([_record(4, "MERGED", timedelta(days=60), body="elsewhere")])
+
+    assert [r["number"] for r in store.find()] == [1, 2, 3, 4]
+    assert any(statement.lstrip().startswith("SELECT") for statement in seen)
