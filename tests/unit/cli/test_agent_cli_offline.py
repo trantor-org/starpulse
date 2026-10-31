@@ -249,6 +249,8 @@ class TestConfigCheck:
                 },
                 "limits": {"cpu": 80, "memory": 80, "sessions": 2, "review": 20},
                 "session_limits": {},
+                "verify_lane": None,
+                "verify_profile": None,
             },
             "release": None,
             "analytics": {
