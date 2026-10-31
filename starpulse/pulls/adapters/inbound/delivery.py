@@ -34,6 +34,8 @@ METRICS = "pulls.metrics"
 SAVED_STREAM = "pulls:saved"
 REFRESH_STREAM = "pulls:refresh"
 POLLER = "pulls.poller"
+#: The worker state holding, by stream, the id of the last `follow_events` entry the replay handed over.
+CURSOR = "pulls.cursor"
 #: Seconds between the worker's writes of its metrics.
 METRICS_S = 15.0
 #: Seconds between the poller's beats, and how old its last beat may be before `serve` calls it down.
@@ -147,16 +149,36 @@ def follow_refreshes(log: EventLog, request: Callable[[str, int], Any], stop: th
 
 
 def follow_events(
-    log: EventLog, feed: Any, handlers: Mapping[str, Callable[[Entry], None]], stop: threading.Event
+    log: EventLog,
+    feed: Any,
+    handlers: Mapping[str, Callable[[Entry], None]],
+    stop: threading.Event,
+    *,
+    resume: bool = False,
 ) -> list[threading.Thread]:
     """Hand each stream of `handlers` (name to handler) every entry the log retains, then each new one, until `stop`.
     Each waits for the Board replay: an event lands on the pull requests its task cites, which the feed knows only
-    once it has read the Board. An entry applied twice leaves the store as once did, so a restart replays them all.
+    once it has read the Board. An entry applied twice leaves the store as once did, so replaying one is harmless.
 
     The replay of a stream's retention takes minutes (the `machine:events` stream holds a month), and a `PR_MERGED`
     published meanwhile would wait behind it. So each stream has a second thread on a `Tail.live` taken before the
-    replay starts, which reads only what is appended from then on. A lock per stream lets one entry run at a time."""
+    replay starts, which reads only what is appended from then on. A lock per stream lets one entry run at a time.
+
+    The replay keeps its cursor in the `CURSOR` worker state before each poll, once the batch before is handed over.
+    With `resume` (the pull store holds records) it starts after that cursor, so a restart reads only what was
+    appended since; without it (a new or wiped store) it reads the whole retention again to rebuild the store."""
     from starpulse.event_log.event_log import Tail  # noqa: PLC0415 -- the event log opens the database stack
+
+    class Kept(Tail):
+        """A replay that writes its cursor before each poll: every entry up to it has been handed over."""
+
+        kept: int | None = None
+
+        def poll(self) -> list[Entry]:
+            if self.cursor != self.kept:
+                log.put_state_entry(CURSOR, self.stream, self.cursor)
+                self.kept = self.cursor
+            return super().poll()
 
     def run(stream: str, handle: Callable[[Entry], None], lock: threading.Lock, tail: Tail) -> None:
         feed.wait_replayed()
@@ -167,11 +189,13 @@ def follow_events(
 
         tail.run(locked, stop)
 
+    _, kept = log.state(CURSOR) if resume else (0, None)
+    cursors = kept if isinstance(kept, dict) else {}
     threads = []
     for stream, handle in handlers.items():
         lock = threading.Lock()
         live = Tail.live(log, stream, interval=POLL_S)
-        replay = log.tail(stream, after=0, interval=POLL_S)
+        replay = Kept(log, stream, after=int(cursors.get(stream) or 0), interval=POLL_S)
         for kind, tail in (("replay", replay), ("live", live)):
             name = f"pull-events-{stream}-{kind}"
             threads.append(threading.Thread(target=run, args=(stream, handle, lock, tail), name=name, daemon=True))
