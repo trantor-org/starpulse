@@ -298,12 +298,15 @@ class _Readable:
     def __init__(self, template: readable.Template) -> None:
         self._template = template
 
+    def _judged(self, record: Record) -> str:
+        return readable.judged(self._template, record.body)
+
     def broken(self, record: Record) -> str:
         return readable.broken(self._template, record.body)
 
     def __call__(self, record: Record) -> bool:
         """Holds for a description the write left as it was: the rules judge a create and an edit, not an older text."""
-        if record.earlier is not None and readable.description(record.earlier.body) == readable.description(record.body):
+        if record.earlier is not None and self._judged(record.earlier) == self._judged(record):
             return True
         return not self.broken(record)
 

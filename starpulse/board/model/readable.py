@@ -29,7 +29,7 @@ _PATH = re.compile(r"(?<![\w/.~-])(?:\.{0,2}/|~/)?[\w.-]+(?:/[\w.-]+)+/?|(?<![\w
 _FILE = re.compile(r"\.[a-z]{1,5}$")
 _RADIUS = re.compile(r"^reach ([0-3]) · data ([0-3]) · undo ([0-3]) · detect ([0-3])\. \S")
 _AXES = ("reach", "data", "undo", "detect")
-_TEMPLATE_KEYS = {"headings", "commands", "max_paths_per_sentence", "blast_radius"}
+_TEMPLATE_KEYS = {"headings", "commands", "max_paths_per_sentence", "blast_radius", "board_written"}
 _HEADING_KEYS = {"name", "optional", "max_sentences", "no_paths"}
 _RADIUS_KEYS = {"heading", "stops", "rollback", "stop_at", "rollback_at"}
 
@@ -57,6 +57,7 @@ class Template:
     commands: tuple[str, ...] = ()
     max_paths: int | None = None
     blast_radius: BlastRadius | None = None
+    board_written: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -122,12 +123,30 @@ def parse(spec: Mapping[str, Any], where: str) -> Template:
             _count(table, "stop_at", here, 0) or 3,
             _count(table, "rollback_at", here, 0) or 2,
         )
-    return Template(tuple(headings), tuple(commands), _count(spec, "max_paths_per_sentence", where), radius)
+    written = spec.get("board_written", [])
+    if not isinstance(written, list) or not all(isinstance(name, str) and name for name in written):
+        raise ValueError(f"{where}: readable `board_written` is a list of the `## ` headings the board writes")
+    return Template(tuple(headings), tuple(commands), _count(spec, "max_paths_per_sentence", where), radius, tuple(written))
 
 
 def description(body: str) -> str:
     found = _REGION.search(body)
     return found.group(1) if found else body
+
+
+def judged(template: Template, body: str) -> str:
+    """The description in `body` without the `board_written` sections, which the board writes and no template judges."""
+    kept: list[str] = []
+    fenced = skipping = False
+    for line in description(body).splitlines(keepends=True):
+        if _FENCE.match(line):
+            fenced = not fenced
+        heading = None if fenced else _HEADING.match(line)
+        if heading:
+            skipping = heading.group(1) in template.board_written
+        if not skipping:
+            kept.append(line)
+    return "".join(kept).rstrip()
 
 
 def _sections(text: str) -> tuple[list[tuple[int, str]], list[_Section]]:
@@ -251,7 +270,7 @@ def _radius(template: Template, found: list[_Section]) -> str:
 
 def broken(template: Template, body: str) -> str:
     """The first rule the description in `body` breaks, with its line in the description, or "" when it reads well."""
-    text = description(body)
+    text = judged(template, body)
     preamble, found = _sections(text)
     if stray := next(((number, line) for number, line in preamble if line.strip()), None):
         return f"text before the first heading (line {stray[0]})"

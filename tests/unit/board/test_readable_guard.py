@@ -212,3 +212,22 @@ def test_a_move_leaves_an_older_description_alone_while_an_edit_and_the_verdict_
     assert not refused(rules.Record({"status": "In Progress"}, old))
     assert refused(rules.Record({"status": "In Progress"}, old + "\nMore."))
     assert rules.readable_verdict(guards, {}, old) == "expected heading `Why`, found `Reason` (line 4)"
+
+
+def test_a_board_written_section_is_neither_judged_nor_a_reason_to_refuse_an_older_description() -> None:
+    template = {**TEMPLATE, "board_written": ["Needs attention", "Start Criteria"]}
+    guards = rules.load([{**GUARD, "require": {"readable": template}}])
+    old = swapped("## Why\n", "## Reason\n")
+    parked = old + "\n## Needs attention\nWhich host? Pick one.\n"
+
+    def refused(before: str, after: str) -> bool:
+        return rules.refusal(guards, rules.Record({}, before), rules.Record({}, after), "agent") is not None
+
+    assert not refused(old, parked)
+    assert not refused(parked, old)
+    assert refused(old, old + "\nMore.")
+    attention = "## Needs attention\nWhich host?\n\n"
+    criteria = "## Start Criteria\n- Tests exist\n\n"
+    for extra in (GOOD + "\n" + criteria + attention, GOOD + "\n" + attention + criteria, attention + criteria + GOOD):
+        assert verdict(extra, template) == ""
+    assert verdict(GOOD + "\n" + attention) != ""
