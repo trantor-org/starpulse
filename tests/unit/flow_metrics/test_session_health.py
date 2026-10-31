@@ -10,6 +10,7 @@ import pytest
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.contracts.analytics import Analytics
 from starpulse.contracts.signals import claim_key
+import starpulse.flow_metrics.model.session_health as health
 from starpulse.flow_metrics.model.session_health import grouped, session_health, session_rows, slice_health
 from starpulse.harness_telemetry.adapters.inbound.telemetry import CLAUDE_CODE, CODEX, Signal, signals
 
@@ -641,3 +642,32 @@ def test_a_session_row_names_the_eval_run_its_signals_came_from() -> None:
     plain = signals(export(claude("api_request", 0, at, model="m", **{"session.id": "s2"})))
 
     assert sorted(row["eval"] for row in session_health(evaluated + plain, None)) == ["", "judge"]
+
+
+def test_a_session_whose_signals_are_unchanged_is_not_worked_out_again_whatever_the_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every `/api/analytics` read folds the whole window: the cost of a request must follow the sessions that
+    changed since the last one, not the sessions the window holds."""
+    worked: list[str] = []
+    real = health.session_rows
+
+    def counting(ordered: list[Signal], keys: TaskKeys | None, analytics: Analytics | None = None) -> list[dict]:
+        worked.append(ordered[0].session)
+        return real(ordered, keys, analytics)
+
+    monkeypatch.setattr(health, "session_rows", counting)
+    everything = [sig(kind, at, session=f"memo-{i}") for i in range(5) for at, kind in enumerate(["prompt", "request"])]
+
+    first = session_health(everything, KEYS)
+    assert len(worked) == 5
+
+    assert session_health(everything, KEYS) == first  # the same window again
+    assert len(session_health(everything[1:], KEYS)) == 5  # a narrower one
+    assert len(worked) == 6  # only the session the narrower window cut was worked out again
+
+    session_health(everything + [sig("request", 2, session="memo-0")], KEYS)  # a signal arrived
+    assert worked[6:] == ["memo-0"]
+
+    session_health(everything, None)  # another reading of the same signals
+    assert len(worked) == 12
