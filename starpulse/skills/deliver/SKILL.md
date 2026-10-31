@@ -45,10 +45,11 @@ Done when the staged diff holds only the task's paths and both files exist.
 ## 4. Deliver
 
 Launch one delivery, then end the turn: `starpulse command run deliver --task PROJ-45 --arg message=<file> --arg
-body=<file>`, in the background. A relative `message` or `body` path resolves against `--arg worktree`, not the
-current directory; a missing file is refused with its resolved path. It commits, pushes, opens the task's PR or
-updates the one already open, waits for its checks, and prints a verdict; when it finishes, the board resumes the session with that verdict. Never wait on it
+body=<file>`, in the background. It commits, pushes, opens the task's PR or updates the one already open, waits for
+its checks, and prints a verdict; when it finishes, the board resumes the session with that verdict. Never wait on it
 with a sleep, a poll or a loop on a file.
+A relative `message` or `body` path resolves against `--arg worktree`, not the current directory; a missing
+file is refused with its resolved path.
 
 - green: the checks passed; go to step 5.
 - red: read the failing check, fix the cause in the worktree, rerun the final gates, and deliver again.
