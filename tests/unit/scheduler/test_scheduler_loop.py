@@ -256,6 +256,20 @@ def test_nothing_is_started_while_the_scheduler_is_off(rig: Rig) -> None:
     assert rig.started == []
 
 
+def test_a_tick_that_skips_admission_logs_why_once_per_change(rig: Rig, caplog: pytest.LogCaptureFixture) -> None:
+    rig.toggle.set(False)
+    rig.put("T-1")
+
+    with caplog.at_level("INFO"):
+        rig.loop.tick()
+        rig.loop.tick()
+        rig.toggle.set(True)
+        rig.loop.tick()
+    skips = [r.getMessage() for r in caplog.records if "admission skipped" in r.getMessage()]
+
+    assert skips == ["StarPulse scheduler: admission skipped: the switch is off"]
+
+
 def test_a_task_outside_the_eligible_lane_or_with_an_open_dependency_is_not_started(rig: Rig) -> None:
     rig.put("T-1", lane="to_do")
     rig.put("T-2", deps=("T-9",))
