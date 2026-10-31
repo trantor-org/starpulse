@@ -1041,9 +1041,14 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
 /* the Admin view's Scheduler card: each capacity dimension's used/limit meter, the next pick as text and the count in flight */
 #admin .ap .inflight { font-size: calc(12px * var(--fs)); color: var(--ink-3); font-variant-numeric: tabular-nums; }
 #admin .ap .state { font-size: calc(11px * var(--fs)); color: var(--muted); }
-#admin .ap .dims { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 18px; transition: opacity .2s; }
+/* a setting's name sits beside its control while both fit at the current text size, and over it once they do not (about 2fr / 3fr side by side) */
+#admin .ap .row { display: flex; flex-wrap: wrap; gap: 8px 14px; }
+#admin .ap .row > :first-child { flex: 2 1 calc(150px * var(--fs)); min-width: 0; }
+#admin .ap .row > :last-child { flex: 3 1 calc(220px * var(--fs)); min-width: 0; }
+/* two meters to a row while each fits its label and value; one to a row past that, so no width or text size scrolls the card sideways */
+#admin .ap .dims { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, max(calc(100px * var(--fs)), calc(50% - 9px))), 1fr)); gap: 8px 18px; transition: opacity .2s; }
 #admin .ap.off :is(.dims, .inflight) { opacity: .45; }
-#admin .ap .dm .r { display: flex; justify-content: space-between; gap: 6px; font-size: calc(10.5px * var(--fs)); color: var(--muted); white-space: nowrap; }
+#admin .ap .dm .r { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 6px; font-size: calc(10.5px * var(--fs)); color: var(--muted); white-space: nowrap; }
 #admin .ap .dm .r b { font-weight: 500; color: var(--ink-3); font-variant-numeric: tabular-nums; }
 #admin .ap .dm.near .r b { color: var(--run); } #admin .ap .dm.over .r b, #admin .ap .dm.over .r span { color: var(--fail); }
 #admin .ap .dm .m { height: 3px; border-radius: 2px; background: color-mix(in srgb, var(--slate) 15%, transparent); margin-top: 3px; overflow: hidden; }
