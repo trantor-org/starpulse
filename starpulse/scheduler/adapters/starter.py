@@ -28,17 +28,23 @@ def builtin_starter(
 
     A missing `tmux` or `claude`, or a tmux that exits non-zero, raises `StartFailedError` naming the cause. It starts
     only Claude: another `harness` raises `StartFailedError` naming `session_start_url`, the seam that dispatches one.
-    `mode` is accepted so the seam matches `session_start_url` and ignored.
+    `mode` is accepted so the seam matches `session_start_url` and ignored. `verb` is the prompt's verb (`Start`, or
+    `Verify` for the verify lane) and `profile` the agent profile a verify session runs on, passed as `--agent`.
     """
 
-    def start(task: str, *, harness: str = "claude", mode: str = "interactive") -> str:
+    def start(
+        task: str, *, harness: str = "claude", mode: str = "interactive", verb: str = "Start", profile: str | None = None
+    ) -> str:
         _ = mode
         if harness != "claude":
             raise StartFailedError(f"the built-in starter starts only claude; set session_start_url to start {harness}")
         if missing := next((name for name in _BINARIES if which(name) is None), None):
             raise StartFailedError(f"the built-in starter needs {missing} on PATH")
         name = f"starpulse-{task}"
-        argv = ["tmux", "new-session", "-d", "-s", name, "-c", str(cwd), "claude", "--remote-control", task, f"Start {task}"]
+        agent = ["--agent", profile] if profile else []
+        argv = [
+            "tmux", "new-session", "-d", "-s", name, "-c", str(cwd), "claude", *agent, "--remote-control", task, f"{verb} {task}"
+        ]
         done = run(argv, capture_output=True, text=True, check=False)
         if done.returncode != 0:
             raise StartFailedError(f"tmux could not start {name}: {done.stderr.strip() or f'exit {done.returncode}'}")

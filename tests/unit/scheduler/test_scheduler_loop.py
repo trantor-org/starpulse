@@ -64,6 +64,7 @@ class Rig:
         self.harness_setting = HarnessSetting(self.log)
         self.started: list[str] = []
         self.started_harness: list[str] = []
+        self.prompts: list[tuple[str, str, str | None]] = []
         self.settled: list[tuple[str, str]] = []
         self.refuse_settle = False
         self.requeueing = requeue
@@ -120,7 +121,9 @@ class Rig:
         self.put(task, "ready")
         return Written(True, task)
 
-    def _start(self, task: str, *, harness: str = "claude", mode: str = "interactive") -> str:
+    def _start(
+        self, task: str, *, harness: str = "claude", mode: str = "interactive", verb: str = "Start", profile: str | None = None
+    ) -> str:
         _ = mode
         self.attempts.append(task)
         if self.limit is not None:
@@ -129,6 +132,7 @@ class Rig:
             raise StartFailedError(f"no session for {task}")
         self.started.append(task)
         self.started_harness.append(harness)
+        self.prompts.append((task, verb, profile))
         return f"https://claude.ai/code/{task}"
 
     def _settle(self, task: str, reason: str) -> Written:
@@ -1038,3 +1042,25 @@ def test_send_back_repick_wakes_the_loop_when_a_task_enters_in_progress_with_the
 
     assert rig.loop.wants("task", {"id": "T-1", "agent": sent_back})
     assert not rig.loop.wants("task", {"id": "T-1", "agent": {**sent_back, "labels": ["size-3"]}})
+
+
+def test_a_task_in_the_verify_lane_starts_a_verify_session_on_the_configured_profile(tmp_path: Path) -> None:
+    rig = Rig(tmp_path, verify_lane="verifying", verify_profile="@agent-standard-medium")
+    rig.put("T-1", lane="verifying")
+
+    assert rig.loop.tick() == ["T-1"]
+    assert rig.prompts == [("T-1", "Verify", "@agent-standard-medium")]
+
+
+def test_a_held_verify_session_is_not_admitted_twice_and_is_admitted_again_once_its_hold_releases(tmp_path: Path) -> None:
+    rig = Rig(tmp_path, verify_lane="verifying", verify_profile="@agent-standard-medium")
+    rig.put("T-1", lane="verifying")
+    rig.loop.tick()
+    rig.session("T-1")
+    rig.session("T-1", "SESSION_STOPPED")
+
+    assert rig.loop.tick() == []  # the stopped session holds the task
+    rig.after(16)  # past START_COOLDOWN; the task sat in the verify lane the whole time
+
+    assert rig.loop.tick() == ["T-1"]
+    assert [prompt[1] for prompt in rig.prompts] == ["Verify", "Verify"]
