@@ -370,7 +370,7 @@ from the window's fixed start, gate on that count, and claim the check once with
 present. Never park on the next single run, wake, take one sample and park again: each sample then
 costs a release, a claim and a park. Worked example: a check that three merge-queue CI runs after
 an apply start their shards within 12 s, with one run in so far, parks once on `--until '{id:
-three-ci-runs, kind: dagu_run, dag: ci, since: "<apply instant>", at_least: 3}'`, not on the next
+three-ci-runs, kind: dagu_run, dag: ci-validate, since: "<apply instant>", at_least: 3}'`, not on the next
 run. Any count kind serves the same way, such as a SQL or metric query's `at_least: N`.
 
 **After two consecutive misses on the same duration or latency Outcome target where
