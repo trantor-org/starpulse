@@ -163,6 +163,17 @@ the call started, and one that started before every request of the window belong
 subagents that overlap can take each other's calls. A server with no telemetry stream is 501 and a window that is no
 positive number 400. `starpulse analytics steps [--hours]` reads it.
 
+## Kept answers
+
+Folding a 168-hour window takes minutes on a process that has not read the telemetry log yet and tens of seconds on one
+that has, longer than the CLI waits. Every `/api/analytics` route but `health` therefore answers from the last good
+body of the same path and query, kept in the event log's checkpoints (`analytics-answers`, at most 32 queries, the
+oldest answered dropped first). A kept body older than five minutes is returned at once and refolded in the background,
+so an answer is at most one refold and five minutes behind the board and the log, and a restarted `serve` answers from
+the saved bodies before it has read a signal. Only the first read of a query the instance has never answered waits for
+a fold, and readers of it share one. A refusal (400, 501, 503) is returned and never kept; a failed refold keeps the
+older body and is tried again after five minutes.
+
 ## Price each transition and report each cell
 
 `GET /api/analytics/transitions[?hours=N]` and `GET /api/analytics/cells[?hours=N]` (168 hours by default) fold the same
