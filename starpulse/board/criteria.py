@@ -38,8 +38,8 @@ _STATUS = {"not-met": "unmet"}
 NOT_EVALUATED = "not evaluated"
 
 
-def authored(description: str) -> list[dict[str, Any]]:
-    """The criteria the description's `start_criteria` block declares, as `{id, kind, expr, cmp, want}`; empty when it has none."""
+def _declared(description: str) -> list[dict[str, Any]]:
+    """The mappings of the description's `start_criteria` block that carry an id, as written."""
     section = _SECTION.search(description)
     fenced = _FENCE.search(section.group(1)) if section else None
     try:
@@ -47,10 +47,18 @@ def authored(description: str) -> list[dict[str, Any]]:
     except yaml.YAMLError:
         return []
     listed = parsed.get("start_criteria") if isinstance(parsed, dict) else None
+    return [raw for raw in listed if isinstance(raw, dict) and raw.get("id")] if isinstance(listed, list) else []
+
+
+def expect_dates(description: str) -> list[str]:
+    """The `expect_by` dates the description's Start Criteria declare, each as text, in the order written."""
+    return [str(raw["expect_by"]) for raw in _declared(description) if raw.get("expect_by") is not None]
+
+
+def authored(description: str) -> list[dict[str, Any]]:
+    """The criteria the description's `start_criteria` block declares, as `{id, kind, expr, cmp, want}`; empty when it has none."""
     found = []
-    for raw in listed if isinstance(listed, list) else []:
-        if not isinstance(raw, dict) or not raw.get("id"):
-            continue
+    for raw in _declared(description):
         cmp = next((key for key in _THRESHOLDS if key in raw), None)
         found.append(
             {
