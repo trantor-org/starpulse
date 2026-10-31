@@ -5,7 +5,7 @@ states:
   checks_failed: {}
   checks_passed: {}
   merged: {final: true}
-  closed: {final: true}
+  closed: {role: resting}  # a reopen leaves it, so it is no final state
 events:
   PR_OPENED:
     - {from: start, to: open}
@@ -17,6 +17,8 @@ events:
     - {from: [open, checks_failed, checks_passed], to: merged}
   PR_CLOSED:
     - {from: [open, checks_failed, checks_passed], to: closed}
+  PR_REOPENED:
+    - {from: closed, to: open}
   CONFLICTED:
     - {from: open, to: open}
     - {from: checks_failed, to: checks_failed}
