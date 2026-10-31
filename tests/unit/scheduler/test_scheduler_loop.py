@@ -964,6 +964,17 @@ def test_a_session_started_outside_the_loop_takes_a_session_slot(rig: Rig) -> No
     assert rig.loop.in_flight() == []
 
 
+def test_a_ready_task_whose_prior_session_is_still_live_is_not_started_again(rig: Rig) -> None:
+    rig.put("T-1")  # woken to Ready from Waiting while the parked session still runs
+    rig.session("T-1")
+
+    assert rig.loop.tick() == []
+    assert rig.started == []
+
+    rig.after(31)  # past STALE_S with no event: the session is gone, so the wake starts one
+    assert rig.loop.tick() == ["T-1"]
+
+
 def test_in_flight_lists_an_in_progress_task_whose_assignee_session_wrote_a_transcript_within_stale_s(rig: Rig) -> None:
     rig.put("T-1", lane="in_progress", assignee="b55dc5cc")
     rig.session("T-9")  # the harness machine keyed the session by the branch it opened on, not the task it claimed
