@@ -1055,3 +1055,106 @@ def test_a_finished_delivery_hands_its_task_and_verdict_to_the_delivered_hook_on
 
     assert until(lambda: delivered == [("TASK-1", "red test")])
     assert not until(lambda: len(delivered) > 1, within=0.2)
+
+
+NOW = 1_800_000_000.0
+DAY = 86_400.0
+OVERDUE_WAITS = {**WAITS, "waiting": {**WAITS["waiting"], "overdue": "OVERDUE"}}
+OVERDUE_MOVES = {**MOVES, ("waiting", "OVERDUE"): "needs_attention"}
+
+
+def dated(when: str) -> str:
+    """`GATED`'s Start Criteria declaring `expect_by: when`."""
+    return GATED.replace("    at_least: 1\n", f"    at_least: 1\n    expect_by: '{when}'\n")
+
+
+def overdue(board: Board, stop: threading.Event, store: PullStore, **options: Any) -> TaskActor:
+    """An actor on a clock fixed at `NOW` whose Waiting lane also waits on the SLE deadline, over unmet criteria."""
+    options = {"evaluate": Criteria("unmet"), "wall": lambda: NOW} | options
+    return running(board, store, stop, waits=OVERDUE_WAITS, moves=OVERDUE_MOVES, **options)
+
+
+def test_a_waiting_task_past_the_default_sle_moves_to_needs_attention_with_its_age_gate_and_a_question(
+    store: PullStore, stop: threading.Event
+) -> None:
+    board = Board(BoardFeed(), task("TASK-1", "Waiting", description=GATED, observed_at=NOW - 8 * DAY))
+
+    overdue(board, stop, store)
+
+    assert until(lambda: board.moved() == [("TASK-1", "needs_attention")])
+    (_, changes, _, actor) = board.writes[-1]
+    assert actor == ACTOR
+    reason = changes["description"]
+    assert "## Needs attention" in reason
+    assert "8 days" in reason
+    assert "7 days from entering Waiting" in reason
+    assert "soak" in reason  # the gate still unmet
+    assert reason.rstrip().endswith("?")
+
+
+def test_a_waiting_task_inside_its_sle_stays_and_moves_at_its_own_deadline_with_no_other_event(
+    store: PullStore, stop: threading.Event
+) -> None:
+    board = Board(
+        BoardFeed(), task("TASK-1", "Waiting", description=GATED, observed_at=time.time() - 7 * DAY + 1.5)
+    )
+
+    overdue(board, stop, store, wall=time.time)
+
+    assert board.moved() == []
+    assert until(lambda: board.moved() == [("TASK-1", "needs_attention")], within=4.0)  # nothing else touched the task
+
+
+def test_a_gate_that_holds_beats_a_deadline_that_has_passed(store: PullStore, stop: threading.Event) -> None:
+    board = Board(BoardFeed(), task("TASK-1", "Waiting", description=GATED, observed_at=NOW - 30 * DAY))
+
+    overdue(board, stop, store, evaluate=Criteria("met"))
+
+    assert until(lambda: board.moved() == [("TASK-1", "ready")])
+    assert not until(lambda: len(board.moved()) > 1, within=0.2)
+
+
+@pytest.mark.parametrize(
+    ("expect_by", "moves"),
+    [("2099-01-01T00:00:00+00:00", False), ("2026-01-01T00:00:00+00:00", True)],
+)
+def test_a_declared_expect_by_replaces_the_default_sle_with_its_date_plus_two_days(
+    store: PullStore, stop: threading.Event, expect_by: str, moves: bool
+) -> None:
+    board = Board(BoardFeed(), task("TASK-1", "Waiting", description=dated(expect_by), observed_at=NOW - 60 * DAY))
+
+    overdue(board, stop, store)
+
+    if moves:
+        assert until(lambda: board.moved() == [("TASK-1", "needs_attention")])
+        assert "expect_by" in board.writes[-1][1]["description"]
+    else:
+        assert not until(lambda: board.moved(), within=0.3)
+
+
+def test_a_task_gated_only_on_dependencies_is_not_overdue_while_each_open_one_is_in_progress_or_review(
+    store: PullStore, stop: threading.Event
+) -> None:
+    board = Board(
+        BoardFeed(),
+        task("TASK-1", "In Progress"),
+        task("TASK-2", "Waiting", dependencies=("TASK-1",), observed_at=NOW - 30 * DAY),
+    )
+
+    overdue(board, stop, store)
+
+    assert board.moved() == []
+    board.put(task("TASK-1", "Ready"))  # the blocker's age now counts: the dependency left In Progress
+    assert until(lambda: board.moved() == [("TASK-2", "needs_attention")])
+    assert "TASK-1" in board.writes[-1][1]["description"]
+
+
+def test_a_new_expect_by_re_arms_the_deadline(store: PullStore, stop: threading.Event) -> None:
+    entered = time.time() - 7 * DAY + 1.5
+    board = Board(BoardFeed(), task("TASK-1", "Waiting", description=GATED, observed_at=entered))
+    overdue(board, stop, store, wall=time.time)
+
+    board.put(task("TASK-1", "Waiting", description=dated("2099-01-01T00:00:00+00:00"), observed_at=entered))
+
+    time.sleep(2.0)
+    assert board.moved() == []

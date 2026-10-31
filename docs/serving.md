@@ -838,6 +838,14 @@ move the machine declares. For a task in a state with `waits`, the first fact th
 - `deps_unresolved`: a dependency is not Done.
 - `criteria_met`: the task's Start Criteria were last evaluated all `met`.
 - `criteria_unmet`: a Start Criterion was last evaluated `unmet` or `error`.
+- `overdue`: a Waiting task is past its service level expectation: seven days from the lane's `entered` time, or
+  two days past the latest `expect_by` its Start Criteria declare (an ISO date or timestamp; one with no zone is UTC).
+  A task gated only on dependencies is exempt while every open dependency is in the working or review lane. A state
+  lists it last, so a gate that holds wins, and maps it to a move into the attention lane; the actor sets the task's
+  `## Needs attention` section to the age, the SLE and the gate, ending in a question. A lane that waits on it also gets
+  a deadline thread: each derivation arms the task's deadline, and the thread derives the task again when it falls, so
+  no event has to wake it. A re-park, a new `expect_by` or a dependency's lane change re-arms it. A task whose Start
+  Criteria are not yet read is not overdue until they are.
 
 A lifecycle machine whose phase state links a skill machine with `exits` (`submachines[].exits`, [Public surface](public-surface.md))
 advances too. When the skill machine of the task's current phase reaches a state its link exits on, the actor publishes

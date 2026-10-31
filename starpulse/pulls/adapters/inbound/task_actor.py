@@ -29,6 +29,7 @@ import logging
 import queue
 import threading
 import time
+from datetime import UTC, datetime
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections.abc import Callable, Mapping, Sequence
@@ -77,6 +78,9 @@ HANDOFF_METRIC = "starpulse_task_actor_handoff_seconds"
 SLOW_BUCKETS_S = (0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0)
 #: Seconds the event loop waits for a change before it looks at its stop flag.
 _POLL_S = 0.5
+#: A Waiting task's service level expectation: seconds from entering Waiting, or past its latest `expect_by`.
+_DAY_S = 86_400.0
+_SLE_DAYS, _GRACE_DAYS = 7, 2
 #: Start Criteria evaluated at once: each is a subprocess, so the pass is bounded rather than one thread per gated task.
 _EVALUATIONS = 8
 
@@ -98,6 +102,19 @@ def _view(agent: Mapping[str, Any]) -> tuple[str, tuple[str, ...], tuple[str, ..
     """The parts of a task's record the actor re-derives on: its lane, dependencies, pull requests and checked criteria."""
     ticks = tuple(criterion["checked"] for criterion in agent.get("criteria", ()))
     return agent["state"], tuple(agent["dependencies"]), tuple(agent["prs"]), ticks
+
+
+def _epoch(text: str) -> float | None:
+    """Epoch seconds of an ISO date or timestamp (UTC when it names no zone); None when it is neither."""
+    try:
+        when = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    return (when if when.tzinfo else when.replace(tzinfo=UTC)).timestamp()
+
+
+def _stamp(epoch: float) -> str:
+    return datetime.fromtimestamp(epoch, UTC).strftime("%Y-%m-%d")
 
 
 def _need_of(need: str) -> tuple[str, int]:
@@ -173,6 +190,7 @@ class TaskActor:
         pin_rule: str | None = None,
         pins: Pins | None = None,
         clock: Callable[[], float] = time.monotonic,
+        wall: Callable[[], float] = time.time,
         evaluate: Callable[[str, str], list[dict[str, Any]]] | None = None,
         holds: Callable[[str], Sequence[str]] | None = None,
         parked: Callable[[str], None] | None = None,
@@ -203,6 +221,13 @@ class TaskActor:
         self._waits = waits
         self._moves = moves
         self._clock = clock
+        #: Epoch seconds, which a task's `entered` and `expect_by` are in; `clock` is monotonic and has no date.
+        self._wall = wall
+        #: The lanes that wait on the service level expectation.
+        self._timed_lanes = {lane for lane, facts in waits.items() if "overdue" in facts}
+        #: When each timed task's deadline falls, if still ahead, and the `expect_by` dates it was armed on.
+        self._due: dict[str, float] = {}
+        self._dates: dict[str, tuple[str, ...]] = {}
         self._evaluate = evaluate
         self._holds = holds
         self._tell = parked
@@ -307,6 +332,8 @@ class TaskActor:
         if self._evaluate is not None and self._gated_lanes:
             threading.Thread(target=self._keep_criteria, args=(stop,), name="task-actor-criteria", daemon=True).start()
         threading.Thread(target=self._follow_store, args=(stop,), name="task-actor-store", daemon=True).start()
+        if self._timed_lanes:
+            threading.Thread(target=self._keep_deadlines, args=(stop,), name="task-actor-deadlines", daemon=True).start()
         return thread
 
     def store_changed(self) -> None:
@@ -355,6 +382,23 @@ class TaskActor:
             except Exception:  # one pass must not end the thread
                 logger.exception("task actor: cannot evaluate Start Criteria")
             stop.wait(min(self._fresh_s / 2, _POLL_S))
+
+    def _keep_deadlines(self, stop: threading.Event) -> None:
+        """Derive each armed task again at its own deadline, so a Waiting task goes overdue with no event to wake it."""
+        self.ready.wait()
+        while not stop.is_set():
+            try:
+                with self._lock:
+                    now = self._wall()
+                    late = [name for name, due in self._due.items() if due <= now]
+                    for name in late:
+                        del self._due[name]
+                    self._derive_all(late, self._clock())
+                    ahead = min(self._due.values(), default=None)
+            except Exception:  # one pass must not end the thread
+                logger.exception("task actor: cannot derive the overdue tasks")
+                ahead = None
+            stop.wait(_POLL_S if ahead is None else max(0.0, min(ahead - self._wall(), _POLL_S)))
 
     def _evaluate_due(self) -> None:
         gated = {
@@ -456,7 +500,10 @@ class TaskActor:
             )  # the last item checked: a refused Done move may now pass
             if ticked:
                 self._tried.pop(name, None)
-            if before == (now := _view(agent)) and not repaired and not ticked:
+            rearmed = agent["state"] in self._timed_lanes and tuple(
+                criteria.expect_dates(agent["description"])
+            ) != self._dates.get(name, ())
+            if before == (now := _view(agent)) and not repaired and not ticked and not rearmed:
                 return
             self._index(agent)
             touched = {name}
@@ -518,6 +565,8 @@ class TaskActor:
         self._tried.pop(name, None)
         self._ticks.pop(name, None)
         self._lint_held.pop(name, None)
+        self._due.pop(name, None)
+        self._dates.pop(name, None)
 
     def _dependents(self, name: str) -> set[str]:
         return {other for other, (_, dependencies, *_) in self._seen.items() if name in dependencies}
@@ -573,6 +622,7 @@ class TaskActor:
         if agent is None:
             return
         self.derivations[name] += 1
+        self._arm(name, agent)
         for fact, event in self._waits.get(agent["state"], {}).items():
             target = self._moves.get((agent["state"], event))
             held = self._facts.get(fact, lambda *_: None)(self, agent) if target else None
@@ -583,8 +633,10 @@ class TaskActor:
             if self._tried.get(name) == sent:
                 continue
             self._tried[name] = sent
-            stale = self._stale(agent) if fact.startswith("deps_done") else {}
-            if self._write(name, target, comment, observed, source=agent["state"], stale=stale):
+            changes = self._stale(agent) if fact.startswith("deps_done") else {}
+            if fact == "overdue":
+                changes = {"description": section_set(agent["description"], "Needs attention", comment)}
+            if self._write(name, target, comment, observed, source=agent["state"], stale=changes):
                 return
 
     def _write(
@@ -835,6 +887,55 @@ class TaskActor:
             with self._metrics:
                 self._refusals += 1
 
+    def _arm(self, name: str, agent: dict[str, Any]) -> None:
+        """Arm the deadline wait of a task in a lane that waits on `overdue`, when its deadline is still ahead; drop it
+        from the wait otherwise. Every derivation re-arms, so a re-park, a new `expect_by` or a dependency's lane
+        change moves the deadline."""
+        self._due.pop(name, None)
+        if agent["state"] not in self._timed_lanes:
+            self._dates.pop(name, None)
+            return
+        self._dates[name] = tuple(criteria.expect_dates(agent["description"]))
+        deadline = self._deadline(agent)
+        if deadline and deadline[0] > self._wall():
+            self._due[name] = deadline[0]
+
+    def _deadline(self, agent: dict[str, Any]) -> tuple[float, str] | None:
+        """When the task's service level expectation ends, in epoch seconds, and what it is counted from; None while the
+        task is exempt (gated only on dependencies, each still In Progress or Review) or has no entry time.
+        The SLE is the latest `expect_by` plus two days, else seven days from entering the lane."""
+        if not agent.get("entered"):
+            return None
+        if not criteria.authored(agent["description"]) and self._moving(agent):
+            return None
+        dates = [stamp for stamp in map(_epoch, criteria.expect_dates(agent["description"])) if stamp]
+        if dates:
+            return max(dates) + _GRACE_DAYS * _DAY_S, f"expect_by {_stamp(max(dates))} plus {_GRACE_DAYS} days"
+        return agent["entered"] + _SLE_DAYS * _DAY_S, f"{_SLE_DAYS} days from entering Waiting"
+
+    def _moving(self, agent: dict[str, Any]) -> bool:
+        """Whether the task has open dependencies and each is In Progress or Review: work is under way on its gate."""
+        roles = self._feed.roles
+        open_ = [dependency for dependency in agent["dependencies"] if not self._feed.is_done(dependency)]
+        return bool(open_) and all(
+            (self._feed.task(dependency) or {}).get("state") in (roles.working, roles.review) for dependency in open_
+        )
+
+    def _overdue(self, agent: dict[str, Any]) -> tuple[Any, str] | None:
+        """The deadline and the Needs attention question when the task is past its service level expectation."""
+        deadline = self._deadline(agent)
+        now = self._wall()
+        if not deadline or deadline[0] > now:
+            return None
+        if self._evaluate is not None and criteria.authored(agent["description"]) and agent["id"] not in self._results:
+            return None  # the gate is not read yet: its result derives the task again, and a gate that holds comes first
+        gate = [*self._unmet(agent), *(each["id"] for each in criteria.authored(agent["description"]))]
+        days = int((now - agent["entered"]) // _DAY_S)
+        return deadline[0], (
+            f"Waiting {days} days, past its service level expectation ({deadline[1]}); still gated on "
+            f"{', '.join(gate) or 'its wait'}. Release it, re-park it with a new expect_by, or close it?"
+        )
+
     def _criteria(self, agent: dict[str, Any]) -> tuple[tuple[tuple[str, str], ...], list[str]] | None:
         """The task's last evaluated `(id, status)` pairs and the ids not met, when its criteria have a result; a board
         with no evaluator command leaves each `not evaluated`, which is no result."""
@@ -917,4 +1018,5 @@ class TaskActor:
         "deps_unresolved": _deps_unresolved,
         "criteria_met": _criteria_met,
         "criteria_unmet": _criteria_unmet,
+        "overdue": _overdue,
     }
