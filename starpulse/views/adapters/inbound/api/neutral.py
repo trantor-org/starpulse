@@ -28,7 +28,6 @@ class Stream(NamedTuple):
     release: Callable[[], None]
 
 
-Query = dict[str, list[str]]
 Endpoint = Callable[["Incoming"], Awaitable["Reply"]]
 #: Times a read: given the request and its arrival, a context the server holds open from that arrival to the last byte
 #: sent; the value it yields has a `ran()` the server calls once a worker thread has taken the read and a `computed()` it
