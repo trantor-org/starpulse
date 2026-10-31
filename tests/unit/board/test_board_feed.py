@@ -1187,7 +1187,7 @@ def test_a_machines_tasks_leave_out_one_past_the_window_as_the_snapshot_does() -
     assert [t["id"] for t in feed.machine_tasks("in-progress")] == ["PROJ-2"]
 
 
-def test_every_task_open_or_settled_is_named_by_its_title_and_labels() -> None:
+def test_every_task_open_or_settled_is_named_by_its_title_labels_milestone_and_profile() -> None:
     feed = BoardFeed(roles=ROLES)
     feed.put(BoardTask(id="PROJ-1", team="demo", title="open one", lane="ready", labels=["a"]))
     feed.put(
@@ -1195,8 +1195,8 @@ def test_every_task_open_or_settled_is_named_by_its_title_and_labels() -> None:
     )
 
     assert feed.titled() == {
-        "PROJ-1": {"title": "open one", "labels": ["a"]},
-        "PROJ-2": {"title": "done one", "labels": ["validation"]},
+        "PROJ-1": {"title": "open one", "labels": ["a"], "milestone": None, "profile": None},
+        "PROJ-2": {"title": "done one", "labels": ["validation"], "milestone": None, "profile": None},
     }
 
 

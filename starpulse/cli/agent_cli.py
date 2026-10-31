@@ -38,6 +38,7 @@
     starpulse analytics health --hours 72
     starpulse analytics transitions --hours 168
     starpulse analytics cells --hours 720
+    starpulse analytics estimates --hours 720 --milestone m-305
     starpulse analytics graph --hours 168
     starpulse analytics stages --hours 168
     starpulse analytics diff --hours 168
@@ -119,6 +120,7 @@ from starpulse.cli.agent_keys import (
     CLAIM_KEYS,
     DIFF_KEYS,
     DOC_KEYS,
+    ESTIMATE_KEYS,
     GRAPH_KEYS,
     HEALTH_KEYS,
     LIFECYCLE_KEYS,
@@ -391,6 +393,14 @@ def _cells(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, An
     """The median steps per clean completion of each kind and size over `--hours`, as `/api/analytics/cells`
     answers; refusals as `analytics transitions`."""
     return _window_read(args, environ, "/api/analytics/cells", CELL_KEYS)
+
+
+def _estimates(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """Each completed task's size label, kind and profile beside its measured steps, active minutes and effort size
+    step over `--hours`, as `/api/analytics/estimates` answers, only `--milestone`'s tasks when given; refusals as
+    `analytics transitions`."""
+    params = {"milestone": args.milestone} if args.milestone else None
+    return _window_read(args, environ, "/api/analytics/estimates", ESTIMATE_KEYS, params)
 
 
 def _scores(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
@@ -1374,6 +1384,17 @@ def _parser() -> argparse.ArgumentParser:
             type=float,
             help="the window to read, in hours; past the telemetry history it is refused (default 168)",
         )
+    estimates = leaf(
+        analytics_verbs,
+        "estimates",
+        "each completed task's size, kind and profile beside its measured steps, active minutes and effort size step "
+        "(the sizes its effort lies above or below its label)",
+        _estimates,
+        ESTIMATE_KEYS,
+        (0, 1, 2, 3),
+    )
+    estimates.add_argument("--hours", type=float, help="the window to read, in hours (default 168)")
+    estimates.add_argument("--milestone", help="only this milestone's tasks (`m-305`)")
     scores = leaf(
         analytics_verbs,
         "scores",

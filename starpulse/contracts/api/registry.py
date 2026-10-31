@@ -85,7 +85,15 @@ from starpulse.contracts.api.dto.snapshot import (
     VerdictDelta,
 )
 from starpulse.contracts.api.dto.trajectories import Trajectories
-from starpulse.contracts.api.dto.transitions import Cells, CostToGo, FlowGraph, RunDiffs, SubStages, Transitions
+from starpulse.contracts.api.dto.transitions import (
+    Cells,
+    CostToGo,
+    Estimates,
+    FlowGraph,
+    RunDiffs,
+    SubStages,
+    Transitions,
+)
 
 #: Each `/api/events` event name and the model of its `data`.
 EVENTS: dict[str, type[BaseModel]] = {
@@ -112,6 +120,7 @@ RESPONSES: dict[str, Any] = {
     "/api/analytics/steps": SessionSteps,
     "/api/analytics/transitions": Transitions,
     "/api/analytics/cells": Cells,
+    "/api/analytics/estimates": Estimates,
     "/api/analytics/graph": FlowGraph,
     "/api/analytics/stages": SubStages,
     "/api/analytics/diff": RunDiffs,
@@ -178,6 +187,7 @@ BODIES: dict[str, Any] = {
     "session_steps": SessionSteps | ApiError | WindowTooLong,
     "transitions": Transitions | ApiError | WindowTooLong,
     "cells": Cells | ApiError | WindowTooLong,
+    "estimates": Estimates | ApiError | WindowTooLong,
     "graph": FlowGraph | ApiError | WindowTooLong,
     "stages": SubStages | ApiError | WindowTooLong,
     "diff": RunDiffs | ApiError | WindowTooLong,

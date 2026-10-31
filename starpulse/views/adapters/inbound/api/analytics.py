@@ -1,6 +1,6 @@
 """The analytics the page reads over the flow history and the sessions' telemetry.
 
-- `GET /api/analytics/health`, `sessions`, `steps`, `transitions`, `cells`, `graph`, `stages`, `cost-to-go`, `diff`,
+- `GET /api/analytics/health`, `sessions`, `steps`, `transitions`, `cells`, `estimates`, `graph`, `stages`, `cost-to-go`, `diff`,
   `missed-loads` and `trace-clusters`: each filtered by the query.
 """
 
@@ -19,6 +19,7 @@ from starpulse.views.application.queries.responses import (
     cells_response,
     cost_to_go_response,
     diff_response,
+    estimates_response,
     graph_response,
     health_response,
     sessions_response,
@@ -108,6 +109,7 @@ routes: list[ApiRoute] = [
     ReadRoute("/analytics/steps", _sessions(steps_response)),
     ReadRoute("/analytics/transitions", _titled(transitions_response)),
     ReadRoute("/analytics/cells", _titled(cells_response)),
+    ReadRoute("/analytics/estimates", _titled(estimates_response)),
     ReadRoute("/analytics/graph", _titled(graph_response)),
     ReadRoute("/analytics/stages", _titled(stages_response)),
     ReadRoute("/analytics/cost-to-go", _titled(cost_to_go_response)),
