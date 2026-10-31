@@ -25,7 +25,7 @@ def main_thread_source(query_source: str) -> str:
     return _MAIN_THREAD if query_source.startswith(_MAIN_THREAD + ":") else query_source
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Signal:
     """One thing a session did, as the export recorded it.
 

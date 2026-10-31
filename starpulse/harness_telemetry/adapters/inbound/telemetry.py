@@ -24,6 +24,7 @@ import importlib
 import json
 import logging
 import re
+import sys
 import threading
 import time
 from collections.abc import Callable, Iterable, Iterator
@@ -353,6 +354,24 @@ def signals(
 
 _FIELDS = {f.name for f in fields(Signal)}
 _LISTS = ("activities", "reads", "writes")
+# Fields whose few distinct values repeat across the held history: one string object each, not one per signal.
+_SHARED = frozenset(
+    (
+        "harness",
+        "session",
+        "kind",
+        "branch",
+        "name",
+        "model",
+        "effort",
+        "origin",
+        "agent",
+        "detail",
+        "turn",
+        "label",
+        "eval",
+    )
+)
 
 
 def _signal(stored: dict[str, Any]) -> Signal:
@@ -363,7 +382,14 @@ def _signal(stored: dict[str, Any]) -> Signal:
     kept["shell_write"] = (
         kept.get("kind") == "tool" and kept.get("name") in SHELLS and writes_file(kept.get("command", ""))
     )
-    return Signal(**{k: tuple(v) if k in _LISTS else v for k, v in kept.items()})
+    return Signal(**{k: _shared(k, v) for k, v in kept.items()})
+
+
+def _shared(field: str, value: Any) -> Any:
+    """`value` of `field` with its strings interned, a list field as a tuple."""
+    if field in _LISTS:
+        return tuple(sys.intern(item) for item in value)
+    return sys.intern(value) if field in _SHARED and isinstance(value, str) else value
 
 
 def held(found: Iterable[Signal]) -> list[Signal]:
@@ -425,14 +451,14 @@ class TelemetryLog:
                 if len(entries) < self._tail.batch:
                     break
             return polled
-        rows = self._loki.fetch(self._stamp)
-        if rows:
-            self._stamp = rows[-1][0]
         new = []
-        for _, row in rows:
-            if row.get("key") not in self._keys:
-                self._keys.add(row["key"])
-                new.append(_signal(row))
+        for page in self._loki.pages(self._stamp):
+            if page:
+                self._stamp = page[-1][0]
+            for _, row in page:
+                if row.get("key") not in self._keys:
+                    self._keys.add(row["key"])
+                    new.append(_signal(row))
         return new
 
     def read(self, since: float = 0.0) -> list[Signal]:

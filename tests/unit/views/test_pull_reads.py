@@ -100,22 +100,24 @@ def test_a_single_pull_request_read_does_not_wait_for_the_list_being_rebuilt(
     assert max(answered) < UNBLOCKED_S
 
 
-def test_a_pull_request_only_the_database_holds_is_resident_once_a_read_has_found_it(tmp_path: Path) -> None:
+def test_a_pull_request_only_the_database_holds_is_read_from_its_index_and_never_held(tmp_path: Path) -> None:
     engine = create_engine(f"sqlite:///{tmp_path / 'pulls.sqlite'}")
     PullStore(engine).save([_record(1)])
     store = PullStore(engine)
-    queries: list[str] = []
-    event.listen(engine, "before_cursor_execute", lambda _c, _cur, statement, *_: queries.append(statement))
-    before = store.resident(REPO, 1)
+    plans: list[str] = []
+
+    def explain(conn: Any, _cursor: Any, statement: str, parameters: Any, *_: Any) -> None:
+        if statement.lstrip().upper().startswith("SELECT"):
+            plans.extend(row[3] for row in conn.exec_driver_sql(f"EXPLAIN QUERY PLAN {statement}", parameters))
+
+    event.listen(engine, "before_cursor_execute", explain)
 
     found = store.find(REPO, 1)
-    after = store.resident(REPO, 1)
-    asked = len(queries)
-    store.find(REPO, 1)
 
-    assert before is None
-    assert after == found
-    assert len(queries) == asked
+    assert [record["number"] for record in found] == [1]
+    assert store.resident(REPO, 1) is None
+    assert any("USING INDEX" in plan or "PRIMARY KEY" in plan for plan in plans)
+    assert not any(plan.startswith("SCAN") for plan in plans)
 
 
 def test_a_resident_pull_request_follows_the_store_when_it_is_saved_again(tmp_path: Path) -> None:

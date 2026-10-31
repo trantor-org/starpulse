@@ -169,6 +169,11 @@ _Held = tuple[Path, tuple[int, int], dict[str, Any]]
 #: could leave the same stamp. Callers add fields to the copy `read` returns, never to a list or dict inside it.
 _RECORDS: dict[tuple[Path, str], _Held] = {}
 
+#: How many records `_RECORDS` keeps: the least recently built is dropped first, so a board of any size holds a fixed
+#: number of parsed task files.
+_RECORDS_KEPT = 256
+_RECORDS_LOCK = threading.Lock()
+
 #: How old a file's modification time is before its record is kept: well past a kernel clock tick.
 _SETTLED_NS = 1_000_000_000
 
@@ -430,7 +435,11 @@ def _reader(root: Path, evaluate: Callable[[str, str], list[dict[str, Any]]], do
             except OSError:
                 return None  # moved or removed while reading
             if held[1][0] < time.time_ns() - _SETTLED_NS:
-                _RECORDS[key] = held
+                with _RECORDS_LOCK:
+                    _RECORDS.pop(key, None)
+                    while len(_RECORDS) >= _RECORDS_KEPT:
+                        del _RECORDS[next(iter(_RECORDS))]
+                    _RECORDS[key] = held
         finished = lane_id(held[2]["status"]) == done  # a Done task has nothing left to start: no evaluator run for it
         return {**held[2], "start_criteria": [] if finished else evaluate(task, held[2]["description"])}
 
