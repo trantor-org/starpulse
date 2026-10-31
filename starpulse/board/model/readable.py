@@ -125,7 +125,7 @@ def parse(spec: Mapping[str, Any], where: str) -> Template:
     return Template(tuple(headings), tuple(commands), _count(spec, "max_paths_per_sentence", where), radius)
 
 
-def _description(body: str) -> str:
+def description(body: str) -> str:
     found = _REGION.search(body)
     return found.group(1) if found else body
 
@@ -251,7 +251,7 @@ def _radius(template: Template, found: list[_Section]) -> str:
 
 def broken(template: Template, body: str) -> str:
     """The first rule the description in `body` breaks, with its line in the description, or "" when it reads well."""
-    text = _description(body)
+    text = description(body)
     preamble, found = _sections(text)
     if stray := next(((number, line) for number, line in preamble if line.strip()), None):
         return f"text before the first heading (line {stray[0]})"

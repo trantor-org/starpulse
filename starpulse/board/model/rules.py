@@ -302,6 +302,9 @@ class _Readable:
         return readable.broken(self._template, record.body)
 
     def __call__(self, record: Record) -> bool:
+        """Holds for a description the write left as it was: the rules judge a create and an edit, not an older text."""
+        if record.earlier is not None and readable.description(record.earlier.body) == readable.description(record.body):
+            return True
         return not self.broken(record)
 
 
