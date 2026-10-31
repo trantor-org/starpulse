@@ -1,6 +1,7 @@
 """A board of 20,000 Tasks with 18,000 archived: every read-model query stays inside the page budget and the memory
 soft limit, and the shape the read model replaces (load every Task, filter in Python) does not."""
 
+import os
 import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -14,7 +15,7 @@ pytestmark = [pytest.mark.nightly, pytest.mark.slow]
 _TOTAL = 20_000
 _ARCHIVED = 18_000
 _BUDGET_MS = 50.0  # the page latency budget: bench/page_latency.py BUDGET_MS
-# The two snapshot reads build every live card with its Acceptance Criteria (TASK-8601): ~2,000 cards and ~4,000 criteria
+# The two snapshot reads build every live card with its Acceptance Criteria: ~2,000 cards and ~4,000 criteria
 # rows turned into dicts, ~35-70 CPU-ms at best on a loaded ai-vm-1, 2.5x the cards-only read that 50 ms was set for. The board
 # feed caches them by read-model position, so a page request pays this only after a change.
 _SNAPSHOT_BUDGET_MS = 100.0
@@ -66,6 +67,10 @@ def board(tmp_path_factory: pytest.TempPathFactory) -> Iterator[tuple[ReadModel,
     yield model, rss_before, model.since(0, _TOTAL)[-500]["seq"]
 
 
+def _load_per_cpu() -> float:
+    return os.getloadavg()[0] / (os.cpu_count() or 1)
+
+
 def _surfaces(model: ReadModel, cursor: int) -> dict[str, Callable[[], object]]:
     return {
         "snapshot": model.snapshot,
@@ -84,7 +89,7 @@ def test_every_query_is_within_the_page_budget_on_twenty_thousand_tasks_with_eig
     floor = {name: _floor_ms(call, _budget_ms(name)) for name, call in _surfaces(model, cursor).items()}
 
     over = {name: ms for name, ms in floor.items() if ms > _budget_ms(name)}
-    assert over == {}, floor
+    assert over == {}, seeded_server.budget_message(floor, _load_per_cpu())
 
 
 # Slow: whichever test runs first seeds 20,000 Tasks through the real write path, ~55 s CPU on a seed-cache miss, ~1 s warm.
