@@ -19,12 +19,21 @@ up, by the end of their last session, and the medians are the holdout's: `median
 and `median_steps_before_edit`. A clean completion has no human prompt after the claim, so `median_operator_prompts`
 (human prompts after the claim) is the median of the latest fifth of all the cell's completions, clean or not, the
 same share of them by the same end time. A cell can improve because its tasks got easier, so the report carries `n`, `completions` and `clean_rate` beside them.
+
+The estimate report: each completed task's size estimate beside what it measured.
+A task's estimate is its `size-<n>` and `kind-<kind>` labels and its profile. Its actuals are the steps (a subagent's
+included) and active minutes (agent seconds plus the operator's wait) of its slice
+(`starpulse.flow_metrics.model.session_health.slice_health`). `bands` are the instance's sizes with the p90 steps and
+active minutes a task of that size lands within (`[analytics]` `size_bands`), smallest first: the *effort size* is the
+smallest size whose band holds both actuals, and the *effort size step* is how many sizes it lies above (positive) or
+below (negative) the label. Effort past the largest band has no size and steps to one past the top. With no bands, or a
+label that is no band's size, the step is None; with no bands the effort size is too.
 """
 
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from math import ceil
 from statistics import median
 from typing import Any
@@ -34,7 +43,7 @@ from starpulse.contracts.analytics import Analytics
 from starpulse.contracts.signals import CLAUDE_CODE, Signal
 from starpulse.flow_metrics.model.steps import owned_steps
 
-__all__ = ["MIN_N", "cell_of", "cell_report", "transition_cost"]
+__all__ = ["MIN_N", "cell_of", "cell_report", "estimate_report", "transition_cost"]
 
 #: Clean completions a cell needs to report.
 MIN_N = 5
@@ -88,6 +97,49 @@ def cell_of(tasks: Mapping[str, Mapping[str, Any]], task: str | None) -> tuple[s
     labels = tasks.get(task or "", {}).get("labels") or ()
     kind, size = _label(labels, "kind-"), _label(labels, "size-")
     return (kind, int(size)) if kind and size and size.isdigit() else None
+
+
+SizeBand = tuple[int, int, float]
+
+
+def _effort_rank(bands: Sequence[SizeBand], steps: int, minutes: float) -> int:
+    """The index of the first band holding `steps` and `minutes`, or `len(bands)` past the last."""
+    fits = (i for i, (_, p90_steps, p90_minutes) in enumerate(bands) if steps <= p90_steps and minutes <= p90_minutes)
+    return next(fits, len(bands))
+
+
+def estimate_report(
+    slices: Iterable[Mapping[str, Any]],
+    tasks: Mapping[str, Mapping[str, Any]],
+    bands: Sequence[SizeBand],
+    milestone: str | None = None,
+) -> list[dict[str, Any]]:
+    """One row per completed, kind- and size-labelled task of `slices` (in `milestone` when given), oldest first; see
+    the module docstring."""
+    ranks = {size: i for i, (size, _, _) in enumerate(bands)}
+    rows = []
+    for s in slices:
+        cell = cell_of(tasks, s["task"])
+        task = tasks.get(s["task"], {})
+        if not s["complete"] or cell is None or (milestone is not None and task.get("milestone") != milestone):
+            continue
+        (kind, size), steps = cell, s["steps"] + s["side_steps"]
+        minutes = (s["active_s"] + s["operator_wait_s"]) / 60
+        rank = _effort_rank(bands, steps, minutes)
+        rows.append(
+            {
+                "task": s["task"],
+                "milestone": task.get("milestone"),
+                "kind": kind,
+                "size": size,
+                "profile": task.get("profile"),
+                "steps": steps,
+                "active_minutes": round(minutes, 1),
+                "effort_size": bands[rank][0] if rank < len(bands) else None,
+                "effort_size_step": rank - ranks[size] if size in ranks else None,
+            }
+        )
+    return rows
 
 
 def _repeats(calls: Iterable[Signal]) -> set[str]:

@@ -1,7 +1,7 @@
 """The estimate report: each completed task's size label, kind and profile beside its measured steps, active minutes and
 the size step its effort landed at."""
 
-from starpulse.flow_metrics.model.estimates import estimate_report
+from starpulse.flow_metrics.model.cells import estimate_report
 
 #: Size -> (steps p90, active minutes p90), as the sizing ADR's table gives them.
 BANDS = ((1, 50, 14.0), (2, 62, 19.0), (3, 144, 44.0), (5, 170, 47.0), (8, 175, 61.0))
