@@ -241,6 +241,8 @@ class TaskActor:
         self._gated_lanes = {lane for lane, facts in waits.items() if facts.keys() & set(_CRITERIA_FACTS)}
         #: When each gated task's criteria were last evaluated, and each criterion's `(id, status)` then.
         self._results: dict[str, tuple[float, tuple[tuple[str, str], ...]]] = {}
+        #: The Start Criteria each gated task carried when its record last changed: a result is dropped when they change.
+        self._gates: dict[str, list[dict[str, Any]] | None] = {}
         #: Tasks whose `deps_done` the board adapter holds; a task created re-derives them.
         self._held: set[str] = set()
         self._gate = PinGate(feed, store, repos, pin_rule, pins, live)
@@ -468,12 +470,25 @@ class TaskActor:
                 except Exception:  # one change must not end the actor
                     logger.exception("task actor: cannot handle the change of %s", data.get("id"))
 
+    def _drop_stale_result(self, name: str, agent: dict[str, Any]) -> None:
+        """Forget the last evaluation of a task that left the gated lanes or was gated on other criteria: the sweep
+        that does so runs only between passes, and a slow evaluation holds a pass, so a task parked again would
+        otherwise be released on the result of its last park."""
+        gate = self._gate_of(agent)
+        if self._gates.get(name) != gate:
+            self._results.pop(name, None)
+        self._gates[name] = gate
+
+    def _gate_of(self, agent: dict[str, Any]) -> list[dict[str, Any]] | None:
+        return criteria.authored(agent["description"]) if agent["state"] in self._gated_lanes else None
+
     def _index(self, agent: dict[str, Any]) -> None:
         """Take `agent`'s lane, dependencies, pull requests and checked criteria into the indexes."""
         name = agent["id"]
         for url in self._seen.get(name, ("", (), (), ()))[2]:
             self._by_pr.get(url, set()).discard(name)
         self._seen[name] = _view(agent)
+        self._gates.setdefault(name, self._gate_of(agent))
         self._ticks[name] = _dod_ticks(agent)
         for url in agent["prs"]:
             self._by_pr.setdefault(url, set()).add(name)
@@ -490,6 +505,7 @@ class TaskActor:
                 self._forget(name)
                 self._derive_all(self._dependents(name), observed)
                 return
+            self._drop_stale_result(name, agent)
             repaired = name in self._lint_held and self._lint_held[name] != _lint_record(agent)
             if repaired:
                 del self._lint_held[name]
@@ -567,6 +583,7 @@ class TaskActor:
         self._lint_held.pop(name, None)
         self._due.pop(name, None)
         self._dates.pop(name, None)
+        self._gates.pop(name, None)
 
     def _dependents(self, name: str) -> set[str]:
         return {other for other, (_, dependencies, *_) in self._seen.items() if name in dependencies}

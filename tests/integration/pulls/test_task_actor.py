@@ -448,6 +448,34 @@ def test_a_gated_task_is_released_while_another_tasks_evaluation_is_still_runnin
         hung.set()
 
 
+def test_a_task_parked_again_on_new_criteria_is_not_released_on_the_result_of_its_last_park(
+    store: PullStore, stop: threading.Event
+) -> None:
+    board = Board(
+        BoardFeed(),
+        task("TASK-1", "Waiting", description=GATED),
+        task("TASK-2", "Waiting", description=GATED.replace("soak", "slow")),
+    )
+    hung = threading.Event()
+    answer = Criteria("met")
+
+    def evaluate(name: str, description: str) -> list[dict[str, Any]]:
+        if name == "TASK-2":  # a slow evaluation holds the pass, so its sweep of finished tasks does not run
+            hung.wait(5)
+        return answer(name, description)
+
+    try:
+        running(board, store, stop, evaluate=evaluate, fresh_s=0.05)
+        assert until(lambda: board.moved() == [("TASK-1", "ready")])
+
+        board.put(task("TASK-1", "In Progress", description=GATED))
+        board.put(task("TASK-1", "Waiting", description=GATED.replace("soak", "merged")))
+
+        assert not until(lambda: board.moved().count(("TASK-1", "ready")) > 1, within=0.3)
+    finally:
+        hung.set()
+
+
 def test_a_review_task_whose_pr_merged_while_the_server_was_down_moves_on_start(
     store: PullStore, stop: threading.Event
 ) -> None:
