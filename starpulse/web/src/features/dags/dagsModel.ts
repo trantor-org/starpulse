@@ -23,7 +23,7 @@ export interface DagFacts { schedule: string; runs: number | null; hours: number
 
 const joined = (parts: (string | number | null | undefined)[]) => parts.filter(Boolean).join(" · ");
 
-/** What a job says about a run an engine tracks per task: the Board task, the activity, the attempt and the last failure. Empty when the run names no task, attempt or failure, as a Dagu run does not. */
+/** What a job says about a run an engine tracks per task: the Board task, the activity, the attempt and the last failure. Empty when the run names no task, attempt or failure, as a run of another engine may not. */
 export function runLine(run: ActiveRun | RecentRun): string {
   if (!run.task && !run.attempt && !run.failure) return "";
   const activity = "step" in run ? run.step : Object.entries(run.steps).find(([, v]) => v === "failed")?.[0];
