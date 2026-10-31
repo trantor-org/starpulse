@@ -282,6 +282,17 @@ since the merge, such as `{id: runs-since-merge, kind: prom, expr: 'sum(increase
 counter>[24h]))', at_least: 24}`. It opens once that many runs exist, not when a date passes. A
 miss on that checkup files a fix task; it never reopens the implementing one.
 
+A check whose criterion names a time window (`24h`, `3 days`) takes a start criterion that observes
+data past the window end, never the merge alone: a `file_changed_since` or `pr_merged` start opens the
+check at the merge, hours before the window's data exists, and the session then idles `In Progress`
+or asks the operator to wait. Look for a series or table whose samples cover the window end (a
+metric's `updated_timestamp_seconds` gauge, a table's newest row) and gate on it, for example
+`{id: window-closed, kind: prom, expr: 'max(<exporter>_updated_timestamp_seconds)', at_least: <merge
++ window epoch>}`. The task lint refuses a check whose Acceptance Criterion names an hour or day
+window while every Start Criterion is `file_changed_since` or `pr_merged`; a data kind beside the
+merge one clears it. A session on an unattended check never parks `--operator` for such a wait: it
+parks `--until` the data kind.
+
 A check's gate must not be the live effect it checks, or a missing effect reads as waiting
 forever. A live check drives the actor along its ordinary path and never supplies by hand the
 key that path derives: a criterion that passes only because the skill args named the task proves
