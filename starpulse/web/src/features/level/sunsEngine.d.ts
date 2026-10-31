@@ -113,6 +113,8 @@ export const TIER: Record<Job["tier"], string>;
 export const STYLE: { note?: string } & Record<string, unknown>;
 export const PANE_R: number;
 export const HAIR: number;
+/** Sizes the pane the replay bar is drawn in: its width (939 in the mockup) and height (900). The board is drawn at the mockup's size. */
+export function setLayout(w: number, h: number): void;
 /** Epoch ms until which a move is still animating. */
 export const ANIM_UNTIL: number;
 export function statusOf(j: Job): { t: string; c: string };

@@ -117,4 +117,34 @@ describe("sunsScene", () => {
       expect(foreign).toEqual([]);
     });
   });
+
+  describe("reflow", () => {
+    const at = (w: number, h = 900) => sceneOf([jobOf("T", "t", undefined, story, NOW)], view("T"), () => {}, NOW, { w, h });
+    const left = (s: ReturnType<typeof sceneOf>, text: string) => Number(/left:(-?[\d.]+)px/.exec([...s.main.T, ...s.main.K].find((t) => t.text === text)!.style)![1]);
+    const top = (s: ReturnType<typeof sceneOf>, aria: string) => Number(/top:(-?[\d.]+)px/.exec([...s.main.H, ...s.main.Q, ...s.main.V].find((b) => b.aria === aria)!.style)![1]);
+
+    it("lays the phase graph out from the container width: nodes follow it, the gutter and the exit edge keep their sides", () => {
+      const narrow = at(940), wide = at(1500);
+
+      expect(left(wide, "Deliver")).toBeGreaterThan(left(narrow, "Deliver") + 100);
+      expect(left(wide, "Review fix")).toBeGreaterThan(left(narrow, "Review fix") + 100);
+      expect(left(wide, "Build")).toBe(left(narrow, "Build"));
+      expect(wide.paths.lane).not.toBe(narrow.paths.lane);
+    });
+
+    it("draws the rows' rules to the container's right edge at any width, shifted once", () => {
+      const rightOf = (s: ReturnType<typeof sceneOf>) => Math.max(...[...s.rpaths.lane.matchAll(/L(-?[\d.]+),/g)].map((m) => Number(m[1])));
+
+      expect(rightOf(at(939))).toBe(1180);
+      expect(rightOf(at(1500))).toBe(1180 + 561);
+      expect(rightOf(at(800))).toBe(1180 - 139);
+    });
+
+    it("anchors the replay bar to the container's bottom edge and gives the rows the height between", () => {
+      const tall = at(1200, 1300), short = at(1200, 900);
+
+      expect(top(tall, "Play replay") - top(short, "Play replay")).toBe(400);
+      expect(tall.rowsViewH - short.rowsViewH).toBe(400);
+    });
+  });
 });

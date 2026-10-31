@@ -1,13 +1,14 @@
-// The In Progress drill-in: the approved "B · Suns" board (TASK-8665's mockup) of one task, the Tasks panel that picks it, and the replay of its
-// last 24 hours (TASK-8664's /api/history). A fixed overlay opened by `?drill=TASK-N`, drawn at the mockup's 1440×900 and scaled to the window.
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+// The In Progress drill-in: the approved "B · Suns" board (TASK-8665's mockup) of one task, the Tasks strip that picks it, and the replay of its
+// last 24 hours (TASK-8664's /api/history). A region of the app shell opened by `?drill=TASK-N`, between the real Navigator and Rail, laid out from
+// the region's measured size: no scaling, so its text keeps the size of every other view's.
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createHistory } from "../../api/history";
 import type { MachineEvent, Roles } from "../../api/types.gen";
 import { ANIM_UNTIL, spanOf, starfield, type Line, type Scene } from "./sunsEngine";
-import { css, jobOf, sceneOf, type View } from "./sunsScene";
+import { css, jobOf, MOCKUP, sceneOf, type View } from "./sunsScene";
 import { tint } from "./tint";
 
-/** What the Tasks panel needs of a board card; a Kanban card has these and more. */
+/** What the Tasks strip needs of a board card; a Kanban card has these and more. */
 export interface DrillTask {
   id: string;
   title: string;
@@ -21,21 +22,16 @@ interface Props {
   /** The task shown first. */
   task: string;
   onClose: () => void;
-  /** The DAGs view's count. */
-  dags?: number;
   /** Epoch seconds; replaced in tests. */
   clock?: () => number;
 }
 
-const W = 1440, H = 900, RECENT = 14;
+/** The mockup's content starts at this x (the mockup's navigation was left of it) and its board at this y below the header, so the stage is offset by both. */
+const ORIGIN = 251, TOP = 48;
+/** Narrower or shorter than this the board scrolls rather than overlap: its phase columns need the room. */
+const MIN_W = 800, MIN_H = 600;
 const LANE = { stroke: tint("slate", 16) }, GUIDE = { stroke: tint("slate", 10) }, GROUP = { stroke: tint("released", 38) };
 const SVG = { position: "absolute", left: 0, top: 0, pointerEvents: "none" } as const;
-const PANEL = { position: "absolute", top: 0, bottom: 0, width: 250, background: tint("bg0", 55), padding: "20px 18px", boxSizing: "border-box" } as const;
-const HEAD = { letterSpacing: ".22em", fontSize: ".78em", color: "var(--muted)" } as const;
-const NAV = { display: "flex", alignItems: "center", gap: 12, padding: "6px 18px", marginLeft: -18 } as const;
-const fit = () => Math.min(window.innerWidth / W, window.innerHeight / H);
-const clockText = (sec: number) => new Date(sec * 1000).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false, timeZoneName: "short" });
-const hm = (sec: number) => new Date(sec * 1000).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
 
 function Lines({ lines, w, h }: { lines: Line[]; w: number; h: number }) {
   return lines.map((l, i) => (
@@ -69,12 +65,32 @@ function Tip({ tip }: { tip: ReturnType<typeof sceneOf>["tip"] }) {
   );
 }
 
-export function SunsDrillIn({ tasks, roles, task, onClose, dags, clock = () => Date.now() / 1000 }: Props) {
+/** The size of `el`'s content box, kept current; 0 × 0 until it is laid out (jsdom never lays out). */
+function useSize<T extends HTMLElement>() {
+  const ref = useRef<T>(null), [size, setSize] = useState({ w: 0, h: 0 });
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const read = () => setSize((s) => (s.w === el.clientWidth && s.h === el.clientHeight ? s : { w: el.clientWidth, h: el.clientHeight }));
+    read();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return [ref, size] as const;
+}
+
+export function SunsDrillIn({ tasks, roles, task, onClose, clock = () => Date.now() / 1000 }: Props) {
   const [view, setViewState] = useState<View>({ sel: task, open: {}, pick: {}, hover: null, det: null, at: null, replaying: false });
   const setView = useCallback((patch: Partial<View>) => setViewState((v) => ({ ...v, ...patch })), []);
-  const [now, setNow] = useState(clock), [scale, setScale] = useState(fit), [, redraw] = useState(0);
+  const [now, setNow] = useState(clock), [, redraw] = useState(0);
   const history = useMemo(() => createHistory({ onChange: () => redraw((n) => n + 1) }), []);
-  const stars = useMemo(() => starfield(W, H, 70), []);
+  const [body, room] = useSize<HTMLDivElement>();
+  // the stage fills the room the shell leaves; before it is measured it is the mockup's own size
+  const stageW = room.w ? Math.max(MIN_W, room.w) : MOCKUP.w, stageH = room.h ? Math.max(MIN_H, room.h) : MOCKUP.h - TOP;
+  const size = { w: stageW, h: stageH + TOP }, W = ORIGIN + stageW, H = size.h;
+  const stars = useMemo(() => starfield(W, H, 70), [W, H]);
 
   // the drilled task stands in by its id alone until the board's tasks arrive
   const working = tasks.filter((t) => t.lane === roles.working || t.id === task);
@@ -84,9 +100,7 @@ export function SunsDrillIn({ tasks, roles, task, onClose, dags, clock = () => D
     return [t.id, Array.isArray(e) ? e : []];
   }));
   const jobs = listed.map((t) => jobOf(t.id, t.title, t.assignee, events.get(t.id)!, now));
-  const s = sceneOf(jobs, view, setView, now);
-  const recent = [...events].flatMap(([id, es]) => es.filter((e) => e.from !== e.to).map((e) => ({ at: e.at, text: `${id} · ${e.machine} ${e.to}` })))
-    .sort((a, b) => b.at - a.at).slice(0, RECENT);
+  const s = sceneOf(jobs, view, setView, now, size);
 
   const live = useRef({ view, job: s.job });
   useEffect(() => {
@@ -108,103 +122,73 @@ export function SunsDrillIn({ tasks, roles, task, onClose, dags, clock = () => D
     }, 120);
     const anim = setInterval(() => ANIM_UNTIL > Date.now() && redraw((n) => n + 1), 50);
     const tick = setInterval(() => setNow(clock()), 60_000);
-    const resize = () => setScale(fit());
     const key = (e: KeyboardEvent) => e.key === "Escape" && (live.current.view.det ? setView({ det: null }) : onClose());
-    addEventListener("resize", resize);
     addEventListener("keydown", key);
     return () => {
       [step, anim, tick].forEach(clearInterval);
-      removeEventListener("resize", resize);
       removeEventListener("keydown", key);
     };
   }, [clock, onClose, setView]);
 
   return (
-    <div role="dialog" aria-label="In Progress drill-in" className="suns-drill" style={{ position: "fixed", inset: 0, zIndex: 50, overflow: "hidden", background: "var(--bg0)" }}>
-      <div style={{ position: "absolute", left: "50%", top: "50%", width: W, height: H, transform: `translate(-50%,-50%) scale(${scale})`, boxSizing: "border-box", background: "var(--bg0)", color: "var(--ink)", fontFamily: "Inter,system-ui,sans-serif", fontSize: "calc(14px * var(--fs))", overflow: "hidden" }}>
-        <div style={{ position: "relative", width: W, height: H, overflow: "hidden", background: "radial-gradient(ellipse at 40% 30%, var(--bg1) 0%, var(--bg0) 70%)" }}>
-          {stars.map((st, i) => <span key={i} style={css(st.style)} />)}
-          <nav aria-label="Tasks" style={{ ...PANEL, left: 0, borderRight: `1px solid ${tint("slate", 8)}`, fontSize: ".86em" }}>
-            <div style={{ letterSpacing: ".32em", fontSize: "1.05em", color: "var(--ink-hi)" }}>STARPULSE</div>
-            <div style={{ marginTop: 8, color: "var(--slate)", fontSize: ".86em" }}>
-              <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "var(--ok)", marginRight: 6 }} />live · {clockText(now)}
-            </div>
-            <div style={{ ...HEAD, margin: "28px 0 8px" }}>VIEWS</div>
-            <div style={{ ...NAV, background: `linear-gradient(90deg,${tint("agent", 16)},transparent)`, borderLeft: "2px solid var(--agent)" }}>
-              <span style={{ width: 12, height: 12, borderRadius: 3, border: "1px solid var(--agent-text)" }} /><span style={{ flex: 1, color: "var(--ink-hi)" }}>Star Map</span>
-            </div>
-            <div style={NAV}>
-              <span style={{ width: 12, height: 12, borderRadius: 3, border: "1px solid var(--dim)" }} /><span style={{ flex: 1, color: "var(--ink-2)" }}>Kanban</span><span style={{ color: "var(--muted)", fontSize: ".86em" }}>{tasks.length}</span>
-            </div>
-            <div style={NAV}>
-              <span style={{ width: 12, height: 12, borderRadius: 3, border: "1px solid var(--dim)" }} /><span style={{ flex: 1, color: "var(--ink-2)" }}>DAGs</span><span style={{ color: "var(--muted)", fontSize: ".86em" }}>{dags || ""}</span>
-            </div>
-            <div style={{ marginTop: 22, border: `1px solid ${tint("slate", 18)}`, borderRadius: 6, padding: "6px 10px", color: "var(--dim)" }}>search…</div>
-            <div style={{ ...HEAD, margin: "30px 0 10px", display: "flex", justifyContent: "space-between" }}><span>TASKS</span></div>
-            <div style={{ display: "flex", justifyContent: "space-between", color: "var(--slate)", fontSize: ".86em", marginBottom: 4 }}><span>In Progress</span><span>{jobs.length}</span></div>
-            {s.fleet.map((f) => (
-              <button key={f.id} type="button" aria-label={f.aria} aria-current={f.on} onClick={f.pick}
-                style={{ all: "unset", cursor: "pointer", display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "baseline", width: "100%", boxSizing: "border-box", padding: "5px 6px", margin: "0 -6px", borderRadius: 4, background: f.on ? tint("agent", 12) : undefined }}>
-                <span style={{ fontFamily: "JetBrains Mono,monospace", fontSize: ".95em", color: f.on ? "var(--agent-hi)" : "var(--ink)" }}>{f.id}</span>
-                <span style={{ color: "var(--muted)", fontSize: ".86em" }}>{f.where}</span>
-                <span style={css(f.bar)} />
-              </button>
-            ))}
-          </nav>
-          <section aria-label="Recent" style={{ ...PANEL, right: 0, borderLeft: `1px solid ${tint("slate", 8)}`, fontSize: ".8em" }}>
-            <div style={{ letterSpacing: ".22em", color: "var(--muted)", marginBottom: 10, fontSize: ".9em" }}>RECENT</div>
-            {recent.map((r, i) => (
-              <div key={i} style={{ fontFamily: "JetBrains Mono, monospace", color: "var(--ink-2)", padding: "2px 0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                <span style={{ color: "var(--faint)", marginRight: 8 }}>{hm(r.at)}</span>{r.text}
+    <section id="sd" role="dialog" aria-label="In Progress drill-in" className="suns-drill">
+      <header>
+        <button type="button" className="crumb" onClick={onClose} aria-label="Back to the Board">Board</button>
+        {" "}<span className="sep">›</span>{" "}
+        <span className="title">In Progress</span>
+        <span className="count">{jobs.length} tasks · showing {s.job.id}</span>
+        <nav aria-label="In Progress tasks" className="fleet">
+          {s.fleet.map((f) => (
+            <button key={f.id} type="button" className={f.on ? "fchip set" : "fchip"} aria-label={f.aria} aria-current={f.on} onClick={f.pick}>
+              <b>{f.id}</b><span>{f.where}</span>
+            </button>
+          ))}
+        </nav>
+      </header>
+      <div ref={body} className="sd-body">
+        <div className="sd-stage" style={{ width: stageW, height: stageH }}>
+          <div style={{ position: "absolute", left: -ORIGIN, top: -TOP, width: W, height: H, background: "radial-gradient(ellipse at 40% 30%, var(--bg1) 0%, var(--bg0) 70%)", color: "var(--ink)", fontSize: "calc(14px * var(--fs))" }}>
+            {stars.map((st, i) => <span key={i} style={css(st.style)} />)}
+            <svg width={W} height={H} style={SVG} aria-hidden="true">
+              <path d={s.paths.lane} fill="none" style={LANE} strokeWidth={1} />
+              <path d={s.paths.guide} fill="none" style={GUIDE} strokeWidth={1} strokeDasharray="1 5" />
+              <path d={s.paths.grp} fill="none" style={GROUP} strokeWidth={1} />
+            </svg>
+            <Lines lines={s.main.L} w={W} h={H} />
+            <Pieces g={s.main} />
+            <div style={{ position: "absolute", left: ORIGIN, top: 393, width: stageW, height: s.rowsViewH, overflowY: "auto", overflowX: "hidden", scrollbarWidth: "thin", scrollbarColor: `${tint("slate", 25)} transparent` }}>
+              <div style={{ position: "relative", left: -ORIGIN, top: s.rowsTop, width: W, height: s.rowsH, marginBottom: s.rowsTop }}>
+                <svg width={W} height={s.rowsH} style={SVG} aria-hidden="true">
+                  <path d={s.rpaths.lane} fill="none" style={LANE} strokeWidth={1} />
+                  <path d={s.rpaths.grp} fill="none" style={GROUP} strokeWidth={1} />
+                </svg>
+                <Lines lines={s.rows.L} w={W} h={s.rowsH} />
+                <Pieces g={s.rows} />
+                <Tip tip={s.rtip} />
               </div>
-            ))}
-            {s.det && (
-              <section aria-label="Details" style={{ position: "absolute", inset: 0, background: "var(--glass)", padding: "20px 18px", boxSizing: "border-box" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                  <span style={{ letterSpacing: ".22em", color: "var(--muted)", fontSize: ".9em" }}>DETAILS</span>
-                  <button type="button" aria-label="Close details" onClick={() => setView({ det: null })} style={{ all: "unset", cursor: "pointer", color: "var(--slate)", fontSize: "1.2em", lineHeight: 1, padding: "0 4px" }}>×</button>
-                </div>
-                <div style={{ marginTop: 14, color: "var(--ink-hi)", fontSize: "1.15em" }}>{s.det.title}</div>
-                <div style={{ marginTop: 4, color: "var(--slate)" }}>{s.det.sub}</div>
-                <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 10 }}>
-                  {s.det.rows.map((r, i) => (
-                    <div key={i}>
-                      <div style={{ color: "var(--muted)", fontSize: ".86em", letterSpacing: ".06em" }}>{r.k}</div>
-                      <div style={{ color: r.c ?? "var(--ink)", marginTop: 2, lineHeight: 1.45 }}>{r.v}</div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
-          </section>
-          <svg width={W} height={H} style={SVG} aria-hidden="true">
-            <path d={s.paths.lane} fill="none" style={LANE} strokeWidth={1} />
-            <path d={s.paths.guide} fill="none" style={GUIDE} strokeWidth={1} strokeDasharray="1 5" />
-            <path d={s.paths.grp} fill="none" style={GROUP} strokeWidth={1} />
-          </svg>
-          <Lines lines={s.main.L} w={W} h={H} />
-          <Pieces g={s.main} />
-          <div style={{ position: "absolute", left: 251, top: 393, width: 939, height: 437, overflowY: "auto", overflowX: "hidden", scrollbarWidth: "thin", scrollbarColor: `${tint("slate", 25)} transparent` }}>
-            <div style={{ position: "relative", left: -251, top: s.rowsTop, width: 1190, height: s.rowsH, marginBottom: s.rowsTop }}>
-              <svg width={1190} height={s.rowsH} style={SVG} aria-hidden="true">
-                <path d={s.rpaths.lane} fill="none" style={LANE} strokeWidth={1} />
-                <path d={s.rpaths.grp} fill="none" style={GROUP} strokeWidth={1} />
-              </svg>
-              <Lines lines={s.rows.L} w={1190} h={s.rowsH} />
-              <Pieces g={s.rows} />
-              <Tip tip={s.rtip} />
             </div>
+            <Tip tip={s.tip} />
           </div>
-          <Tip tip={s.tip} />
-          <div style={{ position: "absolute", left: 274, top: 16, display: "flex", flexDirection: "column", gap: 9 }}>
-            <span style={{ fontSize: ".86em", color: "var(--slate)" }}>
-              <button type="button" onClick={onClose} aria-label="Back to the Board" style={{ all: "unset", cursor: "pointer" }}>Board</button> <span style={{ color: "var(--faint)" }}>›</span> <span style={{ color: "var(--ink-hi)" }}>In Progress</span>
-            </span>
-            <span style={{ fontSize: ".93em", color: "var(--ink)", letterSpacing: ".05em" }}>in-progress</span>
-            <span style={{ fontSize: ".72em", color: "var(--muted)", letterSpacing: ".04em" }}>{jobs.length} tasks · showing {s.job.id}</span>
-          </div>
+          {s.det && (
+            <section aria-label="Details" className="sd-details">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                <span style={{ letterSpacing: ".22em", color: "var(--muted)", fontSize: ".9em" }}>DETAILS</span>
+                <button type="button" aria-label="Close details" onClick={() => setView({ det: null })} style={{ all: "unset", cursor: "pointer", color: "var(--slate)", fontSize: "1.2em", lineHeight: 1, padding: "0 4px" }}>×</button>
+              </div>
+              <div style={{ marginTop: 14, color: "var(--ink-hi)", fontSize: "1.15em" }}>{s.det.title}</div>
+              <div style={{ marginTop: 4, color: "var(--slate)" }}>{s.det.sub}</div>
+              <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+                {s.det.rows.map((r, i) => (
+                  <div key={i}>
+                    <div style={{ color: "var(--muted)", fontSize: ".86em", letterSpacing: ".06em" }}>{r.k}</div>
+                    <div style={{ color: r.c ?? "var(--ink)", marginTop: 2, lineHeight: 1.45 }}>{r.v}</div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
         </div>
       </div>
-    </div>
+    </section>
   );
 }

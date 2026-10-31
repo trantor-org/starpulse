@@ -221,7 +221,9 @@ const ROUND_R=60;
 /* Round 10: Z1's layout (the In Progress template over one row per machine the pinned task ran, newest first) with the drawing handed to
    a style. The engine places states, sorts each machine's edges into steps, lane changes, loops back and skips ahead, stacks loops and
    skips into levels so none overlap, and sizes every row to hold its levels, so no arc leaves its row. */
-const X0=470,X1=1100,PANE_R=1180,HAIR=392,ROWS_END=846;
+const X0=470,X1=1100,HAIR=392,ROWS_END=846;
+/* The mockup's pane is 939 wide and 900 tall; the right edge and the replay bar follow the container (setLayout), the rest is mapped by sunsScene. */
+const PANE_R=1180;
 function hexA(h,a){return 'color-mix(in srgb, '+h+' '+Math.round(a*100)+'%, transparent)';}
 function tc(s){return s.replace(/_/g,' ').replace(/\b[a-z]/g,function(c){return c.toUpperCase();});}
 /* Rounded flow lines (the rounded variant sets ROUND_R): a polyline's short chamfers fold into their corner, then every corner
@@ -383,7 +385,8 @@ function rows(g,S,j){var Y=HAIR+4,stop=false,open=g.open||{},pick=g.pick||{},qa=
    the task's history up to 24h, with a tick per machine entry. Hover anywhere on the bar for the time and where the task was; click to
    put the playhead there, and the template and rows show the task as it was. ▶ plays forward from the playhead; Live returns to now. */
 var NOW_M=5*60+30;
-const SX0=330,SX1=1176,SY=866;
+const SX0=330;let SX1=1176,SY=866;
+function setLayout(w,h){SX1=1176+w-939;SY=866+h-900;}
 function hhmm(ago){var m=((NOW_M-Math.round(ago))%1440+1440)%1440;return ('0'+Math.floor(m/60)).slice(-2)+':'+('0'+(m%60)).slice(-2);}
 function entriesOf(x){var out=[],ago=x.mins;for(var i=x.trail.length-1;i>=0;i--){var t=x.trail[i];if(i<x.trail.length-1) ago+=t.mins||0;
   if(t.phase!=='parked'&&t.phase!=='done') out.unshift({t:t,i:i,ago:ago,dur:i===x.trail.length-1?x.mins:(t.mins||0)});}
@@ -414,4 +417,4 @@ function replay(g,j,at,playing){var tw=spanOf(j),es=entriesOf(j);function xOf(ag
   text(g.T,'Live','',297,SY-8,C.okHi,{size:'.7em'});}}
 /** Pins the clock the scrubber labels count back from, in local minutes past midnight. */
 function setNowMinutes(m){NOW_M=m;}
-export { LENSES, LN, PN, STEPS, TIER, statusOf, starfield, STYLE, PANE_R, HAIR, ANIM_UNTIL, template, rows, hhmm, spanOf, jobAt, replay, setNowMinutes };
+export { LENSES, LN, PN, STEPS, TIER, statusOf, starfield, STYLE, PANE_R, HAIR, setLayout, ANIM_UNTIL, template, rows, hhmm, spanOf, jobAt, replay, setNowMinutes };

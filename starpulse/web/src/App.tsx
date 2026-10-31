@@ -213,7 +213,7 @@ export function App() {
         }} />
       {!held && <div ref={tip} id="tip" />}
       {!held && <div ref={panel} id="panel" />}
-      {drill && <Suspense fallback={null}><SunsDrillIn tasks={hud.cards} roles={hud.roles} task={drill} dags={hud.dags.length} onClose={closeDrill} /></Suspense>}
+      {drill && <Suspense fallback={null}><SunsDrillIn tasks={hud.cards} roles={hud.roles} task={drill} onClose={closeDrill} /></Suspense>}
     </>
   );
 }
