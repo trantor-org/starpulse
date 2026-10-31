@@ -14,12 +14,19 @@ cmd_select() {
     printf 'web=true\nbuild=true\nstatic=true\n'
     return
   fi
-  local changed
+  # The two read only the changed-file list, so they run together; the output is joined in a fixed order afterwards.
+  local changed selected reached status=0
   changed=$(mktemp)
+  selected=$(mktemp)
+  reached=$(mktemp)
   git diff --name-only --no-renames "$BASE" HEAD >"$changed"
-  uv run --no-sync python ci/select_tests.py --base "$BASE" <"$changed"
-  uv run --no-sync python ci/reach.py <"$changed"
-  rm -f "$changed"
+  uv run --no-sync python ci/select_tests.py --base "$BASE" <"$changed" >"$selected" &
+  local selecting=$!
+  uv run --no-sync python ci/reach.py <"$changed" >"$reached" || status=$?
+  wait "$selecting" || status=$?
+  [ "$status" -eq 0 ] && cat "$selected" "$reached"
+  rm -f "$changed" "$selected" "$reached"
+  return "$status"
 }
 
 # The suite in one pytest session over PYTEST_TARGETS (empty is the whole suite): work-stealing xdist workers
