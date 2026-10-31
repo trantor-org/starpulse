@@ -29,6 +29,8 @@ __all__ = ["CACHE_SECONDS", "TIMEOUT", "Evaluator", "authored", "unevaluated"]
 TIMEOUT = 10.0
 #: Seconds a task's evaluated criteria are reused before the command runs again, unless they name their own interval.
 CACHE_SECONDS = 30.0
+#: Seconds a failed run (timeout, no JSON) is reused: each retry costs a whole `backlog-task` start, up to `TIMEOUT` of CPU.
+FAILURE_SECONDS = 300.0
 _clock = time.monotonic
 
 _SECTION = re.compile(r"^## Start Criteria\s*$(.*?)(?=^## |\Z)", re.M | re.S)
@@ -122,13 +124,16 @@ def _run(command: list[str], cwd: Path, criteria: list[dict[str, Any]]) -> list[
 
 
 def _interval(results: list[dict[str, Any]]) -> float:
-    """Seconds `results` stay current: the shortest `interval` a criterion's `refresh` hint names, else `CACHE_SECONDS`."""
+    """Seconds `results` stay current: the shortest `interval` a criterion's `refresh` hint names, else `FAILURE_SECONDS`
+    for a failed run (a timeout costs 10 s of CPU per retry), else `CACHE_SECONDS`."""
     named = [
         hint["interval"]
         for result in results
         if isinstance(hint := result.get("refresh"), dict) and isinstance(hint.get("interval"), int | float)
     ]
-    return float(min(named)) if named else CACHE_SECONDS
+    if named:
+        return float(min(named))
+    return FAILURE_SECONDS if any(result.get("status") == "error" for result in results) else CACHE_SECONDS
 
 
 class Evaluator:

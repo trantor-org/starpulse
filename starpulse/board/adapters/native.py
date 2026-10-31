@@ -414,10 +414,10 @@ def _session(notes: str, comments: list[dict[str, str]]) -> str:
     return links[-1] if links else ""
 
 
-def _reader(root: Path, evaluate: Callable[[str, str], list[dict[str, Any]]]) -> TaskReader:
+def _reader(root: Path, evaluate: Callable[[str, str], list[dict[str, Any]]], done: str | None = None) -> TaskReader:
     """A board reader: the record of the task's file, keyed by the fields the task view draws and edits.
 
-    `start_criteria` is the description's Start Criteria, each with the result `evaluate` gives it."""
+    `start_criteria` is the description's Start Criteria, each with the result `evaluate` gives it; a Done task's is empty."""
 
     def read(task: str, /) -> dict[str, Any] | None:
         key = (root, task.casefold())
@@ -431,7 +431,8 @@ def _reader(root: Path, evaluate: Callable[[str, str], list[dict[str, Any]]]) ->
                 return None  # moved or removed while reading
             if held[1][0] < time.time_ns() - _SETTLED_NS:
                 _RECORDS[key] = held
-        return {**held[2], "start_criteria": evaluate(task, held[2]["description"])}
+        finished = lane_id(held[2]["status"]) == done  # a Done task has nothing left to start: no evaluator run for it
+        return {**held[2], "start_criteria": [] if finished else evaluate(task, held[2]["description"])}
 
     return read
 
@@ -1319,7 +1320,9 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
                 "release": _releaser(root, gate),
                 "assign": assign,
                 "create": _creator(root, config, retired, gate, file_name, link),
-                "read": _reader(root, evaluate.latest if isinstance(evaluate, criteria.Evaluator) else evaluate),
+                "read": _reader(
+                    root, evaluate.latest if isinstance(evaluate, criteria.Evaluator) else evaluate, roles.done
+                ),
                 "evaluate": evaluate,
                 "holds": _holds(settings.get("holds"), base),
                 "unfinished": _holds(settings.get("unfinished"), base),

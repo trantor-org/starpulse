@@ -358,3 +358,35 @@ def test_hinted_criteria_spawn_at_least_ten_times_less_than_unhinted_ones(tmp_pa
     after = _spawns_in_an_hour(tmp_path / "after", monkeypatch, _hinted(["run:nightly"]))
 
     assert (before, after) == (120, 4)
+
+
+def test_a_done_task_is_not_evaluated_so_a_read_of_it_starts_no_evaluator_run(tmp_path: Path) -> None:
+    """Live: 96 of 156 evaluated tasks were Done, each a ~3 CPU-s `backlog-task criteria` run every 15 minutes."""
+    ran = tmp_path / "ran"
+    command = _script(tmp_path, f"from pathlib import Path\nPath({str(ran)!r}).write_text('x')\nprint('[]')\n")
+    built = _board(tmp_path, command)
+    (tmp_path / ".starpulse" / "board" / "tasks" / "task-7 - Wait.md").write_text(TASK.replace("Waiting", "Done"))
+    assert built.read is not None
+
+    record = built.read("task-7")
+
+    assert record is not None
+    assert record["start_criteria"] == []
+    assert not ran.exists()
+
+
+def test_a_task_whose_evaluation_failed_is_not_run_again_after_the_ordinary_cache_window(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Live: a criteria run that timed out (10 s of CPU) was retried every 30 s for as long as it kept failing."""
+    runs = tmp_path / "runs.txt"
+    command = _script(tmp_path, f"open({str(runs)!r}, 'a').write('x')\nprint('not json')\n")
+    now = [100.0]
+    monkeypatch.setattr(criteria, "_clock", lambda: now[0])
+    read = _reader(tmp_path, command)
+
+    read("task-7")
+    now[0] += criteria.CACHE_SECONDS + 1
+    read("task-7")
+
+    assert runs.read_text() == "x"
