@@ -51,13 +51,10 @@ from starpulse.board.adapters.upstream_backlog import (
     project_board,
 )
 from starpulse.board.adapters.upstream_backlog import (
-    _assignee as _assignee_of,
-)
-from starpulse.board.adapters.upstream_backlog import (
     _profile as _profile_of,
 )
 from starpulse.board.model import rules
-from starpulse.board.model.claims import assignee_of, released, unreleased
+from starpulse.board.model.claims import assignee_of, claimed, released, unreleased
 from starpulse.board.model.guard import Guard, Validate
 from starpulse.board.model.seam import (
     ANONYMOUS,
@@ -486,7 +483,7 @@ def _record_of(text: str, task: str, evaluate: Callable[[str, str], list[dict[st
         "notes": notes,
         "finalSummary": _section(_FINAL_SUMMARY, body),
         "comments": comments,
-        "session": assignee_of(body) or _session(notes, comments),
+        "session": assignee_of(frontmatter, body) or _session(notes, comments),
         "acceptanceCriteria": _items(_CRITERIA, body),
         "definitionOfDone": _items(_DONE, body),
     }
@@ -509,6 +506,7 @@ _CHECKLISTS = {
 _FRONT_KEYS = {"adrNeeded": "adr_needed", "duplicateSearch": "duplicate_search", "duplicateResolution": "duplicate_resolution"}
 _SCALARS = {
     "title": "title",
+    "assignee": "assignee",
     "type": "type",
     "priority": "priority",
     "impact": "impact",
@@ -605,7 +603,6 @@ def _set_front(frontmatter: dict, field: str, value: Any, spelled: Mapping[str, 
         if not text:
             del frontmatter[key]
     elif field == "profile":
-        frontmatter.pop("assignee", None)
         frontmatter["profile"] = [_text(field, value)]
         if not frontmatter["profile"][0]:
             del frontmatter["profile"]
@@ -1002,12 +999,13 @@ def _restorer(
     return restore
 
 
-def _assign(body: str, session: str) -> str:
-    """`body` with `**Assignee:** <session>` appended to its notes, which the board reads the assignee from.
+def _assign(frontmatter: dict, body: str, session: str) -> str:
+    """`session` as `frontmatter`'s assignee, and `body` with `**Assignee:** <session>` appended to its notes beside it.
 
     A session the notes already name as assignee is not named again: a claim's edit may have recorded it before the move.
     """
-    return body if _assignee_of(body) == session else _append_notes(unreleased(body), f"**Assignee:** {session}")
+    claimed(frontmatter, session)
+    return body if assignee_of({}, body) == session else _append_notes(unreleased(body), f"**Assignee:** {session}")
 
 
 class _Claims:
@@ -1045,7 +1043,7 @@ def _writer(
 
         def edit(frontmatter: dict, body: str) -> str:
             frontmatter["status"] = spelled.get(lane_id(status), status)
-            return _assign(body, session) if claim else body
+            return _assign(frontmatter, body, session) if claim else body
 
         written = _update(root, task, edit, guard, actor)
         if claim and not written.ok:
@@ -1060,16 +1058,17 @@ class _Unheld(Exception):
 
 
 def _releaser(root: Path, guard: Guard = Guard()) -> TaskReleaser:
-    """A board writer that ends `session`'s claim on a task still in `status`: its notes lose the `**Assignee:**`
-    marker and its State stays. A file another writer moved off `status` or whose claim `session` no longer holds is
+    """A board writer that ends `session`'s claim on a task still in `status`: it loses its `assignee` field and its
+    notes' `**Assignee:**` marker, gains `released_from` and keeps its State. A file another writer moved off `status` or whose claim `session` no longer holds is
     refused untouched, so a release judged from a stale row cannot undo a later move."""
 
     def release(task: str, status: str, /, session: str, actor: str = ANONYMOUS) -> Written:
         def edit(frontmatter: dict, body: str) -> str:
             held = str(frontmatter.get("status") or "")
-            if lane_id(held) != lane_id(status) or assignee_of(body) != session:
-                raise _Unheld(f"{task} is {held or 'without a status'} held by {assignee_of(body) or 'no session'}")
-            return released(body)
+            holder = assignee_of(frontmatter, body)
+            if lane_id(held) != lane_id(status) or holder != session:
+                raise _Unheld(f"{task} is {held or 'without a status'} held by {holder or 'no session'}")
+            return released(frontmatter, body)
 
         try:
             return _update(root, task, edit, guard, actor)
@@ -1307,7 +1306,6 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
 
     def assign(task: str, profile: str, /, actor: str = OPERATOR) -> Written:
         def edit(frontmatter: dict, body: str) -> str:
-            frontmatter.pop("assignee", None)
             frontmatter["profile"] = [profile]
             return body
 

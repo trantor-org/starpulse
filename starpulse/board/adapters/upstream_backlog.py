@@ -32,6 +32,7 @@ except ImportError:
     from yaml import SafeLoader as _FrontmatterLoader
 
 from starpulse.board.adapters import project_machines
+from starpulse.board.model.claims import assignee_of
 from starpulse.board.model.markdown import needs_attention_reason
 from starpulse.board.model.seam import Board, MoveWriter, Written
 from starpulse.contracts.task_keys import TaskKeys
@@ -152,17 +153,6 @@ def _profile(frontmatter: dict) -> str:
     """The profile a task is routed to: its `profile` field, else empty."""
     profiles = _strings(frontmatter.get("profile"))
     return profiles[0] if profiles else ""
-
-
-def _assignee(body: str) -> str:
-    """The session a claim recorded in the task's notes: the last `**Assignee:** <id>` line there, else empty.
-
-    The marker lives in the notes because the Backlog CLI rewrites a task file's frontmatter and drops a key it
-    does not know, while the notes section survives every edit.
-    """
-    notes = _NOTES.search(body)
-    held = _ASSIGNEE.findall(notes.group(1)) if notes else []
-    return held[-1] if held else ""
 
 
 def _criteria(body: str) -> list[tuple[bool, str]]:
@@ -372,7 +362,7 @@ class UpstreamBacklog:
             settled_at=_when(frontmatter.get("updated_date")) if settled else None,
             observed_at=_when(frontmatter.get("updated_date")) if lane == self._roles.done else None,
             profile=_profile(frontmatter),
-            assignee=_assignee(body),
+            assignee=assignee_of(frontmatter, body),
             labels=_strings(frontmatter.get("labels")),
             impact=str(frontmatter.get("impact") or "").strip().lower(),
             urgency=str(frontmatter.get("urgency") or "").strip().lower(),
