@@ -1402,6 +1402,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         "complete": history.recorded(made.complete, read),
         "retire": history.recorded(made.retire, read),
         "create": history.created(made.create, read),
+        "reconcile": history.reconciled(read),
     }
     return replace(made, start=start, sweep=sweep, attach=attach, standing=_standing(root, guard), **recorded)
 

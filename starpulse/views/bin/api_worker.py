@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from starpulse.board.adapters.history_window import HistoryWindow
+from starpulse.board.adapters.lane_sweep import LaneSweep
 from starpulse.board.claim_refusals import CLAIMS_STREAM
 from starpulse.event_log import events as machine_events
 from starpulse.event_log import lane_events, verdict_events
@@ -171,6 +172,9 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     # a move no transition of its machine declares is counted per machine
     conformance = Conformance(feed.machines)
     conformance.follow(log, stop)
+    # a task whose file lane differs from the board's is reconciled, and exported if it stays so
+    lane_sweep = LaneSweep(feed, board)
+    lane_sweep.start()
     # `starpulse worker runs` runs the run adapters and the pushed-runs follower; this process
     # draws the workflows that worker keeps in the log, and starts a run only when the page asks; an opt-in
     # worker's instance also shows the page whether that worker is beating
@@ -213,6 +217,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         actor_metrics=actor_metrics,
         lane_metrics=unattributed.exposition,
         conformance_metrics=conformance.exposition,
+        lane_sweep_metrics=lane_sweep.exposition,
         autopilot_metrics=lambda: autopilot_exposition(log),
     )
     app = page_app(feed, host.static, store, window, board, services)

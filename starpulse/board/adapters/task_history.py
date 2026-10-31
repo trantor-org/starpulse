@@ -18,6 +18,8 @@ from starpulse.event_log.readmodel.fold import replay
 from starpulse.event_log.store import EventStore, NewEvent, StaleVersion
 
 WRITER = "native-board"
+#: The actor of the Events that bring a History to its file (`reconciled`).
+RECONCILER = "starpulse/lane-sweep"
 #: The writer of Events an editor import appends: the operator's break-glass edit, not a command of the board (D5).
 BREAK_GLASS = "break-glass"
 _break_glass: ContextVar[bool] = ContextVar("break_glass", default=False)
@@ -213,6 +215,18 @@ class TaskHistory:
 
         return run
 
+    def reconciled(self, read: Callable[[str], Record | None]) -> Callable[[str], bool]:
+        """A verb that appends the Events bringing a task's History to its file, whatever left them apart; whether any were needed.
+
+        A file edited by a write that recorded nothing (an archive's unlink, before it named its dependents) leaves the read model
+        in the old state, and the board draws the read model. The next write heals it through `_held`; this heals it without one."""
+
+        def run(task: str) -> bool:
+            record = read(task)
+            return record is not None and self._append(task, record, record, RECONCILER, "")
+
+        return run
+
     def created(self, create: Callable[..., Written], read: Callable[[str], Record | None]) -> Callable[..., Written]:
         """`create` that appends the new task's `TaskCreated` once it succeeds."""
 
@@ -238,23 +252,24 @@ class TaskHistory:
                 ]
                 store.append(KIND, task, 0, events)
 
-    def _append(self, task: str, before: Record | None, after: Record | None, actor: str, note: str) -> None:
+    def _append(self, task: str, before: Record | None, after: Record | None, actor: str, note: str) -> bool:
+        """Append the Events that take `before` to `after`; whether any were appended."""
         store = self._store
         if store is None:
-            return
+            return False
         for _ in range(2):
             head = store.head(KIND, task)
             if after is None and head and store.read(KIND, task, head - 1)[-1].type == "Archived":
-                return  # retiring an archived task leaves the board no more than it already has
+                return False  # retiring an archived task leaves the board no more than it already has
             base = before if before is not None else after
             held = _held(store, task, before) if head and before else before
             events = _events(held or {}, after, note)
             seeded = [("TaskImported", seed(base, 0.0))] if head == 0 and base else []
             if not events and not seeded:
-                return
+                return False
             try:
                 store.append(KIND, task, head, [self._new(kind, payload, actor) for kind, payload in seeded + events])
-                return
+                return True
             except StaleVersion:
                 continue
         raise StaleVersion(f"task {task} kept moving while its History was appended to")
