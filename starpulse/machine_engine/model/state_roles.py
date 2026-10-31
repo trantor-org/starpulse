@@ -51,7 +51,7 @@ class StateRoles:
 
     def wire(self) -> dict[str, str | list[str] | None]:
         """The roles as the snapshot sends them, for a client that holds no machine to read them from."""
-        points = ("initial", "final", "done", "working", "ready", "waiting", "review", "attention")
+        points = ("initial", "final", "done", "working", "ready", "waiting", "review", "attention", "proposed")
         return {**{point: getattr(self, point) for point in points}, "startable": sorted(self.startable)}
 
     def _first(self, role: str) -> str | None:
@@ -101,6 +101,11 @@ class StateRoles:
     def attention(self) -> str | None:
         """Where a task waits on a person."""
         return self._first("waiting_on_person")
+
+    @property
+    def proposed(self) -> str | None:
+        """Where a task waits, off the lanes, until it is promoted or dropped."""
+        return self._first("proposed")
 
     @property
     def startable(self) -> frozenset[str]:

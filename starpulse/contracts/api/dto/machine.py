@@ -16,8 +16,8 @@ class MachineState(_Api):
     final: bool
     role: str | None = Field(
         default=None,
-        description="The type the machine declares the state: `initial`, `final`, `resting`, `waiting_on_fact` or "
-        "`waiting_on_person`; null when it declares none.",
+        description="The type the machine declares the state: `initial`, `final`, `resting`, `waiting_on_fact`, "
+        "`waiting_on_person` or `proposed`; null when it declares none.",
     )
 
 
