@@ -17,6 +17,7 @@ from starpulse.contracts.adapters import TaskKeys
 from starpulse.contracts.analytics import Analytics
 from starpulse.flow_metrics.model import analytics
 from starpulse.flow_metrics.model.cells import cell_report, transition_cost
+from starpulse.flow_metrics.model.estimates import estimate_report
 from starpulse.flow_metrics.model.flow import cost_to_go, directly_follows, fast_slow_diff, sub_stages
 from starpulse.flow_metrics.model.level_metrics import WindowPastHistory
 from starpulse.flow_metrics.model.session_health import session_health, slice_health
@@ -370,6 +371,30 @@ def cells_response(
         now,
         "cells",
         lambda found, _: cell_report(slice_health(session_health(found, keys, analytics)), titled()),
+    )
+
+
+def estimates_response(
+    telemetry: TelemetryLog | None,
+    query: dict[str, list[str]],
+    keys: TaskKeys | None,
+    titled: Callable[[], Mapping[str, Mapping[str, Any]]],
+    now: float,
+    analytics: Analytics | None = None,
+) -> tuple[bytes, int]:
+    """The body and status for `/api/analytics/estimates`: each completed task's size estimate beside its measured
+    steps, active minutes and effort size step (`estimates.estimate_report`) over the last `hours`, only the tasks of
+    `milestone` when given; refusals as `steps_response`."""
+    milestone = next(iter(query.get("milestone", [])), None)
+    bands = analytics.size_bands if analytics is not None else ()
+    return _kind_size_response(
+        telemetry,
+        query,
+        now,
+        "estimates",
+        lambda found, _: estimate_report(
+            slice_health(session_health(found, keys, analytics)), titled(), bands, milestone
+        ),
     )
 
 

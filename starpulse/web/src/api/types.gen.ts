@@ -45,6 +45,7 @@ export interface ApiContract {
   docShown: DocShown;
   docs: Docs;
   donePage: DonePage;
+  estimates: Estimates;
   events: (
     TaskDelta | MoveDelta | DagsDelta | PullsDelta | ClaimDelta | VerdictDelta | LedgersDelta | SchedulerStatus
   )[];
@@ -740,6 +741,45 @@ export interface TrailStep {
   at: number;
   event: string;
   state: string;
+  [k: string]: unknown;
+}
+/**
+ * `GET /api/analytics/estimates`: each completed, labelled task's estimate beside its measured actuals.
+ */
+export interface Estimates {
+  estimates: Estimate[];
+  now: number;
+  window_s: number;
+  [k: string]: unknown;
+}
+/**
+ * One completed task: its size estimate beside what it measured.
+ */
+export interface Estimate {
+  /**
+   * Agent seconds plus the operator's wait, in minutes.
+   */
+  active_minutes: number;
+  /**
+   * The smallest configured size whose p90 steps and active minutes hold the actuals; None past the largest, or with no `size_bands`.
+   */
+  effort_size: number | null;
+  /**
+   * Sizes the effort lies above (positive) or below (negative) the label; one past the top when the effort has no size; None when the label is no configured size.
+   */
+  effort_size_step: number | null;
+  kind: string;
+  milestone: string | null;
+  profile: string | null;
+  /**
+   * The task's `size-<n>` label.
+   */
+  size: number;
+  /**
+   * Model requests, a subagent's included.
+   */
+  steps: number;
+  task: string;
   [k: string]: unknown;
 }
 /**

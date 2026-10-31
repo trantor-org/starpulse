@@ -269,6 +269,7 @@ class TestConfigCheck:
                 "ladder": [],
                 "weights": [],
                 "default_repo": "",
+                "size_bands": [],
             },
             "task_actor": False,
             "search": {"embeddings_url": None, "model": None, "token_env": None},
@@ -332,6 +333,7 @@ class TestConfigCheck:
             "ladder": ["haiku-low", "haiku-high"],
             "weights": [["clean", 50.0]],
             "default_repo": "o/r",
+            "size_bands": [],
             "labeller": {
                 "url": "http://labeller/v1",
                 "model": "intent",

@@ -108,3 +108,31 @@ def test_cost_to_go_is_empty_inside_the_history_and_refused_past_it(server: Page
 
     assert inside == (200, {"now": NOW, "window_s": 1.06 * 3600, "cost_to_go": []})
     assert (past[0], "longer than the history" in past[1]["error"]) == (400, True)
+
+
+def test_estimates_carry_each_completed_tasks_label_beside_its_measured_effort(tmp_path: Path) -> None:
+    telemetry = TelemetryLog(EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}"))
+    for n in (1, 2):
+        telemetry.publish(completed(n, "read", "edit", "test"))
+    feed = BoardFeed(roles=ROLES, machines=MACHINES, keys=KEYS)
+    profile = "@agent-standard-high"
+    feed.titled = lambda: {  # type: ignore[method-assign]
+        "TASK-1": {"labels": ["kind-execute", "size-8"], "milestone": "m-305", "profile": profile},
+        "TASK-2": {"labels": ["kind-execute", "size-1"], "milestone": "m-9", "profile": profile},
+    }
+    analytics = Analytics(completion_skill="completing-tasks", size_bands=((1, 2, 5.0), (3, 10, 5.0), (8, 100, 50.0)))
+    with serve(tmp_path, feed, telemetry=telemetry, clock=lambda: 4600.0, analytics=analytics) as server:
+        every = _get(server, "estimates", "?hours=1")
+        one = _get(server, "estimates", "?hours=1&milestone=m-305")
+
+    rows = {r["task"]: r for r in every[1]["estimates"]}
+    assert (every[0], one[0]) == (200, 200)
+    assert {t: (r["milestone"], r["kind"], r["size"], r["profile"]) for t, r in rows.items()} == {
+        "TASK-1": ("m-305", "execute", 8, profile),
+        "TASK-2": ("m-9", "execute", 1, profile),
+    }
+    assert {t: (r["steps"], r["active_minutes"], r["effort_size"], r["effort_size_step"]) for t, r in rows.items()} == {
+        "TASK-1": (4, 0.0, 3, -1),
+        "TASK-2": (4, 0.0, 3, 1),
+    }
+    assert [r["task"] for r in one[1]["estimates"]] == ["TASK-1"]
