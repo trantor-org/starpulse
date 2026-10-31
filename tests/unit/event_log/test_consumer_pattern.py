@@ -11,7 +11,7 @@ import pytest
 from starpulse.contracts import BoardTask
 from starpulse.event_log import events, lane_events
 from starpulse.event_log.event_log import EventLog
-from starpulse.runs import run_events
+from starpulse.runs.model import run_events
 
 PAGE = next(root for root in Path(__file__).resolve().parents if (root / "README.md").is_file()) / "docs/consumers.md"
 

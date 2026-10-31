@@ -21,8 +21,8 @@ from typing import Any, ClassVar, Protocol, get_args
 from pydantic import BaseModel
 
 from starpulse.board.board_feed import PUSHED_INSTANCE, SAVE_INTERVAL, BoardStore, InstanceRuns, entry_position
-from starpulse.runs import run_events
 from starpulse.contracts.adapters import LAST_OUTCOMES, RunStatus
+from starpulse.runs.model import run_events
 
 __all__ = ["PUSHED_INSTANCE", "PushRuns"]
 

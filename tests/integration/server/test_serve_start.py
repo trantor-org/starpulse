@@ -16,8 +16,9 @@ _NOT_YET = ("sqlalchemy", "alembic", "starpulse.runtime.assembly")
 # Package `__init__` modules count: each role subpackage of a context adds one to what a start loads. The `/api` routes
 # are a module per resource and the writes a module per resource (TASK-9316), +19 over the files they replaced; the
 # `slow_read` timing both `/api/pulls` and `/api/task` share is one more (TASK-10060).
-# reads' shared Starlette helpers are one more module (TASK-9318).
-_STARPULSE_MODULES = 190
+# reads' shared Starlette helpers are one more module (TASK-9318). Runs' role subpackages add five `__init__` modules
+# (TASK-9254).
+_STARPULSE_MODULES = 195
 
 _FIRST_CHILD = """
 import json, sys

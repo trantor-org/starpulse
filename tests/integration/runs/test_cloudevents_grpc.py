@@ -13,7 +13,7 @@ import h2.events
 import pytest
 from google.protobuf.empty_pb2 import Empty
 from google.protobuf.timestamp_pb2 import Timestamp
-from starpulse.runs.wire.cloudevents_pb2 import CloudEvent, CloudEventBatch
+from starpulse.runs.adapters.inbound.wire.cloudevents_pb2 import CloudEvent, CloudEventBatch
 from starpulse.runtime.adapter_kit import url
 
 from tests.integration.runs import test_cloudevents_http as http

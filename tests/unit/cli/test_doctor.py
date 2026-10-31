@@ -13,7 +13,7 @@ from starpulse.board.model.commit_keys import CommitKeys
 from starpulse.cli import agent_cli as cli
 from starpulse.cli import doctor
 from starpulse.pulls.model.pins import Repo
-from starpulse.runs.config import RunsInstance
+from starpulse.runs.model.config import RunsInstance
 from starpulse.runtime.adapter_kit import serve, task, url
 from starpulse.runtime.config import Config
 
@@ -66,7 +66,9 @@ def test_the_h3_check_passes_when_the_quic_socket_answers() -> None:
         asked.append((host, port))
         return True
 
-    report = doctor.run_checks(snapshot(), CONFIG, dataclasses.replace(FakeHost().probes(), quic=quic), "https://localhost:8766")
+    report = doctor.run_checks(
+        snapshot(), CONFIG, dataclasses.replace(FakeHost().probes(), quic=quic), "https://localhost:8766"
+    )
 
     assert (report["ok"], check(report, "h3")["status"], asked) == (True, "pass", [("localhost", 8766)])
 

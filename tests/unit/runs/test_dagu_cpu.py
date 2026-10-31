@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 from starpulse.board.board_feed import BoardFeed
-from starpulse.runs.dagu import CpuSampler, DaguRuns
+from starpulse.runs.adapters.outbound.dagu import CpuSampler, DaguRuns
 
 CORES = 4
 

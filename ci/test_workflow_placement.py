@@ -118,7 +118,7 @@ def test_static_checks_script_runs_every_check_the_short_jobs_ran():
         "pnpm --dir starpulse/web run gen:types",
         "git diff --exit-code -- starpulse/schemas/api.schema.json starpulse/web/src/api/types.gen.ts",
         "python -m grpc_tools.protoc",  # wire-pb2: regenerate the protobuf modules, fail on a diff
-        "git diff --exit-code -- starpulse/runs/wire",
+        "git diff --exit-code -- starpulse/runs/adapters/inbound/wire",
     ):
         assert command in script, command
 

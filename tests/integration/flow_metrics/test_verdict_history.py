@@ -12,9 +12,9 @@ from starpulse.board.verdicts import Verdicts
 from starpulse.event_log import verdict_events
 from starpulse.event_log.event_log import EventLog
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore, record_verdicts
-from starpulse.runs.cloudevents import SINGLE, CloudEventsIngest
-from starpulse.runs.config import Producer
-from starpulse.runs.ingest import tokens as ingest_tokens
+from starpulse.runs.adapters.inbound.cloudevents import SINGLE, CloudEventsIngest
+from starpulse.runs.adapters.inbound.ingest import tokens as ingest_tokens
+from starpulse.runs.model.config import Producer
 from starpulse.views.model.encoding import event
 
 from tests.machines import MACHINES

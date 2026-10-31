@@ -39,7 +39,7 @@ from starpulse.harness_telemetry.model.cursor_context_config import (
 )
 from starpulse.harness_telemetry.model.harnesses import Harnesses, load_harnesses
 from starpulse.pulls.model.pins import Repo
-from starpulse.runs.config import Producer, RunsInstance
+from starpulse.runs.model.config import Producer, RunsInstance
 from starpulse.runtime.config_model import (
     WORKER_MEMORY_MB,
     CommitFile,

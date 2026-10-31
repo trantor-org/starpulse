@@ -101,7 +101,7 @@ from connectrpc.protocol import ProtocolType
 from google.protobuf.empty_pb2 import Empty
 from pyqwest import HTTPVersion, SyncClient, SyncHTTPTransport
 
-from starpulse.runs.wire.cloudevents_pb2 import CloudEvent
+from starpulse.runs.adapters.inbound.wire.cloudevents_pb2 import CloudEvent
 
 port, token, kind, run = sys.argv[1:]
 client = ConnectClientSync(
@@ -213,7 +213,9 @@ def migrate(python: str, base: Path, env: dict[str, str]) -> str | None:
         timeout=60,
         check=False,
     )
-    return f"starpulse migrate exited {done.returncode}: {done.stderr.strip()[-STDERR_TAIL:]}" if done.returncode else None
+    return (
+        f"starpulse migrate exited {done.returncode}: {done.stderr.strip()[-STDERR_TAIL:]}" if done.returncode else None
+    )
 
 
 def wait_for_page(port: int, serve: subprocess.Popen, deadline: float, log: Path) -> str | None:

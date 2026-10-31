@@ -36,15 +36,15 @@ from pydantic import ValidationError
 
 from starpulse.board.model.adapter_types import module_name
 from starpulse.contracts.adapters import CloudEvent, VerdictEvent
-from starpulse.runs.config import MAX_BATCH
-from starpulse.runs import run_events
-from starpulse.runs.ingest import run_event, token_owner
 from starpulse.event_log import verdict_events
 from starpulse.event_log.events import STREAM
+from starpulse.runs.adapters.inbound.ingest import run_event, token_owner
+from starpulse.runs.model import run_events
+from starpulse.runs.model.config import MAX_BATCH
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     from starpulse.event_log.event_log import EventLog
-    from starpulse.runs.config import Producer
+    from starpulse.runs.model.config import Producer
 
 #: The structured and batch content types the route takes.
 SINGLE = "application/cloudevents+json"

@@ -6,7 +6,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from starpulse.cli import doctor
-from starpulse.runs.config import RunsInstance
+from starpulse.runs.model.config import RunsInstance
 
 
 class FakeHost:

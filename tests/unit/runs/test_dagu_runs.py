@@ -20,9 +20,8 @@ import pytest
 from starpulse.board.board_feed import BoardFeed
 from starpulse.contracts.adapters import StartFailedError, TaskKeys
 from starpulse.event_log.event_log import EventLog
-from starpulse.runs import dagu as dagu_module
-from starpulse.runs import run_events
-from starpulse.runs.dagu import (
+from starpulse.runs.adapters.outbound import dagu as dagu_module
+from starpulse.runs.adapters.outbound.dagu import (
     _STATUS,
     GRAPH_TTL,
     STATS_TTL,
@@ -41,7 +40,8 @@ from starpulse.runs.dagu import (
     starter,
     status_of,
 )
-from starpulse.runs.dagu import follow as dagu_follow
+from starpulse.runs.adapters.outbound.dagu import follow as dagu_follow
+from starpulse.runs.model import run_events
 from starpulse.runtime.adapter_kit import RunsAdapterKit
 
 from tests.dagu_stub import InFlight, Past, Queue, dagu, run_entry, step_entry
@@ -804,7 +804,7 @@ def test_the_adapters_start_capability_is_the_starter_over_the_instances_url(mon
     def connect(url: str) -> Transport:
         return lambda method, path, body: sent.append((url, path)) or (200, {"dagRunId": "run-9"})
 
-    monkeypatch.setattr("starpulse.runs.dagu.connect", connect)
+    monkeypatch.setattr("starpulse.runs.adapters.outbound.dagu.connect", connect)
 
     assert start("http://dagu.test:8085")("healthcheck") == "run-9"
     assert {url for url, _ in sent} == {"http://dagu.test:8085"}
@@ -860,9 +860,9 @@ def test_a_run_appended_to_the_log_moves_its_dag_and_the_end_reads_the_steps_aga
     log: EventLog, monkeypatch: pytest.MonkeyPatch, follow_instance
 ) -> None:
     monkeypatch.setattr(
-        "starpulse.runs.dagu._reconcile_forever", lambda runs, stop: None
+        "starpulse.runs.adapters.outbound.dagu._reconcile_forever", lambda runs, stop: None
     )  # only the entries move the DAG
-    monkeypatch.setattr("starpulse.runs.dagu._refresh_stats_forever", lambda url, stats, stop: None)
+    monkeypatch.setattr("starpulse.runs.adapters.outbound.dagu._refresh_stats_forever", lambda url, stats, stop: None)
     feed = BoardFeed()
     with dagu({"d1": ["a"]}) as (base_url, calls):
         follow_instance(base_url, feed.runs("ci"), log, interval=0.01)
@@ -879,7 +879,7 @@ def test_a_run_appended_to_the_log_moves_its_dag_and_the_end_reads_the_steps_aga
 def test_the_tail_starts_at_the_log_head_so_no_retained_entry_is_replayed_and_a_later_one_is_handled(
     log: EventLog, monkeypatch: pytest.MonkeyPatch, follow_instance
 ) -> None:
-    monkeypatch.setattr("starpulse.runs.dagu._reconcile_forever", lambda runs, stop: None)
+    monkeypatch.setattr("starpulse.runs.adapters.outbound.dagu._reconcile_forever", lambda runs, stop: None)
     handled: list[str] = []
     real_handle = DaguRuns.handle_entry
     monkeypatch.setattr(
@@ -904,9 +904,9 @@ def test_a_followed_instance_reads_only_the_named_dag_when_an_entry_names_a_new_
     log: EventLog, monkeypatch: pytest.MonkeyPatch, follow_instance
 ) -> None:
     monkeypatch.setattr(
-        "starpulse.runs.dagu._reconcile_forever", lambda runs, stop: None
+        "starpulse.runs.adapters.outbound.dagu._reconcile_forever", lambda runs, stop: None
     )  # its listings would skew the count
-    monkeypatch.setattr("starpulse.runs.dagu._refresh_stats_forever", lambda url, stats, stop: None)  # so would its stats
+    monkeypatch.setattr("starpulse.runs.adapters.outbound.dagu._refresh_stats_forever", lambda url, stats, stop: None)  # so would its stats
     steps = {"d1": ["a"], "d2": ["b"]}
     feed = BoardFeed()
     with dagu(steps) as (base_url, calls):
@@ -1103,7 +1103,7 @@ def test_a_start_that_cannot_reach_dagu_raises_with_the_transports_reason() -> N
 def test_a_run_that_finishes_on_dagu_shows_within_one_reconcile_interval_with_no_log_entries(
     log: EventLog, monkeypatch: pytest.MonkeyPatch, follow_instance
 ) -> None:
-    monkeypatch.setattr("starpulse.runs.dagu.RECONCILE_INTERVAL", 0.05)
+    monkeypatch.setattr("starpulse.runs.adapters.outbound.dagu.RECONCILE_INTERVAL", 0.05)
     feed = BoardFeed()
     latest = {"statusLabel": "running", "dagRunId": "r1"}
 
@@ -1634,7 +1634,9 @@ class _Sink:
     def __init__(self) -> None:
         self.dags: list[dict] = []
 
-    def set_dags(self, dags: list | None, error: str | None, pools: list | None = None, startable=None, cpu=None) -> None:
+    def set_dags(
+        self, dags: list | None, error: str | None, pools: list | None = None, startable=None, cpu=None
+    ) -> None:
         self.dags = dags or []
 
     def recent(self) -> dict[str, dict]:
@@ -1744,7 +1746,7 @@ def test_a_dag_no_cue_ties_gets_no_recent_runs_from_a_reader_that_ties_none() ->
 def test_a_followed_instance_reads_the_recent_runs_of_the_workflows_its_sink_says_are_tied(
     log: EventLog, monkeypatch: pytest.MonkeyPatch, follow_instance
 ) -> None:
-    monkeypatch.setattr("starpulse.runs.dagu._reconcile_forever", lambda runs, stop: None)
+    monkeypatch.setattr("starpulse.runs.adapters.outbound.dagu._reconcile_forever", lambda runs, stop: None)
     sink = _Sink()
     sink.tied = frozenset({"apply"})  # type: ignore[attr-defined]
     with dagu({**APPLY, "other": ["a"]}, history=(APPLIED,)) as (base_url, _):
@@ -1800,7 +1802,7 @@ def test_the_adapters_rerun_capability_is_the_rerunner_over_the_instances_url(mo
     def connect(url: str) -> Transport:
         return lambda method, path, body: sent.append((url, path, body)) or (200, {"dagRunId": "run-9"})
 
-    monkeypatch.setattr("starpulse.runs.dagu.connect", connect)
+    monkeypatch.setattr("starpulse.runs.adapters.outbound.dagu.connect", connect)
 
     assert rerun("http://dagu.test:8085")("healthcheck", {"FORCE": "1"}) == "run-9"
     assert sent == [("http://dagu.test:8085", "/dags/healthcheck/start", {"params": "FORCE=1"})]
@@ -2103,7 +2105,7 @@ def test_a_refresh_reads_several_dags_at_once_so_a_heavy_one_does_not_hold_up_th
 
 _EXIT_MID_REFRESH = """
 import threading
-from starpulse.runs import dagu
+from starpulse.runs.adapters.outbound import dagu
 
 reading, never = threading.Event(), threading.Event()
 
@@ -2122,10 +2124,14 @@ assert reading.wait(30)
 
 
 def test_a_process_that_exits_mid_refresh_does_not_wait_for_the_dags_still_queued() -> None:
-    tree = str(Path(dagu_module.__file__).parents[2])  # the child must import this tree's starpulse, not an installed copy
+    tree = str(
+        Path(dagu_module.__file__).parents[2]
+    )  # the child must import this tree's starpulse, not an installed copy
 
     # every read blocks forever: the child returns only if its exit does not join them, else the timeout fails the test
-    subprocess.run([sys.executable, "-c", _EXIT_MID_REFRESH], check=True, timeout=60, env={**os.environ, "PYTHONPATH": tree})
+    subprocess.run(
+        [sys.executable, "-c", _EXIT_MID_REFRESH], check=True, timeout=60, env={**os.environ, "PYTHONPATH": tree}
+    )
 
 
 def test_a_listing_of_named_dags_serves_the_statistics_already_read_without_reading_more() -> None:

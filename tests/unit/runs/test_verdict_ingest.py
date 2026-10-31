@@ -6,9 +6,9 @@ from pathlib import Path
 import pytest
 from starpulse.event_log import verdict_events
 from starpulse.event_log.event_log import EventLog, Tail
-from starpulse.runs.cloudevents import SINGLE, CloudEventsIngest
-from starpulse.runs.config import Producer
-from starpulse.runs.ingest import tokens as ingest_tokens
+from starpulse.runs.adapters.inbound.cloudevents import SINGLE, CloudEventsIngest
+from starpulse.runs.adapters.inbound.ingest import tokens as ingest_tokens
+from starpulse.runs.model.config import Producer
 
 PRODUCER = Producer("qa", "QA_TOKEN", machines=(), actors=())
 GOOD = {"lens": "security", "round": 1, "outcome": "PASS", "reason": "no findings"}
