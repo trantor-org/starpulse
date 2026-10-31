@@ -170,7 +170,7 @@ describe("the DAGs view's rows", () => {
     expect([...row.querySelectorAll(".last, .num")].map((c) => c.textContent)).toEqual(["succeeded 50m ago", "—", "—"]);
     expect(row.querySelector(".tie")).toBeNull();
     expect(row.querySelector(".pool")).toBeNull();
-    expect(q("header .count").textContent).toBe("4 DAGs · 2 domains");
+    expect(q("header .count").textContent).toBe("4 jobs · 2 domains");
   });
 
   it("shows a running DAG's progress and elapsed time, and an idle one's last result", async () => {
@@ -217,7 +217,7 @@ describe("the DAGs view's rows", () => {
   it("says no DAGs were read when the snapshot has none", async () => {
     await draw(null);
 
-    expect(q("header .count").textContent).toBe("no DAGs read");
+    expect(q("header .count").textContent).toBe("no jobs read");
     expect(host.querySelector("#stage")).toBeNull();
   });
 });

@@ -600,6 +600,7 @@ def test_each_worker_context_has_a_packaged_memory_limit_that_the_config_overrid
         "dagu",
         "github-actions",
         "systemd",
+        "temporal",
     }
     assert all(0 < limit.soft_mb < limit.hard_mb for limit in packaged.values())
     assert tuned["pulls"] == MemoryLimit(100, packaged["pulls"].hard_mb)
@@ -615,7 +616,7 @@ def test_the_dagu_worker_limit_clears_its_measured_steady_state_of_about_280_mb_
     [
         (
             "[worker_memory.pulss]\nsoft_mb = 1\n",
-            "worker_memory: unknown context(s) pulss; known: board, dagu, flow-metrics, github-actions, pulls, runs, scheduler, search, systemd",
+            "worker_memory: unknown context(s) pulss; known: board, dagu, flow-metrics, github-actions, pulls, runs, scheduler, search, systemd, temporal",
         ),
         ("[worker_memory.pulls]\nsoft_mb = 900\nhard_mb = 900\n", "worker_memory.pulls: soft_mb must be below hard_mb"),
         ("[worker_memory.pulls]\nsoft_mb = 5000\n", "worker_memory.pulls: soft_mb must be below hard_mb"),

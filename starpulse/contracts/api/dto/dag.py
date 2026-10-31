@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pydantic import Field
 
-from starpulse.contracts.adapters import ActiveRun, Rerun, RunStats, RunStatus, Step
+from starpulse.contracts.adapters import ActiveRun, RecentRun, Rerun, RunStats, RunStatus, Step
 from starpulse.contracts.api._base import _Api
 
 
@@ -29,6 +29,9 @@ class DagBody(_Api):
     )
     active: list[ActiveRun] | None = Field(
         default=None, description="Every running or queued run of the workflow, including concurrent ones."
+    )
+    failed: list[RecentRun] | None = Field(
+        default=None, description="The newest failed runs of the workflow, newest first; absent when none failed."
     )
     pool: str | None = Field(default=None, description="The name of the pool the workflow runs on; empty when none.")
 

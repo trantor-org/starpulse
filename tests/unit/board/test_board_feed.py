@@ -667,6 +667,20 @@ def test_the_workflow_listing_the_page_draws_leaves_the_recent_runs_to_the_ledge
     assert "recent" not in dag
 
 
+def _failed(number: int) -> dict:
+    return {"runId": f"r{number}", "status": "failed", "finishedAt": f"t{number:02d}", "failure": "boom"}
+
+
+def test_the_workflow_listing_carries_the_newest_failed_runs_and_only_when_there_are_some() -> None:
+    feed = ledger_feed()
+    recent = [APPLIED, *(_failed(n) for n in range(12, 0, -1))]  # newest first, as an adapter lists them
+    feed.set_dags("ci", [_dag("apply", *recent), _dag("start", APPLIED)], None)
+
+    apply, start = feed.snapshot()["dags"]
+    assert [run["runId"] for run in apply["failed"]] == [f"r{n}" for n in range(12, 2, -1)]
+    assert "failed" not in start
+
+
 def test_a_feed_that_ties_no_workflow_to_an_event_has_no_ledgers() -> None:
     feed = BoardFeed(roles=ROLES)
     feed.set_pulls({"TASK-1": [MERGED_PR]})

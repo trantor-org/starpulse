@@ -61,11 +61,11 @@ export function App() {
   // a hovered Recent line lights its task on the view showing: the Kanban hears it as a task to spot and says why it has no card
   const [line, setLine] = useState<string | null>(null), [spotted, setSpotted] = useState<string | null>(null);
   const [why, setWhy] = useState<string | null>(null), [opening, setOpening] = useState<{ id: string } | null>(null);
-  // and a DAG-finished line lights its row in the DAGs view and opens its modal
+  // and a DAG-finished line lights its row in the Jobs view and opens its modal
   const [spottedDag, setSpottedDag] = useState<string | null>(null), [openingDag, setOpeningDag] = useState<{ name: string } | null>(null);
   // the Kanban's text search draws in the navigator's search slot
   const [searchSlot, setSearchSlot] = useState<HTMLElement | null>(null);
-  // and the DAGs view's filter draws in the same section, above the run-pressure cards
+  // and the Jobs view's filter draws in the same section, above the run-pressure cards
   const [dgSlot, setDgSlot] = useState<HTMLElement | null>(null);
   // and its milestone outline draws in the outline slot below it, where Layers draw on the Star Map
   const [outlineSlot, setOutlineSlot] = useState<HTMLElement | null>(null);
@@ -172,20 +172,20 @@ export function App() {
             spot={spotted} note={setWhy} opening={opening} records={held?.records} />
         </Suspense>
       </Kept>
-      <Kept name="dags" on={view === "dags"} warm={drawn}><Suspense fallback={null}><Dags data={hud.dagData} openPath={open} spot={spottedDag} opening={openingDag} filterSlot={dgSlot} /></Suspense></Kept>
+      <Kept name="jobs" on={view === "jobs"} warm={drawn}><Suspense fallback={null}><Dags data={hud.dagData} openPath={open} spot={spottedDag} opening={openingDag} filterSlot={dgSlot} /></Suspense></Kept>
       <Kept name="admin" on={view === "admin"} warm={drawn}><Suspense fallback={null}><AdminPage store={admin} theme={theme} window={historyWindow} hint={hud.hint} /></Suspense></Kept>
       <Rail shown={shell} hud={hud} view={view} note={view === "kanban" && line && why ? { key: line, text: why } : null}
-        can={(l) => (view === "kanban" ? !!l.task : view === "dags" ? !!l.dag : view === "constellation" && !!l.task)}
+        can={(l) => (view === "kanban" ? !!l.task : view === "jobs" ? !!l.dag : view === "constellation" && !!l.task)}
         spot={(l) => {
           setLine(l?.key ?? null);
           if (view === "kanban") return setSpotted(l?.task ?? null);
-          if (view === "dags") return setSpottedDag(l?.dag ?? null);
+          if (view === "jobs") return setSpottedDag(l?.dag ?? null);
           const lane = (id: string) => hud.cards.find((c) => c.id === id)?.lane ?? "";
           renderer.current?.spot(l?.task ? { kind: "task", id: l.task, lane: lane(l.task) } : null, true);
         }}
         pick={(l) => {
           if (view === "kanban") setOpening({ id: l.task! });
-          else if (view === "dags") setOpeningDag({ name: l.dag! });
+          else if (view === "jobs") setOpeningDag({ name: l.dag! });
           else renderer.current?.openTask(l.task!);
         }} />
       {!held && <div ref={tip} id="tip" />}
@@ -240,7 +240,7 @@ function Navigator({ shell, ...props }: { shell: boolean } & Parameters<typeof N
       <nav id="pnav" ref={bar} aria-label="Views">
         {tab("constellation", "Star Map", <svg className="g" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="12" cy="12" r="5" fill="currentColor" stroke="none" /><ellipse cx="12" cy="12" rx="10.6" ry="3.9" transform="rotate(-28 12 12)" strokeWidth="1.5" /><circle cx="20.6" cy="3.6" r="1.1" fill="currentColor" stroke="none" /></svg>, props.phone)}
         {tab("kanban", "Kanban", <svg className="g kb" width="14" height="14" viewBox="0 0 12 12" aria-hidden="true"><rect x="1" y="1" width="2.5" height="10" rx=".6" /><rect x="4.75" y="1" width="2.5" height="7" rx=".6" /><rect x="8.5" y="1" width="2.5" height="4.5" rx=".6" /></svg>)}
-        {tab("dags", "DAGs", <svg className="g dg" width="14" height="14" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 9.5 5 3.2 8.6 5.4 10.4 2" /><circle cx="2" cy="9.5" r="1.3" /><circle cx="5" cy="3.2" r="1.3" /><circle cx="8.6" cy="5.4" r="1.1" /><circle cx="10.4" cy="2" r=".9" /></svg>)}
+        {tab("jobs", "Jobs", <svg className="g dg" width="14" height="14" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 9.5 5 3.2 8.6 5.4 10.4 2" /><circle cx="2" cy="9.5" r="1.3" /><circle cx="5" cy="3.2" r="1.3" /><circle cx="8.6" cy="5.4" r="1.1" /><circle cx="10.4" cy="2" r=".9" /></svg>)}
         {tab("admin", "Admin", <svg className="g" width="14" height="14" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="1.8" /><path d="M6 .9v1.6M6 9.5v1.6M.9 6h1.6M9.5 6h1.6M2.4 2.4l1.1 1.1M8.5 8.5l1.1 1.1M2.4 9.6l1.1-1.1M8.5 3.5l1.1-1.1" /></svg>)}
         <button className="more" aria-label="More: search, status and the rest of the navigator" aria-expanded={sheet} onClick={() => setSheet(true)}><svg className="g" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11" /></svg><span>More</span><i className={`dot ${props.hud.live}`} /></button>
       </nav>
@@ -315,15 +315,15 @@ function NavigatorBody({ hud, view, phone, activeView, slot, dgSlot, outlineSlot
           <span className="t">Kanban</span>
           <span className="n">{recent(hud.cards, now, hud.roles).length || ""}</span>
         </button>
-        <button className={`node${view === "dags" ? " on here" : ""}`} title="DAGs" onClick={() => choose("dags")}>
+        <button className={`node${view === "jobs" ? " on here" : ""}`} title="Jobs" onClick={() => choose("jobs")}>
           <svg className="g dg-glyph" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 9.5 5 3.2 8.6 5.4 10.4 2" /><circle cx="2" cy="9.5" r="1.3" /><circle cx="5" cy="3.2" r="1.3" /><circle cx="8.6" cy="5.4" r="1.1" /><circle cx="10.4" cy="2" r=".9" /></svg>
-          <span className="t">DAGs</span>
+          <span className="t">Jobs</span>
           <span className="n">{hud.dags.length || ""}</span>
         </button>
       </section>
       {view !== "admin" && (
         <section className="away has-x search">
-          {view === "kanban" ? <div key="kb" ref={slot} /> : view === "dags" ? <div key="dg" ref={dgSlot} /> : <>
+          {view === "kanban" ? <div key="kb" ref={slot} /> : view === "jobs" ? <div key="dg" ref={dgSlot} /> : <>
             <input id="q" ref={searchBox} type="search" placeholder="search…" title="Search tasks, States and lifecycle machines" aria-label="Search tasks, States and lifecycle machines" autoComplete="off" value={query}
               onChange={(e) => { setQuery(e.target.value); spot(null); }}
               onKeyDown={(e) => {
@@ -336,7 +336,7 @@ function NavigatorBody({ hud, view, phone, activeView, slot, dgSlot, outlineSlot
         </section>
       )}
       {view === "kanban" && <section className="away outline" ref={outlineSlot} />}
-      {view === "dags" && <><Queues pools={hud.pools} /><DagPressure data={hud.dagData} /></>}
+      {view === "jobs" && <><Queues pools={hud.pools} /><DagPressure data={hud.dagData} /></>}
       {view === "constellation" && (body ? <section className="away matches">{body}</section> : <Leaderboard tasks={hud.cards} roles={hud.roles} now={now} open={selectTask} />)}
       <section className="views admin-sec">
         <button className={`node${view === "admin" ? " on here" : ""}`} title="Admin" onClick={() => choose("admin")}>
@@ -379,7 +379,7 @@ function RailBody({ hud, view, ...feed }: { hud: HudState; view: ViewName } & Om
       </section>
       <section id="legend">
         <h3>Legend</h3>
-        {view === "dags" ? <DagLegend /> : view === "kanban" ? (
+        {view === "jobs" ? <DagLegend /> : view === "kanban" ? (
           <>
             <span><i style={{ background: "var(--ok)" }} />checks pass</span><span><i style={{ background: "var(--fail)" }} />failing</span><span><i style={{ background: "var(--run)" }} />pending</span><br />
             <span><i style={{ background: "var(--agent)" }} />merged</span><span><span style={{ color: "var(--run)" }}>⌁ n</span> review threads</span><br />

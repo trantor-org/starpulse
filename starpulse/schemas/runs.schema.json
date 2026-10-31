@@ -67,6 +67,46 @@
           "description": "Each of the DAG's steps by name with its status in this run.",
           "title": "Steps",
           "type": "object"
+        },
+        "task": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The Board task the run works on (`TASK-N`); None when it names none.",
+          "title": "Task"
+        },
+        "attempt": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The attempt of the step the run is on (or failed on); None when the engine counts none.",
+          "title": "Attempt"
+        },
+        "failure": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The last failure's message (the step's, or the run's); None when nothing failed.",
+          "title": "Failure"
         }
       },
       "required": [
@@ -169,6 +209,33 @@
           "description": "Each step the run reached by name with its status in this run.",
           "title": "Steps",
           "type": "object"
+        },
+        "attempt": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The attempt of the step the run is on (or failed on); None when the engine counts none.",
+          "title": "Attempt"
+        },
+        "failure": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The last failure's message (the step's, or the run's); None when nothing failed.",
+          "title": "Failure"
         }
       },
       "required": [

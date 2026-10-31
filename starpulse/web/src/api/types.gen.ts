@@ -812,6 +812,10 @@ export interface DagBody {
    * Every running or queued run of the workflow, including concurrent ones.
    */
   active?: ActiveRun[] | null;
+  /**
+   * The newest failed runs of the workflow, newest first; absent when none failed.
+   */
+  failed?: RecentRun[] | null;
   finishedAt: string;
   name: string;
   /**
@@ -845,6 +849,14 @@ export interface DagBody {
  */
 export interface ActiveRun {
   /**
+   * The attempt of the step the run is on (or failed on); None when the engine counts none.
+   */
+  attempt?: number | null;
+  /**
+   * The last failure's message (the step's, or the run's); None when nothing failed.
+   */
+  failure?: string | null;
+  /**
    * The engine's own status for the run when it differs from `status`, shown as is.
    */
   raw?: string | null;
@@ -874,6 +886,63 @@ export interface ActiveRun {
   steps: {
     [k: string]: "not_started" | "queued" | "running" | "succeeded" | "failed" | "aborted" | "skipped";
   };
+  /**
+   * The Board task the run works on (`TASK-N`); None when it names none.
+   */
+  task?: string | null;
+}
+/**
+ * One run of a DAG within the last day, running or over, with the parameters it started with.
+ */
+export interface RecentRun {
+  /**
+   * The attempt of the step the run is on (or failed on); None when the engine counts none.
+   */
+  attempt?: number | null;
+  /**
+   * The last failure's message (the step's, or the run's); None when nothing failed.
+   */
+  failure?: string | null;
+  /**
+   * When the run ended, ISO 8601 UTC; empty while it runs.
+   */
+  finishedAt: string;
+  /**
+   * The `KEY=value` parameters the run started with, by name; empty when it had none.
+   */
+  params: {
+    [k: string]: string;
+  };
+  /**
+   * The engine's own status for the run when it differs from `status`, shown as is.
+   */
+  raw?: string | null;
+  /**
+   * The run's id.
+   */
+  runId: string;
+  /**
+   * When the run started, ISO 8601 UTC (`2026-10-02T17:00:00Z`).
+   */
+  startedAt: string;
+  /**
+   * The run's status.
+   */
+  status: "not_started" | "queued" | "running" | "succeeded" | "failed" | "aborted" | "skipped";
+  /**
+   * Each step the run reached by name with its status in this run.
+   */
+  steps: {
+    [k: string]: "not_started" | "queued" | "running" | "succeeded" | "failed" | "aborted" | "skipped";
+  };
+  /**
+   * The Board task a `dag-run-task-<N>-<ts>` run id names (`TASK-N`); None for any other run.
+   */
+  task?: string | null;
+  /**
+   * A link to the run in the scheduler's own page; empty when it has none.
+   */
+  url?: string;
 }
 /**
  * What a DAG declares about a rerun of it: safe (all None), once per `key`, or repeating its effects.

@@ -2,7 +2,7 @@
 
 `api` is the Page API, run by `starpulse.views.bin.api_worker` on the socket `serve` hands it; `pulls` is the Delivery context (the pull request store's projection from the machine events and its manual refresh, the task actor and the release of
 dependents); `scheduler` is the Scheduler context, run by `starpulse.scheduler.bin.scheduler_worker`; `runs` is the
-Runs context, run by `starpulse.runs.bin.runs_worker`; `dagu`, `github-actions` and `systemd` are the run Adapters, each supervised by `serve` for the `[[runs]]` instances that name it, run by
+Runs context, run by `starpulse.runs.bin.runs_worker`; `dagu`, `github-actions`, `systemd` and `temporal` are the run Adapters, each supervised by `serve` for the `[[runs]]` instances that name it, run by
 `starpulse.runs.bin.adapter_worker`; `flow-metrics` is the Flow Metrics context, run by
 `starpulse.flow_metrics.bin.flow_metrics_worker`; `search` is the Search context's embedding catch-up, run by
 `starpulse.board.bin.search_worker`; `board` is the Board context's writer (the Start Criteria dating), run by `starpulse.board.bin.board_worker`.
@@ -24,7 +24,7 @@ from starpulse.runtime.server import listen_options
 logger = logging.getLogger(__name__)
 
 #: The run Adapters that run as their own workers (`starpulse.runs.bin.adapter_worker`): `serve` supervises one for each that a `[[runs]]` instance names.
-OPT_IN = ("dagu", "github-actions", "systemd")
+OPT_IN = ("dagu", "github-actions", "systemd", "temporal")
 CONTEXTS = ("api", "pulls", "scheduler", "runs", "flow-metrics", "search", "board", *OPT_IN)
 
 

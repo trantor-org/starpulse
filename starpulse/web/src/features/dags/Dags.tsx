@@ -9,7 +9,7 @@ import { same } from "../../api/same";
 import { DAG_PREFS_KEY, NO_DAG_FILTERS, useFilters } from "../../shared/viewPrefs";
 import { DagModal } from "./DagModal";
 import { IdleCells, Orb, RunCells, Strip, type LedgerGo } from "./DagParts";
-import { captions, filterRows, panes, places, refusal, rows, short, type DagData, type DagFacts, type Row } from "./dagsModel";
+import { captions, filterRows, panes, places, refusal, rows, runNote, short, type DagData, type DagFacts, type Row } from "./dagsModel";
 import { ChoiceMenu } from "../../shared/ChoiceMenu";
 import { useViewActive } from "../../shared/Kept";
 import { SearchClear } from "../../shared/SearchClear";
@@ -65,6 +65,7 @@ interface RowProps { r: Row; now: number; spot: boolean; why: string | null; f: 
 
 /** One DAG's row, a slot on the stage: where it sits is three custom properties, so a move between panes is its transform's transition and the one element is the whole animation. It draws again only when what it shows changed: its row's reference holds while its DAG does, and its facts are compared by what they say. */
 const DagRow = memo(function DagRow({ r, now, spot, why, f, run, open, pane, col, hs, slot, k, band, caption, glide }: RowProps) {
+  const note = runNote(r.d);
   const at = { "--c": col, "--hs": hs, "--s": slot, "--k": k, "--b": Number(band) } as CSSProperties;
   return (
     <div className={`drow p-${r.phase}${r.runSafe ? " startable" : ""}${spot ? " spot" : ""}`} data-dag={r.d.name} data-pane={pane} data-glide={glide} style={at} tabIndex={0} onClick={() => open(r)}
@@ -73,7 +74,7 @@ const DagRow = memo(function DagRow({ r, now, spot, why, f, run, open, pane, col
       <div className="body">
         <Orb phase={r.phase} />
         <span className="who"><span className="nm" title={r.d.name}>{short(r.d.name)}</span>
-          <span className="sub">{f?.schedule ?? "manual"} · {r.d.pool ? `pool ${short(r.d.pool)}` : "no pool"}</span></span>
+          <span className="sub" title={note || undefined}>{note || `${f?.schedule ?? "manual"} · ${r.d.pool ? `pool ${short(r.d.pool)}` : "no pool"}`}</span></span>
         <Strip r={r} w={220} h={30} />
         {pane === "processing" ? <RunCells r={r} now={now} /> : <IdleCells r={r} f={f} now={now} />}
         <RunBtn r={r} why={why} run={run} />
@@ -180,7 +181,7 @@ export function Dags({ data, post, openPath, spot = null, opening = null, filter
     const level = go.current && ev && flows ? ledgerLevel({ flows, cues }, ev) : null;
     return level ? () => go.current!([...BOARD, level]) : null;
   }, [flows, cues]);
-  if (!data) return <main id="dg" ref={page}><header><span className="title">DAGs</span><span className="count">no DAGs read</span></header></main>;
+  if (!data) return <main id="dg" ref={page}><header><span className="title">Jobs</span><span className="count">no jobs read</span></header></main>;
 
   const why = (r: Row) => refusal(r, starting.has(r.d.name));
   const shown = opened ? all.find((r) => r.d.name === opened) : undefined;
@@ -206,12 +207,12 @@ export function Dags({ data, post, openPath, spot = null, opening = null, filter
   return (
     <main id="dg" ref={page}>
       <header>
-        <span className="title">DAGs</span>
-        <span className="count">{plural(all.length, "DAG")} · {plural(new Set(all.map((r) => r.domain)).size, "domain")}</span>
+        <span className="title">Jobs</span>
+        <span className="count">{plural(all.length, "job")} · {plural(new Set(all.map((r) => r.domain)).size, "domain")}</span>
       </header>
       {filterSlot && createPortal(
         <div className="fw">
-          <input id="dgq" ref={filterBox} type="text" placeholder="filter DAGs by name, step or domain…" aria-label="Filter DAGs by name, step or domain" autoComplete="off" spellCheck={false} value={q}
+          <input id="dgq" ref={filterBox} type="text" placeholder="filter jobs by name, step or domain…" aria-label="Filter jobs by name, step or domain" autoComplete="off" spellCheck={false} value={q}
             onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Escape" && setQ("")} />
           <SearchClear input={filterBox} value={q} clear={() => setQ("")} />
         </div>,
