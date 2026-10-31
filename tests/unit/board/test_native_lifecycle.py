@@ -501,3 +501,78 @@ def test_the_lifecycle_verbs_answer_only_the_lan(tmp_path: Path, monkeypatch: py
     assert claim_task("8.8.8.8", raw, feed, built.writer)[0] == 403
     assert park_task("8.8.8.8", raw, feed, built.read, built.edit)[0] == 403
     assert review_task("8.8.8.8", raw, feed, built.read, built.edit)[0] == 403
+
+
+def _frontmatter(base: Path, task: str) -> dict[str, Any]:
+    return yaml.safe_load(_text(base, task).split("---\n")[1])
+
+
+def test_a_claim_writes_the_session_as_the_frontmatter_assignee(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    feed, built = _lifecycle(tmp_path, monkeypatch, {"task-1": ("Ready", {})})
+
+    assert _claim(feed, built, task="task-1", session="s-1")[0] == 200
+
+    assert _frontmatter(tmp_path, "task-1")["assignee"] == "s-1"
+
+
+def test_a_release_removes_the_frontmatter_assignee_and_writes_released_from(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    feed, built = _lifecycle(tmp_path, monkeypatch, {"task-1": ("Ready", {})})
+    assert _claim(feed, built, task="task-1", session="s-1")[0] == 200
+    assert built.release is not None
+
+    assert built.release("task-1", "In Progress", session="s-1").ok
+
+    front = _frontmatter(tmp_path, "task-1")
+    assert ("assignee" in front, front["released_from"]) == (False, "s-1")
+
+
+def test_a_release_by_a_session_the_frontmatter_does_not_name_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    feed, built = _lifecycle(tmp_path, monkeypatch, {"task-1": ("Ready", {})})
+    assert _claim(feed, built, task="task-1", session="s-1")[0] == 200
+    assert built.release is not None
+
+    assert not built.release("task-1", "In Progress", session="s-2").ok
+    assert _frontmatter(tmp_path, "task-1")["assignee"] == "s-1"
+
+
+def test_a_new_claim_forgets_the_session_a_release_named(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    feed, built = _lifecycle(tmp_path, monkeypatch, {"task-1": ("Ready", {})})
+    assert _claim(feed, built, task="task-1", session="s-1")[0] == 200
+    assert built.release is not None and built.release("task-1", "In Progress", session="s-1").ok
+    _scan(tmp_path, feed)
+
+    assert _claim(feed, built, task="task-1", session="s-2")[0] == 200
+
+    front = _frontmatter(tmp_path, "task-1")
+    assert (front["assignee"], "released_from" in front) == ("s-2", False)
+
+
+def test_a_task_whose_frontmatter_names_an_assignee_and_notes_hold_no_marker_shows_that_assignee(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    feed, built = _lifecycle(tmp_path, monkeypatch, {"task-1": ("In Progress", {"assignee": "s-9"})})
+    _scan(tmp_path, feed)
+    assert built.read is not None
+
+    record = built.read("task-1")
+
+    assert record is not None and record["session"] == "s-9"
+    assert [agent["assignee"] for agent in feed.open_tasks()] == ["s-9"]
+
+
+def test_setting_a_tasks_profile_keeps_the_session_that_holds_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    feed, built = _lifecycle(tmp_path, monkeypatch, {"task-1": ("In Progress", {"assignee": "s-9"})})
+    assert built.assign is not None
+
+    assert built.assign("task-1", "@agent-standard-high").ok
+
+    front = _frontmatter(tmp_path, "task-1")
+    assert (front["assignee"], front["profile"]) == ("s-9", ["@agent-standard-high"])
