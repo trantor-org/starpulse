@@ -31,6 +31,7 @@ from collections.abc import Callable, Sequence
 from typing import IO, Any, NoReturn
 
 from starpulse.runtime.hold import LISTEN_FD_ENV, SUPERVISED_ENV, supervised_env, watch_supervisor
+from starpulse.runtime import launch
 from starpulse.runtime.supervisor import spawn_child
 
 logger = logging.getLogger(__name__)
@@ -39,7 +40,7 @@ logger = logging.getLogger(__name__)
 ENTRY = "starpulse.__main__:main"
 
 #: A worker command `worker_commands` builds starts with these; the rest is the argument line the entry takes.
-_PREFIX = [sys.executable, "-m", "starpulse"]
+_PREFIX = [launch.interpreter(), "-m", "starpulse"]
 
 _ANSWER_S = 60.0  # how long the preloaded process may take to import and answer
 _REAP_S = 0.1
@@ -133,7 +134,9 @@ def _serve(
         control.sendall(json.dumps(reply).encode() + b"\n")
 
 
-def _preload(control: socket.socket, entry: str, modules: Sequence[str]) -> None:  # pragma: no mutate block — process boundary
+def _preload(
+    control: socket.socket, entry: str, modules: Sequence[str]
+) -> None:  # pragma: no mutate block — process boundary
     """Import `modules` and `entry`'s module, then answer `control`."""
     gc.disable()  # the imports build a graph that lives to exit; collecting during them is time the first fork waits on
     for module in modules:
@@ -257,7 +260,7 @@ class _Preloaded:
         else:
             # its stdin pipe from `serve` is the one every fork inherits, so a child still ends when `serve` dies
             self.proc = subprocess.Popen(
-                [sys.executable, "-m", __name__, str(theirs.fileno()), entry, *modules],
+                [launch.interpreter(), "-m", __name__, str(theirs.fileno()), entry, *modules],
                 stdin=subprocess.PIPE,
                 env=supervised_env(),
                 start_new_session=True,

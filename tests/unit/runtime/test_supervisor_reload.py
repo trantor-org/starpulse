@@ -3,6 +3,7 @@ re-executes `serve` when its own closure changed."""
 
 from __future__ import annotations
 
+import os
 import signal
 from collections.abc import Iterator
 from pathlib import Path
@@ -97,7 +98,7 @@ def test_a_change_in_only_the_scheduler_closure_replaces_only_the_scheduler_chil
     report = supervisor.reload()
 
     after = running_pids(supervisor)
-    assert report == {"supervisor": "kept", "children": {"pulls": "kept", "scheduler": "replaced"}}
+    assert report == {"supervisor": "kept", "reads": "launcher", "children": {"pulls": "kept", "scheduler": "replaced"}}
     assert after["pulls"] == before["pulls"]
     assert after["scheduler"] != before["scheduler"]
     pulls, scheduler, replacement = Child.made
@@ -113,7 +114,7 @@ def test_a_change_to_only_the_pulls_config_block_keeps_the_pid_and_asks_it_to_re
     report = supervisor.reload()
 
     pulls, scheduler = Child.made
-    assert report == {"supervisor": "kept", "children": {"pulls": "reloaded", "scheduler": "kept"}}
+    assert report == {"supervisor": "kept", "reads": "launcher", "children": {"pulls": "reloaded", "scheduler": "kept"}}
     assert running_pids(supervisor) == before
     assert (pulls.signals, scheduler.signals) == ([signal.SIGHUP], [])
     assert not pulls.ended
@@ -150,7 +151,11 @@ def test_a_change_to_the_supervisors_own_closure_ends_every_child_and_re_execute
 
     report = supervisor.reload()
 
-    assert report == {"supervisor": "re-executed", "children": {"pulls": "replaced", "scheduler": "replaced"}}
+    assert report == {
+        "supervisor": "re-executed",
+        "reads": "launcher",
+        "children": {"pulls": "replaced", "scheduler": "replaced"},
+    }
     assert [child.ended for child in Child.made] == [True, True]
     assert executed == []
     supervisor.reexec()
@@ -160,7 +165,7 @@ def test_a_change_to_the_supervisors_own_closure_ends_every_child_and_re_execute
 def test_a_reload_with_nothing_changed_keeps_everything_and_the_next_one_compares_with_the_last(
     supervisor: Supervisor, install: Install
 ) -> None:
-    kept = {"supervisor": "kept", "children": {"pulls": "kept", "scheduler": "kept"}}
+    kept = {"supervisor": "kept", "reads": "launcher", "children": {"pulls": "kept", "scheduler": "kept"}}
     assert supervisor.reload() == kept
     install.now["scheduler"] = reading(code="v2")
     assert supervisor.reload()["children"]["scheduler"] == "replaced"
@@ -206,7 +211,7 @@ def test_a_supervisor_whose_baseline_could_not_be_read_replaces_its_children_on_
     report: dict[str, Any] = running.reload()
     running.stop()
 
-    assert report == {"supervisor": "kept", "children": {"pulls": "replaced"}}
+    assert report == {"supervisor": "kept", "reads": "launcher", "children": {"pulls": "replaced"}}
     assert executed == []
 
 
@@ -298,8 +303,8 @@ def test_reload_compares_each_closure_to_the_hashes_taken_at_start(install: Inst
     again = running.reload()
     running.stop()
 
-    assert report == {"supervisor": "kept", "children": {"pulls": "kept", "scheduler": outcome}}
-    assert again == {"supervisor": "kept", "children": {"pulls": "kept", "scheduler": "kept"}}
+    assert report == {"supervisor": "kept", "reads": "launcher", "children": {"pulls": "kept", "scheduler": outcome}}
+    assert again == {"supervisor": "kept", "reads": "launcher", "children": {"pulls": "kept", "scheduler": "kept"}}
 
 
 def test_serve_re_executes_when_its_own_closure_changed_since_start(install: Install, executed: list[bool]) -> None:
@@ -349,6 +354,9 @@ def test_an_edit_to_the_configured_board_adapter_module_replaces_each_child_that
     (package / "__init__.py").write_text("")
     (package / "board.py").write_text("VALUE = 1\n")
     monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.setenv(
+        "PYTHONPATH", os.pathsep.join([str(tmp_path), os.environ.get("PYTHONPATH", "")])
+    )  # the fresh probe
     config = tmp_path / "starpulse.toml"
     config.write_text('[board]\ntype = "demo.board"\n')
     running = Supervisor(
@@ -362,4 +370,8 @@ def test_an_edit_to_the_configured_board_adapter_module_replaces_each_child_that
     finally:
         running.stop()
 
-    assert report == {"supervisor": "re-executed", "children": {"pulls": "replaced", "scheduler": "replaced"}}
+    assert report == {
+        "supervisor": "re-executed",
+        "reads": "launcher",
+        "children": {"pulls": "replaced", "scheduler": "replaced"},
+    }

@@ -1,9 +1,11 @@
 """What a `starpulse` process runs from, read so `starpulse reload` can tell which process a change reaches.
 
 A process is its import closure (the files of the `starpulse` modules its entry loads, with their content hashes) and the
-config blocks it is built from. `code_of` reads the closure from the installed code in a fresh interpreter, as the
-supervisor's children do when they start, so it sees what a child started now would load rather than what this process
-has already imported.
+config blocks it is built from. `code_of` reads the closure from the installed code in a fresh interpreter on the
+launcher (`starpulse.runtime.launch`), as the supervisor's children are started, so it sees what a child started now would
+load rather than what this process has already imported, and the release a symlink now names rather than the one `serve`
+started in. A file is named by its path under the directory holding the package, so the same code in two release
+directories reads equal.
 
 `serve` starts without reading any closure: its start `Reading` holds `package_hashes`, the hash of every module file,
 and a closure is unchanged since then while each of its files still has the hash it had.
@@ -13,14 +15,15 @@ from __future__ import annotations
 
 import importlib.machinery
 import importlib.util
+import os
 import subprocess
-import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 
 from starpulse.board.model.adapter_types import ADAPTER_CONTEXTS, module_name
+from starpulse.runtime import launch
 from starpulse.runtime.config import Config, discover, load
 
 SELF = "serve"
@@ -113,10 +116,13 @@ def _embeddings_url(raw: Mapping[str, object]) -> object:
     return search.get("embeddings_url") if isinstance(search, Mapping) else None
 
 
+#: Imports each module in `argv[2:]` and prints the directory holding package `argv[1]`, then the file of each module of
+#: the package that is loaded, and of each named one, separated by NUL.
 _PROBE = (
-    "import importlib, sys; importlib.import_module(sys.argv[1]); "
-    "sys.stdout.write('\\0'.join(sorted(m.__file__ for n, m in sys.modules.items() "
-    "if (n == sys.argv[2] or n.startswith(sys.argv[2] + '.')) and getattr(m, '__file__', None))))"
+    "import importlib, os, sys; pkg, *entries = sys.argv[1:]; [importlib.import_module(e) for e in entries]; "
+    "root = os.path.dirname(os.path.dirname(sys.modules[pkg].__file__)); "
+    "sys.stdout.write('\\0'.join([root, *sorted(m.__file__ for n, m in sys.modules.items() "
+    "if (n == pkg or n.startswith(pkg + '.') or n in entries) and getattr(m, '__file__', None))]))"
 )
 
 
@@ -140,6 +146,12 @@ class Reading:
         return all(self.files.get(file) == digest for file, digest in after.code)
 
 
+def _name(file: str | Path, root: str | Path) -> str:
+    """`file` under the directory `root` holds the package in, else as given."""
+    relative = os.path.relpath(file, root)
+    return str(file) if relative.startswith("..") else relative
+
+
 def package_hashes(package: str = "starpulse") -> dict[str, str]:
     """The content hash of each module file under `package` as installed, which no interpreter has to import to read.
 
@@ -150,7 +162,7 @@ def package_hashes(package: str = "starpulse") -> dict[str, str]:
     suffixes = (".py", *importlib.machinery.EXTENSION_SUFFIXES)
     try:
         return {
-            str(file): sha256(file.read_bytes()).hexdigest()
+            _name(file, Path(root).parent): sha256(file.read_bytes()).hexdigest()
             for root in spec.submodule_search_locations
             for file in Path(root).rglob("*")
             if file.name.endswith(suffixes)
@@ -159,36 +171,32 @@ def package_hashes(package: str = "starpulse") -> dict[str, str]:
         raise ReloadError(f"{package}: {exc}") from exc
 
 
-def code_of(entry: str, package: str = "starpulse") -> frozenset[tuple[str, str]]:
-    """The file and content hash of each `package` module that importing `entry` loads, read in a fresh interpreter.
+def code_of(entry: str, package: str = "starpulse", extra: tuple[str, ...] = ()) -> frozenset[tuple[str, str]]:
+    """The file and content hash of each `package` module that importing `entry` and each `extra` module loads, read in a
+    fresh interpreter on the launcher.
 
-    Raises `ReloadError` when `entry` does not import or a file cannot be read."""
-    done = subprocess.run([sys.executable, "-c", _PROBE, entry, package], capture_output=True, text=True, check=False)
+    Raises `ReloadError` when a module does not import or a file cannot be read."""
+    done = subprocess.run(
+        [launch.interpreter(), "-c", _PROBE, package, entry, *extra], capture_output=True, text=True, check=False
+    )
     if done.returncode:
         raise ReloadError(f"{entry} does not import: {done.stderr.strip().splitlines()[-1:]}")
+    root, *files = done.stdout.split("\0")
     try:
-        return frozenset(
-            (file, sha256(Path(file).read_bytes()).hexdigest()) for file in done.stdout.split("\0") if file
-        )
+        return frozenset((_name(file, root), sha256(Path(file).read_bytes()).hexdigest()) for file in files if file)
     except OSError as exc:
         raise ReloadError(f"{entry}: {exc}") from exc
 
 
-def board_adapter_code(board_type: str) -> frozenset[tuple[str, str]]:
-    """The file and content hash of the module `board_type` maps to in `adapter_types`. `config` imports the board
-    adapter lazily, so no entry's import closure holds it and an edit to it would reach no child.
+def adapter_module(board_type: str) -> str:
+    """The module `board_type` maps to in `adapter_types`. `config` imports the board adapter lazily, so no entry's import
+    closure holds it and an edit to it would reach no child unless it is read with the closure.
 
-    Raises `ReloadError` when the type names no module, the module is not installed or its file cannot be read."""
+    Raises `ReloadError` when the type names no module."""
     try:
-        spec = importlib.util.find_spec(module_name(board_type))
-    except (ImportError, ValueError) as exc:
+        return module_name(board_type)
+    except ValueError as exc:
         raise ReloadError(f"board type {board_type}: {exc}") from exc
-    if spec is None or spec.origin is None:
-        raise ReloadError(f"board type {board_type} names no module file")
-    try:
-        return frozenset({(spec.origin, sha256(Path(spec.origin).read_bytes()).hexdigest())})
-    except OSError as exc:
-        raise ReloadError(f"{spec.origin}: {exc}") from exc
 
 
 def _blocks(name: str, config: Config) -> tuple[object, object]:
@@ -245,5 +253,5 @@ class Reader:
     def __call__(self, name: str) -> Reading:
         config = self._config()
         # a worker's main takes the root config loader from `runtime` (spec doc-966, D6), so its entry imports none
-        code = code_of(ENTRIES[name]) | code_of("starpulse.runtime.config") | board_adapter_code(config.board_type)
+        code = code_of(ENTRIES[name], extra=("starpulse.runtime.config", adapter_module(config.board_type)))
         return Reading(code, *_blocks(name, config))

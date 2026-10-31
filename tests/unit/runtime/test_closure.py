@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import sys
 from hashlib import sha256
 from pathlib import Path
 
 import pytest
-from starpulse.runtime import closure
+from starpulse.runtime import closure, launch
 from starpulse.runtime.closure import SELF, Reader, Reading, ReloadError, code_of, package_hashes
 from starpulse.runtime.supervisor import WORKER_CONTEXTS
 
@@ -28,7 +29,7 @@ def test_the_closure_is_the_files_of_the_modules_the_entry_loads_with_their_hash
     code = code_of("demo.entry", "demo")
 
     assert code == {
-        (str(package / name), sha256((package / name).read_bytes()).hexdigest())
+        (f"demo/{name}", sha256((package / name).read_bytes()).hexdigest())
         for name in ("__init__.py", "entry.py", "used.py")
     }
 
@@ -74,7 +75,7 @@ def _toml(tmp_path: Path, text: str) -> Path:
 
 @pytest.fixture
 def no_code(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(closure, "code_of", lambda entry, package="starpulse": frozenset({(entry, "hash")}))
+    monkeypatch.setattr(closure, "code_of", lambda entry, package="starpulse", extra=(): frozenset({(entry, "hash")}))
 
 
 @pytest.mark.usefixtures("no_code")
@@ -138,7 +139,7 @@ def test_the_start_reading_runs_no_probe_and_its_hashes_cover_the_files_a_closur
 ) -> None:
     reader = Reader(None)
     probes = []
-    monkeypatch.setattr(closure, "code_of", lambda entry, package="starpulse": probes.append(entry))
+    monkeypatch.setattr(closure, "code_of", lambda entry, package="starpulse", extra=(): probes.append(entry))
 
     start = reader.at_start("pulls")
 
@@ -153,8 +154,8 @@ def test_package_hashes_name_each_module_file_of_the_package_with_its_content_ha
     monkeypatch.syspath_prepend(str(package.parent))
     hashes = package_hashes("demo")
 
-    assert hashes[str(package / "unused.py")] == sha256((package / "unused.py").read_bytes()).hexdigest()
-    assert set(hashes) == {str(package / name) for name in ("__init__.py", "entry.py", "used.py", "unused.py")}
+    assert hashes["demo/unused.py"] == sha256((package / "unused.py").read_bytes()).hexdigest()
+    assert set(hashes) == {f"demo/{name}" for name in ("__init__.py", "entry.py", "used.py", "unused.py")}
 
 
 @pytest.mark.parametrize("entry", list(closure.ENTRIES))
@@ -164,4 +165,44 @@ def test_every_entry_reads_the_board_adapter_module_the_config_maps_its_type_to(
 
 def test_a_board_type_that_names_no_module_is_a_reload_error() -> None:
     with pytest.raises(ReloadError, match="nowhere"):
-        closure.board_adapter_code("nowhere")
+        closure.adapter_module("nowhere")
+
+
+def test_equal_code_in_two_release_directories_has_the_same_closure_and_hashes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for release in ("a", "b"):
+        root = tmp_path / release / "demo"
+        root.mkdir(parents=True)
+        (root / "__init__.py").write_text("")
+        (root / "entry.py").write_text("VALUE = 1\n")
+
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path / "a"))
+    monkeypatch.syspath_prepend(str(tmp_path / "a"))
+    first = (code_of("demo.entry", "demo"), package_hashes("demo"))
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path / "b"))
+    monkeypatch.syspath_prepend(str(tmp_path / "b"))
+    sys.modules.pop("demo", None)
+    second = (code_of("demo.entry", "demo"), package_hashes("demo"))
+
+    assert first == second
+
+
+def test_the_probe_runs_on_the_launchers_interpreter_so_a_new_release_behind_a_symlink_is_what_it_reads(
+    package: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ran = tmp_path / "ran"
+    launcher = tmp_path / "python"
+    launcher.write_text(f'#!/bin/sh\ntouch {ran}\nexec {sys.executable} "$@"\n')
+    launcher.chmod(0o755)
+    monkeypatch.setattr(launch, "interpreter", lambda *_: str(launcher))
+
+    code_of("demo.entry", "demo")
+
+    assert ran.exists()
+
+
+def test_extra_modules_are_imported_and_listed_by_the_same_probe(package: Path) -> None:
+    code = code_of("demo.unused", "demo", extra=("demo.used",))
+
+    assert {file for file, _ in code} == {"demo/__init__.py", "demo/unused.py", "demo/used.py"}

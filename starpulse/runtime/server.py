@@ -218,7 +218,8 @@ from starpulse.runs.ingest import tokens as ingest_tokens
 from starpulse.runtime.closure import ENTRIES, Reader
 from starpulse.runtime.config import Config, ConfigError, discover, load, runs_adapter
 from starpulse.runtime.control import control_file
-from starpulse.runtime.hold import LISTEN_FD_ENV, STATIC_ENV, announce_ready
+from starpulse.runtime import launch
+from starpulse.runtime.hold import LISTEN_FD_ENV, STATIC_ENV, adopted_from_env, announce_ready
 from starpulse.runtime.supervisor import Supervisor, worker_commands
 from starpulse.runtime.zygote import Forker
 from starpulse.sessions.session_start import starter
@@ -618,7 +619,7 @@ def admit_definitions(args: argparse.Namespace) -> None:
     """Register the machine files the config now names, so `serve` starts and reloads only on definitions the registry
     accepts. Runs in a child process: this one never loads the database stack. A ValueError names the States and
     Tasks a missing mapping strands."""
-    command = [sys.executable, "-m", "starpulse.runtime.machine_sync"]
+    command = [launch.interpreter(), "-m", "starpulse.runtime.machine_sync"]
     if args.config:
         command += ["--config", str(args.config)]
     ran = subprocess.run(command, capture_output=True, text=True, check=False)
@@ -676,6 +677,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     os.environ.pop(
         LISTEN_FD_ENV, None
     )  # the workers started below are handed what they hold, not what this process was
+    adopted = adopted_from_env(os.environ)  # the Page API child the previous image started beside its own
     ready = prepare(parser, args, config)
     commands = worker_commands(config, args.config)
     if "api" in commands:  # bound once the config is accepted and before the board, the history or a worker starts
@@ -704,6 +706,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         control=control_file(args.config),
         limits=config.worker_memory,
         admit=lambda: admit_definitions(args),
+        adopted={"api": adopted} if adopted else None,
     )
     supervisor.start()
     try:
