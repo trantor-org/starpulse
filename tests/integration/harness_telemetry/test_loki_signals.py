@@ -26,6 +26,7 @@ class FakeLoki:
         self.pushes: list[dict] = []
         self.queries: list[dict[str, str]] = []
         self.down = False
+        self.limited = 0  # the next pushes answered 429, as Loki's ingestion rate limit does
 
 
 @contextmanager
@@ -38,6 +39,9 @@ def served(loki: FakeLoki) -> Iterator[str]:
             body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             if loki.down:
                 return self.send_error(503)
+            if loki.limited:
+                loki.limited -= 1
+                return self.send_error(429)
             loki.pushes.append(body)
             for stream in body["streams"]:
                 loki.lines += [(int(stamp), line) for stamp, line in stream["values"]]

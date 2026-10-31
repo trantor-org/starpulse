@@ -415,6 +415,15 @@ names into `DIR` as `starpulse-<local time>.db`, proves it with `PRAGMA integrit
 (default 14). It prints one JSON line with the copy's path, `integrity` and the `kept` count, and exits 2 for a store that
 is not SQLite, which its own backup tool owns. The read lock is held only for the copy, so `serve` keeps answering.
 
+## Backfilling telemetry into Loki
+
+`starpulse backfill-telemetry [--days N] [--config starpulse.toml]` copies the last `N` days (default 8) of the event
+log's `telemetry:signals` rows into the Loki the config's `telemetry_loki_url` names, skipping each key Loki already holds,
+so a rerun pushes nothing. Use it after setting `telemetry_loki_url` on an instance that already held signals: the
+analytics views read only Loki and refuse a window longer than its history. The running `serve` reads the copies on its next
+poll, and it holds 8 days of signals, a day past the 168 h default window. It prints one JSON line with `days` and
+`pushed`, and exits 1 for a config with no `telemetry_loki_url` or a Loki it cannot reach. It is not an agent verb.
+
 ## Reloading a running serve
 
 `starpulse reload [--config starpulse.toml]` makes the `serve` started from that config pick up changed code and config

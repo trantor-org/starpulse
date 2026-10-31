@@ -375,6 +375,9 @@ def held(found: Iterable[Signal]) -> list[Signal]:
     return [_signal(asdict(signal)) for signal in first.values()]
 
 
+KEEP_S = 8 * 86400.0  # a day past the views' default 168 h window: the oldest held signal never lies inside it
+
+
 class TelemetryLog:
     """The signals both harnesses' exports gave, kept in Loki when the config names one, else in the event log's
     `telemetry:signals` stream.
@@ -392,7 +395,7 @@ class TelemetryLog:
 
     STREAM = "telemetry:signals"
 
-    def __init__(self, log: EventLog | None, keep: float = 7 * 86400.0, *, loki: LokiSignals | None = None) -> None:
+    def __init__(self, log: EventLog | None, keep: float = KEEP_S, *, loki: LokiSignals | None = None) -> None:
         self._log = log
         self._loki = loki
         self._keep = keep
