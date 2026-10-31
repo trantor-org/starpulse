@@ -164,6 +164,17 @@ def _create(root: Path, project: str) -> None:
 #: Where `_find` last found each task, so a repeat lookup reads that one file instead of listing the board.
 _FOUND: dict[tuple[Path, str, tuple[str, ...]], Path] = {}
 
+#: A task file's record as `_reader` built it, without `start_criteria`: the file, its `_stamp` and the record.
+_Held = tuple[Path, tuple[int, int], dict[str, Any]]
+
+#: The record `_reader` last built for each task of a board, so a repeat read of a file not written since neither finds
+#: nor parses it again. A record is kept only once its file is `_SETTLED_NS` old: a later write within the clock's tick
+#: could leave the same stamp. Callers add fields to the copy `read` returns, never to a list or dict inside it.
+_RECORDS: dict[tuple[Path, str], _Held] = {}
+
+#: How old a file's modification time is before its record is kept: well past a kernel clock tick.
+_SETTLED_NS = 1_000_000_000
+
 #: The `*.md` names `_md_names` last listed in each folder, so a first lookup of a task the board already held when it
 #: was listed does not list the folder again.
 _LISTED: dict[Path, list[str]] = {}
@@ -412,14 +423,39 @@ def _reader(root: Path, evaluate: Callable[[str, str], list[dict[str, Any]]]) ->
     `start_criteria` is the description's Start Criteria, each with the result `evaluate` gives it."""
 
     def read(task: str, /) -> dict[str, Any] | None:
-        if (path := _find(root, task)) is None:
-            return None
-        try:
-            return _record_of(path.read_text(), task, evaluate)
-        except OSError:
-            return None  # moved or removed while reading
+        key = (root, task.casefold())
+        held = _RECORDS.get(key)
+        if held is None or not _unchanged(held):
+            try:
+                if (path := _find(root, task)) is None:
+                    return None
+                held = (path, _stamp(path), _record_of(path.read_text(), task, _no_criteria))
+            except OSError:
+                return None  # moved or removed while reading
+            if held[1][0] < time.time_ns() - _SETTLED_NS:
+                _RECORDS[key] = held
+        return {**held[2], "start_criteria": evaluate(task, held[2]["description"])}
 
     return read
+
+
+def _stamp(path: Path) -> tuple[int, int]:
+    """The file's modification time and size, which differ when it was written since."""
+    stat = path.stat()
+    return stat.st_mtime_ns, stat.st_size
+
+
+def _unchanged(held: _Held) -> bool:
+    """Whether the file `held` was built from is still there, with the stamp it had."""
+    try:
+        return _stamp(held[0]) == held[1]
+    except OSError:
+        return False
+
+
+def _no_criteria(*_: object) -> list[dict[str, Any]]:
+    """The `evaluate` of a record kept without `start_criteria`: the result changes without the file."""
+    return []
 
 
 def _record_of(text: str, task: str, evaluate: Callable[[str, str], list[dict[str, Any]]]) -> dict[str, Any]:
