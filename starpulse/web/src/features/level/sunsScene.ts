@@ -29,7 +29,8 @@ export function css(s: string): CSSProperties {
 
 /** The in-progress machine's states as the engine's phases. */
 const PHASE_OF: Record<string, string> = { build: "build", qa: "qa", deliver: "deliver", review_fix: "review_fix", needs_attention: "parked", parked: "parked", review_recorded: "done", finalized: "done" };
-const VERDICT: Record<string, string> = { pass: "PASS", fail: "CHANGES", changes: "CHANGES" };
+/** The qa machine's verdict events: a lens that times out has asked for changes. */
+const VERDICT: Record<string, string> = { LENS_PASSED: "PASS", LENS_CHANGED: "CHANGES", LENS_TIMED_OUT: "CHANGES" };
 const TIER_OF = /@agent-(deep|standard|fast)-/;
 
 interface Visit {
@@ -37,11 +38,15 @@ interface Visit {
   round: number;
   at: number;
   lenses: Record<string, string>;
+  /** The lens the qa machine is waiting on, the state after the last verdict. */
+  reviewing?: string;
 }
+const lensOf = (state: string) => state.replace(/_dirty$/, "");
 
 /**
- * The engine's job for a task: one visit per phase it entered, in order. The in-progress machine moves it between phases; a lens machine's event
- * puts it in QA; a phase machine's own transition puts it in that phase. Each return to Build starts a round, and the step is the current phase
+ * The engine's job for a task: one visit per phase it entered, in order. The in-progress machine moves it between phases; a verdict on the qa
+ * machine puts it in QA (the lens is the state it left, minus `_dirty`) and its CHANGES_FIXED is the fix in Build; a phase machine's own
+ * transition puts it in that phase. Each return to Build starts a round, and the step is the current phase
  * machine's state. With no events the task is at Build's first step, round 1.
  */
 export function jobOf(id: string, title: string, assignee: string | undefined, events: MachineEvent[], nowSec: number): Job {
@@ -54,14 +59,18 @@ export function jobOf(id: string, title: string, assignee: string | undefined, e
   for (const e of [...events].sort((a, b) => a.at - b.at)) {
     state[e.machine] = e.to;
     if (e.machine === "in-progress" && PHASE_OF[e.to]) enter(PHASE_OF[e.to], e.at);
-    else if (LENSES.includes(e.machine)) {
-      enter("qa", e.at);
-      visits.at(-1)!.lenses[e.machine] = e.to;
-    } else if (STEPS[e.machine] && e.machine !== "qa" && (e.from !== e.to || !visits.length)) enter(e.machine, e.at);
+    else if (e.machine === "qa") {
+      if (e.event === "CHANGES_FIXED") enter("build", e.at);
+      else if (VERDICT[e.event]) {
+        enter("qa", e.at);
+        visits.at(-1)!.lenses[lensOf(e.from)] = VERDICT[e.event];
+        visits.at(-1)!.reviewing = lensOf(e.to);
+      }
+    } else if (STEPS[e.machine] && (e.from !== e.to || !visits.length)) enter(e.machine, e.at);
   }
   if (!visits.length) enter("build", nowSec);
 
-  const verdicts = (v: Visit) => Object.fromEntries(LENSES.filter((l) => VERDICT[v.lenses[l]]).map((l) => [l, VERDICT[v.lenses[l]]]));
+  const verdicts = (v: Visit) => Object.fromEntries(LENSES.filter((l) => v.lenses[l]).map((l) => [l, v.lenses[l]]));
   const trail = visits.map((v, i) => {
     const mins = Math.round(((visits[i + 1]?.at ?? nowSec) - v.at) / 60);
     if (v.phase !== "qa" || i === visits.length - 1) return { phase: v.phase, round: v.round, mins };
@@ -69,7 +78,8 @@ export function jobOf(id: string, title: string, assignee: string | undefined, e
     return { phase: v.phase, round: v.round, mins, v: vs, ...(bad ? { why: `${LN[bad]}: a finding to address` } : {}) };
   });
   const cur = visits.at(-1)!, steps = cur.phase === "qa" ? undefined : STEPS[cur.phase];
-  const lenses = cur.phase !== "qa" ? {} : Object.fromEntries(Object.entries(cur.lenses).map(([l, to]) => [l, VERDICT[to] ? { state: VERDICT[to], step: 3 } : { state: "pending", step: 0 }]));
+  const pending = (l: string) => ({ state: "pending", step: l === cur.reviewing ? 1 : 0 });
+  const lenses = cur.phase !== "qa" ? {} : Object.fromEntries(LENSES.map((l) => [l, cur.lenses[l] ? { state: cur.lenses[l], step: 3 } : pending(l)]));
   return {
     id, title, tier: (assignee?.match(TIER_OF)?.[1] as Job["tier"] | undefined) ?? "standard", spec: "—",
     phase: cur.phase, step: Math.max(0, steps?.indexOf(state[cur.phase]) ?? 0), round: cur.round, limit: 3, attended: false,

@@ -82,7 +82,10 @@ export function App() {
     let frames = REVEAL_SETTLE_FRAMES;
     const frame = () => {
       if (frames-- > 1) return void (pendingView.current = requestAnimationFrame(frame));
-      history.replaceState(null, "", url);
+      // the address was built before this frame; a drill-in opened since (a lane click lands here) keeps its `?drill`
+      const drill = new URLSearchParams(location.search).get("drill"), [path, query = ""] = url.split("?"), q = new URLSearchParams(query);
+      if (drill) q.set("drill", drill);
+      history.replaceState(null, "", q.size ? `${path}?${q}` : path);
       setView(next);
     };
     pendingView.current = requestAnimationFrame(frame);
@@ -117,6 +120,12 @@ export function App() {
   }, [admin, commitView, reveal]);
   useEffect(() => () => cancelAnimationFrame(pendingView.current), []);
   const [drill, setDrill] = useState(() => new URLSearchParams(location.search).get("drill"));
+  const openDrill = useCallback((id: string) => {
+    const q = new URLSearchParams(location.search);
+    q.set("drill", id);
+    history.replaceState(null, "", `${location.pathname}?${q}${location.hash}`);
+    setDrill(id);
+  }, []);
   const closeDrill = () => {
     const q = new URLSearchParams(location.search);
     q.delete("drill");
@@ -130,14 +139,23 @@ export function App() {
     // a booted renderer outlives the page's tree: it was started before this mounted and is never stopped by it
     const r = held?.renderer ?? makeRenderer(canvas.current!, store, { tip: tip.current!, panel: panel.current! }, new URLSearchParams(location.search).has("demo"), admin.get);
     renderer.current = r;
+    // the In Progress sun is the Suns lenses drill-in of its first task, never the machine ledger; with no task in progress there is no sun to drill into
+    r.intercept((p) => {
+      const { cards, roles } = store.get();
+      const lane = roles.working, first = lane ? cards.find((c) => c.lane === lane) : undefined;
+      if (!lane || !first || pathKey(p) !== pathKey([...BOARD, { kind: "state", id: lane }])) return false;
+      openDrill(first.id);
+      return true;
+    });
     if (!held) r.start();
     // times are written at the source, so a new clock is a new subtitle and feed
     const unsubscribe = admin.subscribe(() => r.refresh());
     return () => {
       unsubscribe();
+      r.intercept(null);
       if (!held) r.stop();
     };
-  }, [held, store, admin]);
+  }, [held, store, admin, openDrill]);
   // declared after the renderer's effect, so the first run already reaches it
   useEffect(() => {
     activeView.current = view;

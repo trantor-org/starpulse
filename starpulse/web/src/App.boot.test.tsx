@@ -12,7 +12,7 @@ const made = vi.hoisted(() => ({ renderers: 0, spy: {} as Record<string, ReturnT
 vi.mock("./render/renderer", () => ({
   renderer: () => {
     made.renderers++;
-    made.spy = { start: vi.fn(), stop: vi.fn(), show: vi.fn(), refresh: vi.fn() };
+    made.spy = { start: vi.fn(), stop: vi.fn(), show: vi.fn(), refresh: vi.fn(), intercept: vi.fn() };
     return made.spy;
   },
 }));

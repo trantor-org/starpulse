@@ -87,6 +87,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   const moves = new Moves();
   /** The feed's lines for the runs of every DAG that start, queue, change step or end. */
   const runEvents = new RunEvents();
+  let veto: ((p: Path) => boolean) | null = null;
   let path: Path = BOARD, W = 0, H = 0, view: View = { k: 1, x: 0, y: 0 }, fit: View = view;
   // the task whose path a click pinned, kept by id so each frame finds it again in the rebuilt scene
   let pin: Subject | null = null;
@@ -256,6 +257,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
 
   // go to another level: the old level zooms through the clicked point (in) or shrinks away (out)
   function go(next: Path, fx = W / 2, fy = H / 2, then?: () => View) {
+    if (veto?.(next)) return;
     const shot = document.createElement("canvas");
     shot.width = cv.width;
     shot.height = cv.height;
@@ -494,6 +496,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       // A retired per-graph address opens its level; the page's one address is the root.
       const at = levelParams(location.search);
       path = startPath(location.pathname, location.hash, recall<Path>("fv.path"), S.tree, at);
+      if (veto?.(path)) path = BOARD;
       if (!fixture && retired(location.pathname, location.hash)) history.replaceState(null, "", "/" + viewSearch(location.search, viewOf(location.search), prefs().view));
       keep("fv.path", path);
     }
@@ -1374,6 +1377,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       cv.removeEventListener("contextmenu", onContext);
       cv.removeEventListener("wheel", onWheel);
     },
+    intercept: (fn) => void (veto = fn),
     go: (p, fx, fy, then) => {
       relay.settle();
       if (S) go(p, fx, fy, then);

@@ -19,60 +19,18 @@ onTheme(function(){
  Object.assign(TASKC,{deep:C.agentText,standard:C.waits});
  RAMP_.splice(0,RAMP_.length,...RAMP.map(function(c,i){return i===7?C.ink:c;}));
 });
-const LENSES=['security','ux','ui','code'];
-const LN={security:'Security',ux:'UX',ui:'UI',code:'Code'};
+const LENSES=['security','ux','ui','code','simplify'];
+const LN={security:'Security',ux:'UX',ui:'UI',code:'Code',simplify:'Simplify'};
 const PN={build:'Build',qa:'QA',deliver:'Deliver',review_fix:'Review fix',parked:'Needs attention',done:'Review'};
 const STEPS={build:['worktree_ready','red_proven','green','criteria_checked','docs_reconciled'],qa:['reviewing'],deliver:['lint_green','committed','pushed','pr_opened','ci_green','pr_ready'],review_fix:['threads_read','fixes_pushed','review_recorded']};
 function L(v,s){return {state:v||'pending',step:v?3:(s||0)};}
-function V(a,b,c,d){return {security:a,ux:b,ui:c,code:d};}
-function seed(){return [
- {id:'TASK-8412',tier:'standard',title:'Rate-limit the board search API',spec:'doc-972',phase:'qa',step:0,round:2,limit:3,attended:false,mins:6,lenses:{security:L(null,1),ux:L('PASS'),ui:L('PASS'),code:L(null,2)},plan:{security:'PASS',code:'PASS'},
-  trail:[{phase:'build',round:1,mins:22},{phase:'qa',round:1,mins:9,v:V('CHANGES','PASS','PASS','PASS'),why:'Security: the search term reaches the SQL LIKE pattern unescaped'},{phase:'build',round:2,mins:11},{phase:'qa',round:2,mins:6}]},
- {id:'TASK-8433',tier:'deep',title:'Show claim expiry on In Progress cards',spec:'doc-968',phase:'build',step:2,round:1,limit:3,attended:true,mins:14,lenses:{},plan:{ui:'CHANGES',why:'UI: the expiry badge overprints the phase track at 150% text'},trail:[{phase:'build',round:1,mins:14}]},
- {id:'TASK-8440',tier:'fast',title:'Fix the kanban scroll jump on reload',spec:'none',phase:'deliver',step:4,round:1,limit:3,attended:false,mins:3,lenses:{},plan:{},
-  trail:[{phase:'build',round:1,mins:18},{phase:'qa',round:1,mins:7,v:V('PASS','PASS','PASS','PASS')},{phase:'deliver',round:1,mins:3}]},
- {id:'TASK-8451',tier:'standard',title:'Serve the /api/views card manifest',spec:'doc-972',phase:'qa',step:0,round:1,limit:3,attended:false,mins:4,lenses:{security:L('PASS'),ux:L(null,0),ui:L(null,2),code:L('PASS')},plan:{ux:'PASS',ui:'PASS'},
-  trail:[{phase:'build',round:1,mins:31},{phase:'qa',round:1,mins:4}]},
- {id:'TASK-8457',tier:'fast',title:'Rename the scheduler toggle label',spec:'none',phase:'review_fix',step:1,round:1,limit:3,attended:false,mins:2,lenses:{},plan:{},
-  trail:[{phase:'build',round:1,mins:6},{phase:'qa',round:1,mins:5,v:V('PASS','PASS','PASS','PASS')},{phase:'deliver',round:1,mins:12},{phase:'review_fix',round:1,mins:2}]},
- {id:'TASK-8462',tier:'standard',title:'Archive stale worktrees nightly',spec:'doc-955',phase:'build',step:1,round:3,limit:3,attended:false,mins:5,lenses:{},plan:{},
-  trail:[{phase:'build',round:1,mins:15},{phase:'qa',round:1,mins:8,v:V('PASS','PASS','PASS','CHANGES'),why:'Code: deletes a worktree that still has uncommitted changes'},{phase:'build',round:2,mins:9},{phase:'qa',round:2,mins:7,v:V('PASS','PASS','PASS','CHANGES'),why:'Code: the uncommitted check skips untracked files'},{phase:'build',round:3,mins:5}]},
- {id:'TASK-8470',tier:'deep',title:'Fill ledger columns on drill-down',spec:'doc-819',phase:'qa',step:0,round:3,limit:3,attended:false,mins:3,lenses:{security:L('PASS'),ux:L('PASS'),ui:L(null,1),code:L('PASS')},plan:{ui:'CHANGES',why:'UI: the column fill stops short of xEnd on a near-empty board'},
-  trail:[{phase:'build',round:1,mins:26},{phase:'qa',round:1,mins:8,v:V('PASS','PASS','CHANGES','PASS'),why:'UI: the fill overflows its lane at 125% text'},{phase:'build',round:2,mins:12},{phase:'qa',round:2,mins:6,v:V('PASS','CHANGES','PASS','PASS'),why:'UX: no empty state when a phase has no tasks'},{phase:'build',round:3,mins:8},{phase:'qa',round:3,mins:3}]},
- {id:'TASK-8481',tier:'standard',title:'Retry the PR store refresh on a 502',spec:'none',phase:'build',step:3,round:1,limit:3,attended:false,mins:9,lenses:{},plan:{},trail:[{phase:'build',round:1,mins:9}]}
-];}
-function tick(jobs,n){return jobs.map(function(j0,i){
- if((n+i)%3!==0) return j0;
- var j=Object.assign({},j0,{lenses:Object.assign({},j0.lenses),trail:j0.trail.slice(),mins:j0.mins+1});
- if(j.phase==='parked'||j.phase==='done') return j0;
- if(j.phase==='qa'){
-  var pend=LENSES.filter(function(l){return j.lenses[l].state==='pending';});
-  if(pend.length){var l=pend[n%pend.length],c=j.lenses[l];
-   j.lenses[l]=c.step<(typeof LST!=='undefined'?LST[l].length-1:2)?{state:'pending',step:c.step+1}:{state:(j.plan&&j.plan[l])||'PASS',step:3};return j;}
-  var v={};LENSES.forEach(function(x){v[x]=j.lenses[x].state;});
-  var bad=LENSES.filter(function(x){return v[x]==='CHANGES';});
-  var cur=Object.assign({},j.trail[j.trail.length-1],{v:v,mins:j.mins});
-  if(bad.length) cur.why=(j.plan&&j.plan.why)||(LN[bad[0]]+': a finding to address');
-  j.trail[j.trail.length-1]=cur;j.mins=0;j.plan={};
-  if(bad.length){if(j.round>=j.limit){j.phase='parked';j.trail.push({phase:'parked',round:j.round,mins:0,why:'Rounds exhausted: '+bad.map(function(x){return LN[x];}).join(', ')+' still CHANGES'});}
-   else{j.round++;j.phase='build';j.step=1;j.trail.push({phase:'build',round:j.round,mins:0});}}
-  else{j.phase='deliver';j.step=0;j.trail.push({phase:'deliver',round:j.round,mins:0});}
-  return j;}
- var steps=STEPS[j.phase];
- if(j.step<steps.length-1){j.step++;return j;}
- var next={build:'qa',deliver:'review_fix',review_fix:'done'}[j.phase];
- j.trail[j.trail.length-1]=Object.assign({},j.trail[j.trail.length-1],{mins:j.mins});
- j.phase=next;j.step=0;j.mins=0;
- if(next==='qa') LENSES.forEach(function(x){j.lenses[x]={state:'pending',step:0};});
- j.trail.push({phase:next,round:j.round,mins:0});
- return j;});}
 function trailOf(j){return j.trail.map(function(s){
  var color=s.phase==='qa'?SBT:(s.phase==='parked'?C.fail:PH);
  return {color:color,label:PN[s.phase]+' · round '+s.round+(s.mins?' · '+s.mins+' min':''),hasWhy:!!s.why,why:s.why||''};});}
 function statusOf(j){
  if(j.phase==='parked') return {t:'Needs attention',c:C.failText};
  if(j.phase==='done') return {t:'In Review',c:C.okHi};
- if(j.phase==='qa'){var p=LENSES.filter(function(l){return j.lenses[l].state==='pending';}).length;return {t:'QA '+(4-p)+'/4',c:SBT};}
+ if(j.phase==='qa'){var p=LENSES.filter(function(l){return j.lenses[l].state==='pending';}).length;return {t:'QA '+(LENSES.length-p)+'/'+LENSES.length,c:SBT};}
  return {t:PN[j.phase],c:C.slate};}
 function longStatus(j){var s=statusOf(j);
  if(j.phase==='build'||j.phase==='deliver'||j.phase==='review_fix') return {t:PN[j.phase]+' · '+STEPS[j.phase][j.step].replace(/_/g,' ')+' · '+j.mins+' min'+(j.attended?' · attended':''),c:C.slate};
@@ -85,13 +43,13 @@ function fleetOf(self,jobs){return jobs.map(function(j){var on=self.state.sel===
 function rnd(seedv){var x=seedv;return function(){x=(x*9301+49297)%233280;return x/233280;};}
 function starfield(w,h,n){var r=rnd(7),out=[];for(var i=0;i<n;i++){var a=r(),b=r(),c=r();
  out.push({style:'position:absolute;left:'+(a*w).toFixed(1)+'px;top:'+(b*h).toFixed(1)+'px;width:'+(c>.9?2:1)+'px;height:'+(c>.9?2:1)+'px;border-radius:50%;background:var(--ink-2);opacity:'+(.12+c*.4).toFixed(2)+(c>.85?';animation:twinkle '+(3+c*4).toFixed(1)+'s ease-in-out infinite':'')});}return out;}
-const LSTEPS=['read_diff','probe','verdict'];
+const LSTEPS=['reviewing'];
 const DSTEPS=['queued','running','succeeded'];
 function pt(x,y){return x.toFixed(1)+','+y.toFixed(1);}
 function seen(j,p){return p===j.phase||j.trail.some(function(s){return s.phase===p;});}
 function fillOf(j,p,n){if(j.phase===p) return p==='qa'?1:j.step+1;return seen(j,p)?n:0;}
 function lensOf(j,l){var last=null;j.trail.forEach(function(s){if(s.phase==='qa'&&s.v) last=s;});
- if(j.phase==='qa'){var c=j.lenses[l];return c.state==='pending'?{fill:c.step,state:null,live:c.step>0,at:c.step}:{fill:3,state:c.state,live:false,at:-1};}
+ if(j.phase==='qa'){var c=j.lenses[l];return c.state==='pending'?{fill:c.step,state:null,live:c.step>0,at:0}:{fill:3,state:c.state,live:false,at:-1};}
  return last?{fill:3,state:last.v[l],live:false,at:-1}:null;}
 function dagOf(j){if(j.phase==='deliver'&&j.step>=4) return j.step===4?{fill:2,live:true}:{fill:3,live:false};
  return (seen(j,'review_fix')||j.phase==='done')?{fill:3,live:false}:null;}
@@ -104,34 +62,6 @@ function text(out,t,sub,x,y,col,o){o=o||{};
 function kickReasons(j){var k=j.trail.filter(function(s){return s.phase==='qa'&&s.why;}).map(function(s){return {text:'r'+s.round+' · '+s.why,color:C.failText};});
  if(j.phase==='parked') k.push({text:'Left In Progress: '+j.trail[j.trail.length-1].why,color:C.fail});
  return k.length?k:[{text:'no kickbacks',color:C.muted}];}
-/* Radial growth: the hub is a sun; each phase machine grows as a blue branch out of the hub ring (spoke, then an arc of stations);
-   QA's lenses grow as teal sub-machine branches from QA's station, and deliver's ci_green opens a green DAG branch. */
-function radial(j,o){
- var CX=o.cx,CY=o.cy,k=o.k,HUB=44*k,R1=128*k,LR=[182*k,212*k,242*k,272*k],DR=184*k,ST=11,LS=7;
- var ANG={build:200,qa:290,deliver:30,review_fix:120};
- function P(r,d){var a=d*Math.PI/180;return {x:CX+r*Math.cos(a),y:CY+r*Math.sin(a)};}
- function arcD(r,a0,a1){var p=P(r,a0),q=P(r,a1);return ' A'+r.toFixed(1)+','+r.toFixed(1)+' 0 0 1 '+pt(q.x,q.y);}
- var L={ph:[],sb:[],dg:[],kick:[],park:[],exit:[]},S=[],T=[],B=[],col=TIER[j.tier],cur=j.phase,here=null,probes=[];
- ['build','qa','deliver','review_fix'].forEach(function(p){if(!seen(j,p)) return;
-  var th=ANG[p],n=p==='qa'?1:STEPS[p].length,a1=th+(n-1)*ST,h=P(HUB,th),s0=P(R1,th);
-  L.ph.push('M'+pt(h.x,h.y)+' L'+pt(s0.x,s0.y)+(n>1?arcD(R1,th,a1):''));
-  var f=fillOf(j,p,n),names=p==='qa'?['reviewing']:STEPS[p];
-  for(var i=0;i<n;i++){var q=P(R1,th+i*ST);station(S,q.x,q.y,PH,i<f,3.2);if(cur===p&&i===(p==='qa'?0:j.step)) here={x:q.x,y:q.y,name:names[i],a:th+i*ST};}
-  var mr=(HUB+R1)/2,e=P(mr,th),na=(th-90)*Math.PI/180,c=Math.cos(na);
-  text(T,PN[p].toLowerCase(),'',e.x+Math.cos(na)*10,e.y+Math.sin(na)*10-8,hexA(PHT,cur===p?.95:.55),{align:c<-.2?'right':(c>.2?'left':'center'),size:'.76em'});
-  if(p==='qa') LENSES.forEach(function(l,li){var ls=lensOf(j,l);if(!ls) return;var r=LR[li],sp=P(R1,th),tp=P(r,th);
-   L.sb.push('M'+pt(sp.x,sp.y)+' L'+pt(tp.x,tp.y)+arcD(r,th,th+2*LS));
-   for(var i=0;i<3;i++){var q=P(r,th+i*LS),last=i===2&&ls.state;station(S,q.x,q.y,last?VC[ls.state]:SB,i<ls.fill,last?4:2.6);
-    if(ls.live&&i===ls.at) probes.push({x:q.x,y:q.y});}
-   var e2=P(r,th+2*LS+4);text(T,LN[l],ls.state||(ls.live?LSTEPS[ls.at].replace(/_/g,' '):(cur==='qa'?'queued':'')),e2.x+4,e2.y-9,hexA(SBT,.8),{subColor:ls.state?VC[ls.state]:C.ink});});
-  if(p==='deliver'){var dg=dagOf(j);if(dg){var dt=th+4*ST,d0=P(R1,dt),d1=P(DR,dt);
-   L.dg.push('M'+pt(d0.x,d0.y)+' L'+pt(d1.x,d1.y)+arcD(DR,dt,dt+2*8));
-   for(var i2=0;i2<3;i2++){var q2=P(DR,dt+i2*8);station(S,q2.x,q2.y,DG,i2<dg.fill,2.8);if(dg.live&&i2===1) pulsar(B,q2.x,q2.y);}
-   var ea=dt+2*8,e3=P(DR+16,ea),c3=Math.cos(ea*Math.PI/180);text(T,'dagu/ci-validate',dg.live?'running':'succeeded',e3.x,e3.y-6,hexA(C.okHi,.8),{align:c3<-.2?'right':(c3>.2?'left':'center'),subColor:dg.live?C.ink:DGT});}}
- });
- var qs=P(R1,ANG.qa),b0=P(R1,ANG.build);
- j.trail.filter(function(s){return s.phase==='qa'&&s.why;}).forEach(function(s,i){var c=P((52+i*18)*k,250);L.kick.push('M'+pt(qs.x,qs.y)+' Q'+pt(c.x,c.y)+' '+pt(b0.x,b0.y));});
- return {L:L,S:S,T:T,B:B,here:here,probes:probes,P:P,R1:R1,HUB:HUB,ANG:ANG,ST:ST};}
 /* The Board transitions into In Progress and out of it, laid as a Star Map state level lays them: entries fan in from the left edge to the
    pivot's rim, exits fan out to the right edge, each shaded from its source state's colour to its target's, named "from X" / "to X" at the edge. */
 const BN={new:'New',ready:'Ready',waiting:'Waiting',review:'Review',needs_attention:'Needs attention',done:'Done',archived:'Archived'};
@@ -152,8 +82,6 @@ function litOf(j){return {litIn:seen(j,'review_fix')?'review':'ready',litOut:j.p
    rim left and right, and the job's phase machines grow as straight rays into the top and bottom sectors only, clear of those lines. */
 const SR=34,CX=495,CY=478;
 const RAY={build:218,qa:270,deliver:322,review_fix:90},SP=26;var R0=114,RING_OUT=92;
-const EXEC={security:'@agent-deep-high',ux:'@agent-standard-medium',ui:'@agent-fast-medium',code:'@agent-deep-medium'};
-const ETIER={security:'deep',ux:'standard',ui:'fast',code:'deep'};
 function RP(r,d){var a=d*Math.PI/180;return {x:CX+r*Math.cos(a),y:CY+r*Math.sin(a)};}
 function sunParts(core,jobs,j){
  var G=SR+5*SR;
@@ -174,12 +102,7 @@ function lensRows(j){return LENSES.map(function(l){var s=lensOf(j,l);return {l:l
 function arcP(cx,cy,rx,ry,a0,a1){if(a1-a0>=359.9) return arcP(cx,cy,rx,ry,a0,a0+180)+' '+arcP(cx,cy,rx,ry,a0+180,a0+359.9);
  function e(d){var a=d*Math.PI/180;return {x:cx+rx*Math.cos(a),y:cy+ry*Math.sin(a)};}
  var p=e(a0),q=e(a1);return 'M'+pt(p.x,p.y)+' A'+rx.toFixed(1)+','+ry.toFixed(1)+' 0 '+(a1-a0>180?1:0)+' 1 '+pt(q.x,q.y);}
-function lensState(j,l){var s=lensOf(j,l);if(!s) return null;return {p:s.fill/3,state:s.state,live:s.live,at:s.at,word:s.state||(s.live?(typeof LST!=='undefined'?LST[l]:LSTEPS)[s.at].replace(/_/g,' '):(j.phase==='qa'?'queued':''))};}
-function legend(g,x,y,j,align){LENSES.forEach(function(l,i){var s=lensState(j,l);if(!s) return;
- text(g.T,LN[l]+' · '+s.word,EXEC[l],x,y+i*30,s.state?VC[s.state]:(s.live?C.ink:hexA(SBT,.8)),{align:align||'left',subColor:TIER[ETIER[l]]});});}
-const RK=[52,64,76,88];
-function hist(j,l){var out=[];for(var r=1;r<=j.limit;r++){var s=j.trail.filter(function(t){return t.phase==='qa'&&t.round===r&&t.v;})[0];
- if(s) out.push({v:s.v[l]});else if(j.phase==='qa'&&j.round===r) out.push({live:lensState(j,l)});else out.push(null);}return out;}
+function lensState(j,l){var s=lensOf(j,l);if(!s) return null;return {p:s.fill/3,state:s.state,live:s.live,at:s.at,word:s.state||(s.live?LSTEPS[s.at].replace(/_/g,' '):(j.phase==='qa'?'queued':''))};}
 function onRing(r,deg){return RP(r,deg);}
 function bucketFor(g,s,w){return s.state?(s.state==='PASS'?g.L[w?'passW':'pass']:g.L[w?'chgW':'chg']):g.L[w?'sbW':'sb'];}
 function tdot(out,x,y,j,pinned,r){r=r||3.2;var c=TIER[j.tier];
@@ -189,20 +112,6 @@ function rampCol(i,n){return RAMP_[Math.round((n>1?i/(n-1):0)*(RAMP_.length-1))]
 const TRACE_ALL=true,COMPACT_ALL=true;
 /* Lines only between groups of rows (phase machines and the lens machines), none inside a group. */
 const NO_SEPS=true;
-/* Mock: each lens with its own phase machine instead of one shared read_diff → probe → verdict. The states are illustrative, not
-   the lenses' real machines: Security maps the attack surface and may try several exploits, or skip straight to a verdict when
-   there is none; UX walks the flows again after a copy fix; UI retakes a flaky screenshot, or goes straight to a verdict when there is no baseline yet; Code is a
-   straight run. Every lens still ends in pass or changes. */
-const LST={security:['read_diff','map_surface','probe','exploit_tried','verdict'],ux:['read_spec','walk_flows','check_copy','verdict'],
- ui:['render','screenshot','compare','verdict'],code:['read_diff','run_tests','static_checks','design_review','verdict']};
-var MDL_=null;
-function MDL(l){if(!MDL_){var fin=function(c){return {PASS:{c:c,l:-.5},CHANGES:{c:c,l:.5}};},m=function(main,extra,pos){return def('sub',main.concat(['PASS','CHANGES']).concat(Object.keys(pos||{}).filter(function(n){return main.indexOf(n)<0&&n!=='PASS'&&n!=='CHANGES';})),
-  [['verdict','CHANGES']].concat(extra),{main:main.concat('PASS'),final:['PASS','CHANGES'],pos:Object.assign(fin(main.length),pos||{}),quiet:['PASS','CHANGES']});};
- MDL_={security:m(LST.security,[['exploit_tried','probe'],['map_surface','verdict']]),
-  ux:m(LST.ux,[['check_copy','walk_flows']]),
-  ui:m(LST.ui,[['compare','screenshot'],['screenshot','verdict']]),
-  code:m(LST.code,[])};}
- return MDL_[l];}
 /* Round 12 · Sun: the rounded circuit view with its states drawn as suns. One shape for every state, dim until the task reaches it. Grey for structure, colour only for meaning (blue phase, teal lens, green DAG, green pass,
    rose changes; the task itself in its tier colour). In Progress's own exits leave the template as labelled traces, the way a Star Map drill-in
    shows flow to other states, so no other board state is drawn here. */
@@ -283,8 +192,8 @@ const STYLE={M:{base:24,step:8,back:'below',skip:'above',lab:24},MINI:{base:12,s
   /* loops */
   flow(g,'M968,'+(Y-9)+' L968,'+(Y-33)+' L963,'+(Y-38)+' L862,'+(Y-38)+' L857,'+(Y-33)+' L857,'+(Y-9),MUTE,.8);
   hv(g,'loop:fix',857,Y-44,111,14,{t:'Review fix → Deliver',lines:['fixes pushed, deliver runs again']},{title:'Review fix → Deliver',sub:'event LINT_GREEN',rows:[{k:'when',v:'the PR head holds every fix and lint is green'},{k:'fired by',v:'agent-cmd lint, pre-commit hook'}]});
-  flow(g,'M'+X.join+','+(Y+5)+' L'+X.join+','+(LYT.code+33)+' L'+(X.join-5)+','+(LYT.code+38)+' L510,'+(LYT.code+38)+' L505,'+(LYT.code+33)+' L505,'+(Y+20)+' L483,'+(Y+7),MUTE,.8);
-  hv(g,'loop:changes',505,LYT.code+30,247,16,{t:'QA → Build',lines:['a lens asked for changes','next round, up to 3']},{title:'QA → Build',sub:'a kickback: the next round of build',rows:[{k:'when',v:'any lens returns CHANGES'},{k:'limit',v:'3 rounds, then the task goes to Needs Attention'}]});
+  flow(g,'M'+X.join+','+(Y+5)+' L'+X.join+','+(LYT.simplify+33)+' L'+(X.join-5)+','+(LYT.simplify+38)+' L510,'+(LYT.simplify+38)+' L505,'+(LYT.simplify+33)+' L505,'+(Y+20)+' L483,'+(Y+7),MUTE,.8);
+  hv(g,'loop:changes',505,LYT.simplify+30,247,16,{t:'QA → Build',lines:['a lens asked for changes','next round, up to 3']},{title:'QA → Build',sub:'a kickback: the next round of build',rows:[{k:'when',v:'any lens returns CHANGES'},{k:'limit',v:'3 rounds, then the task goes to Needs Attention'}]});
   /* out: each exit to the board state it hands the task to; parked leaves from any phase over the top */
   flow(g,'M440,'+BUS+' L'+EX+','+BUS,MUTE,.8);
   [[463,440],[843,820],[982,1005]].forEach(function(p){flow(g,'M'+p[0]+','+(Y-8)+' L'+p[1]+','+(Y-31)+' L'+p[1]+','+BUS,MUTE,.8);});
@@ -300,8 +209,8 @@ const STYLE={M:{base:24,step:8,back:'below',skip:'above',lab:24},MINI:{base:12,s
    hv(g,'st:'+k,X[k]-34,Y-14,68,48,{t:PN[k],lines:[n(k)+' task'+(n(k)===1?'':'s')+' here now','phase machine · '+(MD[k].nodes.length)+' states']},tasksIn(k,PN[k],'phase machine'));});
   LENSES.forEach(function(l){var s=lensState(j,l),col=s&&s.state?VC[s.state]:KC.sub;hexPad(g,650,LYT[l],8,col,true,{glow:s&&s.live});
    name(g,LN[l],650,LYT[l]-27,{align:'center',size:'.74em',col:hexA(C.sbHi,.8)});
-   hv(g,'st:lens:'+l,620,LYT[l]-28,60,40,{t:LN[l]+' lens',lines:[n(l)+' task'+(n(l)===1?'':'s')+' reviewing',(typeof MDL==='function'?'own phase machine · '+(MDL(l).nodes.length-2)+' steps':'runs alongside the other three')]},tasksIn(l,LN[l]+' lens','lens sub-machine'));});
-  [[470,Y+34,KC.phase],[650,LYT.code+12,KC.sub],[850,Y+34,KC.phase],[975,Y+34,KC.phase]].forEach(function(t){flow(g,'M'+t[0]+','+t[1]+' L'+t[0]+','+(HAIR-3),t[2],.5);
+   hv(g,'st:lens:'+l,620,LYT[l]-28,60,40,{t:LN[l]+' lens',lines:[n(l)+' task'+(n(l)===1?'':'s')+' reviewing','runs alongside the other four']},tasksIn(l,LN[l]+' lens','lens sub-machine'));});
+  [[470,Y+34,KC.phase],[650,LYT.simplify+12,KC.sub],[850,Y+34,KC.phase],[975,Y+34,KC.phase]].forEach(function(t){flow(g,'M'+t[0]+','+t[1]+' L'+t[0]+','+(HAIR-3),t[2],.5);
    span(g,'left:'+(t[0]-2.5)+'px;top:'+(HAIR-2.5)+'px;width:5px;height:5px;border-radius:50%;background:'+t[2]);});
   /* the stems run left along the hairline, through the dots, to the routing lane, then turn down it; where the lens run shares the
      phase run, their dashes alternate */
@@ -365,7 +274,7 @@ const MD={
  build:def('phase',['start'].concat(STEPS.build),[['green','red_proven'],['criteria_checked','red_proven'],['worktree_ready','criteria_checked'],['worktree_ready','docs_reconciled']]),
  deliver:def('phase',['start'].concat(STEPS.deliver),[['lint_green','start'],['pushed','committed']]),
  review_fix:def('phase',['start'].concat(STEPS.review_fix),[]),
- lens:def('sub',['read_diff','probe','verdict','PASS','CHANGES'],[['verdict','CHANGES']],{main:['read_diff','probe','verdict','PASS'],final:['PASS','CHANGES'],pos:{PASS:{c:3,l:-.5},CHANGES:{c:3,l:.5}},quiet:['PASS','CHANGES']}),
+ lens:def('sub',['reviewing','PASS','CHANGES'],[['reviewing','CHANGES']],{main:['reviewing','PASS'],final:['PASS','CHANGES'],pos:{PASS:{c:1,l:-.5},CHANGES:{c:1,l:.5}},quiet:['PASS','CHANGES']}),
  triage:def('sub',['start','audit_active','dismissal_replied','audit_recorded','approval_requested','fix_verified','fix_replied','completed'],[],
   {edges:[['start','audit_active'],['audit_active','dismissal_replied'],['dismissal_replied','audit_active'],['audit_active','audit_recorded'],['audit_recorded','approval_requested'],['start','fix_verified'],['fix_verified','fix_replied'],['fix_replied','start'],['start','completed']],
    pos:{audit_active:{c:1,l:0},dismissal_replied:{c:1.5,l:-1},audit_recorded:{c:2,l:0},approval_requested:{c:3,l:0},completed:{c:3,l:-1},fix_verified:{c:1,l:1},fix_replied:{c:2,l:1}},final:['completed']}),
@@ -395,7 +304,7 @@ function drawRow(g,S,d,G,o){var xy=G.xy,path=o.path||[],tp=Array.isArray(o.trace
  if(o.now&&path.length){var cur=xy[path[path.length-1]],prev=path.length>1?xy[path[path.length-2]]:{x:cur.x-60,y:cur.y};S.task(g,cur,prev,o.job,{live:o.live,key:o.key,node:path[path.length-1]});}}
 function head(g,y,nm,col,s1,s2,s2c){name(g,nm,272,y-14,{col:col,size:'.88em'});if(s1) name(g,s1,272,y+4,{size:'.7em',col:hexA(C.slate,.62)});if(s2) name(g,s2,272,y+18,{size:'.7em',col:s2c||hexA(C.slate,.62)});}
 /* ---- the template ---- */
-const TY=214,LYT={security:136,ux:188,ui:240,code:292};
+const TY=214,LYT={security:110,ux:162,ui:214,code:266,simplify:318};
 function tpl(){var T={build:{x:X0,y:TY,n:'Build'},fork:{x:548,y:TY,n:'',dot:1},join:{x:752,y:TY,n:'',dot:1},deliver:{x:850,y:TY,n:'Deliver'},review_fix:{x:975,y:TY,n:'Review Fix'},
  review_recorded:{x:1100,y:TY,n:'Review Recorded',fin:1},parked:{x:850,y:112,n:'Parked',fin:1,exit:1},needs_attention:{x:975,y:112,n:'Needs Attention',fin:1,exit:1},finalized:{x:975,y:316,n:'Finalized',fin:1,exit:1}};
  LENSES.forEach(function(l){T[l]={x:650,y:LYT[l],n:LN[l]+' Lens',lens:1};});Object.keys(T).forEach(function(k){T[k].c=T[k].lens||T[k].dot?KC.sub:(T[k].exit?C.review:KC.tpl);T[k].k=k;});return T;}
@@ -403,7 +312,7 @@ function template(g,S,jobs,j){if(S.template) return S.template(g,jobs,j);var T=t
  ed('build','fork');LENSES.forEach(function(l){ed('fork',l,{k:'lane'});ed(l,'join',{k:'lane'});});ed('join','deliver');ed('deliver','review_fix');ed('review_fix','review_recorded');
  ['build','deliver','review_fix'].forEach(function(k){ed(k,'parked',{k:'exit'});});ed('deliver','needs_attention',{k:'exit'});ed('deliver','finalized',{k:'exit'});
  S.loop(g,T.review_fix,T.deliver,-(S.M.base+S.M.step),{kind:'tpl',k:'back',label:'Lint Green'});
- S.loop(g,T.join,T.build,LYT.code-TY+30,{kind:'tpl',k:'back',label:'Changes'});
+ S.loop(g,T.join,T.build,LYT.simplify-TY+30,{kind:'tpl',k:'back',label:'Changes'});
  Object.keys(T).forEach(function(k){var s=T[k];if(s.dot){S.state(g,s,{kind:'sub',dot:true});return;}
   var ls=s.lens?lensState(j,s.k):null;if(ls&&ls.state) s.c=VC[ls.state];
   S.state(g,s,{kind:s.lens?'sub':'tpl',on:true,big:true,label:true,name:s.n,init:k==='build',side:s.lens||k==='finalized'?'right':(s.exit||k==='review_recorded'?'top':'bottom'),cur:ls&&ls.live,tpl:true});});
@@ -453,9 +362,9 @@ function rows(g,S,j){var Y=HAIR+4,stop=false,open=g.open||{},pick=g.pick||{},qa=
  if(qa.length&&!stop){var y0=Y;LENSES.forEach(function(l,li){
    function v(e){return e.now?lensState(j,l):(e.t.v?{state:e.t.v[l]}:null);}
    function why(e){return e.t.why&&e.t.why.indexOf(LN[l]+':')===0?e.t.why.slice(LN[l].length+2):'';}
-   var ST=typeof LST!=='undefined'?LST[l]:LSTEPS;
-   row('lens:'+l,LN[l]+' lens',KT.sub,typeof MDL==='function'?MDL(l):MD.lens,qa,function(e){var s=v(e);return s&&s.state?ST.concat(s.state):(s&&s.live?ST.slice(0,s.at+1):ST.slice(0,1));},
-    {stem:650,active:j.phase==='qa',lane:24,lens:true,last:li===LENSES.length-1,labels:typeof MDL==='function'||li===0,isLive:function(e){var s=v(e);return !!(s&&s.live);},inner:li<3,pillsAlways:true,vc:function(e){var s=v(e);return s&&s.state?VC[s.state]:KC.sub;},
+   var ST=LSTEPS;
+   row('lens:'+l,LN[l]+' lens',KT.sub,MD.lens,qa,function(e){var s=v(e);return s&&s.state?ST.concat(s.state):(s&&s.live?ST.slice(0,s.at+1):[]);},
+    {stem:650,active:j.phase==='qa',lane:24,lens:true,last:li===LENSES.length-1,labels:li===0,isLive:function(e){var s=v(e);return !!(s&&s.live);},inner:li<LENSES.length-1,pillsAlways:true,vc:function(e){var s=v(e);return s&&s.state?VC[s.state]:KC.sub;},
      info:function(e){var s=v(e);return s&&s.state?(s.state==='PASS'?'passed':'asked for changes'):(s&&s.live?'reviewing now':'waiting to start');},
      more:function(e){var w=why(e);return w?[{k:'why',v:w,c:VC.CHANGES}]:[];}});});
   }
@@ -485,7 +394,7 @@ function jobAt(j,ago){if(ago==null||ago<.5) return j;var es=entriesOf(j),e=null;
  var r=Object.assign({},j),frac=Math.max(0,Math.min(1,(e.ago-ago)/Math.max(e.dur,1))),n=(STEPS[e.t.phase]||['x']).length;
  r.trail=j.trail.slice(0,e.i+1);r.phase=e.t.phase;r.round=e.t.round;r.mins=Math.max(0,Math.round(e.ago-ago));r.step=Math.min(n-1,Math.floor(frac*n));
  if(e.t.phase==='qa'){var cur=e.i===j.trail.length-1;r.lenses={};LENSES.forEach(function(l,li){var v=cur?(j.lenses[l]&&j.lenses[l].state!=='pending'?j.lenses[l].state:null):(e.t.v?e.t.v[l]:null);
-  var n=typeof LST!=='undefined'?LST[l].length:3;r.lenses[l]=v&&frac>=.55+li*.1?L(v):L(null,Math.min(n-1,Math.floor(frac*n)));});}
+  r.lenses[l]=v&&frac>=.55+li*.1?L(v):L(null,Math.floor(frac*2));});}
  return r;}
 function replay(g,j,at,playing){var tw=spanOf(j),es=entriesOf(j);function xOf(ago){return SX1-(ago/tw)*(SX1-SX0);}
  g.P.lane.push('M'+SX0+','+SY+' L'+SX1+','+SY);
