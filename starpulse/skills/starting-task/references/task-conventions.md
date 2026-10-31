@@ -270,6 +270,11 @@ runs on itself, and each check after the merge goes in one of two buckets:
   within 24 hours of the merge is a checkup task too, never a Definition of Done item on the
   implementing task.
 
+A check that waits on a deploy (the merge landed, the live release has not applied it) parks once,
+`--until release_contains:<merge sha>`: met when `/srv/trantor/current` checks out a commit
+descending from that sha, so it wakes on the deploy and never re-parks to re-check. Do not park
+`--until-task` or re-park on a timer for it.
+
 A mechanism claim is proved before `Review` instead (Prove now, below). A check that needs
 operator approval to run, such as a load burst against a live service, or a person's judgement,
 such as a render on a device, is proved before `Review` or run with the operator.
