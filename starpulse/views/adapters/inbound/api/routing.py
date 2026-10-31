@@ -24,7 +24,7 @@ from starpulse.views.adapters.inbound.api import (
     snapshot,
     tasks,
 )
-from starpulse.views.adapters.inbound.api.neutral import ApiRoute
+from starpulse.views.adapters.inbound.api.table import ApiRoute
 from starpulse.views.adapters.inbound.api.pulls import PullReads
 from starpulse.views.adapters.inbound.api.slow_reads import SlowReads
 from starpulse.views.adapters.inbound.api.streams import Streams

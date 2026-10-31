@@ -18,7 +18,7 @@ from starlette.responses import Response
 
 from starpulse.pulls.adapters.inbound.pull_refresh import MAX_BODY as MAX_REFRESH_BODY
 from starpulse.views.adapters.inbound.api.answering import answer, reading, seams
-from starpulse.views.adapters.inbound.api.neutral import (
+from starpulse.views.adapters.inbound.api.table import (
     ApiRoute,
     Arrival,
     ReadRoute,

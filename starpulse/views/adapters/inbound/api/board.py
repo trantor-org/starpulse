@@ -12,7 +12,7 @@ from starlette.responses import Response
 
 from starpulse.harness_telemetry.model.harnesses import Harnesses
 from starpulse.views.adapters.inbound.api.answering import answer, query, reading, seams
-from starpulse.views.adapters.inbound.api.neutral import ApiRoute, ReadRoute
+from starpulse.views.adapters.inbound.api.table import ApiRoute, ReadRoute
 from starpulse.views.application.queries.responses import done_response, machines_response, search_response
 from starpulse.views.model.encoding import encode
 
