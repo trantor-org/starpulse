@@ -23,6 +23,7 @@ from starpulse.scheduler.model.ledger import Ledger
 from starpulse.scheduler.adapters.loop import Loop
 from starpulse.scheduler.adapters.probe import LocalProbe
 from starpulse.scheduler.model.quiet_hours import QuietHoursSetting
+from starpulse.scheduler.model.session_caps import SessionCapSetting
 from starpulse.scheduler.model.sampler import Crossing, Reading, Sampler
 from starpulse.scheduler.model.state import SchedulerState
 from starpulse.scheduler.model.toggle import Toggle
@@ -39,6 +40,7 @@ class Runtime:
     quiet_hours: QuietHoursSetting
     harness: HarnessSetting
     policy: Scheduler
+    session_caps: SessionCapSetting
     loop: Loop | None = None
     _push_status: Callable[[], None] | None = None
     _served: dict[str, Any] | None = None
@@ -61,6 +63,14 @@ class Runtime:
     def set_harness(self, raw: object) -> None:
         """Keep the harness the loop starts on; a bad name raises ValueError. Wakes the loop so the next pick follows."""
         self.harness.set(raw)
+        if self.loop is not None:
+            self.loop.wake()
+        self.push_status()
+
+    def set_session_cap(self, raw: object) -> None:
+        """Keep the selected harness's session cap (None clears it, back to `starpulse.toml`); a value that is not a whole
+        number above zero raises ValueError. The loop wakes, since a higher cap may let a task in."""
+        self.session_caps.set(self.harness.get(), raw)
         if self.loop is not None:
             self.loop.wake()
         self.push_status()
@@ -89,6 +99,7 @@ class Runtime:
             "enabled": self.toggle.get(),
             "harness": selected,
             "quietHours": self.quiet_hours.state(),
+            "sessionCap": self.policy.session_cap(selected),
             "sampledAt": at,
             "dimensions": dimensions,
         }
@@ -172,6 +183,8 @@ def build(
         if loop is not None:
             loop.wake()
 
+    session_caps = SessionCapSetting(log)
+    policy = policy.with_overrides(session_caps.get)
     state = SchedulerState(log)
 
     def remember_sample(readings: list[Reading], at: float) -> None:
@@ -218,4 +231,4 @@ def build(
             harness=harness,
             transcript=transcript,
         )
-    return Runtime(toggle, sampler, quiet_hours, harness, policy, loop)
+    return Runtime(toggle, sampler, quiet_hours, harness, policy, session_caps, loop)

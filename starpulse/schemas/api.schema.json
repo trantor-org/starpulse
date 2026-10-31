@@ -6418,7 +6418,7 @@
     },
     "SchedulerRequest": {
       "additionalProperties": false,
-      "description": "`PUT /api/scheduler`: whether the scheduler admits tasks, which harness it starts on, and/or its quiet hours.",
+      "description": "`PUT /api/scheduler`: whether the scheduler admits tasks, which harness it starts on, its quiet hours and/or the\nselected harness's session cap.",
       "properties": {
         "enabled": {
           "anyOf": [
@@ -6452,6 +6452,18 @@
             }
           ],
           "default": null
+        },
+        "sessionCap": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The selected harness's session cap, a whole number above zero that overrides `starpulse.toml`; null clears it."
         }
       },
       "title": "SchedulerRequest",
@@ -6487,6 +6499,37 @@
         "url"
       ],
       "title": "SchedulerSession",
+      "type": "object"
+    },
+    "SchedulerSessionCap": {
+      "description": "The session cap the selected harness runs under and where it comes from.",
+      "properties": {
+        "configLimit": {
+          "description": "What `starpulse.toml` gives this harness, which clearing the Admin cap returns to.",
+          "type": "number"
+        },
+        "harness": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "source": {
+          "description": "`admin` when an operator set the cap in Admin, `starpulse.toml` when the config's limit holds.",
+          "enum": [
+            "admin",
+            "starpulse.toml"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "harness",
+        "limit",
+        "source",
+        "configLimit"
+      ],
+      "title": "SchedulerSessionCap",
       "type": "object"
     },
     "SchedulerStatus": {
@@ -6559,6 +6602,18 @@
               "type": "null"
             }
           ]
+        },
+        "sessionCap": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SchedulerSessionCap"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Absent before the scheduler worker has reported one."
         },
         "sessionsByHarness": {
           "additionalProperties": {

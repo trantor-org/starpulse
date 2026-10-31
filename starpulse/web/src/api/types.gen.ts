@@ -1268,6 +1268,10 @@ export interface SchedulerStatus {
   quietHours?: QuietHours | null;
   sampledAt: number | null;
   /**
+   * Absent before the scheduler worker has reported one.
+   */
+  sessionCap?: SchedulerSessionCap | null;
+  /**
    * Each harness's in-flight count against its session cap; the Sessions meter follows `harness`.
    */
   sessionsByHarness?: {
@@ -1352,6 +1356,22 @@ export interface QuietHours {
    * The IANA zone the window's times are read in, such as America/Phoenix.
    */
   timezone: string;
+  [k: string]: unknown;
+}
+/**
+ * The session cap the selected harness runs under and where it comes from.
+ */
+export interface SchedulerSessionCap {
+  /**
+   * What `starpulse.toml` gives this harness, which clearing the Admin cap returns to.
+   */
+  configLimit: number;
+  harness: string;
+  limit: number;
+  /**
+   * `admin` when an operator set the cap in Admin, `starpulse.toml` when the config's limit holds.
+   */
+  source: "admin" | "starpulse.toml";
   [k: string]: unknown;
 }
 /**
@@ -2111,12 +2131,17 @@ export interface WindowRequest {
   hours: number;
 }
 /**
- * `PUT /api/scheduler`: whether the scheduler admits tasks, which harness it starts on, and/or its quiet hours.
+ * `PUT /api/scheduler`: whether the scheduler admits tasks, which harness it starts on, its quiet hours and/or the
+ * selected harness's session cap.
  */
 export interface SchedulerRequest {
   enabled?: boolean | null;
   harness?: string | null;
   quietHours?: QuietHours | null;
+  /**
+   * The selected harness's session cap, a whole number above zero that overrides `starpulse.toml`; null clears it.
+   */
+  sessionCap?: number | null;
 }
 /**
  * The server was told to stop and will not answer after this: sent to every open stream before it exits.

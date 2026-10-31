@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from pydantic import AfterValidator, Field, ValidationInfo, field_validator, model_validator
+from pydantic import AfterValidator, Field, StrictInt, ValidationInfo, field_validator, model_validator
 
 from starpulse.contracts.api._base import _Request
 from starpulse.contracts.api.dto.scheduler import QuietHours
@@ -327,8 +327,13 @@ class WindowRequest(_Request):
 
 
 class SchedulerRequest(_Request):
-    """`PUT /api/scheduler`: whether the scheduler admits tasks, which harness it starts on, and/or its quiet hours."""
+    """`PUT /api/scheduler`: whether the scheduler admits tasks, which harness it starts on, its quiet hours and/or the
+    selected harness's session cap."""
 
     enabled: bool | None = None
     harness: str | None = None
     quietHours: QuietHours | None = None
+    sessionCap: StrictInt | None = Field(
+        default=None,
+        description="The selected harness's session cap, a whole number above zero that overrides `starpulse.toml`; null clears it.",
+    )

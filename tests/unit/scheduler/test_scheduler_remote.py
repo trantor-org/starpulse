@@ -111,3 +111,24 @@ def test_a_served_scheduler_leaves_no_status_thread_once_its_stop_is_set(log: Ev
         thread.join(DEADLINE_S)
 
     assert not any(thread.is_alive() for thread in followers)
+
+
+def test_remote_serves_a_saved_session_cap_over_the_workers_last_status(log: EventLog) -> None:
+    remote = Remote(log)
+    cap = {"harness": "claude", "limit": 2, "source": "starpulse.toml", "configLimit": 2}
+    publisher(log, BoardFeed(roles=ROLES, machines={**MACHINES, **SESSION_MACHINES}))(
+        "scheduler", {**STATUS, "sessionCap": cap, "dimensions": [{"name": "sessions", "use": 1.0, "limit": 2.0}]}
+    )
+
+    remote.set_session_cap(9)
+    served = remote.served_status()
+    assert served["sessionCap"] == {"harness": "claude", "limit": 9, "source": "admin", "configLimit": 2}
+    assert served["dimensions"] == [{"name": "sessions", "use": 1.0, "limit": 9.0}]
+
+    remote.set_session_cap(None)
+    assert remote.served_status()["sessionCap"] == cap
+
+
+def test_remote_refuses_a_session_cap_the_runtime_refuses(log: EventLog) -> None:
+    with pytest.raises(ValueError, match="session cap"):
+        Remote(log).set_session_cap(0)

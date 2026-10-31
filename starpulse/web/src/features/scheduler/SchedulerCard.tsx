@@ -2,7 +2,7 @@
 // limit, the next pick as text with why it goes or waits, the count of sessions in flight and the quiet hours. Status
 // arrives on /api/events; one GET syncs on view open. Off stops admission; the card dims and counts the sessions still
 // running from its last reading.
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { clockHm } from "../../shared/clock";
 import { useViewActive } from "../../shared/Kept";
 import type { QuietHoursStore } from "../admin/quietHours";
@@ -14,6 +14,7 @@ import {
   type HarnessOption,
   type NextPick,
   type Pause,
+  type SessionCap,
 } from "./scheduler";
 
 const pct = (d: Dimension) => `${Math.min(100, (d.used / d.limit) * 100)}%`;
@@ -65,6 +66,28 @@ function QuietRow({ store, clock }: { store: QuietHoursStore; clock: "24" | "12"
             {phase.kind === "refused" && <div className="refusal"><div className="k">the server refused the change</div>{phase.reason}</div>}
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+const WHOLE = /^[1-9][0-9]*$/;
+
+/** The selected harness's session cap: what admission holds it under, whether an operator or `starpulse.toml` sets it, and the override's controls. */
+function SessionCapRow({ store, cap, harness, saving }: { store: SchedulerStore; cap: SessionCap; harness: string; saving: boolean }) {
+  const [text, setText] = useState(String(cap.limit));
+  const valid = WHOLE.test(text.trim());
+  const admin = cap.source === "admin";
+  return (
+    <div className="row">
+      <div><div className="lb">Session cap</div><div className="hint">Most sessions autopilot runs at once on {harness}; a saved cap replaces the one in starpulse.toml</div></div>
+      <div>
+        <div className="hours">
+          <input type="number" min={1} step={1} value={text} aria-label="Session cap" onChange={(e) => setText(e.target.value)} />
+          <button type="button" className="btn go" disabled={!valid || Number(text) === cap.limit || saving} onClick={() => void store.setSessionCap(Number(text))}>Save</button>
+          {admin && <button type="button" className="btn" disabled={saving} onClick={() => void store.setSessionCap(null)}>Use starpulse.toml</button>}
+        </div>
+        <div className="hint">{admin ? `Admin override; starpulse.toml sets ${cap.configLimit}` : "Set by starpulse.toml"}</div>
       </div>
     </div>
   );
@@ -152,6 +175,10 @@ export function SchedulerCard({ store, quiet, clock }: { store: SchedulerStore; 
         <div><div className="lb">Capacity</div><div className="hint">{capacityHint(current, harnesses)}</div></div>
         <div className="dims">{dimensions.map((d) => <Meter key={d.name} d={d} />)}</div>
       </div>
+      {current.sessionCap && (
+        <SessionCapRow key={`${current.sessionCap.harness}:${current.sessionCap.source}:${current.sessionCap.limit}`}
+          store={store} cap={current.sessionCap} harness={selectedLabel} saving={phase.kind === "saving"} />
+      )}
       <div className="row">
         <div><div className="lb">Next pick</div><div className="hint">The Ready task scheduler starts next, or what it waits on</div></div>
         <Next on={on} next={next} />

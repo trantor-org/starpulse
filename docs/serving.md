@@ -616,7 +616,10 @@ time as the row's `updated_at` (a row the store already holds wins), then rename
 `harness` is the harness the loop starts sessions on (default `claude`); `PUT /api/scheduler` with `{"harness": "<name>"}` selects another.
 `quietHours` is the daily window in which the loop admits nothing, or `null` for none (see Quiet hours below).
 `dimensions` lists `cpu`, `memory`, `sessions` and `review` in that order, each as its use against its limit; the
-`sessions` meter follows the selected harness's cap from `[scheduler.session_limits]` (else `limits.sessions`).
+`sessions` meter follows the selected harness's cap: an Admin override if one is saved (see Session cap below), else
+`[scheduler.session_limits]`, else `limits.sessions`.
+`sessionCap` names that cap as `{"harness", "limit", "source", "configLimit"}`: `source` is `admin` for an override or
+`starpulse.toml`, and `configLimit` is what the config sets.
 `sessionsByHarness` names every harness's in-flight count against its own cap. A credit or usage pause for one
 harness lands in `pauses` and blocks admission for that harness only.
 `sampledAt` is epoch seconds, and `dimensions` is empty with `sampledAt` null until the first sample.
@@ -648,7 +651,8 @@ harness lands in `pauses` and blocks admission for that harness only.
 
 `PUT /api/scheduler` with `{"enabled": true}` or `{"enabled": false}` sets the switch, and with
 `{"quietHours": {"start": "HH:MM", "end": "HH:MM", "timezone": "<IANA zone>"}}` or `{"quietHours": null}` sets or clears
-the quiet hours; a body may carry both. It answers the same body as the `GET`, and a body with anything wrong is a 400
+the quiet hours; `{"sessionCap": <whole number above zero>}` or `{"sessionCap": null}` sets or clears the selected
+harness's session cap; a body may carry several. It answers the same body as the `GET`, and a body with anything wrong is a 400
 that changes nothing. It answers only loopback and private-network (RFC 1918) addresses, with 403 elsewhere, and like every write it needs
 `Content-Type: application/json`. A `serve` that runs no scheduler, an adapter-kit server, answers 404.
 
@@ -658,11 +662,21 @@ to at or over it, or back, logs one `StarPulse scheduler: <dimension> is full|fr
 StarPulse Admin's Scheduler card shows it: the switch with **On** or **Paused**, a meter per dimension (amber from
 80% of its limit, red past it, dimmed while the switch is off), the next pick as text (its task, title and `starting`
 in green or `waits: <reason>` in yellow, or **Nothing eligible**), the count of sessions in flight (the Sessions
-dimension's use, or the length of `inFlight` without it), and the quiet hours row. A click on the switch sends the
+dimension's use, or the length of `inFlight` without it), the session cap row, and the quiet hours row. A click on the switch sends the
 `PUT` with no dialog, and a refusal shows its reason under the switch. The card reads `next` from the same body when it
 carries it, and shows no pick without it. It reads once when Admin opens and follows the `/api/events` `scheduler`
 event after. A server with no scheduler (404) shows the card with its reason and no controls. The Kanban draws no
 scheduler control.
+
+### Session cap
+
+The Scheduler card's **Session cap** row sets the selected harness's cap from StarPulse Admin, over `starpulse.toml`.
+`PUT /api/scheduler {"sessionCap": 12}` keeps 12 for that harness in the history store (setting
+`scheduler.session_caps`, one value per harness); `{"sessionCap": null}` clears it, and the config's cap applies again.
+Anything but a whole number above zero is a 400 that changes the stored cap not at all. The admission loop reads the
+override on every pass and a save wakes it, so a new cap takes effect with no restart; sessions already running past a
+lowered cap continue and nothing new starts until the count falls under it. The override survives a restart. The
+sampler's full/free log lines still read the configured limit.
 
 ### Quiet hours
 
