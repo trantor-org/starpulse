@@ -428,3 +428,8 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no cover — process
 
 if __name__ == "__main__":
     main()
+
+
+def budget_message(floor: dict[str, float], load_per_cpu: float) -> str:
+    """The floors of a failed latency budget with the host's 1-minute load per CPU, so a miss under load reads as load."""
+    return f"{floor} (host load {load_per_cpu:.2f} per CPU)"
