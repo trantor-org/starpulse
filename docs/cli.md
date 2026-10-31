@@ -36,6 +36,7 @@ starpulse analytics health --hours 72            # dwell and WIP per state, thro
 starpulse analytics steps --hours 24             # one row per model request: skill in force, activities, keys, tokens
 starpulse analytics transitions --hours 168      # per kind x size x skill: steps, wasted-step rate, agent seconds, peak context
 starpulse analytics cells --hours 720            # per kind x size: median steps per clean completion on a latest-fifth holdout
+starpulse analytics estimates --milestone m-305  # per completed task: size, kind, profile beside steps, active minutes, effort size step
 starpulse analytics scores --repo o/r --hours 166  # per kind x size x profile: mean task score, with GitHub commits-after-ready and time-to-merge
 starpulse analytics graph --hours 168            # per transition: each activity edge with its run count, judgement cuts marked
 starpulse analytics stages --hours 168           # sub-stages of the stretches no skill governs, and their stability from the week before
@@ -111,6 +112,7 @@ lists exactly the verbs there are.
 | `analytics steps` | `--hours` | `now`, `window_s` and `steps`, each `{harness, session, task, at, model, origin, skill, activities, keys, tokens, captured}`, below; a window that is no positive number or is longer than the telemetry history exits 1 and a server that receives no telemetry exits 3 |
 | `analytics transitions` | `--hours` | `now`, `window_s` and `transitions`, each `{kind, size, skill, tasks, steps, side_steps, wasted_steps, wasted_rate, agent_s, peak_context}`, below; refusals as `analytics steps` |
 | `analytics cells` | `--hours` | `now`, `window_s` and `cells`, each `{kind, size, n, completions, clean_rate, holdout, median_steps, median_operator_prompts, median_steps_before_edit}`, below; refusals as `analytics steps` |
+| `analytics estimates` | `--hours`, `--milestone` | `now`, `window_s` and `estimates`, each `{task, milestone, kind, size, profile, steps, active_minutes, effort_size, effort_size_step}`, below; refusals as `analytics steps` |
 | `analytics scores` | `--hours`, `--repo` (required) | `now`, `window_s`, `scores`, each `{kind, size, profile, n, score, off_arm}`, and `verdicts`, each `{kind, size, baseline, profile, n, baseline_n, verdict, p_non_inferior, p_worse}`; exit 3 when GitHub is unreachable, refusals as `analytics steps` |
 | `analytics graph` | `--hours` | `now`, `window_s` and `graph`, each edge `{kind, size, skill, source, target, runs, count, share, cut}`, below; refusals as `analytics steps` |
 | `analytics stages` | `--hours` | `now`, `window_s` and `stages`, each `{kind, size, stage, runs, median_activities, previous_runs, previous_median_activities, stability}`, below; the history must hold twice the window, else refusals as `analytics steps` |
@@ -176,6 +178,13 @@ the step made, a key being the command the server's redactor left, else the tool
 `analytics transitions` reads `GET /api/analytics/transitions[?hours=N]` and `analytics cells` reads
 `GET /api/analytics/cells[?hours=N]`, each with the window and refusals of `analytics steps`. They place a task by its
 board labels `kind-<kind>` and `size-<n>`; a task missing either is in neither report, and neither ranks a Codex or Cursor step.
+
+`analytics estimates` reads `GET /api/analytics/estimates[?hours=N][&milestone=m-N]`: one row per completed task with a
+`kind-<kind>` and `size-<n>` label, its label, kind and profile beside its measured `steps` (a subagent's included) and
+`active_minutes` (agent seconds plus the operator's wait). `effort_size` is the smallest size whose p90 steps and
+minutes (`[analytics]` `size_bands` in `starpulse.toml`, smallest first) hold both; `effort_size_step` is how many
+sizes it lies above (positive) or below the label, and both are null with no `size_bands` (`effort_size` is also null
+past the largest band, whose step is one past the top).
 
 `analytics scores` reads `GET /api/analytics/sessions[?hours=N]` and joins each completed Claude Code task to its merged pull request on `--repo`
 (found by `TASK-N` in the title among the 500 most recently updated closed pulls; token from `GITHUB_TOKEN` or `GH_TOKEN`). A task scores

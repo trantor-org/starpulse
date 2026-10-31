@@ -54,6 +54,34 @@ class Cells(_Api):
     cells: list[Cell]
 
 
+class Estimate(_Api):
+    """One completed task: its size estimate beside what it measured."""
+
+    task: str
+    milestone: str | None
+    kind: str
+    size: int = Field(description="The task's `size-<n>` label.")
+    profile: str | None
+    steps: int = Field(description="Model requests, a subagent's included.")
+    active_minutes: float = Field(description="Agent seconds plus the operator's wait, in minutes.")
+    effort_size: int | None = Field(
+        description="The smallest configured size whose p90 steps and active minutes hold the actuals; None past the "
+        "largest, or with no `size_bands`."
+    )
+    effort_size_step: int | None = Field(
+        description="Sizes the effort lies above (positive) or below (negative) the label; one past the top when the "
+        "effort has no size; None when the label is no configured size."
+    )
+
+
+class Estimates(_Api):
+    """`GET /api/analytics/estimates`: each completed, labelled task's estimate beside its measured actuals."""
+
+    now: float
+    window_s: float
+    estimates: list[Estimate]
+
+
 class FlowEdge(_Api):
     """One directly-follows edge of a transition's graph."""
 
