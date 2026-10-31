@@ -149,7 +149,8 @@ def test_a_task_record_reads_the_task_file_as_often_as_one_read_of_it_not_once_p
     real = Path.read_text
 
     def counting(self: Path, *args: Any, **kwargs: Any) -> str:
-        opened.append(self.name)
+        if self.suffix == ".md":  # a claim sweeper thread left by an earlier test reads live `<pid>.json` sessions
+            opened.append(self.name)
         return real(self, *args, **kwargs)
 
     monkeypatch.setattr(Path, "read_text", counting)
