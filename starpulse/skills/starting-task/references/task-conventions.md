@@ -364,6 +364,11 @@ A metric criterion over a counter or a histogram's `_count` reads `increase(<ser
 never the raw series: a process restart resets a counter to zero, so the raw value can read 0
 though the change ran.
 
+A check on a concurrency or parallelism change (parallel prepare, a lock, a shared cache or
+mirror) reads the failure rate over a multi-day window of runs, never one burst: a single burst
+of runs misses races that fail only some runs, such as release-gc and mirror-fetch after parallel
+prepare. Gate it on the data kind that closes the window (above).
+
 ## Validation: Start Criteria and check tasks
 
 Start Criteria hold a wait, such as a validation pair gating work that has not started, a parked
