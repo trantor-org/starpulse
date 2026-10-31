@@ -199,3 +199,16 @@ def test_the_snapshot_carries_each_tasks_readable_verdict(tmp_path: Path, monkey
 
     by_id = {agent["id"]: agent["readable"] for flow in snapshot["flows"] for agent in flow["agents"]}
     assert by_id == {"task-1": "expected heading `Why`, found `Reason` (line 4)", "task-2": ""}
+
+
+def test_a_move_leaves_an_older_description_alone_while_an_edit_and_the_verdict_still_judge_it() -> None:
+    old = swapped("## Why\n", "## Reason\n")
+    guards = rules.load([GUARD])
+    before = rules.Record({"status": "Ready"}, old)
+
+    def refused(after: rules.Record) -> bool:
+        return rules.refusal(guards, before, after, "agent") is not None
+
+    assert not refused(rules.Record({"status": "In Progress"}, old))
+    assert refused(rules.Record({"status": "In Progress"}, old + "\nMore."))
+    assert rules.readable_verdict(guards, {}, old) == "expected heading `Why`, found `Reason` (line 4)"
