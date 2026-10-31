@@ -89,7 +89,7 @@ export function SunsDrillIn({ tasks, roles, task, onClose, clock = () => Date.no
   const [body, room] = useSize<HTMLDivElement>();
   // the stage fills the room the shell leaves; before it is measured it is the mockup's own size
   const stageW = room.w ? Math.max(MIN_W, room.w) : MOCKUP.w, stageH = room.h ? Math.max(MIN_H, room.h) : MOCKUP.h - TOP;
-  const size = { w: stageW, h: stageH + TOP }, W = ORIGIN + stageW, H = size.h;
+  const W = ORIGIN + stageW, H = stageH + TOP, size = { w: stageW, h: H };
   const stars = useMemo(() => starfield(W, H, 70), [W, H]);
 
   // the drilled task stands in by its id alone until the board's tasks arrive
