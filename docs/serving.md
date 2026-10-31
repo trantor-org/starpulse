@@ -419,6 +419,8 @@ applied_by = "pin-bump"
 # [scheduler.session_limits]  # optional per-harness session caps; a harness left out uses limits.sessions
 # claude = 3
 # cursor = 2
+# verify_lane = "verifying"       # optional verify lane: its tasks take a `Verify TASK-N` session once the eligible lane has none to admit; set with verify_profile
+# verify_profile = "@agent-standard-medium"  # the agent profile every verify session starts on; the built-in starter passes it as `--agent`
 
 # Optional: what harness telemetry is read against for missed skill loads and trace clusters (see Find missed skill
 # loads and recurring work in docs/sources.md). Every key is optional; with no table nothing is declared, and no

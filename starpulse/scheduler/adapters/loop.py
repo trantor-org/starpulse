@@ -252,9 +252,14 @@ class Loop:
             return data["id"] in self._held
         return False
 
+    def _lanes(self) -> tuple[str, ...]:
+        """The lanes a session admits a task from: the eligible lane, then the verify lane when one is configured."""
+        verify = self._policy.verify_lane
+        return (self._lane, verify) if verify else (self._lane,)
+
     def _may_enter(self, agent: Mapping[str, Any]) -> bool:
-        """Whether the task is in the eligible lane, or In Progress with the `regression` label a verify miss sets."""
-        if agent["state"] == self._lane:
+        """Whether the task is in an admitted lane, or In Progress with the `regression` label a verify miss sets."""
+        if agent["state"] in self._lanes():
             return True
         return agent["state"] == self._feed.roles.working and REGRESSION in agent.get("labels", ())
 
@@ -421,7 +426,7 @@ class Loop:
             phase = self._feed.machine_task("in-progress", task)
             if phase and phase["state"] == "parked":  # a parked phase waits whatever lane the board still holds
                 state = "waiting"
-            if state not in (self._lane, self._feed.roles.working):
+            if state not in (*self._lanes(), self._feed.roles.working):
                 self._close(task, run, state or "closed", now)
                 continue
             seen = self._feed.machine_task(HARNESS.name, task)
@@ -513,17 +518,17 @@ class Loop:
             logger.warning("StarPulse scheduler: cannot comment the session of %s: %s", task, written.output)
 
     def _decide(
-        self, readings: list[Reading], skipped: set[str], log: bool = True
+        self, readings: list[Reading], skipped: set[str], log: bool = True, lane: str | None = None
     ) -> tuple[list[dict[str, Any]], list[Decision]]:
         """The open tasks with the running, `skipped` and merged ones unworkable, and `decide`'s verdict on them over
-        `readings`."""
+        `readings`, for `lane` (the eligible lane by default)."""
         now = self._clock()
         cooling = {task for task in self._starts if self._cooling(task, now)}
         held = set(self._running) | skipped | cooling | self._held
         live = self._live()
         tasks = [self._candidate(agent, held, live) for agent in self._feed.open_tasks()]
         decisions = decide(
-            tasks, self._lane, readings, self._policy, self._chain(), self._ledger, log=log, p_goals=self._p_goals()
+            tasks, lane or self._lane, readings, self._policy, self._chain(), self._ledger, log=log, p_goals=self._p_goals()
         )
         if log:
             self._count(decisions)
@@ -592,12 +597,18 @@ class Loop:
         skipped = {task for task, (_, retry_at) in self._failed.items() if retry_at > now}  # still backing off
         while readings := self._readings():
             tasks, decisions = self._decide(readings, skipped)
-            if (picked := next((d for d in decisions if d.admitted), None)) is None:
+            prompt: dict[str, Any] = {}
+            if (picked := next((d for d in decisions if d.admitted), None)) is None and self._policy.verify_lane:
+                # the eligible lane has nothing admissible: a task awaiting verification takes the room, on the verify profile
+                tasks, decisions = self._decide(readings, skipped, lane=self._policy.verify_lane)
+                picked = next((d for d in decisions if d.admitted), None)
+                prompt = {"verb": "Verify", "profile": self._policy.verify_profile}
+            if picked is None:
                 break
             agent = next(a for a in tasks if a["id"] == picked.task)
             harness = self.selected_harness()
             try:
-                session = self._start(picked.task, harness=harness)
+                session = self._start(picked.task, harness=harness, **prompt)
             except StartFailedError as exc:
                 logger.warning("StarPulse scheduler: cannot start %s: %s", picked.task, exc)
                 self._note_limit(str(exc), now, harness)
@@ -664,7 +675,7 @@ class Loop:
             if agent is None:
                 continue
             if agent["state"] == self._feed.roles.working or (
-                agent["state"] == self._lane and self._cooling(task, now)
+                agent["state"] in self._lanes() and self._cooling(task, now)
             ):
                 kept.add(task)
         released = self._held - kept

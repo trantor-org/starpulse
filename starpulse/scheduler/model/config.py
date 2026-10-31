@@ -37,6 +37,8 @@ _KEYS = {
     "priority_matrix",
     "limits",
     "session_limits",
+    "verify_lane",
+    "verify_profile",
 }
 
 
@@ -66,6 +68,10 @@ class Scheduler:
     """Each dimension's limit: CPU and memory in percent, sessions as a count, review in points."""
     session_limits: Mapping[str, float] = field(default_factory=dict)
     """Per-harness session caps; a harness left out uses `limits["sessions"]`."""
+    verify_lane: str | None = None
+    """The lane whose tasks get a `Verify TASK-N` session on `verify_profile`, admitted once the eligible lane has none; none: no verify lane."""
+    verify_profile: str | None = None
+    """The agent profile every verify session starts on; set together with `verify_lane`."""
 
     def eligible_lane(self, initial: str) -> str:
         """The lane scheduler admits from: the configured one, else the board's `initial` lane."""
@@ -128,6 +134,13 @@ def parse_scheduler(raw: object) -> Scheduler:
     matrix = _table(raw.get("priority_matrix", {}), "priority_matrix", defaults.priority_matrix)
     limits = _table(raw.get("limits", {}), "limits", defaults.limits)
     session_limits = _table(raw.get("session_limits", {}), "session_limits", None)
+    verify_lane, verify_profile = raw.get("verify_lane"), raw.get("verify_profile")
+    if (verify_lane is None) != (verify_profile is None):
+        missing = "verify_profile" if verify_profile is None else "verify_lane"
+        raise SchedulerError(f"scheduler {missing} must be set with its verify_lane or verify_profile pair")
+    _lane(verify_lane, "verify_lane")
+    if verify_profile is not None and not (isinstance(verify_profile, str) and verify_profile):
+        raise SchedulerError("scheduler verify_profile must be the agent profile a verify session starts on")
     return Scheduler(
         lane,
         review_lane,
@@ -138,4 +151,6 @@ def parse_scheduler(raw: object) -> Scheduler:
         {**defaults.priority_matrix, **matrix},
         {**defaults.limits, **limits},
         session_limits,
+        verify_lane,
+        verify_profile,
     )

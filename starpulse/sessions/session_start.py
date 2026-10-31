@@ -30,10 +30,16 @@ def starter(url: str | None, by: str | None = None) -> Callable[..., str] | None
         return None
     base = url.rstrip("/")
 
-    def start(task: str, *, harness: str = "claude", mode: str = "interactive") -> str:
+    def start(
+        task: str, *, harness: str = "claude", mode: str = "interactive", verb: str = "Start", profile: str | None = None
+    ) -> str:
         params: dict[str, str] = {"harness": harness, "mode": mode}
         if by:
             params["by"] = by
+        if verb != "Start":  # a verify session names its prompt verb and the profile it runs on
+            params["verb"] = verb
+        if profile:
+            params["profile"] = profile
         query = f"?{urllib.parse.urlencode(params)}"
         request = urllib.request.Request(f"{base}/start/{task}{query}", method="POST")
         try:

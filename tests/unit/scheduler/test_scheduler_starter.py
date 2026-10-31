@@ -74,3 +74,13 @@ def test_a_harness_other_than_claude_refuses_the_start_naming_session_start_url(
         rig.start("TASK-7", harness="cursor")
 
     assert rig.ran == []
+
+
+def test_a_verify_session_starts_with_the_verify_prompt_and_the_configured_profile(tmp_path: Path) -> None:
+    rig = Rig(tmp_path)
+
+    rig.start("TASK-7", verb="Verify", profile="@agent-standard-medium")
+
+    argv = rig.ran[0]
+    assert argv[-1] == "Verify TASK-7"
+    assert argv[argv.index("--agent") + 1] == "@agent-standard-medium"

@@ -102,3 +102,15 @@ def test_the_priority_matrix_states_its_default_weight_and_a_block_overrides_a_c
         "low/low",
         1.0,
     )  # a cell left out keeps its weight
+
+
+def test_a_verify_lane_and_its_profile_are_set_together(tmp_path: Path) -> None:
+    assert load(None).scheduler.verify_lane is None  # no verify lane: the scheduler admits as before
+    config = load(_write(tmp_path, '[scheduler]\nverify_lane = "verifying"\nverify_profile = "@agent-standard-medium"\n'))
+
+    assert config.scheduler.verify_lane == "verifying"
+    assert config.scheduler.verify_profile == "@agent-standard-medium"
+    with pytest.raises(ConfigError, match="verify_profile"):
+        load(_write(tmp_path, '[scheduler]\nverify_lane = "verifying"\n'))
+    with pytest.raises(ConfigError, match="verify_lane"):
+        load(_write(tmp_path, '[scheduler]\nverify_profile = "@agent-standard-medium"\n'))
