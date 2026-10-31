@@ -149,18 +149,32 @@ def follow_refreshes(log: EventLog, request: Callable[[str, int], Any], stop: th
 def follow_events(
     log: EventLog, feed: Any, handlers: Mapping[str, Callable[[Entry], None]], stop: threading.Event
 ) -> list[threading.Thread]:
-    """Hand each stream of `handlers` (name to handler) every entry the log retains, then each new one, one thread
-    per stream until `stop`. Each waits for the Board replay: an event lands on the pull requests its task cites,
-    which the feed knows only once it has read the Board. An entry applied twice leaves the store as once did, so a
-    restart replays them all."""
+    """Hand each stream of `handlers` (name to handler) every entry the log retains, then each new one, until `stop`.
+    Each waits for the Board replay: an event lands on the pull requests its task cites, which the feed knows only
+    once it has read the Board. An entry applied twice leaves the store as once did, so a restart replays them all.
 
-    def run(stream: str, handle: Callable[[Entry], None]) -> None:
+    The replay of a stream's retention takes minutes (the `machine:events` stream holds a month), and a `PR_MERGED`
+    published meanwhile would wait behind it. So each stream has a second thread on a `Tail.live` taken before the
+    replay starts, which reads only what is appended from then on. A lock per stream lets one entry run at a time."""
+    from starpulse.event_log.event_log import Tail  # noqa: PLC0415 -- the event log opens the database stack
+
+    def run(stream: str, handle: Callable[[Entry], None], lock: threading.Lock, tail: Tail) -> None:
         feed.wait_replayed()
-        log.tail(stream, after=0, interval=POLL_S).run(handle, stop)
 
-    threads = [
-        threading.Thread(target=run, args=item, name=f"pull-events-{item[0]}", daemon=True) for item in handlers.items()
-    ]
+        def locked(entry: Entry) -> None:
+            with lock:
+                handle(entry)
+
+        tail.run(locked, stop)
+
+    threads = []
+    for stream, handle in handlers.items():
+        lock = threading.Lock()
+        live = Tail.live(log, stream, interval=POLL_S)
+        replay = log.tail(stream, after=0, interval=POLL_S)
+        for kind, tail in (("replay", replay), ("live", live)):
+            name = f"pull-events-{stream}-{kind}"
+            threads.append(threading.Thread(target=run, args=(stream, handle, lock, tail), name=name, daemon=True))
     for thread in threads:
         thread.start()
     return threads
