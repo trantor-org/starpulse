@@ -19,8 +19,9 @@ A step named `starpulse command run NAME` is the project's own command. When it 
 2. Otherwise search before filing: `starpulse search <two or three distinctive terms>`. An unfinished hit that asks
    for the same outcome is the task: resume it and comment the new evidence. Never file a replacement because it is
    paused or an earlier attempt failed.
-3. With no such hit, file one with `starpulse task create`: a title naming the outcome, the request in its
-   description, and Acceptance Criteria that are independent completion gates, each checked by a command. A
+3. With no such hit, file one with `starpulse task create`: a title naming the outcome, the request as its
+   description in the [Description template](references/task-conventions.md#description-template), and Acceptance
+   Criteria that are independent completion gates, each checked by a command. A
    criterion the merge itself answers (deploy applied, pin moved, merged commit green) is a post-merge QA item on
    the task; one that waits long on something else belongs to a checkup task filed now with `--type check` and
    parked on the value it reads, never a clock, and it never blocks the implementing task
