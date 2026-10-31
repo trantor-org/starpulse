@@ -1,6 +1,3 @@
-# The self-hosted runner lanes the workflows target; actionlint reads this file from here. `ai-vm-1` is the
-# organization's generic fleet; `merge-event` is trantor's one runner for merge-event submits.
+# No self-hosted runner lane remains; every workflow runs on a GitHub-hosted runner.
 self-hosted-runner:
-  labels:
-    - ai-vm-1
-    - merge-event
+  labels: []

@@ -2,8 +2,8 @@ name: Release
 
 # A `v<version>` tag publishes that version: a GitHub Release with generated notes and the built files,
 # then PyPI through trusted publishing. A merge to main that changes the wheel publishes the same way as a pre-release,
-# a PEP 440 beta (`X.Y.ZbN`) cut at the merged commit; main never carries the beta's version. The soak of the page runs
-# beside a tag's publish and does not hold it. A manual dispatch builds and soaks any ref and publishes nothing, whatever
+# a PEP 440 beta (`X.Y.ZbN`) cut at the merged commit; main never carries the beta's version. The soak of the page is
+# the weekly `starpulse-soak` Dagu DAG on ai-vm-1. A manual dispatch builds any ref and publishes nothing, whatever
 # ref it names. A pull request and a merge-queue candidate do not run this workflow: the required `build` check is the
 # workspace's Dagu DAG.
 on:
@@ -13,20 +13,14 @@ on:
     # The wheel: the `starpulse` package without its tests, and the project file that names its dependencies and version.
     paths: ["starpulse/**", "pyproject.toml"]
   workflow_dispatch:
-    inputs:
-      duration:
-        description: "How long the soak holds the page, in seconds or with an s, m or h suffix; the release soak is 4h"
-        type: string
-        default: 4h
 
 permissions:
   contents: read
 
 jobs:
   build:
-    # A dispatch builds on the self-hosted ai-vm-1 fleet; a tag or a merge to main builds on a clean hosted runner, since
-    # what it builds is published.
-    runs-on: ${{ github.event_name == 'push' && 'ubuntu-latest' || fromJSON('["self-hosted", "ai-vm-1"]') }}
+    # A clean hosted runner: what it builds is published.
+    runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
     steps:
@@ -40,8 +34,6 @@ jobs:
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: 12.6.0
-          # The self-hosted runners share one home, so the default ~/setup-pnpm collides between concurrent jobs.
-          dest: ${{ runner.temp }}/setup-pnpm
       # The server refuses to start without the page, so it is built before the package that carries it.
       - run: pnpm install --frozen-lockfile && pnpm run build
         working-directory: starpulse/web
@@ -63,72 +55,6 @@ jobs:
         with:
           name: dist
           path: dist/
-
-  # The latency budget's endurance half (bench/soak.py): one Chrome tab held open on a disposable seeded server that
-  # the soak starts and feeds a replayed event stream, sampled and probed until the hold ends. It runs on the ai-vm-1
-  # fleet; its probes (reads, a stream delivery, a task's modal) hold the 50 ms budget there, unlike the board's first
-  # paint, which they do not time. Publishing does not wait for it: a page over budget or leaking fails this job while
-  # the GitHub Release and PyPI still ship.
-  soak:
-    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
-    needs: build
-    runs-on: [self-hosted, ai-vm-1]
-    # The 4 h hold, plus the page's build and the seeded server's start.
-    timeout-minutes: 300
-    # A soak holds one of ai-vm-1's runners for hours: the next one for the same ref waits rather than
-    # cancelling it. A tag's soak and a dispatch on that tag share no group, so a dispatch never displaces a release.
-    concurrency:
-      group: release-soak-${{ github.event_name }}-${{ github.ref }}
-      cancel-in-progress: false
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          sparse-checkout: /*
-          sparse-checkout-cone-mode: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 24
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-        with:
-          version: 12.6.0
-          # The self-hosted runners share one home, so the default ~/setup-pnpm collides between concurrent jobs.
-          dest: ${{ runner.temp }}/setup-pnpm
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-      # The seeded server serves the built page and refuses to start without it.
-      - run: pnpm install --frozen-lockfile && pnpm run build
-        working-directory: starpulse/web
-      - run: uv sync --locked --group bench
-      - name: Hold the page open on a seeded server
-        # A tag push has no inputs: the release holds 4 h.
-        env:
-          DURATION: ${{ inputs.duration || '4h' }}
-        run: uv run --no-sync python bench/soak.py --duration "$DURATION" --report "$RUNNER_TEMP/soak.json"
-      # The report is most worth reading when the soak failed or was cut off by the timeout.
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: always()
-        with:
-          name: soak-report
-          path: ${{ runner.temp }}/soak.json
-          if-no-files-found: warn
-
-  # Publishing does not wait for the soak, so a red or cancelled run (a job timeout included) files an issue
-  # naming the tag and the run. A skipped soak does not.
-  soak-alert:
-    if: always() && contains(fromJSON('["failure", "cancelled"]'), needs.soak.result)
-    needs: soak
-    runs-on: ubuntu-latest
-    permissions:
-      issues: write
-    steps:
-      - name: File an issue for the failed soak
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          gh issue create --repo "$GITHUB_REPOSITORY" \
-            --title "Release soak failed for ${TAG}" \
-            --body "The release soak for \`${TAG}\` failed or was cancelled. Run: ${RUN_URL}"
 
   github-release:
     # A push here is a tag or a merge to main. A dispatch names a ref, which may be a tag, and publishes nothing.

@@ -1,11 +1,10 @@
 name: CI
 
-# The nightly suite and a manual dispatch run every job in full. A pull request and a merge-queue candidate get their
-# checks (`python`, `web`, `static-checks`, `build`) from the sp-ci Dagu DAG (its `ci-sp-*` check runs), not from this workflow. A push to main
-# runs none: the merge queue tested its candidate.
+# The jobs left here are the ones GitHub-hosted runners must run: the macOS smoke and the clean-machine ingest. The
+# nightly suite (python, coverage-map, python-ft, fresh-serve) is the `starpulse-nightly` Dagu DAG on ai-vm-1; a pull
+# request and a merge-queue candidate get their checks (`python`, `web`, `static-checks`, `build`) from the sp-ci Dagu
+# DAG (its `ci-sp-*` check runs). A push to main runs none: the merge queue tested its candidate.
 on:
-  push:
-    branches: [main]
   schedule:
     - cron: "17 9 * * *" # 02:17 MST
   workflow_dispatch:
@@ -13,178 +12,11 @@ on:
 permissions:
   contents: read
 
-# The nightly suite runs on the organization's self-hosted ai-vm-1 fleet, free and independent of GitHub's hosted
-# pool. That runner group serves private repositories only: making this repository public strands these jobs.
 jobs:
-  # Chooses the tests: the nightly schedule and a manual dispatch select the whole suite (ci/select_tests.py --full).
-  # It also runs the import layers (pyproject's [tool.importlinter]).
-  select:
-    # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved.
-    if: github.event_name != 'push'
-    runs-on: [self-hosted, ai-vm-1]
-    timeout-minutes: 10
-    outputs:
-      PYTEST_TARGETS: ${{ steps.select.outputs.PYTEST_TARGETS }}
-      python: ${{ steps.select.outputs.python }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          sparse-checkout: /*
-          sparse-checkout-cone-mode: false
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-      - id: select
-        run: ci/run.sh select >> "$GITHUB_OUTPUT"
-
-  # The selected tests in one pytest session of work-stealing xdist workers (`ci/run.sh python-tests`), skipped when `select` chose none.
-  python-tests:
-    needs: select
-    # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved.
-    if: github.event_name != 'push' && needs.select.outputs.python == 'true'
-    runs-on: [self-hosted, ai-vm-1]
-    timeout-minutes: 30
-    env:
-      # The tests `select` chose; empty is the whole suite.
-      PYTEST_TARGETS: ${{ needs.select.outputs.PYTEST_TARGETS }}
-      # The slow/costly-test screen (ci/slow_tests.py) runs only in the nightly suite and a manual dispatch.
-      TEST_COST_REPORT: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '1' || '' }}
-      # The run's per-test coverage data, combined by `coverage-map`; read only when the run is instrumented below.
-      COVERAGE_FILE: coverage.data
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          sparse-checkout: /*
-          sparse-checkout-cone-mode: false
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-      # ci/run.sh sizes the pytest-xdist workers to the host's `tests.slice`, or to the runner's memory (ci/xdist_workers.py).
-      # The nightly and a manual dispatch (TEST_COST_REPORT set) add `-m "not e2e"`: the nightly-marked budget tests the gate
-      # deselects (pyproject addopts). The nightly suite also records which source files each test runs (pyproject's
-      # [tool.coverage.run]); ci/coverage_map.py turns the data into the map the select step reads.
-      - run: ci/run.sh python-tests
-      - if: ${{ failure() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: pytest-log
-          path: pytest.log
-          if-no-files-found: error
-      # The tests the screen flagged (test-cost.json) rerun alone under memray, even after a red suite; one that leaves no
-      # stats is named in the run (ci/memray_flagged.py).
-      - if: ${{ !cancelled() && env.TEST_COST_REPORT == '1' }}
-        run: uv run --no-sync python ci/memray_flagged.py test-cost.json memray
-      - if: ${{ !cancelled() && env.TEST_COST_REPORT == '1' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: test-cost-python
-          path: |
-            test-cost.json
-            memray/
-          if-no-files-found: error
-      - if: ${{ !cancelled() && env.TEST_COST_REPORT == '1' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: coverage-data
-          path: coverage.data
-          if-no-files-found: error
-
-  # Turns the coverage data into the per-test coverage map (ci/coverage_map.py) and publishes it on ai-vm-1, where
-  # the CI select step reads `latest.json`. A red nightly publishes too, from the data the run uploaded even when red
-  # (`!cancelled()` above): the map was frozen for days behind flaky tests. `coverage_map.py build` refuses a map that
-  # names under 90% of the collected tests, as when the run crashed and uploaded nothing.
-  coverage-map:
-    needs: [select, python-tests]
-    # Only the whole suite maps every test; a pull request's selection would publish a partial map.
-    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && !cancelled() && needs.select.result == 'success'
-    runs-on: [self-hosted, ai-vm-1]
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          sparse-checkout: /*
-          sparse-checkout-cone-mode: false
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-      - run: uv sync --locked
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: coverage-data
-      - run: |
-          uv run --no-sync coverage combine coverage.data
-          uv run --no-sync pytest --collect-only -q | grep '::' > collected.txt
-          uv run --no-sync python ci/coverage_map.py build .coverage --sha "$GITHUB_SHA" --collected collected.txt
-
-  # The same selected tests on the free-threaded build (3.14t). The live server runs on 3.14t, so a change that
-  # breaks that build shows in the nightly suite. It is not a required check and `python`
-  # does not wait for it.
-  python-ft:
-    needs: select
-    # A nightly and dispatch job only: the whole suite is its cost.
-    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && needs.select.outputs.python == 'true'
-    runs-on: [self-hosted, ai-vm-1]
-    timeout-minutes: 45
-    env:
-      PYTEST_TARGETS: ${{ needs.select.outputs.PYTEST_TARGETS }}
-      # The build is slower than the 5 s ceiling was set on: name slow tests here (ci/slow_tests.py), never fail them.
-      TEST_COST_REPORT: "1"
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          sparse-checkout: /*
-          sparse-checkout-cone-mode: false
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-      # Outside the checkout: a runner's workspace outlives the job, and a 3.14t .venv there would satisfy the next job's
-      # `requires-python >=3.14` and silently move it onto the free-threaded build. The runner context is not available to
-      # a job-level env, so the path is exported from a step.
-      # The runner image points UV_PYTHON_INSTALL_DIR at /opt/uv-python, which the job cannot write, and 3.14t is not in it.
-      - run: |
-          echo "UV_PROJECT_ENVIRONMENT=$RUNNER_TEMP/ft-venv" >> "$GITHUB_ENV"
-          echo "UV_PYTHON_INSTALL_DIR=$RUNNER_TEMP/uv-python" >> "$GITHUB_ENV"
-      # aioquic and pylsqpack have no 3.14t wheels and their sources do not build there; only the HTTP/3 tests need them
-      # (see the importorskip in tests/integration/server/test_http3.py).
-      # grpcio has no 3.14t wheel, so this compiles it, one job per host core (36) by default: 14 cores and 17 GB, enough
-      # for systemd-oomd to kill the build before uv caches the wheel, so every run rebuilt it. Each job uses about two
-      # cores (six jobs peaked at 11 cores), so three finish within 6 cores and uv's cache then keeps the wheel.
-      # temporalio has no 3.14t wheel either; its Rust source build needs protoc, and nothing in the repo imports it.
-      - run: uv sync --locked --python 3.14t --no-install-package aioquic --no-install-package pylsqpack --no-install-package temporalio
-        env:
-          GRPC_PYTHON_BUILD_EXT_COMPILER_JOBS: "3"
-      # A dependency that re-enables the GIL on import leaves every test green on the build this job exists to test.
-      - run: uv run --no-sync python -c "import sys, starpulse.runtime.server; sys.exit(sys._is_gil_enabled())"
-      - run: echo "PYTEST_ADDOPTS=-n $(uv run --no-sync python ci/xdist_workers.py) --dist worksteal" >> "$GITHUB_ENV"
-      # The selected files may leave nothing for pytest to run (exit 5), which is a pass only while targets were selected.
-      - run: |
-          status=0
-          uv run --no-sync pytest $PYTEST_TARGETS || status=$?
-          [ "$status" -eq 0 ] || { [ "$status" -eq 5 ] && [ -n "$PYTEST_TARGETS" ]; }
-
-  # The out-of-the-box install on Linux, the ai-vm-1 fleet's own platform: the wheel goes into an empty virtualenv and
-  # `starpulse serve` starts from an empty directory with no config, then ci/fresh_serve.py fails unless the page answers
-  # and every worker child, the Page API child with its handed socket included, stays alive. macos-fresh-serve is the
-  # macOS counterpart.
-  fresh-serve:
-    if: github.event_name != 'push'
-    runs-on: [self-hosted, ai-vm-1]
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          sparse-checkout: /*
-          sparse-checkout-cone-mode: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 24
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-        with:
-          version: 12.6.0
-          dest: ${{ runner.temp }}/setup-pnpm
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-      # The wheel carries the built page (starpulse/static is not tracked).
-      - run: pnpm install --frozen-lockfile && pnpm run build
-        working-directory: starpulse/web
-      - run: uv build --wheel --out-dir "$RUNNER_TEMP/dist"
-      - run: uv venv "$RUNNER_TEMP/fresh" && uv pip install --python "$RUNNER_TEMP/fresh/bin/python" "$RUNNER_TEMP"/dist/*.whl
-      - run: python3 -I ci/fresh_serve.py "$RUNNER_TEMP/fresh/bin/python"
   # The out-of-the-box install on macOS: the wheel goes into an empty virtualenv and `starpulse serve` starts from an empty
   # directory with no config, then ci/fresh_serve.py fails unless the page answers and every worker child, the Page API
-  # child with its handed socket included, stays alive. The ai-vm-1 fleet is Linux, so this job runs on a GitHub-hosted
-  # runner (free: this repository is public); `fresh-serve` is the Linux counterpart. Not a
+  # child with its handed socket included, stays alive. Dagu's ai-vm-1 workers are Linux, so this job runs on a GitHub-hosted
+  # runner (free: this repository is public); the nightly DAG's `fresh-serve` is the Linux counterpart. Not a
   # required check: a pull request is proven by dispatching this workflow on its branch.
   macos-fresh-serve:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'

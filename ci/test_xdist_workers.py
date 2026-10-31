@@ -7,7 +7,6 @@ import sys
 from pathlib import Path
 
 import pytest
-import yaml
 from xdist_workers import (
     PEAK_WORKER_RSS_MIB,
     SLICE_MEMORY_HIGH_GIB,
@@ -18,7 +17,7 @@ from xdist_workers import (
 )
 
 GIB = 1024**3
-CI = Path(__file__).resolve().parents[1] / ".github/workflows/ci.yml"
+ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.mark.parametrize(
@@ -34,9 +33,7 @@ def test_a_runner_with_no_cgroup_memory_file_gets_two(tmp_path):
 
 
 def test_the_pytest_job_sizes_its_workers_before_it_runs_pytest():
-    runs = [step.get("run", "") for step in yaml.safe_load(CI.read_text())["jobs"]["python-tests"]["steps"]]
-    assert "ci/run.sh python-tests" in runs
-    script = (CI.parents[2] / "ci/run.sh").read_text()
+    script = (ROOT / "ci/run.sh").read_text()
     body = script.split("cmd_python_tests() {")[1].split("\n}\n")[0]
     assert 'workers="${PYTEST_WORKERS:-$(uv run --no-sync python ci/xdist_workers.py $sizing)}"' in body
     assert 'addopts="-n $workers' in body

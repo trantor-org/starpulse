@@ -1,8 +1,7 @@
-"""Where each workflow job runs: the nightly suite and the release soak on the ai-vm-1 fleet, tag publishing on hosted runners."""
+"""Where each workflow job runs: every job on a hosted runner, none on the ai-vm-1 lane, whose work is Dagu DAGs."""
 
 from __future__ import annotations
 
-import json
 import re
 import subprocess
 import tomllib
@@ -16,33 +15,30 @@ AI_VM_1_LANE = ["self-hosted", "ai-vm-1"]
 HOSTED = "ubuntu-latest"
 #: The required checks' jobs, which moved to the sp-ci Dagu DAG and left ci.yml.
 MOVED_CHECKS = ["python", "web", "static-checks", "build"]
-CI_TEST_JOBS = ["select", "python-tests", "fresh-serve"]
 
 
 def job(workflow: str, name: str) -> dict:
     return yaml.safe_load((WORKFLOWS / workflow).read_text())["jobs"][name]
 
 
-@pytest.mark.parametrize(
-    ("workflow", "name"),
-    [
-        ("ui-preview.yml", "render"),
-        ("ui-preview.yml", "leak-scan"),
-    ],
-)
-def test_pull_request_job_runs_on_the_ai_vm_1_fleet(workflow, name):
-    assert job(workflow, name)["runs-on"] == AI_VM_1_LANE
+def test_no_workflow_job_runs_on_the_ai_vm_1_lane():
+    """The lane's work is Dagu DAGs: the nightly suite, the soak, the UI preview and the repository checks."""
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        for name, body in yaml.safe_load(path.read_text())["jobs"].items():
+            assert body["runs-on"] != AI_VM_1_LANE, f"{path.name}/{name}"
 
 
-@pytest.mark.parametrize("name", CI_TEST_JOBS)
-def test_ci_test_job_runs_on_the_ai_vm_1_fleet(name):
-    assert job("ci.yml", name)["runs-on"] == AI_VM_1_LANE
-
-
-def test_ci_runs_on_the_nightly_a_dispatch_and_a_push_only():
-    """A pull request and a merge-queue candidate get their checks from the sp-ci Dagu DAG, not from Actions."""
+def test_ci_runs_on_the_nightly_and_a_dispatch_only():
+    """A pull request, a merge-queue candidate and a push get their checks from the sp-ci Dagu DAG, not from Actions."""
     document = yaml.safe_load((WORKFLOWS / "ci.yml").read_text())
-    assert set(document[True]) == {"push", "schedule", "workflow_dispatch"}
+    assert set(document[True]) == {"schedule", "workflow_dispatch"}
+
+
+def test_ci_keeps_only_the_jobs_a_hosted_runner_must_run():
+    assert sorted(yaml.safe_load((WORKFLOWS / "ci.yml").read_text())["jobs"]) == [
+        "clean-machine-ingest",
+        "macos-fresh-serve",
+    ]
 
 
 @pytest.mark.parametrize("name", MOVED_CHECKS)
@@ -50,26 +46,17 @@ def test_a_required_check_is_no_ci_job(name):
     assert name not in yaml.safe_load((WORKFLOWS / "ci.yml").read_text())["jobs"]
 
 
-@pytest.mark.parametrize("name", ["coverage-map", "python-ft", "macos-fresh-serve", "clean-machine-ingest"])
+@pytest.mark.parametrize("name", ["macos-fresh-serve", "clean-machine-ingest"])
 def test_a_nightly_only_job_skips_a_pull_request(name):
-    """A pull request's partial selection would publish a partial coverage map, and the others cost a whole-suite run."""
+    """Each costs a whole-suite run or a hosted macOS minute."""
     condition = job("ci.yml", name)["if"]
     assert "'schedule'" in condition
     assert "pull_request" not in condition
 
 
-def test_release_build_runs_hosted_for_a_push_and_on_the_ai_vm_1_fleet_otherwise():
-    """A tag and a merge to main both publish what the build makes, so both build on a clean hosted runner."""
-    runs_on = job("release.yml", "build")["runs-on"]
-    match = re.fullmatch(r"\$\{\{ github\.event_name == 'push' && '([^']+)' \|\| fromJSON\('([^']+)'\) \}\}", runs_on)
-    assert match, runs_on
-    push_runner, other_runner = match.groups()
-    assert push_runner == HOSTED
-    assert json.loads(other_runner) == AI_VM_1_LANE
-
-
-@pytest.mark.parametrize("name", ["github-release", "pypi"])
-def test_publishing_job_runs_on_a_hosted_runner(name):
+@pytest.mark.parametrize("name", ["build", "github-release", "pypi"])
+def test_release_job_runs_on_a_hosted_runner(name):
+    """What the build makes is published, so it builds on a clean runner."""
     assert job("release.yml", name)["runs-on"] == HOSTED
 
 
@@ -77,73 +64,12 @@ def test_publishing_job_runs_on_a_hosted_runner(name):
     ("workflow", "name"),
     [
         ("release.yml", "build"),
-        ("release.yml", "soak"),
-        ("ui-preview.yml", "render"),
     ],
 )
 def test_node_is_installed_before_pnpm(workflow, name):
     """`pnpm/action-setup` installs pnpm with the runner's `npm`, which fails under the system Node of a self-hosted runner."""
     uses = [step["uses"].split("@")[0] for step in job(workflow, name)["steps"] if "uses" in step]
     assert uses.index("actions/setup-node") < uses.index("pnpm/action-setup")
-
-
-def needs(workflow: str, name: str) -> list[str]:
-    declared = job(workflow, name).get("needs", [])
-    return [declared] if isinstance(declared, str) else declared
-
-
-def test_release_soak_runs_on_the_ai_vm_1_fleet_after_the_build_and_does_not_gate_publishing():
-    """The soak runs after a green build; a red soak does not hold the GitHub Release or PyPI."""
-    assert job("release.yml", "soak")["runs-on"] == AI_VM_1_LANE
-    assert "build" in needs("release.yml", "soak")
-    assert "build" in needs("release.yml", "github-release")
-    assert "soak" not in needs("release.yml", "github-release")
-    assert "soak" not in needs("release.yml", "pypi")
-
-
-def test_a_failed_or_cancelled_release_soak_files_a_github_issue_naming_the_tag_and_run():
-    """Publishing no longer waits; a red or cancelled soak still records the tag and the run as an issue."""
-    alert = job("release.yml", "soak-alert")
-    step = next(s for s in alert["steps"] if "gh issue create" in s.get("run", ""))
-    env = step.get("env", {})
-
-    assert needs("release.yml", "soak-alert") == ["soak"]
-    assert "needs.soak.result" in alert["if"]
-    assert "failure" in alert["if"] and "cancelled" in alert["if"]
-    assert env.get("TAG") == "${{ github.ref_name }}"
-    assert "github.run_id" in env.get("RUN_URL", "")
-    assert "${TAG}" in step["run"] and "${RUN_URL}" in step["run"]
-
-
-def test_release_soak_runs_for_a_tag_or_a_dispatch_and_publishing_only_for_a_push():
-    """A merge to main never takes a runner for hours, and a dispatch on a tag's ref publishes nothing."""
-    assert job("release.yml", "soak")["if"] == "github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'"
-    assert job("release.yml", "github-release")["if"] == "github.event_name == 'push'"
-    assert job("release.yml", "pypi")["if"] == "github.event_name == 'push'"
-
-
-def test_release_soak_holds_the_duration_input_four_hours_by_default_and_reports_what_it_saw():
-    document = yaml.safe_load((WORKFLOWS / "release.yml").read_text())
-    duration = document[True]["workflow_dispatch"]["inputs"]["duration"]
-    soak = job("release.yml", "soak")
-    run = next(step for step in soak["steps"] if "bench/soak.py" in step.get("run", ""))
-    upload = next(step for step in soak["steps"] if step.get("uses", "").startswith("actions/upload-artifact"))
-
-    assert duration["default"] == "4h"
-    assert run["env"]["DURATION"] == "${{ inputs.duration || '4h' }}"  # a tag push has no inputs
-    assert '--duration "$DURATION"' in run["run"]
-    assert "--report" in run["run"]  # the exit status is the step's: no `|| true`, no `continue-on-error`
-    assert "||" not in run["run"]
-    assert not run.get("continue-on-error")
-    assert upload["if"] == "always()"  # a failed or timed-out soak is the report most worth reading
-    assert soak["timeout-minutes"] > 4 * 60  # past the hold, with the build and the server's start
-
-
-def test_release_soak_queues_behind_a_running_one_rather_than_cancelling_it():
-    """A 4 hour hold is not restarted by the next run: one holds a runner, the next waits."""
-    concurrency = job("release.yml", "soak")["concurrency"]
-    assert concurrency["group"]
-    assert concurrency["cancel-in-progress"] is False
 
 
 def root_checkouts() -> list[tuple[str, dict]]:
@@ -175,63 +101,6 @@ def test_no_job_or_check_reaches_a_checkout_of_another_repository():
     for name, body in jobs.items():
         for step in body.get("steps", []):
             assert "repository" not in step.get("with", {}), name
-
-
-#: Every ci.yml job but the macOS smoke: the jobs that test a tree.
-TEST_JOBS = [
-    "select",
-    "python-tests",
-    "coverage-map",
-    "python-ft",
-    "fresh-serve",
-]
-
-
-@pytest.mark.parametrize("name", TEST_JOBS)
-def test_a_push_to_main_runs_no_test_job(name):
-    """Main moves only through the merge queue, which already tested the pushed commit (its candidate)."""
-    condition = job("ci.yml", name)["if"]
-    assert "github.event_name != 'push'" in condition or "github.event_name == 'schedule'" in condition
-
-
-def test_every_ci_job_but_the_macos_smoke_is_a_test_job():
-    jobs = yaml.safe_load((WORKFLOWS / "ci.yml").read_text())["jobs"]
-    assert sorted(jobs) == sorted([*TEST_JOBS, "macos-fresh-serve", "clean-machine-ingest"])
-
-
-def test_the_coverage_map_is_published_from_the_nightlys_data_green_or_red():
-    """A red run still uploads its coverage data, and `coverage_map.py build` refuses a map missing too many tests, so one
-    flaky test no longer freezes the map every pull request's selection reads."""
-    condition = job("ci.yml", "coverage-map")["if"]
-    assert "python-tests" in needs("ci.yml", "coverage-map")
-    assert "!cancelled()" in condition
-    assert "needs.select.result == 'success'" in condition
-    assert "needs.python-tests.result == 'success'" not in condition
-
-
-def test_the_free_threaded_suite_runs_beside_the_python_tests():
-    """The live server runs on 3.14t, so a change that breaks that build must show in the nightly run."""
-    ft = job("ci.yml", "python-ft")
-    assert ft["runs-on"] == AI_VM_1_LANE
-    assert "select" in needs("ci.yml", "python-ft")
-
-
-def test_the_free_threaded_suite_fails_when_the_gil_comes_back():
-    """A dependency that re-enables the GIL on import
-    would leave the job green on the build it does not test, so the job checks the interpreter after the imports."""
-    runs = "\n".join(step["run"] for step in job("ci.yml", "python-ft")["steps"] if "run" in step)
-    assert "uv sync --locked --python 3.14t" in runs
-    assert "sys._is_gil_enabled()" in runs
-    assert "PYTEST_TARGETS" in runs  # the same selected tests as the python-tests job
-
-
-def test_the_free_threaded_environment_lives_outside_the_checkout_and_is_set_in_a_step():
-    """A runner's workspace outlives the job, so a 3.14t .venv in it would move the next job onto the free-threaded
-    build. GitHub rejects the whole workflow when a job-level env reads the runner context, which it does not offer."""
-    ft = job("ci.yml", "python-ft")
-    assert "runner" not in str(ft.get("env", {}))
-    runs = "\n".join(step["run"] for step in ft["steps"] if "run" in step)
-    assert 'UV_PROJECT_ENVIRONMENT=$RUNNER_TEMP/ft-venv" >> "$GITHUB_ENV"' in runs
 
 
 STATIC_SCRIPT = WORKFLOWS.parents[1] / "ci/static_checks.sh"
@@ -331,10 +200,6 @@ def run_ci(command: str, tmp_path, env: dict[str, str], *, pytest_exit: int = 0)
     return shell.returncode
 
 
-def test_the_python_tests_job_runs_ci_run_sh_python_tests():
-    assert "ci/run.sh python-tests" in [step.get("run") for step in job("ci.yml", "python-tests")["steps"]]
-
-
 @pytest.mark.parametrize(
     ("targets", "pytest_exit", "status"),
     [
@@ -399,14 +264,14 @@ def test_starpulse_names_its_commitizen_version_source_and_treats_a_breaking_cha
 
 
 def test_ci_runs_the_fresh_install_smoke_on_a_hosted_macos_runner():
-    """The Linux smoke is the fresh-serve job; macOS has no fleet runner, so a hosted one proves the supervisor, resident-size reader and socket handoff there."""
+    """The Linux smoke is the nightly DAG's fresh-serve job; Dagu has no macOS worker, so a hosted runner proves the supervisor, resident-size reader and socket handoff there."""
     smoke = job("ci.yml", "macos-fresh-serve")
     assert smoke["runs-on"] == "macos-latest"
     assert any("ci/fresh_serve.py" in step.get("run", "") for step in smoke["steps"])
 
 
 def test_ci_proves_the_ingest_on_a_hosted_runner_with_no_redis():
-    """The ai-vm-1 fleet sits beside a Redis; a hosted runner has none, so only it can show the ingest needs none."""
+    """The ai-vm-1 workers sit beside a Redis; a hosted runner has none, so only it can show the ingest needs none."""
     proof = job("ci.yml", "clean-machine-ingest")
     assert proof["runs-on"] == "ubuntu-latest"
     assert "github.event_name == 'schedule'" in proof["if"]

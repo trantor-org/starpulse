@@ -191,9 +191,9 @@ until the run ends.
   under its usual load. The default holds every row to the budget, which is what the soak runner's hold is judged by.
 - A URL selects a running server and takes `--pid`; `--replay-multiple` is refused with one, and `--pid` without one.
 
-`.github/workflows/release.yml` runs this mode as its `soak` job on a self-hosted soak runner: 4 hours on a `v*` tag, beside
-the GitHub Release and PyPI jobs, and any `duration` on a `workflow_dispatch`, which publishes nothing. A red or cancelled
-soak files a GitHub issue naming the tag and the run. The report uploads as the run's `soak-report` artifact.
+The weekly `starpulse-soak` Dagu DAG runs this mode for 4 hours against main's tip (Sunday 03:00 MST); `release.yml` no longer
+soaks a tag. A red soak files a GitHub issue naming the commit and the Dagu run, and its step log carries the soak output;
+the run's directory, with `soak.json`, is removed when the run exits.
 
 **Replay rate.** The live instance's event log took 14,497 events in the 24 hours to 2026-10-10 09:30 MST, 1,312 of
 them lane changes, and 11,075 a day over the 7 days before. `LIVE_EVENTS_PER_DAY` in `soak.py` is 14,500, about 0.17
