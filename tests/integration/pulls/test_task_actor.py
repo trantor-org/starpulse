@@ -114,6 +114,31 @@ def test_a_merge_routes_on_verify_plan_a_planned_review_task_to_in_progress_and_
     assert all(name != "TASK-3" for name, *_ in board.writes)  # closed unmerged: neither route
 
 
+def test_a_review_task_whose_every_pr_closed_unmerged_moves_to_needs_attention_with_a_question_and_a_merged_one_closes(
+    store: PullStore, stop: threading.Event
+) -> None:
+    board = Board(
+        BoardFeed(),
+        task("TASK-1", "Review", references=(PR_ONE,)),
+        task("TASK-2", "Review", references=(PR_TWO, PR_THREE)),
+    )
+    waits = {**WAITS, "review": {"pr_merged": "MERGED", "pr_closed_unmerged": "ABANDONED"}}
+    moves = {**MOVES, ("review", "ABANDONED"): "needs_attention"}
+    store.save([pull(1, state="OPEN"), pull(2, state="OPEN"), pull(3, state="OPEN")])
+    actor = running(board, store, stop, waits, moves)
+    store.save([pull(1, state="CLOSED"), pull(2, state="CLOSED"), pull(3, state="MERGED")])
+
+    actor.pulls_changed()
+
+    assert until(lambda: sorted(board.moved()) == [("TASK-1", "needs_attention"), ("TASK-2", "done")])
+    (_, changes, _, writer) = next(write for write in board.writes if write[0] == "TASK-1")
+    reason = changes["description"]
+    assert writer == ACTOR
+    assert "## Needs attention" in reason
+    assert PR_ONE in reason
+    assert reason.rstrip().endswith("?")
+
+
 def test_a_review_task_citing_only_another_tasks_merged_pr_closes_and_one_citing_its_own_closes(
     store: PullStore, stop: threading.Event
 ) -> None:

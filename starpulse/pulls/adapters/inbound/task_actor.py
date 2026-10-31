@@ -80,6 +80,8 @@ SLOW_BUCKETS_S = (0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0
 _POLL_S = 0.5
 #: A Waiting task's service level expectation: seconds from entering Waiting, or past its latest `expect_by`.
 _DAY_S = 86_400.0
+#: The facts whose event parks a task in Needs attention: the comment is also its `## Needs attention` reason, a question.
+_ASKS = ("overdue", "pr_closed_unmerged")
 _SLE_DAYS, _GRACE_DAYS = 7, 2
 #: Start Criteria evaluated at once: each is a subprocess, so the pass is bounded rather than one thread per gated task.
 _EVALUATIONS = 8
@@ -634,7 +636,7 @@ class TaskActor:
                 continue
             self._tried[name] = sent
             changes = self._stale(agent) if fact.startswith("deps_done") else {}
-            if fact == "overdue":
+            if fact in _ASKS:
                 changes = {"description": section_set(agent["description"], "Needs attention", comment)}
             if self._write(name, target, comment, observed, source=agent["state"], stale=changes):
                 return
@@ -794,6 +796,18 @@ class TaskActor:
         terminal = self._pr_terminal(agent)
         merged = any((record := self._record(url)) and record["state"] == "MERGED" for url in self._proof_prs(agent))
         return terminal if terminal and merged and self._planned(agent) is planned else None
+
+    def _pr_closed_unmerged(self, agent: dict[str, Any]) -> tuple[str, str] | None:
+        """The closed pull requests and the Needs attention question when every pull request the task cites has ended and
+        none merged: its delivery is gone and no merge will ever close it."""
+        terminal = self._pr_terminal(agent)
+        merged = any((record := self._record(url)) and record["state"] == "MERGED" for url in self._proof_prs(agent))
+        if not terminal or merged:
+            return None
+        return terminal[0], (
+            f"Every pull request it cites closed unmerged: {terminal[0]}. "
+            "Close it as superseded, or redeliver it?"
+        )
 
     def _pr_merged(self, agent: dict[str, Any]) -> tuple[str, str] | None:
         """`_merged` for a task with no Verify plan."""
@@ -1010,6 +1024,7 @@ class TaskActor:
     _facts: dict[str, Callable[[TaskActor, dict[str, Any]], tuple[Any, str] | None]] = {
         "pr_terminal": _pr_terminal,
         "pr_merged": _pr_merged,
+        "pr_closed_unmerged": _pr_closed_unmerged,
         "pr_merged_planned": _pr_merged_planned,
         "pr_merged_unfinished": _pr_merged_unfinished,
         "pr_ready": _pr_ready,

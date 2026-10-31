@@ -64,6 +64,7 @@ DRAWING = ("tiers", "main_line", "rests", "submachines", "launches", "next")
 WAIT_FACTS = (
     "pr_terminal",
     "pr_merged",
+    "pr_closed_unmerged",
     "pr_merged_planned",
     "pr_merged_unfinished",
     "pr_ready",
