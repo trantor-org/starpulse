@@ -1,7 +1,10 @@
 """A task's Start Criteria on its record: parsed from the description, evaluated by the `[board] criteria` command."""
 
+import contextlib
+import io
 import json
 import shlex
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -341,15 +344,26 @@ def test_an_invalidated_task_still_reads_its_last_results_while_they_refresh(tmp
 
 
 def _spawns_in_an_hour(tmp_path: Path, monkeypatch, script: str) -> int:
+    """Evaluator runs for one idle gated task whose feed pass calls it every 30 s for an hour. Each run executes
+    `script` in this process, so the count holds on a loaded host where a real subprocess outlives its timeout."""
     tmp_path.mkdir()
-    """Evaluator runs for one idle gated task whose feed pass calls it every 30 s for an hour."""
+    spawns = []
+
+    def run(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed):
+            exec(script, {"open": lambda *_: io.StringIO()})
+        spawns.append(command)
+        return subprocess.CompletedProcess(command, 0, printed.getvalue(), "")
+
+    monkeypatch.setattr(criteria.subprocess, "run", run)
     now = [100.0]
     monkeypatch.setattr(criteria, "_clock", lambda: now[0])
     evaluate = criteria.Evaluator(_script(tmp_path, script), tmp_path)
     for _ in range(120):
         evaluate("task-7", NIGHTLY)
         now[0] += 30
-    return _count(tmp_path)
+    return len(spawns)
 
 
 def test_hinted_criteria_spawn_at_least_ten_times_less_than_unhinted_ones(tmp_path: Path, monkeypatch) -> None:
