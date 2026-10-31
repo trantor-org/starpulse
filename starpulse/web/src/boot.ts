@@ -12,7 +12,7 @@ import { loadLateFonts } from "./render/fonts";
 import { renderer } from "./render/renderer";
 import type { Renderer } from "./render/rendererTypes";
 import { NO_BOARD_MS, markDrawn } from "./shared/boardMark";
-import { onPhone, retired, shownView, viewOf, type ViewName } from "./shared/nav";
+import { onPhone, renamedView, retired, shownView, viewOf, type ViewName } from "./shared/nav";
 
 /** What the page adopts from its boot. */
 export interface Booted {
@@ -47,6 +47,9 @@ export function boot(mount: () => void, preload?: (view: ViewName) => void): Boo
   const early = w.__earlyRecord;
   delete w.__earlyRecord;
   if (linked) records.readAhead(linked, early?.id === linked ? () => early.read : undefined);
+  // the Jobs view was the DAGs view: an old address is rewritten to the new one in place
+  const renamed = renamedView(location.search);
+  if (renamed !== null) history.replaceState(null, "", `${location.pathname}${renamed}${location.hash}`);
   // a bare address opens the view the Admin chose; one that names a view opens that, and a view that covers the map leaves it undrawn;
   // a phone width has no Star Map, so it opens the Kanban whatever the address or the Admin chose
   const wanted = viewOf(location.search, retired(location.pathname, location.hash) ? "constellation" : admin.get().view);

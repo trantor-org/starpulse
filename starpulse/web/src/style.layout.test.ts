@@ -80,14 +80,14 @@ describe("the start question", () => {
   });
 });
 
-describe("the DAGs view at a larger text size", () => {
+describe("the Jobs view at a larger text size", () => {
   it("grows a row's step strip and its status star with the text", () => {
     expect(css).toContain("svg.dstrip:not(.big) { height: calc(20px * var(--fs)); }");
     expect(css).toMatch(/\.orb \{[^}]*width: calc\(20px \* var\(--fs\)\); height: calc\(20px \* var\(--fs\)\)/);
   });
 });
 
-describe("the DAGs view at rest", () => {
+describe("the Jobs view at rest", () => {
   it("streams links only in a Processing row, the row the keyboard or a Recent line rests on and in the open DAG's chart: stroke-dashoffset repaints every frame", () => {
     const streams = css.split("\n").filter((l) => l.includes("animation: dag-stream"));
     expect(streams).toEqual([

@@ -484,9 +484,9 @@ applied_by = "pin-bump"
 
 ### Runs adapters
 
-A `[[runs]]` instance's `type` names one of the built-in adapters `dagu`, `github_actions` and `systemd`, or an installed
+A `[[runs]]` instance's `type` names one of the built-in adapters `dagu`, `github_actions`, `systemd` and `temporal`, or an installed
 package's module. `serve` starts the worker of each built-in adapter that a configured instance names, as its own child
-(`starpulse worker dagu --config <this file>`, likewise `github-actions` and `systemd`), and restarts it if it stops, as
+(`starpulse worker dagu --config <this file>`, likewise `github-actions`, `systemd` and `temporal`), and restarts it if it stops, as
 it does its other workers. No OS service unit is needed for an adapter. With its worker down or not yet started, the
 page shows the instance with the error "the dagu worker has not reported" or "last reported Ns ago" (its beat is older
 than 60s).
@@ -514,7 +514,7 @@ models in `starpulse/runtime/config_model.py`, which the loader takes its keys a
 - `event_log_archive_dir` (text, default `"starpulse-archive"`): Where `serve`'s History child writes each row it prunes, before it deletes the row (see Event log archive): a directory, relative to this file unless absolute.
 - `telemetry_loki_url` (text): The Loki base URL the harness adapters push each telemetry signal to, one log line per signal in `{job="starpulse-signals"}`, and the analytics views read back. Unset, the signals go to the event log. Give the stream its own Loki `retention_stream` rule to keep it as long as the event log.
 - `slow_read_seconds` (number, above 0, default `1.0`): The seconds a `GET /api/pulls` or `GET /api/task/<id>` read may take, from accept to the last byte written, before `serve` logs a `slow_read` line for it: `queue_s`, `compute_s` and `write_s`, the seconds it waited for a handler thread, computed its answer and wrote it, `in_flight`, the reads of the same route running when it began, and `busy` and `streams`, the request workers in use (the read itself included) and the streams open when it was accepted. No other route is timed.
-- `worker_memory` (table of `[worker_memory.<context>]` table): The memory limits (proportional size on Linux, resident size on macOS) `serve` holds each worker child to, in megabytes (see Worker processes), set as `[worker_memory.<context>]` with either key left out. Past `soft_mb` it replaces the child, past `hard_mb` it kills and restarts it. Defaults, soft/hard: `pulls` 768/1536, `scheduler` 512/1024, `runs` 512/1024, `flow-metrics` 384/768, `search` 384/768, `board` 768/1536, `dagu` 384/768, `github-actions` 256/512, `systemd` 256/512.
+- `worker_memory` (table of `[worker_memory.<context>]` table): The memory limits (proportional size on Linux, resident size on macOS) `serve` holds each worker child to, in megabytes (see Worker processes), set as `[worker_memory.<context>]` with either key left out. Past `soft_mb` it replaces the child, past `hard_mb` it kills and restarts it. Defaults, soft/hard: `pulls` 768/1536, `scheduler` 512/1024, `runs` 512/1024, `flow-metrics` 384/768, `search` 384/768, `board` 768/1536, `dagu` 384/768, `github-actions` 256/512, `systemd` 256/512, `temporal` 256/512.
 - `mode` (`"ic"`, default `"ic"`): `ic`, the one value: one person on one machine.
 - `host` (text, default `"127.0.0.1"`): The address `serve` and `worker api` listen on; the default answers this machine only, and `0.0.0.0` answers the network. The `--host` flag overrides it.
 - `port` (whole number, 1 or more, default `8766`): The port `serve` listens on. The `--port` flag overrides it.

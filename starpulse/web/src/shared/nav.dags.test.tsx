@@ -32,7 +32,7 @@ const dagData: DagData = {
 let host: HTMLDivElement, root: Root;
 const q = (sel: string) => host.querySelector<HTMLElement>(sel);
 const views = () => [...host.querySelectorAll<HTMLElement>("#nav section.views:not(.admin-sec) .node")];
-const dagsNode = () => views().find((n) => n.title === "DAGs")!;
+const dagsNode = () => views().find((n) => n.title === "Jobs")!;
 
 beforeEach(async () => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -58,7 +58,7 @@ afterEach(() => {
 
 describe("the navigator's DAGs entry", () => {
   it("lists DAGs under Views, after Kanban, with the constellation glyph and the DAG count", () => {
-    expect(views().slice(0, 3).map((n) => n.title)).toEqual(["Star Map", "Kanban", "DAGs"]);
+    expect(views().slice(0, 3).map((n) => n.title)).toEqual(["Star Map", "Kanban", "Jobs"]);
     expect(dagsNode().querySelectorAll("svg.dg-glyph circle")).toHaveLength(4);
     expect(dagsNode().querySelector(".n")!.textContent).toBe("2");
   });
@@ -67,13 +67,13 @@ describe("the navigator's DAGs entry", () => {
     await act(async () => dagsNode().click());
 
     expect(q("#dg")).not.toBeNull();
-    expect(q("#dg header .title")!.textContent).toBe("DAGs");
+    expect(q("#dg header .title")!.textContent).toBe("Jobs");
     expect(dagsNode().className).toContain("on here");
-    const surface = q('.kept[data-view="dags"]')!;
+    const surface = q('.kept[data-view="jobs"]')!;
     expect(surface.hasAttribute("inert")).toBe(false);
     expect((surface.firstElementChild as HTMLElement).style.opacity).not.toBe("0");
     expect(q("#c")!.classList.contains("off")).toBe(true);
-    expect(location.search).toBe("?view=dags");
+    expect(location.search).toBe("?view=jobs");
   });
 });
 
@@ -92,7 +92,7 @@ describe("the DAGs view's navigator and legend", () => {
   it("holds the DAG filter below the views and above the cards, and the canvas holds none", () => {
     const filter = q("#nav #dgq")!;
 
-    expect(filter.getAttribute("aria-label")).toContain("DAGs");
+    expect(filter.getAttribute("aria-label")).toContain("jobs");
     expect(q("#dg #dgq")).toBeNull();
     expect(filter.compareDocumentPosition(q("#nav section.card")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });

@@ -13,7 +13,7 @@ export const browserStorage = (): PrefStorage | null => {
 /** The canvas: the page between the navigator and the rail, where the level is fitted. */
 export const canvasSpace = (viewport: number, nav: number, rail: number) => ({ left: nav, width: viewport - nav - rail });
 
-export type ViewName = "constellation" | "kanban" | "dags" | "admin";
+export type ViewName = "constellation" | "kanban" | "jobs" | "admin";
 
 /** The page's phone width: no navigator and no rail, and no Star Map, which is desktop-only. Width alone, so a landscape phone wider than this keeps it. */
 export const PHONE = "(max-width: 900px)";
@@ -31,7 +31,17 @@ export const retired = (pathname: string, hash: string) => pathname !== "/" || h
 export function viewOf(search: string, fallback: ViewName = "constellation"): ViewName {
   const v = new URLSearchParams(search).get("view");
   if (v === null) return fallback;
-  return v === "kanban" || v === "dags" || v === "admin" ? v : "constellation";
+  if (v === "dags") return "jobs";
+  return v === "kanban" || v === "jobs" || v === "admin" ? v : "constellation";
+}
+
+/** The address `search` becomes when it names the retired `?view=dags` (the Jobs view's old name); null for any other. */
+export function renamedView(search: string): string | null {
+  const params = new URLSearchParams(search);
+  if (params.get("view") !== "dags") return null;
+  params.delete("view");
+  params.set("view", "jobs");
+  return queryString(params);
 }
 
 /** The query string that opens `view`, keeping every other parameter; the view a bare address opens (`fallback`) needs no parameter. */

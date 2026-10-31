@@ -1,4 +1,4 @@
-"""`starpulse worker <dagu|github-actions|systemd>`: a run Adapter as its own process, which `serve` starts as a child for each `[[runs]]` instance that names it.
+"""`starpulse worker <dagu|github-actions|systemd|temporal>`: a run Adapter as its own process, which `serve` starts as a child for each `[[runs]]` instance that names it.
 
 It follows each `[[runs]]` instance whose adapter names this worker (`starpulse.runs.opt_in`) and keeps the
 workflows it reports in the event log (`starpulse.runs.projection`), where `serve` reads them for the page.

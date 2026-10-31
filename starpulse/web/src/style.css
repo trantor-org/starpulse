@@ -903,8 +903,8 @@ html.still *, html.still *::before, html.still *::after { animation: none !impor
 #dg .drow[data-glide=start] { --gl: var(--run); }
 #dg .drow[data-glide] .body { border-color: color-mix(in srgb, var(--gl) 55%, transparent); box-shadow: 0 6px 18px color-mix(in srgb, var(--shadow) 45%, transparent); }
 @media (prefers-reduced-motion: reduce) { #dg :is(.drow, .phead, .phint) { transition: none; } }
-#dg [data-pane=processing] { --grid: 20px calc(140px * var(--fs)) minmax(80px, calc(420px * var(--fs))) calc(76px * var(--fs)) calc(130px * var(--fs)) 0; }
-#dg [data-pane=idle] { --grid: 20px calc(140px * var(--fs)) minmax(80px, calc(420px * var(--fs))) calc(128px * var(--fs)) calc(84px * var(--fs)) calc(140px * var(--fs)) 0; }
+#dg [data-pane=processing] { --grid: 20px calc(240px * var(--fs)) minmax(80px, calc(420px * var(--fs))) calc(76px * var(--fs)) calc(130px * var(--fs)) 0; }
+#dg [data-pane=idle] { --grid: 20px calc(240px * var(--fs)) minmax(80px, calc(420px * var(--fs))) calc(128px * var(--fs)) calc(84px * var(--fs)) calc(140px * var(--fs)) 0; }
 /* a pane's head: its title and count over its column labels, which sit on the row grid below (the row's border and left padding, and the room its ▶ strip takes on the right) */
 #dg .phead { height: calc(var(--H) - 10px * var(--fs)); display: flex; flex-wrap: wrap; align-content: space-between; align-items: center; gap: 8px; padding: 0 2px 4px; border-bottom: 1px solid color-mix(in srgb, var(--slate) 14%, transparent); font-size: calc(10px * var(--fs)); letter-spacing: .2em; text-transform: uppercase; color: var(--muted); }
 #dg .phead .cols { flex: 1 0 100%; box-sizing: border-box; display: grid; grid-template-columns: var(--grid); column-gap: 10px; align-items: center; padding: 0 calc(max(30px, 30px * var(--fs)) + 10px) 0 13px; font-size: calc(9.5px * var(--fs)); letter-spacing: .16em; white-space: nowrap; }

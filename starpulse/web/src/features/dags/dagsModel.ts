@@ -2,7 +2,7 @@
 // the catalog, and where a step sits in its constellation. The page's snapshot reaches it as one DagData, read from the Sky.
 import { BOARD_COLOR } from "../../render/scene";
 import type { Sky } from "../../render/sky";
-import type { Cpu, Cue, Dag, DagStep, Domain, Machine, Pool, Rerun } from "../../api";
+import type { ActiveRun, Cpu, Cue, Dag, DagStep, Domain, Machine, Pool, RecentRun, Rerun } from "../../api";
 
 /** Everything the DAGs view reads from the snapshot: the DAGs, their domains, the pools, the cues, each machine and the server's clock. */
 export interface DagData {
@@ -20,6 +20,23 @@ export interface DagData {
 
 /** A DAG's schedule (its cron expressions, or `manual`), its seven-day statistics (one the server left out stays null, never zero) and the rerun safety it declares (null when it declares none). */
 export interface DagFacts { schedule: string; runs: number | null; hours: number | null; medianSeconds: number | null; p95Seconds: number | null; failureShare: number | null; rerun: Rerun | null }
+
+const joined = (parts: (string | number | null | undefined)[]) => parts.filter(Boolean).join(" · ");
+
+/** What a job says about a run an engine tracks per task: the Board task, the activity, the attempt and the last failure. Empty when the run names no task, attempt or failure, as a Dagu run does not. */
+export function runLine(run: ActiveRun | RecentRun): string {
+  if (!run.task && !run.attempt && !run.failure) return "";
+  const activity = "step" in run ? run.step : Object.entries(run.steps).find(([, v]) => v === "failed")?.[0];
+  return joined([run.task, activity, run.attempt && `attempt ${run.attempt}`, run.failure]);
+}
+
+/** The line a job's row carries in place of its schedule: the run it is in (one on an activity first, then how many others run), else its newest failed run (`failed …`); empty when it has neither to tell. */
+export function runNote(d: Dag): string {
+  const runs = d.active ?? [], run = runs.find((x) => x.step) ?? runs[0];
+  const live = run && runLine(run) && `${runLine(run)}${runs.length > 1 ? ` · +${runs.length - 1} more` : ""}`;
+  const gone = d.failed?.[0] ? runLine(d.failed[0]) : "";
+  return live || (gone && `failed ${gone}`);
+}
 
 export const dagFacts = (d: Dag): DagFacts => ({
   schedule: d.schedule.join(", ") || "manual",

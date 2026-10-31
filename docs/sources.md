@@ -496,6 +496,29 @@ url = "systemd-tmpfiles-clean, apt-daily.timer, user/claude-sessions-snapshot"
   kernel when its parent thread dies), so a restart leaves none behind. The adapter reads no event-log entries. There is no Run now: starting a root unit needs a polkit grant,
   so the adapter offers no start. `systemctl` and `gdbus` (`libglib2.0-bin`) must run on the host that serves StarPulse.
 
+## Temporal workflows
+
+`type = "temporal"` reads the Temporal server that runs the engine's own workflows and shows them beside the scheduler's
+DAGs. `url` is the Temporal UI server (`http://host:8233`); its HTTP API lists the default namespace. Each of the three
+workflow types `task_lifecycle`, `task_phases` and `AlertInvestigationWorkflow` is a workflow, shown even with no run.
+
+```toml
+[[runs]]
+name = "temporal"
+type = "temporal"
+url = "http://temporal.internal:8233"
+```
+
+- **Active runs.** Every running execution is an active run with the Board task its workflow id names (`TASK-N`; an
+  alert has none), the activity it is on, that activity's attempt and the message its last attempt failed with.
+- **Recent runs.** The last day's closed executions, the newest 40 closed and the newest 40 failed, each with its Temporal
+  status. A failed one carries the activity it failed on, that activity's attempt and the failure message, read from its
+  history once, since a closed execution never changes.
+- **Polling.** The server pushes no change, so the adapter lists it every 15 s: three listings, and one describe for each
+  running execution. A server it cannot reach shows as the instance's error, with the last reading kept.
+- **Adapter worker.** `serve` starts it as a child for each instance that names this adapter (`starpulse worker
+  temporal --config <this file>`). There is no Run now: these workflows start from the Board's lifecycle.
+
 ## Show pull requests and Copilot work
 
 `python -m starpulse.cli.github_adapter` reads a repository's 30 most recently updated pull requests every `--interval`
