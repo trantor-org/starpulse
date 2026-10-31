@@ -39,6 +39,10 @@ _LATER = {"head_ref": "headRefName", "unresolved": "unresolvedThreads"}
 #: How long after its last update a closed or merged pull request stays in memory: about 250 a day, 12 KB each.
 HOLD_WINDOW = timedelta(hours=24)
 
+#: How many listings of the records only the database holds a store keeps, and the most records one may hold.
+LISTINGS_KEPT = 4
+LISTING_ROWS = 2000
+
 
 class PullStore:
     """Pull request records by (repository, number), in the database `engine` opens.
@@ -58,11 +62,11 @@ class PullStore:
         self._save_listeners: list[Callable[[list[tuple[str, int]]], None]] = []
         require_migrated(engine)
         self._held: dict[tuple[str, int], dict[str, Any]] = {}
-        #: The records only the database held that a read of one pull request found, until the next save or refresh.
-        self._found: dict[tuple[str, int], list[dict[str, Any]]] = {}
         #: The records only the database held that a listing of a repository (or all) in a state found, without their
         #: `detail`, once `keep_listings` says every save reaches this store: a record saved or refreshed since is
-        #: held, which the listing leaves out, so a save needs no re-read.
+        #: held, which the listing leaves out, so a save needs no re-read. At most `LISTINGS_KEPT` listings of at most
+        #: `LISTING_ROWS` records each, the oldest dropped first, so a long history or a stream of distinct `?repo=`
+        #: values never grows it.
         self._listed: dict[tuple[str | None, str | None], list[dict[str, Any]]] = {}
         self._keep_listings = False
         since = (datetime.now(UTC) - window).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -84,7 +88,6 @@ class PullStore:
         rows = self._read(query)
         with self._lock:
             self._held.update({(row["repo"], row["number"]): row for row in rows})
-            self._found = {}
 
     def save(self, records: Iterable[dict[str, Any]]) -> None:
         """Replace each record (served names, as `find` returns them, and a `detail` when it has one) by its repository
@@ -172,7 +175,7 @@ class PullStore:
     def resident(self, repo: str, number: int) -> list[dict[str, Any]] | None:
         """What `find(repo, number)` answers when memory can say, with no query: None when only the database can."""
         with self._lock:
-            known = (repo, number) in self._held or (repo, number) in self._found
+            known = (repo, number) in self._held
         return self.find(repo, number) if known else None
 
     def _stored(
@@ -184,28 +187,23 @@ class PullStore:
         needle: str | None,
         detailed: bool,
     ) -> list[dict[str, Any]]:
-        """The records in the database matching the filters that are not in `held`; a read of one pull request is kept
-        until the next save or refresh, since an old pull request is read again for as long as a task cites it, and a
-        listing without `detail` or a body filter is kept for good: a save or refresh holds each record it changes.
-        Only a read of `detail` pays to decode it."""
-        memo, key = self._found, (repo, number)
-        one = repo is not None and number is not None and state is None and not needle
-        if one and key in memo:
-            return memo[key]
+        """The records in the database matching the filters that are not in `held`; a pull request is read by its key,
+        an indexed lookup, and a listing without `detail` or a body filter is kept (see `_listed`): a save or refresh
+        holds each record it changes. Only a read of `detail` pays to decode it."""
         listing = self._keep_listings and number is None and not needle and not detailed
         rows = self._listed.get((repo, state)) if listing else None
         if rows is None:
             filters = {"repo": repo, "number": number, "state": state}
-            columns = [column for column in pull_requests.c if detailed or one or column.name != "detail"]
+            columns = [column for column in pull_requests.c if detailed or column.name != "detail"]
             query = select(*columns).where(
                 *(pull_requests.c[name] == value for name, value in filters.items() if value is not None)
             )
             if needle:
                 query = query.where(pull_requests.c.body.contains(needle, autoescape=True))
             rows = self._read(query)
-            if listing:
-                self._listed[(repo, state)] = rows
-        stored = [record for record in rows if (record["repo"], record["number"]) not in held]
-        if one:
-            memo[key] = stored  # the dict read before the query: a refresh since has swapped it for a new one
-        return stored
+            if listing and len(rows) <= LISTING_ROWS:
+                with self._lock:
+                    while len(self._listed) >= LISTINGS_KEPT:
+                        del self._listed[next(iter(self._listed))]
+                    self._listed[(repo, state)] = rows
+        return [record for record in rows if (record["repo"], record["number"]) not in held]
