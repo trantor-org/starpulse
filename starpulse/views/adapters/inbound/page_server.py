@@ -13,12 +13,14 @@ import importlib.util
 import logging
 import signal
 import socket
+import ssl
 import threading
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from hypercorn.asyncio.run import worker_serve
+from hypercorn.asyncio.tcp_server import TCPServer
 from hypercorn.config import Config, Sockets
 from hypercorn.utils import wrap_app
 
@@ -70,6 +72,27 @@ def _survive_cancelled_streams() -> None:
     H3Protocol.stream_send = stream_send  # type: ignore[method-assign]
 
 
+def _tolerate_tls_close_race() -> None:
+    """Make a client's request on a TLS connection the server is closing end that connection quietly.
+
+    Hypercorn's `TCPServer._close` catches no `ssl.SSLError`, so the `APPLICATION_DATA_AFTER_CLOSE_NOTIFY` that
+    `wait_closed` raises escapes into the `gather` of `worker_serve`: it aborts the shutdown drain, cancelling every
+    connection still answering, and logs a traceback. The request was never taken; nothing is lost by ignoring it."""
+    close = TCPServer._close
+    if getattr(close, "tolerates_tls_close_race", False):
+        return
+
+    async def _close(self: TCPServer) -> None:
+        try:
+            await close(self)
+        except ssl.SSLError as failure:
+            if failure.reason != "APPLICATION_DATA_AFTER_CLOSE_NOTIFY":
+                raise
+
+    _close.tolerates_tls_close_race = True  # type: ignore[attr-defined]
+    TCPServer._close = _close  # type: ignore[method-assign]
+
+
 class PageServer:
     """Serves `app` on its own thread until `stop`.
 
@@ -93,6 +116,7 @@ class PageServer:
         for key, file in zip(("tls_cert", "tls_key"), tls or (), strict=False):
             if not file.is_file():
                 raise FileNotFoundError(f"{key} {file} does not exist")
+        _tolerate_tls_close_race()
         self.app, self.stopping, self._drain_s = app, stopping, drain_s
         self.socket = (
             listening if listening is not None else socket.create_server(address or ("127.0.0.1", 0), backlog=BACKLOG)
