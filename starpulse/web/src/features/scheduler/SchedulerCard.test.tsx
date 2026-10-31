@@ -27,26 +27,29 @@ const HARNESSES = {
 };
 const BY_HARNESS = { claude: { use: 2, limit: 3 }, cursor: { use: 0, limit: 2 } };
 
-let host: HTMLDivElement, root: Root, enabled: boolean, harness: string, status: () => unknown, fetcher: ReturnType<typeof vi.fn<typeof fetch>>;
+let host: HTMLDivElement, root: Root, enabled: boolean, harness: string, cap: number | null, status: () => unknown, fetcher: ReturnType<typeof vi.fn<typeof fetch>>;
 const reply = (body: unknown, code = 200) => Promise.resolve(new Response(JSON.stringify(body), { status: code }));
 const settle = () => act(async () => { for (let i = 0; i < 6; i++) await Promise.resolve(); });
 const q = <T extends Element = HTMLElement>(sel: string) => host.querySelector<T>(sel);
 const SWITCH = '[role="switch"][aria-label="Autopilot"]';
 const HARNESS = '[role="radiogroup"][aria-label="Harness"]';
 
-async function draw(body: Record<string, unknown> = {}, opts: { put?: () => Promise<Response>; down?: boolean } = {}) {
+async function draw(body: Record<string, unknown> = {}, opts: { put?: () => Promise<Response>; down?: boolean; cap?: number } = {}) {
+  cap = opts.cap ?? null;
   enabled = (body.enabled as boolean | undefined) ?? true;
   harness = (body.harness as string | undefined) ?? "claude";
   status = () => ({
     sampledAt: NOW, dimensions: dims(), inFlight: SESSIONS, next: NEXT, quietHours: null,
     sessionsByHarness: BY_HARNESS, pauses: [], ...body, enabled, harness,
+    sessionCap: { harness, limit: cap ?? 4, source: cap === null ? "starpulse.toml" : "admin", configLimit: 4 },
   });
   fetcher = vi.fn<typeof fetch>((url, init) => {
     if (String(url).endsWith("/api/harnesses")) return reply(HARNESSES);
     if (opts.down) return reply({ error: "This server has no scheduler." }, 404);
     if (init?.method === "PUT") {
       if (opts.put) return opts.put();
-      const sent = JSON.parse(String(init.body)) as { enabled?: boolean; harness?: string };
+      const sent = JSON.parse(String(init.body)) as { enabled?: boolean; harness?: string; sessionCap?: number | null };
+      if ("sessionCap" in sent) cap = sent.sessionCap ?? null;
       if (typeof sent.enabled === "boolean") enabled = sent.enabled;
       if (typeof sent.harness === "string") harness = sent.harness;
     }
@@ -235,5 +238,69 @@ describe("the Admin view's Autopilot card", () => {
     });
     expect(reads()).toBe(first);
     expect(q(".nx.none")?.textContent).toBe("Nothing eligible");
+  });
+
+  describe("session cap", () => {
+    const row = () => q('[aria-label="Session cap"]')!.closest(".row")!;
+    const input = () => q<HTMLInputElement>('input[aria-label="Session cap"]')!;
+    const button = (name: string) => [...row().querySelectorAll("button")].find((b) => b.textContent === name) as HTMLButtonElement | undefined;
+    const type = (value: string) =>
+      act(() => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input(), value);
+        input().dispatchEvent(new Event("input", { bubbles: true }));
+      });
+
+    it("shows the effective cap and says starpulse.toml sets it until an operator overrides it", async () => {
+      await draw();
+
+      expect(input().value).toBe("4");
+      expect(row().textContent).toContain("starpulse.toml");
+      expect(row().textContent).not.toContain("Admin override");
+      expect(button("Use starpulse.toml")).toBeUndefined();
+      expect(button("Save")!.disabled).toBe(true);
+    });
+
+    it("saves a whole number above zero as the cap and then says Admin overrides the config", async () => {
+      await draw();
+
+      await type("6");
+      await act(async () => button("Save")!.click());
+      await settle();
+
+      expect(fetcher).toHaveBeenCalledWith("/api/scheduler", { method: "PUT", body: JSON.stringify({ sessionCap: 6 }) });
+      expect(input().value).toBe("6");
+      expect(row().textContent).toContain("Admin override");
+      expect(row().textContent).toContain("starpulse.toml sets 4");
+    });
+
+    it("clears the override with a PUT of null and falls back to the configured cap", async () => {
+      await draw({}, { cap: 9 });
+      expect(input().value).toBe("9");
+
+      await act(async () => button("Use starpulse.toml")!.click());
+      await settle();
+
+      expect(fetcher).toHaveBeenCalledWith("/api/scheduler", { method: "PUT", body: JSON.stringify({ sessionCap: null }) });
+      expect(input().value).toBe("4");
+      expect(row().textContent).not.toContain("Admin override");
+    });
+
+    it.each(["0", "-2", "2.5", ""])("offers no Save for %j, which is not a whole number above zero", async (value) => {
+      await draw();
+
+      await type(value);
+
+      expect(button("Save")!.disabled).toBe(true);
+    });
+
+    it("names the server's reason when it refuses the cap", async () => {
+      await draw({}, { put: () => reply({ error: "session cap must be a whole number above zero; got 6" }, 400) });
+
+      await type("6");
+      await act(async () => button("Save")!.click());
+      await settle();
+
+      expect(q(".refusal")?.textContent).toContain("session cap must be a whole number above zero");
+    });
   });
 });

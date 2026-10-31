@@ -49,6 +49,13 @@ export interface HarnessSessions {
   use: number;
   limit: number;
 }
+/** The selected harness's session cap and where it comes from: `admin` is an operator's override, `starpulse.toml` the configured cap it overrides. */
+export interface SessionCap {
+  harness: string;
+  limit: number;
+  source: "admin" | "starpulse.toml";
+  configLimit: number;
+}
 export interface SchedulerState {
   on: boolean;
   /** The harness the loop starts sessions on; defaults to claude. */
@@ -63,6 +70,8 @@ export interface SchedulerState {
   pauses: Pause[];
   /** Each harness's in-flight count against its session cap; empty when the server serves none. */
   sessionsByHarness: Record<string, HarnessSessions>;
+  /** The selected harness's session cap and its source, null when the server does not serve it. */
+  sessionCap: SessionCap | null;
 }
 
 export type Phase = { kind: "idle" } | { kind: "saving" } | { kind: "refused"; reason: string };
@@ -139,6 +148,13 @@ function sessionsByHarness(raw: unknown): Record<string, HarnessSessions> | null
   return out;
 }
 
+function sessionCap(raw: unknown): SessionCap | null | undefined {
+  if (raw === undefined || raw === null) return null;
+  if (!isRecord(raw) || typeof raw.harness !== "string" || typeof raw.limit !== "number" || typeof raw.configLimit !== "number") return undefined;
+  if (raw.source !== "admin" && raw.source !== "starpulse.toml") return undefined;
+  return { harness: raw.harness, limit: raw.limit, source: raw.source, configLimit: raw.configLimit };
+}
+
 function harnessOptions(body: unknown): HarnessOption[] {
   if (!isRecord(body) || !Array.isArray(body.harnesses)) return [];
   return body.harnesses.flatMap((raw) => {
@@ -152,9 +168,9 @@ function harnessOptions(body: unknown): HarnessOption[] {
   });
 }
 
-/** The card's state from an answer, or null when the answer is not a scheduler status. `inFlight`, `next`, `pauses` and `sessionsByHarness` are additive: absent is fine, present must hold. */
+/** The card's state from an answer, or null when the answer is not a scheduler status. `inFlight`, `next`, `pauses`, `sessionsByHarness` and `sessionCap` are additive: absent is fine, present must hold. */
 function parse(body: unknown): SchedulerState | null {
-  const status = body as Partial<SchedulerStatus> & { inFlight?: unknown; next?: unknown; pauses?: unknown; sessionsByHarness?: unknown };
+  const status = body as Partial<SchedulerStatus> & { inFlight?: unknown; next?: unknown; pauses?: unknown; sessionsByHarness?: unknown; sessionCap?: unknown };
   if (!isRecord(body) || typeof status.enabled !== "boolean" || !Array.isArray(status.dimensions)) return null;
   const dimensions = status.dimensions.map(dimension);
   if (dimensions.some((d) => d === null)) return null;
@@ -179,6 +195,8 @@ function parse(body: unknown): SchedulerState | null {
   }
   const byHarness = sessionsByHarness(status.sessionsByHarness);
   if (byHarness === null) return null;
+  const cap = sessionCap(status.sessionCap);
+  if (cap === undefined) return null;
   const harness = typeof status.harness === "string" && status.harness ? status.harness : "claude";
   return {
     on: status.enabled,
@@ -189,6 +207,7 @@ function parse(body: unknown): SchedulerState | null {
     next,
     pauses,
     sessionsByHarness: byHarness,
+    sessionCap: cap,
   };
 }
 
@@ -257,19 +276,24 @@ export class SchedulerStore {
   }
 
   /** Ask the server to admit tasks or stop admitting; a refusal leaves the switch as it was and names why. */
-  async setOn(on: boolean): Promise<void> {
-    if (this.view.phase.kind === "saving") return;
-    this.set({ phase: { kind: "saving" } });
-    const answer = await ask(this.fetcher, { method: "PUT", body: JSON.stringify({ enabled: on }) }, "the change did not reach the server");
-    if (answer.ok) this.set({ current: answer.state, unavailable: "", phase: { kind: "idle" } });
-    else this.set({ phase: { kind: "refused", reason: answer.reason } });
+  setOn(on: boolean): Promise<void> {
+    return this.put({ enabled: on });
   }
 
   /** Ask the server to start sessions on another harness; a refusal leaves the pick as it was and names why. */
-  async setHarness(harness: string): Promise<void> {
+  setHarness(harness: string): Promise<void> {
+    return this.put({ harness });
+  }
+
+  /** Override the selected harness's session cap, or clear the override with null so `starpulse.toml` sets it; a refusal keeps the cap and names why. */
+  setSessionCap(sessionCap: number | null): Promise<void> {
+    return this.put({ sessionCap });
+  }
+
+  private async put(change: Record<string, unknown>): Promise<void> {
     if (this.view.phase.kind === "saving") return;
     this.set({ phase: { kind: "saving" } });
-    const answer = await ask(this.fetcher, { method: "PUT", body: JSON.stringify({ harness }) }, "the change did not reach the server");
+    const answer = await ask(this.fetcher, { method: "PUT", body: JSON.stringify(change) }, "the change did not reach the server");
     if (answer.ok) this.set({ current: answer.state, unavailable: "", phase: { kind: "idle" } });
     else this.set({ phase: { kind: "refused", reason: answer.reason } });
   }

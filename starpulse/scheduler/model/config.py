@@ -9,8 +9,8 @@ attention. `lane`, `review_lane`, `unsized_points`, `idle_minutes`, `state_dir`,
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import dataclass, field
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field, fields
 from typing import Any
 
 __all__ = ["DIMENSIONS", "LEVELS", "Scheduler", "SchedulerError", "parse_scheduler"]
@@ -73,6 +73,14 @@ class Scheduler:
     verify_profile: str | None = None
     """The agent profile every verify session starts on; set together with `verify_lane`."""
 
+    def with_overrides(self, session_override: Callable[[str], int | None]) -> Scheduler:
+        """This policy with `session_override` consulted before the configured session limits."""
+        return _Overridden(**{f.name: getattr(self, f.name) for f in fields(self)}, session_override=session_override)
+
+    def override_of(self, harness: str) -> int | None:
+        """The session cap an operator set in Admin for `harness`; none here, the policy `with_overrides` returns has them."""
+        return None
+
     def eligible_lane(self, initial: str) -> str:
         """The lane scheduler admits from: the configured one, else the board's `initial` lane."""
         return self.lane or initial
@@ -87,9 +95,36 @@ class Scheduler:
         cell = cell if cell in self.priority_matrix else "default"
         return cell, float(self.priority_matrix[cell])
 
-    def session_limit(self, harness: str) -> float:
-        """The session cap for `harness`: its own when set, else the shared `sessions` limit."""
+    def configured_session_limit(self, harness: str) -> float:
+        """The `starpulse.toml` session cap for `harness`: its own when set, else the shared `sessions` limit."""
         return float(self.session_limits.get(harness, self.limits["sessions"]))
+
+    def session_limit(self, harness: str) -> float:
+        """The session cap for `harness`: the Admin override when one is set, else the configured limit."""
+        override = self.override_of(harness)
+        return float(override) if override is not None else self.configured_session_limit(harness)
+
+    def session_cap(self, harness: str) -> dict[str, Any]:
+        """The cap `harness` runs under, where it comes from and what the config would give it, as the status serves it."""
+        override = self.override_of(harness)
+        return {
+            "harness": harness,
+            "limit": self.session_limit(harness),
+            "source": "starpulse.toml" if override is None else "admin",
+            "configLimit": self.configured_session_limit(harness),
+        }
+
+
+@dataclass(frozen=True)
+class _Overridden(Scheduler):
+    """The policy with the Admin session caps beside it; a subclass so the config's own fields, which `config check` and
+    the reference list, stay the `starpulse.toml` keys."""
+
+    session_override: Callable[[str], int | None] = field(default=lambda harness: None, compare=False, repr=False)
+    """Read on every call, so a change takes effect on the loop's next pass."""
+
+    def override_of(self, harness: str) -> int | None:
+        return self.session_override(harness)
 
 
 def _lane(value: object, key: str) -> str | None:

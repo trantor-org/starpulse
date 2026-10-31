@@ -64,6 +64,7 @@ def test_a_get_reports_every_dimensions_use_and_limit_and_that_the_scheduler_is_
         "enabled": False,
         "harness": "claude",
         "quietHours": None,
+        "sessionCap": {"harness": "claude", "limit": 2, "source": "starpulse.toml", "configLimit": 2},
         "sampledAt": 1000.0,
         "dimensions": [
             {"name": "cpu", "use": 35.0, "limit": 80},
@@ -77,7 +78,14 @@ def test_a_get_reports_every_dimensions_use_and_limit_and_that_the_scheduler_is_
 def test_a_get_before_the_first_sample_has_no_readings(tmp_path: Path) -> None:
     assert scheduler("127.0.0.1", "GET", b"", _runtime(tmp_path)) == (
         200,
-        {"enabled": False, "harness": "claude", "quietHours": None, "sampledAt": None, "dimensions": []},
+        {
+            "enabled": False,
+            "harness": "claude",
+            "quietHours": None,
+            "sessionCap": {"harness": "claude", "limit": 2, "source": "starpulse.toml", "configLimit": 2},
+            "sampledAt": None,
+            "dimensions": [],
+        },
     )
 
 
@@ -446,3 +454,73 @@ def test_scheduler_settle_writes_needs_attention_section_and_moves_task(
     task_text = _text(tmp_path, "task-1")
     assert "status: Needs attention\n" in task_text
     assert f"## Needs attention\n\n<!-- SECTION:NEEDS_ATTENTION:BEGIN -->\n{reason}\n" in task_text
+
+
+CAP = {"harness": "claude", "limit": 7, "source": "admin", "configLimit": 2}
+
+
+def test_a_put_sets_the_session_cap_the_capacity_strip_reports_it_and_a_restart_keeps_it(tmp_path: Path) -> None:
+    runtime = _runtime(tmp_path)
+    runtime.sampler.sample()
+
+    status, body = _put(runtime, {"sessionCap": 7})
+
+    assert status == 200 and body["sessionCap"] == CAP
+    assert next(d for d in body["dimensions"] if d["name"] == "sessions")["limit"] == 7
+    restarted = _runtime(tmp_path)
+    assert scheduler("127.0.0.1", "GET", b"", restarted)[1]["sessionCap"] == CAP
+
+
+def test_a_null_session_cap_returns_to_the_config_limit(tmp_path: Path) -> None:
+    runtime = _runtime(tmp_path)
+    _put(runtime, {"sessionCap": 7})
+
+    body = _put(runtime, {"sessionCap": None})[1]
+
+    assert body["sessionCap"] == {"harness": "claude", "limit": 2, "source": "starpulse.toml", "configLimit": 2}
+    assert scheduler("127.0.0.1", "GET", b"", _runtime(tmp_path))[1]["sessionCap"]["source"] == "starpulse.toml"
+
+
+def test_the_session_cap_follows_the_selected_harness(tmp_path: Path) -> None:
+    runtime = _runtime(tmp_path)
+
+    body = _put(runtime, {"harness": "cursor", "sessionCap": 5})[1]
+
+    assert body["sessionCap"] == {"harness": "cursor", "limit": 5, "source": "admin", "configLimit": 2}
+    assert _put(runtime, {"harness": "claude"})[1]["sessionCap"]["source"] == "starpulse.toml"
+
+
+@pytest.mark.parametrize("cap", [0, -3, 2.5, "7", True, [7], {"limit": 7}])
+def test_a_session_cap_that_is_not_a_positive_integer_is_a_4xx_and_changes_nothing(tmp_path: Path, cap: object) -> None:
+    runtime = _runtime(tmp_path)
+    _put(runtime, {"sessionCap": 7})
+
+    status, body = _put(runtime, {"sessionCap": cap})
+
+    assert 400 <= status < 500 and body["error"]
+    assert runtime.session_caps.get("claude") == 7
+
+
+def test_a_session_cap_put_from_outside_the_private_network_is_refused(tmp_path: Path) -> None:
+    runtime = _runtime(tmp_path)
+
+    assert _put(runtime, {"sessionCap": 7}, "203.0.113.9")[0] == 403
+    assert runtime.session_caps.get("claude") is None
+
+
+def test_the_loops_next_pass_admits_against_the_override_with_no_restart(tmp_path: Path) -> None:
+    held = BoardTask(
+        id="T-9", team="demo", title="Held", lane="in_progress", labels=["size-1"], profile="@agent-standard-high"
+    )
+    runtime = _looping(tmp_path, held)
+    assert runtime.loop is not None
+    MachineTasks(runtime.loop._feed).put(
+        MachineEvent(machine="harness", event="SESSION_STARTED", task="T-9", time=1000.0)
+    )
+    runtime.set_enabled(True)
+
+    _put(runtime, {"sessionCap": 1})
+    assert runtime.loop.tick() == []  # T-9 fills the cap of 1; the config limit of 2 would let T-4 in
+
+    _put(runtime, {"sessionCap": None})
+    assert runtime.loop.tick() == ["T-4"]

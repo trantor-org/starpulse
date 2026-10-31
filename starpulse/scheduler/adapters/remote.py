@@ -25,6 +25,7 @@ from starpulse.board.board_feed import BoardFeed
 from starpulse.event_log.event_log import EventLog
 from starpulse.scheduler.model.harness_setting import HarnessSetting
 from starpulse.scheduler.model.quiet_hours import QuietHoursSetting
+from starpulse.scheduler.model.session_caps import SessionCapSetting
 from starpulse.scheduler.model.toggle import Toggle
 
 logger = logging.getLogger(__name__)
@@ -81,6 +82,7 @@ class Remote:
         self._toggle = Toggle(log)
         self._quiet_hours = QuietHoursSetting(log)
         self._harness = HarnessSetting(log)
+        self._session_caps = SessionCapSetting(log)
 
     def set_enabled(self, value: bool) -> None:
         self._toggle.set(value)
@@ -96,16 +98,39 @@ class Remote:
         self._harness.set(raw)
         self._wake()
 
+    def set_session_cap(self, raw: object) -> None:
+        """Keep the selected harness's session cap (None clears it); a value `SessionCapSetting` refuses raises ValueError."""
+        self._session_caps.set(self._harness.get(), raw)
+        self._wake()
+
     def served_status(self) -> dict[str, Any]:
         """The worker's last status, none before it has sampled, over the settings as the store holds them now."""
+        kept = _kept(self._log)
+        harness = self._harness.get()
         return {
             "sampledAt": None,
             "dimensions": [],
-            **_kept(self._log),
+            **kept,
             "enabled": self._toggle.get(),
-            "harness": self._harness.get(),
+            "harness": harness,
             "quietHours": self._quiet_hours.state(),
+            **self._session_cap_over(kept, harness),
         }
+
+    def _session_cap_over(self, kept: dict[str, Any], harness: str) -> dict[str, Any]:
+        """The worker's `sessionCap` and sessions limit with the stored override applied, for the harness it reported on;
+        nothing before it has reported one, or when the harness has since changed (the worker's next push follows)."""
+        cap = kept.get("sessionCap")
+        if not isinstance(cap, dict) or cap.get("harness") != harness:
+            return {}
+        override = self._session_caps.get(harness)
+        limit = cap["configLimit"] if override is None else override
+        served = {**cap, "limit": float(limit), "source": "starpulse.toml" if override is None else "admin"}
+        dimensions = [
+            {**row, "limit": served["limit"]} if row.get("name") == "sessions" else row
+            for row in kept.get("dimensions", [])
+        ]
+        return {"sessionCap": served, "dimensions": dimensions}
 
     status = served_status
 

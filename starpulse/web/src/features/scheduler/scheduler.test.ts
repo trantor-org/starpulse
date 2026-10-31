@@ -7,6 +7,7 @@ const STATUS = {
   enabled: true,
   harness: "claude",
   sampledAt: 100,
+  sessionCap: { harness: "claude", limit: 4, source: "starpulse.toml", configLimit: 4 },
   dimensions: [
     { name: "cpu", use: 41, limit: 80 },
     { name: "memory", use: 58, limit: 85 },
@@ -30,25 +31,33 @@ const answer = (body: unknown, status = 200) => Promise.resolve(new Response(JSO
 function server(opts: { down?: boolean; body?: unknown; status?: number } = {}) {
   let enabled = true;
   let harness = "claude";
+  let cap: number | null = null;
   return vi.fn<typeof fetch>((url, init) => {
     if (opts.down) return Promise.reject(new Error("offline"));
     if (String(url).endsWith("/api/harnesses")) return answer(HARNESSES);
     if (opts.body !== undefined) return answer(opts.body, opts.status);
     if (init?.method === "PUT") {
-      const sent = JSON.parse(String(init.body)) as { enabled?: unknown; harness?: unknown };
+      const sent = JSON.parse(String(init.body)) as { enabled?: unknown; harness?: unknown; sessionCap?: unknown };
+      if ("sessionCap" in sent) {
+        if (sent.sessionCap !== null && !(Number.isInteger(sent.sessionCap) && (sent.sessionCap as number) > 0)) {
+          return answer({ error: "session cap must be a whole number above zero" }, 400);
+        }
+        cap = sent.sessionCap as number | null;
+      }
       if (sent.enabled !== undefined && typeof sent.enabled !== "boolean") {
         return answer({ error: 'the scheduler takes {"enabled": true} or {"enabled": false}' }, 400);
       }
       if (sent.harness !== undefined && (typeof sent.harness !== "string" || !sent.harness)) {
         return answer({ error: "harness must be a non-empty string" }, 400);
       }
-      if (sent.enabled === undefined && sent.harness === undefined) {
+      if (sent.enabled === undefined && sent.harness === undefined && !("sessionCap" in sent)) {
         return answer({ error: "the scheduler takes enabled and/or harness" }, 400);
       }
       if (typeof sent.enabled === "boolean") enabled = sent.enabled;
       if (typeof sent.harness === "string") harness = sent.harness;
     }
-    return answer({ ...STATUS, enabled, harness });
+    const sessionCap = { harness, limit: cap ?? 4, source: cap === null ? "starpulse.toml" : "admin", configLimit: 4 };
+    return answer({ ...STATUS, enabled, harness, sessionCap });
   });
 }
 
@@ -194,6 +203,40 @@ describe("the Autopilot card's store", () => {
     await store.setOn(false);
 
     expect(store.get().phase).toEqual({ kind: "refused", reason: "the change did not reach the server" });
+  });
+
+  it("reads the session cap with where it comes from, and null while the server does not serve it", async () => {
+    const store = new SchedulerStore(server());
+    await store.load();
+    expect(store.get().current!.sessionCap).toEqual({ harness: "claude", limit: 4, source: "starpulse.toml", configLimit: 4 });
+
+    const bare = new SchedulerStore(server({ body: { ...STATUS, sessionCap: undefined } }));
+    await bare.load();
+    expect(bare.get().current!.sessionCap).toBeNull();
+  });
+
+  it("sets the session cap by PUTting {sessionCap} and clears it with null", async () => {
+    const fetcher = server();
+    const store = new SchedulerStore(fetcher);
+    await store.load();
+
+    await store.setSessionCap(7);
+    expect(fetcher).toHaveBeenLastCalledWith("/api/scheduler", { method: "PUT", body: JSON.stringify({ sessionCap: 7 }) });
+    expect(store.get().current!.sessionCap).toEqual({ harness: "claude", limit: 7, source: "admin", configLimit: 4 });
+
+    await store.setSessionCap(null);
+    expect(fetcher).toHaveBeenLastCalledWith("/api/scheduler", { method: "PUT", body: JSON.stringify({ sessionCap: null }) });
+    expect(store.get().current!.sessionCap!.source).toBe("starpulse.toml");
+  });
+
+  it("says why the server refused a session cap and keeps the one it had", async () => {
+    const store = new SchedulerStore(server());
+    await store.load();
+
+    await store.setSessionCap(0);
+
+    expect(store.get().phase).toEqual({ kind: "refused", reason: "session cap must be a whole number above zero" });
+    expect(store.get().current!.sessionCap!.limit).toBe(4);
   });
 
   it("sends one change at a time", async () => {

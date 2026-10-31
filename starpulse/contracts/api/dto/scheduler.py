@@ -66,6 +66,17 @@ class SchedulerHarnessSessions(_Api):
     limit: float
 
 
+class SchedulerSessionCap(_Api):
+    """The session cap the selected harness runs under and where it comes from."""
+
+    harness: str
+    limit: float
+    source: Literal["admin", "starpulse.toml"] = Field(
+        description="`admin` when an operator set the cap in Admin, `starpulse.toml` when the config's limit holds."
+    )
+    configLimit: float = Field(description="What `starpulse.toml` gives this harness, which clearing the Admin cap returns to.")
+
+
 class SchedulerOperatorTask(_Api):
     """A task in the eligible lane that waits on the operator's decision rather than on capacity."""
 
@@ -83,6 +94,9 @@ class SchedulerStatus(_Api):
     enabled: bool
     harness: str = Field(description="The harness the loop starts sessions on; defaults to claude.")
     quietHours: QuietHours | None = Field(default=None, description="Null when no window holds admission back.")
+    sessionCap: SchedulerSessionCap | None = Field(
+        default=None, description="Absent before the scheduler worker has reported one."
+    )
     sampledAt: float | None
     dimensions: list[SchedulerDimension]
     inFlight: list[SchedulerSession] = Field(

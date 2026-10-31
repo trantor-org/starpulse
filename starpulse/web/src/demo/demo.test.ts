@@ -471,6 +471,17 @@ describe("the demo server", () => {
     expect(await body(s.fetch("/api/scheduler"))).toMatchObject({ enabled: false });
   });
 
+  it("overrides the selected harness's session cap with a PUT, drops it on null and refuses a non-whole number", async () => {
+    const s = new DemoServer(fixture(), () => 1000);
+    const put = (sessionCap: unknown) => s.fetch("/api/scheduler", { method: "PUT", body: JSON.stringify({ sessionCap }) });
+
+    expect(await body(s.fetch("/api/scheduler"))).toMatchObject({ sessionCap: { harness: "claude", limit: 3, source: "starpulse.toml", configLimit: 3 } });
+    expect(await body(put(8))).toMatchObject({ sessionCap: { limit: 8, source: "admin", configLimit: 3 }, sessionsByHarness: { claude: { limit: 8 } } });
+    expect((await put(0)).status).toBe(400);
+    expect((await put(2.5)).status).toBe(400);
+    expect(await body(put(null))).toMatchObject({ sessionCap: { limit: 3, source: "starpulse.toml" } });
+  });
+
   it("can stand in for a paused scheduler, a host over its limit, an empty queue, a refused switch and a server with no scheduler", async () => {
     const mode = (m: "off" | "over" | "empty" | "refused" | "down") => new DemoServer(fixture(), () => 1000, false, false, m);
     const turnOff = { method: "PUT", body: JSON.stringify({ enabled: false }) };
