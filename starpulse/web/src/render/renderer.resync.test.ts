@@ -158,6 +158,36 @@ describe("the Star Map seen again", () => {
     r.stop();
   });
 
+  /** A window that is visible and blurred but paints no frames (an occluded or throttled one): the stream stays open and `document.hidden` stays false. */
+  function stallFrames() {
+    const real = globalThis.requestAnimationFrame, held: FrameRequestCallback[] = [];
+    let stalled = true;
+    vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => (stalled ? (held.push(cb), held.length) : real(cb)));
+    return () => {
+      stalled = false;
+      for (const cb of held.splice(0)) real(cb);
+    };
+  }
+
+  it("places the moves a visible but frameless window banked as they stand, not as a burst", async () => {
+    const r = await open();
+    const resume = stallFrames();
+    window.dispatchEvent(new Event("blur"));
+    await vi.advanceTimersByTimeAsync(1500);
+    push.handlers!.snapshot(snap("in_progress"));
+    await vi.advanceTimersByTimeAsync(1500);
+    push.handlers!.snapshot(snap("review"));
+    await vi.advanceTimersByTimeAsync(12_000);
+    expect(document.hidden).toBe(false);
+    log.length = 0;
+    resume();
+    window.dispatchEvent(new Event("focus"));
+    const did = await frames();
+    expect(did.indexOf("resync")).toBeGreaterThanOrEqual(0);
+    expect(did.indexOf("resync")).toBeLessThan(did.indexOf("place"));
+    r.stop();
+  });
+
   it("places what a dropped stream missed as it stands, from the reconnect's snapshot", async () => {
     const r = await open();
     push.handlers!.live(false);

@@ -22,8 +22,10 @@ export interface Probe {
   states: { id: string; x: number; y: number; r: number; sun?: number; edge?: number }[];
   /** The Board's drawn curves on screen, sampled from source to target. */
   edges?: { s: string; t: string; pts: { x: number; y: number }[] }[];
+  /** Board only: the moving or branch dots, as `id@node`, whose head or comet tail sits off every drawn line. */
+  off?: string[];
   /** Each task dot's screen position, to hover one. */
-  tasks?: { id: string; x: number; y: number }[];
+  tasks?: { id: string; x: number; y: number; moving: boolean }[];
   /** Each drawn phase branch's own line on screen, for the overlap check. */
   branches?: { key: string; sun: string; ring: number; parent?: string; th?: number; lane?: number; dir?: number; n?: number; pj?: number; pts: { x: number; y: number }[] }[];
 }
