@@ -223,6 +223,7 @@ class TestConfigCheck:
                 "dagu": {"soft_mb": 384, "hard_mb": 768},
                 "github-actions": {"soft_mb": 256, "hard_mb": 512},
                 "systemd": {"soft_mb": 256, "hard_mb": 512},
+                "temporal": {"soft_mb": 100, "hard_mb": 200},
             },
             "event_log_retention_days": 7,
             "event_log_archive_dir": "starpulse-archive",

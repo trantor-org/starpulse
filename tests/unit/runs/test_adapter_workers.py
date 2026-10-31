@@ -1,4 +1,4 @@
-"""`starpulse worker <dagu|github-actions|systemd>` is each run Adapter as an opt-in process: `serve` starts none of it, and the page shows when it is down."""
+"""`starpulse worker <dagu|github-actions|systemd|temporal>` is each run Adapter as an opt-in process: `serve` starts none of it, and the page shows when it is down."""
 
 import sys
 import threading
@@ -8,15 +8,15 @@ from pathlib import Path
 
 import pytest
 from starpulse.event_log.event_log import EventLog
-from starpulse.runs import dagu, github_actions, opt_in, projection, systemd
+from starpulse.runs import dagu, github_actions, opt_in, projection, systemd, temporal
 from starpulse.runtime import server, supervisor, worker
 from starpulse.runtime.config import load
 
 from tests import fake_board
 
 BOARD = '[board]\ntype = "tests.fake_board"\nlanes = ["waiting", "ready", "done"]\nwrites = true\n'
-WORKERS = {"dagu": "dagu", "github_actions": "github-actions", "systemd": "systemd"}
-ADAPTERS = {"dagu": dagu, "github_actions": github_actions, "systemd": systemd}
+WORKERS = {"dagu": "dagu", "github_actions": "github-actions", "systemd": "systemd", "temporal": "temporal"}
+ADAPTERS = {"dagu": dagu, "github_actions": github_actions, "systemd": systemd, "temporal": temporal}
 
 
 def config_of(kind: str) -> str:
