@@ -429,6 +429,7 @@ applied_by = "pin-bump"
 # roots = ["/srv/repo", "/srv/repo/.claude/worktrees/*"]  # absolute checkouts a path is cut to an area under; `*` is one component
 # stop_activities = ["Bash", "exec_command"]               # activities that say how a session ran, never a cluster's descriptors
 # lifecycle_skills = ["starting-tasks", "completing-tasks"] # skills every task loads, left out of a cluster's skills
+# size_bands = { 1 = [50, 14], 5 = [170, 47] }          # each size -> [p90 steps, p90 active minutes]; `analytics estimates` reads the effort size from them
 # [[analytics.skill_loads]]                                # what should load a skill: any of these
 # skill = "operating-nas"
 # activities = ["ssh root@nas-host"]                       # globs over an activity's name

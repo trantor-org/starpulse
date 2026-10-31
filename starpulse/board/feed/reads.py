@@ -107,15 +107,26 @@ class ReadMethods:
             return self._done_at(task_id) is not None
 
     def titled(self) -> dict[str, dict]:
-        """Every Board task's `title` and `labels`, open or settled, by id; a settled task saved before its labels
-        were kept has none."""
+        """Every Board task's `title`, `labels`, `milestone` and `profile`, open or settled, by id; a settled task saved
+        before its labels were kept has none."""
         with self._lock:
             named = {
-                task_id: {"title": s["title"], "labels": s.get("labels", [])} for task_id, s in self._settled.items()
+                task_id: {
+                    "title": s["title"],
+                    "labels": s.get("labels", []),
+                    "milestone": s.get("milestone") or None,
+                    "profile": s.get("model") or None,
+                }
+                for task_id, s in self._settled.items()
             }
             named.update(
                 {
-                    task_id: {"title": a["title"], "labels": a["labels"]}
+                    task_id: {
+                        "title": a["title"],
+                        "labels": a["labels"],
+                        "milestone": a.get("milestone") or None,
+                        "profile": a.get("profile") or None,
+                    }
                     for task_id, a in self._open.items()
                     if not is_cold(a)
                 }

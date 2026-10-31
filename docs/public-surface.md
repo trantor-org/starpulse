@@ -37,6 +37,9 @@ internal and can change in any release.
   skill within a kind and size of task, and the median steps per clean completion of each kind and size (see
   [Connect sources](sources.md#price-each-transition-and-report-each-cell)), and `starpulse analytics transitions|cells
   [--hours]` that read them.
+- `GET /api/analytics/estimates` and its body in `api.schema.json`: each completed task's size, kind and profile beside
+  its measured steps, active minutes and effort size step, and `starpulse analytics estimates [--hours] [--milestone]`
+  that reads it.
 - `GET /api/analytics/graph`, `GET /api/analytics/stages` and `GET /api/analytics/diff` and their bodies in
   `api.schema.json`: the branching directly-follows graph of each transition with its judgement cuts, the sub-stages
   mined at those cuts for the stretches no skill governs with their stability from one window to the one before, and

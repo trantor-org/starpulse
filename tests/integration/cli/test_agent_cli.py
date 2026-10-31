@@ -27,6 +27,7 @@ from starpulse.board.model.view import task_view
 from starpulse.cli import agent_cli as cli
 from starpulse.cli import agent_wire, doctor, skill_install
 from starpulse.contracts.adapters import Move, TaskKeys
+from starpulse.contracts.analytics import Analytics
 from starpulse.event_log.event_log import EventLog
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 from starpulse.harness_telemetry.adapters.inbound.telemetry import TelemetryLog, signals
@@ -39,6 +40,7 @@ from tests.fake_board import bare_board
 from tests.hosts import FakeHost
 from tests.machines import MACHINES, ROLES
 from tests.unit.board.test_native_lifecycle import PULL, REVIEW_NEEDS_PR, _lifecycle
+from tests.unit.flow_metrics.test_flow import completed
 from tests.unit.harness_telemetry.test_telemetry import FIXTURES
 
 DAY_S = 86400.0
@@ -1499,6 +1501,7 @@ def test_the_manifest_describes_every_verb_and_each_of_its_arguments(capsys: pyt
         "analytics graph",
         "analytics stages",
         "analytics diff",
+        "analytics estimates",
         "analytics scores",
         "analytics verdict",
         "command run",
@@ -1645,6 +1648,43 @@ def test_analytics_health_refuses_a_window_the_server_refuses(base: str, capsys:
     code, doc = _run(capsys, ["analytics", "health", "--hours", "0", "--server", base])
 
     assert (code, doc["code"], "positive number" in doc["error"]) == (1, "refused", True)
+
+
+def test_analytics_estimates_lists_a_completed_tasks_label_beside_its_measured_effort(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    telemetry = TelemetryLog(EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}"))
+    telemetry.publish(completed(1, "read", "edit", "test"))
+    feed = BoardFeed(
+        roles=ROLES,
+        machines=MACHINES,
+        keys=TaskKeys(
+            re.compile(r"TASK-\d+"), re.compile(r"(?:refs/heads/)?(?:[\w.-]+/)*task-(\d+)", re.IGNORECASE), "TASK-{}"
+        ),
+    )
+    feed.titled = lambda: {  # type: ignore[method-assign]
+        "TASK-1": {"labels": ["kind-execute", "size-8"], "milestone": "m-305", "profile": "@agent-standard-high"}
+    }
+    analytics = Analytics(completion_skill="completing-tasks", size_bands=((3, 10, 5.0), (8, 100, 50.0)))
+    with _serve(tmp_path, feed, telemetry=telemetry, clock=lambda: 4600.0, analytics=analytics) as server:
+        code, doc = _run(
+            capsys, ["analytics", "estimates", "--hours", "1", "--milestone", "m-305", "--server", _url(server, "")]
+        )
+
+    assert code == 0
+    assert doc["estimates"] == [
+        {
+            "task": "TASK-1",
+            "milestone": "m-305",
+            "kind": "execute",
+            "size": 8,
+            "profile": "@agent-standard-high",
+            "steps": 4,
+            "active_minutes": 0.0,
+            "effort_size": 3,
+            "effort_size_step": -1,
+        }
+    ]
 
 
 def test_analytics_steps_lists_each_model_request_with_its_skill_activities_keys_and_tokens(
@@ -1978,6 +2018,19 @@ CASES = {
     ("analytics cells", 1): ["analytics", "cells", "--hours", "0", "--server", "{stepped}"],
     ("analytics cells", 2): ["analytics", "cells", "--hours", "soon"],
     ("analytics cells", 3): ["analytics", "cells", "--server", "{down}"],
+    ("analytics estimates", 0): [
+        "analytics",
+        "estimates",
+        "--hours",
+        "1.06",
+        "--milestone",
+        "m-305",
+        "--server",
+        "{stepped}",
+    ],
+    ("analytics estimates", 1): ["analytics", "estimates", "--hours", "0", "--server", "{stepped}"],
+    ("analytics estimates", 2): ["analytics", "estimates", "--hours", "soon"],
+    ("analytics estimates", 3): ["analytics", "estimates", "--server", "{down}"],
     ("analytics graph", 0): ["analytics", "graph", "--hours", "1.06", "--server", "{stepped}"],
     ("analytics graph", 1): ["analytics", "graph", "--hours", "0", "--server", "{stepped}"],
     ("analytics graph", 2): ["analytics", "graph", "--hours", "soon"],

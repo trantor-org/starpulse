@@ -215,6 +215,15 @@ change was tuned on. Its columns:
 Blind spot: a cell can improve because its tasks got easier, so read `n`, `clean_rate` and the two medians beside
 `median_steps`. A cell with a few tasks has a median of one or two.
 
+`GET /api/analytics/estimates[?hours=N][&milestone=m-N]` is `{now, window_s, estimates}`: one row per completed task
+with a `kind-<kind>` and `size-<n>` label, its estimate beside what it measured. The estimate is `kind`, `size`,
+`profile` and `milestone`; the actuals are `steps` (main and subagent requests) and `active_minutes` (agent seconds
+plus the operator's wait). `[analytics]` `size_bands` lists each size with the p90 steps and active minutes a task of
+that size lands within, smallest first; `effort_size` is the smallest size whose band holds both actuals (null past the
+largest, or with no bands) and `effort_size_step` is its distance from `size` in bands, positive when the task
+overran (null with no bands, or a `size` that is no band's). The rows are read from the telemetry and the board on
+each request, so a relabelled task shows its current label.
+
 ## Graph a transition's activities and diff a fast run against a slow one
 
 `GET /api/analytics/graph`, `/stages` and `/diff` (`?hours=N`, 168 by default) read the same steps by the kind and size

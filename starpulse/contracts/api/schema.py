@@ -88,7 +88,15 @@ from starpulse.contracts.api.dto.snapshot import (
     VerdictDelta,
 )
 from starpulse.contracts.api.dto.trajectories import Trajectories
-from starpulse.contracts.api.dto.transitions import Cells, CostToGo, FlowGraph, RunDiffs, SubStages, Transitions
+from starpulse.contracts.api.dto.transitions import (
+    Cells,
+    CostToGo,
+    Estimates,
+    FlowGraph,
+    RunDiffs,
+    SubStages,
+    Transitions,
+)
 
 
 class ApiContract(_Api):
@@ -114,6 +122,7 @@ class ApiContract(_Api):
     sessionSteps: SessionSteps
     transitions: Transitions
     cells: Cells
+    estimates: Estimates
     graph: FlowGraph
     stages: SubStages
     diff: RunDiffs

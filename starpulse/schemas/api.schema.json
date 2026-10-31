@@ -2236,6 +2236,108 @@
       "title": "Edited",
       "type": "object"
     },
+    "Estimate": {
+      "description": "One completed task: its size estimate beside what it measured.",
+      "properties": {
+        "active_minutes": {
+          "description": "Agent seconds plus the operator's wait, in minutes.",
+          "type": "number"
+        },
+        "effort_size": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The smallest configured size whose p90 steps and active minutes hold the actuals; None past the largest, or with no `size_bands`."
+        },
+        "effort_size_step": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Sizes the effort lies above (positive) or below (negative) the label; one past the top when the effort has no size; None when the label is no configured size."
+        },
+        "kind": {
+          "type": "string"
+        },
+        "milestone": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "profile": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "size": {
+          "description": "The task's `size-<n>` label.",
+          "type": "integer"
+        },
+        "steps": {
+          "description": "Model requests, a subagent's included.",
+          "type": "integer"
+        },
+        "task": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "milestone",
+        "kind",
+        "size",
+        "profile",
+        "steps",
+        "active_minutes",
+        "effort_size",
+        "effort_size_step"
+      ],
+      "title": "Estimate",
+      "type": "object"
+    },
+    "Estimates": {
+      "description": "`GET /api/analytics/estimates`: each completed, labelled task's estimate beside its measured actuals.",
+      "properties": {
+        "estimates": {
+          "items": {
+            "$ref": "#/$defs/Estimate"
+          },
+          "type": "array"
+        },
+        "now": {
+          "type": "number"
+        },
+        "window_s": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "now",
+        "window_s",
+        "estimates"
+      ],
+      "title": "Estimates",
+      "type": "object"
+    },
     "FlowEdge": {
       "description": "One directly-follows edge of a transition's graph.",
       "properties": {
@@ -9095,6 +9197,9 @@
     "donePage": {
       "$ref": "#/$defs/DonePage"
     },
+    "estimates": {
+      "$ref": "#/$defs/Estimates"
+    },
     "events": {
       "items": {
         "anyOf": [
@@ -9306,6 +9411,7 @@
     "sessionSteps",
     "transitions",
     "cells",
+    "estimates",
     "graph",
     "stages",
     "diff",

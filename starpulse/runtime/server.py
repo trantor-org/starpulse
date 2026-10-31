@@ -129,6 +129,14 @@ GET /api/analytics/cells[?hours=N]
                    over the latest fifth of the cell's `n` clean completions by end time, except
                    `median_operator_prompts`, over the latest fifth of its `completions`, clean or not. A cell under
                    5 clean completions is not listed. Refusals as `/api/analytics/steps`
+GET /api/analytics/estimates[?hours=N][&milestone=m-N]
+                   each completed task with a `kind-` and `size-` label, over the last `hours`, default 168, as
+                   `{now, window_s, estimates}` (`estimates.estimate_report`): each is `{task, milestone, kind, size,
+                   profile, steps, active_minutes, effort_size, effort_size_step}`, the label and profile beside the
+                   measured steps (a subagent's included) and active minutes (agent seconds plus operator wait).
+                   `effort_size` is the smallest `[analytics]` `size_bands` size whose p90 steps and minutes hold
+                   them (None past the largest), `effort_size_step` the sizes it lies above (positive) or below the
+                   label. `milestone` lists only that milestone's tasks. Refusals as `/api/analytics/steps`
 GET /api/analytics/graph[?hours=N]
                    the branching directly-follows graph of each skill's transition within each kind and size, from
                    the steps of those exports over the last `hours`, default 168, as `{now, window_s, graph}`
