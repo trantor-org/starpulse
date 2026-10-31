@@ -12,7 +12,7 @@ import json
 import time
 import urllib.parse
 import urllib.request
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from typing import Any
 
 __all__ = ["LokiSignals"]
@@ -43,7 +43,10 @@ class LokiSignals:
 
     def fetch(self, after: int) -> list[tuple[int, dict[str, Any]]]:
         """The `(stamp, row)` pairs stamped after `after` (nanoseconds), oldest first; raises `OSError` on a fault."""
-        found: list[tuple[int, dict[str, Any]]] = []
+        return [pair for page in self.pages(after) for pair in page]
+
+    def pages(self, after: int) -> Iterator[list[tuple[int, dict[str, Any]]]]:
+        """`fetch` one page at a time, so a reader folds a long history without holding every row at once."""
         while True:
             query = urllib.parse.urlencode(
                 {
@@ -59,7 +62,7 @@ class LokiSignals:
             ) as response:
                 streams = json.load(response)["data"]["result"]
             page = sorted((int(stamp), json.loads(line)) for stream in streams for stamp, line in stream["values"])
-            found += page
+            yield page
             if len(page) < PAGE:
-                return found
+                return
             after = page[-1][0]

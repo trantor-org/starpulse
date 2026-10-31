@@ -229,7 +229,7 @@ def test_a_task_the_feed_holds_is_read_without_a_worker_thread(tmp_path: Path) -
     assert [_worker(name) for name in readers] == [False]
 
 
-def test_a_task_citing_a_pull_request_only_the_database_holds_reads_it_on_a_worker_once(tmp_path: Path) -> None:
+def test_a_task_citing_a_pull_request_only_the_database_holds_reads_it_from_the_database_on_a_worker_each_time(tmp_path: Path) -> None:
     pulls_engine = create_engine(f"sqlite:///{tmp_path / 'pulls.sqlite'}")
     PullStore(pulls_engine).save([{**_old_pull(1)}])
     queries: list[str] = []
@@ -241,13 +241,13 @@ def test_a_task_citing_a_pull_request_only_the_database_holds_reads_it_on_a_work
     client = _task_client(tmp_path, board, Services(pulls=pulls))
 
     first = client.get("/api/task/PROJ-3")
-    asked = list(queries)
+    asked = len(queries)
     second = client.get("/api/task/PROJ-3")
 
     assert [pull["number"] for pull in first.json()["record"]["pulls"]] == [1]
     assert second.json() == first.json()
-    assert [_worker(name) for name in asked] == [True]
-    assert queries == asked
+    assert asked and len(queries) == 2 * asked  # nothing is held between reads: each one asks the database
+    assert all(_worker(name) for name in queries)
 
 
 def _old_pull(number: int) -> dict:
