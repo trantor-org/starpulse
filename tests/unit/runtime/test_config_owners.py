@@ -150,7 +150,7 @@ class Child:
 def test_a_reload_after_a_change_to_one_table_replaces_only_the_children_that_read_it(
     table: str, tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(closure, "code_of", lambda entry: frozenset())
+    monkeypatch.setattr(closure, "code_of", lambda entry, **_: frozenset())
     path = tmp_path / "starpulse.toml"
     path.write_text(CONFIG)
     Child.made = []

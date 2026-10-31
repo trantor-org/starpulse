@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import os
 import signal
+import subprocess
 import threading
+import time
 from collections.abc import Callable, MutableMapping
 
 #: Set in a supervised child's environment: its stdin is a pipe from `serve`.
@@ -32,10 +34,72 @@ LISTEN_FD_ENV = "STARPULSE_LISTEN_FD"
 #: to it when it is about to serve, and `serve` ends the old child on that byte (`announce_ready`).
 READY_FD_ENV = "STARPULSE_READY_FD"
 
+#: Set to `<pid>:<descriptor>` by a `serve` that re-executes: the Page API child it started beside the old one, and the
+#: write end of that child's stdin pipe. The next image adopts the child in place of starting its own (`adopted_from_env`).
+ADOPT_ENV = "STARPULSE_ADOPT"
+
 #: The directory of the page build `serve` checked, handed to the Page API child so both serve the same one.
 STATIC_ENV = "STARPULSE_STATIC"
 
 _watching = False
+
+
+class Adopted:
+    """A child of this process that an earlier image of `serve` started, shaped like the `Popen` the `Supervisor` drives.
+
+    A re-executed process keeps its pid and so its children: the child is waited for by pid, and `fd` is the write end of
+    the stdin pipe it exits on, which stays open across the exec."""
+
+    def __init__(self, pid: int, fd: int) -> None:
+        self.pid = pid
+        self.fd = fd
+        self.returncode: int | None = None
+
+    def poll(self) -> int | None:
+        if self.returncode is None:
+            try:
+                done, status = os.waitpid(self.pid, os.WNOHANG)
+            except ChildProcessError:  # reaped elsewhere
+                done, status = self.pid, 0
+            if done:
+                self.returncode = os.waitstatus_to_exitcode(status)
+                self._close()
+        return self.returncode
+
+    def _close(self) -> None:
+        if self.fd >= 0:
+            os.close(self.fd)
+            self.fd = -1
+
+    def send_signal(self, number: int) -> None:
+        try:
+            os.kill(self.pid, number)
+        except ProcessLookupError:
+            pass
+
+    def terminate(self) -> None:
+        self.send_signal(signal.SIGTERM)
+
+    def kill(self) -> None:
+        self.send_signal(signal.SIGKILL)
+
+    def wait(self, timeout: float | None = None) -> int:
+        deadline = None if timeout is None else time.monotonic() + timeout
+        while (code := self.poll()) is None:
+            if deadline is not None and time.monotonic() >= deadline:
+                raise subprocess.TimeoutExpired(str(self.pid), timeout)
+            time.sleep(0.05)
+        return code
+
+
+def adopted_from_env(environ: MutableMapping[str, str]) -> Adopted | None:
+    """The Page API child the previous image handed over (`ADOPT_ENV`), consuming the variable; None when it named none."""
+    handed = environ.pop(ADOPT_ENV, None)
+    try:
+        pid, fd = (int(part) for part in (handed or "").split(":"))
+    except ValueError:
+        return None
+    return Adopted(pid, fd)
 
 
 def announce_ready(environ: MutableMapping[str, str]) -> None:
@@ -46,7 +110,7 @@ def announce_ready(environ: MutableMapping[str, str]) -> None:
     try:
         os.write(int(fd), b"1")
         os.close(int(fd))
-    except (OSError, ValueError):
+    except OSError, ValueError:
         pass
 
 

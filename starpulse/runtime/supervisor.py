@@ -32,7 +32,8 @@ from starpulse.runs import opt_in
 from starpulse.runtime.config import Config, MemoryLimit, runs_adapter
 from starpulse.runtime.closure import SELF, Reading, ReloadError
 from starpulse.runtime.control import Control
-from starpulse.runtime.hold import LISTEN_FD_ENV, READY_FD_ENV, supervised_env
+from starpulse.runtime import launch
+from starpulse.runtime.hold import ADOPT_ENV, LISTEN_FD_ENV, READY_FD_ENV, STATIC_ENV, Adopted, supervised_env
 from starpulse.runtime.memory import memory_reader
 
 logger = logging.getLogger(__name__)
@@ -60,7 +61,7 @@ def worker_commands(config: Config, config_path: Path | None) -> dict[str, list[
     contexts = [context for context in WORKER_CONTEXTS if context != "search" or config.search.embeddings_url]
     return {
         context: [
-            sys.executable,
+            launch.interpreter(),
             "-m",
             "starpulse",
             "worker",
@@ -92,8 +93,12 @@ def spawn_child(
     )
 
 
-def _exec_self() -> None:  # pragma: no mutate block — process boundary
-    os.execv(sys.executable, sys.orig_argv)
+def _stdin_fd(proc: Any) -> int | None:
+    """The descriptor of the stdin pipe `proc` exits on, which `serve` holds the write end of."""
+    if isinstance(proc, Adopted):
+        return proc.fd
+    stdin = getattr(proc, "stdin", None)
+    return None if stdin is None else stdin.fileno()
 
 
 @dataclass
@@ -123,15 +128,17 @@ class Supervisor:
         warm: float = 30.0,
         read: Callable[[str], Reading] | None = None,
         baseline: Callable[[str], Reading] | None = None,
-        execute: Callable[[], None] = _exec_self,
+        execute: Callable[[], None] = launch.exec_self,
         retire: Callable[[], None] | None = None,
         control: Path | None = None,
         limits: Mapping[str, MemoryLimit] | None = None,
         memory: Callable[[int], int] | None = memory_reader(),
         sample_every: float = 5.0,
         admit: Callable[[], None] | None = None,
+        adopted: Mapping[str, Adopted] | None = None,
     ) -> None:
         self._admit = admit
+        self._adopted = dict(adopted or {})
         self._children = {name: _Child(command) for name, command in commands.items()}
         self._spawn = spawn
         self._sockets = dict(sockets or {})
@@ -229,7 +236,14 @@ class Supervisor:
                 self._seen = self._readings(self._baseline)
             except ReloadError as exc:
                 logger.warning("reload: no baseline for the installed code: %s", exc)
-        self.tick(time.monotonic())
+        now = time.monotonic()
+        for name, proc in self._adopted.items():  # the previous image's child, kept in place of one started now
+            child = self._children.get(name)
+            if child is None:
+                proc.terminate()
+            else:
+                child.proc, child.started, child.sampled = proc, now, now
+        self.tick(now)
         self._thread = threading.Thread(target=self._run, name="worker-supervisor", daemon=True)
         self._thread.start()
         if self._control:
@@ -259,9 +273,12 @@ class Supervisor:
         """Replace each child whose code or database changed since the last reading, tell each whose only change is its
         live config block to re-read it, and keep the rest; report each as "replaced", "reloaded" or "kept".
 
-        When `serve`'s own code changed every child is ended and `supervisor` reports "re-executed": the caller
-        sends that report, then calls `reexec`. Raises `ReloadError`, changing nothing, when a reading fails or `admit`
-        refuses the definitions the config now names."""
+        When `serve`'s own code changed the Page API is replaced first, beside the old one on the shared socket, from the
+        release now behind the launcher; every other child is ended and `supervisor` reports "re-executed": the caller
+        sends that report, then calls `reexec`, and the next image adopts the Page API. The report's `reads` is
+        "launcher" when the code was read from the release behind the launcher, which a caller that probes code through
+        its own interpreter (an older `starpulse reload`) lacks, and so cannot trust a "kept". Raises `ReloadError`,
+        changing nothing, when a reading fails or `admit` refuses the definitions the config now names."""
         self._admitted()
         after = self._readings()
         with self._lock:
@@ -271,14 +288,17 @@ class Supervisor:
             reexec = own is not None and not own.same_code(after[SELF])
             if reexec:
                 self._halt.set()
-                self._end([c.proc for c in self._children.values() if c.proc is not None])
+                os.environ.pop(STATIC_ENV, None)  # the next release serves the page build it ships
+                for name in self._sockets:
+                    self._replace(name, self._children[name])
+                self._end([c.proc for n, c in self._children.items() if n not in self._sockets and c.proc is not None])
                 outcomes = dict.fromkeys(self._children, "replaced")
             else:
                 if self._retire and self._code_changed(after):
                     self._retire()
                 outcomes = {n: self._apply(n, c, self._seen.get(n), after[n]) for n, c in self._children.items()}
             self._seen = after
-        return {"supervisor": "re-executed" if reexec else "kept", "children": outcomes}
+        return {"supervisor": "re-executed" if reexec else "kept", "reads": "launcher", "children": outcomes}
 
     def _code_changed(self, after: Mapping[str, Reading]) -> bool:
         return any(n not in self._seen or not self._seen[n].same_code(after[n]) for n in self._children)
@@ -335,12 +355,18 @@ class Supervisor:
     def reexec(self) -> None:
         """Replace this process with a new one running the same command, after `reload` reported "re-executed".
 
-        The new image adopts the socket it holds (`LISTEN_FD_ENV`), so a connection made meanwhile queues in its backlog."""
+        The new image adopts the socket it holds (`LISTEN_FD_ENV`), so a connection made meanwhile queues in its backlog,
+        and the Page API child that `reload` started beside the old one (`ADOPT_ENV`), which keeps answering meanwhile."""
         if self._control:
             self._control.stop()
-        for listening in self._sockets.values():  # only the Page API's: one descriptor to name
+        for name, listening in self._sockets.items():  # only the Page API's: one descriptor to name
             listening.set_inheritable(True)
             os.environ[LISTEN_FD_ENV] = str(listening.fileno())
+            proc = self._children[name].proc
+            fd = None if proc is None or proc.poll() is not None else _stdin_fd(proc)
+            if fd is not None:
+                os.set_inheritable(fd, True)
+                os.environ[ADOPT_ENV] = f"{proc.pid}:{fd}"
         self._execute()
 
     def _end(self, running: list[Any]) -> None:
