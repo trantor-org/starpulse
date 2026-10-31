@@ -48,7 +48,9 @@ class FakeTemporal:
         if not path:
             query = parse_qs(parts.query)["query"][0]
             key = "running" if 'ExecutionStatus="Running"' in query else "failed" if "Failed" in query else "closed"
-            return {"executions": self.listed.get(key, [])}
+            # Like the UI server's HTTP API: `pageSize` bounds the page, and an unknown parameter is ignored.
+            size = int(parse_qs(parts.query).get("pageSize", ["1000"])[0])
+            return {"executions": self.listed.get(key, [])[:size]}
         workflow_id = path.removeprefix("/").removesuffix("/history-reverse")
         if path.endswith("/history-reverse"):
             return {"history": {"events": self.histories[workflow_id]}}
@@ -228,3 +230,16 @@ def test_each_listing_is_limited_to_the_three_workflow_types() -> None:
     assert listings and all(
         'WorkflowType IN ("task_lifecycle","task_phases","AlertInvestigationWorkflow")' in c for c in listings
     )
+
+
+def test_a_server_with_more_closed_runs_than_the_limit_is_followed_only_up_to_the_limit() -> None:
+    many = [
+        execution(f"TASK-{n}", f"run-{n}", "task_phases", "COMPLETED", "2026-10-31T10:00:00Z", "2026-10-31T10:05:00Z")
+        for n in range(3 * temporal.RECENT_LIMIT)
+    ]
+    poller = temporal.Poller(Sink(), server(listed={"running": [], "failed": [], "closed": many}), BASE)
+
+    dags = poller.listing(NOW)
+
+    assert len(by_name(dags)["task_phases"]["recent"]) == temporal.RECENT_LIMIT
+    assert len(poller.closed) == temporal.RECENT_LIMIT
