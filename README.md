@@ -90,7 +90,7 @@ The same verbs work by hand, and **New task** on the Kanban view writes to the s
 | Kind | Supported |
 |---|---|
 | Task trackers | Native Markdown board, Backlog.md, Jira |
-| Workflow runs | Dagu, GitHub Actions, systemd timers, any scheduler via CloudEvents |
+| Workflow runs | Dagu, GitHub Actions, systemd timers, Temporal, any scheduler via CloudEvents |
 | Agent sessions | Claude Code (OTLP), GitHub Copilot cloud agent and code review |
 
 New trackers and producers are written against the board, machine-events and runs contracts; see

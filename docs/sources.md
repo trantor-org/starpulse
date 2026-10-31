@@ -496,6 +496,33 @@ url = "systemd-tmpfiles-clean, apt-daily.timer, user/claude-sessions-snapshot"
   kernel when its parent thread dies), so a restart leaves none behind. The adapter reads no event-log entries. There is no Run now: starting a root unit needs a polkit grant,
   so the adapter offers no start. `systemctl` and `gdbus` (`libglib2.0-bin`) must run on the host that serves StarPulse.
 
+## Temporal
+
+`type = "temporal"` reads one Temporal namespace: each Workflow Type is a workflow, its latest Workflow Execution is the
+run, and that run's Activities are its steps, one per Activity Type at its latest state, in the order first scheduled.
+
+```toml
+[[runs]]
+name = "temporal"
+type = "temporal"
+url = "temporal.local:7233/default"   # frontend `host:port`, optional `/namespace` (`default` without one)
+```
+
+- **Adapter worker.** `serve` starts it as a child for each instance that names this adapter (`starpulse worker temporal
+  --config <this file>`). It needs the `starpulse[temporal]` extra (`temporalio`). Its memory limit is 100 MB soft and
+  200 MB hard (`worker_memory`).
+- **Status.** `Running` is `running`; `Completed` and `ContinuedAsNew` are `succeeded`; `Failed` and `TimedOut` are
+  `failed`; `Terminated` and `Canceled` are `aborted`. An Activity's scheduled, started, completed, failed, timed-out
+  and canceled events become `queued`, `running`, `succeeded`, `failed` and `aborted`, the engine's word in `raw` where
+  it differs.
+- **Bounded follow set.** The adapter follows the latest execution of at most 64 Workflow Types, the most recently
+  started kept. An execution whose history fails to read three times in a row is dropped from the set and shown
+  without steps until a newer execution of its type replaces it.
+- **Events.** Every 30 s one visibility listing reads the open executions and those closed since the last good listing,
+  and a run's history is read again only when its length changed. A Temporal that cannot be reached shows as the
+  instance's error and keeps the last reading; nothing grows while it is down. The adapter reads no event-log entries
+  and offers no Run now.
+
 ## Show pull requests and Copilot work
 
 `python -m starpulse.cli.github_adapter` reads a repository's 30 most recently updated pull requests every `--interval`

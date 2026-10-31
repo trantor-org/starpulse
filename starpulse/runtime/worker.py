@@ -24,7 +24,7 @@ from starpulse.runtime.server import listen_options
 logger = logging.getLogger(__name__)
 
 #: The run Adapters that run as their own workers (`starpulse.runs.bin.adapter_worker`): `serve` supervises one for each that a `[[runs]]` instance names.
-OPT_IN = ("dagu", "github-actions", "systemd")
+OPT_IN = ("dagu", "github-actions", "systemd", "temporal")
 CONTEXTS = ("api", "pulls", "scheduler", "runs", "flow-metrics", "search", "board", *OPT_IN)
 
 
