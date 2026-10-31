@@ -159,6 +159,7 @@ class Loop:
         self._parked: dict[str, _Run] = {}
         self._held: set[str] = self._load_held()
         self._paused: dict[str, dict[str, Any]] = self._load_pauses()
+        self._skip_logged: str | None = None  # the last reason a tick logged for skipping admission
         self._failed: dict[str, tuple[int, float]] = {}  # a task whose start failed: its failures so far, when to retry
         self._events: queue.Queue | None = None
         self._sampled_at: float | None = None  # the sample of the last `scheduler` status the loop was offered
@@ -277,9 +278,25 @@ class Loop:
         self._revive(now, agents)
         self._release(now, agents)
         self._reap(now)
-        if not admit or not self._toggle.get() or self._quiet(now) or self._selected_paused(now):
+        if not admit:
             return []
+        if (why := self._admission_off(now)) is not None:
+            if why != self._skip_logged:
+                logger.info("StarPulse scheduler: admission skipped: %s", why)
+            self._skip_logged = why
+            return []
+        self._skip_logged = None
         return self._admit(now)
+
+    def _admission_off(self, now: float) -> str | None:
+        """Why this tick admits nothing, or None; a gated-off tick logs no per-task decision, so this names the gate."""
+        if not self._toggle.get():
+            return "the switch is off"
+        if self._quiet(now):
+            return "inside quiet hours"
+        if paused := self._selected_paused(now):
+            return f"{paused} is paused"
+        return None
 
     def run_forever(self, stop: threading.Event, period: float = PERIOD) -> None:
         """Tick on each wanted event until `stop` is set, and on `period` seconds without one to settle idle sessions."""
